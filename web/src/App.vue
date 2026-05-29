@@ -3,6 +3,7 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { createWsClient } from './lib/ws'
 import type {
   AgentConfig,
+  ConsensusOutcome,
   PermissionMode,
   ServerToClient,
   SessionInfo,
@@ -24,6 +25,14 @@ type ChatBody =
       toolName: string
       input: unknown
       decision: 'allow' | 'deny' | null
+      /** Agents' opinions when consensus ran but was split. */
+      consensus?: ConsensusOutcome
+    }
+  | {
+      kind: 'consensus'
+      toolName: string
+      input: unknown
+      outcome: ConsensusOutcome
     }
   | { kind: 'system'; text: string }
 type ChatMsg = ChatBody & { id: number }
@@ -134,7 +143,11 @@ function applyCommand(c: SlashCommandInfo) {
 // ---- System settings (agent config) ----
 const settingsOpen = ref(false)
 // A local, editable copy of the server settings; committed on Save.
-const settingsDraft = ref<SystemSettings>({ agents: [], defaultAgentId: SYSTEM_AGENT_ID })
+const settingsDraft = ref<SystemSettings>({
+  agents: [],
+  defaultAgentId: SYSTEM_AGENT_ID,
+  consensus: { enabled: false },
+})
 
 function openSettings() {
   settingsOpen.value = true
@@ -194,7 +207,7 @@ function transcriptToChat(item: TranscriptItem): ChatBody {
   }
 }
 
-const TOOL_KINDS = new Set(['tool-use', 'tool-result', 'permission'])
+const TOOL_KINDS = new Set(['tool-use', 'tool-result', 'permission', 'consensus'])
 
 /**
  * Group the flat message list into render blocks: text messages pass through;
@@ -285,6 +298,7 @@ function handleMessage(msg: ServerToClient) {
       settingsDraft.value = {
         agents: msg.settings.agents.map((a) => ({ ...a })),
         defaultAgentId: msg.settings.defaultAgentId,
+        consensus: { enabled: msg.settings.consensus?.enabled ?? false },
       }
       break
     case 'assistant_text':
@@ -303,6 +317,15 @@ function handleMessage(msg: ServerToClient) {
         toolName: msg.toolName,
         input: msg.input,
         decision: null,
+        consensus: msg.consensus,
+      })
+      break
+    case 'consensus_auto':
+      add({
+        kind: 'consensus',
+        toolName: msg.toolName,
+        input: msg.input,
+        outcome: msg.outcome,
       })
       break
     case 'turn_end':
@@ -626,12 +649,47 @@ function onKey(e: KeyboardEvent) {
                   <div v-else class="tool-oneline" @click="toggle(m.id)">
                     {{ oneLine(fmt(m.input)) }}
                   </div>
+                  <div v-if="m.consensus" class="consensus consensus-split">
+                    <div class="consensus-summary">
+                      🤝 多 agent 意见分歧：{{ m.consensus.summary }}
+                    </div>
+                    <ul class="consensus-votes">
+                      <li v-for="v in m.consensus.votes" :key="v.agentId">
+                        <span class="vote-name">{{ v.agentName }}</span>
+                        <span class="vote-decision" :class="v.decision">{{ v.decision }}</span>
+                        <span class="vote-reason">{{ v.reason }}</span>
+                      </li>
+                    </ul>
+                  </div>
                   <div v-if="m.decision === null" class="actions">
                     <button class="deny" @click="respond(m, 'deny')">Deny</button>
                     <button @click="respond(m, 'allow')">Allow</button>
                   </div>
                   <div v-else class="decided">
                     — {{ m.decision === 'allow' ? 'allowed' : 'denied' }} —
+                  </div>
+                </template>
+                <template v-else-if="m.kind === 'consensus'">
+                  <div class="label">
+                    🤝 多 agent 共识 ·
+                    <code>{{ m.toolName }}</code>
+                    <span class="consensus-badge" :class="m.outcome.decision ?? 'split'">{{
+                      m.outcome.decision === 'allow'
+                        ? '自动允许'
+                        : m.outcome.decision === 'deny'
+                          ? '自动拒绝'
+                          : '分歧'
+                    }}</span>
+                  </div>
+                  <div class="consensus">
+                    <div class="consensus-summary">{{ m.outcome.summary }}</div>
+                    <ul class="consensus-votes">
+                      <li v-for="v in m.outcome.votes" :key="v.agentId">
+                        <span class="vote-name">{{ v.agentName }}</span>
+                        <span class="vote-decision" :class="v.decision">{{ v.decision }}</span>
+                        <span class="vote-reason">{{ v.reason }}</span>
+                      </li>
+                    </ul>
                   </div>
                 </template>
               </div>
@@ -746,6 +804,19 @@ function onKey(e: KeyboardEvent) {
         </div>
       </div>
       <button class="agent-add" @click="addAgent">+ Add agent</button>
+
+      <p class="settings-section-title">Consensus</p>
+      <p class="settings-hint">
+        When enabled, every permission prompt is first put to the
+        <em>other</em> configured agents. They each judge the tool call from the recent context and
+        vote allow/deny with a reason; the session's own agent summarizes. If they all agree it
+        auto-resolves, otherwise you decide with their opinions shown. Needs at least one agent
+        besides the session's own.
+      </p>
+      <label v-if="settingsDraft.consensus" class="consensus-toggle">
+        <input v-model="settingsDraft.consensus.enabled" type="checkbox" />
+        Enable multi-agent consensus voting
+      </label>
     </div>
     <div class="settings-foot">
       <button class="ghost" @click="closeSettings">Cancel</button>

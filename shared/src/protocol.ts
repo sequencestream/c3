@@ -76,6 +76,16 @@ export interface AgentConfig {
 }
 
 /**
+ * Multi-agent consensus voting over permission prompts. When enabled, a pending
+ * permission request is first put to the *other* configured agents (every agent
+ * except the session's own); if they unanimously agree it is auto-resolved,
+ * otherwise the human decides with their opinions attached. Off by default.
+ */
+export interface ConsensusConfig {
+  enabled: boolean
+}
+
+/**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
  */
@@ -83,6 +93,36 @@ export interface SystemSettings {
   agents: AgentConfig[]
   /** Id of the agent new/unassigned sessions launch with. */
   defaultAgentId: string
+  /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
+  consensus?: ConsensusConfig
+}
+
+/** One agent's vote on a pending permission request during consensus voting. */
+export interface ConsensusVote {
+  /** Voting agent's id. */
+  agentId: string
+  /** Voting agent's display name. */
+  agentName: string
+  /** Verdict. `abstain` ⇒ the agent errored or returned no parseable answer. */
+  decision: 'allow' | 'deny' | 'abstain'
+  /** One-line rationale from the agent. */
+  reason: string
+}
+
+/**
+ * The aggregated result of a consensus vote over the other agents. Produced by
+ * the server's consensus orchestrator and surfaced to the console either as an
+ * auto-decision (`consensus_auto`) or attached to a `permission_request`.
+ */
+export interface ConsensusOutcome {
+  /** Each voter's verdict + reason. */
+  votes: ConsensusVote[]
+  /** Decider-agent (or code-fallback) one-line summary of the opinions. */
+  summary: string
+  /** True ⇒ every voter returned the same allow/deny verdict (no abstain). */
+  unanimous: boolean
+  /** The unanimous verdict when `unanimous`; null when split (human decides). */
+  decision: 'allow' | 'deny' | null
 }
 
 /**
@@ -158,7 +198,20 @@ export type ServerToClient =
   | { type: 'assistant_text'; text: string }
   | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }
-  | { type: 'permission_request'; requestId: string; toolName: string; input: unknown }
+  | {
+      type: 'permission_request'
+      requestId: string
+      toolName: string
+      input: unknown
+      /** Present when consensus ran but was split — the agents' opinions for the human. */
+      consensus?: ConsensusOutcome
+    }
+  /**
+   * A permission request the multi-agent consensus resolved on its own (all
+   * voters agreed). Informational — no decision needed from the human; carries
+   * the opinions so the console can show how it was decided.
+   */
+  | { type: 'consensus_auto'; toolName: string; input: unknown; outcome: ConsensusOutcome }
   /**
    * One prompt→result turn finished. `complete` = the run ended normally;
    * `error` = it failed. This NEVER means the session ended — the session stays

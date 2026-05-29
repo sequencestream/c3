@@ -704,6 +704,79 @@ button.deny:hover:not(:disabled) {
   text-align: right;
 }
 
+/* ---- Multi-agent consensus ---- */
+.consensus {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--c-code);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+.consensus-split {
+  border-color: var(--c-error);
+}
+.consensus-summary {
+  font-size: var(--fs-code);
+  line-height: var(--lh-normal);
+}
+.consensus-votes {
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.consensus-votes li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+}
+.vote-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.vote-decision {
+  text-transform: uppercase;
+  font-size: var(--fs-badge);
+  letter-spacing: 0.04em;
+}
+.vote-decision.allow {
+  color: var(--c-success);
+}
+.vote-decision.deny {
+  color: var(--c-error);
+}
+.vote-decision.abstain {
+  color: var(--c-text-muted);
+}
+.vote-reason {
+  color: var(--c-text-muted);
+}
+.consensus-badge {
+  margin-left: var(--sp-2);
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-badge);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--c-border);
+}
+.consensus-badge.allow {
+  color: var(--c-success);
+  border-color: var(--c-success);
+}
+.consensus-badge.deny {
+  color: var(--c-error);
+  border-color: var(--c-error);
+}
+.consensus-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-code);
+  cursor: pointer;
+}
+
 /* ---- System settings (full-page) ---- */
 .settings-btn {
   font-size: var(--fs-title-sm);

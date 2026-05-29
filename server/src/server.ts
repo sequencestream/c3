@@ -265,6 +265,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                   resume,
                   envOverrides: launch.envOverrides,
                   model: launch.model,
+                  currentAgentId: launch.agentId,
                   send: (m) => send(ws, m),
                   onStart: (h) => (runHandle = h),
                   onSessionId: (sid) => {

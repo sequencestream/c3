@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { PermissionMode, ServerToClient } from '@ccc/shared/protocol'
+import type { ConsensusOutcome, PermissionMode, ServerToClient } from '@ccc/shared/protocol'
 import { waitForDecision, resolveDecision, type Decision } from './permissions.js'
+import { runConsensusVote } from './consensus.js'
 import { stringifyToolResult } from './format.js'
 
 // In a Bun-compiled binary the SDK's bundled `cli-<platform>` lookup misses
@@ -57,6 +58,11 @@ export interface RunOptions {
   envOverrides?: Record<string, string>
   /** Model alias/id override from the active agent. Omit ⇒ SDK default. */
   model?: string
+  /**
+   * The resolved agent id this session runs on. Excluded from consensus voting
+   * (the other agents vote; this one decides/summarizes). Omit ⇒ no exclusion.
+   */
+  currentAgentId?: string
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
@@ -73,11 +79,15 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     resume,
     envOverrides,
     model,
+    currentAgentId,
     send,
     onStart,
     onSessionId,
   } = opts
   let reportedSessionId = false
+  // Rolling recent-context buffer (user prompt + assistant text) the consensus
+  // voters reason over; capped so a long run doesn't bloat advisor prompts.
+  let recentContext = prompt.slice(-4000)
 
   const claudePath = findClaudeExecutable()
   const q = query({
@@ -109,12 +119,28 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       ...(model ? { model } : {}),
       canUseTool: async (toolName, input, _ctx) => {
         const requestId = randomUUID()
-        const req: ServerToClient = {
-          type: 'permission_request',
-          requestId,
+        // Multi-agent consensus first (resolves to null when disabled, when there
+        // are no other agents, or if the advisor queries throw).
+        const outcome: ConsensusOutcome | null = await runConsensusVote({
+          currentAgentId: currentAgentId ?? null,
           toolName,
           input,
+          context: recentContext,
+          cwd,
+          signal,
+        }).catch(() => null)
+        // Unanimous ⇒ auto-resolve; surface how it was decided in the stream.
+        if (outcome && outcome.unanimous && outcome.decision) {
+          send({ type: 'consensus_auto', toolName, input, outcome })
+          if (outcome.decision === 'allow') {
+            return { behavior: 'allow', updatedInput: input }
+          }
+          return { behavior: 'deny', message: 'Denied by c3 multi-agent consensus' }
         }
+        // Split / no consensus ⇒ ask the human, attaching the opinions (if any).
+        const req: ServerToClient = outcome
+          ? { type: 'permission_request', requestId, toolName, input, consensus: outcome }
+          : { type: 'permission_request', requestId, toolName, input }
         send(req)
         const decision = await waitForDecision(requestId, signal)
         if (decision === 'allow') {
@@ -168,6 +194,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
             }
             if (b.type === 'text' && typeof b.text === 'string') {
               send({ type: 'assistant_text', text: b.text })
+              recentContext = `${recentContext}\n${b.text}`.slice(-4000)
             } else if (b.type === 'tool_use' && b.id && b.name) {
               send({
                 type: 'tool_use',

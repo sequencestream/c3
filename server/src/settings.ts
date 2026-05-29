@@ -79,7 +79,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   }
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : SYSTEM_AGENT_ID
   const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : SYSTEM_AGENT_ID
-  return { agents, defaultAgentId }
+  const consensus = { enabled: raw?.consensus?.enabled === true }
+  return { agents, defaultAgentId, consensus }
 }
 
 export function loadSettings(): SystemSettings {
@@ -110,7 +111,7 @@ export function getDefaultAgentId(): string {
 }
 
 /** The agent for an id, or the default agent if the id is null/unknown. */
-function resolveAgent(agentId: string | null): AgentConfig {
+export function resolveAgent(agentId: string | null): AgentConfig {
   const settings = loadSettings()
   const byId = agentId ? settings.agents.find((a) => a.id === agentId) : undefined
   return (
@@ -169,16 +170,14 @@ export function deleteSessionAgentId(sessionId: string): void {
 }
 
 /**
- * Resolve how to launch Claude Code for a session: the agent's Claude config
- * mapped to SDK launch overrides. Empty fields produce no override, so the
- * system agent yields `{}` (SDK defaults apply).
+ * Map one agent's Claude config to SDK launch overrides. Empty fields produce
+ * no override, so the system agent yields `{}` (SDK defaults apply). Shared by
+ * session launches ({@link resolveSessionLaunch}) and consensus advisor calls.
  */
-export function resolveSessionLaunch(sessionId: string | null): {
+export function launchForAgent(agent: AgentConfig): {
   envOverrides?: Record<string, string>
   model?: string
 } {
-  const agentId = sessionId ? getSessionAgentId(sessionId) : null
-  const agent = resolveAgent(agentId)
   const env: Record<string, string> = {}
   if (agent.baseUrl) env.ANTHROPIC_BASE_URL = agent.baseUrl
   if (agent.apiKey) {
@@ -203,6 +202,33 @@ export function resolveSessionLaunch(sessionId: string | null): {
     ...(Object.keys(env).length > 0 ? { envOverrides: env } : {}),
     ...(agent.model ? { model: agent.model } : {}),
   }
+}
+
+/**
+ * Resolve how to launch Claude Code for a session: the resolved agent's id plus
+ * its Claude config mapped to SDK launch overrides.
+ */
+export function resolveSessionLaunch(sessionId: string | null): {
+  agentId: string
+  envOverrides?: Record<string, string>
+  model?: string
+} {
+  const agentId = sessionId ? getSessionAgentId(sessionId) : null
+  const agent = resolveAgent(agentId)
+  return { agentId: agent.id, ...launchForAgent(agent) }
+}
+
+/** Whether multi-agent consensus voting is enabled in the system settings. */
+export function isConsensusEnabled(): boolean {
+  return loadSettings().consensus?.enabled === true
+}
+
+/**
+ * The agents that vote in a consensus round: every configured agent except the
+ * one the session itself runs on (`currentAgentId`, already resolved).
+ */
+export function consensusVoters(currentAgentId: string | null): AgentConfig[] {
+  return loadSettings().agents.filter((a) => a.id !== currentAgentId)
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

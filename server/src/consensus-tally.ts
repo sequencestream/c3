@@ -125,10 +125,37 @@ export function askVoterPrompt(questions: AskQuestion[], context: string): strin
 }
 
 /**
+ * Resolve an advisor's free-form choice string to one of a question's option
+ * labels. Advisors frequently echo the label with extra reasoning appended
+ * (e.g. `"方案A：扩展协议: <why>"`) or embed it in a sentence; strict equality
+ * would mis-record those as abstentions, so after the exact pass we fall back to
+ * the longest label that prefixes / is prefixed by / is contained in the choice.
+ * Longest-first ordering keeps a specific label (`方案A：扩展协议`) from losing to
+ * a shorter sibling (`方案A`). Returns the canonical label, or null if none fit.
+ */
+export function matchOption(choice: string, options: { label: string }[]): string | null {
+  const c = choice.trim().toLowerCase()
+  if (!c) return null
+  const exact = options.find((o) => o.label.toLowerCase() === c)
+  if (exact) return exact.label
+  const byLenDesc = [...options].sort((a, b) => b.label.length - a.label.length)
+  const prefix = byLenDesc.find((o) => {
+    const l = o.label.toLowerCase()
+    return l.length > 0 && (c.startsWith(l) || l.startsWith(c))
+  })
+  if (prefix) return prefix.label
+  const sub = byLenDesc.find((o) => {
+    const l = o.label.toLowerCase()
+    return l.length >= 2 && (c.includes(l) || l.includes(c))
+  })
+  return sub ? sub.label : null
+}
+
+/**
  * Parse one advisor's reply into per-question answers, aligned to `questions`.
- * Labels are matched case-insensitively to the option set; unmatched/missing
- * questions are returned as `abstain` (ignored by the tally). Always returns one
- * entry per question.
+ * Labels are matched (tolerantly, see {@link matchOption}) to the option set;
+ * unmatched/missing questions are returned as `abstain` (ignored by the tally).
+ * Always returns one entry per question.
  */
 export function parseAskVote(
   text: string,
@@ -161,8 +188,8 @@ export function parseAskVote(
     for (const c of rawChoices) {
       const cl = String(c ?? '').trim()
       if (!cl || cl.toLowerCase() === 'custom') continue
-      const hit = q.options.find((o) => o.label.toLowerCase() === cl.toLowerCase())
-      if (hit) optionLabels.push(hit.label)
+      const hit = matchOption(cl, q.options)
+      if (hit && !optionLabels.includes(hit)) optionLabels.push(hit)
     }
     const custom = typeof a.custom === 'string' && a.custom.trim() ? oneLine(a.custom) : undefined
     if (optionLabels.length === 0 && !custom) {
@@ -200,6 +227,101 @@ export function tallyQuestion(
     unanimous,
     agreed: unanimous ? keys[0] : null,
   }
+}
+
+/**
+ * Build the decider prompt: in ONE call, judge every split question and write the
+ * human-facing summary. The decider sees each advisor's actual answer + reasoning,
+ * so it can recognize an effective consensus the literal tally missed (a mis-parsed
+ * reply, or differently-worded answers that mean the same option). It is asked to
+ * adjudicate ONLY the split questions and must answer with exact option labels.
+ */
+export function deciderAskPrompt(
+  perQuestion: QuestionConsensus[],
+  questions: AskQuestion[],
+): string {
+  const split = perQuestion.filter((q) => !q.unanimous)
+  const lines: string[] = [
+    "You are the deciding agent. Several advisor agents answered, on the user's behalf,",
+    "the questions an AI agent asked. Here is every advisor's actual answer and reasoning:",
+    '',
+  ]
+  perQuestion.forEach((q) => {
+    lines.push(`[${q.index}|${q.header || q.index}] ${q.question}`)
+    q.answers.forEach((a) =>
+      lines.push(
+        `    - ${a.agentName}: ${
+          a.abstain ? '弃权' : a.optionLabels.join('/') || a.custom || '?'
+        }${a.reason ? ` — ${a.reason}` : ''}`,
+      ),
+    )
+    lines.push(`    => ${q.unanimous ? `一致：${q.agreed}` : '意见分歧'}`)
+  })
+  lines.push('')
+  if (split.length > 0) {
+    lines.push(
+      'Some questions above are marked 意见分歧. For EACH such question, judge whether the',
+      'advisors actually reach an effective consensus — e.g. they picked the same option but a',
+      'reply was mis-parsed, or differently-worded answers mean the same option. If they',
+      'effectively agree, set "consensus":true and give the agreed answer using the EXACT option',
+      'label(s) listed below; if they genuinely differ, set "consensus":false. Judge ONLY these:',
+    )
+    split.forEach((q) => {
+      const opts = questions[q.index]?.options ?? []
+      lines.push(`  [${q.index}] options: ${opts.map((o) => o.label).join(' | ')}`)
+    })
+    lines.push('')
+  }
+  lines.push(
+    'Also write ONE short Chinese sentence summarizing the collective answers for a human who must confirm.',
+    'Reply with ONLY a single-line JSON object, no other text:',
+    '{"summary":"<chinese sentence>","questions":[{"index":0,"consensus":true,"choice":"<exact label>"|["<label>"]|"custom","custom":"<text or null>"}]}',
+  )
+  return lines.join('\n')
+}
+
+/**
+ * Parse the decider's combined judge+summary reply. Returns the summary text and,
+ * for each split question the decider ruled an effective consensus on, the agreed
+ * answer in SDK string format (sorted labels comma-joined, or a custom reply) —
+ * but ONLY when it resolves to valid option label(s) or a non-empty custom string.
+ * `consensus:false`, unparseable, or unresolved entries are dropped (stay split).
+ */
+export function parseDeciderAsk(
+  text: string,
+  questions: AskQuestion[],
+): { summary: string; overrides: Map<number, string> } {
+  const overrides = new Map<number, string>()
+  let summary = ''
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) return { summary, overrides }
+  let obj: { summary?: unknown; questions?: unknown }
+  try {
+    obj = JSON.parse(match[0]) as typeof obj
+  } catch {
+    return { summary, overrides }
+  }
+  if (typeof obj.summary === 'string') summary = oneLine(obj.summary)
+  const arr = Array.isArray(obj.questions) ? obj.questions : []
+  for (const raw of arr) {
+    const e = raw as { index?: unknown; consensus?: unknown; choice?: unknown; custom?: unknown }
+    if (e.consensus !== true) continue
+    const idx = typeof e.index === 'number' ? e.index : Number(e.index)
+    if (!Number.isInteger(idx) || !questions[idx]) continue
+    const q = questions[idx]
+    const rawChoices = Array.isArray(e.choice) ? e.choice : [e.choice]
+    const labels: string[] = []
+    for (const c of rawChoices) {
+      const cl = String(c ?? '').trim()
+      if (!cl || cl.toLowerCase() === 'custom') continue
+      const hit = matchOption(cl, q.options)
+      if (hit && !labels.includes(hit)) labels.push(hit)
+    }
+    const custom = typeof e.custom === 'string' && e.custom.trim() ? oneLine(e.custom) : ''
+    if (labels.length > 0) overrides.set(idx, [...labels].sort().join(', '))
+    else if (custom) overrides.set(idx, custom)
+  }
+  return { summary, overrides }
 }
 
 /** Deterministic ask-summary when the decider agent is unavailable or aborted. */

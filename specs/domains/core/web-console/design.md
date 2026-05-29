@@ -5,10 +5,11 @@ Implements the [spec](spec.md). Vue 3 SPA. Lives in `web/src/App.vue` (UI + stat
 
 ## Components / structure
 
-| Unit      | File        | Role                                                                                                        |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
-| App       | `App.vue`   | Chat view, prompt input, permission dialog, mode `<select>`, status indicator                               |
-| WS client | `lib/ws.ts` | Opens `ws(s)://<host>/ws`, dispatches parsed `ServerToClient` to a listener, exposes `send(ClientToServer)` |
+| Unit         | File                   | Role                                                                                                                       |
+| ------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| App          | `App.vue`              | Chat view, prompt input, permission dialog, mode dropdown, status indicator                                                |
+| BaseDropdown | `lib/BaseDropdown.vue` | Standard custom dropdown (replaces native `<select>`): trigger + popover with icon rows, keyboard nav, click-outside close |
+| WS client    | `lib/ws.ts`            | Opens `ws(s)://<host>/ws`, dispatches parsed `ServerToClient` to a listener, exposes `send(ClientToServer)`                |
 
 ## State (App.vue)
 
@@ -44,12 +45,12 @@ Implements the [spec](spec.md). Vue 3 SPA. Lives in `web/src/App.vue` (UI + stat
 
 ## User actions (UI → wire)
 
-| Action                 | Guard                                           | Sends                                                        |
-| ---------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| `submit()`             | non-empty, client present, `!running` (WC-R2)   | `user_prompt`; optimistically marks viewed session `running` |
-| `stopRun()`            | viewed session running (WC-R14)                 | `stop_run`                                                   |
-| `respond(m, decision)` | client present, `m.decision` still null (WC-R3) | `permission_response`; sets `m.decision` locally             |
-| `onModeChange(e)`      | client present, value changed                   | optimistic `mode` update + `set_mode` (WC-R4)                |
+| Action                 | Guard                                           | Sends                                                                                       |
+| ---------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `submit()`             | non-empty, client present, `!running` (WC-R2)   | `user_prompt`; optimistically marks viewed session `running`                                |
+| `stopRun()`            | viewed session running (WC-R14)                 | `stop_run`                                                                                  |
+| `respond(m, decision)` | client present, `m.decision` still null (WC-R3) | `permission_response`; sets `m.decision` locally                                            |
+| `setMode(next)`        | client present, value changed                   | optimistic `mode` update + `set_mode` (WC-R4); `next` from BaseDropdown `update:modelValue` |
 
 ## WS client behavior
 

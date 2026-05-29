@@ -60,11 +60,22 @@ function mapMessage(m: { type: string; message: unknown }): TranscriptItem[] {
     if (!Array.isArray(content)) return []
     const items: TranscriptItem[] = []
     for (const block of content) {
-      const b = block as { type?: string; text?: string; name?: string; input?: unknown }
+      const b = block as {
+        type?: string
+        id?: string
+        text?: string
+        name?: string
+        input?: unknown
+      }
       if (b.type === 'text' && typeof b.text === 'string') {
         items.push({ kind: 'assistant', text: b.text })
       } else if (b.type === 'tool_use' && b.name) {
-        items.push({ kind: 'tool_use', toolName: b.name, input: b.input ?? {} })
+        items.push({
+          kind: 'tool_use',
+          toolUseId: b.id ?? '',
+          toolName: b.name,
+          input: b.input ?? {},
+        })
       }
     }
     return items
@@ -77,13 +88,20 @@ function mapMessage(m: { type: string; message: unknown }): TranscriptItem[] {
     if (!Array.isArray(content)) return []
     const items: TranscriptItem[] = []
     for (const block of content) {
-      const b = block as { type?: string; text?: string; content?: unknown; is_error?: boolean }
+      const b = block as {
+        type?: string
+        tool_use_id?: string
+        text?: string
+        content?: unknown
+        is_error?: boolean
+      }
       if (b.type === 'text' && typeof b.text === 'string') {
         const text = normalizeTranscriptText(b.text)
         if (text) items.push({ kind: 'user', text })
       } else if (b.type === 'tool_result') {
         items.push({
           kind: 'tool_result',
+          toolUseId: b.tool_use_id ?? '',
           content: stringifyToolResult(b.content),
           isError: !!b.is_error,
         })

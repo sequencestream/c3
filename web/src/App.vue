@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { createWsClient } from './lib/ws'
+import BaseDropdown from './lib/BaseDropdown.vue'
 import type {
   AgentConfig,
   AnyConsensusOutcome,
@@ -20,8 +21,8 @@ import { PENDING_SESSION_PREFIX, SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 type ChatBody =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
-  | { kind: 'tool-use'; toolName: string; input: unknown }
-  | { kind: 'tool-result'; content: string; isError: boolean }
+  | { kind: 'tool-use'; toolUseId?: string; toolName: string; input: unknown }
+  | { kind: 'tool-result'; toolUseId?: string; content: string; isError: boolean }
   | {
       kind: 'permission'
       requestId: string
@@ -56,6 +57,8 @@ type Block =
       key: string
       id: number
       msgs: ChatMsg[]
+      /** Render order: each tool-result moved directly under its tool-use, flagged for indent. */
+      rows: { msg: ChatMsg; indent: boolean }[]
       summary: string
       hasPending: boolean
     }
@@ -68,6 +71,7 @@ const status = ref<'connecting' | 'open' | 'closed'>('connecting')
 const sessionStatus = ref<Record<string, SessionStatus>>({})
 const mode = ref<PermissionMode>('default')
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
+const modeOptions = MODES.map((m) => ({ value: m, label: m }))
 const mainEl = ref<HTMLElement | null>(null)
 const expanded = ref<Set<number>>(new Set())
 const expandedBatches = ref<Set<number>>(new Set())
@@ -219,13 +223,50 @@ function transcriptToChat(item: TranscriptItem): ChatBody {
     case 'assistant':
       return { kind: 'assistant', text: item.text }
     case 'tool_use':
-      return { kind: 'tool-use', toolName: item.toolName, input: item.input }
+      return {
+        kind: 'tool-use',
+        toolUseId: item.toolUseId,
+        toolName: item.toolName,
+        input: item.input,
+      }
     case 'tool_result':
-      return { kind: 'tool-result', content: item.content, isError: item.isError }
+      return {
+        kind: 'tool-result',
+        toolUseId: item.toolUseId,
+        content: item.content,
+        isError: item.isError,
+      }
   }
 }
 
 const TOOL_KINDS = new Set(['tool-use', 'tool-result', 'permission', 'consensus'])
+
+/**
+ * Reorder a batch so each tool-result sits directly under its matching tool-use
+ * (paired by `toolUseId`) and is flagged for indentation. Parallel tool calls
+ * arrive interleaved (use_A, use_B, result_A, result_B); this pulls each result
+ * back next to its use. A result whose use isn't in this batch (orphan) stays in
+ * place, un-indented; a use whose result hasn't streamed in yet renders alone.
+ */
+function orderRows(msgs: ChatMsg[]): { msg: ChatMsg; indent: boolean }[] {
+  const useIds = new Set(
+    msgs.flatMap((m) => (m.kind === 'tool-use' && m.toolUseId ? [m.toolUseId] : [])),
+  )
+  const resultByUse = new Map<string, ChatMsg>()
+  for (const m of msgs) if (m.kind === 'tool-result' && m.toolUseId) resultByUse.set(m.toolUseId, m)
+
+  const rows: { msg: ChatMsg; indent: boolean }[] = []
+  for (const m of msgs) {
+    // A result handled under its use is emitted there, not at its own position.
+    if (m.kind === 'tool-result' && m.toolUseId && useIds.has(m.toolUseId)) continue
+    rows.push({ msg: m, indent: false })
+    if (m.kind === 'tool-use' && m.toolUseId) {
+      const result = resultByUse.get(m.toolUseId)
+      if (result) rows.push({ msg: result, indent: true })
+    }
+  }
+  return rows
+}
 
 /**
  * Group the flat message list into render blocks: text messages pass through;
@@ -248,7 +289,15 @@ const blocks = computed<Block[]>(() => {
         if (m.kind === 'permission') counts.set(m.toolName, (counts.get(m.toolName) ?? 0) + 1)
     const summary = [...counts].map(([name, n]) => `${name}.${n}`).join('  ')
     const hasPending = msgs.some((m) => m.kind === 'permission' && m.decision === null)
-    out.push({ type: 'batch', key: `b${msgs[0].id}`, id: msgs[0].id, msgs, summary, hasPending })
+    out.push({
+      type: 'batch',
+      key: `b${msgs[0].id}`,
+      id: msgs[0].id,
+      msgs,
+      rows: orderRows(msgs),
+      summary,
+      hasPending,
+    })
   }
   for (const m of messages.value) {
     if (TOOL_KINDS.has(m.kind)) {
@@ -332,10 +381,15 @@ function handleMessage(msg: ServerToClient) {
       add({ kind: 'assistant', text: msg.text })
       break
     case 'tool_use':
-      add({ kind: 'tool-use', toolName: msg.toolName, input: msg.input })
+      add({ kind: 'tool-use', toolUseId: msg.toolUseId, toolName: msg.toolName, input: msg.input })
       break
     case 'tool_result':
-      add({ kind: 'tool-result', content: msg.content, isError: msg.isError })
+      add({
+        kind: 'tool-result',
+        toolUseId: msg.toolUseId,
+        content: msg.content,
+        isError: msg.isError,
+      })
       break
     case 'permission_request':
       add({
@@ -504,8 +558,7 @@ function stopRun() {
   client?.send({ type: 'stop_run' })
 }
 
-function onModeChange(e: Event) {
-  const next = (e.target as HTMLSelectElement).value as PermissionMode
+function setMode(next: PermissionMode) {
   if (!client || next === mode.value || !hasActiveSession.value) return
   // Optimistic; server echoes a `mode_changed` that confirms it.
   mode.value = next
@@ -711,14 +764,19 @@ function onKey(e: KeyboardEvent) {
       <span class="crumb-ws">{{ activeWorkspaceName }}</span>
       <span class="crumb-sep">›</span>
       <span class="crumb-session">{{ activeTitle }}</span>
+      <label class="mode">
+        <span class="mode-paren">(</span>
+        <BaseDropdown
+          :model-value="mode"
+          :options="modeOptions"
+          :disabled="!hasActiveSession"
+          aria-label="Permission mode"
+          @update:model-value="setMode"
+        />
+        <span class="mode-paren">)</span>
+      </label>
     </div>
     <div class="header-right">
-      <label class="mode">
-        mode
-        <select :value="mode" :disabled="!hasActiveSession" @change="onModeChange">
-          <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
-        </select>
-      </label>
       <button class="icon-btn settings-btn" title="System settings" @click="openSettings">⚙</button>
       <span class="status" :class="status === 'open' ? 'ok' : 'err'">
         {{ status }}
@@ -831,10 +889,13 @@ function onKey(e: KeyboardEvent) {
             </div>
             <div v-if="isBatchOpen(b)" class="batch-body">
               <div
-                v-for="m in b.msgs"
+                v-for="{ msg: m, indent } in b.rows"
                 :key="m.id"
                 class="msg"
-                :class="m.kind + (m.kind === 'tool-result' && m.isError ? ' error' : '')"
+                :class="[
+                  m.kind,
+                  { error: m.kind === 'tool-result' && m.isError, indented: indent },
+                ]"
               >
                 <template v-if="m.kind === 'tool-use'">
                   <div class="label tool-label" @click="toggle(m.id)">
@@ -847,11 +908,13 @@ function onKey(e: KeyboardEvent) {
                   </div>
                 </template>
                 <template v-else-if="m.kind === 'tool-result'">
-                  <div class="label tool-label" @click="toggle(m.id)">
-                    <span class="caret">{{ isExpanded(m.id) ? '▾' : '▸' }}</span>
-                    tool_result {{ m.isError ? '(error)' : '' }}
-                  </div>
-                  <pre v-if="isExpanded(m.id)" class="tool-body">{{ m.content }}</pre>
+                  <template v-if="isExpanded(m.id)">
+                    <div class="label tool-label" @click="toggle(m.id)">
+                      <span class="caret">▾</span>
+                      tool_result {{ m.isError ? '(error)' : '' }}
+                    </div>
+                    <pre class="tool-body">{{ m.content }}</pre>
+                  </template>
                   <div v-else class="tool-oneline" @click="toggle(m.id)">
                     {{ oneLine(m.content) }}
                   </div>

@@ -68,6 +68,9 @@ describe('fallbackSummary', () => {
 import {
   askQuestions,
   parseAskVote,
+  matchOption,
+  parseDeciderAsk,
+  deciderAskPrompt,
   tallyQuestion,
   answerKey,
   fallbackAskSummary,
@@ -115,11 +118,45 @@ describe('parseAskVote', () => {
     expect(out.every((a) => a.abstain)).toBe(true)
   })
 
+  it('matches when the agent appends reasoning after the label', () => {
+    // The exact failure mode that mis-recorded a clear pick as 弃权.
+    const text =
+      '{"answers":[{"index":0,"choice":"商户端核销: 商户触发更合理，先打通主流程","custom":null,"reason":"r"}]}'
+    const out = parseAskVote(text, Q, 'a1', 'Agent1')
+    expect(out[0].optionLabels).toEqual(['商户端核销'])
+    expect(out[0].abstain).toBeUndefined()
+  })
+
+  it('matches a label embedded mid-sentence', () => {
+    const text =
+      '{"answers":[{"index":0,"choice":"我选择 两端都支持 这个方案","custom":null,"reason":"r"}]}'
+    const out = parseAskVote(text, Q, 'a1', 'Agent1')
+    expect(out[0].optionLabels).toEqual(['两端都支持'])
+  })
+
   it('keeps a custom reply when no option matches', () => {
     const text = '{"answers":[{"index":0,"choice":"custom","custom":"看场景再定","reason":"r"}]}'
     const out = parseAskVote(text, Q, 'a1', 'Agent1')
     expect(out[0]).toMatchObject({ optionLabels: [], custom: '看场景再定' })
     expect(out[1].abstain).toBe(true)
+  })
+})
+
+describe('matchOption', () => {
+  const opts = [{ label: '方案A：扩展协议' }, { label: '方案B：启发式配对' }, { label: '方案A' }]
+  it('returns the exact label', () => {
+    expect(matchOption('方案A：扩展协议', opts)).toBe('方案A：扩展协议')
+  })
+  it('prefers the longest label when the choice has trailing text', () => {
+    expect(matchOption('方案A：扩展协议: 给 TranscriptItem 加 toolUseId', opts)).toBe(
+      '方案A：扩展协议',
+    )
+  })
+  it('matches a label embedded in a sentence', () => {
+    expect(matchOption('我倾向 方案B：启发式配对 因为改动小', opts)).toBe('方案B：启发式配对')
+  })
+  it('returns null when nothing fits', () => {
+    expect(matchOption('完全不同的东西', [{ label: '甲' }, { label: '乙' }])).toBeNull()
   })
 })
 
@@ -155,6 +192,53 @@ describe('answerKey', () => {
     expect(answerKey({ agentId: 'x', agentName: 'x', optionLabels: ['B', 'A'], reason: '' })).toBe(
       'A, B',
     )
+  })
+})
+
+describe('parseDeciderAsk', () => {
+  it('returns the summary and an override for a consensus ruling', () => {
+    const text =
+      '{"summary":"两端都支持核销，本期只做线下收款","questions":[{"index":0,"consensus":true,"choice":"两端都支持","custom":null}]}'
+    const { summary, overrides } = parseDeciderAsk(text, Q)
+    expect(summary).toBe('两端都支持核销，本期只做线下收款')
+    expect(overrides.get(0)).toBe('两端都支持')
+  })
+
+  it('drops a question the decider ruled split (consensus:false)', () => {
+    const text =
+      '{"summary":"对核销方式仍有分歧","questions":[{"index":0,"consensus":false,"choice":null,"custom":null}]}'
+    const { overrides } = parseDeciderAsk(text, Q)
+    expect(overrides.has(0)).toBe(false)
+  })
+
+  it('drops an override whose choice matches no option', () => {
+    const text = '{"summary":"s","questions":[{"index":0,"consensus":true,"choice":"火星方案"}]}'
+    expect(parseDeciderAsk(text, Q).overrides.has(0)).toBe(false)
+  })
+
+  it('accepts a custom agreed answer when consensus is on a custom reply', () => {
+    const text =
+      '{"summary":"s","questions":[{"index":1,"consensus":true,"choice":"custom","custom":"线上线下都做"}]}'
+    expect(parseDeciderAsk(text, Q).overrides.get(1)).toBe('线上线下都做')
+  })
+
+  it('returns no overrides on unparseable text', () => {
+    expect(parseDeciderAsk('garbage', Q).overrides.size).toBe(0)
+  })
+})
+
+describe('deciderAskPrompt', () => {
+  it('lists the option labels only for the split questions', () => {
+    const split = tallyQuestion(Q[0], 0, [
+      { agentId: 'x', agentName: 'x', optionLabels: ['商户端核销'], reason: '' },
+      { agentId: 'y', agentName: 'y', optionLabels: [], reason: '', abstain: true },
+    ])
+    const agreed = tallyQuestion(Q[1], 1, [
+      { agentId: 'x', agentName: 'x', optionLabels: ['复用现有订单支付流程'], reason: '' },
+    ])
+    const prompt = deciderAskPrompt([split, agreed], Q)
+    expect(prompt).toContain('[0] options:')
+    expect(prompt).not.toContain('[1] options:')
   })
 })
 

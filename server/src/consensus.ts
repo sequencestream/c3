@@ -31,14 +31,17 @@ import { findClaudeExecutable } from './claude.js'
 import {
   askQuestions,
   askVoterPrompt,
+  deciderAskPrompt,
   fallbackAskSummary,
   fallbackSummary,
   oneLine,
   parseAskVote,
+  parseDeciderAsk,
   parseVote,
   tally,
   tallyQuestion,
   voterPrompt,
+  type AskQuestion,
 } from './consensus-tally.js'
 
 export interface ConsensusParams {
@@ -188,35 +191,33 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
   return { kind: 'tool', votes, summary, unanimous, decision }
 }
 
-/** Ask the session's own agent to summarize the per-question consensus in one line. */
-async function summarizeAsk(
+/**
+ * Decider pass over the per-question tally. In ONE agent call the session's own
+ * agent (a) writes the human-facing summary and (b) adjudicates the split
+ * questions: where the advisors are in *effective* consensus (a mis-parsed reply,
+ * or differently-worded answers that mean the same option), it returns an agreed
+ * answer that upgrades the question to unanimous. It only ever upgrades a split
+ * question — string-unanimous ones are never re-judged. On abort/error/parse
+ * failure the summary falls back to the deterministic line and no upgrade happens
+ * (so the question stays split and defers to the human — the safe default).
+ */
+async function decideAndSummarizeAsk(
   currentAgentId: string | null,
   perQuestion: QuestionConsensus[],
+  questions: AskQuestion[],
   cwd: string,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<{ summary: string; overrides: Map<number, string> }> {
   const fallback = fallbackAskSummary(perQuestion)
-  if (signal.aborted) return fallback
+  if (signal.aborted) return { summary: fallback, overrides: new Map() }
   try {
     const decider = resolveAgent(currentAgentId)
-    const prompt = [
-      "Several advisor agents answered, on the user's behalf, the questions an AI agent asked. Per question:",
-      ...perQuestion.map(
-        (q) =>
-          `- [${q.header || q.index}] ${q.unanimous ? `一致：${q.agreed}` : '意见分歧'}（${q.answers
-            .map(
-              (a) =>
-                `${a.agentName}=${a.abstain ? '弃权' : a.optionLabels.join('/') || a.custom || '?'}`,
-            )
-            .join(', ')}）`,
-      ),
-      '',
-      'Write ONE short sentence in Chinese summarizing the collective answers for a human who must confirm. Output only that sentence, no preamble.',
-    ].join('\n')
+    const prompt = deciderAskPrompt(perQuestion, questions)
     const text = await askAgentOnce(decider, prompt, cwd, signal)
-    return oneLine(text) || fallback
+    const { summary, overrides } = parseDeciderAsk(text, questions)
+    return { summary: summary || fallback, overrides }
   } catch {
-    return fallback
+    return { summary: fallback, overrides: new Map() }
   }
 }
 
@@ -259,10 +260,28 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
       perAgent.map((answers) => answers[i]),
     ),
   )
+
+  // Decider pass: summarize, and let the agent rescue split questions where the
+  // advisors are in effective (not literal) consensus. Runs whenever there is a
+  // split question; pure summary otherwise.
+  const { summary, overrides } = await decideAndSummarizeAsk(
+    p.currentAgentId,
+    perQuestion,
+    questions,
+    p.cwd,
+    p.signal,
+  )
+  for (const q of perQuestion) {
+    if (!q.unanimous && overrides.has(q.index)) {
+      q.unanimous = true
+      q.agreed = overrides.get(q.index)!
+      q.decidedByAgent = true
+    }
+  }
+
   const agreedAnswers: Record<string, string> = {}
   for (const q of perQuestion)
     if (q.unanimous && q.agreed !== null) agreedAnswers[q.question] = q.agreed
   const fullyUnanimous = perQuestion.length > 0 && perQuestion.every((q) => q.unanimous)
-  const summary = await summarizeAsk(p.currentAgentId, perQuestion, p.cwd, p.signal)
   return { kind: 'ask', perQuestion, fullyUnanimous, agreedAnswers, summary }
 }

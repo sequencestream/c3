@@ -54,8 +54,8 @@ export interface SessionInfo {
 export type TranscriptItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
-  | { kind: 'tool_use'; toolName: string; input: unknown }
-  | { kind: 'tool_result'; content: string; isError: boolean }
+  | { kind: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
+  | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
 
 /**
  * A not-yet-started session. The browser invents the `clientId`; the server
@@ -174,6 +174,12 @@ export interface QuestionConsensus {
   unanimous: boolean
   /** The agreed answer string (SDK format: option labels comma-separated); null when split. */
   agreed: string | null
+  /**
+   * True ⇒ the string tally was split, but the decider agent judged the advisors
+   * to be in effective consensus and supplied {@link agreed}. Distinguishes an
+   * AI-adjudicated agreement from a literal unanimous vote (for honest UI/labels).
+   */
+  decidedByAgent?: boolean
 }
 
 /**

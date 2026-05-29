@@ -8,16 +8,19 @@ Implements the [spec](spec.md). Lives in `server/src/claude.ts` (`runClaude`) an
 
 `runClaude(opts)` calls the SDK `query()` with:
 
-| Option                            | Value                     | Why                                                                              |
-| --------------------------------- | ------------------------- | -------------------------------------------------------------------------------- |
-| `prompt`                          | user prompt text          | the turn to run                                                                  |
-| `cwd`                             | active workspace path     | where Claude reads/writes (AS-R1)                                                |
-| `resume`                          | active session id \| omit | continue an existing session; omitted for a pending session's first run (AS-R10) |
-| `settingSources`                  | `['user', 'project']`     | inherit user/project settings, hooks, allow rules, Skills — ADR 0005 / C-SEC-1   |
-| `permissionMode`                  | active session's mode     | starting policy (AS-R3)                                                          |
-| `allowDangerouslySkipPermissions` | `true`                    | permits switching into `bypassPermissions` at any point; c3 stays the UI (C-SEC) |
-| `pathToClaudeCodeExecutable`      | resolved `claude` path    | only set when found (ADR 0003)                                                   |
-| `canUseTool`                      | gateway callback          | gates sensitive tools (AS-R5)                                                    |
+| Option                            | Value                                       | Why                                                                                                                                                                                              |
+| --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `prompt`                          | user prompt text                            | the turn to run                                                                                                                                                                                  |
+| `cwd`                             | active workspace path                       | where Claude reads/writes (AS-R1)                                                                                                                                                                |
+| `resume`                          | active session id \| omit                   | continue an existing session; omitted for a pending session's first run (AS-R10)                                                                                                                 |
+| `settingSources`                  | `['user', 'project']`                       | inherit user/project settings, hooks, allow rules, Skills — ADR 0005 / C-SEC-1                                                                                                                   |
+| `systemPrompt`                    | `{ type: 'preset', preset: 'claude_code' }` | use Claude Code's full system prompt incl. dynamic sections (working dir, git status, CLAUDE.md/memory); without it the SDK 0.3.x default omits env context and the model never learns the `cwd` |
+| `permissionMode`                  | active session's mode                       | starting policy (AS-R3)                                                                                                                                                                          |
+| `allowDangerouslySkipPermissions` | `true`                                      | permits switching into `bypassPermissions` at any point; c3 stays the UI (C-SEC)                                                                                                                 |
+| `pathToClaudeCodeExecutable`      | resolved `claude` path                      | only set when found (ADR 0003)                                                                                                                                                                   |
+| `env`                             | `{ ...process.env, ...overrides }` \| omit  | active agent's `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`; omitted for the system agent (agent-config AC-R4/R5)                                                             |
+| `model`                           | active agent's model \| omit                | model override from the active agent; omitted ⇒ SDK default (agent-config AC-R5)                                                                                                                 |
+| `canUseTool`                      | gateway callback                            | gates sensitive tools (AS-R5)                                                                                                                                                                    |
 
 `onStart` hands a **Run Handle** (`{ setPermissionMode }`) back to the server so a mid-run
 `set_mode` can call `q.setPermissionMode(mode)` (AS-R4). `onSessionId` reports the SDK session
@@ -104,3 +107,5 @@ SDK falls back to its own lookup. Rationale and the single-binary context are in
 - **`@anthropic-ai/claude-agent-sdk`** — `query()`, `setPermissionMode`, `interrupt`.
 - **host `claude` CLI** — required at runtime; absence surfaces as a run error.
 - **permission-gateway** — `waitForDecision`/`resolveDecision`.
+- **agent-config** — `resolveSessionLaunch(sessionId)` supplies the run's `env` overrides and
+  `model` (the bound or default agent's Claude config).

@@ -2,14 +2,16 @@
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { createWsClient } from './lib/ws'
 import type {
+  AgentConfig,
   PermissionMode,
   ServerToClient,
   SessionInfo,
   SlashCommandInfo,
+  SystemSettings,
   TranscriptItem,
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 
 type ChatBody =
   | { kind: 'user'; text: string }
@@ -129,6 +131,43 @@ function applyCommand(c: SlashCommandInfo) {
   nextTick(() => inputEl.value?.focus())
 }
 
+// ---- System settings (agent config) ----
+const settingsOpen = ref(false)
+// A local, editable copy of the server settings; committed on Save.
+const settingsDraft = ref<SystemSettings>({ agents: [], defaultAgentId: SYSTEM_AGENT_ID })
+
+function openSettings() {
+  settingsOpen.value = true
+  client?.send({ type: 'get_settings' })
+}
+
+function closeSettings() {
+  settingsOpen.value = false
+}
+
+function addAgent() {
+  // Locally-unique id so the default-agent radio can target it before save; the
+  // server keeps it as-is (only id-less agents get a fresh uuid on normalize).
+  const id = `new-${Date.now()}-${settingsDraft.value.agents.length}`
+  settingsDraft.value.agents.push({ id, name: '', baseUrl: '', apiKey: '', model: '' })
+}
+
+function removeAgent(id: string) {
+  if (id === SYSTEM_AGENT_ID) return
+  settingsDraft.value.agents = settingsDraft.value.agents.filter((a) => a.id !== id)
+  if (settingsDraft.value.defaultAgentId === id)
+    settingsDraft.value.defaultAgentId = SYSTEM_AGENT_ID
+}
+
+function isSystemAgent(a: AgentConfig): boolean {
+  return a.id === SYSTEM_AGENT_ID
+}
+
+function saveSettings() {
+  client?.send({ type: 'save_settings', settings: settingsDraft.value })
+  settingsOpen.value = false
+}
+
 let client: ReturnType<typeof createWsClient> | null = null
 
 onMounted(() => {
@@ -240,6 +279,13 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'commands':
       availableCommands.value = msg.commands
+      break
+    case 'settings':
+      // Deep-copy so edits to the draft don't mutate the rendered server state.
+      settingsDraft.value = {
+        agents: msg.settings.agents.map((a) => ({ ...a })),
+        defaultAgentId: msg.settings.defaultAgentId,
+      }
       break
     case 'assistant_text':
       add({ kind: 'assistant', text: msg.text })
@@ -450,6 +496,7 @@ function onKey(e: KeyboardEvent) {
           <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
         </select>
       </label>
+      <button class="icon-btn settings-btn" title="System settings" @click="openSettings">⚙</button>
       <span class="status" :class="status === 'open' ? 'ok' : 'err'">
         {{ status }}
       </span>
@@ -626,6 +673,83 @@ function onKey(e: KeyboardEvent) {
           Send
         </button>
       </footer>
+    </div>
+  </div>
+
+  <div v-if="settingsOpen" class="settings-page">
+    <div class="settings-head">
+      <h2>System Settings</h2>
+      <button class="icon-btn" title="Close" @click="closeSettings">✕</button>
+    </div>
+    <div class="settings-body">
+      <p class="settings-section-title">Agents</p>
+      <p class="settings-hint">
+        New sessions launch Claude Code with the default agent. The system agent uses no overrides
+        (your existing <code>claude</code> login) and cannot be edited or removed.
+      </p>
+      <div class="agent-table">
+        <div class="agent-row agent-row-head">
+          <span class="col-default">Default</span>
+          <span class="col-name">Name</span>
+          <span class="col-url">Base URL</span>
+          <span class="col-key">API Key</span>
+          <span class="col-model">Model</span>
+          <span class="col-actions"></span>
+        </div>
+        <div v-for="a in settingsDraft.agents" :key="a.id" class="agent-row">
+          <label class="col-default">
+            <input
+              type="radio"
+              name="default-agent"
+              :value="a.id"
+              :checked="settingsDraft.defaultAgentId === a.id"
+              @change="settingsDraft.defaultAgentId = a.id"
+            />
+          </label>
+          <input
+            v-model="a.name"
+            class="agent-field col-name"
+            :placeholder="isSystemAgent(a) ? 'System' : 'Agent name'"
+            :disabled="isSystemAgent(a)"
+          />
+          <input
+            v-model="a.baseUrl"
+            class="agent-field col-url"
+            :placeholder="isSystemAgent(a) ? '—' : 'ANTHROPIC_BASE_URL'"
+            :disabled="isSystemAgent(a)"
+          />
+          <input
+            v-model="a.apiKey"
+            class="agent-field col-key"
+            type="password"
+            autocomplete="off"
+            :placeholder="isSystemAgent(a) ? '—' : 'API key'"
+            :disabled="isSystemAgent(a)"
+          />
+          <input
+            v-model="a.model"
+            class="agent-field col-model"
+            :placeholder="isSystemAgent(a) ? '—' : 'e.g. claude-opus-4-8'"
+            :disabled="isSystemAgent(a)"
+          />
+          <span class="col-actions">
+            <button
+              v-if="!isSystemAgent(a)"
+              class="icon-btn"
+              title="Remove agent"
+              @click="removeAgent(a.id)"
+            >
+              🗑
+            </button>
+            <span v-else class="agent-badge">built-in</span>
+          </span>
+        </div>
+      </div>
+      <button class="agent-add" @click="addAgent">+ Add agent</button>
+    </div>
+    <div class="settings-foot">
+      <button class="ghost" @click="closeSettings">Cancel</button>
+      <button @click="saveSettings">Save</button>
     </div>
   </div>
 </template>

@@ -50,6 +50,42 @@ export type TranscriptItem =
 export const PENDING_SESSION_PREFIX = 'pending:'
 
 /**
+ * The built-in agent. Its Claude config (baseUrl/apiKey/model) is always empty,
+ * so a session bound to it launches Claude Code with no overrides — the SDK's
+ * own resolution (env vars, `claude /login` credentials) applies. It cannot be
+ * deleted and always exists in {@link SystemSettings.agents}.
+ */
+export const SYSTEM_AGENT_ID = 'system'
+
+/**
+ * One agent profile under the system-config module. An agent names a set of
+ * Claude Code launch overrides; a session launches Claude Code using its agent
+ * (or the default agent when unassigned).
+ */
+export interface AgentConfig {
+  /** Stable id; `'system'` ({@link SYSTEM_AGENT_ID}) for the built-in agent. */
+  id: string
+  /** Display name. */
+  name: string
+  /** ANTHROPIC_BASE_URL override. Empty ⇒ no override. */
+  baseUrl: string
+  /** API key / auth token override. Empty ⇒ no override. */
+  apiKey: string
+  /** Model alias or id. Empty ⇒ no override. */
+  model: string
+}
+
+/**
+ * The system configuration, persisted at `~/.c3/settings.json`. Always contains
+ * the system agent; `defaultAgentId` references an existing agent's id.
+ */
+export interface SystemSettings {
+  agents: AgentConfig[]
+  /** Id of the agent new/unassigned sessions launch with. */
+  defaultAgentId: string
+}
+
+/**
  * One available slash command / skill for the input-box autocomplete menu.
  * Mirrors the SDK `SlashCommand` shape but is declared here to keep the wire
  * protocol independent of SDK types (the boundary rule). Covers both built-in
@@ -88,6 +124,10 @@ export type ClientToServer =
   | { type: 'rename_session'; workspacePath: string; sessionId: string; title: string }
   /** List slash commands/skills for the active session's cwd (reply: `commands`). */
   | { type: 'list_commands' }
+  /** Fetch the system configuration (reply: `settings`). */
+  | { type: 'get_settings' }
+  /** Replace the system configuration; server normalizes and echoes `settings`. */
+  | { type: 'save_settings'; settings: SystemSettings }
   | { type: 'ping' }
 
 // Server → Client
@@ -113,6 +153,8 @@ export type ServerToClient =
   | { type: 'mode_changed'; mode: PermissionMode }
   /** Available slash commands/skills for the active session (reply to `list_commands`). */
   | { type: 'commands'; commands: SlashCommandInfo[] }
+  /** The (normalized) system configuration, in reply to `get_settings`/`save_settings`. */
+  | { type: 'settings'; settings: SystemSettings }
   | { type: 'assistant_text'; text: string }
   | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }

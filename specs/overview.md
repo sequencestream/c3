@@ -21,13 +21,22 @@ ignore.
 
 ## Domains
 
-c3 has one business group, `core`, with three domains:
+c3 has two business groups: `core` (the agent loop) and `system-config` (user configuration).
+
+### Group `core`
 
 | Domain                                                   | Responsibility                                                                                                 |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | [`permission-gateway`](domains/core/permission-gateway/) | Intercept SDK permission requests, route them to the browser, block until the user decides (deny on run abort) |
 | [`agent-session`](domains/core/agent-session/)           | Drive the SDK `query()` loop, map SDK messages to the wire protocol, manage permission mode and run lifecycle  |
+| [`session-registry`](domains/core/session-registry/)     | Manage workspaces & sessions; own per-session mode, recent-access order, history replay                        |
 | [`web-console`](domains/core/web-console/)               | The browser UI: prompt input, activity stream, permission dialog, mode switch                                  |
+
+### Group `system-config`
+
+| Domain                                                | Responsibility                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`agent-config`](domains/system-config/agent-config/) | Manage agent profiles (url/key/model + name), the default agent, per-session binding |
 
 ## Usage rules
 

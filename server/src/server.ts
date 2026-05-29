@@ -27,6 +27,7 @@ import {
   renameWorkspaceSession,
   sessionTitle,
 } from './sessions.js'
+import { loadSettings, saveSettings, resolveSessionLaunch } from './settings.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 
@@ -94,6 +95,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           switch (msg.type) {
             case 'ping':
               send(ws, { type: 'pong' })
+              return
+
+            case 'get_settings':
+              send(ws, { type: 'settings', settings: loadSettings() })
+              return
+
+            case 'save_settings':
+              send(ws, { type: 'settings', settings: saveSettings(msg.settings) })
               return
 
             case 'permission_response':
@@ -240,6 +249,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               const workspacePath = activeWorkspace
               const clientId = activeSession
               const resume = clientId.startsWith(PENDING_SESSION_PREFIX) ? undefined : clientId
+              // Launch with the session's agent overrides, or the default agent's
+              // when unassigned (pending sessions are always unassigned ⇒ default).
+              const launch = resolveSessionLaunch(clientId)
 
               runAbort?.abort()
               const abort = new AbortController()
@@ -251,6 +263,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                   signal: abort.signal,
                   permissionMode: activeMode,
                   resume,
+                  envOverrides: launch.envOverrides,
+                  model: launch.model,
                   send: (m) => send(ws, m),
                   onStart: (h) => (runHandle = h),
                   onSessionId: (sid) => {

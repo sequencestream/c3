@@ -28,6 +28,8 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 | `select_session`      | `workspacePath: string`, `sessionId: string`       | Make a session active; server replies with `session_selected` (history + mode).                                                    |
 | `rename_session`      | `workspacePath`, `sessionId`, `title: string`      | Rename a session's title.                                                                                                          |
 | `delete_session`      | `workspacePath: string`, `sessionId: string`       | Delete a session and its transcript from disk.                                                                                     |
+| `get_settings`        | —                                                  | Fetch the system configuration (server replies with `settings`).                                                                   |
+| `save_settings`       | `settings: SystemSettings`                         | Replace the system configuration; server normalizes and echoes `settings`.                                                         |
 | `ping`                | —                                                  | Keepalive.                                                                                                                         |
 
 ## Server → Client (`ServerToClient`)
@@ -45,6 +47,7 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 | `tool_result`        | `toolUseId`, `content: string`, `isError: boolean`                                         | A tool finished; `content` is the flattened display string.                                                               |
 | `permission_request` | `requestId`, `toolName`, `input: unknown`                                                  | **Block point** — the run waits indefinitely until a `permission_response` arrives (or the run is aborted, which denies). |
 | `session_end`        | `reason: 'complete' \| 'error'`, `error?: string`                                          | The agent run ended.                                                                                                      |
+| `settings`           | `settings: SystemSettings`                                                                 | The (normalized) system configuration, in reply to `get_settings` / `save_settings`.                                      |
 | `error`              | `message: string`                                                                          | A requested operation failed (bad path, missing session, etc.).                                                           |
 | `pong`               | —                                                                                          | Reply to `ping`.                                                                                                          |
 
@@ -58,6 +61,17 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
   session's id until `session_started` binds it to a real SDK id.
 
 See the [session-registry spec](../../domains/core/session-registry/spec.md).
+
+## System-config types
+
+- **`AgentConfig`** — `{ id, name, baseUrl, apiKey, model }`. One agent profile: a named set
+  of Claude Code launch overrides. The built-in agent `id === SYSTEM_AGENT_ID` (`'system'`)
+  has empty `baseUrl`/`apiKey`/`model` (no overrides) and cannot be removed.
+- **`SystemSettings`** — `{ agents: AgentConfig[], defaultAgentId: string }`. The full
+  configuration; always contains the system agent, and `defaultAgentId` references an
+  existing agent. Persisted at `~/.c3/settings.json`.
+
+See the [system-config spec](../../domains/system-config/agent-config/spec.md).
 
 ## PermissionMode
 

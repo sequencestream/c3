@@ -49,6 +49,14 @@ export interface RunOptions {
    * session; the session id is reported via `onSessionId` once it exists.
    */
   resume?: string
+  /**
+   * Environment overrides for the spawned Claude Code process (e.g. the active
+   * agent's ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY). Merged over `process.env`.
+   * Omit for the system agent — the SDK's default env resolution then applies.
+   */
+  envOverrides?: Record<string, string>
+  /** Model alias/id override from the active agent. Omit ⇒ SDK default. */
+  model?: string
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
@@ -57,7 +65,18 @@ export interface RunOptions {
 }
 
 export async function runClaude(opts: RunOptions): Promise<void> {
-  const { prompt, cwd, signal, permissionMode, resume, send, onStart, onSessionId } = opts
+  const {
+    prompt,
+    cwd,
+    signal,
+    permissionMode,
+    resume,
+    envOverrides,
+    model,
+    send,
+    onStart,
+    onSessionId,
+  } = opts
   let reportedSessionId = false
 
   const claudePath = findClaudeExecutable()
@@ -71,11 +90,23 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // rules still flow through canUseTool below; c3 is the gateway, not the
       // sole authority.
       settingSources: ['user', 'project'],
+      // Use Claude Code's full system prompt, including its dynamic sections —
+      // the working directory, git status, and CLAUDE.md/auto-memory. Without
+      // this the SDK 0.3.x default sends a bare prompt with no environment
+      // context, so the model never learns the cwd (weaker models then guess it,
+      // e.g. reporting the home dir). The `cwd` option still sets where tools
+      // run; this is what *tells the model* about that directory.
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
       permissionMode,
       // Required by the SDK to permit switching into 'bypassPermissions' at any
       // point (start or via setPermissionMode). c3 remains the permission UI.
       allowDangerouslySkipPermissions: true,
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+      // Active agent overrides. `env` must carry the full environment, so merge
+      // over process.env rather than replace it. Omitted entirely for the system
+      // agent (no overrides) so the SDK applies its own env resolution.
+      ...(envOverrides ? { env: { ...process.env, ...envOverrides } } : {}),
+      ...(model ? { model } : {}),
       canUseTool: async (toolName, input, _ctx) => {
         const requestId = randomUUID()
         const req: ServerToClient = {

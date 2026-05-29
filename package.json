@@ -1,0 +1,35 @@
+{
+  "name": "claude-code-center",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"pnpm -F @ccc/server dev\" \"pnpm -F @ccc/web dev\"",
+    "build": "pnpm -F @ccc/web build && pnpm -F @ccc/server build",
+    "start": "node server/dist/cli.cjs start",
+    "binary": "pnpm build && pnpm -F @ccc/server binary",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.1.0",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.1",
+    "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "prettier": "^3.8.3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.60.0",
+    "vitest": "^2.1.8",
+    "vue-eslint-parser": "^10.4.0"
+  }
+}

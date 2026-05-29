@@ -1,0 +1,210 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color-scheme: light dark;
+  --bg: #1a1a1a;
+  --fg: #e8e8e8;
+  --muted: #8a8a8a;
+  --accent: #4a90e2;
+  --border: #303030;
+  --card: #242424;
+  --tool: #2d3a4a;
+  --result: #2d3a2d;
+  --error: #4a2d2d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header h1 {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--muted);
+}
+.status.ok {
+  color: #4caf50;
+}
+.status.err {
+  color: #e57373;
+}
+
+main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.msg {
+  padding: 10px 14px;
+  border-radius: 8px;
+  max-width: 90%;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.msg.user {
+  background: var(--accent);
+  color: white;
+  align-self: flex-end;
+}
+.msg.assistant {
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.msg.tool-use {
+  background: var(--tool);
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.msg.tool-result {
+  background: var(--result);
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.msg.tool-result.error {
+  background: var(--error);
+}
+.msg.permission {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.msg.permission code {
+  color: var(--accent);
+}
+.msg.system {
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  align-self: center;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+/* Clickable header that toggles expand/collapse of tool content */
+.tool-label {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tool-label .caret {
+  display: inline-block;
+  width: 1em;
+  font-size: 10px;
+}
+
+/* Collapsed: single line, no newlines, ellipsis when it doesn't fit */
+.tool-oneline {
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  opacity: 0.85;
+}
+
+/* Expanded: full original content */
+.tool-body {
+  margin: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+
+textarea {
+  flex: 1;
+  resize: none;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 14px;
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 60px;
+}
+
+button {
+  padding: 10px 20px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button.deny {
+  background: #b94545;
+}
+
+/* Inline permission prompt actions (rendered within the message stream) */
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.actions button {
+  padding: 6px 16px;
+  font-size: 13px;
+}
+.decided {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}

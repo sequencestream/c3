@@ -1,0 +1,34 @@
+{
+  "name": "@ccc/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "c3": "./dist/cli.cjs"
+  },
+  "scripts": {
+    "predev": "node scripts/ensure-static-embed.mjs",
+    "dev": "tsx watch src/cli.ts start --project ${CCC_PROJECT:-$PWD} --port 3000 --dev",
+    "prebuild": "node scripts/ensure-static-embed.mjs",
+    "build": "node build.mjs",
+    "binary": "node scripts/pkg.mjs",
+    "pretypecheck": "node scripts/ensure-static-embed.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.152",
+    "@ccc/shared": "workspace:*",
+    "@hono/node-server": "^1.13.7",
+    "@hono/node-ws": "^1.0.4",
+    "commander": "^12.1.0",
+    "hono": "^4.6.14",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -10,11 +10,12 @@
 - **exposes-api:** false
 - **notes:** Internal domain. Its only outward surface is the `permission_request` /
   `permission_response` pair on the shared WebSocket protocol.
-- **ADRs:** [0001](../../../architecture/adr/0001-c3-sole-permission-authority.md),
+- **ADRs:** [0005](../../../architecture/adr/0005-inherit-user-project-settings.md)
+  (supersedes [0001](../../../architecture/adr/deprecated/0001-c3-sole-permission-authority.md)),
   [0002](../../../architecture/adr/0002-websocket-as-permission-transport.md)
 
 ## Index
 
 - [spec.md](spec.md) — business rules and states
-- [design.md](design.md) — registry, timeout, callback wiring
+- [design.md](design.md) — registry, abort wiring, callback wiring
 - [models.md](models.md) — Permission Request / Decision entities

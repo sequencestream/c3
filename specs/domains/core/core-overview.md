@@ -6,12 +6,12 @@ sensitive tool calls are gated through the browser, and activity streams back.
 
 ## Domains
 
-| Domain                                                                  | Responsibility                                                                               | API                                   | Status |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------- | ------ |
-| [permission-gateway](permission-gateway/permission-gateway-overview.md) | Intercept SDK permission requests, route to browser, await decision, auto-deny on timeout    | Internal (no public HTTP API)         | active |
-| [agent-session](agent-session/agent-session-overview.md)                | Drive the SDK `query()` loop, map SDK messages to the wire protocol, manage mode & lifecycle | WebSocket `/ws` (see shared protocol) | active |
-| [session-registry](session-registry/session-registry-overview.md)       | Manage workspaces & sessions; own per-session mode, recent-access order, history replay      | WebSocket `/ws` (see shared protocol) | active |
-| [web-console](web-console/web-console-overview.md)                      | Browser UI: sidebar, prompt input, activity stream, permission dialog, mode switch           | Consumes `/ws`                        | active |
+| Domain                                                                  | Responsibility                                                                                    | API                                   | Status |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------- | ------ |
+| [permission-gateway](permission-gateway/permission-gateway-overview.md) | Intercept SDK permission requests, route to browser, block until the user decides (deny on abort) | Internal (no public HTTP API)         | active |
+| [agent-session](agent-session/agent-session-overview.md)                | Drive the SDK `query()` loop, map SDK messages to the wire protocol, manage mode & lifecycle      | WebSocket `/ws` (see shared protocol) | active |
+| [session-registry](session-registry/session-registry-overview.md)       | Manage workspaces & sessions; own per-session mode, recent-access order, history replay           | WebSocket `/ws` (see shared protocol) | active |
+| [web-console](web-console/web-console-overview.md)                      | Browser UI: sidebar, prompt input, activity stream, permission dialog, mode switch                | Consumes `/ws`                        | active |
 
 ## Shared context
 

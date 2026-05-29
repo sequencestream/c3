@@ -12,11 +12,12 @@ program
   .version('0.1.0')
 
 program
-  .command('start')
-  .description('Start the local web server')
+  .command('start', { isDefault: true })
+  .description('Start the local web server (default command)')
   .option(
     '-p, --project <path>',
-    'optional seed workspace directory; more can be added from the UI',
+    'seed workspace directory; more can be added from the UI',
+    process.cwd(),
   )
   .option('--port <number>', 'HTTP port', '3000')
   .option('--dev', 'development mode (do not serve static frontend)', false)

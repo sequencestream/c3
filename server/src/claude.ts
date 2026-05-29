@@ -9,7 +9,7 @@ import { stringifyToolResult } from './format.js'
 // (no node_modules to walk). Resolve `claude` from the host PATH and hand it
 // to the SDK via pathToClaudeCodeExecutable. Override with CLAUDE_PATH.
 let cachedClaudePath: string | null | undefined
-function findClaudeExecutable(): string | undefined {
+export function findClaudeExecutable(): string | undefined {
   if (cachedClaudePath !== undefined) return cachedClaudePath ?? undefined
   if (process.env.CLAUDE_PATH) {
     cachedClaudePath = process.env.CLAUDE_PATH
@@ -66,9 +66,11 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     options: {
       cwd,
       ...(resume ? { resume } : {}),
-      // Don't inherit user/project/local settings (hooks, allow rules, etc.).
-      // We want every tool to flow through canUseTool below.
-      settingSources: [],
+      // Inherit user (~/.claude) and project (.claude) settings — hooks, allow
+      // rules, Skills, CLAUDE.md (ADR 0005). Tools not pre-decided by inherited
+      // rules still flow through canUseTool below; c3 is the gateway, not the
+      // sole authority.
+      settingSources: ['user', 'project'],
       permissionMode,
       // Required by the SDK to permit switching into 'bypassPermissions' at any
       // point (start or via setPermissionMode). c3 remains the permission UI.
@@ -83,7 +85,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
           input,
         }
         send(req)
-        const decision = await waitForDecision(requestId)
+        const decision = await waitForDecision(requestId, signal)
         if (decision === 'allow') {
           return { behavior: 'allow', updatedInput: input }
         }
@@ -167,13 +169,14 @@ export async function runClaude(opts: RunOptions): Promise<void> {
           }
         }
       } else if (m.type === 'result') {
-        send({ type: 'session_end', reason: 'complete' })
+        // The run's turn finished — the session stays alive for the next prompt.
+        send({ type: 'turn_end', reason: 'complete' })
       }
     }
   } catch (err) {
     if (!signal.aborted) {
       send({
-        type: 'session_end',
+        type: 'turn_end',
         reason: 'error',
         error: err instanceof Error ? err.message : String(err),
       })

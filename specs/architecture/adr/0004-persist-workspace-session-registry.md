@@ -45,8 +45,8 @@ empty state so c3 still boots.
 - The architecture's "state is per-connection and in-memory; no persistence" rule is amended:
   **permission decisions remain in-memory and per-connection** (unchanged, ADR 0001/0002), but
   the **workspace/session registry is persisted** (this ADR).
-- `settingSources: []` is unaffected — transcript storage and session APIs work regardless
-  (see [`claude-agent-sdk-guide.md`](../claude-agent-sdk-guide.md) §4).
+- `settingSources` (now `['user', 'project']`, ADR 0005) is unaffected — transcript storage
+  and session APIs work regardless (see [`claude-agent-sdk-guide.md`](../claude-agent-sdk-guide.md) §4).
 
 ## Compliance
 
@@ -58,4 +58,4 @@ empty state so c3 still boots.
 
 - `specs/domains/core/session-registry/spec.md`
 - `specs/architecture/architecture.md` § cross-cutting conventions
-- [ADR 0001](0001-c3-sole-permission-authority.md), [ADR 0003](0003-single-binary-via-bun-compile.md)
+- [ADR 0001](deprecated/0001-c3-sole-permission-authority.md), [ADR 0003](0003-single-binary-via-bun-compile.md)

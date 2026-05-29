@@ -1,6 +1,10 @@
 # 0001 — c3 is the sole permission authority
 
-- **Status:** accepted
+> **Superseded by [ADR 0005](../0005-inherit-user-project-settings.md)** (2026-05-29).
+> c3 now inherits `['user', 'project']` settings and acts as the permission _gateway_
+> rather than the _sole_ authority. Kept for historical record.
+
+- **Status:** superseded
 - **Date:** 2026-05-29
 
 ## Context

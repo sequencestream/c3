@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import type { ClientToServer, PermissionMode, ServerToClient } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude, registerPermissionResolver, type RunHandle } from './claude.js'
+import { listCommands } from './commands.js'
 import {
   addWorkspace,
   getActiveSessionId,
@@ -124,6 +125,20 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'list_sessions':
               await sendSessions(ws, resolve(msg.workspacePath))
               return
+
+            case 'list_commands': {
+              if (!activeWorkspace) {
+                send(ws, { type: 'commands', commands: [] })
+                return
+              }
+              try {
+                const commands = await listCommands(activeWorkspace)
+                send(ws, { type: 'commands', commands })
+              } catch (err) {
+                send(ws, { type: 'error', message: `Failed to list commands: ${errMsg(err)}` })
+              }
+              return
+            }
 
             case 'create_session': {
               const abs = resolve(msg.workspacePath)
@@ -249,7 +264,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                   },
                 })
               } catch (err) {
-                send(ws, { type: 'session_end', reason: 'error', error: errMsg(err) })
+                send(ws, { type: 'turn_end', reason: 'error', error: errMsg(err) })
               } finally {
                 if (runAbort === abort) {
                   runAbort = null

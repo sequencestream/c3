@@ -49,6 +49,23 @@ export type TranscriptItem =
  */
 export const PENDING_SESSION_PREFIX = 'pending:'
 
+/**
+ * One available slash command / skill for the input-box autocomplete menu.
+ * Mirrors the SDK `SlashCommand` shape but is declared here to keep the wire
+ * protocol independent of SDK types (the boundary rule). Covers both built-in
+ * commands and Skills (user + project), exactly what the CLI lists on `/`.
+ */
+export interface SlashCommandInfo {
+  /** Command/skill name without the leading slash. */
+  name: string
+  /** What the command/skill does. */
+  description: string
+  /** Hint for arguments, e.g. "<file>" (may be empty). */
+  argumentHint: string
+  /** Alternate names that resolve to this command (e.g. /cost → /usage). */
+  aliases?: string[]
+}
+
 // Client → Server
 export type ClientToServer =
   | { type: 'user_prompt'; text: string }
@@ -69,6 +86,8 @@ export type ClientToServer =
   | { type: 'select_session'; workspacePath: string; sessionId: string }
   /** Rename a session's title. */
   | { type: 'rename_session'; workspacePath: string; sessionId: string; title: string }
+  /** List slash commands/skills for the active session's cwd (reply: `commands`). */
+  | { type: 'list_commands' }
   | { type: 'ping' }
 
 // Server → Client
@@ -92,11 +111,18 @@ export type ServerToClient =
   | { type: 'session_started'; clientId: string; sessionId: string }
   /** Confirms the active session's mode change. */
   | { type: 'mode_changed'; mode: PermissionMode }
+  /** Available slash commands/skills for the active session (reply to `list_commands`). */
+  | { type: 'commands'; commands: SlashCommandInfo[] }
   | { type: 'assistant_text'; text: string }
   | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }
   | { type: 'permission_request'; requestId: string; toolName: string; input: unknown }
-  | { type: 'session_end'; reason: 'complete' | 'error'; error?: string }
+  /**
+   * One prompt→result turn finished. `complete` = the run ended normally;
+   * `error` = it failed. This NEVER means the session ended — the session stays
+   * active for the next prompt. A session only truly ends when the user clears it.
+   */
+  | { type: 'turn_end'; reason: 'complete' | 'error'; error?: string }
   /** A requested operation failed (bad path, missing session, etc.). */
   | { type: 'error'; message: string }
   | { type: 'pong' }

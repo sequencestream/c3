@@ -13,7 +13,7 @@ Implements the [spec](spec.md). Lives in `server/src/claude.ts` (`runClaude`) an
 | `prompt`                          | user prompt text          | the turn to run                                                                  |
 | `cwd`                             | active workspace path     | where Claude reads/writes (AS-R1)                                                |
 | `resume`                          | active session id \| omit | continue an existing session; omitted for a pending session's first run (AS-R10) |
-| `settingSources`                  | `[]`                      | ignore external settings — ADR 0001 / C-SEC-1                                    |
+| `settingSources`                  | `['user', 'project']`     | inherit user/project settings, hooks, allow rules, Skills — ADR 0005 / C-SEC-1   |
 | `permissionMode`                  | active session's mode     | starting policy (AS-R3)                                                          |
 | `allowDangerouslySkipPermissions` | `true`                    | permits switching into `bypassPermissions` at any point; c3 stays the UI (C-SEC) |
 | `pathToClaudeCodeExecutable`      | resolved `claude` path    | only set when found (ADR 0003)                                                   |

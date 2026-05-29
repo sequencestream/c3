@@ -36,15 +36,19 @@ runtime besides the Claude Agent SDK.
 
 ## Security baseline (non-negotiable)
 
-- **C-SEC-1** — c3 is the **sole permission authority** for its agent session.
-  `settingSources: []` is passed to the SDK so it never inherits the user's
-  `~/.claude/settings.json` hooks or allow-rules. This must not be removed.
+- **C-SEC-1** — c3 is the permission **gateway** for its agent session.
+  `settingSources: ['user', 'project']` is passed to the SDK, so inherited `~/.claude` and
+  project `.claude` hooks and allow/deny rules apply first; any tool **not** pre-decided by
+  them flows through `canUseTool` and out to the browser. An inherited allow-rule may
+  auto-approve a tool the browser never sees — accepted, mirroring the `claude` CLI
+  (ADR 0005). Changing `settingSources` requires a new ADR.
 - **C-SEC-2** — A tool the SDK classifies as sensitive must not execute unless a decision
   authorizes it: an explicit Allow, or an active permission mode that authorizes
   auto-execution (`acceptEdits`, `bypassPermissions`).
-- **C-SEC-3** — Absent any decision, the default outcome is **deny**. Pending requests
-  auto-deny on timeout; an unparseable or unknown client message is ignored, never
-  treated as approval.
+- **C-SEC-3** — Absent any decision, the default outcome is **deny**. A pending request
+  blocks indefinitely until the user decides (no timeout); if the run is aborted it
+  resolves as deny. An unparseable or unknown client message is ignored, never treated
+  as approval.
 - **C-SEC-4** — No secrets are hardcoded or logged. The `claude` CLI owns auth; c3 never
   handles Claude credentials.
 - **C-SEC-5** — The server binds to localhost only. Exposing it to a network requires an

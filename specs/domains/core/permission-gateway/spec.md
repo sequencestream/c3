@@ -13,25 +13,25 @@ it does not render anything (that's `web-console`).
 
 ## Core entities
 
-| Entity              | Description                            | Key attributes                                  |
-| ------------------- | -------------------------------------- | ----------------------------------------------- |
-| Permission Request  | A pending question about one tool call | `requestId`, `toolName`, `input`                |
-| Permission Decision | The resolution of a request            | `allow` \| `deny`, source (`user` \| `timeout`) |
+| Entity              | Description                            | Key attributes                                |
+| ------------------- | -------------------------------------- | --------------------------------------------- |
+| Permission Request  | A pending question about one tool call | `requestId`, `toolName`, `input`              |
+| Permission Decision | The resolution of a request            | `allow` \| `deny`, source (`user` \| `abort`) |
 
 See [models.md](models.md) for full attributes.
 
 ## Business rules
 
-| ID    | Rule                                                                                                                                                                                             |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PG-R1 | Every sensitive tool call produces exactly one Permission Request with a unique `requestId`.                                                                                                     |
-| PG-R2 | A Permission Request blocks the agent's progress on that tool until it is resolved.                                                                                                              |
-| PG-R3 | A request resolves in exactly one of two ways: a matching `permission_response` from the browser, or the timeout. The first to arrive wins; the other is discarded.                              |
-| PG-R4 | The default outcome is **deny**. If the timeout elapses with no response, the request auto-denies.                                                                                               |
-| PG-R5 | A `permission_response` for an unknown or already-resolved `requestId` is a no-op.                                                                                                               |
-| PG-R6 | `allow` lets the SDK proceed with the **original, unmodified** tool input. The gateway does not rewrite tool inputs.                                                                             |
-| PG-R7 | A `deny` returns a denial reason to the SDK ("User denied in c3 UI").                                                                                                                            |
-| PG-R8 | Read-only / trivial tools never reach the gateway — the SDK auto-allows them under the active mode and emits no request. (Which tools count depends on permission mode; see agent-session spec.) |
+| ID    | Rule                                                                                                                                                                                                        |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PG-R1 | Every sensitive tool call produces exactly one Permission Request with a unique `requestId`.                                                                                                                |
+| PG-R2 | A Permission Request blocks the agent's progress on that tool until it is resolved. It **waits indefinitely** for the human — there is no timeout, mirroring the terminal CLI's blocking prompt.            |
+| PG-R3 | A request resolves in exactly one of two ways: a matching `permission_response` from the browser, or the run being aborted (session switch / new prompt). The first to arrive wins; the other is discarded. |
+| PG-R4 | The default outcome is **deny**: absence of an explicit `allow` ⇒ deny. An aborted run clears the pending request and resolves it as `deny` (the outcome is moot — the run is being torn down).             |
+| PG-R5 | A `permission_response` for an unknown or already-resolved `requestId` is a no-op.                                                                                                                          |
+| PG-R6 | `allow` lets the SDK proceed with the **original, unmodified** tool input. The gateway does not rewrite tool inputs.                                                                                        |
+| PG-R7 | A `deny` returns a denial reason to the SDK ("User denied in c3 UI").                                                                                                                                       |
+| PG-R8 | Read-only / trivial tools never reach the gateway — the SDK auto-allows them under the active mode and emits no request. (Which tools count depends on permission mode; see agent-session spec.)            |
 
 ## States & transitions
 
@@ -42,7 +42,7 @@ stateDiagram-v2
     [*] --> Pending: sensitive tool call (canUseTool)
     Pending --> Allowed: permission_response decision=allow
     Pending --> Denied: permission_response decision=deny
-    Pending --> Denied: timeout (60s)
+    Pending --> Denied: run aborted (session switch / new prompt)
     Allowed --> [*]: SDK proceeds with original input
     Denied --> [*]: SDK receives denial
 ```
@@ -65,7 +65,7 @@ result is returned synchronously to the SDK, not broadcast.
 ## Invariants
 
 - **At most one outcome per request** (PG-R3). Resolving twice must not double-resolve or
-  leak a timer.
+  leak a pending entry / abort listener.
 - **Default-deny** (PG-R4) is absolute: absence of an explicit allow ⇒ deny.
 
 ## Data dictionary

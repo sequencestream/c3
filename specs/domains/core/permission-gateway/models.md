@@ -21,13 +21,14 @@ Decision.
 
 The resolution of a request.
 
-| Attribute  | Type | Description                                        |
-| ---------- | ---- | -------------------------------------------------- |
-| `decision` | enum | `allow` \| `deny`                                  |
-| source     | enum | `user` (browser response) \| `timeout` (auto-deny) |
+| Attribute  | Type | Description                                          |
+| ---------- | ---- | ---------------------------------------------------- |
+| `decision` | enum | `allow` \| `deny`                                    |
+| source     | enum | `user` (browser response) \| `abort` (run torn down) |
 
-Relationships: at most one Decision per Permission Request (spec invariant). A `timeout`
-source always carries `deny`.
+Relationships: at most one Decision per Permission Request (spec invariant). An `abort`
+source always carries `deny`. There is no timeout source — an unanswered request waits
+indefinitely.
 
 ## Notes
 

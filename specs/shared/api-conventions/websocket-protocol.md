@@ -32,21 +32,21 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 
 ## Server → Client (`ServerToClient`)
 
-| type                 | fields                                                                                     | meaning                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `ready`              | `workspaces: WorkspaceInfo[]`, `activeSessionId: string \| null`                           | Handshake complete; carries the workspace list and last active session.                             |
-| `workspaces`         | `workspaces: WorkspaceInfo[]`                                                              | Full workspace list, sorted by recent access (desc).                                                |
-| `sessions`           | `workspacePath: string`, `sessions: SessionInfo[]`                                         | Session list for one workspace, newest first.                                                       |
-| `session_selected`   | `workspacePath`, `sessionId`, `title`, `mode: PermissionMode`, `history: TranscriptItem[]` | A session became active; carries its mode and replayed history.                                     |
-| `session_started`    | `clientId: string`, `sessionId: string`                                                    | Binds a pending session's client id to its real SDK session id.                                     |
-| `mode_changed`       | `mode: PermissionMode`                                                                     | Confirms the active session's mode change.                                                          |
-| `assistant_text`     | `text: string`                                                                             | A streamed text block from the model.                                                               |
-| `tool_use`           | `toolUseId`, `toolName`, `input: unknown`                                                  | Model is calling a tool (already authorized when this fires).                                       |
-| `tool_result`        | `toolUseId`, `content: string`, `isError: boolean`                                         | A tool finished; `content` is the flattened display string.                                         |
-| `permission_request` | `requestId`, `toolName`, `input: unknown`                                                  | **Block point** — the run waits until a `permission_response` arrives (or the timeout auto-denies). |
-| `session_end`        | `reason: 'complete' \| 'error'`, `error?: string`                                          | The agent run ended.                                                                                |
-| `error`              | `message: string`                                                                          | A requested operation failed (bad path, missing session, etc.).                                     |
-| `pong`               | —                                                                                          | Reply to `ping`.                                                                                    |
+| type                 | fields                                                                                     | meaning                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `ready`              | `workspaces: WorkspaceInfo[]`, `activeSessionId: string \| null`                           | Handshake complete; carries the workspace list and last active session.                                                   |
+| `workspaces`         | `workspaces: WorkspaceInfo[]`                                                              | Full workspace list, sorted by recent access (desc).                                                                      |
+| `sessions`           | `workspacePath: string`, `sessions: SessionInfo[]`                                         | Session list for one workspace, newest first.                                                                             |
+| `session_selected`   | `workspacePath`, `sessionId`, `title`, `mode: PermissionMode`, `history: TranscriptItem[]` | A session became active; carries its mode and replayed history.                                                           |
+| `session_started`    | `clientId: string`, `sessionId: string`                                                    | Binds a pending session's client id to its real SDK session id.                                                           |
+| `mode_changed`       | `mode: PermissionMode`                                                                     | Confirms the active session's mode change.                                                                                |
+| `assistant_text`     | `text: string`                                                                             | A streamed text block from the model.                                                                                     |
+| `tool_use`           | `toolUseId`, `toolName`, `input: unknown`                                                  | Model is calling a tool (already authorized when this fires).                                                             |
+| `tool_result`        | `toolUseId`, `content: string`, `isError: boolean`                                         | A tool finished; `content` is the flattened display string.                                                               |
+| `permission_request` | `requestId`, `toolName`, `input: unknown`                                                  | **Block point** — the run waits indefinitely until a `permission_response` arrives (or the run is aborted, which denies). |
+| `session_end`        | `reason: 'complete' \| 'error'`, `error?: string`                                          | The agent run ended.                                                                                                      |
+| `error`              | `message: string`                                                                          | A requested operation failed (bad path, missing session, etc.).                                                           |
+| `pong`               | —                                                                                          | Reply to `ping`.                                                                                                          |
 
 ## Workspace & session types
 

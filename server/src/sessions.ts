@@ -13,7 +13,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionInfo, TranscriptItem } from '@ccc/shared/protocol'
 import { getSessionMode } from './state.js'
-import { stringifyToolResult } from './format.js'
+import { normalizeTranscriptText, stringifyToolResult } from './format.js'
 
 /** Best display title for a session, preferring a user-set title. */
 function titleOf(s: {
@@ -70,13 +70,17 @@ function mapMessage(m: { type: string; message: unknown }): TranscriptItem[] {
     return items
   }
   if (m.type === 'user') {
-    if (typeof content === 'string') return [{ kind: 'user', text: content }]
+    if (typeof content === 'string') {
+      const text = normalizeTranscriptText(content)
+      return text ? [{ kind: 'user', text }] : []
+    }
     if (!Array.isArray(content)) return []
     const items: TranscriptItem[] = []
     for (const block of content) {
       const b = block as { type?: string; text?: string; content?: unknown; is_error?: boolean }
       if (b.type === 'text' && typeof b.text === 'string') {
-        items.push({ kind: 'user', text: b.text })
+        const text = normalizeTranscriptText(b.text)
+        if (text) items.push({ kind: 'user', text })
       } else if (b.type === 'tool_result') {
         items.push({
           kind: 'tool_result',

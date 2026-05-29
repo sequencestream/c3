@@ -48,8 +48,8 @@ describe('protocol wire format', () => {
     { type: 'tool_use', toolUseId: 't1', toolName: 'Bash', input: { command: 'ls' } },
     { type: 'tool_result', toolUseId: 't1', content: 'ok', isError: false },
     { type: 'permission_request', requestId: 'r1', toolName: 'Write', input: {} },
-    { type: 'session_end', reason: 'complete' },
-    { type: 'session_end', reason: 'error', error: 'boom' },
+    { type: 'turn_end', reason: 'complete' },
+    { type: 'turn_end', reason: 'error', error: 'boom' },
     { type: 'error', message: 'bad path' },
     { type: 'pong' },
   ]

@@ -102,4 +102,5 @@ Workspace/session events (`ready`, `workspaces`, `sessions`, `session_selected`)
 ## Data dictionary
 
 - **In-flight run** — a Streaming Agent Run with a live Run Handle.
-- **settingSources: []** — the option that keeps external settings out (ADR 0001).
+- **settingSources: ['user', 'project']** — the option that inherits user/project settings
+  (hooks, allow/deny rules, Skills, `CLAUDE.md`); c3 is the gateway on top (ADR 0005).

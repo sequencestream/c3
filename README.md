@@ -37,8 +37,9 @@ to `ws://localhost:5173/ws` transparently.
 
 ```bash
 pnpm build
-pnpm start --project /absolute/path/to/your/project
-# defaults to --port 3000
+pnpm start
+# defaults: --project = current directory, --port 3000
+# or override: pnpm start --project /absolute/path/to/your/project --port 3000
 # open http://localhost:3000
 ```
 
@@ -49,7 +50,8 @@ pnpm start --project /absolute/path/to/your/project
 ```bash
 pnpm binary
 # outputs: dist/c3-macos-arm64  (~61MB)
-./dist/c3-macos-arm64 start --project /abs/path --port 3000
+./dist/c3-macos-arm64
+# or override: ./dist/c3-macos-arm64 start --project /abs/path --port 3000
 ```
 
 Built with [`bun build --compile`](https://bun.sh/docs/bundler/executables).
@@ -94,11 +96,14 @@ script:
 ## CLI
 
 ```
-c3 start --project <path> [--port 3000] [--dev]
+c3 [start] [--project <path>] [--port 3000] [--dev]
 ```
 
-- `--project` _(required)_: absolute path passed to the SDK as `cwd`. Claude will
-  read/write files relative to this directory.
+`start` is the default command, so `c3` on its own is equivalent to `c3 start`.
+
+- `--project` _(optional)_: seed workspace directory passed to the SDK as `cwd`.
+  Claude reads/writes files relative to it. Defaults to the current directory;
+  more workspaces can be added from the UI.
 - `--port`: HTTP port (default 3000).
 - `--dev`: skip serving the frontend bundle (use Vite at :5173 instead).
 
@@ -137,9 +142,11 @@ Whenever Claude wants to invoke a tool that needs approval, the callback:
 4. On `permission_response` from the client, resolves to `{behavior:'allow'|'deny'}`
 5. 60 s timeout → auto-deny
 
-`settingSources: []` is passed to the SDK so it does **not** inherit the user's
-`~/.claude/settings.json` (hooks, allow rules), keeping `c3` the sole permission
-authority for the session.
+`settingSources: ['user', 'project']` is passed to the SDK so it inherits the user's
+`~/.claude` and the project `.claude` settings (hooks, allow/deny rules, Skills,
+`CLAUDE.md`). `c3` is the permission **gateway**: inherited rules apply first, and any
+tool they don't pre-decide flows through `canUseTool` to the browser (an inherited
+allow-rule may auto-approve without prompting).
 
 > **Note about `permissionMode: 'default'`**: the SDK only invokes `canUseTool`
 > for operations it considers "sensitive" (e.g. `Write`, `Edit`, dangerous

@@ -31,25 +31,25 @@ c3 is a single local process with two halves connected by one WebSocket:
   protocol, and exposes mid-run controls (mode switch, interrupt). Runs against the active
   session's `cwd`, with `resume` for continuity.
 - **permission-gateway** — the `canUseTool` callback plus a request→resolver registry. It
-  blocks the SDK until the browser answers or the timeout fires.
+  blocks the SDK until the browser answers (indefinitely, like the CLI) or the run is aborted.
 - **claude CLI** — spawned by the SDK as the actual agent process. How the SDK wraps and
   drives this process is documented in [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md).
 
 ## Module map
 
-| Module              | File                         | Role                                                                              |
-| ------------------- | ---------------------------- | --------------------------------------------------------------------------------- |
-| CLI entry           | `server/src/cli.ts`          | `commander` entry; validates optional `--project` seed/`--port`                   |
-| HTTP/WS server      | `server/src/server.ts`       | Hono app, `/ws` upgrade, static serving, per-connection active session + dispatch |
-| Agent loop          | `server/src/claude.ts`       | SDK `query()` (cwd/resume), `canUseTool`, claude PATH lookup, message mapping     |
-| Session registry    | `server/src/state.ts`        | Persisted workspace registry, per-session mode, active session                    |
-| Session IO          | `server/src/sessions.ts`     | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping    |
-| Permission registry | `server/src/permissions.ts`  | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout              |
-| Result formatting   | `server/src/format.ts`       | Flatten SDK `tool_result` content to a display string                             |
-| Static embed        | `server/src/static-embed.ts` | Generated; Bun-inlined web bundle                                                 |
-| Wire protocol       | `shared/src/protocol.ts`     | `ClientToServer` / `ServerToClient` unions + workspace/session types              |
-| WS client           | `web/src/lib/ws.ts`          | Browser WebSocket wrapper                                                         |
-| UI                  | `web/src/App.vue`            | Sidebar + chat view + permission dialog + mode select                             |
+| Module              | File                         | Role                                                                                             |
+| ------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| CLI entry           | `server/src/cli.ts`          | `commander` entry; `start` is the default command; `--project` defaults to cwd, `--port` to 3000 |
+| HTTP/WS server      | `server/src/server.ts`       | Hono app, `/ws` upgrade, static serving, per-connection active session + dispatch                |
+| Agent loop          | `server/src/claude.ts`       | SDK `query()` (cwd/resume), `canUseTool`, claude PATH lookup, message mapping                    |
+| Session registry    | `server/src/state.ts`        | Persisted workspace registry, per-session mode, active session                                   |
+| Session IO          | `server/src/sessions.ts`     | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                   |
+| Permission registry | `server/src/permissions.ts`  | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                             |
+| Result formatting   | `server/src/format.ts`       | Flatten SDK `tool_result` content to a display string                                            |
+| Static embed        | `server/src/static-embed.ts` | Generated; Bun-inlined web bundle                                                                |
+| Wire protocol       | `shared/src/protocol.ts`     | `ClientToServer` / `ServerToClient` unions + workspace/session types                             |
+| WS client           | `web/src/lib/ws.ts`          | Browser WebSocket wrapper                                                                        |
+| UI                  | `web/src/App.vue`            | Sidebar + chat view + permission dialog + mode select                                            |
 
 ## Cross-cutting conventions
 
@@ -67,9 +67,10 @@ c3 is a single local process with two halves connected by one WebSocket:
 
 ## Key decisions
 
-| ADR                                                    | Decision                                                   |
-| ------------------------------------------------------ | ---------------------------------------------------------- |
-| [0001](adr/0001-c3-sole-permission-authority.md)       | c3 is the sole permission authority (`settingSources: []`) |
-| [0002](adr/0002-websocket-as-permission-transport.md)  | WebSocket is the permission transport                      |
-| [0003](adr/0003-single-binary-via-bun-compile.md)      | Ship as a single binary via `bun build --compile`          |
-| [0004](adr/0004-persist-workspace-session-registry.md) | Persist a c3-owned workspace & session registry            |
+| ADR                                                         | Decision                                                                                              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [0001](adr/deprecated/0001-c3-sole-permission-authority.md) | _(superseded by 0005)_ c3 is the sole permission authority                                            |
+| [0002](adr/0002-websocket-as-permission-transport.md)       | WebSocket is the permission transport                                                                 |
+| [0003](adr/0003-single-binary-via-bun-compile.md)           | Ship as a single binary via `bun build --compile`                                                     |
+| [0004](adr/0004-persist-workspace-session-registry.md)      | Persist a c3-owned workspace & session registry                                                       |
+| [0005](adr/0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the permission gateway (`settingSources: ['user', 'project']`) |

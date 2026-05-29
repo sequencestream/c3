@@ -3,34 +3,42 @@
  *
  * `canUseTool` (in claude.ts) calls `waitForDecision(requestId)` and awaits the
  * returned promise. The WS handler calls `resolveDecision(requestId, decision)`
- * when a `permission_response` arrives from the browser. If no response comes
- * within the timeout, the request auto-denies.
+ * when a `permission_response` arrives from the browser. The request blocks
+ * indefinitely until the user responds — exactly like the terminal CLI prompt.
+ * There is no timeout: an unanswered prompt never auto-denies. If the run is
+ * aborted (session switch / new prompt) the optional `signal` clears the pending
+ * entry so it can't leak.
  *
  * Kept dependency-free (no SDK import) so it can be unit-tested in isolation.
  */
 
 export type Decision = 'allow' | 'deny'
 
-export const PERMISSION_TIMEOUT_MS = 60_000
-
-// Map<requestId, resolver>. Resolved by the WS handler or by the timeout.
+// Map<requestId, resolver>. Resolved by the WS handler, or cleared on abort.
 const pendingApprovals = new Map<string, (d: Decision) => void>()
 
 /**
  * Register a pending permission request and return a promise that resolves with
- * the user's decision, or `'deny'` if `timeoutMs` elapses first.
+ * the user's decision. It never resolves on its own — it waits as long as the
+ * user takes, mirroring the CLI's blocking permission prompt.
+ *
+ * If `signal` is provided and fires before a decision arrives, the pending entry
+ * is removed and the promise resolves to `'deny'` (the run is already being torn
+ * down, so the decision is moot).
  */
-export function waitForDecision(
-  requestId: string,
-  timeoutMs: number = PERMISSION_TIMEOUT_MS,
-): Promise<Decision> {
+export function waitForDecision(requestId: string, signal?: AbortSignal): Promise<Decision> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
+    if (signal?.aborted) {
+      resolve('deny')
+      return
+    }
+    const onAbort = () => {
       pendingApprovals.delete(requestId)
       resolve('deny')
-    }, timeoutMs)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
     pendingApprovals.set(requestId, (d) => {
-      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
       pendingApprovals.delete(requestId)
       resolve(d)
     })

@@ -115,7 +115,7 @@ canUseTool: async (toolName, input) => {
 ```
 
 详见 [permission-gateway 域](../domains/core/permission-gateway/spec.md) 与
-[ADR 0001](adr/0001-c3-sole-permission-authority.md)。
+[ADR 0005](adr/0005-inherit-user-project-settings.md)（取代 [ADR 0001](adr/deprecated/0001-c3-sole-permission-authority.md)）。
 
 ## 4. 上下文与 Session 数据存储
 
@@ -147,9 +147,12 @@ SDK 会话默认存储在本地文件系统，与命令行 Claude Code **一致*
 `settingSources` 控制是否加载 `~/.claude`（`"user"`）与项目 `.claude`（`"project"`）配置：
 
 - 默认加载 `["user", "project"]`。
-- **c3 设为 `settingSources: []`**：不继承用户/项目/本地的 hooks、allow 规则等，
-  让**每个工具都流经 `canUseTool`**，c3 成为唯一权限权威（[ADR 0001](adr/0001-c3-sole-permission-authority.md)）。
-- 注意：`settingSources: []` 影响“是否读取配置/Skill”，但**不改变会话 transcript 仍写入
+- **c3 设为 `settingSources: ['user', 'project']`**（[ADR 0005](adr/0005-inherit-user-project-settings.md)）：
+  继承用户 `~/.claude` 与项目 `.claude` 的 hooks、allow/deny 规则、Skill、`CLAUDE.md`。
+  SDK 先按继承的 deny → ask → allow 规则与权限模式裁决；**未被预先裁决的工具**才流经
+  `canUseTool` 到浏览器。c3 是权限**网关**而非唯一权威——某条继承的 allow 规则可能在不经
+  浏览器的情况下自动放行工具（与 `claude` CLI 行为一致）。
+- 注意：`settingSources` 影响“是否读取配置/Skill”，但**不改变会话 transcript 仍写入
   `~/.claude/projects/...`** 这一存储行为。c3 自身在权限层是无持久化、纯内存、按连接的
   （见 [`architecture.md`](architecture.md) 的 cross-cutting conventions）。
 
@@ -181,8 +184,9 @@ options: {
 
 要点与边界：
 
-- **若 `settingSources: []`（如 c3），则不发现任何 Skill**——磁盘上的 Skill 文件仍在，
-  但只能被 `Read`/`Bash` 当普通文件读取，不会作为 Skill 注入。
+- **若 `settingSources: []`，则不发现任何 Skill**——磁盘上的 Skill 文件仍在，但只能被
+  `Read`/`Bash` 当普通文件读取，不会作为 Skill 注入。c3 现设为 `['user', 'project']`
+  （[ADR 0005](adr/0005-inherit-user-project-settings.md)），故会发现用户级与项目级 Skill。
 - SDK 中 Skill **不遵循** `SKILL.md` 里的 `allowed-tools` frontmatter（那是 CLI 行为）；
   在 SDK 侧应通过主 `allowedTools` 或 `PreToolUse` hook 限制 Skill 内的工具。
 
@@ -234,12 +238,12 @@ options: {
 
 ## 附录：来源与可信度
 
-| 主题                                                    | 来源                                           | 可信度                         |
-| ------------------------------------------------------- | ---------------------------------------------- | ------------------------------ |
-| `query()`/消息/会话/Skill/权限                          | 官方文档 `code.claude.com/docs/en/agent-sdk/*` | 高                             |
-| c3 的 PATH 解析、`interrupt` 兜底、`settingSources: []` | 本仓库 `server/src/claude.ts`                  | 高（已落地代码）               |
-| 二进制如何被打包/提取的内部细节                         | 第三方博客 + 推断                              | 中（实现细节，跨版本可能变化） |
-| `plugins` 注入 Skill 的字段形态                         | 官方文档 + 推断                                | 中（以所用版本类型为准）       |
+| 主题                                                                    | 来源                                           | 可信度                         |
+| ----------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------ |
+| `query()`/消息/会话/Skill/权限                                          | 官方文档 `code.claude.com/docs/en/agent-sdk/*` | 高                             |
+| c3 的 PATH 解析、`interrupt` 兜底、`settingSources: ['user','project']` | 本仓库 `server/src/claude.ts`                  | 高（已落地代码）               |
+| 二进制如何被打包/提取的内部细节                                         | 第三方博客 + 推断                              | 中（实现细节，跨版本可能变化） |
+| `plugins` 注入 Skill 的字段形态                                         | 官方文档 + 推断                                | 中（以所用版本类型为准）       |
 
 > 维护提示：本文件描述外部依赖，**会随 SDK 版本漂移**。升级
 > `@anthropic-ai/claude-agent-sdk` 时复核「需不需要本机 claude」「`settingSources` 语义」

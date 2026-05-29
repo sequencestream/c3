@@ -1,0 +1,48 @@
+# Specs Knowledge Base — Overview
+
+This directory is the source of truth for **what c3 does and why**. Source code is the
+source of truth for **how it does it today**; specs describe the intended behavior that
+code must satisfy. When the two disagree, that is a bug in one of them — reconcile, don't
+ignore.
+
+## How to navigate
+
+| If you want to know…                          | Read                                                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| The project's purpose, scope, stakeholders    | [`project.md`](project.md)                                                                     |
+| Hard rules nothing may violate                | [`constitution.md`](constitution.md)                                                           |
+| What a term means                             | [`glossary.md`](glossary.md)                                                                   |
+| The system shape and how the pieces connect   | [`architecture/architecture.md`](architecture/architecture.md)                                 |
+| Why a key decision was made                   | [`architecture/adr/`](architecture/adr/)                                                       |
+| The WebSocket wire contract                   | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
+| The frontend visual style guide               | [`style/style-spec.md`](style/style-spec.md)                                                   |
+| Performance / security / availability targets | [`non-functional/`](non-functional/)                                                           |
+| A specific capability's behavior              | [`domains/core/`](domains/core/)                                                               |
+
+## Domains
+
+c3 has one business group, `core`, with three domains:
+
+| Domain                                                   | Responsibility                                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [`permission-gateway`](domains/core/permission-gateway/) | Intercept SDK permission requests, route them to the browser, await a decision, auto-deny on timeout          |
+| [`agent-session`](domains/core/agent-session/)           | Drive the SDK `query()` loop, map SDK messages to the wire protocol, manage permission mode and run lifecycle |
+| [`web-console`](domains/core/web-console/)               | The browser UI: prompt input, activity stream, permission dialog, mode switch                                 |
+
+## Usage rules
+
+1. **Spec before code.** New behavior is described here first, then implemented.
+2. **WHAT vs HOW.** `spec.md` files state business behavior; `design.md` files state
+   technical implementation. Keep them apart.
+3. **Single source of truth for the wire format.** The protocol is defined in
+   `shared/src/protocol.ts` (code) and documented in
+   `shared/api-conventions/websocket-protocol.md`. Domain docs reference it; they do not
+   redefine message shapes.
+4. **Reference, don't duplicate.** Shared rules live once and are cited by ID.
+5. **Dates are `YYYY-MM-DD`.** Business-semantic types over technical types.
+
+## Maintenance
+
+- Initialized 2026-05-29.
+- Every domain has `<domain>-overview.md`, `spec.md`, `design.md`, `models.md`.
+- Deprecated content moves to `archived/`; ADRs are never deleted, only superseded.

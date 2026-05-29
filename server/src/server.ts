@@ -4,8 +4,8 @@ import { createNodeWebSocket } from '@hono/node-ws'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ClientToServer, ServerToClient } from '@ccc/shared/protocol'
-import { runClaude, registerPermissionResolver } from './claude.js'
+import type { ClientToServer, PermissionMode, ServerToClient } from '@ccc/shared/protocol'
+import { runClaude, registerPermissionResolver, type RunHandle } from './claude.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 
@@ -23,10 +23,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     '/ws',
     upgradeWebSocket(() => {
       let runAbort: AbortController | null = null
+      // Permission mode persists across prompts for the life of the connection.
+      let currentMode: PermissionMode = 'default'
+      // Live handle to the in-flight run, if any (null between prompts).
+      let runHandle: RunHandle | null = null
 
       return {
         onOpen(_evt, ws) {
-          const ready: ServerToClient = { type: 'ready' }
+          const ready: ServerToClient = { type: 'ready', mode: currentMode }
           ws.send(JSON.stringify(ready))
         },
         async onMessage(evt, ws) {
@@ -45,6 +49,21 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             registerPermissionResolver.resolve(msg.requestId, msg.decision)
             return
           }
+          if (msg.type === 'set_mode') {
+            currentMode = msg.mode
+            // Apply to the live run immediately if one is in flight; otherwise
+            // it takes effect on the next prompt.
+            if (runHandle) {
+              try {
+                await runHandle.setPermissionMode(msg.mode)
+              } catch {
+                /* query may have finished between check and call — ignore */
+              }
+            }
+            const changed: ServerToClient = { type: 'mode_changed', mode: currentMode }
+            ws.send(JSON.stringify(changed))
+            return
+          }
           if (msg.type === 'user_prompt') {
             runAbort?.abort()
             const abort = new AbortController()
@@ -54,7 +73,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 prompt: msg.text,
                 projectPath: opts.projectPath,
                 signal: abort.signal,
+                permissionMode: currentMode,
                 send: (m) => ws.send(JSON.stringify(m)),
+                onStart: (h) => (runHandle = h),
               })
             } catch (err) {
               const end: ServerToClient = {
@@ -66,7 +87,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             } finally {
               // Don't leave a finished run's controller around — a later prompt
               // would abort()/interrupt() an already-closed query and throw.
-              if (runAbort === abort) runAbort = null
+              if (runAbort === abort) {
+                runAbort = null
+                runHandle = null
+              }
             }
           }
         },

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { PermissionMode, ServerToClient } from '@ccc/shared/protocol'
 import { waitForDecision, resolveDecision, type Decision } from './permissions.js'
 import { stringifyToolResult } from './format.js'
 
@@ -32,15 +32,24 @@ export const registerPermissionResolver = {
   },
 }
 
+/** Live controls for an in-flight run, handed to the caller via `onStart`. */
+export interface RunHandle {
+  setPermissionMode(mode: PermissionMode): Promise<void>
+}
+
 export interface RunOptions {
   prompt: string
   projectPath: string
   signal: AbortSignal
+  /** Permission mode to start the query in. */
+  permissionMode: PermissionMode
   send: (msg: ServerToClient) => void
+  /** Called once the query is created so the caller can drive it mid-run. */
+  onStart?: (handle: RunHandle) => void
 }
 
 export async function runClaude(opts: RunOptions): Promise<void> {
-  const { prompt, projectPath, signal, send } = opts
+  const { prompt, projectPath, signal, permissionMode, send, onStart } = opts
 
   const claudePath = findClaudeExecutable()
   const q = query({
@@ -50,7 +59,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // Don't inherit user/project/local settings (hooks, allow rules, etc.).
       // We want every tool to flow through canUseTool below.
       settingSources: [],
-      permissionMode: 'default',
+      permissionMode,
+      // Required by the SDK to permit switching into 'bypassPermissions' at any
+      // point (start or via setPermissionMode). c3 remains the permission UI.
+      allowDangerouslySkipPermissions: true,
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
       canUseTool: async (toolName, input, _ctx) => {
         const requestId = randomUUID()
@@ -68,6 +80,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         return { behavior: 'deny', message: 'User denied in c3 UI' }
       },
     },
+  })
+
+  onStart?.({
+    setPermissionMode: (mode) => q.setPermissionMode(mode),
   })
 
   signal.addEventListener('abort', () => {

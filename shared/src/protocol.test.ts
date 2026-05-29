@@ -12,11 +12,13 @@ describe('protocol wire format', () => {
     { type: 'user_prompt', text: 'hello' },
     { type: 'permission_response', requestId: 'r1', decision: 'allow' },
     { type: 'permission_response', requestId: 'r2', decision: 'deny' },
+    { type: 'set_mode', mode: 'plan' },
     { type: 'ping' },
   ]
 
   const serverMessages: ServerToClient[] = [
-    { type: 'ready' },
+    { type: 'ready', mode: 'default' },
+    { type: 'mode_changed', mode: 'acceptEdits' },
     { type: 'assistant_text', text: 'hi' },
     { type: 'tool_use', toolUseId: 't1', toolName: 'Bash', input: { command: 'ls' } },
     { type: 'tool_result', toolUseId: 't1', content: 'ok', isError: false },

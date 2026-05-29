@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
 import { createWsClient } from './lib/ws'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { PermissionMode, ServerToClient } from '@ccc/shared/protocol'
 
 type ChatBody =
   | { kind: 'user'; text: string }
@@ -23,6 +23,8 @@ const messages = ref<ChatMsg[]>([])
 const input = ref('')
 const status = ref<'connecting' | 'open' | 'closed'>('connecting')
 const running = ref(false)
+const mode = ref<PermissionMode>('default')
+const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 const mainEl = ref<HTMLElement | null>(null)
 const expanded = ref<Set<number>>(new Set())
 let nextId = 1
@@ -43,7 +45,10 @@ function add(m: ChatBody) {
 function handleMessage(msg: ServerToClient) {
   switch (msg.type) {
     case 'ready':
-      // no-op
+      mode.value = msg.mode
+      break
+    case 'mode_changed':
+      mode.value = msg.mode
       break
     case 'assistant_text':
       add({ kind: 'assistant', text: msg.text })
@@ -83,6 +88,14 @@ function submit() {
   client.send({ type: 'user_prompt', text: t })
   input.value = ''
   running.value = true
+}
+
+function onModeChange(e: Event) {
+  const next = (e.target as HTMLSelectElement).value as PermissionMode
+  if (!client || next === mode.value) return
+  // Optimistic; server echoes a `mode_changed` that confirms it.
+  mode.value = next
+  client.send({ type: 'set_mode', mode: next })
 }
 
 function respond(m: PermissionMsg, decision: 'allow' | 'deny') {
@@ -131,9 +144,17 @@ function onKey(e: KeyboardEvent) {
 <template>
   <header>
     <h1>c3 — Claude Code Center</h1>
-    <span class="status" :class="status === 'open' ? 'ok' : 'err'">
-      {{ status }}
-    </span>
+    <div class="header-right">
+      <label class="mode">
+        mode
+        <select :value="mode" @change="onModeChange">
+          <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
+        </select>
+      </label>
+      <span class="status" :class="status === 'open' ? 'ok' : 'err'">
+        {{ status }}
+      </span>
+    </div>
   </header>
 
   <main ref="mainEl">

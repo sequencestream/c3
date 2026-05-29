@@ -20,11 +20,16 @@ describe('protocol wire format', () => {
     { type: 'delete_session', workspacePath: '/abs/proj', sessionId: 's1' },
     { type: 'select_session', workspacePath: '/abs/proj', sessionId: 's1' },
     { type: 'rename_session', workspacePath: '/abs/proj', sessionId: 's1', title: 'New' },
+    { type: 'stop_run' },
     { type: 'ping' },
   ]
 
   const serverMessages: ServerToClient[] = [
-    { type: 'ready', workspaces: [], activeSessionId: null },
+    { type: 'ready', workspaces: [], activeSessionId: null, statuses: [] },
+    {
+      type: 'session_status',
+      statuses: [{ sessionId: 's1', status: 'awaiting_permission' }],
+    },
     {
       type: 'workspaces',
       workspaces: [{ path: '/abs/proj', name: 'proj', lastAccessed: 1 }],
@@ -41,9 +46,11 @@ describe('protocol wire format', () => {
       title: 't',
       mode: 'plan',
       history: [{ kind: 'user', text: 'hi' }],
+      running: false,
     },
     { type: 'session_started', clientId: 'pending:1', sessionId: 's1' },
     { type: 'mode_changed', mode: 'acceptEdits' },
+    { type: 'user_text', text: 'hi' },
     { type: 'assistant_text', text: 'hi' },
     { type: 'tool_use', toolUseId: 't1', toolName: 'Bash', input: { command: 'ls' } },
     { type: 'tool_result', toolUseId: 't1', content: 'ok', isError: false },

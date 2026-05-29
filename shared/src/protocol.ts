@@ -20,6 +20,21 @@ export interface WorkspaceInfo {
   lastAccessed: number
 }
 
+/**
+ * Live run state of a session, surfaced to the sidebar so background sessions
+ * show their status without being viewed.
+ * - `idle` — no turn in flight (session may still be active for the next prompt).
+ * - `running` — a turn is executing.
+ * - `awaiting_permission` — a turn is blocked waiting on a permission decision.
+ */
+export type SessionStatus = 'idle' | 'running' | 'awaiting_permission'
+
+/** One session's live run status, broadcast to every connection for the sidebar. */
+export interface SessionRunStatus {
+  sessionId: string
+  status: SessionStatus
+}
+
 /** A Claude session inside a workspace, as surfaced to the sidebar. */
 export interface SessionInfo {
   /** SDK session UUID. */
@@ -115,6 +130,8 @@ export interface ConsensusVote {
  * auto-decision (`consensus_auto`) or attached to a `permission_request`.
  */
 export interface ConsensusOutcome {
+  /** Discriminates from {@link AskConsensusOutcome} on the wire. */
+  kind: 'tool'
   /** Each voter's verdict + reason. */
   votes: ConsensusVote[]
   /** Decider-agent (or code-fallback) one-line summary of the opinions. */
@@ -124,6 +141,61 @@ export interface ConsensusOutcome {
   /** The unanimous verdict when `unanimous`; null when split (human decides). */
   decision: 'allow' | 'deny' | null
 }
+
+/**
+ * One voter's answer to ONE question of an `AskUserQuestion` prompt. Unlike the
+ * allow/deny vote, the agent picks option label(s) (or writes a custom reply)
+ * for each question put to the user.
+ */
+export interface AgentAnswer {
+  agentId: string
+  agentName: string
+  /** Matched option label(s); empty when the agent only gave a custom reply. */
+  optionLabels: string[]
+  /** Free-text reply when no option fits (or as an addition). */
+  custom?: string
+  /** One-line rationale. */
+  reason: string
+  /** True ⇒ the agent gave no parseable answer for this question (ignored in the tally). */
+  abstain?: boolean
+}
+
+/** Per-question roll-up of every voter's answer, plus whether they agreed. */
+export interface QuestionConsensus {
+  /** Index into the original `AskUserQuestion` `questions` array. */
+  index: number
+  /** Question text — also the key used in the SDK `answers` map. */
+  question: string
+  header: string
+  multiSelect: boolean
+  /** Each voter's answer to this question. */
+  answers: AgentAnswer[]
+  /** True ⇒ every non-abstaining voter chose the same answer (≥1 voter, none abstained). */
+  unanimous: boolean
+  /** The agreed answer string (SDK format: option labels comma-separated); null when split. */
+  agreed: string | null
+}
+
+/**
+ * Consensus over an `AskUserQuestion` prompt: voters answer each question rather
+ * than vote allow/deny. When every question is unanimous the gateway can answer
+ * on the user's behalf; otherwise the human fills in the answers (split questions
+ * highlighted, agreed ones pre-filled). Surfaced like {@link ConsensusOutcome}.
+ */
+export interface AskConsensusOutcome {
+  kind: 'ask'
+  /** One roll-up per question, in original order. */
+  perQuestion: QuestionConsensus[]
+  /** True ⇒ every question is unanimous — eligible for auto-answer. */
+  fullyUnanimous: boolean
+  /** Pre-built `answers` map (question text → agreed answer) for the unanimous questions. */
+  agreedAnswers: Record<string, string>
+  /** Decider-agent (or code-fallback) one-line summary. */
+  summary: string
+}
+
+/** Either consensus shape, discriminated by `kind`. */
+export type AnyConsensusOutcome = ConsensusOutcome | AskConsensusOutcome
 
 /**
  * One available slash command / skill for the input-box autocomplete menu.
@@ -145,7 +217,17 @@ export interface SlashCommandInfo {
 // Client → Server
 export type ClientToServer =
   | { type: 'user_prompt'; text: string }
-  | { type: 'permission_response'; requestId: string; decision: 'allow' | 'deny' }
+  /**
+   * Answer a pending permission request. For `AskUserQuestion`, an `allow` may
+   * carry `answers` (question text → selected option label(s) / custom reply,
+   * multi-select comma-separated) which the gateway injects into the tool input.
+   */
+  | {
+      type: 'permission_response'
+      requestId: string
+      decision: 'allow' | 'deny'
+      answers?: Record<string, string>
+    }
   /** Change the active session's permission mode (per-session, persisted). */
   | { type: 'set_mode'; mode: PermissionMode }
   /** Register a project directory as a workspace. */
@@ -162,6 +244,8 @@ export type ClientToServer =
   | { type: 'select_session'; workspacePath: string; sessionId: string }
   /** Rename a session's title. */
   | { type: 'rename_session'; workspacePath: string; sessionId: string; title: string }
+  /** Stop the in-flight run of the currently-viewed session (if any). */
+  | { type: 'stop_run' }
   /** List slash commands/skills for the active session's cwd (reply: `commands`). */
   | { type: 'list_commands' }
   /** Fetch the system configuration (reply: `settings`). */
@@ -172,13 +256,25 @@ export type ClientToServer =
 
 // Server → Client
 export type ServerToClient =
-  /** Handshake: full workspace list + which session is active (if any). */
-  | { type: 'ready'; workspaces: WorkspaceInfo[]; activeSessionId: string | null }
+  /** Handshake: full workspace list + which session is active (if any) + live run statuses. */
+  | {
+      type: 'ready'
+      workspaces: WorkspaceInfo[]
+      activeSessionId: string | null
+      statuses: SessionRunStatus[]
+    }
+  /** Live run statuses for all sessions with a runtime; drives sidebar badges. */
+  | { type: 'session_status'; statuses: SessionRunStatus[] }
   /** Full workspace list, sorted by recent access (desc). */
   | { type: 'workspaces'; workspaces: WorkspaceInfo[] }
   /** Session list for one workspace, sorted by last-modified (desc). */
   | { type: 'sessions'; workspacePath: string; sessions: SessionInfo[] }
-  /** A session became active; carries its mode and replayed history. */
+  /**
+   * A session became active in this connection's view; carries its mode and
+   * replayed history. `running` reflects whether a turn is in flight for it —
+   * for a session viewed while running in the background, the live tail follows
+   * as normal stream events after this message.
+   */
   | {
       type: 'session_selected'
       workspacePath: string
@@ -186,6 +282,7 @@ export type ServerToClient =
       title: string
       mode: PermissionMode
       history: TranscriptItem[]
+      running: boolean
     }
   /** Binds a pending session's `clientId` to its real SDK `sessionId`. */
   | { type: 'session_started'; clientId: string; sessionId: string }
@@ -195,6 +292,13 @@ export type ServerToClient =
   | { type: 'commands'; commands: SlashCommandInfo[] }
   /** The (normalized) system configuration, in reply to `get_settings`/`save_settings`. */
   | { type: 'settings'; settings: SystemSettings }
+  /**
+   * Echo of a user prompt, emitted into the session's stream when a turn starts.
+   * Lets every viewer (including one switching back to a background session) see
+   * the prompt that drove the in-flight turn, since it isn't part of the on-disk
+   * `baseline` captured before the turn.
+   */
+  | { type: 'user_text'; text: string }
   | { type: 'assistant_text'; text: string }
   | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }
@@ -203,15 +307,19 @@ export type ServerToClient =
       requestId: string
       toolName: string
       input: unknown
-      /** Present when consensus ran but was split — the agents' opinions for the human. */
-      consensus?: ConsensusOutcome
+      /**
+       * Present when consensus ran but was split — the agents' opinions for the
+       * human. For `AskUserQuestion` this is the per-question roll-up
+       * ({@link AskConsensusOutcome}) the answer panel renders.
+       */
+      consensus?: AnyConsensusOutcome
     }
   /**
    * A permission request the multi-agent consensus resolved on its own (all
    * voters agreed). Informational — no decision needed from the human; carries
    * the opinions so the console can show how it was decided.
    */
-  | { type: 'consensus_auto'; toolName: string; input: unknown; outcome: ConsensusOutcome }
+  | { type: 'consensus_auto'; toolName: string; input: unknown; outcome: AnyConsensusOutcome }
   /**
    * One prompt→result turn finished. `complete` = the run ended normally;
    * `error` = it failed. This NEVER means the session ended — the session stays

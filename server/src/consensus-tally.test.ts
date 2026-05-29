@@ -62,3 +62,109 @@ describe('fallbackSummary', () => {
     expect(fallbackSummary([vote('allow'), vote('deny')], false, null)).toContain('需人工裁决')
   })
 })
+
+// ---- AskUserQuestion: per-question answering ----
+
+import {
+  askQuestions,
+  parseAskVote,
+  tallyQuestion,
+  answerKey,
+  fallbackAskSummary,
+  type AskQuestion,
+} from './consensus-tally.js'
+
+const Q: AskQuestion[] = [
+  {
+    question: 'Where does redemption happen?',
+    header: '核销',
+    multiSelect: false,
+    options: [{ label: '商户端核销' }, { label: '用户端自助核销' }, { label: '两端都支持' }],
+  },
+  {
+    question: 'Online payment this iteration?',
+    header: '支付',
+    multiSelect: false,
+    options: [{ label: '复用现有订单支付流程' }, { label: '本期只做下单+线下收款' }],
+  },
+]
+
+describe('askQuestions', () => {
+  it('extracts a valid questions array', () => {
+    expect(askQuestions({ questions: Q })?.length).toBe(2)
+  })
+  it('returns null for non-ask input', () => {
+    expect(askQuestions({ filePath: '/x' })).toBeNull()
+    expect(askQuestions({ questions: [] })).toBeNull()
+  })
+})
+
+describe('parseAskVote', () => {
+  it('matches option labels case-insensitively, one entry per question', () => {
+    const text =
+      '{"answers":[{"index":0,"choice":"商户端核销","reason":"商户触发更合理"},{"index":1,"choice":"本期只做下单+线下收款","reason":"先打通主流程"}]}'
+    const out = parseAskVote(text, Q, 'a1', 'Agent1')
+    expect(out).toHaveLength(2)
+    expect(out[0].optionLabels).toEqual(['商户端核销'])
+    expect(out[0].abstain).toBeUndefined()
+    expect(out[1].optionLabels).toEqual(['本期只做下单+线下收款'])
+  })
+
+  it('marks a missing/garbled question as abstain', () => {
+    const out = parseAskVote('not json at all', Q, 'a1', 'Agent1')
+    expect(out.every((a) => a.abstain)).toBe(true)
+  })
+
+  it('keeps a custom reply when no option matches', () => {
+    const text = '{"answers":[{"index":0,"choice":"custom","custom":"看场景再定","reason":"r"}]}'
+    const out = parseAskVote(text, Q, 'a1', 'Agent1')
+    expect(out[0]).toMatchObject({ optionLabels: [], custom: '看场景再定' })
+    expect(out[1].abstain).toBe(true)
+  })
+})
+
+describe('tallyQuestion', () => {
+  const a = (id: string, labels: string[], abstain = false) => ({
+    agentId: id,
+    agentName: id,
+    optionLabels: labels,
+    reason: '',
+    ...(abstain ? { abstain: true } : {}),
+  })
+
+  it('is unanimous when all active voters agree', () => {
+    const r = tallyQuestion(Q[0], 0, [a('x', ['商户端核销']), a('y', ['商户端核销'])])
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('商户端核销')
+  })
+
+  it('is split when voters differ', () => {
+    const r = tallyQuestion(Q[0], 0, [a('x', ['商户端核销']), a('y', ['两端都支持'])])
+    expect(r.unanimous).toBe(false)
+    expect(r.agreed).toBeNull()
+  })
+
+  it('any abstention blocks unanimity (defer to human)', () => {
+    const r = tallyQuestion(Q[0], 0, [a('x', ['商户端核销']), a('y', [], true)])
+    expect(r.unanimous).toBe(false)
+  })
+})
+
+describe('answerKey', () => {
+  it('sorts multi-select labels so order does not matter', () => {
+    expect(answerKey({ agentId: 'x', agentName: 'x', optionLabels: ['B', 'A'], reason: '' })).toBe(
+      'A, B',
+    )
+  })
+})
+
+describe('fallbackAskSummary', () => {
+  it('reports full agreement', () => {
+    const pq = Q.map((q, i) =>
+      tallyQuestion(q, i, [
+        { agentId: 'x', agentName: 'x', optionLabels: [q.options[0].label], reason: '' },
+      ]),
+    )
+    expect(fallbackAskSummary(pq)).toContain('一致')
+  })
+})

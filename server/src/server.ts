@@ -5,9 +5,9 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ClientToServer, PermissionMode, ServerToClient } from '@ccc/shared/protocol'
+import type { ClientToServer, ServerToClient } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { runClaude, registerPermissionResolver, type RunHandle } from './claude.js'
+import { runClaude, registerPermissionResolver } from './claude.js'
 import { listCommands } from './commands.js'
 import {
   addWorkspace,
@@ -28,6 +28,21 @@ import {
   sessionTitle,
 } from './sessions.js'
 import { loadSettings, saveSettings, resolveSessionLaunch } from './settings.js'
+import {
+  addViewer,
+  bindPending,
+  ensureRuntime,
+  getRuntime,
+  listStatuses,
+  removeRuntime,
+  removeRuntimesForWorkspace,
+  removeViewer,
+  setOnStatusChange,
+  setStatus,
+  stopRun,
+  emit,
+  type Viewer,
+} from './runs.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 
@@ -45,21 +60,32 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Seed the registry with the CLI-provided workspace (idempotent).
   if (opts.projectPath) addWorkspace(opts.projectPath, Date.now())
 
+  const send = (ws: { send: (d: string) => void }, msg: ServerToClient): void =>
+    ws.send(JSON.stringify(msg))
+
+  // Every live connection's deliver callback. Used to broadcast session statuses
+  // (sidebar badges) to all connections, independent of what each is viewing.
+  const connections = new Set<Viewer>()
+  const broadcastStatuses = (): void => {
+    const statuses = listStatuses()
+    for (const deliver of connections) deliver({ type: 'session_status', statuses })
+  }
+  // Any runtime status change (run start/finish, permission wait) re-broadcasts.
+  setOnStatusChange(broadcastStatuses)
+
   app.get(
     '/ws',
     upgradeWebSocket(() => {
-      let runAbort: AbortController | null = null
-      let runHandle: RunHandle | null = null
-      // The session the next prompt runs against. A pending id (`pending:…`)
-      // means a not-yet-created session; it binds to a real id on first run.
-      let activeWorkspace: string | null = null
-      let activeSession: string | null = null
-      // The active session's mode — source of truth for the next run; mirrored
-      // into persisted state for real (non-pending) sessions.
-      let activeMode: PermissionMode = 'default'
-
-      const send = (ws: { send: (d: string) => void }, msg: ServerToClient): void =>
-        ws.send(JSON.stringify(msg))
+      // This connection is a *view* onto sessions, not an owner of runs. It holds
+      // which session it currently shows; runs live in the module-level registry
+      // and survive switching away, refreshes, and disconnects.
+      let viewing: string | null = null
+      let sock: { send: (d: string) => void } | null = null
+      // Stable per-connection delivery: live stream events for the viewed session
+      // and broadcast statuses both flow through this.
+      const deliver: Viewer = (msg) => {
+        if (sock) send(sock, msg)
+      }
 
       const sendWorkspaces = (ws: { send: (d: string) => void }): void =>
         send(ws, { type: 'workspaces', workspaces: listWorkspaces() })
@@ -78,10 +104,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
       return {
         onOpen(_evt, ws) {
+          sock = ws
+          connections.add(deliver)
           send(ws, {
             type: 'ready',
             workspaces: listWorkspaces(),
             activeSessionId: getActiveSessionId(),
+            statuses: listStatuses(),
           })
         },
         async onMessage(evt, ws) {
@@ -106,7 +135,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               return
 
             case 'permission_response':
-              registerPermissionResolver.resolve(msg.requestId, msg.decision)
+              registerPermissionResolver.resolve(msg.requestId, msg.decision, msg.answers)
               return
 
             case 'add_workspace': {
@@ -122,12 +151,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'remove_workspace': {
               const abs = resolve(msg.path)
+              // Tear down any background runs under this workspace.
+              removeRuntimesForWorkspace(abs)
               removeWorkspace(abs)
-              if (activeWorkspace === abs) {
-                activeWorkspace = null
-                activeSession = null
-              }
+              if (viewing && getRuntime(viewing) === undefined) viewing = null
               sendWorkspaces(ws)
+              broadcastStatuses()
               return
             }
 
@@ -136,12 +165,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               return
 
             case 'list_commands': {
-              if (!activeWorkspace) {
+              const cwd = viewing ? getRuntime(viewing)?.workspacePath : null
+              if (!cwd) {
                 send(ws, { type: 'commands', commands: [] })
                 return
               }
               try {
-                const commands = await listCommands(activeWorkspace)
+                const commands = await listCommands(cwd)
                 send(ws, { type: 'commands', commands })
               } catch (err) {
                 send(ws, { type: 'error', message: `Failed to list commands: ${errMsg(err)}` })
@@ -155,18 +185,21 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 send(ws, { type: 'error', message: `Unknown workspace: ${msg.workspacePath}` })
                 return
               }
-              runAbort?.abort()
-              activeWorkspace = abs
-              activeSession = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-              activeMode = 'default'
+              // Switching views never stops a run — just stop watching the old one.
+              if (viewing) removeViewer(viewing, deliver)
+              const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+              ensureRuntime(pendingId, abs, 'default', [])
+              viewing = pendingId
+              addViewer(pendingId, deliver)
               touchWorkspace(abs, Date.now())
               send(ws, {
                 type: 'session_selected',
                 workspacePath: abs,
-                sessionId: activeSession,
+                sessionId: pendingId,
                 title: 'New session',
-                mode: activeMode,
+                mode: 'default',
                 history: [],
+                running: false,
               })
               sendWorkspaces(ws)
               return
@@ -174,13 +207,23 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'select_session': {
               const abs = resolve(msg.workspacePath)
-              runAbort?.abort()
+              if (viewing) removeViewer(viewing, deliver)
               try {
-                const history = await loadHistory(abs, msg.sessionId)
+                const existing = getRuntime(msg.sessionId)
                 const title = await sessionTitle(abs, msg.sessionId)
-                activeWorkspace = abs
-                activeSession = msg.sessionId
-                activeMode = getSessionMode(msg.sessionId)
+                // Cold session ⇒ read disk once and seed a runtime; warm session ⇒
+                // reuse its in-memory runtime (baseline + live buffer). After this
+                // point there is no `await`, so the replay below is atomic w.r.t.
+                // concurrent `emit`s.
+                const rt = existing
+                  ? existing
+                  : ensureRuntime(
+                      msg.sessionId,
+                      abs,
+                      getSessionMode(msg.sessionId),
+                      await loadHistory(abs, msg.sessionId),
+                    )
+                viewing = msg.sessionId
                 touchWorkspace(abs, Date.now())
                 setActiveSessionId(msg.sessionId)
                 send(ws, {
@@ -188,9 +231,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                   workspacePath: abs,
                   sessionId: msg.sessionId,
                   title,
-                  mode: activeMode,
-                  history,
+                  mode: rt.mode,
+                  history: rt.baseline,
+                  running: rt.run != null,
                 })
+                // Replay everything emitted since the baseline (current + past
+                // turns), then start receiving live events.
+                for (const e of rt.buffer) send(ws, e)
+                addViewer(msg.sessionId, deliver)
                 sendWorkspaces(ws)
               } catch (err) {
                 send(ws, { type: 'error', message: `Failed to open session: ${errMsg(err)}` })
@@ -201,12 +249,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'delete_session': {
               const abs = resolve(msg.workspacePath)
               try {
+                removeRuntime(msg.sessionId)
                 await removeSession(abs, msg.sessionId)
-                if (activeSession === msg.sessionId) {
-                  activeSession = null
-                  if (getActiveSessionId() === msg.sessionId) setActiveSessionId(null)
-                }
+                if (viewing === msg.sessionId) viewing = null
+                if (getActiveSessionId() === msg.sessionId) setActiveSessionId(null)
                 await sendSessions(ws, abs)
+                broadcastStatuses()
               } catch (err) {
                 send(ws, { type: 'error', message: `Failed to delete session: ${errMsg(err)}` })
               }
@@ -225,66 +273,93 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             }
 
             case 'set_mode': {
-              activeMode = msg.mode
-              // Persist for real sessions; pending sessions persist on bind.
-              if (activeSession && !activeSession.startsWith(PENDING_SESSION_PREFIX)) {
-                setSessionMode(activeSession, msg.mode)
-              }
-              if (runHandle) {
-                try {
-                  await runHandle.setPermissionMode(msg.mode)
-                } catch {
-                  /* query may have finished between check and call — ignore */
+              const rt = viewing ? getRuntime(viewing) : undefined
+              if (rt) {
+                rt.mode = msg.mode
+                // Persist for real sessions; pending sessions persist on bind.
+                if (!rt.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+                  setSessionMode(rt.sessionId, msg.mode)
+                }
+                if (rt.run?.handle) {
+                  try {
+                    await rt.run.handle.setPermissionMode(msg.mode)
+                  } catch {
+                    /* query may have finished between check and call — ignore */
+                  }
                 }
               }
-              send(ws, { type: 'mode_changed', mode: activeMode })
+              send(ws, { type: 'mode_changed', mode: msg.mode })
+              return
+            }
+
+            case 'stop_run': {
+              if (viewing) stopRun(viewing)
               return
             }
 
             case 'user_prompt': {
-              if (!activeWorkspace || !activeSession) {
+              const rt = viewing ? getRuntime(viewing) : undefined
+              if (!rt) {
                 send(ws, { type: 'error', message: 'Select or create a session first.' })
                 return
               }
-              const workspacePath = activeWorkspace
-              const clientId = activeSession
-              const resume = clientId.startsWith(PENDING_SESSION_PREFIX) ? undefined : clientId
+              if (rt.run) {
+                send(ws, { type: 'error', message: 'A turn is already running in this session.' })
+                return
+              }
+              const workspacePath = rt.workspacePath
+              // `runId` tracks the runtime's current key; it rebinds from a pending
+              // id to the real SDK id once the first run reports one.
+              let runId = rt.sessionId
+              const resume = runId.startsWith(PENDING_SESSION_PREFIX) ? undefined : runId
               // Launch with the session's agent overrides, or the default agent's
               // when unassigned (pending sessions are always unassigned ⇒ default).
-              const launch = resolveSessionLaunch(clientId)
+              const launch = resolveSessionLaunch(runId)
 
-              runAbort?.abort()
               const abort = new AbortController()
-              runAbort = abort
+              rt.run = { abort, handle: null }
+              // Echo the prompt into the stream so switch-back replay shows it.
+              emit(runId, { type: 'user_text', text: msg.text })
+              setStatus(runId, 'running')
               try {
                 await runClaude({
                   prompt: msg.text,
                   cwd: workspacePath,
                   signal: abort.signal,
-                  permissionMode: activeMode,
+                  permissionMode: rt.mode,
                   resume,
                   envOverrides: launch.envOverrides,
                   model: launch.model,
                   currentAgentId: launch.agentId,
-                  send: (m) => send(ws, m),
-                  onStart: (h) => (runHandle = h),
+                  send: (m) => emit(runId, m),
+                  onStart: (h) => {
+                    if (rt.run) rt.run.handle = h
+                  },
                   onSessionId: (sid) => {
                     // Bind a pending (or freshly forked) session to its real id.
-                    if (activeSession === clientId && clientId !== sid) {
-                      activeSession = sid
-                      setSessionMode(sid, activeMode)
-                      setActiveSessionId(sid)
-                      send(ws, { type: 'session_started', clientId, sessionId: sid })
+                    if (runId !== sid) {
+                      const prev = runId
+                      bindPending(prev, sid)
+                      runId = sid
+                      setSessionMode(sid, rt.mode)
+                      if (viewing === prev) {
+                        viewing = sid
+                        setActiveSessionId(sid)
+                      }
+                      send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                      broadcastStatuses()
                     }
                   },
                 })
               } catch (err) {
-                send(ws, { type: 'turn_end', reason: 'error', error: errMsg(err) })
+                emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
               } finally {
-                if (runAbort === abort) {
-                  runAbort = null
-                  runHandle = null
-                }
+                const wasAborted = abort.signal.aborted
+                if (rt.run?.abort === abort) rt.run = null
+                // An aborted run never sends turn_end from the run loop; emit one
+                // so the viewer's input unlocks. A normal/errored run already did.
+                if (wasAborted) emit(runId, { type: 'turn_end', reason: 'complete' })
+                setStatus(runId, 'idle')
                 // Refresh the list so the new/updated session shows its title.
                 await sendSessions(ws, workspacePath)
               }
@@ -293,8 +368,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           }
         },
         onClose() {
-          runAbort?.abort()
-          runAbort = null
+          // Keep runs alive in the background; just stop delivering to this view.
+          if (viewing) removeViewer(viewing, deliver)
+          connections.delete(deliver)
+          sock = null
         },
       }
     }),

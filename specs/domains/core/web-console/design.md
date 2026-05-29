@@ -12,38 +12,44 @@ Implements the [spec](spec.md). Vue 3 SPA. Lives in `web/src/App.vue` (UI + stat
 
 ## State (App.vue)
 
-| Ref        | Type                               | Purpose                                                  |
-| ---------- | ---------------------------------- | -------------------------------------------------------- |
-| `messages` | `ChatMsg[]`                        | Ordered render list (WC-R1)                              |
-| `input`    | string                             | Prompt draft                                             |
-| `status`   | `connecting` \| `open` \| `closed` | Connection indicator (WC-R6)                             |
-| `running`  | boolean                            | True between submit and `session_end` (WC-R2, WC-R5)     |
-| `mode`     | `PermissionMode`                   | Current mode; synced from `ready`/`mode_changed` (WC-R4) |
-| `expanded` | `Set<number>`                      | Which tool/permission entries are expanded               |
+| Ref             | Type                               | Purpose                                                                  |
+| --------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `messages`      | `ChatMsg[]`                        | Ordered render list (WC-R1)                                              |
+| `input`         | string                             | Prompt draft                                                             |
+| `status`        | `connecting` \| `open` \| `closed` | Connection indicator (WC-R6)                                             |
+| `sessionStatus` | `Record<sessionId, SessionStatus>` | Per-session live status from `ready`/`session_status` (WC-R12)           |
+| `running`       | computed boolean                   | Viewed session's status ≠ `idle`; disables input, shows Stop (WC-R2/R14) |
+| `mode`          | `PermissionMode`                   | Current mode; synced from `ready`/`mode_changed` (WC-R4)                 |
+| `expanded`      | `Set<number>`                      | Which tool/permission entries are expanded                               |
 
 `ChatMsg` is a discriminated union over `kind`: `user` · `assistant` · `tool-use` ·
-`tool-result` · `permission` · `system`, each with a numeric `id`.
+`tool-result` · `permission` · `consensus` · `system`, each with a numeric `id`.
 
 ## Event handling (wire → UI)
 
 `handleMessage(msg)` switches on `msg.type`:
 
-| Wire event               | UI effect                                                |
-| ------------------------ | -------------------------------------------------------- |
-| `ready` / `mode_changed` | set `mode`                                               |
-| `assistant_text`         | append assistant message                                 |
-| `tool_use`               | append tool-use message                                  |
-| `tool_result`            | append tool-result message                               |
-| `permission_request`     | append permission message with `decision: null`          |
-| `session_end`            | `running = false`; append system note (complete / error) |
+| Wire event                 | UI effect                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `ready`                    | set `mode`; seed `sessionStatus` from `statuses`                                                       |
+| `session_status`           | replace `sessionStatus`; notify on background `awaiting_permission` (WC-R13)                           |
+| `mode_changed`             | set `mode`                                                                                             |
+| `session_selected`         | clear stream, render `history`, set running from `running`; buffer tail follows as live events (WC-R9) |
+| `user_text`                | append user message                                                                                    |
+| `assistant_text`           | append assistant message                                                                               |
+| `tool_use` / `tool_result` | append tool-use / tool-result message                                                                  |
+| `permission_request`       | append permission message with `decision: null`                                                        |
+| `consensus_auto`           | append consensus message                                                                               |
+| `turn_end`                 | append a system note only on `error`; running unlocks via `session_status` (WC-R5)                     |
 
 ## User actions (UI → wire)
 
-| Action                 | Guard                                           | Sends                                            |
-| ---------------------- | ----------------------------------------------- | ------------------------------------------------ |
-| `submit()`             | non-empty, client present, `!running` (WC-R2)   | `user_prompt`; then `running = true`             |
-| `respond(m, decision)` | client present, `m.decision` still null (WC-R3) | `permission_response`; sets `m.decision` locally |
-| `onModeChange(e)`      | client present, value changed                   | optimistic `mode` update + `set_mode` (WC-R4)    |
+| Action                 | Guard                                           | Sends                                                        |
+| ---------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| `submit()`             | non-empty, client present, `!running` (WC-R2)   | `user_prompt`; optimistically marks viewed session `running` |
+| `stopRun()`            | viewed session running (WC-R14)                 | `stop_run`                                                   |
+| `respond(m, decision)` | client present, `m.decision` still null (WC-R3) | `permission_response`; sets `m.decision` locally             |
+| `onModeChange(e)`      | client present, value changed                   | optimistic `mode` update + `set_mode` (WC-R4)                |
 
 ## WS client behavior
 

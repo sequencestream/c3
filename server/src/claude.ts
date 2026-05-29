@@ -1,9 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { ConsensusOutcome, PermissionMode, ServerToClient } from '@ccc/shared/protocol'
+import type {
+  AskConsensusOutcome,
+  ConsensusOutcome,
+  PermissionMode,
+  ServerToClient,
+} from '@ccc/shared/protocol'
 import { waitForDecision, resolveDecision, type Decision } from './permissions.js'
-import { runConsensusVote } from './consensus.js'
+import { runAskConsensus, runConsensusVote } from './consensus.js'
+import { askQuestions } from './consensus-tally.js'
 import { stringifyToolResult } from './format.js'
 
 // In a Bun-compiled binary the SDK's bundled `cli-<platform>` lookup misses
@@ -28,9 +34,22 @@ export function findClaudeExecutable(): string | undefined {
 }
 
 export const registerPermissionResolver = {
-  resolve(requestId: string, decision: Decision) {
-    resolveDecision(requestId, decision)
+  resolve(requestId: string, decision: Decision, answers?: Record<string, string>) {
+    resolveDecision(requestId, decision, answers)
   },
+}
+
+/**
+ * Inject `AskUserQuestion` answers into the tool input so the SDK echoes them as
+ * the tool result (verified: the tool reads a pre-supplied `answers` map keyed by
+ * question text). This is a deliberate, AskUserQuestion-only exception to the
+ * gateway's "don't rewrite inputs" rule (PG-R6) — the only headless channel to
+ * answer the prompt.
+ */
+function withAnswers(input: unknown, answers: Record<string, string>): Record<string, unknown> {
+  const base = (input ?? {}) as Record<string, unknown>
+  const prior = (base.answers as Record<string, string> | undefined) ?? {}
+  return { ...base, answers: { ...prior, ...answers }, annotations: base.annotations ?? {} }
 }
 
 /** Live controls for an in-flight run, handed to the caller via `onStart`. */
@@ -119,6 +138,38 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       ...(model ? { model } : {}),
       canUseTool: async (toolName, input, _ctx) => {
         const requestId = randomUUID()
+
+        // AskUserQuestion is not an allow/deny tool — it needs an ANSWER per
+        // question. Consensus voters answer each question; if they all agree on
+        // every question we answer on the user's behalf, otherwise the human
+        // fills the answer panel (agreed questions pre-filled). This branch runs
+        // even with consensus disabled so the panel still renders and the answers
+        // get injected (the base AskUserQuestion support).
+        if (toolName === 'AskUserQuestion' && askQuestions(input)) {
+          const ask: AskConsensusOutcome | null = await runAskConsensus({
+            currentAgentId: currentAgentId ?? null,
+            toolName,
+            input,
+            context: recentContext,
+            cwd,
+            signal,
+          }).catch(() => null)
+          if (ask && ask.fullyUnanimous) {
+            send({ type: 'consensus_auto', toolName, input, outcome: ask })
+            return { behavior: 'allow', updatedInput: withAnswers(input, ask.agreedAnswers) }
+          }
+          send(
+            ask
+              ? { type: 'permission_request', requestId, toolName, input, consensus: ask }
+              : { type: 'permission_request', requestId, toolName, input },
+          )
+          const { decision, answers } = await waitForDecision(requestId, signal)
+          if (decision === 'allow') {
+            return { behavior: 'allow', updatedInput: withAnswers(input, answers ?? {}) }
+          }
+          return { behavior: 'deny', message: 'User denied in c3 UI' }
+        }
+
         // Multi-agent consensus first (resolves to null when disabled, when there
         // are no other agents, or if the advisor queries throw).
         const outcome: ConsensusOutcome | null = await runConsensusVote({
@@ -142,7 +193,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
           ? { type: 'permission_request', requestId, toolName, input, consensus: outcome }
           : { type: 'permission_request', requestId, toolName, input }
         send(req)
-        const decision = await waitForDecision(requestId, signal)
+        const { decision } = await waitForDecision(requestId, signal)
         if (decision === 'allow') {
           return { behavior: 'allow', updatedInput: input }
         }

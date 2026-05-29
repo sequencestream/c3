@@ -72,14 +72,17 @@ runtime besides the Claude Agent SDK.
 - Switching into `bypassPermissions` mid-run is permitted by design
   (`allowDangerouslySkipPermissions: true`) **only because c3 remains the UI that
   surfaced the choice.** This must stay an explicit user action.
-- A new user prompt aborts the in-flight run; no two agent runs proceed concurrently on
-  one connection.
+- A session is serial: a new prompt for a session whose turn is in flight is rejected, never
+  coalesced. Different sessions run concurrently with no fixed cap. Runs are owned by a
+  process-wide session-runtime registry, not the connection; switching the viewed session or
+  closing the socket never stops a run — only `stop_run`, `delete_session`, or
+  `remove_workspace` does (ADR 0006).
 
 ## Operations principles
 
 - Single binary must run with only `bun` and a logged-in `claude` on PATH.
 - Failure to find the `claude` executable, or an SDK error, surfaces to the user as a
-  `session_end` with `reason: 'error'` — never a silent hang.
+  `turn_end` with `reason: 'error'` — never a silent hang.
 
 ## Amendment procedure
 

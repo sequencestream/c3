@@ -28,3 +28,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0003](0003-single-binary-via-bun-compile.md)           | Single binary via `bun build --compile`            | accepted   |
 | [0004](0004-persist-workspace-session-registry.md)      | c3 persists a workspace & session registry         | accepted   |
 | [0005](0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the gateway | accepted   |
+| [0006](0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections     | accepted   |

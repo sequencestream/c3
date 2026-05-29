@@ -344,6 +344,39 @@ header h1 {
   display: inline-flex;
 }
 
+/* Live run-status dot in the sidebar (background sessions show their state). */
+.session-status {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-text-muted);
+}
+.session-status.running {
+  background: var(--c-success);
+  animation: status-pulse 1.4s var(--ease-standard) infinite;
+}
+.session-status.awaiting_permission {
+  background: var(--c-warning);
+  animation: status-pulse 1.4s var(--ease-standard) infinite;
+}
+/* A background session blocked on a permission decision — make it stand out. */
+.session.awaiting {
+  color: var(--c-warning);
+}
+.session.awaiting .session-title {
+  font-weight: 600;
+}
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .empty-main {
   margin: auto;
   color: var(--c-text-disabled);
@@ -683,6 +716,17 @@ button.deny:hover:not(:disabled) {
   filter: none;
 }
 
+/* 停止正在运行的 turn */
+button.stop-btn {
+  background: transparent;
+  color: var(--c-error);
+  border: 1px solid var(--c-error);
+}
+button.stop-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  filter: none;
+}
+
 /* 行内权限决策按钮 */
 .actions {
   display: flex;
@@ -775,6 +819,143 @@ button.deny:hover:not(:disabled) {
   gap: var(--sp-2);
   font-size: var(--fs-code);
   cursor: pointer;
+}
+.consensus-badge.split {
+  color: var(--c-text-muted);
+}
+
+/* ---- AskUserQuestion answer panel ---- */
+.ask-summary {
+  margin-top: var(--sp-2);
+  color: var(--c-text-muted);
+}
+.ask-panel {
+  margin-top: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.ask-q {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.ask-q-head {
+  font-size: var(--fs-code);
+  line-height: var(--lh-normal);
+}
+.ask-q-header {
+  display: inline-block;
+  margin-right: var(--sp-2);
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-badge);
+  border-radius: var(--radius-pill);
+  background: var(--c-code);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+}
+.ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.ask-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ask-option.chosen {
+  border-color: var(--c-success);
+  background: var(--c-code);
+}
+.ask-option.locked {
+  cursor: default;
+  opacity: 0.85;
+}
+.ask-option input {
+  margin-top: 2px;
+}
+.ask-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.ask-option-label {
+  font-size: var(--fs-code);
+}
+.ask-option-desc {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.ask-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+}
+.ask-agent-badge {
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-badge);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--c-success);
+  color: var(--c-success);
+  white-space: nowrap;
+}
+.ask-custom-hint {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  padding-left: var(--sp-3);
+}
+.ask-custom {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-caption);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* per-question roll-up in an auto-answered consensus line */
+.consensus-questions {
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.cq-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+}
+.cq-agreed {
+  color: var(--c-success);
+}
+.cq-agreed.split {
+  color: var(--c-text-muted);
+}
+.cq-votes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-size: var(--fs-badge);
+}
+.cq-vote {
+  display: inline-flex;
+  gap: var(--sp-1);
 }
 
 /* ---- System settings (full-page) ---- */

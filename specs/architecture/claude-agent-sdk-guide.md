@@ -60,8 +60,9 @@ function query({
 | `result`    | 终态；含 `subtype`、`total_cost_usd`、`usage`、`session_id`、`num_turns` |
 
 > c3 的消费方式见 `server/src/claude.ts`：对 `assistant` 拆出 `text`/`tool_use`，
-> 对 `user` 拆出 `tool_result`，对 `result` 发出 `session_end`，再映射到
-> [WebSocket 线协议](../shared/api-conventions/websocket-protocol.md)。
+> 对 `user` 拆出 `tool_result`，对 `result` 发出 `turn_end`，再映射到
+> [WebSocket 线协议](../shared/api-conventions/websocket-protocol.md)。所有事件经
+> `server/src/runs.ts` 的 `emit` 写入会话运行时缓冲并投递给当前订阅的连接（ADR 0006）。
 
 ## 2. 是否需要本机安装 Claude Code
 

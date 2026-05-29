@@ -8,14 +8,15 @@ entities — they exist only in the browser. Physical wiring in [design.md](desi
 One item in the rendered stream. A discriminated union over `kind`; every variant carries a
 numeric `id` for keying.
 
-| kind          | Attributes                                                              | Source event                 |
-| ------------- | ----------------------------------------------------------------------- | ---------------------------- |
-| `user`        | `text`                                                                  | local submit                 |
-| `assistant`   | `text`                                                                  | `assistant_text`             |
-| `tool-use`    | `toolName`, `input`                                                     | `tool_use`                   |
-| `tool-result` | `content`, `isError`                                                    | `tool_result`                |
-| `permission`  | `requestId`, `toolName`, `input`, `decision: 'allow' \| 'deny' \| null` | `permission_request`         |
-| `system`      | `text`                                                                  | `session_end` / `error` note |
+| kind          | Attributes                                                                            | Source event                     |
+| ------------- | ------------------------------------------------------------------------------------- | -------------------------------- |
+| `user`        | `text`                                                                                | `user_text` (prompt echo)        |
+| `assistant`   | `text`                                                                                | `assistant_text`                 |
+| `tool-use`    | `toolName`, `input`                                                                   | `tool_use`                       |
+| `tool-result` | `content`, `isError`                                                                  | `tool_result`                    |
+| `permission`  | `requestId`, `toolName`, `input`, `decision: 'allow' \| 'deny' \| null`, `consensus?` | `permission_request`             |
+| `consensus`   | `toolName`, `input`, `outcome`                                                        | `consensus_auto`                 |
+| `system`      | `text`                                                                                | `turn_end{error}` / `error` note |
 
 Relationships:
 
@@ -27,13 +28,14 @@ Relationships:
 ## Sidebar view models
 
 Mirror the server's `WorkspaceInfo` / `SessionInfo` (shared protocol); the console renders
-them and tracks only which workspaces are expanded and which session is active.
+them and tracks which workspaces are expanded, which session is viewed, and each session's live
+status.
 
-| View model     | Attributes                                                | Source event                           |
-| -------------- | --------------------------------------------------------- | -------------------------------------- |
-| Workspace row  | `path`, `name`, `lastAccessed`                            | `ready` / `workspaces`                 |
-| Session row    | `sessionId`, `title`, `lastModified`, `mode`              | `sessions`                             |
-| Active session | `activeWorkspace`, `activeSession`, `activeTitle`, `mode` | `session_selected` / `session_started` |
+| View model     | Attributes                                                                      | Source event                           |
+| -------------- | ------------------------------------------------------------------------------- | -------------------------------------- |
+| Workspace row  | `path`, `name`, `lastAccessed`                                                  | `ready` / `workspaces`                 |
+| Session row    | `sessionId`, `title`, `lastModified`, `mode`; status badge from `sessionStatus` | `sessions` / `session_status`          |
+| Viewed session | `activeWorkspace`, `activeSession`, `activeTitle`, `mode`                       | `session_selected` / `session_started` |
 
 ## Notes
 

@@ -6,11 +6,12 @@ Implements the [spec](spec.md). Lives in `server/src/state.ts` (persistence),
 
 ## Module split
 
-| Concern                    | File                     | Notes                                                             |
-| -------------------------- | ------------------------ | ----------------------------------------------------------------- |
-| Persisted registry         | `server/src/state.ts`    | Module-level cache; atomic write (temp + rename); fail-soft       |
-| SDK session enumeration/IO | `server/src/sessions.ts` | `listSessions` / `getSessionMessages` / `rename` / `delete`       |
-| Active session + dispatch  | `server/src/server.ts`   | Per-connection `activeWorkspace` / `activeSession` / `activeMode` |
+| Concern                    | File                     | Notes                                                           |
+| -------------------------- | ------------------------ | --------------------------------------------------------------- |
+| Persisted registry         | `server/src/state.ts`    | Module-level cache; atomic write (temp + rename); fail-soft     |
+| SDK session enumeration/IO | `server/src/sessions.ts` | `listSessions` / `getSessionMessages` / `rename` / `delete`     |
+| Viewed session + dispatch  | `server/src/server.ts`   | Per-connection `viewing`; per-session mode lives on the runtime |
+| Session runtimes           | `server/src/runs.ts`     | Per-session run/buffer/status (agent-session, ADR 0006)         |
 
 ## Persistence (`state.ts`)
 
@@ -38,14 +39,14 @@ string/text/`tool_result` → `user`/`tool_result` items (`tool_result` content 
 
 ## Per-connection state (`server.ts`)
 
-| Field             | Type             | Lifetime                                                                  |
-| ----------------- | ---------------- | ------------------------------------------------------------------------- |
-| `activeWorkspace` | `string \| null` | the cwd the next run uses                                                 |
-| `activeSession`   | `string \| null` | real id, or `pending:<uuid>` before first run                             |
-| `activeMode`      | `PermissionMode` | source of truth for the next run; mirrored to `sessionModes` for real ids |
+| Field     | Type             | Lifetime                                                 |
+| --------- | ---------------- | -------------------------------------------------------- |
+| `viewing` | `string \| null` | the session this connection watches (real or `pending:`) |
 
-`set_mode` updates `activeMode`, persists it for a real active session (pending persists on
-bind), pushes it to the in-flight run if any, and confirms with `mode_changed` (SR-R5).
+The cwd and per-session mode are read from the viewed session's runtime, not connection fields.
+`set_mode` updates the runtime's `mode`, persists it for a real session (pending persists on
+bind), pushes it to the in-flight run if any, and confirms with `mode_changed` (SR-R5). The
+persisted `activeSessionId` is updated on select/bind as a restart hint.
 
 ## Pending-session binding
 
@@ -57,21 +58,24 @@ sequenceDiagram
     UI->>WS: create_session(ws)
     WS->>UI: session_selected (sessionId=pending:…, history=[])
     UI->>WS: user_prompt(text)
-    WS->>RUN: runClaude(cwd, resume=undefined, mode=activeMode, onSessionId)
+    WS->>RUN: runClaude(cwd, resume=undefined, mode=rt.mode, onSessionId)
     RUN-->>WS: onSessionId(realId)  (from init message)
-    WS->>WS: activeSession=realId; persist mode+active
+    WS->>WS: bindPending(pending→realId); persist mode + activeSessionId; viewing=realId
     WS->>UI: session_started(clientId=pending:…, sessionId=realId)
     Note over WS,UI: on run end → sessions list refreshed (real title)
 ```
 
-A `select_session` of an existing session passes `resume=sessionId`; `onSessionId` reports the
-same id, so no rebind occurs (the guard is `clientId !== sid`).
+Binding re-keys the runtime (buffer/viewers/run move with it). A `select_session` of an
+existing session passes `resume=sessionId`; `onSessionId` reports the same id, so no rebind
+occurs (the guard is `runId !== sid`).
 
 ## Switching & concurrency
 
-One run in flight per connection. `create_session` and `select_session` abort any in-flight
-run before changing the active session (consistent with agent-session AS-R2). `user_prompt`
-requires an active session; otherwise an `error` is returned.
+Switching is a **view** change, not a run change. `create_session` and `select_session`
+`removeViewer(old)` / `addViewer(new)` and replay the new session's record; they **never** abort
+a run (ADR 0006, AS-R8). Many sessions run concurrently; a single session is serial — a
+`user_prompt` for a session with a turn already in flight returns an `error` (AS-R2).
+`user_prompt` requires a viewed session; otherwise an `error` is returned.
 
 ## Non-functional considerations
 

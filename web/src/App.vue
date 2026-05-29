@@ -3,10 +3,13 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { createWsClient } from './lib/ws'
 import type {
   AgentConfig,
-  ConsensusOutcome,
+  AnyConsensusOutcome,
+  AskConsensusOutcome,
   PermissionMode,
   ServerToClient,
   SessionInfo,
+  SessionRunStatus,
+  SessionStatus,
   SlashCommandInfo,
   SystemSettings,
   TranscriptItem,
@@ -26,13 +29,15 @@ type ChatBody =
       input: unknown
       decision: 'allow' | 'deny' | null
       /** Agents' opinions when consensus ran but was split. */
-      consensus?: ConsensusOutcome
+      consensus?: AnyConsensusOutcome
+      /** Per-question answer draft for the AskUserQuestion panel (q index → choice). */
+      askDraft?: Record<number, { labels: string[]; custom: string }>
     }
   | {
       kind: 'consensus'
       toolName: string
       input: unknown
-      outcome: ConsensusOutcome
+      outcome: AnyConsensusOutcome
     }
   | { kind: 'system'; text: string }
 type ChatMsg = ChatBody & { id: number }
@@ -58,7 +63,9 @@ type Block =
 const messages = ref<ChatMsg[]>([])
 const input = ref('')
 const status = ref<'connecting' | 'open' | 'closed'>('connecting')
-const running = ref(false)
+// Live run status per session (sidebar badges + input lock for the viewed one).
+// Source of truth: server `ready.statuses` + `session_status` broadcasts.
+const sessionStatus = ref<Record<string, SessionStatus>>({})
 const mode = ref<PermissionMode>('default')
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 const mainEl = ref<HTMLElement | null>(null)
@@ -81,6 +88,17 @@ const activeWorkspaceName = computed(
   () => workspaces.value.find((w) => w.path === activeWorkspace.value)?.name ?? '',
 )
 const hasActiveSession = computed(() => activeSession.value !== null)
+
+// Status of one session (idle when unknown). Drives sidebar badges.
+function statusOf(sessionId: string): SessionStatus {
+  return sessionStatus.value[sessionId] ?? 'idle'
+}
+
+// The viewed session is "running" (input locked) whenever it isn't idle —
+// covers both an executing turn and one blocked awaiting a permission decision.
+const running = computed(
+  () => hasActiveSession.value && statusOf(activeSession.value as string) !== 'idle',
+)
 
 // ---- Slash-command autocomplete ----
 // Available commands/skills for the active session's cwd (fetched lazily on the
@@ -260,11 +278,15 @@ function handleMessage(msg: ServerToClient) {
   switch (msg.type) {
     case 'ready':
       workspaces.value = msg.workspaces
+      applyStatuses(msg.statuses)
       // Auto-expand the most-recent workspace for an immediate session list.
       if (msg.workspaces.length > 0) toggleWorkspace(msg.workspaces[0].path, true)
       break
     case 'workspaces':
       workspaces.value = msg.workspaces
+      break
+    case 'session_status':
+      applyStatuses(msg.statuses)
       break
     case 'sessions':
       sessionsByWorkspace.value = {
@@ -277,11 +299,13 @@ function handleMessage(msg: ServerToClient) {
       activeSession.value = msg.sessionId
       activeTitle.value = msg.title
       mode.value = msg.mode
-      running.value = false
       messages.value = []
       nextId = 1
       // Commands are per-cwd; drop the old set so the next `/` refetches.
       availableCommands.value = []
+      // History (on-disk baseline) renders first; the live buffer tail, if any,
+      // follows as normal stream events (user_text/assistant_text/…). `running`
+      // is derived from sessionStatus, kept current by session_status broadcasts.
       for (const item of msg.history) add(transcriptToChat(item))
       break
     case 'session_started':
@@ -301,6 +325,9 @@ function handleMessage(msg: ServerToClient) {
         consensus: { enabled: msg.settings.consensus?.enabled ?? false },
       }
       break
+    case 'user_text':
+      add({ kind: 'user', text: msg.text })
+      break
     case 'assistant_text':
       add({ kind: 'assistant', text: msg.text })
       break
@@ -318,6 +345,9 @@ function handleMessage(msg: ServerToClient) {
         input: msg.input,
         decision: null,
         consensus: msg.consensus,
+        ...(msg.toolName === 'AskUserQuestion'
+          ? { askDraft: initAskDraft(msg.input, msg.consensus) }
+          : {}),
       })
       break
     case 'consensus_auto':
@@ -329,9 +359,9 @@ function handleMessage(msg: ServerToClient) {
       })
       break
     case 'turn_end':
-      // A turn finished — the session stays active for the next prompt. Only
-      // surface a line on error; a normal completion just frees the input.
-      running.value = false
+      // A turn finished — the session stays active for the next prompt. The
+      // input unlocks via sessionStatus (server broadcasts idle). Only surface a
+      // line on error; a normal completion just frees the input.
       if (msg.reason === 'error') {
         add({ kind: 'system', text: `— error: ${msg.error ?? 'unknown'} —` })
       }
@@ -340,6 +370,47 @@ function handleMessage(msg: ServerToClient) {
       add({ kind: 'system', text: `— ${msg.message} —` })
       break
   }
+}
+
+// Replace the status map and fire a notification when a *background* session
+// newly enters `awaiting_permission` (one you're not currently looking at).
+function applyStatuses(statuses: SessionRunStatus[]) {
+  const prev = sessionStatus.value
+  for (const s of statuses) {
+    if (
+      s.status === 'awaiting_permission' &&
+      prev[s.sessionId] !== 'awaiting_permission' &&
+      s.sessionId !== activeSession.value
+    ) {
+      notifyAwaitingPermission(s.sessionId)
+    }
+  }
+  const next: Record<string, SessionStatus> = {}
+  for (const s of statuses) next[s.sessionId] = s.status
+  sessionStatus.value = next
+}
+
+function sessionTitleById(id: string): string {
+  for (const list of Object.values(sessionsByWorkspace.value)) {
+    const s = list.find((x) => x.sessionId === id)
+    if (s) return s.title
+  }
+  return 'A background session'
+}
+
+// Browser notification for a background session needing approval. Lazily asks
+// for permission the first time (no-op if the user has denied notifications).
+function notifyAwaitingPermission(id: string) {
+  if (typeof Notification === 'undefined') return
+  const show = () =>
+    new Notification('c3 — permission needed', {
+      body: `${sessionTitleById(id)} is waiting for your approval.`,
+    })
+  if (Notification.permission === 'granted') show()
+  else if (Notification.permission !== 'denied')
+    Notification.requestPermission().then((p) => {
+      if (p === 'granted') show()
+    })
 }
 
 // ---- Sidebar actions ----
@@ -422,10 +493,15 @@ function showMoreSessions(path: string) {
 function submit() {
   const t = input.value.trim()
   if (!t || !client || running.value || !hasActiveSession.value) return
-  add({ kind: 'user', text: t })
   client.send({ type: 'user_prompt', text: t })
   input.value = ''
-  running.value = true
+  // Optimistic lock; the server confirms via `session_status`. The prompt bubble
+  // arrives as a `user_text` echo so every viewer (and switch-back) renders it.
+  sessionStatus.value = { ...sessionStatus.value, [activeSession.value as string]: 'running' }
+}
+
+function stopRun() {
+  client?.send({ type: 'stop_run' })
 }
 
 function onModeChange(e: Event) {
@@ -440,6 +516,130 @@ function respond(m: PermissionMsg, decision: 'allow' | 'deny') {
   if (!client || m.decision) return
   client.send({ type: 'permission_response', requestId: m.requestId, decision })
   m.decision = decision
+}
+
+// ---- AskUserQuestion answer panel ----
+
+interface AskOption {
+  label: string
+  description?: string
+}
+interface AskQuestionView {
+  index: number
+  question: string
+  header: string
+  multiSelect: boolean
+  options: AskOption[]
+}
+
+/** Read the questions out of an AskUserQuestion tool input (loose, defensive). */
+function askQuestionsOf(input: unknown): AskQuestionView[] {
+  const qs = (input as { questions?: unknown })?.questions
+  if (!Array.isArray(qs)) return []
+  return qs.map((q, index) => {
+    const o = q as Partial<AskQuestionView>
+    return {
+      index,
+      question: typeof o.question === 'string' ? o.question : '',
+      header: typeof o.header === 'string' ? o.header : '',
+      multiSelect: (o as { multiSelect?: boolean }).multiSelect === true,
+      options: Array.isArray(o.options)
+        ? (o.options as AskOption[]).map((op) => ({
+            label: String(op.label ?? ''),
+            description: op.description,
+          }))
+        : [],
+    }
+  })
+}
+
+function isAskConsensus(c: AnyConsensusOutcome | undefined): c is AskConsensusOutcome {
+  return !!c && c.kind === 'ask'
+}
+
+/** The per-question roll-up for a given question index, when consensus is the ask shape. */
+function questionConsensus(c: AnyConsensusOutcome | undefined, qIndex: number) {
+  return isAskConsensus(c) ? c.perQuestion.find((p) => p.index === qIndex) : undefined
+}
+
+/** Names (+reason) of voters who chose `label` for question `qIndex`. */
+function agentsForOption(c: AnyConsensusOutcome | undefined, qIndex: number, label: string) {
+  const qc = questionConsensus(c, qIndex)
+  if (!qc) return [] as { agentName: string; reason: string }[]
+  return qc.answers
+    .filter((a) => !a.abstain && a.optionLabels.includes(label))
+    .map((a) => ({ agentName: a.agentName, reason: a.reason }))
+}
+
+/** Voters who answered question `qIndex` with a custom (non-option) reply. */
+function agentsForCustom(c: AnyConsensusOutcome | undefined, qIndex: number) {
+  const qc = questionConsensus(c, qIndex)
+  if (!qc) return [] as { agentName: string; custom: string; reason: string }[]
+  return qc.answers
+    .filter((a) => !a.abstain && a.optionLabels.length === 0 && a.custom)
+    .map((a) => ({ agentName: a.agentName, custom: a.custom ?? '', reason: a.reason }))
+}
+
+/** Build the initial answer draft, pre-filling questions the agents agreed on. */
+function initAskDraft(input: unknown, consensus: AnyConsensusOutcome | undefined) {
+  const draft: Record<number, { labels: string[]; custom: string }> = {}
+  for (const q of askQuestionsOf(input)) {
+    const qc = questionConsensus(consensus, q.index)
+    const labels =
+      qc && qc.unanimous && qc.agreed
+        ? qc.agreed
+            .split(',')
+            .map((s) => s.trim())
+            .filter((l) => q.options.some((o) => o.label === l))
+        : []
+    draft[q.index] = { labels, custom: '' }
+  }
+  return draft
+}
+
+function isOptionChosen(m: PermissionMsg, qIndex: number, label: string): boolean {
+  return m.askDraft?.[qIndex]?.labels.includes(label) ?? false
+}
+
+function toggleAskOption(m: PermissionMsg, q: AskQuestionView, label: string) {
+  if (m.decision || !m.askDraft) return
+  const slot = m.askDraft[q.index]
+  if (q.multiSelect) {
+    const i = slot.labels.indexOf(label)
+    if (i >= 0) slot.labels.splice(i, 1)
+    else slot.labels.push(label)
+  } else {
+    slot.labels = slot.labels[0] === label ? [] : [label]
+  }
+}
+
+/** Every question must have at least one option chosen or a custom reply. */
+function askCustomOf(m: PermissionMsg, qIndex: number): string {
+  return m.askDraft?.[qIndex]?.custom ?? ''
+}
+
+function setAskCustom(m: PermissionMsg, qIndex: number, value: string) {
+  if (m.askDraft?.[qIndex]) m.askDraft[qIndex].custom = value
+}
+
+function isAskAnswered(m: PermissionMsg): boolean {
+  const qs = askQuestionsOf(m.input)
+  if (qs.length === 0) return false
+  return qs.every((q) => {
+    const slot = m.askDraft?.[q.index]
+    return !!slot && (slot.labels.length > 0 || slot.custom.trim().length > 0)
+  })
+}
+
+function submitAsk(m: PermissionMsg) {
+  if (!client || m.decision || !isAskAnswered(m)) return
+  const answers: Record<string, string> = {}
+  for (const q of askQuestionsOf(m.input)) {
+    const slot = m.askDraft![q.index]
+    answers[q.question] = slot.labels.length > 0 ? slot.labels.join(', ') : slot.custom.trim()
+  }
+  client.send({ type: 'permission_response', requestId: m.requestId, decision: 'allow', answers })
+  m.decision = 'allow'
 }
 
 function fmt(v: unknown): string {
@@ -556,6 +756,12 @@ function onKey(e: KeyboardEvent) {
               v-if="isPending(activeSession) && activeWorkspace === w.path"
               class="session active pending"
             >
+              <span
+                v-if="statusOf(activeSession as string) !== 'idle'"
+                class="session-status"
+                :class="statusOf(activeSession as string)"
+                :title="statusOf(activeSession as string)"
+              ></span>
               <span class="session-title">{{ activeTitle }}</span>
             </div>
             <p v-if="sessionsOf(w.path).length === 0" class="empty-hint sub">No sessions.</p>
@@ -563,9 +769,18 @@ function onKey(e: KeyboardEvent) {
               v-for="s in visibleSessionsOf(w.path)"
               :key="s.sessionId"
               class="session"
-              :class="{ active: s.sessionId === activeSession }"
+              :class="{
+                active: s.sessionId === activeSession,
+                awaiting: statusOf(s.sessionId) === 'awaiting_permission',
+              }"
               @click="selectSession(w.path, s.sessionId)"
             >
+              <span
+                v-if="statusOf(s.sessionId) !== 'idle'"
+                class="session-status"
+                :class="statusOf(s.sessionId)"
+                :title="statusOf(s.sessionId)"
+              ></span>
               <span class="session-title" :title="s.title"
                 ><span class="session-date">{{ datePrefix(s.lastModified) }}</span
                 >{{ s.title }}</span
@@ -642,55 +857,171 @@ function onKey(e: KeyboardEvent) {
                   </div>
                 </template>
                 <template v-else-if="m.kind === 'permission'">
-                  <div class="label">
-                    Allow tool: <code>{{ m.toolName }}</code> ?
-                  </div>
-                  <pre v-if="isExpanded(m.id)" class="tool-body">{{ fmt(m.input) }}</pre>
-                  <div v-else class="tool-oneline" @click="toggle(m.id)">
-                    {{ oneLine(fmt(m.input)) }}
-                  </div>
-                  <div v-if="m.consensus" class="consensus consensus-split">
-                    <div class="consensus-summary">
-                      🤝 多 agent 意见分歧：{{ m.consensus.summary }}
+                  <!-- AskUserQuestion: per-question answer panel -->
+                  <template v-if="m.toolName === 'AskUserQuestion'">
+                    <div class="label">
+                      🙋 回答提问 · <code>AskUserQuestion</code>
+                      <span v-if="m.consensus" class="consensus-badge split">多 agent 建议</span>
                     </div>
-                    <ul class="consensus-votes">
-                      <li v-for="v in m.consensus.votes" :key="v.agentId">
-                        <span class="vote-name">{{ v.agentName }}</span>
-                        <span class="vote-decision" :class="v.decision">{{ v.decision }}</span>
-                        <span class="vote-reason">{{ v.reason }}</span>
-                      </li>
-                    </ul>
-                  </div>
-                  <div v-if="m.decision === null" class="actions">
-                    <button class="deny" @click="respond(m, 'deny')">Deny</button>
-                    <button @click="respond(m, 'allow')">Allow</button>
-                  </div>
-                  <div v-else class="decided">
-                    — {{ m.decision === 'allow' ? 'allowed' : 'denied' }} —
-                  </div>
+                    <div v-if="m.consensus" class="consensus-summary ask-summary">
+                      🤝 {{ m.consensus.summary }}
+                    </div>
+                    <div class="ask-panel">
+                      <div v-for="q in askQuestionsOf(m.input)" :key="q.index" class="ask-q">
+                        <div class="ask-q-head">
+                          <span v-if="q.header" class="ask-q-header">{{ q.header }}</span>
+                          {{ q.question }}
+                        </div>
+                        <div class="ask-options">
+                          <label
+                            v-for="o in q.options"
+                            :key="o.label"
+                            class="ask-option"
+                            :class="{
+                              chosen: isOptionChosen(m, q.index, o.label),
+                              locked: !!m.decision,
+                            }"
+                          >
+                            <input
+                              :type="q.multiSelect ? 'checkbox' : 'radio'"
+                              :name="`q-${m.id}-${q.index}`"
+                              :checked="isOptionChosen(m, q.index, o.label)"
+                              :disabled="!!m.decision"
+                              @change="toggleAskOption(m, q, o.label)"
+                            />
+                            <span class="ask-option-body">
+                              <span class="ask-option-label">{{ o.label }}</span>
+                              <span v-if="o.description" class="ask-option-desc">{{
+                                o.description
+                              }}</span>
+                            </span>
+                            <span class="ask-agents">
+                              <span
+                                v-for="a in agentsForOption(m.consensus, q.index, o.label)"
+                                :key="a.agentName"
+                                class="ask-agent-badge"
+                                :title="a.reason"
+                                >{{ a.agentName }}</span
+                              >
+                            </span>
+                          </label>
+                        </div>
+                        <div
+                          v-for="a in agentsForCustom(m.consensus, q.index)"
+                          :key="a.agentName"
+                          class="ask-custom-hint"
+                          :title="a.reason"
+                        >
+                          {{ a.agentName }}：{{ a.custom }}
+                        </div>
+                        <input
+                          v-if="m.decision === null"
+                          class="ask-custom"
+                          type="text"
+                          placeholder="自定义回复（覆盖上面的选择）"
+                          :value="askCustomOf(m, q.index)"
+                          @input="
+                            setAskCustom(m, q.index, ($event.target as HTMLInputElement).value)
+                          "
+                        />
+                      </div>
+                    </div>
+                    <div v-if="m.decision === null" class="actions">
+                      <button class="deny" @click="respond(m, 'deny')">Deny</button>
+                      <button :disabled="!isAskAnswered(m)" @click="submitAsk(m)">提交答案</button>
+                    </div>
+                    <div v-else class="decided">
+                      — {{ m.decision === 'allow' ? 'answered' : 'denied' }} —
+                    </div>
+                  </template>
+
+                  <!-- Every other tool: allow / deny -->
+                  <template v-else>
+                    <div class="label">
+                      Allow tool: <code>{{ m.toolName }}</code> ?
+                    </div>
+                    <pre v-if="isExpanded(m.id)" class="tool-body">{{ fmt(m.input) }}</pre>
+                    <div v-else class="tool-oneline" @click="toggle(m.id)">
+                      {{ oneLine(fmt(m.input)) }}
+                    </div>
+                    <div
+                      v-if="m.consensus && m.consensus.kind === 'tool'"
+                      class="consensus consensus-split"
+                    >
+                      <div class="consensus-summary">
+                        🤝 多 agent 意见分歧：{{ m.consensus.summary }}
+                      </div>
+                      <ul class="consensus-votes">
+                        <li v-for="v in m.consensus.votes" :key="v.agentId">
+                          <span class="vote-name">{{ v.agentName }}</span>
+                          <span class="vote-decision" :class="v.decision">{{ v.decision }}</span>
+                          <span class="vote-reason">{{ v.reason }}</span>
+                        </li>
+                      </ul>
+                    </div>
+                    <div v-if="m.decision === null" class="actions">
+                      <button class="deny" @click="respond(m, 'deny')">Deny</button>
+                      <button @click="respond(m, 'allow')">Allow</button>
+                    </div>
+                    <div v-else class="decided">
+                      — {{ m.decision === 'allow' ? 'allowed' : 'denied' }} —
+                    </div>
+                  </template>
                 </template>
                 <template v-else-if="m.kind === 'consensus'">
-                  <div class="label">
-                    🤝 多 agent 共识 ·
-                    <code>{{ m.toolName }}</code>
-                    <span class="consensus-badge" :class="m.outcome.decision ?? 'split'">{{
-                      m.outcome.decision === 'allow'
-                        ? '自动允许'
-                        : m.outcome.decision === 'deny'
-                          ? '自动拒绝'
-                          : '分歧'
-                    }}</span>
-                  </div>
-                  <div class="consensus">
-                    <div class="consensus-summary">{{ m.outcome.summary }}</div>
-                    <ul class="consensus-votes">
-                      <li v-for="v in m.outcome.votes" :key="v.agentId">
-                        <span class="vote-name">{{ v.agentName }}</span>
-                        <span class="vote-decision" :class="v.decision">{{ v.decision }}</span>
-                        <span class="vote-reason">{{ v.reason }}</span>
-                      </li>
-                    </ul>
-                  </div>
+                  <!-- AskUserQuestion: per-question auto-answer -->
+                  <template v-if="m.outcome.kind === 'ask'">
+                    <div class="label">
+                      🤝 多 agent 共识 · <code>{{ m.toolName }}</code>
+                      <span class="consensus-badge allow">逐题自动作答</span>
+                    </div>
+                    <div class="consensus">
+                      <div class="consensus-summary">{{ m.outcome.summary }}</div>
+                      <ul class="consensus-questions">
+                        <li v-for="q in m.outcome.perQuestion" :key="q.index">
+                          <div class="cq-head">
+                            <span v-if="q.header" class="ask-q-header">{{ q.header }}</span>
+                            <span class="cq-agreed" :class="{ split: !q.unanimous }">{{
+                              q.unanimous ? q.agreed : '（分歧→人工）'
+                            }}</span>
+                          </div>
+                          <div class="cq-votes">
+                            <span v-for="a in q.answers" :key="a.agentId" class="cq-vote">
+                              <span class="vote-name">{{ a.agentName }}</span>
+                              <span class="vote-reason">{{
+                                a.abstain ? '弃权' : a.optionLabels.join('/') || a.custom
+                              }}</span>
+                            </span>
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
+                  </template>
+
+                  <!-- Every other tool: allow / deny verdict -->
+                  <template v-else>
+                    <div class="label">
+                      🤝 多 agent 共识 ·
+                      <code>{{ m.toolName }}</code>
+                      <span class="consensus-badge" :class="m.outcome.decision ?? 'split'">{{
+                        m.outcome.decision === 'allow'
+                          ? '自动允许'
+                          : m.outcome.decision === 'deny'
+                            ? '自动拒绝'
+                            : '分歧'
+                      }}</span>
+                    </div>
+                    <div class="consensus">
+                      <div class="consensus-summary">{{ m.outcome.summary }}</div>
+                      <ul class="consensus-votes">
+                        <li v-for="v in m.outcome.votes" :key="v.agentId">
+                          <span class="vote-name">{{ v.agentName }}</span>
+                          <span class="vote-decision" :class="v.decision">{{ v.decision }}</span>
+                          <span class="vote-reason">{{ v.reason }}</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </template>
                 </template>
               </div>
             </div>
@@ -727,9 +1058,10 @@ function onKey(e: KeyboardEvent) {
           :disabled="running || !hasActiveSession"
           @keydown="onKey"
         />
-        <button :disabled="running || !input.trim() || !hasActiveSession" @click="submit">
-          Send
+        <button v-if="running" class="stop-btn" title="Stop the running turn" @click="stopRun">
+          Stop
         </button>
+        <button v-else :disabled="!input.trim() || !hasActiveSession" @click="submit">Send</button>
       </footer>
     </div>
   </div>

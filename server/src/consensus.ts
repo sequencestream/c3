@@ -19,10 +19,27 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentConfig, ConsensusOutcome, ConsensusVote } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  AskConsensusOutcome,
+  ConsensusOutcome,
+  ConsensusVote,
+  QuestionConsensus,
+} from '@ccc/shared/protocol'
 import { consensusVoters, isConsensusEnabled, launchForAgent, resolveAgent } from './settings.js'
 import { findClaudeExecutable } from './claude.js'
-import { fallbackSummary, oneLine, parseVote, tally, voterPrompt } from './consensus-tally.js'
+import {
+  askQuestions,
+  askVoterPrompt,
+  fallbackAskSummary,
+  fallbackSummary,
+  oneLine,
+  parseAskVote,
+  parseVote,
+  tally,
+  tallyQuestion,
+  voterPrompt,
+} from './consensus-tally.js'
 
 export interface ConsensusParams {
   /** The resolved agent id the session runs on (excluded from voting). */
@@ -168,5 +185,84 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
     p.cwd,
     p.signal,
   )
-  return { votes, summary, unanimous, decision }
+  return { kind: 'tool', votes, summary, unanimous, decision }
+}
+
+/** Ask the session's own agent to summarize the per-question consensus in one line. */
+async function summarizeAsk(
+  currentAgentId: string | null,
+  perQuestion: QuestionConsensus[],
+  cwd: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const fallback = fallbackAskSummary(perQuestion)
+  if (signal.aborted) return fallback
+  try {
+    const decider = resolveAgent(currentAgentId)
+    const prompt = [
+      "Several advisor agents answered, on the user's behalf, the questions an AI agent asked. Per question:",
+      ...perQuestion.map(
+        (q) =>
+          `- [${q.header || q.index}] ${q.unanimous ? `一致：${q.agreed}` : '意见分歧'}（${q.answers
+            .map(
+              (a) =>
+                `${a.agentName}=${a.abstain ? '弃权' : a.optionLabels.join('/') || a.custom || '?'}`,
+            )
+            .join(', ')}）`,
+      ),
+      '',
+      'Write ONE short sentence in Chinese summarizing the collective answers for a human who must confirm. Output only that sentence, no preamble.',
+    ].join('\n')
+    const text = await askAgentOnce(decider, prompt, cwd, signal)
+    return oneLine(text) || fallback
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * Consensus over an `AskUserQuestion` prompt: each voter answers every question
+ * (option label(s) or a custom reply) rather than voting allow/deny. Returns
+ * `null` when consensus is disabled, there are no voters, or the input has no
+ * questions — the caller then shows the answer panel without pre-filled opinions.
+ */
+export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusOutcome | null> {
+  if (!isConsensusEnabled()) return null
+  const voters = consensusVoters(p.currentAgentId)
+  if (voters.length === 0) return null
+  const questions = askQuestions(p.input)
+  if (!questions) return null
+
+  const prompt = askVoterPrompt(questions, p.context)
+  // Each voter answers all questions; an errored voter abstains on every question.
+  const perAgent = await Promise.all(
+    voters.map(async (agent) => {
+      try {
+        const text = await askAgentOnce(agent, prompt, p.cwd, p.signal)
+        return parseAskVote(text, questions, agent.id, agent.name)
+      } catch {
+        return questions.map(() => ({
+          agentId: agent.id,
+          agentName: agent.name,
+          optionLabels: [],
+          reason: '',
+          abstain: true,
+        }))
+      }
+    }),
+  )
+
+  const perQuestion = questions.map((q, i) =>
+    tallyQuestion(
+      q,
+      i,
+      perAgent.map((answers) => answers[i]),
+    ),
+  )
+  const agreedAnswers: Record<string, string> = {}
+  for (const q of perQuestion)
+    if (q.unanimous && q.agreed !== null) agreedAnswers[q.question] = q.agreed
+  const fullyUnanimous = perQuestion.length > 0 && perQuestion.every((q) => q.unanimous)
+  const summary = await summarizeAsk(p.currentAgentId, perQuestion, p.cwd, p.signal)
+  return { kind: 'ask', perQuestion, fullyUnanimous, agreedAnswers, summary }
 }

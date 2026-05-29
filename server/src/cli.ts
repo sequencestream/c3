@@ -14,17 +14,20 @@ program
 program
   .command('start')
   .description('Start the local web server')
-  .requiredOption(
+  .option(
     '-p, --project <path>',
-    'absolute path to the project directory (passed as cwd to Claude)',
+    'optional seed workspace directory; more can be added from the UI',
   )
   .option('--port <number>', 'HTTP port', '3000')
   .option('--dev', 'development mode (do not serve static frontend)', false)
-  .action(async (opts: { project: string; port: string; dev: boolean }) => {
-    const projectPath = resolve(opts.project)
-    if (!existsSync(projectPath) || !statSync(projectPath).isDirectory()) {
-      console.error(`[c3] error: project path is not a directory: ${projectPath}`)
-      process.exit(1)
+  .action(async (opts: { project?: string; port: string; dev: boolean }) => {
+    let projectPath: string | undefined
+    if (opts.project) {
+      projectPath = resolve(opts.project)
+      if (!existsSync(projectPath) || !statSync(projectPath).isDirectory()) {
+        console.error(`[c3] error: project path is not a directory: ${projectPath}`)
+        process.exit(1)
+      }
     }
     const port = Number(opts.port)
     if (!Number.isFinite(port) || port <= 0) {

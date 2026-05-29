@@ -13,11 +13,36 @@ describe('protocol wire format', () => {
     { type: 'permission_response', requestId: 'r1', decision: 'allow' },
     { type: 'permission_response', requestId: 'r2', decision: 'deny' },
     { type: 'set_mode', mode: 'plan' },
+    { type: 'add_workspace', path: '/abs/proj' },
+    { type: 'remove_workspace', path: '/abs/proj' },
+    { type: 'list_sessions', workspacePath: '/abs/proj' },
+    { type: 'create_session', workspacePath: '/abs/proj' },
+    { type: 'delete_session', workspacePath: '/abs/proj', sessionId: 's1' },
+    { type: 'select_session', workspacePath: '/abs/proj', sessionId: 's1' },
+    { type: 'rename_session', workspacePath: '/abs/proj', sessionId: 's1', title: 'New' },
     { type: 'ping' },
   ]
 
   const serverMessages: ServerToClient[] = [
-    { type: 'ready', mode: 'default' },
+    { type: 'ready', workspaces: [], activeSessionId: null },
+    {
+      type: 'workspaces',
+      workspaces: [{ path: '/abs/proj', name: 'proj', lastAccessed: 1 }],
+    },
+    {
+      type: 'sessions',
+      workspacePath: '/abs/proj',
+      sessions: [{ sessionId: 's1', title: 't', lastModified: 2, mode: 'default' }],
+    },
+    {
+      type: 'session_selected',
+      workspacePath: '/abs/proj',
+      sessionId: 's1',
+      title: 't',
+      mode: 'plan',
+      history: [{ kind: 'user', text: 'hi' }],
+    },
+    { type: 'session_started', clientId: 'pending:1', sessionId: 's1' },
     { type: 'mode_changed', mode: 'acceptEdits' },
     { type: 'assistant_text', text: 'hi' },
     { type: 'tool_use', toolUseId: 't1', toolName: 'Bash', input: { command: 'ls' } },
@@ -25,8 +50,8 @@ describe('protocol wire format', () => {
     { type: 'permission_request', requestId: 'r1', toolName: 'Write', input: {} },
     { type: 'session_end', reason: 'complete' },
     { type: 'session_end', reason: 'error', error: 'boom' },
+    { type: 'error', message: 'bad path' },
     { type: 'pong' },
-    { type: 'echo', text: 'x' },
   ]
 
   it('round-trips every client message through JSON unchanged', () => {

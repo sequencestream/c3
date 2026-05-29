@@ -1,16 +1,37 @@
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ClientToServer, PermissionMode, ServerToClient } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude, registerPermissionResolver, type RunHandle } from './claude.js'
+import {
+  addWorkspace,
+  getActiveSessionId,
+  getSessionMode,
+  hasWorkspace,
+  listWorkspaces,
+  removeWorkspace,
+  setActiveSessionId,
+  setSessionMode,
+  touchWorkspace,
+} from './state.js'
+import {
+  listWorkspaceSessions,
+  loadHistory,
+  removeSession,
+  renameWorkspaceSession,
+  sessionTitle,
+} from './sessions.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 
 export interface ServerOptions {
-  projectPath: string
+  /** Optional seed workspace — added to the registry and made discoverable. */
+  projectPath?: string
   port: number
   dev: boolean
 }
@@ -19,19 +40,47 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
+  // Seed the registry with the CLI-provided workspace (idempotent).
+  if (opts.projectPath) addWorkspace(opts.projectPath, Date.now())
+
   app.get(
     '/ws',
     upgradeWebSocket(() => {
       let runAbort: AbortController | null = null
-      // Permission mode persists across prompts for the life of the connection.
-      let currentMode: PermissionMode = 'default'
-      // Live handle to the in-flight run, if any (null between prompts).
       let runHandle: RunHandle | null = null
+      // The session the next prompt runs against. A pending id (`pending:…`)
+      // means a not-yet-created session; it binds to a real id on first run.
+      let activeWorkspace: string | null = null
+      let activeSession: string | null = null
+      // The active session's mode — source of truth for the next run; mirrored
+      // into persisted state for real (non-pending) sessions.
+      let activeMode: PermissionMode = 'default'
+
+      const send = (ws: { send: (d: string) => void }, msg: ServerToClient): void =>
+        ws.send(JSON.stringify(msg))
+
+      const sendWorkspaces = (ws: { send: (d: string) => void }): void =>
+        send(ws, { type: 'workspaces', workspaces: listWorkspaces() })
+
+      const sendSessions = async (
+        ws: { send: (d: string) => void },
+        workspacePath: string,
+      ): Promise<void> => {
+        try {
+          const sessions = await listWorkspaceSessions(workspacePath)
+          send(ws, { type: 'sessions', workspacePath, sessions })
+        } catch (err) {
+          send(ws, { type: 'error', message: `Failed to list sessions: ${errMsg(err)}` })
+        }
+      }
 
       return {
         onOpen(_evt, ws) {
-          const ready: ServerToClient = { type: 'ready', mode: currentMode }
-          ws.send(JSON.stringify(ready))
+          send(ws, {
+            type: 'ready',
+            workspaces: listWorkspaces(),
+            activeSessionId: getActiveSessionId(),
+          })
         },
         async onMessage(evt, ws) {
           let msg: ClientToServer
@@ -40,57 +89,176 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           } catch {
             return
           }
-          if (msg.type === 'ping') {
-            const pong: ServerToClient = { type: 'pong' }
-            ws.send(JSON.stringify(pong))
-            return
-          }
-          if (msg.type === 'permission_response') {
-            registerPermissionResolver.resolve(msg.requestId, msg.decision)
-            return
-          }
-          if (msg.type === 'set_mode') {
-            currentMode = msg.mode
-            // Apply to the live run immediately if one is in flight; otherwise
-            // it takes effect on the next prompt.
-            if (runHandle) {
-              try {
-                await runHandle.setPermissionMode(msg.mode)
-              } catch {
-                /* query may have finished between check and call — ignore */
+
+          switch (msg.type) {
+            case 'ping':
+              send(ws, { type: 'pong' })
+              return
+
+            case 'permission_response':
+              registerPermissionResolver.resolve(msg.requestId, msg.decision)
+              return
+
+            case 'add_workspace': {
+              const abs = addWorkspace(msg.path, Date.now())
+              if (!abs) {
+                send(ws, { type: 'error', message: `Not a directory: ${msg.path}` })
+                return
               }
+              sendWorkspaces(ws)
+              await sendSessions(ws, abs)
+              return
             }
-            const changed: ServerToClient = { type: 'mode_changed', mode: currentMode }
-            ws.send(JSON.stringify(changed))
-            return
-          }
-          if (msg.type === 'user_prompt') {
-            runAbort?.abort()
-            const abort = new AbortController()
-            runAbort = abort
-            try {
-              await runClaude({
-                prompt: msg.text,
-                projectPath: opts.projectPath,
-                signal: abort.signal,
-                permissionMode: currentMode,
-                send: (m) => ws.send(JSON.stringify(m)),
-                onStart: (h) => (runHandle = h),
+
+            case 'remove_workspace': {
+              const abs = resolve(msg.path)
+              removeWorkspace(abs)
+              if (activeWorkspace === abs) {
+                activeWorkspace = null
+                activeSession = null
+              }
+              sendWorkspaces(ws)
+              return
+            }
+
+            case 'list_sessions':
+              await sendSessions(ws, resolve(msg.workspacePath))
+              return
+
+            case 'create_session': {
+              const abs = resolve(msg.workspacePath)
+              if (!hasWorkspace(abs)) {
+                send(ws, { type: 'error', message: `Unknown workspace: ${msg.workspacePath}` })
+                return
+              }
+              runAbort?.abort()
+              activeWorkspace = abs
+              activeSession = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+              activeMode = 'default'
+              touchWorkspace(abs, Date.now())
+              send(ws, {
+                type: 'session_selected',
+                workspacePath: abs,
+                sessionId: activeSession,
+                title: 'New session',
+                mode: activeMode,
+                history: [],
               })
-            } catch (err) {
-              const end: ServerToClient = {
-                type: 'session_end',
-                reason: 'error',
-                error: err instanceof Error ? err.message : String(err),
+              sendWorkspaces(ws)
+              return
+            }
+
+            case 'select_session': {
+              const abs = resolve(msg.workspacePath)
+              runAbort?.abort()
+              try {
+                const history = await loadHistory(abs, msg.sessionId)
+                const title = await sessionTitle(abs, msg.sessionId)
+                activeWorkspace = abs
+                activeSession = msg.sessionId
+                activeMode = getSessionMode(msg.sessionId)
+                touchWorkspace(abs, Date.now())
+                setActiveSessionId(msg.sessionId)
+                send(ws, {
+                  type: 'session_selected',
+                  workspacePath: abs,
+                  sessionId: msg.sessionId,
+                  title,
+                  mode: activeMode,
+                  history,
+                })
+                sendWorkspaces(ws)
+              } catch (err) {
+                send(ws, { type: 'error', message: `Failed to open session: ${errMsg(err)}` })
               }
-              ws.send(JSON.stringify(end))
-            } finally {
-              // Don't leave a finished run's controller around — a later prompt
-              // would abort()/interrupt() an already-closed query and throw.
-              if (runAbort === abort) {
-                runAbort = null
-                runHandle = null
+              return
+            }
+
+            case 'delete_session': {
+              const abs = resolve(msg.workspacePath)
+              try {
+                await removeSession(abs, msg.sessionId)
+                if (activeSession === msg.sessionId) {
+                  activeSession = null
+                  if (getActiveSessionId() === msg.sessionId) setActiveSessionId(null)
+                }
+                await sendSessions(ws, abs)
+              } catch (err) {
+                send(ws, { type: 'error', message: `Failed to delete session: ${errMsg(err)}` })
               }
+              return
+            }
+
+            case 'rename_session': {
+              const abs = resolve(msg.workspacePath)
+              try {
+                await renameWorkspaceSession(abs, msg.sessionId, msg.title)
+                await sendSessions(ws, abs)
+              } catch (err) {
+                send(ws, { type: 'error', message: `Failed to rename session: ${errMsg(err)}` })
+              }
+              return
+            }
+
+            case 'set_mode': {
+              activeMode = msg.mode
+              // Persist for real sessions; pending sessions persist on bind.
+              if (activeSession && !activeSession.startsWith(PENDING_SESSION_PREFIX)) {
+                setSessionMode(activeSession, msg.mode)
+              }
+              if (runHandle) {
+                try {
+                  await runHandle.setPermissionMode(msg.mode)
+                } catch {
+                  /* query may have finished between check and call — ignore */
+                }
+              }
+              send(ws, { type: 'mode_changed', mode: activeMode })
+              return
+            }
+
+            case 'user_prompt': {
+              if (!activeWorkspace || !activeSession) {
+                send(ws, { type: 'error', message: 'Select or create a session first.' })
+                return
+              }
+              const workspacePath = activeWorkspace
+              const clientId = activeSession
+              const resume = clientId.startsWith(PENDING_SESSION_PREFIX) ? undefined : clientId
+
+              runAbort?.abort()
+              const abort = new AbortController()
+              runAbort = abort
+              try {
+                await runClaude({
+                  prompt: msg.text,
+                  cwd: workspacePath,
+                  signal: abort.signal,
+                  permissionMode: activeMode,
+                  resume,
+                  send: (m) => send(ws, m),
+                  onStart: (h) => (runHandle = h),
+                  onSessionId: (sid) => {
+                    // Bind a pending (or freshly forked) session to its real id.
+                    if (activeSession === clientId && clientId !== sid) {
+                      activeSession = sid
+                      setSessionMode(sid, activeMode)
+                      setActiveSessionId(sid)
+                      send(ws, { type: 'session_started', clientId, sessionId: sid })
+                    }
+                  },
+                })
+              } catch (err) {
+                send(ws, { type: 'session_end', reason: 'error', error: errMsg(err) })
+              } finally {
+                if (runAbort === abort) {
+                  runAbort = null
+                  runHandle = null
+                }
+                // Refresh the list so the new/updated session shows its title.
+                await sendSessions(ws, workspacePath)
+              }
+              return
             }
           }
         },
@@ -139,10 +307,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const server = serve({ fetch: app.fetch, port: opts.port }, (info) => {
     const url = `http://localhost:${info.port}`
     console.log(`[c3] server running at ${url}`)
-    console.log(`[c3] project cwd: ${opts.projectPath}`)
+    if (opts.projectPath) console.log(`[c3] seed workspace: ${opts.projectPath}`)
     if (opts.dev) console.log(`[c3] dev mode — open Vite at http://localhost:5173`)
   })
   injectWebSocket(server)
+}
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 function resolveStaticRoot(): string | null {

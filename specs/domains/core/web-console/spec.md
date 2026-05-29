@@ -2,13 +2,15 @@
 
 ## Overview
 
-The web console is the human surface of c3. It connects to the server's WebSocket, lets the
-user send prompts, renders the agent's activity as an ordered chat-like stream, and is the
-only place a permission decision or mode change is made.
+The web console is the human surface of c3. It connects to the server's WebSocket, presents a
+**sidebar** of workspaces and their sessions, lets the user send prompts to the active
+session, renders the agent's activity as an ordered chat-like stream, and is the only place a
+permission decision or mode change is made.
 
-**Scope:** presenting the wire stream and capturing user intent (prompt, decision, mode).
-**Boundary:** it holds no authority — every decision is sent to the server, which enforces
-it. It does not run the agent or persist anything.
+**Scope:** presenting the workspace/session sidebar and the wire stream, and capturing user
+intent (workspace/session management, prompt, decision, per-session mode).
+**Boundary:** it holds no authority — every decision and management action is sent to the
+server, which enforces and persists it. It does not run the agent or own session state.
 
 ## Core entities
 
@@ -20,15 +22,18 @@ See [models.md](models.md).
 
 ## Business rules
 
-| ID    | Rule                                                                                                                                                        |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| WC-R1 | The console renders every wire event in arrival order as a Chat Message.                                                                                    |
-| WC-R2 | A prompt is sent only when the input is non-empty, the socket is connected, and no run is currently running. While a run is in flight the input is blocked. |
-| WC-R3 | A permission prompt can be answered exactly once. After Allow or Deny it is locked and shows the chosen decision.                                           |
-| WC-R4 | A mode change is applied optimistically in the UI and confirmed when `mode_changed` arrives. The UI also adopts the mode the server reports in `ready`.     |
-| WC-R5 | `session_end` clears the running state and appends a system note (`complete` or `error: <message>`).                                                        |
-| WC-R6 | Connection status (`connecting` / `open` / `closed`) is always visible to the user.                                                                         |
-| WC-R7 | The console never executes a tool or makes a decision on the user's behalf — it only sends what the user explicitly chose.                                  |
+| ID     | Rule                                                                                                                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| WC-R1  | The console renders every wire event in arrival order as a Chat Message.                                                                                                                                                                   |
+| WC-R2  | A prompt is sent only when the input is non-empty, the socket is connected, and no run is currently running. While a run is in flight the input is blocked.                                                                                |
+| WC-R3  | A permission prompt can be answered exactly once. After Allow or Deny it is locked and shows the chosen decision.                                                                                                                          |
+| WC-R4  | A mode change is applied optimistically in the UI and confirmed when `mode_changed` arrives. The UI also adopts the mode the server reports in `ready`.                                                                                    |
+| WC-R5  | `session_end` clears the running state and appends a system note (`complete` or `error: <message>`). An `error` event appends a system note too.                                                                                           |
+| WC-R6  | Connection status (`connecting` / `open` / `closed`) is always visible to the user.                                                                                                                                                        |
+| WC-R7  | The console never executes a tool or makes a decision on the user's behalf — it only sends what the user explicitly chose.                                                                                                                 |
+| WC-R8  | The sidebar lists workspaces (recent-access order from the server) and, when expanded, their sessions. The user can add/remove workspaces and create/select/rename/delete sessions; each action is a wire message, never a local mutation. |
+| WC-R9  | Selecting a session replaces the stream with the replayed `session_selected.history`, adopts the session's `mode`, and shows `workspace › title` in the header. Prompts and the mode select are disabled until a session is active.        |
+| WC-R10 | A pending session (created locally via `create_session`) is shown active until `session_started` swaps its `pending:` id for the real session id.                                                                                          |
 
 ## States & transitions
 
@@ -59,14 +64,18 @@ A permission Chat Message: `Unanswered → Allowed | Denied`, one-way (WC-R3).
 
 ## Domain events (wire)
 
-Sends `user_prompt`, `permission_response`, `set_mode`, `ping`. Consumes `ready`,
+Sends `user_prompt`, `permission_response`, `set_mode`, `add_workspace`, `remove_workspace`,
+`list_sessions`, `create_session`, `select_session`, `rename_session`, `delete_session`,
+`ping`. Consumes `ready`, `workspaces`, `sessions`, `session_selected`, `session_started`,
 `mode_changed`, `assistant_text`, `tool_use`, `tool_result`, `permission_request`,
-`session_end`, `pong`. See the
+`session_end`, `error`, `pong`. See the
 [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 
 ## Interactions
 
-- **agent-session** — the server side of the same WebSocket; the console's sole backend.
+- **agent-session** — the server side of the same WebSocket; streams run activity.
+- **session-registry** — serves the workspace/session sidebar data and persists management
+  actions; the console renders its state but owns none of it.
 
 ## Data dictionary
 

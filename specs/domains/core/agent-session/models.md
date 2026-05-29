@@ -4,27 +4,30 @@ Entity definitions. Business-semantic types; physical wiring in [design.md](desi
 
 ## Session
 
-The lifetime of one WebSocket connection.
+The lifetime of one WebSocket connection. The active workspace/session/mode it tracks are
+owned by the [session-registry](../session-registry/models.md); here we list the run controls.
 
-| Attribute     | Type                  | Description                                                                      |
-| ------------- | --------------------- | -------------------------------------------------------------------------------- |
-| `currentMode` | enum `PermissionMode` | Active permission policy; persists for the connection (AS-R3). Starts `default`. |
-| `runAbort`    | reference \| none     | The in-flight run's abort handle, or none between runs                           |
-| `runHandle`   | reference \| none     | Live controls for the in-flight run, or none                                     |
+| Attribute    | Type                  | Description                                                         |
+| ------------ | --------------------- | ------------------------------------------------------------------- |
+| `activeMode` | enum `PermissionMode` | The active session's mode; the run's starting policy (AS-R3, SR-R5) |
+| `runAbort`   | reference \| none     | The in-flight run's abort handle, or none between runs              |
+| `runHandle`  | reference \| none     | Live controls for the in-flight run, or none                        |
 
-Relationships: one Session has at most one in-flight Agent Run (AS-R2). State is discarded
-on connection close (AS-R8).
+Relationships: one connection has at most one in-flight Agent Run (AS-R2). Run/permission
+state is discarded on connection close (AS-R8); the workspace/session registry persists.
 
 ## Agent Run
 
-One `query()` invocation driven by one user prompt.
+One `query()` invocation driven by one user prompt against the active session.
 
-| Attribute        | Type                  | Description                                           |
-| ---------------- | --------------------- | ----------------------------------------------------- |
-| `prompt`         | text                  | The user turn that started the run                    |
-| `projectPath`    | text (path)           | SDK `cwd`; the project directory                      |
-| `permissionMode` | enum `PermissionMode` | Mode the run started in (mutable mid-run)             |
-| state            | enum                  | Streaming → Complete \| Errored \| Aborted (see spec) |
+| Attribute        | Type                  | Description                                                             |
+| ---------------- | --------------------- | ----------------------------------------------------------------------- |
+| `prompt`         | text                  | The user turn that started the run                                      |
+| `cwd`            | text (path)           | SDK `cwd`; the active workspace's directory                             |
+| `resume`         | text (UUID) \| none   | Existing session id to continue; none for a pending session's first run |
+| `permissionMode` | enum `PermissionMode` | Mode the run started in (mutable mid-run)                               |
+| `sessionId`      | text (UUID)           | Reported from the run's `init` message; binds pending sessions (AS-R10) |
+| state            | enum                  | Streaming → Complete \| Errored \| Aborted (see spec)                   |
 
 Relationships: produces a stream of wire events; gates sensitive tools via Permission
 Requests (permission-gateway domain).

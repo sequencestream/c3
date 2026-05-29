@@ -16,26 +16,48 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 
 ## Client → Server (`ClientToServer`)
 
-| type                  | fields                                             | meaning                                                                                                                     |
-| --------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `user_prompt`         | `text: string`                                     | New user turn. Aborts any in-flight run, then starts a new agent run.                                                       |
-| `permission_response` | `requestId: string`, `decision: 'allow' \| 'deny'` | Answer to a prior `permission_request`.                                                                                     |
-| `set_mode`            | `mode: PermissionMode`                             | Change permission mode. Applies to the live run immediately if one is in flight; otherwise takes effect on the next prompt. |
-| `ping`                | —                                                  | Keepalive.                                                                                                                  |
+| type                  | fields                                             | meaning                                                                                                                            |
+| --------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `user_prompt`         | `text: string`                                     | New user turn for the **active session**. Aborts any in-flight run, then starts a new agent run.                                   |
+| `permission_response` | `requestId: string`, `decision: 'allow' \| 'deny'` | Answer to a prior `permission_request`.                                                                                            |
+| `set_mode`            | `mode: PermissionMode`                             | Change the **active session's** permission mode (per-session, persisted). Applies to the live run immediately if one is in flight. |
+| `add_workspace`       | `path: string`                                     | Register a project directory as a workspace.                                                                                       |
+| `remove_workspace`    | `path: string`                                     | Unregister a workspace (does not delete its sessions on disk).                                                                     |
+| `list_sessions`       | `workspacePath: string`                            | Request a workspace's session list (server replies with `sessions`).                                                               |
+| `create_session`      | `workspacePath: string`                            | Create a new pending session and make it active.                                                                                   |
+| `select_session`      | `workspacePath: string`, `sessionId: string`       | Make a session active; server replies with `session_selected` (history + mode).                                                    |
+| `rename_session`      | `workspacePath`, `sessionId`, `title: string`      | Rename a session's title.                                                                                                          |
+| `delete_session`      | `workspacePath: string`, `sessionId: string`       | Delete a session and its transcript from disk.                                                                                     |
+| `ping`                | —                                                  | Keepalive.                                                                                                                         |
 
 ## Server → Client (`ServerToClient`)
 
-| type                 | fields                                             | meaning                                                                                             |
-| -------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `ready`              | `mode: PermissionMode`                             | Handshake complete; carries the current mode.                                                       |
-| `mode_changed`       | `mode: PermissionMode`                             | Confirms a mode change.                                                                             |
-| `assistant_text`     | `text: string`                                     | A streamed text block from the model.                                                               |
-| `tool_use`           | `toolUseId`, `toolName`, `input: unknown`          | Model is calling a tool (already authorized when this fires).                                       |
-| `tool_result`        | `toolUseId`, `content: string`, `isError: boolean` | A tool finished; `content` is the flattened display string.                                         |
-| `permission_request` | `requestId`, `toolName`, `input: unknown`          | **Block point** — the run waits until a `permission_response` arrives (or the timeout auto-denies). |
-| `session_end`        | `reason: 'complete' \| 'error'`, `error?: string`  | The agent run ended.                                                                                |
-| `pong`               | —                                                  | Reply to `ping`.                                                                                    |
-| `echo`               | `text: string`                                     | Diagnostic echo.                                                                                    |
+| type                 | fields                                                                                     | meaning                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `ready`              | `workspaces: WorkspaceInfo[]`, `activeSessionId: string \| null`                           | Handshake complete; carries the workspace list and last active session.                             |
+| `workspaces`         | `workspaces: WorkspaceInfo[]`                                                              | Full workspace list, sorted by recent access (desc).                                                |
+| `sessions`           | `workspacePath: string`, `sessions: SessionInfo[]`                                         | Session list for one workspace, newest first.                                                       |
+| `session_selected`   | `workspacePath`, `sessionId`, `title`, `mode: PermissionMode`, `history: TranscriptItem[]` | A session became active; carries its mode and replayed history.                                     |
+| `session_started`    | `clientId: string`, `sessionId: string`                                                    | Binds a pending session's client id to its real SDK session id.                                     |
+| `mode_changed`       | `mode: PermissionMode`                                                                     | Confirms the active session's mode change.                                                          |
+| `assistant_text`     | `text: string`                                                                             | A streamed text block from the model.                                                               |
+| `tool_use`           | `toolUseId`, `toolName`, `input: unknown`                                                  | Model is calling a tool (already authorized when this fires).                                       |
+| `tool_result`        | `toolUseId`, `content: string`, `isError: boolean`                                         | A tool finished; `content` is the flattened display string.                                         |
+| `permission_request` | `requestId`, `toolName`, `input: unknown`                                                  | **Block point** — the run waits until a `permission_response` arrives (or the timeout auto-denies). |
+| `session_end`        | `reason: 'complete' \| 'error'`, `error?: string`                                          | The agent run ended.                                                                                |
+| `error`              | `message: string`                                                                          | A requested operation failed (bad path, missing session, etc.).                                     |
+| `pong`               | —                                                                                          | Reply to `ping`.                                                                                    |
+
+## Workspace & session types
+
+- **`WorkspaceInfo`** — `{ path, name, lastAccessed }`. A registered project directory.
+- **`SessionInfo`** — `{ sessionId, title, lastModified, mode }`. A session in a workspace.
+- **`TranscriptItem`** — replayed history item: `user` / `assistant` / `tool_use` /
+  `tool_result`, mirroring the live render kinds.
+- **Pending session id** — `PENDING_SESSION_PREFIX` (`pending:`) prefixes a not-yet-started
+  session's id until `session_started` binds it to a real SDK id.
+
+See the [session-registry spec](../../domains/core/session-registry/spec.md).
 
 ## PermissionMode
 

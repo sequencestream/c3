@@ -123,6 +123,206 @@ header h1 {
   background: rgba(239, 68, 68, 0.12);
 }
 
+/* 面包屑：当前工作区 › 当前 session */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-title-sm);
+  min-width: 0;
+}
+.crumb-ws {
+  color: var(--c-text-muted);
+  font-weight: 500;
+}
+.crumb-sep {
+  color: var(--c-text-disabled);
+}
+.crumb-session {
+  color: var(--c-text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50vw;
+}
+
+/* ============ 主体：侧边栏 + 内容（规范 3.2 / 3.3） ============ */
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 左侧工作区 / session 侧边栏 */
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--c-panel);
+  border-right: 1px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-head {
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 var(--sp-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--c-border);
+}
+.sidebar-title {
+  font-size: var(--fs-badge);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--c-text-muted);
+}
+.ws-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-2);
+}
+.empty-hint {
+  font-size: var(--fs-caption);
+  color: var(--c-text-disabled);
+  padding: var(--sp-3);
+  margin: 0;
+}
+.empty-hint.sub {
+  padding: var(--sp-1) var(--sp-3) var(--sp-2) var(--sp-6);
+}
+
+/* 小图标按钮（侧边栏操作），不继承主按钮的渐变样式 */
+.icon-btn {
+  height: 22px;
+  min-width: 22px;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--c-text-muted);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-code);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--c-hover-strong);
+  color: var(--c-text);
+  filter: none;
+  transform: none;
+}
+
+.ws {
+  margin-bottom: var(--sp-1);
+}
+.ws-row {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+.ws-row:hover {
+  background: var(--c-hover);
+}
+.ws-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 30px;
+  padding: 0 var(--sp-2);
+  background: transparent;
+  color: var(--c-text);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  cursor: pointer;
+}
+.ws-toggle:hover {
+  filter: none;
+  transform: none;
+}
+.ws-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-actions {
+  display: none;
+  flex-shrink: 0;
+  padding-right: var(--sp-1);
+}
+.ws-row:hover .ws-actions {
+  display: inline-flex;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+  height: 28px;
+  padding: 0 var(--sp-2) 0 var(--sp-6);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--c-text-muted);
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.session:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
+}
+.session.active {
+  background: var(--c-primary-soft);
+  color: var(--c-text);
+}
+.session.pending .session-title {
+  font-style: italic;
+  color: var(--c-purple-text);
+}
+.session-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-actions {
+  display: none;
+  flex-shrink: 0;
+}
+.session:hover .session-actions {
+  display: inline-flex;
+}
+
+.empty-main {
+  margin: auto;
+  color: var(--c-text-disabled);
+  font-size: var(--fs-body);
+}
+
 /* ============ 对话区域（规范 3.4） ============ */
 main {
   flex: 1;

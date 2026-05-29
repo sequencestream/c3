@@ -39,23 +39,33 @@ export interface RunHandle {
 
 export interface RunOptions {
   prompt: string
-  projectPath: string
+  /** Working directory for this run — the active workspace's path. */
+  cwd: string
   signal: AbortSignal
   /** Permission mode to start the query in. */
   permissionMode: PermissionMode
+  /**
+   * Resume an existing SDK session by id. Omit for the first prompt of a new
+   * session; the session id is reported via `onSessionId` once it exists.
+   */
+  resume?: string
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
+  /** Called once with the SDK session id (from the `init` system message). */
+  onSessionId?: (sessionId: string) => void
 }
 
 export async function runClaude(opts: RunOptions): Promise<void> {
-  const { prompt, projectPath, signal, permissionMode, send, onStart } = opts
+  const { prompt, cwd, signal, permissionMode, resume, send, onStart, onSessionId } = opts
+  let reportedSessionId = false
 
   const claudePath = findClaudeExecutable()
   const q = query({
     prompt,
     options: {
-      cwd: projectPath,
+      cwd,
+      ...(resume ? { resume } : {}),
       // Don't inherit user/project/local settings (hooks, allow rules, etc.).
       // We want every tool to flow through canUseTool below.
       settingSources: [],
@@ -102,6 +112,15 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   try {
     for await (const m of q) {
       if (signal.aborted) break
+      // The `init` system message (and `result`) carries the session id. Report
+      // it once so the caller can bind a pending session and resume next turn.
+      if (!reportedSessionId) {
+        const sid = (m as { session_id?: unknown }).session_id
+        if (typeof sid === 'string' && sid) {
+          reportedSessionId = true
+          onSessionId?.(sid)
+        }
+      }
       // Map SDK messages to wire protocol
       if (m.type === 'assistant') {
         const content = (m as { message?: { content?: unknown[] } }).message?.content

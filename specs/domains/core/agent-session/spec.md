@@ -7,9 +7,14 @@ turns a user prompt into a `query()` run, streams the run's activity back to the
 gates sensitive tools through the [permission-gateway](../permission-gateway/spec.md), and
 lets the user steer the run via permission mode and interruption.
 
-**Scope:** run lifecycle (start, stream, end, abort), permission-mode policy, and faithful
-mapping of SDK messages to wire events. **Boundary:** it does not decide individual
-permissions (gateway) and does not render UI (web-console).
+The run's context — working directory (`cwd`), starting permission mode, and the `resume`
+session id — comes from the [session-registry](../session-registry/spec.md): a run executes
+against the **active session**.
+
+**Scope:** run lifecycle (start, stream, end, abort), permission-mode policy, session
+continuity (`resume`), and faithful mapping of SDK messages to wire events. **Boundary:** it
+does not decide individual permissions (gateway), does not manage the workspace/session
+registry (session-registry), and does not render UI (web-console).
 
 ## Core entities
 
@@ -23,17 +28,18 @@ See [models.md](models.md).
 
 ## Business rules
 
-| ID    | Rule                                                                                                                                                                                                                                                                         |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AS-R1 | A `user_prompt` starts a new Agent Run with the session's current permission mode.                                                                                                                                                                                           |
-| AS-R2 | At most one Agent Run is in flight per session. A new `user_prompt` **aborts** the current run before starting the next (AS-R6).                                                                                                                                             |
-| AS-R3 | Permission mode persists for the life of the session. It does not reset between prompts.                                                                                                                                                                                     |
-| AS-R4 | A `set_mode` applies to the in-flight run immediately if one exists; otherwise it takes effect on the next run. The change is confirmed with `mode_changed`.                                                                                                                 |
-| AS-R5 | The mode determines which tool calls are sensitive and thus reach the gateway. `bypassPermissions` authorizes auto-execution of all tools; `acceptEdits` auto-accepts edit-class tools; `default`/`auto`/`plan` route sensitive calls to the gateway per the SDK classifier. |
-| AS-R6 | Aborting a run interrupts the underlying `query()`. A run already finished or not yet streaming is interrupted harmlessly (no crash).                                                                                                                                        |
-| AS-R7 | A run ends with exactly one terminal outcome: `session_end` with `reason: 'complete'` (the SDK produced a result) or `reason: 'error'` (an exception).                                                                                                                       |
-| AS-R8 | Closing the connection aborts the in-flight run and discards session state.                                                                                                                                                                                                  |
-| AS-R9 | Only the model's text blocks, tool-use blocks, and tool-result blocks are mapped to the wire; other SDK message kinds are ignored.                                                                                                                                           |
+| ID     | Rule                                                                                                                                                                                                                                                                         |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AS-R1  | A `user_prompt` starts a new Agent Run against the active session, with that session's `cwd`, permission mode, and (for an existing session) `resume` id.                                                                                                                    |
+| AS-R2  | At most one Agent Run is in flight per connection. A new `user_prompt`, or switching the active session, **aborts** the current run before starting the next (AS-R6).                                                                                                        |
+| AS-R3  | Permission mode is **per session** (owned by session-registry). A run starts in the active session's mode; `set_mode` changes only that session's mode.                                                                                                                      |
+| AS-R10 | A run reports its SDK session id (from the `init` message) so a pending session binds to a real id and subsequent prompts `resume` it. A resumed run keeps the same id; a new one is bound on first report.                                                                  |
+| AS-R4  | A `set_mode` applies to the in-flight run immediately if one exists; otherwise it takes effect on the next run. The change is confirmed with `mode_changed`.                                                                                                                 |
+| AS-R5  | The mode determines which tool calls are sensitive and thus reach the gateway. `bypassPermissions` authorizes auto-execution of all tools; `acceptEdits` auto-accepts edit-class tools; `default`/`auto`/`plan` route sensitive calls to the gateway per the SDK classifier. |
+| AS-R6  | Aborting a run interrupts the underlying `query()`. A run already finished or not yet streaming is interrupted harmlessly (no crash).                                                                                                                                        |
+| AS-R7  | A run ends with exactly one terminal outcome: `session_end` with `reason: 'complete'` (the SDK produced a result) or `reason: 'error'` (an exception).                                                                                                                       |
+| AS-R8  | Closing the connection aborts the in-flight run and discards session state.                                                                                                                                                                                                  |
+| AS-R9  | Only the model's text blocks, tool-use blocks, and tool-result blocks are mapped to the wire; other SDK message kinds are ignored.                                                                                                                                           |
 
 ## States & transitions
 
@@ -41,9 +47,9 @@ See [models.md](models.md).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle: connection open (ready, mode=default)
+    [*] --> Idle: connection open (ready) + active session set
     Idle --> Running: user_prompt
-    Running --> Running: user_prompt (abort old, start new)
+    Running --> Running: user_prompt / switch session (abort old, start new)
     Running --> Idle: session_end
     Idle --> [*]: connection close
     Running --> [*]: connection close (abort run)
@@ -77,9 +83,11 @@ The exact classification is owned by the SDK; c3 selects the mode and surfaces i
 
 ## Domain events (wire)
 
-Emits `ready`, `mode_changed`, `assistant_text`, `tool_use`, `tool_result`,
-`session_end`. Consumes `user_prompt`, `set_mode`, `ping`. Forwards
-`permission_request` on behalf of the gateway. Shapes in the
+Emits `mode_changed`, `assistant_text`, `tool_use`, `tool_result`, `session_end`. Consumes
+`user_prompt`, `set_mode`, `ping`. Forwards `permission_request` on behalf of the gateway.
+Reports the run's SDK session id to session-registry (which emits `session_started`).
+Workspace/session events (`ready`, `workspaces`, `sessions`, `session_selected`) belong to
+[session-registry](../session-registry/spec.md). Shapes in the
 [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 
 ## Interactions

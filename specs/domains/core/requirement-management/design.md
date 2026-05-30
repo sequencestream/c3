@@ -9,21 +9,25 @@ view to `web/src/`.
 **Reuse baseline.** Almost everything rides on existing machinery: the runtime registry +
 `emit`/viewers + background runs (`runs.ts`); the chat stream and `user_prompt`; the permission
 gateway for the save confirmation; `select_session` for the dev back-link. The genuinely new
-parts are only three: the **SQLite layer**, the **read-only communication run variant +
-`save_requirements` tool**, and the **requirement frontend**.
+parts are: the **SQLite layer**, the **read-only communication run variant + `save_requirements`
+tool**, the **requirement frontend**, and the **automation orchestrator** (state machine +
+completion judge + git helper) layered on the same runtime/launcher/viewer machinery.
 
 ## Module split
 
-| Concern                      | File                                   | Notes                                                                        |
-| ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
-| SQLite driver adapter        | `server/src/requirements/db.ts`        | Cross-runtime: `node:sqlite` vs `bun:sqlite`; minimal synchronous API        |
-| Ledger operations            | `server/src/requirements/store.ts`     | Requirement CRUD, dependency aggregation, communication-session map          |
-| Communication system prompt  | `server/src/requirements/prompt.ts`    | Read-only analyst prompt, injected as `appendSystemPrompt`                   |
-| `save_requirements` MCP tool | `server/src/requirements/save-tool.ts` | `createSdkMcpServer` exposing the confirmed-save tool                        |
-| Run variant                  | `server/src/claude.ts`                 | `runClaude` gains `appendSystemPrompt`/`disallowedTools`/`mcpServers`/`gate` |
-| Runtime kind + launcher      | `server/src/runs.ts`                   | `SessionRuntime.kind: 'normal' \| 'requirement'`; shared `launchRun`         |
-| WS branches + orchestration  | `server/src/server.ts`                 | Five new branches; communication-session viewer management                   |
-| Hidden-set list filter       | `server/src/sessions.ts`               | `listWorkspaceSessions` excludes the project's hidden set                    |
+| Concern                      | File                                    | Notes                                                                                                                          |
+| ---------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| SQLite driver adapter        | `server/src/requirements/db.ts`         | Cross-runtime: `node:sqlite` vs `bun:sqlite`; minimal synchronous API                                                          |
+| Ledger operations            | `server/src/requirements/store.ts`      | Requirement CRUD, dependency aggregation, communication-session map                                                            |
+| Communication system prompt  | `server/src/requirements/prompt.ts`     | Read-only analyst prompt, injected as `appendSystemPrompt`                                                                     |
+| `save_requirements` MCP tool | `server/src/requirements/save-tool.ts`  | `createSdkMcpServer` exposing the confirmed-save tool                                                                          |
+| Run variant                  | `server/src/claude.ts`                  | `runClaude` gains `appendSystemPrompt`/`disallowedTools`/`mcpServers`/`gate`; `askOneShot` (tool-less one-shot, for the judge) |
+| Runtime kind + launcher      | `server/src/runs.ts`                    | `SessionRuntime.kind: 'normal' \| 'requirement'`; shared `launchRun`                                                           |
+| WS branches + orchestration  | `server/src/server.ts`                  | Eight new branches; communication-session viewer management; `runDevTurn` + `broadcastAutomation`                              |
+| Hidden-set list filter       | `server/src/sessions.ts`                | `listWorkspaceSessions` excludes the project's hidden set                                                                      |
+| Automation orchestrator      | `server/src/requirements/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                             |
+| Completion judge             | `server/src/requirements/judge.ts`      | `judgeCompletion` — builds the prompt, runs `askOneShot`, parses `done`/`in_progress`/`stuck`                                  |
+| Git helper                   | `server/src/git.ts`                     | `gitDiffStat` + `commitAndPush` (scoped via `git -C`); never rejects, returns codes/errors                                     |
 
 ## SQLite layer (`db.ts`)
 
@@ -50,15 +54,20 @@ parts are only three: the **SQLite layer**, the **read-only communication run va
 ## Schema (`PRAGMA user_version` migrations)
 
 - `requirements` — the ledger (`id`, `project_path`, `title`, `content`, `priority`, `status`,
-  `module`, `last_dev_session_id`, `created_at`, `updated_at`), indexed by `(project_path,
-status)`. `module` is `TEXT NOT NULL DEFAULT ''`.
+  `module`, `last_dev_session_id`, `automate`, `created_at`, `updated_at`, `completed_at`), indexed
+  by `(project_path, status)`. `module` is `TEXT NOT NULL DEFAULT ''`; `automate` is
+  `INTEGER NOT NULL DEFAULT 0`.
 - `requirement_deps` — `(requirement_id, depends_on_id)` edges.
 - `requirement_chats` — one table doubling as the **per-project current communication session**
   map and the **hidden set**: `session_id` (PK, may be a `pending:` id), `project_path`,
   `is_current` (0/1, at most one per project), `updated_at`. The full set of rows for a project is
   the hidden set; the `is_current=1` row is the current communication session.
 
-**Schema version & migration (v1 → v2).** `SCHEMA_VERSION` is `2`. The fresh-create `SCHEMA`
+**Schema version (current: v4).** `SCHEMA_VERSION` is `4`. Each bump adds one idempotent
+`ensureColumn` after `exec(SCHEMA)`: v2 `module`, v3 `completed_at` (nullable), v4 `automate`
+(`INTEGER NOT NULL DEFAULT 0`). Same key-off-column-presence pattern as below.
+
+**Schema version & migration (v1 → v2).** The fresh-create `SCHEMA`
 already declares `requirements.module`. For pre-existing dbs (v1, no `module` column), `db()`
 runs an **idempotent column migration** after `exec(SCHEMA)` and before writing `user_version`:
 `ensureColumn(d, 'requirements', 'module', "TEXT NOT NULL DEFAULT ''")` checks
@@ -76,8 +85,9 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   hidden filtering breaks.
 - Requirements: `listRequirements(projectPath, status?)` (with `dependsOn` aggregation),
   `insertRequirements(projectPath, items)` (transactional batch, uuid, status `todo`; persists
-  `module` as `it.module ?? ''`), `updateStatus`, `setLastDevSession`, `updateRequirement`,
-  `getRequirement`. The internal `Row`/`hydrate` carry `module` so every read path returns it;
+  `module` as `it.module ?? ''`, `automate` defaults to `0`), `updateStatus`, `setLastDevSession`,
+  `setAutomate(id, automate)`, `updateRequirement`, `getRequirement`. The internal `Row`/`hydrate`
+  carry `module` + `automate` (mapped to boolean) so every read path returns them;
   `updateRequirement` does not yet patch `module` (out of scope, no schema blocker).
 - Communication session (single table): `getChatSession(projectPath)`
   (`is_current=1`), `setChatSession` (clear the project's `is_current` then upsert the new row as
@@ -173,6 +183,44 @@ crosses projects.
 4. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.
 
+## Automation orchestrator (`automation.ts` + `git.ts` + `judge.ts`)
+
+A per-project, in-memory state machine driven entirely by message handlers and an internal viewer
+— no polling, no cron. One `AutomationController` per project lives in a module map; its `status`
+(the `AutomationStatus` model) is the single source of truth, broadcast on every change.
+
+- **Wire branches (`server.ts`).** `set_requirement_automate` → `store.setAutomate` + broadcast
+  `requirements`. `start_automation` → `startAutomation(proj, hooks, now)` (no-op if already
+  running) then broadcast the status. `stop_automation` → `stopAutomation(proj)` (aborts the live
+  run). Entering the requirement view (`open_requirement_chat`) also pushes the current
+  `automation_status` so a fresh connection restores the button state.
+- **Dependency injection.** `automation.ts` imports the store/judge/git directly but takes server
+  wiring via `AutomationHooks`: `runDevTurn` (the only piece bound to the WS-server closure),
+  `broadcastRequirements`, and `emitStatus` (→ `broadcastAutomation`). This keeps the state machine
+  unit-testable with fakes (see `automation.test.ts`).
+- **`runDevTurn` (server closure).** Ensures a `normal` runtime for the requirement (fresh
+  `pending:` id, or resume an existing id for the "继续" continuation), registers an **internal
+  viewer** on it, and launches/resumes via the shared `launchRun`. The viewer captures the last
+  `assistant_text` and resolves the turn on: `turn_end` → `complete`/`error`; `permission_request`
+  → `blocked` (it also `stopRun`s the otherwise-hanging run, since no human is watching — RM-A9);
+  the controller's abort → `blocked('aborted')`. A live team lead (rare for `/sdd-lite`) is fed via
+  `pushInput` instead of a fresh launch.
+- **Main loop (`AutomationController.run`).** `pickNext` selects the best eligible requirement
+  (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
+  each, `develop()` loops: run a dev turn → on first turn `setLastDevSession` + `updateStatus(in_progress)`
+  - broadcast → on `complete`, `gitDiffStat` + `judgeCompletion`; `done` → `commitAndPush` then
+    `updateStatus(done)` + push id to `completedIds`; `in_progress` → resume "继续" (cap
+    `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/`blocked`/push-fail → `fail(reason)` and stop the
+    whole loop (RM-A6). No eligible item → state `done` (RM-A7). Abort mid-run → state `idle`.
+- **Completion judge (`judge.ts`).** `judgeCompletion` builds a Chinese prompt (requirement + last
+  message + `git diff --stat`) demanding a strict `{"verdict","reason"}` JSON, runs it through the
+  tool-less `askOneShot` (default-agent env/model via `resolveSessionLaunch(null)`), and tolerantly
+  parses the first `{…}`; an unparseable answer is treated as `stuck` (fail-safe, RM-A4).
+- **Git (`git.ts`).** `gitDiffStat` and `commitAndPush` shell out via `execFile('git', ['-C', cwd, …])`
+  and never reject (they return exit codes/stderr). `commitAndPush` stages all, treats an empty
+  working tree as a successful no-op, commits `feat: <title>`, and pushes — any non-zero step
+  returns `{ ok:false, error }` which becomes the orchestrator's stop reason (RM-A5/A6).
+
 ## List & back-link
 
 - `list_requirements` / `update_requirement_status` read/write the store and reply `requirements`.
@@ -199,16 +247,21 @@ the list) (RM-R12).
   if `viewMode==='requirements'`, re-send `open_requirement_chat`; `viewMode`/`requirementsProject`
   are also mirrored to `localStorage` to survive a hard refresh. No new server message is needed —
   the existing resume branch suffices.
-- **Layout:** left `RequirementList.vue` (status filter; per-row `MM/DD` date prefix — `completedAt`
-  for done items, else `createdAt`, both zero-padded — then title/priority badge/status/
+- **Layout:** left `RequirementList.vue` (header: title + an **automation** button [▶ / ■ stop,
+  highlighted while running, red on error] + status filter, with a status line below showing the
+  current item or the stop reason; per row a leading **automate** checkbox, then `MM/DD` date prefix
+  — `completedAt` for done items, else `createdAt`, both zero-padded — title/priority badge/status/
   dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
   for launched, mark done/cancel for any); right **reuses** `ChatMessages` + `SessionStatusBar` +
-  `MessageInput` against the already-viewed communication session.
+  `MessageInput` against the already-viewed communication session. The checkbox emits
+  `set-automate`; the button emits `start-automation`/`stop-automation`.
 - **Save confirmation:** `PermissionPrompt.vue` adds a branch for
   `toolName==='mcp__c3__save_requirements'` rendering each proposed item as a card
   (title/priority/dependency) with Save/Cancel mapped to allow/deny.
 - **Requirement data:** `App.vue` holds `requirements: Record<projectPath, Requirement[]>`,
-  refreshed by the `requirements` message.
+  refreshed by the `requirements` message, and `automation: Record<projectPath, AutomationStatus>`,
+  refreshed by the `automation_status` message; `RequirementList` receives the current project's
+  status as the `automation` prop.
 
 ## Dependencies
 
@@ -217,5 +270,7 @@ the list) (RM-R12).
 - **agent-session** — the `requirement`-kind runtime and the shared `launchRun`.
 - **permission-gateway** — gates `save_requirements` via the existing `canUseTool` flow.
 - **session-registry** — its list filter consumes this domain's hidden set.
+- **git (local CLI)** — `automation.ts`'s commit/push on a verified `done` (`git.ts`).
+- **agent-session (one-shot)** — the completion judge runs `askOneShot` (tool-less SDK query).
 - **`@anthropic-ai/claude-agent-sdk`** — `appendSystemPrompt` preset, `disallowedTools`,
   `createSdkMcpServer` / `tool`.

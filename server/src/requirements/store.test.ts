@@ -174,12 +174,14 @@ describe('requirements CRUD', () => {
     expect(got?.title).toBe('Legacy') // historic row survives
     expect(got?.module).toBe('') // backfilled default
     expect(got?.completedAt).toBeNull() // new nullable column, null for historic rows
+    expect(got?.automate).toBe(false) // backfilled default (opt-in to automation)
 
     const cols = raw.all<{ name: string }>('PRAGMA table_info(requirements)')
     expect(cols.some((c) => c.name === 'module')).toBe(true)
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
+    expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(3)
+    expect(version?.user_version).toBe(4)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()

@@ -236,7 +236,13 @@ function onKey(e: KeyboardEvent) {
       :aria-pressed="voiceState === 'listening'"
       @click="toggleMic"
     >
-      🎤
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+        <rect x="2" y="8" width="2.4" height="8" rx="1.2" />
+        <rect x="6.4" y="5" width="2.4" height="14" rx="1.2" />
+        <rect x="10.8" y="2" width="2.4" height="20" rx="1.2" />
+        <rect x="15.2" y="5" width="2.4" height="14" rx="1.2" />
+        <rect x="19.6" y="8" width="2.4" height="8" rx="1.2" />
+      </svg>
     </button>
     <button v-if="locked" class="stop-btn" title="Stop the running turn" @click="emit('stop')">
       Stop

@@ -15,7 +15,7 @@ import { resolve } from 'node:path'
 import type { ProposedRequirement, Requirement, RequirementStatus } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from './db.js'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS requirements (
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS requirements (
   status          TEXT NOT NULL,
   module          TEXT NOT NULL DEFAULT '',
   last_dev_session_id TEXT,
+  automate        INTEGER NOT NULL DEFAULT 0,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL,
   completed_at    INTEGER
@@ -73,6 +74,8 @@ function db(): Db | null {
     ensureColumn(d, 'requirements', 'module', "TEXT NOT NULL DEFAULT ''")
     // v2 → v3: add nullable `completed_at` (historic rows stay null until re-marked done).
     ensureColumn(d, 'requirements', 'completed_at', 'INTEGER')
+    // v3 → v4: add `automate` (historic rows default to 0 — opt-in to automation).
+    ensureColumn(d, 'requirements', 'automate', 'INTEGER NOT NULL DEFAULT 0')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -120,6 +123,7 @@ interface Row {
   status: string
   module: string
   last_dev_session_id: string | null
+  automate: number
   created_at: number
   updated_at: number
   completed_at: number | null
@@ -146,6 +150,7 @@ function hydrate(d: Db, rows: Row[]): Requirement[] {
     status: r.status as RequirementStatus,
     dependsOn: byId.get(r.id) ?? [],
     lastDevSessionId: r.last_dev_session_id,
+    automate: r.automate === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
@@ -236,6 +241,17 @@ export function updateStatus(id: string, status: RequirementStatus): void {
     status,
     now,
     completedAt,
+    id,
+  )
+}
+
+/** Toggle a requirement's automation flag (whether the orchestrator may pick it). */
+export function setAutomate(id: string, automate: boolean): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE requirements SET automate=?, updated_at=? WHERE id=?',
+    automate ? 1 : 0,
+    Date.now(),
     id,
   )
 }

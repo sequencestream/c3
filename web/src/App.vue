@@ -11,6 +11,7 @@ import SessionStatusBar from './components/SessionStatusBar.vue'
 import RequirementList from './components/RequirementList.vue'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
+  AutomationStatus,
   PermissionMode,
   Requirement,
   RequirementStatus,
@@ -100,6 +101,12 @@ const requirements = ref<Record<string, Requirement[]>>({})
 
 const currentRequirements = computed<Requirement[]>(() =>
   requirementsProject.value ? (requirements.value[requirementsProject.value] ?? []) : [],
+)
+
+// Per-project automation-orchestrator status (server pushes `automation_status`).
+const automation = ref<Record<string, AutomationStatus>>({})
+const currentAutomation = computed<AutomationStatus | null>(() =>
+  requirementsProject.value ? (automation.value[requirementsProject.value] ?? null) : null,
 )
 
 const VIEW_MODE_KEY = 'c3.viewMode'
@@ -252,6 +259,9 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'requirements':
       requirements.value = { ...requirements.value, [msg.projectPath]: msg.items }
+      break
+    case 'automation_status':
+      automation.value = { ...automation.value, [msg.status.projectPath]: msg.status }
       break
     case 'user_text':
       add({ kind: 'user', text: msg.text })
@@ -464,6 +474,20 @@ function setRequirementStatus(requirementId: string, status: RequirementStatus) 
   client?.send({ type: 'update_requirement_status', requirementId, status })
 }
 
+function setRequirementAutomate(requirementId: string, automateOn: boolean) {
+  client?.send({ type: 'set_requirement_automate', requirementId, automate: automateOn })
+}
+
+function startAutomation() {
+  if (!requirementsProject.value) return
+  client?.send({ type: 'start_automation', projectPath: requirementsProject.value })
+}
+
+function stopAutomation() {
+  if (!requirementsProject.value) return
+  client?.send({ type: 'stop_automation', projectPath: requirementsProject.value })
+}
+
 function deleteSession(path: string, sessionId: string) {
   client?.send({ type: 'delete_session', workspacePath: path, sessionId })
 }
@@ -558,11 +582,15 @@ function listCommands() {
       v-if="viewMode === 'requirements' && requirementsProject"
       :project="requirementsProject"
       :requirements="currentRequirements"
+      :automation="currentAutomation"
       @filter="setRequirementFilter"
       @refine="refineRequirement"
       @start-dev="startDevelopment"
       @open-dev="openDevSession"
       @set-status="setRequirementStatus"
+      @set-automate="setRequirementAutomate"
+      @start-automation="startAutomation"
+      @stop-automation="stopAutomation"
     />
 
     <div class="content">

@@ -6,11 +6,12 @@
  * 动作(完善/启动开发/开发详情/标记状态)经事件上抛,由 App 统一发往服务端。
  */
 import { computed, ref } from 'vue'
-import type { Requirement, RequirementStatus } from '@ccc/shared/protocol'
+import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
 
 const props = defineProps<{
   project: string
   requirements: Requirement[]
+  automation: AutomationStatus | null
 }>()
 
 const emit = defineEmits<{
@@ -19,7 +20,34 @@ const emit = defineEmits<{
   'start-dev': [requirementId: string, hasUnfinishedDeps: boolean]
   'open-dev': [sessionId: string]
   'set-status': [requirementId: string, status: RequirementStatus]
+  'set-automate': [requirementId: string, automate: boolean]
+  'start-automation': []
+  'stop-automation': []
 }>()
+
+// Automation orchestrator UI state derived from the pushed status.
+const autoRunning = computed(() => props.automation?.state === 'running')
+const autoError = computed(() =>
+  props.automation?.state === 'error' ? (props.automation.error ?? '出错') : null,
+)
+// Short status line shown to the right of the automation button.
+const autoNote = computed<string>(() => {
+  const a = props.automation
+  if (!a) return ''
+  if (a.state === 'running') {
+    const cur = a.currentRequirementId
+    const title = cur ? (titleById.value[cur] ?? cur) : ''
+    return title ? `正在「${title}」` : '准备中…'
+  }
+  if (a.state === 'done')
+    return a.completedIds.length ? `✅ 已完成 ${a.completedIds.length} 项` : '✅ 无可自动化需求'
+  return ''
+})
+
+function toggleAutomation() {
+  if (autoRunning.value) emit('stop-automation')
+  else emit('start-automation')
+}
 
 // Status filter. `null` = 全部. Local UI state; changing it asks App to refetch.
 const STATUS_LABELS: Record<RequirementStatus, string> = {
@@ -89,21 +117,44 @@ function datePrefix(r: Requirement): string {
   <section class="req-list">
     <div class="req-list-head">
       <span class="req-list-title">需求列表</span>
-      <select
-        class="req-filter"
-        :value="filter ?? ''"
-        @change="
-          setFilter((($event.target as HTMLSelectElement).value as RequirementStatus) || null)
-        "
-      >
-        <option v-for="f in FILTERS" :key="f.label" :value="f.value ?? ''">{{ f.label }}</option>
-      </select>
+      <div class="req-head-right">
+        <button
+          class="req-btn auto-btn"
+          :class="{ running: autoRunning, error: !!autoError }"
+          :title="
+            autoRunning
+              ? '停止自动化进程'
+              : '启动自动化进程:按优先级与依赖逐个完成已勾选自动化的需求'
+          "
+          @click="toggleAutomation"
+        >
+          {{ autoRunning ? '■ 停止自动化' : '▶ 自动化' }}
+        </button>
+        <select
+          class="req-filter"
+          :value="filter ?? ''"
+          @change="
+            setFilter((($event.target as HTMLSelectElement).value as RequirementStatus) || null)
+          "
+        >
+          <option v-for="f in FILTERS" :key="f.label" :value="f.value ?? ''">{{ f.label }}</option>
+        </select>
+      </div>
     </div>
+    <div v-if="autoError" class="auto-status error" :title="autoError">⚠ {{ autoError }}</div>
+    <div v-else-if="autoNote" class="auto-status">{{ autoNote }}</div>
     <div class="req-items">
       <p v-if="requirements.length === 0" class="req-empty">暂无需求。在右侧与助手沟通后保存。</p>
       <div v-for="r in displayRequirements" :key="r.id" class="req-item" :class="r.status">
         <div class="req-item-main">
           <div class="req-item-head">
+            <label class="req-auto" title="勾选后纳入自动化进程">
+              <input
+                type="checkbox"
+                :checked="r.automate"
+                @change="emit('set-automate', r.id, ($event.target as HTMLInputElement).checked)"
+              />
+            </label>
             <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
             <span class="req-date">{{ datePrefix(r) }}</span>
             <span class="req-title" :title="r.content">{{ r.title }}</span>

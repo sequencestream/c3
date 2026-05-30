@@ -17,24 +17,33 @@ It has three moving parts:
    slash commands (ADR 0007).
 3. **Launch development** — turning a `todo` requirement into a background normal session that
    runs `/sdd-lite`, with a back-link to that development session.
+4. **Automation orchestrator** — an opt-in, per-project background loop that develops
+   `automate`-flagged requirements one at a time (by priority then dependency order), verifies
+   true completion from the dev session's last message + the working-tree diff, commits & pushes,
+   then advances — stopping with a recorded reason on any abnormal end (RM-A1–RM-A9).
 
 **Scope:** the requirement ledger and its CRUD; the read-only communication agent and its
 `save_requirements` confirmation; refine (restart communication on one item); launch development
 (background `/sdd-lite`); development back-link; the `draft→todo→in_progress→done/cancelled`
 status machine; dependency recording and unmet-dependency warnings; hiding communication sessions
-from the normal list.
+from the normal list; the per-requirement automation flag and the automation orchestrator
+(completion judging, commit/push, sequencing).
 
 **Boundary:** it does **not** define the agent run loop (agent-session) or the permission flow
-(permission-gateway) — it reuses both. It owns no permission state and never auto-completes a
-requirement (the development run finishing does not change status; the user marks `done`).
+(permission-gateway) — it reuses both. It owns no permission state. **Manual** launch development
+never auto-completes a requirement (the development run finishing does not change status; the user
+marks `done`, RM-R9). The **automation orchestrator** is the single, explicit, user-opt-in
+exception: it marks a requirement `done` only after an independent completion judge confirms it and
+the change is committed & pushed (RM-A5).
 
 ## Core entities
 
-| Entity                 | Description                                                                                                                                        |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Requirement            | A ledger item: `title`, `content`, `priority` (P0–P3), `module` (模块名称), `status`, `dependsOn[]`, `lastDevSessionId`, scoped to a `projectPath` |
-| Requirement Dependency | A directed `requirement → depends-on` edge within one project (display + warning only; no topological enforcement in v1)                           |
-| Communication Session  | The per-project hidden agent session used to refine requirements; a real SDK session kept out of the normal list (the hidden set)                  |
+| Entity                  | Description                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requirement             | A ledger item: `title`, `content`, `priority` (P0–P3), `module` (模块名称), `status`, `dependsOn[]`, `lastDevSessionId`, scoped to a `projectPath`  |
+| Requirement Dependency  | A directed `requirement → depends-on` edge within one project (display + warning only; no topological enforcement in v1)                            |
+| Communication Session   | The per-project hidden agent session used to refine requirements; a real SDK session kept out of the normal list (the hidden set)                   |
+| Automation Orchestrator | A per-project background loop (one at a time) that develops `automate` requirements, judges completion, commits/pushes, and sequences (RM-A1–RM-A9) |
 
 See [models.md](models.md).
 
@@ -52,6 +61,16 @@ See [models.md](models.md).
   the communication agent from the item's title/content (e.g. 认证、会话、需求管理). Optional at
   proposal time and `''` when unidentified or for historical rows; lays the data groundwork for
   later module-based organization/filtering/display (RM-R14).
+- **Automation flag (`automate`).** A per-requirement, user-toggled boolean (`false` by default).
+  Only `automate` requirements are candidates for the automation orchestrator (RM-A1).
+- **Automation orchestrator.** A per-project, in-memory background loop. **Eligibility:** a
+  requirement is eligible when `automate` AND `status ∈ {todo, in_progress}` AND every known
+  `dependsOn` item is `done`. It develops the highest-priority (P0→P3, then oldest) eligible item,
+  starting a **fresh** `/sdd-lite` dev session each time. **Completion judge:** because `/sdd-lite`
+  is checkpoint-driven, a turn ending does not mean "done" — a fresh, tool-less judge reads the
+  dev session's last assistant message + the working-tree `git diff` and returns `done` /
+  `in_progress` / `stuck` (RM-A4). **Continuation:** `in_progress` resumes the same session with
+  "继续" up to a cap (clearing checkpoints); the cap prevents an infinite loop (RM-A8).
 
 ## Business rules
 
@@ -72,6 +91,20 @@ See [models.md](models.md).
 | RM-R13 | The development back-link opens the `lastDevSessionId` session (reusing `select_session`). If that session no longer exists, the user gets a friendly prompt (with restart/cancel options), not a crash.                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | RM-R14 | Each requirement carries a `module` (模块名称). The communication agent **infers** it from the item's title/content (scheme a; future-extensible to the project's module structure) and passes it per item to `save_requirements`; a missing/blank `module` persists as `''` (the agent is never blocked on it). The ledger column is `TEXT NOT NULL DEFAULT ''`; old dbs migrate via an idempotent `ALTER TABLE … ADD COLUMN` (schema v1→v2) with historical rows defaulting to `''` (no backfill). All read paths return `module`. This requirement only produces the data; module-based display/filtering is out of scope. |
 
+### Automation orchestrator
+
+| ID    | Rule                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RM-A1 | Each requirement carries an `automate` flag (`INTEGER NOT NULL DEFAULT 0`; schema v3→v4 idempotent `ALTER TABLE … ADD COLUMN`, historic rows default to `0`). It is user-toggled (a per-row checkbox) and gates orchestrator eligibility — nothing else reads it.                                                                                         |
+| RM-A2 | At most **one** orchestrator runs per project. `start_automation` while one is `running` is a no-op (returns the live status). The orchestrator is in-memory; it does **not** survive a server restart (state resets to `idle`).                                                                                                                          |
+| RM-A3 | The orchestrator develops eligible requirements **one at a time**, ordered **priority (P0→P3) then oldest-first**. Eligible = `automate` AND `status ∈ {todo, in_progress}` AND every known `dependsOn` item is `done`. An unknown dependency id (cross-project/deleted) does not block. Each requirement starts a **fresh** `/sdd-lite` session.         |
+| RM-A4 | After a dev turn ends normally, an independent, **tool-less** completion judge reads the requirement + the dev session's last assistant message + the working-tree `git diff` and returns `done` / `in_progress` / `stuck`. The turn ending alone is **never** taken as completion (`/sdd-lite` is checkpoint-driven).                                    |
+| RM-A5 | On `done`: the orchestrator **commits all changes and pushes** (`feat: <title>`), then marks the requirement `done` and advances. This is the **only** auto-`done` path (the explicit exception to RM-R9). A no-op commit (no file changes) is treated as success.                                                                                        |
+| RM-A6 | The orchestrator **stops** (state `error`, reason recorded) on any abnormal end: the dev turn errored; it **blocked on a permission** (a human is needed — see RM-A9); the judge returned `stuck`; the continuation cap was exceeded (RM-A8); or commit/push failed. The reason is surfaced next to the automation button.                                |
+| RM-A7 | When no eligible requirement remains, the orchestrator finishes with state `done` (success). `stop_automation` aborts the current dev run and returns the orchestrator to `idle` (no error recorded).                                                                                                                                                     |
+| RM-A8 | A `in_progress` judge verdict resumes the **same** dev session with "继续" (to clear `/sdd-lite` checkpoints), up to a fixed cap per requirement; exceeding the cap is an abnormal stop (RM-A6).                                                                                                                                                          |
+| RM-A9 | The dev runs use the **system default permission mode** (not a forced bypass). Consequently a tool that needs authorization surfaces a permission request that no human is watching; the orchestrator treats this as a blocked/abnormal stop (RM-A6) rather than hanging. (Fully unattended runs require the user to pre-authorize via mode/allow rules.) |
+
 ## States & transitions
 
 ```mermaid
@@ -79,19 +112,22 @@ stateDiagram-v2
     [*] --> draft: (optional seed)
     draft --> todo: save_requirements (confirmed)
     [*] --> todo: save_requirements (confirmed)
-    todo --> in_progress: launch development
+    todo --> in_progress: launch development / automation pick
     in_progress --> in_progress: relaunch (dangling dev session)
     todo --> done: mark done
-    in_progress --> done: mark done
+    in_progress --> done: mark done / automation verified+committed
     todo --> cancelled: cancel
     in_progress --> cancelled: cancel
 ```
 
 - **Save → `todo`.** Confirmed `save_requirements` produces `todo` items (RM-R6).
 - **Launch → `in_progress`.** Sets `lastDevSessionId`; also re-allowed for an `in_progress`
-  item whose development session was deleted (RM-R8).
-- **Done / cancelled are manual.** The development run never moves status itself (RM-R9). Refine
-  does not change status (RM-R7); it may add/update items via `save_requirements`.
+  item whose development session was deleted (RM-R8). The automation orchestrator likewise sets
+  `in_progress` when it picks a requirement up (RM-A3).
+- **Done / cancelled are manual — except automation.** A **manual** development run never moves
+  status itself (RM-R9). The **automation orchestrator** is the one auto-`done` path: it marks
+  `done` only after the completion judge confirms it and the change is committed & pushed (RM-A5).
+  Refine does not change status (RM-R7); it may add/update items via `save_requirements`.
 - **`completedAt` tracks `done`.** Transitioning to `done` stamps `completedAt` with the current
   time; any transition out of `done` clears it back to null (RM-R9).
 
@@ -131,13 +167,23 @@ stateDiagram-v2
   gateway denies by default (RM-R2, ADR 0007).
 - **Silent-save (anti-scenario).** A `save_requirements` call must **never** persist without the
   user's allow — even if the system default mode is `bypassPermissions` (RM-R3/RM-R5).
-- **Auto-complete (anti-scenario).** A development run completing must **never** flip a
-  requirement to `done` (RM-R9).
+- **US-9 Automate a backlog.** The user checks the `automate` box on the requirements they want
+  built (RM-A1) and clicks the **automation** button in the list header. The orchestrator develops
+  them one by one in priority/dependency order; for each it runs `/sdd-lite`, judges true
+  completion, commits & pushes, and advances (RM-A3–A5). The header shows the current item live and,
+  on an abnormal end, the stop reason next to the button (RM-A6). Stop halts the loop (RM-A7).
+- **Auto-complete (anti-scenario).** A **manual** development run completing must **never** flip a
+  requirement to `done` (RM-R9). The automation orchestrator is the only auto-`done` path, and only
+  after a verified completion judge + a successful commit/push (RM-A5) — never on the bare turn end.
+- **Unattended-permission (anti-scenario).** Running under the system default mode, the
+  orchestrator must **never** hang silently on an unanswerable permission prompt: it stops with a
+  recorded reason instead (RM-A9).
 
 ## Domain events (wire)
 
 Consumes (new): `list_requirements`, `open_requirement_chat`, `refine_requirement`,
-`start_development`, `update_requirement_status`. Emits (new): `requirements`.
+`start_development`, `update_requirement_status`, `set_requirement_automate`, `start_automation`,
+`stop_automation`. Emits (new): `requirements`, `automation_status`.
 
 Reuses (existing): chat I/O is `user_prompt` (routed to the communication runtime) plus
 `session_selected` / `user_text` / `assistant_text` / `tool_use` / `tool_result` / `turn_end`;
@@ -159,7 +205,14 @@ development back-link is `select_session`. See the
 - **web-console** — renders the requirement list + reuses the chat components, the idea button,
   and a specialized render of the `save_requirements` confirmation.
 - **Claude Agent SDK** — the communication agent uses `disallowedTools`, an `appendSystemPrompt`
-  preset, and an in-process MCP server exposing `save_requirements`.
+  preset, and an in-process MCP server exposing `save_requirements`. The automation completion
+  judge runs a separate **tool-less one-shot** SDK query (`askOneShot`) that reasons purely over
+  the text it's given.
+- **agent-session (automation)** — the orchestrator reuses the shared launcher and the runtime
+  registry: it observes a dev run via an internal viewer to detect `turn_end` / `permission_request`
+  and capture the last assistant message, and resumes a session for the "继续" continuation.
+- **git (local)** — on a verified `done`, the orchestrator commits & pushes directly (a small
+  `server/src/git.ts` helper), so it can detect and report failure rather than trusting the agent.
 
 ## Data dictionary
 

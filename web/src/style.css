@@ -806,13 +806,15 @@ footer {
   pointer-events: none;
 }
 
-/* 语音输入麦克风按钮：方形图标按钮，与 56px 高的输入区对齐 */
+/* 语音输入声波按钮：方形图标按钮，与 56px 高的输入区对齐 */
 button.mic-btn {
   height: 56px;
   width: 56px;
   min-width: 56px;
   padding: 0;
-  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   color: var(--c-text-muted);
   border: 1px solid var(--c-border);
@@ -1398,6 +1400,11 @@ button.stop-btn:hover:not(:disabled) {
   font-size: var(--fs-title-sm);
   font-weight: 600;
 }
+.req-head-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
 .req-filter {
   background: var(--c-input);
   color: var(--c-text);
@@ -1405,6 +1412,41 @@ button.stop-btn:hover:not(:disabled) {
   border-radius: var(--radius-sm);
   padding: 2px 6px;
   font-size: var(--fs-caption);
+}
+/* 自动化按钮:运行中高亮,出错变红 */
+.auto-btn.running {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+.auto-btn.error {
+  border-color: var(--c-error);
+  color: var(--c-error);
+}
+/* 自动化状态行:标题栏下方一行,显示当前进度或错误原因 */
+.auto-status {
+  flex-shrink: 0;
+  padding: 4px var(--sp-3);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  border-bottom: 1px solid var(--c-border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auto-status.error {
+  color: var(--c-error);
+}
+/* 需求行的自动化勾选框 */
+.req-auto {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.req-auto input {
+  cursor: pointer;
+  margin: 0;
 }
 .req-items {
   flex: 1;

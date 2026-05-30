@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ClientToServer, ServerToClient } from '@ccc/shared/protocol'
+import type { AutomationStatus, ClientToServer, ServerToClient } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude, registerPermissionResolver, REQUIREMENT_DISALLOWED_TOOLS } from './claude.js'
 import { listCommands } from './commands.js'
@@ -51,12 +51,20 @@ import {
   isStoreAvailable,
   listRequirements,
   rebindChatSession,
+  setAutomate,
   setChatSession,
   setLastDevSession,
   updateStatus,
 } from './requirements/store.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
+import {
+  getAutomationStatus,
+  startAutomation,
+  stopAutomation,
+  type AutomationHooks,
+  type DevTurnResult,
+} from './requirements/automation.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 
@@ -95,6 +103,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     const proj = resolve(projectPath)
     const items = listRequirements(proj)
     for (const deliver of connections) deliver({ type: 'requirements', projectPath: proj, items })
+  }
+
+  // Push an automation-orchestrator status to every connection (the frontend
+  // keeps a per-project map and renders the one it's viewing).
+  const broadcastAutomation = (status: AutomationStatus): void => {
+    for (const deliver of connections) deliver({ type: 'automation_status', status })
   }
 
   /**
@@ -183,6 +197,84 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       setStatus(runId, 'idle')
       await cbs.onSettled?.(workspacePath)
     }
+  }
+
+  /**
+   * Run one dev turn for the automation orchestrator and resolve once it settles.
+   * Observes the runtime via an internal viewer: the last assistant text is the
+   * "completion message" the judge reads; a `turn_end` resolves complete/error; a
+   * `permission_request` means a human is needed, so it aborts the run and resolves
+   * `blocked`. A fresh `sessionId` (null) launches a new `/sdd-lite` session; a real
+   * id resumes it (the "继续" continuation) — or feeds a live team lead directly.
+   */
+  const runDevTurn = (input: {
+    projectPath: string
+    sessionId: string | null
+    prompt: string
+    requirementId: string
+    signal: AbortSignal
+  }): Promise<DevTurnResult> =>
+    new Promise<DevTurnResult>((resolveTurn) => {
+      const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
+      const rt = ensureRuntime(id, input.projectPath, getDefaultMode(), [], 'normal')
+      let lastText = ''
+      let settled = false
+      const finish = (r: DevTurnResult): void => {
+        if (settled) return
+        settled = true
+        removeViewer(rt.sessionId, viewer)
+        resolveTurn(r)
+      }
+      const viewer: Viewer = (e) => {
+        if (e.type === 'assistant_text') {
+          lastText = e.text
+        } else if (e.type === 'permission_request') {
+          // A human authorization is needed — automation can't answer it. Abort the
+          // (otherwise-hanging) run and report it as blocked.
+          stopRun(rt.sessionId)
+          finish({
+            outcome: 'blocked',
+            sessionId: rt.sessionId,
+            lastMessage: lastText,
+            detail: e.toolName,
+          })
+        } else if (e.type === 'turn_end') {
+          finish({
+            outcome: e.reason === 'error' ? 'error' : 'complete',
+            sessionId: rt.sessionId,
+            lastMessage: lastText,
+            detail: e.error,
+          })
+        }
+      }
+      addViewer(id, viewer)
+      input.signal.addEventListener('abort', () => {
+        stopRun(rt.sessionId)
+        finish({
+          outcome: 'blocked',
+          sessionId: rt.sessionId,
+          lastMessage: lastText,
+          detail: 'aborted',
+        })
+      })
+
+      // Live team lead (rare for /sdd-lite): feed the same process. Otherwise launch
+      // a new session or resume the existing one.
+      if (rt.team && rt.run?.handle) {
+        emit(rt.sessionId, { type: 'user_text', text: input.prompt })
+        setStatus(rt.sessionId, 'running')
+        rt.run.handle.pushInput(input.prompt)
+      } else {
+        void launchRun(rt, input.prompt, {
+          onSessionId: (_prev, sid) => setSessionMode(sid, rt.mode),
+        })
+      }
+    })
+
+  const automationHooks: AutomationHooks = {
+    runDevTurn,
+    broadcastRequirements,
+    emitStatus: broadcastAutomation,
   }
 
   app.get(
@@ -525,6 +617,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               for (const e of rt.buffer) send(ws, e)
               addViewer(chatId, deliver)
               send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
+              send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
               return
             }
 
@@ -624,6 +717,41 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               }
               updateStatus(msg.requirementId, msg.status)
               broadcastRequirements(req.projectPath)
+              return
+            }
+
+            case 'set_requirement_automate': {
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              const req = getRequirement(msg.requirementId)
+              if (!req) {
+                send(ws, { type: 'error', message: '需求不存在。' })
+                return
+              }
+              setAutomate(msg.requirementId, msg.automate)
+              broadcastRequirements(req.projectPath)
+              return
+            }
+
+            case 'start_automation': {
+              const proj = resolve(msg.projectPath)
+              if (!hasWorkspace(proj)) {
+                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                return
+              }
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              broadcastAutomation(startAutomation(proj, automationHooks, Date.now()))
+              return
+            }
+
+            case 'stop_automation': {
+              const proj = resolve(msg.projectPath)
+              broadcastAutomation(stopAutomation(proj))
               return
             }
           }

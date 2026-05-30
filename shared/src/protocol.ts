@@ -258,10 +258,44 @@ export interface Requirement {
   dependsOn: string[]
   /** The last dev session launched for this requirement, for the detail back-link. */
   lastDevSessionId: string | null
+  /**
+   * Whether the automation orchestrator may pick this requirement up. User-toggled
+   * (a checkbox per requirement); `false` by default. Only `automate` requirements
+   * are developed by `start_automation`.
+   */
+  automate: boolean
   createdAt: number
   updatedAt: number
   /** When the requirement entered `done`; `null` until completed, cleared if it leaves `done`. */
   completedAt: number | null
+}
+
+/**
+ * Lifecycle of the per-project automation orchestrator (a single background loop
+ * that develops `automate` requirements one by one, by priority + dependencies).
+ * - `idle` — not running (never started, or stopped by the user).
+ * - `running` — actively developing requirements.
+ * - `done` — finished: no more eligible requirements remain.
+ * - `error` — stopped abnormally (a dev run errored, blocked on a permission, a
+ *   completion check failed, or commit/push failed). `error` text says why.
+ */
+export type AutomationState = 'idle' | 'running' | 'done' | 'error'
+
+/** A project's automation orchestrator status, broadcast to every connection. */
+export interface AutomationStatus {
+  /** Owning project — the workspace absolute path (resolved). */
+  projectPath: string
+  state: AutomationState
+  /** The requirement currently being developed (null when not running). */
+  currentRequirementId: string | null
+  /** The dev session of the current requirement, for a back-link (null when none). */
+  currentSessionId: string | null
+  /** Why the orchestrator stopped abnormally; null unless `state === 'error'`. */
+  error: string | null
+  /** Requirement ids completed (committed + pushed) in this run. */
+  completedIds: string[]
+  /** When the orchestrator was started, ms since epoch; null when never started. */
+  startedAt: number | null
 }
 
 /**
@@ -334,6 +368,12 @@ export type ClientToServer =
   | { type: 'start_development'; projectPath: string; requirementId: string }
   /** Manually set a requirement's status (e.g. mark done/cancelled). */
   | { type: 'update_requirement_status'; requirementId: string; status: RequirementStatus }
+  /** Toggle a requirement's automation flag (whether the orchestrator may pick it). */
+  | { type: 'set_requirement_automate'; requirementId: string; automate: boolean }
+  /** Start the project's automation orchestrator (develops `automate` requirements). */
+  | { type: 'start_automation'; projectPath: string }
+  /** Stop the project's automation orchestrator (aborts the current dev run). */
+  | { type: 'stop_automation'; projectPath: string }
   | { type: 'ping' }
 
 // Server → Client
@@ -376,6 +416,12 @@ export type ServerToClient =
   | { type: 'settings'; settings: SystemSettings }
   /** A project's requirement list (reply to `list_requirements`/`open_requirement_chat`, or a push after a change). */
   | { type: 'requirements'; projectPath: string; items: Requirement[] }
+  /**
+   * The project's automation-orchestrator status. Pushed on entering the
+   * requirement view and on every state change (start/stop/progress/error), so
+   * the requirement list's automation button reflects the live run.
+   */
+  | { type: 'automation_status'; status: AutomationStatus }
   /**
    * Echo of a user prompt, emitted into the session's stream when a turn starts.
    * Lets every viewer (including one switching back to a background session) see

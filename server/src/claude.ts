@@ -223,6 +223,77 @@ export interface RunOptions {
   onTeam?: () => void
 }
 
+/**
+ * Tools blocked for {@link askOneShot}. The one-shot judge reasons purely over
+ * the text handed to it (requirement, last message, git diff), so every tool is
+ * cut at the SDK level — and {@link askOneShot}'s `canUseTool` denies anything
+ * that slips through. Keeps the judge deterministic and side-effect-free.
+ */
+const ONESHOT_DISALLOWED_TOOLS = [
+  ...REQUIREMENT_DISALLOWED_TOOLS,
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'TodoWrite',
+  'Agent',
+  'AskUserQuestion',
+]
+
+/**
+ * Run a single, tool-less prompt to completion and return the assistant's text.
+ * Used by the automation orchestrator's completion judge: it has no UI viewer,
+ * never emits wire events, and resolves with the concatenated assistant text
+ * (best-effort — returns whatever was produced if the query errors). All tools
+ * are disabled so the model answers from the prompt alone.
+ */
+export async function askOneShot(opts: {
+  prompt: string
+  cwd: string
+  signal: AbortSignal
+  model?: string
+  envOverrides?: Record<string, string>
+}): Promise<string> {
+  const claudePath = findClaudeExecutable()
+  const q = query({
+    prompt: opts.prompt,
+    options: {
+      cwd: opts.cwd,
+      settingSources: ['user', 'project'],
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
+      disallowedTools: ONESHOT_DISALLOWED_TOOLS,
+      permissionMode: 'default',
+      ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+      ...(opts.envOverrides ? { env: { ...process.env, ...opts.envOverrides } } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
+      canUseTool: async () => ({ behavior: 'deny', message: 'one-shot judge is read-only' }),
+    },
+  })
+  let text = ''
+  try {
+    for await (const m of q) {
+      if (opts.signal.aborted) break
+      if (m.type === 'assistant') {
+        const content = (m as { message?: { content?: unknown[] } }).message?.content
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            const b = block as { type?: string; text?: string }
+            if (b.type === 'text' && typeof b.text === 'string') text += b.text
+          }
+        }
+      } else if (m.type === 'result') {
+        break
+      }
+    }
+  } catch {
+    /* return whatever text was produced before the error */
+  }
+  return text.trim()
+}
+
 export async function runClaude(opts: RunOptions): Promise<void> {
   const {
     prompt,

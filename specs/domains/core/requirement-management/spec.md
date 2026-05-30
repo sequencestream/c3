@@ -90,6 +90,7 @@ See [models.md](models.md).
 | RM-R12 | If the ledger (SQLite) is unavailable, requirement features degrade per entry point (requirement messages return `error`; the normal list is **not** filtered) and c3 still boots and serves normal sessions.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | RM-R13 | The development back-link opens the `lastDevSessionId` session (reusing `select_session`). If that session no longer exists, the user gets a friendly prompt (with restart/cancel options), not a crash.                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | RM-R14 | Each requirement carries a `module` (模块名称). The communication agent **infers** it from the item's title/content (scheme a; future-extensible to the project's module structure) and passes it per item to `save_requirements`; a missing/blank `module` persists as `''` (the agent is never blocked on it). The ledger column is `TEXT NOT NULL DEFAULT ''`; old dbs migrate via an idempotent `ALTER TABLE … ADD COLUMN` (schema v1→v2) with historical rows defaulting to `''` (no backfill). All read paths return `module`. This requirement only produces the data; module-based display/filtering is out of scope. |
+| RM-R15 | **Code + companion docs are one requirement.** When a single change touches both code and its companion docs (spec / 说明 / comments), the communication agent folds the doc-sync work into the **same** requirement's content + acceptance points — it must **not** emit a separate「文档更新」requirement. This keeps code and its docs on one ticket so neither half is scheduled apart or dropped (which would drift docs out of sync with code). Enforced by prompt guidance only (no tool-layer check).                                                                                                                 |
 
 ### Automation orchestrator
 
@@ -145,8 +146,9 @@ stateDiagram-v2
   system prompt; it reads project material but is rejected on any edit/write/command/sub-agent/
   slash attempt (RM-R2). It may ask the user clarifying questions via `AskUserQuestion` — surfaced
   through the standard answer panel and injected back as the agent's tool result (RM-R2). It
-  proposes discrete, verifiable, right-sized items for confirmation. It does not appear in the
-  normal session list (RM-R4).
+  proposes discrete, verifiable, right-sized items for confirmation. When a change spans code and
+  its companion docs, both are folded into one item rather than split into a separate「文档更新」
+  requirement (RM-R15). It does not appear in the normal session list (RM-R4).
 - **US-4 Confirm & persist.** The agent calls `save_requirements`; c3 pops a confirmation listing
   each proposed item (title/priority/dependency). Allow → written to `c3.db` as `todo` for the
   current project; Deny → not written, agent told it was rejected (RM-R5/RM-R6).

@@ -162,6 +162,12 @@ happened. The prompt asks the agent to infer each item's **module name** from it
 `save_requirements`. This is scheme **a** (infer from title/content); a future extension may key
 off the project's actual module structure for more precise classification (RM-R14).
 
+The prompt also carries a **decomposition rule**: when one change touches **both code and its
+companion docs** (spec / 说明 / comments), the analyst folds the doc-sync work into the **same**
+requirement's content + acceptance points rather than emitting a separate「文档更新」item — code and
+its docs are one change, kept on one ticket so neither half is scheduled apart or dropped, which
+would drift docs out of sync with code (RM-R15).
+
 ## `save_requirements` tool (`save-tool.ts`)
 
 `createSdkMcpServer({ name: 'c3', tools: [ saveRequirementsTool(projectPath) ] })`. The `tool()`

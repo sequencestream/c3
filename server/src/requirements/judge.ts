@@ -4,7 +4,8 @@
  * requirement is done" — `/sdd-lite` is checkpoint-driven, so a turn often ends
  * paused for approval, not complete. This module asks a fresh, tool-less Claude
  * (see {@link askOneShot}) to judge the requirement against the agent's last
- * message AND the working-tree diff (objective evidence), returning one of:
+ * message AND code-change evidence — both the uncommitted `git diff` and recent
+ * commits, since `/sdd-lite` may self-commit (clean tree) — returning one of:
  *
  *  - `done`        — implemented and self-verified; commit & move on.
  *  - `in_progress` — paused at a checkpoint / awaiting "继续" / more steps to go.
@@ -25,29 +26,29 @@ export interface JudgeEvidence {
 
 function buildPrompt(req: Requirement, lastMessage: string, ev: JudgeEvidence): string {
   return [
-    '你是一个开发完成度评审员。下面是一个需求、负责开发它的 agent 在本轮最后输出的消息,以及代码改动证据(未提交的 git diff 统计 + 最近的提交记录)。',
-    '请判断该需求是否「真实完成」。',
+    'You are a development-completion reviewer. Below are a requirement, the last message the agent developing it produced this turn, and code-change evidence (the uncommitted git diff stat + recent commit log).',
+    'Judge whether the requirement is TRULY complete.',
     '',
-    `# 需求标题\n${req.title}`,
-    `# 需求内容\n${req.content}`,
+    `# Requirement title\n${req.title}`,
+    `# Requirement content\n${req.content}`,
     '',
-    '# agent 最后的消息',
-    lastMessage || '(无文本输出)',
+    "# Agent's last message",
+    lastMessage || '(no text output)',
     '',
-    '# 未提交改动 git diff --stat (相对 HEAD)',
-    ev.diffStat || '(无未提交改动)',
+    '# Uncommitted changes — git diff --stat (vs HEAD)',
+    ev.diffStat || '(no uncommitted changes)',
     '',
-    '# 最近提交 git log --oneline',
-    ev.recentLog || '(无提交记录)',
+    '# Recent commits — git log --oneline',
+    ev.recentLog || '(no commits)',
     '',
-    '# 判定规则(重要)',
-    '- 代码改动证据可能出现在「未提交改动」或「最近提交」任一处——agent 经常会自己 commit,导致未提交改动为空。**只要任一处存在与需求相符的改动,即视为有实际改动**,不要因为未提交改动为空就判定未完成。',
-    '- done: agent 表示功能已实现(并尽量自验证),且改动证据(diff 或最近提交之一)与需求相符。判定倾向:当 agent 明确表示已完成、且证据不矛盾时,判 done。',
-    '- in_progress: agent 停在检查点等待批准/确认、明确表示还有后续步骤未做、或在征求一个可以用「继续」回答的许可。',
-    '- stuck: agent 报错/放弃/反复失败,或在询问一个无法自动回答、必须人工决策的问题;或声称完成但完全没有任何相符的代码改动证据。',
+    '# Verdict rules (important)',
+    '- Code-change evidence may appear in EITHER the uncommitted changes OR the recent commits — the agent often commits its own work, leaving the uncommitted diff empty. **If either source contains changes consistent with the requirement, treat that as real changes**; do NOT judge it incomplete merely because the uncommitted diff is empty.',
+    '- done: the agent states the feature is implemented (and ideally self-verified), and the change evidence (the diff or a recent commit) is consistent with the requirement. Bias: when the agent clearly says it is complete and the evidence does not contradict it, return done.',
+    '- in_progress: the agent paused at a checkpoint awaiting approval/confirmation, explicitly says there are remaining steps, or is asking for a permission that can be answered with "continue".',
+    '- stuck: the agent errored / gave up / repeatedly failed, is asking a question that cannot be answered automatically and needs a human decision, or claims completion but there is no consistent code-change evidence at all.',
     '',
-    '只输出一个 JSON 对象,不要解释,不要代码块包裹,格式严格为:',
-    '{"verdict":"done|in_progress|stuck","reason":"一句话中文说明"}',
+    'Output a single JSON object only — no explanation, not wrapped in a code block — strictly in the form:',
+    '{"verdict":"done|in_progress|stuck","reason":"one-line explanation"}',
   ].join('\n')
 }
 

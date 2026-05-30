@@ -232,7 +232,9 @@ function onKey(e: KeyboardEvent) {
       <div v-if="showSendHint" class="send-hint" role="tooltip">
         连续回车两次，或 ⌘/Ctrl+Enter 发送
       </div>
-      <button :disabled="!input.trim() || !hasActiveSession" @click="submit">Send</button>
+      <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
+        Send
+      </button>
     </div>
   </footer>
 </template>

@@ -309,7 +309,6 @@ header h1 {
   border: none;
   border-radius: var(--radius-sm);
   font-size: var(--fs-code);
-  line-height: 1;
   cursor: pointer;
   transition:
     background var(--dur-fast) var(--ease-standard),
@@ -529,10 +528,6 @@ header h1 {
 .status-refresh {
   margin-left: auto;
   flex-shrink: 0;
-  /* Reset the global button sizing (height: 56px / min-width: 80px) so it
-     doesn't dictate the status bar's row height. */
-  height: auto;
-  min-width: 0;
   padding: 0 var(--sp-1);
   background: transparent;
   border: none;
@@ -540,7 +535,6 @@ header h1 {
   color: var(--c-text-muted);
   font-size: var(--fs-body);
   font-weight: normal;
-  line-height: 1;
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease-standard);
 }
@@ -784,6 +778,10 @@ footer {
   position: relative;
   display: flex;
 }
+/* 发送按钮：页脚大按钮，与 56px 输入框等高 */
+.send-btn {
+  height: 56px;
+}
 .send-hint {
   position: absolute;
   bottom: calc(100% + var(--sp-2));
@@ -912,9 +910,7 @@ textarea:disabled {
 
 /* ============ 按钮（规范 3.5） ============ */
 button {
-  padding: 0 var(--sp-6);
-  height: 56px;
-  min-width: 80px;
+  padding: var(--sp-2) var(--sp-6);
   background: var(--c-gradient);
   color: #fff;
   border: none;
@@ -922,6 +918,7 @@ button {
   font-family: var(--font-ui);
   font-size: var(--fs-body);
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   transition:
     filter var(--dur-fast) var(--ease-standard),
@@ -950,8 +947,9 @@ button.deny:hover:not(:disabled) {
   filter: none;
 }
 
-/* 停止正在运行的 turn */
+/* 停止正在运行的 turn —— 页脚大按钮，与 56px 输入框等高 */
 button.stop-btn {
+  height: 56px;
   background: transparent;
   color: var(--c-error);
   border: 1px solid var(--c-error);
@@ -971,7 +969,6 @@ button.stop-btn:hover:not(:disabled) {
 .actions button {
   height: 36px;
   padding: 0 var(--sp-6);
-  min-width: 0;
   font-size: var(--fs-code);
   border-radius: var(--radius-sm);
 }
@@ -1313,7 +1310,6 @@ button.stop-btn:hover:not(:disabled) {
   margin-top: var(--sp-4);
   height: 36px;
   padding: 0 var(--sp-4);
-  min-width: 0;
   background: transparent;
   color: var(--c-text);
   border: 1px dashed var(--c-border);
@@ -1344,7 +1340,6 @@ button.stop-btn:hover:not(:disabled) {
 .settings-foot button {
   height: 36px;
   padding: 0 var(--sp-6);
-  min-width: 0;
   font-size: var(--fs-code);
   border-radius: var(--radius-sm);
 }
@@ -1357,4 +1352,156 @@ button.stop-btn:hover:not(:disabled) {
   filter: none;
   background: var(--c-hover);
   color: var(--c-text);
+}
+
+/* ============ 需求视图（需求列表 + 落库确认卡片） ============ */
+.req-list {
+  width: 320px;
+  flex-shrink: 0;
+  background: var(--c-panel);
+  border-right: 1px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.req-list-head {
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 var(--sp-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--c-border);
+}
+.req-list-title {
+  font-size: var(--fs-title-sm);
+  font-weight: 600;
+}
+.req-filter {
+  background: var(--c-input);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: var(--fs-caption);
+}
+.req-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.req-empty {
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: var(--sp-3);
+}
+.req-item {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.req-item.done,
+.req-item.cancelled {
+  opacity: 0.6;
+}
+.req-item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.req-priority {
+  font-size: var(--fs-badge);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-primary-soft);
+  color: var(--c-purple-text);
+  flex-shrink: 0;
+}
+.req-priority.P0 {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--c-error);
+}
+.req-priority.P1 {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--c-warning);
+}
+.req-title {
+  flex: 1;
+  font-size: var(--fs-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-status {
+  font-size: var(--fs-badge);
+  color: var(--c-text-muted);
+  flex-shrink: 0;
+}
+.req-deps {
+  font-size: var(--fs-caption);
+  color: var(--c-warning);
+}
+.req-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1, 4px);
+}
+.req-btn {
+  background: var(--c-input);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.req-btn:hover {
+  background: var(--c-hover);
+}
+.req-btn.primary {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+
+/* 落库确认卡片（PermissionPrompt 的 save_requirements 分支） */
+.req-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+}
+.req-confirm-card {
+  background: var(--c-code);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.req-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.req-confirm-title {
+  font-weight: 600;
+}
+.req-confirm-content {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  white-space: pre-wrap;
+}
+.req-confirm-deps {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
 }

@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ClientToServer, ServerToClient } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { runClaude, registerPermissionResolver } from './claude.js'
+import { runClaude, registerPermissionResolver, REQUIREMENT_DISALLOWED_TOOLS } from './claude.js'
 import { listCommands } from './commands.js'
 import {
   addWorkspace,
@@ -25,6 +25,7 @@ import {
   loadHistory,
   removeSession,
   renameWorkspaceSession,
+  sessionExists,
   sessionTitle,
 } from './sessions.js'
 import { loadSettings, saveSettings, resolveSessionLaunch, getDefaultMode } from './settings.js'
@@ -41,8 +42,21 @@ import {
   setStatus,
   stopRun,
   emit,
+  type SessionRuntime,
   type Viewer,
 } from './runs.js'
+import {
+  getChatSession,
+  getRequirement,
+  isStoreAvailable,
+  listRequirements,
+  rebindChatSession,
+  setChatSession,
+  setLastDevSession,
+  updateStatus,
+} from './requirements/store.js'
+import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
+import { createRequirementMcpServer } from './requirements/save-tool.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 
@@ -72,6 +86,92 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   }
   // Any runtime status change (run start/finish, permission wait) re-broadcasts.
   setOnStatusChange(broadcastStatuses)
+
+  // Push a project's requirement list to every connection (the frontend keeps a
+  // per-project map and ignores projects it isn't viewing). Used after a save,
+  // a status change, or a dev launch. No-op when the store is unavailable.
+  const broadcastRequirements = (projectPath: string): void => {
+    if (!isStoreAvailable()) return
+    const proj = resolve(projectPath)
+    const items = listRequirements(proj)
+    for (const deliver of connections) deliver({ type: 'requirements', projectPath: proj, items })
+  }
+
+  /**
+   * Shared run launcher, extracted from `user_prompt`. Owns only registry/emit
+   * concerns: abort wiring, the prompt echo, status flips, the SDK run, and
+   * pending→real id binding. Everything connection-specific (session_started,
+   * `viewing`, `activeSessionId`, session-list refresh) is injected via the
+   * callbacks, so background launches (`start_development`) and seeded launches
+   * (`refine_requirement`) can reuse it. Requirement runtimes get the read-only
+   * gate, the disallowed-tools lock, the comm system prompt, the `save_requirements`
+   * MCP tool, and a forced `default` permission mode (so `canUseTool` always fires).
+   */
+  const launchRun = async (
+    rt: SessionRuntime,
+    prompt: string,
+    cbs: {
+      onSessionId?: (prevId: string, realId: string) => void
+      onSettled?: (workspacePath: string) => void | Promise<void>
+    } = {},
+  ): Promise<void> => {
+    const workspacePath = rt.workspacePath
+    let runId = rt.sessionId
+    const resume = runId.startsWith(PENDING_SESSION_PREFIX) ? undefined : runId
+    const launch = resolveSessionLaunch(runId)
+    const isRequirement = rt.kind === 'requirement'
+
+    const abort = new AbortController()
+    rt.run = { abort, handle: null }
+    // Echo the prompt into the stream so switch-back replay shows it (for a
+    // seeded run this surfaces the injected first message, by design).
+    emit(runId, { type: 'user_text', text: prompt })
+    setStatus(runId, 'running')
+    try {
+      await runClaude({
+        prompt,
+        cwd: workspacePath,
+        signal: abort.signal,
+        // Requirement chats are pinned to `default` so the gateway always runs.
+        permissionMode: isRequirement ? 'default' : rt.mode,
+        resume,
+        envOverrides: launch.envOverrides,
+        model: launch.model,
+        currentAgentId: launch.agentId,
+        ...(isRequirement
+          ? {
+              appendSystemPrompt: REQUIREMENT_AGENT_PROMPT,
+              disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
+              mcpServers: createRequirementMcpServer(workspacePath, broadcastRequirements),
+              gate: 'requirement' as const,
+            }
+          : {}),
+        send: (m) => emit(runId, m),
+        onStart: (h) => {
+          if (rt.run) rt.run.handle = h
+        },
+        onSessionId: (sid) => {
+          if (runId !== sid) {
+            const prev = runId
+            bindPending(prev, sid)
+            runId = sid
+            cbs.onSessionId?.(prev, sid)
+            broadcastStatuses()
+          }
+        },
+      })
+    } catch (err) {
+      emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
+    } finally {
+      const wasAborted = abort.signal.aborted
+      if (rt.run?.abort === abort) rt.run = null
+      // An aborted run never sends turn_end from the run loop; emit one so the
+      // viewer's input unlocks. A normal/errored run already did.
+      if (wasAborted) emit(runId, { type: 'turn_end', reason: 'complete' })
+      setStatus(runId, 'idle')
+      await cbs.onSettled?.(workspacePath)
+    }
+  }
 
   app.get(
     '/ws',
@@ -275,6 +375,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'set_mode': {
               const rt = viewing ? getRuntime(viewing) : undefined
+              // Requirement comm sessions are pinned to `default` (the gateway
+              // must always fire); ignore mode changes for them.
+              if (rt && rt.kind === 'requirement') {
+                send(ws, { type: 'mode_changed', mode: 'default' })
+                return
+              }
               if (rt) {
                 rt.mode = msg.mode
                 // Persist for real sessions; pending sessions persist on bind.
@@ -308,62 +414,195 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 send(ws, { type: 'error', message: 'A turn is already running in this session.' })
                 return
               }
-              const workspacePath = rt.workspacePath
-              // `runId` tracks the runtime's current key; it rebinds from a pending
-              // id to the real SDK id once the first run reports one.
-              let runId = rt.sessionId
-              const resume = runId.startsWith(PENDING_SESSION_PREFIX) ? undefined : runId
-              // Launch with the session's agent overrides, or the default agent's
-              // when unassigned (pending sessions are always unassigned ⇒ default).
-              const launch = resolveSessionLaunch(runId)
-
-              const abort = new AbortController()
-              rt.run = { abort, handle: null }
-              // Echo the prompt into the stream so switch-back replay shows it.
-              emit(runId, { type: 'user_text', text: msg.text })
-              setStatus(runId, 'running')
-              try {
-                await runClaude({
-                  prompt: msg.text,
-                  cwd: workspacePath,
-                  signal: abort.signal,
-                  permissionMode: rt.mode,
-                  resume,
-                  envOverrides: launch.envOverrides,
-                  model: launch.model,
-                  currentAgentId: launch.agentId,
-                  send: (m) => emit(runId, m),
-                  onStart: (h) => {
-                    if (rt.run) rt.run.handle = h
-                  },
-                  onSessionId: (sid) => {
-                    // Bind a pending (or freshly forked) session to its real id.
-                    if (runId !== sid) {
-                      const prev = runId
-                      bindPending(prev, sid)
-                      runId = sid
-                      setSessionMode(sid, rt.mode)
-                      if (viewing === prev) {
-                        viewing = sid
-                        setActiveSessionId(sid)
-                      }
-                      send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
-                      broadcastStatuses()
+              const isRequirement = rt.kind === 'requirement'
+              await launchRun(rt, msg.text, {
+                onSessionId: (prev, sid) => {
+                  if (isRequirement) {
+                    // Comm session: re-key its store mapping; never touch the
+                    // persisted active/normal-mode state (it's a hidden session).
+                    rebindChatSession(prev, sid)
+                    if (viewing === prev) viewing = sid
+                  } else {
+                    setSessionMode(sid, rt.mode)
+                    if (viewing === prev) {
+                      viewing = sid
+                      setActiveSessionId(sid)
                     }
-                  },
-                })
-              } catch (err) {
-                emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
-              } finally {
-                const wasAborted = abort.signal.aborted
-                if (rt.run?.abort === abort) rt.run = null
-                // An aborted run never sends turn_end from the run loop; emit one
-                // so the viewer's input unlocks. A normal/errored run already did.
-                if (wasAborted) emit(runId, { type: 'turn_end', reason: 'complete' })
-                setStatus(runId, 'idle')
-                // Refresh the list so the new/updated session shows its title.
-                await sendSessions(ws, workspacePath)
+                  }
+                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                },
+                // Requirement comm sessions are hidden from the normal list, so
+                // there's nothing to refresh for them.
+                onSettled: isRequirement
+                  ? undefined
+                  : async (wp) => {
+                      await sendSessions(ws, wp)
+                    },
+              })
+              return
+            }
+
+            case 'list_requirements': {
+              const proj = resolve(msg.projectPath)
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
               }
+              send(ws, {
+                type: 'requirements',
+                projectPath: proj,
+                items: listRequirements(proj, msg.status),
+              })
+              return
+            }
+
+            case 'open_requirement_chat': {
+              const proj = resolve(msg.projectPath)
+              if (!hasWorkspace(proj)) {
+                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                return
+              }
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              // Stop viewing whatever this connection had open.
+              if (viewing) removeViewer(viewing, deliver)
+              // Resume the project's persisted comm session, or open a new one.
+              // This is the single path hit on first entry, WS reconnect, and a
+              // hard refresh — all "auto-reload the last comm session".
+              const existing = getChatSession(proj)
+              let chatId: string
+              if (existing) {
+                chatId = existing
+                if (!getRuntime(chatId)) {
+                  const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
+                  const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
+                  ensureRuntime(chatId, proj, 'default', baseline, 'requirement')
+                }
+              } else {
+                chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+                ensureRuntime(chatId, proj, 'default', [], 'requirement')
+                setChatSession(proj, chatId)
+              }
+              const rt = getRuntime(chatId)
+              if (!rt) {
+                send(ws, { type: 'error', message: 'Failed to open requirement chat.' })
+                return
+              }
+              viewing = chatId
+              touchWorkspace(proj, Date.now())
+              send(ws, {
+                type: 'session_selected',
+                workspacePath: proj,
+                sessionId: chatId,
+                title: '需求沟通',
+                mode: 'default',
+                history: rt.baseline,
+                running: rt.run != null,
+              })
+              for (const e of rt.buffer) send(ws, e)
+              addViewer(chatId, deliver)
+              send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
+              return
+            }
+
+            case 'refine_requirement': {
+              const proj = resolve(msg.projectPath)
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              const req = getRequirement(msg.requirementId)
+              if (!req) {
+                send(ws, { type: 'error', message: '需求不存在。' })
+                return
+              }
+              // Restart the comm session as a fresh one seeded with this requirement.
+              if (viewing) removeViewer(viewing, deliver)
+              const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+              const rt = ensureRuntime(chatId, proj, 'default', [], 'requirement')
+              setChatSession(proj, chatId)
+              viewing = chatId
+              addViewer(chatId, deliver)
+              send(ws, {
+                type: 'session_selected',
+                workspacePath: proj,
+                sessionId: chatId,
+                title: '需求沟通',
+                mode: 'default',
+                history: [],
+                running: false,
+              })
+              send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
+              const firstPrompt = `开始完善需求 ${req.id}。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_requirements。`
+              await launchRun(rt, firstPrompt, {
+                onSessionId: (prev, sid) => {
+                  rebindChatSession(prev, sid)
+                  if (viewing === prev) viewing = sid
+                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                },
+              })
+              return
+            }
+
+            case 'start_development': {
+              const proj = resolve(msg.projectPath)
+              if (!hasWorkspace(proj)) {
+                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                return
+              }
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              const req = getRequirement(msg.requirementId)
+              if (!req) {
+                send(ws, { type: 'error', message: '需求不存在。' })
+                return
+              }
+              // Allow `todo`, or `in_progress` whose dev session has gone missing
+              // (a dangling launch — let the user restart rather than stay stuck).
+              const dangling =
+                req.status === 'in_progress' &&
+                (!req.lastDevSessionId || !(await sessionExists(proj, req.lastDevSessionId)))
+              if (req.status !== 'todo' && !dangling) {
+                send(ws, { type: 'error', message: `当前状态(${req.status})不可启动开发。` })
+                return
+              }
+              const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+              const devRt = ensureRuntime(devId, proj, getDefaultMode(), [], 'normal')
+              const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
+              const devPrompt = `/develop-pipeline ${req.title}\n\n${req.content}${depNote}`
+              // Background launch: don't await — it runs detached, surviving this
+              // connection. Status flips to in_progress once the SDK id binds.
+              void launchRun(devRt, devPrompt, {
+                onSessionId: (prev, sid) => {
+                  setSessionMode(sid, devRt.mode)
+                  setLastDevSession(req.id, sid)
+                  updateStatus(req.id, 'in_progress')
+                  broadcastRequirements(proj)
+                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                },
+                onSettled: async (wp) => {
+                  await sendSessions(ws, wp)
+                },
+              })
+              return
+            }
+
+            case 'update_requirement_status': {
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              const req = getRequirement(msg.requirementId)
+              if (!req) {
+                send(ws, { type: 'error', message: '需求不存在。' })
+                return
+              }
+              updateStatus(msg.requirementId, msg.status)
+              broadcastRequirements(req.projectPath)
               return
             }
           }

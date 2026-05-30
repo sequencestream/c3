@@ -52,6 +52,7 @@ c3 is a single local process with two halves connected by one WebSocket:
 | Session IO               | `server/src/sessions.ts`     | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                         |
 | Permission registry      | `server/src/permissions.ts`  | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                   |
 | Result formatting        | `server/src/format.ts`       | Flatten SDK `tool_result` content to a display string                                                  |
+| Requirement ledger       | `server/src/requirements/`   | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_requirements` tool (ADR 0007)      |
 | Static embed             | `server/src/static-embed.ts` | Generated; Bun-inlined web bundle                                                                      |
 | Wire protocol            | `shared/src/protocol.ts`     | `ClientToServer` / `ServerToClient` unions + workspace/session types                                   |
 | WS client                | `web/src/lib/ws.ts`          | Browser WebSocket wrapper                                                                              |
@@ -75,15 +76,22 @@ c3 is a single local process with two halves connected by one WebSocket:
   (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`): workspaces + recent-access order,
   per-session mode, and the active session. Sessions themselves live in the SDK transcript
   store. See [ADR 0004](adr/0004-persist-workspace-session-registry.md).
+- **Requirement ledger is a separate SQLite store (ADR 0007).** Project-scoped requirements live
+  in `~/.c3/c3.db` (distinct from the registry's `~/.claude/c3/state.json`), behind a cross-runtime
+  driver adapter (`node:sqlite` / `bun:sqlite`). It fails soft: if the db is unavailable,
+  requirement features degrade but c3 still boots and serves normal sessions. The
+  requirement-communication agent reuses the runtime registry and permission gateway as a
+  read-only `requirement`-kind run.
 - **Build order:** `web` then `server` — the server embeds the web bundle.
 
 ## Key decisions
 
-| ADR                                                         | Decision                                                                                              |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [0001](adr/deprecated/0001-c3-sole-permission-authority.md) | _(superseded by 0005)_ c3 is the sole permission authority                                            |
-| [0002](adr/0002-websocket-as-permission-transport.md)       | WebSocket is the permission transport                                                                 |
-| [0003](adr/0003-single-binary-via-bun-compile.md)           | Ship as a single binary via `bun build --compile`                                                     |
-| [0004](adr/0004-persist-workspace-session-registry.md)      | Persist a c3-owned workspace & session registry                                                       |
-| [0005](adr/0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the permission gateway (`settingSources: ['user', 'project']`) |
-| [0006](adr/0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections; runs live in a module-level registry                  |
+| ADR                                                         | Decision                                                                                                               |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [0001](adr/deprecated/0001-c3-sole-permission-authority.md) | _(superseded by 0005)_ c3 is the sole permission authority                                                             |
+| [0002](adr/0002-websocket-as-permission-transport.md)       | WebSocket is the permission transport                                                                                  |
+| [0003](adr/0003-single-binary-via-bun-compile.md)           | Ship as a single binary via `bun build --compile`                                                                      |
+| [0004](adr/0004-persist-workspace-session-registry.md)      | Persist a c3-owned workspace & session registry                                                                        |
+| [0005](adr/0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the permission gateway (`settingSources: ['user', 'project']`)                  |
+| [0006](adr/0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections; runs live in a module-level registry                                   |
+| [0007](adr/0007-read-only-requirement-agent.md)             | Read-only requirement-communication agent; `save_requirements` via the permission gateway; cross-runtime SQLite ledger |

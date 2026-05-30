@@ -21,11 +21,12 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 
 ## Index
 
-| #                                                       | Title                                              | Status     |
-| ------------------------------------------------------- | -------------------------------------------------- | ---------- |
-| [0001](deprecated/0001-c3-sole-permission-authority.md) | c3 is the sole permission authority                | superseded |
-| [0002](0002-websocket-as-permission-transport.md)       | WebSocket as the permission transport              | accepted   |
-| [0003](0003-single-binary-via-bun-compile.md)           | Single binary via `bun build --compile`            | accepted   |
-| [0004](0004-persist-workspace-session-registry.md)      | c3 persists a workspace & session registry         | accepted   |
-| [0005](0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the gateway | accepted   |
-| [0006](0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections     | accepted   |
+| #                                                       | Title                                                                    | Status     |
+| ------------------------------------------------------- | ------------------------------------------------------------------------ | ---------- |
+| [0001](deprecated/0001-c3-sole-permission-authority.md) | c3 is the sole permission authority                                      | superseded |
+| [0002](0002-websocket-as-permission-transport.md)       | WebSocket as the permission transport                                    | accepted   |
+| [0003](0003-single-binary-via-bun-compile.md)           | Single binary via `bun build --compile`                                  | accepted   |
+| [0004](0004-persist-workspace-session-registry.md)      | c3 persists a workspace & session registry                               | accepted   |
+| [0005](0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the gateway                       | accepted   |
+| [0006](0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections                           | accepted   |
+| [0007](0007-read-only-requirement-agent.md)             | Read-only requirement agent; save via confirmation; cross-runtime SQLite | accepted   |

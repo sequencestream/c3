@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type {
   AskConsensusOutcome,
   ConsensusOutcome,
@@ -32,6 +33,45 @@ export function findClaudeExecutable(): string | undefined {
     return undefined
   }
 }
+
+/** The c3 `save_requirements` MCP tool's fully-qualified name (server name `c3`). */
+export const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
+
+/**
+ * Tools hard-disabled (SDK level) for the requirement-communication agent — the
+ * source-of-truth read-only lock, paired with the requirement gate's
+ * deny-by-default. `Bash` covers every shell sub-command, so it isn't enumerated.
+ * `Task` and `SlashCommand` are essential: a spawned sub-agent's tool calls don't
+ * pass through the parent `canUseTool`, and a slash command could run an
+ * arbitrary skill — either would bypass the gateway, so both must be cut here.
+ */
+export const REQUIREMENT_DISALLOWED_TOOLS = [
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'Bash',
+  'BashOutput',
+  'KillShell',
+  'Task',
+  'SlashCommand',
+]
+
+/**
+ * Read-only tools the requirement-communication agent may use without a prompt
+ * ("read project material freely"). Anything not here — and not
+ * `save_requirements` — is denied by the requirement gate (deny-by-default).
+ */
+const REQUIREMENT_READ_TOOLS = new Set([
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'TodoWrite',
+])
 
 export const registerPermissionResolver = {
   resolve(requestId: string, decision: Decision, answers?: Record<string, string>) {
@@ -82,6 +122,20 @@ export interface RunOptions {
    * (the other agents vote; this one decides/summarizes). Omit ⇒ no exclusion.
    */
   currentAgentId?: string
+  /** Text appended to the `claude_code` preset system prompt (e.g. the comm agent role). */
+  appendSystemPrompt?: string
+  /** Tool names hard-disabled at the SDK level (the comm agent's read-only lock). */
+  disallowedTools?: string[]
+  /** In-process MCP servers to expose (e.g. the c3 `save_requirements` tool). */
+  mcpServers?: Record<string, McpServerConfig>
+  /**
+   * Permission gateway policy. `standard` (default) is the normal c3 flow
+   * (consensus + human prompt). `requirement` is the read-only communication
+   * agent: read tools auto-allow, `save_requirements` prompts the human, and
+   * everything else is denied by default (a second line of defence behind
+   * `disallowedTools`).
+   */
+  gate?: 'standard' | 'requirement'
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
@@ -99,6 +153,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     envOverrides,
     model,
     currentAgentId,
+    appendSystemPrompt,
+    disallowedTools,
+    mcpServers,
+    gate = 'standard',
     send,
     onStart,
     onSessionId,
@@ -125,7 +183,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // context, so the model never learns the cwd (weaker models then guess it,
       // e.g. reporting the home dir). The `cwd` option still sets where tools
       // run; this is what *tells the model* about that directory.
-      systemPrompt: { type: 'preset', preset: 'claude_code' },
+      systemPrompt: {
+        type: 'preset',
+        preset: 'claude_code',
+        ...(appendSystemPrompt ? { append: appendSystemPrompt } : {}),
+      },
+      // Hard tool lock (the comm agent's read-only set). Disabling here also
+      // blocks harness-internal invocations the gateway never sees.
+      ...(disallowedTools ? { disallowedTools } : {}),
+      // In-process MCP servers (e.g. the c3 `save_requirements` tool).
+      ...(mcpServers ? { mcpServers } : {}),
       permissionMode,
       // Required by the SDK to permit switching into 'bypassPermissions' at any
       // point (start or via setPermissionMode). c3 remains the permission UI.
@@ -138,6 +205,29 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       ...(model ? { model } : {}),
       canUseTool: async (toolName, input, _ctx) => {
         const requestId = randomUUID()
+
+        // Requirement (read-only) gate: a separate, simpler policy that never
+        // runs consensus. Read tools pass through; `save_requirements` asks the
+        // human; everything else is denied by default (defence-in-depth behind
+        // `disallowedTools`).
+        if (gate === 'requirement') {
+          if (REQUIREMENT_READ_TOOLS.has(toolName)) {
+            return { behavior: 'allow', updatedInput: input }
+          }
+          if (toolName === SAVE_REQUIREMENTS_TOOL) {
+            send({ type: 'permission_request', requestId, toolName, input })
+            const { decision } = await waitForDecision(requestId, signal)
+            if (decision === 'allow') {
+              return { behavior: 'allow', updatedInput: input }
+            }
+            return { behavior: 'deny', message: 'User denied in c3 UI' }
+          }
+          console.warn(`[c3] requirement gate denied tool: ${toolName}`)
+          return {
+            behavior: 'deny',
+            message: 'Requirement chat is read-only; this tool is blocked.',
+          }
+        }
 
         // AskUserQuestion is not an allow/deny tool — it needs an ANSWER per
         // question. Consensus voters answer each question; if they all agree on

@@ -99,7 +99,12 @@ ws.addEventListener('message', (evt) => {
     case 'session_selected':
       if (!promptSent) {
         promptSent = true
-        console.log(`[e2e] session ${msg.sessionId} → sending AskUserQuestion prompt`)
+        // Pin to `default` so AskUserQuestion routes through the gateway (and
+        // thus consensus), independent of the user's configured default mode.
+        send({ type: 'set_mode', mode: 'default' })
+        console.log(
+          `[e2e] session ${msg.sessionId} → set_mode default → sending AskUserQuestion prompt`,
+        )
         send({ type: 'user_prompt', text: PROMPT })
       }
       break

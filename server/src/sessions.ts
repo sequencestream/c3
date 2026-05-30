@@ -11,9 +11,11 @@ import {
   listSessions,
   renameSession,
 } from '@anthropic-ai/claude-agent-sdk'
+import { resolve } from 'node:path'
 import type { SessionInfo, TranscriptItem } from '@ccc/shared/protocol'
 import { getSessionMode } from './state.js'
 import { normalizeTranscriptText, stringifyToolResult } from './format.js'
+import { listHiddenSessions } from './requirements/store.js'
 
 /** Best display title for a session, preferring a user-set title. */
 function titleOf(s: {
@@ -25,10 +27,18 @@ function titleOf(s: {
   return s.customTitle?.trim() || s.summary?.trim() || s.firstPrompt?.trim() || 'Untitled session'
 }
 
-/** List a workspace's sessions, newest first, each tagged with its c3 mode. */
+/**
+ * List a workspace's sessions, newest first, each tagged with its c3 mode.
+ * Requirement-communication sessions are filtered out (they belong to the
+ * requirement view, not the normal list). Uses the resolved path as the key, to
+ * match how the store records `project_path`. If the store is unavailable it
+ * returns an empty hidden set, so the list degrades to "show everything".
+ */
 export async function listWorkspaceSessions(dir: string): Promise<SessionInfo[]> {
   const sessions = await listSessions({ dir })
+  const hidden = new Set(listHiddenSessions(resolve(dir)))
   return sessions
+    .filter((s) => !hidden.has(s.sessionId))
     .map((s) => ({
       sessionId: s.sessionId,
       title: titleOf(s),
@@ -116,6 +126,16 @@ function mapMessage(m: { type: string; message: unknown }): TranscriptItem[] {
 export async function loadHistory(dir: string, sessionId: string): Promise<TranscriptItem[]> {
   const messages = await getSessionMessages(sessionId, { dir })
   return messages.flatMap(mapMessage)
+}
+
+/** Whether a session still exists on disk (false if listing fails). */
+export async function sessionExists(dir: string, sessionId: string): Promise<boolean> {
+  try {
+    const sessions = await listSessions({ dir })
+    return sessions.some((s) => s.sessionId === sessionId)
+  } catch {
+    return false
+  }
 }
 
 export async function removeSession(dir: string, sessionId: string): Promise<void> {

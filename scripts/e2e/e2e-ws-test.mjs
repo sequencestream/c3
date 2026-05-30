@@ -2,7 +2,7 @@
 /**
  * End-to-end WebSocket smoke test: simulates a browser submitting a prompt
  * that requires a tool, auto-approving the permission prompt, and confirming
- * we see tool_result + session_end.
+ * we see tool_result + turn_end.
  *
  * Usage:
  *   node scripts/e2e-ws-test.mjs [ws-url] [prompt]
@@ -19,10 +19,13 @@ console.log(`[e2e] connecting ${URL}`)
 const ws = new WebSocket(URL)
 
 let sawReady = false
+let sessionCreated = false
+let promptSent = false
 let sawPermissionRequest = false
+let sawConsensusAuto = false
 let sawToolUse = false
 let sawToolResult = false
-let sawSessionEnd = false
+let sawTurnEnd = false
 let endReason = ''
 const events = []
 
@@ -46,8 +49,30 @@ ws.addEventListener('message', (evt) => {
 
   if (msg.type === 'ready') {
     sawReady = true
-    console.log('[e2e] ready → sending prompt')
-    ws.send(JSON.stringify({ type: 'user_prompt', text: PROMPT }))
+    const ws0 = msg.workspaces?.[0]?.path
+    if (!ws0) {
+      console.error('[e2e] no seed workspace in ready — start with --project <dir>')
+      finish(5)
+      return
+    }
+    console.log(`[e2e] ready → creating session in ${ws0}`)
+    sessionCreated = true
+    ws.send(JSON.stringify({ type: 'create_session', workspacePath: ws0 }))
+  } else if (msg.type === 'session_selected') {
+    if (!promptSent) {
+      promptSent = true
+      // Pin to `default` so the permission gateway fires regardless of the
+      // user's configured default mode (e.g. `auto`/`acceptEdits` would
+      // silently auto-approve the Write and skip the prompt we're testing).
+      ws.send(JSON.stringify({ type: 'set_mode', mode: 'default' }))
+      console.log(`[e2e] session ${msg.sessionId} → set_mode default → sending prompt`)
+      ws.send(JSON.stringify({ type: 'user_prompt', text: PROMPT }))
+    }
+  } else if (msg.type === 'consensus_auto') {
+    // Consensus enabled in the user's settings: a unanimous vote auto-resolves
+    // the tool with no human prompt. That still counts as the gateway firing.
+    sawConsensusAuto = true
+    console.log(`[e2e] consensus_auto (${msg.toolName}): decision=${msg.outcome?.decision}`)
   } else if (msg.type === 'assistant_text') {
     console.log(
       `[e2e] assistant_text: ${msg.text.slice(0, 120)}${msg.text.length > 120 ? '…' : ''}`,
@@ -72,10 +97,10 @@ ws.addEventListener('message', (evt) => {
     sawToolResult = true
     const summary = msg.content.slice(0, 200)
     console.log(`[e2e] tool_result (isError=${msg.isError}): ${summary}`)
-  } else if (msg.type === 'session_end') {
-    sawSessionEnd = true
+  } else if (msg.type === 'turn_end') {
+    sawTurnEnd = true
     endReason = msg.reason + (msg.error ? `: ${msg.error}` : '')
-    console.log(`[e2e] session_end: ${endReason}`)
+    console.log(`[e2e] turn_end: ${endReason}`)
     finish(judge())
   }
 })
@@ -86,8 +111,8 @@ ws.addEventListener('error', (err) => {
 })
 
 ws.addEventListener('close', () => {
-  if (!sawSessionEnd) {
-    console.error('[e2e] ws closed before session_end')
+  if (!sawTurnEnd) {
+    console.error('[e2e] ws closed before turn_end')
     finish(4)
   }
 })
@@ -97,10 +122,12 @@ function judge() {
   console.log(`events seen: ${JSON.stringify(events)}`)
   const checks = {
     ready: sawReady,
-    permission_request: sawPermissionRequest,
+    session_created: sessionCreated,
+    // The gateway fired — either a human prompt or a unanimous consensus auto-resolve.
+    permission_gateway: sawPermissionRequest || sawConsensusAuto,
     tool_use: sawToolUse,
     tool_result: sawToolResult,
-    session_end_clean: sawSessionEnd && !endReason.startsWith('error'),
+    turn_end_clean: sawTurnEnd && !endReason.startsWith('error'),
   }
   console.log('checks:', checks)
   const pass = Object.values(checks).every(Boolean)

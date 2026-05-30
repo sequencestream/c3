@@ -24,6 +24,7 @@ const emit = defineEmits<{
   'add-workspace': [path: string]
   'remove-workspace': [path: string]
   'create-session': [path: string]
+  'open-requirements': [path: string]
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -113,6 +114,9 @@ function renameSession(path: string, sessionId: string, current: string) {
             <span class="ws-name" :title="w.path">{{ w.name }}</span>
           </button>
           <span class="ws-actions">
+            <button class="icon-btn" title="需求录入" @click="emit('open-requirements', w.path)">
+              💡
+            </button>
             <button class="icon-btn" title="New session" @click="emit('create-session', w.path)">
               ＋
             </button>

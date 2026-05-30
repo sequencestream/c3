@@ -16,22 +16,27 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 
 ## Client → Server (`ClientToServer`)
 
-| type                  | fields                                             | meaning                                                                                                                                                                            |
-| --------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user_prompt`         | `text: string`                                     | New user turn for the **viewed session**. Rejected with `error` if that session already has a turn in flight (serial); otherwise starts a new run. Does not affect other sessions. |
-| `permission_response` | `requestId: string`, `decision: 'allow' \| 'deny'` | Answer to a prior `permission_request` (matched by `requestId`, regardless of which session is viewed).                                                                            |
-| `set_mode`            | `mode: PermissionMode`                             | Change the **viewed session's** permission mode (per-session, persisted). Applies to the live run immediately if one is in flight.                                                 |
-| `stop_run`            | —                                                  | Stop the in-flight run of the **viewed session** (if any). No effect on other sessions.                                                                                            |
-| `add_workspace`       | `path: string`                                     | Register a project directory as a workspace.                                                                                                                                       |
-| `remove_workspace`    | `path: string`                                     | Unregister a workspace (does not delete its sessions on disk).                                                                                                                     |
-| `list_sessions`       | `workspacePath: string`                            | Request a workspace's session list (server replies with `sessions`).                                                                                                               |
-| `create_session`      | `workspacePath: string`                            | Create a new pending session and make it active.                                                                                                                                   |
-| `select_session`      | `workspacePath: string`, `sessionId: string`       | Make a session active; server replies with `session_selected` (history + mode).                                                                                                    |
-| `rename_session`      | `workspacePath`, `sessionId`, `title: string`      | Rename a session's title.                                                                                                                                                          |
-| `delete_session`      | `workspacePath: string`, `sessionId: string`       | Delete a session and its transcript from disk.                                                                                                                                     |
-| `get_settings`        | —                                                  | Fetch the system configuration (server replies with `settings`).                                                                                                                   |
-| `save_settings`       | `settings: SystemSettings`                         | Replace the system configuration; server normalizes and echoes `settings`.                                                                                                         |
-| `ping`                | —                                                  | Keepalive.                                                                                                                                                                         |
+| type                        | fields                                               | meaning                                                                                                                                                                                |
+| --------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user_prompt`               | `text: string`                                       | New user turn for the **viewed session**. Rejected with `error` if that session already has a turn in flight (serial); otherwise starts a new run. Does not affect other sessions.     |
+| `permission_response`       | `requestId: string`, `decision: 'allow' \| 'deny'`   | Answer to a prior `permission_request` (matched by `requestId`, regardless of which session is viewed).                                                                                |
+| `set_mode`                  | `mode: PermissionMode`                               | Change the **viewed session's** permission mode (per-session, persisted). Applies to the live run immediately if one is in flight.                                                     |
+| `stop_run`                  | —                                                    | Stop the in-flight run of the **viewed session** (if any). No effect on other sessions.                                                                                                |
+| `add_workspace`             | `path: string`                                       | Register a project directory as a workspace.                                                                                                                                           |
+| `remove_workspace`          | `path: string`                                       | Unregister a workspace (does not delete its sessions on disk).                                                                                                                         |
+| `list_sessions`             | `workspacePath: string`                              | Request a workspace's session list (server replies with `sessions`).                                                                                                                   |
+| `create_session`            | `workspacePath: string`                              | Create a new pending session and make it active.                                                                                                                                       |
+| `select_session`            | `workspacePath: string`, `sessionId: string`         | Make a session active; server replies with `session_selected` (history + mode).                                                                                                        |
+| `rename_session`            | `workspacePath`, `sessionId`, `title: string`        | Rename a session's title.                                                                                                                                                              |
+| `delete_session`            | `workspacePath: string`, `sessionId: string`         | Delete a session and its transcript from disk.                                                                                                                                         |
+| `list_requirements`         | `projectPath: string`, `status?: RequirementStatus`  | Request a project's requirement list (server replies with `requirements`). Returns `error` if the ledger is unavailable.                                                               |
+| `open_requirement_chat`     | `projectPath: string`                                | Enter the requirement view: open/resume the project's read-only communication session and reply with its `session_selected` plus a `requirements` list (requirement-management RM-R4). |
+| `refine_requirement`        | `projectPath: string`, `requirementId: string`       | Restart the communication session seeded with one requirement's content to refine it further (RM-R7).                                                                                  |
+| `start_development`         | `projectPath: string`, `requirementId: string`       | Launch a background `/develop-pipeline` session for a `todo` requirement; sets it `in_progress` and records `lastDevSessionId` (RM-R8). Warns (not blocks) on unmet dependencies.      |
+| `update_requirement_status` | `requirementId: string`, `status: RequirementStatus` | Manually set a requirement's status (e.g. `done` / `cancelled`); the server replies with `requirements` (RM-R9).                                                                       |
+| `get_settings`              | —                                                    | Fetch the system configuration (server replies with `settings`).                                                                                                                       |
+| `save_settings`             | `settings: SystemSettings`                           | Replace the system configuration; server normalizes and echoes `settings`.                                                                                                             |
+| `ping`                      | —                                                    | Keepalive.                                                                                                                                                                             |
 
 ## Server → Client (`ServerToClient`)
 
@@ -51,6 +56,7 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 | `permission_request` | `requestId`, `toolName`, `input: unknown`, `consensus?: ConsensusOutcome`                                      | **Block point** — the run waits indefinitely until a `permission_response` arrives (or the run is aborted, which denies). `consensus` is attached when [multi-agent consensus](../../domains/core/permission-gateway/consensus.md) ran but the agents were split. |
 | `consensus_auto`     | `toolName`, `input: unknown`, `outcome: ConsensusOutcome`                                                      | A permission request the agents resolved **unanimously** — informational, no human decision needed. Carries the verdicts + reasons + decider summary.                                                                                                             |
 | `turn_end`           | `reason: 'complete' \| 'error'`, `error?: string`                                                              | One prompt→result turn ended (`complete`, incl. a stopped run; or `error`). **Never** means the session ended — it stays alive for the next prompt; the input unlocks via `session_status`.                                                                       |
+| `requirements`       | `projectPath: string`, `items: Requirement[]`                                                                  | A project's requirement list, in reply to `list_requirements` / `open_requirement_chat` / `update_requirement_status`, and broadcast on a confirmed `save_requirements` (requirement-management).                                                                 |
 | `settings`           | `settings: SystemSettings`                                                                                     | The (normalized) system configuration, in reply to `get_settings` / `save_settings`.                                                                                                                                                                              |
 | `error`              | `message: string`                                                                                              | A requested operation failed (bad path, missing session, etc.).                                                                                                                                                                                                   |
 | `pong`               | —                                                                                                              | Reply to `ping`.                                                                                                                                                                                                                                                  |
@@ -85,6 +91,21 @@ See the [session-registry spec](../../domains/core/session-registry/spec.md).
   [consensus design](../../domains/core/permission-gateway/consensus.md).
 
 See the [system-config spec](../../domains/system-config/agent-config/spec.md).
+
+## Requirement types
+
+- **`RequirementPriority`** — `'P0' | 'P1' | 'P2' | 'P3'` (P0 highest).
+- **`RequirementStatus`** — `'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'`.
+- **`Requirement`** — `{ id, projectPath, title, content, priority, status, dependsOn: string[],
+lastDevSessionId: string | null, createdAt, updatedAt }`. A project-scoped ledger item;
+  `projectPath` is the resolved workspace path; `dependsOn` are intra-project requirement ids.
+- **`ProposedRequirement`** — `{ title, content, priority, dependsOn?: string[] }`. One item in a
+  `save_requirements` call and in the confirmation render; persisted as a `Requirement` (status
+  `todo`) only on a confirmed save.
+
+The communication agent's save confirmation reuses `permission_request` /`permission_response`
+with `toolName === 'mcp__c3__save_requirements'` and `input.requirements: ProposedRequirement[]`.
+See the [requirement-management spec](../../domains/core/requirement-management/spec.md).
 
 ## PermissionMode
 

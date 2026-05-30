@@ -36,11 +36,22 @@ interface InFlightRun {
   handle: RunHandle | null
 }
 
+/**
+ * What kind of session a runtime drives:
+ * - `normal` — an ordinary user session (default).
+ * - `requirement` — a read-only requirement-communication session; runs with the
+ *   requirement permission gate + disallowed-tools lock and is hidden from the
+ *   normal session list.
+ */
+export type SessionKind = 'normal' | 'requirement'
+
 export interface SessionRuntime {
   /** Real SDK id, or a `pending:…` id until the first run binds it. */
   sessionId: string
   workspacePath: string
   mode: PermissionMode
+  /** Normal user session vs. read-only requirement-communication session. */
+  kind: SessionKind
   /** On-disk transcript snapshot at runtime creation; replayed before `buffer`. */
   baseline: TranscriptItem[]
   /** Every wire event emitted since creation, across all turns. */
@@ -72,6 +83,7 @@ export function ensureRuntime(
   workspacePath: string,
   mode: PermissionMode,
   baseline: TranscriptItem[],
+  kind: SessionKind = 'normal',
 ): SessionRuntime {
   let rt = runtimes.get(id)
   if (!rt) {
@@ -79,6 +91,7 @@ export function ensureRuntime(
       sessionId: id,
       workspacePath,
       mode,
+      kind,
       baseline,
       buffer: [],
       run: null,

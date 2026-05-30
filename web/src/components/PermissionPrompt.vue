@@ -6,7 +6,7 @@
  * 两者都可附带多 agent 共识（分歧）意见。组件不持有 WebSocket，决策通过事件上抛，
  * 由 App 统一发送并回写 m.decision。
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   askQuestionsOf,
   agentsForOption,
@@ -17,8 +17,18 @@ import {
 } from '../lib/ask'
 import { fmt, oneLine } from '../lib/format'
 import type { PermissionMsg } from '../lib/chat-types'
+import type { ProposedRequirement } from '@ccc/shared/protocol'
 
 const props = defineProps<{ m: PermissionMsg }>()
+
+/** The c3 save_requirements tool's name (mirrors SAVE_REQUIREMENTS_TOOL server-side). */
+const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
+
+/** The proposed requirements carried by a save_requirements permission request. */
+const proposedRequirements = computed<ProposedRequirement[]>(() => {
+  const reqs = (props.m.input as { requirements?: unknown })?.requirements
+  return Array.isArray(reqs) ? (reqs as ProposedRequirement[]) : []
+})
 
 const emit = defineEmits<{
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
@@ -200,6 +210,28 @@ function submitAsk() {
       <button :disabled="!isAskAnswered()" @click="submitAsk()">提交答案</button>
     </div>
     <div v-else class="decided">— {{ m.decision === 'allow' ? 'answered' : 'denied' }} —</div>
+  </template>
+
+  <!-- save_requirements: render the proposed requirements as cards -->
+  <template v-else-if="m.toolName === SAVE_REQUIREMENTS_TOOL">
+    <div class="label">💾 保存需求 · <code>save_requirements</code></div>
+    <div class="req-confirm">
+      <div v-for="(r, i) in proposedRequirements" :key="i" class="req-confirm-card">
+        <div class="req-confirm-head">
+          <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
+          <span class="req-confirm-title">{{ r.title }}</span>
+        </div>
+        <div class="req-confirm-content">{{ r.content }}</div>
+        <div v-if="r.dependsOn && r.dependsOn.length" class="req-confirm-deps">
+          依赖:{{ r.dependsOn.join('、') }}
+        </div>
+      </div>
+    </div>
+    <div v-if="m.decision === null" class="actions">
+      <button class="deny" @click="respond('deny')">取消</button>
+      <button @click="respond('allow')">保存</button>
+    </div>
+    <div v-else class="decided">— {{ m.decision === 'allow' ? '已保存' : '已取消' }} —</div>
   </template>
 
   <!-- Every other tool: allow / deny -->

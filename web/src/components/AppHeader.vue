@@ -12,6 +12,8 @@ defineProps<{
   mode: PermissionMode
   modeOptions: { value: PermissionMode; label: string }[]
   status: 'connecting' | 'open' | 'closed'
+  /** Hidden for the requirement comm session, which is pinned to `default`. */
+  modeSelectable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,7 +29,7 @@ const emit = defineEmits<{
       <span class="crumb-ws">{{ activeWorkspaceName }}</span>
       <span class="crumb-sep">›</span>
       <span class="crumb-session">{{ activeTitle }}</span>
-      <label class="mode">
+      <label v-if="modeSelectable !== false" class="mode">
         <span class="mode-paren">(</span>
         <BaseDropdown
           :model-value="mode"

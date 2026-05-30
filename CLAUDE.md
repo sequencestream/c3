@@ -22,7 +22,7 @@ pnpm pkg                                         # build + single binaries in di
 - server: Hono server
 - web: Vue 3 frontend
 - shared: protocol definitions, common code
-- scripts/e2e/e2e-guide.md: E2E tests
+- scripts/e2e/e2e-guide.md: E2E tests, make sure e2e pass if relative paths are changed.
 - specs/: specs is the source of truth, keep synchronized with code, without ask.
 - specs/overview.md: overview of the system
 - specs/constitution.md: constitution of the system

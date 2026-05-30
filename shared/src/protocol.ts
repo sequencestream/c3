@@ -224,6 +224,51 @@ export interface SlashCommandInfo {
   aliases?: string[]
 }
 
+// ---- Requirement management ----
+
+/** Requirement priority. `P0` highest … `P3` lowest. */
+export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3'
+
+/**
+ * Requirement lifecycle status.
+ * - `draft` — captured but not yet finalized (optional).
+ * - `todo` — finalized, not started (the state save-to-db produces).
+ * - `in_progress` — development launched (`/develop-pipeline` running).
+ * - `done` / `cancelled` — terminal, set by the user (never auto-set).
+ */
+export type RequirementStatus = 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
+
+/** One persisted requirement, scoped to a project (workspace path). */
+export interface Requirement {
+  /** Stable uuid. */
+  id: string
+  /** Owning project — the workspace absolute path (resolved). */
+  projectPath: string
+  title: string
+  content: string
+  priority: RequirementPriority
+  status: RequirementStatus
+  /** Ids of other requirements (same project) this one depends on. */
+  dependsOn: string[]
+  /** The last dev session launched for this requirement, for the detail back-link. */
+  lastDevSessionId: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * One requirement proposed by the requirement-communication agent via the
+ * `save_requirements` tool. Rendered in the confirmation prompt; persisted with
+ * status `todo` once the user allows.
+ */
+export interface ProposedRequirement {
+  title: string
+  content: string
+  priority: RequirementPriority
+  /** Optional ids of existing requirements (same project) it depends on. */
+  dependsOn?: string[]
+}
+
 // Client → Server
 export type ClientToServer =
   | { type: 'user_prompt'; text: string }
@@ -262,6 +307,23 @@ export type ClientToServer =
   | { type: 'get_settings' }
   /** Replace the system configuration; server normalizes and echoes `settings`. */
   | { type: 'save_settings'; settings: SystemSettings }
+  /** List a project's requirements (reply: `requirements`), optionally filtered by status. */
+  | { type: 'list_requirements'; projectPath: string; status?: RequirementStatus }
+  /**
+   * Enter the requirement view for a project: open or resume its (persisted)
+   * communication session and return the requirement list. Replies with a
+   * `session_selected` for the comm session plus a `requirements` list.
+   */
+  | { type: 'open_requirement_chat'; projectPath: string }
+  /**
+   * Restart the comm session as a fresh one seeded with a requirement to refine;
+   * the server injects the first prompt with the requirement's id and content.
+   */
+  | { type: 'refine_requirement'; projectPath: string; requirementId: string }
+  /** Launch a background dev session for a `todo` requirement via `/develop-pipeline`. */
+  | { type: 'start_development'; projectPath: string; requirementId: string }
+  /** Manually set a requirement's status (e.g. mark done/cancelled). */
+  | { type: 'update_requirement_status'; requirementId: string; status: RequirementStatus }
   | { type: 'ping' }
 
 // Server → Client
@@ -302,6 +364,8 @@ export type ServerToClient =
   | { type: 'commands'; commands: SlashCommandInfo[] }
   /** The (normalized) system configuration, in reply to `get_settings`/`save_settings`. */
   | { type: 'settings'; settings: SystemSettings }
+  /** A project's requirement list (reply to `list_requirements`/`open_requirement_chat`, or a push after a change). */
+  | { type: 'requirements'; projectPath: string; items: Requirement[] }
   /**
    * Echo of a user prompt, emitted into the session's stream when a turn starts.
    * Lets every viewer (including one switching back to a background session) see

@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "node scripts/e2e/run-all.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

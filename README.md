@@ -72,26 +72,37 @@ The binary spawns the system `claude` CLI (or `$CLAUDE_PATH`) for the SDK's
 agent process, since the SDK's bundled `cli-<platform>` lookup misses inside a
 single-file Bun binary.
 
-## End-to-end test
+## End-to-end tests
 
-A scripted WebSocket client simulates the browser round-trip:
+`pnpm e2e` runs the whole WebSocket suite: it boots one server (with a throwaway
+requirement db, leaving `~/.c3` untouched), runs every test against it, and
+prints a pass/fail summary. See [`scripts/e2e/e2e-guide.md`](scripts/e2e/e2e-guide.md)
+for the individual tests (smoke, requirement management, consensus voting).
+
+```bash
+pnpm e2e              # build, boot, run all, report
+pnpm e2e --no-build   # reuse the existing server/dist build
+```
+
+Each test is also runnable on its own against a manually-started server, e.g.
+the smoke test:
 
 ```bash
 # Terminal A
 pnpm start --project /tmp --port 13000
 
 # Terminal B
-node scripts/e2e-ws-test.mjs ws://localhost:13000/ws
+node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws
 # expected: RESULT: PASS
 ```
 
-The default test prompt asks Claude to write `/tmp/c3-e2e-test.txt`. The
-script:
+The smoke prompt asks Claude to write `/tmp/c3-e2e-test.txt`. The script:
 
-1. Connects to `/ws`
-2. Sends a `user_prompt`
-3. Auto-approves the `permission_request` for the `Write` tool
-4. Confirms the `tool_result` and `session_end` events arrive
+1. Connects to `/ws` and creates a session in the seed workspace
+2. Pins the session to `default` mode and sends a `user_prompt`
+3. Auto-approves the `permission_request` for the `Write` tool (or accepts a
+   unanimous `consensus_auto` when consensus is enabled)
+4. Confirms the `tool_result` and `turn_end` events arrive
 
 ## CLI
 
@@ -129,7 +140,7 @@ Server → client:
 | `tool_use`           | model decided to call a tool _(already approved when this fires)_ |
 | `tool_result`        | tool finished                                                     |
 | `permission_request` | **block point — UI must answer with `permission_response`**       |
-| `session_end`        | query completed (or errored)                                      |
+| `turn_end`           | query completed (or errored)                                      |
 
 ## How permission interception works
 

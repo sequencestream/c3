@@ -7,9 +7,12 @@ import ChatMessages from './components/ChatMessages.vue'
 import MessageInput from './components/MessageInput.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import SessionStatusBar from './components/SessionStatusBar.vue'
+import RequirementList from './components/RequirementList.vue'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   PermissionMode,
+  Requirement,
+  RequirementStatus,
   ServerToClient,
   SessionInfo,
   SessionRunStatus,
@@ -63,6 +66,52 @@ const activity = ref<RunActivity>({ phase: 'idle' })
 // first `/`). Cleared on session switch so the next `/` refetches for the new cwd.
 const availableCommands = ref<SlashCommandInfo[]>([])
 
+// ---- Requirement view ----
+// `viewMode` toggles the main area between the normal console and the
+// requirement view (list + comm chat). The comm session IS the viewed session,
+// so the chat column is shared; only the left requirement list is extra.
+const viewMode = ref<'console' | 'requirements'>('console')
+const requirementsProject = ref<string | null>(null)
+// Per-project requirement lists (the server pushes `requirements`; we ignore
+// projects we aren't viewing).
+const requirements = ref<Record<string, Requirement[]>>({})
+
+const currentRequirements = computed<Requirement[]>(() =>
+  requirementsProject.value ? (requirements.value[requirementsProject.value] ?? []) : [],
+)
+
+const VIEW_MODE_KEY = 'c3.viewMode'
+const REQ_PROJECT_KEY = 'c3.requirementsProject'
+
+// Persist the requirement-view selection so a hard refresh restores it (Vue's
+// in-memory state already survives a WS reconnect; this only covers reload).
+function persistViewMode() {
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, viewMode.value)
+    if (requirementsProject.value) localStorage.setItem(REQ_PROJECT_KEY, requirementsProject.value)
+  } catch {
+    /* localStorage unavailable — non-fatal */
+  }
+}
+
+// After `ready`, re-enter the requirement view if a hard refresh left us there.
+function maybeRestoreRequirements(list: WorkspaceInfo[]) {
+  let saved: { mode: string | null; proj: string | null }
+  try {
+    saved = {
+      mode: localStorage.getItem(VIEW_MODE_KEY),
+      proj: localStorage.getItem(REQ_PROJECT_KEY),
+    }
+  } catch {
+    return
+  }
+  if (saved.mode === 'requirements' && saved.proj && list.some((w) => w.path === saved.proj)) {
+    viewMode.value = 'requirements'
+    requirementsProject.value = saved.proj
+    client?.send({ type: 'open_requirement_chat', projectPath: saved.proj })
+  }
+}
+
 // ---- System settings (agent config) ----
 const settingsOpen = ref(false)
 // Latest server settings; SettingsPanel deep-copies this into its own draft.
@@ -88,7 +137,11 @@ onMounted(() => {
     // reset). Re-select the active session so its history + live stream replay
     // and this connection re-attaches as a viewer.
     onReopen: () => {
-      if (activeWorkspace.value && activeSession.value) {
+      // In the requirement view, resume the comm session (the server re-binds
+      // the project's persisted `is_current` chat); otherwise re-select normally.
+      if (viewMode.value === 'requirements' && requirementsProject.value) {
+        client?.send({ type: 'open_requirement_chat', projectPath: requirementsProject.value })
+      } else if (activeWorkspace.value && activeSession.value) {
         client?.send({
           type: 'select_session',
           workspacePath: activeWorkspace.value,
@@ -133,6 +186,8 @@ function handleMessage(msg: ServerToClient) {
       applyStatuses(msg.statuses)
       // Auto-expand the most-recent workspace for an immediate session list.
       if (msg.workspaces.length > 0) toggleWorkspace(msg.workspaces[0].path, true)
+      // Restore the requirement view if a hard refresh left us in it.
+      maybeRestoreRequirements(msg.workspaces)
       break
     case 'workspaces':
       workspaces.value = msg.workspaces
@@ -172,6 +227,9 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'settings':
       serverSettings.value = msg.settings
+      break
+    case 'requirements':
+      requirements.value = { ...requirements.value, [msg.projectPath]: msg.items }
       break
     case 'user_text':
       add({ kind: 'user', text: msg.text })
@@ -297,12 +355,68 @@ function removeWorkspace(path: string) {
 }
 
 function createSession(path: string) {
+  enterConsole()
   client?.send({ type: 'create_session', workspacePath: path })
 }
 
 function selectSession(path: string, sessionId: string) {
+  enterConsole()
   if (sessionId === activeSession.value) return
   client?.send({ type: 'select_session', workspacePath: path, sessionId })
+}
+
+// ---- Requirement actions ----
+function enterConsole() {
+  if (viewMode.value !== 'console') {
+    viewMode.value = 'console'
+    persistViewMode()
+  }
+}
+
+function openRequirements(path: string) {
+  viewMode.value = 'requirements'
+  requirementsProject.value = path
+  persistViewMode()
+  // The response carries both the comm `session_selected` and the list.
+  client?.send({ type: 'open_requirement_chat', projectPath: path })
+}
+
+function setRequirementFilter(status: RequirementStatus | null) {
+  if (!requirementsProject.value) return
+  client?.send({
+    type: 'list_requirements',
+    projectPath: requirementsProject.value,
+    ...(status ? { status } : {}),
+  })
+}
+
+function refineRequirement(requirementId: string) {
+  if (!requirementsProject.value) return
+  client?.send({
+    type: 'refine_requirement',
+    projectPath: requirementsProject.value,
+    requirementId,
+  })
+}
+
+function startDevelopment(requirementId: string, hasUnfinishedDeps: boolean) {
+  if (!requirementsProject.value) return
+  if (hasUnfinishedDeps && !window.confirm('该需求存在未完成的依赖,仍要启动开发吗?')) return
+  client?.send({
+    type: 'start_development',
+    projectPath: requirementsProject.value,
+    requirementId,
+  })
+}
+
+function openDevSession(sessionId: string) {
+  if (!requirementsProject.value) return
+  enterConsole()
+  client?.send({ type: 'select_session', workspacePath: requirementsProject.value, sessionId })
+}
+
+function setRequirementStatus(requirementId: string, status: RequirementStatus) {
+  client?.send({ type: 'update_requirement_status', requirementId, status })
 }
 
 function deleteSession(path: string, sessionId: string) {
@@ -371,6 +485,7 @@ function listCommands() {
     :mode="mode"
     :mode-options="modeOptions"
     :status="status"
+    :mode-selectable="viewMode === 'console'"
     @set-mode="setMode"
     @open-settings="openSettings"
   />
@@ -388,9 +503,21 @@ function listCommands() {
       @add-workspace="addWorkspace"
       @remove-workspace="removeWorkspace"
       @create-session="createSession"
+      @open-requirements="openRequirements"
       @select-session="selectSession"
       @delete-session="deleteSession"
       @rename-session="renameSession"
+    />
+
+    <RequirementList
+      v-if="viewMode === 'requirements' && requirementsProject"
+      :project="requirementsProject"
+      :requirements="currentRequirements"
+      @filter="setRequirementFilter"
+      @refine="refineRequirement"
+      @start-dev="startDevelopment"
+      @open-dev="openDevSession"
+      @set-status="setRequirementStatus"
     />
 
     <div class="content">

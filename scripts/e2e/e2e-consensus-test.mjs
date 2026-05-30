@@ -137,7 +137,11 @@ ws.addEventListener('message', (evt) => {
     case 'session_selected':
       if (!promptSent) {
         promptSent = true
-        console.log(`[e2e] session ${msg.sessionId} → sending coding prompt`)
+        // Pin to `default` so Edit hits `canUseTool` (and thus consensus) — the
+        // user's configured default mode (e.g. `auto`/`acceptEdits`) would
+        // otherwise auto-approve the edit and skip voting entirely.
+        send({ type: 'set_mode', mode: 'default' })
+        console.log(`[e2e] session ${msg.sessionId} → set_mode default → sending coding prompt`)
         send({ type: 'user_prompt', text: PROMPT })
       }
       break

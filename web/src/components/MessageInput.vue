@@ -7,11 +7,13 @@
  */
 import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
+import { useSpeechRecognition } from '../composables/useSpeechRecognition'
 
 const props = defineProps<{
   running: boolean
   hasActiveSession: boolean
   availableCommands: SlashCommandInfo[]
+  voiceLang: string
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +24,29 @@ const emit = defineEmits<{
 
 const input = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+// 语音输入：聆听开始时记录 baseText（已有内容），识别结果追加其后。
+let voiceBase = ''
+const {
+  supported: voiceSupported,
+  state: voiceState,
+  errorMessage: voiceError,
+  start: voiceStart,
+  stop: voiceStop,
+} = useSpeechRecognition((final, interim) => {
+  input.value = voiceBase + final + interim
+})
+
+function toggleMic() {
+  if (!voiceSupported || props.running || !props.hasActiveSession) return
+  if (voiceState.value === 'listening') {
+    voiceStop()
+    return
+  }
+  voiceBase = input.value ? input.value.replace(/\s*$/, '') + ' ' : ''
+  voiceStart(props.voiceLang)
+  nextTick(() => inputEl.value?.focus())
+}
 
 // 连续两次裸 Enter（间隔内）直接发送；记录上一次裸 Enter 的事件时间戳。
 const DOUBLE_ENTER_MS = 400
@@ -100,11 +125,18 @@ function applyCommand(c: SlashCommandInfo) {
 function submit() {
   const t = input.value.trim()
   if (!t || props.running || !props.hasActiveSession) return
+  if (voiceState.value === 'listening') voiceStop()
   emit('submit', t)
   input.value = ''
 }
 
 function onKey(e: KeyboardEvent) {
+  // 聆听中按 Esc 先停止语音识别（不触发其他逻辑）。
+  if (e.key === 'Escape' && voiceState.value === 'listening') {
+    e.preventDefault()
+    voiceStop()
+    return
+  }
   // While the slash menu is open it owns navigation/selection keys so they
   // don't fall through to the ⌘/Ctrl+Enter submit path.
   if (slashOpen.value) {
@@ -174,11 +206,25 @@ function onKey(e: KeyboardEvent) {
           ? 'Select or create a session to start'
           : running
             ? 'running…'
-            : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
+            : voiceState === 'listening'
+              ? '正在聆听… 再次点击麦克风或按 Esc 结束'
+              : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
       "
       :disabled="running || !hasActiveSession"
       @keydown="onKey"
     />
+    <button
+      v-if="voiceSupported && !running"
+      class="mic-btn"
+      :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
+      :disabled="!hasActiveSession"
+      :title="voiceState === 'error' ? voiceError : '语音输入'"
+      :aria-label="voiceState === 'listening' ? '停止语音输入' : '开始语音输入'"
+      :aria-pressed="voiceState === 'listening'"
+      @click="toggleMic"
+    >
+      🎤
+    </button>
     <button v-if="running" class="stop-btn" title="Stop the running turn" @click="emit('stop')">
       Stop
     </button>

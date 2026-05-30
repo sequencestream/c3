@@ -800,6 +800,41 @@ footer {
   pointer-events: none;
 }
 
+/* 语音输入麦克风按钮：方形图标按钮，与 56px 高的输入区对齐 */
+button.mic-btn {
+  height: 56px;
+  width: 56px;
+  min-width: 56px;
+  padding: 0;
+  font-size: 20px;
+  background: transparent;
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+}
+button.mic-btn:hover:not(:disabled) {
+  background: var(--c-hover-strong);
+  color: var(--c-text);
+  filter: none;
+}
+button.mic-btn.listening {
+  color: var(--c-error);
+  border-color: var(--c-error);
+  animation: mic-pulse 1.4s var(--ease-standard) infinite;
+}
+button.mic-btn.error {
+  color: var(--c-error);
+  border-color: var(--c-error);
+}
+@keyframes mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
 /* ============ 斜杠命令补全菜单 ============ */
 .slash-menu {
   position: absolute;

@@ -112,6 +112,8 @@ export interface SystemSettings {
   defaultMode?: PermissionMode
   /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
   consensus?: ConsensusConfig
+  /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
+  voiceLang?: string
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */

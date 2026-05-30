@@ -411,6 +411,7 @@ function listCommands() {
         :running="running"
         :has-active-session="hasActiveSession"
         :available-commands="availableCommands"
+        :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
         @submit="onSubmit"
         @stop="stopRun"
         @list-commands="listCommands"

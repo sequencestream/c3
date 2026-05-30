@@ -91,7 +91,9 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     ? (raw!.defaultMode as PermissionMode)
     : 'default'
   const consensus = { enabled: raw?.consensus?.enabled === true }
-  return { agents, defaultAgentId, defaultMode, consensus }
+  const voiceLang =
+    typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
+  return { agents, defaultAgentId, defaultMode, consensus, voiceLang }
 }
 
 export function loadSettings(): SystemSettings {

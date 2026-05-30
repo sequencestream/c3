@@ -10,6 +10,14 @@ import type { AgentConfig, PermissionMode, SystemSettings } from '@ccc/shared/pr
 
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 
+// 浏览器语音输入的可选识别语言（BCP-47）。
+const VOICE_LANGS: { value: string; label: string }[] = [
+  { value: 'zh-CN', label: '中文（普通话）' },
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'zh-HK', label: '粵語' },
+]
+
 const props = defineProps<{
   open: boolean
   settings: SystemSettings | null
@@ -26,6 +34,7 @@ const draft = ref<SystemSettings>({
   defaultAgentId: SYSTEM_AGENT_ID,
   defaultMode: 'default',
   consensus: { enabled: false },
+  voiceLang: 'zh-CN',
 })
 
 // Re-seed the draft whenever the panel opens or fresh server settings arrive.
@@ -39,6 +48,7 @@ watch(
       defaultAgentId: settings.defaultAgentId,
       defaultMode: settings.defaultMode ?? 'default',
       consensus: { enabled: settings.consensus?.enabled ?? false },
+      voiceLang: settings.voiceLang ?? 'zh-CN',
     }
   },
   { immediate: true },
@@ -141,6 +151,16 @@ function isSystemAgent(a: AgentConfig): boolean {
       </p>
       <select v-model="draft.defaultMode" class="mode-select">
         <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
+      </select>
+
+      <p class="settings-section-title">Voice input language</p>
+      <p class="settings-hint">
+        The language the browser's speech recognition listens for when you use the microphone in the
+        message box. Voice input is provided by the browser (Chrome/Edge) and may require a network
+        connection.
+      </p>
+      <select v-model="draft.voiceLang" class="mode-select">
+        <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
       </select>
 
       <p class="settings-section-title">Consensus</p>

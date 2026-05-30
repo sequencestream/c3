@@ -29,6 +29,24 @@ export type ChatBody =
 
 export type ChatMsg = ChatBody & { id: number }
 export type PermissionMsg = Extract<ChatMsg, { kind: 'permission' }>
+
+/**
+ * Fine-grained run activity for the viewed session, inferred entirely on the
+ * client from the event stream (the server only sends events for the session a
+ * connection is viewing). Drives the status bar above the input box; the
+ * authoritative on/off remains `sessionStatus` (server-broadcast).
+ * - `idle` — no turn in flight (the input is free).
+ * - `thinking` — a turn is running and the model is producing text / deciding.
+ * - `tool` — a tool call is executing (`toolName` is the running tool).
+ * - `awaiting` — blocked on a permission decision.
+ * - `error` — the last turn failed; held until the next prompt clears it.
+ */
+export type RunActivity =
+  | { phase: 'idle' }
+  | { phase: 'thinking' }
+  | { phase: 'tool'; toolName: string }
+  | { phase: 'awaiting' }
+  | { phase: 'error'; message: string }
 export type TextMsg = Extract<ChatMsg, { kind: 'user' | 'assistant' | 'system' }>
 
 /**

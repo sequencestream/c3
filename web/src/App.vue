@@ -6,7 +6,8 @@ import SessionSidebar from './components/SessionSidebar.vue'
 import ChatMessages from './components/ChatMessages.vue'
 import MessageInput from './components/MessageInput.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
-import type { ChatBody, ChatMsg, PermissionMsg } from './lib/chat-types'
+import SessionStatusBar from './components/SessionStatusBar.vue'
+import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   PermissionMode,
   ServerToClient,
@@ -52,6 +53,11 @@ function statusOf(sessionId: string): SessionStatus {
 const running = computed(
   () => hasActiveSession.value && statusOf(activeSession.value as string) !== 'idle',
 )
+
+// Fine-grained activity of the viewed session, inferred from the event stream
+// (see RunActivity). `running` is the authoritative on/off; this only refines
+// the label. Reset on session switch; the replayed buffer tail re-derives it.
+const activity = ref<RunActivity>({ phase: 'idle' })
 
 // Available commands/skills for the active session's cwd (fetched lazily on the
 // first `/`). Cleared on session switch so the next `/` refetches for the new cwd.
@@ -152,6 +158,7 @@ function handleMessage(msg: ServerToClient) {
       // History (on-disk baseline) renders first; the live buffer tail, if any,
       // follows as normal stream events (user_text/assistant_text/…). `running`
       // is derived from sessionStatus, kept current by session_status broadcasts.
+      activity.value = { phase: 'idle' }
       for (const item of msg.history) add(transcriptToChat(item))
       break
     case 'session_started':
@@ -168,12 +175,15 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'user_text':
       add({ kind: 'user', text: msg.text })
+      activity.value = { phase: 'thinking' }
       break
     case 'assistant_text':
       add({ kind: 'assistant', text: msg.text })
+      activity.value = { phase: 'thinking' }
       break
     case 'tool_use':
       add({ kind: 'tool-use', toolUseId: msg.toolUseId, toolName: msg.toolName, input: msg.input })
+      activity.value = { phase: 'tool', toolName: msg.toolName }
       break
     case 'tool_result':
       add({
@@ -182,6 +192,9 @@ function handleMessage(msg: ServerToClient) {
         content: msg.content,
         isError: msg.isError,
       })
+      // Tool returned — the model is now deciding the next step (the "stuck
+      // after grep" moment the status bar exists to make visible).
+      activity.value = { phase: 'thinking' }
       break
     case 'permission_request':
       add({
@@ -192,6 +205,7 @@ function handleMessage(msg: ServerToClient) {
         decision: null,
         consensus: msg.consensus,
       })
+      activity.value = { phase: 'awaiting' }
       break
     case 'consensus_auto':
       add({
@@ -200,6 +214,7 @@ function handleMessage(msg: ServerToClient) {
         input: msg.input,
         outcome: msg.outcome,
       })
+      activity.value = { phase: 'thinking' }
       break
     case 'turn_end':
       // A turn finished — the session stays active for the next prompt. The
@@ -207,6 +222,9 @@ function handleMessage(msg: ServerToClient) {
       // line on error; a normal completion just frees the input.
       if (msg.reason === 'error') {
         add({ kind: 'system', text: `— error: ${msg.error ?? 'unknown'} —` })
+        activity.value = { phase: 'error', message: msg.error ?? 'unknown' }
+      } else {
+        activity.value = { phase: 'idle' }
       }
       break
     case 'error':
@@ -302,10 +320,23 @@ function onSubmit(text: string) {
   // Optimistic lock; the server confirms via `session_status`. The prompt bubble
   // arrives as a `user_text` echo so every viewer (and switch-back) renders it.
   sessionStatus.value = { ...sessionStatus.value, [activeSession.value as string]: 'running' }
+  // Clear any held error and show progress immediately (don't wait for the echo).
+  activity.value = { phase: 'thinking' }
 }
 
 function stopRun() {
   client?.send({ type: 'stop_run' })
+}
+
+// Re-sync the viewed session's status/history (re-select it). Useful when a
+// status looks stale; it resyncs the view, it can't revive a wedged SDK run.
+function refreshStatus() {
+  if (!activeWorkspace.value || !activeSession.value) return
+  client?.send({
+    type: 'select_session',
+    workspacePath: activeWorkspace.value,
+    sessionId: activeSession.value,
+  })
 }
 
 function setMode(next: PermissionMode) {
@@ -368,6 +399,13 @@ function listCommands() {
         :has-active-session="hasActiveSession"
         @respond="respond"
         @submit-ask="submitAsk"
+      />
+      <SessionStatusBar
+        :has-active-session="hasActiveSession"
+        :running="running"
+        :connection="status"
+        :activity="activity"
+        @refresh="refreshStatus"
       />
       <MessageInput
         :running="running"

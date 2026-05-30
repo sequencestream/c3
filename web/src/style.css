@@ -480,6 +480,83 @@ header h1 {
   font-size: var(--fs-body);
 }
 
+/* ---- Run-status bar (thin line above the input) ---- */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-6);
+  font-size: var(--fs-badge);
+  line-height: 1;
+  color: var(--c-text-muted);
+  border-top: 1px solid var(--c-border);
+  background: var(--c-panel);
+}
+.status-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-text-muted);
+}
+.status-dot.running {
+  background: var(--c-success);
+}
+.status-dot.awaiting {
+  background: var(--c-warning);
+  animation: status-pulse 1.4s var(--ease-standard) infinite;
+}
+.status-dot.error {
+  background: var(--c-error);
+}
+.status-spinner {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--c-border);
+  border-top-color: var(--c-success);
+  border-radius: 50%;
+  animation: status-spin 0.7s linear infinite;
+}
+.status-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-muted {
+  color: var(--c-text-disabled);
+}
+.status-refresh {
+  margin-left: auto;
+  flex-shrink: 0;
+  /* Reset the global button sizing (height: 56px / min-width: 80px) so it
+     doesn't dictate the status bar's row height. */
+  height: auto;
+  min-width: 0;
+  padding: 0 var(--sp-1);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-body);
+  font-weight: normal;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.status-refresh:hover:not(:disabled) {
+  color: var(--c-text);
+}
+.status-refresh:disabled {
+  color: var(--c-text-disabled);
+  cursor: default;
+}
+@keyframes status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ============ 对话区域（规范 3.4） ============ */
 main {
   flex: 1;

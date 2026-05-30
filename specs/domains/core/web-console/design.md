@@ -19,23 +19,25 @@ props and emitting intent events (App performs every send). All styling is globa
 | ChatMessages     | `components/ChatMessages.vue`     | Groups `messages` into render blocks (text / collapsible tool batch), owns expand state + autoscroll                                                                              |
 | PermissionPrompt | `components/PermissionPrompt.vue` | One permission block: AskUserQuestion answer panel or allow/deny prompt; owns local answer draft, emits `respond`/`submit-ask`                                                    |
 | ConsensusBlock   | `components/ConsensusBlock.vue`   | Read-only render of an auto-resolved multi-agent consensus outcome                                                                                                                |
+| SessionStatusBar | `components/SessionStatusBar.vue` | Thin status line above the input: run-activity dot + spinner + label + refresh button; presentational, emits `refresh` (WC-R15)                                                   |
 | MessageInput     | `components/MessageInput.vue`     | Prompt textarea + slash-command autocomplete; owns input draft, emits `submit`/`stop`/`list-commands`                                                                             |
 | SettingsPanel    | `components/SettingsPanel.vue`    | System settings page: agent table + consensus toggle; owns editable draft seeded from server settings                                                                             |
 | BaseDropdown     | `components/BaseDropdown.vue`     | Standard custom dropdown (replaces native `<select>`): trigger + popover with icon rows, keyboard nav, click-outside close                                                        |
 | WS client        | `lib/ws.ts`                       | Opens `ws(s)://<host>/ws`, dispatches parsed `ServerToClient` to a listener, exposes `send(ClientToServer)` + `close()`; heartbeat + auto-reconnect with `onReopen` view recovery |
 
-Shared modules: `lib/chat-types.ts` (`ChatBody`/`ChatMsg`/`Block` types), `lib/ask.ts`
+Shared modules: `lib/chat-types.ts` (`ChatBody`/`ChatMsg`/`Block`/`RunActivity` types), `lib/ask.ts`
 (AskUserQuestion parsing + consensus pre-fill), `lib/format.ts` (`fmt`/`oneLine`).
 
 ## State (App.vue)
 
-| Ref             | Type                               | Purpose                                                                  |
-| --------------- | ---------------------------------- | ------------------------------------------------------------------------ |
-| `messages`      | `ChatMsg[]`                        | Ordered render list (WC-R1); passed to ChatMessages                      |
-| `status`        | `connecting` \| `open` \| `closed` | Connection indicator (WC-R6)                                             |
-| `sessionStatus` | `Record<sessionId, SessionStatus>` | Per-session live status from `ready`/`session_status` (WC-R12)           |
-| `running`       | computed boolean                   | Viewed session's status ≠ `idle`; disables input, shows Stop (WC-R2/R14) |
-| `mode`          | `PermissionMode`                   | Current mode; synced from `ready`/`mode_changed` (WC-R4)                 |
+| Ref             | Type                               | Purpose                                                                                                  |
+| --------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `messages`      | `ChatMsg[]`                        | Ordered render list (WC-R1); passed to ChatMessages                                                      |
+| `status`        | `connecting` \| `open` \| `closed` | Connection indicator (WC-R6)                                                                             |
+| `sessionStatus` | `Record<sessionId, SessionStatus>` | Per-session live status from `ready`/`session_status` (WC-R12)                                           |
+| `running`       | computed boolean                   | Viewed session's status ≠ `idle`; disables input, shows Stop (WC-R2/R14)                                 |
+| `activity`      | `RunActivity`                      | Fine-grained run state of the viewed session, inferred from the stream; drives SessionStatusBar (WC-R15) |
+| `mode`          | `PermissionMode`                   | Current mode; synced from `ready`/`mode_changed` (WC-R4)                                                 |
 
 Component-local UI state (not in App): prompt draft + slash menu in MessageInput; tool/batch
 expand sets in ChatMessages; per-question answer draft in PermissionPrompt; sidebar pagination

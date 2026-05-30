@@ -85,10 +85,41 @@ function statusLabel(s: RequirementStatus): string {
     <div class="req-items">
       <p v-if="requirements.length === 0" class="req-empty">暂无需求。在右侧与助手沟通后保存。</p>
       <div v-for="r in requirements" :key="r.id" class="req-item" :class="r.status">
-        <div class="req-item-head">
-          <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
-          <span class="req-title" :title="r.content">{{ r.title }}</span>
-          <span class="req-status">{{ statusLabel(r.status) }}</span>
+        <div class="req-item-main">
+          <div class="req-item-head">
+            <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
+            <span class="req-title" :title="r.content">{{ r.title }}</span>
+            <span class="req-status">{{ statusLabel(r.status) }}</span>
+          </div>
+          <div class="req-actions">
+            <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
+              完善
+            </button>
+            <button v-if="r.status === 'todo'" class="req-btn primary" @click="startDev(r)">
+              启动开发
+            </button>
+            <button
+              v-if="r.lastDevSessionId"
+              class="req-btn"
+              @click="emit('open-dev', r.lastDevSessionId as string)"
+            >
+              开发详情
+            </button>
+            <button
+              v-if="r.status !== 'done' && r.status !== 'cancelled'"
+              class="req-btn"
+              @click="emit('set-status', r.id, 'done')"
+            >
+              标记完成
+            </button>
+            <button
+              v-if="r.status !== 'done' && r.status !== 'cancelled'"
+              class="req-btn"
+              @click="emit('set-status', r.id, 'cancelled')"
+            >
+              取消
+            </button>
+          </div>
         </div>
         <div v-if="unfinishedDeps(r).length" class="req-deps" title="存在未完成依赖">
           ⚠ 依赖未完成:{{
@@ -96,35 +127,6 @@ function statusLabel(s: RequirementStatus): string {
               .map((d) => titleById[d.id] ?? d.id)
               .join('、')
           }}
-        </div>
-        <div class="req-actions">
-          <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
-            完善
-          </button>
-          <button v-if="r.status === 'todo'" class="req-btn primary" @click="startDev(r)">
-            启动开发
-          </button>
-          <button
-            v-if="r.lastDevSessionId"
-            class="req-btn"
-            @click="emit('open-dev', r.lastDevSessionId as string)"
-          >
-            开发详情
-          </button>
-          <button
-            v-if="r.status !== 'done' && r.status !== 'cancelled'"
-            class="req-btn"
-            @click="emit('set-status', r.id, 'done')"
-          >
-            标记完成
-          </button>
-          <button
-            v-if="r.status !== 'done' && r.status !== 'cancelled'"
-            class="req-btn"
-            @click="emit('set-status', r.id, 'cancelled')"
-          >
-            取消
-          </button>
         </div>
       </div>
     </div>

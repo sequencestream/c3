@@ -1362,13 +1362,20 @@ button.stop-btn:hover:not(:disabled) {
 
 /* ============ 需求视图（需求列表 + 落库确认卡片） ============ */
 .req-list {
-  width: 320px;
+  width: 640px;
   flex-shrink: 0;
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+/* 窄屏回退:侧栏按视口比例收窄,避免挤压聊天区 */
+@media (max-width: 1024px) {
+  .req-list {
+    width: min(640px, 45vw);
+    min-width: 300px;
+  }
 }
 .req-list-head {
   height: 36px;
@@ -1417,7 +1424,16 @@ button.stop-btn:hover:not(:disabled) {
 .req-item.cancelled {
   opacity: 0.6;
 }
+/* 标题区 + 操作区同行;窄屏 wrap 时操作区整体换到下一行 */
+.req-item-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
 .req-item-head {
+  flex: 1 1 200px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -1456,6 +1472,7 @@ button.stop-btn:hover:not(:disabled) {
   color: var(--c-warning);
 }
 .req-actions {
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-1, 4px);

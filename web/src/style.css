@@ -1463,6 +1463,12 @@ button.stop-btn:hover:not(:disabled) {
   background: rgba(245, 158, 11, 0.15);
   color: var(--c-warning);
 }
+.req-date {
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  color: var(--c-text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .req-title {
   flex: 1;
   font-size: var(--fs-body);

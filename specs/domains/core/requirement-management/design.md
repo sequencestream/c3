@@ -199,7 +199,8 @@ the list) (RM-R12).
   if `viewMode==='requirements'`, re-send `open_requirement_chat`; `viewMode`/`requirementsProject`
   are also mirrored to `localStorage` to survive a hard refresh. No new server message is needed —
   the existing resume branch suffices.
-- **Layout:** left `RequirementList.vue` (status filter; per-row title/priority badge/status/
+- **Layout:** left `RequirementList.vue` (status filter; per-row `MM/DD` date prefix — `completedAt`
+  for done items, else `createdAt`, both zero-padded — then title/priority badge/status/
   dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
   for launched, mark done/cancel for any); right **reuses** `ChatMessages` + `SessionStatusBar` +
   `MessageInput` against the already-viewed communication session.

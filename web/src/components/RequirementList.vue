@@ -75,6 +75,14 @@ function startDev(r: Requirement) {
 function statusLabel(s: RequirementStatus): string {
   return STATUS_LABELS[s] ?? s
 }
+
+// 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt;月日补零两位。
+function datePrefix(r: Requirement): string {
+  const d = new Date(r.completedAt ?? r.createdAt)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${mm}/${dd}`
+}
 </script>
 
 <template>
@@ -97,6 +105,7 @@ function statusLabel(s: RequirementStatus): string {
         <div class="req-item-main">
           <div class="req-item-head">
             <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
+            <span class="req-date">{{ datePrefix(r) }}</span>
             <span class="req-title" :title="r.content">{{ r.title }}</span>
             <span class="req-status">{{ statusLabel(r.status) }}</span>
           </div>

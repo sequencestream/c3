@@ -10,7 +10,7 @@ view + WS handler). Message flattening is in `server/src/format.ts`.
 
 | Option                            | Value                                       | Why                                                                                                                                                                                              |
 | --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `prompt`                          | user prompt text                            | the turn to run                                                                                                                                                                                  |
+| `prompt`                          | an `InputStream` (async-iterable)           | streaming-input mode (AS-R13, ADR 0008): the user's first turn is `push`ed in; keeps the SDK control channel live and lets a team lead outlive a `result`. Not a one-shot string.                |
 | `cwd`                             | session's workspace path                    | where Claude reads/writes (AS-R1)                                                                                                                                                                |
 | `resume`                          | session id \| omit                          | continue an existing session; omitted for a pending session's first run (AS-R10)                                                                                                                 |
 | `settingSources`                  | `['user', 'project']`                       | inherit user/project settings, hooks, allow rules, Skills — ADR 0005 / C-SEC-1                                                                                                                   |
@@ -22,12 +22,29 @@ view + WS handler). Message flattening is in `server/src/format.ts`.
 | `model`                           | active agent's model \| omit                | model override from the active agent; omitted ⇒ SDK default (agent-config AC-R5)                                                                                                                 |
 | `canUseTool`                      | gateway callback                            | gates sensitive tools (AS-R5)                                                                                                                                                                    |
 
-`onStart` hands a **Run Handle** (`{ setPermissionMode }`) back so a mid-run `set_mode` can call
-`q.setPermissionMode(mode)` (AS-R4). `onSessionId` reports the SDK session id from the `init`
-message; the server re-keys the runtime pending→real and persists the mode under that id
-(AS-R10, see [session-registry design](../session-registry/design.md)). The run's `send`
-callback is `(m) => emit(runId, m)` — every event flows into the runtime's buffer + viewers,
-never straight to a socket (AS-R11).
+`onStart` hands a **Run Handle** (`{ setPermissionMode, pushInput }`) back so a mid-run
+`set_mode` can call `q.setPermissionMode(mode)` (AS-R4) and a team session's next turn can call
+`input.push(text)` (AS-R17). `onSessionId` reports the SDK session id from the `init` message;
+the server re-keys the runtime pending→real and persists the mode under that id (AS-R10, see
+[session-registry design](../session-registry/design.md)). `onTeam` fires once when the first
+team tool is seen — the server marks the runtime `team` and emits `team_upgraded` (see § Team
+sessions). The run's `send` callback is `(m) => emit(runId, m)` — every event flows into the
+runtime's buffer + viewers, never straight to a socket (AS-R11).
+
+### InputStream — the streaming-input prompt
+
+`InputStream` (in `claude.ts`) is a controlled async-iterable of `SDKUserMessage` that backs the
+`prompt` option (AS-R13). Unlike a plain string prompt — which ends the query the moment a
+`result` arrives — it keeps the query (and the underlying Claude Code process) alive until
+`close()`:
+
+- `push(text)` enqueues another user turn into the **same** live session (no `resume`, no new
+  process); a parked iterator is resolved immediately, else it queues.
+- `close()` ends the stream so the `for await` returns and the query terminates normally.
+- The constructor flow `push`es the original prompt, then the loop runs.
+
+Two payoffs beyond teams: SDK control requests (`setPermissionMode` / `interrupt`) take effect
+**only** in streaming-input mode — under a string prompt they were silently swallowed (ADR 0008).
 
 ## Session-runtime registry (`runs.ts`)
 
@@ -57,10 +74,12 @@ The connection is a **view**, not a run owner:
 The module-level `connections: Set<deliver>` holds every live connection for `session_status`
 broadcasts; `setOnStatusChange(broadcastStatuses)` wires runtime status changes to it.
 
-On `user_prompt`: resolve `viewing`'s runtime (else `error`); if it already has a `run`, reject
-with `error` (serial, AS-R2). Otherwise create a fresh `AbortController`, set `rt.run`, `emit`
-the `user_text` echo, `setStatus('running')`, derive `resume`, and call `runClaude` with
-`send: (m) => emit(runId, m)`. `runId` is mutable: `onSessionId` calls `bindPending` and updates
+On `user_prompt`: resolve `viewing`'s runtime (else `error`). If the runtime is `team` and has a
+live `run.handle`, do **not** launch a second run — `emit` the `user_text` echo, `setStatus('running')`,
+and `handle.pushInput(text)` (AS-R17). Otherwise, if it already has a `run`, reject with `error`
+(serial, AS-R2). Otherwise create a fresh `AbortController`, set `rt.run`, `emit` the `user_text`
+echo, `setStatus('running')`, derive `resume`, and call `runClaude` with
+`send: (m) => emit(runId, m)` and the `onTeam` hook. `runId` is mutable: `onSessionId` calls `bindPending` and updates
 it so post-bind events target the real key. In `finally`: clear `rt.run` if still current, emit
 a synthetic `turn_end` if the run was stopped (so a viewing input unlocks), `setStatus('idle')`,
 and refresh the session list. **No abort of any other session.**
@@ -82,26 +101,29 @@ sequenceDiagram
     UI->>WS: stop_run (viewed session)
     WS->>REG: stopRun(viewing)
     REG->>RUN: run.abort.abort()
+    RUN->>SDK: input.close()  (ends the streaming prompt → query loop terminates)
     RUN->>SDK: q.interrupt()  (Promise; .catch swallows late rejection)
     Note over WS: finally emits turn_end(complete); status → idle
 ```
 
-`interrupt()` may reject asynchronously ("ProcessTransport is not ready for writing") when
-the query already finished or hasn't streamed. The rejection is swallowed with `.catch(()
-=> {})` so it never crashes the process (AS-R6, AVAIL-4). Switching the view or closing the
-socket never reaches this path.
+The abort listener does two things: `input.close()` ends the streaming-input prompt — this is
+the **only** way a team session stops, since its input never auto-closes (AS-R16) — then
+`q.interrupt()` cuts the in-flight turn. `interrupt()` may reject asynchronously ("ProcessTransport
+is not ready for writing") when the query already finished or hasn't streamed; the rejection is
+swallowed with `.catch(() => {})` so it never crashes the process (AS-R6, AVAIL-4). Switching the
+view or closing the socket never reaches this path.
 
 ## Message mapping (SDK → wire)
 
 The `for await` loop over `query()` maps each SDK message (AS-R9):
 
-| SDK message | Block                             | Wire event                                    |
-| ----------- | --------------------------------- | --------------------------------------------- |
-| `system`    | `init` (has `session_id`)         | `onSessionId(id)` — reported once (AS-R10)    |
-| `assistant` | `text`                            | `assistant_text { text }`                     |
-| `assistant` | `tool_use` (has `id`+`name`)      | `tool_use { toolUseId, toolName, input }`     |
-| `user`      | `tool_result` (has `tool_use_id`) | `tool_result { toolUseId, content, isError }` |
-| `result`    | —                                 | `turn_end { reason: 'complete' }`             |
+| SDK message | Block                             | Wire event                                                                                          |
+| ----------- | --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `system`    | `init` (has `session_id`)         | `onSessionId(id)` — reported once (AS-R10)                                                          |
+| `assistant` | `text`                            | `assistant_text { text }`                                                                           |
+| `assistant` | `tool_use` (has `id`+`name`)      | `tool_use { toolUseId, toolName, input }`; if `isTeamTool` ⇒ `onTeam()` once first (AS-R14)         |
+| `user`      | `tool_result` (has `tool_use_id`) | `tool_result { toolUseId, content, isError }`                                                       |
+| `result`    | —                                 | `turn_end { reason: 'complete' }`, then fork: non-team `input.close()`; team keeps it open (AS-R15) |
 
 - The user prompt is echoed once as `user_text { text }` before the run starts (AS-R1), so a
   switch-back replay shows it (it is not in the on-disk `baseline` captured earlier).
@@ -111,6 +133,37 @@ The `for await` loop over `query()` maps each SDK message (AS-R9):
   (AS-R7). When stopped (`signal.aborted`), the run loop sends no terminal event; the server's
   `finally` emits a synthetic `turn_end { reason: 'complete' }` so the viewing input unlocks.
 - The loop checks `signal.aborted` each iteration and breaks.
+
+## Team sessions (persistent agent teams)
+
+A run becomes a persistent **agent team** when the lead delegates work that must outlive the
+current turn — without keeping the lead process alive, the lead's `result` would close a string
+prompt's query, exiting the process and orphaning/killing background teammates before their
+results return (the motivating bug; ADR 0008).
+
+**Detection — `isTeamTool(name, input)`** (in `claude.ts`), evaluated on each `tool_use` block
+before that turn's `result`, firing `onTeam()` exactly once:
+
+| Tool                                      | Team? | Why                                                  |
+| ----------------------------------------- | ----- | ---------------------------------------------------- |
+| `TeamCreate`                              | yes   | only exists in team mode                             |
+| `SendMessage`                             | yes   | only exists in team mode                             |
+| `Agent` with `run_in_background === true` | yes   | a detached teammate that reports back asynchronously |
+| `Agent` (foreground)                      | no    | a sub-agent that completes within the turn           |
+
+**Lifecycle:**
+
+1. `onTeam()` → server sets `rt.team = true`, `emit(runId, { type: 'team_upgraded' })` (recorded
+   in the buffer, so reconnect replay shows it), `setStatus(runId, 'team')`.
+2. On `result`, the team run keeps `input` open (vs. non-team `input.close()`); the lead process
+   stays alive and the SDK re-wakes it on the next turn (a teammate notification or a pushed user
+   prompt). The runtime stays `team` because `emit`'s `turn_end` would imply `idle`, but the
+   `team` override holds it (see [session-registry design](../session-registry/design.md)).
+3. Next user turn: the server feeds it via `handle.pushInput(text)` into the live session — no
+   second `runClaude`, no `resume` — after echoing `user_text` and setting `running` (AS-R17).
+4. End: only on user stop. The abort listener `input.close()`s the never-auto-closing stream
+   (plus `interrupt()`); the run's `finally` resets `rt.team = false` and falls back to `idle`
+   (AS-R16). There is no automatic "team disbanded" detection.
 
 ## claude executable lookup
 
@@ -139,7 +192,8 @@ SDK falls back to its own lookup. Rationale and the single-binary context are in
 
 ## Dependencies
 
-- **`@anthropic-ai/claude-agent-sdk`** — `query()`, `setPermissionMode`, `interrupt`.
+- **`@anthropic-ai/claude-agent-sdk`** — `query()` (streaming-input prompt), `setPermissionMode`,
+  `interrupt`; agent-team tools (`TeamCreate` / `SendMessage` / background `Agent`).
 - **host `claude` CLI** — required at runtime; absence surfaces as a run error.
 - **permission-gateway** — `waitForDecision`/`resolveDecision`.
 - **agent-config** — `resolveSessionLaunch(sessionId)` supplies the run's `env` overrides and

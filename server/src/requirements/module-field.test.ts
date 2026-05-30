@@ -77,9 +77,9 @@ describe('module field — fresh-schema create (scenario 1)', () => {
     expect(moduleCol!.notnull).toBe(1)
     // SQLite reports a string-literal default as the quoted token "''".
     expect(moduleCol!.dflt_value).toBe("''")
-    // Fresh db is already at schema v2.
+    // Fresh db is already at the current schema version.
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(2)
+    expect(version?.user_version).toBe(3)
   })
 })
 
@@ -119,7 +119,7 @@ describe('module field — pre-v2 migration extensions (scenario 2)', () => {
     }
   }
 
-  it('backfills module="" for MULTIPLE historic rows (none lost) and lands at v2', () => {
+  it('backfills module="" for MULTIPLE historic rows (none lost) and lands at current version', () => {
     // Scenario 2 extension: the existing test migrates a single row; ensure the
     // ALTER … ADD COLUMN DEFAULT '' applies to every legacy row, not just one.
     seedLegacyDb([
@@ -135,7 +135,7 @@ describe('module field — pre-v2 migration extensions (scenario 2)', () => {
     expect(list.every((r) => r.module === '')).toBe(true)
 
     const raw = getDb()!
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(2)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(3)
   })
 
   it('a row inserted AFTER migration coexists with legacy rows and carries its module', () => {

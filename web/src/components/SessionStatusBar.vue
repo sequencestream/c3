@@ -12,6 +12,8 @@ import type { RunActivity } from '../lib/chat-types'
 const props = defineProps<{
   hasActiveSession: boolean
   running: boolean
+  /** Persistent agent-team session: the lead stays alive between turns. */
+  teamActive: boolean
   connection: 'connecting' | 'open' | 'closed'
   activity: RunActivity
 }>()
@@ -28,6 +30,10 @@ const view = computed(() => {
   }
   if (props.activity.phase === 'awaiting') {
     return { dot: 'awaiting', label: 'Awaiting permission', spin: false }
+  }
+  // Team session between lead turns: not "thinking", but waiting on teammates.
+  if (props.teamActive && props.activity.phase === 'idle') {
+    return { dot: 'team', label: '团队运行中 · 等待 teammate', spin: true }
   }
   if (props.activity.phase === 'tool') {
     return { dot: 'running', label: `Running ${props.activity.toolName}…`, spin: true }

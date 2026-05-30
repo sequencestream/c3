@@ -53,3 +53,12 @@ The c3-owned registry — the only persisted c3 data (ADR 0004).
 | `activeSessionId` | text \| null                     | Last active real session, for boot          |
 
 Never contains permission decisions or approvals (SR-R11).
+
+## Session runtime (in-memory)
+
+The per-session run state lives in `runs.ts`, owned by agent-session — its full shape is the
+**Session Runtime** in the [agent-session models](../agent-session/models.md). The registry only
+seeds it (`cwd` / `mode` / `baseline`) and reads its `status`. Note its `team: boolean` flag
+(set when a run upgrades to a persistent agent team, reset on teardown; ADR 0008): it overrides
+a `turn_end`'s implied `idle` to the `team` status (see [design.md](design.md) § Team-session
+status). Never persisted.

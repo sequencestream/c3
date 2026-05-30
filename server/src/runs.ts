@@ -58,6 +58,13 @@ export interface SessionRuntime {
   buffer: ServerToClient[]
   /** Non-null while a turn is executing. */
   run: InFlightRun | null
+  /**
+   * True once this run is detected to be a persistent agent team (a team tool was
+   * used). The lead process then stays alive across turns, so `turn_end` keeps the
+   * status at `team` (not `idle`) and the next user prompt is fed into the live
+   * run instead of resuming a fresh process. Reset when the run tears down.
+   */
+  team: boolean
   status: SessionStatus
   viewers: Set<Viewer>
 }
@@ -95,6 +102,7 @@ export function ensureRuntime(
       baseline,
       buffer: [],
       run: null,
+      team: false,
       status: 'idle',
       viewers: new Set(),
     }
@@ -130,7 +138,11 @@ export function emit(id: string, event: ServerToClient): void {
   if (!rt) return
   rt.buffer.push(event)
   for (const viewer of rt.viewers) viewer(event)
-  const next = statusFor(event)
+  let next = statusFor(event)
+  // A team lead's process stays alive between turns: a `turn_end` means "this
+  // lead turn finished", not "idle". Hold the status at `team` so the sidebar and
+  // composer treat it as a live, persistent session awaiting teammates.
+  if (next === 'idle' && rt.team) next = 'team'
   if (next && next !== rt.status) {
     rt.status = next
     onStatusChange?.()

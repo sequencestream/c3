@@ -23,6 +23,7 @@ A ledger item scoped to one project.
 | `lastDevSessionId` | text \| null                | The session id the last development run produced; back-link target (RM-R8/13)                                                                              |
 | `createdAt`        | timestamp                   | Creation time                                                                                                                                              |
 | `updatedAt`        | timestamp                   | Last mutation time                                                                                                                                         |
+| `completedAt`      | timestamp \| null           | When the requirement entered `done`; stamped on transition to `done`, cleared (null) whenever status leaves `done` (RM-R6/RM-R9)                           |
 
 Relationships: belongs to one project (by `projectPath`); has zero or more Requirement
 Dependencies; may reference one development Session (a normal session, owned by session-registry).
@@ -73,7 +74,7 @@ requirement view. On its first run the `pending:` id is rebound to the real SDK 
 ## Persisted store (c3.db)
 
 The SQLite ledger at `~/.c3/c3.db` (distinct from the registry's `state.json`). Schema version is
-managed via `PRAGMA user_version` (currently `2` — v2 added the `requirements.module` column).
+managed via `PRAGMA user_version` (currently `3` — v2 added the `requirements.module` column, v3 added the nullable `requirements.completed_at` column).
 Tables: `requirements`, `requirement_deps`, and `requirement_chats` (current-session map + hidden
 set in one table). See [design.md](design.md) for the cross-runtime driver adapter and migration
 handling.

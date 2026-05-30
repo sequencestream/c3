@@ -58,6 +58,15 @@ const running = computed(
   () => hasActiveSession.value && statusOf(activeSession.value as string) !== 'idle',
 )
 
+// Sessions upgraded to a persistent agent team (server `team_upgraded`). The lead
+// process stays alive across turns, so the composer stays usable (messages route
+// to the live lead) and a "结束团队" control ends it. Pruned when a session goes
+// idle (the team run ended).
+const teamSessions = ref<Set<string>>(new Set())
+const activeIsTeam = computed(
+  () => hasActiveSession.value && teamSessions.value.has(activeSession.value as string),
+)
+
 // The one permission the user can still act on (the live, still-pending request),
 // or null. Drives the actionable-vs-static split: history replayed from the
 // buffer rebuilds permission cards with `decision: null`, but they are only
@@ -298,6 +307,18 @@ function handleMessage(msg: ServerToClient) {
         activity.value = { phase: 'idle' }
       }
       break
+    case 'team_upgraded':
+      // The viewed session became a persistent agent team. Mark it so the
+      // composer stays usable across turns; reconnects replay this from the
+      // buffer, so re-entering a team session restores the flag.
+      if (activeSession.value) {
+        teamSessions.value = new Set(teamSessions.value).add(activeSession.value)
+      }
+      add({
+        kind: 'system',
+        text: '— 已升级为团队会话：team lead 将持续运行并协调 teammate，直到你点「结束团队」 —',
+      })
+      break
     case 'error':
       add({ kind: 'system', text: `— ${msg.message} —` })
       break
@@ -320,6 +341,17 @@ function applyStatuses(statuses: SessionRunStatus[]) {
   const next: Record<string, SessionStatus> = {}
   for (const s of statuses) next[s.sessionId] = s.status
   sessionStatus.value = next
+  // A team session that drops to idle (or vanishes) has ended — clear its flag so
+  // the composer reverts to normal locking on the next turn.
+  if (teamSessions.value.size) {
+    const live = new Set(
+      [...teamSessions.value].filter((id) => {
+        const st = next[id]
+        return st === 'team' || st === 'running' || st === 'awaiting_permission'
+      }),
+    )
+    if (live.size !== teamSessions.value.size) teamSessions.value = live
+  }
 }
 
 function sessionTitleById(id: string): string {
@@ -544,12 +576,14 @@ function listCommands() {
       <SessionStatusBar
         :has-active-session="hasActiveSession"
         :running="running"
+        :team-active="activeIsTeam"
         :connection="status"
         :activity="activity"
         @refresh="refreshStatus"
       />
       <MessageInput
         :running="running"
+        :team-active="activeIsTeam"
         :has-active-session="hasActiveSession"
         :available-commands="availableCommands"
         :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"

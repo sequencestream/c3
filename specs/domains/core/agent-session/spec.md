@@ -11,15 +11,21 @@ process-wide **Session Runtime** that owns its run; a connection is only a **vie
 session (which one it currently watches). Switching the view or closing the socket never stops
 a run — it keeps going in the background, and a returning view replays everything that happened
 (ADR 0006). Different sessions run **concurrently** with no fixed cap; a single session is
-**serial** (one turn at a time).
+**serial** (one turn at a time) — except a persistent **agent team** session, where the lead
+process stays alive between turns and the user may push further turns into it (AS-R13/R14).
+
+Every run drives the SDK in **streaming-input mode** (a controlled async-iterable prompt)
+rather than a one-shot string. A normal session ends each turn's underlying process by closing
+the stream on `result` (so the next turn resumes a fresh process — the one-shot behaviour); a
+team session keeps the stream open so the lead process outlives the turn (ADR 0008).
 
 The run's context — working directory (`cwd`), starting permission mode, and the `resume`
 session id — comes from the runtime, seeded by the
 [session-registry](../session-registry/spec.md).
 
 **Scope:** run lifecycle (start, stream, end, stop), background execution & replay buffering,
-permission-mode policy, session continuity (`resume`), live status, and faithful mapping of SDK
-messages to wire events. **Boundary:** it does not decide individual permissions (gateway),
+permission-mode policy, session continuity (`resume`), persistent agent-team sessions, live
+status, and faithful mapping of SDK messages to wire events. **Boundary:** it does not decide individual permissions (gateway),
 does not manage the workspace/session registry (session-registry), and does not render UI
 (web-console).
 
@@ -29,27 +35,32 @@ does not manage the workspace/session registry (session-registry), and does not 
 | --------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Session Runtime | Process-wide owner of one session's execution: its run, `baseline + buffer` for replay, current viewers, and status |
 | Agent Run       | One `query()` invocation driven by one user prompt                                                                  |
-| Run Handle      | Live controls over an in-flight run (currently: set permission mode)                                                |
+| Run Handle      | Live controls over an in-flight run: set permission mode, and push the next user turn into a live team session      |
 | Connection View | One WebSocket connection's subscription to the session it currently watches (delivers live events; replays on join) |
 
 See [models.md](models.md).
 
 ## Business rules
 
-| ID     | Rule                                                                                                                                                                                                                                                                           |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AS-R1  | A `user_prompt` starts a new Agent Run against the viewed session's runtime, with that session's `cwd`, permission mode, and (for an existing session) `resume` id. The prompt is echoed into the stream as `user_text` so every viewer (and switch-back replay) shows it.     |
-| AS-R2  | A session is **serial**: at most one Agent Run is in flight per session. A `user_prompt` for a session whose turn is already in flight is rejected with `error` and starts nothing. Different sessions run **concurrently** with no fixed cap.                                 |
-| AS-R3  | Permission mode is **per session** (owned by the runtime, mirrored to session-registry). A run starts in the session's mode; `set_mode` changes only the viewed session's mode.                                                                                                |
-| AS-R10 | A run reports its SDK session id (from the `init` message) so a pending session binds to a real id and subsequent prompts `resume` it. Binding **re-keys** the runtime (buffer, viewers, run move with it); a resumed run keeps the same id.                                   |
-| AS-R4  | A `set_mode` applies to the viewed session's in-flight run immediately if one exists; otherwise it takes effect on that session's next run. The change is confirmed with `mode_changed`.                                                                                       |
-| AS-R5  | The mode determines which tool calls are sensitive and thus reach the gateway. `bypassPermissions` authorizes auto-execution of all tools; `acceptEdits` auto-accepts edit-class tools; `default`/`auto`/`plan` route sensitive calls to the gateway per the SDK classifier.   |
-| AS-R6  | A run is stopped only by `stop_run` (the viewed session), `delete_session`, or `remove_workspace` — never by switching the view or closing the socket. Stopping interrupts the underlying `query()`; a run already finished or not yet streaming is interrupted harmlessly.    |
-| AS-R7  | A run ends with exactly one terminal outcome: `turn_end` with `reason: 'complete'` (the SDK produced a result, or the run was stopped) or `reason: 'error'` (an exception). `turn_end` never means the session ended — it stays alive for the next prompt.                     |
-| AS-R8  | Closing the connection only unsubscribes its view; the run **continues in the background** in its runtime. Reconnecting and selecting the session replays the full record and resumes live delivery.                                                                           |
-| AS-R9  | Only the model's text blocks, tool-use blocks, and tool-result blocks are mapped to the wire; other SDK message kinds are ignored.                                                                                                                                             |
-| AS-R11 | Every live event is recorded in the runtime: appended to its `buffer` and fanned out to current viewers via `emit`. A view joining a session replays `baseline` (on-disk snapshot at runtime creation) then `buffer`, so the full record is reconstructed with no duplication. |
-| AS-R12 | Each runtime has a status — `idle`, `running`, or `awaiting_permission`. Any change broadcasts `session_status` to **all** connections so backgrounded sessions surface their state.                                                                                           |
+| ID     | Rule                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AS-R1  | A `user_prompt` starts a new Agent Run against the viewed session's runtime, with that session's `cwd`, permission mode, and (for an existing session) `resume` id. The prompt is echoed into the stream as `user_text` so every viewer (and switch-back replay) shows it.                                                                                                               |
+| AS-R2  | A session is **serial**: at most one Agent Run is in flight per session. A `user_prompt` for a session whose turn is already in flight is rejected with `error` and starts nothing. Different sessions run **concurrently** with no fixed cap.                                                                                                                                           |
+| AS-R3  | Permission mode is **per session** (owned by the runtime, mirrored to session-registry). A run starts in the session's mode; `set_mode` changes only the viewed session's mode.                                                                                                                                                                                                          |
+| AS-R10 | A run reports its SDK session id (from the `init` message) so a pending session binds to a real id and subsequent prompts `resume` it. Binding **re-keys** the runtime (buffer, viewers, run move with it); a resumed run keeps the same id.                                                                                                                                             |
+| AS-R4  | A `set_mode` applies to the viewed session's in-flight run immediately if one exists; otherwise it takes effect on that session's next run. The change is confirmed with `mode_changed`.                                                                                                                                                                                                 |
+| AS-R5  | The mode determines which tool calls are sensitive and thus reach the gateway. `bypassPermissions` authorizes auto-execution of all tools; `acceptEdits` auto-accepts edit-class tools; `default`/`auto`/`plan` route sensitive calls to the gateway per the SDK classifier.                                                                                                             |
+| AS-R6  | A run is stopped only by `stop_run` (the viewed session), `delete_session`, or `remove_workspace` — never by switching the view or closing the socket. Stopping interrupts the underlying `query()`; a run already finished or not yet streaming is interrupted harmlessly.                                                                                                              |
+| AS-R7  | A run ends with exactly one terminal outcome: `turn_end` with `reason: 'complete'` (the SDK produced a result, or the run was stopped) or `reason: 'error'` (an exception). `turn_end` never means the session ended — it stays alive for the next prompt.                                                                                                                               |
+| AS-R8  | Closing the connection only unsubscribes its view; the run **continues in the background** in its runtime. Reconnecting and selecting the session replays the full record and resumes live delivery.                                                                                                                                                                                     |
+| AS-R9  | Only the model's text blocks, tool-use blocks, and tool-result blocks are mapped to the wire; other SDK message kinds are ignored.                                                                                                                                                                                                                                                       |
+| AS-R11 | Every live event is recorded in the runtime: appended to its `buffer` and fanned out to current viewers via `emit`. A view joining a session replays `baseline` (on-disk snapshot at runtime creation) then `buffer`, so the full record is reconstructed with no duplication.                                                                                                           |
+| AS-R12 | Each runtime has a status — `idle`, `running`, `awaiting_permission`, or `team`. Any change broadcasts `session_status` to **all** connections so backgrounded sessions surface their state.                                                                                                                                                                                             |
+| AS-R13 | Every run drives the SDK in **streaming-input mode**: the prompt is a controlled async-iterable seeded with the user's first turn, not a one-shot string. This keeps the SDK control channel live (so `set_mode`/stop genuinely reach the run) and lets a turn's process outlive a single `result` (ADR 0008).                                                                           |
+| AS-R14 | A run is recognized as a persistent **agent team** at runtime: when the first **team tool** is used, the runtime is marked `team` once and `team_upgraded` is emitted. A team tool is `TeamCreate`, `SendMessage`, or a background `Agent` (`run_in_background === true`); a foreground `Agent` is **not** (it finishes within the turn). Detection happens before that turn's `result`. |
+| AS-R15 | On `result`, the run emits `turn_end { reason: 'complete' }`. A **non-team** run then closes its input stream — the underlying process exits and the next prompt resumes a fresh one (the one-shot behaviour). A **team** run keeps its input open: the lead process stays alive between turns to coordinate teammates, so the run remains in flight (status `team`, not `idle`).        |
+| AS-R16 | A team session ends **only** when the user explicitly stops it (`stop_run` / `delete_session` / `remove_workspace`): aborting closes the input stream, which is the sole way a team's stream is closed (it never auto-closes). There is no automatic team-teardown detection — "team lead is done" is equated with explicit user stop.                                                   |
+| AS-R17 | While a session is `team`, a `user_prompt` is **not** rejected and does **not** start a second run; it is echoed as `user_text` and pushed as the next user turn into the live lead session (no `resume`, no new process). The user may send even while the lead is mid-turn — the SDK queues it. (For non-team sessions AS-R2 still holds.)                                             |
 
 ## States & transitions
 
@@ -63,11 +74,18 @@ stateDiagram-v2
     AwaitingPermission --> Running: decision resolved
     Running --> Idle: turn_end (complete/error) or stop_run
     AwaitingPermission --> Idle: stop_run
+    Running --> Team: team tool used (team_upgraded)
+    Team --> Team: turn_end (lead turn done; process stays alive) / user_prompt (push)
+    Team --> Running: user_prompt resumes a lead turn
+    Team --> AwaitingPermission: permission_request
+    Team --> Idle: stop_run (only)
     Idle --> [*]: delete_session / remove_workspace
 ```
 
 Switching the view and closing the connection do **not** change runtime status — the run runs
-on in the background (AS-R8). Status changes broadcast `session_status` (AS-R12).
+on in the background (AS-R8). Status changes broadcast `session_status` (AS-R12). The `Team`
+state holds the lead process alive between turns; it returns to `Idle` only on explicit user
+stop (AS-R15/R16).
 
 ### Connection View
 
@@ -83,15 +101,19 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Streaming: query() created
+    [*] --> Streaming: query() created (streaming-input prompt)
     Streaming --> Streaming: assistant_text / tool_use / tool_result / permission_request
-    Streaming --> Complete: SDK result message
+    Streaming --> Streaming: result while team (input stays open; awaits next turn)
+    Streaming --> Complete: SDK result message (non-team ⇒ input closed)
     Streaming --> Errored: exception (and not stopped)
-    Streaming --> Stopped: stop_run / delete / workspace removal
+    Streaming --> Stopped: stop_run / delete / workspace removal (input closed + interrupt)
     Complete --> [*]
     Errored --> [*]
     Stopped --> [*]
 ```
+
+For a team run, a `result` ends the _turn_ (emitting `turn_end`) but not the _run_ — the input
+stream stays open and the lead process keeps running until stopped (AS-R15/R16).
 
 ## Permission modes
 
@@ -108,8 +130,8 @@ The exact classification is owned by the SDK; c3 selects the mode and surfaces i
 ## Domain events (wire)
 
 Emits `mode_changed`, `user_text`, `assistant_text`, `tool_use`, `tool_result`, `turn_end`,
-and `session_status` (run-status broadcast). Consumes `user_prompt`, `set_mode`, `stop_run`,
-`ping`. Forwards `permission_request` on behalf of the gateway. Reports the run's SDK session id
+`team_upgraded` (one-shot, on team detection — AS-R14), and `session_status` (run-status
+broadcast). Consumes `user_prompt`, `set_mode`, `stop_run`, `ping`. Forwards `permission_request` on behalf of the gateway. Reports the run's SDK session id
 to session-registry (which emits `session_started`). Workspace/session events (`ready`,
 `workspaces`, `sessions`, `session_selected`) belong to
 [session-registry](../session-registry/spec.md). Shapes in the
@@ -126,13 +148,25 @@ to session-registry (which emits `session_started`). Workspace/session events (`
   a run (AS-R6/AS-R8); only `stop_run`/`delete_session`/`remove_workspace` may.
 - **Serial within a session (anti-scenario):** A second `user_prompt` for a session whose turn
   is in flight must **never** start a second concurrent run for that session (AS-R2).
+- **Team forms:** Given a run uses a team tool (creates a team, sends a teammate message, or
+  spawns a background `Agent`), When that turn's `result` arrives, Then the session is marked
+  `team`, `team_upgraded` is broadcast, and the lead process stays alive instead of exiting.
+- **Team next turn:** Given a `team` session, When the user submits another prompt, Then it is
+  echoed and pushed into the live lead session (no new process, no `resume`); the lead continues
+  in the same context.
+- **Team only ends on stop (anti-scenario):** A `team` session must **never** drop to `idle` on
+  a lead `turn_end`; it ends only on explicit `stop_run` / `delete_session` / `remove_workspace`
+  (AS-R16).
 
 ## Interactions
 
 - **permission-gateway** — invoked from the run's `canUseTool`; blocks the run until
   resolved. A pending request survives switching away (decisions are keyed by `requestId`).
-- **Claude Agent SDK** — `query()` provides the run; `setPermissionMode` and `interrupt`
-  drive it.
+- **Claude Agent SDK** — `query()` provides the run, driven by a streaming-input prompt
+  (AS-R13); `setPermissionMode` and `interrupt` steer it (effective only in streaming-input
+  mode). Closing the input stream ends the query.
+- **Claude Code agent teams** — the SDK feature whose team tools (`TeamCreate` / `SendMessage` /
+  background `Agent`) upgrade a session to a persistent team (AS-R14).
 - **claude CLI** — spawned by the SDK as the agent process; resolved from `$CLAUDE_PATH`
   or PATH.
 

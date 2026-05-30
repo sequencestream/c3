@@ -11,10 +11,21 @@ import { useSpeechRecognition } from '../composables/useSpeechRecognition'
 
 const props = defineProps<{
   running: boolean
+  /**
+   * The viewed session is a persistent agent team: the lead process stays alive
+   * across turns. The composer stays usable even while the lead is busy (messages
+   * route to the live lead and the SDK queues them); a separate control ends the
+   * team. Only `running && !teamActive` locks the input.
+   */
+  teamActive: boolean
   hasActiveSession: boolean
   availableCommands: SlashCommandInfo[]
   voiceLang: string
 }>()
+
+// Input is locked only for an ordinary in-flight turn. A team session never
+// locks — the user may send to the lead at any time.
+const locked = computed(() => props.running && !props.teamActive)
 
 const emit = defineEmits<{
   submit: [text: string]
@@ -38,7 +49,7 @@ const {
 })
 
 function toggleMic() {
-  if (!voiceSupported || props.running || !props.hasActiveSession) return
+  if (!voiceSupported || locked.value || !props.hasActiveSession) return
   if (voiceState.value === 'listening') {
     voiceStop()
     return
@@ -124,7 +135,7 @@ function applyCommand(c: SlashCommandInfo) {
 
 function submit() {
   const t = input.value.trim()
-  if (!t || props.running || !props.hasActiveSession) return
+  if (!t || locked.value || !props.hasActiveSession) return
   if (voiceState.value === 'listening') voiceStop()
   emit('submit', t)
   input.value = ''
@@ -204,17 +215,19 @@ function onKey(e: KeyboardEvent) {
       :placeholder="
         !hasActiveSession
           ? 'Select or create a session to start'
-          : running
-            ? 'running…'
-            : voiceState === 'listening'
-              ? '正在聆听… 再次点击麦克风或按 Esc 结束'
-              : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
+          : teamActive
+            ? '团队运行中 — 输入消息发送给 team lead（随时可发）'
+            : running
+              ? 'running…'
+              : voiceState === 'listening'
+                ? '正在聆听… 再次点击麦克风或按 Esc 结束'
+                : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
       "
-      :disabled="running || !hasActiveSession"
+      :disabled="locked || !hasActiveSession"
       @keydown="onKey"
     />
     <button
-      v-if="voiceSupported && !running"
+      v-if="voiceSupported && !locked"
       class="mic-btn"
       :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
       :disabled="!hasActiveSession"
@@ -225,16 +238,27 @@ function onKey(e: KeyboardEvent) {
     >
       🎤
     </button>
-    <button v-if="running" class="stop-btn" title="Stop the running turn" @click="emit('stop')">
+    <button v-if="locked" class="stop-btn" title="Stop the running turn" @click="emit('stop')">
       Stop
     </button>
-    <div v-else class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
-      <div v-if="showSendHint" class="send-hint" role="tooltip">
-        连续回车两次，或 ⌘/Ctrl+Enter 发送
-      </div>
-      <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
-        Send
+    <template v-else>
+      <!-- Team session: end the whole team (lead + teammates) explicitly. -->
+      <button
+        v-if="teamActive"
+        class="stop-btn"
+        title="结束团队：关闭 team lead 与所有 teammate"
+        @click="emit('stop')"
+      >
+        结束团队
       </button>
-    </div>
+      <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
+        <div v-if="showSendHint" class="send-hint" role="tooltip">
+          连续回车两次，或 ⌘/Ctrl+Enter 发送
+        </div>
+        <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
+          Send
+        </button>
+      </div>
+    </template>
   </footer>
 </template>

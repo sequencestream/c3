@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import type { McpServerConfig, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type {
   AskConsensusOutcome,
   ConsensusOutcome,
@@ -92,9 +92,83 @@ function withAnswers(input: unknown, answers: Record<string, string>): Record<st
   return { ...base, answers: { ...prior, ...answers }, annotations: base.annotations ?? {} }
 }
 
+/**
+ * A controlled async-iterable prompt for the SDK's streaming-input mode. Unlike a
+ * plain string prompt (which ends the query the moment a `result` arrives), this
+ * keeps the query — and the underlying Claude Code process — alive until `close()`
+ * is called. That is the prerequisite for agent teams: the lead process must stay
+ * running to receive teammate notifications and be re-woken across turns.
+ *
+ * `push()` enqueues another user turn into the *same* live session (no resume, no
+ * new process); `close()` ends the stream so the query terminates normally.
+ */
+class InputStream {
+  private queue: SDKUserMessage[] = []
+  private waiters: Array<(r: IteratorResult<SDKUserMessage>) => void> = []
+  private closed = false
+
+  push(text: string): void {
+    if (this.closed) return
+    const msg = {
+      type: 'user',
+      message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+    } as SDKUserMessage
+    const waiter = this.waiters.shift()
+    if (waiter) waiter({ value: msg, done: false })
+    else this.queue.push(msg)
+  }
+
+  close(): void {
+    if (this.closed) return
+    this.closed = true
+    let waiter
+    while ((waiter = this.waiters.shift())) {
+      waiter({ value: undefined as unknown as SDKUserMessage, done: true })
+    }
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<SDKUserMessage> {
+    for (;;) {
+      const next = this.queue.shift()
+      if (next) {
+        yield next
+        continue
+      }
+      if (this.closed) return
+      const result = await new Promise<IteratorResult<SDKUserMessage>>((resolve) => {
+        this.waiters.push(resolve)
+      })
+      if (result.done) return
+      yield result.value
+    }
+  }
+}
+
+/**
+ * Tools whose use means this session is (or is becoming) a persistent agent team
+ * whose lead must stay alive: `TeamCreate` and `SendMessage` only exist in team
+ * mode, and a background `Agent` (`run_in_background: true`) is a detached
+ * teammate that reports back asynchronously. A plain (foreground) `Agent`
+ * completes within the turn and does NOT keep the session alive.
+ */
+function isTeamTool(name: string, input: unknown): boolean {
+  if (name === 'TeamCreate' || name === 'SendMessage') return true
+  if (name === 'Agent') {
+    return (input as { run_in_background?: unknown } | null)?.run_in_background === true
+  }
+  return false
+}
+
 /** Live controls for an in-flight run, handed to the caller via `onStart`. */
 export interface RunHandle {
   setPermissionMode(mode: PermissionMode): Promise<void>
+  /**
+   * Feed another user turn into the live streaming session. Used for team
+   * sessions, where the lead process stays alive and the next prompt must reach
+   * the *same* process (not a fresh `resume` launch).
+   */
+  pushInput(text: string): void
 }
 
 export interface RunOptions {
@@ -141,6 +215,12 @@ export interface RunOptions {
   onStart?: (handle: RunHandle) => void
   /** Called once with the SDK session id (from the `init` system message). */
   onSessionId?: (sessionId: string) => void
+  /**
+   * Called once when this run is detected to be a persistent agent team (the
+   * first team tool is used). After this fires the run will NOT end on `result`
+   * — the lead process stays alive until the run is aborted (user stop).
+   */
+  onTeam?: () => void
 }
 
 export async function runClaude(opts: RunOptions): Promise<void> {
@@ -160,15 +240,27 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     send,
     onStart,
     onSessionId,
+    onTeam,
   } = opts
   let reportedSessionId = false
+  // Once a team tool is seen the lead stays alive past `result` (streaming input
+  // never auto-closes), so teammates can report back and re-wake the lead.
+  let isTeam = false
   // Rolling recent-context buffer (user prompt + assistant text) the consensus
   // voters reason over; capped so a long run doesn't bloat advisor prompts.
   let recentContext = prompt.slice(-4000)
 
+  // Drive the SDK in streaming-input mode (an async-iterable prompt) rather than
+  // a one-shot string. This is what lets a team lead's process outlive a single
+  // `result` (see InputStream) and also enables live `setPermissionMode` /
+  // `interrupt` (SDK control requests work only in streaming-input mode). The
+  // first user turn is the original prompt; close() ends the session.
+  const input = new InputStream()
+  input.push(prompt)
+
   const claudePath = findClaudeExecutable()
   const q = query({
-    prompt,
+    prompt: input,
     options: {
       cwd,
       ...(resume ? { resume } : {}),
@@ -307,9 +399,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
 
   onStart?.({
     setPermissionMode: (mode) => q.setPermissionMode(mode),
+    pushInput: (text) => {
+      recentContext = `${recentContext}\n${text}`.slice(-4000)
+      input.push(text)
+    },
   })
 
   signal.addEventListener('abort', () => {
+    // End the streaming input so the query loop terminates normally — this is the
+    // only thing that stops a team session (its input never auto-closes).
+    input.close()
     try {
       // interrupt() returns a Promise that rejects asynchronously (e.g.
       // "ProcessTransport is not ready for writing") when the query has already
@@ -350,6 +449,13 @@ export async function runClaude(opts: RunOptions): Promise<void> {
               send({ type: 'assistant_text', text: b.text })
               recentContext = `${recentContext}\n${b.text}`.slice(-4000)
             } else if (b.type === 'tool_use' && b.id && b.name) {
+              // A team tool means the lead must outlive this turn. Detection
+              // happens here, before the turn's `result`, so the fork below sees
+              // it. Fires onTeam once.
+              if (!isTeam && isTeamTool(b.name, b.input)) {
+                isTeam = true
+                onTeam?.()
+              }
               send({
                 type: 'tool_use',
                 toolUseId: b.id,
@@ -383,6 +489,11 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       } else if (m.type === 'result') {
         // The run's turn finished — the session stays alive for the next prompt.
         send({ type: 'turn_end', reason: 'complete' })
+        // Non-team run: close the input so the query ends and the Claude Code
+        // process exits (the one-shot behaviour — the next turn resumes a fresh
+        // process). Team run: keep the input open so the lead process stays
+        // alive to coordinate teammates; it ends only on abort (user stop).
+        if (!isTeam) input.close()
       }
     }
   } catch (err) {

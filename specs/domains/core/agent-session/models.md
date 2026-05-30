@@ -15,7 +15,7 @@ connections (ADR 0006). Lives for the process lifetime once created (no eviction
 | `baseline`      | list of TranscriptItem     | On-disk transcript snapshot at runtime creation; replayed before `buffer`      |
 | `buffer`        | list of wire events        | Every event emitted since creation (all turns); replayed on view join (AS-R11) |
 | `run`           | reference \| none          | The in-flight Agent Run's abort + handle, or none between turns                |
-| `status`        | enum                       | `idle` \| `running` \| `awaiting_permission` (AS-R12)                          |
+| `status`        | enum                       | `idle` \| `running` \| `awaiting_permission` \| `team` (AS-R12)                |
 | `viewers`       | set of deliver callbacks   | Connections currently watching this session; live events fan out to them       |
 
 Relationships: at most one in-flight Agent Run per runtime (serial, AS-R2); many runtimes run
@@ -39,14 +39,14 @@ unsubscribes only — the run is unaffected.
 
 One `query()` invocation driven by one user prompt against a session's runtime.
 
-| Attribute        | Type                  | Description                                                             |
-| ---------------- | --------------------- | ----------------------------------------------------------------------- |
-| `prompt`         | text                  | The user turn that started the run                                      |
-| `cwd`            | text (path)           | SDK `cwd`; the session's workspace directory                            |
-| `resume`         | text (UUID) \| none   | Existing session id to continue; none for a pending session's first run |
-| `permissionMode` | enum `PermissionMode` | Mode the run started in (mutable mid-run)                               |
-| `sessionId`      | text (UUID)           | Reported from the run's `init` message; re-keys the runtime (AS-R10)    |
-| state            | enum                  | Streaming → Complete \| Errored \| Stopped (see spec)                   |
+| Attribute        | Type                  | Description                                                                   |
+| ---------------- | --------------------- | ----------------------------------------------------------------------------- |
+| `prompt`         | text                  | The user's first turn, seeded into the streaming-input `InputStream` (AS-R13) |
+| `cwd`            | text (path)           | SDK `cwd`; the session's workspace directory                                  |
+| `resume`         | text (UUID) \| none   | Existing session id to continue; none for a pending session's first run       |
+| `permissionMode` | enum `PermissionMode` | Mode the run started in (mutable mid-run)                                     |
+| `sessionId`      | text (UUID)           | Reported from the run's `init` message; re-keys the runtime (AS-R10)          |
+| state            | enum                  | Streaming → Complete \| Errored \| Stopped (see spec)                         |
 
 Relationships: produces a stream of wire events; gates sensitive tools via Permission
 Requests (permission-gateway domain).
@@ -55,11 +55,23 @@ Requests (permission-gateway domain).
 
 Live controls handed to the connection when a run starts.
 
-| Attribute                 | Type      | Description                                     |
-| ------------------------- | --------- | ----------------------------------------------- |
-| `setPermissionMode(mode)` | operation | Applies a new mode to the in-flight run (AS-R4) |
+| Attribute                 | Type      | Description                                                                       |
+| ------------------------- | --------- | --------------------------------------------------------------------------------- |
+| `setPermissionMode(mode)` | operation | Applies a new mode to the in-flight run (AS-R4)                                   |
+| `pushInput(text)`         | operation | Feeds the next user turn into the live streaming session — team sessions (AS-R17) |
 
 Relationships: exists only while a run is in flight; cleared to none when the run ends.
+
+## Run Options
+
+The inputs to `runClaude` (`RunOptions`). Business-relevant additions beyond the SDK options
+listed in [design.md](design.md) § Run construction:
+
+| Attribute         | Type     | Description                                                                           |
+| ----------------- | -------- | ------------------------------------------------------------------------------------- |
+| `onStart(handle)` | callback | Fires once with the **Run Handle** so the caller can drive the live run               |
+| `onSessionId(id)` | callback | Fires once with the SDK session id from the `init` message (AS-R10)                   |
+| `onTeam()`        | callback | Fires once when the first team tool is detected — the run becomes persistent (AS-R14) |
 
 ## PermissionMode (enum)
 

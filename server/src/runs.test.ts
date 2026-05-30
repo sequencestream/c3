@@ -91,6 +91,21 @@ describe('session-runtime registry', () => {
     removeRuntime('s-stat')
   })
 
+  it('holds a team runtime at `team` on turn_end instead of idle', () => {
+    ensureRuntime('s-team', '/ws', 'default', []).team = true
+    setStatus('s-team', 'running')
+    // A lead turn finishing does not idle a team — the lead stays alive.
+    emit('s-team', { type: 'turn_end', reason: 'complete' })
+    expect(getRuntime('s-team')!.status).toBe('team')
+    // Non-team runtime still idles on turn_end.
+    ensureRuntime('s-plain', '/ws', 'default', [])
+    setStatus('s-plain', 'running')
+    emit('s-plain', { type: 'turn_end', reason: 'complete' })
+    expect(getRuntime('s-plain')!.status).toBe('idle')
+    removeRuntime('s-team')
+    removeRuntime('s-plain')
+  })
+
   it('does not notify when an event keeps the same status', () => {
     const onChange = vi.fn()
     setOnStatusChange(onChange)

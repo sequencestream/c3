@@ -30,3 +30,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0005](0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the gateway                       | accepted   |
 | [0006](0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections                           | accepted   |
 | [0007](0007-read-only-requirement-agent.md)             | Read-only requirement agent; save via confirmation; cross-runtime SQLite | accepted   |
+| [0008](0008-streaming-input-for-agent-teams.md)         | Streaming-input prompts for persistent agent teams                       | accepted   |

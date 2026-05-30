@@ -15,7 +15,7 @@ import { resolve } from 'node:path'
 import type { ProposedRequirement, Requirement, RequirementStatus } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from './db.js'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS requirements (
@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS requirements (
   module          TEXT NOT NULL DEFAULT '',
   last_dev_session_id TEXT,
   created_at      INTEGER NOT NULL,
-  updated_at      INTEGER NOT NULL
+  updated_at      INTEGER NOT NULL,
+  completed_at    INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_req_project_status ON requirements(project_path, status);
 
@@ -70,6 +71,8 @@ function db(): Db | null {
     d.exec(SCHEMA)
     // v1 → v2: add `module` to pre-existing requirements tables (historic rows default to '').
     ensureColumn(d, 'requirements', 'module', "TEXT NOT NULL DEFAULT ''")
+    // v2 → v3: add nullable `completed_at` (historic rows stay null until re-marked done).
+    ensureColumn(d, 'requirements', 'completed_at', 'INTEGER')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -119,6 +122,7 @@ interface Row {
   last_dev_session_id: string | null
   created_at: number
   updated_at: number
+  completed_at: number | null
 }
 
 /** Attach `dependsOn` to a set of rows in one deps query, preserving row order. */
@@ -144,6 +148,7 @@ function hydrate(d: Db, rows: Row[]): Requirement[] {
     lastDevSessionId: r.last_dev_session_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    completedAt: r.completed_at,
   }))
 }
 
@@ -189,8 +194,8 @@ export function insertRequirements(
       ids.push(id)
       d.run(
         `INSERT INTO requirements
-           (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+           (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         id,
         proj,
         it.title,
@@ -201,6 +206,7 @@ export function insertRequirements(
         null,
         now,
         now,
+        null,
       )
       for (const dep of it.dependsOn ?? []) {
         d.run(
@@ -222,7 +228,16 @@ export function insertRequirements(
 
 export function updateStatus(id: string, status: RequirementStatus): void {
   const d = requireDb()
-  d.run('UPDATE requirements SET status=?, updated_at=? WHERE id=?', status, Date.now(), id)
+  const now = Date.now()
+  // `done` stamps the completion time; any other status clears it (covers reverting from done).
+  const completedAt = status === 'done' ? now : null
+  d.run(
+    'UPDATE requirements SET status=?, updated_at=?, completed_at=? WHERE id=?',
+    status,
+    now,
+    completedAt,
+    id,
+  )
 }
 
 export function setLastDevSession(id: string, sessionId: string): void {
@@ -243,7 +258,7 @@ export function updateRequirement(
   const d = requireDb()
   tx(d, () => {
     const sets: string[] = []
-    const params: (string | number)[] = []
+    const params: (string | number | null)[] = []
     if (patch.title !== undefined) {
       sets.push('title=?')
       params.push(patch.title)
@@ -259,6 +274,9 @@ export function updateRequirement(
     if (patch.status !== undefined) {
       sets.push('status=?')
       params.push(patch.status)
+      // Keep completed_at in sync with status, same rule as updateStatus.
+      sets.push('completed_at=?')
+      params.push(patch.status === 'done' ? Date.now() : null)
     }
     if (sets.length > 0) {
       sets.push('updated_at=?')

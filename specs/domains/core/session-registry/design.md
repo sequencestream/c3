@@ -6,12 +6,12 @@ Implements the [spec](spec.md). Lives in `server/src/state.ts` (persistence),
 
 ## Module split
 
-| Concern                    | File                     | Notes                                                           |
-| -------------------------- | ------------------------ | --------------------------------------------------------------- |
-| Persisted registry         | `server/src/state.ts`    | Module-level cache; atomic write (temp + rename); fail-soft     |
-| SDK session enumeration/IO | `server/src/sessions.ts` | `listSessions` / `getSessionMessages` / `rename` / `delete`     |
-| Viewed session + dispatch  | `server/src/server.ts`   | Per-connection `viewing`; per-session mode lives on the runtime |
-| Session runtimes           | `server/src/runs.ts`     | Per-session run/buffer/status (agent-session, ADR 0006)         |
+| Concern                    | File                     | Notes                                                                    |
+| -------------------------- | ------------------------ | ------------------------------------------------------------------------ |
+| Persisted registry         | `server/src/state.ts`    | Module-level cache; atomic write (temp + rename); fail-soft              |
+| SDK session enumeration/IO | `server/src/sessions.ts` | `listSessions` / `getSessionMessages` / `rename` / `delete`              |
+| Viewed session + dispatch  | `server/src/server.ts`   | Per-connection `viewing`; per-session mode lives on the runtime          |
+| Session runtimes           | `server/src/runs.ts`     | Per-session run/buffer/status/`team` flag (agent-session, ADR 0006/0008) |
 
 ## Persistence (`state.ts`)
 
@@ -76,6 +76,16 @@ Switching is a **view** change, not a run change. `create_session` and `select_s
 a run (ADR 0006, AS-R8). Many sessions run concurrently; a single session is serial — a
 `user_prompt` for a session with a turn already in flight returns an `error` (AS-R2).
 `user_prompt` requires a viewed session; otherwise an `error` is returned.
+
+## Team-session status (`runs.ts`)
+
+A runtime carries a `team: boolean` (default `false`), set `true` by the server's `onTeam` hook
+when a run uses a team tool and reset `false` when the run tears down (agent-session, ADR 0008).
+It changes status semantics in `emit`: a `turn_end` normally implies `idle`, but while `rt.team`
+is true the implied `idle` is overridden to `team` (`if (next === 'idle' && rt.team) next = 'team'`).
+So a team lead's `turn_end` reports `team`, not `idle` — the lead process is alive between turns,
+not free. A `team` session's next `user_prompt` is pushed into the live run rather than launching
+a new one (AS-R17, agent-session design § Team sessions).
 
 ## Non-functional considerations
 

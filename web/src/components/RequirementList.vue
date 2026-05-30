@@ -44,6 +44,15 @@ function setFilter(value: RequirementStatus | null) {
   emit('filter', value)
 }
 
+// 「全部」视图下把已完成(done)的需求稳定置底,未完成的保持原序;
+// 单状态过滤时由服务端返回该状态数据,原样展示不再排序。
+const displayRequirements = computed<Requirement[]>(() => {
+  if (filter.value !== null) return props.requirements
+  return [...props.requirements].sort(
+    (a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0),
+  )
+})
+
 // Title lookup so a dependency id can show its requirement's title in a hint.
 const titleById = computed<Record<string, string>>(() => {
   const out: Record<string, string> = {}
@@ -84,7 +93,7 @@ function statusLabel(s: RequirementStatus): string {
     </div>
     <div class="req-items">
       <p v-if="requirements.length === 0" class="req-empty">暂无需求。在右侧与助手沟通后保存。</p>
-      <div v-for="r in requirements" :key="r.id" class="req-item" :class="r.status">
+      <div v-for="r in displayRequirements" :key="r.id" class="req-item" :class="r.status">
         <div class="req-item-main">
           <div class="req-item-head">
             <span class="req-priority" :class="r.priority">{{ r.priority }}</span>

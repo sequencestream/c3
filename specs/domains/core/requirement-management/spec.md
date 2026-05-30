@@ -92,6 +92,8 @@ stateDiagram-v2
   item whose development session was deleted (RM-R8).
 - **Done / cancelled are manual.** The development run never moves status itself (RM-R9). Refine
   does not change status (RM-R7); it may add/update items via `save_requirements`.
+- **`completedAt` tracks `done`.** Transitioning to `done` stamps `completedAt` with the current
+  time; any transition out of `done` clears it back to null (RM-R9).
 
 ## User scenarios
 

@@ -26,8 +26,12 @@ export interface WorkspaceInfo {
  * - `idle` — no turn in flight (session may still be active for the next prompt).
  * - `running` — a turn is executing.
  * - `awaiting_permission` — a turn is blocked waiting on a permission decision.
+ * - `team` — a persistent agent-team session: the team lead's process stays alive
+ *   between turns, coordinating background teammates. The run is still in-flight
+ *   (not idle) even when no turn is actively producing output; it only ends when
+ *   the user explicitly stops it.
  */
-export type SessionStatus = 'idle' | 'running' | 'awaiting_permission'
+export type SessionStatus = 'idle' | 'running' | 'awaiting_permission' | 'team'
 
 /** One session's live run status, broadcast to every connection for the sidebar. */
 export interface SessionRunStatus {
@@ -256,6 +260,8 @@ export interface Requirement {
   lastDevSessionId: string | null
   createdAt: number
   updatedAt: number
+  /** When the requirement entered `done`; `null` until completed, cleared if it leaves `done`. */
+  completedAt: number | null
 }
 
 /**
@@ -402,8 +408,17 @@ export type ServerToClient =
    * One prompt→result turn finished. `complete` = the run ended normally;
    * `error` = it failed. This NEVER means the session ended — the session stays
    * active for the next prompt. A session only truly ends when the user clears it.
+   * For a team session this fires per lead turn; the lead process keeps running.
    */
   | { type: 'turn_end'; reason: 'complete' | 'error'; error?: string }
+  /**
+   * The session was upgraded to a persistent agent team: the run detected a team
+   * tool (TeamCreate / SendMessage / a background Agent) and the lead process now
+   * stays alive between turns to coordinate teammates. The client keeps the
+   * composer enabled (messages route to the live lead) and shows a team badge.
+   * Emitted once, into the session buffer, so reconnecting viewers also see it.
+   */
+  | { type: 'team_upgraded' }
   /** A requested operation failed (bad path, missing session, etc.). */
   | { type: 'error'; message: string }
   | { type: 'pong' }

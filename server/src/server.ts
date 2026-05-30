@@ -159,12 +159,24 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             broadcastStatuses()
           }
         },
+        onTeam: () => {
+          // The run became a persistent agent team: the lead process now stays
+          // alive across turns. Mark the runtime (so `turn_end` holds at `team`
+          // and the next prompt feeds the live run), tell the client once, and
+          // surface the team status.
+          rt.team = true
+          emit(runId, { type: 'team_upgraded' })
+          setStatus(runId, 'team')
+        },
       })
     } catch (err) {
       emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
     } finally {
       const wasAborted = abort.signal.aborted
       if (rt.run?.abort === abort) rt.run = null
+      // The run is fully over (team sessions only reach here on user stop), so the
+      // team is no longer live — clear the flag and fall back to idle.
+      rt.team = false
       // An aborted run never sends turn_end from the run loop; emit one so the
       // viewer's input unlocks. A normal/errored run already did.
       if (wasAborted) emit(runId, { type: 'turn_end', reason: 'complete' })
@@ -408,6 +420,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               const rt = viewing ? getRuntime(viewing) : undefined
               if (!rt) {
                 send(ws, { type: 'error', message: 'Select or create a session first.' })
+                return
+              }
+              // Team session: the lead process is alive across turns, so feed the
+              // prompt into the *same* run (no resume launch). The user may send
+              // even while the lead is mid-turn — the SDK queues it.
+              if (rt.team && rt.run?.handle) {
+                emit(rt.sessionId, { type: 'user_text', text: msg.text })
+                setStatus(rt.sessionId, 'running')
+                rt.run.handle.pushInput(msg.text)
                 return
               }
               if (rt.run) {

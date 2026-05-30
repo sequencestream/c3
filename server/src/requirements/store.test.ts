@@ -95,6 +95,27 @@ describe('requirements CRUD', () => {
     expect(got?.title).toBe('A') // untouched
   })
 
+  it('stamps completedAt when marked done and clears it when reverted', () => {
+    const [r] = insertRequirements(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    expect(getRequirement(r.id)?.completedAt).toBeNull() // todo → no completion time
+
+    updateStatus(r.id, 'done')
+    const done = getRequirement(r.id)
+    expect(typeof done?.completedAt).toBe('number') // done → stamped
+    expect(done?.completedAt).toBeGreaterThan(0)
+
+    updateStatus(r.id, 'in_progress')
+    expect(getRequirement(r.id)?.completedAt).toBeNull() // reverted → cleared
+  })
+
+  it('keeps completedAt in sync when status is patched via updateRequirement', () => {
+    const [r] = insertRequirements(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    updateRequirement(r.id, { status: 'done' })
+    expect(typeof getRequirement(r.id)?.completedAt).toBe('number')
+    updateRequirement(r.id, { status: 'cancelled' })
+    expect(getRequirement(r.id)?.completedAt).toBeNull()
+  })
+
   it('stores the inferred module and defaults to "" when omitted', () => {
     const saved = insertRequirements(proj, [
       { title: 'A', content: '', priority: 'P0', module: '认证' },
@@ -152,11 +173,13 @@ describe('requirements CRUD', () => {
     const got = getRequirement('old-1')
     expect(got?.title).toBe('Legacy') // historic row survives
     expect(got?.module).toBe('') // backfilled default
+    expect(got?.completedAt).toBeNull() // new nullable column, null for historic rows
 
     const cols = raw.all<{ name: string }>('PRAGMA table_info(requirements)')
     expect(cols.some((c) => c.name === 'module')).toBe(true)
+    expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(2)
+    expect(version?.user_version).toBe(3)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()

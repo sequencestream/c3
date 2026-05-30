@@ -90,9 +90,13 @@ capped at ~4000 chars (`claude.ts`).
 
 `AskUserQuestion` is **not** an allow/deny tool: it carries `questions[]`, each
 with `options[]` (and a `multiSelect` flag), and needs an _answer per question_,
-not a verdict. So the gateway routes it to a separate path (`runAskConsensus`)
-that runs **even when consensus is disabled** — it is also the base mechanism
-that makes AskUserQuestion answerable at all in c3's headless (no-TTY) setup.
+not a verdict. So the gateway routes it to a separate branch (`claude.ts`,
+guarded by `askQuestions(input)`) that **always** runs — rendering the answer
+panel and injecting the chosen answers is the base mechanism that makes
+AskUserQuestion answerable at all in c3's headless (no-TTY) setup. The consensus
+_voting_ within that branch, however, only happens when consensus is **enabled**:
+`runAskConsensus` returns `null` when disabled (or with no voters / no questions),
+so there is no auto-answer and the human fills the panel unaided.
 
 | Role    | Job (ask path)                                                                                          |
 | ------- | ------------------------------------------------------------------------------------------------------- |

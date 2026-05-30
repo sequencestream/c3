@@ -68,7 +68,7 @@ header h1 {
 /* ============ 标准下拉框（Dropdown 组件） ============ */
 /*
  * VSCode / Trae 风格的自定义下拉菜单：触发按钮 + 浮层面板（图标行 + 悬停高亮）。
- * 由 lib/Dropdown.vue 消费，统一替代原生 <select>。
+ * 由 components/BaseDropdown.vue 消费，统一替代原生 <select>。
  */
 .dd {
   position: relative;

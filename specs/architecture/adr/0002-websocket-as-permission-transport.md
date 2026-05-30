@@ -33,8 +33,9 @@ carries a `requestId`; the browser's `permission_response` echoes it to correlat
 
 - **Easier:** a single ordered stream; the gateway can `await` a promise keyed by
   `requestId` and resolve it when the matching response arrives.
-- **Harder:** the connection is session state. Closing it aborts the in-flight run; there
-  is no built-in auto-reconnect today (the client only reports `closed`).
+- **Harder:** the connection is session state. The client mitigates drops with a heartbeat +
+  exponential-backoff auto-reconnect that re-selects the active session on reopen (AVAIL-6);
+  background runs survive the drop regardless (AVAIL-3).
 - Vite proxies `/ws` to the server in development so the browser connects transparently.
 
 ## Compliance

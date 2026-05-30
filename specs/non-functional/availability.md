@@ -12,11 +12,9 @@ requirements are about clean degradation and not leaving the user stuck.
 | AVAIL-3 | Closing the WebSocket only unsubscribes that connection's view; in-flight runs continue in the background and the server stays up for new connections. Reconnecting and selecting the session replays the full record (ADR 0006).                                                                                                                 |
 | AVAIL-4 | Stopping a run (`stop_run` / delete / workspace removal) interrupts it cleanly; `interrupt()` rejections (e.g. "not ready for writing") are swallowed and do not crash the process. A second prompt for a session whose turn is in flight is rejected, not coalesced.                                                                             |
 | AVAIL-5 | An unparseable client message is ignored without tearing down the connection.                                                                                                                                                                                                                                                                     |
+| AVAIL-6 | The client keeps the socket alive with a 25s `ping`/`pong` heartbeat and detects a half-open link via a 10s pong timeout. On any drop it auto-reconnects with exponential backoff (1s → cap 30s, jittered), then re-selects the active session so history + buffered live events replay without a manual page reload (builds on AVAIL-3).         |
 
 ## Known gaps (documented, not yet addressed)
 
-- **No client auto-reconnect.** On socket close the browser reports `closed` and does not
-  reconnect automatically; the user reloads the page. The background run is unaffected and is
-  picked up again on reselect. Tracked as a future improvement.
 - **No runtime eviction.** Session runtimes (their event buffers) live for the process
   lifetime; there is no memory cap or eviction yet. Acceptable for a local single-user tool.

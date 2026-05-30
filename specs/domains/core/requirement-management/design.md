@@ -151,22 +151,24 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
 
 ## Communication system prompt (`prompt.ts`)
 
-Injected as `appendSystemPrompt` on the `claude_code` preset. In brief: you are a requirement
-analyst; read project material only, never edit/write/run change commands/spawn sub-agents/run
-slash commands; converse with the user and break requests into discrete, verifiable,
-right-sized items (each with title/content/priority P0–P3/optional dependencies/**inferred
-module name**); confirm a list with the user first; on approval call `save_requirements` (the
-system pops the confirmation, the real write follows the user's allow); never pretend a save
-happened. The prompt asks the agent to infer each item's **module name** from its title/content
-(e.g. 认证、会话、需求管理), leaving it blank when unsure, and to pass `module` per item to
-`save_requirements`. This is scheme **a** (infer from title/content); a future extension may key
-off the project's actual module structure for more precise classification (RM-R14).
+Injected as `appendSystemPrompt` on the `claude_code` preset. **The prompt text is in English**
+(the agent still converses with the user in Chinese). In brief: you are a requirement analyst; read
+project material only, never edit/write/run change commands/spawn sub-agents/run slash commands;
+converse with the user and break requests into discrete, verifiable, right-sized items (each with
+title/content/priority P0–P3/optional dependencies/**inferred module name**); confirm a list with
+the user first; on approval call `save_requirements` (the system pops the confirmation, the real
+write follows the user's allow); never pretend a save happened. The prompt asks the agent to infer
+each item's **module name** from its title/content (e.g. auth、session、requirement-management),
+leaving it blank when unsure, and to pass `module` per item to `save_requirements`. This is scheme
+**a** (infer from title/content); a future extension may key off the project's actual module
+structure for more precise classification (RM-R14).
 
-The prompt also carries a **decomposition rule**: when one change touches **both code and its
-companion docs** (spec / 说明 / comments), the analyst folds the doc-sync work into the **same**
-requirement's content + acceptance points rather than emitting a separate「文档更新」item — code and
-its docs are one change, kept on one ticket so neither half is scheduled apart or dropped, which
-would drift docs out of sync with code (RM-R15).
+The prompt also carries a **decomposition rule (a single goal is never split)**: when one goal
+touches **code, its tests, and/or its companion docs** (spec / README / comments), the analyst
+folds the test- and doc-sync work into the **same** requirement's content + acceptance points
+rather than emitting a separate「更新测试」/「文档更新」item — code, its tests, and its docs are one
+change, kept on one ticket so no half is scheduled apart or dropped, which would drift tests/docs
+out of sync with code (RM-R15).
 
 ## `save_requirements` tool (`save-tool.ts`)
 
@@ -270,8 +272,9 @@ the list) (RM-R12).
 - **Layout:** left `RequirementList.vue` (header: title + an **automation** button [▶ / ■ stop,
   highlighted while running, red on error] + status filter, with a status line below showing the
   current item or the stop reason; per row a leading **automate** checkbox, then `MM/DD` date prefix
-  — `completedAt` for done items, else `createdAt`, both zero-padded — title/priority badge/status/
-  dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
+  — `completedAt` for done items, else `createdAt`, both zero-padded — an optional **module tag**
+  (`.req-module` 胶囊标签,渲染于 date 与 title 之间;`module===''` 时 `v-if` 不渲染,无占位不破版)
+  before the title/priority badge/status/dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
   for launched, mark done/cancel for any); right **reuses** `ChatMessages` + `SessionStatusBar` +
   `MessageInput` against the already-viewed communication session. The checkbox emits
   `set-automate`; the button emits `start-automation`/`stop-automation`.

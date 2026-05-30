@@ -157,6 +157,7 @@ function datePrefix(r: Requirement): string {
             </label>
             <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
             <span class="req-date">{{ datePrefix(r) }}</span>
+            <span v-if="r.module" class="req-module" :title="r.module">{{ r.module }}</span>
             <span class="req-title" :title="r.content">{{ r.title }}</span>
             <span class="req-status">{{ statusLabel(r.status) }}</span>
           </div>

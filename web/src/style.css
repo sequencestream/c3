@@ -1511,6 +1511,19 @@ button.stop-btn:hover:not(:disabled) {
   color: var(--c-text-muted);
   font-variant-numeric: tabular-nums;
 }
+.req-module {
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-badge);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-hover);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+}
 .req-title {
   flex: 1;
   font-size: var(--fs-body);

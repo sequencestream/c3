@@ -23,7 +23,7 @@
 import type { AutomationStatus, Requirement } from '@ccc/shared/protocol'
 import { getRequirement, listRequirements, setLastDevSession, updateStatus } from './store.js'
 import { judgeCompletion } from './judge.js'
-import { commitAndPush, gitDiffStat } from '../git.js'
+import { commitAndPush, gitDiffStat, gitRecentLog } from '../git.js'
 
 /** Outcome of one dev turn, as observed by the orchestrator's internal viewer. */
 export interface DevTurnResult {
@@ -136,6 +136,7 @@ class AutomationController {
   }
 
   private fail(reason: string): void {
+    console.warn(`[c3:automation] 停止 (${this.projectPath}): ${reason}`)
     this.status.state = 'error'
     this.status.error = reason
     this.status.currentRequirementId = null
@@ -221,12 +222,17 @@ class AutomationController {
         return false
       }
 
-      // Normal turn end → judge true completion.
-      const diffStat = await gitDiffStat(this.projectPath)
+      // Normal turn end → judge true completion. Evidence includes BOTH the
+      // uncommitted diff and recent commits, since /sdd-lite may self-commit
+      // (leaving the tree clean) — an empty diff alone must not read as "未完成".
+      const [diffStat, recentLog] = await Promise.all([
+        gitDiffStat(this.projectPath),
+        gitRecentLog(this.projectPath),
+      ])
       const verdict = await judgeCompletion({
         req,
         lastMessage: turn.lastMessage,
-        diffStat,
+        evidence: { diffStat, recentLog },
         cwd: this.projectPath,
         signal: this.abort.signal,
       })
@@ -241,6 +247,9 @@ class AutomationController {
         updateStatus(req.id, 'done')
         this.status.completedIds.push(req.id)
         this.hooks.broadcastRequirements(this.projectPath)
+        console.log(
+          `[c3:automation]「${req.title}」已完成 → done${res.committed ? ' (已提交)' : ''} (已推送)`,
+        )
         return true
       }
       if (verdict.verdict === 'in_progress') {

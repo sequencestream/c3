@@ -24,9 +24,10 @@ Three decisions are coupled enough to record together:
    model can still call `Write`/`Bash`, or spawn a sub-agent or slash command that writes, and a
    prompt cannot stop it. Rejected as the _sole_ mechanism.
 2. **Read-only by tool layer + deny-by-default gateway (chosen).** Disallow all write/exec/orchestration
-   tools and deny anything unexpected at `canUseTool`. _Con:_ must keep the disallow list and gate
-   in sync with the SDK's tool surface. _Pro:_ defense in depth; a new SDK write tool is still
-   denied by the gateway default.
+   tools and deny anything unexpected at `canUseTool`, while still admitting purely _interactive_
+   tools (`AskUserQuestion`) that have no write side effects. _Con:_ must keep the disallow list and
+   gate in sync with the SDK's tool surface, and classify each new tool as write vs interactive.
+   _Pro:_ defense in depth; a new SDK write tool is still denied by the gateway default.
 3. **Save by a free-form agent action (auto-persist).** _Con:_ no human checkpoint; violates the
    "human decides" posture and risks junk in the ledger. Rejected.
 4. **Save via a confirmation that reuses the permission gateway (chosen).** A `save_requirements`
@@ -47,8 +48,18 @@ Adopt options 2, 4, and 6 together.
   `KillShell`/**`Task`**/**`SlashCommand`** — `Task` and `SlashCommand` are essential because a
   sub-agent's tool calls bypass the parent `canUseTool`, and slash commands could trigger
   file-writing skills. On top of that, the `canUseTool` gate for this run **denies by default**:
-  read-class tools auto-allow, `mcp__c3__save_requirements` raises a confirmation, everything else
-  is denied — so even a future SDK write tool not in the disallow list is still blocked.
+  read-class tools auto-allow, `mcp__c3__save_requirements` raises a confirmation,
+  `AskUserQuestion` is allowed (routed via answer-injection — see below), everything else is
+  denied — so even a future SDK write tool not in the disallow list is still blocked.
+- **`AskUserQuestion` is allowed as an _interactive_, not a _write_, tool.** It only poses
+  clarifying questions to the human and carries no file/exec/orchestration side effects, so letting
+  the read-only agent ask the user does not violate the read-only posture — it is the same
+  human-in-the-loop dialogue the agent already has, just structured. It is therefore **kept out of
+  `disallowedTools`** and admitted by the gate. It is _not_ a plain allow: the SDK only echoes an
+  answer when `input.answers` is pre-filled, so the gate prompts the human via `permission_request`
+  and, on allow, returns `withAnswers(input, answers)` (deny on cancel). It runs **without
+  consensus** (single agent, no voting party), and an empty/invalid question set falls through to
+  the default deny.
 - **The communication run is forced to `permissionMode: 'default'`,** never inheriting the system
   default mode. Under `bypassPermissions` the SDK does not call `canUseTool`, which would let
   `save_requirements` persist silently — unacceptable. `set_mode` is ignored for this run and the
@@ -84,6 +95,11 @@ Adopt options 2, 4, and 6 together.
   mode.
 - A requirement MUST be persisted only inside the `save_requirements` handler, after a human
   allow. No code path may write the ledger to bypass that confirmation.
+- `AskUserQuestion` MUST stay out of `disallowedTools` and be admitted by the requirement gate as
+  an interactive (non-write) tool, but only through the answer-injection path (prompt the human,
+  inject `withAnswers` on allow, deny on cancel) — never a plain allow. Reviewers reject treating
+  it as a write tool (over-restrictive) or as an auto-allow read tool (the injected answer would be
+  lost).
 - The SQLite driver MUST be selected by `globalThis.Bun`; `'node:sqlite'` and `'bun:sqlite'` MUST
   be in esbuild `external`. The store MUST fail soft so c3 boots without it.
 

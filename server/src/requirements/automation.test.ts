@@ -12,6 +12,7 @@ const commitMock = vi.fn()
 vi.mock('./judge.js', () => ({ judgeCompletion: (...a: unknown[]) => judgeMock(...a) }))
 vi.mock('../git.js', () => ({
   gitDiffStat: async () => 'M file.ts | 1 +',
+  gitRecentLog: async () => 'abc123 feat: prior work',
   commitAndPush: (...a: unknown[]) => commitMock(...a),
 }))
 

@@ -27,7 +27,7 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 | Hidden-set list filter       | `server/src/sessions.ts`                | `listWorkspaceSessions` excludes the project's hidden set                                                                      |
 | Automation orchestrator      | `server/src/requirements/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                             |
 | Completion judge             | `server/src/requirements/judge.ts`      | `judgeCompletion` — builds the prompt, runs `askOneShot`, parses `done`/`in_progress`/`stuck`                                  |
-| Git helper                   | `server/src/git.ts`                     | `gitDiffStat` + `commitAndPush` (scoped via `git -C`); never rejects, returns codes/errors                                     |
+| Git helper                   | `server/src/git.ts`                     | `gitDiffStat` + `gitRecentLog` + `commitAndPush` (scoped via `git -C`); never rejects, returns codes/errors                    |
 
 ## SQLite layer (`db.ts`)
 
@@ -119,15 +119,19 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   `['Write','Edit','MultiEdit','NotebookEdit','Bash','BashOutput','KillShell','Task','SlashCommand']`.
   `Task` and `SlashCommand` are essential: a spawned sub-agent's tool calls bypass the parent
   `canUseTool`, and slash commands could trigger writing skills. On top of that the
-  `gate==='requirement'` `canUseTool` **denies by default**: read-class tools (Read/Grep/Glob/
-  WebFetch/WebSearch) auto-allow; `mcp__c3__save_requirements` raises a `permission_request`;
-  `AskUserQuestion` is a clarifying-only tool (no write/exec side effects) so it is **allowed but
-  routed via user-answer injection** — `send` a `permission_request`, await the user decision, on
-  allow return `withAnswers(input, answers)` (the SDK only echoes answers when `input.answers` is
-  pre-filled), on cancel deny. It runs **without consensus** (single agent, no voting party). The
+  `gate==='requirement'` `canUseTool` **denies by default**: read-class tools (`REQUIREMENT_READ_TOOLS`
+  = Read/Grep/Glob/LS/NotebookRead/WebFetch/WebSearch/TodoWrite) auto-allow;
+  `mcp__c3__save_requirements` raises a `permission_request`; `AskUserQuestion` is an **interactive
+  (clarifying-only) tool, not a write tool** — it has no file/exec side effects, so the read-only
+  agent may use it. It is therefore **kept out of `disallowedTools`** and **allowed but routed via
+  user-answer injection** — `send` a `permission_request`, await the user decision, on allow return
+  `withAnswers(input, answers)` (the SDK only echoes answers when `input.answers` is pre-filled),
+  on cancel deny. It runs **without consensus** (single agent, no voting party). The
   `askQuestions(input)` guard filters empty/invalid questions, which fall through to the default
   deny. Everything else is denied (belt-and-braces even if the SDK adds a new write tool). The
-  SDK-level `disallowedTools` hard-disabled list is unchanged.
+  SDK-level `disallowedTools` hard-disabled list
+  (Write/Edit/MultiEdit/NotebookEdit/Bash/BashOutput/KillShell/Task/SlashCommand) is unchanged and
+  **does not include `AskUserQuestion`**.
 - **Independent viewer orchestration.** `open_requirement_chat` / `refine_requirement` manage the
   viewer switch themselves (`removeViewer(old)` → `viewing=chatId` → `addViewer`) and do **not**
   reuse `select_session`'s internals (which unconditionally set the active session). The
@@ -217,13 +221,19 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   → `fail(reason)` and stop the whole loop (RM-A6). No eligible item → state `done` (RM-A7). Abort
   mid-run → state `idle`.
 - **Completion judge (`judge.ts`).** `judgeCompletion` builds a Chinese prompt (requirement + last
-  message + `git diff --stat`) demanding a strict `{"verdict","reason"}` JSON, runs it through the
-  tool-less `askOneShot` (default-agent env/model via `resolveSessionLaunch(null)`), and tolerantly
+  message + **evidence**: `git diff HEAD --stat` for uncommitted work AND `git log --oneline -5` for
+  recent commits — `/sdd-lite` often self-commits, leaving a clean tree, so an empty diff must NOT
+  read as incomplete; the prompt instructs the judge to accept either source and lean `done` when
+  the agent reports completion and the evidence is consistent) demanding a strict
+  `{"verdict","reason"}` JSON, runs it through the tool-less `askOneShot` (default-agent env/model
+  via `resolveSessionLaunch(null)`), logs the verdict, and tolerantly
   parses the first `{…}`; an unparseable answer is treated as `stuck` (fail-safe, RM-A4).
-- **Git (`git.ts`).** `gitDiffStat` and `commitAndPush` shell out via `execFile('git', ['-C', cwd, …])`
-  and never reject (they return exit codes/stderr). `commitAndPush` stages all, treats an empty
-  working tree as a successful no-op, commits `feat: <title>`, and pushes — any non-zero step
-  returns `{ ok:false, error }` which becomes the orchestrator's stop reason (RM-A5/A6).
+- **Git (`git.ts`).** `gitDiffStat`, `gitRecentLog`, and `commitAndPush` shell out via
+  `execFile('git', ['-C', cwd, …])` and never reject (they return exit codes/stderr).
+  `commitAndPush` stages all, commits `feat: <title>` **only when there are changes**, and then
+  **always pushes** (an empty tree means `/sdd-lite` already committed its own work — we still push
+  so those local commits reach the remote). Any non-zero step returns `{ ok:false, error }` which
+  becomes the orchestrator's stop reason (RM-A5/A6).
 
 ## List & back-link
 

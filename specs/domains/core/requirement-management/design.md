@@ -50,12 +50,24 @@ parts are only three: the **SQLite layer**, the **read-only communication run va
 ## Schema (`PRAGMA user_version` migrations)
 
 - `requirements` — the ledger (`id`, `project_path`, `title`, `content`, `priority`, `status`,
-  `last_dev_session_id`, `created_at`, `updated_at`), indexed by `(project_path, status)`.
+  `module`, `last_dev_session_id`, `created_at`, `updated_at`), indexed by `(project_path,
+status)`. `module` is `TEXT NOT NULL DEFAULT ''`.
 - `requirement_deps` — `(requirement_id, depends_on_id)` edges.
 - `requirement_chats` — one table doubling as the **per-project current communication session**
   map and the **hidden set**: `session_id` (PK, may be a `pending:` id), `project_path`,
   `is_current` (0/1, at most one per project), `updated_at`. The full set of rows for a project is
   the hidden set; the `is_current=1` row is the current communication session.
+
+**Schema version & migration (v1 → v2).** `SCHEMA_VERSION` is `2`. The fresh-create `SCHEMA`
+already declares `requirements.module`. For pre-existing dbs (v1, no `module` column), `db()`
+runs an **idempotent column migration** after `exec(SCHEMA)` and before writing `user_version`:
+`ensureColumn(d, 'requirements', 'module', "TEXT NOT NULL DEFAULT ''")` checks
+`PRAGMA table_info(requirements)` and only runs `ALTER TABLE requirements ADD COLUMN module
+TEXT NOT NULL DEFAULT ''` if the column is absent. This keys off the actual column presence (not
+the exact `user_version` history), so it is safe on new and old dbs and idempotent across runs;
+`ALTER TABLE … ADD COLUMN` is a lightweight metadata-only op and historical rows take the `''`
+default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table_info` /
+`ALTER TABLE ADD COLUMN` through the shared `exec`/`all` adapter (RM-R14).
 
 ## Store (`store.ts`)
 
@@ -63,8 +75,10 @@ parts are only three: the **SQLite layer**, the **read-only communication run va
   matching the workspace key / runtime `workspacePath` / SDK `cwd`. Otherwise queries miss and
   hidden filtering breaks.
 - Requirements: `listRequirements(projectPath, status?)` (with `dependsOn` aggregation),
-  `insertRequirements(projectPath, items)` (transactional batch, uuid, status `todo`),
-  `updateStatus`, `setLastDevSession`, `updateRequirement`, `getRequirement`.
+  `insertRequirements(projectPath, items)` (transactional batch, uuid, status `todo`; persists
+  `module` as `it.module ?? ''`), `updateStatus`, `setLastDevSession`, `updateRequirement`,
+  `getRequirement`. The internal `Row`/`hydrate` carry `module` so every read path returns it;
+  `updateRequirement` does not yet patch `module` (out of scope, no schema blocker).
 - Communication session (single table): `getChatSession(projectPath)`
   (`is_current=1`), `setChatSession` (clear the project's `is_current` then upsert the new row as
   `is_current=1`, also entering the hidden set), `isHiddenSession`/`listHiddenSessions`,
@@ -96,8 +110,14 @@ parts are only three: the **SQLite layer**, the **read-only communication run va
   `Task` and `SlashCommand` are essential: a spawned sub-agent's tool calls bypass the parent
   `canUseTool`, and slash commands could trigger writing skills. On top of that the
   `gate==='requirement'` `canUseTool` **denies by default**: read-class tools (Read/Grep/Glob/
-  WebFetch/WebSearch) auto-allow, `mcp__c3__save_requirements` raises a `permission_request`, and
-  everything else is denied (belt-and-braces even if the SDK adds a new write tool).
+  WebFetch/WebSearch) auto-allow; `mcp__c3__save_requirements` raises a `permission_request`;
+  `AskUserQuestion` is a clarifying-only tool (no write/exec side effects) so it is **allowed but
+  routed via user-answer injection** — `send` a `permission_request`, await the user decision, on
+  allow return `withAnswers(input, answers)` (the SDK only echoes answers when `input.answers` is
+  pre-filled), on cancel deny. It runs **without consensus** (single agent, no voting party). The
+  `askQuestions(input)` guard filters empty/invalid questions, which fall through to the default
+  deny. Everything else is denied (belt-and-braces even if the SDK adds a new write tool). The
+  SDK-level `disallowedTools` hard-disabled list is unchanged.
 - **Independent viewer orchestration.** `open_requirement_chat` / `refine_requirement` manage the
   viewer switch themselves (`removeViewer(old)` → `viewing=chatId` → `addViewer`) and do **not**
   reuse `select_session`'s internals (which unconditionally set the active session). The
@@ -120,15 +140,21 @@ parts are only three: the **SQLite layer**, the **read-only communication run va
 Injected as `appendSystemPrompt` on the `claude_code` preset. In brief: you are a requirement
 analyst; read project material only, never edit/write/run change commands/spawn sub-agents/run
 slash commands; converse with the user and break requests into discrete, verifiable,
-right-sized items (each with title/content/priority P0–P3/optional dependencies); confirm a list
-with the user first; on approval call `save_requirements` (the system pops the confirmation, the
-real write follows the user's allow); never pretend a save happened.
+right-sized items (each with title/content/priority P0–P3/optional dependencies/**inferred
+module name**); confirm a list with the user first; on approval call `save_requirements` (the
+system pops the confirmation, the real write follows the user's allow); never pretend a save
+happened. The prompt asks the agent to infer each item's **module name** from its title/content
+(e.g. 认证、会话、需求管理), leaving it blank when unsure, and to pass `module` per item to
+`save_requirements`. This is scheme **a** (infer from title/content); a future extension may key
+off the project's actual module structure for more precise classification (RM-R14).
 
 ## `save_requirements` tool (`save-tool.ts`)
 
 `createSdkMcpServer({ name: 'c3', tools: [ saveRequirementsTool(projectPath) ] })`. The `tool()`
 call uses four positional args (name, required description, a **raw zod shape** — not
-`z.object(...)` — and an async handler returning a `CallToolResult`). The handler runs **only
+`z.object(...)` — and an async handler returning a `CallToolResult`). Each requirement element
+includes an optional `module: z.string().optional()` (described as the inferred module name, may
+be left blank); the handler passes it straight through to `insertRequirements` (RM-R14). The handler runs **only
 after** the human confirmation (the gateway already allowed); it writes via
 `store.insertRequirements` and broadcasts a `requirements` refresh, returning a text result (or
 `isError` text on db-unavailable / failure so the agent learns it did not save). `projectPath` is
@@ -142,7 +168,7 @@ crosses projects.
 2. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the response carries a
    warning (the frontend also second-confirms before sending) (RM-R11).
 3. Start a **background normal runtime** (`pending:`) via `launchRun` with
-   prompt `/develop-pipeline <title + content + dependency summary>`; on `onSessionId`,
+   prompt `/sdd-lite <title + content + dependency summary>`; on `onSessionId`,
    `setLastDevSession` + `updateStatus(in_progress)` + broadcast `requirements` + `broadcastStatuses`.
 4. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.

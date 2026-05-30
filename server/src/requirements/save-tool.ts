@@ -37,6 +37,7 @@ export function createRequirementMcpServer(
               title: z.string(),
               content: z.string(),
               priority: z.enum(['P0', 'P1', 'P2', 'P3']),
+              module: z.string().optional().describe('所属模块名(按标题/内容推断,可留空)'),
               dependsOn: z.array(z.string()).optional(),
             }),
           ),

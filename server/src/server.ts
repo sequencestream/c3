@@ -573,7 +573,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
               const devRt = ensureRuntime(devId, proj, getDefaultMode(), [], 'normal')
               const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
-              const devPrompt = `/develop-pipeline ${req.title}\n\n${req.content}${depNote}`
+              const devPrompt = `/sdd-lite ${req.title}\n\n${req.content}${depNote}`
               // Background launch: don't await — it runs detached, surviving this
               // connection. Status flips to in_progress once the SDK id binds.
               void launchRun(devRt, devPrompt, {

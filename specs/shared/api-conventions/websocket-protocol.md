@@ -13,6 +13,12 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
   recognize — an unparseable message is **never** treated as a permission approval.
 - Correlation is by `requestId`: a `permission_request` carries one; the matching
   `permission_response` echoes it.
+- Permission **decisions are not persisted**. The runtime `buffer` keeps the raw
+  `permission_request` events, so a `select_session` replay re-emits past requests with no
+  decision attached — identical on the wire to a fresh request. Distinguishing a live, still-pending
+  request from replayed history is a **client** concern: the console treats a permission as
+  actionable only while the session is `awaiting_permission` and it is the latest undecided one
+  (see web-console WC-R16); replayed/resolved permissions render as static records.
 
 ## Client → Server (`ClientToServer`)
 
@@ -32,7 +38,7 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 | `list_requirements`         | `projectPath: string`, `status?: RequirementStatus`  | Request a project's requirement list (server replies with `requirements`). Returns `error` if the ledger is unavailable.                                                               |
 | `open_requirement_chat`     | `projectPath: string`                                | Enter the requirement view: open/resume the project's read-only communication session and reply with its `session_selected` plus a `requirements` list (requirement-management RM-R4). |
 | `refine_requirement`        | `projectPath: string`, `requirementId: string`       | Restart the communication session seeded with one requirement's content to refine it further (RM-R7).                                                                                  |
-| `start_development`         | `projectPath: string`, `requirementId: string`       | Launch a background `/develop-pipeline` session for a `todo` requirement; sets it `in_progress` and records `lastDevSessionId` (RM-R8). Warns (not blocks) on unmet dependencies.      |
+| `start_development`         | `projectPath: string`, `requirementId: string`       | Launch a background `/sdd-lite` session for a `todo` requirement; sets it `in_progress` and records `lastDevSessionId` (RM-R8). Warns (not blocks) on unmet dependencies.              |
 | `update_requirement_status` | `requirementId: string`, `status: RequirementStatus` | Manually set a requirement's status (e.g. `done` / `cancelled`); the server replies with `requirements` (RM-R9).                                                                       |
 | `get_settings`              | —                                                    | Fetch the system configuration (server replies with `settings`).                                                                                                                       |
 | `save_settings`             | `settings: SystemSettings`                           | Replace the system configuration; server normalizes and echoes `settings`.                                                                                                             |
@@ -96,16 +102,19 @@ See the [system-config spec](../../domains/system-config/agent-config/spec.md).
 
 - **`RequirementPriority`** — `'P0' | 'P1' | 'P2' | 'P3'` (P0 highest).
 - **`RequirementStatus`** — `'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'`.
-- **`Requirement`** — `{ id, projectPath, title, content, priority, status, dependsOn: string[],
-lastDevSessionId: string | null, createdAt, updatedAt }`. A project-scoped ledger item;
-  `projectPath` is the resolved workspace path; `dependsOn` are intra-project requirement ids.
-- **`ProposedRequirement`** — `{ title, content, priority, dependsOn?: string[] }`. One item in a
-  `save_requirements` call and in the confirmation render; persisted as a `Requirement` (status
-  `todo`) only on a confirmed save.
+- **`Requirement`** — `{ id, projectPath, title, content, priority, module: string, status,
+dependsOn: string[], lastDevSessionId: string | null, createdAt, updatedAt }`. A project-scoped
+  ledger item; `projectPath` is the resolved workspace path; `dependsOn` are intra-project
+  requirement ids; `module` (模块名称) is the agent-inferred owning module, `''` when unidentified.
+- **`ProposedRequirement`** — `{ title, content, priority, module?: string, dependsOn?: string[] }`.
+  One item in a `save_requirements` call and in the confirmation render; persisted as a
+  `Requirement` (status `todo`) only on a confirmed save (`module` defaults to `''` when omitted).
 
 The communication agent's save confirmation reuses `permission_request` /`permission_response`
 with `toolName === 'mcp__c3__save_requirements'` and `input.requirements: ProposedRequirement[]`.
-See the [requirement-management spec](../../domains/core/requirement-management/spec.md).
+The same agent may also raise `AskUserQuestion` over the same pair (no `consensus`); on `allow` its
+answers are injected back as the tool result. See the
+[requirement-management spec](../../domains/core/requirement-management/spec.md).
 
 ## PermissionMode
 

@@ -222,6 +222,19 @@ export async function runClaude(opts: RunOptions): Promise<void> {
             }
             return { behavior: 'deny', message: 'User denied in c3 UI' }
           }
+          // AskUserQuestion is a clarifying-only tool (no write/exec side effects),
+          // so the read-only requirement agent may use it. It needs the standard
+          // answer-injection flow — NOT a plain allow (the SDK echoes answers only
+          // when `input.answers` is pre-filled). Single agent ⇒ no consensus: just
+          // prompt the human and inject the answers (or deny on cancel).
+          if (toolName === 'AskUserQuestion' && askQuestions(input)) {
+            send({ type: 'permission_request', requestId, toolName, input })
+            const { decision, answers } = await waitForDecision(requestId, signal)
+            if (decision === 'allow') {
+              return { behavior: 'allow', updatedInput: withAnswers(input, answers ?? {}) }
+            }
+            return { behavior: 'deny', message: 'User denied in c3 UI' }
+          }
           console.warn(`[c3] requirement gate denied tool: ${toolName}`)
           return {
             behavior: 'deny',

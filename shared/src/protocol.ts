@@ -233,7 +233,7 @@ export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3'
  * Requirement lifecycle status.
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
- * - `in_progress` — development launched (`/develop-pipeline` running).
+ * - `in_progress` — development launched (`/sdd-lite` running).
  * - `done` / `cancelled` — terminal, set by the user (never auto-set).
  */
 export type RequirementStatus = 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
@@ -247,6 +247,8 @@ export interface Requirement {
   title: string
   content: string
   priority: RequirementPriority
+  /** Owning module name, inferred by the comm agent from title/content. `''` when historic/unidentified. */
+  module: string
   status: RequirementStatus
   /** Ids of other requirements (same project) this one depends on. */
   dependsOn: string[]
@@ -265,6 +267,8 @@ export interface ProposedRequirement {
   title: string
   content: string
   priority: RequirementPriority
+  /** Module name the comm agent inferred from title/content; persisted as `''` when omitted. */
+  module?: string
   /** Optional ids of existing requirements (same project) it depends on. */
   dependsOn?: string[]
 }
@@ -320,7 +324,7 @@ export type ClientToServer =
    * the server injects the first prompt with the requirement's id and content.
    */
   | { type: 'refine_requirement'; projectPath: string; requirementId: string }
-  /** Launch a background dev session for a `todo` requirement via `/develop-pipeline`. */
+  /** Launch a background dev session for a `todo` requirement via `/sdd-lite`. */
   | { type: 'start_development'; projectPath: string; requirementId: string }
   /** Manually set a requirement's status (e.g. mark done/cancelled). */
   | { type: 'update_requirement_status'; requirementId: string; status: RequirementStatus }

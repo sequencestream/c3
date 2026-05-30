@@ -15,7 +15,7 @@ import { resolve } from 'node:path'
 import type { ProposedRequirement, Requirement, RequirementStatus } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from './db.js'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS requirements (
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS requirements (
   content         TEXT NOT NULL,
   priority        TEXT NOT NULL,
   status          TEXT NOT NULL,
+  module          TEXT NOT NULL DEFAULT '',
   last_dev_session_id TEXT,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL
@@ -48,12 +49,27 @@ CREATE INDEX IF NOT EXISTS idx_chat_project ON requirement_chats(project_path);
 
 let schemaReady = false
 
+/**
+ * Idempotently add a column to an existing table when it's missing. Used for
+ * backward-compatible migrations: a fresh db already has the column via SCHEMA,
+ * so we check `PRAGMA table_info` rather than relying on `user_version` history.
+ * Works on both `node:sqlite` and `bun:sqlite` (only `exec`/`all`).
+ */
+function ensureColumn(d: Db, table: string, col: string, decl: string): void {
+  const cols = d.all<{ name: string }>(`PRAGMA table_info(${table})`)
+  if (!cols.some((c) => c.name === col)) {
+    d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`)
+  }
+}
+
 /** Return the db with the schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
     d.exec(SCHEMA)
+    // v1 → v2: add `module` to pre-existing requirements tables (historic rows default to '').
+    ensureColumn(d, 'requirements', 'module', "TEXT NOT NULL DEFAULT ''")
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -99,6 +115,7 @@ interface Row {
   content: string
   priority: string
   status: string
+  module: string
   last_dev_session_id: string | null
   created_at: number
   updated_at: number
@@ -121,6 +138,7 @@ function hydrate(d: Db, rows: Row[]): Requirement[] {
     title: r.title,
     content: r.content,
     priority: r.priority as Requirement['priority'],
+    module: r.module,
     status: r.status as RequirementStatus,
     dependsOn: byId.get(r.id) ?? [],
     lastDevSessionId: r.last_dev_session_id,
@@ -171,14 +189,15 @@ export function insertRequirements(
       ids.push(id)
       d.run(
         `INSERT INTO requirements
-           (id, project_path, title, content, priority, status, last_dev_session_id, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
+           (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
         id,
         proj,
         it.title,
         it.content,
         it.priority,
         'todo',
+        it.module ?? '',
         null,
         now,
         now,

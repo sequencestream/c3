@@ -19,7 +19,11 @@ import { fmt, oneLine } from '../lib/format'
 import type { PermissionMsg } from '../lib/chat-types'
 import type { ProposedRequirement } from '@ccc/shared/protocol'
 
-const props = defineProps<{ m: PermissionMsg }>()
+// `actionable` is true only for the live, still-pending permission the user can
+// answer. When false and undecided, this prompt is a history record replayed
+// from the buffer (or a superseded earlier request) and renders as a single
+// static line — no buttons, no decision verdict.
+const props = defineProps<{ m: PermissionMsg; actionable: boolean }>()
 
 /** The c3 save_requirements tool's name (mirrors SAVE_REQUIREMENTS_TOOL server-side). */
 const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
@@ -28,6 +32,23 @@ const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
 const proposedRequirements = computed<ProposedRequirement[]>(() => {
   const reqs = (props.m.input as { requirements?: unknown })?.requirements
   return Array.isArray(reqs) ? (reqs as ProposedRequirement[]) : []
+})
+
+/**
+ * Undecided but not actionable ⇒ a historical request (buffer replay) the user
+ * can no longer act on. Render it as one static line instead of a live card.
+ */
+const isStatic = computed(() => props.m.decision === null && !props.actionable)
+
+/** The one-line label for a static history record, per tool type. */
+const historyLine = computed<string>(() => {
+  if (props.m.toolName === 'AskUserQuestion') {
+    return `🙋 曾请求回答 ${askQuestionsOf(props.m.input).length} 个问题 · AskUserQuestion`
+  }
+  if (props.m.toolName === SAVE_REQUIREMENTS_TOOL) {
+    return `💾 曾请求保存 ${proposedRequirements.value.length} 条需求`
+  }
+  return `🔧 曾请求使用工具 ${props.m.toolName}`
 })
 
 const emit = defineEmits<{
@@ -113,8 +134,11 @@ function submitAsk() {
 </script>
 
 <template>
+  <!-- Replayed / superseded history: a single static line, no actions, no verdict -->
+  <div v-if="isStatic" class="perm-history">{{ historyLine }}</div>
+
   <!-- AskUserQuestion: per-question answer panel -->
-  <template v-if="m.toolName === 'AskUserQuestion'">
+  <template v-else-if="m.toolName === 'AskUserQuestion'">
     <div class="label">
       🙋 回答提问 · <code>AskUserQuestion</code>
       <span v-if="m.consensus" class="consensus-badge split">多 agent 建议</span>
@@ -196,7 +220,7 @@ function submitAsk() {
           {{ a.agentName }}：{{ a.custom }}
         </div>
         <input
-          v-if="m.decision === null && isCustomChosen(q.index)"
+          v-if="actionable && isCustomChosen(q.index)"
           class="ask-custom"
           type="text"
           placeholder="输入自定义回复…"
@@ -205,7 +229,7 @@ function submitAsk() {
         />
       </div>
     </div>
-    <div v-if="m.decision === null" class="actions">
+    <div v-if="actionable" class="actions">
       <button class="deny" @click="respond('deny')">Deny</button>
       <button :disabled="!isAskAnswered()" @click="submitAsk()">提交答案</button>
     </div>
@@ -227,7 +251,7 @@ function submitAsk() {
         </div>
       </div>
     </div>
-    <div v-if="m.decision === null" class="actions">
+    <div v-if="actionable" class="actions">
       <button class="deny" @click="respond('deny')">取消</button>
       <button @click="respond('allow')">保存</button>
     </div>
@@ -253,7 +277,7 @@ function submitAsk() {
         </li>
       </ul>
     </div>
-    <div v-if="m.decision === null" class="actions">
+    <div v-if="actionable" class="actions">
       <button class="deny" @click="respond('deny')">Deny</button>
       <button @click="respond('allow')">Allow</button>
     </div>

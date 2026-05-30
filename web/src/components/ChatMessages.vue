@@ -11,7 +11,13 @@ import ConsensusBlock from './ConsensusBlock.vue'
 import { fmt, oneLine } from '../lib/format'
 import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../lib/chat-types'
 
-const props = defineProps<{ messages: ChatMsg[]; hasActiveSession: boolean }>()
+const props = defineProps<{
+  messages: ChatMsg[]
+  hasActiveSession: boolean
+  // The single permission the user can still act on (live, still-pending), or
+  // null. Permissions other than this one render as static history records.
+  actionablePermissionId: string | null
+}>()
 
 const emit = defineEmits<{
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
@@ -81,7 +87,11 @@ const blocks = computed<Block[]>(() => {
       for (const m of msgs)
         if (m.kind === 'permission') counts.set(m.toolName, (counts.get(m.toolName) ?? 0) + 1)
     const summary = [...counts].map(([name, n]) => `${name}.${n}`).join('  ')
-    const hasPending = msgs.some((m) => m.kind === 'permission' && m.decision === null)
+    // Only a genuinely actionable (live, pending) permission forces the batch
+    // open. Historical permissions replayed from the buffer stay collapsed.
+    const hasPending = msgs.some(
+      (m) => m.kind === 'permission' && m.requestId === props.actionablePermissionId,
+    )
     out.push({
       type: 'batch',
       key: `b${msgs[0].id}`,
@@ -174,6 +184,7 @@ function toggle(id: number): void {
             <PermissionPrompt
               v-else-if="m.kind === 'permission'"
               :m="m"
+              :actionable="m.requestId === actionablePermissionId"
               @respond="(pm, decision) => emit('respond', pm, decision)"
               @submit-ask="(pm, answers) => emit('submit-ask', pm, answers)"
             />

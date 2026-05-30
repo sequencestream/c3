@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resetDbForTests } from './db.js'
+import { getDb, resetDbForTests } from './db.js'
 import {
   getChatSession,
   getRequirement,
@@ -95,11 +95,73 @@ describe('requirements CRUD', () => {
     expect(got?.title).toBe('A') // untouched
   })
 
+  it('stores the inferred module and defaults to "" when omitted', () => {
+    const saved = insertRequirements(proj, [
+      { title: 'A', content: '', priority: 'P0', module: '认证' },
+      { title: 'B', content: '', priority: 'P0' }, // module omitted → '' fallback
+    ])
+    const byTitle = new Map(saved.map((r) => [r.title, r]))
+    expect(byTitle.get('A')?.module).toBe('认证')
+    expect(byTitle.get('B')?.module).toBe('')
+    // module survives a re-read
+    expect(getRequirement(byTitle.get('A')!.id)?.module).toBe('认证')
+  })
+
   it('persists across a cache reset (real file)', () => {
     const [r] = insertRequirements(proj, [{ title: 'A', content: '', priority: 'P0' }])
     resetDbForTests()
     resetStoreForTests()
     expect(getRequirement(r.id)?.title).toBe('A')
+  })
+
+  it('migrates a pre-v2 db: adds the module column, keeps historic rows, is idempotent', () => {
+    // Build an old-schema requirements table (no `module` column) with one
+    // historic row, mimicking a db created before this change.
+    const raw = getDb()!
+    raw.exec(`
+      CREATE TABLE requirements (
+        id              TEXT PRIMARY KEY,
+        project_path    TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        content         TEXT NOT NULL,
+        priority        TEXT NOT NULL,
+        status          TEXT NOT NULL,
+        last_dev_session_id TEXT,
+        created_at      INTEGER NOT NULL,
+        updated_at      INTEGER NOT NULL
+      );
+      PRAGMA user_version=1;
+    `)
+    raw.run(
+      `INSERT INTO requirements
+         (id, project_path, title, content, priority, status, last_dev_session_id, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      'old-1',
+      proj,
+      'Legacy',
+      'body',
+      'P0',
+      'todo',
+      null,
+      1,
+      1,
+    )
+
+    // First store access triggers the schema-ensure / migration path.
+    resetStoreForTests()
+    const got = getRequirement('old-1')
+    expect(got?.title).toBe('Legacy') // historic row survives
+    expect(got?.module).toBe('') // backfilled default
+
+    const cols = raw.all<{ name: string }>('PRAGMA table_info(requirements)')
+    expect(cols.some((c) => c.name === 'module')).toBe(true)
+    const version = raw.get<{ user_version: number }>('PRAGMA user_version')
+    expect(version?.user_version).toBe(2)
+
+    // Idempotent: a second ensure must not try to re-add the column (would throw).
+    resetStoreForTests()
+    expect(() => listRequirements(proj)).not.toThrow()
+    expect(getRequirement('old-1')?.module).toBe('')
   })
 })
 

@@ -50,6 +50,14 @@ describe('requirement gate — disallowed-tools lock', () => {
     expect(REQUIREMENT_DISALLOWED_TOOLS).not.toContain('save_requirements')
   })
 
+  it('does not hard-disable AskUserQuestion (clarifying-only, gate routes it via answer injection)', () => {
+    // The requirement agent may ASK the user to clarify (no write/exec side
+    // effect). The gate handles it through the standard answer-injection flow, so
+    // it must NOT sit in the SDK-level hard-disabled list — otherwise the answer
+    // panel could never render. Guard against a future trim accidentally adding it.
+    expect(REQUIREMENT_DISALLOWED_TOOLS).not.toContain('AskUserQuestion')
+  })
+
   it('names the save tool with the mcp__<server>__<tool> convention', () => {
     // The gate keys on this exact name to route the confirmation prompt, and the
     // MCP server registers `save_requirements` under server `c3`.

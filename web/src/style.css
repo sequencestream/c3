@@ -979,6 +979,12 @@ button.stop-btn:hover:not(:disabled) {
   text-align: right;
 }
 
+/* 重放的历史权限：一行无操作的静态记录 */
+.perm-history {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+
 /* ---- Multi-agent consensus ---- */
 .consensus {
   margin-top: var(--sp-3);

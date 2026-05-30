@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { createWsClient } from './lib/ws'
+import { actionablePermissionId } from './lib/permission'
 import AppHeader from './components/AppHeader.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatMessages from './components/ChatMessages.vue'
@@ -55,6 +56,18 @@ function statusOf(sessionId: string): SessionStatus {
 // covers both an executing turn and one blocked awaiting a permission decision.
 const running = computed(
   () => hasActiveSession.value && statusOf(activeSession.value as string) !== 'idle',
+)
+
+// The one permission the user can still act on (the live, still-pending request),
+// or null. Drives the actionable-vs-static split: history replayed from the
+// buffer rebuilds permission cards with `decision: null`, but they are only
+// clickable while the session is genuinely blocked on them — see
+// `actionablePermissionId`. Everything else renders as a static history line.
+const actionablePermId = computed<string | null>(() =>
+  actionablePermissionId(
+    messages.value,
+    hasActiveSession.value && statusOf(activeSession.value as string) === 'awaiting_permission',
+  ),
 )
 
 // Fine-grained activity of the viewed session, inferred from the event stream
@@ -524,6 +537,7 @@ function listCommands() {
       <ChatMessages
         :messages="messages"
         :has-active-session="hasActiveSession"
+        :actionable-permission-id="actionablePermId"
         @respond="respond"
         @submit-ask="submitAsk"
       />

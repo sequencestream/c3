@@ -1480,6 +1480,28 @@ button.stop-btn:hover:not(:disabled) {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-2);
+  cursor: pointer;
+}
+.req-chevron {
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  color: var(--c-text-muted);
+  transition: transform 0.15s ease;
+}
+.req-chevron--open {
+  transform: rotate(90deg);
+}
+.req-detail {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: var(--c-hover);
+  border: 1px solid var(--c-border);
+  color: var(--c-text);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .req-item-head {
   flex: 1 1 200px;

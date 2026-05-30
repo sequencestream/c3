@@ -104,6 +104,13 @@ function statusLabel(s: RequirementStatus): string {
   return STATUS_LABELS[s] ?? s
 }
 
+// 手风琴展开状态:记录当前展开项的 id,null 表示全部收起;天然保证至多一项展开。
+const expandedId = ref<string | null>(null)
+
+function toggleDetail(id: string): void {
+  expandedId.value = expandedId.value === id ? null : id
+}
+
 // 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt;月日补零两位。
 function datePrefix(r: Requirement): string {
   const d = new Date(r.completedAt ?? r.createdAt)
@@ -146,9 +153,23 @@ function datePrefix(r: Requirement): string {
     <div class="req-items">
       <p v-if="requirements.length === 0" class="req-empty">暂无需求。在右侧与助手沟通后保存。</p>
       <div v-for="r in displayRequirements" :key="r.id" class="req-item" :class="r.status">
-        <div class="req-item-main">
+        <div
+          class="req-item-main"
+          role="button"
+          tabindex="0"
+          :aria-expanded="r.id === expandedId"
+          @click="toggleDetail(r.id)"
+          @keydown.enter.prevent="toggleDetail(r.id)"
+          @keydown.space.prevent="toggleDetail(r.id)"
+        >
           <div class="req-item-head">
-            <label class="req-auto" title="勾选后纳入自动化进程">
+            <span
+              class="req-chevron"
+              :class="{ 'req-chevron--open': r.id === expandedId }"
+              aria-hidden="true"
+              >▸</span
+            >
+            <label class="req-auto" title="勾选后纳入自动化进程" @click.stop>
               <input
                 type="checkbox"
                 :checked="r.automate"
@@ -161,7 +182,7 @@ function datePrefix(r: Requirement): string {
             <span class="req-title" :title="r.content">{{ r.title }}</span>
             <span class="req-status">{{ statusLabel(r.status) }}</span>
           </div>
-          <div class="req-actions">
+          <div class="req-actions" @click.stop>
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
               完善
             </button>
@@ -191,6 +212,7 @@ function datePrefix(r: Requirement): string {
             </button>
           </div>
         </div>
+        <div v-if="r.id === expandedId" class="req-detail">{{ r.content }}</div>
         <div v-if="unfinishedDeps(r).length" class="req-deps" title="存在未完成依赖">
           ⚠ 依赖未完成:{{
             unfinishedDeps(r)

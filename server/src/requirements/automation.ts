@@ -126,6 +126,15 @@ class AutomationController {
     this.hooks.emitStatus({ ...this.status, completedIds: [...this.status.completedIds] })
   }
 
+  /** Link the dev session + flip the requirement to in_progress, then broadcast. */
+  private markInProgress(reqId: string, sessionId: string): void {
+    setLastDevSession(reqId, sessionId)
+    if (getRequirement(reqId)?.status !== 'in_progress') updateStatus(reqId, 'in_progress')
+    this.status.currentSessionId = sessionId
+    this.hooks.broadcastRequirements(this.projectPath)
+    this.emit()
+  }
+
   private fail(reason: string): void {
     this.status.state = 'error'
     this.status.error = reason
@@ -186,18 +195,18 @@ class AutomationController {
         prompt,
         requirementId: req.id,
         signal: this.abort.signal,
+        // Flip to in_progress + link the dev session AS SOON AS it binds (early,
+        // well before the turn ends) — exactly like manual start_development.
+        onSessionId: (sid) => this.markInProgress(req.id, sid),
       })
       if (this.abort.signal.aborted) return false
 
-      // First turn: link the dev session and mark in_progress so the UI tracks it.
-      if (sessionId === null) {
-        setLastDevSession(req.id, turn.sessionId)
-        if (getRequirement(req.id)?.status !== 'in_progress') updateStatus(req.id, 'in_progress')
-        this.hooks.broadcastRequirements(this.projectPath)
+      // Fallback: if the early bind never fired (a resumed turn, or an error before
+      // binding), still record the session id and keep the status consistent.
+      if (this.status.currentSessionId !== turn.sessionId) {
+        this.markInProgress(req.id, turn.sessionId)
       }
       sessionId = turn.sessionId
-      this.status.currentSessionId = turn.sessionId
-      this.emit()
 
       if (turn.outcome === 'error') {
         this.fail(`「${req.title}」运行出错:${turn.detail ?? '未知错误'}`)

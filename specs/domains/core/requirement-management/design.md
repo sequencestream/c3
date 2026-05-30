@@ -200,18 +200,22 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   unit-testable with fakes (see `automation.test.ts`).
 - **`runDevTurn` (server closure).** Ensures a `normal` runtime for the requirement (fresh
   `pending:` id, or resume an existing id for the "继续" continuation), registers an **internal
-  viewer** on it, and launches/resumes via the shared `launchRun`. The viewer captures the last
-  `assistant_text` and resolves the turn on: `turn_end` → `complete`/`error`; `permission_request`
-  → `blocked` (it also `stopRun`s the otherwise-hanging run, since no human is watching — RM-A9);
-  the controller's abort → `blocked('aborted')`. A live team lead (rare for `/sdd-lite`) is fed via
-  `pushInput` instead of a fresh launch.
+  viewer** on it, and launches/resumes via the shared `launchRun`. It surfaces the SDK session bind
+  **early** via an `onSessionId` callback (fired from `launchRun`'s own `onSessionId`, well before
+  the turn ends). The viewer captures the last `assistant_text` and resolves the turn on: `turn_end`
+  → `complete`/`error`; `permission_request` → `blocked` (it also `stopRun`s the otherwise-hanging
+  run, since no human is watching — RM-A9); the controller's abort → `blocked('aborted')`. A live
+  team lead (rare for `/sdd-lite`) is fed via `pushInput` instead of a fresh launch.
 - **Main loop (`AutomationController.run`).** `pickNext` selects the best eligible requirement
   (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
-  each, `develop()` loops: run a dev turn → on first turn `setLastDevSession` + `updateStatus(in_progress)`
-  - broadcast → on `complete`, `gitDiffStat` + `judgeCompletion`; `done` → `commitAndPush` then
-    `updateStatus(done)` + push id to `completedIds`; `in_progress` → resume "继续" (cap
-    `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/`blocked`/push-fail → `fail(reason)` and stop the
-    whole loop (RM-A6). No eligible item → state `done` (RM-A7). Abort mid-run → state `idle`.
+  each, `develop()` loops: run a dev turn → **as soon as the dev session binds** (`onSessionId`,
+  early — mirroring manual `start_development`) `markInProgress` does `setLastDevSession` +
+  `updateStatus(in_progress)` + broadcast + emit, so the UI flips to `in_progress` immediately, not
+  at turn end (a fallback re-marks if the early bind never fired); → on `complete`, `gitDiffStat` +
+  `judgeCompletion`; `done` → `commitAndPush` then `updateStatus(done)` + push id to `completedIds`;
+  `in_progress` → resume "继续" (cap `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/`blocked`/push-fail
+  → `fail(reason)` and stop the whole loop (RM-A6). No eligible item → state `done` (RM-A7). Abort
+  mid-run → state `idle`.
 - **Completion judge (`judge.ts`).** `judgeCompletion` builds a Chinese prompt (requirement + last
   message + `git diff --stat`) demanding a strict `{"verdict","reason"}` JSON, runs it through the
   tool-less `askOneShot` (default-agent env/model via `resolveSessionLaunch(null)`), and tolerantly

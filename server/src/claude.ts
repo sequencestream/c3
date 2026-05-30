@@ -86,7 +86,10 @@ export const registerPermissionResolver = {
  * gateway's "don't rewrite inputs" rule (PG-R6) — the only headless channel to
  * answer the prompt.
  */
-function withAnswers(input: unknown, answers: Record<string, string>): Record<string, unknown> {
+export function withAnswers(
+  input: unknown,
+  answers: Record<string, string>,
+): Record<string, unknown> {
   const base = (input ?? {}) as Record<string, unknown>
   const prior = (base.answers as Record<string, string> | undefined) ?? {}
   return { ...base, answers: { ...prior, ...answers }, annotations: base.annotations ?? {} }

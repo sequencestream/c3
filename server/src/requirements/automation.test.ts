@@ -91,6 +91,43 @@ describe('automation orchestrator', () => {
     expect(prompts[1]).toContain('/sdd-lite low')
   })
 
+  it('flips the requirement to in_progress as soon as the dev session binds (before the turn ends)', async () => {
+    const [r] = insertRequirements(proj, [{ title: 'early', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    let statusAtBind: string | undefined
+    let sessionAtBind: string | null | undefined
+
+    await new Promise<void>((resolve) => {
+      const hooks: AutomationHooks = {
+        runDevTurn: async (input) => {
+          // Bind the session early, then block until the test inspects the state.
+          input.onSessionId?.('sess-early')
+          await gate
+          return { outcome: 'complete', sessionId: 'sess-early', lastMessage: '完成' }
+        },
+        broadcastRequirements: () => {},
+        emitStatus: (s) => {
+          // The moment the bind marks currentSessionId, snapshot the persisted status.
+          if (s.currentSessionId === 'sess-early' && statusAtBind === undefined) {
+            statusAtBind = getRequirement(r.id)?.status
+            sessionAtBind = getRequirement(r.id)?.lastDevSessionId
+            release() // let the (still-pending) turn finish
+          }
+          if (s.state === 'done') setTimeout(resolve, 0)
+        },
+      }
+      startAutomation(proj, hooks, 1000)
+    })
+
+    // in_progress + lastDevSessionId were set at bind time — not at turn end.
+    expect(statusAtBind).toBe('in_progress')
+    expect(sessionAtBind).toBe('sess-early')
+  })
+
   it('skips requirements without the automate flag', async () => {
     const [on, off] = insertRequirements(proj, [
       { title: 'on', content: 'c', priority: 'P0' },

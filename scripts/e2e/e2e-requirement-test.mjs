@@ -12,16 +12,28 @@
  * lands as status `todo`). Finally we flip the saved requirement to `done` via
  * `update_requirement_status` and confirm the broadcast reflects it.
  *
+ * After the save flow, a SECOND turn on the same read-only comm session exercises
+ * the requirement gate's AskUserQuestion handling — the runtime path the unit test
+ * (`requirement-gate.test.ts`) cannot reach because the decision lives in a
+ * `canUseTool` closure. We drive the comm agent to call AskUserQuestion; the gate
+ * must route it to the answer panel (`permission_request`, toolName
+ * `AskUserQuestion`) rather than the read-only deny-by-default fallback — if it
+ * denied, no such request would arrive at all. We submit `answers`, and the agent
+ * must echo our choice back, proving `withAnswers` fed the answer to the model.
+ *
  * What this verifies (maps to the requirement spec):
  * - US-1/US-2: entering the view returns a `session_selected` comm session
  *   (title 需求沟通) plus the project's `requirements` list.
  * - US-3/US-4: the agent's `save_requirements` call is gated (human confirm),
  *   and only persists after `allow` — landing as a `todo` row, broadcast live.
  * - status machine: `update_requirement_status` moves the row and re-broadcasts.
+ * - read-only gate / AskUserQuestion (003 follow-up): AskUserQuestion is routed to
+ *   the answer panel + answers injected, NOT denied as a non-read-only tool.
  *
  * Unlike the consensus tests this needs no extra agents — only the default agent
- * runs. It spends real tokens (one short comm turn) and needs the requirement db
- * (`c3.db`) available; the runner points `C3_DB_PATH` at a throwaway file.
+ * runs. It spends real tokens (two short comm turns — save, then AskUserQuestion)
+ * and needs the requirement db (`c3.db`) available; the runner points `C3_DB_PATH`
+ * at a throwaway file.
  *
  * Usage:
  *   pnpm start --project /tmp --port 13000     # in another terminal
@@ -30,9 +42,14 @@
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
-const TIMEOUT_MS = 180_000
+const TIMEOUT_MS = 240_000 // two live comm turns (save, then AskUserQuestion)
 
 const SAVE_TOOL = 'mcp__c3__save_requirements'
+const ASK_TOOL = 'AskUserQuestion'
+
+// The label we expect the agent to echo back after we answer its question — proof
+// that `withAnswers` injected our choice into the model's view of the tool result.
+const ASK_CHOICE = 'pnpm'
 
 // ---- Seed a throwaway project under /tmp (gives the read-only agent material) ----
 const PROJECT_DIR = mkdtempSync('/tmp/c3-requirement-')
@@ -47,6 +64,14 @@ const PROMPT =
   `直接调用 save_requirements 工具,只提交一条需求:` +
   `title="${REQ_TITLE}",content="验证 c3 需求落库端到端流程",priority="P2"。` +
   `提交后用一句话告诉我已提交。`
+
+// Second turn: force ONE AskUserQuestion call so the read-only gate must route it
+// through the answer panel. Mirror the ask-consensus e2e prompt shape.
+const ASK_PROMPT =
+  `现在请只调用一次 AskUserQuestion 工具,向我提一个问题:` +
+  `"Which package manager should this project use?",header 用 "PkgMgr",` +
+  `选项依次为 "${ASK_CHOICE}"、"npm"、"yarn"。` +
+  `等我回答后,用一句话复述我选择的包管理器名称。不要使用任何其他工具。`
 
 console.log(`[e2e] project: ${PROJECT_DIR}`)
 console.log(`[e2e] connecting ${URL}`)
@@ -69,8 +94,15 @@ let sawSaveResult = false // tool_result for the save call (not an error)
 let statusUpdated = false // the saved row flipped to `done` via update_requirement_status
 let statusUpdateSent = false
 
-let sawTurnEnd = false
-let turnReason = ''
+// ---- AskUserQuestion turn (second turn) ----
+let askPromptSent = false // the AskUserQuestion prompt has been sent
+let sawAskPermission = false // permission_request for AskUserQuestion (gate ROUTED it, didn't deny)
+let askAnswered = false // we submitted answers to the panel
+let askAnswerInjected = false // the agent echoed ASK_CHOICE back (withAnswers worked)
+let sawAskTurnEnd = false // the AskUserQuestion turn completed
+
+let saveTurnReason = '' // turn_end reason of the first (save) turn
+let askTurnReason = '' // turn_end reason of the second (AskUserQuestion) turn
 let finished = false
 const events = []
 
@@ -142,7 +174,7 @@ ws.addEventListener('message', (evt) => {
       if (mine && mine.status === 'done') {
         statusUpdated = true
         console.log('[e2e] ✅ status updated → done')
-        if (sawTurnEnd) finish(judge())
+        maybeStartAskTurn() // save flow done → exercise the AskUserQuestion path
       }
       break
     }
@@ -151,6 +183,16 @@ ws.addEventListener('message', (evt) => {
       console.log(
         `[e2e] assistant_text: ${msg.text.slice(0, 100)}${msg.text.length > 100 ? '…' : ''}`,
       )
+      // After we answer the panel, the agent should name our choice back — only
+      // possible if `withAnswers` injected the answer into the tool result.
+      if (
+        askAnswered &&
+        !askAnswerInjected &&
+        msg.text.toLowerCase().includes(ASK_CHOICE.toLowerCase())
+      ) {
+        askAnswerInjected = true
+        console.log(`[e2e] ✅ agent echoed "${ASK_CHOICE}" → withAnswers injection confirmed`)
+      }
       break
 
     case 'tool_use':
@@ -168,8 +210,25 @@ ws.addEventListener('message', (evt) => {
           `[e2e] ✅ save_requirements gated: ${reqs.length} proposed (valid=${proposedValid}) → allow`,
         )
         send({ type: 'permission_response', requestId: msg.requestId, decision: 'allow' })
+      } else if (msg.toolName === ASK_TOOL) {
+        // Reaching here AT ALL proves the read-only gate routed AskUserQuestion to
+        // the answer panel instead of denying it (a denied tool yields no
+        // permission_request). Single agent ⇒ plain panel, no consensus roll-up.
+        sawAskPermission = true
+        const answers = {}
+        for (const q of msg.input?.questions ?? []) {
+          const labels = (q.options ?? []).map((o) => o.label)
+          // Prefer our sentinel choice so we can detect the echo; else first option.
+          answers[q.question] = labels.includes(ASK_CHOICE) ? ASK_CHOICE : (labels[0] ?? '')
+        }
+        askAnswered = true
+        console.log(
+          `[e2e] ✅ AskUserQuestion gated (routed to panel) → answers ${JSON.stringify(answers)}`,
+        )
+        send({ type: 'permission_response', requestId: msg.requestId, decision: 'allow', answers })
       } else {
-        // The read-only gate should only ever prompt for save_requirements.
+        // The read-only gate should only ever prompt for save_requirements or
+        // AskUserQuestion. Anything else is a regression — deny it.
         console.log(`[e2e] ⚠️ unexpected permission_request: ${msg.toolName} → deny`)
         send({ type: 'permission_response', requestId: msg.requestId, decision: 'deny' })
       }
@@ -180,20 +239,30 @@ ws.addEventListener('message', (evt) => {
       console.log(`[e2e] tool_result (isError=${msg.isError})`)
       break
 
-    case 'turn_end':
-      sawTurnEnd = true
-      turnReason = msg.reason + (msg.error ? `: ${msg.error}` : '')
-      console.log(`[e2e] turn_end: ${turnReason}`)
-      // Saved? Exercise the status machine, then judge once it broadcasts back.
+    case 'turn_end': {
+      const reason = msg.reason + (msg.error ? `: ${msg.error}` : '')
+      console.log(`[e2e] turn_end: ${reason}`)
+      if (askPromptSent) {
+        // The AskUserQuestion (second) turn finished → all flows exercised, judge.
+        sawAskTurnEnd = true
+        askTurnReason = reason
+        finish(judge())
+        break
+      }
+      // First (save) turn finished. Drive the status machine, then start the
+      // AskUserQuestion turn once the `done` broadcast lands (bounded fallback so a
+      // slow/missing broadcast still hands off to the second turn).
+      saveTurnReason = reason
       if (savedReqId && !statusUpdateSent) {
         statusUpdateSent = true
         console.log(`[e2e] update_requirement_status ${savedReqId} → done`)
         send({ type: 'update_requirement_status', requirementId: savedReqId, status: 'done' })
-        setTimeout(() => finish(judge()), 4000) // bounded wait for the broadcast
+        setTimeout(maybeStartAskTurn, 4000)
       } else {
-        finish(judge())
+        maybeStartAskTurn()
       }
       break
+    }
 
     case 'error':
       console.error(`[e2e] error: ${msg.message}`)
@@ -213,6 +282,19 @@ ws.addEventListener('close', () => {
   }
 })
 
+// Start the second (AskUserQuestion) turn once the save flow is done. Idempotent:
+// reachable both from the `done` broadcast and from a bounded turn_end fallback.
+function maybeStartAskTurn() {
+  if (askPromptSent || finished) return
+  if (!commSessionId) {
+    finish(judge())
+    return
+  }
+  askPromptSent = true
+  console.log('[e2e] sending AskUserQuestion prompt to comm agent')
+  send({ type: 'user_prompt', text: ASK_PROMPT })
+}
+
 function judge() {
   console.log('\n========== REQUIREMENT E2E REPORT ==========')
   console.log(`events: ${JSON.stringify(events)}`)
@@ -224,7 +306,12 @@ function judge() {
     requirement_persisted: !!savedReqId,
     save_tool_result_ok: sawSaveResult,
     status_update_broadcast: statusUpdated,
-    turn_completed_clean: sawTurnEnd && turnReason.startsWith('complete'),
+    save_turn_completed_clean: saveTurnReason.startsWith('complete'),
+    // AskUserQuestion runtime path (003 follow-up): routed to the panel (not
+    // denied) and the injected answer made it back to the model.
+    ask_gated: sawAskPermission,
+    ask_answer_injected: askAnswerInjected,
+    ask_turn_completed_clean: sawAskTurnEnd && askTurnReason.startsWith('complete'),
   }
   console.log('checks:', checks)
   const pass = Object.values(checks).every(Boolean)

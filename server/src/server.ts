@@ -64,6 +64,7 @@ import {
   stopAutomation,
   type AutomationHooks,
   type DevTurnResult,
+  type RunDevTurnInput,
 } from './requirements/automation.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
@@ -207,13 +208,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
    * `blocked`. A fresh `sessionId` (null) launches a new `/sdd-lite` session; a real
    * id resumes it (the "继续" continuation) — or feeds a live team lead directly.
    */
-  const runDevTurn = (input: {
-    projectPath: string
-    sessionId: string | null
-    prompt: string
-    requirementId: string
-    signal: AbortSignal
-  }): Promise<DevTurnResult> =>
+  const runDevTurn = (input: RunDevTurnInput): Promise<DevTurnResult> =>
     new Promise<DevTurnResult>((resolveTurn) => {
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
       const rt = ensureRuntime(id, input.projectPath, getDefaultMode(), [], 'normal')
@@ -266,7 +261,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         rt.run.handle.pushInput(input.prompt)
       } else {
         void launchRun(rt, input.prompt, {
-          onSessionId: (_prev, sid) => setSessionMode(sid, rt.mode),
+          onSessionId: (_prev, sid) => {
+            setSessionMode(sid, rt.mode)
+            // Surface the bind to the orchestrator immediately (early in_progress flip).
+            input.onSessionId?.(sid)
+          },
         })
       }
     })

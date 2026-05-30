@@ -22,16 +22,28 @@ section.
 - `pnpm start --project /tmp --port 13000`
 - `node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
-## Requirement management (save flow)
+## Requirement management (save flow + AskUserQuestion gate)
 
 Exercises the requirement-management feature end-to-end: register a throwaway
 project, enter its requirement view (`open_requirement_chat` → read-only comm
 session + `requirements` list), ask the comm agent to call `save_requirements`,
 approve the gated `permission_request` (`mcp__c3__save_requirements`), and
 confirm the row persists as `todo` and broadcasts. Then flips it to `done` via
-`update_requirement_status` and checks the re-broadcast. Needs only the default
-agent (spends a short turn of real tokens) and the requirement db available
-(`C3_DB_PATH`, which `pnpm e2e` provides automatically).
+`update_requirement_status` and checks the re-broadcast.
+
+A second turn then covers the requirement gate's **AskUserQuestion** runtime path
+— the one the unit test (`server/src/requirement-gate.test.ts`) can't reach
+because the decision lives in a `canUseTool` closure (this is the 003 follow-up:
+`changes/.../2026-05-30-003-req-ask-question`). The comm agent is told to call
+AskUserQuestion once; the gate must route it to the answer panel
+(`permission_request` with toolName `AskUserQuestion`) rather than the read-only
+deny-by-default fallback — a denied tool would yield no request at all
+(`ask_gated`). We submit `answers`, and the agent must echo our choice back,
+proving `withAnswers` injected the answer into the model (`ask_answer_injected`).
+
+Needs only the default agent (spends two short turns of real tokens — save, then
+AskUserQuestion) and the requirement db available (`C3_DB_PATH`, which `pnpm e2e`
+provides automatically).
 
 - `pnpm start --project /tmp --port 13000` (with a throwaway `C3_DB_PATH` set if
   you don't want to touch `~/.c3/c3.db`)

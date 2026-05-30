@@ -779,6 +779,27 @@ footer {
   position: relative;
 }
 
+/* 发送按钮 + 悬停提示气泡 */
+.send-wrap {
+  position: relative;
+  display: flex;
+}
+.send-hint {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  right: 0;
+  white-space: nowrap;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  z-index: 20;
+  pointer-events: none;
+}
+
 /* ============ 斜杠命令补全菜单 ============ */
 .slash-menu {
   position: absolute;
@@ -1085,6 +1106,9 @@ button.stop-btn:hover:not(:disabled) {
   color: var(--c-success);
   white-space: nowrap;
 }
+.ask-option-custom {
+  border-style: dashed;
+}
 .ask-custom-hint {
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
@@ -1266,6 +1290,20 @@ button.stop-btn:hover:not(:disabled) {
   filter: none;
   background: var(--c-hover);
   border-color: var(--c-text-muted);
+}
+.mode-select {
+  height: 34px;
+  padding: 0 var(--sp-3);
+  background: var(--c-input);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--fs-code);
+}
+.mode-select:focus {
+  outline: none;
+  border-color: var(--c-primary);
 }
 
 .settings-foot button {

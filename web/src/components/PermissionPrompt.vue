@@ -13,6 +13,7 @@ import {
   agentsForCustom,
   initAskDraft,
   type AskQuestionView,
+  type AskDraftSlot,
 } from '../lib/ask'
 import { fmt, oneLine } from '../lib/format'
 import type { PermissionMsg } from '../lib/chat-types'
@@ -29,9 +30,7 @@ const expandedInput = ref(false)
 
 // Per-question answer draft (q index → choice), seeded from the agents' consensus
 // where they agreed. Local state: this is the user's working copy, not the message.
-const draft = ref<Record<number, { labels: string[]; custom: string }>>(
-  initAskDraft(props.m.input, props.m.consensus),
-)
+const draft = ref<Record<number, AskDraftSlot>>(initAskDraft(props.m.input, props.m.consensus))
 
 function respond(decision: 'allow' | 'deny') {
   if (props.m.decision) return
@@ -52,7 +51,23 @@ function toggleAskOption(q: AskQuestionView, label: string) {
     else slot.labels.push(label)
   } else {
     slot.labels = slot.labels[0] === label ? [] : [label]
+    // Single-select: a normal option and the custom reply are mutually exclusive.
+    slot.customActive = false
   }
+}
+
+function isCustomChosen(qIndex: number): boolean {
+  return draft.value[qIndex]?.customActive ?? false
+}
+
+/** Toggle the synthetic "custom reply" option that lives at the end of each option list. */
+function toggleAskCustomOption(q: AskQuestionView) {
+  if (props.m.decision) return
+  const slot = draft.value[q.index]
+  if (!slot) return
+  slot.customActive = !slot.customActive
+  // Single-select: picking the custom reply clears any chosen option.
+  if (slot.customActive && !q.multiSelect) slot.labels = []
 }
 
 function askCustomOf(qIndex: number): string {
@@ -63,13 +78,14 @@ function setAskCustom(qIndex: number, value: string) {
   if (draft.value[qIndex]) draft.value[qIndex].custom = value
 }
 
-/** Every question must have at least one option chosen or a custom reply. */
+/** Every question must have at least one option chosen, or an active non-empty custom reply. */
 function isAskAnswered(): boolean {
   const qs = askQuestionsOf(props.m.input)
   if (qs.length === 0) return false
   return qs.every((q) => {
     const slot = draft.value[q.index]
-    return !!slot && (slot.labels.length > 0 || slot.custom.trim().length > 0)
+    if (!slot) return false
+    return slot.labels.length > 0 || (slot.customActive && slot.custom.trim().length > 0)
   })
 }
 
@@ -78,7 +94,9 @@ function submitAsk() {
   const answers: Record<string, string> = {}
   for (const q of askQuestionsOf(props.m.input)) {
     const slot = draft.value[q.index]
-    answers[q.question] = slot.labels.length > 0 ? slot.labels.join(', ') : slot.custom.trim()
+    const parts = [...slot.labels]
+    if (slot.customActive && slot.custom.trim()) parts.push(slot.custom.trim())
+    answers[q.question] = parts.join(', ')
   }
   emit('submit-ask', props.m, answers)
 }
@@ -129,6 +147,35 @@ function submitAsk() {
               >
             </span>
           </label>
+          <!-- Synthetic "custom reply" option: lets the user type a free answer. -->
+          <label
+            class="ask-option ask-option-custom"
+            :class="{
+              chosen: isCustomChosen(q.index),
+              locked: !!m.decision,
+            }"
+          >
+            <input
+              :type="q.multiSelect ? 'checkbox' : 'radio'"
+              :name="`q-${m.id}-${q.index}`"
+              :checked="isCustomChosen(q.index)"
+              :disabled="!!m.decision"
+              @change="toggleAskCustomOption(q)"
+            />
+            <span class="ask-option-body">
+              <span class="ask-option-label">✏️ 自定义回复</span>
+              <span class="ask-option-desc">自己输入答案</span>
+            </span>
+            <span class="ask-agents">
+              <span
+                v-for="a in agentsForCustom(m.consensus, q.index)"
+                :key="a.agentName"
+                class="ask-agent-badge"
+                :title="`${a.custom}（${a.reason}）`"
+                >{{ a.agentName }}</span
+              >
+            </span>
+          </label>
         </div>
         <div
           v-for="a in agentsForCustom(m.consensus, q.index)"
@@ -139,10 +186,10 @@ function submitAsk() {
           {{ a.agentName }}：{{ a.custom }}
         </div>
         <input
-          v-if="m.decision === null"
+          v-if="m.decision === null && isCustomChosen(q.index)"
           class="ask-custom"
           type="text"
-          placeholder="自定义回复（覆盖上面的选择）"
+          placeholder="输入自定义回复…"
           :value="askCustomOf(q.index)"
           @input="setAskCustom(q.index, ($event.target as HTMLInputElement).value)"
         />

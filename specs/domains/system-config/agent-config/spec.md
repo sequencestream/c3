@@ -18,22 +18,23 @@ resolving a session's launch overrides for each run.
 | -------------- | ------------------------------------------------------------------------------------ |
 | Agent          | A launch profile: `id`, `name`, `baseUrl`, `apiKey`, `model`                         |
 | System Agent   | The built-in agent (`id === 'system'`): empty overrides, undeletable, always present |
-| SystemSettings | The whole configuration: `agents[]` + `defaultAgentId`                               |
+| SystemSettings | The whole configuration: `agents[]` + `defaultAgentId` + `defaultMode`               |
 | Session bind   | A `sessionId → agentId` entry; absent ⇒ the session uses the default agent           |
 
 See [models.md](models.md).
 
 ## Business rules
 
-| ID    | Rule                                                                                                                                                                                                                      |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-R1 | The system agent (`id === SYSTEM_AGENT_ID`) always exists, has empty `baseUrl`/`apiKey`/`model`, and cannot be removed. Edits to its Claude config are ignored.                                                           |
-| AC-R2 | `defaultAgentId` must reference an existing agent. On save, an unknown/empty default falls back to the system agent.                                                                                                      |
-| AC-R3 | `save_settings` is normalized server-side: the system agent is re-injected, agents without an id get a fresh uuid, duplicate ids and a duplicate system entry are dropped. The normalized result is echoed as `settings`. |
-| AC-R4 | A session launches Claude Code with its bound agent's overrides; if unbound, with the **default** agent's. Empty fields produce no override (system agent ⇒ no overrides).                                                |
-| AC-R5 | A non-empty `baseUrl` sets `ANTHROPIC_BASE_URL`; a non-empty `apiKey` sets both `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`; a non-empty `model` sets the SDK `model`. All overrides merge over `process.env`.         |
-| AC-R6 | New (pending) sessions are unbound, so they launch with the default agent (AC-R4).                                                                                                                                        |
-| AC-R7 | The configuration persists at `~/.c3/settings.json`; the per-session binding at `~/.c3/state.json`. Both are written atomically and fail soft to defaults so c3 still boots.                                              |
+| ID    | Rule                                                                                                                                                                                                                                                                         |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-R1 | The system agent (`id === SYSTEM_AGENT_ID`) always exists, has empty `baseUrl`/`apiKey`/`model`, and cannot be removed. Edits to its Claude config are ignored.                                                                                                              |
+| AC-R2 | `defaultAgentId` must reference an existing agent. On save, an unknown/empty default falls back to the system agent.                                                                                                                                                         |
+| AC-R3 | `save_settings` is normalized server-side: the system agent is re-injected, agents without an id get a fresh uuid, duplicate ids and a duplicate system entry are dropped. The normalized result is echoed as `settings`.                                                    |
+| AC-R4 | A session launches Claude Code with its bound agent's overrides; if unbound, with the **default** agent's. Empty fields produce no override (system agent ⇒ no overrides).                                                                                                   |
+| AC-R5 | A non-empty `baseUrl` sets `ANTHROPIC_BASE_URL`; a non-empty `apiKey` sets both `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`; a non-empty `model` sets the SDK `model`. All overrides merge over `process.env`.                                                            |
+| AC-R6 | New (pending) sessions are unbound, so they launch with the default agent (AC-R4).                                                                                                                                                                                           |
+| AC-R7 | The configuration persists at `~/.c3/settings.json`; the per-session binding at `~/.c3/state.json`. Both are written atomically and fail soft to defaults so c3 still boots.                                                                                                 |
+| AC-R8 | `defaultMode` is the permission mode new sessions start in. On save it must be one of the five `PermissionMode` values; an unknown/absent value falls back to `default`. It seeds a new session's mode (SR-R6); per-session mode changes thereafter (SR-R5) do not alter it. |
 
 ## User scenarios
 
@@ -44,6 +45,9 @@ See [models.md](models.md).
 - **Default agent drives new sessions:** Given a non-system default agent, When the user starts
   a new session and sends a prompt, Then Claude Code launches with that agent's url/key/model
   (AC-R4).
+- **Default mode seeds new sessions:** Given a configured `defaultMode` (e.g. `plan`), When the
+  user starts a new session, Then it opens in that mode (AC-R8, SR-R6); switching its mode later
+  leaves `defaultMode` unchanged.
 - **System agent (anti-scenario):** The system agent must **never** be deletable and its Claude
   config must **never** carry overrides (AC-R1).
 - **Dangling default (anti-scenario):** Removing the agent that was the default must **never**

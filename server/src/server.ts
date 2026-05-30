@@ -27,7 +27,7 @@ import {
   renameWorkspaceSession,
   sessionTitle,
 } from './sessions.js'
-import { loadSettings, saveSettings, resolveSessionLaunch } from './settings.js'
+import { loadSettings, saveSettings, resolveSessionLaunch, getDefaultMode } from './settings.js'
 import {
   addViewer,
   bindPending,
@@ -188,7 +188,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               // Switching views never stops a run — just stop watching the old one.
               if (viewing) removeViewer(viewing, deliver)
               const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-              ensureRuntime(pendingId, abs, 'default', [])
+              const defaultMode = getDefaultMode()
+              ensureRuntime(pendingId, abs, defaultMode, [])
               viewing = pendingId
               addViewer(pendingId, deliver)
               touchWorkspace(abs, Date.now())
@@ -197,7 +198,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 workspacePath: abs,
                 sessionId: pendingId,
                 title: 'New session',
-                mode: 'default',
+                mode: defaultMode,
                 history: [],
                 running: false,
               })

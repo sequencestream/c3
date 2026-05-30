@@ -17,8 +17,16 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
+import type { AgentConfig, PermissionMode, SystemSettings } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+
+const PERMISSION_MODES: readonly PermissionMode[] = [
+  'default',
+  'auto',
+  'plan',
+  'acceptEdits',
+  'bypassPermissions',
+]
 
 interface SessionAgentState {
   version: 1
@@ -79,8 +87,11 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   }
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : SYSTEM_AGENT_ID
   const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : SYSTEM_AGENT_ID
+  const defaultMode: PermissionMode = PERMISSION_MODES.includes(raw?.defaultMode as PermissionMode)
+    ? (raw!.defaultMode as PermissionMode)
+    : 'default'
   const consensus = { enabled: raw?.consensus?.enabled === true }
-  return { agents, defaultAgentId, consensus }
+  return { agents, defaultAgentId, defaultMode, consensus }
 }
 
 export function loadSettings(): SystemSettings {
@@ -108,6 +119,11 @@ export function saveSettings(next: SystemSettings): SystemSettings {
 
 export function getDefaultAgentId(): string {
   return loadSettings().defaultAgentId
+}
+
+/** The permission mode new sessions start in (`default` when unconfigured). */
+export function getDefaultMode(): PermissionMode {
+  return loadSettings().defaultMode ?? 'default'
 }
 
 /** The agent for an id, or the default agent if the id is null/unknown. */

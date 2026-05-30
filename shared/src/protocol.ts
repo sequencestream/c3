@@ -108,6 +108,8 @@ export interface SystemSettings {
   agents: AgentConfig[]
   /** Id of the agent new/unassigned sessions launch with. */
   defaultAgentId: string
+  /** Permission mode new sessions start in. Optional; `default` when unset. */
+  defaultMode?: PermissionMode
   /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
   consensus?: ConsensusConfig
 }

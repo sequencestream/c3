@@ -27,11 +27,12 @@ always empty (AC-R1). Always present, never removable.
 
 The whole configuration, persisted at `~/.c3/settings.json`.
 
-| Field            | Type               | Description                                                                                                                                                              |
-| ---------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agents`         | `Agent[]`          | The registry; always includes the system agent (AC-R1)                                                                                                                   |
-| `defaultAgentId` | text               | Id of an existing agent; falls back to system agent (AC-R2)                                                                                                              |
-| `consensus`      | `{enabled}` (opt.) | Multi-agent consensus voting on permission prompts; off by default. Consumed by the permission gateway — see [consensus.md](../../core/permission-gateway/consensus.md). |
+| Field            | Type                    | Description                                                                                                                                                              |
+| ---------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agents`         | `Agent[]`               | The registry; always includes the system agent (AC-R1)                                                                                                                   |
+| `defaultAgentId` | text                    | Id of an existing agent; falls back to system agent (AC-R2)                                                                                                              |
+| `defaultMode`    | `PermissionMode` (opt.) | Permission mode new sessions start in; one of the five `PermissionMode` values, falls back to `default` (AC-R8). Seeds a new session's mode in session-registry (SR-R6). |
+| `consensus`      | `{enabled}` (opt.)      | Multi-agent consensus voting on permission prompts; off by default. Consumed by the permission gateway — see [consensus.md](../../core/permission-gateway/consensus.md). |
 
 ## Session binding (state.json, `~/.c3`)
 

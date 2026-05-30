@@ -68,9 +68,18 @@ export function agentsForCustom(c: AnyConsensusOutcome | undefined, qIndex: numb
     .map((a) => ({ agentName: a.agentName, custom: a.custom ?? '', reason: a.reason }))
 }
 
+/** One question's working answer: chosen option labels plus an optional custom reply. */
+export interface AskDraftSlot {
+  labels: string[]
+  /** Free-text reply, only meaningful when `customActive`. */
+  custom: string
+  /** Whether the "custom reply" option is selected for this question. */
+  customActive: boolean
+}
+
 /** Build the initial answer draft, pre-filling questions the agents agreed on. */
 export function initAskDraft(input: unknown, consensus: AnyConsensusOutcome | undefined) {
-  const draft: Record<number, { labels: string[]; custom: string }> = {}
+  const draft: Record<number, AskDraftSlot> = {}
   for (const q of askQuestionsOf(input)) {
     const qc = questionConsensus(consensus, q.index)
     const labels =
@@ -80,7 +89,7 @@ export function initAskDraft(input: unknown, consensus: AnyConsensusOutcome | un
             .map((s) => s.trim())
             .filter((l) => q.options.some((o) => o.label === l))
         : []
-    draft[q.index] = { labels, custom: '' }
+    draft[q.index] = { labels, custom: '', customActive: false }
   }
   return draft
 }

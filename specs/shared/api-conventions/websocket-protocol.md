@@ -74,10 +74,11 @@ See the [session-registry spec](../../domains/core/session-registry/spec.md).
 - **`AgentConfig`** — `{ id, name, baseUrl, apiKey, model }`. One agent profile: a named set
   of Claude Code launch overrides. The built-in agent `id === SYSTEM_AGENT_ID` (`'system'`)
   has empty `baseUrl`/`apiKey`/`model` (no overrides) and cannot be removed.
-- **`SystemSettings`** — `{ agents: AgentConfig[], defaultAgentId: string, consensus?: { enabled } }`.
+- **`SystemSettings`** — `{ agents: AgentConfig[], defaultAgentId: string, defaultMode?: PermissionMode, consensus?: { enabled } }`.
   The full configuration; always contains the system agent, and `defaultAgentId` references an
-  existing agent. `consensus` toggles multi-agent permission voting (off by default). Persisted
-  at `~/.c3/settings.json`.
+  existing agent. `defaultMode` is the permission mode new sessions start in (one of the five
+  `PermissionMode` values; `default` when unset). `consensus` toggles multi-agent permission
+  voting (off by default). Persisted at `~/.c3/settings.json`.
 - **`ConsensusOutcome`** — `{ votes: ConsensusVote[], summary, unanimous, decision }`. The result
   of a consensus round; `decision` is set only when `unanimous`. **`ConsensusVote`** —
   `{ agentId, agentName, decision: 'allow' | 'deny' | 'abstain', reason }`. See the

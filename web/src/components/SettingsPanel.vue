@@ -6,7 +6,9 @@
  */
 import { ref, watch } from 'vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
+import type { AgentConfig, PermissionMode, SystemSettings } from '@ccc/shared/protocol'
+
+const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 
 const props = defineProps<{
   open: boolean
@@ -22,6 +24,7 @@ const emit = defineEmits<{
 const draft = ref<SystemSettings>({
   agents: [],
   defaultAgentId: SYSTEM_AGENT_ID,
+  defaultMode: 'default',
   consensus: { enabled: false },
 })
 
@@ -34,6 +37,7 @@ watch(
     draft.value = {
       agents: settings.agents.map((a) => ({ ...a })),
       defaultAgentId: settings.defaultAgentId,
+      defaultMode: settings.defaultMode ?? 'default',
       consensus: { enabled: settings.consensus?.enabled ?? false },
     }
   },
@@ -129,6 +133,15 @@ function isSystemAgent(a: AgentConfig): boolean {
         </div>
       </div>
       <button class="agent-add" @click="addAgent">+ Add agent</button>
+
+      <p class="settings-section-title">Default mode</p>
+      <p class="settings-hint">
+        The permission mode new sessions start in. You can still switch a session's mode at any time
+        from its header.
+      </p>
+      <select v-model="draft.defaultMode" class="mode-select">
+        <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
+      </select>
 
       <p class="settings-section-title">Consensus</p>
       <p class="settings-hint">

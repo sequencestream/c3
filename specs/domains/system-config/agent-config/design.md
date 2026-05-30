@@ -6,16 +6,16 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 
 ## Module split
 
-| Concern                         | File                     | Notes                                                                     |
-| ------------------------------- | ------------------------ | ------------------------------------------------------------------------- |
-| Settings + binding persistence  | `server/src/settings.ts` | Two files under `~/.c3/`; module cache; atomic write; fail-soft           |
-| Event dispatch + run resolution | `server/src/server.ts`   | `get_settings` / `save_settings`; `resolveSessionLaunch` per run          |
-| Override application            | `server/src/claude.ts`   | Maps overrides onto `query()` `env` (merged over `process.env`) + `model` |
-| Full-page settings view         | `web/src/App.vue`        | Editable draft, one row per agent, add/remove, pick default, save         |
+| Concern                         | File                                   | Notes                                                                                      |
+| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                            |
+| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                           |
+| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                  |
+| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, pick default mode, save |
 
 ## Persistence (`settings.ts`)
 
-- **`settings.json`** at `~/.c3/settings.json` — `{ agents, defaultAgentId }`.
+- **`settings.json`** at `~/.c3/settings.json` — `{ agents, defaultAgentId, defaultMode }`.
 - **`state.json`** at `~/.c3/state.json` — `{ version, sessionAgents }` (the binding).
 - Each loaded lazily into a module cache; every mutation persists synchronously.
 - **Atomic write:** write `…json.<pid>.tmp` then `renameSync` over the target.
@@ -32,6 +32,9 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
   ids are dropped; string fields are trimmed; `name` falls back to the id.
 - `defaultAgentId` is kept only if it references a surviving agent; otherwise it falls back to
   `SYSTEM_AGENT_ID`.
+- `defaultMode` is kept only if it is one of the five `PermissionMode` values; otherwise it falls
+  back to `default` (AC-R8). Consumed by `getDefaultMode()`, which seeds a new session's runtime
+  mode in `create_session` (SR-R6).
 
 The normalized object is echoed to the client as `settings`, so the browser's temporary
 client-side ids (`new-…`) are replaced by the server's stable uuids.

@@ -5,7 +5,7 @@
  * 自身持有输入文本与斜杠菜单状态；可用命令由 App 注入（懒加载，按会话 cwd）。
  * 首次输入 `/` 且命令未加载时上抛 list-commands，由 App 向服务端请求。
  */
-import { ref, computed, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
 
 const props = defineProps<{
@@ -22,6 +22,26 @@ const emit = defineEmits<{
 
 const input = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+// 连续两次裸 Enter（间隔内）直接发送；记录上一次裸 Enter 的事件时间戳。
+const DOUBLE_ENTER_MS = 400
+let lastEnterAt = -Infinity
+
+// 鼠标在 Send 按钮上停留超过 2s 时弹出发送方式提示。
+const showSendHint = ref(false)
+let hintTimer: ReturnType<typeof setTimeout> | null = null
+function onSendHover() {
+  if (hintTimer) clearTimeout(hintTimer)
+  hintTimer = setTimeout(() => (showSendHint.value = true), 2000)
+}
+function onSendLeave() {
+  if (hintTimer) clearTimeout(hintTimer)
+  hintTimer = null
+  showSendHint.value = false
+}
+onUnmounted(() => {
+  if (hintTimer) clearTimeout(hintTimer)
+})
 const slashIndex = ref(0)
 const slashDismissed = ref(false)
 const slashMenuEl = ref<HTMLElement | null>(null)
@@ -113,6 +133,18 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
     e.preventDefault()
     submit()
+    return
+  }
+  // 裸 Enter：短间隔内连按两次直接发送，否则保持默认换行。
+  // 跳过输入法组合态（中文候选词回车确认）与 Shift+Enter 手动换行。
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    if (e.timeStamp - lastEnterAt < DOUBLE_ENTER_MS) {
+      e.preventDefault()
+      lastEnterAt = -Infinity
+      submit()
+    } else {
+      lastEnterAt = e.timeStamp
+    }
   }
 }
 </script>
@@ -142,7 +174,7 @@ function onKey(e: KeyboardEvent) {
           ? 'Select or create a session to start'
           : running
             ? 'running…'
-            : 'Type a prompt — ⌘/Ctrl+Enter to send, / for commands'
+            : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
       "
       :disabled="running || !hasActiveSession"
       @keydown="onKey"
@@ -150,6 +182,11 @@ function onKey(e: KeyboardEvent) {
     <button v-if="running" class="stop-btn" title="Stop the running turn" @click="emit('stop')">
       Stop
     </button>
-    <button v-else :disabled="!input.trim() || !hasActiveSession" @click="submit">Send</button>
+    <div v-else class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
+      <div v-if="showSendHint" class="send-hint" role="tooltip">
+        连续回车两次，或 ⌘/Ctrl+Enter 发送
+      </div>
+      <button :disabled="!input.trim() || !hasActiveSession" @click="submit">Send</button>
+    </div>
   </footer>
 </template>

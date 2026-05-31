@@ -66,6 +66,15 @@ export interface SessionRuntime {
    */
   team: boolean
   status: SessionStatus
+  /**
+   * Request ids of permission prompts that have been emitted but not yet decided
+   * (answered/denied by the human). While this set is non-empty AND the run is
+   * still alive, a stray `turn_end` must NOT collapse the session to `idle` — the
+   * answer panel would otherwise downgrade to a static history line and become
+   * unanswerable (the consensus-window race). Cleared per-request when the human
+   * answers (`resolvePending`) and wholesale on teardown (`clearPending`).
+   */
+  pending: Set<string>
   viewers: Set<Viewer>
 }
 
@@ -104,6 +113,7 @@ export function ensureRuntime(
       run: null,
       team: false,
       status: 'idle',
+      pending: new Set(),
       viewers: new Set(),
     }
     runtimes.set(id, rt)
@@ -138,15 +148,48 @@ export function emit(id: string, event: ServerToClient): void {
   if (!rt) return
   rt.buffer.push(event)
   for (const viewer of rt.viewers) viewer(event)
+  // Track outstanding (un-decided) permission prompts so the guard below can keep
+  // a genuinely-blocked, still-alive run from collapsing to idle.
+  if (event.type === 'permission_request') rt.pending.add(event.requestId)
   let next = statusFor(event)
-  // A team lead's process stays alive between turns: a `turn_end` means "this
-  // lead turn finished", not "idle". Hold the status at `team` so the sidebar and
-  // composer treat it as a live, persistent session awaiting teammates.
-  if (next === 'idle' && rt.team) next = 'team'
+  // A `turn_end` (→ idle) must NOT drop a live run that still has an un-answered
+  // permission prompt: that would flip the session out of `awaiting_permission`,
+  // null out the front-end's `actionablePermissionId`, and downgrade the answer
+  // panel to a static "曾请求…" line — the consensus-window race. While the run is
+  // alive (`rt.run != null`) and a prompt is pending, hold at `awaiting_permission`
+  // so the panel stays actionable until the human answers. Once the run is torn
+  // down (`rt.run` null) idle is correct — the request can no longer be answered.
+  // This takes precedence over the team-hold (an unanswered prompt outranks "team
+  // lead idle between turns").
+  if (next === 'idle' && rt.run != null && rt.pending.size > 0) {
+    next = 'awaiting_permission'
+  } else if (next === 'idle' && rt.team) {
+    // A team lead's process stays alive between turns: a `turn_end` means "this
+    // lead turn finished", not "idle". Hold the status at `team` so the sidebar and
+    // composer treat it as a live, persistent session awaiting teammates.
+    next = 'team'
+  }
   if (next && next !== rt.status) {
     rt.status = next
     onStatusChange?.()
   }
+}
+
+/**
+ * Mark one permission prompt decided (the human answered/denied it) so it no
+ * longer holds the session in `awaiting_permission`. Request ids are globally
+ * unique, so this scans every runtime — the answering connection need not know
+ * which session owns the prompt.
+ */
+export function resolvePending(requestId: string): void {
+  for (const rt of runtimes.values()) {
+    if (rt.pending.delete(requestId)) return
+  }
+}
+
+/** Drop every outstanding permission prompt for a session (run teardown). */
+export function clearPending(id: string): void {
+  runtimes.get(id)?.pending.clear()
 }
 
 /** Force a runtime's status (e.g. 'running' at run start). Broadcasts if changed. */

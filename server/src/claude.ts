@@ -415,6 +415,14 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         // even with consensus disabled so the panel still renders and the answers
         // get injected (the base AskUserQuestion support).
         if (toolName === 'AskUserQuestion' && askQuestions(input)) {
+          // The consensus pass spawns one advisor query() subprocess per voter plus
+          // a decider — a multi-second window during which the tool-use stays
+          // pending and the request is not yet visible to the human. It is fully
+          // contained (the `.catch` ⇒ null) so an advisor error/slowness can never
+          // abort or throw into the main run; the worst case is "no opinions, ask
+          // the human" (the safe default). If the main run is nonetheless torn down
+          // in this window, `waitForDecision` resolves to deny (below) and we log it
+          // so the precise trigger can be confirmed in a live multi-agent setup.
           const ask: AskConsensusOutcome | null = await runAskConsensus({
             currentAgentId: currentAgentId ?? null,
             toolName,
@@ -422,10 +430,28 @@ export async function runClaude(opts: RunOptions): Promise<void> {
             context: recentContext,
             cwd,
             signal,
-          }).catch(() => null)
+          }).catch((err) => {
+            console.warn(
+              `[c3] runAskConsensus threw (deferring to human): ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            )
+            return null
+          })
           if (ask && ask.fullyUnanimous) {
             send({ type: 'consensus_auto', toolName, input, outcome: ask })
             return { behavior: 'allow', updatedInput: withAnswers(input, ask.agreedAnswers) }
+          }
+          // The run was torn down *while* consensus ran: do NOT emit a
+          // permission_request the human can never answer. It would linger in the
+          // buffer as a dead "曾请求…" static line (the residue the fix forbids).
+          // Deny straight away — the turn is already ending.
+          if (signal.aborted) {
+            console.warn(
+              `[c3] AskUserQuestion ${requestId} aborted during the consensus window — ` +
+                `skipping the unanswerable permission_request (consensus-window race)`,
+            )
+            return { behavior: 'deny', message: 'Run aborted during consensus' }
           }
           send(
             ask
@@ -435,6 +461,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
           const { decision, answers } = await waitForDecision(requestId, signal)
           if (decision === 'allow') {
             return { behavior: 'allow', updatedInput: withAnswers(input, answers ?? {}) }
+          }
+          // Distinguish a human "deny" from a run-teardown deny: the latter means an
+          // AskUserQuestion prompt the user never answered was denied because the run
+          // signal aborted during/after the consensus window — the race this log
+          // exists to catch.
+          if (signal.aborted) {
+            console.warn(
+              `[c3] AskUserQuestion ${requestId} denied by run abort before the human answered ` +
+                `(consensus-window race) — tool=${toolName}`,
+            )
           }
           return { behavior: 'deny', message: 'User denied in c3 UI' }
         }
@@ -456,6 +492,11 @@ export async function runClaude(opts: RunOptions): Promise<void> {
             return { behavior: 'allow', updatedInput: input }
           }
           return { behavior: 'deny', message: 'Denied by c3 multi-agent consensus' }
+        }
+        // Run torn down during the consensus window ⇒ skip the unanswerable prompt
+        // (same residue guard as the AskUserQuestion branch above) and deny.
+        if (signal.aborted) {
+          return { behavior: 'deny', message: 'Run aborted during consensus' }
         }
         // Split / no consensus ⇒ ask the human, attaching the opinions (if any).
         const req: ServerToClient = outcome

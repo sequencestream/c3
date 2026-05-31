@@ -11,6 +11,8 @@ import {
   removeRuntime,
   removeRuntimesForWorkspace,
   removeViewer,
+  resolvePending,
+  clearPending,
   setOnStatusChange,
   setStatus,
   stopRun,
@@ -104,6 +106,117 @@ describe('session-runtime registry', () => {
     expect(getRuntime('s-plain')!.status).toBe('idle')
     removeRuntime('s-team')
     removeRuntime('s-plain')
+  })
+
+  // The consensus-window race: a permission prompt is emitted, then a stray
+  // `turn_end` arrives before the human answers. While the run is alive the prompt
+  // must keep the session in `awaiting_permission` so its answer panel stays
+  // actionable; only a real teardown (run nulled) may settle it to idle.
+  describe('pending-permission guard (consensus-window race)', () => {
+    const withRun = (id: string) => {
+      const rt = ensureRuntime(id, '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      return rt
+    }
+
+    it('holds awaiting_permission when turn_end arrives with a prompt still pending and run alive', () => {
+      withRun('s-race')
+      emit('s-race', {
+        type: 'permission_request',
+        requestId: 'q1',
+        toolName: 'AskUserQuestion',
+        input: {},
+      })
+      expect(getRuntime('s-race')!.status).toBe('awaiting_permission')
+      // A stray turn_end (the bug trigger) must NOT collapse to idle.
+      emit('s-race', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-race')!.status).toBe('awaiting_permission')
+      removeRuntime('s-race')
+    })
+
+    it('settles to idle once the prompt is answered (resolvePending), then turn_end', () => {
+      withRun('s-ans')
+      emit('s-ans', {
+        type: 'permission_request',
+        requestId: 'q2',
+        toolName: 'AskUserQuestion',
+        input: {},
+      })
+      // Human answers: the guard releases.
+      resolvePending('q2')
+      emit('s-ans', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-ans')!.status).toBe('idle')
+      removeRuntime('s-ans')
+    })
+
+    it('idles on turn_end when the run is already torn down (rt.run null), even with a pending prompt', () => {
+      const rt = ensureRuntime('s-dead', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      emit('s-dead', {
+        type: 'permission_request',
+        requestId: 'q3',
+        toolName: 'AskUserQuestion',
+        input: {},
+      })
+      // Teardown order mirrors server.ts finally: run nulled before the turn_end.
+      rt.run = null
+      emit('s-dead', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-dead')!.status).toBe('idle')
+      removeRuntime('s-dead')
+    })
+
+    it('a pending prompt outranks the team-hold (panel must stay actionable)', () => {
+      const rt = withRun('s-team-pend')
+      rt.team = true
+      emit('s-team-pend', {
+        type: 'permission_request',
+        requestId: 'q4',
+        toolName: 'Write',
+        input: {},
+      })
+      emit('s-team-pend', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-team-pend')!.status).toBe('awaiting_permission')
+      removeRuntime('s-team-pend')
+    })
+
+    it('clearPending drops a stale prompt so a later turn_end can idle the live run', () => {
+      withRun('s-clear')
+      emit('s-clear', {
+        type: 'permission_request',
+        requestId: 'q5',
+        toolName: 'AskUserQuestion',
+        input: {},
+      })
+      clearPending('s-clear')
+      emit('s-clear', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-clear')!.status).toBe('idle')
+      removeRuntime('s-clear')
+    })
+
+    it('resolvePending finds the prompt across runtimes by request id', () => {
+      withRun('s-r-a')
+      withRun('s-r-b')
+      emit('s-r-a', {
+        type: 'permission_request',
+        requestId: 'uniq-a',
+        toolName: 'AskUserQuestion',
+        input: {},
+      })
+      emit('s-r-b', {
+        type: 'permission_request',
+        requestId: 'uniq-b',
+        toolName: 'AskUserQuestion',
+        input: {},
+      })
+      // Answer B from any connection; only B releases.
+      resolvePending('uniq-b')
+      emit('s-r-a', { type: 'turn_end', reason: 'complete' })
+      emit('s-r-b', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-r-a')!.status).toBe('awaiting_permission')
+      expect(getRuntime('s-r-b')!.status).toBe('idle')
+      removeRuntime('s-r-a')
+      removeRuntime('s-r-b')
+    })
   })
 
   it('does not notify when an event keeps the same status', () => {

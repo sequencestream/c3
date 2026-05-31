@@ -85,6 +85,27 @@ capped at ~4000 chars (`claude.ts`).
   are deliberately injected into the input — the only headless channel to answer.
 - **No leak on abort.** Advisor queries attach to the run's `AbortSignal` and are
   interrupted on teardown, like the human prompt (PG-R4).
+- **Consensus window never drops a live prompt.** `runAskConsensus` spawns one
+  advisor `query()` subprocess per voter plus a decider — a multi-second window in
+  which the AskUserQuestion tool-use is pending and the request is not yet visible
+  to the human. The pass is fully contained (`.catch ⇒ null`): an advisor
+  error/abort/slowness can never throw into or abort the main run; the worst case
+  is "no opinions, ask the human". Crucially, while a run is **alive** and a prompt
+  has been emitted but not yet answered, a stray `turn_end` must NOT settle the
+  session to `idle` — the runtime holds it at `awaiting_permission` (`runs.ts`
+  `emit` guard, backed by the `pending` request-id set) so the answer panel stays
+  actionable instead of downgrading to a static "曾请求…" history line. The guard
+  releases per-request when the human answers (`resolvePending`) and wholesale on
+  teardown (`clearPending`); once the run is genuinely gone (`rt.run` null) `idle`
+  is correct (the prompt can no longer be answered). A teardown deny that beats the
+  human answer is logged (`[c3] AskUserQuestion <id> denied by run abort …`) so the
+  precise trigger can be confirmed in a live multi-agent setup.
+- **No unanswerable residue.** If the run signal is already aborted when the
+  consensus pass returns (the run was torn down _inside_ the window, before the
+  request was ever shown), the gateway does **not** emit the `permission_request`
+  at all — it denies immediately. Emitting it would leave a phantom prompt in the
+  buffer that renders as a dead static "曾请求…" line nobody can answer. Both the
+  AskUserQuestion and the allow/deny consensus branches apply this guard.
 
 ## AskUserQuestion — per-question answering
 

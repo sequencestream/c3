@@ -42,6 +42,8 @@ import {
   setStatus,
   stopRun,
   emit,
+  resolvePending,
+  clearPending,
   type SessionRuntime,
   type Viewer,
 } from './runs.js'
@@ -192,6 +194,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // The run is fully over (team sessions only reach here on user stop), so the
       // team is no longer live — clear the flag and fall back to idle.
       rt.team = false
+      // Drop any still-pending permission prompt: the run is gone, so it can no
+      // longer be answered. Clearing keeps a stale id from holding a *future* turn
+      // (same runtime, resumed session) at awaiting_permission.
+      clearPending(runId)
       // An aborted run never sends turn_end from the run loop; emit one so the
       // viewer's input unlocks. A normal/errored run already did.
       if (wasAborted) emit(runId, { type: 'turn_end', reason: 'complete' })
@@ -338,6 +344,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               return
 
             case 'permission_response':
+              // Clear the pending-prompt guard first so the run's eventual
+              // `turn_end` can settle to idle (the prompt is now decided).
+              resolvePending(msg.requestId)
               registerPermissionResolver.resolve(msg.requestId, msg.decision, msg.answers)
               return
 

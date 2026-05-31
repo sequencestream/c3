@@ -11,7 +11,11 @@ import type { ChatMsg } from './chat-types'
  * non-actionable and renders as a static record instead of a clickable card.
  *
  * `awaiting` is the viewed session's `awaiting_permission` status; keeping it a
- * parameter makes this a pure function of the transcript + status.
+ * parameter makes this a pure function of the transcript + status. The server
+ * holds a live run at `awaiting_permission` for as long as an un-answered prompt
+ * is outstanding (it won't let a stray `turn_end` flip it to idle — see
+ * `runs.ts` emit guard), so a still-answerable AskUserQuestion panel never
+ * downgrades to a static history line while the run is alive.
  */
 export function actionablePermissionId(messages: ChatMsg[], awaiting: boolean): string | null {
   if (!awaiting) return null

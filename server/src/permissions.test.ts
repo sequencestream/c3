@@ -57,6 +57,29 @@ describe('permission registry', () => {
     expect(pendingCount()).toBe(0)
   })
 
+  it('a decision delivered before an abort wins; the later abort is a no-op', async () => {
+    // The race the consensus-window fix guards: if the human answers (resolveDecision)
+    // and the run is torn down a tick later, the human's answer must stand — the
+    // abort must not flip it to deny or double-resolve.
+    const ac = new AbortController()
+    const p = waitForDecision('req-answered-then-abort', ac.signal)
+    expect(resolveDecision('req-answered-then-abort', 'allow', { Q: 'A' })).toBe(true)
+    // Abort arrives after the decision: nothing pending, so it cannot change it.
+    ac.abort()
+    await expect(p).resolves.toEqual({ decision: 'allow', answers: { Q: 'A' } })
+    expect(pendingCount()).toBe(0)
+  })
+
+  it('an abort makes a later resolveDecision a no-op (no zombie / double-resolve)', async () => {
+    const ac = new AbortController()
+    const p = waitForDecision('req-abort-then-answer', ac.signal)
+    ac.abort()
+    await expect(p).resolves.toEqual({ decision: 'deny' })
+    // The pending entry is gone, so a late human answer finds nothing to resolve.
+    expect(resolveDecision('req-abort-then-answer', 'allow')).toBe(false)
+    expect(pendingCount()).toBe(0)
+  })
+
   it('returns false for unknown or already-resolved request ids', () => {
     expect(resolveDecision('never-registered', 'allow')).toBe(false)
 

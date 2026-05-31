@@ -604,6 +604,67 @@ header h1 {
   color: var(--c-text);
 }
 
+/* ---- Task panel (between chat log and status bar) ---- */
+.task-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-6);
+  border-top: 1px solid var(--c-border);
+  background: var(--c-panel);
+}
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-body);
+  line-height: 1.3;
+  border-radius: var(--radius-sm);
+}
+.task-mark {
+  flex-shrink: 0;
+  width: 1em;
+  text-align: center;
+}
+.task-subject {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* in_progress — 高亮突出 */
+.task-row.task-active {
+  color: var(--c-text);
+  font-weight: 600;
+  background: var(--c-primary-soft);
+}
+.task-row.task-active .task-mark {
+  color: var(--c-primary-2);
+}
+/* pending — 待办 */
+.task-row.task-pending {
+  color: var(--c-text-muted);
+}
+/* completed — 打勾置灰 */
+.task-row.task-done {
+  color: var(--c-text-disabled);
+}
+.task-row.task-done .task-mark {
+  color: var(--c-success);
+}
+.task-row.task-done .task-subject {
+  text-decoration: line-through;
+}
+.task-more {
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-badge);
+  color: var(--c-text-disabled);
+}
+
 /* ============ 对话区域（规范 3.4） ============ */
 main {
   flex: 1;

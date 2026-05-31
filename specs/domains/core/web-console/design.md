@@ -29,7 +29,10 @@ props and emitting intent events (App performs every send). All styling is globa
 Shared modules: `lib/chat-types.ts` (`ChatBody`/`ChatMsg`/`Block`/`RunActivity` types), `lib/ask.ts`
 (AskUserQuestion parsing + consensus pre-fill), `lib/format.ts` (`fmt`/`oneLine`),
 `lib/pending-queue.ts` (pure send-queue logic: `mergeQueue`/`shouldFlush`/`composerAction`/
-`appendItem`/`removeItem`/`mergeIntoDraft`, unit-tested in `pending-queue.test.ts`).
+`appendItem`/`removeItem`/`mergeIntoDraft`, unit-tested in `pending-queue.test.ts`),
+`lib/task-list.ts` (pure task-list inference: `TaskItem`/`TaskListModel` types +
+`emptyTaskModel`/`applyTaskTool`, plus the panel selector `taskPanelView` and `isTaskTool`/
+`TASK_TOOL_NAMES`, unit-tested in `task-list.test.ts`; see _Task-list inference_ below).
 
 ## State (App.vue)
 
@@ -103,6 +106,49 @@ client derives actionability rather than trusting `decision: null` alone (WC-R16
 - ChatMessages forces a tool batch open only for the actionable permission, not for replayed
   static ones.
 
+## Task-list inference (client-only)
+
+A dev session calls the SDK task tools (`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`),
+which arrive as ordinary `tool_use` + `tool_result` pairs. Like `RunActivity`, the console
+**infers** a normalized "current task list" entirely on the client — **no wire/protocol change**.
+The pure logic lives in `lib/task-list.ts` (unit-tested, DOM-free); App.vue drives it by correlating
+each task `tool_use` with its `tool_result` (by `toolUseId`) and folding the pair into the model:
+
+- `applyTaskTool(model, toolName, input, result?) → TaskListModel` is pure (returns a new model,
+  same reference when nothing changed). `emptyTaskModel()` seeds it.
+- **Snapshot vs. increment.** `TaskList` is a **full snapshot** → it replaces the whole list (old
+  list never stacks); an unparseable snapshot keeps the current list rather than clearing it.
+  `TaskGet` is a single-task snapshot → **upsert**. `TaskCreate` reads the new task's `id` from the
+  **result** (its input has no id) and inserts it; if no id is recoverable it is skipped. `TaskUpdate`
+  prefers the result, else applies the `input` (`taskId` + `status`/`subject`/…) incrementally; an
+  update to an unknown id is ignored (tolerates out-of-order arrival — a later snapshot reconciles).
+- **Ordering.** `TaskItem.order` is the original order: snapshot uses array index; an incremental
+  insert takes `max(order)+1`; updates/upserts preserve the existing order.
+- **Tolerance.** The result extractor accepts several serializations (JSON array / `{tasks:[…]}` /
+  `{task:{…}}` / single object), normalizes `id` (number→string), defaults an invalid/missing
+  `status` to `pending`, drops non-object / id-less rows, and never throws on dirty data — the SDK
+  result serialization isn't pinned, so parsing is defensive by design.
+- **Wiring.** App.vue holds the `taskModel` ref + a `toolUseId → {toolName, input}` pending map,
+  reset on `session_selected`. Both history replay (the `msg.history` loop) and the live
+  `tool_use`/`tool_result` cases feed the _same_ `feedTaskUse`/`feedTaskResult` helpers (gated by
+  `isTaskTool`), so replay and the live stream converge on one model. Only task tools enter the
+  model; their ordinary `tool_use`/`tool_result` chat rows are untouched (kept as history).
+
+### Task panel (TaskPanel.vue)
+
+A read-only, resident panel between ChatMessages and SessionStatusBar (`.content`) renders the
+viewed session's live tasks. Display rules are a pure selector, `taskPanelView(model, recent=2)`:
+
+- **Grouping & order.** Three groups, each ascending by `order`: `in_progress` on top
+  (highlighted), `pending` in the middle, `completed` at the bottom (✓, struck-through / greyed).
+- **Truncation.** `completed` keeps only the most recent `recent` (highest `order`) entries, still
+  ascending; the rest are counted in `hiddenCompleted` and shown as a "+N 已完成" hint.
+- **Visibility.** `visible` is true only when an `in_progress` or `pending` task exists; an
+  all-completed or empty list hides the whole panel. The component is the selector's `v-if`.
+- The user never edits tasks here — status is driven solely by the agent's tool calls.
+- **Tests.** The selector is covered DOM-free in `task-list.test.ts`; `TaskPanel.vue` additionally
+  has a mounted component test (`TaskPanel.test.ts`) via `@vue/test-utils` — see _Testing_ below.
+
 ## Pending send queue (ordinary sessions)
 
 An ordinary session is single-turn: the server rejects a `user_prompt` while a turn is in
@@ -171,7 +217,20 @@ The console's look and feel follows the project style guide at
 translucent materials, restrained accent color, low information density). Component styling
 should conform to it rather than restating its rules here.
 
+## Testing
+
+- A single root `vitest.config.ts` runs every package's colocated `*.test.ts`. The default
+  environment is `node`; only `web/src/components/**` runs in **happy-dom** (`environmentMatchGlobs`),
+  and the `vue()` plugin lets those tests mount `.vue` SFCs.
+- **Pure logic** (reducers, selectors, view models in `lib/`) is tested DOM-free in Node — the bulk
+  of coverage, fast and free of a mounted DOM.
+- **Component tests** mount the SFC with `@vue/test-utils` and assert on rendered DOM / prop-driven
+  re-render — used where behavior is the rendering itself (e.g. `TaskPanel.test.ts`: grouping order,
+  completed-truncation, visibility, per-status markup, live switch on `setProps`).
+
 ## Dependencies
 
 - **`@ccc/shared`** — protocol types (the only cross-package import).
 - **agent-session** — the WebSocket backend.
+- **Dev/test** — `@vue/test-utils` + `happy-dom` + `@vitejs/plugin-vue` (component tests only;
+  pure-logic suites need none of them).

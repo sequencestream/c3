@@ -16,7 +16,9 @@ import MessageInput from './components/MessageInput.vue'
 import PendingQueue from './components/PendingQueue.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import SessionStatusBar from './components/SessionStatusBar.vue'
+import TaskPanel from './components/TaskPanel.vue'
 import RequirementList from './components/RequirementList.vue'
+import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   AutomationStatus,
@@ -42,6 +44,30 @@ const mode = ref<PermissionMode>('default')
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 const modeOptions = MODES.map((m) => ({ value: m, label: m }))
 let nextId = 1
+
+// Inferred "current task list" of the viewed session (client-only, like RunActivity;
+// see lib/task-list.ts). Reset on session_selected, then fed by correlating each task
+// tool_use with its tool_result by toolUseId — across both history replay and the live
+// stream, so the two paths converge on the same model. `taskToolPending` holds a task
+// tool_use's (toolName, input) until its tool_result arrives.
+const taskModel = ref<TaskListModel>(emptyTaskModel())
+let taskToolPending = new Map<string, { toolName: string; input: unknown }>()
+
+function feedTaskUse(toolName: string, toolUseId: string | undefined, input: unknown) {
+  if (!toolUseId || !isTaskTool(toolName)) return
+  taskToolPending.set(toolUseId, { toolName, input })
+}
+
+function feedTaskResult(toolUseId: string | undefined, content: string, isError: boolean) {
+  if (!toolUseId) return
+  const pending = taskToolPending.get(toolUseId)
+  if (!pending) return
+  taskToolPending.delete(toolUseId)
+  taskModel.value = applyTaskTool(taskModel.value, pending.toolName, pending.input, {
+    content,
+    isError,
+  })
+}
 
 // Sidebar / session state
 const workspaces = ref<WorkspaceInfo[]>([])
@@ -306,7 +332,15 @@ function handleMessage(msg: ServerToClient) {
       // follows as normal stream events (user_text/assistant_text/…). `running`
       // is derived from sessionStatus, kept current by session_status broadcasts.
       activity.value = { phase: 'idle' }
-      for (const item of msg.history) add(transcriptToChat(item))
+      // Task panel re-infers from scratch on every (re)select so replay matches live.
+      taskModel.value = emptyTaskModel()
+      taskToolPending = new Map()
+      for (const item of msg.history) {
+        add(transcriptToChat(item))
+        if (item.kind === 'tool_use') feedTaskUse(item.toolName, item.toolUseId, item.input)
+        else if (item.kind === 'tool_result')
+          feedTaskResult(item.toolUseId, item.content, item.isError)
+      }
       break
     case 'session_started':
       if (activeSession.value === msg.clientId) activeSession.value = msg.sessionId
@@ -336,6 +370,7 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'tool_use':
       add({ kind: 'tool-use', toolUseId: msg.toolUseId, toolName: msg.toolName, input: msg.input })
+      feedTaskUse(msg.toolName, msg.toolUseId, msg.input)
       activity.value = { phase: 'tool', toolName: msg.toolName }
       break
     case 'tool_result':
@@ -345,6 +380,7 @@ function handleMessage(msg: ServerToClient) {
         content: msg.content,
         isError: msg.isError,
       })
+      feedTaskResult(msg.toolUseId, msg.content, msg.isError)
       // Tool returned — the model is now deciding the next step (the "stuck
       // after grep" moment the status bar exists to make visible).
       activity.value = { phase: 'thinking' }
@@ -664,6 +700,7 @@ function listCommands() {
         @respond="respond"
         @submit-ask="submitAsk"
       />
+      <TaskPanel :model="taskModel" />
       <SessionStatusBar
         :has-active-session="hasActiveSession"
         :running="running"

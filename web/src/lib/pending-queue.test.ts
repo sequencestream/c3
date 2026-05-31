@@ -41,6 +41,24 @@ describe('shouldFlush', () => {
   it('团队会话不触发(实时 pushInput,不入队)', () => {
     expect(shouldFlush(false, true, 2)).toBe(false)
   })
+
+  // 电平触发(level),非边沿:flush 兜底改为每次状态对账后调用,所以 shouldFlush
+  // 只看「当前是否就绪且队列非空」,与上一次状态无关——重复观察 idle 必须都返回 true,
+  // 否则错过一次 running→idle 跳变后队列将永久滞留。
+  it('对同一就绪态重复求值都返回 true(level,不依赖跳变)', () => {
+    expect(shouldFlush(false, false, 2)).toBe(true)
+    expect(shouldFlush(false, false, 2)).toBe(true) // 再次对账仍应触发
+  })
+})
+
+// 运行中入队多条,回合结束后合并为一条 prompt 自动发出:flush 路径取 mergeQueue
+// 的结果作为单条 prompt,故多条按序以空行合并为一。
+describe('flush 合并(运行中入队多条 → 回合结束合并为一条)', () => {
+  it('多条入队按序合并为一条 prompt', () => {
+    const q = items('第一条', '第二条', '第三条')
+    expect(shouldFlush(false, false, q.length)).toBe(true)
+    expect(mergeQueue(q)).toBe('第一条\n\n第二条\n\n第三条')
+  })
 })
 
 describe('composerAction', () => {

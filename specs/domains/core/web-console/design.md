@@ -73,16 +73,16 @@ in SessionSidebar; editable settings draft in SettingsPanel.
 
 ## User actions (UI → wire)
 
-| Action                 | Guard                                                             | Sends                                                                                       |
-| ---------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `onSubmit(text)`       | non-empty, client present; reached only when idle or team (WC-R2) | `user_prompt`; optimistically marks viewed session `running`                                |
-| `onEnqueue(text)`      | ordinary session running (`composerAction`)                       | nothing — appends to `pendingQueues[viewed]` (client-only); clears the composer             |
-| `onEditQueued(item)`   | item in queue                                                     | nothing — removes the item and folds its text back into the composer draft (`prefill`)      |
-| `onDeleteQueued(id)`   | item in queue                                                     | nothing — removes the item from the queue                                                   |
-| `flushIfReady()`       | `shouldFlush(running, teamActive, len)` (watch on running/active) | merges the viewed session's queue (`\n\n`) → `onSubmit` → clears it                         |
-| `stopRun()`            | viewed session running (WC-R14)                                   | `stop_run`                                                                                  |
-| `respond(m, decision)` | client present, prompt `actionable` (⇒ `m.decision` null) (WC-R3) | `permission_response`; sets `m.decision` locally                                            |
-| `setMode(next)`        | client present, value changed                                     | optimistic `mode` update + `set_mode` (WC-R4); `next` from BaseDropdown `update:modelValue` |
+| Action                 | Guard                                                                                    | Sends                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `onSubmit(text)`       | non-empty, client present; reached only when idle or team (WC-R2)                        | `user_prompt`; optimistically marks viewed session `running`                                |
+| `onEnqueue(text)`      | ordinary session running (`composerAction`)                                              | nothing — appends to `pendingQueues[viewed]` (client-only); clears the composer             |
+| `onEditQueued(item)`   | item in queue                                                                            | nothing — removes the item and folds its text back into the composer draft (`prefill`)      |
+| `onDeleteQueued(id)`   | item in queue                                                                            | nothing — removes the item from the queue                                                   |
+| `flushIfReady()`       | `shouldFlush(running, teamActive, len)` (edge watch + level re-check in `applyStatuses`) | merges the viewed session's queue (`\n\n`) → `onSubmit` → clears it                         |
+| `stopRun()`            | viewed session running (WC-R14)                                                          | `stop_run`                                                                                  |
+| `respond(m, decision)` | client present, prompt `actionable` (⇒ `m.decision` null) (WC-R3)                        | `permission_response`; sets `m.decision` locally                                            |
+| `setMode(next)`        | client present, value changed                                                            | optimistic `mode` update + `set_mode` (WC-R4); `next` from BaseDropdown `update:modelValue` |
 
 ## Permission actionability (live vs. replayed)
 
@@ -164,13 +164,17 @@ turns, so the composer still feeds the live lead immediately (`composerAction` r
   composer. Each item is still _pending (not yet in context)_ and carries ✎ (edit) and 🗑
   (delete): delete drops it; edit drops it and folds its text back into the composer draft
   (`mergeIntoDraft` — single-newline append so an in-progress draft isn't lost) for re-editing.
-- **Flush on ready.** When the viewed ordinary session returns to idle with a non-empty queue
-  (`shouldFlush` — driven by a watch on `running`/`activeSession`/`activeIsTeam`), the items are
-  merged in order, joined by a blank line (`\n\n`), into one prompt and submitted via the normal
-  `onSubmit` → `user_prompt` path; the queue is then cleared. `onSubmit` optimistically marks the
-  session running, so the flush can't re-fire before the server confirms. The merged prompt comes
-  back as an ordinary `user_text` echo bubble — once flushed, those entries are normal context,
-  no longer editable/deletable.
+- **Flush on ready (level-triggered).** When the viewed ordinary session is idle with a non-empty
+  queue (`shouldFlush`), the items are merged in order, joined by a blank line (`\n\n`), into one
+  prompt and submitted via the normal `onSubmit` → `user_prompt` path; the queue is then cleared.
+  The trigger is **level**, not edge: besides the `watch` on `running`/`activeSession`/`activeIsTeam`
+  (which catches the `running→idle` transition), `applyStatuses` calls `flushIfReady()` after every
+  `session_status` broadcast/reconcile. So a queue still flushes even if that transition was missed
+  (e.g. the broadcast arrives already-idle with no change for the `watch` to fire on) — the stuck
+  queue would otherwise linger forever. The flush is idempotent: `shouldFlush` gates on idle + non-empty,
+  and `onSubmit` optimistically marks the session running, so it can't re-fire before the server
+  confirms. The merged prompt comes back as an ordinary `user_text` echo bubble — once flushed, those
+  entries are normal context, no longer editable/deletable.
 - **Routing constraint.** Because `user_prompt` routes to the connection's currently-viewed
   session, flush only fires for the viewed-and-idle session. An unviewed session's queue is
   retained until it is viewed again while idle, then flushed.

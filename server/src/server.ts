@@ -40,6 +40,7 @@ import {
   removeViewer,
   setOnStatusChange,
   setStatus,
+  finalizeRun,
   stopRun,
   emit,
   resolvePending,
@@ -191,7 +192,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     } catch (err) {
       emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
     } finally {
-      const wasAborted = abort.signal.aborted
       if (rt.run?.abort === abort) rt.run = null
       // The run is fully over (team sessions only reach here on user stop), so the
       // team is no longer live — clear the flag and fall back to idle.
@@ -200,10 +200,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // longer be answered. Clearing keeps a stale id from holding a *future* turn
       // (same runtime, resumed session) at awaiting_permission.
       clearPending(runId)
-      // An aborted run never sends turn_end from the run loop; emit one so the
-      // viewer's input unlocks. A normal/errored run already did.
-      if (wasAborted) emit(runId, { type: 'turn_end', reason: 'complete' })
-      setStatus(runId, 'idle')
+      // Authoritative terminal-state backstop. The run is fully over; guarantee a
+      // terminal `turn_end` is broadcast and the session settles to `idle` — no
+      // longer only when `wasAborted`. This also covers a run loop that ended
+      // without a clean `result` (the SDK iterator finished or the Claude process
+      // exited mid-turn): `finalizeRun` synthesizes the missing `turn_end` so the
+      // viewer's input unlocks and its pending-send queue can flush. Idempotent:
+      // a run that already emitted `turn_end` only gets the `idle` settle.
+      finalizeRun(runId)
       await cbs.onSettled?.(workspacePath)
     }
   }

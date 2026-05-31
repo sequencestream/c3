@@ -461,6 +461,11 @@ function applyStatuses(statuses: SessionRunStatus[]) {
     )
     if (live.size !== teamSessions.value.size) teamSessions.value = live
   }
+  // Level-triggered flush backstop: every status broadcast/reconcile re-checks the
+  // viewed session, so a queue still flushes even if the running→idle transition
+  // was missed (the `watch` below is edge-triggered and would skip it). Idempotent
+  // — `shouldFlush` gates on idle+non-empty and `onSubmit` optimistically re-locks.
+  flushIfReady()
 }
 
 function sessionTitleById(id: string): string {

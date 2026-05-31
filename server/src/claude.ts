@@ -320,6 +320,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   // Once a team tool is seen the lead stays alive past `result` (streaming input
   // never auto-closes), so teammates can report back and re-wake the lead.
   let isTeam = false
+  // Whether the SDK delivered a clean `result` (the normal turn-end signal). If the
+  // iterator instead ends or the process exits without one, the `finally` below
+  // synthesizes the terminal `turn_end` so the turn never stalls (see there).
+  let sawResult = false
   // Rolling recent-context buffer (user prompt + assistant text) the consensus
   // voters reason over; capped so a long run doesn't bloat advisor prompts.
   let recentContext = prompt.slice(-4000)
@@ -603,6 +607,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         }
       } else if (m.type === 'result') {
         // The run's turn finished — the session stays alive for the next prompt.
+        sawResult = true
         send({ type: 'turn_end', reason: 'complete' })
         // Non-team run: close the input so the query ends and the Claude Code
         // process exits (the one-shot behaviour — the next turn resumes a fresh
@@ -618,6 +623,18 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         reason: 'error',
         error: err instanceof Error ? err.message : String(err),
       })
+    }
+  } finally {
+    // Terminal-state guarantee at the run-loop layer: the iterator can finish (or
+    // the Claude process can exit) without ever delivering a `result` — e.g. it
+    // died mid-turn. Then neither the `result` branch nor the `catch` fired, so no
+    // `turn_end` reached the viewer. Synthesize one here (non-team, non-aborted) so
+    // the turn always ends. A team lead's input stays open until abort, and an
+    // aborted run is settled by the server's teardown, so both are skipped. The
+    // server's `finalizeRun` is the outer backstop; `sawResult`/`sawTurnEnd` keep
+    // the two from emitting a duplicate.
+    if (!sawResult && !isTeam && !signal.aborted) {
+      send({ type: 'turn_end', reason: 'complete' })
     }
   }
 }

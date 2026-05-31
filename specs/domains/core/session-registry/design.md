@@ -87,6 +87,31 @@ So a team lead's `turn_end` reports `team`, not `idle` — the lead process is a
 not free. A `team` session's next `user_prompt` is pushed into the live run rather than launching
 a new one (AS-R17, agent-session design § Team sessions).
 
+## Terminal-state guarantee (`finalizeRun`)
+
+Client `running`/"thinking" is derived purely from broadcast status, so a turn that never
+broadcasts its end leaves the viewer stuck (and its pending-send queue unflushed). The normal
+end signal is the SDK `result` → `turn_end` (agent-session). But the run loop can finish
+**without** a `result`: the SDK iterator ends or the Claude process exits mid-turn. Then neither
+the `result` branch nor the error `catch` fires, so no `turn_end` reaches viewers.
+
+`finalizeRun(id)` is the **authoritative terminal-state backstop**, called from the server's run
+teardown `finally` (after `rt.run` is nulled, `team` cleared, and `clearPending`). It:
+
+- synthesizes a `turn_end{reason:'complete'}` **iff** none was broadcast this turn, then
+- **unconditionally** settles the session to `idle` (no longer only when the run `wasAborted`).
+
+Idempotency uses `rt.sawTurnEnd`: `emit` sets it on any `turn_end`; `setStatus(id,'running')`
+(turn start) re-arms it to `false`. So a normal `result` run gets only the `idle` settle (no
+duplicate `turn_end`), while a loop that ended without `result` gets a synthesized one. The
+run-loop layer (`runClaude`) carries the same guarantee defensively: its `finally` emits a
+terminal `turn_end` when the iterator ended without a `result` (non-team, non-aborted), so the
+two layers agree and `sawTurnEnd`/`sawResult` prevent a double emit.
+
+**Out of scope:** a process that truly _hangs_ (the run loop's `for await` never returns, so the
+teardown `finally` never runs) is not covered — that path is still settled by the user pressing
+Stop (abort), which closes the streaming input and reaches the same teardown.
+
 ## Non-functional considerations
 
 - **Only metadata persisted** — never permission state (SR-R11, ADR 0001/0004).

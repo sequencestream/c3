@@ -15,6 +15,7 @@ import {
   clearPending,
   setOnStatusChange,
   setStatus,
+  finalizeRun,
   stopRun,
 } from './runs.js'
 
@@ -216,6 +217,82 @@ describe('session-runtime registry', () => {
       expect(getRuntime('s-r-b')!.status).toBe('idle')
       removeRuntime('s-r-a')
       removeRuntime('s-r-b')
+    })
+  })
+
+  // Authoritative terminal-state backstop. The server's run teardown calls
+  // finalizeRun in its `finally`; it must always settle the session to idle AND
+  // guarantee exactly one terminal turn_end reached viewers — even when the run
+  // loop ended without a clean `result` (SDK iterator finished / process exited).
+  describe('finalizeRun (terminal-state backstop)', () => {
+    it('synthesizes a turn_end and idles when the turn never emitted one', () => {
+      const seen: ServerToClient[] = []
+      ensureRuntime('s-fin', '/ws', 'default', [])
+      addViewer('s-fin', (e) => seen.push(e))
+      setStatus('s-fin', 'running') // turn starts; arms the backstop
+      emit('s-fin', { type: 'assistant_text', text: 'partial' })
+      // Iterator ended without a `result`: no turn_end was ever sent.
+      finalizeRun('s-fin')
+      expect(getRuntime('s-fin')!.status).toBe('idle')
+      // The viewer saw a synthesized terminal turn_end (so its input unlocks).
+      expect(seen.filter((e) => e.type === 'turn_end')).toEqual([
+        { type: 'turn_end', reason: 'complete' },
+      ])
+      removeRuntime('s-fin')
+    })
+
+    it('does not duplicate turn_end when the turn already emitted one', () => {
+      const seen: ServerToClient[] = []
+      ensureRuntime('s-fin2', '/ws', 'default', [])
+      addViewer('s-fin2', (e) => seen.push(e))
+      setStatus('s-fin2', 'running')
+      // Normal `result` path: the run loop emitted its own turn_end.
+      emit('s-fin2', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-fin2')!.status).toBe('idle')
+      finalizeRun('s-fin2') // backstop must be a no-op for turn_end
+      expect(seen.filter((e) => e.type === 'turn_end')).toHaveLength(1)
+      expect(getRuntime('s-fin2')!.status).toBe('idle')
+      removeRuntime('s-fin2')
+    })
+
+    it('settles an aborted run to idle with a synthesized turn_end', () => {
+      const seen: ServerToClient[] = []
+      const rt = ensureRuntime('s-fin-abort', '/ws', 'default', [])
+      addViewer('s-fin-abort', (e) => seen.push(e))
+      rt.run = { abort: new AbortController(), handle: null }
+      setStatus('s-fin-abort', 'running')
+      // Mirror server teardown order: the run is nulled before finalizeRun.
+      rt.run = null
+      finalizeRun('s-fin-abort')
+      expect(getRuntime('s-fin-abort')!.status).toBe('idle')
+      expect(seen.filter((e) => e.type === 'turn_end')).toHaveLength(1)
+      removeRuntime('s-fin-abort')
+    })
+
+    it('idles a finished team run once its team flag is cleared (server teardown order)', () => {
+      const rt = ensureRuntime('s-fin-team', '/ws', 'default', [])
+      rt.team = true
+      setStatus('s-fin-team', 'running')
+      // Server teardown clears `team` before finalizing, so finalize idles cleanly.
+      rt.team = false
+      finalizeRun('s-fin-team')
+      expect(getRuntime('s-fin-team')!.status).toBe('idle')
+      removeRuntime('s-fin-team')
+    })
+
+    it('re-arms per turn: a fresh `running` makes the next finalize synthesize again', () => {
+      const seen: ServerToClient[] = []
+      ensureRuntime('s-fin-rearm', '/ws', 'default', [])
+      addViewer('s-fin-rearm', (e) => seen.push(e))
+      // Turn 1: clean result, then finalize (no duplicate).
+      setStatus('s-fin-rearm', 'running')
+      emit('s-fin-rearm', { type: 'turn_end', reason: 'complete' })
+      finalizeRun('s-fin-rearm')
+      // Turn 2: starts running (re-arms), ends without a result → finalize synthesizes.
+      setStatus('s-fin-rearm', 'running')
+      finalizeRun('s-fin-rearm')
+      expect(seen.filter((e) => e.type === 'turn_end')).toHaveLength(2)
+      removeRuntime('s-fin-rearm')
     })
   })
 

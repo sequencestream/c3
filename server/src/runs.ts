@@ -75,6 +75,14 @@ export interface SessionRuntime {
    * answers (`resolvePending`) and wholesale on teardown (`clearPending`).
    */
   pending: Set<string>
+  /**
+   * Whether a terminal `turn_end` has already been broadcast for the current
+   * turn. Set in `emit` when a `turn_end` flows through; reset in `setStatus`
+   * when a new turn starts (status → `running`). `finalizeRun` reads it to avoid
+   * emitting a duplicate `turn_end` while still guaranteeing exactly one fires —
+   * the authoritative terminal-state backstop (see `finalizeRun`).
+   */
+  sawTurnEnd: boolean
   viewers: Set<Viewer>
 }
 
@@ -114,6 +122,7 @@ export function ensureRuntime(
       team: false,
       status: 'idle',
       pending: new Set(),
+      sawTurnEnd: false,
       viewers: new Set(),
     }
     runtimes.set(id, rt)
@@ -151,6 +160,10 @@ export function emit(id: string, event: ServerToClient): void {
   // Track outstanding (un-decided) permission prompts so the guard below can keep
   // a genuinely-blocked, still-alive run from collapsing to idle.
   if (event.type === 'permission_request') rt.pending.add(event.requestId)
+  // Note that this turn has broadcast its terminal event, so `finalizeRun` won't
+  // synthesize a duplicate. Set on the raw event regardless of the status guards
+  // below (the wire event reached viewers either way).
+  if (event.type === 'turn_end') rt.sawTurnEnd = true
   let next = statusFor(event)
   // A `turn_end` (→ idle) must NOT drop a live run that still has an un-answered
   // permission prompt: that would flip the session out of `awaiting_permission`,
@@ -195,9 +208,35 @@ export function clearPending(id: string): void {
 /** Force a runtime's status (e.g. 'running' at run start). Broadcasts if changed. */
 export function setStatus(id: string, status: SessionStatus): void {
   const rt = runtimes.get(id)
-  if (!rt || rt.status === status) return
+  if (!rt) return
+  // A new turn starts when the server forces `running`: arm the terminal-state
+  // backstop so this turn must broadcast (or have `finalizeRun` synthesize) its
+  // own `turn_end`, independent of the previous turn.
+  if (status === 'running') rt.sawTurnEnd = false
+  if (rt.status === status) return
   rt.status = status
   onStatusChange?.()
+}
+
+/**
+ * Authoritative terminal-state backstop: the run is over (the caller has torn it
+ * down in its `finally`). If no terminal `turn_end` was broadcast this turn — the
+ * SDK iterator ended or the Claude process exited without a clean `result`, so the
+ * run loop never emitted one — synthesize a `turn_end` now, then unconditionally
+ * settle to `idle`. This is what frees a viewer that would otherwise stay stuck
+ * "thinking" forever (and, on the client, releases the pending-send queue). The
+ * `sawTurnEnd` flag keeps this idempotent: a run that already emitted `turn_end`
+ * (the normal `result` path) only gets the `setStatus(idle)`, never a duplicate.
+ *
+ * Note: a process that truly *hangs* (the `for await` never returns, so the run's
+ * `finally` never runs) is out of scope here — that path is still settled by the
+ * user pressing Stop (abort), which closes the input and reaches this teardown.
+ */
+export function finalizeRun(id: string): void {
+  const rt = runtimes.get(id)
+  if (!rt) return
+  if (!rt.sawTurnEnd) emit(id, { type: 'turn_end', reason: 'complete' })
+  setStatus(id, 'idle')
 }
 
 export function addViewer(id: string, viewer: Viewer): void {

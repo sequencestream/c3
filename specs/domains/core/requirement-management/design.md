@@ -214,9 +214,10 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   run). Entering the requirement view (`open_requirement_chat`) also pushes the current
   `automation_status` so a fresh connection restores the button state.
 - **Dependency injection.** `automation.ts` imports the store/judge/git directly but takes server
-  wiring via `AutomationHooks`: `runDevTurn` (the only piece bound to the WS-server closure),
-  `broadcastRequirements`, and `emitStatus` (→ `broadcastAutomation`). This keeps the state machine
-  unit-testable with fakes (see `automation.test.ts`).
+  wiring via `AutomationHooks`: `runDevTurn` (bound to the WS-server closure),
+  `broadcastRequirements`, `emitStatus` (→ `broadcastAutomation`), and `sessionExists` (the same
+  `sessions.ts` disk check manual `start_development` uses — injected so the resume/dangling branch
+  stays unit-testable with fakes). This keeps the state machine unit-testable (see `automation.test.ts`).
 - **`runDevTurn` (server closure).** Ensures a `normal` runtime for the requirement (fresh
   `pending:` id, or resume an existing id for the "继续" continuation), registers an **internal
   viewer** on it, and launches/resumes via the shared `launchRun`. It surfaces the SDK session bind
@@ -227,7 +228,10 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   team lead (rare for `/sdd-lite`) is fed via `pushInput` instead of a fresh launch.
 - **Main loop (`AutomationController.run`).** `pickNext` selects the best eligible requirement
   (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
-  each, `develop()` loops: run a dev turn → **as soon as the dev session binds** (`onSessionId`,
+  each, `develop()` first picks its **starting** session id: an `in_progress` requirement whose
+  `lastDevSessionId` passes `sessionExists` is **resumed** (real id ⇒ `runDevTurn` continues that
+  context, first prompt "继续"); a `todo` or dangling one starts `null` (fresh launch) — the same
+  dangling rule as manual `start_development`. Then `develop()` loops: run a dev turn → **as soon as the dev session binds** (`onSessionId`,
   early — mirroring manual `start_development`) `markInProgress` does `setLastDevSession` +
   `updateStatus(in_progress)` + broadcast + emit, so the UI flips to `in_progress` immediately, not
   at turn end (a fallback re-marks if the early bind never fired); → on `complete`, `gitDiffStat` +

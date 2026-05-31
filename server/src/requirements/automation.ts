@@ -14,8 +14,10 @@
  *      automation button).
  *
  * Eligibility: `automate` AND status ∈ {todo, in_progress} AND every dependency
- * is `done`. Sorted P0→P3 then oldest-first. Each requirement starts a FRESH dev
- * session (matching the existing dangling-restart behaviour).
+ * is `done`. Sorted P0→P3 then oldest-first. An `in_progress` requirement whose
+ * `lastDevSessionId` still exists on disk is RESUMED (its half-built context is
+ * continued); a `todo` or dangling one starts a fresh dev session (matching the
+ * existing dangling-restart behaviour).
  *
  * One controller per project (module-level map). State survives connection churn
  * like every other runtime; it does NOT survive a server restart (in-memory).
@@ -65,6 +67,12 @@ export interface AutomationHooks {
   broadcastRequirements(projectPath: string): void
   /** Push an automation status to all connections. */
   emitStatus(status: AutomationStatus): void
+  /**
+   * Whether a dev session still exists on disk — so a resumable `lastDevSessionId`
+   * is continued and a dangling one falls back to a fresh launch, exactly like
+   * manual `start_development`'s dangling check.
+   */
+  sessionExists(projectPath: string, sessionId: string): Promise<boolean>
 }
 
 /** Max "继续" resumes per requirement before giving up (clears sdd-lite checkpoints). */
@@ -181,7 +189,15 @@ class AutomationController {
    * (move to the next), false if the loop must stop (error already recorded).
    */
   private async develop(req: Requirement): Promise<boolean> {
-    let sessionId: string | null = null
+    // Resume the requirement's existing dev session when it's still on disk
+    // (continue the half-built context with "继续"); a `todo` item or a dangling
+    // session (empty/deleted `lastDevSessionId`) starts a fresh launch — the same
+    // dangling rule as manual `start_development`.
+    const resumable =
+      req.status === 'in_progress' &&
+      !!req.lastDevSessionId &&
+      (await this.hooks.sessionExists(this.projectPath, req.lastDevSessionId))
+    let sessionId: string | null = resumable ? req.lastDevSessionId : null
     let continuations = 0
     while (!this.abort.signal.aborted) {
       const prompt =

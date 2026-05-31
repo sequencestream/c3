@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AutomationStatus } from '@ccc/shared/protocol'
 import { resetDbForTests } from './db.js'
-import { getRequirement, insertRequirements, resetStoreForTests, setAutomate } from './store.js'
+import {
+  getRequirement,
+  insertRequirements,
+  resetStoreForTests,
+  setAutomate,
+  setLastDevSession,
+  updateStatus,
+} from './store.js'
 
 // Mock the heavy collaborators so the test exercises only the state machine.
 const judgeMock = vi.fn()
@@ -42,12 +49,14 @@ afterEach(() => {
 /** Drive startAutomation and resolve once the orchestrator reaches a terminal state. */
 function runToEnd(
   runDevTurn: AutomationHooks['runDevTurn'],
+  sessionExists: AutomationHooks['sessionExists'] = async () => false,
 ): Promise<{ final: AutomationStatus; emitted: AutomationStatus[] }> {
   const emitted: AutomationStatus[] = []
   return new Promise((resolve) => {
     const hooks: AutomationHooks = {
       runDevTurn,
       broadcastRequirements: () => {},
+      sessionExists,
       emitStatus: (s) => {
         emitted.push(s)
         if (s.state === 'done' || s.state === 'error' || s.state === 'idle') {
@@ -111,6 +120,7 @@ describe('automation orchestrator', () => {
           return { outcome: 'complete', sessionId: 'sess-early', lastMessage: '完成' }
         },
         broadcastRequirements: () => {},
+        sessionExists: async () => false,
         emitStatus: (s) => {
           // The moment the bind marks currentSessionId, snapshot the persisted status.
           if (s.currentSessionId === 'sess-early' && statusAtBind === undefined) {
@@ -127,6 +137,53 @@ describe('automation orchestrator', () => {
     // in_progress + lastDevSessionId were set at bind time — not at turn end.
     expect(statusAtBind).toBe('in_progress')
     expect(sessionAtBind).toBe('sess-early')
+  })
+
+  it('resumes an in_progress requirement whose lastDevSessionId still exists on disk', async () => {
+    const [r] = insertRequirements(proj, [{ title: 'resume-me', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    // Simulate a half-built dev session linked to the requirement.
+    updateStatus(r.id, 'in_progress')
+    setLastDevSession(r.id, 'sess-existing')
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const seen: (string | null)[] = []
+    const runDevTurn: AutomationHooks['runDevTurn'] = async (input) => {
+      seen.push(input.sessionId)
+      return {
+        outcome: 'complete',
+        sessionId: input.sessionId ?? 'sess-bound',
+        lastMessage: '完成',
+      }
+    }
+    // The linked session exists on disk → it must be resumed.
+    const { final } = await runToEnd(runDevTurn, async (_p, id) => id === 'sess-existing')
+
+    expect(final.state).toBe('done')
+    expect(seen[0]).toBe('sess-existing') // resumed with the real id, not null
+  })
+
+  it('falls back to a fresh session when the lastDevSessionId is dangling', async () => {
+    const [missing] = insertRequirements(proj, [{ title: 'gone', content: 'c', priority: 'P0' }])
+    const [blank] = insertRequirements(proj, [{ title: 'blank', content: 'c', priority: 'P1' }])
+    setAutomate(missing.id, true)
+    setAutomate(blank.id, true)
+    // `missing`: has an id but the session was deleted; `blank`: in_progress with no id.
+    updateStatus(missing.id, 'in_progress')
+    setLastDevSession(missing.id, 'sess-deleted')
+    updateStatus(blank.id, 'in_progress')
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const seen: (string | null)[] = []
+    const runDevTurn: AutomationHooks['runDevTurn'] = async (input) => {
+      seen.push(input.sessionId)
+      return { outcome: 'complete', sessionId: input.sessionId ?? 'sess-new', lastMessage: '完成' }
+    }
+    // No session exists on disk → both dangling requirements start fresh (null).
+    const { final } = await runToEnd(runDevTurn, async () => false)
+
+    expect(final.state).toBe('done')
+    expect(seen).toEqual([null, null]) // P0 (deleted id) then P1 (blank id), both fresh
   })
 
   it('skips requirements without the automate flag', async () => {
@@ -230,6 +287,7 @@ describe('automation orchestrator', () => {
             )
           }),
         broadcastRequirements: () => {},
+        sessionExists: async () => false,
         emitStatus: (s) => {
           emitted.push(s)
           if (s.state === 'running' && emitted.length === 2) stopAutomation(proj)

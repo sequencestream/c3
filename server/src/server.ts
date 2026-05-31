@@ -280,6 +280,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     runDevTurn,
     broadcastRequirements,
     emitStatus: broadcastAutomation,
+    sessionExists,
   }
 
   app.get(

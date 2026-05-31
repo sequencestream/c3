@@ -203,10 +203,78 @@ class AutomationController {
     this.emit()
   }
 
+  /**
+   * RM-A12: Global concurrency gate. Before picking the next eligible
+   * requirement, check whether ANY in_progress requirement (including
+   * non-automate manual runs) has a dev session that is truly running
+   * (isRunning returns true). If so, attach an internal viewer and wait
+   * for the current turn to settle before proceeding.
+   * Dangling sessions (exists on disk but not running) do NOT block.
+   *
+   * Returns true to continue the loop, false if the loop must stop (the
+   * caller should check abort and return).
+   */
+  private async awaitProjectRunning(): Promise<boolean> {
+    const all = listRequirements(this.projectPath)
+    const running = all.find(
+      (r) =>
+        r.status === 'in_progress' &&
+        !!r.lastDevSessionId &&
+        this.hooks.isRunning(r.lastDevSessionId),
+    )
+    if (!running) return true // gate clear
+
+    console.log(
+      `[c3:automation] 全局并发闸门:「${running.title}」的 dev session 仍在运行,等待 turn settle`,
+    )
+
+    // Track which requirement we're waiting on for status display.
+    this.status.currentRequirementId = running.id
+    this.status.currentSessionId = running.lastDevSessionId!
+    this.emit()
+
+    const turn = await this.hooks.runDevTurn({
+      projectPath: this.projectPath,
+      sessionId: running.lastDevSessionId!,
+      prompt: '', // ignored when attach=true
+      requirementId: running.id,
+      signal: this.abort.signal,
+      attach: true,
+    })
+
+    if (this.abort.signal.aborted) return false
+
+    // A non-automate requirement that errored or blocked on a permission:
+    // log the event but do NOT stop the orchestrator — the gate only waits;
+    // the manual requirement's lifecycle is outside our scope.
+    if (turn.outcome !== 'complete') {
+      console.warn(
+        `[c3:automation] 闸门监听:「${running.title}」运行结束(outcome=${turn.outcome}),非自动化需求,继续推进`,
+      )
+    }
+
+    // Loop back to re-check the gate (another requirement may have started
+    // running during our wait).
+    return true
+  }
+
   /** The main loop. Runs detached; resolves when the loop ends (done/error/stop). */
   async run(): Promise<void> {
     this.emit()
     while (!this.abort.signal.aborted) {
+      // RM-A12: Global concurrency gate — wait for any in_progress requirement
+      // (including non-automate manual runs) with a truly running dev session
+      // to settle before picking the next automate requirement.
+      if (!(await this.awaitProjectRunning())) {
+        if (this.abort.signal.aborted) {
+          this.status.state = 'idle'
+          this.status.currentRequirementId = null
+          this.status.currentSessionId = null
+          this.emit()
+        }
+        return
+      }
+
       const req = pickNext(this.projectPath)
       if (!req) {
         this.status.state = 'done'

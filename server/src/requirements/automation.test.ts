@@ -266,6 +266,82 @@ describe('automation orchestrator', () => {
     expect(seen[0].sessionId).toBe('sess-idle') // resumed, per req-004
   })
 
+  it('global gate blocks when a non-automate manual run is in progress, waits for it, then proceeds', async () => {
+    // A non-automate requirement already in_progress with a running dev session.
+    const [manual] = insertRequirements(proj, [
+      { title: 'manual-work', content: 'c', priority: 'P0' },
+    ])
+    updateStatus(manual.id, 'in_progress')
+    setLastDevSession(manual.id, 'sess-manual')
+
+    // An automate requirement eligible for the orchestrator.
+    const [auto] = insertRequirements(proj, [{ title: 'auto-work', content: 'c', priority: 'P1' }])
+    setAutomate(auto.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const seen: { sessionId: string | null; attach?: boolean }[] = []
+    let manualRunning = true
+    const runDevTurn: AutomationHooks['runDevTurn'] = async (input) => {
+      seen.push({ sessionId: input.sessionId, attach: input.attach })
+      if (input.attach && input.sessionId === 'sess-manual') {
+        manualRunning = false // turn settled → gate clears on re-check
+        return { outcome: 'complete', sessionId: 'sess-manual', lastMessage: 'done' }
+      }
+      return {
+        outcome: 'complete',
+        sessionId: input.sessionId ?? 'sess-auto',
+        lastMessage: '完成',
+      }
+    }
+
+    const { final } = await runToEnd(
+      runDevTurn,
+      async () => false,
+      (id) => id === 'sess-manual' && manualRunning,
+    )
+
+    expect(final.state).toBe('done')
+    expect(final.completedIds).toEqual([auto.id])
+    // First call: gate attaches to the manual session.
+    expect(seen[0]).toEqual({ sessionId: 'sess-manual', attach: true })
+    // Second call: develop picks the automate requirement (fresh launch).
+    expect(seen[1].sessionId).toBeNull()
+    expect(seen[1].attach).toBeFalsy()
+    expect(commitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('dangling (exists but not running) does not block the global gate', async () => {
+    // A non-automate requirement in_progress but NOT running (dangling on disk).
+    const [manual] = insertRequirements(proj, [{ title: 'dangling', content: 'c', priority: 'P0' }])
+    updateStatus(manual.id, 'in_progress')
+    setLastDevSession(manual.id, 'sess-dead')
+
+    // An automate requirement eligible for the orchestrator.
+    const [auto] = insertRequirements(proj, [{ title: 'auto', content: 'c', priority: 'P0' }])
+    setAutomate(auto.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const seen: string[] = []
+    const { final } = await runToEnd(
+      async (input) => {
+        seen.push(`dev:${input.sessionId ?? 'null'},attach:${!!input.attach}`)
+        return {
+          outcome: 'complete',
+          sessionId: input.sessionId ?? 'sess-auto',
+          lastMessage: '完成',
+        }
+      },
+      async () => true, // all sessions "exist on disk"
+      () => false, // none are running
+    )
+
+    expect(final.state).toBe('done')
+    expect(final.completedIds).toEqual([auto.id])
+    // The gate should not have attached to anything — went straight to develop.
+    expect(seen[0]).toBe('dev:null,attach:false') // fresh launch for the automate req
+    expect(commitMock).toHaveBeenCalledTimes(1)
+  })
+
   it('skips requirements without the automate flag', async () => {
     const [on, off] = insertRequirements(proj, [
       { title: 'on', content: 'c', priority: 'P0' },

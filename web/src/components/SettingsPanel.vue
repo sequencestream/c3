@@ -35,6 +35,7 @@ const draft = ref<SystemSettings>({
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
+  showToolSessions: false,
 })
 
 // Re-seed the draft whenever the panel opens or fresh server settings arrive.
@@ -49,6 +50,7 @@ watch(
       defaultMode: settings.defaultMode ?? 'default',
       consensus: { enabled: settings.consensus?.enabled ?? false },
       voiceLang: settings.voiceLang ?? 'zh-CN',
+      showToolSessions: settings.showToolSessions ?? false,
     }
   },
   { immediate: true },
@@ -185,6 +187,12 @@ function isSystemAgent(a: AgentConfig): boolean {
       <label v-if="draft.consensus" class="consensus-toggle">
         <input v-model="draft.consensus.enabled" type="checkbox" />
         Enable multi-agent consensus voting
+      </label>
+
+      <p class="settings-section-title">Display</p>
+      <label class="consensus-toggle">
+        <input v-model="draft.showToolSessions" type="checkbox" />
+        显示工具 session
       </label>
     </div>
     <div class="settings-foot">

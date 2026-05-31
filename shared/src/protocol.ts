@@ -118,6 +118,9 @@ export interface SystemSettings {
   consensus?: ConsensusConfig
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
+  /** When true, tool-created sessions (completion judge, consensus advisor) appear
+   * in the sidebar session list. Default is false (hidden). */
+  showToolSessions?: boolean
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */

@@ -16,6 +16,7 @@ import type { SessionInfo, TranscriptItem } from '@ccc/shared/protocol'
 import { getSessionMode } from './state.js'
 import { normalizeTranscriptText, stringifyToolResult } from './format.js'
 import { listHiddenSessions } from './requirements/store.js'
+import { getShowToolSessions } from './settings.js'
 
 /**
  * Module-level tracker for tool-created sessions (completion judge, consensus
@@ -48,7 +49,9 @@ function titleOf(s: {
 /**
  * List a workspace's sessions, newest first, each tagged with its c3 mode.
  * Requirement-communication sessions are filtered out (they belong to the
- * requirement view, not the normal list). Uses the resolved path as the key, to
+ * requirement view, not the normal list). Tool-created sessions (completion
+ * judge, consensus advisor) are also hidden by default, controlled by the
+ * `showToolSessions` system setting. Uses the resolved path as the key, to
  * match how the store records `project_path`. If the store is unavailable it
  * returns an empty hidden set, so the list degrades to "show everything".
  */
@@ -57,6 +60,7 @@ export async function listWorkspaceSessions(dir: string): Promise<SessionInfo[]>
   const hidden = new Set(listHiddenSessions(resolve(dir)))
   return sessions
     .filter((s) => !hidden.has(s.sessionId))
+    .filter((s) => getShowToolSessions() || !isToolSession(s.sessionId))
     .map((s) => ({
       sessionId: s.sessionId,
       title: titleOf(s),

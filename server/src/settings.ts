@@ -93,7 +93,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const consensus = { enabled: raw?.consensus?.enabled === true }
   const voiceLang =
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
-  return { agents, defaultAgentId, defaultMode, consensus, voiceLang }
+  const showToolSessions = raw?.showToolSessions === true
+  return { agents, defaultAgentId, defaultMode, consensus, voiceLang, showToolSessions }
 }
 
 export function loadSettings(): SystemSettings {
@@ -239,6 +240,11 @@ export function resolveSessionLaunch(sessionId: string | null): {
 /** Whether multi-agent consensus voting is enabled in the system settings. */
 export function isConsensusEnabled(): boolean {
   return loadSettings().consensus?.enabled === true
+}
+
+/** Whether tool-created sessions should appear in the sidebar session list. */
+export function getShowToolSessions(): boolean {
+  return loadSettings().showToolSessions === true
 }
 
 /**

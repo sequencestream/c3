@@ -1730,6 +1730,35 @@ button.stop-btn:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.12);
   color: var(--c-error);
 }
+/* 派生运行态指示:运行中/已中断 以彩色圆点 + 文字显示在状态标签旁。 */
+.req-run-status {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-inner);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.req-run-status.running {
+  color: var(--c-success);
+  background: rgba(34, 197, 94, 0.1);
+}
+.req-run-status.running::before {
+  content: '●';
+  display: inline-block;
+  margin-right: 3px;
+  animation: status-pulse 1.4s var(--ease-standard) infinite;
+}
+.req-run-status.dangling {
+  color: var(--c-warning);
+  background: rgba(245, 158, 11, 0.1);
+}
+.req-run-status.dangling::before {
+  content: '●';
+  display: inline-block;
+  margin-right: 3px;
+  color: var(--c-warning);
+}
 .req-deps {
   font-size: var(--fs-caption);
   color: var(--c-warning);

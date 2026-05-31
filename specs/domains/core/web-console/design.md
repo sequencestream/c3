@@ -24,28 +24,36 @@ props and emitting intent events (App performs every send). All styling is globa
 | PendingQueue     | `components/PendingQueue.vue`     | Pending-send queue rendered between SessionStatusBar and MessageInput; lists queued items (text + ✎ edit / 🗑 delete), emits `edit`/`delete`. Presentational; App owns the queue state and flush                                                                                                                                                                                                                                                                                                                         |
 | SettingsPanel    | `components/SettingsPanel.vue`    | System settings page: agent table + consensus toggle; owns editable draft seeded from server settings                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | BaseDropdown     | `components/BaseDropdown.vue`     | Standard custom dropdown (replaces native `<select>`): trigger + popover with icon rows, keyboard nav, click-outside close                                                                                                                                                                                                                                                                                                                                                                                               |
+| RequirementList  | `components/RequirementList.vue`  | Requirement view left column: requirement list + status filter + row actions (refine/start-dev/dev-detail/set-status/set-automate). Receives full requirement list and automation-orchestrator status as props; emits intent events for App to send. Renders each item's lifecycle status badge plus the derived `runStatus` indicator (running green pulse / dangling amber) next to `in_progress` items. Panel is collapsible (narrow view hides secondary fields)                                                     |
 | WS client        | `lib/ws.ts`                       | Opens `ws(s)://<host>/ws`, dispatches parsed `ServerToClient` to a listener, exposes `send(ClientToServer)` + `close()`; heartbeat + auto-reconnect with `onReopen` view recovery                                                                                                                                                                                                                                                                                                                                        |
 
 Shared modules: `lib/chat-types.ts` (`ChatBody`/`ChatMsg`/`Block`/`RunActivity` types), `lib/ask.ts`
 (AskUserQuestion parsing + consensus pre-fill), `lib/format.ts` (`fmt`/`oneLine`),
 `lib/pending-queue.ts` (pure send-queue logic: `mergeQueue`/`shouldFlush`/`composerAction`/
 `appendItem`/`removeItem`/`mergeIntoDraft`, unit-tested in `pending-queue.test.ts`),
+`lib/req-list-view.ts` (requirement-list pure presentation logic: `statusLabel`/`reqRunStatusLabel`/
+`panelToggleLabel`/`rowVisibility`/`showRunStatus`/`compareByCompletion`, unit-tested in
+`req-list-view.test.ts`; see _Requirement runStatus indicator_ below),
 `lib/task-list.ts` (pure task-list inference: `TaskItem`/`TaskListModel` types +
 `emptyTaskModel`/`applyTaskTool`, plus the panel selector `taskPanelView` and `isTaskTool`/
 `TASK_TOOL_NAMES`, unit-tested in `task-list.test.ts`; see _Task-list inference_ below).
 
 ## State (App.vue)
 
-| Ref                | Type                               | Purpose                                                                                                                                         |
-| ------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `messages`         | `ChatMsg[]`                        | Ordered render list (WC-R1); passed to ChatMessages                                                                                             |
-| `status`           | `connecting` \| `open` \| `closed` | Connection indicator (WC-R6)                                                                                                                    |
-| `sessionStatus`    | `Record<sessionId, SessionStatus>` | Per-session live status from `ready`/`session_status` (WC-R12)                                                                                  |
-| `running`          | computed boolean                   | Viewed session's status ≠ `idle`; shows Stop and switches Send to enqueue (input stays editable) (WC-R2/R14)                                    |
-| `pendingQueues`    | `Record<sessionId, PendingItem[]>` | Per-session client-only send queue (ordinary sessions). Survives session switches; lost on reload. `currentQueue` is the viewed session's slice |
-| `activity`         | `RunActivity`                      | Fine-grained run state of the viewed session, inferred from the stream; drives SessionStatusBar (WC-R15)                                        |
-| `mode`             | `PermissionMode`                   | Current mode; synced from `ready`/`mode_changed` (WC-R4)                                                                                        |
-| `actionablePermId` | computed `string \| null`          | `requestId` of the one permission the user can still act on, or null; derived from `sessionStatus` + transcript (WC-R16)                        |
+| Ref                   | Type                                    | Purpose                                                                                                                                         |
+| --------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `messages`            | `ChatMsg[]`                             | Ordered render list (WC-R1); passed to ChatMessages                                                                                             |
+| `status`              | `connecting` \| `open` \| `closed`      | Connection indicator (WC-R6)                                                                                                                    |
+| `sessionStatus`       | `Record<sessionId, SessionStatus>`      | Per-session live status from `ready`/`session_status` (WC-R12)                                                                                  |
+| `running`             | computed boolean                        | Viewed session's status ≠ `idle`; shows Stop and switches Send to enqueue (input stays editable) (WC-R2/R14)                                    |
+| `pendingQueues`       | `Record<sessionId, PendingItem[]>`      | Per-session client-only send queue (ordinary sessions). Survives session switches; lost on reload. `currentQueue` is the viewed session's slice |
+| `activity`            | `RunActivity`                           | Fine-grained run state of the viewed session, inferred from the stream; drives SessionStatusBar (WC-R15)                                        |
+| `mode`                | `PermissionMode`                        | Current mode; synced from `ready`/`mode_changed` (WC-R4)                                                                                        |
+| `actionablePermId`    | computed `string \| null`               | `requestId` of the one permission the user can still act on, or null; derived from `sessionStatus` + transcript (WC-R16)                        |
+| `requirements`        | `Record<projectPath, Requirement[]>`    | Per-project requirement lists; updated on `requirements` push or `list_requirements` reply                                                      |
+| `automation`          | `Record<projectPath, AutomationStatus>` | Per-project automation-orchestrator status; updated on `automation_status` push                                                                 |
+| `viewMode`            | `'console' \| 'requirements'`           | Which view the main area shows; persisted to `localStorage` so hard refresh restores the requirement view                                       |
+| `requirementsProject` | `string \| null`                        | The project path whose requirement view is currently open; persisted alongside `viewMode`                                                       |
 
 Component-local UI state (not in App): prompt draft + slash menu in MessageInput; tool/batch
 expand sets in ChatMessages; per-question answer draft in PermissionPrompt; sidebar pagination
@@ -70,19 +78,62 @@ in SessionSidebar; editable settings draft in SettingsPanel.
 | `permission_request`       | append permission message with `decision: null` (live or replayed alike; actionability is derived, see below) |
 | `consensus_auto`           | append consensus message                                                                                      |
 | `turn_end`                 | append a system note only on `error`; running unlocks via `session_status` (WC-R5)                            |
+| `requirements`             | replace `requirements[projectPath]` with the pushed list (WC-R10)                                             |
+| `automation_status`        | replace `automation[projectPath]` with the pushed orchestrator status (WC-R11)                                |
+
+## Requirement runStatus indicator
+
+Each `Requirement` carries a derived `runStatus: 'running' | 'dangling' | 'idle'` field (see
+[requirement-management design](../core/requirement-management/design.md)). The server computes it during
+`reconcileInProgress` on `open_requirement_chat` entry, caches the result, and enriches every requirement
+broadcast via `enrichRunStatus`:
+
+- **`running`** — the dev session's process is alive in the runtime registry (`isRunning`). The UI renders a
+  green pulsing dot + "运行中" badge next to the lifecycle status.
+- **`dangling`** — the dev process is dead but the requirement is still `in_progress` (server restart / crash /
+  normal exit where the completion judge found it not done). The UI renders an amber dot + "已中断" warning.
+- **`idle`** — not `in_progress`, or auto-completed. No runStatus indicator is rendered.
+- **Reconnect / hard refresh.** The `onReopen` callback re-sends `open_requirement_chat`, which triggers a
+  fresh reconcile + `enrichRunStatus` pass. `maybeRestoreRequirements` recovers the persisted view mode from
+  `localStorage`. Both paths restore the correct runStatus without user action.
+- **Broadcast enrichment.** Every `broadcastRequirements` call applies `enrichRunStatus`, which checks live
+  `isRunning` first, then falls back to the reconcile cache (see `server.ts`). So incremental status changes
+  (a dev session completes, the orchestrator progresses) also reflect the correct runStatus on all connections.
+
+The pure display logic lives in `lib/req-list-view.ts`:
+
+| Function                   | Returns                    | Description                                      |
+| -------------------------- | -------------------------- | ------------------------------------------------ |
+| `statusLabel(s)`           | `string`                   | Lifecycle status (`draft`→`草稿` …)              |
+| `reqRunStatusLabel(s)`     | `string`                   | Derived run-status label (`running`→`运行中` …)  |
+| `showRunStatus(s)`         | `boolean`                  | `true` for non-`idle` run statuses               |
+| `panelToggleLabel(coll)`   | `{icon,text}`              | Collapse button label reflecting target state    |
+| `rowVisibility(coll)`      | `{showModule,showActions}` | Secondary-field visibility in collapsed mode     |
+| `compareByCompletion(a,b)` | `number`                   | Done-items sort: completedAt desc, then priority |
+
+The CSS utility class `status-pulse` (`animation`) is shared with the session-status dot in
+`SessionStatusBar.vue` — `.req-run-status.running` reuses it for the green pulsing indicator.
 
 ## User actions (UI → wire)
 
-| Action                 | Guard                                                                                    | Sends                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `onSubmit(text)`       | non-empty, client present; reached only when idle or team (WC-R2)                        | `user_prompt`; optimistically marks viewed session `running`                                |
-| `onEnqueue(text)`      | ordinary session running (`composerAction`)                                              | nothing — appends to `pendingQueues[viewed]` (client-only); clears the composer             |
-| `onEditQueued(item)`   | item in queue                                                                            | nothing — removes the item and folds its text back into the composer draft (`prefill`)      |
-| `onDeleteQueued(id)`   | item in queue                                                                            | nothing — removes the item from the queue                                                   |
-| `flushIfReady()`       | `shouldFlush(running, teamActive, len)` (edge watch + level re-check in `applyStatuses`) | merges the viewed session's queue (`\n\n`) → `onSubmit` → clears it                         |
-| `stopRun()`            | viewed session running (WC-R14)                                                          | `stop_run`                                                                                  |
-| `respond(m, decision)` | client present, prompt `actionable` (⇒ `m.decision` null) (WC-R3)                        | `permission_response`; sets `m.decision` locally                                            |
-| `setMode(next)`        | client present, value changed                                                            | optimistic `mode` update + `set_mode` (WC-R4); `next` from BaseDropdown `update:modelValue` |
+| Action                            | Guard                                                                                    | Sends                                                                                       |
+| --------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `onSubmit(text)`                  | non-empty, client present; reached only when idle or team (WC-R2)                        | `user_prompt`; optimistically marks viewed session `running`                                |
+| `onEnqueue(text)`                 | ordinary session running (`composerAction`)                                              | nothing — appends to `pendingQueues[viewed]` (client-only); clears the composer             |
+| `onEditQueued(item)`              | item in queue                                                                            | nothing — removes the item and folds its text back into the composer draft (`prefill`)      |
+| `onDeleteQueued(id)`              | item in queue                                                                            | nothing — removes the item from the queue                                                   |
+| `flushIfReady()`                  | `shouldFlush(running, teamActive, len)` (edge watch + level re-check in `applyStatuses`) | merges the viewed session's queue (`\n\n`) → `onSubmit` → clears it                         |
+| `stopRun()`                       | viewed session running (WC-R14)                                                          | `stop_run`                                                                                  |
+| `respond(m, decision)`            | client present, prompt `actionable` (⇒ `m.decision` null) (WC-R3)                        | `permission_response`; sets `m.decision` locally                                            |
+| `setMode(next)`                   | client present, value changed                                                            | optimistic `mode` update + `set_mode` (WC-R4); `next` from BaseDropdown `update:modelValue` |
+| `openRequirements(p)`             | client present                                                                           | `open_requirement_chat` — server replies with comm `session_selected` + `requirements`      |
+| `setRequirementFilter(s)`         | `requirementsProject` set                                                                | `list_requirements` with optional status filter                                             |
+| `refineRequirement(id)`           | client present                                                                           | `refine_requirement`; launches a fresh seeded comm session                                  |
+| `startDevelopment(id)`            | client present                                                                           | `start_development` — background `/sdd-lite` launch, status flips to `in_progress`          |
+| `setRequirementStatus(id,s)`      | client present                                                                           | `update_requirement_status`; broadcast re-enriches runStatus                                |
+| `setRequirementAutomate(id,bool)` | client present                                                                           | `set_requirement_automate`; broadcast re-enriches runStatus                                 |
+| `startAutomation()`               | `requirementsProject` set                                                                | `start_automation` — begins the per-project orchestrator loop                               |
+| `stopAutomation()`                | `requirementsProject` set                                                                | `stop_automation` — aborts the current orchestration run                                    |
 
 ## Permission actionability (live vs. replayed)
 
@@ -195,8 +246,11 @@ turns, so the composer still feeds the live lead immediately (`composerAction` r
   successful open. `close()` sets a `stopped` flag that cancels heartbeat + reconnect for clean
   teardown.
 - **View recovery**: a reconnect (not the first connect) fires `onReopen`, where App re-sends
-  `select_session` for the active workspace/session. The server's fresh connection re-attaches as
-  a viewer and replays `history` + buffered live events, so the stream resumes without a reload.
+  `select_session` for the active workspace/session (or `open_requirement_chat` when the
+  requirement view was active). The server's fresh connection re-attaches as a viewer, replays
+  `history` + buffered live events, reconciles in_progress requirements (computing runStatus),
+  and pushes the enriched requirements list — so both the normal console and the requirement
+  view resume correctly without a reload.
 
 ## Technology choices
 

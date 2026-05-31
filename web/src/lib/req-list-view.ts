@@ -6,7 +6,7 @@
  * 便于在 Node 环境下单测(项目的 web 测试不含 DOM)。
  */
 
-import type { Requirement, RequirementStatus } from '@ccc/shared/protocol'
+import type { Requirement, RequirementRunStatus, RequirementStatus } from '@ccc/shared/protocol'
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
 export const STATUS_LABELS: Record<RequirementStatus, string> = {
@@ -19,6 +19,28 @@ export const STATUS_LABELS: Record<RequirementStatus, string> = {
 
 export function statusLabel(s: RequirementStatus): string {
   return STATUS_LABELS[s] ?? s
+}
+
+/**
+ * 派生运行态中文标签。仅 `in_progress` 状态的需求有非 `idle` 的运行态,
+ * `idle` 不显示独立标签(由 `.req-status` 的「开发中」标签覆盖)。
+ * - `running` → 绿色脉冲,表示 dev session 进程存活。
+ * - `dangling` → 橙色警告,表示进程已死但需求尚未完成。
+ * - `idle` → 空字符串,不渲染(默认态,包括已完成/未开始的需求)。
+ */
+export const RUN_STATUS_LABELS: Record<RequirementRunStatus, string> = {
+  running: '运行中',
+  dangling: '已中断',
+  idle: '',
+}
+
+export function reqRunStatusLabel(s: RequirementRunStatus): string {
+  return RUN_STATUS_LABELS[s] ?? ''
+}
+
+/** 非 idle 的运行态才需要显示指示器。 */
+export function showRunStatus(s: RequirementRunStatus): boolean {
+  return s === 'running' || s === 'dangling'
 }
 
 /** 标题栏切换按钮的文案与 title,反映「点击后将切换到的」目标态。 */

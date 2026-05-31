@@ -10,7 +10,9 @@ import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shar
 import {
   compareByCompletion,
   panelToggleLabel,
+  reqRunStatusLabel,
   rowVisibility,
+  showRunStatus,
   statusLabel,
 } from '../lib/req-list-view'
 
@@ -193,6 +195,9 @@ function datePrefix(r: Requirement): string {
             }}</span>
             <span class="req-title" :title="r.content">{{ r.title }}</span>
             <span class="req-status" :class="r.status">{{ statusLabel(r.status) }}</span>
+            <span v-if="showRunStatus(r.runStatus)" class="req-run-status" :class="r.runStatus">{{
+              reqRunStatusLabel(r.runStatus)
+            }}</span>
           </div>
           <div v-if="rowVis.showActions" class="req-actions" @click.stop>
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">

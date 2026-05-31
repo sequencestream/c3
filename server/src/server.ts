@@ -5,7 +5,13 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { AutomationStatus, ClientToServer, ServerToClient } from '@ccc/shared/protocol'
+import type {
+  AutomationStatus,
+  ClientToServer,
+  Requirement,
+  RequirementRunStatus,
+  ServerToClient,
+} from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude, registerPermissionResolver, REQUIREMENT_DISALLOWED_TOOLS } from './claude.js'
 import { listCommands } from './commands.js'
@@ -106,6 +112,34 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Any runtime status change (run start/finish, permission wait) re-broadcasts.
   setOnStatusChange(broadcastStatuses)
 
+  /**
+   * Per-requirement runStatus cache, populated by reconcileInProgress on
+   * open_requirement_chat and consumed by enrichRunStatus during requirement
+   * broadcasts. This is a DERIVED-field cache (runStatus is not stored in the
+   * DB); the key is requirement id, and entries are overwritten on each fresh
+   * reconcile. Cleared when a requirement leaves in_progress.
+   */
+  const runStatusCache = new Map<string, RequirementRunStatus>()
+
+  /**
+   * Enrich a requirements list with the correct (derived) runStatus for each
+   * in_progress item. Priority order:
+   * 1. Process still running in the runtime registry → `running`.
+   * 2. Cached from the most recent reconcile → `dangling` (or `idle` for
+   *    auto-completed items whose status hasn't been re-read yet).
+   * 3. Fallback → `idle` (no reconcile data — first entry or status changed).
+   */
+  function enrichRunStatus(items: Requirement[]): Requirement[] {
+    return items.map((r) => {
+      if (r.status !== 'in_progress') return r
+      if (r.lastDevSessionId && isRunning(r.lastDevSessionId))
+        return { ...r, runStatus: 'running' as const }
+      const cached = runStatusCache.get(r.id)
+      if (cached) return { ...r, runStatus: cached }
+      return r
+    })
+  }
+
   // ---- Session-layer status heartbeat ----
 
   // How often the server broadcasts a full session-status snapshot (edge-triggered
@@ -124,11 +158,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // Push a project's requirement list to every connection (the frontend keeps a
   // per-project map and ignores projects it isn't viewing). Used after a save,
-  // a status change, or a dev launch. No-op when the store is unavailable.
+  // a status change, or a dev launch. Applies runStatus enrichment so each
+  // client sees the reconciled running/dangling/idle state. No-op when the
+  // store is unavailable.
   const broadcastRequirements = (projectPath: string): void => {
     if (!isStoreAvailable()) return
     const proj = resolve(projectPath)
-    const items = listRequirements(proj)
+    const items = enrichRunStatus(listRequirements(proj))
     for (const deliver of connections) deliver({ type: 'requirements', projectPath: proj, items })
   }
 
@@ -698,13 +734,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
               // Reconcile in_progress requirements: for each, check liveness and
               // auto-complete if the process is dead but the judge confirms done.
+              // Cache the reconcile results so subsequent broadcasts (via
+              // enrichRunStatus) see the derived runStatus.
               const inProgReqs = listRequirements(proj).filter((r) => r.status === 'in_progress')
               if (inProgReqs.length > 0) {
                 const signal = new AbortController()
                 // Only fire-and-forget: don't block sending if reconcile takes long.
                 // But we want the reconciled list sent immediately, so await it
                 // before the `requirements` message below.
-                await reconcileInProgress(
+                const reconciled = await reconcileInProgress(
                   inProgReqs,
                   proj,
                   {
@@ -720,10 +758,22 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                   console.warn(
                     `[c3:reconcile] 对账异常: ${err instanceof Error ? err.message : String(err)}`,
                   )
+                  return []
                 })
+                // Cache reconciled runStatus for enrichRunStatus. Auto-completed
+                // items got status=done, so their cache entry won't be read again
+                // (enrichRunStatus only overrides in_progress items). Keeping them
+                // is harmless and avoids a separate clean-up step.
+                for (const r of reconciled) {
+                  runStatusCache.set(r.requirementId, r.runStatus)
+                }
               }
 
-              send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
+              send(ws, {
+                type: 'requirements',
+                projectPath: proj,
+                items: enrichRunStatus(listRequirements(proj)),
+              })
               send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
               // If any auto-completes happened, broadcast so other connections see it.
               const after = listRequirements(proj).filter((r) => r.status === 'in_progress')
@@ -826,6 +876,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 return
               }
               updateStatus(msg.requirementId, msg.status)
+              // If the requirement leaves in_progress, clear its cache entry so
+              // a future restart doesn't show a stale dangling/ running label.
+              if (req.status === 'in_progress' && msg.status !== 'in_progress') {
+                runStatusCache.delete(msg.requirementId)
+              }
               broadcastRequirements(req.projectPath)
               return
             }

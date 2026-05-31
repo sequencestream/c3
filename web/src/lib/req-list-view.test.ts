@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import type { CompletionOrderInput } from './req-list-view'
-import { compareByCompletion, panelToggleLabel, rowVisibility, statusLabel } from './req-list-view'
+import {
+  compareByCompletion,
+  panelToggleLabel,
+  reqRunStatusLabel,
+  rowVisibility,
+  showRunStatus,
+  statusLabel,
+} from './req-list-view'
 
 describe('statusLabel', () => {
   it('五种状态各映射到对应中文标签', () => {
@@ -9,6 +16,38 @@ describe('statusLabel', () => {
     expect(statusLabel('in_progress')).toBe('开发中')
     expect(statusLabel('done')).toBe('已完成')
     expect(statusLabel('cancelled')).toBe('已取消')
+  })
+})
+
+describe('reqRunStatusLabel', () => {
+  it('running 映射为"运行中"', () => {
+    expect(reqRunStatusLabel('running')).toBe('运行中')
+  })
+
+  it('dangling 映射为"已中断"', () => {
+    expect(reqRunStatusLabel('dangling')).toBe('已中断')
+  })
+
+  it('idle 映射为空字符串', () => {
+    expect(reqRunStatusLabel('idle')).toBe('')
+  })
+
+  it('未知值回退为空字符串', () => {
+    expect(reqRunStatusLabel('unknown' as never)).toBe('')
+  })
+})
+
+describe('showRunStatus', () => {
+  it('running 应显示', () => {
+    expect(showRunStatus('running')).toBe(true)
+  })
+
+  it('dangling 应显示', () => {
+    expect(showRunStatus('dangling')).toBe(true)
+  })
+
+  it('idle 不应显示', () => {
+    expect(showRunStatus('idle')).toBe(false)
   })
 })
 

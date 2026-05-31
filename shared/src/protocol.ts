@@ -311,6 +311,16 @@ export interface ProposedRequirement {
   module?: string
   /** Optional ids of existing requirements (same project) it depends on. */
   dependsOn?: string[]
+  /**
+   * Optional 0-based indexes into THIS batch's `requirements` array, naming
+   * sibling proposed requirements this item depends on. Sibling ids don't exist
+   * yet at proposal time, so intra-batch ordering can only be expressed by index;
+   * `insertRequirements` resolves each index to the sibling's freshly-minted id and
+   * merges it into `dependsOn`. Complements (does not replace) `dependsOn`.
+   * Validated on save: an out-of-range, self, or cyclic reference rejects the whole
+   * batch (nothing is written). See RM-R17.
+   */
+  dependsOnIndexes?: number[]
 }
 
 // Client → Server

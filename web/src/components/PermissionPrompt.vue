@@ -35,6 +35,20 @@ const proposedRequirements = computed<ProposedRequirement[]>(() => {
 })
 
 /**
+ * Human-readable labels for an item's intra-batch dependencies (`dependsOnIndexes`),
+ * resolving each 0-based index to the sibling's `#N「title」` in this same batch so the
+ * user sees the order relationship before allowing the save. Out-of-range indexes (the
+ * server rejects them) fall back to a bare `#N`.
+ */
+function batchDepLabels(r: ProposedRequirement): string[] {
+  const reqs = proposedRequirements.value
+  return (r.dependsOnIndexes ?? []).map((j) => {
+    const sib = reqs[j]
+    return sib ? `#${j + 1}「${sib.title}」` : `#${j + 1}`
+  })
+}
+
+/**
  * Undecided but not actionable ⇒ a historical request (buffer replay) the user
  * can no longer act on. Render it as one static line instead of a live card.
  */
@@ -248,6 +262,9 @@ function submitAsk() {
         <div class="req-confirm-content">{{ r.content }}</div>
         <div v-if="r.dependsOn && r.dependsOn.length" class="req-confirm-deps">
           依赖:{{ r.dependsOn.join('、') }}
+        </div>
+        <div v-if="batchDepLabels(r).length" class="req-confirm-deps">
+          依赖本批:{{ batchDepLabels(r).join('、') }}
         </div>
       </div>
     </div>

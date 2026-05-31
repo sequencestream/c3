@@ -103,6 +103,29 @@ describe('automation orchestrator', () => {
     expect(prompts[1]).toContain('/sdd-lite low')
   })
 
+  it('orders by intra-batch dependency, not submission/createdAt — the depended-on item starts first', async () => {
+    // A is submitted first (so its createdAt is earlier) but declares an intra-batch
+    // dependency on B (index 1). B must therefore develop before A despite A's earlier
+    // createdAt: the index ref was resolved to B's real id at insert time, so pickNext's
+    // dependency gate holds A back until B is done.
+    const [a, b] = insertRequirements(proj, [
+      { title: 'depends', content: 'c', priority: 'P0', dependsOnIndexes: [1] },
+      { title: 'prereq', content: 'c', priority: 'P0' },
+    ])
+    expect(a.dependsOn).toEqual([b.id]) // index resolved to the sibling's real id
+    setAutomate(a.id, true)
+    setAutomate(b.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const prompts: string[] = []
+    const { final } = await runToEnd(completingTurn(prompts))
+
+    expect(final.state).toBe('done')
+    expect(final.completedIds).toEqual([b.id, a.id]) // prereq (B) before dependent (A)
+    expect(prompts[0]).toContain('/sdd-lite prereq')
+    expect(prompts[1]).toContain('/sdd-lite depends')
+  })
+
   it('flips the requirement to in_progress as soon as the dev session binds (before the turn ends)', async () => {
     const [r] = insertRequirements(proj, [{ title: 'early', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)

@@ -184,6 +184,68 @@ export function getRequirement(id: string): Requirement | null {
   return row ? hydrate(d, [row])[0] : null
 }
 
+/**
+ * Resolve each item's effective dependency-id list for a batch insert (RM-R17),
+ * given the ids freshly minted for the SAME batch (`ids[i]` belongs to `items[i]`).
+ *
+ * Two sources are merged & de-duplicated per item:
+ *  - `dependsOn` — ids of requirements that already exist in the ledger (unchanged).
+ *  - `dependsOnIndexes` — 0-based indexes into THIS batch, resolved to the sibling's
+ *    `ids[index]`. Lets a batch express its own先后关系 before any row has an id.
+ *
+ * Pure (items + ids in, id-lists out) so the validation is unit-testable without a
+ * db. Throws — rejecting the WHOLE batch — when an index reference is out of range,
+ * points at itself, or forms a cycle among the batch's intra-batch edges (existing-id
+ * deps can't form a cycle with brand-new rows, so only index edges are checked).
+ */
+export function resolveBatchDependencies(
+  items: Pick<ProposedRequirement, 'dependsOn' | 'dependsOnIndexes'>[],
+  ids: string[],
+): string[][] {
+  const n = items.length
+  // Validate index references and collect the intra-batch edge list per item.
+  const idxEdges: number[][] = items.map((it, i) => {
+    const refs = it.dependsOnIndexes ?? []
+    for (const j of refs) {
+      if (!Number.isInteger(j) || j < 0 || j >= n) {
+        throw new Error(`批内依赖下标越界:第 ${i} 条引用了不存在的下标 ${j}(有效范围 0..${n - 1})`)
+      }
+      if (j === i) {
+        throw new Error(`批内依赖不能自引用:第 ${i} 条依赖了自身`)
+      }
+    }
+    return refs
+  })
+  detectBatchCycle(idxEdges)
+  // Merge existing-id deps with the resolved sibling ids, de-duplicated.
+  return items.map((it, i) => {
+    const merged = new Set<string>(it.dependsOn ?? [])
+    for (const j of idxEdges[i]) merged.add(ids[j])
+    return [...merged]
+  })
+}
+
+/** Throw if the intra-batch index edges contain a cycle (3-colour DFS). */
+function detectBatchCycle(edges: number[][]): void {
+  const WHITE = 0
+  const GRAY = 1
+  const BLACK = 2
+  const colour = new Array<number>(edges.length).fill(WHITE)
+  const visit = (n: number): void => {
+    colour[n] = GRAY
+    for (const m of edges[n]) {
+      if (colour[m] === GRAY) {
+        throw new Error(`批内依赖成环:第 ${n} 条与第 ${m} 条互相依赖`)
+      }
+      if (colour[m] === WHITE) visit(m)
+    }
+    colour[n] = BLACK
+  }
+  for (let i = 0; i < edges.length; i++) {
+    if (colour[i] === WHITE) visit(i)
+  }
+}
+
 /** Insert a batch of proposed requirements (status `todo`) in one transaction. */
 export function insertRequirements(
   projectPath: string,
@@ -192,16 +254,22 @@ export function insertRequirements(
   const d = requireDb()
   const proj = resolve(projectPath)
   const now = Date.now()
-  const ids: string[] = []
+  // Mint every id up front so intra-batch `dependsOnIndexes` can resolve to a real
+  // sibling id; validate + resolve BEFORE any write so an invalid batch (out-of-range
+  // / self / cyclic) rejects atomically with nothing persisted (RM-R17).
+  const ids: string[] = items.map(() => randomUUID())
+  const deps = resolveBatchDependencies(items, ids)
   tx(d, () => {
-    for (const it of items) {
-      const id = randomUUID()
-      ids.push(id)
+    items.forEach((it, i) => {
+      // Stagger created_at by batch index so same-priority, dependency-free items keep
+      // a stable, submission-order rank in the orchestrator's `createdAt` tiebreak —
+      // a single shared `now` left them arbitrarily ordered (RM-A3).
+      const createdAt = now + i
       d.run(
         `INSERT INTO requirements
            (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        id,
+        ids[i],
         proj,
         it.title,
         it.content,
@@ -209,18 +277,18 @@ export function insertRequirements(
         'todo',
         it.module ?? '',
         null,
-        now,
-        now,
+        createdAt,
+        createdAt,
         null,
       )
-      for (const dep of it.dependsOn ?? []) {
+      for (const dep of deps[i]) {
         d.run(
           'INSERT OR IGNORE INTO requirement_deps (requirement_id, depends_on_id) VALUES (?,?)',
-          id,
+          ids[i],
           dep,
         )
       }
-    }
+    })
   })
   // Re-read so callers get fully-hydrated rows (incl. dependsOn).
   const placeholders = ids.map(() => '?').join(',')

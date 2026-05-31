@@ -39,7 +39,9 @@ export function createRequirementMcpServer(
     tools: [
       tool(
         'save_requirements',
-        '提交一批拟新增的需求条目;落库前由用户在 c3 UI 确认。',
+        '提交一批拟新增的需求条目;落库前由用户在 c3 UI 确认。' +
+          '当本批需求之间存在先后/依赖关系时,用每条的 dependsOnIndexes 字段(同批数组下标)' +
+          '声明它依赖本批的哪些兄弟需求,落库时会解析为真实 id,使自动化编排按依赖顺序启动。',
         {
           requirements: z.array(
             z.object({
@@ -47,7 +49,18 @@ export function createRequirementMcpServer(
               content: z.string(),
               priority: z.enum(['P0', 'P1', 'P2', 'P3']),
               module: z.string().optional().describe('所属模块名(按标题/内容推断,可留空)'),
-              dependsOn: z.array(z.string()).optional(),
+              dependsOn: z
+                .array(z.string())
+                .optional()
+                .describe('依赖的“已存在需求”的 id(引用本次提交之前就已落库的需求)'),
+              dependsOnIndexes: z
+                .array(z.number().int())
+                .optional()
+                .describe(
+                  '本批内依赖:用同批 requirements 数组的下标(0 起)引用兄弟需求;' +
+                    '有先后关系时务必填写(被依赖项应排在依赖项之前提交)。' +
+                    '与 dependsOn 并用互补;下标越界/自引用/批内成环会导致整批保存失败。',
+                ),
             }),
           ),
         },

@@ -110,6 +110,46 @@ describe('save_requirements tool handler', () => {
     expect(logout.dependsOn).toEqual(['x'])
   })
 
+  it('resolves intra-batch dependsOnIndexes to the sibling real id through the handler', async () => {
+    // RM-R17: an item can reference a sibling in the same batch by 0-based index;
+    // the handler (via insertRequirements) resolves it to that sibling's minted id.
+    const handler = getSaveHandler(createRequirementMcpServer(proj, () => {}))
+    const res = await handler(
+      {
+        requirements: [
+          { title: 'Schema', content: '', priority: 'P0' },
+          { title: 'Migration', content: '', priority: 'P0', dependsOnIndexes: [0] },
+        ],
+      },
+      {},
+    )
+    expect(res.isError).toBeFalsy()
+    const saved = listRequirements(proj)
+    const schema = saved.find((r) => r.title === 'Schema')!
+    const migration = saved.find((r) => r.title === 'Migration')!
+    expect(migration.dependsOn).toEqual([schema.id])
+  })
+
+  it('returns isError without persisting when an intra-batch reference is invalid (cycle)', async () => {
+    // A cyclic / out-of-range index makes insertRequirements throw; the handler catches
+    // it and reports a保存失败 so the agent learns nothing was written (atomic reject).
+    const onSaved = vi.fn()
+    const handler = getSaveHandler(createRequirementMcpServer(proj, onSaved))
+    const res = await handler(
+      {
+        requirements: [
+          { title: 'A', content: '', priority: 'P0', dependsOnIndexes: [1] },
+          { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+        ],
+      },
+      {},
+    )
+    expect(res.isError).toBe(true)
+    expect(res.content[0].text).toContain('保存失败')
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(listRequirements(proj)).toEqual([])
+  })
+
   it('binds to the closure project path, not a wire-supplied one (no cross-project save)', async () => {
     // Design R6 / §4.5: projectPath is captured in the closure so the agent can't
     // redirect the save elsewhere. Two servers for two projects stay isolated.

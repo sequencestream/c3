@@ -89,6 +89,18 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   `setAutomate(id, automate)`, `updateRequirement`, `getRequirement`. The internal `Row`/`hydrate`
   carry `module` + `automate` (mapped to boolean) so every read path returns them;
   `updateRequirement` does not yet patch `module` (out of scope, no schema blocker).
+- **Intra-batch dependencies (RM-R17).** `insertRequirements` mints **all** row ids up front
+  (`items.map(() => randomUUID())`) so a batch can reference its own siblings before any row has an
+  id. A pure, exported `resolveBatchDependencies(items, ids)` then, per item, validates
+  `dependsOnIndexes` (each must be an in-range, non-self index), runs a 3-colour DFS
+  (`detectBatchCycle`) to reject any intra-batch cycle, and returns the merged & de-duplicated
+  dependency-id list (existing-id `dependsOn` ∪ the indexes resolved to `ids[index]`). It runs
+  **before** the transaction opens, so an invalid batch throws and nothing is written; the
+  `save_requirements` handler turns the throw into an `isError` result. Being pure (items + ids in,
+  id-lists out) it is unit-tested without a db. Each row is stamped `created_at = now + index` so
+  same-priority, dependency-free items keep a deterministic submission-order rank in the
+  orchestrator's oldest-first tiebreak (RM-A3), instead of the arbitrary order a single shared
+  `now` produced.
 - Communication session (single table): `getChatSession(projectPath)`
   (`is_current=1`), `setChatSession` (clear the project's `is_current` then upsert the new row as
   `is_current=1`, also entering the hidden set), `isHiddenSession`/`listHiddenSessions`,
@@ -157,7 +169,12 @@ project material only, never edit/write/run change commands/spawn sub-agents/run
 converse with the user and break requests into discrete, verifiable, right-sized items (each with
 title/content/priority P0–P3/optional dependencies/**inferred module name**); confirm a list with
 the user first; on approval call `save_requirements` (the system pops the confirmation, the real
-write follows the user's allow); never pretend a save happened. The prompt asks the agent to infer
+write follows the user's allow); never pretend a save happened. The dependency guidance is
+explicit: use `dependsOn` for requirements that already exist (by id) and `dependsOnIndexes` for
+**sibling items in the same batch** (by 0-based array index), and **must** declare the batch's
+order — putting the prerequisite earlier in the array and pointing the dependent item's
+`dependsOnIndexes` at it — whenever items have先后关系, so the orchestrator sequences them right
+(RM-R17). The prompt asks the agent to infer
 each item's **module name** from its title/content (e.g. auth、session、requirement-management),
 leaving it blank when unsure, and to pass `module` per item to `save_requirements`. This is scheme
 **a** (infer from title/content); a future extension may key off the project's actual module
@@ -183,7 +200,12 @@ server is built solely on the `kind === 'requirement'` / `gate: 'requirement'` l
 call uses four positional args (name, required description, a **raw zod shape** — not
 `z.object(...)` — and an async handler returning a `CallToolResult`). Each requirement element
 includes an optional `module: z.string().optional()` (described as the inferred module name, may
-be left blank); the handler passes it straight through to `insertRequirements` (RM-R14). The handler runs **only
+be left blank); the handler passes it straight through to `insertRequirements` (RM-R14). It also
+carries `dependsOn` (ids of already-existing requirements) and `dependsOnIndexes:
+z.array(z.number().int()).optional()` (0-based indexes into the same batch, described as the
+intra-batch dependency to fill when items have先后关系); both flow through to `insertRequirements`,
+which resolves the indexes (RM-R17). The tool's top-level description tells the agent to use
+`dependsOnIndexes` for intra-batch order so the orchestrator sequences correctly. The handler runs **only
 after** the human confirmation (the gateway already allowed); it writes via
 `store.insertRequirements` and broadcasts a `requirements` refresh, returning a text result (or
 `isError` text on db-unavailable / failure so the agent learns it did not save). `projectPath` is
@@ -339,7 +361,11 @@ the list) (RM-R12).
   `set-automate` (`@click.stop`, toggles `!r.automate`); the button emits `start-automation`/`stop-automation`.
 - **Save confirmation:** `PermissionPrompt.vue` adds a branch for
   `toolName==='mcp__c3__save_requirements'` rendering each proposed item as a card
-  (title/priority/dependency) with Save/Cancel mapped to allow/deny.
+  (title/priority/dependency) with Save/Cancel mapped to allow/deny. Dependencies render on two
+  lines: existing-id deps as "依赖:…" and intra-batch deps (`dependsOnIndexes`) as
+  "依赖本批:#N「title」" — a `batchDepLabels` helper resolves each 0-based index back to the
+  sibling's title in the same `proposedRequirements` array so the user sees the order relationship
+  before allowing (RM-R17).
 - **Requirement data:** `App.vue` holds `requirements: Record<projectPath, Requirement[]>`,
   refreshed by the `requirements` message, and `automation: Record<projectPath, AutomationStatus>`,
   refreshed by the `automation_status` message; `RequirementList` receives the current project's

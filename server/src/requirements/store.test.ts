@@ -13,6 +13,7 @@ import {
   listRequirements,
   rebindChatSession,
   resetStoreForTests,
+  resolveBatchDependencies,
   setChatSession,
   setLastDevSession,
   updateRequirement,
@@ -187,6 +188,120 @@ describe('requirements CRUD', () => {
     resetStoreForTests()
     expect(() => listRequirements(proj)).not.toThrow()
     expect(getRequirement('old-1')?.module).toBe('')
+  })
+})
+
+describe('resolveBatchDependencies (pure)', () => {
+  const ids = ['id-0', 'id-1', 'id-2']
+
+  it('resolves intra-batch indexes to sibling ids', () => {
+    const out = resolveBatchDependencies(
+      [{ dependsOnIndexes: [] }, { dependsOnIndexes: [0] }, { dependsOnIndexes: [0, 1] }],
+      ids,
+    )
+    expect(out).toEqual([[], ['id-0'], ['id-0', 'id-1']])
+  })
+
+  it('merges existing-id deps with resolved indexes, de-duplicated', () => {
+    const out = resolveBatchDependencies(
+      [{ dependsOn: ['ext'] }, { dependsOn: ['ext', 'id-0'], dependsOnIndexes: [0] }],
+      ['id-0', 'id-1'],
+    )
+    expect(out[0]).toEqual(['ext'])
+    // 'id-0' appears via both dependsOn and dependsOnIndexes → kept once
+    expect(out[1].sort()).toEqual(['ext', 'id-0'])
+  })
+
+  it('leaves existing-id-only batches untouched (back-compat)', () => {
+    const out = resolveBatchDependencies([{ dependsOn: ['x', 'y'] }, {}], ['id-0', 'id-1'])
+    expect(out).toEqual([['x', 'y'], []])
+  })
+
+  it('rejects an out-of-range index', () => {
+    expect(() => resolveBatchDependencies([{}, { dependsOnIndexes: [5] }], ids)).toThrow(/越界/)
+    expect(() => resolveBatchDependencies([{ dependsOnIndexes: [-1] }, {}], ids)).toThrow(/越界/)
+  })
+
+  it('rejects a self reference', () => {
+    expect(() => resolveBatchDependencies([{ dependsOnIndexes: [0] }], ['id-0'])).toThrow(/自引用/)
+  })
+
+  it('rejects a direct cycle', () => {
+    expect(() =>
+      resolveBatchDependencies(
+        [{ dependsOnIndexes: [1] }, { dependsOnIndexes: [0] }],
+        ['id-0', 'id-1'],
+      ),
+    ).toThrow(/成环/)
+  })
+
+  it('rejects a transitive cycle', () => {
+    // 0 → 1 → 2 → 0
+    expect(() =>
+      resolveBatchDependencies(
+        [{ dependsOnIndexes: [1] }, { dependsOnIndexes: [2] }, { dependsOnIndexes: [0] }],
+        ids,
+      ),
+    ).toThrow(/成环/)
+  })
+})
+
+describe('insertRequirements — intra-batch dependencies', () => {
+  it('resolves dependsOnIndexes to the sibling real id on save', () => {
+    const [a, b] = insertRequirements(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] }, // depends on A
+    ])
+    expect(a.dependsOn).toEqual([])
+    expect(b.dependsOn).toEqual([a.id])
+  })
+
+  it('merges existing-id deps with intra-batch index deps', () => {
+    const [, b] = insertRequirements(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0', dependsOn: ['ext-id'], dependsOnIndexes: [0] },
+    ])
+    const a = listRequirements(proj).find((r) => r.title === 'A')!
+    expect(b.dependsOn.sort()).toEqual(['ext-id', a.id].sort())
+  })
+
+  it('staggers created_at by batch index so submission order is stable', () => {
+    const [a, b, c] = insertRequirements(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0' },
+      { title: 'C', content: '', priority: 'P0' },
+    ])
+    expect(a.createdAt).toBeLessThan(b.createdAt)
+    expect(b.createdAt).toBeLessThan(c.createdAt)
+  })
+
+  it('rejects the whole batch atomically on an out-of-range index (nothing persisted)', () => {
+    expect(() =>
+      insertRequirements(proj, [
+        { title: 'A', content: '', priority: 'P0' },
+        { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [9] },
+      ]),
+    ).toThrow(/越界/)
+    expect(listRequirements(proj)).toEqual([])
+  })
+
+  it('rejects the whole batch atomically on a self reference (nothing persisted)', () => {
+    expect(() =>
+      insertRequirements(proj, [
+        { title: 'A', content: '', priority: 'P0', dependsOnIndexes: [0] },
+      ]),
+    ).toThrow(/自引用/)
+    expect(listRequirements(proj)).toEqual([])
+  })
+
+  it('rejects the whole batch atomically on a cycle (nothing persisted)', () => {
+    expect(() =>
+      insertRequirements(proj, [
+        { title: 'A', content: '', priority: 'P0', dependsOnIndexes: [1] },
+        { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+      ]),
+    ).toThrow(/成环/)
+    expect(listRequirements(proj)).toEqual([])
   })
 })
 

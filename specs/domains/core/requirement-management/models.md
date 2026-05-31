@@ -34,13 +34,14 @@ Dependencies; may reference one development Session (a normal session, owned by 
 A single item inside a `save_requirements` call; also what the confirmation dialog renders. Not
 yet persisted — it becomes a Requirement (status `todo`) only on confirmed save (RM-R5/RM-R6).
 
-| Attribute   | Type                        | Description                                                |
-| ----------- | --------------------------- | ---------------------------------------------------------- |
-| `title`     | text                        | Proposed title                                             |
-| `content`   | text                        | Proposed description                                       |
-| `priority`  | enum `P0`\|`P1`\|`P2`\|`P3` | Proposed 需求级别                                          |
-| `module`    | text (optional)             | Inferred module name; omitted → persisted as `''` (RM-R14) |
-| `dependsOn` | `id[]` (optional)           | Proposed intra-project dependencies                        |
+| Attribute          | Type                        | Description                                                                                                                                       |
+| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`            | text                        | Proposed title                                                                                                                                    |
+| `content`          | text                        | Proposed description                                                                                                                              |
+| `priority`         | enum `P0`\|`P1`\|`P2`\|`P3` | Proposed 需求级别                                                                                                                                 |
+| `module`           | text (optional)             | Inferred module name; omitted → persisted as `''` (RM-R14)                                                                                        |
+| `dependsOn`        | `id[]` (optional)           | Proposed dependencies on **already-existing** intra-project requirements (by id)                                                                  |
+| `dependsOnIndexes` | `number[]` (optional)       | Proposed dependencies on **sibling** items in the same batch, by 0-based array index; resolved to the sibling's minted id at insert time (RM-R17) |
 
 ## Requirement Dependency
 
@@ -52,7 +53,10 @@ A directed edge within one project.
 | `dependsOnId`   | text (UUID) | The requirement it depends on |
 
 Display + warning only: an item with any dependency not `done` shows a hint, and launching
-development on it warns but is not blocked (RM-R11). No topological/cycle enforcement in v1.
+development on it warns but is not blocked (RM-R11). No topological/cycle enforcement in v1
+**for the persisted graph** — but a single `save_requirements` batch's intra-batch references
+(`dependsOnIndexes`) are validated at insert time (out-of-range / self / cycle reject the whole
+batch, RM-R17), since they are resolved to real ids before any row is written.
 
 ## Communication Session
 

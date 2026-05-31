@@ -233,7 +233,10 @@ A per-project, in-memory state machine driven entirely by message handlers and a
     **buffer**'s last `assistant_text` (the in-flight turn's latest message may have been emitted
     before the viewer attached, so the judge would otherwise read `''`). If the run already settled in
     the race between the controller's `isRunning` check and `addViewer` (`rt.run == null`), it resolves
-    immediately from the buffer's trailing `turn_end` (`complete`/`error`) instead of hanging.
+    immediately from the buffer's trailing `turn_end` (`complete`/`error`) instead of hanging. On
+    this replay path it also sets `pendingQuestion = hasPendingQuestion(rt.buffer)` so a settled turn
+    that ended on an unanswered `AskUserQuestion` is flagged for `develop()`'s human-decision guard
+    (RM-A11) — otherwise it would read as a plain `complete` and risk a blind "继续".
 - **Main loop (`AutomationController.run`).** `pickNext` selects the best eligible requirement
   (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
   each, `develop()` first picks its **starting** action by precedence: (1) if `lastDevSessionId` is
@@ -252,14 +255,31 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   `in_progress` → resume "继续" (cap `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/`blocked`/push-fail
   → `fail(reason)` and stop the whole loop (RM-A6). No eligible item → state `done` (RM-A7). Abort
   mid-run → state `idle`.
-- **Completion judge (`judge.ts`).** `judgeCompletion` builds a Chinese prompt (requirement + last
+  - **Human-decision guard (RM-A11).** Before the `done`/`in_progress`/`stuck` branch, `develop()`
+    checks `turn.pendingQuestion`: when the turn ended on an **unanswered `AskUserQuestion`**, it
+    `fail(reason)`s immediately — **even if the judge said `in_progress`** — so a mis-judged verdict
+    can never drive a blind "继续" over a real user choice. The flag is computed by the pure
+    `hasPendingQuestion(buffer)` (exported from `automation.ts`, unit-tested): an `AskUserQuestion`
+    `tool_use` with no matching `tool_result` (by `toolUseId`) means the question was never answered.
+    A **live** AskUserQuestion is already caught as `blocked` by `runDevTurn` (the viewer aborts the
+    hanging run, RM-A9); the flag specifically covers the **attach buffer-replay** path, where a
+    settled run carrying a pending question would otherwise surface as `complete`.
+- **Completion judge (`judge.ts`).** `judgeCompletion` builds an English prompt (requirement + last
   message + **evidence**: `git diff HEAD --stat` for uncommitted work AND `git log --oneline -5` for
   recent commits — `/sdd-lite` often self-commits, leaving a clean tree, so an empty diff must NOT
-  read as incomplete; the prompt instructs the judge to accept either source and lean `done` when
-  the agent reports completion and the evidence is consistent) demanding a strict
-  `{"verdict","reason"}` JSON, runs it through the tool-less `askOneShot` (default-agent env/model
-  via `resolveSessionLaunch(null)`), logs the verdict, and tolerantly
-  parses the first `{…}`; an unparseable answer is treated as `stuck` (fail-safe, RM-A4).
+  read as incomplete; either source counts) demanding a strict `{"verdict","reason"}` JSON. The
+  verdict rules are ordered **stuck → done → in_progress** with the priority pinned in the prompt:
+  (1) **stuck first** — any human-intervention signal (asking the user / `AskUserQuestion`,
+  presenting options or seeking a preference/direction/scope/trade-off; waiting on a permission;
+  blocked for lack of context; errored/gave up; or claims done with no consistent evidence);
+  (2) **done** only if not stuck and the change evidence is consistent (the agent's word alone is
+  insufficient); (3) **in_progress** as the **fallback** for a pure `/sdd-lite` checkpoint or
+  self-driven remaining steps. The old "bias toward done / continue" wording is **removed** —
+  `in_progress` is no longer a default. It runs through the tool-less `askOneShot` (default-agent
+  env/model via `resolveSessionLaunch(null)`), logs the verdict, and tolerantly parses the first
+  `{…}`; an unparseable / out-of-range answer is treated as `stuck` (fail-safe — never silently
+  `in_progress`, RM-A4). The judge is the **first** line of the human-decision defence; the
+  orchestrator's `pendingQuestion` guard (RM-A11) is the second.
 - **Git (`git.ts`).** `gitDiffStat`, `gitRecentLog`, and `commitAndPush` shell out via
   `execFile('git', ['-C', cwd, …])` and never reject (they return exit codes/stderr).
   `commitAndPush` stages all, commits `feat: <title>` **only when there are changes**, and then

@@ -287,6 +287,31 @@ describe('automation orchestrator', () => {
     expect(prompts[1]).toBe('继续') // resumed after the checkpoint
   })
 
+  it('stops (does NOT 继续) when the turn ends on an unanswered question, even if the judge says in_progress', async () => {
+    const [r] = insertRequirements(proj, [{ title: 'asks', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    // The judge mis-reads the human-decision point as a checkpoint…
+    judgeMock.mockResolvedValue({ verdict: 'in_progress', reason: '检查点' })
+
+    // …but the turn carries the pendingQuestion guard, so the loop must stop.
+    const prompts: string[] = []
+    const runDevTurn: AutomationHooks['runDevTurn'] = async (input) => {
+      prompts.push(input.prompt)
+      return {
+        outcome: 'complete',
+        sessionId: 'sess-ask',
+        lastMessage: '用方案A还是方案B?',
+        pendingQuestion: true,
+      }
+    }
+    const { final } = await runToEnd(runDevTurn)
+
+    expect(final.state).toBe('error')
+    expect(final.error).toContain('人工决策')
+    expect(commitMock).not.toHaveBeenCalled()
+    expect(prompts).toEqual([expect.stringContaining('/sdd-lite asks')]) // no second "继续"
+  })
+
   it('stops with an error when the judge says stuck', async () => {
     const [r] = insertRequirements(proj, [{ title: 'bad', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)

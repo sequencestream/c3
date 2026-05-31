@@ -63,6 +63,7 @@ import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
 import {
   getAutomationStatus,
+  hasPendingQuestion,
   startAutomation,
   stopAutomation,
   type AutomationHooks,
@@ -283,7 +284,17 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               break
             }
           }
-          finish({ outcome, sessionId: rt.sessionId, lastMessage: lastText, detail })
+          // The settled turn may have ended on an unanswered AskUserQuestion (a real
+          // human decision). It reads as `complete` here, but the orchestrator must
+          // stop, not "继续" over it — flag it so develop()'s guard catches a
+          // mis-judged in_progress (RM-A11).
+          finish({
+            outcome,
+            sessionId: rt.sessionId,
+            lastMessage: lastText,
+            detail,
+            pendingQuestion: hasPendingQuestion(rt.buffer),
+          })
         }
         return
       }

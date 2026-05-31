@@ -25,7 +25,7 @@
  * One controller per project (module-level map). State survives connection churn
  * like every other runtime; it does NOT survive a server restart (in-memory).
  */
-import type { AutomationStatus, Requirement } from '@ccc/shared/protocol'
+import type { AutomationStatus, Requirement, ServerToClient } from '@ccc/shared/protocol'
 import { getRequirement, listRequirements, setLastDevSession, updateStatus } from './store.js'
 import { judgeCompletion } from './judge.js'
 import { commitAndPush, gitDiffStat, gitRecentLog } from '../git.js'
@@ -44,6 +44,15 @@ export interface DevTurnResult {
   lastMessage: string
   /** Error message (`error`) or blocking tool name / 'aborted' (`blocked`). */
   detail?: string
+  /**
+   * The turn ended on an UNANSWERED human-decision point — an `AskUserQuestion`
+   * permission request that was never resolved. A live AskUserQuestion settles the
+   * turn as `blocked` (the viewer aborts the run), but on the attach buffer-replay
+   * path a settled run with a pending question can surface as `complete`; this flag
+   * lets {@link AutomationController.develop} force a stop even if the completion
+   * judge mis-reads it as `in_progress` — a real decision must not be "继续"-ed away.
+   */
+  pendingQuestion?: boolean
 }
 
 export interface RunDevTurnInput {
@@ -94,6 +103,31 @@ export interface AutomationHooks {
 
 /** Max "继续" resumes per requirement before giving up (clears sdd-lite checkpoints). */
 const MAX_CONTINUATIONS = 10
+
+/**
+ * Does a runtime buffer end on an UNANSWERED `AskUserQuestion` — a real human
+ * decision point left open? An answered question gets a `tool_result` echoed back
+ * with the same `toolUseId`; an unanswered one (the run was killed / nobody
+ * replied) has the `tool_use` but no matching `tool_result`. Used as a guard
+ * independent of the completion judge: a turn that surfaced via the attach
+ * buffer-replay path can read as `complete` while still carrying a pending
+ * question, and a blind "继续" must NOT be sent to answer it (see RM-A11).
+ *
+ * Pure (buffer in, boolean out) so the orchestrator's defence is unit-testable
+ * without standing up a runtime.
+ */
+export function hasPendingQuestion(buffer: readonly ServerToClient[]): boolean {
+  const answered = new Set<string>()
+  for (const e of buffer) {
+    if (e.type === 'tool_result') answered.add(e.toolUseId)
+  }
+  for (const e of buffer) {
+    if (e.type === 'tool_use' && e.toolName === 'AskUserQuestion' && !answered.has(e.toolUseId)) {
+      return true
+    }
+  }
+  return false
+}
 
 function idleStatus(projectPath: string): AutomationStatus {
   return {
@@ -284,6 +318,15 @@ class AutomationController {
         signal: this.abort.signal,
       })
       if (this.abort.signal.aborted) return false
+
+      // Defence in depth (independent of the judge): if the turn ended on an
+      // unanswered AskUserQuestion, a real human decision is pending — never let a
+      // mis-judged `in_progress` drive a blind "继续" over it. Force a stop with a
+      // recorded reason, exactly like the stuck / cap paths below.
+      if (turn.pendingQuestion) {
+        this.fail(`「${req.title}」需要人工决策(未作答的提问):${verdict.reason}`)
+        return false
+      }
 
       if (verdict.verdict === 'done') {
         const res = await commitAndPush(this.projectPath, `feat: ${req.title}`)

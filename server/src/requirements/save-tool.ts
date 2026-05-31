@@ -27,6 +27,15 @@ export function createRequirementMcpServer(
 ): Record<string, McpServerConfig> {
   const server = createSdkMcpServer({
     name: 'c3',
+    // Keep this server's tools resident in the turn-1 prompt instead of letting
+    // the harness defer them behind tool search. Without this, the requirement
+    // agent must ToolSearch `save_requirements` back before every save (an extra
+    // round-trip + tokens). `alwaysLoad` sets `_meta['anthropic/alwaysLoad']` on
+    // each tool (≡ API `defer_loading: false`). The blocking-startup side effect
+    // is moot here — this is an in-process MCP server, so it connects instantly.
+    // Scope is naturally the requirement agent only: this server is built solely
+    // by the `kind === 'requirement'` / `gate: 'requirement'` launch path.
+    alwaysLoad: true,
     tools: [
       tool(
         'save_requirements',

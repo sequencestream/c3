@@ -172,7 +172,14 @@ out of sync with code (RM-R15).
 
 ## `save_requirements` tool (`save-tool.ts`)
 
-`createSdkMcpServer({ name: 'c3', tools: [ saveRequirementsTool(projectPath) ] })`. The `tool()`
+`createSdkMcpServer({ name: 'c3', alwaysLoad: true, tools: [ saveRequirementsTool(projectPath) ] })`.
+`alwaysLoad: true` stamps `_meta['anthropic/alwaysLoad']` on each registered tool (≡ API
+`defer_loading: false`), so `save_requirements` stays resident in the turn-1 prompt instead of
+being deferred behind the harness's tool search — the agent never has to ToolSearch its schema
+back before a save. The "blocks startup until the server connects" side effect is moot: this is an
+in-process SDK MCP server, so it connects instantly. Scope is the requirement agent only — this
+server is built solely on the `kind === 'requirement'` / `gate: 'requirement'` launch path
+(ADR 0007). The `tool()`
 call uses four positional args (name, required description, a **raw zod shape** — not
 `z.object(...)` — and an async handler returning a `CallToolResult`). Each requirement element
 includes an optional `module: z.string().optional()` (described as the inferred module name, may

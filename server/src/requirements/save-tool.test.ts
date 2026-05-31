@@ -64,6 +64,21 @@ describe('save_requirements tool handler', () => {
     expect(Object.keys(c3.instance._registeredTools)).toContain('save_requirements')
   })
 
+  it('marks the tool always-load so it stays resident (no ToolSearch before save)', () => {
+    // ADR 0007: the requirement agent must not have to ToolSearch `save_requirements`
+    // back before every save. `createSdkMcpServer({ alwaysLoad: true })` stamps
+    // `_meta['anthropic/alwaysLoad'] = true` on each registered tool (≡ API
+    // `defer_loading: false`), keeping the schema in the turn-1 prompt. Asserting
+    // the meta — not just the tool's existence — guards the deferral behaviour.
+    const servers = createRequirementMcpServer(proj, () => {})
+    const c3 = servers.c3 as unknown as {
+      instance: { _registeredTools: Record<string, { _meta?: Record<string, unknown> }> }
+    }
+    expect(c3.instance._registeredTools.save_requirements._meta).toMatchObject({
+      'anthropic/alwaysLoad': true,
+    })
+  })
+
   it('persists a confirmed batch as todo, calls onSaved, returns a success result', async () => {
     // AC-4.3 / AC-4.4: reaching the handler == user allowed; rows land as `todo`,
     // scoped to the project; onSaved fires so the server can broadcast a refresh.

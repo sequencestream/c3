@@ -68,6 +68,22 @@ Adopt options 2, 4, and 6 together.
   `mcp__c3__save_requirements`) flows through the existing `canUseTool` → `permission_request` /
   `permission_response` path; the tool handler writes to the ledger only after the user allows,
   and reports an error result to the agent on deny/failure.
+- **`save_requirements` is pinned resident (`alwaysLoad`).** The `c3` SDK MCP server is built with
+  `createSdkMcpServer({ alwaysLoad: true })`, which stamps `_meta['anthropic/alwaysLoad']` on each
+  tool (≡ API `defer_loading: false`). Otherwise the harness's tool search defers the MCP tool, and
+  the agent must `ToolSearch` the `save_requirements` schema back before every save — an extra
+  round-trip and token cost on the hot path. `alwaysLoad` only keeps the **schema** resident; it
+  does **not** bypass the gate — `canUseTool` still raises the human confirmation. The
+  blocks-startup-until-connected side effect of `alwaysLoad` is moot here: an in-process MCP server
+  connects instantly. Scope is the requirement agent only, since the `c3` server is built solely on
+  the `kind === 'requirement'` / `gate: 'requirement'` launch path.
+  - **Limitation (recorded, not yet solvable):** built-in tools the agent also uses
+    (`AskUserQuestion`, `Read`/`Grep`/`Glob`/`LS`) have **no** always-load lever in
+    `@anthropic-ai/claude-agent-sdk` 0.3.158 — `ToolConfig` exposes only
+    `askUserQuestion.previewFormat`, and there is no global tool-search toggle in `Options`. So those
+    may still be deferred behind tool search. **Trigger to revisit:** when the SDK exposes a
+    built-in-tool `alwaysLoad` (or an `Options`-level tool-search switch), extend the residency to
+    the read-only/interactive built-in set the same way.
 - **The ledger uses a cross-runtime SQLite driver adapter.** One minimal synchronous interface
   (`exec`/`run`/`all`/`get`) selects `bun:sqlite` vs `node:sqlite` by `globalThis.Bun`; the two
   never cross. Adapters use only `?` placeholders and read rows by field. esbuild must mark both
@@ -95,6 +111,9 @@ Adopt options 2, 4, and 6 together.
   mode.
 - A requirement MUST be persisted only inside the `save_requirements` handler, after a human
   allow. No code path may write the ledger to bypass that confirmation.
+- The `c3` MCP server MUST keep `save_requirements` resident (`alwaysLoad: true`) so it is not
+  deferred behind tool search. Reviewers reject dropping `alwaysLoad`, and reject any reading of it
+  as a permission relaxation — it pins the schema only; the gate confirmation is unchanged.
 - `AskUserQuestion` MUST stay out of `disallowedTools` and be admitted by the requirement gate as
   an interactive (non-write) tool, but only through the answer-injection path (prompt the human,
   inject `withAnswers` on allow, deny on cancel) — never a plain allow. Reviewers reject treating

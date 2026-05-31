@@ -80,3 +80,49 @@ export function compareByCompletion(a: CompletionOrderInput, b: CompletionOrderI
   if (ta !== tb) return tb - ta
   return a.priority.localeCompare(b.priority)
 }
+
+/** 时刻格式化选项。`short` → MM/DD,`full` → YYYY-MM-DD HH:mm(默认)。 */
+export interface FormatDateOpts {
+  style?: 'short' | 'full'
+}
+
+/**
+ * 将毫秒时间戳格式化为可读日期字符串。
+ *
+ * - `short`: `MM/DD` 风格，月日补零两位，与现有行内日期前缀一致。
+ * - `full` (默认): `YYYY-MM-DD HH:mm` 完整格式，用于元信息区。
+ */
+export function formatDate(ms: number, opts?: FormatDateOpts): string {
+  const d = new Date(ms)
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  if (opts?.style === 'short') {
+    return `${mo}/${dd}`
+  }
+  const h = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${y}-${mo}-${dd} ${h}:${mi}`
+}
+
+/** 单项依赖的描述信息。 */
+export interface DepInfo {
+  id: string
+  title: string
+  done: boolean
+}
+
+/**
+ * 将需求的依赖 ID 列表解析为带标题与完成状态的 DepInfo 数组。
+ * 利用 `reqList` 查询依赖的标题与状态。
+ *
+ * @returns 依赖数组；无依赖时返回空数组。
+ */
+export function formatDependsOn(r: Requirement, reqList: Requirement[]): DepInfo[] {
+  if (!r.dependsOn.length) return []
+  const byId = new Map(reqList.map((x) => [x.id, x]))
+  return r.dependsOn.map((id) => {
+    const dep = byId.get(id)
+    return { id, title: dep?.title ?? id, done: dep?.status === 'done' }
+  })
+}

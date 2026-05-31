@@ -378,7 +378,15 @@ the list) (RM-R12).
   before the title/priority badge/status (`.req-status` 为彩色 pill 徽标,`:class="r.status"` 按
   draft 灰 / todo 主色 / in_progress 橙 / done 绿 / cancelled 红映射语义色,风格同 `.req-priority`,
   收缩态不隐藏;标签文案来自 `lib/req-list-view.ts` 的 `statusLabel`)
-  and a dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
+  and a dependency hint;
+  **展开详情(手风琴,至多一项展开):** `.req-detail` 展示 `r.content` 全文,
+  下方 `.req-meta` 显示次要元信息(字号 `--fs-caption`、灰色 `--c-text-muted`):
+  创建时间 `formatDate(r.createdAt)` (完整格式 `YYYY-MM-DD HH:mm`)、
+  完成时间(仅 `r.completedAt` 非空时显示,同完整格式)、
+  依赖列表(无依赖时不显示;已完成依赖灰色、未完成依赖以 `--c-warning` 橙色并加 ⚠ 标记);
+  时间与依赖格式化由 `lib/req-list-view.ts` 的 `formatDate`/`formatDependsOn` 纯函数完成;
+  再下方 `.req-deps` 仅当存在未完成依赖时显示简短警告;
+  per-status actions: Refine + Launch-development for `todo`, Development-details
   for launched, mark done/cancel for any), then a **trailing automate toggle icon** (`.req-automate`,
   渲染于 `.req-actions` 操作按钮排末尾、所有操作按钮之后;`r.automate` → ⏳ tooltip `in auto queue`,
   否则 ✋ tooltip `manual trigger mode`;因属于 `.req-actions`,收缩态随操作区一并隐藏);

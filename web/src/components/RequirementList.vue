@@ -9,6 +9,8 @@ import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
 import {
   compareByCompletion,
+  formatDate,
+  formatDependsOn,
   panelToggleLabel,
   reqRunStatusLabel,
   rowVisibility,
@@ -121,10 +123,7 @@ function togglePanel(): void {
 
 // 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt;月日补零两位。
 function datePrefix(r: Requirement): string {
-  const d = new Date(r.completedAt ?? r.createdAt)
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${mm}/${dd}`
+  return formatDate(r.completedAt ?? r.createdAt, { style: 'short' })
 }
 </script>
 
@@ -240,6 +239,22 @@ function datePrefix(r: Requirement): string {
           </div>
         </div>
         <div v-if="r.id === expandedId" class="req-detail">{{ r.content }}</div>
+        <div v-if="r.id === expandedId" class="req-meta">
+          <span class="req-meta-item">创建: {{ formatDate(r.createdAt) }}</span>
+          <span v-if="r.completedAt" class="req-meta-item"
+            >完成: {{ formatDate(r.completedAt) }}</span
+          >
+          <span v-if="formatDependsOn(r, props.requirements).length" class="req-meta-item">
+            依赖:
+            <span
+              v-for="(dep, di) in formatDependsOn(r, props.requirements)"
+              :key="dep.id"
+              :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
+            >
+              {{ di > 0 ? '、' : '' }}{{ dep.title }}{{ dep.done ? '' : ' ⚠' }}
+            </span>
+          </span>
+        </div>
         <div v-if="unfinishedDeps(r).length" class="req-deps" title="存在未完成依赖">
           ⚠ 依赖未完成:{{
             unfinishedDeps(r)

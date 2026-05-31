@@ -1650,6 +1650,28 @@ button.stop-btn:hover:not(:disabled) {
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* 展开详情下方的次要元信息区:创建/完成时间、依赖关系。字号小于正文且灰色。 */
+.req-meta {
+  margin-top: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3) var(--sp-2);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  line-height: 1.8;
+}
+.req-meta-item {
+  display: inline;
+}
+.req-meta-item + .req-meta-item::before {
+  content: '·';
+  margin: 0 var(--sp-1);
+  color: var(--c-border);
+}
+.req-dep-done {
+  color: var(--c-text-muted);
+}
+.req-dep-pending {
+  color: var(--c-warning);
+}
 .req-item-head {
   flex: 1 1 200px;
   min-width: 0;

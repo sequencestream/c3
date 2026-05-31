@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import type { Requirement } from '@ccc/shared/protocol'
 import type { CompletionOrderInput } from './req-list-view'
 import {
   compareByCompletion,
+  formatDate,
+  formatDependsOn,
   panelToggleLabel,
   reqRunStatusLabel,
   rowVisibility,
@@ -118,5 +121,84 @@ describe('compareByCompletion', () => {
     const a = make({ completedAt: 100, priority: 'P1' })
     const b = make({ completedAt: 100, priority: 'P1' })
     expect(compareByCompletion(a, b)).toBe(0)
+  })
+})
+
+describe('formatDate', () => {
+  it('short 风格输出 MM/DD', () => {
+    const d = new Date(2026, 4, 31, 14, 30)
+    expect(formatDate(d.getTime(), { style: 'short' })).toBe('05/31')
+  })
+
+  it('月份日期的单数字自动补零', () => {
+    const d = new Date(2026, 0, 5, 8, 3)
+    expect(formatDate(d.getTime(), { style: 'short' })).toBe('01/05')
+  })
+
+  it('full 风格(默认)输出 YYYY-MM-DD HH:mm', () => {
+    const d = new Date(2026, 4, 31, 14, 30)
+    expect(formatDate(d.getTime())).toBe('2026-05-31 14:30')
+  })
+
+  it('full 风格不传入 opts 时默认使用完整格式', () => {
+    const d = new Date(2026, 0, 1, 9, 5)
+    expect(formatDate(d.getTime())).toBe('2026-01-01 09:05')
+  })
+})
+
+describe('formatDependsOn', () => {
+  function makeReq(overrides: Partial<Requirement>): Requirement {
+    return {
+      id: 'r-default',
+      projectPath: '/test',
+      title: '默认需求',
+      content: '',
+      priority: 'P2',
+      module: '',
+      status: 'todo',
+      dependsOn: [],
+      lastDevSessionId: null,
+      automate: false,
+      createdAt: 0,
+      updatedAt: 0,
+      completedAt: null,
+      runStatus: 'idle',
+      ...overrides,
+    }
+  }
+
+  it('无依赖时返回空数组', () => {
+    const r = makeReq({ dependsOn: [] })
+    expect(formatDependsOn(r, [r])).toEqual([])
+  })
+
+  it('含依赖时返回带标题与状态的 DepInfo', () => {
+    const depA = makeReq({ id: 'dep-a', title: '需求 A', status: 'done' })
+    const depB = makeReq({ id: 'dep-b', title: '需求 B', status: 'todo' })
+    const r = makeReq({ id: 'main', dependsOn: ['dep-a', 'dep-b'] })
+    const result = formatDependsOn(r, [depA, depB, r])
+    expect(result).toHaveLength(2)
+    expect(result[0]).toEqual({ id: 'dep-a', title: '需求 A', done: true })
+    expect(result[1]).toEqual({ id: 'dep-b', title: '需求 B', done: false })
+  })
+
+  it('依赖 ID 在列表中不存在时回退用 ID 本身作为标题', () => {
+    const r = makeReq({ id: 'main', dependsOn: ['missing-id'] })
+    const result = formatDependsOn(r, [r])
+    expect(result[0]).toEqual({ id: 'missing-id', title: 'missing-id', done: false })
+  })
+
+  it('包含未完成依赖时 done 字段为 false', () => {
+    const dep = makeReq({ id: 'dep', title: '未完成依赖', status: 'in_progress' })
+    const r = makeReq({ id: 'main', dependsOn: ['dep'] })
+    const result = formatDependsOn(r, [dep, r])
+    expect(result[0].done).toBe(false)
+  })
+
+  it('已完成依赖的 done 字段为 true', () => {
+    const dep = makeReq({ id: 'dep', title: '已完成依赖', status: 'done' })
+    const r = makeReq({ id: 'main', dependsOn: ['dep'] })
+    const result = formatDependsOn(r, [dep, r])
+    expect(result[0].done).toBe(true)
   })
 })

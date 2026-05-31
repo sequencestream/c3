@@ -531,7 +531,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 title: 'New session',
                 mode: defaultMode,
                 history: [],
-                running: false,
+                status: 'idle',
               })
               sendWorkspaces(ws)
               return
@@ -565,7 +565,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                   title,
                   mode: rt.mode,
                   history: rt.baseline,
-                  running: rt.run != null,
+                  status: rt.status,
                 })
                 // Replay everything emitted since the baseline (current + past
                 // turns), then start receiving live events.
@@ -739,7 +739,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 title: '需求沟通',
                 mode: 'default',
                 history: rt.baseline,
-                running: rt.run != null,
+                status: rt.status,
               })
               for (const e of rt.buffer) send(ws, e)
               addViewer(chatId, deliver)
@@ -832,7 +832,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 title: '需求沟通',
                 mode: 'default',
                 history: [],
-                running: false,
+                status: 'idle',
               })
               send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
               const firstPrompt = `开始完善需求 ${req.id}。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_requirements。`

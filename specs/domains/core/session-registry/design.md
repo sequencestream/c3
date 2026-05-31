@@ -129,6 +129,11 @@ For every runtime where `rt.run != null`:
 - **Stale branch:** `rt.status === 'running' && now - rt.lastActivityAt > staleMs` → no events
   emitted for too long; the SDK iterator/for-await loop is presumed hung or the Claude process
   exited mid-turn. Converge to `idle`.
+- **Dangling-pointer branch:** `rt.status === 'idle'` while `rt.run != null` → a status/run
+  inconsistency (e.g. a stray `turn_end` flowed through `emit` and settled the status to `idle`
+  before the run's teardown cleared `rt.run`). Broadcasts would advertise the session as `idle`
+  while `user_prompt` still rejects with "a turn is already running"; the stale branch (gated on
+  `running`) never reaps it. Converge so client and server agree.
 - **Preserved:** `awaiting_permission` and `team` are **not** converged by staleness alone — a
   user waiting on a prompt is legitimate, and a team lead waiting between turns is legitimate.
 

@@ -122,16 +122,25 @@ view or closing the socket never reaches this path.
 
 The `for await` loop over `query()` maps each SDK message (AS-R9):
 
-| SDK message | Block                             | Wire event                                                                                          |
-| ----------- | --------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `system`    | `init` (has `session_id`)         | `onSessionId(id)` — reported once (AS-R10)                                                          |
-| `assistant` | `text`                            | `assistant_text { text }`                                                                           |
-| `assistant` | `tool_use` (has `id`+`name`)      | `tool_use { toolUseId, toolName, input }`; if `isTeamTool` ⇒ `onTeam()` once first (AS-R14)         |
-| `user`      | `tool_result` (has `tool_use_id`) | `tool_result { toolUseId, content, isError }`                                                       |
-| `result`    | —                                 | `turn_end { reason: 'complete' }`, then fork: non-team `input.close()`; team keeps it open (AS-R15) |
+| SDK message | Block                             | Wire event                                                                                                                                                               |
+| ----------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `system`    | `init` (has `session_id`)         | `onSessionId(id)` — reported once (AS-R10)                                                                                                                               |
+| `assistant` | `text`                            | `assistant_text { text }`                                                                                                                                                |
+| `assistant` | `tool_use` (has `id`+`name`)      | `tool_use { toolUseId, toolName, input }`; if `isTeamTool` ⇒ `onTeam()` once first (AS-R14)                                                                              |
+| `user`      | `tool_result` (has `tool_use_id`) | `tool_result { toolUseId, content, isError }`                                                                                                                            |
+| `result`    | —                                 | if the turn emitted no visible block ⇒ `notice { text }` first, then `turn_end { reason: 'complete' }`, then fork: non-team `input.close()`; team keeps it open (AS-R15) |
 
 - The user prompt is echoed once as `user_text { text }` before the run starts (AS-R1), so a
   switch-back replay shows it (it is not in the on-disk `baseline` captured earlier).
+- A turn that produces only a `thinking` block (the model thought, then ended with no `text`
+  or `tool_use`) is tracked per turn; the `result` branch then emits `notice { text }` before
+  `turn_end` so the turn renders a muted line instead of a silent gap (an empty turn is
+  otherwise indistinguishable from a hang). The flag resets per turn (a team lead reuses one
+  process across turns). On-disk replay (`flattenMessages`) mirrors this per **turn**, not per
+  message: the transcript splits one turn into several single-block messages (a `thinking`
+  message, a `text` message, a `tool_use` message…), so a lone `thinking` message is usually
+  just the lead-in to a turn that continues — the notice is added only when a whole turn (up
+  to the next real user prompt) thought but produced no assistant text and no tool call.
 - `content` for tool results is flattened by `stringifyToolResult` (string as-is; array →
   text blocks joined by newline, non-text JSON-stringified; else JSON-stringified).
 - An exception in the loop, when `!signal.aborted`, sends `turn_end { reason: 'error', error }`

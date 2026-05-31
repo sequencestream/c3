@@ -318,6 +318,8 @@ function transcriptToChat(item: TranscriptItem): ChatBody {
         content: item.content,
         isError: item.isError,
       }
+    case 'notice':
+      return { kind: 'system', text: item.text }
   }
 }
 
@@ -352,9 +354,15 @@ function handleMessage(msg: ServerToClient) {
       nextId = 1
       // Commands are per-cwd; drop the old set so the next `/` refetches.
       availableCommands.value = []
+      // Seed this session's live status from the authoritative snapshot the server
+      // computed at selection time. The composer lock derives from sessionStatus,
+      // which is otherwise only fed by async broadcasts — so without this seed a
+      // background-running session selected between two heartbeats shows "ready"
+      // and lets the user submit into a live turn (server then rejects it with "A
+      // turn is already running"). Later broadcasts keep it current.
+      sessionStatus.value = { ...sessionStatus.value, [msg.sessionId]: msg.status }
       // History (on-disk baseline) renders first; the live buffer tail, if any,
-      // follows as normal stream events (user_text/assistant_text/…). `running`
-      // is derived from sessionStatus, kept current by session_status broadcasts.
+      // follows as normal stream events (user_text/assistant_text/…).
       activity.value = { phase: 'idle' }
       // Task panel re-infers from scratch on every (re)select so replay matches live.
       taskModel.value = emptyTaskModel()
@@ -391,6 +399,11 @@ function handleMessage(msg: ServerToClient) {
     case 'assistant_text':
       add({ kind: 'assistant', text: msg.text })
       activity.value = { phase: 'thinking' }
+      break
+    case 'notice':
+      // A turn that produced no visible output (thinking-only). Render the muted
+      // line; the following `turn_end` settles activity to idle.
+      add({ kind: 'system', text: msg.text })
       break
     case 'tool_use':
       add({ kind: 'tool-use', toolUseId: msg.toolUseId, toolName: msg.toolName, input: msg.input })

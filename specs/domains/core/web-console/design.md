@@ -66,20 +66,20 @@ in SessionSidebar; editable settings draft in SettingsPanel.
 
 `handleMessage(msg)` switches on `msg.type`:
 
-| Wire event                 | UI effect                                                                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ready`                    | set `mode`; seed `sessionStatus` from `statuses`                                                              |
-| `session_status`           | replace `sessionStatus`; notify on background `awaiting_permission` (WC-R13)                                  |
-| `mode_changed`             | set `mode`                                                                                                    |
-| `session_selected`         | clear stream, render `history`, set running from `running`; buffer tail follows as live events (WC-R9)        |
-| `user_text`                | append user message                                                                                           |
-| `assistant_text`           | append assistant message                                                                                      |
-| `tool_use` / `tool_result` | append tool-use / tool-result message                                                                         |
-| `permission_request`       | append permission message with `decision: null` (live or replayed alike; actionability is derived, see below) |
-| `consensus_auto`           | append consensus message                                                                                      |
-| `turn_end`                 | append a system note only on `error`; running unlocks via `session_status` (WC-R5)                            |
-| `requirements`             | replace `requirements[projectPath]` with the pushed list (WC-R10)                                             |
-| `automation_status`        | replace `automation[projectPath]` with the pushed orchestrator status (WC-R11)                                |
+| Wire event                 | UI effect                                                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ready`                    | set `mode`; seed `sessionStatus` from `statuses`                                                                                                   |
+| `session_status`           | replace `sessionStatus`; notify on background `awaiting_permission` (WC-R13)                                                                       |
+| `mode_changed`             | set `mode`                                                                                                                                         |
+| `session_selected`         | clear stream, render `history`, seed `sessionStatus[sessionId]` from `status` (locks composer at once); buffer tail follows as live events (WC-R9) |
+| `user_text`                | append user message                                                                                                                                |
+| `assistant_text`           | append assistant message                                                                                                                           |
+| `tool_use` / `tool_result` | append tool-use / tool-result message                                                                                                              |
+| `permission_request`       | append permission message with `decision: null` (live or replayed alike; actionability is derived, see below)                                      |
+| `consensus_auto`           | append consensus message                                                                                                                           |
+| `turn_end`                 | append a system note only on `error`; running unlocks via `session_status` (WC-R5)                                                                 |
+| `requirements`             | replace `requirements[projectPath]` with the pushed list (WC-R10)                                                                                  |
+| `automation_status`        | replace `automation[projectPath]` with the pushed orchestrator status (WC-R11)                                                                     |
 
 ## Requirement runStatus indicator
 

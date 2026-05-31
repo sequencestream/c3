@@ -23,7 +23,7 @@ pnpm pkg                                         # build + single binaries in di
 - web: Vue 3 frontend
 - shared: protocol definitions, common code
 - scripts/e2e/e2e-guide.md: E2E tests, make sure e2e pass if relative paths are changed.
-- specs/: specs is the source of truth, keep synchronized with code, without ask.
+- specs/: specs is the source of truth, keep synchronized with code, without ask. Read spec first then code for logics.
 - specs/overview.md: overview of the system
 - specs/constitution.md: constitution of the system
 - specs/glossary.md: glossary of the system

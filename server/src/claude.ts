@@ -8,6 +8,7 @@ import type {
   PermissionMode,
   ServerToClient,
 } from '@ccc/shared/protocol'
+import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
 import { waitForDecision, resolveDecision, type Decision } from './permissions.js'
 import { runAskConsensus, runConsensusVote } from './consensus.js'
 import { askQuestions } from './consensus-tally.js'
@@ -334,6 +335,12 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   // iterator instead ends or the process exits without one, the `finally` below
   // synthesizes the terminal `turn_end` so the turn never stalls (see there).
   let sawResult = false
+  // Whether the current turn emitted any *visible* output (assistant text or a
+  // tool call). A thinking-only turn (the model thought, then ended with no text
+  // or tool) leaves this false — the `result` branch then emits a `notice` so the
+  // viewer sees a muted line rather than a silent gap. Reset per turn (a team
+  // lead drives many turns in one process).
+  let sawVisibleOutput = false
   // Rolling recent-context buffer (user prompt + assistant text) the consensus
   // voters reason over; capped so a long run doesn't bloat advisor prompts.
   let recentContext = prompt.slice(-4000)
@@ -576,6 +583,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
             }
             if (b.type === 'text' && typeof b.text === 'string') {
               send({ type: 'assistant_text', text: b.text })
+              sawVisibleOutput = true
               recentContext = `${recentContext}\n${b.text}`.slice(-4000)
             } else if (b.type === 'tool_use' && b.id && b.name) {
               // A team tool means the lead must outlive this turn. Detection
@@ -591,6 +599,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
                 toolName: b.name,
                 input: b.input ?? {},
               })
+              sawVisibleOutput = true
             }
           }
         }
@@ -618,7 +627,14 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       } else if (m.type === 'result') {
         // The run's turn finished — the session stays alive for the next prompt.
         sawResult = true
+        // A turn that thought but said nothing (end_turn with no text/tool) would
+        // otherwise render as an empty gap — indistinguishable from a hang. Surface
+        // a muted notice so the viewer knows the turn ran and deliberately produced
+        // no reply. Emit before `turn_end` so it lands inside the finished turn.
+        if (!sawVisibleOutput) send({ type: 'notice', text: EMPTY_TURN_NOTICE })
         send({ type: 'turn_end', reason: 'complete' })
+        // Arm the next turn (a team lead reuses this process across turns).
+        sawVisibleOutput = false
         // Non-team run: close the input so the query ends and the Claude Code
         // process exits (the one-shot behaviour — the next turn resumes a fresh
         // process). Team run: keep the input open so the lead process stays

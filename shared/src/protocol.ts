@@ -62,6 +62,16 @@ export type TranscriptItem =
   | { kind: 'assistant'; text: string }
   | { kind: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
   | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
+  /**
+   * A turn that produced no visible output — the model only thought (an
+   * end_turn after a thinking-only response) and emitted no assistant text or
+   * tool call. Without this, the turn would render as nothing at all, which is
+   * indistinguishable from a silent hang. Surfaced as a muted system line.
+   */
+  | { kind: 'notice'; text: string }
+
+/** Display text for a turn that ended with only thinking and no visible output. */
+export const EMPTY_TURN_NOTICE = '— No response this turn (the model only thought) —'
 
 /**
  * A not-yet-started session. The browser invents the `clientId`; the server
@@ -427,9 +437,12 @@ export type ServerToClient =
   | { type: 'sessions'; workspacePath: string; sessions: SessionInfo[] }
   /**
    * A session became active in this connection's view; carries its mode and
-   * replayed history. `running` reflects whether a turn is in flight for it —
-   * for a session viewed while running in the background, the live tail follows
-   * as normal stream events after this message.
+   * replayed history. `status` is the runtime's authoritative live status at
+   * selection time — the client seeds its per-session status map from it so the
+   * composer locks immediately, without waiting for the next status broadcast
+   * (the source of a stale "ready" window on a background-running session). For a
+   * session viewed while running in the background, the live tail follows as
+   * normal stream events after this message.
    */
   | {
       type: 'session_selected'
@@ -438,7 +451,7 @@ export type ServerToClient =
       title: string
       mode: PermissionMode
       history: TranscriptItem[]
-      running: boolean
+      status: SessionStatus
     }
   /** Binds a pending session's `clientId` to its real SDK `sessionId`. */
   | { type: 'session_started'; clientId: string; sessionId: string }
@@ -464,6 +477,13 @@ export type ServerToClient =
    */
   | { type: 'user_text'; text: string }
   | { type: 'assistant_text'; text: string }
+  /**
+   * A turn produced no visible output (thinking-only, end_turn with no text or
+   * tool call). Emitted just before the turn's `turn_end` so the viewer sees a
+   * muted line instead of a silent gap. Buffered like any other event, so a
+   * viewer switching back replays it too.
+   */
+  | { type: 'notice'; text: string }
   | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }
   | {

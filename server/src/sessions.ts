@@ -13,6 +13,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import { resolve } from 'node:path'
 import type { SessionInfo, TranscriptItem } from '@ccc/shared/protocol'
+import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
 import { getSessionMode } from './state.js'
 import { normalizeTranscriptText, stringifyToolResult } from './format.js'
 import { listHiddenSessions } from './requirements/store.js'
@@ -86,7 +87,7 @@ export async function sessionTitle(dir: string, sessionId: string): Promise<stri
  * Map one SDK transcript message to zero or more render items. Mirrors the live
  * mapping in `claude.ts` so replayed history looks identical to live output.
  */
-function mapMessage(m: { type: string; message: unknown }): TranscriptItem[] {
+export function mapMessage(m: { type: string; message: unknown }): TranscriptItem[] {
   const msg = m.message as { role?: string; content?: unknown } | undefined
   const content = msg?.content
   if (m.type === 'assistant') {
@@ -145,10 +146,57 @@ function mapMessage(m: { type: string; message: unknown }): TranscriptItem[] {
   return []
 }
 
+/** True if an assistant SDK message carries a `thinking` block. */
+function assistantHasThinking(m: { type: string; message: unknown }): boolean {
+  if (m.type !== 'assistant') return false
+  const content = (m.message as { content?: unknown } | undefined)?.content
+  if (!Array.isArray(content)) return false
+  return content.some((b) => (b as { type?: string }).type === 'thinking')
+}
+
+/**
+ * Flatten a session's SDK transcript into render items, inserting an empty-turn
+ * `notice` per turn that thought but produced nothing visible (mirrors the live
+ * `notice` in claude.ts so reconnecting to such a turn shows the same line).
+ *
+ * The detection MUST be per-turn, not per-message: the on-disk transcript splits
+ * one model turn into several single-block messages (a `thinking` message, a
+ * `text` message, a `tool_use` message…). So a lone `thinking` message is almost
+ * always just the lead-in to a turn that continues with text/tools in the *next*
+ * message — not an empty turn. A turn is genuinely empty only if, across every
+ * assistant message until the next real user prompt, it emitted a thinking block
+ * but no assistant text and no tool call. A real user prompt (string / text
+ * content, not a tool_result) is the turn boundary; the notice lands at the end
+ * of the empty turn, before that next prompt.
+ */
+export function flattenMessages(messages: { type: string; message: unknown }[]): TranscriptItem[] {
+  const out: TranscriptItem[] = []
+  let turnHadVisible = false
+  let turnHadThinking = false
+  const closeTurn = () => {
+    if (turnHadThinking && !turnHadVisible) out.push({ kind: 'notice', text: EMPTY_TURN_NOTICE })
+    turnHadThinking = false
+    turnHadVisible = false
+  }
+  for (const m of messages) {
+    const items = mapMessage(m)
+    if (m.type === 'assistant') {
+      if (items.length > 0) turnHadVisible = true
+      if (assistantHasThinking(m)) turnHadThinking = true
+    } else if (m.type === 'user' && items.some((it) => it.kind === 'user')) {
+      // A real user prompt ends the preceding assistant turn.
+      closeTurn()
+    }
+    out.push(...items)
+  }
+  closeTurn() // settle the final turn (EOF)
+  return out
+}
+
 /** Read a session's transcript and flatten it into render items. */
 export async function loadHistory(dir: string, sessionId: string): Promise<TranscriptItem[]> {
   const messages = await getSessionMessages(sessionId, { dir })
-  return messages.flatMap(mapMessage)
+  return flattenMessages(messages)
 }
 
 /**

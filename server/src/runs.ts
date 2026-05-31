@@ -340,6 +340,21 @@ export function reconcileLiveness(now: number, staleMs: number): string[] {
       converged.push(id)
       continue
     }
+    // Branch 3: status/run inconsistency — a live run pointer but the status has
+    // settled to `idle` (e.g. a stray `turn_end` flowed through `emit` before the
+    // run's teardown cleared `rt.run`). Broadcasts would then advertise the session
+    // as idle while `user_prompt` still rejects with "a turn is already running",
+    // and the staleness branch above (gated on `running`) never reaps it. Force a
+    // consistent terminal state so the client and server agree.
+    if (rt.status === 'idle') {
+      rt.run.abort.abort()
+      rt.run = null
+      rt.team = false
+      clearPending(id)
+      finalizeRun(id)
+      converged.push(id)
+      continue
+    }
     // `awaiting_permission` and `team` are not converged by staleness alone.
   }
   return converged

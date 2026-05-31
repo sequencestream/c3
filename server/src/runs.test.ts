@@ -394,6 +394,25 @@ describe('session-runtime registry', () => {
       removeRuntime('s-stale')
     })
 
+    it('converges a run pointer left dangling under an idle status', () => {
+      // The inconsistency a stray turn_end leaves: status settled to idle while the
+      // run pointer is still set. Broadcasts would advertise idle, but user_prompt
+      // rejects with "a turn is already running" — so reconcile must reap it.
+      const now = 5_000
+      const staleMs = 10_000
+      const rt = ensureRuntime('s-dangling', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      // Status is idle (never forced to running, or dropped there by a stray turn_end)
+      // while the run pointer lingers — even with fresh activity, this is reaped.
+      expect(rt.status).toBe('idle')
+
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual(['s-dangling'])
+      expect(isRunning('s-dangling')).toBe(false)
+      expect(getRuntime('s-dangling')?.status).toBe('idle')
+      removeRuntime('s-dangling')
+    })
+
     it('does NOT converge awaiting_permission by staleness alone', () => {
       const now = 20_000
       const staleMs = 1_000

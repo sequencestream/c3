@@ -141,7 +141,7 @@ function datePrefix(r: Requirement): string {
           :aria-pressed="collapsed"
           @click="togglePanel"
         >
-          {{ toggleLabel.icon }} {{ toggleLabel.text }}
+          {{ toggleLabel.icon }}
         </button>
         <span class="req-list-title">需求列表</span>
       </div>

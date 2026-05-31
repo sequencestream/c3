@@ -49,7 +49,7 @@ describe('protocol wire format', () => {
       title: 't',
       mode: 'plan',
       history: [{ kind: 'user', text: 'hi' }],
-      running: false,
+      status: 'idle',
     },
     { type: 'session_started', clientId: 'pending:1', sessionId: 's1' },
     { type: 'mode_changed', mode: 'acceptEdits' },

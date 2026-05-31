@@ -8,15 +8,15 @@ entities — they exist only in the browser. Physical wiring in [design.md](desi
 One item in the rendered stream. A discriminated union over `kind`; every variant carries a
 numeric `id` for keying.
 
-| kind          | Attributes                                                                            | Source event                     |
-| ------------- | ------------------------------------------------------------------------------------- | -------------------------------- |
-| `user`        | `text`                                                                                | `user_text` (prompt echo)        |
-| `assistant`   | `text`                                                                                | `assistant_text`                 |
-| `tool-use`    | `toolName`, `input`                                                                   | `tool_use`                       |
-| `tool-result` | `content`, `isError`                                                                  | `tool_result`                    |
-| `permission`  | `requestId`, `toolName`, `input`, `decision: 'allow' \| 'deny' \| null`, `consensus?` | `permission_request`             |
-| `consensus`   | `toolName`, `input`, `outcome`                                                        | `consensus_auto`                 |
-| `system`      | `text`                                                                                | `turn_end{error}` / `error` note |
+| kind          | Attributes                                                                            | Source event                                                     |
+| ------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `user`        | `text`                                                                                | `user_text` (prompt echo)                                        |
+| `assistant`   | `text`                                                                                | `assistant_text`                                                 |
+| `tool-use`    | `toolName`, `input`                                                                   | `tool_use`                                                       |
+| `tool-result` | `content`, `isError`                                                                  | `tool_result`                                                    |
+| `permission`  | `requestId`, `toolName`, `input`, `decision: 'allow' \| 'deny' \| null`, `consensus?` | `permission_request`                                             |
+| `consensus`   | `toolName`, `input`, `outcome`                                                        | `consensus_auto`                                                 |
+| `system`      | `text`                                                                                | `turn_end{error}` / `error` / `notice` (thinking-only turn) note |
 
 Relationships:
 

@@ -6,7 +6,7 @@
  * 便于在 Node 环境下单测(项目的 web 测试不含 DOM)。
  */
 
-import type { RequirementStatus } from '@ccc/shared/protocol'
+import type { Requirement, RequirementStatus } from '@ccc/shared/protocol'
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
 export const STATUS_LABELS: Record<RequirementStatus, string> = {
@@ -42,4 +42,19 @@ export interface RowVisibility {
 
 export function rowVisibility(collapsed: boolean): RowVisibility {
   return { showModule: !collapsed, showActions: !collapsed }
+}
+
+/** 已完成需求排序所需的最小字段集(便于在测试中轻量构造)。 */
+export type CompletionOrderInput = Pick<Requirement, 'completedAt' | 'createdAt' | 'priority'>
+
+/**
+ * 已完成需求的比较器:完成时间倒序为主键,优先级 P0→P3 为次键。
+ * 完成时刻取 `completedAt`,缺失(历史数据)时回退到 `createdAt`。
+ * `priority` 为 `P0..P3`,字符串升序即优先级从高到低,直接 localeCompare 即可。
+ */
+export function compareByCompletion(a: CompletionOrderInput, b: CompletionOrderInput): number {
+  const ta = a.completedAt ?? a.createdAt
+  const tb = b.completedAt ?? b.createdAt
+  if (ta !== tb) return tb - ta
+  return a.priority.localeCompare(b.priority)
 }

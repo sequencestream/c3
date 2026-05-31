@@ -7,7 +7,12 @@
  */
 import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
-import { panelToggleLabel, rowVisibility, statusLabel } from '../lib/req-list-view'
+import {
+  compareByCompletion,
+  panelToggleLabel,
+  rowVisibility,
+  statusLabel,
+} from '../lib/req-list-view'
 
 const props = defineProps<{
   project: string
@@ -66,13 +71,15 @@ function setFilter(value: RequirementStatus | null) {
   emit('filter', value)
 }
 
-// 「全部」视图下把已完成(done)的需求稳定置底,未完成的保持原序;
-// 单状态过滤时由服务端返回该状态数据,原样展示不再排序。
+// 「全部」视图:未完成项保持服务端原序置顶,已完成项置底并按完成时间倒序、再优先级排序。
+// 「已完成」筛选视图:整列在客户端按同样规则重排。
+// 其它单状态筛选:由服务端返回该状态数据,原样展示不再排序。
 const displayRequirements = computed<Requirement[]>(() => {
+  if (filter.value === 'done') return [...props.requirements].sort(compareByCompletion)
   if (filter.value !== null) return props.requirements
-  return [...props.requirements].sort(
-    (a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0),
-  )
+  const pending = props.requirements.filter((r) => r.status !== 'done')
+  const done = props.requirements.filter((r) => r.status === 'done').sort(compareByCompletion)
+  return [...pending, ...done]
 })
 
 // Title lookup so a dependency id can show its requirement's title in a hint.

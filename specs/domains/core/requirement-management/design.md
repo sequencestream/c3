@@ -282,7 +282,12 @@ the list) (RM-R12).
   折叠态文案/可见性由纯函数 `lib/req-list-view.ts` 的 `panelToggleLabel`/`rowVisibility` 决定)
   (header: title + an **automation** button [▶ / ■ stop,
   highlighted while running, red on error] + status filter, with a status line below showing the
-  current item or the stop reason; per row a `MM/DD` date prefix
+  current item or the stop reason;
+  **列表排序(纯客户端 `displayRequirements`,服务端 `listRequirements` 的 `priority ASC, updated_at DESC`
+  不变):**「全部」视图未完成项保持服务端原序置顶、已完成(`done`)项置底;置底段与「已完成」筛选整列均
+  **按完成时间倒序、再优先级排序**——`lib/req-list-view.ts` 的 `compareByCompletion`:`completedAt` 降序为
+  主键(缺失时回退 `createdAt`),同完成时刻按 `priority` 升序 P0→P3;其它单状态筛选原样不重排;
+  per row a `MM/DD` date prefix
   — `completedAt` for done items, else `createdAt`, both zero-padded — an optional **module tag**
   (`.req-module` 胶囊标签,渲染于 date 与 title 之间;`module===''` 时 `v-if` 不渲染,无占位不破版)
   before the title/priority badge/status (`.req-status` 为彩色 pill 徽标,`:class="r.status"` 按

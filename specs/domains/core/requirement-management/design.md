@@ -269,15 +269,21 @@ the list) (RM-R12).
   if `viewMode==='requirements'`, re-send `open_requirement_chat`; `viewMode`/`requirementsProject`
   are also mirrored to `localStorage` to survive a hard refresh. No new server message is needed —
   the existing resume branch suffices.
-- **Layout:** left `RequirementList.vue` (header: title + an **automation** button [▶ / ■ stop,
+- **Layout:** left `RequirementList.vue` (默认完整宽度 960px,窄屏 `min(960px,68vw)`;可在标题栏
+  通过 `.req-collapse-btn` 在展开/收缩两态间切换,折叠态是组件本地 UI 状态 `collapsed`(同 `expandedId`
+  范式),收缩态宽度减半至 480px 并以 `v-if` **不渲染** `.req-module` 与 `.req-actions`,展开态恢复;
+  折叠态文案/可见性由纯函数 `lib/req-list-view.ts` 的 `panelToggleLabel`/`rowVisibility` 决定)
+  (header: title + an **automation** button [▶ / ■ stop,
   highlighted while running, red on error] + status filter, with a status line below showing the
-  current item or the stop reason; per row a leading **automate** checkbox, then `MM/DD` date prefix
+  current item or the stop reason; per row a `MM/DD` date prefix
   — `completedAt` for done items, else `createdAt`, both zero-padded — an optional **module tag**
   (`.req-module` 胶囊标签,渲染于 date 与 title 之间;`module===''` 时 `v-if` 不渲染,无占位不破版)
-  before the title/priority badge/status/dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
+  before the title/priority badge/status, then a **trailing automate toggle icon** (`.req-automate`,
+  行尾,`req-status` 之后;`r.automate` → ⏳ tooltip `in auto queue`,否则 ✋ tooltip `manual trigger mode`)
+  and a dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
   for launched, mark done/cancel for any); right **reuses** `ChatMessages` + `SessionStatusBar` +
-  `MessageInput` against the already-viewed communication session. The checkbox emits
-  `set-automate`; the button emits `start-automation`/`stop-automation`.
+  `MessageInput` against the already-viewed communication session. The automate icon emits
+  `set-automate` (`@click.stop`, toggles `!r.automate`); the button emits `start-automation`/`stop-automation`.
 - **Save confirmation:** `PermissionPrompt.vue` adds a branch for
   `toolName==='mcp__c3__save_requirements'` rendering each proposed item as a card
   (title/priority/dependency) with Save/Cancel mapped to allow/deny.

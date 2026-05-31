@@ -1372,19 +1372,28 @@ button.stop-btn:hover:not(:disabled) {
 
 /* ============ 需求视图（需求列表 + 落库确认卡片） ============ */
 .req-list {
-  width: 640px;
+  width: 960px;
   flex-shrink: 0;
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.2s ease;
 }
-/* 窄屏回退:侧栏按视口比例收窄,避免挤压聊天区 */
+/* 收缩态:宽度减半,隐藏模块名与操作区(由组件 v-if 不渲染) */
+.req-list.collapsed {
+  width: 480px;
+}
+/* 窄屏回退:侧栏按视口比例收窄,避免挤压聊天区(随完整态 1.5 倍同步放大) */
 @media (max-width: 1024px) {
   .req-list {
-    width: min(640px, 45vw);
-    min-width: 300px;
+    width: min(960px, 68vw);
+    min-width: 450px;
+  }
+  .req-list.collapsed {
+    width: min(480px, 34vw);
+    min-width: 280px;
   }
 }
 .req-list-head {
@@ -1396,9 +1405,31 @@ button.stop-btn:hover:not(:disabled) {
   justify-content: space-between;
   border-bottom: 1px solid var(--c-border);
 }
+.req-list-head-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
 .req-list-title {
   font-size: var(--fs-title-sm);
   font-weight: 600;
+}
+/* 展开/收缩切换按钮:标题前,文案/图标反映点击后将切换到的目标态 */
+.req-collapse-btn {
+  flex-shrink: 0;
+  background: var(--c-input);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.req-collapse-btn:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
 }
 .req-head-right {
   display: flex;
@@ -1437,16 +1468,26 @@ button.stop-btn:hover:not(:disabled) {
 .auto-status.error {
   color: var(--c-error);
 }
-/* 需求行的自动化勾选框 */
-.req-auto {
-  display: flex;
-  align-items: center;
+/* 需求行尾的自动化开关图标:✋ 人工触发 / ⏳ 已入自动化队列 */
+.req-automate {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  font-size: var(--fs-badge);
+  line-height: 1;
   cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
 }
-.req-auto input {
-  cursor: pointer;
-  margin: 0;
+.req-automate:hover {
+  opacity: 0.8;
+}
+.req-automate.active {
+  opacity: 1;
 }
 .req-items {
   flex: 1;

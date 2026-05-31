@@ -7,6 +7,7 @@
  */
 import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
+import { panelToggleLabel, rowVisibility } from '../lib/req-list-view'
 
 const props = defineProps<{
   project: string
@@ -111,6 +112,15 @@ function toggleDetail(id: string): void {
   expandedId.value = expandedId.value === id ? null : id
 }
 
+// 面板折叠态:本地 UI 状态(同 expandedId 范式)。收缩态收窄面板并隐藏模块名/操作区。
+const collapsed = ref(false)
+const toggleLabel = computed(() => panelToggleLabel(collapsed.value))
+const rowVis = computed(() => rowVisibility(collapsed.value))
+
+function togglePanel(): void {
+  collapsed.value = !collapsed.value
+}
+
 // 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt;月日补零两位。
 function datePrefix(r: Requirement): string {
   const d = new Date(r.completedAt ?? r.createdAt)
@@ -121,9 +131,20 @@ function datePrefix(r: Requirement): string {
 </script>
 
 <template>
-  <section class="req-list">
+  <section class="req-list" :class="{ collapsed }">
     <div class="req-list-head">
-      <span class="req-list-title">需求列表</span>
+      <div class="req-list-head-left">
+        <button
+          type="button"
+          class="req-collapse-btn"
+          :title="toggleLabel.title"
+          :aria-pressed="collapsed"
+          @click="togglePanel"
+        >
+          {{ toggleLabel.icon }} {{ toggleLabel.text }}
+        </button>
+        <span class="req-list-title">需求列表</span>
+      </div>
       <div class="req-head-right">
         <button
           class="req-btn auto-btn"
@@ -169,20 +190,25 @@ function datePrefix(r: Requirement): string {
               aria-hidden="true"
               >▸</span
             >
-            <label class="req-auto" title="勾选后纳入自动化进程" @click.stop>
-              <input
-                type="checkbox"
-                :checked="r.automate"
-                @change="emit('set-automate', r.id, ($event.target as HTMLInputElement).checked)"
-              />
-            </label>
             <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
             <span class="req-date">{{ datePrefix(r) }}</span>
-            <span v-if="r.module" class="req-module" :title="r.module">{{ r.module }}</span>
+            <span v-if="rowVis.showModule && r.module" class="req-module" :title="r.module">{{
+              r.module
+            }}</span>
             <span class="req-title" :title="r.content">{{ r.title }}</span>
             <span class="req-status">{{ statusLabel(r.status) }}</span>
+            <button
+              type="button"
+              class="req-automate"
+              :class="{ active: r.automate }"
+              :title="r.automate ? 'in auto queue' : 'manual trigger mode'"
+              :aria-pressed="r.automate"
+              @click.stop="emit('set-automate', r.id, !r.automate)"
+            >
+              {{ r.automate ? '⏳' : '✋' }}
+            </button>
           </div>
-          <div class="req-actions" @click.stop>
+          <div v-if="rowVis.showActions" class="req-actions" @click.stop>
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
               完善
             </button>

@@ -77,7 +77,12 @@ broadcasts; `setOnStatusChange(broadcastStatuses)` wires runtime status changes 
 On `user_prompt`: resolve `viewing`'s runtime (else `error`). If the runtime is `team` and has a
 live `run.handle`, do **not** launch a second run — `emit` the `user_text` echo, `setStatus('running')`,
 and `handle.pushInput(text)` (AS-R17). Otherwise, if it already has a `run`, reject with `error`
-(serial, AS-R2). Otherwise create a fresh `AbortController`, set `rt.run`, `emit` the `user_text`
+(serial, AS-R2). The server stays strictly single-turn here; the web console hides this rejection
+from the user by **client-side queuing** — for an ordinary running session it withholds the
+`user_prompt`, queues the text locally, and only sends it (merged into one prompt) once the
+session returns to idle (see [web-console design](../web-console/design.md), WC-R17). The server
+sees just one ordinary turn at a time and is unaware of the queue. Otherwise create a fresh
+`AbortController`, set `rt.run`, `emit` the `user_text`
 echo, `setStatus('running')`, derive `resume`, and call `runClaude` with
 `send: (m) => emit(runId, m)` and the `onTeam` hook. `runId` is mutable: `onSessionId` calls `bindPending` and updates
 it so post-bind events target the real key. In `finally`: clear `rt.run` if still current, emit

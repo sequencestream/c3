@@ -559,6 +559,51 @@ header h1 {
   }
 }
 
+/* ---- Pending send queue (between status bar and composer) ---- */
+.pending-queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-6);
+  border-top: 1px solid var(--c-border);
+  background: var(--c-panel);
+}
+.pending-head {
+  font-size: var(--fs-badge);
+  color: var(--c-text-muted);
+}
+.pending-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg);
+}
+.pending-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pending-act {
+  flex-shrink: 0;
+  padding: 0 var(--sp-1);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-body);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.pending-act:hover {
+  color: var(--c-text);
+}
+
 /* ============ 对话区域（规范 3.4） ============ */
 main {
   flex: 1;

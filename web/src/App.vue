@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { createWsClient } from './lib/ws'
 import { actionablePermissionId } from './lib/permission'
+import {
+  appendItem,
+  mergeQueue,
+  removeItem,
+  shouldFlush,
+  type PendingItem,
+} from './lib/pending-queue'
 import AppHeader from './components/AppHeader.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatMessages from './components/ChatMessages.vue'
 import MessageInput from './components/MessageInput.vue'
+import PendingQueue from './components/PendingQueue.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import SessionStatusBar from './components/SessionStatusBar.vue'
 import RequirementList from './components/RequirementList.vue'
@@ -67,6 +75,61 @@ const teamSessions = ref<Set<string>>(new Set())
 const activeIsTeam = computed(
   () => hasActiveSession.value && teamSessions.value.has(activeSession.value as string),
 )
+
+// ---- Pending send queue (ordinary sessions, client-side only) ----
+// While an ordinary turn is in flight the server rejects user_prompt, so Send
+// enqueues here instead. Kept per sessionId in memory (survives session
+// switches; lost on reload). When the viewed session returns to idle and its
+// queue is non-empty, the queue is merged into one prompt and flushed via the
+// normal user_prompt path. No server/protocol change.
+const pendingQueues = ref<Record<string, PendingItem[]>>({})
+let nextQueueId = 1
+const composer = ref<InstanceType<typeof MessageInput> | null>(null)
+
+const currentQueue = computed<PendingItem[]>(() =>
+  activeSession.value ? (pendingQueues.value[activeSession.value] ?? []) : [],
+)
+
+function setQueue(sessionId: string, items: PendingItem[]) {
+  pendingQueues.value = { ...pendingQueues.value, [sessionId]: items }
+}
+
+function onEnqueue(text: string) {
+  const sid = activeSession.value
+  if (!sid) return
+  setQueue(sid, appendItem(currentQueue.value, text, nextQueueId++))
+}
+
+function onDeleteQueued(id: number) {
+  const sid = activeSession.value
+  if (!sid) return
+  setQueue(sid, removeItem(currentQueue.value, id))
+}
+
+// Edit: pull the item out of the queue and fold its text back into the composer
+// draft for re-editing (the composer appends with a newline if a draft exists).
+function onEditQueued(item: PendingItem) {
+  const sid = activeSession.value
+  if (!sid) return
+  setQueue(sid, removeItem(currentQueue.value, item.id))
+  composer.value?.prefill(item.text)
+}
+
+// Flush the viewed session's queue once it is idle: merge into one prompt, send
+// via the normal path, and clear the queue. onSubmit optimistically marks the
+// session running, so this won't re-fire before the server confirms.
+function flushIfReady() {
+  const sid = activeSession.value
+  if (!sid) return
+  if (!shouldFlush(running.value, activeIsTeam.value, currentQueue.value.length)) return
+  const merged = mergeQueue(currentQueue.value)
+  setQueue(sid, [])
+  onSubmit(merged)
+}
+
+// Trigger on a running→idle transition (status broadcast) or when switching to an
+// already-idle session that still holds a queue.
+watch([running, activeSession, activeIsTeam], () => flushIfReady())
 
 // The one permission the user can still act on (the live, still-pending request),
 // or null. Drives the actionable-vs-static split: history replayed from the
@@ -609,13 +672,16 @@ function listCommands() {
         :activity="activity"
         @refresh="refreshStatus"
       />
+      <PendingQueue :items="currentQueue" @edit="onEditQueued" @delete="onDeleteQueued" />
       <MessageInput
+        ref="composer"
         :running="running"
         :team-active="activeIsTeam"
         :has-active-session="hasActiveSession"
         :available-commands="availableCommands"
         :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
         @submit="onSubmit"
+        @enqueue="onEnqueue"
         @stop="stopRun"
         @list-commands="listCommands"
       />

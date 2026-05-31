@@ -8,6 +8,7 @@
 import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
 import { useSpeechRecognition } from '../composables/useSpeechRecognition'
+import { composerAction, mergeIntoDraft } from '../lib/pending-queue'
 
 const props = defineProps<{
   running: boolean
@@ -15,7 +16,7 @@ const props = defineProps<{
    * The viewed session is a persistent agent team: the lead process stays alive
    * across turns. The composer stays usable even while the lead is busy (messages
    * route to the live lead and the SDK queues them); a separate control ends the
-   * team. Only `running && !teamActive` locks the input.
+   * team.
    */
   teamActive: boolean
   hasActiveSession: boolean
@@ -23,12 +24,17 @@ const props = defineProps<{
   voiceLang: string
 }>()
 
-// Input is locked only for an ordinary in-flight turn. A team session never
-// locks — the user may send to the lead at any time.
-const locked = computed(() => props.running && !props.teamActive)
+// The input is never disabled for an active session. For an ordinary in-flight
+// turn the server rejects user_prompt (single-turn), so Send enqueues instead of
+// submitting — but the textarea itself stays editable so the user can compose
+// ahead. Only the absence of a session disables it.
+const inputDisabled = computed(() => !props.hasActiveSession)
+// An ordinary (non-team) turn is in flight: show Stop alongside Send.
+const ordinaryRunning = computed(() => props.running && !props.teamActive)
 
 const emit = defineEmits<{
   submit: [text: string]
+  enqueue: [text: string]
   stop: []
   'list-commands': []
 }>()
@@ -49,7 +55,7 @@ const {
 })
 
 function toggleMic() {
-  if (!voiceSupported || locked.value || !props.hasActiveSession) return
+  if (!voiceSupported || !props.hasActiveSession) return
   if (voiceState.value === 'listening') {
     voiceStop()
     return
@@ -135,11 +141,23 @@ function applyCommand(c: SlashCommandInfo) {
 
 function submit() {
   const t = input.value.trim()
-  if (!t || locked.value || !props.hasActiveSession) return
+  if (!t || !props.hasActiveSession) return
   if (voiceState.value === 'listening') voiceStop()
-  emit('submit', t)
+  // Ordinary in-flight turn → enqueue (server would reject user_prompt); else
+  // submit immediately (idle, or a team session feeding its live lead).
+  if (composerAction(props.running, props.teamActive) === 'enqueue') emit('enqueue', t)
+  else emit('submit', t)
   input.value = ''
 }
+
+// Re-open a queued item for editing: fold its text back into the current draft
+// (single-newline append so an in-progress draft isn't lost), then focus.
+function prefill(text: string) {
+  input.value = mergeIntoDraft(input.value, text)
+  nextTick(() => inputEl.value?.focus())
+}
+
+defineExpose({ prefill })
 
 function onKey(e: KeyboardEvent) {
   // 聆听中按 Esc 先停止语音识别（不触发其他逻辑）。
@@ -217,17 +235,17 @@ function onKey(e: KeyboardEvent) {
           ? 'Select or create a session to start'
           : teamActive
             ? '团队运行中 — 输入消息发送给 team lead（随时可发）'
-            : running
-              ? 'running…'
+            : ordinaryRunning
+              ? '回合进行中 — 发送将排队,回合结束后合并入下一轮'
               : voiceState === 'listening'
                 ? '正在聆听… 再次点击麦克风或按 Esc 结束'
                 : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
       "
-      :disabled="locked || !hasActiveSession"
+      :disabled="inputDisabled"
       @keydown="onKey"
     />
     <button
-      v-if="voiceSupported && !locked"
+      v-if="voiceSupported"
       class="mic-btn"
       :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
       :disabled="!hasActiveSession"
@@ -244,27 +262,31 @@ function onKey(e: KeyboardEvent) {
         <rect x="19.6" y="8" width="2.4" height="8" rx="1.2" />
       </svg>
     </button>
-    <button v-if="locked" class="stop-btn" title="Stop the running turn" @click="emit('stop')">
+    <!-- Ordinary in-flight turn: Stop is available alongside Send (which queues). -->
+    <button
+      v-if="ordinaryRunning"
+      class="stop-btn"
+      title="Stop the running turn"
+      @click="emit('stop')"
+    >
       Stop
     </button>
-    <template v-else>
-      <!-- Team session: end the whole team (lead + teammates) explicitly. -->
-      <button
-        v-if="teamActive"
-        class="stop-btn"
-        title="结束团队：关闭 team lead 与所有 teammate"
-        @click="emit('stop')"
-      >
-        结束团队
-      </button>
-      <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
-        <div v-if="showSendHint" class="send-hint" role="tooltip">
-          连续回车两次，或 ⌘/Ctrl+Enter 发送
-        </div>
-        <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
-          Send
-        </button>
+    <!-- Team session: end the whole team (lead + teammates) explicitly. -->
+    <button
+      v-else-if="teamActive"
+      class="stop-btn"
+      title="结束团队：关闭 team lead 与所有 teammate"
+      @click="emit('stop')"
+    >
+      结束团队
+    </button>
+    <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
+      <div v-if="showSendHint" class="send-hint" role="tooltip">
+        {{ ordinaryRunning ? '回合进行中 — 发送将排队' : '连续回车两次，或 ⌘/Ctrl+Enter 发送' }}
       </div>
-    </template>
+      <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
+        {{ ordinaryRunning ? '排队' : 'Send' }}
+      </button>
+    </div>
   </footer>
 </template>

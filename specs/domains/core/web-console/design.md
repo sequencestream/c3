@@ -11,34 +11,38 @@ App owns all WebSocket state and `client.send`; child components are presentatio
 props and emitting intent events (App performs every send). All styling is global
 (`standard.css` + `style.css`), so components carry no scoped styles.
 
-| Unit             | File                              | Role                                                                                                                                                                                                                                                      |
-| ---------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App              | `App.vue`                         | Container: holds state, owns `client`, runs `handleMessage`, wires children                                                                                                                                                                               |
-| AppHeader        | `components/AppHeader.vue`        | Breadcrumbs, permission-mode dropdown, settings entry, connection status                                                                                                                                                                                  |
-| SessionSidebar   | `components/SessionSidebar.vue`   | Workspace / session tree; owns per-workspace pagination + prompt/confirm UX, emits CRUD intents                                                                                                                                                           |
-| ChatMessages     | `components/ChatMessages.vue`     | Groups `messages` into render blocks (text / collapsible tool batch), owns expand state + autoscroll                                                                                                                                                      |
-| PermissionPrompt | `components/PermissionPrompt.vue` | One permission block. When `actionable`: AskUserQuestion answer panel or allow/deny prompt (owns local answer draft, emits `respond`/`submit-ask`). When undecided-but-not-actionable: a single static history line (no buttons, no verdict)              |
-| ConsensusBlock   | `components/ConsensusBlock.vue`   | Read-only render of an auto-resolved multi-agent consensus outcome                                                                                                                                                                                        |
-| SessionStatusBar | `components/SessionStatusBar.vue` | Thin status line above the input: run-activity dot + spinner + label + refresh button; presentational, emits `refresh` (WC-R15)                                                                                                                           |
-| MessageInput     | `components/MessageInput.vue`     | Prompt textarea + slash-command autocomplete; owns input draft, emits `submit`/`stop`/`list-commands`. Submit keys: `⌘/Ctrl+Enter`, or two bare `Enter`s within 400ms (skips IME compose & `Shift+Enter`). Hovering Send for 2s shows a send-hint tooltip |
-| SettingsPanel    | `components/SettingsPanel.vue`    | System settings page: agent table + consensus toggle; owns editable draft seeded from server settings                                                                                                                                                     |
-| BaseDropdown     | `components/BaseDropdown.vue`     | Standard custom dropdown (replaces native `<select>`): trigger + popover with icon rows, keyboard nav, click-outside close                                                                                                                                |
-| WS client        | `lib/ws.ts`                       | Opens `ws(s)://<host>/ws`, dispatches parsed `ServerToClient` to a listener, exposes `send(ClientToServer)` + `close()`; heartbeat + auto-reconnect with `onReopen` view recovery                                                                         |
+| Unit             | File                              | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| App              | `App.vue`                         | Container: holds state, owns `client`, runs `handleMessage`, wires children                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| AppHeader        | `components/AppHeader.vue`        | Breadcrumbs, permission-mode dropdown, settings entry, connection status                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| SessionSidebar   | `components/SessionSidebar.vue`   | Workspace / session tree; owns per-workspace pagination + prompt/confirm UX, emits CRUD intents                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ChatMessages     | `components/ChatMessages.vue`     | Groups `messages` into render blocks (text / collapsible tool batch), owns expand state + autoscroll                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| PermissionPrompt | `components/PermissionPrompt.vue` | One permission block. When `actionable`: AskUserQuestion answer panel or allow/deny prompt (owns local answer draft, emits `respond`/`submit-ask`). When undecided-but-not-actionable: a single static history line (no buttons, no verdict)                                                                                                                                                                                                                                                                             |
+| ConsensusBlock   | `components/ConsensusBlock.vue`   | Read-only render of an auto-resolved multi-agent consensus outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| SessionStatusBar | `components/SessionStatusBar.vue` | Thin status line above the input: run-activity dot + spinner + label + refresh button; presentational, emits `refresh` (WC-R15)                                                                                                                                                                                                                                                                                                                                                                                          |
+| MessageInput     | `components/MessageInput.vue`     | Prompt textarea + slash-command autocomplete; owns input draft, emits `submit`/`enqueue`/`stop`/`list-commands`, exposes `prefill(text)`. The textarea is editable whenever a session is active (only `!hasActiveSession` disables it); during an ordinary in-flight turn Send/Enter **enqueues** instead of submitting (`composerAction`), and Stop shows alongside. Submit keys: `⌘/Ctrl+Enter`, or two bare `Enter`s within 400ms (skips IME compose & `Shift+Enter`). Hovering Send for 2s shows a send-hint tooltip |
+| PendingQueue     | `components/PendingQueue.vue`     | Pending-send queue rendered between SessionStatusBar and MessageInput; lists queued items (text + ✎ edit / 🗑 delete), emits `edit`/`delete`. Presentational; App owns the queue state and flush                                                                                                                                                                                                                                                                                                                         |
+| SettingsPanel    | `components/SettingsPanel.vue`    | System settings page: agent table + consensus toggle; owns editable draft seeded from server settings                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| BaseDropdown     | `components/BaseDropdown.vue`     | Standard custom dropdown (replaces native `<select>`): trigger + popover with icon rows, keyboard nav, click-outside close                                                                                                                                                                                                                                                                                                                                                                                               |
+| WS client        | `lib/ws.ts`                       | Opens `ws(s)://<host>/ws`, dispatches parsed `ServerToClient` to a listener, exposes `send(ClientToServer)` + `close()`; heartbeat + auto-reconnect with `onReopen` view recovery                                                                                                                                                                                                                                                                                                                                        |
 
 Shared modules: `lib/chat-types.ts` (`ChatBody`/`ChatMsg`/`Block`/`RunActivity` types), `lib/ask.ts`
-(AskUserQuestion parsing + consensus pre-fill), `lib/format.ts` (`fmt`/`oneLine`).
+(AskUserQuestion parsing + consensus pre-fill), `lib/format.ts` (`fmt`/`oneLine`),
+`lib/pending-queue.ts` (pure send-queue logic: `mergeQueue`/`shouldFlush`/`composerAction`/
+`appendItem`/`removeItem`/`mergeIntoDraft`, unit-tested in `pending-queue.test.ts`).
 
 ## State (App.vue)
 
-| Ref                | Type                               | Purpose                                                                                                                  |
-| ------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `messages`         | `ChatMsg[]`                        | Ordered render list (WC-R1); passed to ChatMessages                                                                      |
-| `status`           | `connecting` \| `open` \| `closed` | Connection indicator (WC-R6)                                                                                             |
-| `sessionStatus`    | `Record<sessionId, SessionStatus>` | Per-session live status from `ready`/`session_status` (WC-R12)                                                           |
-| `running`          | computed boolean                   | Viewed session's status ≠ `idle`; disables input, shows Stop (WC-R2/R14)                                                 |
-| `activity`         | `RunActivity`                      | Fine-grained run state of the viewed session, inferred from the stream; drives SessionStatusBar (WC-R15)                 |
-| `mode`             | `PermissionMode`                   | Current mode; synced from `ready`/`mode_changed` (WC-R4)                                                                 |
-| `actionablePermId` | computed `string \| null`          | `requestId` of the one permission the user can still act on, or null; derived from `sessionStatus` + transcript (WC-R16) |
+| Ref                | Type                               | Purpose                                                                                                                                         |
+| ------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `messages`         | `ChatMsg[]`                        | Ordered render list (WC-R1); passed to ChatMessages                                                                                             |
+| `status`           | `connecting` \| `open` \| `closed` | Connection indicator (WC-R6)                                                                                                                    |
+| `sessionStatus`    | `Record<sessionId, SessionStatus>` | Per-session live status from `ready`/`session_status` (WC-R12)                                                                                  |
+| `running`          | computed boolean                   | Viewed session's status ≠ `idle`; shows Stop and switches Send to enqueue (input stays editable) (WC-R2/R14)                                    |
+| `pendingQueues`    | `Record<sessionId, PendingItem[]>` | Per-session client-only send queue (ordinary sessions). Survives session switches; lost on reload. `currentQueue` is the viewed session's slice |
+| `activity`         | `RunActivity`                      | Fine-grained run state of the viewed session, inferred from the stream; drives SessionStatusBar (WC-R15)                                        |
+| `mode`             | `PermissionMode`                   | Current mode; synced from `ready`/`mode_changed` (WC-R4)                                                                                        |
+| `actionablePermId` | computed `string \| null`          | `requestId` of the one permission the user can still act on, or null; derived from `sessionStatus` + transcript (WC-R16)                        |
 
 Component-local UI state (not in App): prompt draft + slash menu in MessageInput; tool/batch
 expand sets in ChatMessages; per-question answer draft in PermissionPrompt; sidebar pagination
@@ -68,7 +72,11 @@ in SessionSidebar; editable settings draft in SettingsPanel.
 
 | Action                 | Guard                                                             | Sends                                                                                       |
 | ---------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `onSubmit(text)`       | non-empty + `!running` (in MessageInput), client present (WC-R2)  | `user_prompt`; optimistically marks viewed session `running`                                |
+| `onSubmit(text)`       | non-empty, client present; reached only when idle or team (WC-R2) | `user_prompt`; optimistically marks viewed session `running`                                |
+| `onEnqueue(text)`      | ordinary session running (`composerAction`)                       | nothing — appends to `pendingQueues[viewed]` (client-only); clears the composer             |
+| `onEditQueued(item)`   | item in queue                                                     | nothing — removes the item and folds its text back into the composer draft (`prefill`)      |
+| `onDeleteQueued(id)`   | item in queue                                                     | nothing — removes the item from the queue                                                   |
+| `flushIfReady()`       | `shouldFlush(running, teamActive, len)` (watch on running/active) | merges the viewed session's queue (`\n\n`) → `onSubmit` → clears it                         |
 | `stopRun()`            | viewed session running (WC-R14)                                   | `stop_run`                                                                                  |
 | `respond(m, decision)` | client present, prompt `actionable` (⇒ `m.decision` null) (WC-R3) | `permission_response`; sets `m.decision` locally                                            |
 | `setMode(next)`        | client present, value changed                                     | optimistic `mode` update + `set_mode` (WC-R4); `next` from BaseDropdown `update:modelValue` |
@@ -94,6 +102,34 @@ client derives actionability rather than trusting `decision: null` alone (WC-R16
   undecided one while `awaiting_permission`), while resolved history degrades to a static record.
 - ChatMessages forces a tool batch open only for the actionable permission, not for replayed
   static ones.
+
+## Pending send queue (ordinary sessions)
+
+An ordinary session is single-turn: the server rejects a `user_prompt` while a turn is in
+flight (agent-session). So the composer stays editable during a turn, but Send/Enter
+**enqueues** the text instead of sending it (`composerAction`). This is a client-only affordance
+— **no server or protocol change**. Team sessions are unaffected: their lead is alive across
+turns, so the composer still feeds the live lead immediately (`composerAction` returns `send`).
+
+- **Per-session, in-memory.** `pendingQueues` is keyed by `sessionId`, so switching sessions
+  keeps each queue intact (switch away and back and it's still there). It is plain reactive
+  state — a hard refresh or server restart loses it (consistent with "no persistence" above).
+- **Queue UI.** PendingQueue renders the viewed session's items between the status bar and the
+  composer. Each item is still _pending (not yet in context)_ and carries ✎ (edit) and 🗑
+  (delete): delete drops it; edit drops it and folds its text back into the composer draft
+  (`mergeIntoDraft` — single-newline append so an in-progress draft isn't lost) for re-editing.
+- **Flush on ready.** When the viewed ordinary session returns to idle with a non-empty queue
+  (`shouldFlush` — driven by a watch on `running`/`activeSession`/`activeIsTeam`), the items are
+  merged in order, joined by a blank line (`\n\n`), into one prompt and submitted via the normal
+  `onSubmit` → `user_prompt` path; the queue is then cleared. `onSubmit` optimistically marks the
+  session running, so the flush can't re-fire before the server confirms. The merged prompt comes
+  back as an ordinary `user_text` echo bubble — once flushed, those entries are normal context,
+  no longer editable/deletable.
+- **Routing constraint.** Because `user_prompt` routes to the connection's currently-viewed
+  session, flush only fires for the viewed-and-idle session. An unviewed session's queue is
+  retained until it is viewed again while idle, then flushed.
+- The merge/flush-trigger/add-edit-delete logic is the pure module `lib/pending-queue.ts`,
+  unit-tested in Node (no DOM).
 
 ## WS client behavior
 

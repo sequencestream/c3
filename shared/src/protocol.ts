@@ -49,6 +49,8 @@ export interface SessionInfo {
   lastModified: number
   /** c3-tracked permission mode for this session. */
   mode: PermissionMode
+  /** Whether this session was created by a tool (not the user). */
+  isToolSession: boolean
 }
 
 /**

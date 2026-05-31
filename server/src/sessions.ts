@@ -66,6 +66,7 @@ export async function listWorkspaceSessions(dir: string): Promise<SessionInfo[]>
       title: titleOf(s),
       lastModified: s.lastModified,
       mode: getSessionMode(s.sessionId),
+      isToolSession: isToolSession(s.sessionId),
     }))
     .sort((a, b) => b.lastModified - a.lastModified)
 }

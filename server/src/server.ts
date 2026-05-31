@@ -122,6 +122,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const runStatusCache = new Map<string, RequirementRunStatus>()
 
   /**
+   * Dead-session de-dup for reconcile (perf). Maps requirement id → the
+   * `lastDevSessionId` we last ran the completion judge against while its
+   * process was dead. Judging a dead session is an LLM call that yields the
+   * same verdict every time, yet open_requirement_chat fires on every entry,
+   * refresh, and WS reconnect — so we skip a requirement whose CURRENT dead
+   * session is already recorded here. A live process (re-derived cheaply) or a
+   * brand-new session id (differs from the record) still gets (re)judged.
+   * Cleared when a requirement leaves in_progress.
+   */
+  const judgedSessions = new Map<string, string>()
+
+  /**
    * Enrich a requirements list with the correct (derived) runStatus for each
    * in_progress item. Priority order:
    * 1. Process still running in the runtime registry → `running`.
@@ -732,18 +744,35 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               for (const e of rt.buffer) send(ws, e)
               addViewer(chatId, deliver)
 
-              // Reconcile in_progress requirements: for each, check liveness and
-              // auto-complete if the process is dead but the judge confirms done.
-              // Cache the reconcile results so subsequent broadcasts (via
-              // enrichRunStatus) see the derived runStatus.
+              // (A) Send the requirement list IMMEDIATELY so the panel renders
+              // without waiting on reconciliation. runStatus comes from the live
+              // registry / cache (enrichRunStatus); the expensive part — judging
+              // dead dev sessions — runs in the background below and re-broadcasts
+              // the refreshed list once it settles.
+              send(ws, {
+                type: 'requirements',
+                projectPath: proj,
+                items: enrichRunStatus(listRequirements(proj)),
+              })
+              send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
+
+              // Reconcile in_progress requirements in the background: for each,
+              // check liveness and auto-complete if the process is dead but the
+              // judge confirms done. Never blocks the list send above.
               const inProgReqs = listRequirements(proj).filter((r) => r.status === 'in_progress')
-              if (inProgReqs.length > 0) {
+              // (B) Skip a requirement whose CURRENT dead session was already judged
+              // (same verdict, saved LLM call). Live processes and brand-new session
+              // ids fall through and still get (re)judged.
+              const toReconcile = inProgReqs.filter((r) => {
+                const dead = !(r.lastDevSessionId && isRunning(r.lastDevSessionId))
+                if (!dead) return true
+                return !r.lastDevSessionId || judgedSessions.get(r.id) !== r.lastDevSessionId
+              })
+              if (toReconcile.length > 0) {
                 const signal = new AbortController()
-                // Only fire-and-forget: don't block sending if reconcile takes long.
-                // But we want the reconciled list sent immediately, so await it
-                // before the `requirements` message below.
-                const reconciled = await reconcileInProgress(
-                  inProgReqs,
+                const sessionById = new Map(inProgReqs.map((r) => [r.id, r.lastDevSessionId]))
+                void reconcileInProgress(
+                  toReconcile,
                   proj,
                   {
                     isRunning,
@@ -754,30 +783,27 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                     updateStatus,
                   },
                   signal.signal,
-                ).catch((err) => {
-                  console.warn(
-                    `[c3:reconcile] 对账异常: ${err instanceof Error ? err.message : String(err)}`,
-                  )
-                  return []
-                })
-                // Cache reconciled runStatus for enrichRunStatus. Auto-completed
-                // items got status=done, so their cache entry won't be read again
-                // (enrichRunStatus only overrides in_progress items). Keeping them
-                // is harmless and avoids a separate clean-up step.
-                for (const r of reconciled) {
-                  runStatusCache.set(r.requirementId, r.runStatus)
-                }
+                )
+                  .then((reconciled) => {
+                    if (reconciled.length === 0) return
+                    for (const r of reconciled) {
+                      // Cache the derived runStatus for enrichRunStatus. Auto-completed
+                      // items left in_progress, so their entry won't be read again.
+                      runStatusCache.set(r.requirementId, r.runStatus)
+                      // Record the dead session we judged so (B) can skip it next
+                      // time; a still-running process keeps being re-derived instead.
+                      const sid = sessionById.get(r.requirementId)
+                      if (sid && r.runStatus !== 'running') judgedSessions.set(r.requirementId, sid)
+                    }
+                    // Push the refreshed list (updated runStatus + any auto-completes).
+                    broadcastRequirements(proj)
+                  })
+                  .catch((err) => {
+                    console.warn(
+                      `[c3:reconcile] 对账异常: ${err instanceof Error ? err.message : String(err)}`,
+                    )
+                  })
               }
-
-              send(ws, {
-                type: 'requirements',
-                projectPath: proj,
-                items: enrichRunStatus(listRequirements(proj)),
-              })
-              send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
-              // If any auto-completes happened, broadcast so other connections see it.
-              const after = listRequirements(proj).filter((r) => r.status === 'in_progress')
-              if (after.length < inProgReqs.length) broadcastRequirements(proj)
               return
             }
 
@@ -880,6 +906,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               // a future restart doesn't show a stale dangling/ running label.
               if (req.status === 'in_progress' && msg.status !== 'in_progress') {
                 runStatusCache.delete(msg.requirementId)
+                judgedSessions.delete(msg.requirementId)
               }
               broadcastRequirements(req.projectPath)
               return

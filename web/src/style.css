@@ -410,6 +410,18 @@ header h1 {
   color: var(--c-text-muted);
   font-variant-numeric: tabular-nums;
 }
+.session-tool-badge {
+  flex-shrink: 0;
+  margin-right: var(--sp-1);
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  border-radius: 3px;
+  background: var(--c-bg-inset);
+  color: var(--c-text-muted);
+  letter-spacing: 0.3px;
+}
 .session-more {
   display: flex;
   align-items: center;

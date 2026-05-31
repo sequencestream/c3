@@ -157,6 +157,7 @@ function renameSession(path: string, sessionId: string, current: string) {
             ></span>
             <span class="session-title" :title="s.title"
               ><span class="session-date">{{ datePrefix(s.lastModified) }}</span
+              ><span v-if="s.isToolSession" class="session-tool-badge">TOOL</span
               >{{ s.title }}</span
             >
             <span class="session-actions">

@@ -154,7 +154,8 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
 - **Open/resume (`open_requirement_chat`):** db unavailable → `error`; an existing
   `getChatSession` → resume it (cold-load history into a `requirement`-kind, `default`-mode
   runtime); none → create a `pending:` requirement runtime and `setChatSession` it. Then switch
-  the viewer, reply `session_selected` (history), and reply a `requirements` list. This same
+  the viewer, reply `session_selected` (history), and reply a `requirements` list **immediately**
+  (run-state reconcile runs in the background afterward — see Reconcile). This same
   branch is what re-loads the project's current communication session on first entry, WS
   reconnect, and full-page refresh (RM-R4).
 - **Refine (`refine_requirement`):** switch away from the old communication view, start a new
@@ -314,8 +315,12 @@ A per-project, in-memory state machine driven entirely by message handlers and a
 ## Reconcile (`reconcile.ts`)
 
 A standalone (DI'd) function `reconcileInProgress` called by the server's
-`open_requirement_chat` handler **before** the requirement list is sent to the
-client. It processes every `in_progress` requirement for a project:
+`open_requirement_chat` handler **in the background, after** the requirement
+list is already sent to the client (perf: the panel renders immediately on the
+cached/derived `runStatus`, and a `broadcastRequirements` pushes the refreshed
+list once reconcile settles — judging a dead session is an LLM call and must
+never block the first paint). It processes every `in_progress` requirement for a
+project:
 
 1. **Liveness check:** if `lastDevSessionId` is non-null and `hooks.isRunning`
    returns true, the dev process is still alive yields `runStatus: 'running'`.
@@ -332,8 +337,17 @@ All side-effect access (runtime registry, disk transcripts, AI judge, git,
 store) is injected via the `ReconcileDeps` interface so the logic is pure and
 unit-testable. The reconcile auto-`done` is the explicit, documented exception
 to RM-R9 for process death, covering both manual and automation-started runs
-(RM-R18). The server also broadcasts updated requirements when any were
-auto-completed, so other connections see the change.
+(RM-R18). On completion the server caches each derived `runStatus` (consumed by
+`enrichRunStatus` on later broadcasts) and `broadcastRequirements` so every
+connection sees the refreshed run-states and any auto-completes.
+
+**Dead-session de-dup (perf).** The handler keeps a `judgedSessions` map
+(requirement id → the `lastDevSessionId` last judged while dead) and filters the
+reconcile input: a requirement whose **current dead session** is already recorded
+is skipped — re-judging on every entry / refresh / WS reconnect yields the same
+verdict at the cost of another LLM call. A live process (re-derived cheaply via
+`enrichRunStatus`) and a brand-new session id (differs from the record) still get
+(re)judged. The entry is cleared when the requirement leaves `in_progress`.
 
 ## List & back-link
 

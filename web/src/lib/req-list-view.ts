@@ -66,17 +66,17 @@ export function rowVisibility(collapsed: boolean): RowVisibility {
   return { showModule: !collapsed, showActions: !collapsed }
 }
 
-/** 已完成需求排序所需的最小字段集(便于在测试中轻量构造)。 */
-export type CompletionOrderInput = Pick<Requirement, 'completedAt' | 'createdAt' | 'priority'>
+/** 已完成/已取消需求排序所需的最小字段集(便于在测试中轻量构造)。 */
+export type CompletionOrderInput = Pick<Requirement, 'completedAt' | 'updatedAt' | 'priority'>
 
 /**
- * 已完成需求的比较器:完成时间倒序为主键,优先级 P0→P3 为次键。
- * 完成时刻取 `completedAt`,缺失(历史数据)时回退到 `createdAt`。
+ * 终止态需求的比较器:完成/取消时间倒序为主键,优先级 P0→P3 为次键。
+ * 时刻取 `completedAt`;`cancelled` 项无 `completedAt` 时回退到 `updatedAt`。
  * `priority` 为 `P0..P3`,字符串升序即优先级从高到低,直接 localeCompare 即可。
  */
 export function compareByCompletion(a: CompletionOrderInput, b: CompletionOrderInput): number {
-  const ta = a.completedAt ?? a.createdAt
-  const tb = b.completedAt ?? b.createdAt
+  const ta = a.completedAt ?? a.updatedAt
+  const tb = b.completedAt ?? b.updatedAt
   if (ta !== tb) return tb - ta
   return a.priority.localeCompare(b.priority)
 }

@@ -75,15 +75,18 @@ function setFilter(value: RequirementStatus | null) {
   emit('filter', value)
 }
 
-// 「全部」视图:未完成项保持服务端原序置顶,已完成项置底并按完成时间倒序、再优先级排序。
+// 「全部」视图:活跃项(draft/todo/in_progress)保持服务端原序置顶,
+// 终止态项(done/cancelled)置底,按完成/取消时间倒序+优先级排序。
 // 「已完成」筛选视图:整列在客户端按同样规则重排。
 // 其它单状态筛选:由服务端返回该状态数据,原样展示不再排序。
 const displayRequirements = computed<Requirement[]>(() => {
   if (filter.value === 'done') return [...props.requirements].sort(compareByCompletion)
   if (filter.value !== null) return props.requirements
-  const pending = props.requirements.filter((r) => r.status !== 'done')
-  const done = props.requirements.filter((r) => r.status === 'done').sort(compareByCompletion)
-  return [...pending, ...done]
+  const pending = props.requirements.filter((r) => r.status !== 'done' && r.status !== 'cancelled')
+  const terminated = props.requirements
+    .filter((r) => r.status === 'done' || r.status === 'cancelled')
+    .sort(compareByCompletion)
+  return [...pending, ...terminated]
 })
 
 // Title lookup so a dependency id can show its requirement's title in a hint.

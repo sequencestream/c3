@@ -83,7 +83,7 @@ describe('rowVisibility', () => {
 describe('compareByCompletion', () => {
   const make = (o: Partial<CompletionOrderInput>): CompletionOrderInput => ({
     completedAt: null,
-    createdAt: 0,
+    updatedAt: 0,
     priority: 'P2',
     ...o,
   })
@@ -103,16 +103,16 @@ describe('compareByCompletion', () => {
     expect([p3, p0].sort(compareByCompletion)).toEqual([p0, p3])
   })
 
-  it('缺失 completedAt 时回退到 createdAt 比较', () => {
-    const a = make({ completedAt: null, createdAt: 300 })
-    const b = make({ completedAt: null, createdAt: 100 })
+  it('缺失 completedAt 时回退到 updatedAt 比较', () => {
+    const a = make({ completedAt: null, updatedAt: 300 })
+    const b = make({ completedAt: null, updatedAt: 100 })
     expect(compareByCompletion(a, b)).toBeLessThan(0)
     expect([b, a].sort(compareByCompletion)).toEqual([a, b])
   })
 
-  it('一方有 completedAt、一方回退 createdAt 时按各自时刻比较', () => {
-    const completed = make({ completedAt: 150, createdAt: 0 })
-    const fallback = make({ completedAt: null, createdAt: 100 })
+  it('一方有 completedAt、一方回退 updatedAt 时按各自时刻比较', () => {
+    const completed = make({ completedAt: 150, updatedAt: 0 })
+    const fallback = make({ completedAt: null, updatedAt: 100 })
     // completed 的时刻 150 > fallback 的 100,应排在前
     expect(compareByCompletion(completed, fallback)).toBeLessThan(0)
   })
@@ -121,6 +121,23 @@ describe('compareByCompletion', () => {
     const a = make({ completedAt: 100, priority: 'P1' })
     const b = make({ completedAt: 100, priority: 'P1' })
     expect(compareByCompletion(a, b)).toBe(0)
+  })
+
+  it('cancelled 与 done 混合排序:终止态统一按时刻倒序+优先级', () => {
+    const doneLater = make({ completedAt: 300, priority: 'P1' })
+    const cancelledMid = make({ completedAt: null, updatedAt: 200, priority: 'P2' })
+    const doneEarly = make({ completedAt: 100, priority: 'P0' })
+    const sorted = [doneEarly, cancelledMid, doneLater].sort(compareByCompletion)
+    // 300 > 200 > 100
+    expect(sorted).toEqual([doneLater, cancelledMid, doneEarly])
+  })
+
+  it('cancelled 项无 completedAt 时回退到 updatedAt', () => {
+    const a = make({ completedAt: null, updatedAt: 200, priority: 'P1' })
+    const b = make({ completedAt: null, updatedAt: 100, priority: 'P2' })
+    // a 的 updatedAt 200 > b 的 100
+    expect(compareByCompletion(a, b)).toBeLessThan(0)
+    expect([b, a].sort(compareByCompletion)).toEqual([a, b])
   })
 })
 

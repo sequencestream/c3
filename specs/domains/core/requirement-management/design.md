@@ -287,10 +287,12 @@ the list) (RM-R12).
   (`.req-module` 胶囊标签,渲染于 date 与 title 之间;`module===''` 时 `v-if` 不渲染,无占位不破版)
   before the title/priority badge/status (`.req-status` 为彩色 pill 徽标,`:class="r.status"` 按
   draft 灰 / todo 主色 / in_progress 橙 / done 绿 / cancelled 红映射语义色,风格同 `.req-priority`,
-  收缩态不隐藏;标签文案来自 `lib/req-list-view.ts` 的 `statusLabel`), then a **trailing automate toggle icon** (`.req-automate`,
-  行尾,`req-status` 之后;`r.automate` → ⏳ tooltip `in auto queue`,否则 ✋ tooltip `manual trigger mode`)
+  收缩态不隐藏;标签文案来自 `lib/req-list-view.ts` 的 `statusLabel`)
   and a dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
-  for launched, mark done/cancel for any); right **reuses** `ChatMessages` + `SessionStatusBar` +
+  for launched, mark done/cancel for any), then a **trailing automate toggle icon** (`.req-automate`,
+  渲染于 `.req-actions` 操作按钮排末尾、所有操作按钮之后;`r.automate` → ⏳ tooltip `in auto queue`,
+  否则 ✋ tooltip `manual trigger mode`;因属于 `.req-actions`,收缩态随操作区一并隐藏);
+  right **reuses** `ChatMessages` + `SessionStatusBar` +
   `MessageInput` against the already-viewed communication session. The automate icon emits
   `set-automate` (`@click.stop`, toggles `!r.automate`); the button emits `start-automation`/`stop-automation`.
 - **Save confirmation:** `PermissionPrompt.vue` adds a branch for

@@ -186,16 +186,6 @@ function datePrefix(r: Requirement): string {
             }}</span>
             <span class="req-title" :title="r.content">{{ r.title }}</span>
             <span class="req-status" :class="r.status">{{ statusLabel(r.status) }}</span>
-            <button
-              type="button"
-              class="req-automate"
-              :class="{ active: r.automate }"
-              :title="r.automate ? 'in auto queue' : 'manual trigger mode'"
-              :aria-pressed="r.automate"
-              @click.stop="emit('set-automate', r.id, !r.automate)"
-            >
-              {{ r.automate ? '⏳' : '✋' }}
-            </button>
           </div>
           <div v-if="rowVis.showActions" class="req-actions" @click.stop>
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
@@ -224,6 +214,16 @@ function datePrefix(r: Requirement): string {
               @click="emit('set-status', r.id, 'cancelled')"
             >
               取消
+            </button>
+            <button
+              type="button"
+              class="req-automate"
+              :class="{ active: r.automate }"
+              :title="r.automate ? 'in auto queue' : 'manual trigger mode'"
+              :aria-pressed="r.automate"
+              @click.stop="emit('set-automate', r.id, !r.automate)"
+            >
+              {{ r.automate ? '⏳' : '✋' }}
             </button>
           </div>
         </div>

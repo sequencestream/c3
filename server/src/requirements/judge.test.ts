@@ -33,12 +33,13 @@ const req: Requirement = {
   createdAt: 1,
   updatedAt: 1,
   completedAt: 0,
+  runStatus: 'idle',
 }
 
 function judge(lastMessage: string) {
   return judgeCompletion({
     req,
-    lastMessage,
+    lastMessages: [lastMessage],
     evidence: { diffStat: '', recentLog: '' },
     cwd: '/p',
     signal: new AbortController().signal,

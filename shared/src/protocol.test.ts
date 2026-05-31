@@ -21,6 +21,7 @@ describe('protocol wire format', () => {
     { type: 'select_session', workspacePath: '/abs/proj', sessionId: 's1' },
     { type: 'rename_session', workspacePath: '/abs/proj', sessionId: 's1', title: 'New' },
     { type: 'stop_run' },
+    { type: 'request_session_status' },
     { type: 'ping' },
   ]
 

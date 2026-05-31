@@ -12,7 +12,12 @@
  */
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
-import type { ProposedRequirement, Requirement, RequirementStatus } from '@ccc/shared/protocol'
+import type {
+  ProposedRequirement,
+  Requirement,
+  RequirementRunStatus,
+  RequirementStatus,
+} from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from './db.js'
 
 const SCHEMA_VERSION = 4
@@ -154,6 +159,7 @@ function hydrate(d: Db, rows: Row[]): Requirement[] {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
+    runStatus: 'idle' as RequirementRunStatus,
   }))
 }
 

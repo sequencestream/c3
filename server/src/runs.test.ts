@@ -16,6 +16,7 @@ import {
   setOnStatusChange,
   setStatus,
   finalizeRun,
+  reconcileLiveness,
   stopRun,
 } from './runs.js'
 
@@ -358,5 +359,118 @@ describe('session-runtime registry', () => {
     expect(map.get('s-l2')).toBe('running')
     removeRuntime('s-l1')
     removeRuntime('s-l2')
+  })
+
+  describe('reconcileLiveness', () => {
+    it('leaves a running session with recent activity alone', () => {
+      const now = 5_000
+      const staleMs = 10_000
+      const rt = ensureRuntime('s-ok', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      setStatus('s-ok', 'running')
+      // Emit simulates recent activity (updates lastActivityAt).
+      emit('s-ok', { type: 'assistant_text', text: 'alive' })
+
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual([])
+      expect(isRunning('s-ok')).toBe(true)
+      removeRuntime('s-ok')
+    })
+
+    it('converges a stale running session to idle', () => {
+      const now = 20_000
+      const staleMs = 10_000
+      const rt = ensureRuntime('s-stale', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      setStatus('s-stale', 'running')
+      // lastActivityAt was set by ensureRuntime to Date.now() at creation, but for
+      // deterministic test we need a past value — set it directly.
+      rt.lastActivityAt = 0
+
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual(['s-stale'])
+      expect(isRunning('s-stale')).toBe(false)
+      expect(getRuntime('s-stale')?.status).toBe('idle')
+      removeRuntime('s-stale')
+    })
+
+    it('does NOT converge awaiting_permission by staleness alone', () => {
+      const now = 20_000
+      const staleMs = 1_000
+      const rt = ensureRuntime('s-await', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      setStatus('s-await', 'awaiting_permission')
+      rt.lastActivityAt = 0
+
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual([])
+      expect(isRunning('s-await')).toBe(true)
+      removeRuntime('s-await')
+    })
+
+    it('does NOT converge team by staleness alone', () => {
+      const now = 20_000
+      const staleMs = 1_000
+      const rt = ensureRuntime('s-team', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      rt.team = true
+      setStatus('s-team', 'team')
+      rt.lastActivityAt = 0
+
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual([])
+      expect(isRunning('s-team')).toBe(true)
+      removeRuntime('s-team')
+    })
+
+    it('converges an aborted-but-zombie run regardless of status', () => {
+      const now = 5_000
+      const staleMs = 10_000
+      const rt = ensureRuntime('s-zombie', '/ws', 'default', [])
+      const ac = new AbortController()
+      ac.abort() // already aborted but the run pointer still exists
+      rt.run = { abort: ac, handle: null }
+      setStatus('s-zombie', 'running')
+
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual(['s-zombie'])
+      expect(isRunning('s-zombie')).toBe(false)
+      expect(getRuntime('s-zombie')?.status).toBe('idle')
+      removeRuntime('s-zombie')
+    })
+
+    it('converges an aborted zombie even when awaiting_permission', () => {
+      const now = 5_000
+      const staleMs = 10_000
+      const rt = ensureRuntime('s-zombie-await', '/ws', 'default', [])
+      const ac = new AbortController()
+      ac.abort()
+      rt.run = { abort: ac, handle: null }
+      setStatus('s-zombie-await', 'awaiting_permission')
+
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual(['s-zombie-await'])
+      expect(isRunning('s-zombie-await')).toBe(false)
+      removeRuntime('s-zombie-await')
+    })
+
+    it('triggers onStatusChange when convergence changes status', () => {
+      const onChange = vi.fn()
+      setOnStatusChange(onChange)
+
+      const now = 20_000
+      const staleMs = 1_000
+      const rt = ensureRuntime('s-cb', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      setStatus('s-cb', 'running')
+      rt.lastActivityAt = 0
+
+      onChange.mockClear() // clear the call from setStatus('running')
+      const result = reconcileLiveness(now, staleMs)
+      expect(result).toEqual(['s-cb'])
+      // finalizeRun → setStatus(idle) triggers onStatusChange.
+      expect(onChange).toHaveBeenCalled()
+      removeRuntime('s-cb')
+    })
   })
 })

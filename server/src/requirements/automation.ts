@@ -312,7 +312,7 @@ class AutomationController {
       ])
       const verdict = await judgeCompletion({
         req,
-        lastMessage: turn.lastMessage,
+        lastMessages: [turn.lastMessage],
         evidence: { diffStat, recentLog },
         cwd: this.projectPath,
         signal: this.abort.signal,

@@ -40,7 +40,13 @@ export interface JudgeEvidence {
   recentLog: string
 }
 
-function buildPrompt(req: Requirement, lastMessage: string, ev: JudgeEvidence): string {
+function buildPrompt(req: Requirement, lastMessages: string[], ev: JudgeEvidence): string {
+  // Render each message with a numbered divider; at least one message is always present.
+  const messages = lastMessages.length
+    ? lastMessages
+        .map((m, i) => `# 消息 ${i + 1}（时间倒序:最旧在上）\n${m || '(无文本输出)'}`)
+        .join('\n\n')
+    : '(无文本输出)'
   return [
     'You are a development-completion reviewer. Below are a requirement, the last message the agent developing it produced this turn, and code-change evidence (the uncommitted git diff stat + recent commit log).',
     'Judge whether the requirement is TRULY complete.',
@@ -48,8 +54,8 @@ function buildPrompt(req: Requirement, lastMessage: string, ev: JudgeEvidence): 
     `# Requirement title\n${req.title}`,
     `# Requirement content\n${req.content}`,
     '',
-    "# Agent's last message",
-    lastMessage || '(no text output)',
+    "# Agent's last message(s)",
+    messages,
     '',
     '# Uncommitted changes — git diff --stat (vs HEAD)',
     ev.diffStat || '(no uncommitted changes)',
@@ -87,14 +93,14 @@ function parseVerdict(text: string): JudgeVerdict {
 
 export async function judgeCompletion(input: {
   req: Requirement
-  lastMessage: string
+  lastMessages: string[]
   evidence: JudgeEvidence
   cwd: string
   signal: AbortSignal
 }): Promise<JudgeVerdict> {
   const launch = resolveSessionLaunch(null)
   const text = await askOneShot({
-    prompt: buildPrompt(input.req, input.lastMessage, input.evidence),
+    prompt: buildPrompt(input.req, input.lastMessages, input.evidence),
     cwd: input.cwd,
     signal: input.signal,
     model: launch.model,

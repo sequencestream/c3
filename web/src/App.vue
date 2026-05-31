@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { createWsClient } from './lib/ws'
 import { actionablePermissionId } from './lib/permission'
 import {
@@ -266,7 +266,31 @@ onMounted(() => {
           sessionId: activeSession.value,
         })
       }
+      // Reconnect is a high-risk window for a stale status; pull a fresh snapshot.
+      client?.send({ type: 'request_session_status' })
     },
+  })
+
+  // Session-layer status heartbeat: periodically pull the authoritative snapshot
+  // so the UI reconciles even when the server's event-driven broadcast is dropped.
+  const hbTimer = setInterval(() => {
+    client?.send({ type: 'request_session_status' })
+  }, 15_000)
+
+  // Tab restored from background → fetch fresh status (browsers may deprioritise
+  // WebSocket messages for backgrounded tabs).
+  const onVis = () => {
+    if (document.visibilityState === 'visible') {
+      client?.send({ type: 'request_session_status' })
+    }
+  }
+  document.addEventListener('visibilitychange', onVis)
+
+  // Cleanup on unmount. Vue 3 allows lifecycle hooks within hooks — the inner
+  // onUnmounted registers against the component, not the outer onMounted.
+  onUnmounted(() => {
+    clearInterval(hbTimer)
+    document.removeEventListener('visibilitychange', onVis)
   })
 })
 

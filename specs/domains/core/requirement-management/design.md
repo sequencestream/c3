@@ -27,6 +27,7 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 | Hidden-set list filter       | `server/src/sessions.ts`                | `listWorkspaceSessions` excludes the project's hidden set                                                                      |
 | Automation orchestrator      | `server/src/requirements/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                             |
 | Completion judge             | `server/src/requirements/judge.ts`      | `judgeCompletion` — builds the prompt, runs `askOneShot`, parses `done`/`in_progress`/`stuck`                                  |
+| Reconcile                    | `server/src/requirements/reconcile.ts`  | `reconcileInProgress` — reconciling dead-process in_progress requirements on list entry (DI'd deps)                            |
 | Git helper                   | `server/src/git.ts`                     | `gitDiffStat` + `gitRecentLog` + `commitAndPush` (scoped via `git -C`); never rejects, returns codes/errors                    |
 
 ## SQLite layer (`db.ts`)
@@ -308,6 +309,30 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   **always pushes** (an empty tree means `/sdd-lite` already committed its own work — we still push
   so those local commits reach the remote). Any non-zero step returns `{ ok:false, error }` which
   becomes the orchestrator's stop reason (RM-A5/A6).
+
+## Reconcile (`reconcile.ts`)
+
+A standalone (DI'd) function `reconcileInProgress` called by the server's
+`open_requirement_chat` handler **before** the requirement list is sent to the
+client. It processes every `in_progress` requirement for a project:
+
+1. **Liveness check:** if `lastDevSessionId` is non-null and `hooks.isRunning`
+   returns true, the dev process is still alive yields `runStatus: 'running'`.
+2. **Dead process path:** otherwise, load the session's last 3 assistant
+   messages from disk via `hooks.loadTranscriptMessages` and run the completion
+   judge (through `hooks.judgeCompletion`, **without git evidence** since the
+   process is gone).
+3. **Judge `done`:** call `hooks.commitAndPush` + `hooks.updateStatus(done)` yields
+   `runStatus: 'idle'` (auto-completed).
+4. **Judge `in_progress` / `stuck` or no session:** yields `runStatus: 'dangling'`
+   (keeps `in_progress`, but marked interrupted).
+
+All side-effect access (runtime registry, disk transcripts, AI judge, git,
+store) is injected via the `ReconcileDeps` interface so the logic is pure and
+unit-testable. The reconcile auto-`done` is the explicit, documented exception
+to RM-R9 for process death, covering both manual and automation-started runs
+(RM-R18). The server also broadcasts updated requirements when any were
+auto-completed, so other connections see the change.
 
 ## List & back-link
 

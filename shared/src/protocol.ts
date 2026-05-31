@@ -242,6 +242,17 @@ export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3'
  */
 export type RequirementStatus = 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
 
+/**
+ * Derived run-state of an in_progress requirement, computed by reconciling the
+ * requirement's lastDevSessionId liveness against the process table.
+ * - `running` — the dev session's process is still alive (tracking in-flight).
+ * - `dangling` — the dev process is dead but the requirement is still in_progress
+ *   (service restart / crash); a completion judge found the requirement not done.
+ * - `idle` — not in_progress, or the dev process ended and the judge confirmed done
+ *   (just done, or never started).
+ */
+export type RequirementRunStatus = 'running' | 'dangling' | 'idle'
+
 /** One persisted requirement, scoped to a project (workspace path). */
 export interface Requirement {
   /** Stable uuid. */
@@ -268,6 +279,12 @@ export interface Requirement {
   updatedAt: number
   /** When the requirement entered `done`; `null` until completed, cleared if it leaves `done`. */
   completedAt: number | null
+  /**
+   * Derived run-state of an `in_progress` requirement, computed at list-time by
+   * the server's reconcile logic. `'idle'` for other statuses. Clients use this
+   * to render a "tracking" badge or a "dangling" warning next to an in_progress item.
+   */
+  runStatus: RequirementRunStatus
 }
 
 /**
@@ -384,6 +401,8 @@ export type ClientToServer =
   | { type: 'start_automation'; projectPath: string }
   /** Stop the project's automation orchestrator (aborts the current dev run). */
   | { type: 'stop_automation'; projectPath: string }
+  /** Pull the authoritative session-status snapshot (session-layer heartbeat). */
+  | { type: 'request_session_status' }
   | { type: 'ping' }
 
 // Server → Client

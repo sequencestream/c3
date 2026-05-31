@@ -83,6 +83,14 @@ export interface SessionRuntime {
    * the authoritative terminal-state backstop (see `finalizeRun`).
    */
   sawTurnEnd: boolean
+  /**
+   * ms since epoch of the most recent activity in this session (any `emit` call
+   * or runtime creation). Used by the session-layer heartbeat to detect stale /
+   * hung runs: if the status is `running` but no event has been emitted for more
+   * than `staleMs`, the run is presumed hung and gets forcefully converged to
+   * `idle`. Updated in `emit()`.
+   */
+  lastActivityAt: number
   viewers: Set<Viewer>
 }
 
@@ -123,6 +131,7 @@ export function ensureRuntime(
       status: 'idle',
       pending: new Set(),
       sawTurnEnd: false,
+      lastActivityAt: Date.now(),
       viewers: new Set(),
     }
     runtimes.set(id, rt)
@@ -156,6 +165,7 @@ export function emit(id: string, event: ServerToClient): void {
   const rt = runtimes.get(id)
   if (!rt) return
   rt.buffer.push(event)
+  rt.lastActivityAt = Date.now()
   for (const viewer of rt.viewers) viewer(event)
   // Track outstanding (un-decided) permission prompts so the guard below can keep
   // a genuinely-blocked, still-alive run from collapsing to idle.
@@ -284,6 +294,55 @@ export function isRunning(id: string): boolean {
 /** All known sessions' live statuses, for the handshake and broadcasts. */
 export function listStatuses(): SessionRunStatus[] {
   return [...runtimes.values()].map((rt) => ({ sessionId: rt.sessionId, status: rt.status }))
+}
+
+/**
+ * Session-layer liveness reconciliation: identify stale/hung runs and converge
+ * them to `idle`. Called periodically by the server's status heartbeat.
+ *
+ * A run is converged when:
+ * 1. Its AbortController has already been triggered (`aborted === true`) but
+ *    the teardown `finally` never ran — the run is stuck in a zombie state.
+ *    This applies to ALL statuses including `awaiting_permission` and `team`.
+ * 2. The status is `running` AND no event has been emitted for > `staleMs` —
+ *    the SDK iterator or for-await loop is presumed hung / the process exited
+ *    without a clean result.
+ *
+ * `awaiting_permission` and `team` runs are NOT converged by staleness alone
+ * (a user waiting on a prompt is legitimate; a team lead waiting between turns
+ * is legitimate). Only the `aborted` branch covers them.
+ *
+ * Convergence mimics `launchRun`'s teardown `finally`: abort the controller,
+ * clear the run pointer, reset team flag, drop pending prompts, and `finalizeRun`.
+ *
+ * @returns The session ids that were converged (for testing).
+ */
+export function reconcileLiveness(now: number, staleMs: number): string[] {
+  const converged: string[] = []
+  for (const [id, rt] of runtimes) {
+    if (!rt.run) continue
+    // Branch 1: run was already aborted but hasn't cleaned up.
+    if (rt.run.abort.signal.aborted) {
+      rt.run = null
+      rt.team = false
+      clearPending(id)
+      finalizeRun(id)
+      converged.push(id)
+      continue
+    }
+    // Branch 2: status running with no recent activity → presumed hung.
+    if (rt.status === 'running' && now - rt.lastActivityAt > staleMs) {
+      rt.run.abort.abort()
+      rt.run = null
+      rt.team = false
+      clearPending(id)
+      finalizeRun(id)
+      converged.push(id)
+      continue
+    }
+    // `awaiting_permission` and `team` are not converged by staleness alone.
+  }
+  return converged
 }
 
 /** Abort and drop every runtime under `workspacePath` (workspace removed). */

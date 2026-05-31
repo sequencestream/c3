@@ -23,6 +23,7 @@ import {
 import {
   listWorkspaceSessions,
   loadHistory,
+  loadLastAssistantMessages,
   removeSession,
   renameWorkspaceSession,
   sessionExists,
@@ -35,6 +36,7 @@ import {
   ensureRuntime,
   getRuntime,
   listStatuses,
+  reconcileLiveness,
   removeRuntime,
   removeRuntimesForWorkspace,
   removeViewer,
@@ -62,6 +64,9 @@ import {
 } from './requirements/store.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
+import { reconcileInProgress } from './requirements/reconcile.js'
+import { judgeCompletion } from './requirements/judge.js'
+import { commitAndPush } from './git.js'
 import {
   getAutomationStatus,
   hasPendingQuestion,
@@ -100,6 +105,22 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   }
   // Any runtime status change (run start/finish, permission wait) re-broadcasts.
   setOnStatusChange(broadcastStatuses)
+
+  // ---- Session-layer status heartbeat ----
+
+  // How often the server broadcasts a full session-status snapshot (edge-triggered
+  // events may drop; this is the periodic safety net for client reconciliation).
+  const STATUS_HEARTBEAT_MS = 15_000
+  // How long a `running` session can be silent before its run is presumed hung and
+  // forcefully converged to `idle`. Conservative — long-running tools (build, deploy)
+  // emit no intermediate events but finish much faster than this threshold.
+  const RUN_STALE_MS = 5 * 60_000
+
+  setInterval(() => {
+    // Reap stale/hung runs before broadcasting, so the snapshot is authoritative.
+    reconcileLiveness(Date.now(), RUN_STALE_MS)
+    broadcastStatuses()
+  }, STATUS_HEARTBEAT_MS)
 
   // Push a project's requirement list to every connection (the frontend keeps a
   // per-project map and ignores projects it isn't viewing). Used after a save,
@@ -379,6 +400,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           switch (msg.type) {
             case 'ping':
               send(ws, { type: 'pong' })
+              return
+
+            case 'request_session_status':
+              send(ws, { type: 'session_status', statuses: listStatuses() })
               return
 
             case 'get_settings':
@@ -670,8 +695,39 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               })
               for (const e of rt.buffer) send(ws, e)
               addViewer(chatId, deliver)
+
+              // Reconcile in_progress requirements: for each, check liveness and
+              // auto-complete if the process is dead but the judge confirms done.
+              const inProgReqs = listRequirements(proj).filter((r) => r.status === 'in_progress')
+              if (inProgReqs.length > 0) {
+                const signal = new AbortController()
+                // Only fire-and-forget: don't block sending if reconcile takes long.
+                // But we want the reconciled list sent immediately, so await it
+                // before the `requirements` message below.
+                await reconcileInProgress(
+                  inProgReqs,
+                  proj,
+                  {
+                    isRunning,
+                    loadTranscriptMessages: (p, sid, count) =>
+                      loadLastAssistantMessages(p, sid, count),
+                    judgeCompletion,
+                    commitAndPush,
+                    updateStatus,
+                  },
+                  signal.signal,
+                ).catch((err) => {
+                  console.warn(
+                    `[c3:reconcile] 对账异常: ${err instanceof Error ? err.message : String(err)}`,
+                  )
+                })
+              }
+
               send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
               send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
+              // If any auto-completes happened, broadcast so other connections see it.
+              const after = listRequirements(proj).filter((r) => r.status === 'in_progress')
+              if (after.length < inProgReqs.length) broadcastRequirements(proj)
               return
             }
 

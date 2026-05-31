@@ -128,6 +128,41 @@ export async function loadHistory(dir: string, sessionId: string): Promise<Trans
   return messages.flatMap(mapMessage)
 }
 
+/**
+ * Load the last N assistant messages from a session's on-disk transcript.
+ * Returns plain-text assistant replies, most-recent first (index 0 = most recent).
+ * Used by the reconcile logic to judge whether a dead-process session's work was
+ * actually completed. Note: the SDK returns messages in chronological order
+ * (oldest first), so we reverse before slicing.
+ */
+export async function loadLastAssistantMessages(
+  dir: string,
+  sessionId: string,
+  count: number,
+): Promise<string[]> {
+  try {
+    const messages = await getSessionMessages(sessionId, { dir })
+    const assistantTexts: string[] = []
+    for (const m of messages) {
+      if (m.type === 'assistant') {
+        const content = (m.message as { content?: unknown })?.content
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            const b = block as { type?: string; text?: string }
+            if (b.type === 'text' && typeof b.text === 'string') {
+              assistantTexts.push(b.text)
+            }
+          }
+        }
+      }
+    }
+    // SDK returns chronological (oldest first); reverse so most recent is first.
+    return assistantTexts.reverse().slice(0, count)
+  } catch {
+    return []
+  }
+}
+
 /** Whether a session still exists on disk (false if listing fails). */
 export async function sessionExists(dir: string, sessionId: string): Promise<boolean> {
   try {

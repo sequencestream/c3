@@ -108,9 +108,55 @@ run-loop layer (`runClaude`) carries the same guarantee defensively: its `finall
 terminal `turn_end` when the iterator ended without a `result` (non-team, non-aborted), so the
 two layers agree and `sawTurnEnd`/`sawResult` prevent a double emit.
 
-**Out of scope:** a process that truly _hangs_ (the run loop's `for await` never returns, so the
-teardown `finally` never runs) is not covered — that path is still settled by the user pressing
-Stop (abort), which closes the streaming input and reaches the same teardown.
+## Session-layer heartbeat & liveness reconciliation
+
+In addition to the edge-triggered status broadcast (above), the server runs a **periodic
+heartbeat** (`STATUS_HEARTBEAT_MS = 15_000`) that:
+
+1. **Reaps stale/hung runs** via `reconcileLiveness()` before broadcasting, so the snapshot is
+   always authoritative, then
+2. **Unconditionally broadcasts** `session_status` to all connections, so a client that missed an
+   event-driven broadcast (reconnect race, background tab, dropped frame) corrects within one
+   heartbeat period.
+
+### `reconcileLiveness(now, staleMs)` — server/src/runs.ts
+
+For every runtime where `rt.run != null`:
+
+- **Aborted branch:** `rt.run.abort.signal.aborted === true` → the run was requested to stop but
+  its teardown `finally` never ran (zombie). Converge **regardless** of status — this is the only
+  path that converges `awaiting_permission` and `team` sessions.
+- **Stale branch:** `rt.status === 'running' && now - rt.lastActivityAt > staleMs` → no events
+  emitted for too long; the SDK iterator/for-await loop is presumed hung or the Claude process
+  exited mid-turn. Converge to `idle`.
+- **Preserved:** `awaiting_permission` and `team` are **not** converged by staleness alone — a
+  user waiting on a prompt is legitimate, and a team lead waiting between turns is legitimate.
+
+Convergence mimics `launchRun`'s teardown `finally`:
+
+1. `rt.run.abort.abort()` (safe if already aborted)
+2. `rt.run = null`
+3. `rt.team = false`; `clearPending(id)`
+4. `finalizeRun(id)` — synthesises `turn_end` (if needed) + settles to `idle` + triggers
+   `onStatusChange` → rebroadcast.
+
+`staleMs` defaults to 5 minutes (`RUN_STALE_MS`) — conservative enough to avoid false-positives
+from long-running tools (build, deploy) that emit no intermediate events.
+
+### Client-side reconciliation
+
+The client (`web/src/App.vue`) pulls the authoritative snapshot on three triggers:
+
+- **Periodic** — `setInterval(15s)` sends `request_session_status`.
+- **Visibility restore** — `visibilitychange → visible` sends `request_session_status`.
+- **Reconnect** — `onReopen` callback sends `request_session_status`.
+
+On receiving `session_status`, `applyStatuses()` does a **full-table replace** of the local
+`sessionStatus` map + fires `flushIfReady()` (level-triggered flush backstop). Any discrepancy
+between the local stale state and the server's snapshot is corrected at the next arrival.
+
+The transport-layer ping/pong (`ws.ts`) is unchanged — it only probes socket half-open. The
+session-layer heartbeat is a distinct concern.
 
 ## Non-functional considerations
 

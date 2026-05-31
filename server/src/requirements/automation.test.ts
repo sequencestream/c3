@@ -50,6 +50,7 @@ afterEach(() => {
 function runToEnd(
   runDevTurn: AutomationHooks['runDevTurn'],
   sessionExists: AutomationHooks['sessionExists'] = async () => false,
+  isRunning: AutomationHooks['isRunning'] = () => false,
 ): Promise<{ final: AutomationStatus; emitted: AutomationStatus[] }> {
   const emitted: AutomationStatus[] = []
   return new Promise((resolve) => {
@@ -57,6 +58,7 @@ function runToEnd(
       runDevTurn,
       broadcastRequirements: () => {},
       sessionExists,
+      isRunning,
       emitStatus: (s) => {
         emitted.push(s)
         if (s.state === 'done' || s.state === 'error' || s.state === 'idle') {
@@ -121,6 +123,7 @@ describe('automation orchestrator', () => {
         },
         broadcastRequirements: () => {},
         sessionExists: async () => false,
+        isRunning: () => false,
         emitStatus: (s) => {
           // The moment the bind marks currentSessionId, snapshot the persisted status.
           if (s.currentSessionId === 'sess-early' && statusAtBind === undefined) {
@@ -184,6 +187,60 @@ describe('automation orchestrator', () => {
 
     expect(final.state).toBe('done')
     expect(seen).toEqual([null, null]) // P0 (deleted id) then P1 (blank id), both fresh
+  })
+
+  it('attaches to (does not relaunch) a requirement whose dev session is already running', async () => {
+    const [r] = insertRequirements(proj, [{ title: 'attach-me', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    // A turn is already in flight on the linked dev session (run outlives the turn).
+    updateStatus(r.id, 'in_progress')
+    setLastDevSession(r.id, 'sess-live')
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const seen: { sessionId: string | null; attach: boolean | undefined }[] = []
+    let sessionWhileTracking: string | null = null
+    const runDevTurn: AutomationHooks['runDevTurn'] = async (input) => {
+      seen.push({ sessionId: input.sessionId, attach: input.attach })
+      // The status must already point at the tracked session before the turn ends.
+      sessionWhileTracking = getAutomationStatus(proj).currentSessionId
+      return { outcome: 'complete', sessionId: input.sessionId ?? 'bound', lastMessage: '完成' }
+    }
+    // isRunning → true only for the linked session; sessionExists is irrelevant here.
+    const { final } = await runToEnd(
+      runDevTurn,
+      async () => true,
+      (id) => id === 'sess-live',
+    )
+
+    expect(final.state).toBe('done')
+    // First turn attaches the in-flight run with the real id — no fresh/resume launch.
+    expect(seen[0]).toEqual({ sessionId: 'sess-live', attach: true })
+    // currentSessionId pointed at the tracked session DURING the turn, not only after.
+    expect(sessionWhileTracking).toBe('sess-live')
+  })
+
+  it('does NOT attach when the dev session is not running (falls back to resume/fresh)', async () => {
+    const [r] = insertRequirements(proj, [{ title: 'not-live', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    updateStatus(r.id, 'in_progress')
+    setLastDevSession(r.id, 'sess-idle')
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const seen: { sessionId: string | null; attach: boolean | undefined }[] = []
+    const runDevTurn: AutomationHooks['runDevTurn'] = async (input) => {
+      seen.push({ sessionId: input.sessionId, attach: input.attach })
+      return { outcome: 'complete', sessionId: input.sessionId ?? 'bound', lastMessage: '完成' }
+    }
+    // Not running → no attach; on disk → resume (req-004 logic), so the real id is used.
+    const { final } = await runToEnd(
+      runDevTurn,
+      async (_p, id) => id === 'sess-idle',
+      () => false,
+    )
+
+    expect(final.state).toBe('done')
+    expect(seen[0].attach).toBeFalsy() // not attached
+    expect(seen[0].sessionId).toBe('sess-idle') // resumed, per req-004
   })
 
   it('skips requirements without the automate flag', async () => {
@@ -288,6 +345,7 @@ describe('automation orchestrator', () => {
           }),
         broadcastRequirements: () => {},
         sessionExists: async () => false,
+        isRunning: () => false,
         emitStatus: (s) => {
           emitted.push(s)
           if (s.state === 'running' && emitted.length === 2) stopAutomation(proj)

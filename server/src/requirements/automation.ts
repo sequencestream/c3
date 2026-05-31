@@ -14,10 +14,13 @@
  *      automation button).
  *
  * Eligibility: `automate` AND status ∈ {todo, in_progress} AND every dependency
- * is `done`. Sorted P0→P3 then oldest-first. An `in_progress` requirement whose
- * `lastDevSessionId` still exists on disk is RESUMED (its half-built context is
- * continued); a `todo` or dangling one starts a fresh dev session (matching the
- * existing dangling-restart behaviour).
+ * is `done`. Sorted P0→P3 then oldest-first. If the requirement's linked dev
+ * session is ALREADY running a turn (a run outlives its turn), the orchestrator
+ * ATTACHES to that in-flight turn instead of starting another (no double-run /
+ * preempt). Otherwise an `in_progress` requirement whose `lastDevSessionId` still
+ * exists on disk is RESUMED (its half-built context is continued); a `todo` or
+ * dangling one starts a fresh dev session (matching the existing dangling-restart
+ * behaviour).
  *
  * One controller per project (module-level map). State survives connection churn
  * like every other runtime; it does NOT survive a server restart (in-memory).
@@ -51,6 +54,12 @@ export interface RunDevTurnInput {
   requirementId: string
   signal: AbortSignal
   /**
+   * `true` ⇒ the session (`sessionId`) is already running a turn in the
+   * background; do NOT launch or push — only attach an internal viewer and track
+   * that in-flight turn until it settles. `prompt` is ignored in this mode.
+   */
+  attach?: boolean
+  /**
    * Called as soon as the run binds its real SDK session id (early — well before
    * the turn ends), so the orchestrator can flip the requirement to `in_progress`
    * and link the dev session immediately, mirroring manual `start_development`.
@@ -73,6 +82,14 @@ export interface AutomationHooks {
    * manual `start_development`'s dangling check.
    */
   sessionExists(projectPath: string, sessionId: string): Promise<boolean>
+  /**
+   * Whether a session currently has a turn executing in the background (a run
+   * outlives the turn — a session isn't "done" when its run settles). When true
+   * for a requirement's `lastDevSessionId`, the orchestrator ATTACHES to that
+   * in-flight turn instead of launching a second one (which would double-run /
+   * preempt it).
+   */
+  isRunning(sessionId: string): boolean
 }
 
 /** Max "继续" resumes per requirement before giving up (clears sdd-lite checkpoints). */
@@ -189,15 +206,21 @@ class AutomationController {
    * (move to the next), false if the loop must stop (error already recorded).
    */
   private async develop(req: Requirement): Promise<boolean> {
-    // Resume the requirement's existing dev session when it's still on disk
-    // (continue the half-built context with "继续"); a `todo` item or a dangling
+    // If the requirement's linked dev session is ALREADY running a turn in the
+    // background, don't launch/push a second one (that would double-run / preempt
+    // it) — attach to it and track until it settles, then judge. A run outlives
+    // its turn, so a session that's still running here is the common re-start case.
+    let attach = !!req.lastDevSessionId && this.hooks.isRunning(req.lastDevSessionId!)
+    // Otherwise resume the requirement's existing dev session when it's still on
+    // disk (continue the half-built context with "继续"); a `todo` item or a dangling
     // session (empty/deleted `lastDevSessionId`) starts a fresh launch — the same
     // dangling rule as manual `start_development`.
     const resumable =
+      !attach &&
       req.status === 'in_progress' &&
       !!req.lastDevSessionId &&
       (await this.hooks.sessionExists(this.projectPath, req.lastDevSessionId))
-    let sessionId: string | null = resumable ? req.lastDevSessionId : null
+    let sessionId: string | null = attach || resumable ? req.lastDevSessionId : null
     let continuations = 0
     while (!this.abort.signal.aborted) {
       const prompt =
@@ -206,16 +229,24 @@ class AutomationController {
               req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
             }`
           : '继续'
+      // When attaching, there's no launch to fire `onSessionId`, so mark in_progress
+      // up front: the status must reflect "tracking <session>" (currentSessionId set)
+      // while the in-flight turn runs, not only after it settles.
+      if (attach && sessionId) this.markInProgress(req.id, sessionId)
       const turn = await this.hooks.runDevTurn({
         projectPath: this.projectPath,
         sessionId,
         prompt,
         requirementId: req.id,
         signal: this.abort.signal,
+        attach,
         // Flip to in_progress + link the dev session AS SOON AS it binds (early,
         // well before the turn ends) — exactly like manual start_development.
         onSessionId: (sid) => this.markInProgress(req.id, sid),
       })
+      // Only the first turn attaches; the attached turn settles the run, so any
+      // "继续" continuation goes through the ordinary resume path.
+      attach = false
       if (this.abort.signal.aborted) return false
 
       // Fallback: if the early bind never fired (a resumed turn, or an error before

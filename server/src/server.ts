@@ -44,6 +44,7 @@ import {
   emit,
   resolvePending,
   clearPending,
+  isRunning,
   type SessionRuntime,
   type Viewer,
 } from './runs.js'
@@ -219,6 +220,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
       const rt = ensureRuntime(id, input.projectPath, getDefaultMode(), [], 'normal')
       let lastText = ''
+      // Attaching to an already-running turn: its latest assistant text may have
+      // been emitted BEFORE we add our viewer, so seed lastText from the buffer —
+      // otherwise the completion judge would read '' instead of the real message.
+      if (input.attach) {
+        for (const e of rt.buffer) if (e.type === 'assistant_text') lastText = e.text
+      }
       let settled = false
       const finish = (r: DevTurnResult): void => {
         if (settled) return
@@ -259,6 +266,28 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         })
       })
 
+      // Attach mode: the turn is already running in the background — only observe
+      // it (the viewer above), never launch or push. If it settled in the race
+      // between the orchestrator's isRunning check and our addViewer, its turn_end
+      // already fired (before our viewer existed), so resolve now from the buffer
+      // instead of hanging forever.
+      if (input.attach) {
+        if (!isRunning(rt.sessionId)) {
+          let outcome: DevTurnResult['outcome'] = 'complete'
+          let detail: string | undefined
+          for (let i = rt.buffer.length - 1; i >= 0; i--) {
+            const e = rt.buffer[i]
+            if (e.type === 'turn_end') {
+              outcome = e.reason === 'error' ? 'error' : 'complete'
+              detail = e.error
+              break
+            }
+          }
+          finish({ outcome, sessionId: rt.sessionId, lastMessage: lastText, detail })
+        }
+        return
+      }
+
       // Live team lead (rare for /sdd-lite): feed the same process. Otherwise launch
       // a new session or resume the existing one.
       if (rt.team && rt.run?.handle) {
@@ -281,6 +310,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastRequirements,
     emitStatus: broadcastAutomation,
     sessionExists,
+    isRunning,
   }
 
   app.get(

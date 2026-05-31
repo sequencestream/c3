@@ -215,9 +215,11 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   `automation_status` so a fresh connection restores the button state.
 - **Dependency injection.** `automation.ts` imports the store/judge/git directly but takes server
   wiring via `AutomationHooks`: `runDevTurn` (bound to the WS-server closure),
-  `broadcastRequirements`, `emitStatus` (→ `broadcastAutomation`), and `sessionExists` (the same
+  `broadcastRequirements`, `emitStatus` (→ `broadcastAutomation`), `sessionExists` (the same
   `sessions.ts` disk check manual `start_development` uses — injected so the resume/dangling branch
-  stays unit-testable with fakes). This keeps the state machine unit-testable (see `automation.test.ts`).
+  stays unit-testable with fakes), and `isRunning` (the `runs.ts` in-flight check, injected so the
+  attach branch — RM-A10 — stays unit-testable with fakes). This keeps the state machine unit-testable
+  (see `automation.test.ts`).
 - **`runDevTurn` (server closure).** Ensures a `normal` runtime for the requirement (fresh
   `pending:` id, or resume an existing id for the "继续" continuation), registers an **internal
   viewer** on it, and launches/resumes via the shared `launchRun`. It surfaces the SDK session bind
@@ -226,12 +228,23 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   → `complete`/`error`; `permission_request` → `blocked` (it also `stopRun`s the otherwise-hanging
   run, since no human is watching — RM-A9); the controller's abort → `blocked('aborted')`. A live
   team lead (rare for `/sdd-lite`) is fed via `pushInput` instead of a fresh launch.
+  - **Attach mode (`input.attach`, RM-A10).** When the controller passes `attach: true`, the closure
+    only registers the viewer — it **never** launches or pushes. It seeds `lastText` from the runtime
+    **buffer**'s last `assistant_text` (the in-flight turn's latest message may have been emitted
+    before the viewer attached, so the judge would otherwise read `''`). If the run already settled in
+    the race between the controller's `isRunning` check and `addViewer` (`rt.run == null`), it resolves
+    immediately from the buffer's trailing `turn_end` (`complete`/`error`) instead of hanging.
 - **Main loop (`AutomationController.run`).** `pickNext` selects the best eligible requirement
   (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
-  each, `develop()` first picks its **starting** session id: an `in_progress` requirement whose
-  `lastDevSessionId` passes `sessionExists` is **resumed** (real id ⇒ `runDevTurn` continues that
-  context, first prompt "继续"); a `todo` or dangling one starts `null` (fresh launch) — the same
-  dangling rule as manual `start_development`. Then `develop()` loops: run a dev turn → **as soon as the dev session binds** (`onSessionId`,
+  each, `develop()` first picks its **starting** action by precedence: (1) if `lastDevSessionId` is
+  **already running** (`hooks.isRunning`) it **attaches** (RM-A10) — `attach: true`, starting id =
+  `lastDevSessionId`, and `markInProgress` is called **before** `runDevTurn` (no launch ⇒ no early
+  `onSessionId`, so the status must point at the tracked session up front); else (2) an `in_progress`
+  requirement whose `lastDevSessionId` passes `sessionExists` is **resumed** (real id ⇒ `runDevTurn`
+  continues that context, first prompt "继续"); else (3) a `todo` or dangling one starts `null` (fresh
+  launch) — the same dangling rule as manual `start_development`. The `attach` flag applies to the
+  **first** turn only; it is cleared after the first `runDevTurn` so any "继续" continuation uses the
+  ordinary resume path (the attached turn settled the run). Then `develop()` loops: run a dev turn → **as soon as the dev session binds** (`onSessionId`,
   early — mirroring manual `start_development`) `markInProgress` does `setLastDevSession` +
   `updateStatus(in_progress)` + broadcast + emit, so the UI flips to `in_progress` immediately, not
   at turn end (a fallback re-marks if the early bind never fired); → on `complete`, `gitDiffStat` +

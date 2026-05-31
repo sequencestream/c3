@@ -12,6 +12,7 @@ import { waitForDecision, resolveDecision, type Decision } from './permissions.j
 import { runAskConsensus, runConsensusVote } from './consensus.js'
 import { askQuestions } from './consensus-tally.js'
 import { stringifyToolResult } from './format.js'
+import { addToolSession } from './sessions.js'
 
 // In a Bun-compiled binary the SDK's bundled `cli-<platform>` lookup misses
 // (no node_modules to walk). Resolve `claude` from the host PATH and hand it
@@ -276,9 +277,18 @@ export async function askOneShot(opts: {
     },
   })
   let text = ''
+  let sessionId = ''
   try {
     for await (const m of q) {
       if (opts.signal.aborted) break
+      // Capture session_id from the first event and register it as a tool session.
+      if (!sessionId) {
+        const sid = (m as { session_id?: unknown }).session_id
+        if (typeof sid === 'string' && sid) {
+          sessionId = sid
+          addToolSession(sid)
+        }
+      }
       if (m.type === 'assistant') {
         const content = (m as { message?: { content?: unknown[] } }).message?.content
         if (Array.isArray(content)) {

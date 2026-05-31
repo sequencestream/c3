@@ -17,6 +17,24 @@ import { getSessionMode } from './state.js'
 import { normalizeTranscriptText, stringifyToolResult } from './format.js'
 import { listHiddenSessions } from './requirements/store.js'
 
+/**
+ * Module-level tracker for tool-created sessions (completion judge, consensus
+ * advisor queries). These sessions are created by `askOneShot()` and
+ * `askAgentOnce()` via the SDK's `query()` and need to be distinguishable
+ * from ordinary user-initiated sessions for filtering and display purposes.
+ */
+const toolSessionIds: Set<string> = new Set()
+
+/** Record a session id that was created by a tool (not by the user). */
+export function addToolSession(id: string): void {
+  toolSessionIds.add(id)
+}
+
+/** Whether a session was created by a tool. */
+export function isToolSession(id: string): boolean {
+  return toolSessionIds.has(id)
+}
+
 /** Best display title for a session, preferring a user-set title. */
 function titleOf(s: {
   customTitle?: string

@@ -28,6 +28,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { consensusVoters, isConsensusEnabled, launchForAgent, resolveAgent } from './settings.js'
 import { findClaudeExecutable } from './claude.js'
+import { addToolSession } from './sessions.js'
 import {
   askQuestions,
   askVoterPrompt,
@@ -94,9 +95,18 @@ async function askAgentOnce(
   signal.addEventListener('abort', onAbort, { once: true })
 
   let text = ''
+  let sessionId = ''
   try {
     for await (const m of q) {
       if (signal.aborted) break
+      // Capture session_id from the first event and register it as a tool session.
+      if (!sessionId) {
+        const sid = (m as { session_id?: unknown }).session_id
+        if (typeof sid === 'string' && sid) {
+          sessionId = sid
+          addToolSession(sid)
+        }
+      }
       if (m.type === 'assistant') {
         const content = (m as { message?: { content?: unknown[] } }).message?.content
         if (Array.isArray(content)) {

@@ -285,7 +285,9 @@ the list) (RM-R12).
   current item or the stop reason; per row a `MM/DD` date prefix
   — `completedAt` for done items, else `createdAt`, both zero-padded — an optional **module tag**
   (`.req-module` 胶囊标签,渲染于 date 与 title 之间;`module===''` 时 `v-if` 不渲染,无占位不破版)
-  before the title/priority badge/status, then a **trailing automate toggle icon** (`.req-automate`,
+  before the title/priority badge/status (`.req-status` 为彩色 pill 徽标,`:class="r.status"` 按
+  draft 灰 / todo 主色 / in_progress 橙 / done 绿 / cancelled 红映射语义色,风格同 `.req-priority`,
+  收缩态不隐藏;标签文案来自 `lib/req-list-view.ts` 的 `statusLabel`), then a **trailing automate toggle icon** (`.req-automate`,
   行尾,`req-status` 之后;`r.automate` → ⏳ tooltip `in auto queue`,否则 ✋ tooltip `manual trigger mode`)
   and a dependency hint; per-status actions: Refine + Launch-development for `todo`, Development-details
   for launched, mark done/cancel for any); right **reuses** `ChatMessages` + `SessionStatusBar` +

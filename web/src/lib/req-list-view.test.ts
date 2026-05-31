@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { panelToggleLabel, rowVisibility } from './req-list-view'
+import { panelToggleLabel, rowVisibility, statusLabel } from './req-list-view'
+
+describe('statusLabel', () => {
+  it('五种状态各映射到对应中文标签', () => {
+    expect(statusLabel('draft')).toBe('草稿')
+    expect(statusLabel('todo')).toBe('未开始')
+    expect(statusLabel('in_progress')).toBe('开发中')
+    expect(statusLabel('done')).toBe('已完成')
+    expect(statusLabel('cancelled')).toBe('已取消')
+  })
+})
 
 describe('panelToggleLabel', () => {
   it('展开态下文案提示「收起」', () => {

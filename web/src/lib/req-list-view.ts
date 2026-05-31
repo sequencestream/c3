@@ -6,6 +6,21 @@
  * 便于在 Node 环境下单测(项目的 web 测试不含 DOM)。
  */
 
+import type { RequirementStatus } from '@ccc/shared/protocol'
+
+/** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
+export const STATUS_LABELS: Record<RequirementStatus, string> = {
+  draft: '草稿',
+  todo: '未开始',
+  in_progress: '开发中',
+  done: '已完成',
+  cancelled: '已取消',
+}
+
+export function statusLabel(s: RequirementStatus): string {
+  return STATUS_LABELS[s] ?? s
+}
+
 /** 标题栏切换按钮的文案与 title,反映「点击后将切换到的」目标态。 */
 export interface ToggleLabel {
   icon: string

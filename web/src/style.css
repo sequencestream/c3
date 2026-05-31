@@ -1594,10 +1594,35 @@ button.stop-btn:hover:not(:disabled) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 状态徽标:与 .req-priority 同款 pill,按状态映射语义色;收缩态不隐藏 */
 .req-status {
   font-size: var(--fs-badge);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-hover-strong);
   color: var(--c-text-muted);
   flex-shrink: 0;
+}
+.req-status.draft {
+  background: var(--c-hover-strong);
+  color: var(--c-text-muted);
+}
+.req-status.todo {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--c-primary);
+}
+.req-status.in_progress {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--c-warning);
+}
+.req-status.done {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--c-success);
+}
+.req-status.cancelled {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--c-error);
 }
 .req-deps {
   font-size: var(--fs-caption);

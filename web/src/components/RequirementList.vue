@@ -7,7 +7,7 @@
  */
 import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
-import { panelToggleLabel, rowVisibility } from '../lib/req-list-view'
+import { panelToggleLabel, rowVisibility, statusLabel } from '../lib/req-list-view'
 
 const props = defineProps<{
   project: string
@@ -51,13 +51,6 @@ function toggleAutomation() {
 }
 
 // Status filter. `null` = 全部. Local UI state; changing it asks App to refetch.
-const STATUS_LABELS: Record<RequirementStatus, string> = {
-  draft: '草稿',
-  todo: '未开始',
-  in_progress: '开发中',
-  done: '已完成',
-  cancelled: '已取消',
-}
 const FILTERS: { value: RequirementStatus | null; label: string }[] = [
   { value: null, label: '全部' },
   { value: 'todo', label: '未开始' },
@@ -99,10 +92,6 @@ function unfinishedDeps(r: Requirement): Requirement[] {
 
 function startDev(r: Requirement) {
   emit('start-dev', r.id, unfinishedDeps(r).length > 0)
-}
-
-function statusLabel(s: RequirementStatus): string {
-  return STATUS_LABELS[s] ?? s
 }
 
 // 手风琴展开状态:记录当前展开项的 id,null 表示全部收起;天然保证至多一项展开。
@@ -196,7 +185,7 @@ function datePrefix(r: Requirement): string {
               r.module
             }}</span>
             <span class="req-title" :title="r.content">{{ r.title }}</span>
-            <span class="req-status">{{ statusLabel(r.status) }}</span>
+            <span class="req-status" :class="r.status">{{ statusLabel(r.status) }}</span>
             <button
               type="button"
               class="req-automate"

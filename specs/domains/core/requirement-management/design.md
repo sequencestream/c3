@@ -145,7 +145,8 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   SDK-level `disallowedTools` hard-disabled list
   (Write/Edit/MultiEdit/NotebookEdit/Bash/BashOutput/KillShell/Task/SlashCommand) is unchanged and
   **does not include `AskUserQuestion`**.
-- **Independent viewer orchestration.** `open_requirement_chat` / `refine_requirement` manage the
+- **Independent viewer orchestration.** `open_requirement_chat` / `new_requirement_chat` /
+  `refine_requirement` manage the
   viewer switch themselves (`removeViewer(old)` → `viewing=chatId` → `addViewer`) and do **not**
   reuse `select_session`'s internals (which unconditionally set the active session). The
   communication session's `onSessionId` binds the real id (`bindPending` +
@@ -158,6 +159,13 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   (run-state reconcile runs in the background afterward — see Reconcile). This same
   branch is what re-loads the project's current communication session on first entry, WS
   reconnect, and full-page refresh (RM-R4).
+- **New session (`new_requirement_chat`):** unknown workspace / db unavailable → `error`; otherwise
+  unconditionally start a fresh `pending:` requirement runtime (`default` mode) and `setChatSession`
+  it — which clears the project's prior `is_current=1` row before marking the new one current.
+  Switch the viewer, reply `session_selected` (empty history) and a `requirements` list. No first
+  prompt is injected (unlike refine): the dialog opens empty for a new round of communication.
+  Because the new session is now `is_current=1`, a later `open_requirement_chat` (refresh/reconnect)
+  resumes **this** session, not the abandoned one. Triggered by the "+" in the title bar (RM-R4).
 - **Refine (`refine_requirement`):** switch away from the old communication view, start a new
   `pending:` requirement runtime (`default` mode), `setChatSession` to it, reply `session_selected`
   (empty), then `launchRun` injects a first `user_prompt` ("开始完善需求 …, 定稿后调用
@@ -371,6 +379,11 @@ the list) (RM-R12).
 - **View switch:** `App.vue` gains `viewMode: 'console' | 'requirements'` + `requirementsProject`.
   Opening sends `open_requirement_chat` (its response carries the list); selecting any normal
   session resets to `console`. The requirement view renders no mode selector (RM-R3).
+- **Title bar (RM-R3):** the dialog column reuses `SessionTitleBar.vue` with `show-mode=false`
+  (no mode selector) and `show-new=true` (a "+" button). The console tab keeps the default
+  `show-mode=true`/`show-new=false`. The "+" emits `new-session` → `App.vue` sends
+  `new_requirement_chat`; the resulting `session_selected` (empty history) clears the dialog so a
+  fresh round starts. Title shows `activeTitle || '需求沟通'`.
 - **Reconnect / refresh recovery:** each project's current communication session is persisted in
   `requirement_chats.is_current`, so entering the requirement view auto-reloads it. On WS reopen,
   if `viewMode==='requirements'`, re-send `open_requirement_chat`; `viewMode`/`requirementsProject`

@@ -813,6 +813,44 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               return
             }
 
+            case 'new_requirement_chat': {
+              const proj = resolve(msg.projectPath)
+              if (!hasWorkspace(proj)) {
+                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                return
+              }
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              // Open a brand-new comm session: setChatSession resets the prior
+              // is_current row to 0 and marks this one current, so a refresh /
+              // reconnect via open_requirement_chat resumes THIS session.
+              if (viewing) removeViewer(viewing, deliver)
+              const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+              const rt = ensureRuntime(chatId, proj, 'default', [], 'requirement')
+              setChatSession(proj, chatId)
+              viewing = chatId
+              touchWorkspace(proj, Date.now())
+              addViewer(chatId, deliver)
+              send(ws, {
+                type: 'session_selected',
+                workspacePath: proj,
+                sessionId: chatId,
+                title: '需求沟通',
+                mode: 'default',
+                history: [],
+                status: rt.status,
+              })
+              send(ws, {
+                type: 'requirements',
+                projectPath: proj,
+                items: enrichRunStatus(listRequirements(proj)),
+              })
+              send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
+              return
+            }
+
             case 'refine_requirement': {
               const proj = resolve(msg.projectPath)
               if (!isStoreAvailable()) {

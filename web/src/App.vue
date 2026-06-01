@@ -632,6 +632,14 @@ function openRequirements(path: string) {
   client?.send({ type: 'open_requirement_chat', projectPath: path })
 }
 
+// "+" in the requirement title bar: start a brand-new comm session. The server
+// resets the prior is_current row, marks the new one current, and replies with a
+// session_selected (empty history) — handleMessage clears the dialog accordingly.
+function newRequirementChat() {
+  if (!requirementsProject.value) return
+  client?.send({ type: 'new_requirement_chat', projectPath: requirementsProject.value })
+}
+
 function setRequirementFilter(status: RequirementStatus | null) {
   if (!requirementsProject.value) return
   client?.send({
@@ -794,6 +802,13 @@ function listCommands() {
         :mode="mode"
         :mode-options="modeOptions"
         @set-mode="setMode"
+      />
+      <SessionTitleBar
+        v-else-if="activeTab === 'requirements' && requirementsProject"
+        :active-title="activeTitle || '需求沟通'"
+        :show-mode="false"
+        :show-new="true"
+        @new-session="newRequirementChat"
       />
       <ChatMessages
         :messages="messages"

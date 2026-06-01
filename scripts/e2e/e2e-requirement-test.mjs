@@ -101,6 +101,10 @@ let askAnswered = false // we submitted answers to the panel
 let askAnswerInjected = false // the agent echoed ASK_CHOICE back (withAnswers worked)
 let sawAskTurnEnd = false // the AskUserQuestion turn completed
 
+// ---- new_requirement_chat ("+" → brand-new comm session) ----
+let newChatSent = false // we sent new_requirement_chat
+let sawNewChat = false // got a fresh session_selected with a different id + empty history
+
 let saveTurnReason = '' // turn_end reason of the first (save) turn
 let askTurnReason = '' // turn_end reason of the second (AskUserQuestion) turn
 let finished = false
@@ -142,6 +146,18 @@ ws.addEventListener('message', (evt) => {
       break
 
     case 'session_selected':
+      if (newChatSent) {
+        // Response to new_requirement_chat: must be a DIFFERENT session id with an
+        // empty history (the old conversation must not bleed into the new one).
+        const fresh = msg.sessionId !== commSessionId && (msg.history?.length ?? 0) === 0
+        sawNewChat = fresh
+        console.log(
+          `[e2e] ${fresh ? '✅' : '⚠️'} new_requirement_chat → session ${msg.sessionId} ` +
+            `(prev ${commSessionId}, history=${msg.history?.length ?? 0})`,
+        )
+        finish(judge())
+        break
+      }
       // The comm session for the requirement view (read-only, title 需求沟通).
       sawCommSession = true
       commSessionId = msg.sessionId
@@ -243,10 +259,11 @@ ws.addEventListener('message', (evt) => {
       const reason = msg.reason + (msg.error ? `: ${msg.error}` : '')
       console.log(`[e2e] turn_end: ${reason}`)
       if (askPromptSent) {
-        // The AskUserQuestion (second) turn finished → all flows exercised, judge.
+        // The AskUserQuestion (second) turn finished. Last flow: exercise the "+"
+        // (new_requirement_chat) before judging.
         sawAskTurnEnd = true
         askTurnReason = reason
-        finish(judge())
+        maybeStartNewChat()
         break
       }
       // First (save) turn finished. Drive the status machine, then start the
@@ -295,6 +312,15 @@ function maybeStartAskTurn() {
   send({ type: 'user_prompt', text: ASK_PROMPT })
 }
 
+// Final flow: open a brand-new comm session via "+". The response is handled in
+// the `session_selected` case, which verifies a fresh id + empty history then judges.
+function maybeStartNewChat() {
+  if (newChatSent || finished) return
+  newChatSent = true
+  console.log('[e2e] sending new_requirement_chat (the "+" button)')
+  send({ type: 'new_requirement_chat', projectPath: PROJECT_DIR })
+}
+
 function judge() {
   console.log('\n========== REQUIREMENT E2E REPORT ==========')
   console.log(`events: ${JSON.stringify(events)}`)
@@ -312,6 +338,8 @@ function judge() {
     ask_gated: sawAskPermission,
     ask_answer_injected: askAnswerInjected,
     ask_turn_completed_clean: sawAskTurnEnd && askTurnReason.startsWith('complete'),
+    // "+" → new_requirement_chat: fresh session id, empty history (old chat not threaded in).
+    new_chat_fresh_session: sawNewChat,
   }
   console.log('checks:', checks)
   const pass = Object.values(checks).every(Boolean)

@@ -405,6 +405,13 @@ export type ClientToServer =
    */
   | { type: 'open_requirement_chat'; projectPath: string }
   /**
+   * Start a brand-new communication session for a project: resets the previous
+   * `is_current` comm session to 0, creates a fresh one marked current, and
+   * replies with a `session_selected` (empty history) plus the `requirements`
+   * list. The "+" button in the requirement view title bar triggers this.
+   */
+  | { type: 'new_requirement_chat'; projectPath: string }
+  /**
    * Restart the comm session as a fresh one seeded with a requirement to refine;
    * the server injects the first prompt with the requirement's id and content.
    */

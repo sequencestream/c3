@@ -95,8 +95,11 @@ project; not persisted — a server restart resets it to `idle`). Pushed to ever
 ## Persisted store (c3.db)
 
 The SQLite ledger at `~/.c3/c3.db` (distinct from the registry's `state.json`). Schema version is
-managed via `PRAGMA user_version` (currently `4` — v2 added the `requirements.module` column, v3
+managed via `PRAGMA user_version` (currently `5` — v2 added the `requirements.module` column, v3
 added the nullable `requirements.completed_at` column, v4 added `requirements.automate` INTEGER NOT
-NULL DEFAULT 0). Tables: `requirements`, `requirement_deps`, and `requirement_chats`
-(current-session map + hidden set in one table). See [design.md](design.md) for the cross-runtime
-driver adapter and migration handling.
+NULL DEFAULT 0, v5 added the `tool_sessions` table). Tables: `requirements`, `requirement_deps`,
+`requirement_chats` (current-session map + hidden set in one table), and `tool_sessions`
+(`session_id` PRIMARY KEY + `created_at`) — the persisted set of tool-created sessions (completion
+judge, consensus advisor) so the session-registry's "show tool sessions" filter survives restarts.
+A session's row is dropped when the session is deleted. See [design.md](design.md) for the
+cross-runtime driver adapter and migration handling.

@@ -182,7 +182,7 @@ describe('requirements CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(4)
+    expect(version?.user_version).toBe(5)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()

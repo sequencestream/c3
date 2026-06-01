@@ -29,8 +29,18 @@ Implements the [spec](spec.md). Lives in `server/src/state.ts` (persistence),
 | ---------------------------- | --------------------------------- | ------------------------------------------------ |
 | `listWorkspaceSessions(dir)` | `listSessions({ dir })`           | `SessionInfo[]` + per-session mode, newest first |
 | `loadHistory(dir, id)`       | `getSessionMessages(id, { dir })` | `TranscriptItem[]` (see mapping)                 |
-| `removeSession(dir, id)`     | `deleteSession(id, { dir })`      | —                                                |
+| `removeSession(dir, id)`     | `deleteSession(id, { dir })`      | + drops the session's tool-session tag           |
 | `renameWorkspaceSession(…)`  | `renameSession(id, title, …)`     | —                                                |
+
+`listWorkspaceSessions` filters two classes out of the SDK list before mapping: the project's
+**hidden set** (requirement comm sessions, owned by requirement-management) and **tool-created
+sessions** (completion judge / consensus advisor) unless the `showToolSessions` setting is on.
+Tool sessions are tagged via `addToolSession` (called when a tool query's `init` reports its
+`session_id`), which write-throughs to the persisted `tool_sessions` table so the tag — and thus
+the default-off filter — survives restarts; an in-memory-only set would be empty after a restart
+and leak historic tool sessions into the list. `isToolSession` reads the in-memory cache first and
+falls back to the db. `removeSession` deletes the transcript (SDK) **and** the persisted tag, so a
+reused id is not misclassified.
 
 Transcript mapping mirrors the live mapping in agent-session so replayed history renders
 identically: `assistant` text/`tool_use` → `assistant`/`tool_use` items; `user`

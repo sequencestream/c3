@@ -20,7 +20,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from './db.js'
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS requirements (
@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS requirement_chats (
   updated_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_project ON requirement_chats(project_path);
+
+CREATE TABLE IF NOT EXISTS tool_sessions (
+  session_id    TEXT PRIMARY KEY,
+  created_at    INTEGER NOT NULL
+);
 `
 
 let schemaReady = false
@@ -448,4 +453,36 @@ export function listHiddenSessions(projectPath: string): string[] {
       session_id: string
     }>('SELECT session_id FROM requirement_chats WHERE project_path=?', resolve(projectPath))
     .map((r) => r.session_id)
+}
+
+// ---- Tool-created session set ----
+// Sessions spawned by tools (completion judge, consensus advisor). Persisted so
+// the "show tool sessions" filter survives restarts — an in-memory-only set
+// would be empty after a restart, leaving historic tool sessions unrecognised
+// and thus visible even when the setting is off.
+
+/** Record a session id as tool-created (idempotent). */
+export function recordToolSession(sessionId: string): void {
+  const d = db()
+  if (!d) return
+  d.run(
+    'INSERT OR IGNORE INTO tool_sessions (session_id, created_at) VALUES (?,?)',
+    sessionId,
+    Date.now(),
+  )
+}
+
+/** Whether a session id was recorded as tool-created. */
+export function isToolSessionRecorded(sessionId: string): boolean {
+  if (!isDbAvailable()) return false
+  const d = db()
+  if (!d) return false
+  return !!d.get('SELECT 1 FROM tool_sessions WHERE session_id=?', sessionId)
+}
+
+/** Forget a tool-session record (called when its session is deleted). */
+export function deleteToolSessionRecord(sessionId: string): void {
+  const d = db()
+  if (!d) return
+  d.run('DELETE FROM tool_sessions WHERE session_id=?', sessionId)
 }

@@ -16,7 +16,12 @@ import type { SessionInfo, TranscriptItem } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
 import { getSessionMode } from './state.js'
 import { normalizeTranscriptText, stringifyToolResult } from './format.js'
-import { listHiddenSessions } from './requirements/store.js'
+import {
+  listHiddenSessions,
+  recordToolSession,
+  isToolSessionRecorded,
+  deleteToolSessionRecord,
+} from './requirements/store.js'
 import { getShowToolSessions } from './settings.js'
 
 /**
@@ -24,17 +29,24 @@ import { getShowToolSessions } from './settings.js'
  * advisor queries). These sessions are created by `askOneShot()` and
  * `askAgentOnce()` via the SDK's `query()` and need to be distinguishable
  * from ordinary user-initiated sessions for filtering and display purposes.
+ *
+ * The set is a write-through cache over the persisted `tool_sessions` table:
+ * recording also writes the db, so the tag survives restarts (an in-memory-only
+ * set would be empty after a restart and leak historic tool sessions into the
+ * list even with the setting off). `isToolSession` falls back to the db on a
+ * cache miss to recognise sessions recorded by a previous process.
  */
 const toolSessionIds: Set<string> = new Set()
 
 /** Record a session id that was created by a tool (not by the user). */
 export function addToolSession(id: string): void {
   toolSessionIds.add(id)
+  recordToolSession(id)
 }
 
 /** Whether a session was created by a tool. */
 export function isToolSession(id: string): boolean {
-  return toolSessionIds.has(id)
+  return toolSessionIds.has(id) || isToolSessionRecorded(id)
 }
 
 /** Best display title for a session, preferring a user-set title. */
@@ -59,15 +71,17 @@ function titleOf(s: {
 export async function listWorkspaceSessions(dir: string): Promise<SessionInfo[]> {
   const sessions = await listSessions({ dir })
   const hidden = new Set(listHiddenSessions(resolve(dir)))
+  const showTool = getShowToolSessions()
   return sessions
     .filter((s) => !hidden.has(s.sessionId))
-    .filter((s) => getShowToolSessions() || !isToolSession(s.sessionId))
-    .map((s) => ({
+    .map((s) => ({ s, tool: isToolSession(s.sessionId) }))
+    .filter(({ tool }) => showTool || !tool)
+    .map(({ s, tool }) => ({
       sessionId: s.sessionId,
       title: titleOf(s),
       lastModified: s.lastModified,
       mode: getSessionMode(s.sessionId),
-      isToolSession: isToolSession(s.sessionId),
+      isToolSession: tool,
     }))
     .sort((a, b) => b.lastModified - a.lastModified)
 }
@@ -245,7 +259,12 @@ export async function sessionExists(dir: string, sessionId: string): Promise<boo
 }
 
 export async function removeSession(dir: string, sessionId: string): Promise<void> {
+  // Delete the SDK's transcript file, then forget any c3-side tool-session tag
+  // (both the in-memory cache and its persisted row) so a re-created session
+  // reusing the id isn't wrongly classed as tool-created.
   await deleteSession(sessionId, { dir })
+  toolSessionIds.delete(sessionId)
+  deleteToolSessionRecord(sessionId)
 }
 
 export async function renameWorkspaceSession(

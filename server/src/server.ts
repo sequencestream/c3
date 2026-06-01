@@ -987,6 +987,49 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               return
             }
 
+            case 'discussion_to_requirement': {
+              if (!isStoreAvailable()) {
+                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                return
+              }
+              const discussion = getDiscussion(msg.discussionId)
+              if (!discussion) {
+                send(ws, { type: 'error', message: '讨论不存在。' })
+                return
+              }
+              if (discussion.status !== 'completed' || !discussion.conclusion) {
+                send(ws, { type: 'error', message: '仅已完成且有结论的讨论可转为需求。' })
+                return
+              }
+              const proj = resolve(discussion.projectPath)
+              // Seed a fresh comm session with the conclusion — a refine variant.
+              if (viewing) removeViewer(viewing, deliver)
+              const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+              const rt = ensureRuntime(chatId, proj, 'default', [], 'requirement')
+              setChatSession(proj, chatId)
+              viewing = chatId
+              addViewer(chatId, deliver)
+              send(ws, {
+                type: 'session_selected',
+                workspacePath: proj,
+                sessionId: chatId,
+                title: 'New Requirement',
+                mode: 'default',
+                history: [],
+                status: 'idle',
+              })
+              send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
+              const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_requirements。`
+              await launchRun(rt, firstPrompt, {
+                onSessionId: (prev, sid) => {
+                  rebindChatSession(prev, sid)
+                  if (viewing === prev) viewing = sid
+                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                },
+              })
+              return
+            }
+
             case 'start_development': {
               const proj = resolve(msg.projectPath)
               if (!hasWorkspace(proj)) {

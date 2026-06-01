@@ -474,6 +474,17 @@ export type ClientToServer =
    * the server injects the first prompt with the requirement's id and content.
    */
   | { type: 'refine_requirement'; projectPath: string; requirementId: string }
+  /**
+   * Bridge a completed discussion's conclusion into the requirement domain: a
+   * `refine_requirement` variant whose seed is the discussion's conclusion rather
+   * than an existing requirement. The server resolves the project from the
+   * discussion, restarts the comm session as a fresh one, injects a first prompt
+   * carrying the discussion title + conclusion, and replies with a
+   * `session_selected` (empty history) plus the `requirements` list. Rejected if
+   * the discussion is missing, not `completed`, or has no conclusion. The agent
+   * then splits it into requirements via the unchanged `save_requirements` flow.
+   */
+  | { type: 'discussion_to_requirement'; discussionId: string }
   /** Launch a background dev session for a `todo` requirement via the configurable development skill. */
   | { type: 'start_development'; projectPath: string; requirementId: string }
   /** Manually set a requirement's status (e.g. mark done/cancelled). */

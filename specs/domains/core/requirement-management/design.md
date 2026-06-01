@@ -170,6 +170,13 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   `pending:` requirement runtime (`default` mode), `setChatSession` to it, reply `session_selected`
   (empty), then `launchRun` injects a first `user_prompt` ("开始完善需求 …, 定稿后调用
   save_requirements") equivalent to a user message (RM-R7).
+- **From discussion (`discussion_to_requirement`):** the same refine machinery, but the seed is a
+  completed discussion's `conclusion` rather than an existing requirement. The server loads the
+  discussion (`getDiscussion`), rejects unless `completed` with a non-empty `conclusion`, resolves
+  the project from `discussion.projectPath`, then runs the identical `pending:` requirement-runtime
+  flow with a first prompt carrying the discussion title + conclusion ("基于以下讨论结论拆分出可验证
+  的需求条目 …, 定稿后调用 save_requirements"). Triggered by the discussion view's **Convert to
+  Requirement** button (RM-R7).
 
 ## Communication system prompt (`prompt.ts`)
 

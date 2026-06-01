@@ -51,6 +51,15 @@ completed`, appends every turn (`appendMessage`) and streams it (`discussion_mes
   `paused` / `ended`) is broadcast as `discussion_run_status`, **decoupled from** the persisted
   `DiscussionStatus` (pause is runtime-only, not persisted).
 
+- **Conclusion → requirement bridge** (`discussion_to_requirement`): a completed discussion's
+  title-bar **Convert to Requirement** button seeds the requirement domain. The server resolves the
+  project from the discussion, restarts the requirement communication session as a fresh one (a
+  `refine_requirement` variant) whose first prompt carries the discussion title + `conclusion`, and
+  replies with `session_selected` + `requirements`; the agent then splits it into verifiable items
+  via the **unchanged** `save_requirements` flow (see
+  [requirement-management RM-R7](../requirement-management/spec.md)). Rejected unless the discussion
+  is `completed` with a non-empty `conclusion`.
+
 ## Out of scope (now)
 
 - No resume of an orphaned `in_progress` discussion (no live run) after a server restart — pause

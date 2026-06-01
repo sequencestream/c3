@@ -218,8 +218,14 @@ stateDiagram-v2
 ## Domain events (wire)
 
 Consumes (new): `list_requirements`, `open_requirement_chat`, `refine_requirement`,
-`start_development`, `update_requirement_status`, `set_requirement_automate`, `start_automation`,
-`stop_automation`. Emits (new): `requirements`, `automation_status`.
+`discussion_to_requirement`, `start_development`, `update_requirement_status`,
+`set_requirement_automate`, `start_automation`, `stop_automation`. Emits (new): `requirements`,
+`automation_status`.
+
+`discussion_to_requirement` is a `refine_requirement` variant owned by the
+[discussion domain](../discussion/discussion-overview.md) trigger: it seeds the communication
+session with a completed discussion's `conclusion` instead of an existing requirement's content,
+then funnels into the same `save_requirements` flow (RM-R7). The save path is unchanged.
 
 Reuses (existing): chat I/O is `user_prompt` (routed to the communication runtime) plus
 `session_selected` / `user_text` / `assistant_text` / `tool_use` / `tool_result` / `turn_end`;

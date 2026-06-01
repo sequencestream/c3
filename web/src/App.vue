@@ -901,6 +901,19 @@ function submitDiscussionInput() {
   discussionInput.value = ''
 }
 
+// "Convert to Requirement" in a completed discussion's title bar: bridge its
+// conclusion into the requirement domain. Switch to the Requirements tab (the
+// reply carries the seeded comm session via `session_selected` plus the list),
+// then ask the server to restart a comm session seeded with the conclusion.
+function convertDiscussionToRequirement() {
+  const d = activeDiscussion.value
+  if (!d || d.status !== 'completed') return
+  requirementsProject.value = d.projectPath
+  activeTab.value = 'requirements'
+  persistViewMode()
+  client?.send({ type: 'discussion_to_requirement', discussionId: d.id })
+}
+
 // "+" in the requirement title bar: start a brand-new comm session. The server
 // resets the prior is_current row, marks the new one current, and replies with a
 // session_selected (empty history) — handleMessage clears the dialog accordingly.
@@ -1121,6 +1134,14 @@ function listCommands() {
                 @click="resumeDiscussion"
               >
                 Resume
+              </button>
+              <button
+                v-if="activeDiscussion.status === 'completed'"
+                type="button"
+                class="disc-start-btn"
+                @click="convertDiscussionToRequirement"
+              >
+                Convert to Requirement
               </button>
               <span class="disc-status" :class="activeDiscussion.status">
                 {{ discussionStatusLabel(activeDiscussion.status) }}

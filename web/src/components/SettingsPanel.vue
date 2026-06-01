@@ -36,6 +36,7 @@ const draft = ref<SystemSettings>({
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
   showToolSessions: false,
+  devSkill: '',
 })
 
 // Re-seed the draft whenever the panel opens or fresh server settings arrive.
@@ -51,6 +52,7 @@ watch(
       consensus: { enabled: settings.consensus?.enabled ?? false },
       voiceLang: settings.voiceLang ?? 'zh-CN',
       showToolSessions: settings.showToolSessions ?? false,
+      devSkill: settings.devSkill ?? '',
     }
   },
   { immediate: true },
@@ -154,6 +156,16 @@ function isSystemAgent(a: AgentConfig): boolean {
       <select v-model="draft.defaultMode" class="mode-select">
         <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
       </select>
+
+      <p class="settings-section-title">开发技能</p>
+      <p class="settings-hint">
+        启动需求开发时,以斜线开头的斜杠命令会拼接到需求内容之前。留空则不加任何技能前缀。
+      </p>
+      <input
+        v-model="draft.devSkill"
+        class="agent-field dev-skill-input"
+        placeholder="/your-skill(留空则不加前缀)"
+      />
 
       <p class="settings-section-title">Voice input language</p>
       <p class="settings-hint">

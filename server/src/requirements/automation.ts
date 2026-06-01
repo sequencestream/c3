@@ -4,11 +4,11 @@
  * fully unattended.
  *
  * For each eligible requirement it:
- *   1. launches a `/sdd-lite` dev run (via the injected {@link AutomationHooks.runDevTurn});
+ *   1. launches a dev run (the configurable development skill; via the injected {@link AutomationHooks.runDevTurn});
  *   2. on a normal turn end, judges true completion from the agent's last message
  *      + the working-tree diff ({@link judgeCompletion});
  *   3. if done → commit & push → mark `done` → next requirement;
- *      if in_progress → resume with "继续" (capped, to clear `/sdd-lite` checkpoints);
+ *      if in_progress → resume with "继续" (capped, to clear dev-skill checkpoints);
  *      if stuck / the run errored / it blocked on a permission / push failed →
  *      stop the whole loop and record the reason on the status (shown next to the
  *      automation button).
@@ -29,6 +29,7 @@ import type { AutomationStatus, Requirement, ServerToClient } from '@ccc/shared/
 import { getRequirement, listRequirements, setLastDevSession, updateStatus } from './store.js'
 import { judgeCompletion } from './judge.js'
 import { commitAndPush, gitDiffStat, gitRecentLog } from '../git.js'
+import { getDevSkill } from '../settings.js'
 
 /** Outcome of one dev turn, as observed by the orchestrator's internal viewer. */
 export interface DevTurnResult {
@@ -101,7 +102,7 @@ export interface AutomationHooks {
   isRunning(sessionId: string): boolean
 }
 
-/** Max "继续" resumes per requirement before giving up (clears sdd-lite checkpoints). */
+/** Max "继续" resumes per requirement before giving up (clears dev-skill checkpoints). */
 const MAX_CONTINUATIONS = 10
 
 /**
@@ -325,9 +326,11 @@ class AutomationController {
     let sessionId: string | null = attach || resumable ? req.lastDevSessionId : null
     let continuations = 0
     while (!this.abort.signal.aborted) {
+      const skill = getDevSkill()
+      const skillPrefix = skill ? `${skill} ` : ''
       const prompt =
         sessionId === null
-          ? `/sdd-lite ${req.title}\n\n${req.content}${
+          ? `${skillPrefix}${req.title}\n\n${req.content}${
               req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
             }`
           : '继续'
@@ -372,7 +375,7 @@ class AutomationController {
       }
 
       // Normal turn end → judge true completion. Evidence includes BOTH the
-      // uncommitted diff and recent commits, since /sdd-lite may self-commit
+      // uncommitted diff and recent commits, since the dev skill may self-commit
       // (leaving the tree clean) — an empty diff alone must not read as "未完成".
       const [diffStat, recentLog] = await Promise.all([
         gitDiffStat(this.projectPath),

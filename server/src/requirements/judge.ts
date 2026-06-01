@@ -1,15 +1,15 @@
 /**
  * Completion judge for the automation orchestrator. After a dev run's turn ends
  * normally, the orchestrator can't trust "the turn finished" to mean "the
- * requirement is done" — `/sdd-lite` is checkpoint-driven, so a turn often ends
+ * requirement is done" — the dev skill is often checkpoint-driven, so a turn often ends
  * paused, not complete. This module asks a fresh, tool-less Claude
  * (see {@link askOneShot}) to judge the requirement against the agent's last
  * message AND code-change evidence — both the uncommitted `git diff` and recent
- * commits, since `/sdd-lite` may self-commit (clean tree) — returning one of:
+ * commits, since the dev skill may self-commit (clean tree) — returning one of:
  *
  *  - `done`        — implemented and self-verified, with consistent change evidence.
  *  - `in_progress` — FALLBACK only: not done, with NO human-intervention reason — a
- *                    pure `/sdd-lite` checkpoint or more self-driven steps left, so
+ *                    pure dev-skill checkpoint or more self-driven steps left, so
  *                    a blind "继续" can safely advance it.
  *  - `stuck`       — needs a human (asked the user / AskUserQuestion, awaiting a
  *                    permission, lacks context, errored, gave up), or claims done
@@ -67,7 +67,7 @@ function buildPrompt(req: Requirement, lastMessages: string[], ev: JudgeEvidence
     '- Code-change evidence may appear in EITHER the uncommitted changes OR the recent commits — the agent often commits its own work, leaving the uncommitted diff empty. **If either source contains changes consistent with the requirement, treat that as real changes**; do NOT judge it incomplete merely because the uncommitted diff is empty.',
     '- **stuck — check FIRST. The turn ended needing a HUMAN, so this requirement must STOP, not auto-continue.** Return stuck if ANY of these hold: the agent is asking the user a question / presenting options / seeking a preference, direction, scope, or trade-off decision (this includes any use of the **AskUserQuestion** tool — a real decision point a blind "继续" would wrongly answer); it is waiting on a permission / tool authorization no one can grant; it is blocked for lack of context or information only a human can supply; it errored, gave up, or repeatedly failed; OR it claims completion but there is no consistent code-change evidence at all. A genuine human-decision point is stuck, NOT in_progress.',
     "- **done — only if not stuck.** The agent states the feature is implemented (ideally self-verified) AND the change evidence (the diff or a recent commit) is consistent with the requirement. Real evidence is required — do NOT return done on the agent's word alone when no consistent change evidence exists (that case is stuck).",
-    '- **in_progress — FALLBACK only, when it is neither stuck nor done.** The agent paused at a pure `/sdd-lite` checkpoint that a plain "继续" can advance (no human choice needed), or it explicitly says there are remaining steps it will carry out itself. This is NOT a default-to-continue: if there is any human-intervention signal above, it is stuck, not in_progress.',
+    '- **in_progress — FALLBACK only, when it is neither stuck nor done.** The agent paused at a pure dev-skill checkpoint that a plain "继续" can advance (no human choice needed), or it explicitly says there are remaining steps it will carry out itself. This is NOT a default-to-continue: if there is any human-intervention signal above, it is stuck, not in_progress.',
     '',
     'Output a single JSON object only — no explanation, not wrapped in a code block — strictly in the form:',
     '{"verdict":"done|in_progress|stuck","reason":"one-line explanation"}',

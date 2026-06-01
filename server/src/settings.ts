@@ -94,7 +94,18 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const voiceLang =
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
   const showToolSessions = raw?.showToolSessions === true
-  return { agents, defaultAgentId, defaultMode, consensus, voiceLang, showToolSessions }
+  const devSkill = normalizeDevSkill(raw?.devSkill)
+  return { agents, defaultAgentId, defaultMode, consensus, voiceLang, showToolSessions, devSkill }
+}
+
+/**
+ * Force a development-skill value into shape: trim it, default to empty (no skill
+ * prefix at launch), and prepend a missing leading `/` when non-empty.
+ */
+function normalizeDevSkill(raw: unknown): string {
+  const trimmed = typeof raw === 'string' ? raw.trim() : ''
+  if (!trimmed) return ''
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 }
 
 export function loadSettings(): SystemSettings {
@@ -245,6 +256,11 @@ export function isConsensusEnabled(): boolean {
 /** Whether tool-created sessions should appear in the sidebar session list. */
 export function getShowToolSessions(): boolean {
   return loadSettings().showToolSessions === true
+}
+
+/** The slash command prefixed to a requirement when launching development; empty ⇒ no prefix. */
+export function getDevSkill(): string {
+  return normalizeDevSkill(loadSettings().devSkill)
 }
 
 /**

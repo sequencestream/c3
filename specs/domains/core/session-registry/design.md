@@ -87,6 +87,27 @@ So a team lead's `turn_end` reports `team`, not `idle` — the lead process is a
 not free. A `team` session's next `user_prompt` is pushed into the live run rather than launching
 a new one (AS-R17, agent-session design § Team sessions).
 
+## `turn_end` → `idle` is held until teardown (`runs.ts`)
+
+The normal `result` path emits its `turn_end` from **inside** `runClaude`, so the run's teardown
+`finally` (which nulls `rt.run`) has not run yet. If `emit` settled the status to `idle` there, it
+would broadcast `idle` while `rt.run` is still non-null. The client derives `running` purely from
+broadcast status (§ Client-side reconciliation): it sees the running→idle transition and flushes
+its **pending-send queue** as a fresh `user_prompt`, which the server then rejects with "a turn is
+already running" (AS-R2) — silently dropping the queued prompt. The teardown gap is the entire SDK
+query winddown (`input.close()` → iterator end), tens-to-hundreds of ms, so the flush reliably wins
+the race.
+
+So `emit` **holds** a `turn_end`'s implied `idle` whenever `rt.run != null`
+(`else if (next === 'idle' && rt.run != null) next = null`), keeping the current status until the
+run actually tears down. `finalizeRun` then re-settles to `idle` from the teardown `finally` —
+**after** `rt.run` is nulled — so the broadcast `idle` and the server's readiness to accept a new
+`user_prompt` are consistent, and the flushed prompt lands on a genuinely-ready session. This holds
+for both `complete` and `error` `turn_end`s. Precedence among the `idle`-overrides in `emit`: an
+unanswered permission prompt (→ `awaiting_permission`, the consensus-window guard) outranks the
+team hold (→ `team`), which outranks the run-alive hold (→ no change). The `turn_end` **wire
+event** still reaches viewers regardless — it just no longer drives the status to `idle` early.
+
 ## Terminal-state guarantee (`finalizeRun`)
 
 Client `running`/"thinking" is derived purely from broadcast status, so a turn that never
@@ -130,10 +151,12 @@ For every runtime where `rt.run != null`:
   emitted for too long; the SDK iterator/for-await loop is presumed hung or the Claude process
   exited mid-turn. Converge to `idle`.
 - **Dangling-pointer branch:** `rt.status === 'idle'` while `rt.run != null` → a status/run
-  inconsistency (e.g. a stray `turn_end` flowed through `emit` and settled the status to `idle`
-  before the run's teardown cleared `rt.run`). Broadcasts would advertise the session as `idle`
-  while `user_prompt` still rejects with "a turn is already running"; the stale branch (gated on
-  `running`) never reaps it. Converge so client and server agree.
+  inconsistency. The primary cause — a normal `turn_end` settling `idle` before teardown cleared
+  `rt.run` — is now prevented at the source (§ `turn_end` → `idle` is held until teardown), so this
+  is a **defensive backstop** for any residual path that settles `idle` with a live run pointer.
+  Broadcasts would otherwise advertise the session as `idle` while `user_prompt` still rejects with
+  "a turn is already running"; the stale branch (gated on `running`) never reaps it. Converge so
+  client and server agree.
 - **Preserved:** `awaiting_permission` and `team` are **not** converged by staleness alone — a
   user waiting on a prompt is legitimate, and a team lead waiting between turns is legitimate.
 

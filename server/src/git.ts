@@ -45,7 +45,7 @@ export async function gitRecentLog(projectPath: string, n = 5): Promise<string> 
 
 /**
  * Stage everything, commit with `message` (if there are changes), and **always
- * push**. The `/sdd-lite` agent may have already committed its own work, leaving
+ * push**. The dev-skill agent may have already committed its own work, leaving
  * the tree clean — so an empty stage is NOT a no-op: we still push so those local
  * commits reach the remote. Returns `{ ok }` plus a one-line `error` reason the
  * orchestrator surfaces on the automation button. A push failure is a hard stop

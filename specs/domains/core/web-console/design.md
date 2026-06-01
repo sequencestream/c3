@@ -129,7 +129,7 @@ The CSS utility class `status-pulse` (`animation`) is shared with the session-st
 | `openRequirements(p)`             | client present                                                                           | `open_requirement_chat` — server replies with comm `session_selected` + `requirements`      |
 | `setRequirementFilter(s)`         | `requirementsProject` set                                                                | `list_requirements` with optional status filter                                             |
 | `refineRequirement(id)`           | client present                                                                           | `refine_requirement`; launches a fresh seeded comm session                                  |
-| `startDevelopment(id)`            | client present                                                                           | `start_development` — background `/sdd-lite` launch, status flips to `in_progress`          |
+| `startDevelopment(id)`            | client present                                                                           | `start_development` — background dev-skill launch, status flips to `in_progress`            |
 | `setRequirementStatus(id,s)`      | client present                                                                           | `update_requirement_status`; broadcast re-enriches runStatus                                |
 | `setRequirementAutomate(id,bool)` | client present                                                                           | `set_requirement_automate`; broadcast re-enriches runStatus                                 |
 | `startAutomation()`               | `requirementsProject` set                                                                | `start_automation` — begins the per-project orchestrator loop                               |
@@ -225,7 +225,10 @@ turns, so the composer still feeds the live lead immediately (`composerAction` r
   queue would otherwise linger forever. The flush is idempotent: `shouldFlush` gates on idle + non-empty,
   and `onSubmit` optimistically marks the session running, so it can't re-fire before the server
   confirms. The merged prompt comes back as an ordinary `user_text` echo bubble — once flushed, those
-  entries are normal context, no longer editable/deletable.
+  entries are normal context, no longer editable/deletable. The flush is only safe because the server
+  broadcasts `idle` **after** the run tears down (`rt.run` nulled), not from the in-run `turn_end`:
+  otherwise the flushed `user_prompt` would race the teardown and be rejected with "a turn is already
+  running", dropping the queue (session-registry design § `turn_end` → `idle` is held until teardown).
 - **Routing constraint.** Because `user_prompt` routes to the connection's currently-viewed
   session, flush only fires for the viewed-and-idle session. An unviewed session's queue is
   retained until it is viewed again while idle, then flushed.

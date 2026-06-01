@@ -35,7 +35,13 @@ import {
   sessionExists,
   sessionTitle,
 } from './sessions.js'
-import { loadSettings, saveSettings, resolveSessionLaunch, getDefaultMode } from './settings.js'
+import {
+  loadSettings,
+  saveSettings,
+  resolveSessionLaunch,
+  getDefaultMode,
+  getDevSkill,
+} from './settings.js'
 import {
   addViewer,
   bindPending,
@@ -286,7 +292,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
    * Observes the runtime via an internal viewer: the last assistant text is the
    * "completion message" the judge reads; a `turn_end` resolves complete/error; a
    * `permission_request` means a human is needed, so it aborts the run and resolves
-   * `blocked`. A fresh `sessionId` (null) launches a new `/sdd-lite` session; a real
+   * `blocked`. A fresh `sessionId` (null) launches a new dev session; a real
    * id resumes it (the "继续" continuation) — or feeds a live team lead directly.
    */
   const runDevTurn = (input: RunDevTurnInput): Promise<DevTurnResult> =>
@@ -372,7 +378,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         return
       }
 
-      // Live team lead (rare for /sdd-lite): feed the same process. Otherwise launch
+      // Live team lead (rare for a dev skill): feed the same process. Otherwise launch
       // a new session or resume the existing one.
       if (rt.team && rt.run?.handle) {
         emit(rt.sessionId, { type: 'user_text', text: input.prompt })
@@ -873,7 +879,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
               const devRt = ensureRuntime(devId, proj, getDefaultMode(), [], 'normal')
               const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
-              const devPrompt = `/sdd-lite ${req.title}\n\n${req.content}${depNote}`
+              const skill = getDevSkill()
+              const skillPrefix = skill ? `${skill} ` : ''
+              const devPrompt = `${skillPrefix}${req.title}\n\n${req.content}${depNote}`
               // Background launch: don't await — it runs detached, surviving this
               // connection. Status flips to in_progress once the SDK id binds.
               void launchRun(devRt, devPrompt, {

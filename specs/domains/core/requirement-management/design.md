@@ -221,7 +221,8 @@ crosses projects.
 2. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the response carries a
    warning (the frontend also second-confirms before sending) (RM-R11).
 3. Start a **background normal runtime** (`pending:`) via `launchRun` with
-   prompt `/sdd-lite <title + content + dependency summary>`; on `onSessionId`,
+   prompt `[<devSkill> ]<title + content + dependency summary>` (the configurable development
+   skill from system settings, `getDevSkill()`; empty by default ⇒ no skill prefix); on `onSessionId`,
    `setLastDevSession` + `updateStatus(in_progress)` + broadcast `requirements` + `broadcastStatuses`.
 4. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.
@@ -251,7 +252,7 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   the turn ends). The viewer captures the last `assistant_text` and resolves the turn on: `turn_end`
   → `complete`/`error`; `permission_request` → `blocked` (it also `stopRun`s the otherwise-hanging
   run, since no human is watching — RM-A9); the controller's abort → `blocked('aborted')`. A live
-  team lead (rare for `/sdd-lite`) is fed via `pushInput` instead of a fresh launch.
+  team lead (rare for a dev skill) is fed via `pushInput` instead of a fresh launch.
   - **Attach mode (`input.attach`, RM-A10).** When the controller passes `attach: true`, the closure
     only registers the viewer — it **never** launches or pushes. It seeds `lastText` from the runtime
     **buffer**'s last `assistant_text` (the in-flight turn's latest message may have been emitted
@@ -291,14 +292,14 @@ A per-project, in-memory state machine driven entirely by message handlers and a
     settled run carrying a pending question would otherwise surface as `complete`.
 - **Completion judge (`judge.ts`).** `judgeCompletion` builds an English prompt (requirement + last
   message + **evidence**: `git diff HEAD --stat` for uncommitted work AND `git log --oneline -5` for
-  recent commits — `/sdd-lite` often self-commits, leaving a clean tree, so an empty diff must NOT
+  recent commits — the dev skill often self-commits, leaving a clean tree, so an empty diff must NOT
   read as incomplete; either source counts) demanding a strict `{"verdict","reason"}` JSON. The
   verdict rules are ordered **stuck → done → in_progress** with the priority pinned in the prompt:
   (1) **stuck first** — any human-intervention signal (asking the user / `AskUserQuestion`,
   presenting options or seeking a preference/direction/scope/trade-off; waiting on a permission;
   blocked for lack of context; errored/gave up; or claims done with no consistent evidence);
   (2) **done** only if not stuck and the change evidence is consistent (the agent's word alone is
-  insufficient); (3) **in_progress** as the **fallback** for a pure `/sdd-lite` checkpoint or
+  insufficient); (3) **in_progress** as the **fallback** for a pure dev-skill checkpoint or
   self-driven remaining steps. The old "bias toward done / continue" wording is **removed** —
   `in_progress` is no longer a default. It runs through the tool-less `askOneShot` (default-agent
   env/model via `resolveSessionLaunch(null)`), logs the verdict, and tolerantly parses the first
@@ -308,7 +309,7 @@ A per-project, in-memory state machine driven entirely by message handlers and a
 - **Git (`git.ts`).** `gitDiffStat`, `gitRecentLog`, and `commitAndPush` shell out via
   `execFile('git', ['-C', cwd, …])` and never reject (they return exit codes/stderr).
   `commitAndPush` stages all, commits `feat: <title>` **only when there are changes**, and then
-  **always pushes** (an empty tree means `/sdd-lite` already committed its own work — we still push
+  **always pushes** (an empty tree means the dev skill already committed its own work — we still push
   so those local commits reach the remote). Any non-zero step returns `{ ok:false, error }` which
   becomes the orchestrator's stop reason (RM-A5/A6).
 

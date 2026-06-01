@@ -137,15 +137,18 @@ describe('session-runtime registry', () => {
     })
 
     it('settles to idle once the prompt is answered (resolvePending), then turn_end', () => {
-      withRun('s-ans')
+      const rt = withRun('s-ans')
       emit('s-ans', {
         type: 'permission_request',
         requestId: 'q2',
         toolName: 'AskUserQuestion',
         input: {},
       })
-      // Human answers: the guard releases.
+      // Human answers: the pending guard releases. The run then finishes and tears
+      // down — teardown order mirrors server.ts finally (run nulled before the
+      // settling turn_end), so it idles instead of holding (see the flush-race test).
       resolvePending('q2')
+      rt.run = null
       emit('s-ans', { type: 'turn_end', reason: 'complete' })
       expect(getRuntime('s-ans')!.status).toBe('idle')
       removeRuntime('s-ans')
@@ -182,7 +185,7 @@ describe('session-runtime registry', () => {
     })
 
     it('clearPending drops a stale prompt so a later turn_end can idle the live run', () => {
-      withRun('s-clear')
+      const rt = withRun('s-clear')
       emit('s-clear', {
         type: 'permission_request',
         requestId: 'q5',
@@ -190,6 +193,10 @@ describe('session-runtime registry', () => {
         input: {},
       })
       clearPending('s-clear')
+      // Teardown order mirrors server.ts finally: run nulled before the turn_end so
+      // the settling event lands on a torn-down run (otherwise it holds — see the
+      // "holds running until teardown" race test below).
+      rt.run = null
       emit('s-clear', { type: 'turn_end', reason: 'complete' })
       expect(getRuntime('s-clear')!.status).toBe('idle')
       removeRuntime('s-clear')
@@ -197,7 +204,7 @@ describe('session-runtime registry', () => {
 
     it('resolvePending finds the prompt across runtimes by request id', () => {
       withRun('s-r-a')
-      withRun('s-r-b')
+      const rtB = withRun('s-r-b')
       emit('s-r-a', {
         type: 'permission_request',
         requestId: 'uniq-a',
@@ -210,14 +217,56 @@ describe('session-runtime registry', () => {
         toolName: 'AskUserQuestion',
         input: {},
       })
-      // Answer B from any connection; only B releases.
+      // Answer B from any connection; only B releases. A still has a live run with a
+      // pending prompt, so its turn_end holds at awaiting_permission. B's run then
+      // tears down (run nulled before the settling turn_end) and idles.
       resolvePending('uniq-b')
       emit('s-r-a', { type: 'turn_end', reason: 'complete' })
+      rtB.run = null
       emit('s-r-b', { type: 'turn_end', reason: 'complete' })
       expect(getRuntime('s-r-a')!.status).toBe('awaiting_permission')
       expect(getRuntime('s-r-b')!.status).toBe('idle')
       removeRuntime('s-r-a')
       removeRuntime('s-r-b')
+    })
+  })
+
+  // The pending-queue flush race: the normal `result` path emits `turn_end` from
+  // inside the run, while `rt.run` is still set (teardown's `finally` hasn't run).
+  // Broadcasting `idle` here would let the client flush its queued prompt as a new
+  // `user_prompt` that the server then rejects ("a turn is already running"),
+  // silently dropping it. So the session must HOLD until the run is torn down.
+  describe('turn_end hold-until-teardown (pending-queue flush race)', () => {
+    it('holds running on turn_end while the run is still live, then idles on finalizeRun', () => {
+      const seen: ServerToClient[] = []
+      const rt = ensureRuntime('s-hold', '/ws', 'default', [])
+      addViewer('s-hold', (e) => seen.push(e))
+      rt.run = { abort: new AbortController(), handle: null }
+      setStatus('s-hold', 'running')
+      // turn_end emitted from inside the run (rt.run NOT yet nulled): must NOT idle.
+      emit('s-hold', { type: 'turn_end', reason: 'complete' })
+      expect(getRuntime('s-hold')!.status).toBe('running')
+      // The turn_end wire event still reached the viewer (the client renders it; it
+      // just doesn't drive the input lock — that's sessionStatus's job).
+      expect(seen.filter((e) => e.type === 'turn_end')).toHaveLength(1)
+      // Teardown: finally nulls rt.run, then finalizeRun settles to idle (no dup).
+      rt.run = null
+      finalizeRun('s-hold')
+      expect(getRuntime('s-hold')!.status).toBe('idle')
+      expect(seen.filter((e) => e.type === 'turn_end')).toHaveLength(1)
+      removeRuntime('s-hold')
+    })
+
+    it('an error turn_end also holds until teardown, then idles', () => {
+      const rt = ensureRuntime('s-hold-err', '/ws', 'default', [])
+      rt.run = { abort: new AbortController(), handle: null }
+      setStatus('s-hold-err', 'running')
+      emit('s-hold-err', { type: 'turn_end', reason: 'error', error: 'boom' })
+      expect(getRuntime('s-hold-err')!.status).toBe('running')
+      rt.run = null
+      finalizeRun('s-hold-err')
+      expect(getRuntime('s-hold-err')!.status).toBe('idle')
+      removeRuntime('s-hold-err')
     })
   })
 

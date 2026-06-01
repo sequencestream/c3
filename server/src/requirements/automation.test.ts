@@ -22,6 +22,11 @@ vi.mock('../git.js', () => ({
   gitRecentLog: async () => 'abc123 feat: prior work',
   commitAndPush: (...a: unknown[]) => commitMock(...a),
 }))
+// The launch prompt's skill prefix comes from system settings; mock it so tests
+// don't depend on the developer's on-disk config and can exercise a custom skill.
+// Default is empty (no prefix), matching the real default.
+const devSkillMock = vi.fn(() => '')
+vi.mock('../settings.js', () => ({ getDevSkill: () => devSkillMock() }))
 
 // Imported AFTER the mocks so automation.ts binds to the mocked modules.
 const { startAutomation, stopAutomation, getAutomationStatus } = await import('./automation.js')
@@ -38,6 +43,7 @@ beforeEach(() => {
   judgeMock.mockReset()
   commitMock.mockReset()
   commitMock.mockResolvedValue({ ok: true, committed: true })
+  devSkillMock.mockReturnValue('')
 })
 
 afterEach(() => {
@@ -98,9 +104,36 @@ describe('automation orchestrator', () => {
     expect(getRequirement(p0.id)?.status).toBe('done')
     expect(getRequirement(p1.id)?.status).toBe('done')
     expect(commitMock).toHaveBeenCalledTimes(2)
-    // First prompt of each requirement is the /sdd-lite launch.
-    expect(prompts[0]).toContain('/sdd-lite high')
-    expect(prompts[1]).toContain('/sdd-lite low')
+    // With no dev skill configured (default), the launch prompt is just the title/content.
+    expect(prompts[0]).toMatch(/^high\n/)
+    expect(prompts[1]).toMatch(/^low\n/)
+  })
+
+  it('prefixes the launch prompt with the configured dev skill', async () => {
+    devSkillMock.mockReturnValue('/my-skill')
+    const [r] = insertRequirements(proj, [{ title: 'custom', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const prompts: string[] = []
+    const { final } = await runToEnd(completingTurn(prompts))
+
+    expect(final.state).toBe('done')
+    expect(prompts[0]).toMatch(/^\/my-skill custom\n/)
+  })
+
+  it('omits the skill prefix when no dev skill is configured', async () => {
+    devSkillMock.mockReturnValue('')
+    const [r] = insertRequirements(proj, [{ title: 'plain', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
+
+    const prompts: string[] = []
+    const { final } = await runToEnd(completingTurn(prompts))
+
+    expect(final.state).toBe('done')
+    // No leading space, no slash command — the prompt starts straight with the title.
+    expect(prompts[0]).toMatch(/^plain\n/)
   })
 
   it('orders by intra-batch dependency, not submission/createdAt — the depended-on item starts first', async () => {
@@ -122,8 +155,8 @@ describe('automation orchestrator', () => {
 
     expect(final.state).toBe('done')
     expect(final.completedIds).toEqual([b.id, a.id]) // prereq (B) before dependent (A)
-    expect(prompts[0]).toContain('/sdd-lite prereq')
-    expect(prompts[1]).toContain('/sdd-lite depends')
+    expect(prompts[0]).toMatch(/^prereq\n/)
+    expect(prompts[1]).toMatch(/^depends\n/)
   })
 
   it('flips the requirement to in_progress as soon as the dev session binds (before the turn ends)', async () => {
@@ -382,7 +415,7 @@ describe('automation orchestrator', () => {
     const { final } = await runToEnd(completingTurn(prompts))
 
     expect(final.state).toBe('done')
-    expect(prompts[0]).toContain('/sdd-lite multi')
+    expect(prompts[0]).toMatch(/^multi\n/)
     expect(prompts[1]).toBe('继续') // resumed after the checkpoint
   })
 
@@ -408,7 +441,7 @@ describe('automation orchestrator', () => {
     expect(final.state).toBe('error')
     expect(final.error).toContain('人工决策')
     expect(commitMock).not.toHaveBeenCalled()
-    expect(prompts).toEqual([expect.stringContaining('/sdd-lite asks')]) // no second "继续"
+    expect(prompts).toEqual([expect.stringMatching(/^asks\n/)]) // no second "继续"
   })
 
   it('stops with an error when the judge says stuck', async () => {

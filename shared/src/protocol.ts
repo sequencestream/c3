@@ -133,6 +133,9 @@ export interface SystemSettings {
   /** When true, tool-created sessions (completion judge, consensus advisor) appear
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean
+  /** Slash command (leading `/`) prefixed to the requirement content when launching
+   * development. Optional; empty/unset ⇒ no skill prefix. */
+  devSkill?: string
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */
@@ -252,7 +255,7 @@ export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3'
  * Requirement lifecycle status.
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
- * - `in_progress` — development launched (`/sdd-lite` running).
+ * - `in_progress` — development launched (dev session running).
  * - `done` / `cancelled` — terminal, set by the user (never auto-set).
  */
 export type RequirementStatus = 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
@@ -406,7 +409,7 @@ export type ClientToServer =
    * the server injects the first prompt with the requirement's id and content.
    */
   | { type: 'refine_requirement'; projectPath: string; requirementId: string }
-  /** Launch a background dev session for a `todo` requirement via `/sdd-lite`. */
+  /** Launch a background dev session for a `todo` requirement via the configurable development skill. */
   | { type: 'start_development'; projectPath: string; requirementId: string }
   /** Manually set a requirement's status (e.g. mark done/cancelled). */
   | { type: 'update_requirement_status'; requirementId: string; status: RequirementStatus }

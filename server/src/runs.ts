@@ -191,6 +191,16 @@ export function emit(id: string, event: ServerToClient): void {
     // lead turn finished", not "idle". Hold the status at `team` so the sidebar and
     // composer treat it as a live, persistent session awaiting teammates.
     next = 'team'
+  } else if (next === 'idle' && rt.run != null) {
+    // The normal `result` path emits this `turn_end` from *inside* `runClaude`, so
+    // the run's teardown `finally` (which nulls `rt.run`) hasn't run yet. Settling
+    // to idle now would broadcast `idle` while `rt.run` is still set — the client
+    // sees the idle transition, flushes its pending-send queue as a fresh
+    // `user_prompt`, and the server rejects it with "a turn is already running",
+    // silently dropping the queued prompt. Hold the current status instead;
+    // `finalizeRun` re-settles to idle AFTER the `finally` nulls `rt.run`, so the
+    // flushed prompt lands on a session that is genuinely ready to accept it.
+    next = null
   }
   if (next && next !== rt.status) {
     rt.status = next

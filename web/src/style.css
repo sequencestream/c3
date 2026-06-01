@@ -1471,6 +1471,10 @@ button.stop-btn:hover:not(:disabled) {
   border-color: var(--c-primary);
 }
 
+.dev-skill-input {
+  width: 320px;
+}
+
 .settings-foot button {
   height: 36px;
   padding: 0 var(--sp-6);

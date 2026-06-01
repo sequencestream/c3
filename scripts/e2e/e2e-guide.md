@@ -22,6 +22,22 @@ section.
 - `pnpm start --project /tmp --port 13000`
 - `node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
+## Pending-queue flush race (running→idle re-submit)
+
+Reproduces the client's pending-send-queue flush at the protocol level: a first
+trivial (tool-less) turn runs, and the instant our session's `session_status`
+flips running→idle the test fires a SECOND `user_prompt` — mirroring App.vue's
+`flushIfReady`. It guards the teardown race where the server broadcast `idle`
+from inside the run's `turn_end` _before_ the teardown `finally` nulled `rt.run`,
+so the flushed prompt was rejected with "A turn is already running in this
+session." and silently dropped. PASS = the second prompt is accepted and its
+turn completes; FAIL = the "already running" error fires.
+
+Needs only the default agent (spends two short tool-less turns of real tokens).
+
+- `pnpm start --project /tmp --port 13000`
+- `node scripts/e2e/e2e-pending-flush-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
+
 ## Requirement management (save flow + AskUserQuestion gate)
 
 Exercises the requirement-management feature end-to-end: register a throwaway

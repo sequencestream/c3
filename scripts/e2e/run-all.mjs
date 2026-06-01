@@ -52,6 +52,7 @@ writeFileSync(join(SEED_PROJECT, 'README.md'), '# c3 e2e seed\n')
 // Each test: name, script file, and whether a non-(0/5) exit fails the suite.
 const TESTS = [
   { name: 'smoke (permission flow)', file: 'e2e-ws-test.mjs' },
+  { name: 'pending-queue flush race', file: 'e2e-pending-flush-test.mjs' },
   { name: 'requirement (save flow)', file: 'e2e-requirement-test.mjs' },
   { name: 'consensus (voting)', file: 'e2e-consensus-test.mjs' },
   { name: 'ask-consensus (per-question)', file: 'e2e-ask-consensus-test.mjs' },

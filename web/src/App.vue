@@ -11,12 +11,13 @@ import {
   type PendingItem,
 } from './lib/pending-queue'
 import AppHeader from './components/AppHeader.vue'
-import SessionSidebar from './components/SessionSidebar.vue'
+import SessionList from './components/SessionList.vue'
 import ChatMessages from './components/ChatMessages.vue'
 import MessageInput from './components/MessageInput.vue'
 import PendingQueue from './components/PendingQueue.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import SessionStatusBar from './components/SessionStatusBar.vue'
+import SessionTitleBar from './components/SessionTitleBar.vue'
 import TaskPanel from './components/TaskPanel.vue'
 import RequirementList from './components/RequirementList.vue'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
@@ -182,11 +183,18 @@ const activity = ref<RunActivity>({ phase: 'idle' })
 // first `/`). Cleared on session switch so the next `/` refetches for the new cwd.
 const availableCommands = ref<SlashCommandInfo[]>([])
 
-// ---- Requirement view ----
-// `viewMode` toggles the main area between the normal console and the
-// requirement view (list + comm chat). The comm session IS the viewed session,
-// so the chat column is shared; only the left requirement list is extra.
-const viewMode = ref<'console' | 'requirements'>('console')
+// ---- Top-bar tabs ----
+// `activeTab` is the explicit top-bar tab selection that drives which page the
+// content area shows. The list is data so a future tab (e.g. 「讨论」) is just
+// one more entry here + one branch in the body. The requirement tab's comm
+// session IS the viewed session, so it shares the chat column; only the left
+// requirement list is extra.
+type TabKey = 'console' | 'requirements'
+const HEADER_TABS: { key: TabKey; label: string }[] = [
+  { key: 'console', label: '会话' },
+  { key: 'requirements', label: '需求' },
+]
+const activeTab = ref<TabKey>('console')
 const requirementsProject = ref<string | null>(null)
 // Per-project requirement lists (the server pushes `requirements`; we ignore
 // projects we aren't viewing).
@@ -229,7 +237,7 @@ function persistCurrentWorkspace() {
 // in-memory state already survives a WS reconnect; this only covers reload).
 function persistViewMode() {
   try {
-    localStorage.setItem(VIEW_MODE_KEY, viewMode.value)
+    localStorage.setItem(VIEW_MODE_KEY, activeTab.value)
     if (requirementsProject.value) localStorage.setItem(REQ_PROJECT_KEY, requirementsProject.value)
   } catch {
     /* localStorage unavailable — non-fatal */
@@ -248,7 +256,7 @@ function maybeRestoreRequirements(list: WorkspaceInfo[]) {
     return
   }
   if (saved.mode === 'requirements' && saved.proj && list.some((w) => w.path === saved.proj)) {
-    viewMode.value = 'requirements'
+    activeTab.value = 'requirements'
     requirementsProject.value = saved.proj
     client?.send({ type: 'open_requirement_chat', projectPath: saved.proj })
   }
@@ -281,7 +289,7 @@ onMounted(() => {
     onReopen: () => {
       // In the requirement view, resume the comm session (the server re-binds
       // the project's persisted `is_current` chat); otherwise re-select normally.
-      if (viewMode.value === 'requirements' && requirementsProject.value) {
+      if (activeTab.value === 'requirements' && requirementsProject.value) {
         client?.send({ type: 'open_requirement_chat', projectPath: requirementsProject.value })
       } else if (activeWorkspace.value && activeSession.value) {
         client?.send({
@@ -598,16 +606,26 @@ function selectSession(path: string, sessionId: string) {
   client?.send({ type: 'select_session', workspacePath: path, sessionId })
 }
 
-// ---- Requirement actions ----
+// ---- Tab / requirement actions ----
+// Top-bar tab click: console switches back to the chat page; requirements opens
+// the current workspace's requirement page (no-op without a workspace).
+function onSelectTab(key: string) {
+  if (key === 'requirements') {
+    if (currentWorkspace.value) openRequirements(currentWorkspace.value)
+    return
+  }
+  enterConsole()
+}
+
 function enterConsole() {
-  if (viewMode.value !== 'console') {
-    viewMode.value = 'console'
+  if (activeTab.value !== 'console') {
+    activeTab.value = 'console'
     persistViewMode()
   }
 }
 
 function openRequirements(path: string) {
-  viewMode.value = 'requirements'
+  activeTab.value = 'requirements'
   requirementsProject.value = path
   persistViewMode()
   // The response carries both the comm `session_selected` and the list.
@@ -726,15 +744,13 @@ function listCommands() {
 
 <template>
   <AppHeader
-    :has-active-session="hasActiveSession"
     :workspaces="workspaces"
     :current-workspace="currentWorkspace"
-    :active-title="activeTitle"
-    :mode="mode"
-    :mode-options="modeOptions"
     :status="status"
-    :mode-selectable="viewMode === 'console'"
-    @set-mode="setMode"
+    :tabs="HEADER_TABS"
+    :active-tab="activeTab"
+    :tabs-enabled="currentWorkspace !== null"
+    @select-tab="onSelectTab"
     @open-settings="openSettings"
     @add-workspace="addWorkspace"
     @select-workspace="selectWorkspace"
@@ -742,7 +758,8 @@ function listCommands() {
   />
 
   <div class="body">
-    <SessionSidebar
+    <SessionList
+      v-if="activeTab === 'console'"
       :current-workspace="currentWorkspace"
       :sessions="currentSessions"
       :session-status="sessionStatus"
@@ -750,14 +767,13 @@ function listCommands() {
       :active-session="activeSession"
       :active-title="activeTitle"
       @create-session="createSession"
-      @open-requirements="openRequirements"
       @select-session="selectSession"
       @delete-session="deleteSession"
       @rename-session="renameSession"
     />
 
     <RequirementList
-      v-if="viewMode === 'requirements' && requirementsProject"
+      v-if="activeTab === 'requirements' && requirementsProject"
       :project="requirementsProject"
       :requirements="currentRequirements"
       :automation="currentAutomation"
@@ -772,6 +788,13 @@ function listCommands() {
     />
 
     <div class="content">
+      <SessionTitleBar
+        v-if="activeTab === 'console' && hasActiveSession"
+        :active-title="activeTitle"
+        :mode="mode"
+        :mode-options="modeOptions"
+        @set-mode="setMode"
+      />
       <ChatMessages
         :messages="messages"
         :has-active-session="hasActiveSession"

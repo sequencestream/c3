@@ -65,9 +65,38 @@ header h1 {
   color: var(--c-text-muted);
   letter-spacing: 0;
 }
-.mode-paren {
-  color: var(--c-text-disabled);
-  font-size: var(--fs-title-sm);
+/* Top-bar tab nav (right after the workspace switcher). Data-driven buttons;
+   the active tab is underlined/highlighted. Disabled until a workspace exists. */
+.header-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.header-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+.header-tab:hover:not(:disabled) {
+  color: var(--c-text);
+  background: var(--c-card);
+}
+.header-tab.active {
+  color: var(--c-text);
+  background: var(--c-card);
+  border-color: var(--c-border);
+}
+.header-tab:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ============ 标准下拉框（Dropdown 组件） ============ */
@@ -225,28 +254,29 @@ header h1 {
   background: rgba(239, 68, 68, 0.12);
 }
 
-/* 面包屑：当前工作区 › 当前 session */
-.crumbs {
+/* 会话标题行:聊天列(.content)顶部 —— 左侧会话标题 + 右侧权限模式下拉 */
+.session-title-bar {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 var(--sp-4);
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: var(--fs-title-sm);
-  min-width: 0;
+  background: var(--c-panel);
+  border-bottom: 1px solid var(--c-border);
 }
-.crumb-ws {
-  color: var(--c-text-muted);
-  font-weight: 500;
-}
-.crumb-sep {
-  color: var(--c-text-disabled);
-}
-.crumb-session {
+.session-title-text {
   color: var(--c-text);
+  font-size: var(--fs-title-sm);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 50vw;
+  min-width: 0;
+}
+.session-title-bar .mode {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* ============ 工作区切换器（顶部栏最左侧） ============ */
@@ -496,6 +526,11 @@ header h1 {
 }
 .ws-row:hover .ws-actions {
   display: inline-flex;
+}
+/* Always-visible action cluster in the sidebar header (e.g. New session). */
+.sidebar-actions {
+  display: inline-flex;
+  flex-shrink: 0;
 }
 
 .session-list {

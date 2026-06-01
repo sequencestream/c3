@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /*
- * SessionSidebar.vue — 左侧「当前工作区」的会话列表。
+ * SessionList.vue — 「会话」tab 的左栏:当前工作区的会话列表。
  *
- * 工作区的新增/切换/移除已收敛到顶部的 WorkspaceSwitcher;侧栏只呈现 currentWorkspace
- * 的会话列表。会话分页(每次可见条数)是侧栏自身的 UI 状态;增删改经事件上抛(含
- * prompt/confirm 交互),由 App 统一发往服务端。
+ * 工作区的新增/切换/移除已收敛到顶部的 WorkspaceSwitcher;本组件只呈现 currentWorkspace
+ * 的会话列表(只在「会话」tab 渲染,与「需求」tab 的 RequirementList 左栏对称)。会话分页
+ * (每次可见条数)是组件自身的 UI 状态;增删改经事件上抛(含 prompt/confirm 交互),
+ * 由 App 统一发往服务端。
  */
 import { ref } from 'vue'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
@@ -21,7 +22,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'create-session': [path: string]
-  'open-requirements': [path: string]
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -31,7 +31,7 @@ const emit = defineEmits<{
 const SESSION_PAGE = 10
 const sessionLimit = ref(SESSION_PAGE)
 
-// Status of one session (idle when unknown). Drives sidebar badges.
+// Status of one session (idle when unknown). Drives list badges.
 function statusOf(sessionId: string): SessionStatus {
   return props.sessionStatus[sessionId] ?? 'idle'
 }
@@ -76,10 +76,6 @@ function createSession() {
   if (props.currentWorkspace) emit('create-session', props.currentWorkspace)
 }
 
-function openRequirements() {
-  if (props.currentWorkspace) emit('open-requirements', props.currentWorkspace)
-}
-
 function deleteSession(sessionId: string) {
   if (!props.currentWorkspace) return
   if (window.confirm('Delete this session and its transcript? This cannot be undone.'))
@@ -97,8 +93,7 @@ function renameSession(sessionId: string, current: string) {
   <aside class="sidebar">
     <div class="sidebar-head">
       <span class="sidebar-title">Sessions</span>
-      <span v-if="currentWorkspace" class="ws-actions">
-        <button class="icon-btn" title="需求录入" @click="openRequirements">💡</button>
+      <span v-if="currentWorkspace" class="sidebar-actions">
         <button class="icon-btn" title="New session" @click="createSession">＋</button>
       </span>
     </div>

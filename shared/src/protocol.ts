@@ -484,6 +484,13 @@ export type ClientToServer =
   | { type: 'start_automation'; projectPath: string }
   /** Stop the project's automation orchestrator (aborts the current dev run). */
   | { type: 'stop_automation'; projectPath: string }
+  /** List a project's discussions (reply: `discussions`), optionally filtered by status. */
+  | { type: 'list_discussions'; projectPath: string; status?: DiscussionStatus }
+  /**
+   * Open a discussion: enter the discussion view for one discussion and return
+   * it together with its full message history. Replies with `discussion_detail`.
+   */
+  | { type: 'open_discussion'; discussionId: string }
   /** Pull the authoritative session-status snapshot (session-layer heartbeat). */
   | { type: 'request_session_status' }
   | { type: 'ping' }
@@ -537,6 +544,10 @@ export type ServerToClient =
    * the requirement list's automation button reflects the live run.
    */
   | { type: 'automation_status'; status: AutomationStatus }
+  /** A project's discussion list (reply to `list_discussions`/`open_discussion` entry, or a push after a change). */
+  | { type: 'discussions'; projectPath: string; items: Discussion[] }
+  /** One discussion plus its full message history (reply to `open_discussion`). */
+  | { type: 'discussion_detail'; discussion: Discussion; messages: DiscussionMessage[] }
   /**
    * Echo of a user prompt, emitted into the session's stream when a turn starts.
    * Lets every viewer (including one switching back to a background session) see

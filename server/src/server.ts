@@ -74,6 +74,12 @@ import {
   setLastDevSession,
   updateStatus,
 } from './requirements/store.js'
+import {
+  isStoreAvailable as isDiscussionStoreAvailable,
+  listDiscussions,
+  getDiscussion,
+  listMessages as listDiscussionMessages,
+} from './discussions/store.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
 import { reconcileInProgress } from './requirements/reconcile.js'
@@ -990,6 +996,38 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'stop_automation': {
               const proj = resolve(msg.projectPath)
               broadcastAutomation(stopAutomation(proj))
+              return
+            }
+
+            case 'list_discussions': {
+              const proj = resolve(msg.projectPath)
+              if (!isDiscussionStoreAvailable()) {
+                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                return
+              }
+              send(ws, {
+                type: 'discussions',
+                projectPath: proj,
+                items: listDiscussions(proj, msg.status),
+              })
+              return
+            }
+
+            case 'open_discussion': {
+              if (!isDiscussionStoreAvailable()) {
+                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                return
+              }
+              const discussion = getDiscussion(msg.discussionId)
+              if (!discussion) {
+                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                return
+              }
+              send(ws, {
+                type: 'discussion_detail',
+                discussion,
+                messages: listDiscussionMessages(msg.discussionId),
+              })
               return
             }
           }

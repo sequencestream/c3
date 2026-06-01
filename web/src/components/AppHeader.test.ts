@@ -5,6 +5,7 @@ import AppHeader from './AppHeader.vue'
 const TABS = [
   { key: 'console', label: 'Sessions' },
   { key: 'requirements', label: 'Requirements' },
+  { key: 'discussion', label: 'Discussions' },
 ]
 
 const baseProps = {
@@ -20,22 +21,24 @@ describe('AppHeader.vue — top-bar tabs', () => {
   it('按 tabs 数据渲染全部 tab,标记当前 tab', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Sessions', 'Requirements'])
+    expect(tabs.map((t) => t.text())).toEqual(['Sessions', 'Requirements', 'Discussions'])
     expect(tabs[0].classes()).toContain('active')
     expect(tabs[1].classes()).not.toContain('active')
+    expect(tabs[2].classes()).not.toContain('active')
   })
 
-  it('activeTab 变化 → 高亮跟随', () => {
-    const w = mount(AppHeader, { props: { ...baseProps, activeTab: 'requirements' } })
+  it('activeTab 变化 → 高亮跟随(discussion)', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, activeTab: 'discussion' } })
     const tabs = w.findAll('.header-tab')
     expect(tabs[0].classes()).not.toContain('active')
-    expect(tabs[1].classes()).toContain('active')
+    expect(tabs[1].classes()).not.toContain('active')
+    expect(tabs[2].classes()).toContain('active')
   })
 
   it('点击 tab → emit select-tab(key)', async () => {
     const w = mount(AppHeader, { props: baseProps })
-    await w.findAll('.header-tab')[1].trigger('click')
-    expect(w.emitted('select-tab')).toEqual([['requirements']])
+    await w.findAll('.header-tab')[2].trigger('click')
+    expect(w.emitted('select-tab')).toEqual([['discussion']])
   })
 
   it('无当前工作区(tabsEnabled=false)→ tab 禁用,点击不 emit', async () => {

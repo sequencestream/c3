@@ -20,11 +20,14 @@ import SessionStatusBar from './components/SessionStatusBar.vue'
 import SessionTitleBar from './components/SessionTitleBar.vue'
 import TaskPanel from './components/TaskPanel.vue'
 import RequirementList from './components/RequirementList.vue'
+import DiscussionList from './components/DiscussionList.vue'
+import { discussionMessagesToChat } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, type SessionRef } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   AutomationStatus,
+  Discussion,
   PermissionMode,
   Requirement,
   RequirementStatus,
@@ -200,10 +203,11 @@ const availableCommands = ref<SlashCommandInfo[]>([])
 // one more entry here + one branch in the body. The requirement tab's comm
 // session IS the viewed session, so it shares the chat column; only the left
 // requirement list is extra.
-type TabKey = 'console' | 'requirements'
+type TabKey = 'console' | 'requirements' | 'discussion'
 const HEADER_TABS: { key: TabKey; label: string }[] = [
   { key: 'console', label: 'Sessions' },
   { key: 'requirements', label: 'Requirements' },
+  { key: 'discussion', label: 'Discussions' },
 ]
 const activeTab = ref<TabKey>('console')
 const requirementsProject = ref<string | null>(null)
@@ -221,8 +225,24 @@ const currentAutomation = computed<AutomationStatus | null>(() =>
   requirementsProject.value ? (automation.value[requirementsProject.value] ?? null) : null,
 )
 
+// ---- Discussion view (read path) ----
+// Mirrors the requirement view: the discussion tab shows a project's discussion
+// list (left) and one opened discussion's read-only history (right). No live
+// session in R1 — `discussion_detail` carries the full message history at once.
+const discussionsProject = ref<string | null>(null)
+const discussions = ref<Record<string, Discussion[]>>({})
+const currentDiscussions = computed<Discussion[]>(() =>
+  discussionsProject.value ? (discussions.value[discussionsProject.value] ?? []) : [],
+)
+const activeDiscussionId = ref<string | null>(null)
+const activeDiscussion = ref<Discussion | null>(null)
+// The opened discussion's history, normalized into chat bubbles for ChatMessages.
+const discussionMessages = ref<ChatMsg[]>([])
+
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.requirementsProject'
+const DISC_PROJECT_KEY = 'c3.discussionsProject'
+const DISC_ID_KEY = 'c3.discussionId'
 const CURRENT_WS_KEY = 'c3.currentWorkspace'
 
 // Read the persisted current-workspace path (null when unset/unavailable).
@@ -250,6 +270,9 @@ function persistViewMode() {
   try {
     localStorage.setItem(VIEW_MODE_KEY, activeTab.value)
     if (requirementsProject.value) localStorage.setItem(REQ_PROJECT_KEY, requirementsProject.value)
+    if (discussionsProject.value) localStorage.setItem(DISC_PROJECT_KEY, discussionsProject.value)
+    if (activeDiscussionId.value) localStorage.setItem(DISC_ID_KEY, activeDiscussionId.value)
+    else localStorage.removeItem(DISC_ID_KEY)
   } catch {
     /* localStorage unavailable — non-fatal */
   }
@@ -270,6 +293,30 @@ function maybeRestoreRequirements(list: WorkspaceInfo[]) {
     activeTab.value = 'requirements'
     requirementsProject.value = saved.proj
     client?.send({ type: 'open_requirement_chat', projectPath: saved.proj })
+  }
+}
+
+// After `ready`, re-enter the discussion view if a hard refresh left us there,
+// re-fetching the list and (if one was open) re-opening that discussion.
+function maybeRestoreDiscussions(list: WorkspaceInfo[]) {
+  let saved: { mode: string | null; proj: string | null; id: string | null }
+  try {
+    saved = {
+      mode: localStorage.getItem(VIEW_MODE_KEY),
+      proj: localStorage.getItem(DISC_PROJECT_KEY),
+      id: localStorage.getItem(DISC_ID_KEY),
+    }
+  } catch {
+    return
+  }
+  if (saved.mode === 'discussion' && saved.proj && list.some((w) => w.path === saved.proj)) {
+    activeTab.value = 'discussion'
+    discussionsProject.value = saved.proj
+    client?.send({ type: 'list_discussions', projectPath: saved.proj })
+    if (saved.id) {
+      activeDiscussionId.value = saved.id
+      client?.send({ type: 'open_discussion', discussionId: saved.id })
+    }
   }
 }
 
@@ -302,6 +349,12 @@ onMounted(() => {
       // the project's persisted `is_current` chat); otherwise re-select normally.
       if (activeTab.value === 'requirements' && requirementsProject.value) {
         client?.send({ type: 'open_requirement_chat', projectPath: requirementsProject.value })
+      } else if (activeTab.value === 'discussion' && discussionsProject.value) {
+        // Re-fetch the list and re-open the viewed discussion (read path, no
+        // live session to re-bind — just re-pull the persisted history).
+        client?.send({ type: 'list_discussions', projectPath: discussionsProject.value })
+        if (activeDiscussionId.value)
+          client?.send({ type: 'open_discussion', discussionId: activeDiscussionId.value })
       } else if (activeWorkspace.value && activeSession.value) {
         client?.send({
           type: 'select_session',
@@ -376,8 +429,9 @@ function handleMessage(msg: ServerToClient) {
       currentWorkspace.value = resolveCurrentWorkspace(readStoredWorkspace(), msg.workspaces)
       persistCurrentWorkspace()
       ensureSessions(currentWorkspace.value)
-      // Restore the requirement view if a hard refresh left us in it.
+      // Restore the requirement / discussion view if a hard refresh left us in it.
       maybeRestoreRequirements(msg.workspaces)
+      maybeRestoreDiscussions(msg.workspaces)
       break
     case 'workspaces': {
       workspaces.value = msg.workspaces
@@ -452,6 +506,19 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'automation_status':
       automation.value = { ...automation.value, [msg.status.projectPath]: msg.status }
+      break
+    case 'discussions':
+      discussions.value = { ...discussions.value, [msg.projectPath]: msg.items }
+      break
+    case 'discussion_detail':
+      activeDiscussion.value = msg.discussion
+      activeDiscussionId.value = msg.discussion.id
+      // Render the persisted history as read-only chat bubbles (own id space).
+      discussionMessages.value = discussionMessagesToChat(msg.messages).map((b, i) => ({
+        ...b,
+        id: i + 1,
+      }))
+      persistViewMode()
       break
     case 'user_text':
       add({ kind: 'user', text: msg.text })
@@ -635,6 +702,10 @@ function onSelectTab(key: string) {
     if (currentWorkspace.value) openRequirements(currentWorkspace.value)
     return
   }
+  if (key === 'discussion') {
+    if (currentWorkspace.value) openDiscussions(currentWorkspace.value)
+    return
+  }
   switchToConsoleTab()
 }
 
@@ -703,6 +774,32 @@ function openRequirements(path: string) {
   persistViewMode()
   // The response carries both the comm `session_selected` and the list.
   client?.send({ type: 'open_requirement_chat', projectPath: path })
+}
+
+// Enter the discussion view for a project: fetch its discussion list and reset
+// the right pane (no discussion opened until the user clicks one). Read path.
+function openDiscussions(path: string) {
+  activeTab.value = 'discussion'
+  discussionsProject.value = path
+  activeDiscussionId.value = null
+  activeDiscussion.value = null
+  discussionMessages.value = []
+  persistViewMode()
+  client?.send({ type: 'list_discussions', projectPath: path })
+}
+
+// Click a discussion in the list: pull its detail (discussion + full history).
+function openDiscussion(discussionId: string) {
+  if (discussionId === activeDiscussionId.value) return
+  activeDiscussionId.value = discussionId
+  persistViewMode()
+  client?.send({ type: 'open_discussion', discussionId })
+}
+
+// "+" in the discussion title bar — placeholder in R1 (the create/write path
+// lands in a later requirement; this only marks the entry point).
+function newDiscussion() {
+  /* TODO: wire the discussion create (write) path. */
 }
 
 // "+" in the requirement title bar: start a brand-new comm session. The server
@@ -878,48 +975,74 @@ function listCommands() {
       @new-requirement="newRequirementChat"
     />
 
+    <DiscussionList
+      v-if="activeTab === 'discussion' && discussionsProject"
+      :discussions="currentDiscussions"
+      :active-id="activeDiscussionId"
+      @open="openDiscussion"
+      @new-discussion="newDiscussion"
+    />
+
     <div class="content">
-      <SessionTitleBar
-        v-if="activeTab === 'console' && hasActiveSession"
-        :active-title="activeTitle"
-        :mode="mode"
-        :mode-options="modeOptions"
-        @set-mode="setMode"
-      />
-      <SessionTitleBar
-        v-else-if="activeTab === 'requirements' && requirementsProject"
-        :active-title="activeTitle || 'Requirement chat'"
-        :show-mode="false"
-      />
-      <ChatMessages
-        :messages="messages"
-        :has-active-session="hasActiveSession"
-        :actionable-permission-id="actionablePermId"
-        @respond="respond"
-        @submit-ask="submitAsk"
-      />
-      <TaskPanel :model="taskModel" />
-      <SessionStatusBar
-        :has-active-session="hasActiveSession"
-        :running="running"
-        :team-active="activeIsTeam"
-        :connection="status"
-        :activity="activity"
-        @refresh="refreshStatus"
-      />
-      <PendingQueue :items="currentQueue" @edit="onEditQueued" @delete="onDeleteQueued" />
-      <MessageInput
-        ref="composer"
-        :running="running"
-        :team-active="activeIsTeam"
-        :has-active-session="hasActiveSession"
-        :available-commands="availableCommands"
-        :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-        @submit="onSubmit"
-        @enqueue="onEnqueue"
-        @stop="stopRun"
-        @list-commands="listCommands"
-      />
+      <!-- Discussion tab: read-only history of the opened discussion. No input,
+           status bar, or task panel — R1 has no live discussion session. -->
+      <template v-if="activeTab === 'discussion'">
+        <SessionTitleBar
+          v-if="activeDiscussion"
+          :active-title="activeDiscussion.title"
+          :show-mode="false"
+        />
+        <ChatMessages
+          :messages="discussionMessages"
+          :has-active-session="activeDiscussionId !== null"
+          :actionable-permission-id="null"
+          @respond="() => {}"
+          @submit-ask="() => {}"
+        />
+      </template>
+      <template v-else>
+        <SessionTitleBar
+          v-if="activeTab === 'console' && hasActiveSession"
+          :active-title="activeTitle"
+          :mode="mode"
+          :mode-options="modeOptions"
+          @set-mode="setMode"
+        />
+        <SessionTitleBar
+          v-else-if="activeTab === 'requirements' && requirementsProject"
+          :active-title="activeTitle || 'Requirement chat'"
+          :show-mode="false"
+        />
+        <ChatMessages
+          :messages="messages"
+          :has-active-session="hasActiveSession"
+          :actionable-permission-id="actionablePermId"
+          @respond="respond"
+          @submit-ask="submitAsk"
+        />
+        <TaskPanel :model="taskModel" />
+        <SessionStatusBar
+          :has-active-session="hasActiveSession"
+          :running="running"
+          :team-active="activeIsTeam"
+          :connection="status"
+          :activity="activity"
+          @refresh="refreshStatus"
+        />
+        <PendingQueue :items="currentQueue" @edit="onEditQueued" @delete="onDeleteQueued" />
+        <MessageInput
+          ref="composer"
+          :running="running"
+          :team-active="activeIsTeam"
+          :has-active-session="hasActiveSession"
+          :available-commands="availableCommands"
+          :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
+          @submit="onSubmit"
+          @enqueue="onEnqueue"
+          @stop="stopRun"
+          @list-commands="listCommands"
+        />
+      </template>
     </div>
   </div>
 

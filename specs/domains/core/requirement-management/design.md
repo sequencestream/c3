@@ -17,7 +17,7 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 
 | Concern                      | File                                    | Notes                                                                                                                          |
 | ---------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| SQLite driver adapter        | `server/src/requirements/db.ts`         | Cross-runtime: `node:sqlite` vs `bun:sqlite`; minimal synchronous API                                                          |
+| SQLite driver adapter        | `server/src/db.ts`                      | Shared cross-runtime adapter: `node:sqlite` vs `bun:sqlite`; minimal synchronous API (also used by the discussion store)       |
 | Ledger operations            | `server/src/requirements/store.ts`      | Requirement CRUD, dependency aggregation, communication-session map                                                            |
 | Communication system prompt  | `server/src/requirements/prompt.ts`     | Read-only analyst prompt, injected as `appendSystemPrompt`                                                                     |
 | `save_requirements` MCP tool | `server/src/requirements/save-tool.ts`  | `createSdkMcpServer` exposing the confirmed-save tool                                                                          |

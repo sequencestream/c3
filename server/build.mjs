@@ -16,7 +16,7 @@ await build({
   external: [
     // Native bindings the SDK may dlopen at runtime
     '@anthropic-ai/claude-agent-sdk',
-    // Runtime-selected SQLite drivers (requirements/db.ts). Marking both external
+    // Runtime-selected SQLite drivers (db.ts). Marking both external
     // is mandatory: esbuild (platform node) cannot resolve `bun:sqlite`, and even
     // a dynamic import of it fails the bundle without this. `node:sqlite` is a
     // builtin, harmless to list. db.ts loads exactly one at runtime.

@@ -358,6 +358,64 @@ export interface ProposedRequirement {
   dependsOnIndexes?: number[]
 }
 
+// ---- Discussion ----
+
+/**
+ * Discussion lifecycle status.
+ * - `draft` — created, not yet started.
+ * - `in_progress` — discussion underway.
+ * - `completed` — concluded; stamps `completedAt`.
+ * - `cancelled` — abandoned (terminal, no completion stamp).
+ */
+export type DiscussionStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled'
+
+/**
+ * Who authored a discussion message.
+ * - `organizer` — the discussion organizer/orchestrator.
+ * - `agent` — a participating agent (identified by `speakerAgentId`/`speakerName`).
+ * - `human` — the user.
+ */
+export type DiscussionSpeakerKind = 'organizer' | 'agent' | 'human'
+
+/** One persisted discussion, scoped to a project (workspace path). */
+export interface Discussion {
+  /** Stable uuid. */
+  id: string
+  /** Owning project — the workspace absolute path (resolved). */
+  projectPath: string
+  title: string
+  /** Free-form discussion type/category. */
+  type: string
+  /** What the discussion aims to achieve. */
+  goal: string
+  /** Background material seeding the discussion. */
+  context: string
+  status: DiscussionStatus
+  /** The concluded outcome; `null` until set. */
+  conclusion: string | null
+  createdAt: number
+  updatedAt: number
+  /** When the discussion entered `completed`; `null` otherwise. */
+  completedAt: number | null
+}
+
+/** One message within a discussion, ordered by `seq` (per-discussion monotonic). */
+export interface DiscussionMessage {
+  /** Stable uuid. */
+  id: string
+  /** The owning discussion's id. */
+  discussionId: string
+  /** Per-discussion monotonic sequence number (1-based, assigned on append). */
+  seq: number
+  speakerKind: DiscussionSpeakerKind
+  /** The participating agent's id when `speakerKind === 'agent'`; else `null`. */
+  speakerAgentId: string | null
+  /** Display name of the speaker; `null` when not applicable. */
+  speakerName: string | null
+  content: string
+  createdAt: number
+}
+
 // Client → Server
 export type ClientToServer =
   | { type: 'user_prompt'; text: string }

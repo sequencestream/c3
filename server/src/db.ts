@@ -1,7 +1,8 @@
 /**
- * SQLite access for the requirement-management module, persisted at
- * `~/.c3/c3.db` (overridable for tests via `C3_DB_PATH`, or the dir via
- * `C3_DIR`).
+ * Shared SQLite access for c3, persisted at `~/.c3/c3.db` (overridable for tests
+ * via `C3_DB_PATH`, or the dir via `C3_DIR`). The single c3.db backs every
+ * persistence domain (requirements, discussions, …); each domain store owns its
+ * own tables and schema-ensure flag over this one connection.
  *
  * Cross-runtime: c3 ships both as a Node bundle (`node cli.cjs`) and a Bun
  * single binary. The two runtimes expose DIFFERENT builtin SQLite modules and
@@ -129,14 +130,14 @@ export function getDb(): Db | null {
     instance = db
     available = true
   } catch (err) {
-    console.error('[c3] requirement db unavailable:', err)
+    console.error('[c3] c3.db unavailable:', err)
     instance = null
     available = false
   }
   return instance
 }
 
-/** Whether the requirement database opened successfully (callers degrade if not). */
+/** Whether the c3 database opened successfully (callers degrade if not). */
 export function isDbAvailable(): boolean {
   if (!opened) getDb()
   return available

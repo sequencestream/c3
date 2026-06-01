@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { resetDbForTests } from './db.js'
+import { resetDbForTests } from '../db.js'
 import {
   getRequirement,
   insertRequirements,

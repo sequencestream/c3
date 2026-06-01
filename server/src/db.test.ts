@@ -1,5 +1,5 @@
 /**
- * Integration tests for the cross-runtime SQLite adapter (`db.ts`, design §2.1).
+ * Integration tests for the shared cross-runtime SQLite adapter (`db.ts`).
  *
  * Under Node these exercise the `node:sqlite` (`DatabaseSync`) branch — the path
  * a `node cli.cjs` deployment takes. The `bun:sqlite` branch is structurally

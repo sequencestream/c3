@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../db.js'
 import {
+  findRequirements,
   getChatSession,
   getRequirement,
   insertRequirements,
@@ -331,5 +332,77 @@ describe('communication session mapping / hidden set', () => {
     setChatSession('/abs/project-b', 's2')
     expect(listHiddenSessions(proj)).toEqual(['s1'])
     expect(listHiddenSessions('/abs/project-b')).toEqual(['s2'])
+  })
+})
+
+describe('findRequirements (read-only requirement-agent query)', () => {
+  it('matches keyword as a substring over BOTH title and content', () => {
+    insertRequirements(proj, [
+      { title: '登录鉴权', content: 'OAuth flow', priority: 'P0' },
+      { title: '会话管理', content: '处理 token 刷新', priority: 'P1' },
+      { title: '导出报表', content: 'CSV export', priority: 'P2' },
+    ])
+    // hits the title of the first item
+    expect(findRequirements(proj, { keyword: '鉴权' }).map((r) => r.title)).toEqual(['登录鉴权'])
+    // hits the content of the second item
+    expect(findRequirements(proj, { keyword: 'token' }).map((r) => r.title)).toEqual(['会话管理'])
+    // no match → empty
+    expect(findRequirements(proj, { keyword: 'nope' })).toEqual([])
+  })
+
+  it('returns the full project ledger when no filter is given (priority then recency order)', () => {
+    insertRequirements(proj, [
+      { title: 'A', content: '', priority: 'P2' },
+      { title: 'B', content: '', priority: 'P0' },
+    ])
+    expect(findRequirements(proj).map((r) => r.title)).toEqual(['B', 'A'])
+  })
+
+  it('filters by module (exact) and by status, composing with AND', () => {
+    const [a] = insertRequirements(proj, [
+      { title: 'A', content: 'x', priority: 'P0', module: '认证' },
+    ])
+    insertRequirements(proj, [
+      { title: 'B', content: 'x', priority: 'P0', module: '会话' },
+      { title: 'C', content: 'x', priority: 'P0', module: '认证' },
+    ])
+    updateStatus(a.id, 'in_progress')
+    // module filter
+    expect(
+      findRequirements(proj, { module: '认证' })
+        .map((r) => r.title)
+        .sort(),
+    ).toEqual(['A', 'C'])
+    // status filter
+    expect(findRequirements(proj, { status: 'in_progress' }).map((r) => r.title)).toEqual(['A'])
+    // module AND status (+ keyword) all compose
+    expect(
+      findRequirements(proj, { module: '认证', status: 'todo', keyword: 'x' }).map((r) => r.title),
+    ).toEqual(['C'])
+  })
+
+  it('hydrates dependsOn on the returned rows', () => {
+    insertRequirements(proj, [{ title: 'Dep', content: '', priority: 'P0', dependsOn: ['ext-1'] }])
+    expect(findRequirements(proj, { keyword: 'Dep' })[0].dependsOn).toEqual(['ext-1'])
+  })
+
+  it('never leaks another project (project-scoped, resolve-normalized)', () => {
+    insertRequirements(proj, [{ title: 'Mine', content: 'secret', priority: 'P0' }])
+    insertRequirements('/abs/project-b', [{ title: 'Theirs', content: 'secret', priority: 'P0' }])
+    // a keyword common to both only returns this project's rows
+    expect(findRequirements(proj, { keyword: 'secret' }).map((r) => r.title)).toEqual(['Mine'])
+    // trailing slash resolves to the same key
+    expect(findRequirements('/abs/project-a/', { keyword: 'secret' }).map((r) => r.title)).toEqual([
+      'Mine',
+    ])
+  })
+
+  it('treats LIKE wildcards in the keyword literally (escaped)', () => {
+    insertRequirements(proj, [
+      { title: '100% done', content: '', priority: 'P0' },
+      { title: 'anything', content: '', priority: 'P0' },
+    ])
+    // '%' must match literally, not as a wildcard (else it would match both)
+    expect(findRequirements(proj, { keyword: '100%' }).map((r) => r.title)).toEqual(['100% done'])
   })
 })

@@ -15,20 +15,20 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 
 ## Module split
 
-| Concern                      | File                                    | Notes                                                                                                                          |
-| ---------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| SQLite driver adapter        | `server/src/db.ts`                      | Shared cross-runtime adapter: `node:sqlite` vs `bun:sqlite`; minimal synchronous API (also used by the discussion store)       |
-| Ledger operations            | `server/src/requirements/store.ts`      | Requirement CRUD, dependency aggregation, communication-session map                                                            |
-| Communication system prompt  | `server/src/requirements/prompt.ts`     | Read-only analyst prompt, injected as `appendSystemPrompt`                                                                     |
-| `save_requirements` MCP tool | `server/src/requirements/save-tool.ts`  | `createSdkMcpServer` exposing the confirmed-save tool                                                                          |
-| Run variant                  | `server/src/claude.ts`                  | `runClaude` gains `appendSystemPrompt`/`disallowedTools`/`mcpServers`/`gate`; `askOneShot` (tool-less one-shot, for the judge) |
-| Runtime kind + launcher      | `server/src/runs.ts`                    | `SessionRuntime.kind: 'normal' \| 'requirement'`; shared `launchRun`                                                           |
-| WS branches + orchestration  | `server/src/server.ts`                  | Eight new branches; communication-session viewer management; `runDevTurn` + `broadcastAutomation`                              |
-| Hidden-set list filter       | `server/src/sessions.ts`                | `listWorkspaceSessions` excludes the project's hidden set                                                                      |
-| Automation orchestrator      | `server/src/requirements/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                             |
-| Completion judge             | `server/src/requirements/judge.ts`      | `judgeCompletion` — builds the prompt, runs `askOneShot`, parses `done`/`in_progress`/`stuck`                                  |
-| Reconcile                    | `server/src/requirements/reconcile.ts`  | `reconcileInProgress` — reconciling dead-process in_progress requirements on list entry (DI'd deps)                            |
-| Git helper                   | `server/src/git.ts`                     | `gitDiffStat` + `gitRecentLog` + `commitAndPush` (scoped via `git -C`); never rejects, returns codes/errors                    |
+| Concern                     | File                                    | Notes                                                                                                                            |
+| --------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| SQLite driver adapter       | `server/src/db.ts`                      | Shared cross-runtime adapter: `node:sqlite` vs `bun:sqlite`; minimal synchronous API (also used by the discussion store)         |
+| Ledger operations           | `server/src/requirements/store.ts`      | Requirement CRUD, dependency aggregation, communication-session map                                                              |
+| Communication system prompt | `server/src/requirements/prompt.ts`     | Read-only analyst prompt, injected as `appendSystemPrompt`                                                                       |
+| `c3` MCP tools              | `server/src/requirements/save-tool.ts`  | `createSdkMcpServer` exposing `save_requirements` (confirmed-save) + read-only `find_requirements` / `view_requirement` (RM-R19) |
+| Run variant                 | `server/src/claude.ts`                  | `runClaude` gains `appendSystemPrompt`/`disallowedTools`/`mcpServers`/`gate`; `askOneShot` (tool-less one-shot, for the judge)   |
+| Runtime kind + launcher     | `server/src/runs.ts`                    | `SessionRuntime.kind: 'normal' \| 'requirement'`; shared `launchRun`                                                             |
+| WS branches + orchestration | `server/src/server.ts`                  | Eight new branches; communication-session viewer management; `runDevTurn` + `broadcastAutomation`                                |
+| Hidden-set list filter      | `server/src/sessions.ts`                | `listWorkspaceSessions` excludes the project's hidden set                                                                        |
+| Automation orchestrator     | `server/src/requirements/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                               |
+| Completion judge            | `server/src/requirements/judge.ts`      | `judgeCompletion` — builds the prompt, runs `askOneShot`, parses `done`/`in_progress`/`stuck`                                    |
+| Reconcile                   | `server/src/requirements/reconcile.ts`  | `reconcileInProgress` — reconciling dead-process in_progress requirements on list entry (DI'd deps)                              |
+| Git helper                  | `server/src/git.ts`                     | `gitDiffStat` + `gitRecentLog` + `commitAndPush` (scoped via `git -C`); never rejects, returns codes/errors                      |
 
 ## SQLite layer (`db.ts`)
 
@@ -90,6 +90,14 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   `setAutomate(id, automate)`, `updateRequirement`, `getRequirement`. The internal `Row`/`hydrate`
   carry `module` + `automate` (mapped to boolean) so every read path returns them;
   `updateRequirement` does not yet patch `module` (out of scope, no schema blocker).
+- **Read-only agent query (RM-R19):** `findRequirements(projectPath, { keyword?, module?, status? })`
+  backs the agent's `find_requirements` tool — filters compose with `AND`, all optional: `keyword`
+  is a `LIKE` substring over `title` OR `content` (a tiny `escapeLike` escapes `% _ \` and the query
+  uses `ESCAPE '\'` so a literal `%` doesn't act as a wildcard), `module`/`status` are exact-match;
+  same `resolve()` + `project_path` scoping and `priority ASC, updated_at DESC` order as
+  `listRequirements`; `[]` when the db is unavailable. `view_requirement` reuses the existing
+  `getRequirement(id)` (id-only) and the **tool handler** guards `req.projectPath === resolve(projectPath)`
+  so an id from another project reads as not-found (no cross-project leak).
 - **Intra-batch dependencies (RM-R17).** `insertRequirements` mints **all** row ids up front
   (`items.map(() => randomUUID())`) so a batch can reference its own siblings before any row has an
   id. A pure, exported `resolveBatchDependencies(items, ids)` then, per item, validates
@@ -132,9 +140,14 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   `['Write','Edit','MultiEdit','NotebookEdit','Bash','BashOutput','KillShell','Task','SlashCommand']`.
   `Task` and `SlashCommand` are essential: a spawned sub-agent's tool calls bypass the parent
   `canUseTool`, and slash commands could trigger writing skills. On top of that the
-  `gate==='requirement'` `canUseTool` **denies by default**: read-class tools (`REQUIREMENT_READ_TOOLS`
-  = Read/Grep/Glob/LS/NotebookRead/WebFetch/WebSearch/TodoWrite) auto-allow;
-  `mcp__c3__save_requirements` raises a `permission_request`; `AskUserQuestion` is an **interactive
+  `gate==='requirement'` `canUseTool` **denies by default**, routed by the pure, exported
+  `classifyRequirementTool(toolName)` → `allow` | `confirm-save` | `ask` | `deny` (unit-tested in
+  `requirement-gate.test.ts`, since the live closure is otherwise e2e-only): read-class tools
+  (`REQUIREMENT_READ_TOOLS` = Read/Grep/Glob/LS/NotebookRead/WebFetch/WebSearch/TodoWrite) **and**
+  the two read-only c3 query tools (`REQUIREMENT_QUERY_TOOLS` = `mcp__c3__find_requirements` /
+  `mcp__c3__view_requirement`, RM-R19) → `allow` (auto-allow, no prompt — they only read the agent's
+  own project ledger); `mcp__c3__save_requirements` → `confirm-save` (raises a `permission_request`);
+  `AskUserQuestion` → `ask`. `AskUserQuestion` is an **interactive
   (clarifying-only) tool, not a write tool** — it has no file/exec side effects, so the read-only
   agent may use it. It is therefore **kept out of `disallowedTools`** and **allowed but routed via
   user-answer injection** — `send` a `permission_request`, await the user decision, on allow return
@@ -183,6 +196,9 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
 Injected as `appendSystemPrompt` on the `claude_code` preset. **The prompt text is in English**
 (the agent still converses with the user in Chinese). In brief: you are a requirement analyst; read
 project material only, never edit/write/run change commands/spawn sub-agents/run slash commands;
+you may query THIS project's existing ledger read-only via `find_requirements` / `view_requirement`,
+and should do so **before** splitting new items or setting `dependsOn` (reuse related items, avoid
+duplicates, reference the correct existing id — RM-R19);
 converse with the user and break requests into discrete, verifiable, right-sized items (each with
 title/content/priority P0–P3/optional dependencies/**inferred module name**); confirm a list with
 the user first; on approval call `save_requirements` (the system pops the confirmation, the real
@@ -204,9 +220,9 @@ rather than emitting a separate「更新测试」/「文档更新」item — cod
 change, kept on one ticket so no half is scheduled apart or dropped, which would drift tests/docs
 out of sync with code (RM-R15).
 
-## `save_requirements` tool (`save-tool.ts`)
+## `c3` MCP tools (`save-tool.ts`)
 
-`createSdkMcpServer({ name: 'c3', alwaysLoad: true, tools: [ saveRequirementsTool(projectPath) ] })`.
+`createSdkMcpServer({ name: 'c3', alwaysLoad: true, tools: [ save_requirements, find_requirements, view_requirement ] })`.
 `alwaysLoad: true` stamps `_meta['anthropic/alwaysLoad']` on each registered tool (≡ API
 `defer_loading: false`), so `save_requirements` stays resident in the turn-1 prompt instead of
 being deferred behind the harness's tool search — the agent never has to ToolSearch its schema
@@ -228,6 +244,17 @@ after** the human confirmation (the gateway already allowed); it writes via
 `isError` text on db-unavailable / failure so the agent learns it did not save). `projectPath` is
 closed over from the runtime's resolved `workspacePath` and re-bound each run, so the tool never
 crosses projects.
+
+**Read-only query tools (RM-R19).** The same server also carries `find_requirements`
+(`{ keyword?, module?, status? }`, all optional; `status` is a `z.enum` over the five
+`RequirementStatus` values) → `store.findRequirements` → a **slim** JSON list
+(`id`/`title`/`module`/`priority`/`status`/`dependsOn`; `content` is deliberately omitted to keep the
+list compact) or a「未找到」message, and `view_requirement` (`{ id }`) → `store.getRequirement` →
+the single requirement's **full** JSON, guarding `req.projectPath === resolve(projectPath)` so an
+unknown / other-project id returns a friendly「未找到」text (not `isError`). Both close over the same
+`projectPath` (no cross-project reads), inherit `alwaysLoad`, and are auto-allowed by the gate
+(`classifyRequirementTool` → `allow`), unlike `save_requirements`'s confirmation. The agent is
+prompted to query the ledger before splitting items or setting `dependsOn`.
 
 ## Launch development (`start_development`)
 

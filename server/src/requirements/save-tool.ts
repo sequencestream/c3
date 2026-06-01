@@ -1,17 +1,34 @@
 /**
- * The in-process `save_requirements` MCP tool exposed to the requirement-
- * communication agent. The agent calls it with a batch of proposed requirements;
- * the c3 permission gate (see `claude.ts`) intercepts the call and asks the user
- * to confirm. Reaching this handler therefore means the user already allowed it —
- * the handler just persists and broadcasts.
+ * The in-process MCP tools the `c3` server exposes to the requirement-
+ * communication agent:
+ *  - `save_requirements` (write): the agent submits a batch of proposed
+ *    requirements; the c3 permission gate (see `claude.ts`) intercepts and asks
+ *    the user to confirm. Reaching the handler therefore means the user already
+ *    allowed it — the handler just persists and broadcasts.
+ *  - `find_requirements` / `view_requirement` (read-only): let the agent search
+ *    the project ledger and inspect one item so it can discover related work,
+ *    avoid duplicates, and set `dependsOn` correctly. The gate auto-allows these
+ *    (no confirmation). All three are bound to ONE project via `projectPath` in
+ *    the closure, so the agent can never read/write another project's ledger.
  *
- * The tool is named `save_requirements` on the `c3` server, so its fully-qualified
- * name is `mcp__c3__save_requirements` (see `SAVE_REQUIREMENTS_TOOL`).
+ * Tools are named on the `c3` server, so the fully-qualified names are
+ * `mcp__c3__save_requirements` / `mcp__c3__find_requirements` /
+ * `mcp__c3__view_requirement` (see the `*_TOOL` constants in `claude.ts`).
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import { resolve } from 'node:path'
 import { z } from 'zod'
-import { insertRequirements, isStoreAvailable } from './store.js'
+import type { RequirementStatus } from '@ccc/shared/protocol'
+import { findRequirements, getRequirement, insertRequirements, isStoreAvailable } from './store.js'
+
+const REQUIREMENT_STATUSES = [
+  'draft',
+  'todo',
+  'in_progress',
+  'done',
+  'cancelled',
+] as const satisfies readonly RequirementStatus[]
 
 /**
  * Build the `c3` MCP server carrying `save_requirements`, bound to one project.
@@ -88,6 +105,73 @@ export function createRequirementMcpServer(
               content: [{ type: 'text', text: `保存失败:${String(err)}` }],
               isError: true,
             }
+          }
+        },
+      ),
+      tool(
+        'find_requirements',
+        '检索本项目已有需求(只读)。用于发现关联项、避免重复、为 dependsOn 找到真实 id。' +
+          '可按 keyword(模糊匹配标题/内容)、module、status 过滤(均可选,留空则返回全部);' +
+          '返回精简列表(id、title、module、priority、status、dependsOn)。',
+        {
+          keyword: z.string().optional().describe('关键字,模糊匹配 title/content(可留空)'),
+          module: z.string().optional().describe('按所属模块名精确过滤(可留空)'),
+          status: z
+            .enum(REQUIREMENT_STATUSES)
+            .optional()
+            .describe('按状态过滤:draft/todo/in_progress/done/cancelled(可留空)'),
+        },
+        async (args) => {
+          if (!isStoreAvailable()) {
+            return { content: [{ type: 'text', text: '需求库不可用,无法检索。' }], isError: true }
+          }
+          const rows = findRequirements(projectPath, {
+            keyword: args.keyword,
+            module: args.module,
+            status: args.status,
+          })
+          const slim = rows.map((r) => ({
+            id: r.id,
+            title: r.title,
+            module: r.module,
+            priority: r.priority,
+            status: r.status,
+            dependsOn: r.dependsOn,
+          }))
+          return {
+            content: [
+              {
+                type: 'text',
+                text:
+                  slim.length === 0
+                    ? '未找到匹配的需求。'
+                    : `找到 ${slim.length} 条需求:\n${JSON.stringify(slim, null, 2)}`,
+              },
+            ],
+          }
+        },
+      ),
+      tool(
+        'view_requirement',
+        '按 id 查看本项目单条需求的完整详情(只读,含 content、dependsOn 等)。',
+        {
+          id: z.string().describe('需求 id'),
+        },
+        async (args) => {
+          if (!isStoreAvailable()) {
+            return { content: [{ type: 'text', text: '需求库不可用,无法查看。' }], isError: true }
+          }
+          const req = getRequirement(args.id)
+          // Bind to the closure project: getRequirement is id-only, so guard here
+          // that the row belongs to THIS project — otherwise treat it as not found
+          // (no cross-project reads, consistent with save_requirements).
+          if (!req || req.projectPath !== resolve(projectPath)) {
+            return {
+              content: [{ type: 'text', text: `未找到 id 为 ${args.id} 的需求(本项目)。` }],
+            }
+          }
+          return {
+            content: [{ type: 'text', text: JSON.stringify(req, null, 2) }],
           }
         },
       ),

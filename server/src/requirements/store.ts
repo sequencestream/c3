@@ -195,6 +195,48 @@ export function getRequirement(id: string): Requirement | null {
   return row ? hydrate(d, [row])[0] : null
 }
 
+/** Escape LIKE wildcards so a keyword matches literally (paired with `ESCAPE '\'`). */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
+/**
+ * Search a project's requirements for the read-only requirement agent's
+ * `find_requirements` tool. Filters compose with AND; all are optional:
+ *  - `keyword` — case-handled LIKE substring over `title` OR `content` (wildcards escaped).
+ *  - `module` / `status` — exact-match column filters.
+ * Same `(project_path)` scoping + `resolve()` as the rest of the store, so the
+ * agent can never read another project's ledger. Ordered like `listRequirements`
+ * (priority asc, then recency). Returns `[]` when the db is unavailable.
+ */
+export function findRequirements(
+  projectPath: string,
+  filter: { keyword?: string; module?: string; status?: RequirementStatus } = {},
+): Requirement[] {
+  const d = db()
+  if (!d) return []
+  const where: string[] = ['project_path=?']
+  const params: (string | number)[] = [resolve(projectPath)]
+  if (filter.keyword) {
+    where.push("(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')")
+    const like = `%${escapeLike(filter.keyword)}%`
+    params.push(like, like)
+  }
+  if (filter.module) {
+    where.push('module=?')
+    params.push(filter.module)
+  }
+  if (filter.status) {
+    where.push('status=?')
+    params.push(filter.status)
+  }
+  const rows = d.all<Row>(
+    `SELECT * FROM requirements WHERE ${where.join(' AND ')} ORDER BY priority ASC, updated_at DESC`,
+    ...params,
+  )
+  return hydrate(d, rows)
+}
+
 /**
  * Resolve each item's effective dependency-id list for a batch insert (RM-R17),
  * given the ids freshly minted for the SAME batch (`ids[i]` belongs to `items[i]`).

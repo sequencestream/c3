@@ -39,6 +39,20 @@ export function findClaudeExecutable(): string | undefined {
 /** The c3 `save_requirements` MCP tool's fully-qualified name (server name `c3`). */
 export const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
 
+/** The c3 `find_requirements` read-only MCP tool's fully-qualified name. */
+export const FIND_REQUIREMENTS_TOOL = 'mcp__c3__find_requirements'
+
+/** The c3 `view_requirement` read-only MCP tool's fully-qualified name. */
+export const VIEW_REQUIREMENT_TOOL = 'mcp__c3__view_requirement'
+
+/**
+ * The read-only c3 MCP query tools the requirement agent may call without a
+ * prompt. They only read the project's own ledger (project-bound in the tool
+ * closure), so the gate treats them like the read-class built-ins — unlike
+ * `save_requirements`, which still raises a human confirmation.
+ */
+export const REQUIREMENT_QUERY_TOOLS = new Set([FIND_REQUIREMENTS_TOOL, VIEW_REQUIREMENT_TOOL])
+
 /**
  * Tools hard-disabled (SDK level) for the requirement-communication agent — the
  * source-of-truth read-only lock, paired with the requirement gate's
@@ -74,6 +88,24 @@ const REQUIREMENT_READ_TOOLS = new Set([
   'WebSearch',
   'TodoWrite',
 ])
+
+/**
+ * Pure classification of a tool for the requirement (read-only) gate, so the
+ * routing is unit-testable (the live `canUseTool` closure is otherwise only
+ * reachable via live-LLM e2e). Deny-by-default:
+ *  - `allow` — read-class built-ins + the read-only c3 query tools (no prompt).
+ *  - `confirm-save` — `save_requirements` (raises a human confirmation).
+ *  - `ask` — `AskUserQuestion` (clarifying-only; gate still applies the
+ *    `askQuestions` input guard and routes via answer-injection).
+ *  - `deny` — everything else.
+ */
+export type RequirementToolDecision = 'allow' | 'confirm-save' | 'ask' | 'deny'
+export function classifyRequirementTool(toolName: string): RequirementToolDecision {
+  if (REQUIREMENT_READ_TOOLS.has(toolName) || REQUIREMENT_QUERY_TOOLS.has(toolName)) return 'allow'
+  if (toolName === SAVE_REQUIREMENTS_TOOL) return 'confirm-save'
+  if (toolName === 'AskUserQuestion') return 'ask'
+  return 'deny'
+}
 
 export const registerPermissionResolver = {
   resolve(requestId: string, decision: Decision, answers?: Record<string, string>) {
@@ -398,10 +430,12 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         // human; everything else is denied by default (defence-in-depth behind
         // `disallowedTools`).
         if (gate === 'requirement') {
-          if (REQUIREMENT_READ_TOOLS.has(toolName)) {
+          const decisionClass = classifyRequirementTool(toolName)
+          // Read-class built-ins + read-only c3 query tools (find/view) pass through.
+          if (decisionClass === 'allow') {
             return { behavior: 'allow', updatedInput: input }
           }
-          if (toolName === SAVE_REQUIREMENTS_TOOL) {
+          if (decisionClass === 'confirm-save') {
             send({ type: 'permission_request', requestId, toolName, input })
             const { decision } = await waitForDecision(requestId, signal)
             if (decision === 'allow') {
@@ -414,7 +448,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
           // answer-injection flow — NOT a plain allow (the SDK echoes answers only
           // when `input.answers` is pre-filled). Single agent ⇒ no consensus: just
           // prompt the human and inject the answers (or deny on cancel).
-          if (toolName === 'AskUserQuestion' && askQuestions(input)) {
+          if (decisionClass === 'ask' && askQuestions(input)) {
             send({ type: 'permission_request', requestId, toolName, input })
             const { decision, answers } = await waitForDecision(requestId, signal)
             if (decision === 'allow') {

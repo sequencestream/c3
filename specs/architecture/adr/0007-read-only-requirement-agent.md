@@ -50,7 +50,13 @@ Adopt options 2, 4, and 6 together.
   file-writing skills. On top of that, the `canUseTool` gate for this run **denies by default**:
   read-class tools auto-allow, `mcp__c3__save_requirements` raises a confirmation,
   `AskUserQuestion` is allowed (routed via answer-injection — see below), everything else is
-  denied — so even a future SDK write tool not in the disallow list is still blocked.
+  denied — so even a future SDK write tool not in the disallow list is still blocked. The
+  read-class auto-allow set includes, besides the read built-ins (`Read`/`Grep`/`Glob`/`LS`/…),
+  the **two read-only c3 MCP query tools** `mcp__c3__find_requirements` and
+  `mcp__c3__view_requirement` — they only read the agent's **own** project ledger
+  (project-bound in the tool closure, like `save_requirements`), so they carry no write/exec
+  side effect and need no confirmation. The gate's tool routing is the pure, unit-tested
+  `classifyRequirementTool` (`allow` / `confirm-save` / `ask` / `deny`).
 - **`AskUserQuestion` is allowed as an _interactive_, not a _write_, tool.** It only poses
   clarifying questions to the human and carries no file/exec/orchestration side effects, so letting
   the read-only agent ask the user does not violate the read-only posture — it is the same
@@ -76,7 +82,10 @@ Adopt options 2, 4, and 6 together.
   does **not** bypass the gate — `canUseTool` still raises the human confirmation. The
   blocks-startup-until-connected side effect of `alwaysLoad` is moot here: an in-process MCP server
   connects instantly. Scope is the requirement agent only, since the `c3` server is built solely on
-  the `kind === 'requirement'` / `gate: 'requirement'` launch path.
+  the `kind === 'requirement'` / `gate: 'requirement'` launch path. The same `c3` server carries the
+  two read-only query tools (`find_requirements`/`view_requirement`), which inherit `alwaysLoad` for
+  the same reason — the agent must not have to ToolSearch them back before checking for related
+  requirements.
   - **Limitation (recorded, not yet solvable):** built-in tools the agent also uses
     (`AskUserQuestion`, `Read`/`Grep`/`Glob`/`LS`) have **no** always-load lever in
     `@anthropic-ai/claude-agent-sdk` 0.3.158 — `ToolConfig` exposes only
@@ -111,6 +120,10 @@ Adopt options 2, 4, and 6 together.
   mode.
 - A requirement MUST be persisted only inside the `save_requirements` handler, after a human
   allow. No code path may write the ledger to bypass that confirmation.
+- The read-only query tools (`find_requirements`/`view_requirement`) MUST be project-bound in the
+  tool closure (never trust a wire-supplied project) and MUST be auto-allowed by the gate without a
+  confirmation; they are read-only and may not write the ledger. Reviewers reject any path that lets
+  them read another project, or that turns them into a write/confirm tool.
 - The `c3` MCP server MUST keep `save_requirements` resident (`alwaysLoad: true`) so it is not
   deferred behind tool search. Reviewers reject dropping `alwaysLoad`, and reject any reading of it
   as a permission relaxation — it pins the schema only; the gate confirmation is unchanged.

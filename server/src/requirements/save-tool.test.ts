@@ -17,7 +17,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { Requirement } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../db.js'
 import { createRequirementMcpServer } from './save-tool.js'
-import { listRequirements, resetStoreForTests } from './store.js'
+import { insertRequirements, listRequirements, resetStoreForTests } from './store.js'
 
 interface CallToolResult {
   content: { type: string; text: string }[]
@@ -25,14 +25,18 @@ interface CallToolResult {
 }
 type Handler = (args: unknown, extra: unknown) => Promise<CallToolResult>
 
-/** Reach into the SDK MCP server instance for the actual registered handler. */
-function getSaveHandler(servers: Record<string, McpServerConfig>): Handler {
+/** Reach into the SDK MCP server instance for an actual registered tool handler. */
+function getHandler(servers: Record<string, McpServerConfig>, toolName: string): Handler {
   // The `c3` server config carries the live MCP server `instance`; its
   // `_registeredTools` map holds the handler the SDK will invoke for a tool call.
   const c3 = servers.c3 as unknown as {
     instance: { _registeredTools: Record<string, { handler: Handler }> }
   }
-  return c3.instance._registeredTools.save_requirements.handler
+  return c3.instance._registeredTools[toolName].handler
+}
+
+function getSaveHandler(servers: Record<string, McpServerConfig>): Handler {
+  return getHandler(servers, 'save_requirements')
 }
 
 const proj = '/abs/save-tool-proj'
@@ -174,5 +178,117 @@ describe('save_requirements tool handler', () => {
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain('不可用')
     expect(onSaved).not.toHaveBeenCalled()
+  })
+})
+
+describe('read-only query tool handlers (find_requirements / view_requirement)', () => {
+  it('registers both query tools on the c3 server, marked always-load', () => {
+    const servers = createRequirementMcpServer(proj, () => {})
+    const c3 = servers.c3 as unknown as {
+      instance: {
+        _registeredTools: Record<string, { _meta?: Record<string, unknown> }>
+      }
+    }
+    const names = Object.keys(c3.instance._registeredTools)
+    expect(names).toContain('find_requirements')
+    expect(names).toContain('view_requirement')
+    // resident in the turn-1 prompt, same as save_requirements (ADR 0007)
+    expect(c3.instance._registeredTools.find_requirements._meta).toMatchObject({
+      'anthropic/alwaysLoad': true,
+    })
+    expect(c3.instance._registeredTools.view_requirement._meta).toMatchObject({
+      'anthropic/alwaysLoad': true,
+    })
+  })
+
+  it('find_requirements returns a slim list (id/title/module/priority/status/dependsOn) filtered by keyword', async () => {
+    insertRequirements(proj, [
+      { title: '登录鉴权', content: 'oauth', priority: 'P0', module: '认证', dependsOn: ['ext'] },
+      { title: '导出报表', content: 'csv', priority: 'P2' },
+    ])
+    const find = getHandler(
+      createRequirementMcpServer(proj, () => {}),
+      'find_requirements',
+    )
+    const res = await find({ keyword: '鉴权' }, {})
+    expect(res.isError).toBeFalsy()
+    // the text carries a JSON array; parse the slim rows out of it
+    const json = res.content[0].text.slice(res.content[0].text.indexOf('['))
+    const rows = JSON.parse(json) as Record<string, unknown>[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toEqual({
+      id: expect.any(String),
+      title: '登录鉴权',
+      module: '认证',
+      priority: 'P0',
+      status: 'todo',
+      dependsOn: ['ext'],
+    })
+    // slim shape: no `content` field leaks into the list
+    expect(rows[0]).not.toHaveProperty('content')
+  })
+
+  it('find_requirements reports a friendly empty result when nothing matches', async () => {
+    insertRequirements(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const find = getHandler(
+      createRequirementMcpServer(proj, () => {}),
+      'find_requirements',
+    )
+    const res = await find({ keyword: 'zzz' }, {})
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0].text).toContain('未找到')
+  })
+
+  it('find_requirements binds to the closure project (no cross-project read)', async () => {
+    insertRequirements('/abs/proj-a', [{ title: 'AOnly', content: 'shared', priority: 'P0' }])
+    insertRequirements('/abs/proj-b', [{ title: 'BOnly', content: 'shared', priority: 'P0' }])
+    const findA = getHandler(
+      createRequirementMcpServer('/abs/proj-a', () => {}),
+      'find_requirements',
+    )
+    const res = await findA({ keyword: 'shared' }, {})
+    expect(res.content[0].text).toContain('AOnly')
+    expect(res.content[0].text).not.toContain('BOnly')
+  })
+
+  it('view_requirement returns one requirement full detail by id (incl. content/dependsOn)', async () => {
+    const [r] = insertRequirements(proj, [
+      { title: 'Detail', content: 'long body', priority: 'P1', dependsOn: ['ext'] },
+    ])
+    const view = getHandler(
+      createRequirementMcpServer(proj, () => {}),
+      'view_requirement',
+    )
+    const res = await view({ id: r.id }, {})
+    expect(res.isError).toBeFalsy()
+    const detail = JSON.parse(res.content[0].text) as Record<string, unknown>
+    expect(detail.id).toBe(r.id)
+    expect(detail.content).toBe('long body')
+    expect(detail.dependsOn).toEqual(['ext'])
+  })
+
+  it('view_requirement gives a friendly (non-error) prompt for an unknown id', async () => {
+    const view = getHandler(
+      createRequirementMcpServer(proj, () => {}),
+      'view_requirement',
+    )
+    const res = await view({ id: 'does-not-exist' }, {})
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0].text).toContain('未找到')
+    expect(res.content[0].text).toContain('does-not-exist')
+  })
+
+  it('view_requirement refuses an id from another project (treated as not found)', async () => {
+    const [other] = insertRequirements('/abs/proj-b', [
+      { title: 'Secret', content: 's', priority: 'P0' },
+    ])
+    const view = getHandler(
+      createRequirementMcpServer('/abs/proj-a', () => {}),
+      'view_requirement',
+    )
+    const res = await view({ id: other.id }, {})
+    // exists in the ledger, but not in proj-a → not found (no cross-project leak)
+    expect(res.content[0].text).toContain('未找到')
+    expect(res.content[0].text).not.toContain('Secret')
   })
 })

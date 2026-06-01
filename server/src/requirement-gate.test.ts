@@ -9,7 +9,15 @@
  * tests pin them so a regression (e.g. dropping `Task`/`SlashCommand`) is caught.
  */
 import { describe, expect, it } from 'vitest'
-import { REQUIREMENT_DISALLOWED_TOOLS, SAVE_REQUIREMENTS_TOOL, withAnswers } from './claude.js'
+import {
+  classifyRequirementTool,
+  FIND_REQUIREMENTS_TOOL,
+  REQUIREMENT_DISALLOWED_TOOLS,
+  REQUIREMENT_QUERY_TOOLS,
+  SAVE_REQUIREMENTS_TOOL,
+  VIEW_REQUIREMENT_TOOL,
+  withAnswers,
+} from './claude.js'
 
 describe('requirement gate — disallowed-tools lock', () => {
   it('hard-disables every write/exec/escape tool the design requires (§4.3)', () => {
@@ -69,6 +77,67 @@ describe('requirement gate — disallowed-tools lock', () => {
     // The gate keys on this exact name to route the confirmation prompt, and the
     // MCP server registers `save_requirements` under server `c3`.
     expect(SAVE_REQUIREMENTS_TOOL).toBe('mcp__c3__save_requirements')
+  })
+
+  it('names the read-only query tools on the c3 server', () => {
+    // The gate auto-allows these by exact name; the MCP server registers them on `c3`.
+    expect(FIND_REQUIREMENTS_TOOL).toBe('mcp__c3__find_requirements')
+    expect(VIEW_REQUIREMENT_TOOL).toBe('mcp__c3__view_requirement')
+    expect([...REQUIREMENT_QUERY_TOOLS]).toEqual([FIND_REQUIREMENTS_TOOL, VIEW_REQUIREMENT_TOOL])
+  })
+
+  it('does not hard-disable the read-only query tools (they auto-allow, not blocked)', () => {
+    expect(REQUIREMENT_DISALLOWED_TOOLS).not.toContain(FIND_REQUIREMENTS_TOOL)
+    expect(REQUIREMENT_DISALLOWED_TOOLS).not.toContain(VIEW_REQUIREMENT_TOOL)
+  })
+})
+
+describe('requirement gate — classifyRequirementTool (deny-by-default routing)', () => {
+  // The live `canUseTool` closure is only reachable via live-LLM e2e, but its tool
+  // routing is the pure `classifyRequirementTool` — pin every branch here so a
+  // regression (e.g. a query tool dropping out of the allow set, or an unknown tool
+  // ceasing to deny) is caught without an e2e.
+
+  it('auto-allows the read-class built-ins', () => {
+    for (const t of [
+      'Read',
+      'Grep',
+      'Glob',
+      'LS',
+      'NotebookRead',
+      'WebFetch',
+      'WebSearch',
+      'TodoWrite',
+    ]) {
+      expect(classifyRequirementTool(t)).toBe('allow')
+    }
+  })
+
+  it('auto-allows the read-only c3 query tools (no confirmation)', () => {
+    expect(classifyRequirementTool(FIND_REQUIREMENTS_TOOL)).toBe('allow')
+    expect(classifyRequirementTool(VIEW_REQUIREMENT_TOOL)).toBe('allow')
+  })
+
+  it('routes save_requirements to a human confirmation', () => {
+    expect(classifyRequirementTool(SAVE_REQUIREMENTS_TOOL)).toBe('confirm-save')
+  })
+
+  it('routes AskUserQuestion to the answer-injection (ask) path', () => {
+    expect(classifyRequirementTool('AskUserQuestion')).toBe('ask')
+  })
+
+  it('denies everything else by default (incl. write/exec/unknown tools)', () => {
+    for (const t of [
+      'Write',
+      'Edit',
+      'Bash',
+      'Task',
+      'SlashCommand',
+      'mcp__c3__some_future_tool',
+      'Whatever',
+    ]) {
+      expect(classifyRequirementTool(t)).toBe('deny')
+    }
   })
 })
 

@@ -3,11 +3,13 @@
  * AppHeader.vue — 顶部栏：会话面包屑、权限模式下拉、设置入口、连接状态。
  */
 import BaseDropdown from './BaseDropdown.vue'
-import type { PermissionMode } from '@ccc/shared/protocol'
+import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
+import type { PermissionMode, WorkspaceInfo } from '@ccc/shared/protocol'
 
 defineProps<{
   hasActiveSession: boolean
-  activeWorkspaceName: string
+  workspaces: WorkspaceInfo[]
+  currentWorkspace: string | null
   activeTitle: string
   mode: PermissionMode
   modeOptions: { value: PermissionMode; label: string }[]
@@ -19,14 +21,22 @@ defineProps<{
 const emit = defineEmits<{
   'set-mode': [mode: PermissionMode]
   'open-settings': []
+  'add-workspace': [path: string]
+  'select-workspace': [path: string]
+  'remove-workspace': [path: string]
 }>()
 </script>
 
 <template>
   <header>
-    <h1 v-if="!hasActiveSession">c3 — Claude Code Center</h1>
-    <div v-else class="crumbs">
-      <span class="crumb-ws">{{ activeWorkspaceName }}</span>
+    <WorkspaceSwitcher
+      :workspaces="workspaces"
+      :current-workspace="currentWorkspace"
+      @add-workspace="emit('add-workspace', $event)"
+      @select-workspace="emit('select-workspace', $event)"
+      @remove-workspace="emit('remove-workspace', $event)"
+    />
+    <div v-if="hasActiveSession" class="crumbs">
       <span class="crumb-sep">›</span>
       <span class="crumb-session">{{ activeTitle }}</span>
       <label v-if="modeSelectable !== false" class="mode">

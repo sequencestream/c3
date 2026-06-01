@@ -83,129 +83,143 @@ function isSystemAgent(a: AgentConfig): boolean {
       <button class="icon-btn" title="Close" @click="emit('close')">✕</button>
     </div>
     <div class="settings-body">
-      <p class="settings-section-title">Agents</p>
-      <p class="settings-hint">
-        New sessions launch Claude Code with the default agent. The system agent uses no overrides
-        (your existing <code>claude</code> login) and cannot be edited or removed.
-      </p>
-      <div class="agent-table">
-        <div class="agent-row agent-row-head">
-          <span class="col-default">Default</span>
-          <span class="col-name">Name</span>
-          <span class="col-url">Base URL</span>
-          <span class="col-key">API Key</span>
-          <span class="col-model">Model</span>
-          <span class="col-actions"></span>
-        </div>
-        <div v-for="a in draft.agents" :key="a.id" class="agent-row">
-          <label class="col-default">
+      <section class="settings-section">
+        <p class="settings-section-title">Agents</p>
+        <p class="settings-hint">
+          New sessions launch Claude Code with the default agent. The system agent uses no overrides
+          (your existing <code>claude</code> login) and cannot be edited or removed.
+        </p>
+        <div class="agent-table">
+          <div class="agent-row agent-row-head">
+            <span class="col-default">Default</span>
+            <span class="col-name">Name</span>
+            <span class="col-url">Base URL</span>
+            <span class="col-key">API Key</span>
+            <span class="col-model">Model</span>
+            <span class="col-actions"></span>
+          </div>
+          <div v-for="a in draft.agents" :key="a.id" class="agent-row">
+            <label class="col-default">
+              <input
+                type="radio"
+                name="default-agent"
+                :value="a.id"
+                :checked="draft.defaultAgentId === a.id"
+                @change="draft.defaultAgentId = a.id"
+              />
+            </label>
             <input
-              type="radio"
-              name="default-agent"
-              :value="a.id"
-              :checked="draft.defaultAgentId === a.id"
-              @change="draft.defaultAgentId = a.id"
+              v-model="a.name"
+              class="agent-field col-name"
+              :placeholder="isSystemAgent(a) ? 'System' : 'Agent name'"
+              :disabled="isSystemAgent(a)"
             />
-          </label>
-          <input
-            v-model="a.name"
-            class="agent-field col-name"
-            :placeholder="isSystemAgent(a) ? 'System' : 'Agent name'"
-            :disabled="isSystemAgent(a)"
-          />
-          <input
-            v-model="a.baseUrl"
-            class="agent-field col-url"
-            :placeholder="isSystemAgent(a) ? '—' : 'ANTHROPIC_BASE_URL'"
-            :disabled="isSystemAgent(a)"
-          />
-          <input
-            v-model="a.apiKey"
-            class="agent-field col-key"
-            type="password"
-            autocomplete="off"
-            :placeholder="isSystemAgent(a) ? '—' : 'API key'"
-            :disabled="isSystemAgent(a)"
-          />
-          <input
-            v-model="a.model"
-            class="agent-field col-model"
-            :placeholder="isSystemAgent(a) ? '—' : 'e.g. claude-opus-4-8'"
-            :disabled="isSystemAgent(a)"
-          />
-          <span class="col-actions">
-            <button
-              v-if="!isSystemAgent(a)"
-              class="icon-btn"
-              title="Remove agent"
-              @click="removeAgent(a.id)"
-            >
-              🗑
-            </button>
-            <span v-else class="agent-badge">built-in</span>
-          </span>
+            <input
+              v-model="a.baseUrl"
+              class="agent-field col-url"
+              :placeholder="isSystemAgent(a) ? '—' : 'ANTHROPIC_BASE_URL'"
+              :disabled="isSystemAgent(a)"
+            />
+            <input
+              v-model="a.apiKey"
+              class="agent-field col-key"
+              type="password"
+              autocomplete="off"
+              :placeholder="isSystemAgent(a) ? '—' : 'API key'"
+              :disabled="isSystemAgent(a)"
+            />
+            <input
+              v-model="a.model"
+              class="agent-field col-model"
+              :placeholder="isSystemAgent(a) ? '—' : 'e.g. claude-opus-4-8'"
+              :disabled="isSystemAgent(a)"
+            />
+            <span class="col-actions">
+              <button
+                v-if="!isSystemAgent(a)"
+                class="icon-btn"
+                title="Remove agent"
+                @click="removeAgent(a.id)"
+              >
+                🗑
+              </button>
+              <span v-else class="agent-badge">built-in</span>
+            </span>
+          </div>
         </div>
-      </div>
-      <button class="agent-add" @click="addAgent">+ Add agent</button>
+        <button class="agent-add" @click="addAgent">+ Add agent</button>
+      </section>
 
-      <p class="settings-section-title">Default mode</p>
-      <p class="settings-hint">
-        The permission mode new sessions start in. You can still switch a session's mode at any time
-        from its header.
-      </p>
-      <select v-model="draft.defaultMode" class="mode-select">
-        <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
-      </select>
+      <section class="settings-section">
+        <p class="settings-section-title">Default mode</p>
+        <p class="settings-hint">
+          The permission mode new sessions start in. You can still switch a session's mode at any
+          time from its header.
+        </p>
+        <select v-model="draft.defaultMode" class="mode-select">
+          <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
+        </select>
+      </section>
 
-      <p class="settings-section-title">开发技能</p>
-      <p class="settings-hint">
-        启动需求开发时,以斜线开头的斜杠命令会拼接到需求内容之前。留空则不加任何技能前缀。
-      </p>
-      <input
-        v-model="draft.devSkill"
-        class="agent-field dev-skill-input"
-        placeholder="/your-skill(留空则不加前缀)"
-      />
+      <section class="settings-section">
+        <p class="settings-section-title">Dev skill</p>
+        <p class="settings-hint">
+          When starting a development task, this slash command is prepended to the requirement text.
+          Leave it empty to add no skill prefix.
+        </p>
+        <input
+          v-model="draft.devSkill"
+          class="agent-field dev-skill-input"
+          placeholder="/your-skill (leave empty for no prefix)"
+        />
+      </section>
 
-      <p class="settings-section-title">Voice input language</p>
-      <p class="settings-hint">
-        The language the browser's speech recognition listens for when you use the microphone in the
-        message box. Voice input is provided by the browser (Chrome/Edge) and may require a network
-        connection.
-      </p>
-      <select v-model="draft.voiceLang" class="mode-select">
-        <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
-      </select>
+      <section class="settings-section">
+        <p class="settings-section-title">Voice input language</p>
+        <p class="settings-hint">
+          The language the browser's speech recognition listens for when you use the microphone in
+          the message box. Voice input is provided by the browser (Chrome/Edge) and may require a
+          network connection.
+        </p>
+        <select v-model="draft.voiceLang" class="mode-select">
+          <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
+        </select>
+      </section>
 
-      <p class="settings-section-title">Consensus</p>
-      <p class="settings-hint">
-        When enabled, an allow/deny permission prompt is first put to the <em>other</em> configured
-        agents. Each judges the tool call from the recent context and votes allow/deny with a
-        reason; the session's own agent then summarizes their opinions. If every voter agrees, the
-        prompt auto-resolves with no human needed — otherwise you decide, with each agent's vote and
-        reason shown. Any error, timeout, or unparseable answer counts as an abstain, which keeps
-        the decision with you. Needs at least one agent besides the session's own.
-      </p>
-      <p class="settings-hint">
-        <strong>AskUserQuestion</strong> (where the agent asks <em>you</em> a multiple-choice
-        question) takes a separate per-question path. c3 always shows you an answer panel and
-        injects your picks back to the agent — that is the only way to answer it without a terminal,
-        so it works regardless of this toggle. The consensus part only kicks in when it's
-        <em>on</em>: the voters answer every question and the decider summarizes and reconciles
-        answers that mean the same thing, so questions everyone agrees on get pre-filled or
-        auto-answered and only the rest are left for you. With consensus off, no voting runs and you
-        fill the whole panel yourself.
-      </p>
-      <label v-if="draft.consensus" class="consensus-toggle">
-        <input v-model="draft.consensus.enabled" type="checkbox" />
-        Enable multi-agent consensus voting
-      </label>
+      <section class="settings-section">
+        <p class="settings-section-title">Consensus</p>
+        <p class="settings-hint">
+          When enabled, an allow/deny permission prompt is first put to the
+          <em>other</em> configured agents. Each judges the tool call from the recent context and
+          votes allow/deny with a reason; the session's own agent then summarizes their opinions. If
+          every voter agrees, the prompt auto-resolves with no human needed — otherwise you decide,
+          with each agent's vote and reason shown. Any error, timeout, or unparseable answer counts
+          as an abstain, which keeps the decision with you. Needs at least one agent besides the
+          session's own.
+        </p>
+        <p class="settings-hint">
+          <strong>AskUserQuestion</strong> (where the agent asks <em>you</em> a multiple-choice
+          question) takes a separate per-question path. c3 always shows you an answer panel and
+          injects your picks back to the agent — that is the only way to answer it without a
+          terminal, so it works regardless of this toggle. The consensus part only kicks in when
+          it's <em>on</em>: the voters answer every question and the decider summarizes and
+          reconciles answers that mean the same thing, so questions everyone agrees on get
+          pre-filled or auto-answered and only the rest are left for you. With consensus off, no
+          voting runs and you fill the whole panel yourself.
+        </p>
+        <label v-if="draft.consensus" class="consensus-toggle">
+          <input v-model="draft.consensus.enabled" type="checkbox" />
+          Enable multi-agent consensus voting
+        </label>
+      </section>
 
-      <p class="settings-section-title">Display</p>
-      <label class="consensus-toggle">
-        <input v-model="draft.showToolSessions" type="checkbox" />
-        显示工具 session
-      </label>
+      <section class="settings-section">
+        <p class="settings-section-title">Display</p>
+        <label class="consensus-toggle">
+          <input v-model="draft.showToolSessions" type="checkbox" />
+          Show tool sessions
+        </label>
+      </section>
     </div>
     <div class="settings-foot">
       <button class="ghost" @click="emit('close')">Cancel</button>

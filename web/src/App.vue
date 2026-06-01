@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { createWsClient } from './lib/ws'
 import { actionablePermissionId } from './lib/permission'
+import { resolveCurrentWorkspace } from './lib/current-workspace'
 import {
   appendItem,
   mergeQueue,
@@ -72,15 +73,18 @@ function feedTaskResult(toolUseId: string | undefined, content: string, isError:
 // Sidebar / session state
 const workspaces = ref<WorkspaceInfo[]>([])
 const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
-const expandedWorkspaces = ref<Set<string>>(new Set())
+// The single global "current workspace" the sidebar reflects; decoupled from the
+// viewed session's workspace (`activeWorkspace`). Persisted to localStorage.
+const currentWorkspace = ref<string | null>(null)
 const activeWorkspace = ref<string | null>(null)
 const activeSession = ref<string | null>(null)
 const activeTitle = ref<string>('')
 
-const activeWorkspaceName = computed(
-  () => workspaces.value.find((w) => w.path === activeWorkspace.value)?.name ?? '',
-)
 const hasActiveSession = computed(() => activeSession.value !== null)
+// Sessions of the current workspace (the only ones the sidebar lists).
+const currentSessions = computed<SessionInfo[]>(
+  () => (currentWorkspace.value && sessionsByWorkspace.value[currentWorkspace.value]) || [],
+)
 
 // Status of one session (idle when unknown).
 function statusOf(sessionId: string): SessionStatus {
@@ -200,6 +204,26 @@ const currentAutomation = computed<AutomationStatus | null>(() =>
 
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.requirementsProject'
+const CURRENT_WS_KEY = 'c3.currentWorkspace'
+
+// Read the persisted current-workspace path (null when unset/unavailable).
+function readStoredWorkspace(): string | null {
+  try {
+    return localStorage.getItem(CURRENT_WS_KEY)
+  } catch {
+    return null
+  }
+}
+
+// Persist the current-workspace selection so a hard refresh restores it.
+function persistCurrentWorkspace() {
+  try {
+    if (currentWorkspace.value) localStorage.setItem(CURRENT_WS_KEY, currentWorkspace.value)
+    else localStorage.removeItem(CURRENT_WS_KEY)
+  } catch {
+    /* localStorage unavailable — non-fatal */
+  }
+}
 
 // Persist the requirement-view selection so a hard refresh restores it (Vue's
 // in-memory state already survives a WS reconnect; this only covers reload).
@@ -328,14 +352,25 @@ function handleMessage(msg: ServerToClient) {
     case 'ready':
       workspaces.value = msg.workspaces
       applyStatuses(msg.statuses)
-      // Auto-expand the most-recent workspace for an immediate session list.
-      if (msg.workspaces.length > 0) toggleWorkspace(msg.workspaces[0].path, true)
+      // Restore the persisted current workspace (or fall back to most-recent),
+      // then load its sessions for the sidebar.
+      currentWorkspace.value = resolveCurrentWorkspace(readStoredWorkspace(), msg.workspaces)
+      persistCurrentWorkspace()
+      ensureSessions(currentWorkspace.value)
       // Restore the requirement view if a hard refresh left us in it.
       maybeRestoreRequirements(msg.workspaces)
       break
-    case 'workspaces':
+    case 'workspaces': {
       workspaces.value = msg.workspaces
+      // If the current workspace was removed, fall back to the most-recent one.
+      const resolved = resolveCurrentWorkspace(currentWorkspace.value, msg.workspaces)
+      if (resolved !== currentWorkspace.value) {
+        currentWorkspace.value = resolved
+        persistCurrentWorkspace()
+        ensureSessions(resolved)
+      }
       break
+    }
     case 'session_status':
       applyStatuses(msg.statuses)
       break
@@ -528,18 +563,20 @@ function notifyAwaitingPermission(id: string) {
     })
 }
 
-// ---- Sidebar actions ----
-function toggleWorkspace(path: string, forceOpen = false) {
-  const next = new Set(expandedWorkspaces.value)
-  const willOpen = forceOpen || !next.has(path)
-  if (willOpen) {
-    next.add(path)
-    if (!sessionsByWorkspace.value[path])
-      client?.send({ type: 'list_sessions', workspacePath: path })
-  } else {
-    next.delete(path)
-  }
-  expandedWorkspaces.value = next
+// ---- Workspace / sidebar actions ----
+// Lazily fetch a workspace's session list (once) for the sidebar.
+function ensureSessions(path: string | null) {
+  if (path && !sessionsByWorkspace.value[path])
+    client?.send({ type: 'list_sessions', workspacePath: path })
+}
+
+// Switch the global current workspace; refreshes the sidebar session list.
+// Does not auto-select a session — the chat view stays on the viewed session.
+function selectWorkspace(path: string) {
+  if (path === currentWorkspace.value) return
+  currentWorkspace.value = path
+  persistCurrentWorkspace()
+  ensureSessions(path)
 }
 
 function addWorkspace(path: string) {
@@ -690,7 +727,8 @@ function listCommands() {
 <template>
   <AppHeader
     :has-active-session="hasActiveSession"
-    :active-workspace-name="activeWorkspaceName"
+    :workspaces="workspaces"
+    :current-workspace="currentWorkspace"
     :active-title="activeTitle"
     :mode="mode"
     :mode-options="modeOptions"
@@ -698,20 +736,19 @@ function listCommands() {
     :mode-selectable="viewMode === 'console'"
     @set-mode="setMode"
     @open-settings="openSettings"
+    @add-workspace="addWorkspace"
+    @select-workspace="selectWorkspace"
+    @remove-workspace="removeWorkspace"
   />
 
   <div class="body">
     <SessionSidebar
-      :workspaces="workspaces"
-      :sessions-by-workspace="sessionsByWorkspace"
+      :current-workspace="currentWorkspace"
+      :sessions="currentSessions"
       :session-status="sessionStatus"
-      :expanded-workspaces="expandedWorkspaces"
       :active-workspace="activeWorkspace"
       :active-session="activeSession"
       :active-title="activeTitle"
-      @toggle-workspace="toggleWorkspace"
-      @add-workspace="addWorkspace"
-      @remove-workspace="removeWorkspace"
       @create-session="createSession"
       @open-requirements="openRequirements"
       @select-session="selectSession"

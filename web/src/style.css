@@ -29,10 +29,15 @@ header {
   flex-shrink: 0;
   padding: 0 var(--sp-6);
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: var(--sp-3);
   background: var(--c-panel);
   border-bottom: 1px solid var(--c-border);
+}
+
+/* Connection status + settings sit at the far right. */
+.header-right {
+  margin-left: auto;
 }
 
 header h1 {
@@ -242,6 +247,133 @@ header h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 50vw;
+}
+
+/* ============ 工作区切换器（顶部栏最左侧） ============ */
+.ws-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ws-switcher-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 28vw;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--c-text);
+  font-size: var(--fs-title-sm);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+.ws-switcher-trigger:hover {
+  background: var(--c-card);
+  border-color: var(--c-border);
+}
+.ws-switcher.open .ws-switcher-trigger {
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 2px var(--c-primary-glow);
+}
+.ws-switcher-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-switcher-name.empty {
+  color: var(--c-text-disabled);
+  font-weight: 500;
+}
+.ws-switcher-arrow {
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.ws-switcher.open .ws-switcher-arrow {
+  transform: rotate(180deg);
+}
+
+.ws-switcher-panel {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: 0;
+  min-width: 260px;
+  max-width: 420px;
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--sp-1);
+  list-style: none;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-mid);
+  z-index: 50;
+  animation: dd-pop var(--dur-fast) var(--ease-standard);
+}
+.ws-switcher-empty {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+}
+.ws-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ws-switcher-item:hover {
+  background: var(--c-hover-strong);
+}
+.ws-switcher-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.ws-switcher-item-name {
+  color: var(--c-text);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-switcher-item.current .ws-switcher-item-name {
+  color: var(--c-primary);
+}
+.ws-switcher-item-path {
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.ws-switcher-check {
+  color: var(--c-primary);
+  flex-shrink: 0;
+}
+.ws-switcher-remove {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.ws-switcher-item:hover .ws-switcher-remove {
+  opacity: 1;
 }
 
 /* ============ 主体：侧边栏 + 内容（规范 3.2 / 3.3） ============ */
@@ -1367,16 +1499,30 @@ button.stop-btn:hover:not(:disabled) {
   overflow-y: auto;
   padding: var(--sp-6) var(--sp-8);
 }
+/* Each settings group is a tinted card; spacing between cards separates them. */
+.settings-section {
+  padding: var(--sp-4) var(--sp-6);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+}
+.settings-section + .settings-section {
+  margin-top: var(--sp-6);
+}
 .settings-section-title {
   margin: 0 0 var(--sp-1);
   font-size: var(--fs-title-sm);
   font-weight: 600;
 }
 .settings-hint {
-  margin: 0 0 var(--sp-6);
+  margin: 0 0 var(--sp-3);
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
   line-height: var(--lh-normal);
+}
+/* The last hint before a control sits close to it. */
+.settings-hint:last-of-type {
+  margin-bottom: var(--sp-2);
 }
 .settings-hint code {
   font-family: var(--font-mono);

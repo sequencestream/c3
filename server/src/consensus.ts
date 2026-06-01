@@ -18,17 +18,14 @@
  * abstains (which, being non-unanimous, defers to the human — the safe default).
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk'
 import type {
-  AgentConfig,
   AskConsensusOutcome,
   ConsensusOutcome,
   ConsensusVote,
   QuestionConsensus,
 } from '@ccc/shared/protocol'
-import { consensusVoters, isConsensusEnabled, launchForAgent, resolveAgent } from './settings.js'
-import { findClaudeExecutable } from './claude.js'
-import { addToolSession } from './sessions.js'
+import { consensusVoters, isConsensusEnabled, resolveAgent } from './settings.js'
+import { askAgentOnce } from './agent-once.js'
 import {
   askQuestions,
   askVoterPrompt,
@@ -56,73 +53,6 @@ export interface ConsensusParams {
   cwd: string
   /** Aborts every in-flight advisor query when the run is torn down. */
   signal: AbortSignal
-}
-
-/**
- * Run one agent for a single non-interactive turn and return its assistant text.
- * Tools are denied so the advisor reasons from the provided context only; no
- * setting sources are loaded so the call stays light (no CLAUDE.md/hooks/Skills).
- */
-async function askAgentOnce(
-  agent: AgentConfig,
-  prompt: string,
-  cwd: string,
-  signal: AbortSignal,
-): Promise<string> {
-  const launch = launchForAgent(agent)
-  const claudePath = findClaudeExecutable()
-  const q = query({
-    prompt,
-    options: {
-      cwd,
-      ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-      ...(launch.envOverrides ? { env: { ...process.env, ...launch.envOverrides } } : {}),
-      ...(launch.model ? { model: launch.model } : {}),
-      permissionMode: 'default',
-      // Advisor must not act — it only answers from context.
-      canUseTool: async () => ({ behavior: 'deny', message: 'consensus advisor: no tools' }),
-    },
-  })
-
-  const onAbort = () => {
-    try {
-      const p = q.interrupt?.()
-      if (p && typeof p.catch === 'function') p.catch(() => {})
-    } catch {
-      /* noop */
-    }
-  }
-  signal.addEventListener('abort', onAbort, { once: true })
-
-  let text = ''
-  let sessionId = ''
-  try {
-    for await (const m of q) {
-      if (signal.aborted) break
-      // Capture session_id from the first event and register it as a tool session.
-      if (!sessionId) {
-        const sid = (m as { session_id?: unknown }).session_id
-        if (typeof sid === 'string' && sid) {
-          sessionId = sid
-          addToolSession(sid)
-        }
-      }
-      if (m.type === 'assistant') {
-        const content = (m as { message?: { content?: unknown[] } }).message?.content
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            const b = block as { type?: string; text?: string }
-            if (b.type === 'text' && typeof b.text === 'string') text += b.text
-          }
-        }
-      } else if (m.type === 'result') {
-        break
-      }
-    }
-  } finally {
-    signal.removeEventListener('abort', onAbort)
-  }
-  return text.trim()
 }
 
 /** Ask the session's own agent to summarize the opinions in one sentence. */

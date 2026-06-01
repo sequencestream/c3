@@ -505,6 +505,17 @@ export type ClientToServer =
    * it together with its full message history. Replies with `discussion_detail`.
    */
   | { type: 'open_discussion'; discussionId: string }
+  /**
+   * Start the organizer-driven orchestration of a `draft` discussion. The server
+   * flips it to `in_progress` and runs the engine in the background: the organizer
+   * (the default agent) picks speakers among the configured agents and drives the
+   * type's workflow (discuss → summarize → confirm → conclude), each turn a
+   * one-shot `askAgentOnce` over the current transcript. Every speech is appended
+   * and streamed back as `discussion_message`; the run ends by writing the
+   * `conclusion` and flipping to `completed`. A no-op if already running or not a
+   * `draft`. The background run does not end any session (既有 session 约定).
+   */
+  | { type: 'start_discussion'; discussionId: string }
   /** Pull the authoritative session-status snapshot (session-layer heartbeat). */
   | { type: 'request_session_status' }
   | { type: 'ping' }
@@ -562,6 +573,13 @@ export type ServerToClient =
   | { type: 'discussions'; projectPath: string; items: Discussion[] }
   /** One discussion plus its full message history (reply to `open_discussion`). */
   | { type: 'discussion_detail'; discussion: Discussion; messages: DiscussionMessage[] }
+  /**
+   * A newly-appended discussion message, pushed live to every connection while
+   * the organizer engine runs (the client appends it when viewing that
+   * discussion). The companion status/conclusion change rides the refreshed
+   * `discussions` list broadcast.
+   */
+  | { type: 'discussion_message'; discussionId: string; message: DiscussionMessage }
   /**
    * Echo of a user prompt, emitted into the session's stream when a turn starts.
    * Lets every viewer (including one switching back to a background session) see

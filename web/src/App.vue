@@ -21,7 +21,7 @@ import SessionTitleBar from './components/SessionTitleBar.vue'
 import TaskPanel from './components/TaskPanel.vue'
 import RequirementList from './components/RequirementList.vue'
 import DiscussionList from './components/DiscussionList.vue'
-import { discussionMessagesToChat } from './lib/discussion-view'
+import { discussionMessageToChat, discussionMessagesToChat } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, type SessionRef } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
@@ -238,6 +238,9 @@ const activeDiscussionId = ref<string | null>(null)
 const activeDiscussion = ref<Discussion | null>(null)
 // The opened discussion's history, normalized into chat bubbles for ChatMessages.
 const discussionMessages = ref<ChatMsg[]>([])
+// Highest message seq rendered for the open discussion — dedupes the live
+// `discussion_message` stream against the `discussion_detail` snapshot.
+const discussionMaxSeq = ref(0)
 
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.requirementsProject'
@@ -507,9 +510,16 @@ function handleMessage(msg: ServerToClient) {
     case 'automation_status':
       automation.value = { ...automation.value, [msg.status.projectPath]: msg.status }
       break
-    case 'discussions':
+    case 'discussions': {
       discussions.value = { ...discussions.value, [msg.projectPath]: msg.items }
+      // Keep the open discussion's status/conclusion in sync with the refreshed
+      // list (the engine pushes this on every state change).
+      if (activeDiscussionId.value) {
+        const updated = msg.items.find((d) => d.id === activeDiscussionId.value)
+        if (updated) activeDiscussion.value = updated
+      }
       break
+    }
     case 'discussion_detail':
       activeDiscussion.value = msg.discussion
       activeDiscussionId.value = msg.discussion.id
@@ -518,7 +528,22 @@ function handleMessage(msg: ServerToClient) {
         ...b,
         id: i + 1,
       }))
+      discussionMaxSeq.value = msg.messages.length ? msg.messages[msg.messages.length - 1].seq : 0
       persistViewMode()
+      break
+    case 'discussion_message':
+      // Live append while the organizer engine runs. Only for the open discussion,
+      // and only messages newer than what the snapshot already rendered.
+      if (
+        msg.discussionId === activeDiscussionId.value &&
+        msg.message.seq > discussionMaxSeq.value
+      ) {
+        discussionMaxSeq.value = msg.message.seq
+        discussionMessages.value.push({
+          ...discussionMessageToChat(msg.message),
+          id: discussionMessages.value.length + 1,
+        })
+      }
       break
     case 'user_text':
       add({ kind: 'user', text: msg.text })
@@ -784,6 +809,7 @@ function openDiscussions(path: string) {
   activeDiscussionId.value = null
   activeDiscussion.value = null
   discussionMessages.value = []
+  discussionMaxSeq.value = 0
   persistViewMode()
   client?.send({ type: 'list_discussions', projectPath: path })
 }
@@ -808,6 +834,20 @@ function createDiscussion(payload: { type: string; goal: string; context: string
     goal: payload.goal,
     context: payload.context,
   })
+}
+
+// "Start" in the discussion title bar (draft only): kick off the organizer
+// engine. Messages then stream in live via `discussion_message`; the status
+// flips through the refreshed `discussions` list.
+function startDiscussion() {
+  const id = activeDiscussionId.value
+  if (!id) return
+  client?.send({ type: 'start_discussion', discussionId: id })
+}
+
+// Title-bar status label for a non-draft discussion (draft shows the Start button).
+function discussionStatusLabel(status: Discussion['status']): string {
+  return status === 'in_progress' ? 'Running' : status === 'completed' ? 'Completed' : 'Cancelled'
 }
 
 // "+" in the requirement title bar: start a brand-new comm session. The server
@@ -999,7 +1039,21 @@ function listCommands() {
           v-if="activeDiscussion"
           :active-title="activeDiscussion.title"
           :show-mode="false"
-        />
+        >
+          <template #action>
+            <button
+              v-if="activeDiscussion.status === 'draft'"
+              type="button"
+              class="disc-start-btn"
+              @click="startDiscussion"
+            >
+              Start
+            </button>
+            <span v-else class="disc-status" :class="activeDiscussion.status">
+              {{ discussionStatusLabel(activeDiscussion.status) }}
+            </span>
+          </template>
+        </SessionTitleBar>
         <ChatMessages
           :messages="discussionMessages"
           :has-active-session="activeDiscussionId !== null"

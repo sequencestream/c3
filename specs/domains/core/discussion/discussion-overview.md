@@ -4,12 +4,14 @@ A project-scoped **discussion** store: a discussion (a goal-directed conversatio
 organizer, agents, and the human) plus its ordered messages, persisted in the shared
 `~/.c3/c3.db` alongside the requirement ledger.
 
-**Status: partial — persistence + create flow.** This domain provides the data model and SQLite
-persistence layer (tables + store CRUD), the read path (list + open), and the **create flow**: a
-data-driven type catalog with per-type workflow, the "+" form, and a read-only research agent that
-completes a new discussion's context. The _organizer / multi-agent orchestration loop_ (driving a
-discussion through its workflow with participating agents) is **not yet built**; it will consume the
-workflow definitions later.
+**Status: live — persistence + create flow + organizer engine.** This domain provides the data
+model and SQLite persistence layer (tables + store CRUD), the read path (list + open), the **create
+flow** (data-driven type catalog with per-type workflow, the "+" form, and a read-only research
+agent that completes a new discussion's context), and the **organizer-driven multi-agent
+orchestration loop**: `start_discussion` runs a `draft` to a `conclusion` in the background, the
+organizer (the default agent) nominating speakers among the configured agents and driving the
+type's workflow, each turn a one-shot `askAgentOnce`, every message streamed live as
+`discussion_message` (see [design §organizer-engine](design.md#organizer-engine)).
 
 ## Scope (now)
 
@@ -25,22 +27,35 @@ workflow definitions later.
   no save tool, write/exec/sub-agent tools hard-disabled — completes its `context`
   (`server/src/discussions/research.ts`). The server captures the agent's final text and writes it
   back, pushing `discussions` on draft insert and again on completion.
-- Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context).
+- Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
+  the right pane shows a **Start** button on a `draft` and appends streamed messages live once the
+  engine runs.
+- **Organizer engine** (`server/src/discussions/orchestrator.ts` + pure
+  `orchestrator-logic.ts`): a background loop reusing the consensus `askAgentOnce` /
+  `launchForAgent` paradigm. The organizer's round decision and participants' speech parsing are
+  pure, dependency-injected, unit-tested functions; the loop walks `draft → in_progress →
+completed`, appends every turn (`appendMessage`) and streams it (`discussion_message`), and writes
+  the `conclusion`. Termination is guaranteed (forward-only stages, per-stage + total round caps);
+  a single configured agent degenerates gracefully (organizer == sole participant).
 - Reuses the shared cross-runtime SQLite adapter (`server/src/db.ts`, ADR 0007) and the requirement
   store's fail-soft + `PRAGMA user_version` + idempotent `ensureColumn` migration paradigm.
 
 ## Out of scope (now)
 
-- No organizer or multi-agent orchestration loop (the workflow catalog is data only; nothing yet
-  drives a discussion through its stages).
-- No discussion message-append write path or status-transition UI.
+- No human-in-the-loop speaking during a run (the `human` speaker kind is modeled but the engine
+  only drives organizer + agents).
+- No pause/resume or mid-run checkpoint recovery: a discussion runs to completion; a stopped run
+  (server teardown) stays `in_progress`.
 
 ## Index
 
 - [models.md](models.md) — entity definitions (`Discussion`, `DiscussionMessage`).
-- [design.md](design.md) — the SQLite persistence layer (schema, migration, store API).
+- [design.md](design.md) — the SQLite persistence layer (schema, migration, store API) **and the
+  organizer engine state machine** ([§organizer-engine](design.md#organizer-engine)).
 - Type catalog + workflow: `shared/src/discussion-types.ts`; create flow + research agent:
-  `server/src/discussions/research.ts`, `create_discussion` handler in `server/src/server.ts`.
+  `server/src/discussions/research.ts`; organizer engine: `server/src/discussions/orchestrator.ts`
+  - `orchestrator-logic.ts`; `create_discussion` / `start_discussion` handlers in
+    `server/src/server.ts`.
 
 ## Dependencies
 

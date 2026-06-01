@@ -279,6 +279,28 @@ header h1 {
   flex-shrink: 0;
 }
 
+/* Discussion title bar: Start trigger (draft) / status label (running/done),
+   pushed to the right edge of the bar. */
+.session-title-bar .disc-start-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-caption);
+}
+.session-title-bar .disc-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--c-text-muted);
+}
+.session-title-bar .disc-status.in_progress {
+  color: var(--c-primary);
+}
+.session-title-bar .disc-status.completed {
+  color: var(--c-success);
+}
+
 /* ============ 工作区切换器（顶部栏最左侧） ============ */
 .ws-switcher {
   position: relative;

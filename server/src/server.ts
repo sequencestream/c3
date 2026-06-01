@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import type {
   AutomationStatus,
   ClientToServer,
+  DiscussionMessage,
   Requirement,
   RequirementRunStatus,
   ServerToClient,
@@ -83,6 +84,7 @@ import {
   listMessages as listDiscussionMessages,
 } from './discussions/store.js'
 import { researchDiscussionContext } from './discussions/research.js'
+import { runDiscussion, defaultDiscussionDeps } from './discussions/orchestrator.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
@@ -204,6 +206,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     const proj = resolve(projectPath)
     const items = listDiscussions(proj)
     for (const deliver of connections) deliver({ type: 'discussions', projectPath: proj, items })
+  }
+
+  // Live discussion-engine runs, keyed by discussion id. The controller aborts the
+  // background orchestration (server teardown / re-entry guard). A running entry
+  // is the "already running" gate for `start_discussion`.
+  const discussionRuns = new Map<string, AbortController>()
+
+  // Stream one freshly-appended discussion message to every connection (the
+  // frontend appends it when viewing that discussion).
+  const broadcastDiscussionMessage = (discussionId: string, message: DiscussionMessage): void => {
+    for (const deliver of connections)
+      deliver({ type: 'discussion_message', discussionId, message })
   }
 
   // Push an automation-orchestrator status to every connection (the frontend
@@ -1088,6 +1102,43 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 discussion,
                 messages: listDiscussionMessages(msg.discussionId),
               })
+              return
+            }
+
+            case 'start_discussion': {
+              if (!isDiscussionStoreAvailable()) {
+                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                return
+              }
+              const discussion = getDiscussion(msg.discussionId)
+              if (!discussion) {
+                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                return
+              }
+              // Idempotent guards: only a `draft` can be started, and never twice.
+              if (discussionRuns.has(discussion.id)) return
+              if (discussion.status !== 'draft') {
+                send(ws, { type: 'error', message: '讨论已开始或已结束,无法重复启动。' })
+                return
+              }
+              const abort = new AbortController()
+              discussionRuns.set(discussion.id, abort)
+              const deps = defaultDiscussionDeps({
+                onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
+                // Status/conclusion changes ride the refreshed list broadcast.
+                onStatusChange: () => broadcastDiscussions(discussion.projectPath),
+              })
+              // Background orchestration: the engine runs the agents and streams
+              // messages until it concludes. It does not own a user session, so
+              // finishing the run never ends a session (既有 session 约定).
+              void runDiscussion(discussion.id, abort.signal, deps)
+                .catch((err) => {
+                  console.warn(`[c3] discussion orchestration error: ${errMsg(err)}`)
+                })
+                .finally(() => {
+                  discussionRuns.delete(discussion.id)
+                  broadcastDiscussions(discussion.projectPath)
+                })
               return
             }
           }

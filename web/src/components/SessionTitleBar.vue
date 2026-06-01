@@ -32,6 +32,7 @@ const emit = defineEmits<{
 <template>
   <div class="session-title-bar">
     <span class="session-title-text" :title="activeTitle">{{ activeTitle }}</span>
+    <slot name="action" />
     <label v-if="showMode" class="mode">
       <BaseDropdown
         :model-value="mode"

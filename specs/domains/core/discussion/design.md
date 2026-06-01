@@ -1,9 +1,11 @@
 # discussion — Design
 
-The SQLite persistence layer for the [discussion](discussion-overview.md) domain. Lives in
-`server/src/discussions/store.ts` over the shared adapter `server/src/db.ts`. Implements the
-[models](models.md). **This is the persistence foundation only** — no agent, orchestration, wire
-protocol, or frontend yet.
+The [discussion](discussion-overview.md) domain's server design: the SQLite **persistence layer**
+(`server/src/discussions/store.ts` over the shared adapter `server/src/db.ts`, implementing the
+[models](models.md)) and the **organizer engine** (`orchestrator.ts` + pure `orchestrator-logic.ts`)
+that drives a discussion through its workflow. The wire protocol
+(`create_discussion` / `start_discussion` / `discussion_message`) is in
+[websocket-protocol.md](../../../shared/api-conventions/websocket-protocol.md).
 
 ## Module split
 
@@ -81,6 +83,57 @@ now : null` (mirrors the requirement store's done-stamping rule, including clear
 - `listMessages(discussionId)` → `DiscussionMessage[]`, `ORDER BY seq ASC`.
 - `isStoreAvailable()` / `resetStoreForTests()` mirror the requirement store.
 
+## Organizer engine
+
+The orchestration loop that drives a `draft` discussion to a `conclusion`. Split for testability:
+
+| Concern               | File                                           | Notes                                                                                                                                    |
+| --------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Pure decision/parsing | `server/src/discussions/orchestrator-logic.ts` | No I/O/SDK: prompt builders, `parseOrganizerDecision`, `parseParticipantSpeech`, `resolveStep`, `renderTranscript`. Unit-tested.         |
+| Orchestration loop    | `server/src/discussions/orchestrator.ts`       | `runDiscussion(id, signal, deps)` + `defaultDiscussionDeps`. All collaborators injected (`DiscussionDeps`).                              |
+| One-shot agent turn   | `server/src/agent-once.ts`                     | `askAgentOnce` (extracted from consensus): a single tool-disabled turn under the agent's launch overrides, registered as a tool session. |
+
+**Roles.** The **organizer** is the default agent (`resolveAgent(null)`); the **participants** are
+all configured agents (`loadSettings().agents`) — the organizer included, so it may nominate itself
+and is the sole speaker when only one agent is configured (the consensus "no voters" degeneration).
+
+**Round model.** Each round the organizer is asked, over the live transcript + the active workflow
+stage, for a decision; `parseOrganizerDecision` reads it (JSON `{action, speaker, note, conclusion}`
+first, keyword fallback, and a safe `advance` default so an unparseable reply never hangs).
+`resolveStep` folds the stage and the per-stage round cap into a concrete step:
+
+- `speak` — a nominated participant takes a one-shot turn (`askAgentOnce` → `parseParticipantSpeech`);
+  its speech is appended as a `speakerKind: 'agent'` message.
+- `advance` — move to the next workflow stage; a non-empty organizer `note` (e.g. the summary) is
+  appended as a `speakerKind: 'organizer'` message.
+- `conclude` — append the final conclusion (organizer message), `setConclusion`, `completed`.
+
+**State machine.**
+
+```
+draft ──start_discussion──▶ in_progress ──(walk workflow stages)──▶ completed (conclusion written)
+                                  │
+   discuss ──advance──▶ summarize ──advance──▶ confirm ──advance──▶ conclude ──▶ conclude step
+      ▲  │ speak (participant turn, loops, capped by maxRoundsPerStage)
+      └──┘
+   (an explicit `conclude` decision finishes from any stage; the terminal `conclude` stage
+    always concludes)
+```
+
+**Persistence + streaming.** Every appended message is `store.appendMessage` (monotonic per-discussion
+`seq`) and streamed via `deps.onMessage` → server `discussion_message` broadcast. Status/conclusion
+changes fire `deps.onStatusChange` → refreshed `discussions` list broadcast.
+
+**Termination.** Stages move forward only and `conclude` is terminal; `maxRoundsPerStage`
+(default `max(3, participants*2+1)`) forces an advance out of a stuck stage; `maxTotalRounds`
+(default 40) is the hard backstop, writing a fallback conclusion. An abort (server teardown) breaks
+the loop and leaves the discussion `in_progress` (no resume).
+
+**Background carrier.** The server keeps a `discussionRuns: Map<id, AbortController>` — the running
+entry is the `start_discussion` re-entry guard, and the controller aborts the loop. The run uses
+`askAgentOnce` (tool sessions), not a user `SessionRuntime`, so finishing it never ends a session
+(既有 session 约定: a session ends only on user `/clear`).
+
 ## Testing
 
 `server/src/discussions/store.test.ts` (real temp-file db, `node:sqlite` branch): table + index
@@ -92,8 +145,21 @@ ordered list, nullable speaker fields → null); migration (old db with **no** d
 created; old `discussions` table with **only core columns** → `ensureColumn` backfills, historic
 row survives, idempotent on re-ensure); fail-soft degradation (reads empty/null, write throws).
 
+`server/src/discussions/orchestrator-logic.test.ts` (pure): `parseOrganizerDecision` (JSON / fenced /
+keyword fallback / invalid speaker / unparseable → advance), `parseParticipantSpeech` (trim + self-name
+strip + blank), `resolveStep` (terminal-stage conclude, explicit conclude, cap-forced advance, valid /
+invalid speaker), `renderTranscript`, prompt builders carry the key fields.
+
+`server/src/discussions/orchestrator.test.ts` (fakes — scripted `ask`, in-memory store, capture hooks):
+the full workflow happy path (status `in_progress` → `completed`, streamed messages mirror appends,
+conclusion written), the single-agent degeneration, mid-run abort leaving `in_progress`, and the
+total-round-cap fallback conclusion.
+
 ## Dependencies
 
 - **SQLite (shared adapter)** — `server/src/db.ts` (`node:sqlite` / `bun:sqlite`, both `external`).
 - **shared protocol** — `Discussion` / `DiscussionMessage` / `DiscussionStatus` /
   `DiscussionSpeakerKind` entity types.
+- **discussion types** — `shared/src/discussion-types.ts` (workflow stages + `nextDiscussionStage`).
+- **agent runtime** — `server/src/agent-once.ts` (`askAgentOnce`) and `server/src/settings.ts`
+  (`resolveAgent` / `loadSettings` / `launchForAgent`) for the organizer + participants.

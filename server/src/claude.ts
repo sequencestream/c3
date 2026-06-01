@@ -214,7 +214,7 @@ export interface RunOptions {
    * everything else is denied by default (a second line of defence behind
    * `disallowedTools`).
    */
-  gate?: 'standard' | 'requirement'
+  gate?: 'standard' | 'requirement' | 'discussion-research'
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
@@ -426,6 +426,23 @@ export async function runClaude(opts: RunOptions): Promise<void> {
           return {
             behavior: 'deny',
             message: 'Requirement chat is read-only; this tool is blocked.',
+          }
+        }
+
+        // Discussion-research (read-only) gate: a one-shot research agent that
+        // completes a new discussion's `context`. It reuses the requirement read
+        // set (Read/Grep/Glob/… + WebFetch/WebSearch) so it can read project
+        // material and search the web, but has NO save tool — the server writes the
+        // agent's final text back itself — and clarifying questions are off (the
+        // run is unattended). Everything else is denied by default.
+        if (gate === 'discussion-research') {
+          if (REQUIREMENT_READ_TOOLS.has(toolName)) {
+            return { behavior: 'allow', updatedInput: input }
+          }
+          console.warn(`[c3] discussion-research gate denied tool: ${toolName}`)
+          return {
+            behavior: 'deny',
+            message: 'Discussion research is read-only; this tool is blocked.',
           }
         }
 

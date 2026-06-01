@@ -78,8 +78,12 @@ import {
   isStoreAvailable as isDiscussionStoreAvailable,
   listDiscussions,
   getDiscussion,
+  createDiscussion,
+  setDiscussionContext,
   listMessages as listDiscussionMessages,
 } from './discussions/store.js'
+import { researchDiscussionContext } from './discussions/research.js'
+import { isDiscussionType } from '@ccc/shared/discussion-types'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
 import { reconcileInProgress } from './requirements/reconcile.js'
@@ -190,6 +194,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     const proj = resolve(projectPath)
     const items = enrichRunStatus(listRequirements(proj))
     for (const deliver of connections) deliver({ type: 'requirements', projectPath: proj, items })
+  }
+
+  // Push a project's refreshed discussion list to every connection (the frontend
+  // keeps a per-project cache and renders the one it's viewing). No-op when the
+  // store is unavailable.
+  const broadcastDiscussions = (projectPath: string): void => {
+    if (!isDiscussionStoreAvailable()) return
+    const proj = resolve(projectPath)
+    const items = listDiscussions(proj)
+    for (const deliver of connections) deliver({ type: 'discussions', projectPath: proj, items })
   }
 
   // Push an automation-orchestrator status to every connection (the frontend
@@ -1010,6 +1024,52 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 projectPath: proj,
                 items: listDiscussions(proj, msg.status),
               })
+              return
+            }
+
+            case 'create_discussion': {
+              if (!isDiscussionStoreAvailable()) {
+                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                return
+              }
+              if (!isDiscussionType(msg.discussionType)) {
+                send(ws, {
+                  type: 'error',
+                  message: `Unknown discussion type: ${msg.discussionType}`,
+                })
+                return
+              }
+              const proj = resolve(msg.projectPath)
+              // Title is derived from the goal (the form has no title field): first
+              // non-empty line, trimmed and capped.
+              const firstLine =
+                msg.goal
+                  .split('\n')
+                  .map((l) => l.trim())
+                  .find(Boolean) ?? ''
+              const title = (firstLine || 'Discussion').slice(0, 80)
+              const created = createDiscussion({
+                projectPath: proj,
+                title,
+                type: msg.discussionType,
+                goal: msg.goal,
+                context: msg.context ?? '',
+                status: 'draft',
+              })
+              // Push the draft immediately so the list shows it, then run the
+              // read-only research agent in the background to complete its context
+              // and push again. Fire-and-forget: research never blocks creation.
+              broadcastDiscussions(proj)
+              void researchDiscussionContext(created)
+                .then((context) => {
+                  if (context !== created.context) {
+                    setDiscussionContext(created.id, context)
+                    broadcastDiscussions(proj)
+                  }
+                })
+                .catch((err) => {
+                  console.warn(`[c3] discussion research wiring error: ${errMsg(err)}`)
+                })
               return
             }
 

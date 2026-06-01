@@ -241,6 +241,12 @@ export function setConclusion(id: string, conclusion: string): void {
   d.run('UPDATE discussions SET conclusion=?, updated_at=? WHERE id=?', conclusion, Date.now(), id)
 }
 
+/** Replace the discussion's background context (the research agent's completed output). */
+export function setDiscussionContext(id: string, context: string): void {
+  const d = requireDb()
+  d.run('UPDATE discussions SET context=?, updated_at=? WHERE id=?', context, Date.now(), id)
+}
+
 // ---- Discussion messages ----
 
 interface MessageRow {

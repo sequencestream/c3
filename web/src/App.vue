@@ -796,10 +796,18 @@ function openDiscussion(discussionId: string) {
   client?.send({ type: 'open_discussion', discussionId })
 }
 
-// "+" in the discussion title bar — placeholder in R1 (the create/write path
-// lands in a later requirement; this only marks the entry point).
-function newDiscussion() {
-  /* TODO: wire the discussion create (write) path. */
+// "+" form submit in the discussion list: create a discussion. The server
+// persists a draft, pushes the refreshed list, then completes its context via a
+// read-only research agent and pushes again — both arrive as `discussions`.
+function createDiscussion(payload: { type: string; goal: string; context: string }) {
+  if (!discussionsProject.value) return
+  client?.send({
+    type: 'create_discussion',
+    projectPath: discussionsProject.value,
+    discussionType: payload.type,
+    goal: payload.goal,
+    context: payload.context,
+  })
 }
 
 // "+" in the requirement title bar: start a brand-new comm session. The server
@@ -980,7 +988,7 @@ function listCommands() {
       :discussions="currentDiscussions"
       :active-id="activeDiscussionId"
       @open="openDiscussion"
-      @new-discussion="newDiscussion"
+      @create="createDiscussion"
     />
 
     <div class="content">

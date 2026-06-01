@@ -49,10 +49,35 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.findAll('.disc-item').length).toBe(0)
   })
 
-  it('点击顶部「+」→ emit new-discussion', async () => {
+  it('点击顶部「+」展开新建表单,填写后提交 → emit create(payload)', async () => {
+    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
+    // 默认不显示表单
+    expect(w.find('.disc-form').exists()).toBe(false)
+    await w.find('.disc-new-btn').trigger('click')
+    expect(w.find('.disc-form').exists()).toBe(true)
+    // 选类型 + 填目标/上下文,提交
+    const options = w.findAll('.disc-form select option')
+    expect(options.length).toBeGreaterThan(0)
+    const firstValue = (options[0].element as HTMLOptionElement).value
+    await w.find('.disc-form select').setValue(firstValue)
+    await w.findAll('.disc-form textarea')[0].setValue('Decide cache TTL')
+    await w.findAll('.disc-form textarea')[1].setValue('Redis today')
+    await w.find('.disc-form').trigger('submit')
+    expect(w.emitted('create')).toEqual([
+      [{ type: firstValue, goal: 'Decide cache TTL', context: 'Redis today' }],
+    ])
+    // 提交后表单收起
+    expect(w.find('.disc-form').exists()).toBe(false)
+  })
+
+  it('目标为空时不提交,「+」可再次点击收起表单', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha')] })
     await w.find('.disc-new-btn').trigger('click')
-    expect(w.emitted('new-discussion')).toEqual([[]])
+    await w.find('.disc-form').trigger('submit')
+    expect(w.emitted('create')).toBeUndefined()
+    // 再次点击「+」收起
+    await w.find('.disc-new-btn').trigger('click')
+    expect(w.find('.disc-form').exists()).toBe(false)
   })
 
   it('显示状态标签', () => {

@@ -3,9 +3,11 @@
  * DiscussionList.vue — 讨论视图左栏:讨论列表 + 顶部「+」。
  *
  * 数据由 App 提供(读路径)。点击某讨论上抛 `open` 事件,由 App 拉取详情;
- * 顶部「+」上抛 `new-discussion`(R1 仅占位,写路径后续接入)。
+ * 顶部「+」展开内联新建表单(类型/目标/上下文),提交上抛 `create`(写路径)。
  */
+import { ref } from 'vue'
 import type { Discussion, DiscussionStatus } from '@ccc/shared/protocol'
+import { listDiscussionTypes } from '@ccc/shared/discussion-types'
 import { formatDate } from '../lib/req-list-view'
 
 defineProps<{
@@ -15,8 +17,34 @@ defineProps<{
 
 const emit = defineEmits<{
   open: [discussionId: string]
-  'new-discussion': []
+  create: [payload: { type: string; goal: string; context: string }]
 }>()
+
+const TYPES = listDiscussionTypes()
+
+// Inline create form state. The "+" toggles it; submit emits `create`.
+const showForm = ref(false)
+const formType = ref(TYPES[0]?.id ?? '')
+const formGoal = ref('')
+const formContext = ref('')
+
+function openForm(): void {
+  showForm.value = true
+}
+
+function closeForm(): void {
+  showForm.value = false
+  formType.value = TYPES[0]?.id ?? ''
+  formGoal.value = ''
+  formContext.value = ''
+}
+
+function submitForm(): void {
+  const goal = formGoal.value.trim()
+  if (!formType.value || !goal) return
+  emit('create', { type: formType.value, goal, context: formContext.value.trim() })
+  closeForm()
+}
 
 const STATUS_LABEL: Record<DiscussionStatus, string> = {
   draft: 'Draft',
@@ -40,11 +68,41 @@ function datePrefix(d: Discussion): string {
         class="disc-new-btn"
         aria-label="New discussion"
         title="New discussion"
-        @click="emit('new-discussion')"
+        @click="showForm ? closeForm() : openForm()"
       >
         +
       </button>
     </div>
+    <form v-if="showForm" class="disc-form" @submit.prevent="submitForm">
+      <label class="disc-field">
+        <span class="disc-field-label">Type</span>
+        <select v-model="formType" class="disc-input">
+          <option v-for="t in TYPES" :key="t.id" :value="t.id">{{ t.label }}</option>
+        </select>
+      </label>
+      <label class="disc-field">
+        <span class="disc-field-label">Goal</span>
+        <textarea
+          v-model="formGoal"
+          class="disc-input"
+          rows="2"
+          placeholder="What should this discussion achieve?"
+        />
+      </label>
+      <label class="disc-field">
+        <span class="disc-field-label">Context</span>
+        <textarea
+          v-model="formContext"
+          class="disc-input"
+          rows="3"
+          placeholder="Background material (a research agent will complete it)"
+        />
+      </label>
+      <div class="disc-form-actions">
+        <button type="button" class="disc-btn" @click="closeForm">Cancel</button>
+        <button type="submit" class="disc-btn primary" :disabled="!formGoal.trim()">Create</button>
+      </div>
+    </form>
     <div class="disc-items">
       <p v-if="discussions.length === 0" class="disc-empty">No discussions yet.</p>
       <div
@@ -120,6 +178,65 @@ function datePrefix(d: Discussion): string {
 .disc-new-btn:hover {
   color: var(--c-text);
   border-color: var(--c-primary);
+}
+.disc-form {
+  flex-shrink: 0;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-card);
+}
+.disc-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.disc-field-label {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.disc-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-1) var(--sp-2);
+  font: inherit;
+  color: var(--c-text);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+}
+.disc-input:focus {
+  outline: none;
+  border-color: var(--c-primary);
+}
+.disc-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.disc-btn {
+  padding: var(--sp-1) var(--sp-3);
+  font: inherit;
+  color: var(--c-text);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.disc-btn:hover {
+  border-color: var(--c-primary);
+}
+.disc-btn.primary {
+  color: #fff;
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+}
+.disc-btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .disc-items {
   flex: 1;

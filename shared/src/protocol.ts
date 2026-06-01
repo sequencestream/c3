@@ -487,6 +487,20 @@ export type ClientToServer =
   /** List a project's discussions (reply: `discussions`), optionally filtered by status. */
   | { type: 'list_discussions'; projectPath: string; status?: DiscussionStatus }
   /**
+   * Create a discussion from the "+" form. The server persists it as `draft`
+   * (title derived from `goal`), pushes a refreshed `discussions` list, then runs
+   * a read-only research agent that reads project material + searches the web to
+   * complete its `context` and pushes `discussions` again. `type` must name a
+   * known discussion type (see `discussion-types.ts`).
+   */
+  | {
+      type: 'create_discussion'
+      projectPath: string
+      discussionType: string
+      goal: string
+      context?: string
+    }
+  /**
    * Open a discussion: enter the discussion view for one discussion and return
    * it together with its full message history. Replies with `discussion_detail`.
    */

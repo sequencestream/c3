@@ -82,13 +82,12 @@ describe('SessionList.vue — 当前工作区会话列表', () => {
     expect(w.find('.session-more').exists()).toBe(false)
   })
 
-  it('新建 ＋ → emit create-session(path);💡 → emit open-requirements(path)', async () => {
+  it('新建 ＋ → emit create-session(path)', async () => {
     const w = mountList()
     const btns = w.findAll('.sidebar-head .icon-btn')
-    // 顺序:💡 需求录入, ＋ 新建
+    // 需求入口已迁至顶栏 tab nav(AppHeader),会话头部只剩 ＋ 新建。
+    expect(btns.length).toBe(1)
     await btns[0].trigger('click')
-    expect(w.emitted('open-requirements')).toEqual([[WS]])
-    await btns[1].trigger('click')
     expect(w.emitted('create-session')).toEqual([[WS]])
   })
 

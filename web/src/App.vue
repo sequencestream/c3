@@ -21,6 +21,7 @@ import SessionTitleBar from './components/SessionTitleBar.vue'
 import TaskPanel from './components/TaskPanel.vue'
 import RequirementList from './components/RequirementList.vue'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
+import { consoleEntryTarget, type SessionRef } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   AutomationStatus,
@@ -80,6 +81,16 @@ const currentWorkspace = ref<string | null>(null)
 const activeWorkspace = ref<string | null>(null)
 const activeSession = ref<string | null>(null)
 const activeTitle = ref<string>('')
+
+// The 「会话」(console) tab remembers its OWN last-viewed session, independent of
+// the 「需求」tab's comm session — so switching tabs never crosses chat content.
+// The viewed state (`activeSession`/`messages`/…) reflects whichever tab is
+// active; this pointer lets `switchToConsoleTab` re-bind the console tab's
+// session (the server only streams to the currently-viewed session, so we
+// re-`select_session` on switch rather than caching a stale `messages`). The
+// requirement tab needs no symmetric pointer: its comm session is server-tracked
+// (`is_current` per project) and recovered by re-sending `open_requirement_chat`.
+const consoleSession = ref<SessionRef | null>(null)
 
 const hasActiveSession = computed(() => activeSession.value !== null)
 // Sessions of the current workspace (the only ones the sidebar lists).
@@ -393,6 +404,13 @@ function handleMessage(msg: ServerToClient) {
       activeSession.value = msg.sessionId
       activeTitle.value = msg.title
       mode.value = msg.mode
+      // Remember this as the console tab's own session ONLY when the selection
+      // originated on the console tab. Comm-session selections (open/new/refine
+      // requirement chat) always arrive while the requirement tab is active, so
+      // they never pollute the console pointer.
+      if (activeTab.value === 'console') {
+        consoleSession.value = { workspacePath: msg.workspacePath, sessionId: msg.sessionId }
+      }
       messages.value = []
       nextId = 1
       // Commands are per-cwd; drop the old set so the next `/` refetches.
@@ -602,6 +620,9 @@ function createSession(path: string) {
 
 function selectSession(path: string, sessionId: string) {
   enterConsole()
+  // Pin the console tab's pointer up front so it stays correct even on the
+  // already-viewing early-return (no `session_selected` reply to record it).
+  consoleSession.value = { workspacePath: path, sessionId }
   if (sessionId === activeSession.value) return
   client?.send({ type: 'select_session', workspacePath: path, sessionId })
 }
@@ -614,14 +635,66 @@ function onSelectTab(key: string) {
     if (currentWorkspace.value) openRequirements(currentWorkspace.value)
     return
   }
-  enterConsole()
+  switchToConsoleTab()
 }
 
+// Flip to the console tab WITHOUT re-binding a session. Used by the explicit
+// session selectors (`selectSession`/`createSession`/`openDevSession`), which
+// flip the tab and then select a specific session themselves — re-binding here
+// would double-select / pick the wrong one.
 function enterConsole() {
   if (activeTab.value !== 'console') {
     activeTab.value = 'console'
     persistViewMode()
   }
+}
+
+// Top-bar 「会话」tab click: flip to the console tab AND re-bind the chat column
+// to the console tab's OWN session. Only re-binds when arriving from another tab
+// (the chat column may currently show the requirement comm session); clicking
+// the already-active console tab is a no-op for the view.
+function switchToConsoleTab() {
+  const wasOther = activeTab.value !== 'console'
+  enterConsole()
+  if (wasOther) bindConsoleSession()
+}
+
+// Resolve and apply the console tab's session on (re)entry: re-select the
+// remembered one (or fall back to the workspace's first), or clear to empty.
+function bindConsoleSession() {
+  const target = consoleEntryTarget(
+    consoleSession.value,
+    currentWorkspace.value,
+    currentSessions.value,
+  )
+  if (target.kind === 'empty') {
+    clearViewedSession()
+    return
+  }
+  const ref = target.ref
+  // Already viewing it (e.g. fallback resolved to the current session) — nothing
+  // to re-fetch.
+  if (activeSession.value === ref.sessionId && activeWorkspace.value === ref.workspacePath) return
+  client?.send({
+    type: 'select_session',
+    workspacePath: ref.workspacePath,
+    sessionId: ref.sessionId,
+  })
+}
+
+// Reset the viewed chat column to the empty state (no session). Mirrors the
+// `session_selected` reset minus the history replay; used when the console tab
+// has no session to show, so the requirement comm session never lingers.
+function clearViewedSession() {
+  activeWorkspace.value = null
+  activeSession.value = null
+  activeTitle.value = ''
+  messages.value = []
+  nextId = 1
+  availableCommands.value = []
+  activity.value = { phase: 'idle' }
+  taskModel.value = emptyTaskModel()
+  taskToolPending = new Map()
 }
 
 function openRequirements(path: string) {
@@ -671,6 +744,7 @@ function startDevelopment(requirementId: string, hasUnfinishedDeps: boolean) {
 function openDevSession(sessionId: string) {
   if (!requirementsProject.value) return
   enterConsole()
+  consoleSession.value = { workspacePath: requirementsProject.value, sessionId }
   client?.send({ type: 'select_session', workspacePath: requirementsProject.value, sessionId })
 }
 
@@ -693,6 +767,10 @@ function stopAutomation() {
 }
 
 function deleteSession(path: string, sessionId: string) {
+  // Drop the console pointer if it referenced the deleted session, so the next
+  // console entry falls back to the list's first session (or empty) instead of
+  // re-selecting a gone session.
+  if (consoleSession.value?.sessionId === sessionId) consoleSession.value = null
   client?.send({ type: 'delete_session', workspacePath: path, sessionId })
 }
 

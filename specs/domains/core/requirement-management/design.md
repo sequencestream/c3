@@ -381,7 +381,7 @@ the list) (RM-R12).
   session resets to `console`. The requirement view renders no mode selector (RM-R3).
 - **Title bar (RM-R3):** the dialog column reuses `SessionTitleBar.vue` with `show-mode=false`
   (no mode selector). The console tab keeps the default `show-mode=true`. Title shows
-  `activeTitle || '需求沟通'`.
+  `activeTitle || 'New Requirement'`.
 - **New-requirement button:** the "+" button lives in `RequirementList.vue`'s header, to the
   right of the status filter (`req-head-right`). It emits `new-requirement` → `App.vue` sends
   `new_requirement_chat`; the resulting `session_selected` (empty history) clears the dialog so a

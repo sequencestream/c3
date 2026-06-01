@@ -23,7 +23,7 @@
  *
  * What this verifies (maps to the requirement spec):
  * - US-1/US-2: entering the view returns a `session_selected` comm session
- *   (title 需求沟通) plus the project's `requirements` list.
+ *   (title New Requirement) plus the project's `requirements` list.
  * - US-3/US-4: the agent's `save_requirements` call is gated (human confirm),
  *   and only persists after `allow` — landing as a `todo` row, broadcast live.
  * - status machine: `update_requirement_status` moves the row and re-broadcasts.
@@ -60,7 +60,7 @@ writeFileSync(
 
 const REQ_TITLE = 'E2E 落库验证'
 const PROMPT =
-  `你是需求沟通助手。请不要阅读任何文件、也不要向我提问。` +
+  `你是New Requirement助手。请不要阅读任何文件、也不要向我提问。` +
   `直接调用 save_requirements 工具,只提交一条需求:` +
   `title="${REQ_TITLE}",content="验证 c3 需求落库端到端流程",priority="P2"。` +
   `提交后用一句话告诉我已提交。`
@@ -85,7 +85,7 @@ let chatOpened = false
 let promptSent = false
 let commSessionId = null
 
-let sawCommSession = false // session_selected for the comm session (title 需求沟通)
+let sawCommSession = false // session_selected for the comm session (title New Requirement)
 let sawInitialList = false // first `requirements` reply (the list on entry)
 let sawSavePermission = false // permission_request for save_requirements
 let proposedValid = false // the proposed payload looked well-formed
@@ -158,7 +158,7 @@ ws.addEventListener('message', (evt) => {
         finish(judge())
         break
       }
-      // The comm session for the requirement view (read-only, title 需求沟通).
+      // The comm session for the requirement view (read-only, title New Requirement).
       sawCommSession = true
       commSessionId = msg.sessionId
       console.log(`[e2e] comm session ${commSessionId} (title="${msg.title}")`)

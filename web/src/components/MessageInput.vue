@@ -234,11 +234,11 @@ function onKey(e: KeyboardEvent) {
         !hasActiveSession
           ? 'Select or create a session to start'
           : teamActive
-            ? '团队运行中 — 输入消息发送给 team lead（随时可发）'
+            ? 'Team running — type a message to send to the team lead (anytime)'
             : ordinaryRunning
-              ? '回合进行中 — 发送将排队,回合结束后合并入下一轮'
+              ? 'Turn in progress — your message will be queued and merged into the next turn'
               : voiceState === 'listening'
-                ? '正在聆听… 再次点击麦克风或按 Esc 结束'
+                ? 'Listening… click the mic again or press Esc to stop'
                 : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
       "
       :disabled="inputDisabled"
@@ -249,8 +249,8 @@ function onKey(e: KeyboardEvent) {
       class="mic-btn"
       :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
       :disabled="!hasActiveSession"
-      :title="voiceState === 'error' ? voiceError : '语音输入'"
-      :aria-label="voiceState === 'listening' ? '停止语音输入' : '开始语音输入'"
+      :title="voiceState === 'error' ? voiceError : 'Voice input'"
+      :aria-label="voiceState === 'listening' ? 'Stop voice input' : 'Start voice input'"
       :aria-pressed="voiceState === 'listening'"
       @click="toggleMic"
     >
@@ -275,17 +275,21 @@ function onKey(e: KeyboardEvent) {
     <button
       v-else-if="teamActive"
       class="stop-btn"
-      title="结束团队：关闭 team lead 与所有 teammate"
+      title="End team: shut down the team lead and all teammates"
       @click="emit('stop')"
     >
-      结束团队
+      End team
     </button>
     <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
       <div v-if="showSendHint" class="send-hint" role="tooltip">
-        {{ ordinaryRunning ? '回合进行中 — 发送将排队' : '连续回车两次，或 ⌘/Ctrl+Enter 发送' }}
+        {{
+          ordinaryRunning
+            ? 'Turn in progress — your message will be queued'
+            : 'Press Enter twice, or ⌘/Ctrl+Enter to send'
+        }}
       </div>
       <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
-        {{ ordinaryRunning ? '排队' : 'Send' }}
+        {{ ordinaryRunning ? 'Queue' : 'Send' }}
       </button>
     </div>
   </footer>

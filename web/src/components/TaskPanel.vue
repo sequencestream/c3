@@ -16,7 +16,7 @@ const view = computed(() => taskPanelView(props.model))
 </script>
 
 <template>
-  <div v-if="view.visible" class="task-panel" aria-label="当前任务">
+  <div v-if="view.visible" class="task-panel" aria-label="Current tasks">
     <div
       v-for="t in view.inProgress"
       :key="t.id"
@@ -34,6 +34,8 @@ const view = computed(() => taskPanelView(props.model))
       <span class="task-mark">✓</span>
       <span class="task-subject">{{ t.subject }}</span>
     </div>
-    <div v-if="view.hiddenCompleted > 0" class="task-more">+{{ view.hiddenCompleted }} 已完成</div>
+    <div v-if="view.hiddenCompleted > 0" class="task-more">
+      +{{ view.hiddenCompleted }} completed
+    </div>
   </div>
 </template>

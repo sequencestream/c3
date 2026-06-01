@@ -202,8 +202,8 @@ const availableCommands = ref<SlashCommandInfo[]>([])
 // requirement list is extra.
 type TabKey = 'console' | 'requirements'
 const HEADER_TABS: { key: TabKey; label: string }[] = [
-  { key: 'console', label: '会话' },
-  { key: 'requirements', label: '需求' },
+  { key: 'console', label: 'Sessions' },
+  { key: 'requirements', label: 'Requirements' },
 ]
 const activeTab = ref<TabKey>('console')
 const requirementsProject = ref<string | null>(null)
@@ -523,7 +523,7 @@ function handleMessage(msg: ServerToClient) {
       }
       add({
         kind: 'system',
-        text: '— 已升级为团队会话：team lead 将持续运行并协调 teammate，直到你点「结束团队」 —',
+        text: '— Upgraded to a team session: the team lead keeps running and coordinating teammates until you click "End team" —',
       })
       break
     case 'error':
@@ -733,7 +733,11 @@ function refineRequirement(requirementId: string) {
 
 function startDevelopment(requirementId: string, hasUnfinishedDeps: boolean) {
   if (!requirementsProject.value) return
-  if (hasUnfinishedDeps && !window.confirm('该需求存在未完成的依赖,仍要启动开发吗?')) return
+  if (
+    hasUnfinishedDeps &&
+    !window.confirm('This requirement has unfinished dependencies. Start development anyway?')
+  )
+    return
   client?.send({
     type: 'start_development',
     projectPath: requirementsProject.value,
@@ -871,6 +875,7 @@ function listCommands() {
       @set-automate="setRequirementAutomate"
       @start-automation="startAutomation"
       @stop-automation="stopAutomation"
+      @new-requirement="newRequirementChat"
     />
 
     <div class="content">
@@ -883,10 +888,8 @@ function listCommands() {
       />
       <SessionTitleBar
         v-else-if="activeTab === 'requirements' && requirementsProject"
-        :active-title="activeTitle || '需求沟通'"
+        :active-title="activeTitle || 'Requirement chat'"
         :show-mode="false"
-        :show-new="true"
-        @new-session="newRequirementChat"
       />
       <ChatMessages
         :messages="messages"

@@ -13,8 +13,8 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
   <!-- AskUserQuestion: per-question auto-answer -->
   <template v-if="m.outcome.kind === 'ask'">
     <div class="label">
-      🤝 多 agent 共识 · <code>{{ m.toolName }}</code>
-      <span class="consensus-badge allow">逐题自动作答</span>
+      🤝 Multi-agent consensus · <code>{{ m.toolName }}</code>
+      <span class="consensus-badge allow">Auto-answered per question</span>
     </div>
     <div class="consensus">
       <div class="consensus-summary">{{ m.outcome.summary }}</div>
@@ -23,14 +23,14 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
           <div class="cq-head">
             <span v-if="q.header" class="ask-q-header">{{ q.header }}</span>
             <span class="cq-agreed" :class="{ split: !q.unanimous }">{{
-              q.unanimous ? q.agreed : '（分歧→人工）'
+              q.unanimous ? q.agreed : '(disagreement → manual)'
             }}</span>
           </div>
           <div class="cq-votes">
             <span v-for="a in q.answers" :key="a.agentId" class="cq-vote">
               <span class="vote-name">{{ a.agentName }}</span>
               <span class="vote-reason">{{
-                a.abstain ? '弃权' : a.optionLabels.join('/') || a.custom
+                a.abstain ? 'Abstained' : a.optionLabels.join('/') || a.custom
               }}</span>
             </span>
           </div>
@@ -42,14 +42,14 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
   <!-- Every other tool: allow / deny verdict -->
   <template v-else>
     <div class="label">
-      🤝 多 agent 共识 ·
+      🤝 Multi-agent consensus ·
       <code>{{ m.toolName }}</code>
       <span class="consensus-badge" :class="m.outcome.decision ?? 'split'">{{
         m.outcome.decision === 'allow'
-          ? '自动允许'
+          ? 'Auto-allowed'
           : m.outcome.decision === 'deny'
-            ? '自动拒绝'
-            : '分歧'
+            ? 'Auto-denied'
+            : 'Disagreement'
       }}</span>
     </div>
     <div class="consensus">

@@ -10,11 +10,11 @@ import type { Requirement, RequirementRunStatus, RequirementStatus } from '@ccc/
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
 export const STATUS_LABELS: Record<RequirementStatus, string> = {
-  draft: '草稿',
-  todo: '未开始',
-  in_progress: '开发中',
-  done: '已完成',
-  cancelled: '已取消',
+  draft: 'Draft',
+  todo: 'To do',
+  in_progress: 'In progress',
+  done: 'Done',
+  cancelled: 'Cancelled',
 }
 
 export function statusLabel(s: RequirementStatus): string {
@@ -29,8 +29,8 @@ export function statusLabel(s: RequirementStatus): string {
  * - `idle` → 空字符串,不渲染(默认态,包括已完成/未开始的需求)。
  */
 export const RUN_STATUS_LABELS: Record<RequirementRunStatus, string> = {
-  running: '运行中',
-  dangling: '已中断',
+  running: 'Running',
+  dangling: 'Interrupted',
   idle: '',
 }
 
@@ -52,8 +52,17 @@ export interface ToggleLabel {
 
 export function panelToggleLabel(collapsed: boolean): ToggleLabel {
   return collapsed
-    ? { icon: '⇥', text: '展开', title: '展开需求列表(显示模块名与操作按钮)' }
-    : { icon: '⇤', text: '收起', title: '收起需求列表(隐藏模块名与操作按钮,腾出聊天空间)' }
+    ? {
+        icon: '⇥',
+        text: 'Expand',
+        title: 'Expand the requirement list (show module names and action buttons)',
+      }
+    : {
+        icon: '⇤',
+        text: 'Collapse',
+        title:
+          'Collapse the requirement list (hide module names and action buttons to free up chat space)',
+      }
 }
 
 /** 行内次要字段在当前折叠态下是否渲染。收缩态隐藏模块名与操作区。 */

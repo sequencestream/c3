@@ -57,12 +57,12 @@ const isStatic = computed(() => props.m.decision === null && !props.actionable)
 /** The one-line label for a static history record, per tool type. */
 const historyLine = computed<string>(() => {
   if (props.m.toolName === 'AskUserQuestion') {
-    return `🙋 曾请求回答 ${askQuestionsOf(props.m.input).length} 个问题 · AskUserQuestion`
+    return `🙋 Asked to answer ${askQuestionsOf(props.m.input).length} question(s) · AskUserQuestion`
   }
   if (props.m.toolName === SAVE_REQUIREMENTS_TOOL) {
-    return `💾 曾请求保存 ${proposedRequirements.value.length} 条需求`
+    return `💾 Asked to save ${proposedRequirements.value.length} requirement(s)`
   }
-  return `🔧 曾请求使用工具 ${props.m.toolName}`
+  return `🔧 Asked to use tool ${props.m.toolName}`
 })
 
 const emit = defineEmits<{
@@ -154,8 +154,8 @@ function submitAsk() {
   <!-- AskUserQuestion: per-question answer panel -->
   <template v-else-if="m.toolName === 'AskUserQuestion'">
     <div class="label">
-      🙋 回答提问 · <code>AskUserQuestion</code>
-      <span v-if="m.consensus" class="consensus-badge split">多 agent 建议</span>
+      🙋 Answer question · <code>AskUserQuestion</code>
+      <span v-if="m.consensus" class="consensus-badge split">Multi-agent suggestion</span>
     </div>
     <div v-if="m.consensus" class="consensus-summary ask-summary">🤝 {{ m.consensus.summary }}</div>
     <div class="ask-panel">
@@ -211,8 +211,8 @@ function submitAsk() {
               @change="toggleAskCustomOption(q)"
             />
             <span class="ask-option-body">
-              <span class="ask-option-label">✏️ 自定义回复</span>
-              <span class="ask-option-desc">自己输入答案</span>
+              <span class="ask-option-label">✏️ Custom reply</span>
+              <span class="ask-option-desc">Type your own answer</span>
             </span>
             <span class="ask-agents">
               <span
@@ -237,7 +237,7 @@ function submitAsk() {
           v-if="actionable && isCustomChosen(q.index)"
           class="ask-custom"
           type="text"
-          placeholder="输入自定义回复…"
+          placeholder="Type a custom reply…"
           :value="askCustomOf(q.index)"
           @input="setAskCustom(q.index, ($event.target as HTMLInputElement).value)"
         />
@@ -245,14 +245,14 @@ function submitAsk() {
     </div>
     <div v-if="actionable" class="actions">
       <button class="deny" @click="respond('deny')">Deny</button>
-      <button :disabled="!isAskAnswered()" @click="submitAsk()">提交答案</button>
+      <button :disabled="!isAskAnswered()" @click="submitAsk()">Submit answers</button>
     </div>
     <div v-else class="decided">— {{ m.decision === 'allow' ? 'answered' : 'denied' }} —</div>
   </template>
 
   <!-- save_requirements: render the proposed requirements as cards -->
   <template v-else-if="m.toolName === SAVE_REQUIREMENTS_TOOL">
-    <div class="label">💾 保存需求 · <code>save_requirements</code></div>
+    <div class="label">💾 Save requirements · <code>save_requirements</code></div>
     <div class="req-confirm">
       <div v-for="(r, i) in proposedRequirements" :key="i" class="req-confirm-card">
         <div class="req-confirm-head">
@@ -261,18 +261,18 @@ function submitAsk() {
         </div>
         <div class="req-confirm-content">{{ r.content }}</div>
         <div v-if="r.dependsOn && r.dependsOn.length" class="req-confirm-deps">
-          依赖:{{ r.dependsOn.join('、') }}
+          Depends on:{{ r.dependsOn.join(', ') }}
         </div>
         <div v-if="batchDepLabels(r).length" class="req-confirm-deps">
-          依赖本批:{{ batchDepLabels(r).join('、') }}
+          Depends on (this batch):{{ batchDepLabels(r).join(', ') }}
         </div>
       </div>
     </div>
     <div v-if="actionable" class="actions">
-      <button class="deny" @click="respond('deny')">取消</button>
-      <button @click="respond('allow')">保存</button>
+      <button class="deny" @click="respond('deny')">Cancel</button>
+      <button @click="respond('allow')">Save</button>
     </div>
-    <div v-else class="decided">— {{ m.decision === 'allow' ? '已保存' : '已取消' }} —</div>
+    <div v-else class="decided">— {{ m.decision === 'allow' ? 'Saved' : 'Cancelled' }} —</div>
   </template>
 
   <!-- Every other tool: allow / deny -->
@@ -285,7 +285,7 @@ function submitAsk() {
       {{ oneLine(fmt(m.input)) }}
     </div>
     <div v-if="m.consensus && m.consensus.kind === 'tool'" class="consensus consensus-split">
-      <div class="consensus-summary">🤝 多 agent 意见分歧：{{ m.consensus.summary }}</div>
+      <div class="consensus-summary">🤝 Agents disagree: {{ m.consensus.summary }}</div>
       <ul class="consensus-votes">
         <li v-for="v in m.consensus.votes" :key="v.agentId">
           <span class="vote-name">{{ v.agentName }}</span>

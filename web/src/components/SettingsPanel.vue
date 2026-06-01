@@ -12,10 +12,10 @@ const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypa
 
 // 浏览器语音输入的可选识别语言（BCP-47）。
 const VOICE_LANGS: { value: string; label: string }[] = [
-  { value: 'zh-CN', label: '中文（普通话）' },
+  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
   { value: 'en-US', label: 'English (US)' },
-  { value: 'zh-TW', label: '繁體中文' },
-  { value: 'zh-HK', label: '粵語' },
+  { value: 'zh-TW', label: 'Chinese (Traditional)' },
+  { value: 'zh-HK', label: 'Cantonese' },
 ]
 
 const props = defineProps<{

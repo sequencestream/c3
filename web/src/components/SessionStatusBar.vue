@@ -33,7 +33,7 @@ const view = computed(() => {
   }
   // Team session between lead turns: not "thinking", but waiting on teammates.
   if (props.teamActive && props.activity.phase === 'idle') {
-    return { dot: 'team', label: '团队运行中 · 等待 teammate', spin: true }
+    return { dot: 'team', label: 'Team running · waiting on teammates', spin: true }
   }
   if (props.activity.phase === 'tool') {
     return { dot: 'running', label: `Running ${props.activity.toolName}…`, spin: true }

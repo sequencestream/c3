@@ -33,12 +33,13 @@ const emit = defineEmits<{
   'set-automate': [requirementId: string, automate: boolean]
   'start-automation': []
   'stop-automation': []
+  'new-requirement': []
 }>()
 
 // Automation orchestrator UI state derived from the pushed status.
 const autoRunning = computed(() => props.automation?.state === 'running')
 const autoError = computed(() =>
-  props.automation?.state === 'error' ? (props.automation.error ?? '出错') : null,
+  props.automation?.state === 'error' ? (props.automation.error ?? 'Error') : null,
 )
 // Short status line shown to the right of the automation button.
 const autoNote = computed<string>(() => {
@@ -47,10 +48,12 @@ const autoNote = computed<string>(() => {
   if (a.state === 'running') {
     const cur = a.currentRequirementId
     const title = cur ? (titleById.value[cur] ?? cur) : ''
-    return title ? `正在「${title}」` : '准备中…'
+    return title ? `Working on "${title}"` : 'Preparing…'
   }
   if (a.state === 'done')
-    return a.completedIds.length ? `✅ 已完成 ${a.completedIds.length} 项` : '✅ 无可自动化需求'
+    return a.completedIds.length
+      ? `✅ Completed ${a.completedIds.length} item(s)`
+      : '✅ No requirements to automate'
   return ''
 })
 
@@ -59,14 +62,14 @@ function toggleAutomation() {
   else emit('start-automation')
 }
 
-// Status filter. `null` = 全部. Local UI state; changing it asks App to refetch.
+// Status filter. `null` = All. Local UI state; changing it asks App to refetch.
 const FILTERS: { value: RequirementStatus | null; label: string }[] = [
-  { value: null, label: '全部' },
-  { value: 'todo', label: '未开始' },
-  { value: 'in_progress', label: '开发中' },
-  { value: 'done', label: '已完成' },
-  { value: 'cancelled', label: '已取消' },
-  { value: 'draft', label: '草稿' },
+  { value: null, label: 'All' },
+  { value: 'todo', label: 'To do' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'done', label: 'Done' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'draft', label: 'Draft' },
 ]
 const filter = ref<RequirementStatus | null>(null)
 
@@ -143,7 +146,7 @@ function datePrefix(r: Requirement): string {
         >
           {{ toggleLabel.icon }}
         </button>
-        <span class="req-list-title">需求列表</span>
+        <span class="req-list-title">Requirements</span>
       </div>
       <div class="req-head-right">
         <button
@@ -151,12 +154,12 @@ function datePrefix(r: Requirement): string {
           :class="{ running: autoRunning, error: !!autoError }"
           :title="
             autoRunning
-              ? '停止自动化进程'
-              : '启动自动化进程:按优先级与依赖逐个完成已勾选自动化的需求'
+              ? 'Stop the automation process'
+              : 'Start automation: complete the requirements marked for automation one by one, by priority and dependencies'
           "
           @click="toggleAutomation"
         >
-          {{ autoRunning ? '■ 停止自动化' : '▶ 自动化' }}
+          {{ autoRunning ? '■ Stop automation' : '▶ Automation' }}
         </button>
         <select
           class="req-filter"
@@ -167,12 +170,23 @@ function datePrefix(r: Requirement): string {
         >
           <option v-for="f in FILTERS" :key="f.label" :value="f.value ?? ''">{{ f.label }}</option>
         </select>
+        <button
+          type="button"
+          class="req-new-btn"
+          aria-label="New requirement: start a new chat session"
+          title="New requirement: start a new chat session"
+          @click="emit('new-requirement')"
+        >
+          +
+        </button>
       </div>
     </div>
     <div v-if="autoError" class="auto-status error" :title="autoError">⚠ {{ autoError }}</div>
     <div v-else-if="autoNote" class="auto-status">{{ autoNote }}</div>
     <div class="req-items">
-      <p v-if="requirements.length === 0" class="req-empty">暂无需求。在右侧与助手沟通后保存。</p>
+      <p v-if="requirements.length === 0" class="req-empty">
+        No requirements yet. Chat with the assistant on the right and save them.
+      </p>
       <div v-for="r in displayRequirements" :key="r.id" class="req-item" :class="r.status">
         <div
           class="req-item-main"
@@ -203,31 +217,31 @@ function datePrefix(r: Requirement): string {
           </div>
           <div v-if="rowVis.showActions" class="req-actions" @click.stop>
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
-              完善
+              Refine
             </button>
             <button v-if="r.status === 'todo'" class="req-btn primary" @click="startDev(r)">
-              启动开发
+              Start dev
             </button>
             <button
               v-if="r.lastDevSessionId"
               class="req-btn"
               @click="emit('open-dev', r.lastDevSessionId as string)"
             >
-              开发详情
+              Dev details
             </button>
             <button
               v-if="r.status !== 'done' && r.status !== 'cancelled'"
               class="req-btn"
               @click="emit('set-status', r.id, 'done')"
             >
-              标记完成
+              Mark done
             </button>
             <button
               v-if="r.status !== 'done' && r.status !== 'cancelled'"
               class="req-btn"
               @click="emit('set-status', r.id, 'cancelled')"
             >
-              取消
+              Cancel
             </button>
             <button
               type="button"
@@ -243,26 +257,26 @@ function datePrefix(r: Requirement): string {
         </div>
         <div v-if="r.id === expandedId" class="req-detail">{{ r.content }}</div>
         <div v-if="r.id === expandedId" class="req-meta">
-          <span class="req-meta-item">创建: {{ formatDate(r.createdAt) }}</span>
+          <span class="req-meta-item">Created: {{ formatDate(r.createdAt) }}</span>
           <span v-if="r.completedAt" class="req-meta-item"
-            >完成: {{ formatDate(r.completedAt) }}</span
+            >Completed: {{ formatDate(r.completedAt) }}</span
           >
           <span v-if="formatDependsOn(r, props.requirements).length" class="req-meta-item">
-            依赖:
+            Depends on:
             <span
               v-for="(dep, di) in formatDependsOn(r, props.requirements)"
               :key="dep.id"
               :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
             >
-              {{ di > 0 ? '、' : '' }}{{ dep.title }}{{ dep.done ? '' : ' ⚠' }}
+              {{ di > 0 ? ', ' : '' }}{{ dep.title }}{{ dep.done ? '' : ' ⚠' }}
             </span>
           </span>
         </div>
-        <div v-if="unfinishedDeps(r).length" class="req-deps" title="存在未完成依赖">
-          ⚠ 依赖未完成:{{
+        <div v-if="unfinishedDeps(r).length" class="req-deps" title="Has unfinished dependencies">
+          ⚠ Unfinished dependencies:{{
             unfinishedDeps(r)
               .map((d) => titleById[d.id] ?? d.id)
-              .join('、')
+              .join(', ')
           }}
         </div>
       </div>

@@ -1,0 +1,1 @@
+- use english for page ui text

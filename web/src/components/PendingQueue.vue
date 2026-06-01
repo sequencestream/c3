@@ -19,22 +19,22 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div v-if="items.length" class="pending-queue" aria-label="待发送队列">
-    <div class="pending-head">待发送 · 回合结束后合并入下一轮({{ items.length }})</div>
+  <div v-if="items.length" class="pending-queue" aria-label="Pending queue">
+    <div class="pending-head">Queued · merged into the next turn ({{ items.length }})</div>
     <div v-for="item in items" :key="item.id" class="pending-item">
       <span class="pending-text">{{ item.text }}</span>
       <button
         class="pending-act"
-        title="修改:取回到输入框重新编辑"
-        aria-label="修改"
+        title="Edit: pull back into the input box to re-edit"
+        aria-label="Edit"
         @click="emit('edit', item)"
       >
         ✎
       </button>
       <button
         class="pending-act"
-        title="删除:从队列移除"
-        aria-label="删除"
+        title="Delete: remove from the queue"
+        aria-label="Delete"
         @click="emit('delete', item.id)"
       >
         🗑

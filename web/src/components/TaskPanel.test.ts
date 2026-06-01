@@ -70,7 +70,7 @@ describe('TaskPanel.vue — 挂载渲染', () => {
     // order 最大的两笔(c3、c4)按升序展示。
     const doneSubjects = w.findAll('.task-row.task-done').map((r) => r.find('.task-subject').text())
     expect(doneSubjects).toEqual(['c3', 'c4'])
-    expect(w.find('.task-more').text()).toBe('+2 已完成')
+    expect(w.find('.task-more').text()).toBe('+2 completed')
   })
 
   it('恰好 2 笔已完成时不显示折叠提示', () => {

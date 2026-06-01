@@ -13,22 +13,22 @@ import {
 } from './req-list-view'
 
 describe('statusLabel', () => {
-  it('五种状态各映射到对应中文标签', () => {
-    expect(statusLabel('draft')).toBe('草稿')
-    expect(statusLabel('todo')).toBe('未开始')
-    expect(statusLabel('in_progress')).toBe('开发中')
-    expect(statusLabel('done')).toBe('已完成')
-    expect(statusLabel('cancelled')).toBe('已取消')
+  it('五种状态各映射到对应英文标签', () => {
+    expect(statusLabel('draft')).toBe('Draft')
+    expect(statusLabel('todo')).toBe('To do')
+    expect(statusLabel('in_progress')).toBe('In progress')
+    expect(statusLabel('done')).toBe('Done')
+    expect(statusLabel('cancelled')).toBe('Cancelled')
   })
 })
 
 describe('reqRunStatusLabel', () => {
-  it('running 映射为"运行中"', () => {
-    expect(reqRunStatusLabel('running')).toBe('运行中')
+  it('running 映射为 "Running"', () => {
+    expect(reqRunStatusLabel('running')).toBe('Running')
   })
 
-  it('dangling 映射为"已中断"', () => {
-    expect(reqRunStatusLabel('dangling')).toBe('已中断')
+  it('dangling 映射为 "Interrupted"', () => {
+    expect(reqRunStatusLabel('dangling')).toBe('Interrupted')
   })
 
   it('idle 映射为空字符串', () => {
@@ -55,18 +55,18 @@ describe('showRunStatus', () => {
 })
 
 describe('panelToggleLabel', () => {
-  it('展开态下文案提示「收起」', () => {
+  it('展开态下文案提示 "Collapse"', () => {
     const l = panelToggleLabel(false)
-    expect(l.text).toBe('收起')
+    expect(l.text).toBe('Collapse')
     expect(l.icon).toBe('⇤')
-    expect(l.title).toContain('收起')
+    expect(l.title).toContain('Collapse')
   })
 
-  it('收缩态下文案提示「展开」', () => {
+  it('收缩态下文案提示 "Expand"', () => {
     const l = panelToggleLabel(true)
-    expect(l.text).toBe('展开')
+    expect(l.text).toBe('Expand')
     expect(l.icon).toBe('⇥')
-    expect(l.title).toContain('展开')
+    expect(l.title).toContain('Expand')
   })
 })
 

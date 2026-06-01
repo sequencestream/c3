@@ -3,8 +3,8 @@ import { mount } from '@vue/test-utils'
 import AppHeader from './AppHeader.vue'
 
 const TABS = [
-  { key: 'console', label: '会话' },
-  { key: 'requirements', label: '需求' },
+  { key: 'console', label: 'Sessions' },
+  { key: 'requirements', label: 'Requirements' },
 ]
 
 const baseProps = {
@@ -20,7 +20,7 @@ describe('AppHeader.vue — top-bar tabs', () => {
   it('按 tabs 数据渲染全部 tab,标记当前 tab', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['会话', '需求'])
+    expect(tabs.map((t) => t.text())).toEqual(['Sessions', 'Requirements'])
     expect(tabs[0].classes()).toContain('active')
     expect(tabs[1].classes()).not.toContain('active')
   })

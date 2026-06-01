@@ -300,6 +300,36 @@ header h1 {
 .session-title-bar .disc-status.completed {
   color: var(--c-success);
 }
+/* Pause/Resume button sits before the status label; keep them visually grouped. */
+.session-title-bar .disc-start-btn + .disc-status {
+  margin-left: var(--sp-2);
+}
+
+/* Discussion composer: human interjection / follow-up question row. */
+.disc-composer {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--c-border);
+  background: var(--c-panel);
+}
+.disc-composer-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+.disc-composer-input:focus {
+  outline: none;
+  border-color: var(--c-primary);
+}
+.disc-composer .disc-start-btn {
+  margin-left: 0;
+}
 
 /* ============ 工作区切换器（顶部栏最左侧） ============ */
 .ws-switcher {

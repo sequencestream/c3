@@ -85,12 +85,13 @@ now : null` (mirrors the requirement store's done-stamping rule, including clear
 
 ## Organizer engine
 
-The orchestration loop that drives a `draft` discussion to a `conclusion`. Split for testability:
+The orchestration loop that drives a `draft` (or re-driven `completed`) discussion to a `conclusion`.
+Split for testability:
 
 | Concern               | File                                           | Notes                                                                                                                                    |
 | --------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Pure decision/parsing | `server/src/discussions/orchestrator-logic.ts` | No I/O/SDK: prompt builders, `parseOrganizerDecision`, `parseParticipantSpeech`, `resolveStep`, `renderTranscript`. Unit-tested.         |
-| Orchestration loop    | `server/src/discussions/orchestrator.ts`       | `runDiscussion(id, signal, deps)` + `defaultDiscussionDeps`. All collaborators injected (`DiscussionDeps`).                              |
+| Orchestration loop    | `server/src/discussions/orchestrator.ts`       | `runDiscussion(id, signal, deps)` + `defaultDiscussionDeps`. All collaborators injected (`DiscussionDeps`), including the pause `gate`.  |
 | One-shot agent turn   | `server/src/agent-once.ts`                     | `askAgentOnce` (extracted from consensus): a single tool-disabled turn under the agent's launch overrides, registered as a tool session. |
 
 **Roles.** The **organizer** is the default agent (`resolveAgent(null)`); the **participants** are
@@ -112,25 +113,55 @@ first, keyword fallback, and a safe `advance` default so an unparseable reply ne
 
 ```
 draft ──start_discussion──▶ in_progress ──(walk workflow stages)──▶ completed (conclusion written)
-                                  │
+                              │   ▲                                       │
+                  pause ──────┤   │ resume                                │ continue_discussion
+                  (gate parks)│   │                                       │ (append human Q)
+                              └───┘                                       ▼
    discuss ──advance──▶ summarize ──advance──▶ confirm ──advance──▶ conclude ──▶ conclude step
       ▲  │ speak (participant turn, loops, capped by maxRoundsPerStage)
       └──┘
    (an explicit `conclude` decision finishes from any stage; the terminal `conclude` stage
-    always concludes)
+    always concludes. `continue_discussion` re-enters in_progress at the first stage with the
+    full prior transcript as context, producing a new conclusion.)
 ```
+
+**Human-in-the-loop.** Three controls layer onto the loop without touching its decision logic:
+
+- **Pause gate** — `DiscussionDeps.gate(signal)` is awaited at the top of every round. While paused
+  it parks (no organizer decision, no speech); resume or abort wakes it. So pause/resume suspend the
+  engine **without aborting** it (local stage/round state is preserved). `pause_discussion` /
+  `resume_discussion` flip the per-run flag; an already in-flight `askAgentOnce` still finishes (the
+  pause is a round-boundary gate, so one more message may land after a pause request).
+- **Interjection** (`discussion_speak`) — the server pauses the run, appends a `human` message
+  (streamed as `discussion_message`), and resumes; the loop re-reads `listMessages` each round, so
+  the organizer's next decision sees it. With no live run (in_progress but stopped) the message is
+  simply appended.
+- **New round** (`continue_discussion`) — on a `completed` discussion the server appends the human's
+  follow-up as a `human` message, flips `completed → in_progress`, and re-runs `runDiscussion` over
+  the grown transcript. The engine needs no change: it re-enters at the first workflow stage, the
+  prior conclusion + the new question are context, and `setConclusion` overwrites with the new
+  outcome. A re-entry guard (`discussionRuns.has(id)`) rejects it while a run is live.
 
 **Persistence + streaming.** Every appended message is `store.appendMessage` (monotonic per-discussion
 `seq`) and streamed via `deps.onMessage` → server `discussion_message` broadcast. Status/conclusion
-changes fire `deps.onStatusChange` → refreshed `discussions` list broadcast.
+changes fire `deps.onStatusChange` → refreshed `discussions` list broadcast. The live **run-state**
+(`running` / `paused` / `ended`) is a separate `discussion_run_status` broadcast — runtime-only and
+**decoupled** from the persisted `DiscussionStatus` (a paused run is still `in_progress` on disk; the
+state is lost on server restart). The frontend keys a per-discussion run-state map off it (dropping
+the entry on `ended`) to render the Pause/Resume control and the composer mode (Speak vs Continue).
 
 **Termination.** Stages move forward only and `conclude` is terminal; `maxRoundsPerStage`
 (default `max(3, participants*2+1)`) forces an advance out of a stuck stage; `maxTotalRounds`
 (default 40) is the hard backstop, writing a fallback conclusion. An abort (server teardown) breaks
 the loop and leaves the discussion `in_progress` (no resume).
 
-**Background carrier.** The server keeps a `discussionRuns: Map<id, AbortController>` — the running
-entry is the `start_discussion` re-entry guard, and the controller aborts the loop. The run uses
+**Background carrier.** The server keeps a `discussionRuns: Map<id, DiscussionRunControl>` where
+`DiscussionRunControl = { abort, paused, resumeWaiters }`. A present entry is the re-entry guard for
+`start_discussion` / `continue_discussion`; `abort` tears the loop down; `paused` + `resumeWaiters`
+back the pause gate (resume splices+wakes the waiters; the gate also wakes on `abort`, so neither
+resume nor teardown can hang on a paused loop). `startDiscussionRun(discussion)` is the shared
+entry — it registers the control, wires the broadcast + gate hooks into `defaultDiscussionDeps`, and
+on `finally` deletes the entry and broadcasts `discussion_run_status: 'ended'`. The run uses
 `askAgentOnce` (tool sessions), not a user `SessionRuntime`, so finishing it never ends a session
 (既有 session 约定: a session ends only on user `/clear`).
 
@@ -152,8 +183,10 @@ invalid speaker), `renderTranscript`, prompt builders carry the key fields.
 
 `server/src/discussions/orchestrator.test.ts` (fakes — scripted `ask`, in-memory store, capture hooks):
 the full workflow happy path (status `in_progress` → `completed`, streamed messages mirror appends,
-conclusion written), the single-agent degeneration, mid-run abort leaving `in_progress`, and the
-total-round-cap fallback conclusion.
+conclusion written), the single-agent degeneration, mid-run abort leaving `in_progress`, the
+total-round-cap fallback conclusion, the **pause gate** (a gate that parks the first round ⇒ status
+flips but no message is streamed; release ⇒ runs to completion), and a **fresh post-conclusion round**
+(append a `human` question + flip to `in_progress` + re-run ⇒ new conclusion, grown transcript).
 
 ## Dependencies
 

@@ -241,6 +241,12 @@ const discussionMessages = ref<ChatMsg[]>([])
 // Highest message seq rendered for the open discussion — dedupes the live
 // `discussion_message` stream against the `discussion_detail` snapshot.
 const discussionMaxSeq = ref(0)
+// Live run-state of each discussion's orchestration (id → running/paused),
+// decoupled from the persisted status. Absent = no live run; driven by the
+// `discussion_run_status` event. Drives the Pause/Resume control + composer mode.
+const discussionRunState = ref<Record<string, 'running' | 'paused'>>({})
+// Draft for the discussion composer (human speak / follow-up question).
+const discussionInput = ref('')
 
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.requirementsProject'
@@ -545,6 +551,14 @@ function handleMessage(msg: ServerToClient) {
         })
       }
       break
+    case 'discussion_run_status': {
+      // Track the live run-state; `ended` drops the entry (fall back to status).
+      const next = { ...discussionRunState.value }
+      if (msg.state === 'ended') delete next[msg.discussionId]
+      else next[msg.discussionId] = msg.state
+      discussionRunState.value = next
+      break
+    }
     case 'user_text':
       add({ kind: 'user', text: msg.text })
       activity.value = { phase: 'thinking' }
@@ -810,6 +824,7 @@ function openDiscussions(path: string) {
   activeDiscussion.value = null
   discussionMessages.value = []
   discussionMaxSeq.value = 0
+  discussionInput.value = ''
   persistViewMode()
   client?.send({ type: 'list_discussions', projectPath: path })
 }
@@ -818,6 +833,7 @@ function openDiscussions(path: string) {
 function openDiscussion(discussionId: string) {
   if (discussionId === activeDiscussionId.value) return
   activeDiscussionId.value = discussionId
+  discussionInput.value = ''
   persistViewMode()
   client?.send({ type: 'open_discussion', discussionId })
 }
@@ -845,9 +861,44 @@ function startDiscussion() {
   client?.send({ type: 'start_discussion', discussionId: id })
 }
 
+// The open discussion's live run-state ('running' | 'paused' | undefined).
+const activeDiscussionRunState = computed<'running' | 'paused' | undefined>(() =>
+  activeDiscussionId.value ? discussionRunState.value[activeDiscussionId.value] : undefined,
+)
+
 // Title-bar status label for a non-draft discussion (draft shows the Start button).
 function discussionStatusLabel(status: Discussion['status']): string {
-  return status === 'in_progress' ? 'Running' : status === 'completed' ? 'Completed' : 'Cancelled'
+  if (status === 'in_progress') {
+    return activeDiscussionRunState.value === 'paused' ? 'Paused' : 'Running'
+  }
+  return status === 'completed' ? 'Completed' : 'Cancelled'
+}
+
+// Pause / resume the live orchestration of the open discussion.
+function pauseDiscussion() {
+  const id = activeDiscussionId.value
+  if (id) client?.send({ type: 'pause_discussion', discussionId: id })
+}
+function resumeDiscussion() {
+  const id = activeDiscussionId.value
+  if (id) client?.send({ type: 'resume_discussion', discussionId: id })
+}
+
+// Submit the discussion composer. While in_progress → human interjection
+// (server pauses, injects, resumes); while completed → drive a new round.
+function submitDiscussionInput() {
+  const id = activeDiscussionId.value
+  const text = discussionInput.value.trim()
+  const status = activeDiscussion.value?.status
+  if (!id || !text || !status) return
+  if (status === 'in_progress') {
+    client?.send({ type: 'discussion_speak', discussionId: id, text })
+  } else if (status === 'completed') {
+    client?.send({ type: 'continue_discussion', discussionId: id, text })
+  } else {
+    return
+  }
+  discussionInput.value = ''
 }
 
 // "+" in the requirement title bar: start a brand-new comm session. The server
@@ -1049,9 +1100,32 @@ function listCommands() {
             >
               Start
             </button>
-            <span v-else class="disc-status" :class="activeDiscussion.status">
-              {{ discussionStatusLabel(activeDiscussion.status) }}
-            </span>
+            <template v-else>
+              <button
+                v-if="
+                  activeDiscussion.status === 'in_progress' &&
+                  activeDiscussionRunState === 'running'
+                "
+                type="button"
+                class="disc-start-btn"
+                @click="pauseDiscussion"
+              >
+                Pause
+              </button>
+              <button
+                v-else-if="
+                  activeDiscussion.status === 'in_progress' && activeDiscussionRunState === 'paused'
+                "
+                type="button"
+                class="disc-start-btn"
+                @click="resumeDiscussion"
+              >
+                Resume
+              </button>
+              <span class="disc-status" :class="activeDiscussion.status">
+                {{ discussionStatusLabel(activeDiscussion.status) }}
+              </span>
+            </template>
           </template>
         </SessionTitleBar>
         <ChatMessages
@@ -1061,6 +1135,30 @@ function listCommands() {
           @respond="() => {}"
           @submit-ask="() => {}"
         />
+        <!-- Discussion composer: human interjection while running, or a follow-up
+             question that drives a new round once concluded. Hidden for a draft. -->
+        <form
+          v-if="
+            activeDiscussion &&
+            (activeDiscussion.status === 'in_progress' || activeDiscussion.status === 'completed')
+          "
+          class="disc-composer"
+          @submit.prevent="submitDiscussionInput"
+        >
+          <input
+            v-model="discussionInput"
+            type="text"
+            class="disc-composer-input"
+            :placeholder="
+              activeDiscussion.status === 'completed'
+                ? 'Ask a follow-up to start a new round…'
+                : 'Speak in this discussion…'
+            "
+          />
+          <button type="submit" class="disc-start-btn" :disabled="!discussionInput.trim()">
+            {{ activeDiscussion.status === 'completed' ? 'Continue' : 'Speak' }}
+          </button>
+        </form>
       </template>
       <template v-else>
         <SessionTitleBar

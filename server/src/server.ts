@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import type {
   AutomationStatus,
   ClientToServer,
+  Discussion,
   DiscussionMessage,
   Requirement,
   RequirementRunStatus,
@@ -82,6 +83,8 @@ import {
   createDiscussion,
   setDiscussionContext,
   listMessages as listDiscussionMessages,
+  appendMessage as appendDiscussionMessage,
+  updateDiscussionStatus as updateDiscussionStatus,
 } from './discussions/store.js'
 import { researchDiscussionContext } from './discussions/research.js'
 import { runDiscussion, defaultDiscussionDeps } from './discussions/orchestrator.js'
@@ -208,16 +211,76 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     for (const deliver of connections) deliver({ type: 'discussions', projectPath: proj, items })
   }
 
-  // Live discussion-engine runs, keyed by discussion id. The controller aborts the
-  // background orchestration (server teardown / re-entry guard). A running entry
-  // is the "already running" gate for `start_discussion`.
-  const discussionRuns = new Map<string, AbortController>()
+  // Per-run control for a live discussion orchestration. `abort` tears it down
+  // (server teardown); `paused` + `resumeWaiters` implement a pause gate the loop
+  // awaits at each round boundary (no new speech while paused) — resume and abort
+  // both wake the waiters so neither resume nor teardown can hang on a paused loop.
+  interface DiscussionRunControl {
+    abort: AbortController
+    paused: boolean
+    resumeWaiters: Array<() => void>
+  }
+
+  // Live discussion-engine runs, keyed by discussion id. A present entry is the
+  // "already running" re-entry guard for `start_discussion` / `continue_discussion`.
+  const discussionRuns = new Map<string, DiscussionRunControl>()
 
   // Stream one freshly-appended discussion message to every connection (the
   // frontend appends it when viewing that discussion).
   const broadcastDiscussionMessage = (discussionId: string, message: DiscussionMessage): void => {
     for (const deliver of connections)
       deliver({ type: 'discussion_message', discussionId, message })
+  }
+
+  // Broadcast a discussion's live run-state (decoupled from its persisted status).
+  const broadcastDiscussionRunStatus = (
+    discussionId: string,
+    state: 'running' | 'paused' | 'ended',
+  ): void => {
+    for (const deliver of connections)
+      deliver({ type: 'discussion_run_status', discussionId, state })
+  }
+
+  // The pause gate handed to the engine: resolves at once unless paused, else
+  // blocks until resume() wakes the waiters or the run is aborted.
+  const makeDiscussionGate =
+    (ctrl: DiscussionRunControl) =>
+    (signal: AbortSignal): Promise<void> => {
+      if (!ctrl.paused || signal.aborted) return Promise.resolve()
+      return new Promise<void>((res) => {
+        const wake = (): void => res()
+        ctrl.resumeWaiters.push(wake)
+        signal.addEventListener('abort', wake, { once: true })
+      })
+    }
+
+  // Start a background orchestration run for a discussion (shared by
+  // `start_discussion` and `continue_discussion`). The caller has already gated
+  // re-entry and set the discussion's status; here we register the run control,
+  // wire the broadcast + pause hooks, and clean up on finish.
+  const startDiscussionRun = (discussion: Discussion): void => {
+    const abort = new AbortController()
+    const ctrl: DiscussionRunControl = { abort, paused: false, resumeWaiters: [] }
+    discussionRuns.set(discussion.id, ctrl)
+    broadcastDiscussionRunStatus(discussion.id, 'running')
+    const deps = defaultDiscussionDeps({
+      onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
+      // Status/conclusion changes ride the refreshed list broadcast.
+      onStatusChange: () => broadcastDiscussions(discussion.projectPath),
+      gate: makeDiscussionGate(ctrl),
+    })
+    // Background orchestration: runs the agents and streams messages until it
+    // concludes. It does not own a user session, so finishing never ends a
+    // session (既有 session 约定).
+    void runDiscussion(discussion.id, abort.signal, deps)
+      .catch((err) => {
+        console.warn(`[c3] discussion orchestration error: ${errMsg(err)}`)
+      })
+      .finally(() => {
+        discussionRuns.delete(discussion.id)
+        broadcastDiscussionRunStatus(discussion.id, 'ended')
+        broadcastDiscussions(discussion.projectPath)
+      })
   }
 
   // Push an automation-orchestrator status to every connection (the frontend
@@ -1121,24 +1184,94 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 send(ws, { type: 'error', message: '讨论已开始或已结束,无法重复启动。' })
                 return
               }
-              const abort = new AbortController()
-              discussionRuns.set(discussion.id, abort)
-              const deps = defaultDiscussionDeps({
-                onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
-                // Status/conclusion changes ride the refreshed list broadcast.
-                onStatusChange: () => broadcastDiscussions(discussion.projectPath),
+              startDiscussionRun(discussion)
+              return
+            }
+
+            case 'pause_discussion': {
+              const ctrl = discussionRuns.get(msg.discussionId)
+              if (!ctrl || ctrl.paused) return
+              ctrl.paused = true
+              broadcastDiscussionRunStatus(msg.discussionId, 'paused')
+              return
+            }
+
+            case 'resume_discussion': {
+              const ctrl = discussionRuns.get(msg.discussionId)
+              if (!ctrl || !ctrl.paused) return
+              ctrl.paused = false
+              const waiters = ctrl.resumeWaiters.splice(0)
+              for (const wake of waiters) wake()
+              broadcastDiscussionRunStatus(msg.discussionId, 'running')
+              return
+            }
+
+            case 'discussion_speak': {
+              if (!isDiscussionStoreAvailable()) {
+                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                return
+              }
+              const discussion = getDiscussion(msg.discussionId)
+              if (!discussion) {
+                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                return
+              }
+              const text = msg.text.trim()
+              if (!text) return
+              // Pause the live run (if any) so the human message lands at a round
+              // boundary, append + stream it, then resume — the organizer's next
+              // round picks it up from the transcript.
+              const ctrl = discussionRuns.get(msg.discussionId)
+              if (ctrl) {
+                ctrl.paused = true
+                broadcastDiscussionRunStatus(msg.discussionId, 'paused')
+              }
+              const message = appendDiscussionMessage({
+                discussionId: msg.discussionId,
+                speakerKind: 'human',
+                speakerName: 'Human',
+                content: text,
               })
-              // Background orchestration: the engine runs the agents and streams
-              // messages until it concludes. It does not own a user session, so
-              // finishing the run never ends a session (既有 session 约定).
-              void runDiscussion(discussion.id, abort.signal, deps)
-                .catch((err) => {
-                  console.warn(`[c3] discussion orchestration error: ${errMsg(err)}`)
-                })
-                .finally(() => {
-                  discussionRuns.delete(discussion.id)
-                  broadcastDiscussions(discussion.projectPath)
-                })
+              broadcastDiscussionMessage(msg.discussionId, message)
+              if (ctrl) {
+                ctrl.paused = false
+                const waiters = ctrl.resumeWaiters.splice(0)
+                for (const wake of waiters) wake()
+                broadcastDiscussionRunStatus(msg.discussionId, 'running')
+              }
+              return
+            }
+
+            case 'continue_discussion': {
+              if (!isDiscussionStoreAvailable()) {
+                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                return
+              }
+              const discussion = getDiscussion(msg.discussionId)
+              if (!discussion) {
+                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                return
+              }
+              // Re-entry guard + only a concluded discussion can start a new round.
+              if (discussionRuns.has(discussion.id)) return
+              if (discussion.status !== 'completed') {
+                send(ws, { type: 'error', message: '只有已结束的讨论可以追加新一轮。' })
+                return
+              }
+              const text = msg.text.trim()
+              if (!text) return
+              // Append the human's follow-up, flip back to in_progress, and re-run
+              // the engine over the full transcript (prior conclusion + new question).
+              const message = appendDiscussionMessage({
+                discussionId: discussion.id,
+                speakerKind: 'human',
+                speakerName: 'Human',
+                content: text,
+              })
+              broadcastDiscussionMessage(discussion.id, message)
+              updateDiscussionStatus(discussion.id, 'in_progress')
+              broadcastDiscussions(discussion.projectPath)
+              startDiscussionRun({ ...discussion, status: 'in_progress' })
               return
             }
           }

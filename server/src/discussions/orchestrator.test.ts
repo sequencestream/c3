@@ -3,7 +3,10 @@
  * (a scripted `ask`, an in-memory store, capture hooks). Covers: the happy path
  * across all four workflow stages with status transitions + streamed messages +
  * a written conclusion; the single-agent degenerate path; mid-run abort leaving
- * the discussion `in_progress`; and the total-round-cap fallback conclusion.
+ * the discussion `in_progress`; the total-round-cap fallback conclusion; the
+ * pause gate (suspend at the round boundary → no new speech → resume to finish);
+ * and a fresh post-conclusion round driven to a new conclusion (the `continue`
+ * path: append a human question, flip back to in_progress, re-run the engine).
  */
 import { describe, expect, it } from 'vitest'
 import type { AgentConfig, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
@@ -205,5 +208,84 @@ describe('runDiscussion', () => {
     expect(get().status).toBe('completed')
     expect(get().conclusion).toContain('轮数上限')
     expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(2)
+  })
+
+  it('suspends at the gate while paused and resumes to completion', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const h = harness({
+      store,
+      participants: [agent('system', 'System'), agent('gpt', 'GPT')],
+      organizer: agent('system', 'System'),
+      organizerScript: ['{"action":"conclude","conclusion":"Done."}'],
+    })
+    // A gate that blocks the very first round until released — the engine has
+    // flipped to in_progress but must not ask the organizer or append anything.
+    let release: () => void = () => {}
+    const gated = new Promise<void>((r) => {
+      release = r
+    })
+    let gateCalls = 0
+    h.deps.gate = async () => {
+      gateCalls += 1
+      if (gateCalls === 1) await gated
+    }
+
+    const done = runDiscussion('d1', new AbortController().signal, h.deps)
+    await Promise.resolve()
+    await Promise.resolve()
+    // Paused at the round boundary: status flipped, but no speech happened.
+    expect(get().status).toBe('in_progress')
+    expect(messages.length).toBe(0)
+    expect(h.streamed.length).toBe(0)
+
+    release()
+    await done
+    expect(get().status).toBe('completed')
+    expect(get().conclusion).toBe('Done.')
+  })
+
+  it('drives a fresh round to a new conclusion after completion', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System')]
+
+    // Round 1 → first conclusion.
+    const h1 = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: ['{"action":"conclude","conclusion":"First."}'],
+    })
+    await runDiscussion('d1', new AbortController().signal, h1.deps)
+    expect(get().status).toBe('completed')
+    expect(get().conclusion).toBe('First.')
+
+    // Simulate `continue_discussion`: append the human question + flip back to
+    // in_progress, then re-run the engine over the grown transcript.
+    store.appendMessage({
+      discussionId: 'd1',
+      speakerKind: 'human',
+      speakerName: 'Human',
+      content: 'What about X?',
+    })
+    store.updateDiscussionStatus('d1', 'in_progress')
+    const before = messages.length
+
+    const h2 = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: ['{"action":"conclude","conclusion":"Second."}'],
+    })
+    await runDiscussion('d1', new AbortController().signal, h2.deps)
+
+    expect(get().status).toBe('completed')
+    expect(get().conclusion).toBe('Second.')
+    // Transcript carries the prior conclusion, the human question, and the new one.
+    expect(messages.some((m) => m.speakerKind === 'human' && m.content === 'What about X?')).toBe(
+      true,
+    )
+    expect(messages.filter((m) => m.content === 'First.').length).toBe(1)
+    expect(messages[messages.length - 1].content).toBe('Second.')
+    expect(messages.length).toBeGreaterThan(before)
   })
 })

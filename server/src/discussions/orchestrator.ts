@@ -86,6 +86,14 @@ export interface DiscussionDeps {
   maxRoundsPerStage?: number
   /** Total round cap across the whole discussion (hard backstop). */
   maxTotalRounds?: number
+  /**
+   * Awaited at the top of every round; resolves immediately unless the run is
+   * paused, in which case it blocks until resume (or abort). This is how the
+   * background carrier suspends the loop without aborting it — while paused no
+   * organizer decision is made and no agent speaks, so "no new speech while
+   * paused" holds at round boundaries. Absent = the loop never pauses.
+   */
+  gate?: (signal: AbortSignal) => Promise<void>
 }
 
 /**
@@ -147,6 +155,11 @@ export async function runDiscussion(
   let lastSummary = ''
 
   while (!signal.aborted && total < maxTotal) {
+    // Pause point: suspend at the round boundary while paused (no decision, no
+    // speech) until resume or abort. A no-op when not paused / no gate injected.
+    if (deps.gate) await deps.gate(signal)
+    if (signal.aborted) break
+
     const stageDef = def?.workflow.find((s) => s.id === stage)
     if (!stageDef) break // unknown type / exhausted workflow → fall through to fallback conclusion
 
@@ -263,6 +276,8 @@ export async function runDiscussion(
 export function defaultDiscussionDeps(hooks: {
   onMessage: (m: DiscussionMessage) => void
   onStatusChange: (id: string) => void
+  /** Optional pause gate (the server wires it to its per-run pause control). */
+  gate?: (signal: AbortSignal) => Promise<void>
 }): DiscussionDeps {
   return {
     ask: askAgentOnce,
@@ -277,5 +292,6 @@ export function defaultDiscussionDeps(hooks: {
     participants: () => loadSettings().agents,
     onMessage: hooks.onMessage,
     onStatusChange: hooks.onStatusChange,
+    ...(hooks.gate ? { gate: hooks.gate } : {}),
   }
 }

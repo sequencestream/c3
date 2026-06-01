@@ -516,6 +516,35 @@ export type ClientToServer =
    * `draft`. The background run does not end any session (既有 session 约定).
    */
   | { type: 'start_discussion'; discussionId: string }
+  /**
+   * Pause a live discussion orchestration: the engine suspends at the next round
+   * boundary, so no new organizer decision or agent speech happens until resumed
+   * (an already in-flight one-shot turn may still finish). No-op if the discussion
+   * has no live run or is already paused. The frontend reflects it via the
+   * `discussion_run_status` (`paused`) event.
+   */
+  | { type: 'pause_discussion'; discussionId: string }
+  /**
+   * Resume a paused discussion orchestration: the engine continues from where it
+   * suspended (its local stage/round state is preserved). No-op if not paused.
+   */
+  | { type: 'resume_discussion'; discussionId: string }
+  /**
+   * Human interjection into a live discussion ("I want to speak"): the server
+   * pauses the run, appends a `human` message, and resumes — so the organizer's
+   * next round sees it. Requires a live run (running or paused); when the
+   * discussion is `in_progress` without a live run, the message is simply appended.
+   */
+  | { type: 'discussion_speak'; discussionId: string; text: string }
+  /**
+   * Drive a *new round* on a `completed` discussion: the server appends the
+   * human's follow-up question/requirement as a `human` message, flips the
+   * discussion back to `in_progress`, and re-runs the organizer engine over the
+   * full transcript (the prior conclusion + the new question as context). The run
+   * walks the workflow again and writes a fresh `conclusion`. Rejected if the
+   * discussion is not `completed` or already has a live run.
+   */
+  | { type: 'continue_discussion'; discussionId: string; text: string }
   /** Pull the authoritative session-status snapshot (session-layer heartbeat). */
   | { type: 'request_session_status' }
   | { type: 'ping' }
@@ -580,6 +609,14 @@ export type ServerToClient =
    * `discussions` list broadcast.
    */
   | { type: 'discussion_message'; discussionId: string; message: DiscussionMessage }
+  /**
+   * Live run-state of a discussion's background orchestration, decoupled from its
+   * persisted `DiscussionStatus`: `running` / `paused` while the engine is alive,
+   * `ended` when the run finishes or is torn down (the frontend then drops its
+   * run-state entry and falls back to the persisted status). Runtime-only — not
+   * persisted, not restored across a server restart.
+   */
+  | { type: 'discussion_run_status'; discussionId: string; state: 'running' | 'paused' | 'ended' }
   /**
    * Echo of a user prompt, emitted into the session's stream when a turn starts.
    * Lets every viewer (including one switching back to a background session) see

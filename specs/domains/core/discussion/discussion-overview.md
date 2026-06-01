@@ -4,14 +4,16 @@ A project-scoped **discussion** store: a discussion (a goal-directed conversatio
 organizer, agents, and the human) plus its ordered messages, persisted in the shared
 `~/.c3/c3.db` alongside the requirement ledger.
 
-**Status: live — persistence + create flow + organizer engine.** This domain provides the data
-model and SQLite persistence layer (tables + store CRUD), the read path (list + open), the **create
-flow** (data-driven type catalog with per-type workflow, the "+" form, and a read-only research
-agent that completes a new discussion's context), and the **organizer-driven multi-agent
-orchestration loop**: `start_discussion` runs a `draft` to a `conclusion` in the background, the
-organizer (the default agent) nominating speakers among the configured agents and driving the
-type's workflow, each turn a one-shot `askAgentOnce`, every message streamed live as
-`discussion_message` (see [design §organizer-engine](design.md#organizer-engine)).
+**Status: live — persistence + create flow + organizer engine + human-in-the-loop.** This domain
+provides the data model and SQLite persistence layer (tables + store CRUD), the read path (list +
+open), the **create flow** (data-driven type catalog with per-type workflow, the "+" form, and a
+read-only research agent that completes a new discussion's context), the **organizer-driven
+multi-agent orchestration loop** (`start_discussion` runs a `draft` to a `conclusion` in the
+background, the organizer nominating speakers among the configured agents and driving the type's
+workflow, each turn a one-shot `askAgentOnce`, every message streamed live as `discussion_message`),
+and **human-in-the-loop control**: pause/resume the running engine, the human interjecting a `human`
+message mid-run, and re-driving a _new round_ on a concluded discussion with a follow-up question
+(see [design §organizer-engine](design.md#organizer-engine)).
 
 ## Scope (now)
 
@@ -39,13 +41,22 @@ completed`, appends every turn (`appendMessage`) and streams it (`discussion_mes
   a single configured agent degenerates gracefully (organizer == sole participant).
 - Reuses the shared cross-runtime SQLite adapter (`server/src/db.ts`, ADR 0007) and the requirement
   store's fail-soft + `PRAGMA user_version` + idempotent `ensureColumn` migration paradigm.
+- **Human-in-the-loop control** (`pause_discussion` / `resume_discussion` / `discussion_speak` /
+  `continue_discussion`): the engine awaits a **pause gate** at each round boundary (paused ⇒ no new
+  organizer decision or agent speech), so the run can be paused/resumed without aborting. The human
+  can **interject** (`discussion_speak` pauses the run, appends a `human` message, resumes — the
+  organizer picks it up next round) and can **drive a new round** on a `completed` discussion
+  (`continue_discussion` appends the follow-up question, flips `completed → in_progress`, and re-runs
+  the engine over the full transcript to a fresh `conclusion`). The live run-state (`running` /
+  `paused` / `ended`) is broadcast as `discussion_run_status`, **decoupled from** the persisted
+  `DiscussionStatus` (pause is runtime-only, not persisted).
 
 ## Out of scope (now)
 
-- No human-in-the-loop speaking during a run (the `human` speaker kind is modeled but the engine
-  only drives organizer + agents).
-- No pause/resume or mid-run checkpoint recovery: a discussion runs to completion; a stopped run
-  (server teardown) stays `in_progress`.
+- No resume of an orphaned `in_progress` discussion (no live run) after a server restart — pause
+  state is runtime-only and not restored.
+- Pause takes effect only at a round boundary: an already in-flight one-shot `askAgentOnce` finishes
+  (so one more message may land after a pause request).
 
 ## Index
 

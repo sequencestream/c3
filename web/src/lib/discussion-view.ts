@@ -1,4 +1,4 @@
-import type { DiscussionMessage, DiscussionStatus } from '@ccc/shared/protocol'
+import type { Discussion, DiscussionMessage, DiscussionStatus } from '@ccc/shared/protocol'
 import type { ChatBody } from './chat-types'
 
 /*
@@ -85,5 +85,74 @@ export function autoGrowHeight(scrollHeight: number, maxPx: number): AutoGrowSty
   return {
     height: Math.min(scrollHeight, maxPx),
     overflowY: scrollHeight > maxPx ? 'auto' : 'hidden',
+  }
+}
+
+/*
+ * Agenda progress view — the explicit agenda the organizer engine decomposes the
+ * discussion goal into (see discussion `agenda-engine`). `Discussion.agenda` is the
+ * ordered subtopic list; `Discussion.agendaIndex` is the 0-based current subtopic
+ * (`index === length` ⇒ every subtopic is done). The index is the single source of
+ * completion: items before it are done, the item at it is current, the rest upcoming.
+ *
+ * Pure & defensive: `agendaIndex` is clamped to `[0, length]` so a stale/garbage
+ * index can never produce a negative percent or an out-of-range "current". Unit-tested
+ * DOM-free; the live update (engine advances the index → `discussions` re-broadcast →
+ * `activeDiscussion` refresh) drives re-render with no extra state.
+ */
+export type AgendaItemStatus = 'done' | 'current' | 'upcoming'
+
+export interface AgendaItemView {
+  text: string
+  status: AgendaItemStatus
+  index: number
+}
+
+export interface AgendaProgressView {
+  /** Render only when a discussion has an agenda (`agenda.length > 0`). */
+  visible: boolean
+  items: AgendaItemView[]
+  /** Title of the current subtopic, or `null` when the agenda is complete. */
+  current: string | null
+  /** Completed subtopic count = clamped index. */
+  completed: number
+  /** Total subtopics = `agenda.length`. */
+  total: number
+  /** Integer 0–100; `0` when there is no agenda. */
+  percent: number
+  /** Every subtopic done (`completed >= total`, with `total > 0`). */
+  complete: boolean
+}
+
+export function agendaProgressView(d: Discussion | null): AgendaProgressView {
+  const agenda = d?.agenda ?? []
+  const total = agenda.length
+  if (total === 0) {
+    return {
+      visible: false,
+      items: [],
+      current: null,
+      completed: 0,
+      total: 0,
+      percent: 0,
+      complete: false,
+    }
+  }
+  const raw = d?.agendaIndex ?? 0
+  const idx = Math.min(Math.max(Math.trunc(raw), 0), total)
+  const items: AgendaItemView[] = agenda.map((text, index) => ({
+    text,
+    index,
+    status: index < idx ? 'done' : index === idx ? 'current' : 'upcoming',
+  }))
+  const complete = idx >= total
+  return {
+    visible: true,
+    items,
+    current: complete ? null : agenda[idx],
+    completed: idx,
+    total,
+    percent: Math.round((idx / total) * 100),
+    complete,
   }
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import type { DiscussionMessage } from '@ccc/shared/protocol'
+import type { Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import {
+  agendaProgressView,
   autoGrowHeight,
   discussionMessageToChat,
   discussionMessagesToChat,
@@ -8,6 +9,25 @@ import {
   rowVisibility,
   statusLabel,
 } from './discussion-view'
+
+function disc(over: Partial<Discussion> = {}): Discussion {
+  return {
+    id: 'd1',
+    projectPath: '/proj',
+    title: 'T',
+    type: 'design',
+    goal: '',
+    context: '',
+    status: 'in_progress',
+    agenda: [],
+    agendaIndex: 0,
+    conclusion: null,
+    createdAt: 0,
+    updatedAt: 0,
+    completedAt: null,
+    ...over,
+  }
+}
 
 function msg(over: Partial<DiscussionMessage>): DiscussionMessage {
   return {
@@ -102,5 +122,52 @@ describe('discussion-view — autoGrowHeight(textarea 自动拉伸)', () => {
 
   it('空内容:高度收缩到 scrollHeight(复位场景)', () => {
     expect(autoGrowHeight(0, 200)).toEqual({ height: 0, overflowY: 'hidden' })
+  })
+})
+
+describe('discussion-view — agendaProgressView(议程进度选择器)', () => {
+  it('null / 空议程 → 隐藏', () => {
+    expect(agendaProgressView(null).visible).toBe(false)
+    const v = agendaProgressView(disc({ agenda: [] }))
+    expect(v).toEqual({
+      visible: false,
+      items: [],
+      current: null,
+      completed: 0,
+      total: 0,
+      percent: 0,
+      complete: false,
+    })
+  })
+
+  it('部分完成:done/current/upcoming 标记 + 当前子题 + 百分比', () => {
+    const v = agendaProgressView(disc({ agenda: ['A', 'B', 'C', 'D'], agendaIndex: 1 }))
+    expect(v.visible).toBe(true)
+    expect(v.items.map((i) => i.status)).toEqual(['done', 'current', 'upcoming', 'upcoming'])
+    expect(v.current).toBe('B')
+    expect(v.completed).toBe(1)
+    expect(v.total).toBe(4)
+    expect(v.percent).toBe(25)
+    expect(v.complete).toBe(false)
+  })
+
+  it('全部完成(index === length):100%、current 为 null、全 done', () => {
+    const v = agendaProgressView(disc({ agenda: ['A', 'B'], agendaIndex: 2 }))
+    expect(v.items.map((i) => i.status)).toEqual(['done', 'done'])
+    expect(v.current).toBeNull()
+    expect(v.completed).toBe(2)
+    expect(v.percent).toBe(100)
+    expect(v.complete).toBe(true)
+  })
+
+  it('索引越界 / 负值 → clamp 到 [0, length],不产生越界 current 或负百分比', () => {
+    const over = agendaProgressView(disc({ agenda: ['A', 'B'], agendaIndex: 99 }))
+    expect(over.current).toBeNull()
+    expect(over.percent).toBe(100)
+    expect(over.complete).toBe(true)
+    const neg = agendaProgressView(disc({ agenda: ['A', 'B'], agendaIndex: -3 }))
+    expect(neg.items.map((i) => i.status)).toEqual(['current', 'upcoming'])
+    expect(neg.current).toBe('A')
+    expect(neg.percent).toBe(0)
   })
 })

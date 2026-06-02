@@ -896,6 +896,90 @@ header h1 {
   color: var(--c-text-disabled);
 }
 
+/* Discussion agenda progress — mirrors the task panel's visual language. */
+.agenda-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-6);
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-panel);
+}
+.agenda-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-2);
+}
+.agenda-title {
+  font-size: var(--fs-badge);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-text-muted);
+}
+.agenda-count {
+  font-size: var(--fs-badge);
+  color: var(--c-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.agenda-bar {
+  height: 4px;
+  margin: 2px var(--sp-2) var(--sp-2);
+  border-radius: var(--radius-sm);
+  background: var(--c-border);
+  overflow: hidden;
+}
+.agenda-bar-fill {
+  height: 100%;
+  background: var(--c-primary-2);
+  transition: width 0.3s ease;
+}
+.agenda-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-body);
+  line-height: 1.3;
+  border-radius: var(--radius-sm);
+}
+.agenda-mark {
+  flex-shrink: 0;
+  width: 1em;
+  text-align: center;
+}
+.agenda-subject {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agenda-row.agenda-current {
+  color: var(--c-text);
+  font-weight: 600;
+  background: var(--c-primary-soft);
+}
+.agenda-row.agenda-current .agenda-mark {
+  color: var(--c-primary-2);
+}
+.agenda-row.agenda-upcoming {
+  color: var(--c-text-muted);
+}
+.agenda-row.agenda-done {
+  color: var(--c-text-disabled);
+}
+.agenda-row.agenda-done .agenda-mark {
+  color: var(--c-success);
+}
+.agenda-row.agenda-done .agenda-subject {
+  text-decoration: line-through;
+}
+
 /* ============ 对话区域（规范 3.4） ============ */
 main {
   flex: 1;

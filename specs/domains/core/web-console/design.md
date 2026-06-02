@@ -214,6 +214,32 @@ viewed session's live tasks. Display rules are a pure selector, `taskPanelView(m
 - **Tests.** The selector is covered DOM-free in `task-list.test.ts`; `TaskPanel.vue` additionally
   has a mounted component test (`TaskPanel.test.ts`) via `@vue/test-utils` — see _Testing_ below.
 
+## Discussion agenda progress (AgendaProgress.vue)
+
+The discussion detail (the `activeTab === 'discussion'` branch of `.content`, between SessionTitleBar
+and ChatMessages) renders the organizer engine's **explicit agenda** for the open discussion:
+the ordered subtopic list, the current subtopic, and overall completion. It reads straight from
+`activeDiscussion` (`Discussion.agenda: string[]` + `agendaIndex: number`); no new App state or wire
+handling — see the [discussion design](../discussion/design.md) for the agenda model.
+
+- **Pure selector** `agendaProgressView(discussion)` (`lib/discussion-view.ts`, DOM-free, unit-tested)
+  folds the discussion into `{ visible, items, current, completed, total, percent, complete }`. The
+  0-based `agendaIndex` is the single source of completion (items before it `done`, the item at it
+  `current`, the rest `upcoming`); it is clamped to `[0, length]` so a stale/garbage index can never
+  produce a negative percent or an out-of-range current. An empty agenda ⇒ `visible: false`; a complete
+  agenda (`index === length`) ⇒ `current: null`, `percent: 100`, every item `done`.
+- **Component** `AgendaProgress.vue` is the selector's `v-if` (renders nothing until the engine sets an
+  agenda): a header (`completed/total (percent%)`) + a progress bar (`width: percent%`) + one row per
+  subtopic with a status mark (✓ done / ▶ current / ○ upcoming), reusing the task-panel visual language
+  (current highlighted, done struck-through/greyed). UI copy is English (`web/CLAUDE.md`).
+- **Live update.** The agenda re-renders reactively as the prop changes: the engine fires
+  `onStatusChange` on every `set_agenda`/`focus_subtopic` → `discussions` broadcast → App's
+  `case 'discussions'` refreshes `activeDiscussion` (the `discussion_message` announcement carries no
+  agenda fields, so the list push is what moves the bar). `discussion_detail` seeds the initial agenda.
+- **Tests.** The selector is covered DOM-free in `discussion-view.test.ts` (hidden / partial / complete /
+  index clamping); `AgendaProgress.test.ts` mounts the SFC (`@vue/test-utils`) and asserts the rows,
+  marks, count/percent, bar width, visibility, and live re-render on `setProps` (index advancing).
+
 ## Per-tab viewed session (no cross-tab pollution)
 
 The 「会话」(console) and 「需求」(requirements) tabs each maintain their **own** current

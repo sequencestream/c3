@@ -21,6 +21,7 @@ import SessionTitleBar from './components/SessionTitleBar.vue'
 import TaskPanel from './components/TaskPanel.vue'
 import RequirementList from './components/RequirementList.vue'
 import DiscussionList from './components/DiscussionList.vue'
+import AgendaProgress from './components/AgendaProgress.vue'
 import { discussionMessageToChat, discussionMessagesToChat } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
@@ -1159,6 +1160,9 @@ function listCommands() {
             </template>
           </template>
         </SessionTitleBar>
+        <!-- Agenda progress: subtopic list + current subtopic + completion, live as
+             the organizer engine advances the agenda index. -->
+        <AgendaProgress :discussion="activeDiscussion" />
         <ChatMessages
           :messages="discussionMessages"
           :has-active-session="activeDiscussionId !== null"

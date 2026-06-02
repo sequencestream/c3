@@ -214,6 +214,9 @@ export async function runDiscussion(
       agenda = [...step.subtopics]
       agendaIndex = 0
       store.setAgenda(id, agenda, agendaIndex)
+      // Re-broadcast the discussion list so viewers see the new agenda live (the
+      // persisted agenda/index rides the refreshed `discussions` push).
+      deps.onStatusChange(id)
       const announce =
         step.organizerNote.trim() ||
         `议程已设定:${agenda.map((t, i) => `${i + 1}. ${t}`).join(' ')}`
@@ -227,6 +230,8 @@ export async function runDiscussion(
     if (step.kind === 'focus_subtopic') {
       agendaIndex = step.index
       store.setAgenda(id, agenda, agendaIndex)
+      // Live-broadcast the advanced agenda index (current subtopic moved forward).
+      deps.onStatusChange(id)
       const announce =
         step.organizerNote.trim() ||
         (agenda[agendaIndex] ? `进入子议题:${agenda[agendaIndex]}` : '')

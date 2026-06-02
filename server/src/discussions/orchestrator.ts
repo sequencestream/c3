@@ -3,8 +3,9 @@
  *
  * Drives a `draft` discussion to a `conclusion` in the background: the organizer
  * (the default agent) is asked each round — over the live transcript and the
- * active workflow stage — to nominate a participant, advance the stage, or
- * conclude; the nominated participant then speaks via the one-shot, tool-disabled
+ * active workflow stage — to nominate a participant, broadcast a sub-question to
+ * several participants at once (`discuss` only; they answer in parallel), advance
+ * the stage, or conclude; nominated participants speak via the one-shot, tool-disabled
  * {@link askAgentOnce} primitive (the consensus paradigm). Every organizer note,
  * participant speech, and the final conclusion is appended to the store and
  * streamed out via `onMessage`. The discussion walks `draft → in_progress →
@@ -253,6 +254,59 @@ export async function runDiscussion(
       }
       stage = next.id
       roundsInStage = 0
+      continue
+    }
+
+    // step.kind === 'broadcast' (discuss only): one organizer sub-question, several
+    // participants answer in PARALLEL. Speeches are appended in nomination order — not
+    // completion order — so `seq` is deterministic no matter which agent finishes first.
+    // The whole batch counts as a single round (roundsInStage/total each +1), so the
+    // R2 per-subtopic cap and the maxTotalRounds backstop are unaffected.
+    if (step.kind === 'broadcast') {
+      // Announce the sub-question first, then snapshot the transcript: every participant
+      // in the batch sees the same context — the question, but none of the batch's answers.
+      if (step.organizerNote.trim()) appendOrganizer(step.organizerNote)
+      const snapshot = store.listMessages(id)
+      const discussionNow = store.getDiscussion(id) ?? initial
+      const batch = step.speakerIds
+        .map((sid) => ({ cfg: byId.get(sid), speaker: participants.find((p) => p.id === sid) }))
+        .filter(
+          (b): b is { cfg: AgentConfig; speaker: DiscussionParticipant } => !!b.cfg && !!b.speaker,
+        )
+      const prompts = batch.map((b) =>
+        buildParticipantPrompt({
+          discussion: discussionNow,
+          def,
+          stage: stageDef,
+          messages: snapshot,
+          speaker: b.speaker,
+          organizerNote: step.organizerNote,
+          subtopic: agenda[agendaIndex],
+        }),
+      )
+      const texts = await Promise.all(
+        batch.map((b, i) => ask(b.cfg, prompts[i], cwd, signal).catch(() => '')),
+      )
+      if (signal.aborted) break
+      // Sequential, in-order append: under the single synchronous connection each
+      // appendMessage takes the next seq, so the batch's seqs match the nomination order.
+      for (let i = 0; i < batch.length; i++) {
+        const b = batch[i]
+        const speech = parseParticipantSpeech(texts[i], b.speaker.name)
+        if (speech) {
+          deps.onMessage(
+            store.appendMessage({
+              discussionId: id,
+              speakerKind: 'agent',
+              speakerAgentId: b.speaker.id,
+              speakerName: b.speaker.name,
+              content: speech,
+            }),
+          )
+        }
+      }
+      roundsInStage++
+      total++
       continue
     }
 

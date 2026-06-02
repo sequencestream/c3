@@ -105,6 +105,43 @@ describe('parseOrganizerDecision', () => {
     const d = parseOrganizerDecision('这个子题讨论够了,进入下一个子题。', IDS)
     expect(d).toEqual({ action: 'focus_subtopic', note: '' })
   })
+
+  it('parses a broadcast decision with an explicit speaker list (intersected + deduped)', () => {
+    const d = parseOrganizerDecision(
+      '{"action":"broadcast","speakers":["gpt","gpt","ghost","system"],"note":"各自给方案"}',
+      IDS,
+    )
+    // ghost is dropped (not valid); gpt deduped; order preserved.
+    expect(d).toEqual({ action: 'broadcast', speakerIds: ['gpt', 'system'], note: '各自给方案' })
+  })
+
+  it('parses a broadcast with speakers="all" / omitted as every participant', () => {
+    expect(parseOrganizerDecision('{"action":"broadcast","speakers":"all"}', IDS)).toEqual({
+      action: 'broadcast',
+      speakerIds: ['system', 'gpt'],
+      note: '',
+    })
+    expect(parseOrganizerDecision('{"action":"broadcast","note":"问全体"}', IDS)).toEqual({
+      action: 'broadcast',
+      speakerIds: ['system', 'gpt'],
+      note: '问全体',
+    })
+  })
+
+  it('recovers a broadcast with an all-invalid speaker list to the whole roster', () => {
+    const d = parseOrganizerDecision('{"action":"broadcast","speakers":["ghost"]}', IDS)
+    expect(d).toEqual({ action: 'broadcast', speakerIds: ['system', 'gpt'], note: '' })
+  })
+
+  it('degrades a broadcast to advance when there are no valid participants at all', () => {
+    const d = parseOrganizerDecision('{"action":"broadcast","speakers":["ghost"]}', [])
+    expect(d.action).not.toBe('broadcast')
+  })
+
+  it('keyword fallback: detects a broadcast in prose (asks everyone)', () => {
+    const d = parseOrganizerDecision('就这个子议题做一次批次广播,请大家并行作答。', IDS)
+    expect(d).toEqual({ action: 'broadcast', speakerIds: ['system', 'gpt'], note: '' })
+  })
 })
 
 describe('parseParticipantSpeech', () => {
@@ -246,6 +283,40 @@ describe('resolveStep', () => {
     })
     expect(step.kind).toBe('advance')
   })
+
+  it('broadcast in discuss yields a broadcast step', () => {
+    const step = resolveStep({
+      ...base,
+      stage: 'discuss',
+      decision: { action: 'broadcast', speakerIds: ['system', 'gpt'], note: '问各位' },
+    })
+    expect(step).toEqual({
+      kind: 'broadcast',
+      speakerIds: ['system', 'gpt'],
+      organizerNote: '问各位',
+    })
+  })
+
+  it('broadcast degrades to advance outside the discuss stage (converging stays serial)', () => {
+    const step = resolveStep({
+      ...base,
+      stage: 'summarize',
+      decision: { action: 'broadcast', speakerIds: ['system', 'gpt'], note: '' },
+    })
+    expect(step.kind).toBe('advance')
+  })
+
+  it('the per-stage cap forces forward motion even with a pending broadcast', () => {
+    const step = resolveStep({
+      ...base,
+      roundsInStage: 4,
+      stage: 'discuss',
+      decision: { action: 'broadcast', speakerIds: ['system', 'gpt'], note: '' },
+      agenda: { items: ['A', 'B'], index: 0 },
+    })
+    // Cap is checked before the agenda/broadcast block → moves to the next subtopic.
+    expect(step).toEqual({ kind: 'focus_subtopic', index: 1, organizerNote: '' })
+  })
 })
 
 describe('renderTranscript', () => {
@@ -279,7 +350,9 @@ describe('prompt builders', () => {
     expect(p).toContain(stage.prompt)
     expect(p).toContain('id=gpt 名称=GPT')
     expect(p).toContain('GPT: hi')
-    expect(p).toContain('set_agenda|focus_subtopic|speak|advance|conclude')
+    expect(p).toContain('set_agenda|focus_subtopic|broadcast|speak|advance|conclude')
+    // The broadcast action is documented as the preferred discuss mechanism.
+    expect(p).toContain('broadcast:')
   })
 
   it('organizer prompt in discuss carries the agenda and marks the current subtopic', () => {

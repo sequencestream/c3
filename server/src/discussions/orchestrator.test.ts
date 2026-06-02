@@ -364,6 +364,79 @@ describe('runDiscussion', () => {
     expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(2)
   })
 
+  it('broadcasts a batch in discuss: one round, multiple agent speeches in nomination-order seq', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    // Track the order participant asks were *launched* and let GPT resolve before System,
+    // so completion order ≠ nomination order — the persisted seq must still follow the
+    // nomination order (System then GPT), not who finished first.
+    let resolveSystem: (v: string) => void = () => {}
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [],
+    })
+    const queue = [
+      '{"action":"broadcast","speakers":["system","gpt"],"note":"各自给出方案"}', // one batch
+      '{"action":"advance","note":"两点已覆盖"}', // discuss → summarize
+      '{"action":"advance","note":""}', // summarize → confirm
+      '{"action":"advance","note":""}', // confirm → conclude
+      '{"action":"conclude","conclusion":"Use Redis."}',
+    ]
+    h.deps.ask = async (a, prompt) => {
+      if (isOrganizerPrompt(prompt))
+        return queue.shift() ?? '{"action":"conclude","conclusion":"x"}'
+      // System's reply is gated open until GPT (launched second) has already returned.
+      if (a.id === 'system') return new Promise<string>((r) => (resolveSystem = r))
+      // GPT resolves immediately, then releases System.
+      queueMicrotask(() => resolveSystem('System 的观点'))
+      return 'GPT 的观点'
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    expect(get().conclusion).toBe('Use Redis.')
+    // The broadcast sub-question was announced by the organizer before the batch.
+    expect(
+      messages.some((m) => m.speakerKind === 'organizer' && m.content === '各自给出方案'),
+    ).toBe(true)
+    // Both participants spoke from the single batch — two agent messages.
+    const agentMsgs = messages.filter((m) => m.speakerKind === 'agent')
+    expect(agentMsgs.length).toBe(2)
+    // Persisted in NOMINATION order (System then GPT) despite GPT finishing first; seq monotonic.
+    expect(agentMsgs.map((m) => m.speakerName)).toEqual(['System', 'GPT'])
+    expect(agentMsgs[0].seq).toBeLessThan(agentMsgs[1].seq)
+    // Streaming mirrors the persisted append order.
+    expect(h.streamed.map((m) => m.id)).toEqual(messages.map((m) => m.id))
+  })
+
+  it('keeps the converging stages serial: a broadcast decision in summarize does not batch', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        '{"action":"advance","note":""}', // discuss → summarize (no batching there)
+        // In summarize, a broadcast decision must degrade to advance (serial), NOT fan out.
+        '{"action":"broadcast","speakers":["system","gpt"],"note":"don\'t batch here"}',
+        '{"action":"advance","note":""}', // confirm → conclude
+        '{"action":"conclude","conclusion":"Done."}',
+      ],
+      participantReply: 'view',
+    })
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    expect(get().conclusion).toBe('Done.')
+    // The summarize-stage broadcast degraded to advance → no batch fan-out → no agent speeches.
+    expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(0)
+  })
+
   it('auto-advances to the next subtopic when a subtopic hits the per-stage round cap', async () => {
     const { store, messages, get } = makeStore(seedDiscussion())
     const participants = [agent('system', 'System'), agent('gpt', 'GPT')]

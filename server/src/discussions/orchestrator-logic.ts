@@ -34,6 +34,7 @@ export interface DiscussionParticipant {
 /** The organizer's parsed decision for one round. */
 export type OrganizerDecision =
   | { action: 'speak'; speakerId: string; note: string }
+  | { action: 'broadcast'; speakerIds: string[]; note: string }
   | { action: 'set_agenda'; subtopics: string[]; note: string }
   | { action: 'focus_subtopic'; index?: number; note: string }
   | { action: 'advance'; note: string }
@@ -42,6 +43,7 @@ export type OrganizerDecision =
 /** The concrete step the engine runs, after folding stage + round cap into the decision. */
 export type DiscussionStep =
   | { kind: 'speak'; speakerId: string; organizerNote: string }
+  | { kind: 'broadcast'; speakerIds: string[]; organizerNote: string }
   | { kind: 'set_agenda'; subtopics: string[]; organizerNote: string }
   | { kind: 'focus_subtopic'; index: number; organizerNote: string }
   | { kind: 'advance'; organizerNote: string }
@@ -92,16 +94,48 @@ function cleanText(text: string): string {
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
 /**
+ * Resolve a `broadcast` decision's `speakers` field into a concrete, ordered, deduped
+ * list of valid participant ids. `"all"`/`"全部"`/missing ⇒ every participant (the
+ * default — broadcast asks everyone); an explicit id array is intersected with the
+ * valid set (order preserved). An unusable value yields `[]`, which degrades the
+ * decision to the safe `advance` default.
+ */
+function resolveBroadcastSpeakers(raw: unknown, validSpeakerIds: readonly string[]): string[] {
+  const allValid = [...new Set(validSpeakerIds.filter(Boolean))]
+  if (raw == null) return allValid
+  if (typeof raw === 'string') {
+    const s = raw.trim().toLowerCase()
+    return s === '' || s === 'all' || s === '全部' ? allValid : []
+  }
+  if (Array.isArray(raw)) {
+    const valid = new Set(allValid)
+    const out: string[] = []
+    for (const item of raw) {
+      const id = str(item)
+      if (valid.has(id) && !out.includes(id)) out.push(id)
+    }
+    return out
+  }
+  return []
+}
+
+/**
  * Parse the organizer's reply into a {@link OrganizerDecision}. JSON object first
- * (`{action, speaker, subtopics, index, note, conclusion}`), then keyword heuristics,
- * and finally a safe default of `advance` so the engine can never hang on an
- * unparseable reply. A `speak` whose `speaker` is not a known participant id
- * degrades the same way; a `set_agenda` with no usable subtopics also degrades.
+ * (`{action, speaker, speakers, subtopics, index, note, conclusion}`), then keyword
+ * heuristics, and finally a safe default of `advance` so the engine can never hang on
+ * an unparseable reply. A `speak` whose `speaker` is not a known participant id
+ * degrades the same way; a `set_agenda` with no usable subtopics, or a `broadcast`
+ * whose resolved speaker set is empty, also degrade.
  *
  * Agenda actions: `set_agenda` decomposes the goal into ordered subtopics (its
  * `subtopics` must be a non-empty string array — there is no prose fallback for it,
  * a list can't be reliably extracted from free text); `focus_subtopic` moves to the
  * next subtopic (or the optional numeric `index`).
+ *
+ * Batch action: `broadcast` (discuss only) asks several participants the same
+ * sub-question at once — `speakers` is an id array or `"all"`/`"全部"`/missing for
+ * everyone (see {@link resolveBroadcastSpeakers}); the engine then runs them in
+ * parallel. Outside `discuss`, {@link resolveStep} degrades it to a serial advance.
  */
 export function parseOrganizerDecision(
   text: string,
@@ -124,6 +158,15 @@ export function parseOrganizerDecision(
       const index = typeof json.index === 'number' ? json.index : undefined
       return { action: 'focus_subtopic', index, note }
     }
+    if (action === 'broadcast') {
+      // An explicit-but-all-invalid speaker list recovers to "everyone" rather than
+      // degrading — broadcast's natural default is the whole roster, and asking all
+      // beats silently advancing on a typo'd id. Only a truly empty roster degrades.
+      let speakerIds = resolveBroadcastSpeakers(json.speakers, validSpeakerIds)
+      if (!speakerIds.length) speakerIds = resolveBroadcastSpeakers('all', validSpeakerIds)
+      if (speakerIds.length) return { action: 'broadcast', speakerIds, note }
+      // no valid participants at all → degrade through the fallback below
+    }
     if (action === 'speak') {
       const speaker = str(json.speaker)
       if (valid.has(speaker)) return { action: 'speak', speakerId: speaker, note }
@@ -141,6 +184,12 @@ export function parseOrganizerDecision(
   // specific "next subtopic" intent wins over a bare "next".
   if (/\b(focus[_ ]?subtopic|next subtopic)\b/.test(lower) || /下一(个)?子(议)?题/.test(text)) {
     return { action: 'focus_subtopic', note: '' }
+  }
+  // A batch broadcast asks everyone at once — recognized before the speak prose match
+  // so a "broadcast" intent isn't swallowed by a participant id appearing in the text.
+  if (/\bbroadcast\b/.test(lower) || /批次|广播|齐发|并行作答/.test(text)) {
+    const speakerIds = resolveBroadcastSpeakers('all', validSpeakerIds)
+    if (speakerIds.length) return { action: 'broadcast', speakerIds, note: '' }
   }
   // The organizer may have named a participant in prose — honor the first valid id.
   for (const id of validSpeakerIds) {
@@ -197,6 +246,9 @@ function decisionNote(decision: OrganizerDecision): string {
  *   agenda it moves to the next subtopic (not out of the stage); otherwise it advances;
  * - in `discuss`, `set_agenda` (non-empty) sets the agenda and `focus_subtopic` moves to
  *   the next subtopic — or advances to the next stage once every subtopic is done;
+ * - in `discuss`, `broadcast` (non-empty speaker set) asks several participants the same
+ *   sub-question at once (the engine runs them in parallel) — outside `discuss` it degrades
+ *   to `advance`, so the converging stages stay serial;
  * - a `speak` with a known participant speaks; everything else advances.
  *
  * `agenda` defaults to empty, so callers that don't track an agenda (and any stage
@@ -237,6 +289,9 @@ export function resolveStep(input: {
   if (stage === 'discuss') {
     if (decision.action === 'set_agenda' && decision.subtopics.length) {
       return { kind: 'set_agenda', subtopics: decision.subtopics, organizerNote: decision.note }
+    }
+    if (decision.action === 'broadcast' && decision.speakerIds.length) {
+      return { kind: 'broadcast', speakerIds: decision.speakerIds, organizerNote: decision.note }
     }
     if (decision.action === 'focus_subtopic') {
       const next =
@@ -330,10 +385,11 @@ export function buildOrganizerPrompt(input: {
     renderTranscript(messages),
     '',
     '根据当前阶段决定下一步,只输出一个 JSON 对象,不要任何额外文字:',
-    '{"action":"set_agenda|focus_subtopic|speak|advance|conclude","speaker":"<参与者 id,action=speak 时必填>","subtopics":["<action=set_agenda 时的有序子议题列表>"],"index":<action=focus_subtopic 时可选,目标子议题下标(从 0 起)>,"note":"<组织者要记录的话,可空>","conclusion":"<action=conclude 时的完整最终结论>"}',
+    '{"action":"set_agenda|focus_subtopic|broadcast|speak|advance|conclude","speaker":"<参与者 id,action=speak 时必填>","speakers":["<action=broadcast 时的参与者 id 列表;填 \\"all\\" 或省略表示全部>"],"subtopics":["<action=set_agenda 时的有序子议题列表>"],"index":<action=focus_subtopic 时可选,目标子议题下标(从 0 起)>,"note":"<组织者要记录的话/要广播的子问题,可空>","conclusion":"<action=conclude 时的完整最终结论>"}',
     '- set_agenda: 仅在 discuss 阶段、议程尚未设定时使用;把目标拆成有序子议题填入 subtopics,引擎据此逐题推进。',
     '- focus_subtopic: 当前子议题已讨论充分,切到下一子议题(也可用 index 指定);所有子议题完成后会自动进入下一阶段。',
-    '- speak: 指定下一位发言的参与者(填其 id),围绕当前子议题展开;note 可写你对该参与者的引导。',
+    '- broadcast: 仅在 discuss 阶段使用,且是本阶段的首选方式——围绕当前子议题向多名(或全部)参与者抛出同一子问题,他们会并行各答一段;speakers 填 id 列表或 "all"/省略表示全部,note 写要广播的子问题。',
+    '- speak: 指定单独一位参与者发言(填其 id),用于追问或补充,围绕当前子议题;note 可写你对该参与者的引导。',
     '- advance: 本阶段已充分,推进到下一阶段;note 写本阶段的小结(例如 summarize 阶段填归纳要点)。',
     '- conclude: 讨论已可收尾,conclusion 写完整、可执行的最终结论。',
   )

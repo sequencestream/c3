@@ -28,7 +28,7 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 | Automation orchestrator     | `server/src/requirements/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                               |
 | Completion judge            | `server/src/requirements/judge.ts`      | `judgeCompletion` — builds the prompt, runs `askOneShot`, parses `done`/`in_progress`/`stuck`                                    |
 | Reconcile                   | `server/src/requirements/reconcile.ts`  | `reconcileInProgress` — reconciling dead-process in_progress requirements on list entry (DI'd deps)                              |
-| Git helper                  | `server/src/git.ts`                     | `gitDiffStat` + `gitRecentLog` + `commitAndPush` (scoped via `git -C`); never rejects, returns codes/errors                      |
+| Git helper                  | `server/src/git.ts`                     | `gitDiffStat` + `gitRecentLog` + `commitAndPush` (scoped via `git -C`, multi-repo aware); never rejects, returns codes/errors    |
 
 ## SQLite layer (`db.ts`)
 
@@ -350,10 +350,18 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   orchestrator's `pendingQuestion` guard (RM-A11) is the second.
 - **Git (`git.ts`).** `gitDiffStat`, `gitRecentLog`, and `commitAndPush` shell out via
   `execFile('git', ['-C', cwd, …])` and never reject (they return exit codes/stderr).
-  `commitAndPush` stages all, commits `feat: <title>` **only when there are changes**, and then
-  **always pushes** (an empty tree means the dev skill already committed its own work — we still push
-  so those local commits reach the remote). Any non-zero step returns `{ ok:false, error }` which
-  becomes the orchestrator's stop reason (RM-A5/A6).
+  `commitAndPush` is **multi-repo aware**:
+  - If the project root has a `.git` marker it is treated as the single repo — classic behaviour:
+    stage all, commit `feat: <title>` **only when there are changes**, then **always push** (an empty
+    tree means the dev skill already self-committed — we still push so those commits reach the remote).
+  - Otherwise it discovers git repos under the root (`discoverSubRepos`: recursive, bounded depth,
+    skips `node_modules`/`dist`/etc., stops at each repo boundary) and commits each **affected** repo
+    independently. `git -C <repo> add -A` scopes staging to that repo, so changed files group to their
+    owning repo by location. A repo is affected when its tree is dirty **or** it is ahead of upstream
+    (covers a subrepo the dev skill self-committed); untouched repos are left alone. Finding **no** repo
+    is an error (`工作区内未找到 git 仓库,无法提交`).
+  - Any non-zero step returns `{ ok:false, error }` (the failing subrepo's relative path is named in
+    the message), which becomes the orchestrator's stop reason (RM-A5/A6).
 
 ## Reconcile (`reconcile.ts`)
 

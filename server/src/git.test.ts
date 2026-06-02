@@ -1,0 +1,164 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { commitAndPush } from './git.js'
+
+// These tests drive the REAL `git` CLI against throwaway repos in a temp dir, with
+// bare repos as push targets — so they exercise discovery + per-repo commit/push
+// for real, not a mock. Remotes live OUTSIDE the scanned root so the scan can't
+// mistake them for workspace repos.
+
+let dir: string // temp sandbox; `<dir>/work` is the scanned workspace root
+let work: string
+let remotes: string // <dir>/remotes — bare push targets, outside `work`
+
+function run(cmd: string, args: string[], cwd: string): string {
+  return execFileSync(cmd, args, { cwd, encoding: 'utf8' }).toString()
+}
+
+/** Init a working repo at `path` with one initial commit. When `withRemote`, also
+ *  create a bare remote and set upstream so `push` (and `@{u}`) work. */
+function initRepo(path: string, name: string, withRemote = true): void {
+  mkdirSync(path, { recursive: true })
+  run('git', ['init', '-q'], path)
+  run('git', ['config', 'user.email', 't@t.dev'], path)
+  run('git', ['config', 'user.name', 'tester'], path)
+  run('git', ['config', 'commit.gpgsign', 'false'], path)
+  writeFileSync(join(path, 'README.md'), 'init\n')
+  run('git', ['add', '-A'], path)
+  run('git', ['commit', '-q', '-m', 'init'], path)
+  if (withRemote) {
+    const bare = join(remotes, `${name}.git`)
+    run('git', ['init', '--bare', '-q', bare], remotes)
+    run('git', ['remote', 'add', 'origin', bare], path)
+    run('git', ['push', '-q', '-u', 'origin', 'HEAD'], path)
+  }
+}
+
+/** Subject of the most recent commit in `repo`. */
+function lastCommitMsg(repo: string): string {
+  return run('git', ['-C', repo, 'log', '-1', '--pretty=%s'], repo).trim()
+}
+
+/** Commits in `repo` not yet on its upstream (0 ⇒ fully pushed). */
+function aheadCount(repo: string): number {
+  return Number(run('git', ['-C', repo, 'rev-list', '--count', '@{u}..HEAD'], repo).trim())
+}
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'c3-git-'))
+  work = join(dir, 'work')
+  remotes = join(dir, 'remotes')
+  mkdirSync(work, { recursive: true })
+  mkdirSync(remotes, { recursive: true })
+})
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true })
+})
+
+describe('commitAndPush — repository discovery & per-repo commit', () => {
+  it('single root repo: commits & pushes the project root unchanged', async () => {
+    initRepo(work, 'root')
+    writeFileSync(join(work, 'a.ts'), 'export const a = 1\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(true)
+    expect(res.committed).toBe(true)
+    expect(lastCommitMsg(work)).toBe('feat: 需求标题')
+    expect(aheadCount(work)).toBe(0) // pushed to upstream
+  })
+
+  it('single root repo: a clean-but-ahead tree still pushes (no new commit)', async () => {
+    initRepo(work, 'root')
+    // A self-committed-but-unpushed local commit, working tree clean.
+    writeFileSync(join(work, 'b.ts'), 'export const b = 2\n')
+    run('git', ['add', '-A'], work)
+    run('git', ['commit', '-q', '-m', 'feat: self-committed'], work)
+    expect(aheadCount(work)).toBe(1)
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(true)
+    expect(res.committed).toBe(false) // nothing new to commit
+    expect(lastCommitMsg(work)).toBe('feat: self-committed') // unchanged
+    expect(aheadCount(work)).toBe(0) // but the local commit reached the remote
+  })
+
+  it('single subdir repo: root has no .git, the one subrepo commits & pushes; root untouched', async () => {
+    const app = join(work, 'app')
+    initRepo(app, 'app')
+    writeFileSync(join(app, 'x.ts'), 'export const x = 1\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(true)
+    expect(res.committed).toBe(true)
+    expect(lastCommitMsg(app)).toBe('feat: 需求标题')
+    expect(aheadCount(app)).toBe(0)
+  })
+
+  it('multiple subdir repos: each affected repo commits separately by file location', async () => {
+    const api = join(work, 'packages', 'api')
+    const ui = join(work, 'packages', 'ui')
+    initRepo(api, 'api')
+    initRepo(ui, 'ui')
+    writeFileSync(join(api, 'server.ts'), 'export const s = 1\n')
+    writeFileSync(join(ui, 'app.ts'), 'export const u = 1\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(true)
+    expect(res.committed).toBe(true)
+    // Each repo got its own commit; files grouped to their owning repo.
+    expect(lastCommitMsg(api)).toBe('feat: 需求标题')
+    expect(lastCommitMsg(ui)).toBe('feat: 需求标题')
+    expect(aheadCount(api)).toBe(0)
+    expect(aheadCount(ui)).toBe(0)
+  })
+
+  it('multiple subdir repos: an untouched (clean, up-to-date) repo is left alone', async () => {
+    const dirty = join(work, 'dirty')
+    const clean = join(work, 'clean')
+    initRepo(dirty, 'dirty')
+    initRepo(clean, 'clean')
+    writeFileSync(join(dirty, 'd.ts'), 'export const d = 1\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(true)
+    expect(lastCommitMsg(dirty)).toBe('feat: 需求标题')
+    expect(lastCommitMsg(clean)).toBe('init') // never touched
+    expect(aheadCount(clean)).toBe(0)
+  })
+
+  it('push failure is a hard stop, and the error names the failing repo', async () => {
+    // A dirty subrepo with NO remote/upstream → push fails.
+    const broken = join(work, 'broken')
+    initRepo(broken, 'broken', false)
+    writeFileSync(join(broken, 'c.ts'), 'export const c = 1\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('broken')
+    expect(res.error).toContain('git push 失败')
+    // It committed locally before the push failed.
+    expect(lastCommitMsg(broken)).toBe('feat: 需求标题')
+  })
+
+  it('no git repo anywhere: reports an error and does not commit', async () => {
+    // Plain files/dirs, no .git anywhere under the root.
+    mkdirSync(join(work, 'src'), { recursive: true })
+    writeFileSync(join(work, 'src', 'note.txt'), 'hello\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(false)
+    expect(res.committed).toBe(false)
+    expect(res.error).toContain('未找到 git 仓库')
+  })
+})

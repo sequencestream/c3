@@ -261,6 +261,9 @@ development back-link is `select_session`. See the
   `lastDevSessionId` still exists on disk — restoring the half-built context instead of restarting.
 - **git (local)** — on a verified `done`, the orchestrator commits & pushes directly (a small
   `server/src/git.ts` helper), so it can detect and report failure rather than trusting the agent.
+  The helper is **multi-repo aware**: if the project root is itself a repo it commits that one repo
+  (classic behaviour); otherwise it discovers the git repos under the root and commits each affected
+  one independently, naming the offending repo on any push failure (RM-A5).
 
 ## Data dictionary
 

@@ -69,8 +69,10 @@ import {
   askQuestions,
   parseAskVote,
   matchOption,
+  stripRecommendation,
   parseDeciderAsk,
   deciderAskPrompt,
+  askVoterPrompt,
   tallyQuestion,
   answerKey,
   fallbackAskSummary,
@@ -157,6 +159,78 @@ describe('matchOption', () => {
   })
   it('returns null when nothing fits', () => {
     expect(matchOption('完全不同的东西', [{ label: '甲' }, { label: '乙' }])).toBeNull()
+  })
+})
+
+describe('stripRecommendation', () => {
+  it('strips trailing bracketed recommendation markers across bracket styles', () => {
+    expect(stripRecommendation('方案A (推荐)')).toBe('方案A')
+    expect(stripRecommendation('方案A（推荐）')).toBe('方案A')
+    expect(stripRecommendation('方案A【建议】')).toBe('方案A')
+    expect(stripRecommendation('Use X (Recommended)')).toBe('Use X')
+    expect(stripRecommendation('Use X (recommend)')).toBe('Use X')
+    expect(stripRecommendation('选项 [默认]')).toBe('选项')
+  })
+  it('leaves labels without a bracketed marker untouched (no false strip)', () => {
+    expect(stripRecommendation('使用系统默认')).toBe('使用系统默认')
+    expect(stripRecommendation('商户端核销')).toBe('商户端核销')
+    expect(stripRecommendation('推荐信生成')).toBe('推荐信生成')
+  })
+  it('is idempotent', () => {
+    expect(stripRecommendation(stripRecommendation('方案A (推荐)'))).toBe('方案A')
+  })
+})
+
+describe('de-bias: prompts hide the asker recommendation, matchOption restores it', () => {
+  const QR: AskQuestion[] = [
+    {
+      question: 'pick a plan',
+      header: '方案',
+      multiSelect: false,
+      options: [{ label: '方案A (推荐)' }, { label: '方案B' }],
+    },
+    {
+      question: 'pick features',
+      header: '功能',
+      multiSelect: true,
+      options: [{ label: '功能X（推荐）' }, { label: '功能Y' }, { label: '功能Z' }],
+    },
+  ]
+
+  it('askVoterPrompt strips the recommendation marker from presented labels', () => {
+    const prompt = askVoterPrompt(QR, 'ctx')
+    expect(prompt).toContain('方案A')
+    expect(prompt).not.toContain('推荐')
+    expect(prompt).not.toMatch(/recommend/i)
+  })
+
+  it('deciderAskPrompt strips the recommendation marker for split questions', () => {
+    const split = tallyQuestion(QR[0], 0, [
+      { agentId: 'x', agentName: 'x', optionLabels: ['方案A (推荐)'], reason: '' },
+      { agentId: 'y', agentName: 'y', optionLabels: [], reason: '', abstain: true },
+    ])
+    const prompt = deciderAskPrompt([split], QR)
+    expect(prompt).toContain('[0] options:')
+    expect(prompt).not.toContain('推荐')
+  })
+
+  it('matchOption maps a stripped choice back to the original exact label', () => {
+    expect(matchOption('方案A', QR[0].options)).toBe('方案A (推荐)')
+    // a sibling without a marker still resolves to itself
+    expect(matchOption('方案B', QR[0].options)).toBe('方案B')
+  })
+
+  it('multiSelect: stripped picks restore to original labels and tally', () => {
+    const text = '{"answers":[{"index":1,"choice":["功能X","功能Y"],"reason":"r"}]}'
+    const out = parseAskVote(text, QR, 'a1', 'Agent1')
+    expect(out[1].optionLabels).toEqual(['功能X（推荐）', '功能Y'])
+    expect(out[0].abstain).toBe(true)
+  })
+
+  it('no marker ⇒ matchOption behaves exactly as before (no side effect)', () => {
+    const plain = [{ label: '商户端核销' }, { label: '两端都支持' }]
+    expect(matchOption('商户端核销', plain)).toBe('商户端核销')
+    expect(matchOption('完全不同', plain)).toBeNull()
   })
 })
 

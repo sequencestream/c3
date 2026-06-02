@@ -111,7 +111,9 @@ export function askVoterPrompt(questions: AskQuestion[], context: string): strin
   questions.forEach((q, i) => {
     lines.push(`[${i}] ${q.question}${q.multiSelect ? ' (multi-select)' : ''}`)
     q.options.forEach((o) =>
-      lines.push(`    - ${o.label}${o.description ? `: ${o.description}` : ''}`),
+      lines.push(
+        `    - ${stripRecommendation(o.label)}${o.description ? `: ${o.description}` : ''}`,
+      ),
     )
   })
   lines.push(
@@ -125,6 +127,22 @@ export function askVoterPrompt(questions: AskQuestion[], context: string): strin
 }
 
 /**
+ * Trailing recommendation/preference markers an asker appends to an option label
+ * (per the AskUserQuestion convention of flagging its recommended choice). We
+ * strip ONLY a bracketed marker at the very end — `方案A (推荐)`, `Use X (Recommended)`,
+ * `选项【建议】` — across `()（）[]【】` and the synonyms 推荐/建议/默认/recommended/
+ * recommend/default. Unbracketed text is left intact so a legitimate label that
+ * merely ends in such a word (e.g. `使用系统默认`) is never truncated.
+ */
+const REC_MARKER =
+  /\s*[（(【[]\s*(?:推荐|建议|默认|recommended|recommend|default)\s*[)）】\]]\s*$/iu
+
+/** Remove a trailing bracketed recommendation marker from a label; idempotent. */
+export function stripRecommendation(label: string): string {
+  return label.replace(REC_MARKER, '').trim()
+}
+
+/**
  * Resolve an advisor's free-form choice string to one of a question's option
  * labels. Advisors frequently echo the label with extra reasoning appended
  * (e.g. `"方案A：扩展协议: <why>"`) or embed it in a sentence; strict equality
@@ -132,12 +150,26 @@ export function askVoterPrompt(questions: AskQuestion[], context: string): strin
  * the longest label that prefixes / is prefixed by / is contained in the choice.
  * Longest-first ordering keeps a specific label (`方案A：扩展协议`) from losing to
  * a shorter sibling (`方案A`). Returns the canonical label, or null if none fit.
+ *
+ * Voter/decider prompts present the **de-biased** label (asker recommendation
+ * markers stripped, see {@link stripRecommendation}), so an advisor naturally
+ * echoes the stripped form. After the literal-exact pass we therefore compare
+ * stripped-against-stripped and return the **original** label — restoring the
+ * exact label `withAnswers` injects by, untouched by the de-bias. A no-op when
+ * the label carries no marker (the literal exact pass already caught it).
  */
 export function matchOption(choice: string, options: { label: string }[]): string | null {
   const c = choice.trim().toLowerCase()
   if (!c) return null
   const exact = options.find((o) => o.label.toLowerCase() === c)
   if (exact) return exact.label
+  const cStripped = stripRecommendation(choice).toLowerCase()
+  if (cStripped) {
+    const strippedExact = options.find(
+      (o) => stripRecommendation(o.label).toLowerCase() === cStripped,
+    )
+    if (strippedExact) return strippedExact.label
+  }
   const byLenDesc = [...options].sort((a, b) => b.label.length - a.label.length)
   const prefix = byLenDesc.find((o) => {
     const l = o.label.toLowerCase()
@@ -251,11 +283,14 @@ export function deciderAskPrompt(
     q.answers.forEach((a) =>
       lines.push(
         `    - ${a.agentName}: ${
-          a.abstain ? '弃权' : a.optionLabels.join('/') || a.custom || '?'
+          a.abstain ? '弃权' : a.optionLabels.map(stripRecommendation).join('/') || a.custom || '?'
         }${a.reason ? ` — ${a.reason}` : ''}`,
       ),
     )
-    lines.push(`    => ${q.unanimous ? `一致：${q.agreed}` : '意见分歧'}`)
+    const agreedClean = q.agreed
+      ? q.agreed.split(', ').map(stripRecommendation).join(', ')
+      : q.agreed
+    lines.push(`    => ${q.unanimous ? `一致：${agreedClean}` : '意见分歧'}`)
   })
   lines.push('')
   if (split.length > 0) {
@@ -268,7 +303,9 @@ export function deciderAskPrompt(
     )
     split.forEach((q) => {
       const opts = questions[q.index]?.options ?? []
-      lines.push(`  [${q.index}] options: ${opts.map((o) => o.label).join(' | ')}`)
+      lines.push(
+        `  [${q.index}] options: ${opts.map((o) => stripRecommendation(o.label)).join(' | ')}`,
+      )
     })
     lines.push('')
   }

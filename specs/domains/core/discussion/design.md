@@ -113,8 +113,8 @@ and the agenda (`{items, index}`, default empty) into a concrete step:
 - `speak` — a nominated participant takes a one-shot turn (`askAgentOnce` → `parseParticipantSpeech`);
   its speech is appended as a `speakerKind: 'agent'` message. The participant prompt hard-caps each turn
   to **one paragraph** (no sub-paragraphs/bullets, ≈`MAX_SPEECH_CHARS`=300 chars / 6 sentences), and
-  `parseParticipantSpeech` enforces this as a truncation backstop (over-long text → sliced to the budget,
-  last char `…`) so persisted content can never exceed it regardless of agent verbosity. When an agenda
+  `parseParticipantSpeech` no longer enforces a hard truncation — over-long replies are
+  accepted verbatim (the budget serves only as prompt-level guidance). When an agenda
   is set, the current subtopic (`agenda[agendaIndex]`) is injected into the participant prompt to focus
   the turn. In converging stages (`summarize`/`confirm`) `speak` is the only speaker action — the
   organizer refines serially, one participant at a time.
@@ -243,8 +243,8 @@ speaker list [intersected + deduped + order-preserved] / `"all"`/omitted ⇒ who
 list recovers to whole roster / no-participants degrades / broadcast prose keyword),
 `parseParticipantSpeech` (trim
 
-- self-name strip + blank + over-long truncation to `MAX_SPEECH_CHARS` with `…` + short speech untouched
-- explicit `maxChars` override), `resolveStep` (terminal-stage conclude, explicit conclude, cap-forced
+- self-name strip + blank + over-long text preserved verbatim (no truncation) + short speech untouched
+- explicit `maxChars` override (no-op — kept for backward compatibility), `resolveStep` (terminal-stage conclude, explicit conclude, cap-forced
   advance, valid / invalid speaker, `set_agenda` step, `focus_subtopic` advances index, focus past last →
   advance, cap moves to next subtopic when unfinished / advances on last subtopic, agenda actions degrade
   outside `discuss`, **`broadcast` in `discuss` yields a broadcast step / degrades to advance outside

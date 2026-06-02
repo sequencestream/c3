@@ -33,6 +33,11 @@ export const MIN_ROUNDS_PER_STAGE = 8
 /** Fallback per-stage round cap when unset/invalid (kept above the floor for depth). */
 export const DEFAULT_ROUNDS_PER_STAGE = 12
 
+/** Hard floor for participant speech character guidance; lower values are clamped up. */
+export const MIN_SPEECH_CHARS = 300
+/** Default character budget for participant speech when unset/invalid. */
+export const DEFAULT_SPEECH_CHARS = 300
+
 interface SessionAgentState {
   version: 1
   /** sessionId → agentId. A missing entry means "use the default agent". */
@@ -101,6 +106,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const showToolSessions = raw?.showToolSessions === true
   const devSkill = normalizeDevSkill(raw?.devSkill)
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
+  const maxSpeechChars = normalizeMaxSpeechChars(raw?.maxSpeechChars)
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
   return {
     agents,
@@ -111,6 +117,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     showToolSessions,
     devSkill,
     maxRoundsPerStage,
+    maxSpeechChars,
     degradationChain,
   }
 }
@@ -124,6 +131,18 @@ function normalizeMaxRoundsPerStage(raw: unknown): number {
   const n = typeof raw === 'number' ? raw : NaN
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_ROUNDS_PER_STAGE
   return Math.max(MIN_ROUNDS_PER_STAGE, Math.floor(n))
+}
+
+/**
+ * Force the participant speech char budget into shape: a finite number ≥
+ * {@link MIN_SPEECH_CHARS} is kept; a positive value below the floor is
+ * clamped up; anything else (missing, non-finite, ≤ 0) falls back to
+ * {@link DEFAULT_SPEECH_CHARS}.
+ */
+export function normalizeMaxSpeechChars(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : NaN
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SPEECH_CHARS
+  return Math.max(MIN_SPEECH_CHARS, Math.floor(n))
 }
 
 /**
@@ -318,6 +337,15 @@ export function getDevSkill(): string {
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */
 export function getMaxRoundsPerStage(): number {
   return normalizeMaxRoundsPerStage(loadSettings().maxRoundsPerStage)
+}
+
+/**
+ * The discussion participant speech char budget (normalized; always ≥
+ * {@link MIN_SPEECH_CHARS}). This is a prompt-level guidance — over-long
+ * replies are accepted verbatim.
+ */
+export function getMaxSpeechChars(): number {
+  return normalizeMaxSpeechChars(loadSettings().maxSpeechChars)
 }
 
 /**

@@ -13,6 +13,7 @@ const baseSettings: SystemSettings = {
   showToolSessions: false,
   devSkill: '',
   maxRoundsPerStage: 14,
+  maxSpeechChars: 400,
 }
 
 describe('SettingsPanel.vue — discussion rounds per stage', () => {
@@ -38,5 +39,34 @@ describe('SettingsPanel.vue — discussion rounds per stage', () => {
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].maxRoundsPerStage).toBe(20)
+  })
+})
+
+describe('SettingsPanel.vue — discussion speech character limit', () => {
+  it('seeds the speech-chars input from server settings', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const inputs = w.findAll('.rounds-input')
+    // Second .rounds-input belongs to the speech chars field
+    expect(inputs.length).toBeGreaterThanOrEqual(2)
+    expect((inputs[1].element as HTMLInputElement).value).toBe('400')
+  })
+
+  it('defaults the speech-chars input when settings omit the field', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, maxSpeechChars: undefined } },
+    })
+    const inputs = w.findAll('.rounds-input')
+    expect((inputs[1].element as HTMLInputElement).value).toBe('300')
+  })
+
+  it('emits the edited speech-chars value on save', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const inputs = w.findAll('.rounds-input')
+    await inputs[1].setValue(600)
+    const saveBtn = w.findAll('.settings-foot button').find((b) => b.text() === 'Save')!
+    await saveBtn.trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0].maxSpeechChars).toBe(600)
   })
 })

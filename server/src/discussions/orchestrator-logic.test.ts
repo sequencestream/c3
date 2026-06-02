@@ -157,12 +157,11 @@ describe('parseParticipantSpeech', () => {
     expect(parseParticipantSpeech('   ')).toBe('')
   })
 
-  it('truncates over-long text to the budget, ending with an ellipsis', () => {
-    const long = 'a'.repeat(MAX_SPEECH_CHARS + 50)
+  it('preserves over-long text verbatim (no hard truncation)', () => {
+    const long = 'a'.repeat(MAX_SPEECH_CHARS + 500)
     const out = parseParticipantSpeech(long)
-    expect(out.length).toBe(MAX_SPEECH_CHARS)
-    expect(out.length).toBeLessThanOrEqual(MAX_SPEECH_CHARS)
-    expect(out.endsWith('…')).toBe(true)
+    expect(out.length).toBe(MAX_SPEECH_CHARS + 500)
+    expect(out).toBe(long)
   })
 
   it('leaves a normal short speech untouched (no ellipsis, no truncation)', () => {
@@ -170,8 +169,10 @@ describe('parseParticipantSpeech', () => {
     expect(parseParticipantSpeech(short)).toBe(short)
   })
 
-  it('respects an explicit maxChars override', () => {
-    expect(parseParticipantSpeech('abcdef', undefined, 4)).toBe('abc…')
+  it('ignores the maxChars parameter (truncation removed — text preserved verbatim)', () => {
+    // The maxChars parameter is kept as a no-op for backward compatibility;
+    // truncation no longer happens regardless of its value.
+    expect(parseParticipantSpeech('abcdef', undefined, 4)).toBe('abcdef')
   })
 })
 
@@ -408,5 +409,18 @@ describe('prompt builders', () => {
     })
     expect(p).toContain('一个段落')
     expect(p).toContain(String(MAX_SPEECH_CHARS))
+  })
+
+  it('participant prompt reflects the configured maxSpeechChars value', () => {
+    const p = buildParticipantPrompt({
+      discussion,
+      def,
+      stage,
+      messages: [],
+      speaker: { id: 'gpt', name: 'GPT' },
+      maxSpeechChars: 500,
+    })
+    expect(p).toContain('500')
+    expect(p).not.toContain(String(MAX_SPEECH_CHARS))
   })
 })

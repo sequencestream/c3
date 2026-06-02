@@ -140,6 +140,14 @@ export interface SystemSettings {
    * clamped up); an unset/invalid value falls back to a sane default (≥ 8). */
   maxRoundsPerStage?: number
   /**
+   * Per-turn character limit for participant speech in discussions. This is a
+   * prompt-level guidance — participants are asked to keep replies within this
+   * budget, but over-long replies are accepted verbatim (no hard truncation).
+   * Minimum 300 (lower values are clamped up); an unset/invalid value falls
+   * back to the default (≥ 300).
+   */
+  maxSpeechChars?: number
+  /**
    * Ordered list of agent ids defining the degradation/fallback chain.
    * When a session's turn encounters a rate-limit / session-limit / auth /
    * connection error, the server tries agents in this order until one succeeds

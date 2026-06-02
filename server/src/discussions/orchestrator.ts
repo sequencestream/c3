@@ -35,7 +35,7 @@ import {
   type DiscussionStageKind,
 } from '@ccc/shared/discussion-types'
 import { askAgentOnce } from '../agent-once.js'
-import { getMaxRoundsPerStage, loadSettings, resolveAgent } from '../settings.js'
+import { getMaxRoundsPerStage, getMaxSpeechChars, loadSettings, resolveAgent } from '../settings.js'
 import {
   appendMessage as storeAppendMessage,
   getDiscussion as storeGetDiscussion,
@@ -88,6 +88,11 @@ export interface DiscussionDeps {
   onStatusChange: (id: string) => void
   /** Round cap per workflow stage (defaults to the system-configured value). */
   maxRoundsPerStage?: number
+  /**
+   * Per-turn character budget for participant speech (prompt-level guidance).
+   * Defaults to the system-configured value when absent.
+   */
+  maxSpeechChars?: number
   /** Total round cap across the whole discussion (hard backstop). */
   maxTotalRounds?: number
   /**
@@ -126,6 +131,7 @@ export async function runDiscussion(
   const validIds = participants.map((p) => p.id)
   const byId = new Map(participantCfgs.map((a) => [a.id, a]))
   const maxPerStage = deps.maxRoundsPerStage ?? getMaxRoundsPerStage()
+  const speechBudget = deps.maxSpeechChars ?? getMaxSpeechChars()
   const maxTotal = deps.maxTotalRounds ?? 40
 
   // draft → in_progress.
@@ -287,6 +293,7 @@ export async function runDiscussion(
           speaker: b.speaker,
           organizerNote: step.organizerNote,
           subtopic: agenda[agendaIndex],
+          maxSpeechChars: speechBudget,
         }),
       )
       const texts = await Promise.all(
@@ -332,6 +339,7 @@ export async function runDiscussion(
             speaker,
             organizerNote: step.organizerNote,
             subtopic: agenda[agendaIndex],
+            maxSpeechChars: speechBudget,
           }),
           cwd,
           signal,
@@ -394,6 +402,7 @@ export function defaultDiscussionDeps(hooks: {
     organizer: () => resolveAgent(null),
     participants: () => loadSettings().agents,
     maxRoundsPerStage: getMaxRoundsPerStage(),
+    maxSpeechChars: getMaxSpeechChars(),
     onMessage: hooks.onMessage,
     onStatusChange: hooks.onStatusChange,
     ...(hooks.gate ? { gate: hooks.gate } : {}),

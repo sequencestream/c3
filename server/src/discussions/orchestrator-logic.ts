@@ -203,31 +203,30 @@ export function parseOrganizerDecision(
 }
 
 /**
- * Hard upper bound (in characters) on a single participant turn. The prompt asks
- * for one paragraph within this budget; {@link parseParticipantSpeech} enforces it
- * as a truncation backstop so an over-long reply can never exceed it on disk.
+ * Default character budget for participant speech prompts (used when no system
+ * config is threaded in). The prompt asks for one paragraph within this budget,
+ * but {@link parseParticipantSpeech} does NOT truncate — over-long replies are
+ * accepted verbatim.
  */
 export const MAX_SPEECH_CHARS = 300
 
 /**
  * Normalize a participant's reply into its speech text. A leading `Name:` echo
  * (some agents prefix their own name) is stripped; empty text returns `''` and
- * the caller skips appending it (but still counts the round). Over-long text is
- * truncated to `maxChars` (last char becomes `…`), guaranteeing the persisted
- * content never exceeds the budget regardless of how verbose the agent was.
+ * the caller skips appending it (but still counts the round). Unlike earlier
+ * versions, there is no hard truncation — over-long replies are accepted
+ * verbatim regardless of the configured budget (the budget serves only as
+ * prompt-level guidance).
  */
 export function parseParticipantSpeech(
   text: string,
   speakerName?: string,
-  maxChars: number = MAX_SPEECH_CHARS,
+  _maxChars?: number,
 ): string {
   let t = cleanText(text)
   if (speakerName) {
     const prefix = `${speakerName}:`
     if (t.startsWith(prefix)) t = t.slice(prefix.length).trim()
-  }
-  if (maxChars > 0 && t.length > maxChars) {
-    t = t.slice(0, maxChars - 1).trimEnd() + '…'
   }
   return t
 }
@@ -410,8 +409,17 @@ export function buildParticipantPrompt(input: {
   organizerNote?: string
   /** The current agenda subtopic to focus on, when one is set. */
   subtopic?: string
+  /**
+   * Character budget for this turn — the prompt asks the participant to keep
+   * replies within this limit as guidance. Defaults to {@link MAX_SPEECH_CHARS}.
+   * Over-long replies are accepted verbatim (no hard truncation).
+   */
+  maxSpeechChars?: number
 }): string {
-  const { discussion, def, stage, messages, speaker, organizerNote, subtopic } = input
+  const { discussion, def, stage, messages, speaker, organizerNote, subtopic, maxSpeechChars } =
+    input
+  const budget =
+    typeof maxSpeechChars === 'number' && maxSpeechChars > 0 ? maxSpeechChars : MAX_SPEECH_CHARS
   const lines = [
     `你是这场讨论的参与者「${speaker.name}」。`,
     '',
@@ -429,7 +437,7 @@ export function buildParticipantPrompt(input: {
   lines.push(
     '',
     `请围绕当前阶段给出你的观点,用中文,不要复述他人已说的内容,只输出你的发言正文(不要加你的名字前缀)。` +
-      `严格控制篇幅:只用一个段落、不分段、不列点,控制在约 ${MAX_SPEECH_CHARS} 字 / 6 句以内,直击要点。`,
+      `严格控制篇幅:只用一个段落、不分段、不列点,控制在约 ${budget} 字 / 6 句以内,直击要点。`,
   )
   return lines.join('\n')
 }

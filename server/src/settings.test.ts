@@ -7,11 +7,14 @@ import type { SystemSettings } from '@ccc/shared/protocol'
 import {
   getDevSkill,
   getMaxRoundsPerStage,
+  getMaxSpeechChars,
   saveSettings,
   normalizeDegradationChain,
   resetSettingsCacheForTests,
   DEFAULT_ROUNDS_PER_STAGE,
   MIN_ROUNDS_PER_STAGE,
+  DEFAULT_SPEECH_CHARS,
+  MIN_SPEECH_CHARS,
 } from './settings.js'
 
 // Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
@@ -154,5 +157,53 @@ describe('normalizeDegradationChain', () => {
   it('accepts the system agent id as a valid chain entry', () => {
     const result = normalizeDegradationChain(['sys', 'a1'], AGENTS)
     expect(result).toEqual(['sys', 'a1'])
+  })
+})
+
+/** Persist just a `maxSpeechChars` value (with the required baseline fields). */
+function saveWithMaxSpeechChars(value: unknown): void {
+  saveSettings({
+    agents: [],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    maxSpeechChars: value,
+  } as unknown as SystemSettings)
+}
+
+describe('getMaxSpeechChars normalization', () => {
+  it('falls back to the default when unset', () => {
+    saveWithMaxSpeechChars(undefined)
+    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+  })
+
+  it('clamps a positive value below the floor up to the minimum', () => {
+    saveWithMaxSpeechChars(100)
+    expect(getMaxSpeechChars()).toBe(MIN_SPEECH_CHARS)
+  })
+
+  it('clamps the floor exactly to the minimum', () => {
+    saveWithMaxSpeechChars(MIN_SPEECH_CHARS)
+    expect(getMaxSpeechChars()).toBe(MIN_SPEECH_CHARS)
+  })
+
+  it('keeps a legal value at or above the floor', () => {
+    saveWithMaxSpeechChars(500)
+    expect(getMaxSpeechChars()).toBe(500)
+  })
+
+  it('floors a fractional value', () => {
+    saveWithMaxSpeechChars(450.7)
+    expect(getMaxSpeechChars()).toBe(450)
+  })
+
+  it('falls back to the default for a non-numeric value', () => {
+    saveWithMaxSpeechChars('nope')
+    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+  })
+
+  it('falls back to the default for zero/negative values', () => {
+    saveWithMaxSpeechChars(0)
+    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+    saveWithMaxSpeechChars(-3)
+    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
   })
 })

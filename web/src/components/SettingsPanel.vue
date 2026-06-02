@@ -14,6 +14,10 @@ const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypa
 const MIN_ROUNDS_PER_STAGE = 8
 const DEFAULT_ROUNDS_PER_STAGE = 12
 
+// Discussion speech character limit: minimum enforced both here and server-side.
+const MIN_SPEECH_CHARS = 300
+const DEFAULT_SPEECH_CHARS = 300
+
 // 浏览器语音输入的可选识别语言（BCP-47）。
 const VOICE_LANGS: { value: string; label: string }[] = [
   { value: 'zh-CN', label: 'Chinese (Mandarin)' },
@@ -42,6 +46,7 @@ const draft = ref<SystemSettings>({
   showToolSessions: false,
   devSkill: '',
   maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
+  maxSpeechChars: DEFAULT_SPEECH_CHARS,
 })
 
 // Re-seed the draft whenever the panel opens or fresh server settings arrive.
@@ -59,6 +64,7 @@ watch(
       showToolSessions: settings.showToolSessions ?? false,
       devSkill: settings.devSkill ?? '',
       maxRoundsPerStage: settings.maxRoundsPerStage ?? DEFAULT_ROUNDS_PER_STAGE,
+      maxSpeechChars: settings.maxSpeechChars ?? DEFAULT_SPEECH_CHARS,
     }
   },
   { immediate: true },
@@ -192,6 +198,22 @@ function isSystemAgent(a: AgentConfig): boolean {
           class="agent-field rounds-input"
           type="number"
           :min="MIN_ROUNDS_PER_STAGE"
+          step="1"
+        />
+      </section>
+
+      <section class="settings-section">
+        <p class="settings-section-title">Discussion speech character limit</p>
+        <p class="settings-hint">
+          The per-turn character budget participants see in their prompt guidance. Participants are
+          asked to keep replies within this limit, but over-long replies are accepted verbatim (no
+          hard truncation). Minimum {{ MIN_SPEECH_CHARS }} (lower values are clamped up on save).
+        </p>
+        <input
+          v-model.number="draft.maxSpeechChars"
+          class="agent-field rounds-input"
+          type="number"
+          :min="MIN_SPEECH_CHARS"
           step="1"
         />
       </section>

@@ -80,13 +80,21 @@ capped at ~4000 chars (`claude.ts`).
   the decider may rescue a split/abstained question into consensus, but only with a
   re-validated exact-label answer; a decider error/abort/parse-failure or invalid
   answer emits no upgrade, so the question stays split and defers to the human.
-- **De-bias is presentation-only.** Asker recommendation markers are stripped only
-  in the text shown to voters/decider (`stripRecommendation`). The option set, the
-  tally, and SDK answer injection still operate on the **original** labels: a
-  marker-free echo is restored to its original exact label by `matchOption`'s
-  stripped-exact pass, so `withAnswers` (which matches by original label) is never
-  affected. Stripping a label with no marker is a no-op — the literal-exact pass
-  already resolves it, so existing matching behaviour is unchanged.
+- **De-bias is presentation-only.** Two de-bias passes (ask path only — see
+  below) touch only the text shown to the advisors, never the option set, the
+  tally, or SDK answer injection:
+  1. _Recommendation stripping_ (`stripRecommendation`) removes the asker's
+     trailing marker from presented labels. A marker-free echo is restored to its
+     original exact label by `matchOption`'s stripped-exact pass; stripping a
+     marker-less label is a no-op.
+  2. _Order shuffling_ (`shuffleOptions`) presents each voter an **independently**
+     randomized option order (and the decider one shuffled order) to dilute the
+     LLM's positional ("first option") bias.
+     Both are transparent downstream: `matchOption` resolves a choice by label
+     **content, never by option index**, and `answerKey` sorts labels before
+     comparing, so the parse passes the **original** `questions` and the tally,
+     decider upgrade (`decidedByAgent`), `agreedAnswers`, and `withAnswers` (matches
+     by original label) all key off the canonical labels regardless of presentation.
 - **No input mutation.** Auto-allow returns the original input unchanged (PG-R6).
   The sole exception is `AskUserQuestion` (see below), where the chosen answers
   are deliberately injected into the input — the only headless channel to answer.
@@ -143,9 +151,19 @@ so there is no auto-answer and the human fills the panel unaided.
   its option list **and** the echoed advisor answers) present labels with the
   marker stripped. Stripping is **end-anchored and bracketed only**
   (`()（）[]【】` × 推荐/建议/默认/recommended/recommend/default), so a label that
-  merely ends in such a word without brackets (`使用系统默认`) is untouched. The
-  ordering is **not** changed — only the textual marker is removed (a deliberate
-  scope choice; positional reordering was considered and rejected).
+  merely ends in such a word without brackets (`使用系统默认`) is untouched.
+- **Order de-bias (`shuffleOptions`).** Beyond the textual marker, the **fixed
+  order** of `options[]` is itself an anchor — an LLM tends to favour whatever
+  comes first. So each voter is presented an **independently** shuffled option
+  order (Fisher–Yates), and the decider's split-question option list is shuffled
+  once. Per-voter diversity dilutes the positional bias across the N votes at no
+  extra cost (still one advisor query per voter). Shuffling is **presentation-only
+  and index-agnostic**: `shuffleOptions` reorders only the array passed into the
+  prompt builder; `parseAskVote`/`parseDeciderAsk` are handed the **original**
+  `questions`, and `matchOption` resolves by label content (not position), so
+  tally/upgrade/injection are unaffected (an earlier scope rejected reordering in
+  favour of marker-stripping only — that decision is now superseded). Ask path
+  only — the allow/deny path has no candidate list to reorder.
 - **Tolerant label matching (`matchOption`).** Advisors often echo a label with
   reasoning appended (`"方案A：扩展协议: <why>"`) or embed it in a sentence. Match
   order is: exact (case-insensitive) → **stripped-exact** (de-biased label compared
@@ -180,16 +198,17 @@ tool input and echoes it as the tool result. So both paths resolve via
 `{ behavior: 'allow', updatedInput: { ...input, answers } }` (`withAnswers` in
 `claude.ts`). This is the documented PG-R6 exception, AskUserQuestion-only.
 
-| Function                                             | Contract                                                                                                                                                                                   |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `runAskConsensus(params): AskConsensusOutcome\|null` | `null` ⇒ disabled, no voters, or input has no questions (caller still shows the panel).                                                                                                    |
-| `askQuestions(input)`                                | Extracts/validates the questions array; `null` for non-ask input.                                                                                                                          |
-| `stripRecommendation(label)`                         | Removes an end-anchored, bracketed recommendation marker (推荐/建议/默认/recommended/…); idempotent; no-op when absent. Used only for prompt presentation.                                 |
-| `matchOption(choice, options)`                       | Resolves a free-form choice to a canonical option label (exact → stripped-exact → prefix → substring); `null` if none fit. Stripped-exact restores a de-biased echo to the original label. |
-| `parseAskVote(text, qs, …)`                          | One `AgentAnswer` per question; choice resolved via `matchOption`, unmatched / missing entry ⇒ `abstain`.                                                                                  |
-| `tallyQuestion(q, i, answers)`                       | `unanimous` only when all voters answered (no abstain) and agree; `agreed` is the SDK-ready string.                                                                                        |
-| `deciderAskPrompt(perQuestion, qs)`                  | Builds the combined judge+summary prompt; lists option labels only for the split questions.                                                                                                |
-| `parseDeciderAsk(text, qs)`                          | `{ summary, overrides }`; an override is emitted only for `consensus:true` rulings whose answer re-validates to a label/custom — else dropped (stays split).                               |
+| Function                                             | Contract                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runAskConsensus(params): AskConsensusOutcome\|null` | `null` ⇒ disabled, no voters, or input has no questions (caller still shows the panel).                                                                                                                                           |
+| `askQuestions(input)`                                | Extracts/validates the questions array; `null` for non-ask input.                                                                                                                                                                 |
+| `stripRecommendation(label)`                         | Removes an end-anchored, bracketed recommendation marker (推荐/建议/默认/recommended/…); idempotent; no-op when absent. Used only for prompt presentation.                                                                        |
+| `shuffleOptions(questions, rng?)`                    | Shallow-copies `questions` with each `options` array Fisher–Yates–shuffled (labels untouched). Presentation-only; `rng` injectable for tests. Called per-voter and once for the decider; parse still uses the original questions. |
+| `matchOption(choice, options)`                       | Resolves a free-form choice to a canonical option label (exact → stripped-exact → prefix → substring); `null` if none fit. Stripped-exact restores a de-biased echo to the original label.                                        |
+| `parseAskVote(text, qs, …)`                          | One `AgentAnswer` per question; choice resolved via `matchOption`, unmatched / missing entry ⇒ `abstain`.                                                                                                                         |
+| `tallyQuestion(q, i, answers)`                       | `unanimous` only when all voters answered (no abstain) and agree; `agreed` is the SDK-ready string.                                                                                                                               |
+| `deciderAskPrompt(perQuestion, qs)`                  | Builds the combined judge+summary prompt; lists option labels only for the split questions.                                                                                                                                       |
+| `parseDeciderAsk(text, qs)`                          | `{ summary, overrides }`; an override is emitted only for `consensus:true` rulings whose answer re-validates to a label/custom — else dropped (stays split).                                                                      |
 
 ## Wire protocol
 

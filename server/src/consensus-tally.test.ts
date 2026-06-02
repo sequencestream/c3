@@ -76,6 +76,7 @@ import {
   tallyQuestion,
   answerKey,
   fallbackAskSummary,
+  shuffleOptions,
   type AskQuestion,
 } from './consensus-tally.js'
 
@@ -231,6 +232,101 @@ describe('de-bias: prompts hide the asker recommendation, matchOption restores i
     const plain = [{ label: '商户端核销' }, { label: '两端都支持' }]
     expect(matchOption('商户端核销', plain)).toBe('商户端核销')
     expect(matchOption('完全不同', plain)).toBeNull()
+  })
+})
+
+describe('shuffleOptions (de-bias option order)', () => {
+  // A deterministic rng over a fixed draw sequence keeps the permutation testable.
+  const seqRng = (seq: number[]) => {
+    let i = 0
+    return () => seq[i++ % seq.length]
+  }
+
+  it('preserves the full label set of every question (no loss, no dup)', () => {
+    const out = shuffleOptions(Q, seqRng([0.7, 0.1, 0.9, 0.3]))
+    out.forEach((q, i) => {
+      const before = Q[i].options.map((o) => o.label).sort()
+      const after = q.options.map((o) => o.label).sort()
+      expect(after).toEqual(before)
+    })
+  })
+
+  it('does not mutate the input questions or their option arrays', () => {
+    const original = Q[0].options.map((o) => o.label)
+    shuffleOptions(Q, () => 0)
+    expect(Q[0].options.map((o) => o.label)).toEqual(original)
+  })
+
+  it('produces a deterministic permutation for a fixed rng', () => {
+    // Fisher–Yates with rng ⇒ 0 always: [a,b,c] -> swap(2,0) -> [c,b,a] -> swap(1,0) -> [b,c,a].
+    const q: AskQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        multiSelect: false,
+        options: [{ label: 'a' }, { label: 'b' }, { label: 'c' }],
+      },
+    ]
+    expect(shuffleOptions(q, () => 0)[0].options.map((o) => o.label)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('a voter seeing a shuffled order still tallies back to the original label', () => {
+    // Present each voter an independently shuffled list, but parse against the
+    // ORIGINAL questions: matchOption keys off the label, not the position.
+    const shuffled = shuffleOptions(Q, seqRng([0, 0.5, 0]))
+    expect(shuffled[0].options.map((o) => o.label)).not.toEqual(Q[0].options.map((o) => o.label))
+    // Voter echoes the label it saw; parse uses the canonical Q, not the shuffle.
+    const text = '{"answers":[{"index":0,"choice":"两端都支持","reason":"r"}]}'
+    const a1 = parseAskVote(text, Q, 'a1', 'A1')
+    const a2 = parseAskVote(text, Q, 'a2', 'A2')
+    const r = tallyQuestion(Q[0], 0, [a1[0], a2[0]])
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('两端都支持')
+  })
+
+  it('multiSelect: shuffled presentation still tallies (answerKey is order-free)', () => {
+    const QM: AskQuestion[] = [
+      {
+        question: 'pick features',
+        header: 'f',
+        multiSelect: true,
+        options: [{ label: 'X' }, { label: 'Y' }, { label: 'Z' }],
+      },
+    ]
+    shuffleOptions(QM, () => 0) // de-bias the prompt order…
+    // …two voters answer in different label orders; answerKey sorts ⇒ they agree.
+    const v1 = parseAskVote(
+      '{"answers":[{"index":0,"choice":["X","Y"],"reason":"r"}]}',
+      QM,
+      'a',
+      'A',
+    )
+    const v2 = parseAskVote(
+      '{"answers":[{"index":0,"choice":["Y","X"],"reason":"r"}]}',
+      QM,
+      'b',
+      'B',
+    )
+    const r = tallyQuestion(QM[0], 0, [v1[0], v2[0]])
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('X, Y')
+  })
+
+  it('decider upgrade survives a shuffled decider prompt (parse uses original Q)', () => {
+    // The decider sees options in shuffled order; its ruling is parsed against Q.
+    const shuffled = shuffleOptions(Q, () => 0)
+    const split = tallyQuestion(Q[0], 0, [
+      { agentId: 'x', agentName: 'x', optionLabels: ['商户端核销'], reason: '' },
+      { agentId: 'y', agentName: 'y', optionLabels: ['两端都支持'], reason: '' },
+    ])
+    const prompt = deciderAskPrompt([split], shuffled)
+    expect(prompt).toContain('[0] options:')
+    // Decider rules an effective consensus on a label; parse against original Q.
+    const { overrides } = parseDeciderAsk(
+      '{"summary":"s","questions":[{"index":0,"consensus":true,"choice":"两端都支持"}]}',
+      Q,
+    )
+    expect(overrides.get(0)).toBe('两端都支持')
   })
 })
 

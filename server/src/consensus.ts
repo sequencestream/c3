@@ -36,6 +36,7 @@ import {
   parseAskVote,
   parseDeciderAsk,
   parseVote,
+  shuffleOptions,
   tally,
   tallyQuestion,
   voterPrompt,
@@ -152,7 +153,10 @@ async function decideAndSummarizeAsk(
   if (signal.aborted) return { summary: fallback, overrides: new Map() }
   try {
     const decider = resolveAgent(currentAgentId)
-    const prompt = deciderAskPrompt(perQuestion, questions)
+    // Shuffle the option list shown to the decider (de-bias the fixed order);
+    // parse against the ORIGINAL questions — matchOption resolves by label, so
+    // tally/injection stay on canonical labels.
+    const prompt = deciderAskPrompt(perQuestion, shuffleOptions(questions))
     const text = await askAgentOnce(decider, prompt, cwd, signal)
     const { summary, overrides } = parseDeciderAsk(text, questions)
     return { summary: summary || fallback, overrides }
@@ -174,10 +178,13 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
   const questions = askQuestions(p.input)
   if (!questions) return null
 
-  const prompt = askVoterPrompt(questions, p.context)
   // Each voter answers all questions; an errored voter abstains on every question.
   const perAgent = await Promise.all(
     voters.map(async (agent) => {
+      // Independent per-voter option ordering dilutes the LLM's positional bias;
+      // parse against the ORIGINAL questions so tally/injection key off the
+      // canonical labels (matchOption resolves by label content, not by index).
+      const prompt = askVoterPrompt(shuffleOptions(questions), p.context)
       try {
         const text = await askAgentOnce(agent, prompt, p.cwd, p.signal)
         return parseAskVote(text, questions, agent.id, agent.name)

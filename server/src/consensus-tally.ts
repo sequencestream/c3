@@ -42,6 +42,31 @@ export function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Return a shallow copy of `questions` with each question's `options` array
+ * randomly reordered (Fisher–Yates driven by `rng`, default `Math.random`).
+ * Only presentation order changes — labels/descriptions are untouched — so
+ * parsing/tally/injection are unaffected: `matchOption` resolves a choice by
+ * label **content**, never by option index, and `answerKey` sorts labels before
+ * comparing. Giving each voter an independent ordering dilutes the LLM's
+ * positional ("first option is safest") selection bias. Ask-path only;
+ * allow/deny has no candidate list to reorder. `rng` is injectable so unit
+ * tests stay deterministic.
+ */
+export function shuffleOptions(
+  questions: AskQuestion[],
+  rng: () => number = Math.random,
+): AskQuestion[] {
+  return questions.map((q) => {
+    const options = [...q.options]
+    for (let i = options.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[options[i], options[j]] = [options[j], options[i]]
+    }
+    return { ...q, options }
+  })
+}
+
 /** Extract an allow/deny verdict from an advisor's free-form reply. */
 export function parseVote(text: string): { decision: 'allow' | 'deny'; reason: string } | null {
   const match = text.match(/\{[\s\S]*\}/)

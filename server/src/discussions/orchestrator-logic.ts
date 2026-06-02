@@ -117,15 +117,31 @@ export function parseOrganizerDecision(
 }
 
 /**
+ * Hard upper bound (in characters) on a single participant turn. The prompt asks
+ * for one paragraph within this budget; {@link parseParticipantSpeech} enforces it
+ * as a truncation backstop so an over-long reply can never exceed it on disk.
+ */
+export const MAX_SPEECH_CHARS = 300
+
+/**
  * Normalize a participant's reply into its speech text. A leading `Name:` echo
  * (some agents prefix their own name) is stripped; empty text returns `''` and
- * the caller skips appending it (but still counts the round).
+ * the caller skips appending it (but still counts the round). Over-long text is
+ * truncated to `maxChars` (last char becomes `…`), guaranteeing the persisted
+ * content never exceeds the budget regardless of how verbose the agent was.
  */
-export function parseParticipantSpeech(text: string, speakerName?: string): string {
+export function parseParticipantSpeech(
+  text: string,
+  speakerName?: string,
+  maxChars: number = MAX_SPEECH_CHARS,
+): string {
   let t = cleanText(text)
   if (speakerName) {
     const prefix = `${speakerName}:`
     if (t.startsWith(prefix)) t = t.slice(prefix.length).trim()
+  }
+  if (maxChars > 0 && t.length > maxChars) {
+    t = t.slice(0, maxChars - 1).trimEnd() + '…'
   }
   return t
 }
@@ -255,7 +271,8 @@ export function buildParticipantPrompt(input: {
   }
   lines.push(
     '',
-    '请围绕当前阶段给出你的观点:简洁、直接、用中文,不要复述他人已说的内容,只输出你的发言正文(不要加你的名字前缀)。',
+    `请围绕当前阶段给出你的观点,用中文,不要复述他人已说的内容,只输出你的发言正文(不要加你的名字前缀)。` +
+      `严格控制篇幅:只用一个段落、不分段、不列点,控制在约 ${MAX_SPEECH_CHARS} 字 / 6 句以内,直击要点。`,
   )
   return lines.join('\n')
 }

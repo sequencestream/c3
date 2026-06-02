@@ -104,7 +104,10 @@ first, keyword fallback, and a safe `advance` default so an unparseable reply ne
 `resolveStep` folds the stage and the per-stage round cap into a concrete step:
 
 - `speak` — a nominated participant takes a one-shot turn (`askAgentOnce` → `parseParticipantSpeech`);
-  its speech is appended as a `speakerKind: 'agent'` message.
+  its speech is appended as a `speakerKind: 'agent'` message. The participant prompt hard-caps each turn
+  to **one paragraph** (no sub-paragraphs/bullets, ≈`MAX_SPEECH_CHARS`=300 chars / 6 sentences), and
+  `parseParticipantSpeech` enforces this as a truncation backstop (over-long text → sliced to the budget,
+  last char `…`) so persisted content can never exceed it regardless of agent verbosity.
 - `advance` — move to the next workflow stage; a non-empty organizer `note` (e.g. the summary) is
   appended as a `speakerKind: 'organizer'` message.
 - `conclude` — append the final conclusion (organizer message), `setConclusion`, `completed`.
@@ -178,7 +181,8 @@ row survives, idempotent on re-ensure); fail-soft degradation (reads empty/null,
 
 `server/src/discussions/orchestrator-logic.test.ts` (pure): `parseOrganizerDecision` (JSON / fenced /
 keyword fallback / invalid speaker / unparseable → advance), `parseParticipantSpeech` (trim + self-name
-strip + blank), `resolveStep` (terminal-stage conclude, explicit conclude, cap-forced advance, valid /
+strip + blank + over-long truncation to `MAX_SPEECH_CHARS` with `…` + short speech untouched +
+explicit `maxChars` override), `resolveStep` (terminal-stage conclude, explicit conclude, cap-forced advance, valid /
 invalid speaker), `renderTranscript`, prompt builders carry the key fields.
 
 `server/src/discussions/orchestrator.test.ts` (fakes — scripted `ask`, in-memory store, capture hooks):

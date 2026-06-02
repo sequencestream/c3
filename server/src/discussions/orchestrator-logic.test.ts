@@ -10,6 +10,7 @@ import type { Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import {
   buildOrganizerPrompt,
   buildParticipantPrompt,
+  MAX_SPEECH_CHARS,
   parseOrganizerDecision,
   parseParticipantSpeech,
   renderTranscript,
@@ -91,6 +92,23 @@ describe('parseParticipantSpeech', () => {
 
   it('returns empty string for blank text', () => {
     expect(parseParticipantSpeech('   ')).toBe('')
+  })
+
+  it('truncates over-long text to the budget, ending with an ellipsis', () => {
+    const long = 'a'.repeat(MAX_SPEECH_CHARS + 50)
+    const out = parseParticipantSpeech(long)
+    expect(out.length).toBe(MAX_SPEECH_CHARS)
+    expect(out.length).toBeLessThanOrEqual(MAX_SPEECH_CHARS)
+    expect(out.endsWith('…')).toBe(true)
+  })
+
+  it('leaves a normal short speech untouched (no ellipsis, no truncation)', () => {
+    const short = '我支持引入缓存层,成本可控且收益明显。'
+    expect(parseParticipantSpeech(short)).toBe(short)
+  })
+
+  it('respects an explicit maxChars override', () => {
+    expect(parseParticipantSpeech('abcdef', undefined, 4)).toBe('abc…')
   })
 })
 
@@ -190,5 +208,17 @@ describe('prompt builders', () => {
     expect(p).toContain('「GPT」')
     expect(p).toContain(stage.prompt)
     expect(p).toContain('focus on cost')
+  })
+
+  it('participant prompt carries the one-paragraph length constraint', () => {
+    const p = buildParticipantPrompt({
+      discussion,
+      def,
+      stage,
+      messages: [],
+      speaker: { id: 'gpt', name: 'GPT' },
+    })
+    expect(p).toContain('一个段落')
+    expect(p).toContain(String(MAX_SPEECH_CHARS))
   })
 })

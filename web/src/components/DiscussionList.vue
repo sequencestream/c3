@@ -211,7 +211,7 @@ function togglePanel(): void {
 
 <style scoped>
 .disc-list {
-  width: 360px;
+  width: 960px;
   flex-shrink: 0;
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
@@ -220,18 +220,19 @@ function togglePanel(): void {
   overflow: hidden;
   transition: width 0.2s ease;
 }
-/* 收缩态:收窄面板,隐藏行内次要元信息(由组件 v-if 不渲染) */
+/* 收缩态:宽度减半,隐藏行内次要元信息(由组件 v-if 不渲染) */
 .disc-list.collapsed {
-  width: 240px;
+  width: 480px;
 }
+/* 窄屏回退:侧栏按视口比例收窄,避免挤压聊天区(与 .req-list 一致) */
 @media (max-width: 1024px) {
   .disc-list {
-    width: min(360px, 34vw);
-    min-width: 240px;
+    width: min(960px, 68vw);
+    min-width: 450px;
   }
   .disc-list.collapsed {
-    width: min(240px, 24vw);
-    min-width: 180px;
+    width: min(480px, 34vw);
+    min-width: 280px;
   }
 }
 .disc-list-head {

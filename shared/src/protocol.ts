@@ -456,6 +456,64 @@ export interface DiscussionMessage {
   createdAt: number
 }
 
+// ---- Schedules ----
+
+export type ScheduleType = 'command' | 'llm'
+
+export type McpMode = 'read-only' | 'sandboxed' | 'full-access'
+
+export type ScheduleStatus = 'active' | 'paused' | 'error'
+
+export interface Schedule {
+  id: string
+  type: ScheduleType
+  /** Arbitrary JSON configuration, interpreted by the cron runner per `type`. */
+  config: unknown
+  /** Owning workspace absolute path (resolved). */
+  workspacePath: string
+  cronExpression: string
+  /** Unix ms timestamp of the next planned run; null when not scheduled. */
+  nextRunAt: number | null
+  status: ScheduleStatus
+  mcpMode: McpMode
+  toolAllowlist: string[]
+  toolDenylist: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+/** Fields the client supplies when creating a schedule. */
+export interface CreateScheduleInput {
+  type: ScheduleType
+  config: unknown
+  workspacePath: string
+  cronExpression: string
+  mcpMode: McpMode
+  toolAllowlist?: string[]
+  toolDenylist?: string[]
+}
+
+/** Fields the client may supply when updating a schedule. All optional. */
+export interface UpdateScheduleInput {
+  type?: ScheduleType
+  config?: unknown
+  cronExpression?: string
+  mcpMode?: McpMode
+  toolAllowlist?: string[]
+  toolDenylist?: string[]
+  status?: ScheduleStatus
+}
+
+export interface ScheduleExecutionLog {
+  id: string
+  scheduleId: string
+  startedAt: number
+  finishedAt: number | null
+  exitCode: number | null
+  output: string
+  error: string | null
+}
+
 // Client → Server
 export type ClientToServer =
   | { type: 'user_prompt'; text: string }
@@ -598,6 +656,16 @@ export type ClientToServer =
   | { type: 'continue_discussion'; discussionId: string; text: string }
   /** Pull the authoritative session-status snapshot (session-layer heartbeat). */
   | { type: 'request_session_status' }
+  /** Create a schedule in a workspace; server broadcasts `schedules`. */
+  | { type: 'create_schedule'; workspacePath: string; input: CreateScheduleInput }
+  /** List schedules in a workspace; server replies with `schedules`. */
+  | { type: 'list_schedules'; workspacePath: string }
+  /** Partial update of a schedule; server broadcasts `schedules`. */
+  | { type: 'update_schedule'; scheduleId: string; input: UpdateScheduleInput }
+  /** Delete a schedule; server broadcasts `schedules`. */
+  | { type: 'delete_schedule'; scheduleId: string }
+  /** Get full schedule detail with execution logs; server replies with `schedule_detail`. */
+  | { type: 'get_schedule_detail'; scheduleId: string }
   | { type: 'ping' }
 
 // Server → Client
@@ -743,4 +811,10 @@ export type ServerToClient =
     }
   /** A requested operation failed (bad path, missing session, etc.). */
   | { type: 'error'; message: string }
+  /** A workspace's schedule list (reply to `list_schedules` or broadcast after create/update/delete). */
+  | { type: 'schedules'; workspacePath: string; items: Schedule[] }
+  /** Full schedule detail with execution logs (reply to `get_schedule_detail`). */
+  | { type: 'schedule_detail'; schedule: Schedule; logs: ScheduleExecutionLog[] }
+  /** Execution logs for a schedule. */
+  | { type: 'schedule_execution_logs'; scheduleId: string; items: ScheduleExecutionLog[] }
   | { type: 'pong' }

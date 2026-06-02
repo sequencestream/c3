@@ -92,6 +92,16 @@ import {
 import { researchDiscussionContext } from './discussions/research.js'
 import { runDiscussion, defaultDiscussionDeps } from './discussions/orchestrator.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
+import {
+  isStoreAvailable as isScheduleStoreAvailable,
+  listSchedules,
+  getSchedule,
+  createSchedule,
+  updateSchedule as updateScheduleStore,
+  deleteSchedule as deleteScheduleStore,
+  getScheduleDetail,
+  listExecutionLogs,
+} from './schedules/store.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
 import { reconcileInProgress } from './requirements/reconcile.js'
@@ -212,6 +222,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     const proj = resolve(projectPath)
     const items = listDiscussions(proj)
     for (const deliver of connections) deliver({ type: 'discussions', projectPath: proj, items })
+  }
+
+  // Push a workspace's schedule list to every connection. Used after create,
+  // update, delete. No-op when the store is unavailable.
+  const broadcastSchedules = (workspacePath: string): void => {
+    if (!isScheduleStoreAvailable()) return
+    const proj = resolve(workspacePath)
+    const items = listSchedules(proj)
+    for (const deliver of connections) deliver({ type: 'schedules', workspacePath: proj, items })
   }
 
   // Per-run control for a live discussion orchestration. `abort` tears it down
@@ -1453,6 +1472,75 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               updateDiscussionStatus(discussion.id, 'in_progress')
               broadcastDiscussions(discussion.projectPath)
               startDiscussionRun({ ...discussion, status: 'in_progress' })
+              return
+            }
+
+            case 'create_schedule': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const created = createSchedule(msg.input)
+              broadcastSchedules(created.workspacePath)
+              return
+            }
+
+            case 'list_schedules': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const proj = resolve(msg.workspacePath)
+              const items = listSchedules(proj)
+              send(ws, { type: 'schedules', workspacePath: proj, items })
+              return
+            }
+
+            case 'update_schedule': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const existing = getSchedule(msg.scheduleId)
+              if (!existing) {
+                send(ws, { type: 'error', message: '定时任务不存在。' })
+                return
+              }
+              updateScheduleStore(msg.scheduleId, msg.input)
+              broadcastSchedules(existing.workspacePath)
+              return
+            }
+
+            case 'delete_schedule': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const existing = getSchedule(msg.scheduleId)
+              if (!existing) {
+                send(ws, { type: 'error', message: '定时任务不存在。' })
+                return
+              }
+              deleteScheduleStore(msg.scheduleId)
+              broadcastSchedules(existing.workspacePath)
+              return
+            }
+
+            case 'get_schedule_detail': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const detail = getScheduleDetail(msg.scheduleId)
+              if (!detail.schedule) {
+                send(ws, { type: 'error', message: '定时任务不存在。' })
+                return
+              }
+              send(ws, {
+                type: 'schedule_detail',
+                schedule: detail.schedule,
+                logs: detail.logs,
+              })
               return
             }
           }

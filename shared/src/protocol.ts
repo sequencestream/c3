@@ -325,6 +325,12 @@ export interface AutomationStatus {
   currentRequirementId: string | null
   /** The dev session of the current requirement, for a back-link (null when none). */
   currentSessionId: string | null
+  /**
+   * True while the current dev turn is paused on a permission prompt awaiting a
+   * human answer (automation mirrors manual: it does NOT abort, it waits for the
+   * watching human to answer in the browser). Cleared once the turn settles.
+   */
+  awaitingPermission: boolean
   /** Why the orchestrator stopped abnormally; null unless `state === 'error'`. */
   error: string | null
   /** Requirement ids completed (committed + pushed) in this run. */

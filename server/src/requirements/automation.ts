@@ -36,7 +36,12 @@ export interface DevTurnResult {
   /**
    * - `complete` — the turn ended normally (`turn_end: complete`); judge it.
    * - `error` — the turn ended with an error (`turn_end: error`).
-   * - `blocked` — a permission prompt fired (needs a human) or the run was aborted.
+   * - `blocked` — the run was aborted (automation stopped, or a teardown).
+   *
+   * NOTE: a permission prompt no longer yields `blocked`. Automation mirrors
+   * manual execution — a prompt keeps the run alive and is surfaced to the
+   * browser for the watching human to answer (see {@link RunDevTurnInput.onAwaitingPermission});
+   * the turn then settles `complete`/`error` once the human responds.
    */
   outcome: 'complete' | 'error' | 'blocked'
   /** The dev session id (real, after binding). */
@@ -76,6 +81,13 @@ export interface RunDevTurnInput {
    * Only fires for a fresh launch (a resumed/continuation turn already has its id).
    */
   onSessionId?: (sessionId: string) => void
+  /**
+   * Called when the in-flight turn pauses on / resumes from a permission prompt
+   * (`true` ⇒ now awaiting a human answer, `false` ⇒ answered / settled). Lets the
+   * orchestrator surface an "awaiting authorization" hint on the automation status
+   * while a watching human answers the prompt in the browser.
+   */
+  onAwaitingPermission?: (awaiting: boolean) => void
 }
 
 /** Server-provided integration points (everything tied to the WS-server closure). */
@@ -136,6 +148,7 @@ function idleStatus(projectPath: string): AutomationStatus {
     state: 'idle',
     currentRequirementId: null,
     currentSessionId: null,
+    awaitingPermission: false,
     error: null,
     completedIds: [],
     startedAt: null,
@@ -184,6 +197,13 @@ class AutomationController {
   private emit(): void {
     // Send a copy so later mutations don't race the serialized wire payload.
     this.hooks.emitStatus({ ...this.status, completedIds: [...this.status.completedIds] })
+  }
+
+  /** Reflect "awaiting human authorization" on the status (no-op if unchanged). */
+  private setAwaiting(awaiting: boolean): void {
+    if (this.status.awaitingPermission === awaiting) return
+    this.status.awaitingPermission = awaiting
+    this.emit()
   }
 
   /** Link the dev session + flip the requirement to in_progress, then broadcast. */
@@ -241,7 +261,9 @@ class AutomationController {
       requirementId: running.id,
       signal: this.abort.signal,
       attach: true,
+      onAwaitingPermission: (awaiting) => this.setAwaiting(awaiting),
     })
+    this.setAwaiting(false)
 
     if (this.abort.signal.aborted) return false
 
@@ -348,7 +370,12 @@ class AutomationController {
         // Flip to in_progress + link the dev session AS SOON AS it binds (early,
         // well before the turn ends) — exactly like manual start_development.
         onSessionId: (sid) => this.markInProgress(req.id, sid),
+        // Surface "awaiting authorization" while the turn pauses on a permission
+        // prompt (automation now waits for the watching human, like manual).
+        onAwaitingPermission: (awaiting) => this.setAwaiting(awaiting),
       })
+      // The turn has settled — it is no longer paused on any prompt.
+      this.setAwaiting(false)
       // Only the first turn attaches; the attached turn settles the run, so any
       // "继续" continuation goes through the ordinary resume path.
       attach = false

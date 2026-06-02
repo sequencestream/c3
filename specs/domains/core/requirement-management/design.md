@@ -292,9 +292,12 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   viewer** on it, and launches/resumes via the shared `launchRun`. It surfaces the SDK session bind
   **early** via an `onSessionId` callback (fired from `launchRun`'s own `onSessionId`, well before
   the turn ends). The viewer captures the last `assistant_text` and resolves the turn on: `turn_end`
-  → `complete`/`error`; `permission_request` → `blocked` (it also `stopRun`s the otherwise-hanging
-  run, since no human is watching — RM-A9); the controller's abort → `blocked('aborted')`. A live
-  team lead (rare for a dev skill) is fed via `pushInput` instead of a fresh launch.
+  → `complete`/`error`; the controller's abort → `blocked('aborted')`. A `permission_request` does
+  **not** resolve the turn — automation **mirrors manual** (RM-A9): the run stays alive awaiting the
+  watching human's browser answer, and the viewer only fires `onAwaitingPermission(true)` (cleared on
+  the answering `tool_result`, or on `turn_end`) so the controller can flip `awaitingPermission` on
+  the status ("awaiting authorization" hint). A live team lead (rare for a dev skill) is fed via
+  `pushInput` instead of a fresh launch.
   - **Attach mode (`input.attach`, RM-A10).** When the controller passes `attach: true`, the closure
     only registers the viewer — it **never** launches or pushes. It seeds `lastText` from the runtime
     **buffer**'s last `assistant_text` (the in-flight turn's latest message may have been emitted
@@ -320,17 +323,19 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   `updateStatus(in_progress)` + broadcast + emit, so the UI flips to `in_progress` immediately, not
   at turn end (a fallback re-marks if the early bind never fired); → on `complete`, `gitDiffStat` +
   `judgeCompletion`; `done` → `commitAndPush` then `updateStatus(done)` + push id to `completedIds`;
-  `in_progress` → resume "继续" (cap `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/`blocked`/push-fail
-  → `fail(reason)` and stop the whole loop (RM-A6). No eligible item → state `done` (RM-A7). Abort
-  mid-run → state `idle`.
+  `in_progress` → resume "继续" (cap `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/push-fail (and a
+  torn-down `pendingQuestion`, RM-A11) → `fail(reason)` and stop the whole loop (RM-A6). A live
+  permission prompt does **not** stop the loop — it waits for the watching human (RM-A9), and
+  `setAwaiting(true/false)` flips the status `awaitingPermission` hint while paused. No eligible item
+  → state `done` (RM-A7). Abort mid-run (`blocked('aborted')`) → state `idle`.
   - **Human-decision guard (RM-A11).** Before the `done`/`in_progress`/`stuck` branch, `develop()`
     checks `turn.pendingQuestion`: when the turn ended on an **unanswered `AskUserQuestion`**, it
     `fail(reason)`s immediately — **even if the judge said `in_progress`** — so a mis-judged verdict
     can never drive a blind "继续" over a real user choice. The flag is computed by the pure
     `hasPendingQuestion(buffer)` (exported from `automation.ts`, unit-tested): an `AskUserQuestion`
     `tool_use` with no matching `tool_result` (by `toolUseId`) means the question was never answered.
-    A **live** AskUserQuestion is already caught as `blocked` by `runDevTurn` (the viewer aborts the
-    hanging run, RM-A9); the flag specifically covers the **attach buffer-replay** path, where a
+    A **live** AskUserQuestion no longer blocks — `runDevTurn` keeps the run alive for the watching
+    human to answer (RM-A9); the flag specifically covers the **torn-down / attach buffer-replay** path, where a
     settled run carrying a pending question would otherwise surface as `complete`.
 - **Completion judge (`judge.ts`).** `judgeCompletion` builds an English prompt (requirement + last
   message + **evidence**: `git diff HEAD --stat` for uncommitted work AND `git log --oneline -5` for

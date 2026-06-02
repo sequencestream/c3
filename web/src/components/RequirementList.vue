@@ -48,6 +48,8 @@ const autoNote = computed<string>(() => {
   if (a.state === 'running') {
     const cur = a.currentRequirementId
     const title = cur ? (titleById.value[cur] ?? cur) : ''
+    if (a.awaitingPermission)
+      return title ? `⏸ Awaiting authorization for "${title}"` : '⏸ Awaiting authorization'
     return title ? `Working on "${title}"` : 'Preparing…'
   }
   if (a.state === 'done')

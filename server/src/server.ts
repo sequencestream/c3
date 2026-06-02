@@ -387,10 +387,17 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   /**
    * Run one dev turn for the automation orchestrator and resolve once it settles.
    * Observes the runtime via an internal viewer: the last assistant text is the
-   * "completion message" the judge reads; a `turn_end` resolves complete/error; a
-   * `permission_request` means a human is needed, so it aborts the run and resolves
-   * `blocked`. A fresh `sessionId` (null) launches a new dev session; a real
-   * id resumes it (the "继续" continuation) — or feeds a live team lead directly.
+   * "completion message" the judge reads; a `turn_end` resolves complete/error.
+   *
+   * Automation MIRRORS manual execution on permission prompts: a `permission_request`
+   * does NOT abort the run. The prompt is already surfaced to the browser (claude.ts
+   * `send`s it before awaiting), the run stays alive in `awaiting_permission`, and a
+   * watching human answers it there — exactly like a manual session. We only signal
+   * the orchestrator (`onAwaitingPermission`) so it can show an "awaiting authorization"
+   * hint; the turn then settles `complete`/`error` once the human responds. Only a real
+   * abort (automation stopped) resolves `blocked`. A fresh `sessionId` (null) launches a
+   * new dev session; a real id resumes it (the "继续" continuation) — or feeds a live team
+   * lead directly.
    */
   const runDevTurn = (input: RunDevTurnInput): Promise<DevTurnResult> =>
     new Promise<DevTurnResult>((resolveTurn) => {
@@ -404,6 +411,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         for (const e of rt.buffer) if (e.type === 'assistant_text') lastText = e.text
       }
       let settled = false
+      let awaiting = false
       const finish = (r: DevTurnResult): void => {
         if (settled) return
         settled = true
@@ -414,16 +422,26 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         if (e.type === 'assistant_text') {
           lastText = e.text
         } else if (e.type === 'permission_request') {
-          // A human authorization is needed — automation can't answer it. Abort the
-          // (otherwise-hanging) run and report it as blocked.
-          stopRun(rt.sessionId)
-          finish({
-            outcome: 'blocked',
-            sessionId: rt.sessionId,
-            lastMessage: lastText,
-            detail: e.toolName,
-          })
+          // A human authorization is needed. Automation mirrors manual: do NOT abort —
+          // the prompt is already surfaced to the browser and the run stays alive
+          // awaiting the watching human's answer. Just signal the orchestrator so it
+          // can show an "awaiting authorization" hint.
+          if (!awaiting) {
+            awaiting = true
+            input.onAwaitingPermission?.(true)
+          }
+        } else if (e.type === 'tool_result') {
+          // The pending prompt was answered (its tool produced a result) — the run
+          // is moving again. Clear the awaiting hint.
+          if (awaiting) {
+            awaiting = false
+            input.onAwaitingPermission?.(false)
+          }
         } else if (e.type === 'turn_end') {
+          if (awaiting) {
+            awaiting = false
+            input.onAwaitingPermission?.(false)
+          }
           finish({
             outcome: e.reason === 'error' ? 'error' : 'complete',
             sessionId: rt.sessionId,

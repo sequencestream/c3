@@ -135,7 +135,7 @@ dependsOn: string[], lastDevSessionId: string | null, automate: boolean, created
   `Requirement` (status `todo`) only on a confirmed save (`module` defaults to `''` when omitted).
 - **`AutomationState`** — `'idle' | 'running' | 'done' | 'error'`.
 - **`AutomationStatus`** — `{ projectPath, state: AutomationState, currentRequirementId: string | null,
-currentSessionId: string | null, error: string | null, completedIds: string[], startedAt: number | null }`.
+currentSessionId: string | null, awaitingPermission: boolean, error: string | null, completedIds: string[], startedAt: number | null }`.
   The per-project automation-orchestrator status (RM-A1–A9); in-memory, not persisted.
 
 The communication agent's save confirmation reuses `permission_request` /`permission_response`

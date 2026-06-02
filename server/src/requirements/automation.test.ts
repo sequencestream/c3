@@ -456,20 +456,24 @@ describe('automation orchestrator', () => {
     expect(commitMock).not.toHaveBeenCalled()
   })
 
-  it('stops with an error when a dev turn blocks on a permission', async () => {
+  it('does NOT stop on a permission prompt — surfaces "awaiting", then continues when answered', async () => {
     const [r] = insertRequirements(proj, [{ title: 'perm', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
 
-    const { final } = await runToEnd(async () => ({
-      outcome: 'blocked',
-      sessionId: 'sess-x',
-      lastMessage: '',
-      detail: 'Bash',
-    }))
+    // The turn pauses on a permission prompt (signals awaiting), then the watching
+    // human answers in the browser and the turn settles complete — exactly like manual.
+    const { final, emitted } = await runToEnd(async (input) => {
+      input.onAwaitingPermission?.(true)
+      return { outcome: 'complete', sessionId: 'sess-x', lastMessage: '已完成并自验证' }
+    })
 
-    expect(final.state).toBe('error')
-    expect(final.error).toContain('授权')
-    expect(getAutomationStatus(proj).state).toBe('error')
+    // The "awaiting authorization" hint was surfaced while paused…
+    expect(emitted.some((s) => s.awaitingPermission)).toBe(true)
+    // …and cleared once the turn settled; the loop ran to completion (no stop).
+    expect(final.state).toBe('done')
+    expect(final.awaitingPermission).toBe(false)
+    expect(getRequirement(r.id)?.status).toBe('done')
   })
 
   it('stops with an error when commit/push fails', async () => {

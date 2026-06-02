@@ -82,15 +82,16 @@ The live state of a project's automation orchestrator (RM-A1–RM-A9). In-memory
 project; not persisted — a server restart resets it to `idle`). Pushed to every connection as the
 `automation_status` wire event.
 
-| Attribute              | Type                   | Description                                                       |
-| ---------------------- | ---------------------- | ----------------------------------------------------------------- |
-| `projectPath`          | text (path)            | Resolved absolute workspace path (RM-R10)                         |
-| `state`                | enum `AutomationState` | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                  |
-| `currentRequirementId` | id \| null             | The requirement being developed now (null when not running)       |
-| `currentSessionId`     | text \| null           | The current requirement's dev session, for a back-link            |
-| `error`                | text \| null           | Why it stopped abnormally; null unless `state = error` (RM-A6/A7) |
-| `completedIds`         | `id[]`                 | Requirement ids completed (committed + pushed) in this run        |
-| `startedAt`            | timestamp \| null      | When the orchestrator was started; null when never started        |
+| Attribute              | Type                   | Description                                                                                                                     |
+| ---------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `projectPath`          | text (path)            | Resolved absolute workspace path (RM-R10)                                                                                       |
+| `state`                | enum `AutomationState` | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                                                                                |
+| `currentRequirementId` | id \| null             | The requirement being developed now (null when not running)                                                                     |
+| `currentSessionId`     | text \| null           | The current requirement's dev session, for a back-link                                                                          |
+| `awaitingPermission`   | boolean                | True while the current dev turn is paused on a permission prompt awaiting a human answer (RM-A9); cleared when the turn settles |
+| `error`                | text \| null           | Why it stopped abnormally; null unless `state = error` (RM-A6/A7)                                                               |
+| `completedIds`         | `id[]`                 | Requirement ids completed (committed + pushed) in this run                                                                      |
+| `startedAt`            | timestamp \| null      | When the orchestrator was started; null when never started                                                                      |
 
 ## Persisted store (c3.db)
 

@@ -22,6 +22,8 @@ import TaskPanel from './components/TaskPanel.vue'
 import RequirementList from './components/RequirementList.vue'
 import DiscussionList from './components/DiscussionList.vue'
 import AgendaProgress from './components/AgendaProgress.vue'
+import ScheduleList from './components/ScheduleList.vue'
+import ScheduleDetail from './components/ScheduleDetail.vue'
 import { discussionMessageToChat, discussionMessagesToChat } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
@@ -31,6 +33,7 @@ import type {
   Discussion,
   PermissionMode,
   Requirement,
+  Schedule,
   RequirementStatus,
   ServerToClient,
   SessionInfo,
@@ -204,11 +207,12 @@ const availableCommands = ref<SlashCommandInfo[]>([])
 // one more entry here + one branch in the body. The requirement tab's comm
 // session IS the viewed session, so it shares the chat column; only the left
 // requirement list is extra.
-type TabKey = 'console' | 'requirements' | 'discussion'
+type TabKey = 'console' | 'requirements' | 'discussion' | 'schedules'
 const HEADER_TABS: { key: TabKey; label: string }[] = [
   { key: 'console', label: 'Sessions' },
   { key: 'requirements', label: 'Requirements' },
   { key: 'discussion', label: 'Discussions' },
+  { key: 'schedules', label: 'Schedules' },
 ]
 const activeTab = ref<TabKey>('console')
 const requirementsProject = ref<string | null>(null)
@@ -249,10 +253,25 @@ const discussionRunState = ref<Record<string, 'running' | 'paused'>>({})
 // Draft for the discussion composer (human speak / follow-up question).
 const discussionInput = ref('')
 
+// ---- Schedules view (read path) ----
+// Mirrors the discussion view: shows a project's schedule list (left) and the
+// selected schedule's detail (right). No live session involved — R1 is read-only.
+const schedulesProject = ref<string | null>(null)
+const schedules = ref<Record<string, Schedule[]>>({})
+const currentSchedules = computed<Schedule[]>(() =>
+  schedulesProject.value ? (schedules.value[schedulesProject.value] ?? []) : [],
+)
+const selectedScheduleId = ref<string | null>(null)
+const selectedSchedule = computed<Schedule | null>(() => {
+  if (!selectedScheduleId.value || !schedulesProject.value) return null
+  return currentSchedules.value.find((s) => s.id === selectedScheduleId.value) ?? null
+})
+
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.requirementsProject'
 const DISC_PROJECT_KEY = 'c3.discussionsProject'
 const DISC_ID_KEY = 'c3.discussionId'
+const SCHED_PROJECT_KEY = 'c3.schedulesProject'
 const CURRENT_WS_KEY = 'c3.currentWorkspace'
 
 // Read the persisted current-workspace path (null when unset/unavailable).
@@ -283,6 +302,8 @@ function persistViewMode() {
     if (discussionsProject.value) localStorage.setItem(DISC_PROJECT_KEY, discussionsProject.value)
     if (activeDiscussionId.value) localStorage.setItem(DISC_ID_KEY, activeDiscussionId.value)
     else localStorage.removeItem(DISC_ID_KEY)
+    if (schedulesProject.value) localStorage.setItem(SCHED_PROJECT_KEY, schedulesProject.value)
+    else localStorage.removeItem(SCHED_PROJECT_KEY)
   } catch {
     /* localStorage unavailable — non-fatal */
   }
@@ -330,6 +351,26 @@ function maybeRestoreDiscussions(list: WorkspaceInfo[]) {
   }
 }
 
+// After `ready`, re-enter the schedules view if a hard refresh left us there,
+// re-fetching the list so the left panel is populated.
+function maybeRestoreSchedules(list: WorkspaceInfo[]) {
+  let saved: { mode: string | null; proj: string | null }
+  try {
+    saved = {
+      mode: localStorage.getItem(VIEW_MODE_KEY),
+      proj: localStorage.getItem(SCHED_PROJECT_KEY),
+    }
+  } catch {
+    return
+  }
+  if (saved.mode === 'schedules' && saved.proj && list.some((w) => w.path === saved.proj)) {
+    activeTab.value = 'schedules'
+    schedulesProject.value = saved.proj
+    selectedScheduleId.value = null
+    client?.send({ type: 'list_schedules', workspacePath: saved.proj })
+  }
+}
+
 // ---- System settings (agent config) ----
 const settingsOpen = ref(false)
 // Latest server settings; SettingsPanel deep-copies this into its own draft.
@@ -365,6 +406,9 @@ onMounted(() => {
         client?.send({ type: 'list_discussions', projectPath: discussionsProject.value })
         if (activeDiscussionId.value)
           client?.send({ type: 'open_discussion', discussionId: activeDiscussionId.value })
+      } else if (activeTab.value === 'schedules' && schedulesProject.value) {
+        // Re-fetch the schedule list (read path, no live session).
+        client?.send({ type: 'list_schedules', workspacePath: schedulesProject.value })
       } else if (activeWorkspace.value && activeSession.value) {
         client?.send({
           type: 'select_session',
@@ -439,9 +483,10 @@ function handleMessage(msg: ServerToClient) {
       currentWorkspace.value = resolveCurrentWorkspace(readStoredWorkspace(), msg.workspaces)
       persistCurrentWorkspace()
       ensureSessions(currentWorkspace.value)
-      // Restore the requirement / discussion view if a hard refresh left us in it.
+      // Restore the requirement / discussion / schedules view if a hard refresh left us in it.
       maybeRestoreRequirements(msg.workspaces)
       maybeRestoreDiscussions(msg.workspaces)
+      maybeRestoreSchedules(msg.workspaces)
       break
     case 'workspaces': {
       workspaces.value = msg.workspaces
@@ -527,6 +572,9 @@ function handleMessage(msg: ServerToClient) {
       }
       break
     }
+    case 'schedules':
+      schedules.value = { ...schedules.value, [msg.workspacePath]: msg.items }
+      break
     case 'discussion_detail':
       activeDiscussion.value = msg.discussion
       activeDiscussionId.value = msg.discussion.id
@@ -766,6 +814,10 @@ function onSelectTab(key: string) {
     if (currentWorkspace.value) openDiscussions(currentWorkspace.value)
     return
   }
+  if (key === 'schedules') {
+    if (currentWorkspace.value) openSchedules(currentWorkspace.value)
+    return
+  }
   switchToConsoleTab()
 }
 
@@ -871,6 +923,21 @@ function createDiscussion(payload: { type: string; goal: string; context: string
     goal: payload.goal,
     context: payload.context,
   })
+}
+
+// Enter the schedules view for a project: fetch its schedule list and reset the
+// right pane (no schedule selected until the user clicks one). Read path.
+function openSchedules(path: string) {
+  activeTab.value = 'schedules'
+  schedulesProject.value = path
+  selectedScheduleId.value = null
+  persistViewMode()
+  client?.send({ type: 'list_schedules', workspacePath: path })
+}
+
+// Click a schedule in the list: switch the right panel to show its detail.
+function onSelectSchedule(id: string) {
+  selectedScheduleId.value = id
 }
 
 // "Start" in the discussion title bar (draft only): kick off the organizer
@@ -1116,6 +1183,13 @@ function listCommands() {
       @create="createDiscussion"
     />
 
+    <ScheduleList
+      v-if="activeTab === 'schedules' && schedulesProject"
+      :schedules="currentSchedules"
+      :active-id="selectedScheduleId"
+      @select="onSelectSchedule"
+    />
+
     <div class="content">
       <!-- Discussion tab: read-only history of the opened discussion. No input,
            status bar, or task panel — R1 has no live discussion session. -->
@@ -1204,6 +1278,11 @@ function listCommands() {
             {{ activeDiscussion.status === 'completed' ? 'Continue' : 'Speak' }}
           </button>
         </form>
+      </template>
+      <!-- Schedules tab: selected schedule's config summary (read-only). No input,
+           status bar, or task panel — R1 is pure read-path. -->
+      <template v-else-if="activeTab === 'schedules'">
+        <ScheduleDetail :schedule="selectedSchedule" />
       </template>
       <template v-else>
         <SessionTitleBar

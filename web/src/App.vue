@@ -23,7 +23,7 @@ import RequirementList from './components/RequirementList.vue'
 import DiscussionList from './components/DiscussionList.vue'
 import { discussionMessageToChat, discussionMessagesToChat } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
-import { consoleEntryTarget, type SessionRef } from './lib/tab-view'
+import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   AutomationStatus,
@@ -696,19 +696,29 @@ function notifyAwaitingPermission(id: string) {
 }
 
 // ---- Workspace / sidebar actions ----
-// Lazily fetch a workspace's session list (once) for the sidebar.
-function ensureSessions(path: string | null) {
-  if (path && !sessionsByWorkspace.value[path])
-    client?.send({ type: 'list_sessions', workspacePath: path })
+// Force a fresh `list_sessions` for a workspace, bypassing the `ensureSessions`
+// lazy cache. The `sessions` reply merges by `workspacePath`, so this refreshes
+// only the target workspace's slice — other workspaces' caches are untouched.
+function refreshSessions(path: string | null) {
+  if (path) client?.send({ type: 'list_sessions', workspacePath: path })
 }
 
-// Switch the global current workspace; refreshes the sidebar session list.
-// Does not auto-select a session — the chat view stays on the viewed session.
+// Lazily fetch a workspace's session list (once) for the sidebar.
+function ensureSessions(path: string | null) {
+  if (path && !sessionsByWorkspace.value[path]) refreshSessions(path)
+}
+
+// Switch the global current workspace. The view always lands on the 「会话」
+// (console) tab and the target's session list is force-refreshed (a cached,
+// possibly-stale list is re-fetched). Session re-binding stays with
+// `switchToConsoleTab`/`consoleEntryTarget` — no new selection strategy.
 function selectWorkspace(path: string) {
-  if (path === currentWorkspace.value) return
+  const fx = workspaceSwitchEffects(path, currentWorkspace.value)
+  if (fx.noop) return
   currentWorkspace.value = path
   persistCurrentWorkspace()
-  ensureSessions(path)
+  if (fx.refreshSessions) refreshSessions(path)
+  if (fx.enterConsole) switchToConsoleTab()
 }
 
 function addWorkspace(path: string) {

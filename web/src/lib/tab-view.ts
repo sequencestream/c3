@@ -32,3 +32,31 @@ export function consoleEntryTarget(
   }
   return { kind: 'empty' }
 }
+
+/** The side effects a sidebar workspace-switch click should produce. */
+export interface WorkspaceSwitchEffects {
+  /** Target equals the current workspace → ignore the click entirely. */
+  noop: boolean
+  /** Force a fresh `list_sessions` for the target, bypassing the lazy cache. */
+  refreshSessions: boolean
+  /** Flip the view to the 「会话」(console) tab. */
+  enterConsole: boolean
+}
+
+/**
+ * Decide what switching the current workspace does. Switching always lands on
+ * the console tab and force-refreshes the target's session list (so a cached,
+ * possibly-stale list is re-fetched); re-selecting the workspace it already
+ * points at is a no-op. Session re-binding stays with `consoleEntryTarget` — no
+ * new selection strategy here.
+ *
+ * Pure / DOM-free; orchestration (sending `list_sessions`, flipping the tab)
+ * lives in App.vue.
+ */
+export function workspaceSwitchEffects(
+  target: string,
+  current: string | null,
+): WorkspaceSwitchEffects {
+  if (target === current) return { noop: true, refreshSessions: false, enterConsole: false }
+  return { noop: false, refreshSessions: true, enterConsole: true }
+}

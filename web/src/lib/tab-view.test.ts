@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { consoleEntryTarget, type SessionRef } from './tab-view'
+import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './tab-view'
 import type { SessionInfo } from '@ccc/shared/protocol'
 
 const sess = (sessionId: string): SessionInfo => ({
@@ -42,6 +42,32 @@ describe('consoleEntryTarget', () => {
     expect(consoleEntryTarget(remembered, '/ws', list)).toEqual({
       kind: 'select',
       ref: remembered,
+    })
+  })
+})
+
+describe('workspaceSwitchEffects', () => {
+  it('目标 = 当前工作区 → noop,不刷新不切 tab', () => {
+    expect(workspaceSwitchEffects('/ws', '/ws')).toEqual({
+      noop: true,
+      refreshSessions: false,
+      enterConsole: false,
+    })
+  })
+
+  it('切到不同工作区 → 强制刷新 + 落 console tab', () => {
+    expect(workspaceSwitchEffects('/ws-b', '/ws-a')).toEqual({
+      noop: false,
+      refreshSessions: true,
+      enterConsole: true,
+    })
+  })
+
+  it('从无当前工作区切入 → 强制刷新 + 落 console tab', () => {
+    expect(workspaceSwitchEffects('/ws', null)).toEqual({
+      noop: false,
+      refreshSessions: true,
+      enterConsole: true,
     })
   })
 })

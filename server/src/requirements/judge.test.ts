@@ -85,6 +85,55 @@ describe('judge prompt — tightened resume-judgement rules', () => {
     // in_progress is framed as a fallback, not a default-to-continue.
     expect(prompt).toMatch(/in_progress — FALLBACK only/)
   })
+
+  it('frames change evidence as SUPPORTING, judged primarily from the agent report', async () => {
+    askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
+    await judge('实现完成')
+    const prompt = askMock.mock.calls[0][0].prompt
+    // The intro and rules both demote evidence to corroboration, not a precondition.
+    expect(prompt).toMatch(
+      /PRIMARILY from what the agent reports|JUDGED PRIMARILY FROM THE AGENT REPORT/,
+    )
+    expect(prompt).toMatch(/SUPPORTING corroboration|not a precondition|not a hard gate/)
+  })
+
+  it('does NOT treat empty evidence as a stuck signal (the误卡 fix)', async () => {
+    askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
+    await judge('实现完成')
+    const prompt = askMock.mock.calls[0][0].prompt
+    // The old "claims completion but there is no consistent code-change evidence ⇒ stuck" is gone.
+    expect(prompt).not.toMatch(/no consistent code-change evidence at all/)
+    // Empty evidence is explicitly NOT a stuck signal; a concrete report with no diff is done.
+    expect(prompt).toMatch(
+      /Empty evidence alone is NOT a stuck signal|NEVER judge incomplete merely because the evidence is empty/,
+    )
+    // The done rule says a concrete report is enough even with empty evidence.
+    const doneBlock = prompt.slice(prompt.indexOf('- **done'), prompt.indexOf('- **in_progress'))
+    expect(doneBlock).toMatch(/even when the change evidence is empty|enough for `done`/)
+  })
+
+  it('still routes a claimed-done-but-spinning/untrustworthy report (no evidence) to stuck', async () => {
+    askMock.mockResolvedValue('{"verdict":"stuck","reason":"spinning"}')
+    await judge('搞定了(无具体说明)')
+    const prompt = askMock.mock.calls[0][0].prompt
+    const stuckBlock = prompt.slice(prompt.indexOf('- **stuck'), prompt.indexOf('- **done'))
+    // The narrow残留 stuck case: untrustworthy/self-contradictory/spinning report AND no evidence.
+    expect(stuckBlock).toMatch(/untrustworthy|self-contradictory|spinning/)
+  })
+})
+
+describe('judge — evidence is not a hard gate on the verdict', () => {
+  it('returns done on a credible report even when both evidence sources are empty', async () => {
+    // Evidence: { diffStat: '', recentLog: '' } (see judge()). The code must NOT
+    // override a model `done` to stuck just because evidence is empty.
+    askMock.mockResolvedValue('{"verdict":"done","reason":"需求已实现并自测"}')
+    expect((await judge('已实现并自测,需求达成')).verdict).toBe('done')
+  })
+
+  it('still surfaces a human-intervention stuck verdict with empty evidence', async () => {
+    askMock.mockResolvedValue('{"verdict":"stuck","reason":"asked the user"}')
+    expect((await judge('用方案A还是B?')).verdict).toBe('stuck')
+  })
 })
 
 describe('judge parser — safe coercion', () => {

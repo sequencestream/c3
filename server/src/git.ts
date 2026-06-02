@@ -29,25 +29,80 @@ function git(
   })
 }
 
-/**
- * `git diff` summary for the working tree (staged + unstaged), as objective
- * evidence for the completion judge. Empty string when nothing changed or git
- * errors (the judge then leans on the assistant message alone).
- */
-export async function gitDiffStat(projectPath: string): Promise<string> {
-  const r = await git(projectPath, ['-C', projectPath, 'diff', 'HEAD', '--stat'])
-  return r.code === 0 ? r.stdout.trim() : ''
-}
-
-/** Recent commit subjects (oneline), as completion evidence for the judge. */
-export async function gitRecentLog(projectPath: string, n = 5): Promise<string> {
-  const r = await git(projectPath, ['-C', projectPath, 'log', '--oneline', `-${n}`])
-  return r.code === 0 ? r.stdout.trim() : ''
-}
-
 /** A `.git` marker (dir, file, or worktree pointer) makes `dir` a repo root. */
 function isGitRepo(dir: string): boolean {
   return existsSync(join(dir, '.git'))
+}
+
+/**
+ * Working-tree change summary for one repo: `git diff HEAD --stat` for tracked
+ * edits PLUS the list of untracked new files (`git ls-files --others`), which a
+ * bare `diff HEAD` omits — a dev agent creating new-but-uncommitted files is real
+ * evidence the judge must see. Read-only (never mutates the index). Empty on a
+ * clean tree or git error.
+ */
+async function diffStatRepo(repo: string): Promise<string> {
+  const diff = await git(repo, ['-C', repo, 'diff', 'HEAD', '--stat'])
+  const others = await git(repo, ['-C', repo, 'ls-files', '--others', '--exclude-standard'])
+  const parts: string[] = []
+  if (diff.code === 0 && diff.stdout.trim()) parts.push(diff.stdout.trim())
+  if (others.code === 0 && others.stdout.trim()) {
+    const files = others.stdout
+      .trim()
+      .split('\n')
+      .map((f) => ` ${f} (new file, untracked)`)
+      .join('\n')
+    parts.push(files)
+  }
+  return parts.join('\n')
+}
+
+/** `git log --oneline -n` for one repo; empty on error. */
+async function recentLogRepo(repo: string, n: number): Promise<string> {
+  const r = await git(repo, ['-C', repo, 'log', '--oneline', `-${n}`])
+  return r.code === 0 ? r.stdout.trim() : ''
+}
+
+/**
+ * Collect each affected sub-repo's evidence and label it with the repo's path
+ * relative to `root`, so the judge sees WHICH repo changed in a multi-repo
+ * workspace. Repos with no output are dropped; the surviving blocks are joined.
+ */
+async function collectFromSubRepos(
+  root: string,
+  perRepo: (repo: string) => Promise<string>,
+): Promise<string> {
+  const parts: string[] = []
+  for (const repo of discoverSubRepos(root)) {
+    const out = await perRepo(repo)
+    if (out) parts.push(`# 仓库 ${relative(root, repo) || repo}\n${out}`)
+  }
+  return parts.join('\n\n')
+}
+
+/**
+ * `git diff` summary as objective evidence for the completion judge.
+ *
+ * **Multi-repo aware, mirroring {@link commitAndPush}:** if `projectPath` is
+ * itself a repo, report that one repo (classic path); otherwise the workspace
+ * root holds repos in subdirectories — sum each sub-repo's diff, labelled by repo.
+ * This stops evidence from being permanently empty just because the root isn't a
+ * git repo and the changes live in a sub-repo. Empty string when nothing changed
+ * or git errors (the judge then leans on the assistant message alone).
+ */
+export async function gitDiffStat(projectPath: string): Promise<string> {
+  if (isGitRepo(projectPath)) return diffStatRepo(projectPath)
+  return collectFromSubRepos(projectPath, diffStatRepo)
+}
+
+/**
+ * Recent commit subjects (oneline) as completion evidence for the judge.
+ * **Multi-repo aware** like {@link gitDiffStat}: a root repo reports its own log;
+ * otherwise each sub-repo's recent log is summed and labelled by repo.
+ */
+export async function gitRecentLog(projectPath: string, n = 5): Promise<string> {
+  if (isGitRepo(projectPath)) return recentLogRepo(projectPath, n)
+  return collectFromSubRepos(projectPath, (repo) => recentLogRepo(repo, n))
 }
 
 // Heavy / irrelevant directories we never descend into while hunting for repos.

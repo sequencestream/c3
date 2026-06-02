@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { commitAndPush } from './git.js'
+import { commitAndPush, gitDiffStat, gitRecentLog } from './git.js'
 
 // These tests drive the REAL `git` CLI against throwaway repos in a temp dir, with
 // bare repos as push targets — so they exercise discovery + per-repo commit/push
@@ -160,5 +160,46 @@ describe('commitAndPush — repository discovery & per-repo commit', () => {
     expect(res.ok).toBe(false)
     expect(res.committed).toBe(false)
     expect(res.error).toContain('未找到 git 仓库')
+  })
+})
+
+describe('gitDiffStat / gitRecentLog — multi-repo aware evidence', () => {
+  it('root repo: reports its own diff and recent log (single-repo path)', async () => {
+    initRepo(work, 'root')
+    // `git diff HEAD --stat` only shows TRACKED changes — modify the tracked README.
+    writeFileSync(join(work, 'README.md'), 'init\nedited\n')
+
+    expect(await gitDiffStat(work)).toContain('README.md')
+    expect(await gitRecentLog(work)).toContain('init')
+  })
+
+  it('subdir repos: sums each affected sub-repo, labelled by repo path — not empty just because root has no .git', async () => {
+    const api = join(work, 'packages', 'api')
+    const ui = join(work, 'packages', 'ui')
+    initRepo(api, 'api')
+    initRepo(ui, 'ui')
+    // Uncommitted (tracked) change in api; a self-commit (clean tree) in ui.
+    writeFileSync(join(api, 'README.md'), 'init\nedited\n')
+    writeFileSync(join(ui, 'app.ts'), 'export const u = 1\n')
+    run('git', ['add', '-A'], ui)
+    run('git', ['commit', '-q', '-m', 'feat: ui self-commit'], ui)
+
+    const diff = await gitDiffStat(work)
+    // Root isn't a git repo, yet the sub-repo change surfaces, labelled by repo.
+    expect(diff).not.toBe('')
+    expect(diff).toContain('README.md')
+    expect(diff).toContain('packages/api') //归属仓库标注
+
+    const log = await gitRecentLog(work)
+    expect(log).toContain('feat: ui self-commit')
+    expect(log).toContain('packages/ui') // 归属仓库标注
+  })
+
+  it('no git repo anywhere: evidence is empty (the judge leans on the message)', async () => {
+    mkdirSync(join(work, 'src'), { recursive: true })
+    writeFileSync(join(work, 'src', 'note.txt'), 'hello\n')
+
+    expect(await gitDiffStat(work)).toBe('')
+    expect(await gitRecentLog(work)).toBe('')
   })
 })

@@ -24,7 +24,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../db.js'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schedules (
@@ -50,10 +50,19 @@ CREATE TABLE IF NOT EXISTS schedule_execution_logs (
   finished_at   INTEGER,
   exit_code     INTEGER,
   output        TEXT NOT NULL DEFAULT '',
-  error         TEXT
+  error         TEXT,
+  status        TEXT NOT NULL DEFAULT 'running'
 );
 CREATE INDEX IF NOT EXISTS idx_sch_exec_schedule ON schedule_execution_logs(schedule_id);
 `
+
+// Migration functions — run after the base schema to evolve the database across versions.
+function runMigrations(d: Db, currentVersion: number): void {
+  // v1 → v2: add status column to schedule_execution_logs
+  if (currentVersion < 2) {
+    d.exec(`ALTER TABLE schedule_execution_logs ADD COLUMN status TEXT NOT NULL DEFAULT 'running'`)
+  }
+}
 
 let schemaReady = false
 
@@ -63,6 +72,8 @@ function db(): Db | null {
   if (!d) return null
   if (!schemaReady) {
     d.exec(SCHEMA)
+    const current = d.get<{ user_version: number }>('PRAGMA user_version')?.['user_version'] ?? 0
+    runMigrations(d, current)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -126,6 +137,7 @@ interface ExecutionLogRow {
   exit_code: number | null
   output: string
   error: string | null
+  status: string | null
 }
 
 /** Parse a JSON-array column to a string list; tolerate null/blank/corrupt → `[]`. */
@@ -171,6 +183,7 @@ function toExecutionLog(r: ExecutionLogRow): ScheduleExecutionLog {
     exitCode: r.exit_code,
     output: r.output,
     error: r.error,
+    status: r.status,
   }
 }
 
@@ -287,27 +300,110 @@ export function getScheduleDetail(id: string): {
   return { schedule, logs }
 }
 
+// ---- Scheduler queries ----
+
+/** Query all active schedules whose next_run_at is due (<= now). */
+export function getDueSchedules(now: number): Schedule[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<ScheduleRow>(
+      'SELECT * FROM schedules WHERE status = ? AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC',
+      'active',
+      now,
+    )
+    .map(toSchedule)
+}
+
+/** Update a schedule's next_run_at after a successful execution. */
+export function updateNextRunAt(id: string, nextRunAt: number | null): void {
+  const d = requireDb()
+  d.run('UPDATE schedules SET next_run_at=?, updated_at=? WHERE id=?', nextRunAt, Date.now(), id)
+}
+
+/**
+ * Pause all schedules under a given workspace path.
+ * Used by archiver.ts when a workspace is removed.
+ */
+export function pauseAllForWorkspace(workspacePath: string): void {
+  const d = requireDb()
+  const abs = resolve(workspacePath)
+  d.run(
+    'UPDATE schedules SET status=?, updated_at=? WHERE workspace_path=? AND status=?',
+    'paused',
+    Date.now(),
+    abs,
+    'active',
+  )
+}
+
+/**
+ * Update an execution log's fields (status, output, error, exit_code, finished_at).
+ * Only provided fields are changed.
+ */
+export function updateExecutionLog(
+  id: string,
+  patch: {
+    status?: string
+    output?: string
+    error?: string | null
+    exitCode?: number | null
+    finishedAt?: number | null
+  },
+): void {
+  const d = requireDb()
+  const sets: string[] = []
+  const params: (string | number | null)[] = []
+
+  if (patch.status !== undefined) {
+    sets.push('status=?')
+    params.push(patch.status)
+  }
+  if (patch.output !== undefined) {
+    sets.push('output=?')
+    params.push(patch.output)
+  }
+  if (patch.error !== undefined) {
+    sets.push('error=?')
+    params.push(patch.error)
+  }
+  if (patch.exitCode !== undefined) {
+    sets.push('exit_code=?')
+    params.push(patch.exitCode)
+  }
+  if (patch.finishedAt !== undefined) {
+    sets.push('finished_at=?')
+    params.push(patch.finishedAt)
+  }
+
+  if (sets.length === 0) return
+  params.push(id)
+  d.run(`UPDATE schedule_execution_logs SET ${sets.join(', ')} WHERE id=?`, ...params)
+}
+
 // ---- Execution logs ----
 
-/** Append an execution log entry for a schedule. */
+/** Append an execution log entry for a schedule with `running` status. */
 export function appendExecutionLog(input: Omit<ScheduleExecutionLog, 'id'>): ScheduleExecutionLog {
   const d = requireDb()
   const id = randomUUID()
+  const now = Date.now()
   d.run(
     `INSERT INTO schedule_execution_logs
-       (id, schedule_id, started_at, finished_at, exit_code, output, error)
-     VALUES (?,?,?,?,?,?,?)`,
+       (id, schedule_id, started_at, finished_at, exit_code, output, error, status)
+     VALUES (?,?,?,?,?,?,?,?)`,
     id,
     input.scheduleId,
     input.startedAt,
-    input.finishedAt,
-    input.exitCode,
-    input.output,
-    input.error,
+    input.finishedAt ?? null,
+    input.exitCode ?? null,
+    input.output ?? '',
+    input.error ?? null,
+    input.status ?? 'running',
   )
   // Refresh the parent schedule's updated_at so list ordering reflects activity.
-  d.run('UPDATE schedules SET updated_at=? WHERE id=?', Date.now(), input.scheduleId)
-  return { id, ...input }
+  d.run('UPDATE schedules SET updated_at=? WHERE id=?', now, input.scheduleId)
+  return { id, ...input, status: input.status ?? 'running' }
 }
 
 /** All execution logs for a schedule, most-recently-started first. */

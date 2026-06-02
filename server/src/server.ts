@@ -101,7 +101,18 @@ import {
   deleteSchedule as deleteScheduleStore,
   getScheduleDetail,
   listExecutionLogs,
+  appendExecutionLog,
+  getDueSchedules,
+  updateNextRunAt,
+  updateExecutionLog,
 } from './schedules/store.js'
+import {
+  startScheduler,
+  stopScheduler,
+  triggerRunNow,
+  setExecutionStore,
+} from './schedules/scheduler.js'
+import { onWorkspaceRemoved } from './schedules/archiver.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
 import { reconcileInProgress } from './requirements/reconcile.js'
@@ -744,6 +755,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               const abs = resolve(msg.path)
               // Tear down any background runs under this workspace.
               removeRuntimesForWorkspace(abs)
+              // Pause all schedules under this workspace (SCH-R1).
+              if (isScheduleStoreAvailable()) {
+                onWorkspaceRemoved(abs)
+              }
               removeWorkspace(abs)
               if (viewing && getRuntime(viewing) === undefined) viewing = null
               sendWorkspaces(ws)
@@ -1543,6 +1558,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               })
               return
             }
+
+            case 'schedule_run_now': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              void triggerRunNow(msg.scheduleId).then(() => {
+                const s = getSchedule(msg.scheduleId)
+                if (s) broadcastSchedules(s.workspacePath)
+              })
+              return
+            }
           }
         },
         onClose() {
@@ -1596,6 +1623,44 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     if (opts.dev) console.log(`[c3] dev mode — open Vite at http://localhost:5173`)
   })
   injectWebSocket(server)
+
+  // Start the schedule scheduler after the server is ready.
+  if (isScheduleStoreAvailable()) {
+    setExecutionStore({
+      getDueSchedules,
+      getSchedule,
+      updateNextRunAt,
+      updateSchedule: (id: string, patch: { status?: string }) => {
+        updateScheduleStore(id, {
+          status: patch.status as import('@ccc/shared/protocol').ScheduleStatus | undefined,
+        })
+      },
+      appendExecutionLog: (input) => {
+        return appendExecutionLog({
+          scheduleId: input.scheduleId,
+          startedAt: input.startedAt,
+          finishedAt: input.finishedAt,
+          exitCode: input.exitCode,
+          output: input.output ?? '',
+          error: input.error,
+          status: 'running',
+        })
+      },
+      updateExecutionLog,
+      broadcast: broadcastSchedules,
+    })
+    startScheduler()
+  }
+
+  // Graceful shutdown: stop the scheduler on process termination.
+  const shutdown = async () => {
+    console.log('[c3] shutting down...')
+    await stopScheduler(30_000)
+    server.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 }
 
 function errMsg(err: unknown): string {

@@ -512,6 +512,8 @@ export interface ScheduleExecutionLog {
   exitCode: number | null
   output: string
   error: string | null
+  /** Current status: 'running' | 'success' | 'failed' | 'cancelled' */
+  status: string | null
 }
 
 // Client → Server
@@ -666,6 +668,8 @@ export type ClientToServer =
   | { type: 'delete_schedule'; scheduleId: string }
   /** Get full schedule detail with execution logs; server replies with `schedule_detail`. */
   | { type: 'get_schedule_detail'; scheduleId: string }
+  /** Manual trigger: execute a schedule immediately (outside normal tick). */
+  | { type: 'schedule_run_now'; scheduleId: string }
   | { type: 'ping' }
 
 // Server → Client

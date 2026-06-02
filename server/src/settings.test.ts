@@ -8,6 +8,7 @@ import {
   getDevSkill,
   getMaxRoundsPerStage,
   saveSettings,
+  normalizeDegradationChain,
   resetSettingsCacheForTests,
   DEFAULT_ROUNDS_PER_STAGE,
   MIN_ROUNDS_PER_STAGE,
@@ -109,5 +110,49 @@ describe('getMaxRoundsPerStage normalization', () => {
     expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
     saveWithMaxRounds(-3)
     expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+  })
+})
+
+const AGENTS: import('@ccc/shared/protocol').AgentConfig[] = [
+  { id: 'sys', name: 'System', baseUrl: '', apiKey: '', model: '' },
+  { id: 'a1', name: 'Agent One', baseUrl: 'https://one.example.com', apiKey: 'key1', model: '' },
+  { id: 'a2', name: 'Agent Two', baseUrl: 'https://two.example.com', apiKey: 'key2', model: '' },
+  { id: 'a3', name: 'Agent Three', baseUrl: '', apiKey: '', model: 'claude-opus-4' },
+]
+
+describe('normalizeDegradationChain', () => {
+  it('returns undefined for undefined input', () => {
+    expect(normalizeDegradationChain(undefined, AGENTS)).toBeUndefined()
+  })
+
+  it('returns undefined for empty array', () => {
+    expect(normalizeDegradationChain([], AGENTS)).toBeUndefined()
+  })
+
+  it('returns undefined when no known agent ids are given', () => {
+    expect(normalizeDegradationChain(['unknown-id', 'also-unknown'], AGENTS)).toBeUndefined()
+  })
+
+  it('filters out unknown ids and keeps known ones in order', () => {
+    const result = normalizeDegradationChain(['unknown', 'a2', 'also-unknown', 'a1'], AGENTS)
+    expect(result).toEqual(['a2', 'a1'])
+  })
+
+  it('strips duplicate ids (keeps first occurrence)', () => {
+    const result = normalizeDegradationChain(['a1', 'a2', 'a1', 'a3', 'a2'], AGENTS)
+    expect(result).toEqual(['a1', 'a2', 'a3'])
+  })
+
+  it('ignores non-string entries', () => {
+    const result = normalizeDegradationChain(
+      ['a1', null, 123, undefined, 'a2'] as unknown as string[],
+      AGENTS,
+    )
+    expect(result).toEqual(['a1', 'a2'])
+  })
+
+  it('accepts the system agent id as a valid chain entry', () => {
+    const result = normalizeDegradationChain(['sys', 'a1'], AGENTS)
+    expect(result).toEqual(['sys', 'a1'])
   })
 })

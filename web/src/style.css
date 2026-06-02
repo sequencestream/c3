@@ -1268,6 +1268,39 @@ main {
   padding: 0;
   font-size: var(--fs-caption);
 }
+/* Shiki 高亮:Shiki 输出的 <pre class="shiki"> 已被剥除 inline style,沿用上面的 .md-body pre 配色。
+   token 配色全部绑 --c-*,随 [data-theme] 暗/亮主题自动切换(见 lib/highlight.ts 的哨兵→class 映射)。 */
+.md-body pre.shiki {
+  background: var(--c-code);
+}
+.md-body .shiki .line {
+  display: inline;
+}
+.md-body .shiki .t-comment {
+  color: var(--c-text-disabled);
+  font-style: italic;
+}
+.md-body .shiki .t-keyword {
+  color: var(--c-primary-2);
+}
+.md-body .shiki .t-string {
+  color: var(--c-success);
+}
+.md-body .shiki .t-function {
+  color: var(--c-primary);
+}
+.md-body .shiki .t-number {
+  color: var(--c-warning);
+}
+.md-body .shiki .t-type {
+  color: var(--c-purple-text);
+}
+.md-body .shiki .t-variable {
+  color: var(--c-text);
+}
+.md-body .shiki .t-punctuation {
+  color: var(--c-text-muted);
+}
 /* 表格：边框 + 斑马纹 */
 .md-body table {
   border-collapse: collapse;

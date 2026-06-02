@@ -139,6 +139,18 @@ export interface SystemSettings {
   /** Per-stage round cap for multi-agent discussions. Minimum 8 (lower values are
    * clamped up); an unset/invalid value falls back to a sane default (≥ 8). */
   maxRoundsPerStage?: number
+  /**
+   * Ordered list of agent ids defining the degradation/fallback chain.
+   * When a session's turn encounters a rate-limit / session-limit / auth /
+   * connection error, the server tries agents in this order until one succeeds
+   * or all fail. Absent ⇒ no degradation (current behaviour: single agent,
+   * error ends the turn immediately).
+   * When present, the first entry is tried first on error; subsequent entries
+   * are fallbacks. After normalisation each id references an existing agent in
+   * `agents`; unknown ids are filtered out. An empty chain (all ids filtered)
+   * is treated as absent (no degradation).
+   */
+  degradationChain?: string[]
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */
@@ -698,6 +710,29 @@ export type ServerToClient =
    * Emitted once, into the session buffer, so reconnecting viewers also see it.
    */
   | { type: 'team_upgraded' }
+  /**
+   * One agent in the degradation chain failed (rate-limit / auth / connection
+   * error). Emitted into the session buffer between the original user_text and
+   * the next attempt's first event, so the viewer sees why the first agent was
+   * skipped. Followed by either the next agent's output or `all_agents_failed`.
+   */
+  | {
+      type: 'agent_failed'
+      agentId: string
+      agentName: string
+      error: string
+    }
+  /**
+   * Every agent in the degradation chain has been exhausted — none could
+   * complete the current turn. The session then emits `turn_end { reason:
+   * 'error' }` with a combined message. This is the terminal failure banner
+   * for the current turn (the session stays alive for a manual retry).
+   */
+  | {
+      type: 'all_agents_failed'
+      agents: Array<{ agentId: string; agentName: string; error: string }>
+      message: string
+    }
   /** A requested operation failed (bad path, missing session, etc.). */
   | { type: 'error'; message: string }
   | { type: 'pong' }

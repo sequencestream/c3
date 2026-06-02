@@ -114,6 +114,37 @@ export const registerPermissionResolver = {
 }
 
 /**
+ * Heuristic check: does this error message describe a transient / degradable
+ * failure that warrants switching to a different agent? Matches rate-limit,
+ * session-limit, authentication, and connection errors — the kinds of errors
+ * that a different API key or base URL might avoid. A regular tool-execution
+ * or model-response error is NOT degradable (the agent itself is fine).
+ */
+export function isDegradableError(message: string): boolean {
+  const lower = message.toLowerCase()
+  // Rate limit (HTTP 429, SDK rate-limit messages)
+  if (/rate\s*limit|rate_limit|429|too\s*many\s*requests/i.test(lower)) return true
+  // Session limit
+  if (/session\s*limit|session_limit|concurrent\s*session/i.test(lower)) return true
+  // Authentication / token errors
+  if (/401|auth|unauthorized|authentication|invalid\s*api.?key|invalid\s*token/i.test(lower))
+    return true
+  // Connection / network errors
+  if (
+    /econnrefused|econnreset|etimedout|ehostunreach|network|connection\s*(refused|reset|failed|error)/i.test(
+      lower,
+    )
+  )
+    return true
+  // Server-side temporary errors
+  if (/5\d{2}|service\s*unavailable|internal\s*server\s*error|bad\s*gateway/i.test(lower))
+    return true
+  // API-level exhaustion / quota
+  if (/quota|exhausted|insufficient\s*quota/i.test(lower)) return true
+  return false
+}
+
+/**
  * Inject `AskUserQuestion` answers into the tool input so the SDK echoes them as
  * the tool result (verified: the tool reads a pre-supplied `answers` map keyed by
  * question text). This is a deliberate, AskUserQuestion-only exception to the
@@ -258,6 +289,17 @@ export interface RunOptions {
    * — the lead process stays alive until the run is aborted (user stop).
    */
   onTeam?: () => void
+  /**
+   * Optional callback invoked when the run encounters a degradable error
+   * (rate-limit, session-limit, auth, or connection failure). The caller
+   * may then retry with a different agent configuration.
+   * When this callback fires, the run does NOT emit a terminal `turn_end` —
+   * it returns normally so the caller can decide to retry. The caller is
+   * responsible for emitting the appropriate events.
+   * Absent ⇒ the error is treated as final and a `turn_end { error }` is
+   * emitted as usual.
+   */
+  onDegradableError?: (error: string) => void
 }
 
 /**
@@ -358,6 +400,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     onStart,
     onSessionId,
     onTeam,
+    onDegradableError,
   } = opts
   let reportedSessionId = false
   // Once a team tool is seen the lead stays alive past `result` (streaming input
@@ -695,10 +738,22 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     }
   } catch (err) {
     if (!signal.aborted) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      // Degradable error (rate-limit / session-limit / auth / connection):
+      // signal the caller and skip the terminal `turn_end` so the caller can
+      // retry with a different agent configuration.
+      if (onDegradableError && isDegradableError(errorMsg)) {
+        // Prevent the `finally` block from emitting a spurious turn_end.
+        sawResult = true
+        onDegradableError(errorMsg)
+        // Return without emitting turn_end — the caller will retry or
+        // emit the terminal event itself.
+        return
+      }
       send({
         type: 'turn_end',
         reason: 'error',
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMsg,
       })
     }
   } finally {

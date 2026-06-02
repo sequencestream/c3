@@ -41,6 +41,9 @@ import {
   loadSettings,
   saveSettings,
   resolveSessionLaunch,
+  resolveAgent,
+  launchForAgent,
+  getDegradationChain,
   getDefaultMode,
   getDevSkill,
 } from './settings.js'
@@ -309,62 +312,163 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   ): Promise<void> => {
     const workspacePath = rt.workspacePath
     let runId = rt.sessionId
-    const resume = runId.startsWith(PENDING_SESSION_PREFIX) ? undefined : runId
-    const launch = resolveSessionLaunch(runId)
     const isRequirement = rt.kind === 'requirement'
 
-    const abort = new AbortController()
-    rt.run = { abort, handle: null }
-    // Echo the prompt into the stream so switch-back replay shows it (for a
-    // seeded run this surfaces the injected first message, by design).
+    // Build the ordered list of agent configs to try.
+    // Entry 0 is always the session's current agent (bound or default).
+    // Subsequent entries come from the degradation chain (if configured).
+    const chain = getDegradationChain()
+    const firstLaunch = resolveSessionLaunch(runId)
+    const agentsToTry: Array<{
+      agentId: string
+      envOverrides?: Record<string, string>
+      model?: string
+    }> = [firstLaunch]
+    if (chain && chain.length > 0) {
+      for (const id of chain) {
+        // Skip the first agent (already in agentsToTry[0]) and self-references.
+        if (id !== firstLaunch.agentId && !agentsToTry.some((a) => a.agentId === id)) {
+          const agent = resolveAgent(id)
+          agentsToTry.push({ agentId: agent.id, ...launchForAgent(agent) })
+        }
+      }
+    }
+    const hasDegradation = agentsToTry.length > 1
+
+    // Single AbortController for the entire cycle. When the user hits stop,
+    // this is aborted, which cascades to the current attempt via each
+    // attempt's per-attempt controller.
+    // IMPORTANT: we set rt.run.abort = cycleAbort so stopRun() kills the
+    // entire cycle, not just one attempt.
+    const cycleAbort = new AbortController()
+    rt.run = { abort: cycleAbort, handle: null }
+
+    // Echo the prompt into the stream once (first attempt only).
     emit(runId, { type: 'user_text', text: prompt })
-    setStatus(runId, 'running')
+
+    const failedAgents: Array<{ agentId: string; agentName: string; error: string }> = []
+    let success = false
+    // True once the first attempt's onSessionId has fired (so retry
+    // attempts skip cbs.onSessionId — no duplicate session_started).
+    let hasBound = false
+
     try {
-      await runClaude({
-        prompt,
-        cwd: workspacePath,
-        signal: abort.signal,
-        // Requirement chats are pinned to `default` so the gateway always runs.
-        permissionMode: isRequirement ? 'default' : rt.mode,
-        resume,
-        envOverrides: launch.envOverrides,
-        model: launch.model,
-        currentAgentId: launch.agentId,
-        ...(isRequirement
-          ? {
-              appendSystemPrompt: REQUIREMENT_AGENT_PROMPT,
-              disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
-              mcpServers: createRequirementMcpServer(workspacePath, broadcastRequirements),
-              gate: 'requirement' as const,
-            }
-          : {}),
-        send: (m) => emit(runId, m),
-        onStart: (h) => {
-          if (rt.run) rt.run.handle = h
-        },
-        onSessionId: (sid) => {
-          if (runId !== sid) {
-            const prev = runId
-            bindPending(prev, sid)
-            runId = sid
-            cbs.onSessionId?.(prev, sid)
-            broadcastStatuses()
-          }
-        },
-        onTeam: () => {
-          // The run became a persistent agent team: the lead process now stays
-          // alive across turns. Mark the runtime (so `turn_end` holds at `team`
-          // and the next prompt feeds the live run), tell the client once, and
-          // surface the team status.
-          rt.team = true
-          emit(runId, { type: 'team_upgraded' })
-          setStatus(runId, 'team')
-        },
-      })
+      for (let attempt = 0; attempt < agentsToTry.length; attempt++) {
+        if (cycleAbort.signal.aborted) break
+
+        const agentCfg = agentsToTry[attempt]
+
+        // Emit agent_failed for the PREVIOUS attempt before starting the next.
+        if (attempt > 0 && failedAgents.length > 0) {
+          const prev = failedAgents[failedAgents.length - 1]
+          emit(runId, {
+            type: 'agent_failed',
+            agentId: prev.agentId,
+            agentName: prev.agentName,
+            error: prev.error,
+          })
+        }
+
+        // Set up per-attempt abort. The cycleAbort listener cascades user
+        // stop to this attempt.
+        const attemptAbort = new AbortController()
+        rt.run = { abort: cycleAbort, handle: null }
+        const onCycleAbort = (): void => attemptAbort.abort()
+        cycleAbort.signal.addEventListener('abort', onCycleAbort, { once: true })
+
+        setStatus(runId, 'running')
+
+        let degraded = false
+
+        try {
+          await runClaude({
+            prompt,
+            cwd: workspacePath,
+            signal: attemptAbort.signal,
+            // Requirement chats are pinned to `default` so the gateway always runs.
+            permissionMode: isRequirement ? 'default' : rt.mode,
+            // On retry: never resume the original SDK session (it's dead after
+            // a rate-limit/auth error). Each attempt gets a fresh SDK session.
+            resume:
+              attempt === 0
+                ? runId.startsWith(PENDING_SESSION_PREFIX)
+                  ? undefined
+                  : runId
+                : undefined,
+            envOverrides: agentCfg.envOverrides,
+            model: agentCfg.model,
+            currentAgentId: agentCfg.agentId,
+            ...(isRequirement
+              ? {
+                  appendSystemPrompt: REQUIREMENT_AGENT_PROMPT,
+                  disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
+                  mcpServers: createRequirementMcpServer(workspacePath, broadcastRequirements),
+                  gate: 'requirement' as const,
+                }
+              : {}),
+            send: (m) => emit(runId, m),
+            onStart: (h) => {
+              if (rt.run) rt.run.handle = h
+            },
+            onSessionId: (sid) => {
+              if (runId !== sid) {
+                const prev = runId
+                // First binding (pending→real): call bindPending + external cb.
+                // Retry binding (already bound): skip bindPending + external cb
+                // to avoid duplicate `session_started` on the wire. The new SDK
+                // session id is ephemeral — we don't track it for resume.
+                if (prev.startsWith(PENDING_SESSION_PREFIX)) {
+                  bindPending(prev, sid)
+                  runId = sid
+                  if (!hasBound) {
+                    hasBound = true
+                    cbs.onSessionId?.(prev, sid)
+                  }
+                } else if (!hasBound) {
+                  // First binding on a non-pending session (e.g. resume flow).
+                  // This path runs once per launchRun.
+                  hasBound = true
+                  cbs.onSessionId?.(prev, sid)
+                }
+                // If hasBound is already true (retry), skip everything — the
+                // runtime keeps its original Map key.
+                broadcastStatuses()
+              }
+            },
+            onTeam: () => {
+              // The run became a persistent agent team: the lead process now stays
+              // alive across turns. Mark the runtime (so `turn_end` holds at `team`
+              // and the next prompt feeds the live run), tell the client once, and
+              // surface the team status.
+              rt.team = true
+              emit(runId, { type: 'team_upgraded' })
+              setStatus(runId, 'team')
+            },
+            onDegradableError: (errMsg) => {
+              degraded = true
+              const agent = resolveAgent(agentCfg.agentId)
+              failedAgents.push({ agentId: agent.id, agentName: agent.name, error: errMsg })
+            },
+          })
+        } finally {
+          cycleAbort.signal.removeEventListener('abort', onCycleAbort)
+        }
+
+        if (cycleAbort.signal.aborted) break
+        if (degraded) {
+          // Clear any pending permission prompts from the failed attempt.
+          clearPending(runId)
+          continue // try next agent
+        }
+
+        // Success!
+        success = true
+        break
+      }
     } catch (err) {
       emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
     } finally {
-      if (rt.run?.abort === abort) rt.run = null
+      if (rt.run) rt.run = null
       // The run is fully over (team sessions only reach here on user stop), so the
       // team is no longer live — clear the flag and fall back to idle.
       rt.team = false
@@ -372,13 +476,29 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // longer be answered. Clearing keeps a stale id from holding a *future* turn
       // (same runtime, resumed session) at awaiting_permission.
       clearPending(runId)
+
+      // On chain exhaustion: emit terminal failure banner + turn_end error.
+      // Skip this if the user stopped the cycle mid-degradation (finalizeRun
+      // will emit turn_end { complete } for the stop).
+      if (!success && hasDegradation && failedAgents.length > 0 && !cycleAbort.signal.aborted) {
+        emit(runId, {
+          type: 'all_agents_failed',
+          agents: failedAgents,
+          message: `All ${failedAgents.length} agent(s) failed. Last error: ${failedAgents[failedAgents.length - 1].error}`,
+        })
+        emit(runId, {
+          type: 'turn_end',
+          reason: 'error',
+          error: `All agents failed: ${failedAgents[failedAgents.length - 1].error}`,
+        })
+      } else if (!success && !cycleAbort.signal.aborted && !hasDegradation) {
+        // Single-attempt (no degradation) failure: the runClaude internal
+        // catch already emitted turn_end { error }. This branch covers
+        // the case where runClaude threw unexpectedly.
+      }
+
       // Authoritative terminal-state backstop. The run is fully over; guarantee a
-      // terminal `turn_end` is broadcast and the session settles to `idle` — no
-      // longer only when `wasAborted`. This also covers a run loop that ended
-      // without a clean `result` (the SDK iterator finished or the Claude process
-      // exited mid-turn): `finalizeRun` synthesizes the missing `turn_end` so the
-      // viewer's input unlocks and its pending-send queue can flush. Idempotent:
-      // a run that already emitted `turn_end` only gets the `idle` settle.
+      // terminal `turn_end` is broadcast and the session settles to `idle`.
       finalizeRun(runId)
       await cbs.onSettled?.(workspacePath)
     }

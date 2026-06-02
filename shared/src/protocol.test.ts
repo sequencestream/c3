@@ -62,6 +62,12 @@ describe('protocol wire format', () => {
     { type: 'turn_end', reason: 'error', error: 'boom' },
     { type: 'error', message: 'bad path' },
     { type: 'pong' },
+    { type: 'agent_failed', agentId: 'sys', agentName: 'System', error: 'rate limit' },
+    {
+      type: 'all_agents_failed',
+      agents: [{ agentId: 'sys', agentName: 'System', error: 'rate limit' }],
+      message: 'All agents failed: rate limit',
+    },
   ]
 
   it('round-trips every client message through JSON unchanged', () => {

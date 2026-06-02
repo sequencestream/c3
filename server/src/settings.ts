@@ -101,6 +101,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const showToolSessions = raw?.showToolSessions === true
   const devSkill = normalizeDevSkill(raw?.devSkill)
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
+  const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
   return {
     agents,
     defaultAgentId,
@@ -110,6 +111,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     showToolSessions,
     devSkill,
     maxRoundsPerStage,
+    degradationChain,
   }
 }
 
@@ -122,6 +124,30 @@ function normalizeMaxRoundsPerStage(raw: unknown): number {
   const n = typeof raw === 'number' ? raw : NaN
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_ROUNDS_PER_STAGE
   return Math.max(MIN_ROUNDS_PER_STAGE, Math.floor(n))
+}
+
+/**
+ * Normalise the degradation chain: keep only ids that reference an existing
+ * agent in `agents`, preserve order, and strip duplicates. If the result is
+ * empty (nothing was valid, or the input was absent/empty) return undefined ⇒
+ * no degradation (current behaviour, single-agent fallback).
+ */
+export function normalizeDegradationChain(
+  raw: unknown,
+  agents: AgentConfig[],
+): string[] | undefined {
+  const valid = new Set(agents.map((a) => a.id))
+  if (!Array.isArray(raw)) return undefined
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const id of raw) {
+    if (typeof id !== 'string' || !id) continue
+    if (!valid.has(id)) continue
+    if (seen.has(id)) continue
+    seen.add(id)
+    result.push(id)
+  }
+  return result.length > 0 ? result : undefined
 }
 
 /**
@@ -292,6 +318,30 @@ export function getDevSkill(): string {
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */
 export function getMaxRoundsPerStage(): number {
   return normalizeMaxRoundsPerStage(loadSettings().maxRoundsPerStage)
+}
+
+/**
+ * The degradation chain for the current settings. Returns undefined when
+ * unconfigured — the caller then runs a single attempt with no fallback
+ * (the existing behaviour). The returned array is always non-empty when
+ * present (normalizeDegradationChain filters down to known agent ids).
+ */
+export function getDegradationChain(): string[] | undefined {
+  return loadSettings().degradationChain
+}
+
+/**
+ * Resolve an agent by its chain position, returning the same shape as
+ * {@link resolveSessionLaunch}. Returns null when the chain is absent or
+ * the index is out of range.
+ */
+export function resolveDegradationAgent(
+  chainIndex: number,
+): { agentId: string; envOverrides?: Record<string, string>; model?: string } | null {
+  const chain = getDegradationChain()
+  if (!chain || chainIndex < 0 || chainIndex >= chain.length) return null
+  const agent = resolveAgent(chain[chainIndex])
+  return { agentId: agent.id, ...launchForAgent(agent) }
 }
 
 /**

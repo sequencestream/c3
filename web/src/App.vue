@@ -633,6 +633,16 @@ function handleMessage(msg: ServerToClient) {
         text: '— Upgraded to a team session: the team lead keeps running and coordinating teammates until you click "End team" —',
       })
       break
+    case 'agent_failed':
+      // The current agent hit a rate-limit/auth/connection error — the server
+      // is trying the next agent in the degradation chain. Surface which agent
+      // failed and why.
+      add({ kind: 'system', text: `— Agent "${msg.agentName}" failed: ${msg.error} —` })
+      break
+    case 'all_agents_failed':
+      // Every agent in the degradation chain failed. The turn ends with error.
+      add({ kind: 'system', text: `— ${msg.message} —` })
+      break
     case 'error':
       add({ kind: 'system', text: `— ${msg.message} —` })
       break

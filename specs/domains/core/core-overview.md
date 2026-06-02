@@ -16,6 +16,7 @@ project-scoped discussion store (persistence foundation).
 | [web-console](web-console/web-console-overview.md)                                  | Browser UI: sidebar, prompt input, activity stream, permission dialog, mode switch                                                                                           | Consumes `/ws`                        | active  |
 | [requirement-management](requirement-management/requirement-management-overview.md) | Project-scoped requirement ledger (SQLite); read-only requirement-communication agent; `save_requirements` confirmation; launch the configurable development skill           | WebSocket `/ws` (see shared protocol) | active  |
 | [discussion](discussion/discussion-overview.md)                                     | Project-scoped discussion store (SQLite): discussions + ordered messages, with status lifecycle and conclusion. Persistence foundation; agent/orchestration/UI not yet built | Internal (no public API yet)          | partial |
+| [schedules](schedules/schedules-overview.md)                                        | Time-based execution of commands and LLM prompts across workspaces; execution log recording and review                                                                       | WebSocket `/ws` (see shared protocol) | planned |
 
 ## Shared context
 
@@ -30,8 +31,11 @@ project-scoped discussion store (persistence foundation).
 
 ```
 web-console ──(/ws)──► session-registry ──supplies cwd/mode/resume──► agent-session ──uses──► permission-gateway ──blocks──► SDK query()
+                                                                          ▲
+                                                                          │ schedules ──uses──► agent-session (execute llm_prompt / command)
 ```
 
 `web-console` depends on the server's wire contract; `session-registry` feeds each run's
-context to `agent-session`; `agent-session` depends on `permission-gateway` to gate tools.
+context to `agent-session`; `agent-session` depends on `permission-gateway` to gate tools;
+`schedules` depends on `session-registry` (workspace validation) and `agent-session` (execution).
 No cycles.

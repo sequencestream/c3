@@ -1190,6 +1190,124 @@ main {
   margin-left: 10px;
 }
 
+/* ============ assistant Markdown 渲染兜底（v-html 内容不受 scoped CSS 约束） ============ */
+/* 仅 .msg.assistant 内的 .md-body 走这里；纯文本消息不挂 .md-body，仍由 .msg 接管。 */
+.md-body {
+  /* 覆盖 .msg 的 pre-wrap：块级元素自管换行，避免标签间空白被保留成空行 */
+  white-space: normal;
+}
+.md-body > :first-child {
+  margin-top: 0;
+}
+.md-body > :last-child {
+  margin-bottom: 0;
+}
+/* 标题字号 / 间距收敛，防止破版 */
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  margin: var(--sp-3) 0 var(--sp-2);
+  line-height: var(--lh-tight, 1.3);
+  font-weight: 600;
+}
+.md-body h1 {
+  font-size: 1.4em;
+}
+.md-body h2 {
+  font-size: 1.25em;
+}
+.md-body h3 {
+  font-size: 1.1em;
+}
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  font-size: 1em;
+}
+.md-body p {
+  margin: var(--sp-2) 0;
+}
+/* 列表缩进 */
+.md-body ul,
+.md-body ol {
+  margin: var(--sp-2) 0;
+  padding-left: 1.4em;
+}
+.md-body li {
+  margin: var(--sp-1) 0;
+}
+/* 任务列表（- [ ] / - [x]）去掉项目符号，对齐复选框 */
+.md-body li.task-list-item {
+  list-style: none;
+}
+.md-body input[type='checkbox'] {
+  margin-right: var(--sp-2);
+}
+/* 行内 code：等宽 + 背景 */
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  background: var(--c-code);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+/* 代码块：暗背景 + 横向滚动，去掉行内 code 的内边距叠加 */
+.md-body pre {
+  margin: var(--sp-2) 0;
+  background: var(--c-code);
+  padding: var(--sp-3);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  line-height: var(--lh-code);
+}
+.md-body pre code {
+  background: transparent;
+  padding: 0;
+  font-size: var(--fs-caption);
+}
+/* 表格：边框 + 斑马纹 */
+.md-body table {
+  border-collapse: collapse;
+  margin: var(--sp-2) 0;
+  width: auto;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid var(--c-border);
+  padding: var(--sp-1) var(--sp-3);
+  text-align: left;
+}
+.md-body th {
+  background: var(--c-card);
+  font-weight: 600;
+}
+.md-body tbody tr:nth-child(even) {
+  background: var(--c-hover);
+}
+/* 链接：主题色 */
+.md-body a {
+  color: var(--c-primary);
+  text-decoration: underline;
+}
+/* 引用：左边线 */
+.md-body blockquote {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-1) var(--sp-3);
+  border-left: 3px solid var(--c-border);
+  color: var(--c-text-muted);
+}
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--c-border);
+  margin: var(--sp-3) 0;
+}
+.md-body img {
+  max-width: 100%;
+}
+
 /* ============ 输入区域（规范 3.4 / 3.6） ============ */
 footer {
   flex-shrink: 0;

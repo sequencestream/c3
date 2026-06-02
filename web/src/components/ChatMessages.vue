@@ -8,6 +8,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import PermissionPrompt from './PermissionPrompt.vue'
 import ConsensusBlock from './ConsensusBlock.vue'
+import MarkdownText from './MarkdownText.vue'
 import { fmt, oneLine } from '../lib/format'
 import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../lib/chat-types'
 
@@ -145,7 +146,7 @@ function toggle(id: number): void {
     </p>
     <template v-for="b in blocks" :key="b.key">
       <div v-if="b.type === 'text'" class="msg" :class="b.msg.kind">
-        {{ b.msg.text }}
+        <MarkdownText :text="b.msg.text" :kind="b.msg.kind" />
       </div>
       <div v-else class="batch" :class="{ open: isBatchOpen(b) }">
         <div class="batch-head" @click="toggleBatch(b.id)">

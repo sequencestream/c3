@@ -154,9 +154,12 @@ state is lost on server restart). The frontend keys a per-discussion run-state m
 the entry on `ended`) to render the Pause/Resume control and the composer mode (Speak vs Continue).
 
 **Termination.** Stages move forward only and `conclude` is terminal; `maxRoundsPerStage`
-(default `max(3, participants*2+1)`) forces an advance out of a stuck stage; `maxTotalRounds`
-(default 40) is the hard backstop, writing a fallback conclusion. An abort (server teardown) breaks
-the loop and leaves the discussion `in_progress` (no resume).
+forces an advance out of a stuck stage; `maxTotalRounds` (default 40) is the hard backstop,
+writing a fallback conclusion. `maxRoundsPerStage` is the system-configured
+`SystemSettings.maxRoundsPerStage` (minimum 8, default 12 — see agent-config AC-R9), read via
+`getMaxRoundsPerStage()` and injected through `defaultDiscussionDeps`; tests may override it on
+the injected deps. An abort (server teardown) breaks the loop and leaves the discussion
+`in_progress` (no resume).
 
 **Background carrier.** The server keeps a `discussionRuns: Map<id, DiscussionRunControl>` where
 `DiscussionRunControl = { abort, paused, resumeWaiters }`. A present entry is the re-entry guard for

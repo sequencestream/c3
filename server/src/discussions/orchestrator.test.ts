@@ -87,6 +87,7 @@ function harness(opts: {
   organizerScript: string[]
   participantReply?: string
   maxTotalRounds?: number
+  maxRoundsPerStage?: number
   signal?: AbortSignal
   onOrganizerCall?: () => void
 }): Harness {
@@ -107,6 +108,7 @@ function harness(opts: {
     onMessage: (m) => streamed.push(m),
     onStatusChange: (id) => statusChanges.push(id),
     ...(opts.maxTotalRounds !== undefined ? { maxTotalRounds: opts.maxTotalRounds } : {}),
+    ...(opts.maxRoundsPerStage !== undefined ? { maxRoundsPerStage: opts.maxRoundsPerStage } : {}),
   }
   return { deps, statusChanges, streamed }
 }
@@ -168,6 +170,28 @@ describe('runDiscussion', () => {
     expect(get().status).toBe('completed')
     expect(get().conclusion).toBe('Done solo.')
     expect(messages.some((m) => m.speakerKind === 'agent' && m.speakerName === 'Solo')).toBe(true)
+  })
+
+  it('honors the configured per-stage round cap (forces advance after the cap)', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const h = harness({
+      store,
+      participants: [agent('system', 'System'), agent('gpt', 'GPT')],
+      organizer: agent('system', 'System'),
+      // Organizer never advances/concludes on its own — only the per-stage cap can.
+      organizerScript: [],
+      participantReply: 'view',
+      maxRoundsPerStage: 2,
+    })
+    h.deps.ask = async (_a, prompt) =>
+      isOrganizerPrompt(prompt) ? '{"action":"speak","speaker":"gpt","note":""}' : 'view'
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    // 2 speaks per stage forced an advance through discuss → summarize → confirm
+    // (3 stages × 2 = 6); the terminal `conclude` stage adds no speeches.
+    expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(6)
   })
 
   it('leaves the discussion in_progress when aborted mid-run', async () => {

@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { SystemSettings } from '@ccc/shared/protocol'
-import { getDevSkill, saveSettings, resetSettingsCacheForTests } from './settings.js'
+import {
+  getDevSkill,
+  getMaxRoundsPerStage,
+  saveSettings,
+  resetSettingsCacheForTests,
+  DEFAULT_ROUNDS_PER_STAGE,
+  MIN_ROUNDS_PER_STAGE,
+} from './settings.js'
 
 // Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
 // these tests never touch the developer's real settings.json.
@@ -54,5 +61,53 @@ describe('getDevSkill normalization', () => {
   it('keeps an already-slashed command unchanged', () => {
     saveWithDevSkill('/foo')
     expect(getDevSkill()).toBe('/foo')
+  })
+})
+
+/** Persist just a `maxRoundsPerStage` value (with the required baseline fields). */
+function saveWithMaxRounds(value: unknown): void {
+  saveSettings({
+    agents: [],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    maxRoundsPerStage: value,
+  } as unknown as SystemSettings)
+}
+
+describe('getMaxRoundsPerStage normalization', () => {
+  it('falls back to the default when unset', () => {
+    saveWithMaxRounds(undefined)
+    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+  })
+
+  it('clamps a positive value below the floor up to the minimum', () => {
+    saveWithMaxRounds(5)
+    expect(getMaxRoundsPerStage()).toBe(MIN_ROUNDS_PER_STAGE)
+  })
+
+  it('clamps the floor exactly to the minimum', () => {
+    saveWithMaxRounds(MIN_ROUNDS_PER_STAGE)
+    expect(getMaxRoundsPerStage()).toBe(MIN_ROUNDS_PER_STAGE)
+  })
+
+  it('keeps a legal value at or above the floor', () => {
+    saveWithMaxRounds(20)
+    expect(getMaxRoundsPerStage()).toBe(20)
+  })
+
+  it('floors a fractional value', () => {
+    saveWithMaxRounds(12.9)
+    expect(getMaxRoundsPerStage()).toBe(12)
+  })
+
+  it('falls back to the default for a non-numeric value', () => {
+    saveWithMaxRounds('nope')
+    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+  })
+
+  it('falls back to the default for zero/negative values', () => {
+    saveWithMaxRounds(0)
+    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+    saveWithMaxRounds(-3)
+    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
   })
 })

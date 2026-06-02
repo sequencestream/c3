@@ -136,6 +136,9 @@ export interface SystemSettings {
   /** Slash command (leading `/`) prefixed to the requirement content when launching
    * development. Optional; empty/unset ⇒ no skill prefix. */
   devSkill?: string
+  /** Per-stage round cap for multi-agent discussions. Minimum 8 (lower values are
+   * clamped up); an unset/invalid value falls back to a sane default (≥ 8). */
+  maxRoundsPerStage?: number
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */

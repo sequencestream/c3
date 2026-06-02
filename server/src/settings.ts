@@ -28,6 +28,11 @@ const PERMISSION_MODES: readonly PermissionMode[] = [
   'bypassPermissions',
 ]
 
+/** Hard floor for the per-stage discussion round cap; lower values are clamped up. */
+export const MIN_ROUNDS_PER_STAGE = 8
+/** Fallback per-stage round cap when unset/invalid (kept above the floor for depth). */
+export const DEFAULT_ROUNDS_PER_STAGE = 12
+
 interface SessionAgentState {
   version: 1
   /** sessionId → agentId. A missing entry means "use the default agent". */
@@ -95,7 +100,28 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
   const showToolSessions = raw?.showToolSessions === true
   const devSkill = normalizeDevSkill(raw?.devSkill)
-  return { agents, defaultAgentId, defaultMode, consensus, voiceLang, showToolSessions, devSkill }
+  const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
+  return {
+    agents,
+    defaultAgentId,
+    defaultMode,
+    consensus,
+    voiceLang,
+    showToolSessions,
+    devSkill,
+    maxRoundsPerStage,
+  }
+}
+
+/**
+ * Force the per-stage round cap into shape: a finite number ≥ {@link MIN_ROUNDS_PER_STAGE}
+ * is floored and kept; a positive value below the floor is clamped up to it; anything
+ * else (missing, non-finite, ≤ 0) falls back to {@link DEFAULT_ROUNDS_PER_STAGE}.
+ */
+function normalizeMaxRoundsPerStage(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : NaN
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_ROUNDS_PER_STAGE
+  return Math.max(MIN_ROUNDS_PER_STAGE, Math.floor(n))
 }
 
 /**
@@ -261,6 +287,11 @@ export function getShowToolSessions(): boolean {
 /** The slash command prefixed to a requirement when launching development; empty ⇒ no prefix. */
 export function getDevSkill(): string {
   return normalizeDevSkill(loadSettings().devSkill)
+}
+
+/** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */
+export function getMaxRoundsPerStage(): number {
+  return normalizeMaxRoundsPerStage(loadSettings().maxRoundsPerStage)
 }
 
 /**

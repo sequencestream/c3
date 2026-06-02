@@ -10,6 +10,10 @@ import type { AgentConfig, PermissionMode, SystemSettings } from '@ccc/shared/pr
 
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 
+// Per-stage discussion round cap: floor enforced both here and server-side.
+const MIN_ROUNDS_PER_STAGE = 8
+const DEFAULT_ROUNDS_PER_STAGE = 12
+
 // 浏览器语音输入的可选识别语言（BCP-47）。
 const VOICE_LANGS: { value: string; label: string }[] = [
   { value: 'zh-CN', label: 'Chinese (Mandarin)' },
@@ -37,6 +41,7 @@ const draft = ref<SystemSettings>({
   voiceLang: 'zh-CN',
   showToolSessions: false,
   devSkill: '',
+  maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
 })
 
 // Re-seed the draft whenever the panel opens or fresh server settings arrive.
@@ -53,6 +58,7 @@ watch(
       voiceLang: settings.voiceLang ?? 'zh-CN',
       showToolSessions: settings.showToolSessions ?? false,
       devSkill: settings.devSkill ?? '',
+      maxRoundsPerStage: settings.maxRoundsPerStage ?? DEFAULT_ROUNDS_PER_STAGE,
     }
   },
   { immediate: true },
@@ -171,6 +177,22 @@ function isSystemAgent(a: AgentConfig): boolean {
           v-model="draft.devSkill"
           class="agent-field dev-skill-input"
           placeholder="/your-skill (leave empty for no prefix)"
+        />
+      </section>
+
+      <section class="settings-section">
+        <p class="settings-section-title">Discussion rounds per stage</p>
+        <p class="settings-hint">
+          The maximum number of speaking rounds a multi-agent discussion spends in each workflow
+          stage before the organizer is forced to advance. Higher values allow deeper, longer
+          discussions. Minimum {{ MIN_ROUNDS_PER_STAGE }} (lower values are clamped up on save).
+        </p>
+        <input
+          v-model.number="draft.maxRoundsPerStage"
+          class="agent-field rounds-input"
+          type="number"
+          :min="MIN_ROUNDS_PER_STAGE"
+          step="1"
         />
       </section>
 

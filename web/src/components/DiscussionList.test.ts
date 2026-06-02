@@ -12,6 +12,8 @@ function disc(id: string, title: string, over: Partial<Discussion> = {}): Discus
     goal: '',
     context: '',
     status: 'in_progress',
+    agenda: [],
+    agendaIndex: 0,
     conclusion: null,
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,

@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS discussions (
   goal          TEXT NOT NULL DEFAULT '',
   context       TEXT NOT NULL DEFAULT '',
   status        TEXT NOT NULL,
+  agenda        TEXT NOT NULL DEFAULT '[]',
+  agenda_index  INTEGER NOT NULL DEFAULT 0,
   conclusion    TEXT,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL,
@@ -84,6 +86,8 @@ function db(): Db | null {
     // so it's a no-op on a fresh schema and safe across runs.
     ensureColumn(d, 'discussions', 'goal', "TEXT NOT NULL DEFAULT ''")
     ensureColumn(d, 'discussions', 'context', "TEXT NOT NULL DEFAULT ''")
+    ensureColumn(d, 'discussions', 'agenda', "TEXT NOT NULL DEFAULT '[]'")
+    ensureColumn(d, 'discussions', 'agenda_index', 'INTEGER NOT NULL DEFAULT 0')
     ensureColumn(d, 'discussions', 'conclusion', 'TEXT')
     ensureColumn(d, 'discussions', 'completed_at', 'INTEGER')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
@@ -134,10 +138,23 @@ interface DiscussionRow {
   goal: string
   context: string
   status: string
+  agenda: string | null
+  agenda_index: number | null
   conclusion: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
+}
+
+/** Parse the persisted agenda JSON to a string list; tolerate null/blank/corrupt → `[]`. */
+function parseAgenda(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 function toDiscussion(r: DiscussionRow): Discussion {
@@ -149,6 +166,8 @@ function toDiscussion(r: DiscussionRow): Discussion {
     goal: r.goal,
     context: r.context,
     status: r.status as DiscussionStatus,
+    agenda: parseAgenda(r.agenda),
+    agendaIndex: r.agenda_index ?? 0,
     conclusion: r.conclusion,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -201,8 +220,8 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
   const completedAt = status === 'completed' ? now : null
   d.run(
     `INSERT INTO discussions
-       (id, project_path, title, type, goal, context, status, conclusion, created_at, updated_at, completed_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, project_path, title, type, goal, context, status, agenda, agenda_index, conclusion, created_at, updated_at, completed_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     resolve(input.projectPath),
     input.title,
@@ -210,6 +229,8 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
     input.goal ?? '',
     input.context ?? '',
     status,
+    '[]',
+    0,
     null,
     now,
     now,
@@ -239,6 +260,21 @@ export function updateDiscussionStatus(id: string, status: DiscussionStatus): vo
 export function setConclusion(id: string, conclusion: string): void {
   const d = requireDb()
   d.run('UPDATE discussions SET conclusion=?, updated_at=? WHERE id=?', conclusion, Date.now(), id)
+}
+
+/**
+ * Persist the discussion's agenda: the ordered subtopics + the 0-based current
+ * index (`items.length` ⇒ all done). Stored as a JSON array; bumps `updated_at`.
+ */
+export function setAgenda(id: string, items: readonly string[], index: number): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE discussions SET agenda=?, agenda_index=?, updated_at=? WHERE id=?',
+    JSON.stringify(items),
+    index,
+    Date.now(),
+    id,
+  )
 }
 
 /** Replace the discussion's background context (the research agent's completed output). */

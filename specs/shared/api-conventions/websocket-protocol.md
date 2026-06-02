@@ -150,9 +150,11 @@ answers are injected back as the tool result. See the
 - **`DiscussionStatus`** — `'draft' | 'in_progress' | 'completed' | 'cancelled'`.
 - **`DiscussionSpeakerKind`** — `'organizer' | 'agent' | 'human'`. Who authored a message.
 - **`Discussion`** — `{ id, projectPath, title, type: string, goal, context, status,
-conclusion: string | null, createdAt, updatedAt, completedAt: number | null }`. A project-scoped
-  discussion; `projectPath` is the resolved workspace path; `conclusion`/`completedAt` are `null`
-  until concluded.
+agenda: string[], agendaIndex: number, conclusion: string | null, createdAt, updatedAt,
+completedAt: number | null }`. A project-scoped discussion; `projectPath` is the resolved workspace
+  path; `conclusion`/`completedAt` are `null` until concluded. `agenda` is the organizer's ordered
+  subtopics (`[]` when unset); `agendaIndex` is the 0-based current subtopic (`=== agenda.length`
+  ⇒ all done) — completion is derived from the index.
 - **`DiscussionMessage`** — `{ id, discussionId, seq: number, speakerKind: DiscussionSpeakerKind,
 speakerAgentId: string | null, speakerName: string | null, content, createdAt }`. One message,
   ordered by the per-discussion monotonic `seq` (1-based).

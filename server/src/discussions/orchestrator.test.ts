@@ -25,7 +25,9 @@ function makeStore(seed: Discussion): {
   messages: DiscussionMessage[]
   get: () => Discussion
 } {
-  const discussions = new Map<string, Discussion>([[seed.id, { ...seed }]])
+  const discussions = new Map<string, Discussion>([
+    [seed.id, { ...seed, agenda: [...seed.agenda] }],
+  ])
   const messages: DiscussionMessage[] = []
   let seq = 0
   const store: DiscussionStore = {
@@ -54,6 +56,13 @@ function makeStore(seed: Discussion): {
       const d = discussions.get(id)
       if (d) d.status = s
     },
+    setAgenda: (id, items, index) => {
+      const d = discussions.get(id)
+      if (d) {
+        d.agenda = [...items]
+        d.agendaIndex = index
+      }
+    },
   }
   return { store, messages, get: () => discussions.get(seed.id)! }
 }
@@ -66,6 +75,8 @@ const seedDiscussion = (): Discussion => ({
   goal: 'Choose a caching layer',
   context: '',
   status: 'draft',
+  agenda: [],
+  agendaIndex: 0,
   conclusion: null,
   createdAt: 1,
   updatedAt: 1,
@@ -311,5 +322,77 @@ describe('runDiscussion', () => {
     expect(messages.filter((m) => m.content === 'First.').length).toBe(1)
     expect(messages[messages.length - 1].content).toBe('Second.')
     expect(messages.length).toBeGreaterThan(before)
+  })
+
+  it('walks an explicit agenda subtopic by subtopic before summarizing', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        // discuss: decompose the goal into two subtopics…
+        '{"action":"set_agenda","subtopics":["Latency","Cost"],"note":""}',
+        '{"action":"speak","speaker":"gpt","note":""}', // …speak on subtopic 1 (Latency)
+        '{"action":"focus_subtopic","note":""}', // move to subtopic 2 (Cost)
+        '{"action":"speak","speaker":"gpt","note":""}', // …speak on subtopic 2
+        '{"action":"focus_subtopic","note":""}', // past the last subtopic ⇒ advance to summarize
+        '{"action":"advance","note":"两点已覆盖"}', // summarize → confirm
+        '{"action":"advance","note":""}', // confirm → conclude
+        '{"action":"conclude","conclusion":"Use Redis."}',
+      ],
+      participantReply: 'GPT 的观点',
+      maxRoundsPerStage: 8,
+    })
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    expect(get().conclusion).toBe('Use Redis.')
+    // The agenda was persisted and fully walked (index ends past the last subtopic).
+    expect(get().agenda).toEqual(['Latency', 'Cost'])
+    expect(get().agendaIndex).toBe(get().agenda.length)
+    // The organizer announced the agenda and each subtopic transition.
+    expect(
+      messages.some((m) => m.speakerKind === 'organizer' && m.content.includes('Latency')),
+    ).toBe(true)
+    expect(messages.some((m) => m.speakerKind === 'organizer' && m.content.includes('Cost'))).toBe(
+      true,
+    )
+    // Two participant turns — one per subtopic.
+    expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(2)
+  })
+
+  it('auto-advances to the next subtopic when a subtopic hits the per-stage round cap', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    // Organizer sets a 2-subtopic agenda once, then only ever nominates GPT — never
+    // focuses/advances on its own. The per-subtopic cap must carry it forward.
+    let setOnce = false
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [],
+      participantReply: 'view',
+      maxRoundsPerStage: 2,
+    })
+    h.deps.ask = async (_a, prompt) => {
+      if (!prompt.includes('组织者(organizer)')) return 'view'
+      if (!setOnce) {
+        setOnce = true
+        return '{"action":"set_agenda","subtopics":["A","B"],"note":""}'
+      }
+      return '{"action":"speak","speaker":"gpt","note":""}'
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    // 2 speaks on subtopic A → cap → focus B; 2 speaks on B → cap → advance out of
+    // discuss; then summarize + confirm each cap at 2 speaks (no agenda) = 6 more.
+    expect(get().agendaIndex).toBe(get().agenda.length)
+    expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(2 + 2 + 2 + 2)
   })
 })

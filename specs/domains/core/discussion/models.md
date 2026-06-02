@@ -18,6 +18,8 @@ A goal-directed conversation scoped to one project.
 | `goal`        | text                    | What the discussion aims to achieve; `''` when unset                                                    |
 | `context`     | text                    | Background material seeding the discussion; `''` when unset                                             |
 | `status`      | enum `DiscussionStatus` | `draft`\|`in_progress`\|`completed`\|`cancelled`                                                        |
+| `agenda`      | string[]                | Organizer's ordered subtopics decomposed from `goal`; `[]` when no agenda is set                        |
+| `agendaIndex` | integer                 | 0-based index of the current subtopic (`0..agenda.length`); `=== agenda.length` ⇒ all subtopics done    |
 | `conclusion`  | text \| null            | The concluded outcome; `null` until set via `setConclusion`                                             |
 | `createdAt`   | timestamp               | Creation time                                                                                           |
 | `updatedAt`   | timestamp               | Last mutation time (bumped by status/conclusion changes and by appending a message)                     |

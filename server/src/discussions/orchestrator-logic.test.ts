@@ -27,6 +27,8 @@ const discussion: Discussion = {
   goal: 'Choose a caching layer',
   context: 'High read load.',
   status: 'in_progress',
+  agenda: [],
+  agendaIndex: 0,
   conclusion: null,
   createdAt: 1,
   updatedAt: 1,
@@ -78,6 +80,30 @@ describe('parseOrganizerDecision', () => {
   it('defaults to advance on an unparseable reply (never hangs)', () => {
     const d = parseOrganizerDecision('...', IDS)
     expect(d).toEqual({ action: 'advance', note: '' })
+  })
+
+  it('parses a set_agenda decision with a subtopic list', () => {
+    const d = parseOrganizerDecision(
+      '{"action":"set_agenda","subtopics":["延迟","成本"," "],"note":"先拆题"}',
+      IDS,
+    )
+    // Blank entries are dropped.
+    expect(d).toEqual({ action: 'set_agenda', subtopics: ['延迟', '成本'], note: '先拆题' })
+  })
+
+  it('degrades a set_agenda with no usable subtopics (does not hang)', () => {
+    const d = parseOrganizerDecision('{"action":"set_agenda","subtopics":[]}', IDS)
+    expect(d.action).not.toBe('set_agenda')
+  })
+
+  it('parses a focus_subtopic decision with an explicit index', () => {
+    const d = parseOrganizerDecision('{"action":"focus_subtopic","index":2,"note":"下一题"}', IDS)
+    expect(d).toEqual({ action: 'focus_subtopic', index: 2, note: '下一题' })
+  })
+
+  it('keyword fallback: detects moving to the next subtopic in prose', () => {
+    const d = parseOrganizerDecision('这个子题讨论够了,进入下一个子题。', IDS)
+    expect(d).toEqual({ action: 'focus_subtopic', note: '' })
   })
 })
 
@@ -160,6 +186,66 @@ describe('resolveStep', () => {
     })
     expect(step.kind).toBe('advance')
   })
+
+  it('set_agenda in discuss yields a set_agenda step', () => {
+    const step = resolveStep({
+      ...base,
+      stage: 'discuss',
+      decision: { action: 'set_agenda', subtopics: ['A', 'B'], note: 'go' },
+    })
+    expect(step).toEqual({ kind: 'set_agenda', subtopics: ['A', 'B'], organizerNote: 'go' })
+  })
+
+  it('focus_subtopic advances to the next subtopic', () => {
+    const step = resolveStep({
+      ...base,
+      stage: 'discuss',
+      decision: { action: 'focus_subtopic', note: '' },
+      agenda: { items: ['A', 'B', 'C'], index: 0 },
+    })
+    expect(step).toEqual({ kind: 'focus_subtopic', index: 1, organizerNote: '' })
+  })
+
+  it('focus_subtopic past the last subtopic advances out of the stage', () => {
+    const step = resolveStep({
+      ...base,
+      stage: 'discuss',
+      decision: { action: 'focus_subtopic', note: 'done' },
+      agenda: { items: ['A', 'B'], index: 1 },
+    })
+    expect(step).toEqual({ kind: 'advance', organizerNote: 'done' })
+  })
+
+  it('the per-stage cap moves to the next subtopic when the agenda is unfinished', () => {
+    const step = resolveStep({
+      ...base,
+      roundsInStage: 4,
+      stage: 'discuss',
+      decision: { action: 'speak', speakerId: 'gpt', note: '' },
+      agenda: { items: ['A', 'B'], index: 0 },
+    })
+    expect(step).toEqual({ kind: 'focus_subtopic', index: 1, organizerNote: '' })
+  })
+
+  it('the per-stage cap advances out of the stage on the last subtopic', () => {
+    const step = resolveStep({
+      ...base,
+      roundsInStage: 4,
+      stage: 'discuss',
+      decision: { action: 'speak', speakerId: 'gpt', note: '' },
+      agenda: { items: ['A', 'B'], index: 1 },
+    })
+    expect(step.kind).toBe('advance')
+  })
+
+  it('agenda actions degrade to advance outside the discuss stage', () => {
+    const step = resolveStep({
+      ...base,
+      stage: 'summarize',
+      decision: { action: 'set_agenda', subtopics: ['A'], note: '' },
+    })
+    expect(step.kind).toBe('advance')
+  })
 })
 
 describe('renderTranscript', () => {
@@ -193,7 +279,36 @@ describe('prompt builders', () => {
     expect(p).toContain(stage.prompt)
     expect(p).toContain('id=gpt 名称=GPT')
     expect(p).toContain('GPT: hi')
-    expect(p).toContain('"action":"speak|advance|conclude"')
+    expect(p).toContain('set_agenda|focus_subtopic|speak|advance|conclude')
+  })
+
+  it('organizer prompt in discuss carries the agenda and marks the current subtopic', () => {
+    const p = buildOrganizerPrompt({
+      discussion,
+      def,
+      stage, // decision workflow[0] is the `discuss` stage
+      messages: [],
+      participants: [{ id: 'gpt', name: 'GPT' }],
+      agenda: { items: ['延迟', '成本'], index: 1 },
+    })
+    expect(p).toContain('当前议程')
+    expect(p).toContain('延迟')
+    expect(p).toContain('成本')
+    expect(p).toContain('set_agenda')
+    expect(p).toContain('focus_subtopic')
+  })
+
+  it('participant prompt carries the current subtopic when one is set', () => {
+    const p = buildParticipantPrompt({
+      discussion,
+      def,
+      stage,
+      messages: [],
+      speaker: { id: 'gpt', name: 'GPT' },
+      subtopic: '延迟',
+    })
+    expect(p).toContain('当前子议题')
+    expect(p).toContain('延迟')
   })
 
   it('participant prompt carries the speaker, stage focus, and organizer note', () => {

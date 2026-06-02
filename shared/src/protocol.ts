@@ -400,6 +400,17 @@ export interface Discussion {
   /** Background material seeding the discussion. */
   context: string
   status: DiscussionStatus
+  /**
+   * Ordered subtopics the organizer decomposed `goal` into (the explicit agenda).
+   * `[]` when no agenda has been set. Only meaningful in the `discuss` stage.
+   */
+  agenda: string[]
+  /**
+   * 0-based index of the current subtopic within `agenda` (range `0..agenda.length`).
+   * Items before it are done; `agendaIndex === agenda.length` means all subtopics
+   * are complete. Completion status is derived from this index (strictly forward).
+   */
+  agendaIndex: number
   /** The concluded outcome; `null` until set. */
   conclusion: string | null
   createdAt: number

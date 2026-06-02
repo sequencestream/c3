@@ -34,14 +34,31 @@ export interface DiscussionParticipant {
 /** The organizer's parsed decision for one round. */
 export type OrganizerDecision =
   | { action: 'speak'; speakerId: string; note: string }
+  | { action: 'set_agenda'; subtopics: string[]; note: string }
+  | { action: 'focus_subtopic'; index?: number; note: string }
   | { action: 'advance'; note: string }
   | { action: 'conclude'; conclusion: string }
 
 /** The concrete step the engine runs, after folding stage + round cap into the decision. */
 export type DiscussionStep =
   | { kind: 'speak'; speakerId: string; organizerNote: string }
+  | { kind: 'set_agenda'; subtopics: string[]; organizerNote: string }
+  | { kind: 'focus_subtopic'; index: number; organizerNote: string }
   | { kind: 'advance'; organizerNote: string }
   | { kind: 'conclude'; conclusion: string }
+
+/**
+ * The live agenda the engine folds into a step: the ordered subtopics the
+ * organizer set, and the 0-based index of the current one. `index === items.length`
+ * means every subtopic is done. Empty `items` means no agenda is set yet — the
+ * engine then behaves exactly as it did before agendas existed.
+ */
+export interface AgendaState {
+  items: readonly string[]
+  index: number
+}
+
+const EMPTY_AGENDA: AgendaState = { items: [], index: 0 }
 
 /** Extract the first JSON object from `text` (handles ```json fences), or null. */
 function extractJsonObject(text: string): Record<string, unknown> | null {
@@ -76,9 +93,15 @@ const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
 /**
  * Parse the organizer's reply into a {@link OrganizerDecision}. JSON object first
- * (`{action, speaker, note, conclusion}`), then keyword heuristics, and finally a
- * safe default of `advance` so the engine can never hang on an unparseable reply.
- * A `speak` whose `speaker` is not a known participant id degrades the same way.
+ * (`{action, speaker, subtopics, index, note, conclusion}`), then keyword heuristics,
+ * and finally a safe default of `advance` so the engine can never hang on an
+ * unparseable reply. A `speak` whose `speaker` is not a known participant id
+ * degrades the same way; a `set_agenda` with no usable subtopics also degrades.
+ *
+ * Agenda actions: `set_agenda` decomposes the goal into ordered subtopics (its
+ * `subtopics` must be a non-empty string array — there is no prose fallback for it,
+ * a list can't be reliably extracted from free text); `focus_subtopic` moves to the
+ * next subtopic (or the optional numeric `index`).
  */
 export function parseOrganizerDecision(
   text: string,
@@ -92,6 +115,15 @@ export function parseOrganizerDecision(
     if (action === 'conclude') {
       return { action: 'conclude', conclusion: str(json.conclusion) || note || cleanText(text) }
     }
+    if (action === 'set_agenda') {
+      const subtopics = Array.isArray(json.subtopics) ? json.subtopics.map(str).filter(Boolean) : []
+      if (subtopics.length) return { action: 'set_agenda', subtopics, note }
+      // empty/unusable subtopics → degrade through the fallback below
+    }
+    if (action === 'focus_subtopic') {
+      const index = typeof json.index === 'number' ? json.index : undefined
+      return { action: 'focus_subtopic', index, note }
+    }
     if (action === 'speak') {
       const speaker = str(json.speaker)
       if (valid.has(speaker)) return { action: 'speak', speakerId: speaker, note }
@@ -104,6 +136,11 @@ export function parseOrganizerDecision(
   const lower = text.toLowerCase()
   if (/\b(conclude|conclusion)\b/.test(lower) || /结论|定论|结束讨论/.test(text)) {
     return { action: 'conclude', conclusion: cleanText(text) }
+  }
+  // Moving on to the next subtopic — before the stage-advance keyword so the more
+  // specific "next subtopic" intent wins over a bare "next".
+  if (/\b(focus[_ ]?subtopic|next subtopic)\b/.test(lower) || /下一(个)?子(议)?题/.test(text)) {
+    return { action: 'focus_subtopic', note: '' }
   }
   // The organizer may have named a participant in prose — honor the first valid id.
   for (const id of validSpeakerIds) {
@@ -146,13 +183,24 @@ export function parseParticipantSpeech(
   return t
 }
 
+/** The `note` carried by any decision, or `''` for actions that don't carry one. */
+function decisionNote(decision: OrganizerDecision): string {
+  return decision.action === 'conclude' ? '' : decision.note
+}
+
 /**
- * Fold the active stage and the per-stage round cap into the organizer's decision
- * to yield the concrete step:
+ * Fold the active stage, the per-stage round cap, and the live agenda into the
+ * organizer's decision to yield the concrete step:
  * - the terminal `conclude` stage always concludes (that is the organizer's job there);
  * - an explicit `conclude` decision concludes from any stage;
- * - hitting `maxRoundsPerStage` forces an `advance` (the safety valve against a stuck stage);
+ * - hitting `maxRoundsPerStage` forces forward motion: in `discuss` with an unfinished
+ *   agenda it moves to the next subtopic (not out of the stage); otherwise it advances;
+ * - in `discuss`, `set_agenda` (non-empty) sets the agenda and `focus_subtopic` moves to
+ *   the next subtopic — or advances to the next stage once every subtopic is done;
  * - a `speak` with a known participant speaks; everything else advances.
+ *
+ * `agenda` defaults to empty, so callers that don't track an agenda (and any stage
+ * other than `discuss`) keep the pre-agenda behavior exactly.
  */
 export function resolveStep(input: {
   stage: DiscussionStageKind
@@ -160,16 +208,13 @@ export function resolveStep(input: {
   validSpeakerIds: readonly string[]
   roundsInStage: number
   maxRoundsPerStage: number
+  agenda?: AgendaState
 }): DiscussionStep {
   const { stage, decision, validSpeakerIds, roundsInStage, maxRoundsPerStage } = input
+  const agenda = input.agenda ?? EMPTY_AGENDA
 
   if (stage === 'conclude') {
-    const conclusion =
-      decision.action === 'conclude'
-        ? decision.conclusion
-        : decision.action === 'advance'
-          ? decision.note
-          : decision.note
+    const conclusion = decision.action === 'conclude' ? decision.conclusion : decisionNote(decision)
     return { kind: 'conclude', conclusion: conclusion.trim() }
   }
 
@@ -177,8 +222,33 @@ export function resolveStep(input: {
     return { kind: 'conclude', conclusion: decision.conclusion.trim() }
   }
 
+  // Per-stage cap: a stuck stage must move forward. In `discuss` with subtopics still
+  // pending, that means the next subtopic; otherwise (last subtopic / no agenda) it
+  // advances out of the stage — the pre-agenda safety-valve behavior.
   if (roundsInStage >= maxRoundsPerStage) {
+    if (stage === 'discuss' && agenda.index + 1 < agenda.items.length) {
+      return { kind: 'focus_subtopic', index: agenda.index + 1, organizerNote: '' }
+    }
     return { kind: 'advance', organizerNote: decision.action === 'advance' ? decision.note : '' }
+  }
+
+  // Agenda actions only have meaning while the floor is open (`discuss`); elsewhere
+  // they fall through to the safe `advance` default below.
+  if (stage === 'discuss') {
+    if (decision.action === 'set_agenda' && decision.subtopics.length) {
+      return { kind: 'set_agenda', subtopics: decision.subtopics, organizerNote: decision.note }
+    }
+    if (decision.action === 'focus_subtopic') {
+      const next =
+        typeof decision.index === 'number' && decision.index >= 0
+          ? decision.index
+          : agenda.index + 1
+      // Past the last subtopic ⇒ every subtopic is done ⇒ advance to the next stage.
+      if (next >= agenda.items.length) {
+        return { kind: 'advance', organizerNote: decision.note }
+      }
+      return { kind: 'focus_subtopic', index: next, organizerNote: decision.note }
+    }
   }
 
   if (decision.action === 'speak' && validSpeakerIds.includes(decision.speakerId)) {
@@ -208,9 +278,27 @@ function header(discussion: Discussion, def: DiscussionTypeDef | undefined): str
 }
 
 /**
+ * Render the current agenda for the organizer prompt: a numbered subtopic list with
+ * the current one marked, or a prompt to set one when none exists. Only the `discuss`
+ * stage shows the agenda (it's the only stage where agenda actions apply).
+ */
+function renderAgenda(agenda: AgendaState): string {
+  if (agenda.items.length === 0) {
+    return '当前议程: (尚未设定 —— 请先用 set_agenda 把目标拆成有序子议题)'
+  }
+  const lines = agenda.items.map((t, i) => {
+    const mark = i < agenda.index ? '✓ 已完成' : i === agenda.index ? '▶ 当前' : '· 待讨论'
+    return `${i + 1}. [${mark}] ${t}`
+  })
+  const done = agenda.index >= agenda.items.length
+  return ['当前议程:', ...lines, done ? '(所有子议题已完成)' : ''].filter(Boolean).join('\n')
+}
+
+/**
  * Build the organizer's prompt: the discussion header, the active stage and its
- * workflow instruction, the participant roster, the transcript so far, and the
- * strict JSON output contract {@link parseOrganizerDecision} reads.
+ * workflow instruction, the current agenda (in `discuss`), the participant roster,
+ * the transcript so far, and the strict JSON output contract
+ * {@link parseOrganizerDecision} reads (including the agenda actions).
  */
 export function buildOrganizerPrompt(input: {
   discussion: Discussion
@@ -218,15 +306,22 @@ export function buildOrganizerPrompt(input: {
   stage: DiscussionWorkflowStage
   messages: readonly DiscussionMessage[]
   participants: readonly DiscussionParticipant[]
+  agenda?: AgendaState
 }): string {
   const { discussion, def, stage, messages, participants } = input
+  const agenda = input.agenda ?? EMPTY_AGENDA
   const roster = participants.map((p) => `- id=${p.id} 名称=${p.name}`).join('\n')
-  return [
+  const lines = [
     '你是这场讨论的「组织者(organizer)」,统一编排各参与者的发言并推动讨论得出结论。',
     '',
     header(discussion, def),
     '',
     `当前阶段: ${stage.label} —— ${stage.prompt}`,
+  ]
+  if (stage.id === 'discuss') {
+    lines.push('', renderAgenda(agenda))
+  }
+  lines.push(
     '',
     '参与者名单:',
     roster,
@@ -235,11 +330,14 @@ export function buildOrganizerPrompt(input: {
     renderTranscript(messages),
     '',
     '根据当前阶段决定下一步,只输出一个 JSON 对象,不要任何额外文字:',
-    '{"action":"speak|advance|conclude","speaker":"<参与者 id,action=speak 时必填>","note":"<组织者要记录的话,可空>","conclusion":"<action=conclude 时的完整最终结论>"}',
-    '- speak: 指定下一位发言的参与者(填其 id);note 可写你对该参与者的引导。当本阶段仍需更多输入时用它。',
+    '{"action":"set_agenda|focus_subtopic|speak|advance|conclude","speaker":"<参与者 id,action=speak 时必填>","subtopics":["<action=set_agenda 时的有序子议题列表>"],"index":<action=focus_subtopic 时可选,目标子议题下标(从 0 起)>,"note":"<组织者要记录的话,可空>","conclusion":"<action=conclude 时的完整最终结论>"}',
+    '- set_agenda: 仅在 discuss 阶段、议程尚未设定时使用;把目标拆成有序子议题填入 subtopics,引擎据此逐题推进。',
+    '- focus_subtopic: 当前子议题已讨论充分,切到下一子议题(也可用 index 指定);所有子议题完成后会自动进入下一阶段。',
+    '- speak: 指定下一位发言的参与者(填其 id),围绕当前子议题展开;note 可写你对该参与者的引导。',
     '- advance: 本阶段已充分,推进到下一阶段;note 写本阶段的小结(例如 summarize 阶段填归纳要点)。',
     '- conclude: 讨论已可收尾,conclusion 写完整、可执行的最终结论。',
-  ].join('\n')
+  )
+  return lines.join('\n')
 }
 
 /**
@@ -254,18 +352,21 @@ export function buildParticipantPrompt(input: {
   messages: readonly DiscussionMessage[]
   speaker: DiscussionParticipant
   organizerNote?: string
+  /** The current agenda subtopic to focus on, when one is set. */
+  subtopic?: string
 }): string {
-  const { discussion, def, stage, messages, speaker, organizerNote } = input
+  const { discussion, def, stage, messages, speaker, organizerNote, subtopic } = input
   const lines = [
     `你是这场讨论的参与者「${speaker.name}」。`,
     '',
     header(discussion, def),
     '',
     `当前阶段: ${stage.label} —— ${stage.prompt}`,
-    '',
-    '已有发言:',
-    renderTranscript(messages),
   ]
+  if (subtopic && subtopic.trim()) {
+    lines.push('', `当前子议题: ${subtopic.trim()} —— 请聚焦此子议题发言。`)
+  }
+  lines.push('', '已有发言:', renderTranscript(messages))
   if (organizerNote && organizerNote.trim()) {
     lines.push('', `组织者给你的引导: ${organizerNote.trim()}`)
   }

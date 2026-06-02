@@ -22,6 +22,7 @@ import {
   listDiscussions,
   listMessages,
   resetStoreForTests,
+  setAgenda,
   setConclusion,
   updateDiscussionStatus,
 } from './store.js'
@@ -71,6 +72,8 @@ describe('discussions CRUD', () => {
     expect(d.context).toBe('')
     expect(d.conclusion).toBeNull()
     expect(d.completedAt).toBeNull()
+    expect(d.agenda).toEqual([]) // default empty agenda
+    expect(d.agendaIndex).toBe(0)
     expect(d.createdAt).toBe(d.updatedAt)
     const got = getDiscussion(d.id)
     expect(got?.title).toBe('T')
@@ -136,11 +139,25 @@ describe('discussions CRUD', () => {
     expect(got!.updatedAt).toBeGreaterThanOrEqual(d.updatedAt)
   })
 
+  it('persists the agenda (subtopics + index) and round-trips the JSON', () => {
+    const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    setAgenda(d.id, ['延迟', '成本', '运维'], 1)
+    const got = getDiscussion(d.id)
+    expect(got?.agenda).toEqual(['延迟', '成本', '运维'])
+    expect(got?.agendaIndex).toBe(1)
+    expect(got!.updatedAt).toBeGreaterThanOrEqual(d.updatedAt)
+    // index can reach length (all subtopics done)
+    setAgenda(d.id, ['延迟', '成本', '运维'], 3)
+    expect(getDiscussion(d.id)?.agendaIndex).toBe(3)
+  })
+
   it('persists across a cache reset (real file)', () => {
     const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    setAgenda(d.id, ['x'], 0)
     resetDbForTests()
     resetStoreForTests()
     expect(getDiscussion(d.id)?.title).toBe('A')
+    expect(getDiscussion(d.id)?.agenda).toEqual(['x'])
   })
 })
 
@@ -235,9 +252,20 @@ describe('migration', () => {
     expect(got?.context).toBe('') // backfilled default
     expect(got?.conclusion).toBeNull() // new nullable column
     expect(got?.completedAt).toBeNull()
+    expect(got?.agenda).toEqual([]) // backfilled default '[]' → parsed to empty list
+    expect(got?.agendaIndex).toBe(0) // backfilled default 0
 
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((c) => c.name)
-    expect(cols).toEqual(expect.arrayContaining(['goal', 'context', 'conclusion', 'completed_at']))
+    expect(cols).toEqual(
+      expect.arrayContaining([
+        'goal',
+        'context',
+        'agenda',
+        'agenda_index',
+        'conclusion',
+        'completed_at',
+      ]),
+    )
 
     // Idempotent: a second ensure must not try to re-add columns (would throw).
     resetStoreForTests()

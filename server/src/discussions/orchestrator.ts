@@ -39,6 +39,7 @@ import {
   appendMessage as storeAppendMessage,
   getDiscussion as storeGetDiscussion,
   listMessages as storeListMessages,
+  setAgenda as storeSetAgenda,
   setConclusion as storeSetConclusion,
   updateDiscussionStatus as storeUpdateStatus,
 } from './store.js'
@@ -67,6 +68,8 @@ export interface DiscussionStore {
   }): DiscussionMessage
   setConclusion(id: string, conclusion: string): void
   updateDiscussionStatus(id: string, status: DiscussionStatus): void
+  /** Persist the agenda: ordered subtopics + the 0-based current index. */
+  setAgenda(id: string, items: readonly string[], index: number): void
 }
 
 /** Injected dependencies for {@link runDiscussion}. */
@@ -153,6 +156,9 @@ export async function runDiscussion(
   let roundsInStage = 0
   let total = 0
   let lastSummary = ''
+  // Live agenda, seeded from the persisted discussion (empty ⇒ no agenda yet).
+  let agenda: string[] = [...(initial.agenda ?? [])]
+  let agendaIndex = initial.agendaIndex ?? 0
 
   while (!signal.aborted && total < maxTotal) {
     // Pause point: suspend at the round boundary while paused (no decision, no
@@ -176,6 +182,7 @@ export async function runDiscussion(
           stage: stageDef,
           messages: store.listMessages(id),
           participants,
+          agenda: { items: agenda, index: agendaIndex },
         }),
         cwd,
         signal,
@@ -192,6 +199,7 @@ export async function runDiscussion(
       validSpeakerIds: validIds,
       roundsInStage,
       maxRoundsPerStage: maxPerStage,
+      agenda: { items: agenda, index: agendaIndex },
     })
 
     if (step.kind === 'conclude') {
@@ -199,10 +207,44 @@ export async function runDiscussion(
       return
     }
 
+    // Set/replace the agenda: subtopics decomposed from the goal; restart at the
+    // first subtopic. Stays in `discuss`; `total` bumps as the termination backstop.
+    if (step.kind === 'set_agenda') {
+      agenda = [...step.subtopics]
+      agendaIndex = 0
+      store.setAgenda(id, agenda, agendaIndex)
+      const announce =
+        step.organizerNote.trim() ||
+        `议程已设定:${agenda.map((t, i) => `${i + 1}. ${t}`).join(' ')}`
+      appendOrganizer(announce)
+      roundsInStage = 0
+      total++
+      continue
+    }
+
+    // Move to the next subtopic (per-subtopic round budget resets). Stays in `discuss`.
+    if (step.kind === 'focus_subtopic') {
+      agendaIndex = step.index
+      store.setAgenda(id, agenda, agendaIndex)
+      const announce =
+        step.organizerNote.trim() ||
+        (agenda[agendaIndex] ? `进入子议题:${agenda[agendaIndex]}` : '')
+      if (announce) appendOrganizer(announce)
+      roundsInStage = 0
+      total++
+      continue
+    }
+
     if (step.kind === 'advance') {
       if (step.organizerNote.trim()) {
         lastSummary = step.organizerNote.trim()
         appendOrganizer(step.organizerNote)
+      }
+      // Leaving `discuss` with an agenda set ⇒ every subtopic is done; snap the
+      // persisted index to `length` so the state truthfully reads "agenda complete".
+      if (stage === 'discuss' && agenda.length > 0 && agendaIndex < agenda.length) {
+        agendaIndex = agenda.length
+        store.setAgenda(id, agenda, agendaIndex)
       }
       const next = nextDiscussionStage(initial.type, stage)
       if (!next) {
@@ -230,6 +272,7 @@ export async function runDiscussion(
             messages: store.listMessages(id),
             speaker,
             organizerNote: step.organizerNote,
+            subtopic: agenda[agendaIndex],
           }),
           cwd,
           signal,
@@ -287,6 +330,7 @@ export function defaultDiscussionDeps(hooks: {
       appendMessage: storeAppendMessage,
       setConclusion: storeSetConclusion,
       updateDiscussionStatus: storeUpdateStatus,
+      setAgenda: storeSetAgenda,
     },
     organizer: () => resolveAgent(null),
     participants: () => loadSettings().agents,

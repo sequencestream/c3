@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { DiscussionMessage } from '@ccc/shared/protocol'
-import { discussionMessageToChat, discussionMessagesToChat } from './discussion-view'
+import {
+  discussionMessageToChat,
+  discussionMessagesToChat,
+  panelToggleLabel,
+  rowVisibility,
+  statusLabel,
+} from './discussion-view'
 
 function msg(over: Partial<DiscussionMessage>): DiscussionMessage {
   return {
@@ -52,5 +58,30 @@ describe('discussion-view — DiscussionMessage → ChatBody', () => {
       { kind: 'user', text: 'q' },
       { kind: 'assistant', text: 'A: a' },
     ])
+  })
+})
+
+describe('discussion-view — 列表面板视图纯函数', () => {
+  it('statusLabel 四态映射到英文标签', () => {
+    expect(statusLabel('draft')).toBe('Draft')
+    expect(statusLabel('in_progress')).toBe('In progress')
+    expect(statusLabel('completed')).toBe('Completed')
+    expect(statusLabel('cancelled')).toBe('Cancelled')
+  })
+
+  it('panelToggleLabel:展开态提示 Collapse,收缩态提示 Expand', () => {
+    const expanded = panelToggleLabel(false)
+    expect(expanded.text).toBe('Collapse')
+    expect(expanded.icon).toBe('⇤')
+    expect(expanded.title).toContain('Collapse')
+    const collapsed = panelToggleLabel(true)
+    expect(collapsed.text).toBe('Expand')
+    expect(collapsed.icon).toBe('⇥')
+    expect(collapsed.title).toContain('Expand')
+  })
+
+  it('rowVisibility:展开态显示次要元信息,收缩态隐藏', () => {
+    expect(rowVisibility(false)).toEqual({ showMeta: true })
+    expect(rowVisibility(true)).toEqual({ showMeta: false })
   })
 })

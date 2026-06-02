@@ -26,6 +26,10 @@ await build({
   alias: {
     '@ccc/shared': resolve(import.meta.dirname, '../shared/src/index.ts'),
     '@ccc/shared/protocol': resolve(import.meta.dirname, '../shared/src/protocol.ts'),
+    '@ccc/shared/discussion-types': resolve(
+      import.meta.dirname,
+      '../shared/src/discussion-types.ts',
+    ),
   },
   logLevel: 'info',
   // The dev (tsx/ESM) path in server.ts reads import.meta.url via direct eval so

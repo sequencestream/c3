@@ -31,7 +31,15 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   back, pushing `discussions` on draft insert and again on completion.
 - Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
   the right pane shows a **Start** button on a `draft` and appends streamed messages live once the
-  engine runs.
+  engine runs. The **left list** mirrors the requirement list's interaction paradigm
+  (`web/src/components/DiscussionList.vue` + pure view helpers in `web/src/lib/discussion-view.ts`):
+  a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary
+  row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /
+  in_progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
+  (`expandedId`, at most one open) that expands goal / context / conclusion + type / status /
+  created / completed beneath the clicked row. A persistent per-row **Open chat** button still emits
+  `open` to load the transcript + orchestration view in the right pane (accordion browsing and the
+  right pane coexist). All list copy is English (web/CLAUDE.md).
 - **Organizer engine** (`server/src/discussions/orchestrator.ts` + pure
   `orchestrator-logic.ts`): a background loop reusing the consensus `askAgentOnce` /
   `launchForAgent` paradigm. The organizer's round decision and participants' speech parsing are

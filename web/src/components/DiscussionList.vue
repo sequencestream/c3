@@ -9,7 +9,12 @@ import { computed, ref } from 'vue'
 import type { Discussion } from '@ccc/shared/protocol'
 import { listDiscussionTypes } from '@ccc/shared/discussion-types'
 import { formatDate } from '../lib/req-list-view'
-import { panelToggleLabel, rowVisibility, statusLabel } from '../lib/discussion-view'
+import {
+  autoGrowHeight,
+  panelToggleLabel,
+  rowVisibility,
+  statusLabel,
+} from '../lib/discussion-view'
 
 defineProps<{
   discussions: Discussion[]
@@ -28,6 +33,18 @@ const showForm = ref(false)
 const formType = ref(TYPES[0]?.id ?? '')
 const formGoal = ref('')
 const formContext = ref('')
+
+// Auto-grow: the Goal/Context textareas grow with their content up to this cap,
+// then scroll internally. Closing the form (v-if) destroys the elements, so a
+// reopened form starts fresh; clearing content shrinks via the `input` handler.
+const MAX_TEXTAREA_PX = 200
+function autoGrow(e: Event): void {
+  const el = e.target as HTMLTextAreaElement
+  el.style.height = 'auto'
+  const { height, overflowY } = autoGrowHeight(el.scrollHeight, MAX_TEXTAREA_PX)
+  el.style.height = `${height}px`
+  el.style.overflowY = overflowY
+}
 
 function openForm(): void {
   showForm.value = true
@@ -109,18 +126,20 @@ function togglePanel(): void {
         <span class="disc-field-label">Goal</span>
         <textarea
           v-model="formGoal"
-          class="disc-input"
+          class="disc-input disc-textarea"
           rows="2"
           placeholder="What should this discussion achieve?"
+          @input="autoGrow"
         />
       </label>
       <label class="disc-field">
         <span class="disc-field-label">Context</span>
         <textarea
           v-model="formContext"
-          class="disc-input"
+          class="disc-input disc-textarea"
           rows="3"
           placeholder="Background material (a research agent will complete it)"
+          @input="autoGrow"
         />
       </label>
       <div class="disc-form-actions">
@@ -302,6 +321,14 @@ function togglePanel(): void {
 .disc-input:focus {
   outline: none;
   border-color: var(--c-primary);
+}
+/* Auto-grow textareas: JS sizes height to content up to the cap (MAX_TEXTAREA_PX);
+   max-height here is the CSS backstop matching that cap, and the user can't drag
+   past it (resize disabled — height is content-driven). */
+.disc-textarea {
+  max-height: 200px;
+  resize: none;
+  overflow-y: hidden;
 }
 .disc-form-actions {
   display: flex;

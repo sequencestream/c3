@@ -131,6 +131,48 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.find('.disc-item').classes()).toContain('completed')
   })
 
+  it('Goal/Context textarea auto-grow:高度跟随内容并在 200px 上限处出现内部滚动', async () => {
+    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
+    await w.find('.disc-new-btn').trigger('click')
+    const goal = w.findAll('.disc-form textarea')[0]
+    const el = goal.element as HTMLTextAreaElement
+    // happy-dom 不做布局,scrollHeight 恒为 0;桩入它以验证 auto-grow 接线。
+    let fakeScrollHeight = 80
+    Object.defineProperty(el, 'scrollHeight', { get: () => fakeScrollHeight, configurable: true })
+
+    // 内容低于上限:高度跟随内容,内部不滚动。
+    await goal.setValue('a\nb\nc')
+    expect(el.style.height).toBe('80px')
+    expect(el.style.overflowY).toBe('hidden')
+
+    // 内容超过上限:高度封顶 200px 并出现内部滚动条。
+    fakeScrollHeight = 360
+    await goal.setValue('many\nmany\nlines\nof\ntext')
+    expect(el.style.height).toBe('200px')
+    expect(el.style.overflowY).toBe('auto')
+
+    // 清空内容:高度收缩复位。
+    fakeScrollHeight = 0
+    await goal.setValue('')
+    expect(el.style.height).toBe('0px')
+    expect(el.style.overflowY).toBe('hidden')
+  })
+
+  it('关闭后重开表单:textarea 为全新元素,无残留内联高度', async () => {
+    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
+    await w.find('.disc-new-btn').trigger('click')
+    const el = w.findAll('.disc-form textarea')[0].element as HTMLTextAreaElement
+    Object.defineProperty(el, 'scrollHeight', { get: () => 360, configurable: true })
+    await w.findAll('.disc-form textarea')[0].setValue('lots of text')
+    expect(el.style.height).toBe('200px')
+    // 关闭(Cancel)后表单 v-if 移除,重开为全新 DOM,高度复位。
+    await w.find('.disc-form button.disc-btn').trigger('click')
+    expect(w.find('.disc-form').exists()).toBe(false)
+    await w.find('.disc-new-btn').trigger('click')
+    const reopened = w.findAll('.disc-form textarea')[0].element as HTMLTextAreaElement
+    expect(reopened.style.height).toBe('')
+  })
+
   it('收缩/展开按钮:切换 collapsed 并隐藏行内次要信息(type)', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha', { type: 'design' })] })
     // 默认展开态:type 可见

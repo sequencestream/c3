@@ -31,7 +31,9 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   back, pushing `discussions` on draft insert and again on completion.
 - Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
   the right pane shows a **Start** button on a `draft` and appends streamed messages live once the
-  engine runs. The **left list** mirrors the requirement list's interaction paradigm
+  engine runs. The create form's Goal / Context textareas **auto-grow** with their content up to a
+  pixel cap (`autoGrowHeight` in `discussion-view.ts`), scrolling internally only past the cap and
+  resetting when the form closes. The **left list** mirrors the requirement list's interaction paradigm
   (`web/src/components/DiscussionList.vue` + pure view helpers in `web/src/lib/discussion-view.ts`):
   a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary
   row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /

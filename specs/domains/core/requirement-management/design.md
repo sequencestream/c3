@@ -288,7 +288,7 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   attach branch — RM-A10 — stays unit-testable with fakes). This keeps the state machine unit-testable
   (see `automation.test.ts`).
 - **`runDevTurn` (server closure).** Ensures a `normal` runtime for the requirement (fresh
-  `pending:` id, or resume an existing id for the "继续" continuation), registers an **internal
+  `pending:` id, or resume an existing id for the continue continuation), registers an **internal
   viewer** on it, and launches/resumes via the shared `launchRun`. It surfaces the SDK session bind
   **early** via an `onSessionId` callback (fired from `launchRun`'s own `onSessionId`, well before
   the turn ends). The viewer captures the last `assistant_text` and resolves the turn on: `turn_end`
@@ -306,7 +306,7 @@ A per-project, in-memory state machine driven entirely by message handlers and a
     immediately from the buffer's trailing `turn_end` (`complete`/`error`) instead of hanging. On
     this replay path it also sets `pendingQuestion = hasPendingQuestion(rt.buffer)` so a settled turn
     that ended on an unanswered `AskUserQuestion` is flagged for `develop()`'s human-decision guard
-    (RM-A11) — otherwise it would read as a plain `complete` and risk a blind "继续".
+    (RM-A11) — otherwise it would read as a plain `complete` and risk a blind continue.
 - **Main loop (`AutomationController.run`).** At the top of each loop iteration, **before** `pickNext`, the global concurrency gate (`awaitProjectRunning`, RM-A12) scans **all** `in_progress` requirements (regardless of the `automate` flag) for a dev session that is **truly running** (`lastDevSessionId` non-null AND `hooks.isRunning` returns true). When found, it attaches an internal viewer to that in-flight turn (via `hooks.runDevTurn` with `attach: true`) and waits for it to settle — logging the outcome but **never** judging or interfering with the requirement's lifecycle (manual requirements are outside the orchestrator's scope). After the turn settles, the loop re-checks the gate; when clear, it falls through to `pickNext`. A dangling session (on disk but not running) passes the gate immediately. This is independent of `develop()`'s internal attach logic (RM-A10), which handles a **selected** requirement's own running session after `pickNext`; the gate covers **any** running session from requirements `pickNext` would not select (notably non-`automate` manual runs), preventing concurrent dev sessions that would conflict on file modifications in the same working tree.
 - **`pickNext`** selects the best eligible requirement
   (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
@@ -315,15 +315,15 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   `lastDevSessionId`, and `markInProgress` is called **before** `runDevTurn` (no launch ⇒ no early
   `onSessionId`, so the status must point at the tracked session up front); else (2) an `in_progress`
   requirement whose `lastDevSessionId` passes `sessionExists` is **resumed** (real id ⇒ `runDevTurn`
-  continues that context, first prompt "继续"); else (3) a `todo` or dangling one starts `null` (fresh
+  continues that context, first prompt continue); else (3) a `todo` or dangling one starts `null` (fresh
   launch) — the same dangling rule as manual `start_development`. The `attach` flag applies to the
-  **first** turn only; it is cleared after the first `runDevTurn` so any "继续" continuation uses the
+  **first** turn only; it is cleared after the first `runDevTurn` so any continue continuation uses the
   ordinary resume path (the attached turn settled the run). Then `develop()` loops: run a dev turn → **as soon as the dev session binds** (`onSessionId`,
   early — mirroring manual `start_development`) `markInProgress` does `setLastDevSession` +
   `updateStatus(in_progress)` + broadcast + emit, so the UI flips to `in_progress` immediately, not
   at turn end (a fallback re-marks if the early bind never fired); → on `complete`, `gitDiffStat` +
   `judgeCompletion`; `done` → `commitAndPush` then `updateStatus(done)` + push id to `completedIds`;
-  `in_progress` → resume "继续" (cap `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/push-fail (and a
+  `in_progress` → resume continue (cap `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/push-fail (and a
   torn-down `pendingQuestion`, RM-A11) → `fail(reason)` and stop the whole loop (RM-A6). A live
   permission prompt does **not** stop the loop — it waits for the watching human (RM-A9), and
   `setAwaiting(true/false)` flips the status `awaitingPermission` hint while paused. No eligible item
@@ -331,7 +331,7 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   - **Human-decision guard (RM-A11).** Before the `done`/`in_progress`/`stuck` branch, `develop()`
     checks `turn.pendingQuestion`: when the turn ended on an **unanswered `AskUserQuestion`**, it
     `fail(reason)`s immediately — **even if the judge said `in_progress`** — so a mis-judged verdict
-    can never drive a blind "继续" over a real user choice. The flag is computed by the pure
+    can never drive a blind continue over a real user choice. The flag is computed by the pure
     `hasPendingQuestion(buffer)` (exported from `automation.ts`, unit-tested): an `AskUserQuestion`
     `tool_use` with no matching `tool_result` (by `toolUseId`) means the question was never answered.
     A **live** AskUserQuestion no longer blocks — `runDevTurn` keeps the run alive for the watching

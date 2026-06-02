@@ -396,7 +396,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
    * the orchestrator (`onAwaitingPermission`) so it can show an "awaiting authorization"
    * hint; the turn then settles `complete`/`error` once the human responds. Only a real
    * abort (automation stopped) resolves `blocked`. A fresh `sessionId` (null) launches a
-   * new dev session; a real id resumes it (the "继续" continuation) — or feeds a live team
+   * new dev session; a real id resumes it (the continue continuation) — or feeds a live team
    * lead directly.
    */
   const runDevTurn = (input: RunDevTurnInput): Promise<DevTurnResult> =>
@@ -480,7 +480,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           }
           // The settled turn may have ended on an unanswered AskUserQuestion (a real
           // human decision). It reads as `complete` here, but the orchestrator must
-          // stop, not "继续" over it — flag it so develop()'s guard catches a
+          // stop, not continue over it — flag it so develop()'s guard catches a
           // mis-judged in_progress (RM-A11).
           finish({
             outcome,

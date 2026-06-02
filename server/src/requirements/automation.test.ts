@@ -404,7 +404,7 @@ describe('automation orchestrator', () => {
     expect(final.completedIds).toEqual([]) // nothing eligible
   })
 
-  it('continues with "继续" when the judge says in_progress, then completes', async () => {
+  it('continues with continue when the judge says in_progress, then completes', async () => {
     const [r] = insertRequirements(proj, [{ title: 'multi', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)
     judgeMock
@@ -416,10 +416,10 @@ describe('automation orchestrator', () => {
 
     expect(final.state).toBe('done')
     expect(prompts[0]).toMatch(/^multi\n/)
-    expect(prompts[1]).toBe('继续') // resumed after the checkpoint
+    expect(prompts[1]).toBe('continue') // resumed after the checkpoint
   })
 
-  it('stops (does NOT 继续) when the turn ends on an unanswered question, even if the judge says in_progress', async () => {
+  it('stops (does NOT continue) when the turn ends on an unanswered question, even if the judge says in_progress', async () => {
     const [r] = insertRequirements(proj, [{ title: 'asks', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)
     // The judge mis-reads the human-decision point as a checkpoint…
@@ -441,7 +441,7 @@ describe('automation orchestrator', () => {
     expect(final.state).toBe('error')
     expect(final.error).toContain('人工决策')
     expect(commitMock).not.toHaveBeenCalled()
-    expect(prompts).toEqual([expect.stringMatching(/^asks\n/)]) // no second "继续"
+    expect(prompts).toEqual([expect.stringMatching(/^asks\n/)]) // no second continue
   })
 
   it('stops with an error when the judge says stuck', async () => {

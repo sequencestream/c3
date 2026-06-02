@@ -8,7 +8,7 @@
  *   2. on a normal turn end, judges true completion from the agent's last message
  *      + the working-tree diff ({@link judgeCompletion});
  *   3. if done → commit & push → mark `done` → next requirement;
- *      if in_progress → resume with "继续" (capped, to clear dev-skill checkpoints);
+ *      if in_progress → resume with continue (capped, to clear dev-skill checkpoints);
  *      if stuck / the run errored / it blocked on a permission / push failed →
  *      stop the whole loop and record the reason on the status (shown next to the
  *      automation button).
@@ -56,7 +56,7 @@ export interface DevTurnResult {
    * turn as `blocked` (the viewer aborts the run), but on the attach buffer-replay
    * path a settled run with a pending question can surface as `complete`; this flag
    * lets {@link AutomationController.develop} force a stop even if the completion
-   * judge mis-reads it as `in_progress` — a real decision must not be "继续"-ed away.
+   * judge mis-reads it as `in_progress` — a real decision must not be continue-ed away.
    */
   pendingQuestion?: boolean
 }
@@ -114,7 +114,7 @@ export interface AutomationHooks {
   isRunning(sessionId: string): boolean
 }
 
-/** Max "继续" resumes per requirement before giving up (clears dev-skill checkpoints). */
+/** Max continue resumes per requirement before giving up (clears dev-skill checkpoints). */
 const MAX_CONTINUATIONS = 10
 
 /**
@@ -124,7 +124,7 @@ const MAX_CONTINUATIONS = 10
  * replied) has the `tool_use` but no matching `tool_result`. Used as a guard
  * independent of the completion judge: a turn that surfaced via the attach
  * buffer-replay path can read as `complete` while still carrying a pending
- * question, and a blind "继续" must NOT be sent to answer it (see RM-A11).
+ * question, and a blind continue must NOT be sent to answer it (see RM-A11).
  *
  * Pure (buffer in, boolean out) so the orchestrator's defence is unit-testable
  * without standing up a runtime.
@@ -272,7 +272,7 @@ class AutomationController {
     // the manual requirement's lifecycle is outside our scope.
     if (turn.outcome !== 'complete') {
       console.warn(
-        `[c3:automation] 闸门监听:「${running.title}」运行结束(outcome=${turn.outcome}),非自动化需求,继续推进`,
+        `[c3:automation] gate: "${running.title}" turn ended (outcome=${turn.outcome}); non-automate requirement, continuing`,
       )
     }
 
@@ -337,7 +337,7 @@ class AutomationController {
     // its turn, so a session that's still running here is the common re-start case.
     let attach = !!req.lastDevSessionId && this.hooks.isRunning(req.lastDevSessionId!)
     // Otherwise resume the requirement's existing dev session when it's still on
-    // disk (continue the half-built context with "继续"); a `todo` item or a dangling
+    // disk (continue the half-built context with continue); a `todo` item or a dangling
     // session (empty/deleted `lastDevSessionId`) starts a fresh launch — the same
     // dangling rule as manual `start_development`.
     const resumable =
@@ -355,7 +355,7 @@ class AutomationController {
           ? `${skillPrefix}${req.title}\n\n${req.content}${
               req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
             }`
-          : '继续'
+          : 'continue'
       // When attaching, there's no launch to fire `onSessionId`, so mark in_progress
       // up front: the status must reflect "tracking <session>" (currentSessionId set)
       // while the in-flight turn runs, not only after it settles.
@@ -377,7 +377,7 @@ class AutomationController {
       // The turn has settled — it is no longer paused on any prompt.
       this.setAwaiting(false)
       // Only the first turn attaches; the attached turn settles the run, so any
-      // "继续" continuation goes through the ordinary resume path.
+      // continue continuation goes through the ordinary resume path.
       attach = false
       if (this.abort.signal.aborted) return false
 
@@ -419,7 +419,7 @@ class AutomationController {
 
       // Defence in depth (independent of the judge): if the turn ended on an
       // unanswered AskUserQuestion, a real human decision is pending — never let a
-      // mis-judged `in_progress` drive a blind "继续" over it. Force a stop with a
+      // mis-judged `in_progress` drive a blind continue over it. Force a stop with a
       // recorded reason, exactly like the stuck / cap paths below.
       if (turn.pendingQuestion) {
         this.fail(`「${req.title}」需要人工决策(未作答的提问):${verdict.reason}`)
@@ -448,7 +448,7 @@ class AutomationController {
           )
           return false
         }
-        continue // resume with "继续"
+        continue // resume with continue
       }
       // stuck
       this.fail(`「${req.title}」未真实完成:${verdict.reason}`)

@@ -28,8 +28,8 @@
 import type { AutomationStatus, Requirement, ServerToClient } from '@ccc/shared/protocol'
 import { getRequirement, listRequirements, setLastDevSession, updateStatus } from './store.js'
 import { judgeCompletion } from './judge.js'
-import { commitAndPush, gitDiffStat, gitRecentLog, runLintFix } from '../git.js'
-import { getDevSkill, getLintFixCommand } from '../settings.js'
+import { commitAndPush, gitDiffStat, gitRecentLog } from '../git.js'
+import { getDevSkill } from '../settings.js'
 
 /** Outcome of one dev turn, as observed by the orchestrator's internal viewer. */
 export interface DevTurnResult {
@@ -116,14 +116,6 @@ export interface AutomationHooks {
 
 /** Max continue resumes per requirement before giving up (clears dev-skill checkpoints). */
 const MAX_CONTINUATIONS = 10
-
-/**
- * Max self-heal retries when an auto-commit is blocked by a pre-commit lint hook
- * (RM-A13): retry #1 runs the configured lint-fix command, retry #2 hands the lint
- * errors to the dev agent. Exceeding the cap is an abnormal stop (RM-A6) — the
- * requirement is NOT marked done and the lint error summary is recorded.
- */
-const MAX_LINT_HEAL_RETRIES = 2
 
 /**
  * Does a runtime buffer end on an UNANSWERED `AskUserQuestion` — a real human
@@ -468,20 +460,20 @@ class AutomationController {
 
   /**
    * RM-A13: commit & push the finished work, self-healing a pre-commit **lint**
-   * failure. A first `commitAndPush` that fails with `failure !== 'commit-hook'`
-   * (push rejected, no upstream, conflict-state, no repo …) is returned verbatim
-   * — it is NOT a lint failure and must surface as a hard stop (RM-A6), never
-   * silently retried. A `commit-hook` failure enters a bounded heal loop
-   * ({@link MAX_LINT_HEAL_RETRIES} = 2, **command first, agent fallback**):
-   *   - retry #1: run the configured lint-fix command (`getLintFixCommand`, e.g.
-   *     `pnpm lint:fix`); a blank command skips straight to the agent stage;
-   *   - retry #2 (and any retry once the command stage is spent): resume the dev
-   *     session with a targeted prompt carrying the lint error summary, so the
-   *     agent fixes what `eslint --fix` could not, then retry the commit.
-   * Each retry re-stages everything (`commitAndPush`'s `git add -A`). If a retry's
-   * commit fails with a non-`commit-hook` reason it is surfaced immediately. After
-   * the cap is exhausted the loop stops with the last lint error summary. Every
-   * step logs (visible trail for triage). Returns `{ ok:false }` with no error on
+   * failure by handing it to the dev agent **once**.
+   *
+   * Lint toolchains differ per project (language/framework), so there is no
+   * portable fix *command* — when the commit is rejected by a pre-commit lint
+   * hook (`commitAndPush` returns `failure: 'commit-hook'`), the orchestrator
+   * resumes the **same** dev session with a targeted prompt carrying the lint
+   * error summary and lets the agent fix it, then retries the commit **exactly
+   * once**. A first commit that fails with `failure !== 'commit-hook'` (push
+   * rejected, no upstream, conflict-state, no repo …) is returned verbatim — it
+   * is NOT a lint failure and must surface as a hard stop (RM-A6), never silently
+   * retried. If the single agent retry's commit still fails (lint or otherwise),
+   * the error is surfaced and the loop stops (RM-A6, requirement not `done`).
+   *
+   * Every stage logs a visible trail. Returns `{ ok:false }` with no error on
    * abort — the caller checks the signal and returns quietly.
    */
   private async commitWithLintHeal(
@@ -494,48 +486,37 @@ class AutomationController {
     // Not a lint/pre-commit-hook failure → never self-heal; surface as a hard stop.
     if (res.failure !== 'commit-hook') return { ok: false, error: res.error }
 
-    const lintCmd = getLintFixCommand()
-    for (let attempt = 1; attempt <= MAX_LINT_HEAL_RETRIES; attempt++) {
-      if (this.abort.signal.aborted) return { ok: false }
-      // Command-first: only the first attempt runs the lint-fix command (and only
-      // when one is configured); the rest hand the errors to the dev agent.
-      const useCommand = attempt === 1 && lintCmd !== ''
-      if (useCommand) {
-        console.warn(
-          `[c3:automation]「${req.title}」pre-commit lint 失败,运行修复命令「${lintCmd}」[第 ${attempt}/${MAX_LINT_HEAL_RETRIES} 次]:${res.error}`,
-        )
-        const fix = await runLintFix(this.projectPath, lintCmd)
-        console.log(`[c3:automation] lint 修复命令${fix.ok ? '完成' : '退出非零'}:${fix.output}`)
-      } else {
-        console.warn(
-          `[c3:automation]「${req.title}」lint 命令未消除报错,启动修复 agent [第 ${attempt}/${MAX_LINT_HEAL_RETRIES} 次]:${res.error}`,
-        )
-        const fixPrompt = `pre-commit 钩子的 lint 检查未通过,本次提交被拦截。请修复以下 lint/格式报错(eslint --fix 无法自动修复的部分),改完即可,无需自行 git commit:\n\n${res.error ?? 'pre-commit lint 失败'}`
-        const turn = await this.hooks.runDevTurn({
-          projectPath: this.projectPath,
-          sessionId,
-          prompt: fixPrompt,
-          requirementId: req.id,
-          signal: this.abort.signal,
-          onAwaitingPermission: (awaiting) => this.setAwaiting(awaiting),
-        })
-        this.setAwaiting(false)
-        if (this.abort.signal.aborted) return { ok: false }
-        sessionId = turn.sessionId
-        if (turn.outcome !== 'complete') {
-          console.warn(
-            `[c3:automation] 修复 agent turn 未正常结束 (outcome=${turn.outcome});仍尝试重试 commit`,
-          )
-        }
-      }
-      res = await commitAndPush(this.projectPath, message)
-      if (res.ok) return { ok: true, committed: res.committed }
-      // A non-lint failure surfacing mid-heal is a real error — stop, don't retry.
-      if (res.failure !== 'commit-hook') return { ok: false, error: res.error }
+    if (this.abort.signal.aborted) return { ok: false }
+    // Single agent attempt: resume the dev session to fix what the lint hook rejected.
+    console.warn(
+      `[c3:automation]「${req.title}」pre-commit lint 失败,启动修复 agent 介入一次:${res.error}`,
+    )
+    const fixPrompt = `pre-commit 钩子的 lint 检查未通过,本次提交被拦截。请修复以下 lint/格式报错,改完即可,无需自行 git commit:\n\n${res.error ?? 'pre-commit lint 失败'}`
+    const turn = await this.hooks.runDevTurn({
+      projectPath: this.projectPath,
+      sessionId,
+      prompt: fixPrompt,
+      requirementId: req.id,
+      signal: this.abort.signal,
+      onAwaitingPermission: (awaiting) => this.setAwaiting(awaiting),
+    })
+    this.setAwaiting(false)
+    if (this.abort.signal.aborted) return { ok: false }
+    if (turn.outcome !== 'complete') {
+      console.warn(
+        `[c3:automation] 修复 agent turn 未正常结束 (outcome=${turn.outcome});仍尝试重试 commit`,
+      )
     }
+
+    res = await commitAndPush(this.projectPath, message)
+    if (res.ok) return { ok: true, committed: res.committed }
+    // The single retry still failed — stop and surface the reason (RM-A6).
     return {
       ok: false,
-      error: `lint 自动修复失败(已重试 ${MAX_LINT_HEAL_RETRIES} 次),最后报错:${res.error ?? '未知 lint 错误'}`,
+      error:
+        res.failure === 'commit-hook'
+          ? `lint 自动修复失败(修复 agent 介入后仍未通过):${res.error ?? '未知 lint 错误'}`
+          : res.error,
     }
   }
 }

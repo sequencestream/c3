@@ -7,7 +7,7 @@
  *
  * Every call is scoped to `cwd` via `git -C`; nothing here touches process.cwd().
  */
-import { exec, execFile } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
@@ -296,32 +296,4 @@ export async function commitAndPush(projectPath: string, message: string): Promi
 /** Collapse multi-line git output into a single trimmed line for the UI. */
 function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim().slice(0, 300)
-}
-
-/**
- * Run the project's configured lint-fix command (e.g. `pnpm lint:fix`) in `cwd`
- * as the **command-first** stage of the automation orchestrator's lint self-heal.
- * The command is a free-form shell string (it may carry args/pipes), so it runs
- * via `exec` (a shell), scoped to `cwd`, with a timeout and a bounded buffer.
- *
- * A blank `command` is a no-op: the caller (orchestrator) then skips straight to
- * the agent-fallback stage. `ok` reflects the command's exit code (0 ⇒ ok), but a
- * non-ok command is not fatal — the orchestrator retries the commit regardless and
- * lets the agent fallback take over if the lint failure persists. Never rejects.
- */
-export function runLintFix(
-  cwd: string,
-  command: string,
-  timeoutMs = 180_000,
-): Promise<{ ok: boolean; output: string }> {
-  const cmd = command.trim()
-  if (!cmd) return Promise.resolve({ ok: false, output: '(未配置 lint 修复命令)' })
-  return new Promise((resolve) => {
-    exec(cmd, { cwd, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-      resolve({
-        ok: !err,
-        output: oneLine(`${stdout?.toString() ?? ''}\n${stderr?.toString() ?? ''}`),
-      })
-    })
-  })
 }

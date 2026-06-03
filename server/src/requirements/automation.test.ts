@@ -16,23 +16,17 @@ import {
 // Mock the heavy collaborators so the test exercises only the state machine.
 const judgeMock = vi.fn()
 const commitMock = vi.fn()
-const lintFixMock = vi.fn()
 vi.mock('./judge.js', () => ({ judgeCompletion: (...a: unknown[]) => judgeMock(...a) }))
 vi.mock('../git.js', () => ({
   gitDiffStat: async () => 'M file.ts | 1 +',
   gitRecentLog: async () => 'abc123 feat: prior work',
   commitAndPush: (...a: unknown[]) => commitMock(...a),
-  runLintFix: (...a: unknown[]) => lintFixMock(...a),
 }))
-// The launch prompt's skill prefix + the lint-fix command come from system
-// settings; mock them so tests don't depend on the developer's on-disk config.
-// Defaults mirror the real ones (no skill prefix; `pnpm lint:fix`).
+// The launch prompt's skill prefix comes from system settings; mock it so tests
+// don't depend on the developer's on-disk config and can exercise a custom skill.
+// Default is empty (no prefix), matching the real default.
 const devSkillMock = vi.fn(() => '')
-const lintFixCmdMock = vi.fn(() => 'pnpm lint:fix')
-vi.mock('../settings.js', () => ({
-  getDevSkill: () => devSkillMock(),
-  getLintFixCommand: () => lintFixCmdMock(),
-}))
+vi.mock('../settings.js', () => ({ getDevSkill: () => devSkillMock() }))
 
 // Imported AFTER the mocks so automation.ts binds to the mocked modules.
 const { startAutomation, stopAutomation, getAutomationStatus } = await import('./automation.js')
@@ -49,10 +43,7 @@ beforeEach(() => {
   judgeMock.mockReset()
   commitMock.mockReset()
   commitMock.mockResolvedValue({ ok: true, committed: true })
-  lintFixMock.mockReset()
-  lintFixMock.mockResolvedValue({ ok: true, output: 'lint fixed' })
   devSkillMock.mockReturnValue('')
-  lintFixCmdMock.mockReturnValue('pnpm lint:fix')
 })
 
 afterEach(() => {
@@ -500,42 +491,12 @@ describe('automation orchestrator', () => {
 
   // ---- Lint self-heal on a pre-commit-hook failure (RM-A13) ----
 
-  it('self-heals a pre-commit lint failure via the lint-fix command, then commits', async () => {
-    const [r] = insertRequirements(proj, [{ title: 'lint-cmd', content: 'c', priority: 'P0' }])
+  it('self-heals a pre-commit lint failure by handing it to the dev agent once, then commits', async () => {
+    const [r] = insertRequirements(proj, [{ title: 'lint-heal', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)
     judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    // First commit blocked by the lint hook; after the lint-fix command it succeeds.
+    // First commit blocked by the lint hook; after the agent fixes it, the retry succeeds.
     commitMock
-      .mockResolvedValueOnce({
-        ok: false,
-        committed: false,
-        error: 'eslint 报错',
-        failure: 'commit-hook',
-      })
-      .mockResolvedValueOnce({ ok: true, committed: true })
-
-    const prompts: string[] = []
-    const { final } = await runToEnd(completingTurn(prompts))
-
-    expect(final.state).toBe('done')
-    expect(getRequirement(r.id)?.status).toBe('done')
-    expect(lintFixMock).toHaveBeenCalledTimes(1) // command stage ran once
-    expect(commitMock).toHaveBeenCalledTimes(2) // initial + 1 retry
-    expect(prompts).toEqual([expect.stringMatching(/^lint-cmd\n/)]) // no agent fix turn
-  })
-
-  it('falls back to the dev agent when the lint command cannot fix it, then commits', async () => {
-    const [r] = insertRequirements(proj, [{ title: 'lint-agent', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    // Command stage doesn't clear it (still commit-hook); the agent fixes it next.
-    commitMock
-      .mockResolvedValueOnce({
-        ok: false,
-        committed: false,
-        error: 'eslint: no-unused-vars',
-        failure: 'commit-hook',
-      })
       .mockResolvedValueOnce({
         ok: false,
         committed: false,
@@ -548,21 +509,21 @@ describe('automation orchestrator', () => {
     const { final } = await runToEnd(completingTurn(prompts))
 
     expect(final.state).toBe('done')
-    expect(lintFixMock).toHaveBeenCalledTimes(1) // command stage (attempt 1)
-    expect(commitMock).toHaveBeenCalledTimes(3) // initial + command retry + agent retry
-    // Two dev turns: the original work turn, then the lint-fix agent turn with a
-    // targeted prompt carrying the lint error summary.
+    expect(getRequirement(r.id)?.status).toBe('done')
+    expect(commitMock).toHaveBeenCalledTimes(2) // initial + single agent retry
+    // Two dev turns: the original work turn, then the lint-fix agent turn carrying
+    // the lint error summary in a targeted prompt.
     expect(prompts).toHaveLength(2)
-    expect(prompts[0]).toMatch(/^lint-agent\n/)
+    expect(prompts[0]).toMatch(/^lint-heal\n/)
     expect(prompts[1]).toContain('pre-commit')
     expect(prompts[1]).toContain('no-unused-vars')
   })
 
-  it('stops after the 2-retry cap when the lint failure never clears (not marked done)', async () => {
+  it('stops (single agent attempt only) when the lint failure survives the agent fix; not marked done', async () => {
     const [r] = insertRequirements(proj, [{ title: 'stubborn', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)
     judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    // Every commit is blocked by the lint hook — command + agent both fail to clear it.
+    // Both commits are blocked by the lint hook — the agent could not clear it.
     commitMock.mockResolvedValue({
       ok: false,
       committed: false,
@@ -570,16 +531,17 @@ describe('automation orchestrator', () => {
       failure: 'commit-hook',
     })
 
-    const { final } = await runToEnd(completingTurn([]))
+    const prompts: string[] = []
+    const { final } = await runToEnd(completingTurn(prompts))
 
     expect(final.state).toBe('error')
     expect(final.error).toContain('lint 自动修复失败')
-    expect(final.error).toContain('已重试 2 次')
     expect(getRequirement(r.id)?.status).not.toBe('done')
-    expect(commitMock).toHaveBeenCalledTimes(3) // initial + 2 retries (cap)
+    expect(commitMock).toHaveBeenCalledTimes(2) // initial + ONE agent retry (no further tries)
+    expect(prompts).toHaveLength(2) // work turn + exactly one agent fix turn
   })
 
-  it('does NOT self-heal a non-lint commit failure (other) — surfaces it directly', async () => {
+  it('does NOT self-heal a non-lint commit failure (other) — surfaces it directly, no agent turn', async () => {
     const [r] = insertRequirements(proj, [{ title: 'other-fail', content: 'c', priority: 'P0' }])
     setAutomate(r.id, true)
     judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
@@ -590,35 +552,13 @@ describe('automation orchestrator', () => {
       failure: 'other',
     })
 
-    const { final } = await runToEnd(completingTurn([]))
-
-    expect(final.state).toBe('error')
-    expect(final.error).toContain('git push 失败')
-    expect(lintFixMock).not.toHaveBeenCalled() // no command stage
-    expect(commitMock).toHaveBeenCalledTimes(1) // no retry
-  })
-
-  it('skips the command stage and goes straight to the agent when no lint-fix command is configured', async () => {
-    lintFixCmdMock.mockReturnValue('') // explicit empty ⇒ skip command stage
-    const [r] = insertRequirements(proj, [{ title: 'no-cmd', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    commitMock
-      .mockResolvedValueOnce({
-        ok: false,
-        committed: false,
-        error: 'eslint 报错',
-        failure: 'commit-hook',
-      })
-      .mockResolvedValueOnce({ ok: true, committed: true })
-
     const prompts: string[] = []
     const { final } = await runToEnd(completingTurn(prompts))
 
-    expect(final.state).toBe('done')
-    expect(lintFixMock).not.toHaveBeenCalled() // command stage skipped
-    expect(prompts).toHaveLength(2) // work turn + agent fix turn (attempt 1 is the agent)
-    expect(prompts[1]).toContain('pre-commit')
+    expect(final.state).toBe('error')
+    expect(final.error).toContain('git push 失败')
+    expect(commitMock).toHaveBeenCalledTimes(1) // no retry
+    expect(prompts).toHaveLength(1) // only the work turn — no agent fix turn
   })
 
   it('stop() aborts and returns to idle', async () => {

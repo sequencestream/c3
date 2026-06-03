@@ -36,6 +36,7 @@ import type {
   PermissionMode,
   Requirement,
   Schedule,
+  ScheduleExecutionLog,
   UpdateScheduleInput,
   RequirementStatus,
   ServerToClient,
@@ -269,6 +270,12 @@ const selectedSchedule = computed<Schedule | null>(() => {
   if (!selectedScheduleId.value || !schedulesProject.value) return null
   return currentSchedules.value.find((s) => s.id === selectedScheduleId.value) ?? null
 })
+// Execution logs per schedule, fetched on demand via `get_schedule_detail` and
+// re-fetched whenever the schedule list is broadcast (i.e. after each run).
+const scheduleLogs = ref<Record<string, ScheduleExecutionLog[]>>({})
+const selectedScheduleLogs = computed<ScheduleExecutionLog[]>(() =>
+  selectedScheduleId.value ? (scheduleLogs.value[selectedScheduleId.value] ?? []) : [],
+)
 
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.requirementsProject'
@@ -577,6 +584,18 @@ function handleMessage(msg: ServerToClient) {
     }
     case 'schedules':
       schedules.value = { ...schedules.value, [msg.workspacePath]: msg.items }
+      // After a run completes the server re-broadcasts the list; refresh the open
+      // schedule's execution logs so history stays current without manual reload.
+      if (
+        activeTab.value === 'schedules' &&
+        schedulesProject.value === msg.workspacePath &&
+        selectedScheduleId.value
+      ) {
+        client?.send({ type: 'get_schedule_detail', scheduleId: selectedScheduleId.value })
+      }
+      break
+    case 'schedule_detail':
+      scheduleLogs.value = { ...scheduleLogs.value, [msg.schedule.id]: msg.logs }
       break
     case 'discussion_detail':
       activeDiscussion.value = msg.discussion
@@ -938,9 +957,11 @@ function openSchedules(path: string) {
   client?.send({ type: 'list_schedules', workspacePath: path })
 }
 
-// Click a schedule in the list: switch the right panel to show its detail.
+// Click a schedule in the list: switch the right panel to show its detail and
+// fetch its execution logs (reply arrives as `schedule_detail`).
 function onSelectSchedule(id: string) {
   selectedScheduleId.value = id
+  client?.send({ type: 'get_schedule_detail', scheduleId: id })
 }
 
 // ---- Schedule create/edit form (write path) ----
@@ -1323,7 +1344,7 @@ function listCommands() {
             Edit
           </button>
         </div>
-        <ScheduleDetail :schedule="selectedSchedule" />
+        <ScheduleDetail :schedule="selectedSchedule" :logs="selectedScheduleLogs" />
       </template>
       <template v-else>
         <SessionTitleBar

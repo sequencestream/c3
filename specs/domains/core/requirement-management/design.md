@@ -341,16 +341,15 @@ A per-project, in-memory state machine driven entirely by message handlers and a
     `commitWithLintHeal(req, sessionId)` rather than a bare `commitAndPush`. It first commits; on
     `ok` it returns `{ok, committed}`. A failure with `failure !== 'commit-hook'` (push rejected, no
     upstream, no repo …) is returned verbatim → hard stop (RM-A6), **never** retried. A
-    `failure: 'commit-hook'` (a pre-commit lint hook) enters a bounded loop (`MAX_LINT_HEAL_RETRIES=2`):
-    retry #1 runs the configured lint-fix command (`getLintFixCommand`, default `pnpm lint:fix`; blank
-    skips to the agent stage) via `runLintFix(projectPath, cmd)`; the remaining retry resumes the
-    **same** dev session (`hooks.runDevTurn`, same `sessionId`, no `attach`) with a targeted prompt
-    embedding the lint error summary, so the agent fixes what `eslint --fix` could not. Each retry
-    re-stages via `commitAndPush`'s `git add -A`; a commit that succeeds ends the heal, a mid-heal
-    non-`commit-hook` failure surfaces immediately, and exhausting the cap returns
-    `lint 自动修复失败(已重试 2 次)…` → `fail` (RM-A6, requirement not `done`). The signal is checked
-    around every await (abort returns `{ok:false}` with no error so the caller stays quiet); an
-    agent-turn permission pause flips `setAwaiting` per RM-A9. Every stage `console.log/warn`s a trail.
+    `failure: 'commit-hook'` (a pre-commit lint hook) is healed by a **single dev-agent attempt** —
+    lint toolchains differ per project, so there is no portable fix _command_: it resumes the **same**
+    dev session (`hooks.runDevTurn`, same `sessionId`, no `attach`) with a targeted prompt embedding the
+    lint error summary, lets the agent fix it, then retries the commit **once** (`commitAndPush` re-stages
+    via `git add -A`). A retry that succeeds ends the heal; a retry that fails non-`commit-hook` surfaces
+    verbatim; a retry that is still a lint failure returns `lint 自动修复失败(修复 agent 介入后仍未通过)…`
+    → `fail` (RM-A6, requirement not `done`). The signal is checked around every await (abort returns
+    `{ok:false}` with no error so the caller stays quiet); the agent fix turn's permission pause flips
+    `setAwaiting` per RM-A9. Every stage `console.warn`s a trail.
 - **Completion judge (`judge.ts`).** `judgeCompletion` builds an English prompt (requirement + last
   message + **evidence**: `git diff HEAD --stat` for uncommitted work AND `git log --oneline -5` for
   recent commits — the dev skill often self-commits, leaving a clean tree, so an empty diff must NOT
@@ -385,13 +384,9 @@ CommitFailureKind` field classifies **why**: a failed `git commit` whose output 
     lint/pre-commit-hook signature (`eslint`/`prettier`/`lint-staged`/`husky`/`pre-commit`/`✖`, via the
     pure, unit-tested `classifyCommitFailure`) is `'commit-hook'` (self-heal-eligible, RM-A13); every
     other failure (`git add`/`status`/`push`, no-repo) is `'other'` (hard stop). Multi-repo runs
-    propagate the sub-repo's `failure` so a sub-repo lint failure still triggers the self-heal.
-  - `runLintFix(cwd, command, timeoutMs?)` runs the orchestrator's command-first lint fix (RM-A13) via
-    `exec` (a shell — the command is a free-form string, e.g. `pnpm lint:fix`), scoped to `cwd`, with a
-    timeout and bounded buffer; never rejects, returns `{ ok, output }`. A blank command is a no-op
-    (`ok:false`, `(未配置 lint 修复命令)`) so the orchestrator skips straight to the agent fallback. The
-    command string comes from the `lintFixCommand` system setting (`getLintFixCommand`; unset ⇒ default
-    `pnpm lint:fix`, explicit empty string ⇒ skip the command stage).
+    propagate the sub-repo's `failure` so a sub-repo lint failure still triggers the self-heal
+    (RM-A13). There is **no** lint-fix _command_ helper — the heal is a single dev-agent fix, since
+    lint toolchains are not portable across projects.
 
 ## Reconcile (`reconcile.ts`)
 

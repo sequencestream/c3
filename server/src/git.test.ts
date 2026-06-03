@@ -3,13 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  classifyCommitFailure,
-  commitAndPush,
-  gitDiffStat,
-  gitRecentLog,
-  runLintFix,
-} from './git.js'
+import { classifyCommitFailure, commitAndPush, gitDiffStat, gitRecentLog } from './git.js'
 
 // These tests drive the REAL `git` CLI against throwaway repos in a temp dir, with
 // bare repos as push targets — so they exercise discovery + per-repo commit/push
@@ -192,24 +186,7 @@ describe('classifyCommitFailure — lint/pre-commit-hook vs other', () => {
   })
 })
 
-describe('runLintFix', () => {
-  it('runs the configured command in cwd and reports ok on exit 0', async () => {
-    const r = await runLintFix(work, 'echo fixed-by-lint')
-    expect(r.ok).toBe(true)
-    expect(r.output).toContain('fixed-by-lint')
-  })
-
-  it('reports not-ok on a non-zero command (so the orchestrator falls through)', async () => {
-    const r = await runLintFix(work, 'exit 3')
-    expect(r.ok).toBe(false)
-  })
-
-  it('is a no-op for a blank command (caller skips straight to the agent stage)', async () => {
-    const r = await runLintFix(work, '   ')
-    expect(r.ok).toBe(false)
-    expect(r.output).toContain('未配置')
-  })
-
+describe('commitAndPush — no git repo in the workspace', () => {
   it('no git repo anywhere: reports an error and does not commit', async () => {
     // Plain files/dirs, no .git anywhere under the root.
     mkdirSync(join(work, 'src'), { recursive: true })

@@ -27,8 +27,11 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   persists a `draft` (title derived from `goal`), then a **read-only research agent** —
   `discussion-research` gate reusing the requirement read set (Read/Grep/Glob + WebSearch/WebFetch),
   no save tool, write/exec/sub-agent tools hard-disabled — completes its `context`
-  (`server/src/discussions/research.ts`). The server captures the agent's final text and writes it
-  back, pushing `discussions` on draft insert and again on completion.
+  (`server/src/discussions/research.ts`). The completed `context` is **strictly status-only**: the
+  researcher collects relevant facts / current state / constraints / open questions, and is hard-forbidden
+  from emitting any options, candidate solutions, recommendations, or conclusions — so the discussion's
+  divergent brainstorm is not pre-anchored by a preset answer. The server captures the agent's final text
+  and writes it back, pushing `discussions` on draft insert and again on completion.
 - Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
   the right pane shows a **Start** button on a `draft` and appends streamed messages live once the
   engine runs. The create form's Goal / Context textareas **auto-grow** with their content up to a

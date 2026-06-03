@@ -12,7 +12,8 @@ import { runClaude, REQUIREMENT_DISALLOWED_TOOLS } from '../claude.js'
 /** System-prompt append that frames the unattended, read-only research run. */
 export const DISCUSSION_RESEARCH_PROMPT = `你是讨论的「上下文研究员」。你的唯一任务:为一个即将开始的讨论补全背景资料(context)。
 - 只读:可用 Read/Grep/Glob 阅读本项目材料,可用 WebSearch/WebFetch 联网检索补充背景;不要写文件、不要执行命令、不要提问。
-- 围绕讨论的「类型 + 目标」收集真正相关的事实、现状、约束、已知方案与未知点。
+- 围绕讨论的「类型 + 目标」收集真正相关的事实、现状、约束、未知点/待澄清项。
+- 只描述现状:严禁提供任何可选方案、候选方案、解决思路、倾向性建议或结论;只客观陈述「当前项目情况」,把判断与发散留给讨论本身。
 - 把用户给出的原始 context 视为线索,在其基础上核实与扩充,而非简单复述。
 - 最终只输出补全后的 context 正文本身(结构化要点即可),不要寒暄、不要解释你做了什么。`
 

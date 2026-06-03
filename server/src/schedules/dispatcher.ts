@@ -11,8 +11,13 @@
 
 import { spawn } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { McpMode, Schedule } from '@ccc/shared/protocol'
 import { findClaudeExecutable } from '../claude.js'
+import { getWorkspaceMcpConfig } from './store.js'
+import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
+import { pendWriteApproval } from './queue.js'
+import type { FrozenToolSet } from './mcp-freeze.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +35,35 @@ interface LlmConfig {
   prompt: string
   maxWallClockMs?: number // ms, default 60_000
   outputSchema?: Record<string, unknown> // JSON Schema
+}
+
+/** Diff preview generation helper for write approval display. */
+function generateDiffPreview(toolName: string, input: unknown): string {
+  const inp = input as Record<string, unknown>
+  if (toolName === 'Write' || toolName === 'Edit') {
+    const path = inp?.filePath ?? inp?.file_path ?? 'unknown'
+    const content =
+      typeof inp?.content === 'string'
+        ? inp.content.substring(0, 200)
+        : typeof inp?.content === 'object'
+          ? JSON.stringify(inp.content).substring(0, 200)
+          : ''
+    return `File: ${path}\nContent (first 200 chars): ${content}`
+  }
+  if (toolName === 'Bash') {
+    const cmd = typeof inp?.command === 'string' ? inp.command.substring(0, 200) : 'unknown'
+    return `Command: ${cmd}`
+  }
+  if (toolName === 'NotebookEdit') {
+    return `Notebook: ${inp?.notebookPath ?? inp?.notebook_path ?? 'unknown'}`
+  }
+  if (toolName === 'Agent') {
+    return `Sub-agent prompt: ${typeof inp?.prompt === 'string' ? inp.prompt.substring(0, 200) : ''}`
+  }
+  if (toolName.startsWith('mcp__')) {
+    return `MCP tool: ${toolName}\nInput: ${JSON.stringify(input).substring(0, 300)}`
+  }
+  return `Tool: ${toolName}\nInput: ${JSON.stringify(input).substring(0, 200)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -216,35 +250,64 @@ async function executeCommand(
 // ---------------------------------------------------------------------------
 
 /**
- * V1 permission handler for LLM prompt schedule execution.
- * - `full-access`: auto-allow all tools (bypassPermissions)
- * - `sandboxed`: allow read tools, deny write tools
- * - `read-only`: deny all tools
+ * Create a context-aware permission handler for LLM prompt schedule execution.
+ *
+ * Uses the frozen tool set for allowlist/denylist enforcement. For sandboxed
+ * and full-access modes, write tool calls go through the approval queue
+ * (sandboxed → full queue with timeout; full-access → Owner quick confirm).
  */
-function permissionHandler(mcpMode: McpMode) {
-  const readTools = new Set([
-    'Read',
-    'Grep',
-    'Glob',
-    'LS',
-    'NotebookRead',
-    'WebFetch',
-    'WebSearch',
-    'TodoWrite',
-  ])
+function createPermissionHandler(
+  scheduleId: string,
+  workspacePath: string,
+  frozenTools: FrozenToolSet,
+  mcpMode: McpMode,
+): CanUseTool {
+  return async (toolName, input) => {
+    // Step 1: Check if tool is in the frozen tool set
+    if (!matchesFrozenTool(toolName, frozenTools)) {
+      return { behavior: 'deny', message: `tool "${toolName}" is not in the frozen allowlist` }
+    }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return async (toolName: string): Promise<any> => {
+    // Step 2: Apply mcpMode rules
     switch (mcpMode) {
-      case 'full-access':
-        return { behavior: 'bypassPermissions' }
       case 'read-only':
         return { behavior: 'deny', message: 'schedule execution identity: read-only' }
-      case 'sandboxed':
-        if (readTools.has(toolName)) {
+
+      case 'full-access': {
+        if (!isWriteTool(toolName, frozenTools)) {
           return { behavior: 'allow' }
         }
-        return { behavior: 'deny', message: `tool "${toolName}" not in sandboxed allowlist` }
+        const approved = await pendWriteApproval({
+          scheduleId,
+          workspacePath,
+          toolName,
+          toolInput: input,
+          diffPreview: generateDiffPreview(toolName, input),
+          ttlMs: 5 * 60 * 1000,
+        })
+        if (approved) {
+          return { behavior: 'allow' }
+        }
+        return { behavior: 'deny', message: 'full-access write not approved' }
+      }
+
+      case 'sandboxed': {
+        if (!isWriteTool(toolName, frozenTools)) {
+          return { behavior: 'allow' }
+        }
+        const approved = await pendWriteApproval({
+          scheduleId,
+          workspacePath,
+          toolName,
+          toolInput: input,
+          diffPreview: generateDiffPreview(toolName, input),
+        })
+        if (approved) {
+          return { behavior: 'allow' }
+        }
+        return { behavior: 'deny', message: 'sandboxed write not approved' }
+      }
+
       default:
         return { behavior: 'deny', message: `unknown mcpMode: ${mcpMode}` }
     }
@@ -326,6 +389,27 @@ async function executeLlmPrompt(
 
   const claudePath = findClaudeExecutable()
 
+  // Resolve workspace-level MCP configuration and freeze the tool list.
+  const workspaceMcpConfig = getWorkspaceMcpConfig(schedule.workspacePath)
+  const frozenTools = freezeTools(
+    schedule.toolAllowlist ?? [],
+    schedule.toolDenylist ?? [],
+    workspaceMcpConfig,
+    schedule.mcpMode,
+  )
+  const permissionHandler = createPermissionHandler(
+    schedule.id,
+    schedule.workspacePath,
+    frozenTools,
+    schedule.mcpMode,
+  )
+
+  // Build mcpServers from workspace config (if any)
+  const hasMcpServers = Object.keys(workspaceMcpConfig.mcpServers).length > 0
+  const mcpServers:
+    | Record<string, { command: string; args?: string[]; env?: Record<string, string> }>
+    | undefined = hasMcpServers ? workspaceMcpConfig.mcpServers : undefined
+
   try {
     const q = query({
       prompt,
@@ -336,7 +420,8 @@ async function executeLlmPrompt(
         disallowedTools: [],
         permissionMode: 'default',
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-        canUseTool: permissionHandler(schedule.mcpMode),
+        ...(mcpServers ? { mcpServers } : {}),
+        canUseTool: permissionHandler,
       },
     })
 

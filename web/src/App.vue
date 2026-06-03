@@ -24,16 +24,19 @@ import DiscussionList from './components/DiscussionList.vue'
 import AgendaProgress from './components/AgendaProgress.vue'
 import ScheduleList from './components/ScheduleList.vue'
 import ScheduleDetail from './components/ScheduleDetail.vue'
+import ScheduleForm from './components/ScheduleForm.vue'
 import { discussionMessageToChat, discussionMessagesToChat } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   AutomationStatus,
+  CreateScheduleInput,
   Discussion,
   PermissionMode,
   Requirement,
   Schedule,
+  UpdateScheduleInput,
   RequirementStatus,
   ServerToClient,
   SessionInfo,
@@ -940,6 +943,26 @@ function onSelectSchedule(id: string) {
   selectedScheduleId.value = id
 }
 
+// ---- Schedule create/edit form (write path) ----
+// The modal serves both create (target = null) and edit (target = a schedule).
+// On save it sends create_schedule / update_schedule; the server then
+// broadcasts a fresh `schedules` list, which refreshes the view automatically.
+const scheduleFormOpen = ref(false)
+const scheduleFormTarget = ref<Schedule | null>(null)
+
+function openScheduleForm(target: Schedule | null) {
+  scheduleFormTarget.value = target
+  scheduleFormOpen.value = true
+}
+
+function createSchedule(input: CreateScheduleInput) {
+  client?.send({ type: 'create_schedule', workspacePath: input.workspacePath, input })
+}
+
+function updateSchedule(id: string, input: UpdateScheduleInput) {
+  client?.send({ type: 'update_schedule', scheduleId: id, input })
+}
+
 // "Start" in the discussion title bar (draft only): kick off the organizer
 // engine. Messages then stream in live via `discussion_message`; the status
 // flips through the refreshed `discussions` list.
@@ -1279,9 +1302,27 @@ function listCommands() {
           </button>
         </form>
       </template>
-      <!-- Schedules tab: selected schedule's config summary (read-only). No input,
-           status bar, or task panel — R1 is pure read-path. -->
+      <!-- Schedules tab: a small write toolbar (New / Edit) above the selected
+           schedule's config summary. -->
       <template v-else-if="activeTab === 'schedules'">
+        <div class="sched-toolbar">
+          <button
+            type="button"
+            class="sched-toolbar-btn primary"
+            :disabled="!schedulesProject"
+            @click="openScheduleForm(null)"
+          >
+            + New schedule
+          </button>
+          <button
+            type="button"
+            class="sched-toolbar-btn"
+            :disabled="!selectedSchedule"
+            @click="openScheduleForm(selectedSchedule)"
+          >
+            Edit
+          </button>
+        </div>
         <ScheduleDetail :schedule="selectedSchedule" />
       </template>
       <template v-else>
@@ -1335,5 +1376,14 @@ function listCommands() {
     :settings="serverSettings"
     @close="settingsOpen = false"
     @save="saveSettings"
+  />
+
+  <ScheduleForm
+    :open="scheduleFormOpen"
+    :schedule="scheduleFormTarget"
+    :workspace-path="schedulesProject ?? ''"
+    @close="scheduleFormOpen = false"
+    @create="createSchedule"
+    @update="updateSchedule"
   />
 </template>

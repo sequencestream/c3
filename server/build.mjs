@@ -30,6 +30,8 @@ await build({
       import.meta.dirname,
       '../shared/src/discussion-types.ts',
     ),
+    '@ccc/shared/cron': resolve(import.meta.dirname, '../shared/src/cron.ts'),
+    '@ccc/shared/nl-cron': resolve(import.meta.dirname, '../shared/src/nl-cron.ts'),
   },
   logLevel: 'info',
   // The dev (tsx/ESM) path in server.ts reads import.meta.url via direct eval so

@@ -42,10 +42,15 @@ function timeLeft(ts: number | null): string {
   return '< 1m'
 }
 
-// 每行的标签:类型前缀 + cron 表达式。
+// 每行的标签:类型前缀 + 名称(若 config 里有)否则回退到 cron 表达式。
 function scheduleLabel(s: Schedule): string {
   const tag = s.type === 'command' ? 'Cmd' : 'LLM'
-  return `${tag} · ${s.cronExpression}`
+  const cfg = s.config
+  const name =
+    cfg && typeof cfg === 'object' && typeof (cfg as Record<string, unknown>).name === 'string'
+      ? ((cfg as Record<string, unknown>).name as string).trim()
+      : ''
+  return `${tag} · ${name || s.cronExpression}`
 }
 
 // 面板折叠切换(与 DiscussionList 一致)。

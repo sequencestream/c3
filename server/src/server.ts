@@ -105,6 +105,9 @@ import {
   getDueSchedules,
   updateNextRunAt,
   updateExecutionLog,
+  listPendingWriteApprovals as storeListPendingApprovals,
+  getWorkspaceMcpConfig as storeGetWorkspaceMcpConfig,
+  saveWorkspaceMcpConfig as storeSaveWorkspaceMcpConfig,
 } from './schedules/store.js'
 import {
   startScheduler,
@@ -112,6 +115,13 @@ import {
   triggerRunNow,
   setExecutionStore,
 } from './schedules/scheduler.js'
+import {
+  setBroadcast as setApprovalBroadcast,
+  startExpiryScanner,
+  stopExpiryScanner,
+  resolveApproval,
+  cancelAllForWorkspace as cancelAllApprovalsForWorkspace,
+} from './schedules/queue.js'
 import { onWorkspaceRemoved } from './schedules/archiver.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
@@ -1570,6 +1580,53 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               })
               return
             }
+
+            case 'get_workspace_mcp_config': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const config = storeGetWorkspaceMcpConfig(msg.workspacePath)
+              send(ws, { type: 'workspace_mcp_config', workspacePath: msg.workspacePath, config })
+              return
+            }
+
+            case 'save_workspace_mcp_config': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              storeSaveWorkspaceMcpConfig(msg.workspacePath, msg.config)
+              send(ws, {
+                type: 'workspace_mcp_config',
+                workspacePath: msg.workspacePath,
+                config: storeGetWorkspaceMcpConfig(msg.workspacePath),
+              })
+              return
+            }
+
+            case 'list_pending_write_approvals': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const items = storeListPendingApprovals(msg.workspacePath)
+              send(ws, { type: 'pending_write_approvals', workspacePath: msg.workspacePath, items })
+              return
+            }
+
+            case 'approve_write_approval': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const ok = resolveApproval(msg.approvalId, msg.decision, 'owner')
+              if (!ok) {
+                send(ws, { type: 'error', message: '审批条目不存在或已被处理' })
+              }
+              // Broadcast resolved event is already handled inside resolveApproval
+              return
+            }
           }
         },
         onClose() {
@@ -1649,12 +1706,40 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       updateExecutionLog,
       broadcast: broadcastSchedules,
     })
+
+    // Wire the write-approval broadcast to all WS connections and start the
+    // expiry scanner so overdue approvals auto-reject.
+    setApprovalBroadcast((event) => {
+      if (event.type === 'pending') {
+        const approval = event.approval as import('@ccc/shared/protocol').PendingWriteApproval
+        for (const deliver of connections) {
+          deliver({ type: 'schedule_write_approval_pending', approval })
+        }
+      } else if (event.type === 'resolved') {
+        const r = event.approval as {
+          approvalId: string
+          status: 'approved' | 'rejected' | 'expired'
+          scheduleId?: string
+        }
+        for (const deliver of connections) {
+          deliver({
+            type: 'schedule_write_approval_resolved',
+            approvalId: r.approvalId,
+            status: r.status,
+            scheduleId: r.scheduleId ?? '',
+          })
+        }
+      }
+    })
+    startExpiryScanner()
+
     startScheduler()
   }
 
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async () => {
     console.log('[c3] shutting down...')
+    stopExpiryScanner()
     await stopScheduler(30_000)
     server.close()
     process.exit(0)

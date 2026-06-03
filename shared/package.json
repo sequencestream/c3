@@ -8,6 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
-    "./discussion-types": "./src/discussion-types.ts"
+    "./discussion-types": "./src/discussion-types.ts",
+    "./cron": "./src/cron.ts",
+    "./nl-cron": "./src/nl-cron.ts"
   }
 }

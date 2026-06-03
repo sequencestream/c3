@@ -16,15 +16,18 @@ import { resolve } from 'node:path'
 import type {
   CreateScheduleInput,
   McpMode,
+  PendingWriteApproval,
   Schedule,
   ScheduleExecutionLog,
   ScheduleStatus,
   ScheduleType,
   UpdateScheduleInput,
+  WorkspaceMcpConfig,
 } from '@ccc/shared/protocol'
+import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../db.js'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schedules (
@@ -54,13 +57,76 @@ CREATE TABLE IF NOT EXISTS schedule_execution_logs (
   status        TEXT NOT NULL DEFAULT 'running'
 );
 CREATE INDEX IF NOT EXISTS idx_sch_exec_schedule ON schedule_execution_logs(schedule_id);
+
+CREATE TABLE IF NOT EXISTS write_approvals (
+  id             TEXT PRIMARY KEY,
+  schedule_id    TEXT NOT NULL,
+  workspace_path TEXT NOT NULL,
+  tool_name      TEXT NOT NULL,
+  tool_input     TEXT NOT NULL DEFAULT '{}',
+  diff_preview   TEXT NOT NULL DEFAULT '',
+  created_at     INTEGER NOT NULL,
+  expires_at     INTEGER NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'pending',
+  resolved_by    TEXT,
+  resolved_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_wa_workspace ON write_approvals(workspace_path);
+CREATE INDEX IF NOT EXISTS idx_wa_status ON write_approvals(status);
+
+CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
+  workspace_path TEXT PRIMARY KEY,
+  config_json    TEXT NOT NULL DEFAULT '{}',
+  updated_at     INTEGER NOT NULL
+);
 `
 
+/** Whether a column already exists on a table (so an ALTER ADD is idempotent). */
+function columnExists(d: Db, table: string, column: string): boolean {
+  const rows = d.all<{ name: string }>(`PRAGMA table_info(${table})`)
+  return rows.some((r) => r.name === column)
+}
+
 // Migration functions — run after the base schema to evolve the database across versions.
+//
+// IMPORTANT: `PRAGMA user_version` is database-global and shared with the sibling
+// requirement/discussion stores. A fresh db (user_version=0) has already had the
+// LATEST base SCHEMA applied (CREATE TABLE IF NOT EXISTS with the newest column
+// shape) before this runs, so every migration step must be idempotent — guard
+// `ALTER TABLE ADD COLUMN` with a column-existence check, and use `IF NOT EXISTS`
+// for tables. Otherwise a fresh db re-runs the old ALTER and fails on a duplicate
+// column.
 function runMigrations(d: Db, currentVersion: number): void {
   // v1 → v2: add status column to schedule_execution_logs
-  if (currentVersion < 2) {
+  if (currentVersion < 2 && !columnExists(d, 'schedule_execution_logs', 'status')) {
     d.exec(`ALTER TABLE schedule_execution_logs ADD COLUMN status TEXT NOT NULL DEFAULT 'running'`)
+  }
+  // v2 → v3: add write_approvals and workspace_mcp_configs tables. The base SCHEMA
+  // already creates them with IF NOT EXISTS; this re-runs the DDL for older db
+  // files opened before the SCHEMA block carried these tables.
+  if (currentVersion < 3) {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS write_approvals (
+        id             TEXT PRIMARY KEY,
+        schedule_id    TEXT NOT NULL,
+        workspace_path TEXT NOT NULL,
+        tool_name      TEXT NOT NULL,
+        tool_input     TEXT NOT NULL DEFAULT '{}',
+        diff_preview   TEXT NOT NULL DEFAULT '',
+        created_at     INTEGER NOT NULL,
+        expires_at     INTEGER NOT NULL,
+        status         TEXT NOT NULL DEFAULT 'pending',
+        resolved_by    TEXT,
+        resolved_at    INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_wa_workspace ON write_approvals(workspace_path);
+      CREATE INDEX IF NOT EXISTS idx_wa_status ON write_approvals(status);
+      CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
+        workspace_path TEXT PRIMARY KEY,
+        config_json    TEXT NOT NULL DEFAULT '{}',
+        updated_at     INTEGER NOT NULL
+      );
+    `)
   }
 }
 
@@ -216,6 +282,13 @@ export function createSchedule(input: CreateScheduleInput): Schedule {
   const now = Date.now()
   const allowlist = input.toolAllowlist ?? []
   const denylist = input.toolDenylist ?? []
+  // Backfill the first trigger time so a `active` schedule is eligible for
+  // dispatch immediately. getDueSchedules() filters out `next_run_at IS NULL`,
+  // so without this the first run would never fire. Invalid crons stay null
+  // (never due) rather than throwing and rejecting the create.
+  const nextRunAt = isValidCron(input.cronExpression)
+    ? computeNextRunAt(input.cronExpression, now)
+    : null
   d.run(
     `INSERT INTO schedules
        (id, type, config, workspace_path, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
@@ -225,7 +298,7 @@ export function createSchedule(input: CreateScheduleInput): Schedule {
     JSON.stringify(input.config ?? {}),
     resolve(input.workspacePath),
     input.cronExpression,
-    null, // next_run_at — set by the cron engine
+    nextRunAt,
     'active',
     input.mcpMode,
     JSON.stringify(allowlist),
@@ -253,6 +326,10 @@ export function updateSchedule(id: string, patch: UpdateScheduleInput): void {
   if (patch.cronExpression !== undefined) {
     sets.push('cron_expression=?')
     params.push(patch.cronExpression)
+    // Recompute next_run_at so the new cron takes effect on the next tick rather
+    // than firing against the previous expression's stale timestamp.
+    sets.push('next_run_at=?')
+    params.push(isValidCron(patch.cronExpression) ? computeNextRunAt(patch.cronExpression) : null)
   }
   if (patch.mcpMode !== undefined) {
     sets.push('mcp_mode=?')
@@ -416,4 +493,199 @@ export function listExecutionLogs(scheduleId: string): ScheduleExecutionLog[] {
       scheduleId,
     )
     .map(toExecutionLog)
+}
+
+// ---- Write approvals ----
+
+interface WriteApprovalRow {
+  id: string
+  schedule_id: string
+  workspace_path: string
+  tool_name: string
+  tool_input: string
+  diff_preview: string
+  created_at: number
+  expires_at: number
+  status: string
+  resolved_by: string | null
+  resolved_at: number | null
+}
+
+function toWriteApproval(r: WriteApprovalRow): PendingWriteApproval {
+  let toolInput: unknown = {}
+  try {
+    toolInput = JSON.parse(r.tool_input)
+  } catch {
+    /* ignore corrupt input */
+  }
+  return {
+    id: r.id,
+    scheduleId: r.schedule_id,
+    workspacePath: r.workspace_path,
+    toolName: r.tool_name,
+    toolInput,
+    diffPreview: r.diff_preview,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    status: r.status,
+    resolvedBy: r.resolved_by,
+    resolvedAt: r.resolved_at,
+  }
+}
+
+/** Create a new pending write approval entry. */
+export function createWriteApproval(input: {
+  scheduleId: string
+  workspacePath: string
+  toolName: string
+  toolInput: unknown
+  diffPreview: string
+  expiresAt: number
+}): PendingWriteApproval {
+  const d = requireDb()
+  const id = randomUUID()
+  const now = Date.now()
+  d.run(
+    `INSERT INTO write_approvals
+       (id, schedule_id, workspace_path, tool_name, tool_input, diff_preview, created_at, expires_at, status)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    id,
+    input.scheduleId,
+    resolve(input.workspacePath),
+    input.toolName,
+    JSON.stringify(input.toolInput ?? {}),
+    input.diffPreview,
+    now,
+    input.expiresAt,
+    'pending',
+  )
+  return {
+    id,
+    scheduleId: input.scheduleId,
+    workspacePath: input.workspacePath,
+    toolName: input.toolName,
+    toolInput: input.toolInput,
+    diffPreview: input.diffPreview,
+    createdAt: now,
+    expiresAt: input.expiresAt,
+    status: 'pending',
+    resolvedBy: null,
+    resolvedAt: null,
+  }
+}
+
+/** Get a single write approval by id. */
+export function getWriteApproval(id: string): PendingWriteApproval | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<WriteApprovalRow>('SELECT * FROM write_approvals WHERE id=?', id)
+  return row ? toWriteApproval(row) : null
+}
+
+/** List pending (unresolved) write approvals for a workspace. */
+export function listPendingWriteApprovals(workspacePath: string): PendingWriteApproval[] {
+  const d = db()
+  if (!d) return []
+  const abs = resolve(workspacePath)
+  return d
+    .all<WriteApprovalRow>(
+      'SELECT * FROM write_approvals WHERE workspace_path=? AND status=? ORDER BY created_at ASC',
+      abs,
+      'pending',
+    )
+    .map(toWriteApproval)
+}
+
+/** List expired (past expires_at) pending approvals — used by the expiry scanner. */
+export function listExpiredPendingApprovals(): PendingWriteApproval[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<WriteApprovalRow>(
+      'SELECT * FROM write_approvals WHERE status=? AND expires_at <= ?',
+      'pending',
+      Date.now(),
+    )
+    .map(toWriteApproval)
+}
+
+/**
+ * Resolve a pending write approval (approve or reject).
+ * Returns true if the approval was actually updated, false if already resolved.
+ */
+export function resolveWriteApproval(
+  id: string,
+  status: 'approved' | 'rejected' | 'expired',
+  resolvedBy?: string,
+): boolean {
+  const d = requireDb()
+  const row = d.get<WriteApprovalRow>('SELECT status FROM write_approvals WHERE id=?', id)
+  if (!row || row.status !== 'pending') return false
+  const now = Date.now()
+  d.run(
+    'UPDATE write_approvals SET status=?, resolved_by=?, resolved_at=? WHERE id=?',
+    status,
+    resolvedBy ?? null,
+    now,
+    id,
+  )
+  return true
+}
+
+// ---- Workspace MCP configs ----
+
+interface WorkspaceMcpConfigRow {
+  workspace_path: string
+  config_json: string
+  updated_at: number
+}
+
+function toWorkspaceMcpConfig(r: WorkspaceMcpConfigRow): WorkspaceMcpConfig {
+  let config: WorkspaceMcpConfig = { mcpServers: {}, denylist: [] }
+  try {
+    const parsed = JSON.parse(r.config_json)
+    if (parsed && typeof parsed === 'object') {
+      config = {
+        mcpServers: parsed.mcpServers ?? {},
+        denylist: Array.isArray(parsed.denylist)
+          ? parsed.denylist.filter((x: unknown): x is string => typeof x === 'string')
+          : [],
+      }
+    }
+  } catch {
+    /* ignore corrupt config */
+  }
+  return config
+}
+
+/** Get workspace-level MCP configuration (empty default if not set). */
+export function getWorkspaceMcpConfig(workspacePath: string): WorkspaceMcpConfig {
+  const d = db()
+  if (!d) return { mcpServers: {}, denylist: [] }
+  const abs = resolve(workspacePath)
+  const row = d.get<WorkspaceMcpConfigRow>(
+    'SELECT * FROM workspace_mcp_configs WHERE workspace_path=?',
+    abs,
+  )
+  if (!row) return { mcpServers: {}, denylist: [] }
+  return toWorkspaceMcpConfig(row)
+}
+
+/** Save workspace-level MCP configuration (upsert). */
+export function saveWorkspaceMcpConfig(workspacePath: string, config: WorkspaceMcpConfig): void {
+  const d = requireDb()
+  const abs = resolve(workspacePath)
+  const now = Date.now()
+  const json = JSON.stringify({
+    mcpServers: config.mcpServers ?? {},
+    denylist: config.denylist ?? [],
+  })
+  d.run(
+    `INSERT INTO workspace_mcp_configs (workspace_path, config_json, updated_at)
+     VALUES (?,?,?)
+     ON CONFLICT(workspace_path) DO UPDATE SET config_json=excluded.config_json, updated_at=excluded.updated_at`,
+    abs,
+    json,
+    now,
+  )
 }

@@ -331,6 +331,36 @@ header h1 {
   margin-left: 0;
 }
 
+/* ============ Schedules write toolbar (New / Edit) ============ */
+.sched-toolbar {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-panel);
+}
+.sched-toolbar-btn {
+  font-size: var(--fs-caption);
+  padding: var(--sp-1) var(--sp-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-text);
+  cursor: pointer;
+}
+.sched-toolbar-btn:hover:not(:disabled) {
+  border-color: var(--c-primary);
+}
+.sched-toolbar-btn.primary {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+.sched-toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ============ 工作区切换器（顶部栏最左侧） ============ */
 .ws-switcher {
   position: relative;

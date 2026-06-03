@@ -516,6 +516,42 @@ export interface ScheduleExecutionLog {
   status: string | null
 }
 
+// ---- Schedule MCP Security ----
+
+/** One pending write operation approval for a sandboxed schedule execution. */
+export interface PendingWriteApproval {
+  id: string
+  scheduleId: string
+  /** Owning workspace absolute path (resolved). */
+  workspacePath: string
+  toolName: string
+  /** The tool call input (shown for diff review). */
+  toolInput: unknown
+  /** Server-generated diff/preview summary. */
+  diffPreview: string
+  createdAt: number
+  expiresAt: number
+  /** 'pending' | 'approved' | 'rejected' | 'expired' */
+  status: string
+  resolvedBy: string | null
+  resolvedAt: number | null
+}
+
+/** Workspace-level MCP server connections and denylist configuration. */
+export interface WorkspaceMcpConfig {
+  /** MCP server connection definitions, keyed by server name. */
+  mcpServers: Record<
+    string,
+    {
+      command: string
+      args?: string[]
+      env?: Record<string, string>
+    }
+  >
+  /** Workspace-level global denylist (subtraction-based disable). */
+  denylist: string[]
+}
+
 // Client → Server
 export type ClientToServer =
   | { type: 'user_prompt'; text: string }
@@ -670,6 +706,22 @@ export type ClientToServer =
   | { type: 'get_schedule_detail'; scheduleId: string }
   /** Manual trigger: execute a schedule immediately (outside normal tick). */
   | { type: 'schedule_run_now'; scheduleId: string }
+  /** Get workspace-level MCP server configuration. */
+  | { type: 'get_workspace_mcp_config'; workspacePath: string }
+  /** Save workspace-level MCP server configuration. */
+  | {
+      type: 'save_workspace_mcp_config'
+      workspacePath: string
+      config: WorkspaceMcpConfig
+    }
+  /** List pending write approvals for a workspace. */
+  | { type: 'list_pending_write_approvals'; workspacePath: string }
+  /** Approve or reject a pending write approval. */
+  | {
+      type: 'approve_write_approval'
+      approvalId: string
+      decision: 'approve' | 'reject'
+    }
   | { type: 'ping' }
 
 // Server → Client
@@ -821,4 +873,17 @@ export type ServerToClient =
   | { type: 'schedule_detail'; schedule: Schedule; logs: ScheduleExecutionLog[] }
   /** Execution logs for a schedule. */
   | { type: 'schedule_execution_logs'; scheduleId: string; items: ScheduleExecutionLog[] }
+  /** Workspace-level MCP server configuration (reply to `get_workspace_mcp_config`). */
+  | { type: 'workspace_mcp_config'; workspacePath: string; config: WorkspaceMcpConfig }
+  /** A new pending write approval entry was created. */
+  | { type: 'schedule_write_approval_pending'; approval: PendingWriteApproval }
+  /** A pending write approval was resolved (approved/rejected/expired). */
+  | {
+      type: 'schedule_write_approval_resolved'
+      approvalId: string
+      status: 'approved' | 'rejected' | 'expired'
+      scheduleId: string
+    }
+  /** Pending write approvals for a workspace (reply to `list_pending_write_approvals`). */
+  | { type: 'pending_write_approvals'; workspacePath: string; items: PendingWriteApproval[] }
   | { type: 'pong' }

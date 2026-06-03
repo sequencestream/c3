@@ -46,20 +46,21 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   broadcasts). A manual **Start** button stays on a `draft` as a fallback (research failed/stalled),
   and streamed messages append live once the engine runs. The create form's Goal / Context textareas **auto-grow** with their content up to a
   pixel cap (`autoGrowHeight` in `discussion-view.ts`), scrolling internally only past the cap and
-  resetting when the form closes. The **left list** mirrors the requirement list's interaction paradigm
-  (`web/src/components/DiscussionList.vue` + pure view helpers in `web/src/lib/discussion-view.ts`):
-  a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary
-  row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /
-  in_progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
-  (`expandedId`, at most one open) that expands a **tab bar + single content area** beneath the
-  clicked row (`discussionDetailTabs`): one tab per non-empty field (Goal / Context / Conclusion,
-  empty fields dropped) whose body is **Markdown-rendered** via `MarkdownText :markdown` (the shared
-  markdown-it `html:false` → DOMPurify pipeline), plus an always-present **Details** tab carrying the
-  structured meta (type / status / created / completed). The active tab resets to the first
-  content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
-  the selected field. A persistent per-row **Open chat** button still emits
-  `open` to load the transcript + orchestration view in the right pane (accordion browsing and the
-  right pane coexist). All list copy is English (web/CLAUDE.md).
+  resetting when the form closes. The **left list** (`web/src/pages/discussions/components/DiscussionList/DiscussionList.vue`
+  - pure view helpers in `web/src/lib/discussion-view.ts`) carries:
+    a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary
+    row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /
+    in_progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
+    (`expandedId`, at most one open) that expands a **tab bar + single content area** beneath the row
+    (`discussionDetailTabs`): one tab per non-empty field (Goal / Context / Conclusion,
+    empty fields dropped) whose body is **Markdown-rendered** via `MarkdownText :markdown` (the shared
+    markdown-it `html:false` → DOMPurify pipeline), plus an always-present **Details** tab carrying the
+    structured meta (type / status / created / completed). The active tab resets to the first
+    content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
+    the selected field. **Row click is a single combined action** (`openRow`): it emits `open` to load
+    the transcript + orchestration view in the right pane _and_ toggles that row's inline detail
+    accordion in one gesture (re-clicking the same row collapses the detail; `open` stays idempotent).
+    There is no chevron and no per-row "Open chat" button. All list copy is English (web/CLAUDE.md).
 - **Organizer engine** (`server/src/discussions/orchestrator.ts` + pure
   `orchestrator-logic.ts`): a background loop reusing the consensus `askAgentOnce` /
   `launchForAgent` paradigm. The organizer's round decision and participants' speech parsing are

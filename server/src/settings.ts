@@ -56,8 +56,8 @@ function stateFile(): string {
   return join(c3Dir(), 'state.json')
 }
 
-function systemAgent(): AgentConfig {
-  return { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '' }
+function systemAgent(enabled = true): AgentConfig {
+  return { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', enabled }
 }
 
 function defaultSettings(): SystemSettings {
@@ -81,7 +81,13 @@ let settingsCache: SystemSettings | null = null
  */
 function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const incoming = Array.isArray(raw?.agents) ? raw.agents : []
-  const agents: AgentConfig[] = [systemAgent()]
+  // The system agent's Claude overrides are always ignored (AC-R1), but its
+  // `enabled` flag IS honoured: a disabled system agent drops out of every
+  // list consumer (it can still be a launch fallback). Absent ⇒ enabled.
+  const systemIncoming = incoming.find(
+    (a) => a && typeof a === 'object' && a.id === SYSTEM_AGENT_ID,
+  )
+  const agents: AgentConfig[] = [systemAgent(systemIncoming?.enabled !== false)]
   for (const a of incoming) {
     if (!a || typeof a !== 'object') continue
     const id = typeof a.id === 'string' && a.id ? a.id : randomUUID()
@@ -93,6 +99,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
       baseUrl: typeof a.baseUrl === 'string' ? a.baseUrl.trim() : '',
       apiKey: typeof a.apiKey === 'string' ? a.apiKey.trim() : '',
       model: typeof a.model === 'string' ? a.model.trim() : '',
+      // Back-compat: missing/true ⇒ enabled; only an explicit false disables.
+      enabled: a.enabled !== false,
     })
   }
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : SYSTEM_AGENT_ID
@@ -146,16 +154,17 @@ export function normalizeMaxSpeechChars(raw: unknown): number {
 }
 
 /**
- * Normalise the degradation chain: keep only ids that reference an existing
- * agent in `agents`, preserve order, and strip duplicates. If the result is
- * empty (nothing was valid, or the input was absent/empty) return undefined ⇒
+ * Normalise the degradation chain: keep only ids that reference an *enabled*
+ * agent in `agents`, preserve order, and strip duplicates. Disabled agents are
+ * dropped (they must not appear in the fallback chain). If the result is empty
+ * (nothing was valid/enabled, or the input was absent/empty) return undefined ⇒
  * no degradation (current behaviour, single-agent fallback).
  */
 export function normalizeDegradationChain(
   raw: unknown,
   agents: AgentConfig[],
 ): string[] | undefined {
-  const valid = new Set(agents.map((a) => a.id))
+  const valid = new Set(agents.filter((a) => a.enabled !== false).map((a) => a.id))
   if (!Array.isArray(raw)) return undefined
   const seen = new Set<string>()
   const result: string[] = []
@@ -209,6 +218,18 @@ export function getDefaultAgentId(): string {
 /** The permission mode new sessions start in (`default` when unconfigured). */
 export function getDefaultMode(): PermissionMode {
   return loadSettings().defaultMode ?? 'default'
+}
+
+/**
+ * The enabled agents only — the canonical "list of agents" every consumer pool
+ * draws from (discussion participants, consensus voters, default-agent picker).
+ * Back-compat: an agent with no `enabled` field counts as enabled. NOTE this is
+ * deliberately NOT used by {@link resolveAgent}/{@link resolveSessionLaunch}: a
+ * disabled agent is still a valid launch fallback so a session is never locked
+ * out (AC-R10).
+ */
+export function enabledAgents(settings: SystemSettings = loadSettings()): AgentConfig[] {
+  return settings.agents.filter((a) => a.enabled !== false)
 }
 
 /** The agent for an id, or the default agent if the id is null/unknown. */
@@ -373,11 +394,12 @@ export function resolveDegradationAgent(
 }
 
 /**
- * The agents that vote in a consensus round: every configured agent except the
- * one the session itself runs on (`currentAgentId`, already resolved).
+ * The agents that vote in a consensus round: every *enabled* agent except the
+ * one the session itself runs on (`currentAgentId`, already resolved). Disabled
+ * agents never vote.
  */
 export function consensusVoters(currentAgentId: string | null): AgentConfig[] {
-  return loadSettings().agents.filter((a) => a.id !== currentAgentId)
+  return enabledAgents().filter((a) => a.id !== currentAgentId)
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

@@ -35,7 +35,12 @@ import {
   type DiscussionStageKind,
 } from '@ccc/shared/discussion-types'
 import { askAgentOnce } from '../agent-once.js'
-import { getMaxRoundsPerStage, getMaxSpeechChars, loadSettings, resolveAgent } from '../settings.js'
+import {
+  enabledAgents,
+  getMaxRoundsPerStage,
+  getMaxSpeechChars,
+  resolveAgent,
+} from '../settings.js'
 import {
   appendMessage as storeAppendMessage,
   getDiscussion as storeGetDiscussion,
@@ -400,7 +405,7 @@ export function defaultDiscussionDeps(hooks: {
       setAgenda: storeSetAgenda,
     },
     organizer: () => resolveAgent(null),
-    participants: () => loadSettings().agents,
+    participants: () => enabledAgents(),
     maxRoundsPerStage: getMaxRoundsPerStage(),
     maxSpeechChars: getMaxSpeechChars(),
     onMessage: hooks.onMessage,

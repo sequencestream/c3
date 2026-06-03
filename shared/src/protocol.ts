@@ -104,6 +104,16 @@ export interface AgentConfig {
   apiKey: string
   /** Model alias or id. Empty ⇒ no override. */
   model: string
+  /**
+   * Whether this agent is enabled. Absent/`true` ⇒ enabled (back-compat: old
+   * configs without the field are treated as enabled). When `false`, the agent
+   * is excluded from every "list of agents" consumer (discussion participants,
+   * consensus voters, degradation chain, default-agent picker) — yet it stays
+   * a valid launch target, so `resolveSessionLaunch` can still fall back to a
+   * bound/default/system agent that happens to be disabled (a session is never
+   * locked out). The system agent may be disabled too.
+   */
+  enabled?: boolean
 }
 
 /**

@@ -42,25 +42,38 @@ async function clickTab(w: ReturnType<typeof mountList>, label: string): Promise
 }
 
 describe('DiscussionList.vue — 讨论列表(读路径)', () => {
-  it('渲染讨论列表,点击行内 Open chat → emit open(id)', async () => {
+  it('渲染讨论列表,点击行主体 → emit open(id),且不再有 Open chat 按钮', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')] })
     const items = w.findAll('.disc-item')
     expect(items.length).toBe(2)
     expect(items.map((i) => i.find('.disc-title').text())).toEqual(['Alpha', 'Beta'])
-    await items[1].find('.disc-open-btn').trigger('click')
+    // Open chat 按钮已删除
+    expect(w.find('.disc-open-btn').exists()).toBe(false)
+    // 点击行主体即在右侧打开 chat
+    await items[1].find('.disc-item-main').trigger('click')
     expect(w.emitted('open')).toEqual([['d2']])
   })
 
-  it('点击标题区只展开手风琴,不触发 open', async () => {
+  it('键盘 Enter / Space 聚焦行主体 → emit open(id)', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha')] })
+    await w.find('.disc-item-main').trigger('keydown.enter')
+    await w.find('.disc-item-main').trigger('keydown.space')
+    expect(w.emitted('open')).toEqual([['d1'], ['d1']])
+  })
+
+  it('点击行主体:同时 emit open 并展开内联详情(无 chevron)', async () => {
+    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
+    // 行首箭头已移除
+    expect(w.find('.disc-chevron').exists()).toBe(false)
+    // 点击行主体:既打开 chat,又展开内联详情
     await w.find('.disc-item-main').trigger('click')
-    expect(w.emitted('open')).toBeUndefined()
+    expect(w.emitted('open')).toEqual([['d1']])
     // 无 goal/context/conclusion → 仅 Details Tab,展开即显示结构化元信息列表。
     expect(w.find('.disc-detail').exists()).toBe(true)
     expect(w.find('.disc-meta-list').exists()).toBe(true)
   })
 
-  it('手风琴互斥:至多一项展开,再次点击收起', async () => {
+  it('手风琴互斥:至多一项展开,再次点击同行收起(每次点击仍 emit open)', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')] })
     const mains = w.findAll('.disc-item-main')
     await mains[0].trigger('click')
@@ -68,9 +81,10 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     // 展开第二项 → 第一项自动收起(互斥)
     await mains[1].trigger('click')
     expect(w.findAll('.disc-detail').length).toBe(1)
-    // 再次点击第二项 → 全部收起
+    // 再次点击第二项 → 详情收起,但 chat 仍被打开(open 幂等)
     await mains[1].trigger('click')
     expect(w.findAll('.disc-detail').length).toBe(0)
+    expect(w.emitted('open')).toEqual([['d1'], ['d2'], ['d2']])
   })
 
   it('展开详情:Tab 切换显示 goal/context/conclusion 与元信息', async () => {
@@ -202,8 +216,8 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     await w.find('.disc-collapse-btn').trigger('click')
     expect(w.find('.disc-list').classes()).toContain('collapsed')
     expect(w.find('.disc-type').exists()).toBe(false)
-    // 收缩态下 Open chat 入口仍可用
-    await w.find('.disc-open-btn').trigger('click')
+    // 收缩态下点击行主体仍可打开 chat
+    await w.find('.disc-item-main').trigger('click')
     expect(w.emitted('open')).toEqual([['d1']])
     // 再次点击恢复展开态
     await w.find('.disc-collapse-btn').trigger('click')

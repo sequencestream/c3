@@ -74,7 +74,13 @@ function addAgent() {
   // Locally-unique id so the default-agent radio can target it before save; the
   // server keeps it as-is (only id-less agents get a fresh uuid on normalize).
   const id = `new-${Date.now()}-${draft.value.agents.length}`
-  draft.value.agents.push({ id, name: '', baseUrl: '', apiKey: '', model: '' })
+  draft.value.agents.push({ id, name: '', baseUrl: '', apiKey: '', model: '', enabled: true })
+}
+
+// An agent counts as enabled unless explicitly disabled (back-compat with
+// configs/drafts that predate the field).
+function isEnabled(a: AgentConfig): boolean {
+  return a.enabled !== false
 }
 
 function removeAgent(id: string) {
@@ -99,10 +105,14 @@ function isSystemAgent(a: AgentConfig): boolean {
         <p class="settings-section-title">Agents</p>
         <p class="settings-hint">
           New sessions launch Claude Code with the default agent. The system agent uses no overrides
-          (your existing <code>claude</code> login) and cannot be edited or removed.
+          (your existing <code>claude</code> login) and cannot be edited or removed. Toggle
+          <strong>On</strong> to enable an agent; a disabled agent is excluded from discussion
+          participants, consensus voting, the degradation chain, and the default picker — but bound
+          or fallback launches still work, so no existing session is locked out.
         </p>
         <div class="agent-table">
           <div class="agent-row agent-row-head">
+            <span class="col-on">On</span>
             <span class="col-default">Default</span>
             <span class="col-name">Name</span>
             <span class="col-url">Base URL</span>
@@ -111,12 +121,22 @@ function isSystemAgent(a: AgentConfig): boolean {
             <span class="col-actions"></span>
           </div>
           <div v-for="a in draft.agents" :key="a.id" class="agent-row">
+            <label class="col-on">
+              <input
+                type="checkbox"
+                :checked="isEnabled(a)"
+                title="Enable / disable this agent"
+                @change="a.enabled = ($event.target as HTMLInputElement).checked"
+              />
+            </label>
             <label class="col-default">
               <input
                 type="radio"
                 name="default-agent"
                 :value="a.id"
                 :checked="draft.defaultAgentId === a.id"
+                :disabled="!isEnabled(a)"
+                title="Only an enabled agent can be the default"
                 @change="draft.defaultAgentId = a.id"
               />
             </label>

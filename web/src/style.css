@@ -1859,7 +1859,7 @@ button.stop-btn:hover:not(:disabled) {
 }
 .agent-row {
   display: grid;
-  grid-template-columns: 64px 180px minmax(220px, 1fr) minmax(180px, 1fr) 220px 44px;
+  grid-template-columns: 40px 64px 180px minmax(220px, 1fr) minmax(180px, 1fr) 220px 44px;
   align-items: center;
   gap: var(--sp-3);
 }
@@ -1868,6 +1868,7 @@ button.stop-btn:hover:not(:disabled) {
   color: var(--c-text-muted);
   padding: 0 var(--sp-1) var(--sp-1);
 }
+.col-on,
 .col-default {
   display: flex;
   align-items: center;

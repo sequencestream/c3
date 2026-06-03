@@ -64,11 +64,6 @@ function fmtDate(ts: number): string {
   return new Date(ts).toLocaleString()
 }
 
-function fmtNextRun(ts: number | null): string {
-  if (ts === null) return 'Not scheduled'
-  return new Date(ts).toLocaleString()
-}
-
 // 展开行的完整配置 JSON(美化输出);无配置时返回 "—"。
 function configText(s: Schedule): string {
   const c = s.config
@@ -217,26 +212,8 @@ function togglePanel(): void {
             >
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Next run</span>
-            <span class="sched-meta-val"
-              >{{ fmtNextRun(s.nextRunAt) }} ({{ timeLeft(s.nextRunAt) }})</span
-            >
-          </div>
-          <div class="sched-meta-row">
-            <span class="sched-meta-label">MCP mode</span>
+            <span class="sched-meta-label">Mode</span>
             <span class="sched-meta-val">{{ s.mcpMode }}</span>
-          </div>
-          <div class="sched-meta-row">
-            <span class="sched-meta-label">Allowlist</span>
-            <span class="sched-meta-val">{{
-              s.toolAllowlist.length ? s.toolAllowlist.join(', ') : '—'
-            }}</span>
-          </div>
-          <div class="sched-meta-row">
-            <span class="sched-meta-label">Denylist</span>
-            <span class="sched-meta-val">{{
-              s.toolDenylist.length ? s.toolDenylist.join(', ') : '—'
-            }}</span>
           </div>
           <div class="sched-meta-row">
             <span class="sched-meta-label">Created</span>

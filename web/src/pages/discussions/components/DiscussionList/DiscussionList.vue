@@ -114,6 +114,12 @@ function toggleDetail(id: string): void {
   activeTab.value = tabs[0]?.kind ?? 'details'
 }
 
+// 点击行:同时在右侧打开 chat 并切换内联详情手风琴(两个动作合一)。
+function openRow(id: string): void {
+  emit('open', id)
+  toggleDetail(id)
+}
+
 // 实时更新可能让当前选中字段变空(对应 Tab 消失):回落到首个可见 Tab。
 watch(expandedTabs, (tabs) => {
   if (tabs.length && !tabs.some((t) => t.kind === activeTab.value)) {
@@ -195,22 +201,19 @@ function togglePanel(): void {
         class="disc-item"
         :class="[d.status, { active: d.id === activeId }]"
       >
+        <!-- Clicking the row both opens the chat in the right pane and toggles the
+             inline detail accordion (the two actions are combined; no chevron). -->
         <div
           class="disc-item-main"
           role="button"
           tabindex="0"
           :aria-expanded="d.id === expandedId"
-          @click="toggleDetail(d.id)"
-          @keydown.enter.prevent="toggleDetail(d.id)"
-          @keydown.space.prevent="toggleDetail(d.id)"
+          :aria-label="`Open chat: ${d.title}`"
+          @click="openRow(d.id)"
+          @keydown.enter.prevent="openRow(d.id)"
+          @keydown.space.prevent="openRow(d.id)"
         >
           <div class="disc-item-head">
-            <span
-              class="disc-chevron"
-              :class="{ 'disc-chevron--open': d.id === expandedId }"
-              aria-hidden="true"
-              >▸</span
-            >
             <span class="disc-date">{{ datePrefix(d) }}</span>
             <span v-if="rowVis.showMeta && d.type" class="disc-type">{{ typeLabel(d) }}</span>
             <span class="disc-title" :title="d.goal || d.title">{{ d.title }}</span>
@@ -226,16 +229,6 @@ function togglePanel(): void {
               {{ liveState(d) === 'running' ? 'Running' : 'Paused' }}
             </span>
             <span class="disc-status" :class="d.status">{{ statusLabel(d.status) }}</span>
-          </div>
-          <div class="disc-actions" @click.stop>
-            <button
-              type="button"
-              class="disc-open-btn"
-              title="Open chat history and orchestration view"
-              @click="emit('open', d.id)"
-            >
-              Open chat
-            </button>
           </div>
         </div>
         <div v-if="d.id === expandedId" class="disc-detail">
@@ -484,15 +477,6 @@ function togglePanel(): void {
   align-items: center;
   gap: var(--sp-2);
 }
-.disc-chevron {
-  flex-shrink: 0;
-  font-size: var(--fs-badge);
-  color: var(--c-text-muted);
-  transition: transform 0.15s ease;
-}
-.disc-chevron--open {
-  transform: rotate(90deg);
-}
 .disc-date {
   flex-shrink: 0;
   font-size: var(--fs-badge);
@@ -594,25 +578,6 @@ function togglePanel(): void {
   .disc-run.running .disc-run-dot {
     animation: none;
   }
-}
-.disc-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.disc-open-btn {
-  padding: 2px 8px;
-  font-size: var(--fs-caption);
-  color: var(--c-text);
-  background: transparent;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.disc-open-btn:hover {
-  border-color: var(--c-primary);
-  color: var(--c-primary);
 }
 /* 手风琴展开详情:Tab 栏 + 单一内容区 */
 .disc-detail {

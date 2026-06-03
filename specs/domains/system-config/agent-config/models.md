@@ -8,20 +8,23 @@ shapes (`AgentConfig`, `SystemSettings`, `SYSTEM_AGENT_ID`) are defined once in 
 
 A Claude Code launch profile.
 
-| Attribute | Type       | Description                                                      |
-| --------- | ---------- | ---------------------------------------------------------------- |
-| `id`      | text       | Stable id; `'system'` (`SYSTEM_AGENT_ID`) for the built-in agent |
-| `name`    | text       | Display name                                                     |
-| `baseUrl` | text (url) | `ANTHROPIC_BASE_URL` override; empty ⇒ no override (AC-R5)       |
-| `apiKey`  | text       | API key / auth token override; empty ⇒ no override (AC-R5)       |
-| `model`   | text       | Model alias or id; empty ⇒ no override (AC-R5)                   |
+| Attribute | Type       | Description                                                                                                                                                                                                                 |
+| --------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`      | text       | Stable id; `'system'` (`SYSTEM_AGENT_ID`) for the built-in agent                                                                                                                                                            |
+| `name`    | text       | Display name                                                                                                                                                                                                                |
+| `baseUrl` | text (url) | `ANTHROPIC_BASE_URL` override; empty ⇒ no override (AC-R5)                                                                                                                                                                  |
+| `apiKey`  | text       | API key / auth token override; empty ⇒ no override (AC-R5)                                                                                                                                                                  |
+| `model`   | text       | Model alias or id; empty ⇒ no override (AC-R5)                                                                                                                                                                              |
+| `enabled` | bool (opt) | Enabled flag; absent/`true` ⇒ enabled, only explicit `false` disables. Disabled agents drop out of every list consumer (participants, voters, degradation chain, default picker) but remain valid launch fallbacks (AC-R10) |
 
 Relationships: zero or more Sessions bind to an Agent; an unbound session uses the default.
 
 ## System Agent
 
 The built-in agent. Same shape as Agent, but `id === 'system'` and all three overrides are
-always empty (AC-R1). Always present, never removable.
+always empty (AC-R1). Always present, never removable. Its `enabled` flag IS honoured, so the
+system agent can be disabled like any other (AC-R10) — it then leaves the list consumers but
+still serves as a launch fallback.
 
 ## SystemSettings
 

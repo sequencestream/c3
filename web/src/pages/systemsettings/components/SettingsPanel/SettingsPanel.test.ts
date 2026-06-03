@@ -42,6 +42,53 @@ describe('SettingsPanel.vue — discussion rounds per stage', () => {
   })
 })
 
+describe('SettingsPanel.vue — agent enable/disable', () => {
+  const twoAgents: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '' },
+      { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '', enabled: true },
+      { id: 'a2', name: 'Two', baseUrl: 'https://two', apiKey: 'k', model: '', enabled: false },
+    ],
+  }
+
+  it('renders an On checkbox per agent row, reflecting enabled state', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    const checks = w.findAll('.col-on input[type="checkbox"]')
+    expect(checks).toHaveLength(3)
+    // System + a1 enabled (absent/true), a2 disabled.
+    expect((checks[0].element as HTMLInputElement).checked).toBe(true)
+    expect((checks[1].element as HTMLInputElement).checked).toBe(true)
+    expect((checks[2].element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('disables the default radio on a disabled row (only enabled agents pickable)', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    const radios = w.findAll('.col-default input[type="radio"]')
+    expect((radios[2].element as HTMLInputElement).disabled).toBe(true)
+    expect((radios[1].element as HTMLInputElement).disabled).toBe(false)
+  })
+
+  it('emits the toggled enabled value on save', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    const checks = w.findAll('.col-on input[type="checkbox"]')
+    await checks[1].setValue(false) // disable a1
+    const saveBtn = w.findAll('.settings-foot button').find((b) => b.text() === 'Save')!
+    await saveBtn.trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
+  })
+
+  it('new agents default to enabled', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const addBtn = w.findAll('button').find((b) => b.text().includes('Add agent'))!
+    await addBtn.trigger('click')
+    const checks = w.findAll('.col-on input[type="checkbox"]')
+    // System row + the freshly added one, both checked.
+    expect((checks[checks.length - 1].element as HTMLInputElement).checked).toBe(true)
+  })
+})
+
 describe('SettingsPanel.vue — discussion speech character limit', () => {
   it('seeds the speech-chars input from server settings', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })

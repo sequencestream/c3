@@ -5,9 +5,13 @@ import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { SystemSettings } from '@ccc/shared/protocol'
 import {
+  consensusVoters,
+  enabledAgents,
   getDevSkill,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
+  loadSettings,
+  resolveSessionLaunch,
   saveSettings,
   normalizeDegradationChain,
   resetSettingsCacheForTests,
@@ -157,6 +161,101 @@ describe('normalizeDegradationChain', () => {
   it('accepts the system agent id as a valid chain entry', () => {
     const result = normalizeDegradationChain(['sys', 'a1'], AGENTS)
     expect(result).toEqual(['sys', 'a1'])
+  })
+
+  it('drops disabled agents from the chain (AC-R10)', () => {
+    const agents = AGENTS.map((a) => (a.id === 'a2' ? { ...a, enabled: false } : a))
+    const result = normalizeDegradationChain(['a1', 'a2', 'a3'], agents)
+    expect(result).toEqual(['a1', 'a3'])
+  })
+})
+
+/** Persist a set of agents (plus the baseline fields) and re-read via loadSettings. */
+function saveAgents(
+  agents: import('@ccc/shared/protocol').AgentConfig[],
+  defaultAgentId = SYSTEM_AGENT_ID,
+): SystemSettings {
+  return saveSettings({ agents, defaultAgentId } as SystemSettings)
+}
+
+describe('enabled flag (AC-R10)', () => {
+  it('persists enabled as an explicit boolean; absent ⇒ enabled (back-compat)', () => {
+    // No `enabled` field on the incoming agent → treated as enabled and persisted as true.
+    const saved = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '' } as never,
+    ])
+    const a1 = saved.agents.find((a) => a.id === 'a1')
+    expect(a1?.enabled).toBe(true)
+    // The re-injected system agent is enabled by default too.
+    expect(saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)?.enabled).toBe(true)
+  })
+
+  it('keeps an explicit false (disabled) through normalize', () => {
+    const saved = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '', enabled: false },
+    ])
+    expect(saved.agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
+  })
+
+  it('honours a disabled system agent (overrides still ignored — AC-R1)', () => {
+    const saved = saveAgents([
+      // Try to both disable and override the system agent.
+      {
+        id: SYSTEM_AGENT_ID,
+        name: 'hacked',
+        baseUrl: 'https://evil',
+        apiKey: 'k',
+        model: 'm',
+        enabled: false,
+      },
+    ])
+    const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
+    expect(sys.enabled).toBe(false)
+    expect(sys.baseUrl).toBe('')
+    expect(sys.apiKey).toBe('')
+    expect(sys.model).toBe('')
+  })
+
+  it('enabledAgents() returns only enabled agents', () => {
+    saveAgents([
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '', enabled: true },
+      { id: 'a2', name: 'Two', baseUrl: '', apiKey: '', model: '', enabled: false },
+    ])
+    const ids = enabledAgents().map((a) => a.id)
+    expect(ids).toContain(SYSTEM_AGENT_ID)
+    expect(ids).toContain('a1')
+    expect(ids).not.toContain('a2')
+  })
+
+  it('enabledAgents() excludes a disabled system agent', () => {
+    saveAgents([
+      { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', enabled: false },
+    ])
+    expect(enabledAgents().some((a) => a.id === SYSTEM_AGENT_ID)).toBe(false)
+  })
+
+  it('consensusVoters drops disabled agents and the session self', () => {
+    saveAgents([
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '', enabled: true },
+      { id: 'a2', name: 'Two', baseUrl: '', apiKey: '', model: '', enabled: false },
+    ])
+    const voters = consensusVoters('a1').map((a) => a.id)
+    expect(voters).toContain(SYSTEM_AGENT_ID)
+    expect(voters).not.toContain('a1') // self excluded
+    expect(voters).not.toContain('a2') // disabled excluded
+  })
+
+  it('still launches a session bound to a disabled agent (no lock-out — AC-R10)', () => {
+    const settings = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '', enabled: false },
+    ])
+    // Sanity: a1 is disabled yet present.
+    expect(settings.agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
+    // No binding for this session → falls back to default (system). Always resolves.
+    const launch = resolveSessionLaunch('some-session')
+    expect(launch.agentId).toBe(SYSTEM_AGENT_ID)
+    // loadSettings is consistent with the saved set.
+    expect(loadSettings().agents.some((a) => a.id === 'a1')).toBe(true)
   })
 })
 

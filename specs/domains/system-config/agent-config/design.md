@@ -35,9 +35,30 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 - `defaultMode` is kept only if it is one of the five `PermissionMode` values; otherwise it falls
   back to `default` (AC-R8). Consumed by `getDefaultMode()`, which seeds a new session's runtime
   mode in `create_session` (SR-R6).
+- `enabled` is persisted as an explicit boolean using `a.enabled !== false` (absent/`true` ⇒
+  `true`, only explicit `false` ⇒ `false`) — so old configs lacking the field stay enabled
+  (AC-R10). The re-injected system agent's `enabled` is read from the incoming `system` entry the
+  same way (its overrides are still ignored — AC-R1).
 
 The normalized object is echoed to the client as `settings`, so the browser's temporary
 client-side ids (`new-…`) are replaced by the server's stable uuids.
+
+## Enabled filtering (AC-R10)
+
+`enabledAgents(settings?)` returns `agents.filter(a => a.enabled !== false)` — the single source
+the "list of agents" consumers draw from:
+
+- **Discussion participants** — `orchestrator.ts` `participants: () => enabledAgents()`.
+- **Consensus voters** — `consensusVoters()` filters `enabledAgents()` (minus the session's own).
+- **Degradation chain** — `normalizeDegradationChain` builds its `valid` id set from enabled
+  agents only, so disabled ids are dropped from the stored/loaded chain; `server.ts` assembles
+  `agentsToTry` from `getDegradationChain()` (already filtered) with entry 0 = the resolved
+  session agent.
+- **Default-agent picker** — `SettingsPanel.vue` disables the default radio on a disabled row.
+
+`resolveAgent`/`resolveSessionLaunch`/`resolveDegradationAgent` (the launch path) deliberately do
+**not** call `enabledAgents` — a disabled agent stays a valid fallback so a bound/default/system
+launch is never blocked (AC-R10).
 
 ## Launch resolution (`resolveSessionLaunch`)
 

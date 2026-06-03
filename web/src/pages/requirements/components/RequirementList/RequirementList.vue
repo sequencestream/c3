@@ -230,7 +230,7 @@ function datePrefix(r: Requirement): string {
               class="req-btn"
               @click="emit('open-dev', r.lastDevSessionId as string)"
             >
-              Dev details
+              Session
             </button>
             <button
               v-if="r.status !== 'done' && r.status !== 'cancelled'"

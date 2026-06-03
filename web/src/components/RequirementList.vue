@@ -7,6 +7,7 @@
  */
 import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
+import MarkdownText from './MarkdownText.vue'
 import {
   compareByCompletion,
   formatDate,
@@ -257,7 +258,9 @@ function datePrefix(r: Requirement): string {
             </button>
           </div>
         </div>
-        <div v-if="r.id === expandedId" class="req-detail">{{ r.content }}</div>
+        <div v-if="r.id === expandedId" class="req-detail">
+          <MarkdownText :text="r.content" markdown />
+        </div>
         <div v-if="r.id === expandedId" class="req-meta">
           <span class="req-meta-item">Created: {{ formatDate(r.createdAt) }}</span>
           <span v-if="r.completedAt" class="req-meta-item"

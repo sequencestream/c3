@@ -476,7 +476,12 @@ the list) (RM-R12).
   draft 灰 / todo 主色 / in_progress 橙 / done 绿 / cancelled 红映射语义色,风格同 `.req-priority`,
   收缩态不隐藏;标签文案来自 `lib/req-list-view.ts` 的 `statusLabel`)
   and a dependency hint;
-  **展开详情(手风琴,至多一项展开):** `.req-detail` 展示 `r.content` 全文,
+  **展开详情(手风琴,至多一项展开):** `.req-detail` 复用 `MarkdownText.vue`
+  以 Markdown 安全渲染 `r.content` 全文(`<MarkdownText :text="r.content" markdown />`)——
+  `MarkdownText` 默认仅 `kind==='assistant'` 启用 Markdown,新增显式 `markdown` prop
+  强制走同一条管线(markdown-it `html:false` → DOMPurify.sanitize → v-html),与聊天消息
+  一致的 XSS 防护与外链加固(`target=_blank rel=noopener noreferrer`,剔除 `javascript:`/`data:`);
+  全局 `.md-body` 样式套用其排版,聊天既有行为不回归。
   下方 `.req-meta` 显示次要元信息(字号 `--fs-caption`、灰色 `--c-text-muted`):
   创建时间 `formatDate(r.createdAt)` (完整格式 `YYYY-MM-DD HH:mm`)、
   完成时间(仅 `r.completedAt` 非空时显示,同完整格式)、

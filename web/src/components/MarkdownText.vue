@@ -2,10 +2,13 @@
 /*
  * MarkdownText.vue — 单条文本消息的渲染器。
  *
- * 仅对 assistant 文本启用 Markdown(markdown-it html:false → DOMPurify → v-html
+ * 默认仅对 assistant 文本启用 Markdown(markdown-it html:false → DOMPurify → v-html
  * 两道防线);user / system 走纯文本转义直出（保留 .msg 的换行语义）。工具消息不进
  * 本组件，仍由 ChatMessages 以 <pre class="tool-body"> 原样渲染。本项目非流式（整段
  * push），无需缓冲层 / 未闭合标签处理。
+ *
+ * 非聊天场景（如需求详情、prompt 预览）可传 `markdown` 强制走同一条安全渲染管线，
+ * 无需借 kind="assistant"——此时 kind 可省略，XSS 防护与外链加固一致。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
@@ -15,7 +18,10 @@ import { highlight, langFromClass } from '../lib/highlight'
 
 const props = defineProps<{
   text: string
-  kind: TextMsg['kind']
+  // 聊天场景传消息的 kind(仅 'assistant' 启用 Markdown);非聊天场景可省略并改用 markdown。
+  kind?: TextMsg['kind']
+  // 强制启用 Markdown 管线,不论 kind——用于需求详情等非聊天场景。
+  markdown?: boolean
 }>()
 
 // 模块级单例：避免每次渲染都 new MarkdownIt / 重复注册 hook。
@@ -36,18 +42,19 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   }
 })
 
+// markdown 强制开启,或 kind==='assistant' 时启用 Markdown;其余走纯文本直出。
+const isMarkdown = computed(() => props.markdown === true || props.kind === 'assistant')
+
 // 渲染管线固定顺序：markdown-it(html:false) → DOMPurify.sanitize → v-html。
-// computed 缓存：text/kind 不变则不重复 render + sanitize。
+// computed 缓存：text/kind/markdown 不变则不重复 render + sanitize。
 const html = computed(() => {
-  if (props.kind !== 'assistant') return ''
+  if (!isMarkdown.value) return ''
   const raw = md.render(props.text)
   return DOMPurify.sanitize(raw, {
     // 兼容 Shiki 等高亮器的 class / data-language；不放行 inline style。
     ADD_ATTR: ['class', 'data-language', 'target', 'rel'],
   })
 })
-
-const isMarkdown = computed(() => props.kind === 'assistant')
 
 // 渲染后异步高亮:Shiki 按需 import,逐个代码块替换;失败/未知语言保持原 <pre><code> 兜底。
 // 非流式(整段 push),每条消息只需在挂载 / text 变更后跑一次。

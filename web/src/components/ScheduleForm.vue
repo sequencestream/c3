@@ -8,8 +8,8 @@
  * segmented builder — all of which feed a single `cronExpression`, with a live
  * "next run" preview computed by the same `computeNextRunAt` the server uses.
  *
- * `name`/`description` have no dedicated protocol fields, so they live inside the
- * schedule's free-form `config` JSON alongside the command / prompt.
+ * The schedule's display name is auto-generated server-side from the task
+ * content on create — the form does not collect a name or description.
  *
  * Schedule times are interpreted as server (UTC) time — there is no per-schedule
  * timezone.
@@ -59,8 +59,6 @@ const WEEKDAYS = [
 ]
 
 // ---- Form draft ----------------------------------------------------------
-const name = ref('')
-const description = ref('')
 const type = ref<ScheduleType>('command')
 const mcpMode = ref<McpMode>('sandboxed')
 const command = ref('')
@@ -97,8 +95,6 @@ watch(
       type.value = sched.type
       mcpMode.value = sched.mcpMode
       cronExpression.value = sched.cronExpression
-      name.value = readConfigField(sched.config, 'name')
-      description.value = readConfigField(sched.config, 'description')
       command.value = readConfigField(sched.config, 'command')
       prompt.value = readConfigField(sched.config, 'prompt')
       cronTab.value = 'advanced'
@@ -106,8 +102,6 @@ watch(
       type.value = 'command'
       mcpMode.value = 'sandboxed'
       cronExpression.value = '*/30 * * * *'
-      name.value = ''
-      description.value = ''
       command.value = ''
       prompt.value = ''
       cronTab.value = 'nl'
@@ -183,12 +177,11 @@ const nextRunPreview = computed(() => {
 const taskFilled = computed(() =>
   type.value === 'command' ? command.value.trim().length > 0 : prompt.value.trim().length > 0,
 )
-const canSave = computed(() => name.value.trim().length > 0 && taskFilled.value && cronValid.value)
+const canSave = computed(() => taskFilled.value && cronValid.value)
 
 function buildConfig(): Record<string, unknown> {
-  const base: Record<string, unknown> = { name: name.value.trim() }
-  const desc = description.value.trim()
-  if (desc) base.description = desc
+  // Name is auto-generated server-side; the form supplies only the task body.
+  const base: Record<string, unknown> = {}
   if (type.value === 'command') base.command = command.value.trim()
   else base.prompt = prompt.value
   return base
@@ -225,17 +218,6 @@ function save(): void {
       </div>
 
       <div class="sf-body">
-        <!-- Basics -->
-        <label class="sf-field">
-          <span class="sf-label">Name</span>
-          <input v-model="name" class="sf-input" placeholder="e.g. Nightly build" />
-        </label>
-
-        <label class="sf-field">
-          <span class="sf-label">Description <span class="sf-optional">(optional)</span></span>
-          <input v-model="description" class="sf-input" placeholder="What this schedule does" />
-        </label>
-
         <div class="sf-field">
           <span class="sf-label">Task type</span>
           <div class="sf-segmented">
@@ -520,10 +502,6 @@ function save(): void {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-}
-.sf-optional {
-  text-transform: none;
-  font-weight: 400;
 }
 .sf-input,
 .sf-textarea {

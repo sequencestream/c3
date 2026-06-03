@@ -26,6 +26,20 @@ import type {
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../db.js'
+import { fallbackName } from './naming.js'
+
+/**
+ * Strip server-owned / dropped keys from a client-supplied config before
+ * persisting. `name` is always set by the server (auto-generated); `description`
+ * is removed entirely (legacy field). Returns a fresh object.
+ */
+function sanitizeConfig(config: unknown): Record<string, unknown> {
+  if (!config || typeof config !== 'object') return {}
+  const out: Record<string, unknown> = { ...(config as Record<string, unknown>) }
+  delete out.name
+  delete out.description
+  return out
+}
 
 const SCHEMA_VERSION = 3
 
@@ -275,13 +289,21 @@ export function getSchedule(id: string): Schedule | null {
   return row ? toSchedule(row) : null
 }
 
-/** Insert a schedule with status `active` and return the hydrated row. */
-export function createSchedule(input: CreateScheduleInput): Schedule {
+/**
+ * Insert a schedule with status `active` and return the hydrated row.
+ *
+ * `generatedName` is the server-derived display name written to `config.name`;
+ * the client never supplies a name. When omitted, a deterministic fallback is
+ * derived from the task content so `config.name` is always non-empty.
+ */
+export function createSchedule(input: CreateScheduleInput, generatedName?: string): Schedule {
   const d = requireDb()
   const id = randomUUID()
   const now = Date.now()
   const allowlist = input.toolAllowlist ?? []
   const denylist = input.toolDenylist ?? []
+  const config = sanitizeConfig(input.config)
+  config.name = (generatedName ?? '').trim() || fallbackName(input.type, input.config)
   // Backfill the first trigger time so a `active` schedule is eligible for
   // dispatch immediately. getDueSchedules() filters out `next_run_at IS NULL`,
   // so without this the first run would never fire. Invalid crons stay null
@@ -295,7 +317,7 @@ export function createSchedule(input: CreateScheduleInput): Schedule {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
-    JSON.stringify(input.config ?? {}),
+    JSON.stringify(config),
     resolve(input.workspacePath),
     input.cronExpression,
     nextRunAt,
@@ -320,8 +342,16 @@ export function updateSchedule(id: string, patch: UpdateScheduleInput): void {
     params.push(patch.type)
   }
   if (patch.config !== undefined) {
+    // Preserve the server-owned name; drop the dropped `description` key.
+    const existing = getSchedule(id)
+    const prevName =
+      existing && existing.config && typeof existing.config === 'object'
+        ? (existing.config as Record<string, unknown>).name
+        : undefined
+    const next = sanitizeConfig(patch.config)
+    if (typeof prevName === 'string' && prevName.trim()) next.name = prevName
     sets.push('config=?')
-    params.push(JSON.stringify(patch.config))
+    params.push(JSON.stringify(next))
   }
   if (patch.cronExpression !== undefined) {
     sets.push('cron_expression=?')

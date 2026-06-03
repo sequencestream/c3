@@ -123,6 +123,7 @@ import {
   cancelAllForWorkspace as cancelAllApprovalsForWorkspace,
 } from './schedules/queue.js'
 import { onWorkspaceRemoved } from './schedules/archiver.js'
+import { generateScheduleName } from './schedules/naming.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
 import { reconcileInProgress } from './requirements/reconcile.js'
@@ -1534,7 +1535,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
                 return
               }
-              const created = createSchedule(msg.input)
+              // Name is auto-generated server-side from the task content; any
+              // client-supplied name in config is ignored (stripped by the store).
+              const generatedName = await generateScheduleName(msg.input)
+              const created = createSchedule(msg.input, generatedName)
               broadcastSchedules(created.workspacePath)
               return
             }

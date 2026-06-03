@@ -152,6 +152,34 @@ describe('createSchedule next_run_at backfill', () => {
     expect(sch.nextRunAt).toBeNull()
   })
 
+  it('writes the server-supplied name into config and drops client name/description', () => {
+    const sch = createSchedule(
+      {
+        type: 'command',
+        config: { command: 'echo hi', name: 'client name', description: 'should be dropped' },
+        workspacePath: proj,
+        cronExpression: '*/5 * * * *',
+        mcpMode: 'read-only',
+      },
+      'Generated Name',
+    )
+    const cfg = sch.config as Record<string, unknown>
+    expect(cfg.name).toBe('Generated Name')
+    expect(cfg.description).toBeUndefined()
+    expect(cfg.command).toBe('echo hi')
+  })
+
+  it('falls back to a non-empty name when none is supplied', () => {
+    const sch = createSchedule({
+      type: 'command',
+      config: { command: 'pnpm build' },
+      workspacePath: proj,
+      cronExpression: '*/5 * * * *',
+      mcpMode: 'read-only',
+    })
+    expect((sch.config as Record<string, unknown>).name).toBe('pnpm build')
+  })
+
   it('recomputes next_run_at when the cron expression is updated', () => {
     const sch = createSchedule({
       type: 'command',

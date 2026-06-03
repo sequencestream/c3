@@ -525,6 +525,11 @@ export interface ScheduleExecutionLog {
   error: string | null
   /** Current status: 'running' | 'success' | 'failed' | 'cancelled' */
   status: string | null
+  /**
+   * Agent session id for `llm`-type executions; null for `command` type or when
+   * the run never started a session. Used to load the run's transcript on demand.
+   */
+  sessionId: string | null
 }
 
 // ---- Schedule MCP Security ----
@@ -720,6 +725,11 @@ export type ClientToServer =
   | { type: 'delete_schedule'; scheduleId: string }
   /** Get full schedule detail with execution logs; server replies with `schedule_detail`. */
   | { type: 'get_schedule_detail'; scheduleId: string }
+  /**
+   * Read one `llm`-type execution's agent session transcript (read-only replay);
+   * server replies with `execution_transcript`.
+   */
+  | { type: 'get_execution_transcript'; scheduleId: string; executionId: string }
   /** Manual trigger: execute a schedule immediately (outside normal tick). */
   | { type: 'schedule_run_now'; scheduleId: string }
   /** Get workspace-level MCP server configuration. */
@@ -898,6 +908,17 @@ export type ServerToClient =
   | { type: 'schedules'; workspacePath: string; items: Schedule[] }
   /** Full schedule detail with execution logs (reply to `get_schedule_detail`). */
   | { type: 'schedule_detail'; schedule: Schedule; logs: ScheduleExecutionLog[] }
+  /**
+   * One execution's agent session transcript (reply to `get_execution_transcript`).
+   * `items` is empty for `command`-type or sessionless executions; `sessionId` is
+   * null in that case.
+   */
+  | {
+      type: 'execution_transcript'
+      executionId: string
+      sessionId: string | null
+      items: TranscriptItem[]
+    }
   /** Execution logs for a schedule. */
   | { type: 'schedule_execution_logs'; scheduleId: string; items: ScheduleExecutionLog[] }
   /** Workspace-level MCP server configuration (reply to `get_workspace_mcp_config`). */

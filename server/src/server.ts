@@ -115,6 +115,7 @@ import {
   triggerRunNow,
   setExecutionStore,
 } from './schedules/scheduler.js'
+import { readExecutionTranscript } from './schedules/transcript.js'
 import {
   setBroadcast as setApprovalBroadcast,
   startExpiryScanner,
@@ -1598,6 +1599,25 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 type: 'schedule_detail',
                 schedule: detail.schedule,
                 logs: detail.logs,
+              })
+              return
+            }
+
+            case 'get_execution_transcript': {
+              if (!isScheduleStoreAvailable()) {
+                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                return
+              }
+              const transcript = await readExecutionTranscript(msg.executionId)
+              if (!transcript) {
+                send(ws, { type: 'error', message: '执行记录不存在。' })
+                return
+              }
+              send(ws, {
+                type: 'execution_transcript',
+                executionId: msg.executionId,
+                sessionId: transcript.sessionId,
+                items: transcript.items,
               })
               return
             }

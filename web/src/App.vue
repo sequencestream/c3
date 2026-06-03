@@ -281,6 +281,9 @@ const scheduleLogs = ref<Record<string, ScheduleExecutionLog[]>>({})
 const selectedScheduleLogs = computed<ScheduleExecutionLog[]>(() =>
   selectedScheduleId.value ? (scheduleLogs.value[selectedScheduleId.value] ?? []) : [],
 )
+// One execution's agent-session transcript, fetched on demand when the user
+// expands "View session" on an llm-type history item. Keyed by executionId.
+const executionTranscripts = ref<Record<string, TranscriptItem[]>>({})
 
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.requirementsProject'
@@ -611,6 +614,12 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'schedule_detail':
       scheduleLogs.value = { ...scheduleLogs.value, [msg.schedule.id]: msg.logs }
+      break
+    case 'execution_transcript':
+      executionTranscripts.value = {
+        ...executionTranscripts.value,
+        [msg.executionId]: msg.items,
+      }
       break
     case 'discussion_detail':
       activeDiscussion.value = msg.discussion
@@ -980,6 +989,18 @@ function openSchedules(path: string) {
 function onSelectSchedule(id: string) {
   selectedScheduleId.value = id
   client?.send({ type: 'get_schedule_detail', scheduleId: id })
+}
+
+// Expand "View session" on an llm-type history item: fetch its transcript once
+// (reply arrives as `execution_transcript`). Re-fetch is harmless but avoided —
+// ScheduleDetail only emits this when it has no cached transcript yet.
+function onLoadExecutionSession(executionId: string) {
+  if (!selectedScheduleId.value) return
+  client?.send({
+    type: 'get_execution_transcript',
+    scheduleId: selectedScheduleId.value,
+    executionId,
+  })
 }
 
 // 列表行的 enable/disable 开关:映射到 update_schedule 的 status(无独立 pause/resume
@@ -1369,7 +1390,12 @@ function listCommands() {
             Edit
           </button>
         </div>
-        <ScheduleDetail :schedule="selectedSchedule" :logs="selectedScheduleLogs" />
+        <ScheduleDetail
+          :schedule="selectedSchedule"
+          :logs="selectedScheduleLogs"
+          :transcripts="executionTranscripts"
+          @load-session="onLoadExecutionSession"
+        />
       </template>
       <template v-else>
         <SessionTitleBar

@@ -427,9 +427,20 @@ async function executeLlmPrompt(
 
     let text = ''
     let result = ''
+    let sessionId = ''
 
     for await (const m of q) {
       if (abortController.signal.aborted) break
+      // Capture the agent session id from the first event that carries it and
+      // persist it immediately, so the transcript stays reachable even if the
+      // run later times out or fails before reaching a terminal update.
+      if (!sessionId) {
+        const sid = (m as { session_id?: unknown }).session_id
+        if (typeof sid === 'string' && sid) {
+          sessionId = sid
+          updateLog(logId, { sessionId })
+        }
+      }
       if (m.type === 'assistant') {
         const content = (m as { message?: { content?: unknown[] } }).message?.content
         if (Array.isArray(content)) {

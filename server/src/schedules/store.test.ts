@@ -19,6 +19,8 @@ import {
   saveWorkspaceMcpConfig,
   appendExecutionLog,
   listExecutionLogs,
+  updateExecutionLog,
+  getExecutionLog,
 } from './store.js'
 
 let dir: string
@@ -302,5 +304,42 @@ describe('listExecutionLogs', () => {
   it('returns an empty array for a schedule with no logs', () => {
     const sch = makeSchedule()
     expect(listExecutionLogs(sch.id)).toEqual([])
+  })
+
+  it('round-trips sessionId: defaults null, persists on append, updatable later', () => {
+    const sch = makeSchedule()
+
+    // Default: append without sessionId → null.
+    const a = appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 1_000,
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+    })
+    expect(a.sessionId).toBeNull()
+    expect(getExecutionLog(a.id)?.sessionId).toBeNull()
+
+    // Append with sessionId → persisted and readable back.
+    const b = appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 2_000,
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+      sessionId: 'sess-append',
+    })
+    expect(b.sessionId).toBe('sess-append')
+    expect(getExecutionLog(b.id)?.sessionId).toBe('sess-append')
+
+    // updateExecutionLog can set sessionId after the fact (dispatcher path).
+    updateExecutionLog(a.id, { sessionId: 'sess-later' })
+    expect(getExecutionLog(a.id)?.sessionId).toBe('sess-later')
+  })
+
+  it('getExecutionLog returns null for an unknown id', () => {
+    expect(getExecutionLog('nope')).toBeNull()
   })
 })

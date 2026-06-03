@@ -41,7 +41,7 @@ function sanitizeConfig(config: unknown): Record<string, unknown> {
   return out
 }
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schedules (
@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS schedule_execution_logs (
   exit_code     INTEGER,
   output        TEXT NOT NULL DEFAULT '',
   error         TEXT,
-  status        TEXT NOT NULL DEFAULT 'running'
+  status        TEXT NOT NULL DEFAULT 'running',
+  session_id    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sch_exec_schedule ON schedule_execution_logs(schedule_id);
 
@@ -141,6 +142,11 @@ function runMigrations(d: Db, currentVersion: number): void {
         updated_at     INTEGER NOT NULL
       );
     `)
+  }
+  // v3 → v4: add session_id column to schedule_execution_logs (llm-type runs
+  // record their agent session id so the transcript can be loaded on demand).
+  if (currentVersion < 4 && !columnExists(d, 'schedule_execution_logs', 'session_id')) {
+    d.exec(`ALTER TABLE schedule_execution_logs ADD COLUMN session_id TEXT`)
   }
 }
 
@@ -218,6 +224,7 @@ interface ExecutionLogRow {
   output: string
   error: string | null
   status: string | null
+  session_id: string | null
 }
 
 /** Parse a JSON-array column to a string list; tolerate null/blank/corrupt → `[]`. */
@@ -264,6 +271,7 @@ function toExecutionLog(r: ExecutionLogRow): ScheduleExecutionLog {
     output: r.output,
     error: r.error,
     status: r.status,
+    sessionId: r.session_id,
   }
 }
 
@@ -456,6 +464,7 @@ export function updateExecutionLog(
     error?: string | null
     exitCode?: number | null
     finishedAt?: number | null
+    sessionId?: string | null
   },
 ): void {
   const d = requireDb()
@@ -482,6 +491,10 @@ export function updateExecutionLog(
     sets.push('finished_at=?')
     params.push(patch.finishedAt)
   }
+  if (patch.sessionId !== undefined) {
+    sets.push('session_id=?')
+    params.push(patch.sessionId)
+  }
 
   if (sets.length === 0) return
   params.push(id)
@@ -491,14 +504,19 @@ export function updateExecutionLog(
 // ---- Execution logs ----
 
 /** Append an execution log entry for a schedule with `running` status. */
-export function appendExecutionLog(input: Omit<ScheduleExecutionLog, 'id'>): ScheduleExecutionLog {
+export function appendExecutionLog(
+  input: Omit<ScheduleExecutionLog, 'id' | 'status' | 'sessionId'> & {
+    status?: string | null
+    sessionId?: string | null
+  },
+): ScheduleExecutionLog {
   const d = requireDb()
   const id = randomUUID()
   const now = Date.now()
   d.run(
     `INSERT INTO schedule_execution_logs
-       (id, schedule_id, started_at, finished_at, exit_code, output, error, status)
-     VALUES (?,?,?,?,?,?,?,?)`,
+       (id, schedule_id, started_at, finished_at, exit_code, output, error, status, session_id)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
     id,
     input.scheduleId,
     input.startedAt,
@@ -507,10 +525,19 @@ export function appendExecutionLog(input: Omit<ScheduleExecutionLog, 'id'>): Sch
     input.output ?? '',
     input.error ?? null,
     input.status ?? 'running',
+    input.sessionId ?? null,
   )
   // Refresh the parent schedule's updated_at so list ordering reflects activity.
   d.run('UPDATE schedules SET updated_at=? WHERE id=?', now, input.scheduleId)
-  return { id, ...input, status: input.status ?? 'running' }
+  return { id, ...input, status: input.status ?? 'running', sessionId: input.sessionId ?? null }
+}
+
+/** Get a single execution log by id (null if absent or db unavailable). */
+export function getExecutionLog(id: string): ScheduleExecutionLog | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<ExecutionLogRow>('SELECT * FROM schedule_execution_logs WHERE id=?', id)
+  return row ? toExecutionLog(row) : null
 }
 
 /** All execution logs for a schedule, most-recently-started first. */

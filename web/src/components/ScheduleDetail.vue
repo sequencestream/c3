@@ -6,16 +6,63 @@
  * 倒计时)以及历史执行日志(起止时间 / 退出码 / output / error)。
  */
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import type { Schedule, ScheduleExecutionLog } from '@ccc/shared/protocol'
+import type { Schedule, ScheduleExecutionLog, TranscriptItem } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 
 const props = withDefaults(
   defineProps<{
     schedule: Schedule | null
     logs?: ScheduleExecutionLog[]
+    // Agent-session transcripts keyed by executionId, fetched on demand by the
+    // parent when a log item is expanded.
+    transcripts?: Record<string, TranscriptItem[]>
   }>(),
-  { logs: () => [] },
+  { logs: () => [], transcripts: () => ({}) },
 )
+
+const emit = defineEmits<{
+  // Request the transcript for one execution; parent replies by populating
+  // `transcripts[executionId]`.
+  'load-session': [executionId: string]
+}>()
+
+// Whether this schedule produces agent sessions (only llm prompts do). Command
+// schedules never show the "View session" entry.
+const isLlm = computed(() => props.schedule?.type === 'llm')
+
+// executionIds whose session view is currently expanded.
+const expandedSessions = ref<Set<string>>(new Set())
+
+function isExpanded(id: string): boolean {
+  return expandedSessions.value.has(id)
+}
+
+// Toggle one log's session view. On first expand (no cached transcript yet),
+// ask the parent to fetch it.
+function toggleSession(id: string): void {
+  const next = new Set(expandedSessions.value)
+  if (next.has(id)) {
+    next.delete(id)
+  } else {
+    next.add(id)
+    if (props.transcripts[id] === undefined) emit('load-session', id)
+  }
+  expandedSessions.value = next
+}
+
+function transcriptOf(id: string): TranscriptItem[] | undefined {
+  return props.transcripts[id]
+}
+
+// Compact, human-readable tool input for the transcript view.
+function fmtToolInput(input: unknown): string {
+  if (input === null || input === undefined) return ''
+  try {
+    return JSON.stringify(input, null, 2)
+  } catch {
+    return String(input)
+  }
+}
 
 // 未来预览要展示几次执行(验收要求 3-5 次)。
 const UPCOMING_COUNT = 5
@@ -211,6 +258,49 @@ function logStatus(log: ScheduleExecutionLog): string {
             </div>
             <pre v-if="log.output" class="sched-log-output">{{ log.output }}</pre>
             <pre v-if="log.error" class="sched-log-error">{{ log.error }}</pre>
+
+            <!-- Session transcript entry: only for llm (prompt) executions. -->
+            <template v-if="isLlm">
+              <button type="button" class="sched-session-toggle" @click="toggleSession(log.id)">
+                {{ isExpanded(log.id) ? '▾ Hide session' : '▸ View session' }}
+              </button>
+              <div v-if="isExpanded(log.id)" class="sched-session">
+                <p v-if="transcriptOf(log.id) === undefined" class="sched-session-empty">
+                  Loading session…
+                </p>
+                <p v-else-if="transcriptOf(log.id)!.length === 0" class="sched-session-empty">
+                  No session record for this execution.
+                </p>
+                <ul v-else class="sched-msg-list">
+                  <li
+                    v-for="(item, i) in transcriptOf(log.id)"
+                    :key="i"
+                    class="sched-msg"
+                    :class="`sched-msg--${item.kind}`"
+                  >
+                    <template v-if="item.kind === 'assistant' || item.kind === 'user'">
+                      <span class="sched-msg-role">{{
+                        item.kind === 'assistant' ? 'Assistant' : 'User'
+                      }}</span>
+                      <pre class="sched-msg-text">{{ item.text }}</pre>
+                    </template>
+                    <template v-else-if="item.kind === 'tool_use'">
+                      <span class="sched-msg-role">Tool · {{ item.toolName }}</span>
+                      <pre class="sched-msg-text">{{ fmtToolInput(item.input) }}</pre>
+                    </template>
+                    <template v-else-if="item.kind === 'tool_result'">
+                      <span class="sched-msg-role" :class="{ 'is-error': item.isError }">
+                        Result{{ item.isError ? ' (error)' : '' }}
+                      </span>
+                      <pre class="sched-msg-text">{{ item.content }}</pre>
+                    </template>
+                    <template v-else>
+                      <span class="sched-msg-notice">{{ item.text }}</span>
+                    </template>
+                  </li>
+                </ul>
+              </div>
+            </template>
           </li>
         </ul>
         <p v-else class="sched-section-empty">No execution history yet.</p>
@@ -462,5 +552,76 @@ function logStatus(log: ScheduleExecutionLog): string {
 .log-status-badge.cancelled {
   background: rgba(245, 158, 11, 0.15);
   color: var(--c-warning);
+}
+
+/* ---- Session transcript (llm executions) ---- */
+.sched-session-toggle {
+  align-self: flex-start;
+  margin-top: var(--sp-1);
+  padding: 2px 6px;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sched-session-toggle:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
+}
+.sched-session {
+  margin-top: var(--sp-2);
+  border-top: 1px dashed var(--c-border);
+  padding-top: var(--sp-2);
+}
+.sched-session-empty {
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  margin: 0;
+}
+.sched-msg-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.sched-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sched-msg-role {
+  font-size: var(--fs-badge);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--c-text-muted);
+}
+.sched-msg-role.is-error {
+  color: var(--c-error);
+}
+.sched-msg--tool_use .sched-msg-role {
+  color: var(--c-info, #3b82f6);
+}
+.sched-msg-text {
+  font-family: var(--ff-mono, monospace);
+  font-size: var(--fs-caption);
+  background: var(--c-bg, var(--c-panel));
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  max-height: 240px;
+}
+.sched-msg-notice {
+  font-size: var(--fs-caption);
+  font-style: italic;
+  color: var(--c-text-muted);
 }
 </style>

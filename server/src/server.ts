@@ -90,7 +90,11 @@ import {
   updateDiscussionStatus as updateDiscussionStatus,
 } from './discussions/store.js'
 import { researchDiscussionContext, canAutoStartDiscussion } from './discussions/research.js'
-import { runDiscussion, defaultDiscussionDeps } from './discussions/orchestrator.js'
+import {
+  runDiscussion,
+  defaultDiscussionDeps,
+  type DispatchStatus,
+} from './discussions/orchestrator.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
 import {
   isStoreAvailable as isScheduleStoreAvailable,
@@ -292,6 +296,28 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       deliver({ type: 'discussion_message', discussionId, message })
   }
 
+  // Broadcast the transient in-flight/failed status of agents the organizer just
+  // dispatched (pending → cleared/failed). Runtime-only, never persisted; maps the
+  // engine's per-agent DispatchStatus onto the wire event.
+  const broadcastDiscussionDispatchStatus = (discussionId: string, s: DispatchStatus): void => {
+    const evt =
+      s.phase === 'failed'
+        ? {
+            type: 'discussion_dispatch_status' as const,
+            discussionId,
+            phase: 'failed' as const,
+            agents: [s.agent],
+            error: s.error,
+          }
+        : {
+            type: 'discussion_dispatch_status' as const,
+            discussionId,
+            phase: s.phase,
+            agents: s.agents,
+          }
+    for (const deliver of connections) deliver(evt)
+  }
+
   // Broadcast a discussion's live run-state (decoupled from its persisted status).
   const broadcastDiscussionRunStatus = (
     discussionId: string,
@@ -327,6 +353,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
       // Status/conclusion changes ride the refreshed list broadcast.
       onStatusChange: () => broadcastDiscussions(discussion.projectPath),
+      onDispatchStatus: (s) => broadcastDiscussionDispatchStatus(discussion.id, s),
       gate: makeDiscussionGate(ctrl),
     })
     // Background orchestration: runs the agents and streams messages until it

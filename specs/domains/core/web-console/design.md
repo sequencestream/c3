@@ -241,6 +241,32 @@ handling — see the [discussion design](../discussion/design.md) for the agenda
   index clamping); `AgendaProgress.test.ts` mounts the SFC (`@vue/test-utils`) and asserts the rows,
   marks, count/percent, bar width, visibility, and live re-render on `setProps` (index advancing).
 
+## Discussion dispatch status (in-flight / failed)
+
+The discussion chat tail (between ChatMessages and the composer, in `Discussions.vue`) renders the
+**transient in-flight status** of the agents the organizer just dispatched, so a viewer sees who is
+replying before anything lands in the transcript — and any reply failure that would otherwise be
+invisible. Runtime-only: never persisted, never a chat message; the same transient paradigm as
+`discussion_run_status`. See the [discussion design](../discussion/design.md) for the engine/wire side.
+
+- **Pure reducers** in `lib/discussion-view.ts` (DOM-free, unit-tested): `applyDispatchStatus(prev, ev)`
+  folds a `discussion_dispatch_status` event into a per-discussion `DispatchView` (`{ pending, errors }`)
+  — `pending` appends the agents (de-duped by id, arrival order, clearing their stale errors), `cleared`
+  removes them, `failed` removes the agent and records a de-duped error. `clearDispatchAgent(prev, id)`
+  drops one agent on its reply message (the snappy primary clear, idempotent).
+- **App state.** `App.vue` keys `discussionDispatch: Record<id, DispatchView>` off the event; the
+  `discussion_message` handler also calls `clearDispatchAgent` (by `speakerAgentId`); the entry is
+  dropped on `discussion_run_status: 'ended'` and on `openDiscussion` (switch). `activeDiscussionDispatch`
+  feeds the open discussion's view to `Discussions.vue`. Not reconciled on reconnect — it starts empty
+  and self-heals, so no stuck pending.
+- **Component.** `Discussions.vue` renders, when a discussion is open and the view is non-empty,
+  `"<name> is replying…"` per pending agent (a `broadcast` shows several) and `"⚠ <name> failed to
+reply: <error>"` per error. UI copy is English (`web/CLAUDE.md`).
+- **Tests.** Reducers are covered DOM-free in `discussion-view.test.ts` (pending/cleared/failed, dedup,
+  re-dispatch clearing errors, immutability, message-clear idempotency); `Discussions.test.ts` mounts
+  the SFC (children stubbed) and asserts the per-agent replying lines, the failure line, and that
+  nothing renders when empty / no discussion is open.
+
 ## Per-tab viewed session (no cross-tab pollution)
 
 The 「会话」(console) and 「需求」(requirements) tabs each maintain their **own** current

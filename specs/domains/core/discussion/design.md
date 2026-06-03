@@ -223,6 +223,23 @@ for _that list's_ ids — each listed id is set from the snapshot or dropped whe
 `ended` missed during a disconnect) — while leaving other projects' entries untouched. The
 transition-only `discussion_run_status` event still drives fine-grained updates between list sends.
 
+**Dispatch (in-flight) status.** Before a nominated agent's `askAgentOnce` turn is awaited, the engine
+emits the agent(s) as in-flight via the injected `deps.onDispatchStatus` hook (`speak` lists one,
+`broadcast` lists the whole batch — concurrent replies); when the turn resolves it emits `cleared`,
+and when it **throws** it emits `failed` (with a brief error) instead of the former silent
+`.catch(() => '')`. A failure is no longer swallowed into an empty speech — it is surfaced, the speech
+is skipped, and the round still proceeds (a `broadcast` uses `Promise.allSettled`, so one failure does
+not drop the rest of the batch). The server maps the per-agent `DispatchStatus`
+(`pending` / `cleared` / `failed`) onto a runtime-only `discussion_dispatch_status` broadcast — **not
+persisted**, never a `discussion_messages` row. The frontend (`App.vue`) keeps a per-discussion
+`DispatchView` (`{ pending, errors }`) reduced by `applyDispatchStatus`; the chat tail renders
+`"<name> is replying…"` per pending agent and a failure line per error. `cleared` is the reliable clear
+for an empty/skipped speech that appends no message; the landed reply also clears its author eagerly
+(`clearDispatchAgent` keyed by `speakerAgentId`). Unlike run-state, dispatch status is **not**
+snapshotted on the `discussions` list — it is too ephemeral; it self-heals via `cleared` / `failed` /
+the reply message / run `ended` / discussion switch (each drops the entry), so a refresh/reconnect
+(which starts empty) leaves no stuck pending.
+
 **Termination.** Stages move forward only and `conclude` is terminal; `maxRoundsPerStage`
 forces an advance out of a stuck stage; `maxTotalRounds` (default 40) is the hard backstop,
 writing a fallback conclusion. `maxRoundsPerStage` is the system-configured

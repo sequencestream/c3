@@ -61,6 +61,35 @@ import {
 /** The display name used for the organizer's own (role) messages. */
 export const ORGANIZER_NAME = '组织者'
 
+/** Minimal identity of a dispatched participant, carried by {@link DispatchStatus}. */
+export interface DispatchAgent {
+  id: string
+  name: string
+}
+
+/**
+ * A runtime-only, transient in-flight signal for the agents the organizer just
+ * dispatched — emitted via {@link DiscussionDeps.onDispatchStatus} before/after the
+ * `askAgentOnce` turn so viewers see who is replying. Never persisted, never a
+ * `discussion_message`.
+ *
+ * - `pending`: `agents` were dispatched and are now replying (`broadcast` lists several).
+ * - `cleared`: `agents` finished — drop them from the in-flight set. The reliable
+ *   clear for an empty/skipped speech (which appends no message).
+ * - `failed`: `agent` failed to reply (`error` is brief); the speech is skipped and
+ *   the round still proceeds.
+ */
+export type DispatchStatus =
+  | { phase: 'pending'; agents: DispatchAgent[] }
+  | { phase: 'cleared'; agents: DispatchAgent[] }
+  | { phase: 'failed'; agent: DispatchAgent; error: string }
+
+/** Brief, human-readable reason from a thrown agent turn (for the `failed` status). */
+function errText(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.trim() || 'agent failed to reply'
+}
+
 /** The slice of the discussion store the engine needs (structurally typed for DI). */
 export interface DiscussionStore {
   getDiscussion(id: string): Discussion | null
@@ -91,6 +120,12 @@ export interface DiscussionDeps {
   onMessage: (m: DiscussionMessage) => void
   /** Notify that the discussion's status/conclusion changed (e.g. refresh the list). */
   onStatusChange: (id: string) => void
+  /**
+   * Emit the transient in-flight status of dispatched participants (pending →
+   * cleared/failed) so viewers see who is replying. Runtime-only, not persisted.
+   * Absent = no dispatch signal is surfaced (the loop runs identically).
+   */
+  onDispatchStatus?: (s: DispatchStatus) => void
   /** Round cap per workflow stage (defaults to the system-configured value). */
   maxRoundsPerStage?: number
   /**
@@ -301,15 +336,28 @@ export async function runDiscussion(
           maxSpeechChars: speechBudget,
         }),
       )
-      const texts = await Promise.all(
-        batch.map((b, i) => ask(b.cfg, prompts[i], cwd, signal).catch(() => '')),
+      // Surface the whole batch as in-flight before awaiting; broadcast may have
+      // several agents replying at once.
+      deps.onDispatchStatus?.({ phase: 'pending', agents: batch.map((b) => b.speaker) })
+      // Settle (not all-or-nothing): a thrown turn is exposed as `failed` rather than
+      // silently swallowed into an empty speech, while the rest of the batch proceeds.
+      const results = await Promise.allSettled(
+        batch.map((b, i) => ask(b.cfg, prompts[i], cwd, signal)),
       )
       if (signal.aborted) break
       // Sequential, in-order append: under the single synchronous connection each
       // appendMessage takes the next seq, so the batch's seqs match the nomination order.
+      const settled: DispatchAgent[] = []
       for (let i = 0; i < batch.length; i++) {
         const b = batch[i]
-        const speech = parseParticipantSpeech(texts[i], b.speaker.name)
+        const r = results[i]
+        if (r.status === 'rejected') {
+          // Failure is exposed (not appended); the round still proceeds.
+          deps.onDispatchStatus?.({ phase: 'failed', agent: b.speaker, error: errText(r.reason) })
+          continue
+        }
+        settled.push(b.speaker)
+        const speech = parseParticipantSpeech(r.value, b.speaker.name)
         if (speech) {
           deps.onMessage(
             store.appendMessage({
@@ -322,6 +370,9 @@ export async function runDiscussion(
           )
         }
       }
+      // Clear the non-failed agents (covers empty/skipped speeches that append no
+      // message); failed ones were already dropped from pending by their `failed`.
+      if (settled.length) deps.onDispatchStatus?.({ phase: 'cleared', agents: settled })
       roundsInStage++
       total++
       continue
@@ -332,7 +383,10 @@ export async function runDiscussion(
     const speakerCfg = byId.get(step.speakerId)
     const speaker = participants.find((p) => p.id === step.speakerId)
     if (speakerCfg && speaker) {
+      const dispatched: DispatchAgent = { id: speaker.id, name: speaker.name }
+      deps.onDispatchStatus?.({ phase: 'pending', agents: [dispatched] })
       let speechText = ''
+      let failed = false
       try {
         speechText = await ask(
           speakerCfg,
@@ -349,21 +403,28 @@ export async function runDiscussion(
           cwd,
           signal,
         )
-      } catch {
-        /* keep '' on failure — an empty speech is simply skipped below */
+      } catch (err) {
+        // Expose the failure (not silently swallowed into an empty speech); the
+        // speech is skipped and the round still proceeds.
+        failed = true
+        deps.onDispatchStatus?.({ phase: 'failed', agent: dispatched, error: errText(err) })
       }
       if (signal.aborted) break
-      const speech = parseParticipantSpeech(speechText, speaker.name)
-      if (speech) {
-        deps.onMessage(
-          store.appendMessage({
-            discussionId: id,
-            speakerKind: 'agent',
-            speakerAgentId: speaker.id,
-            speakerName: speaker.name,
-            content: speech,
-          }),
-        )
+      if (!failed) {
+        const speech = parseParticipantSpeech(speechText, speaker.name)
+        if (speech) {
+          deps.onMessage(
+            store.appendMessage({
+              discussionId: id,
+              speakerKind: 'agent',
+              speakerAgentId: speaker.id,
+              speakerName: speaker.name,
+              content: speech,
+            }),
+          )
+        }
+        // Clear pending (covers an empty/skipped speech that appends no message).
+        deps.onDispatchStatus?.({ phase: 'cleared', agents: [dispatched] })
       }
     }
     roundsInStage++
@@ -391,6 +452,8 @@ export async function runDiscussion(
 export function defaultDiscussionDeps(hooks: {
   onMessage: (m: DiscussionMessage) => void
   onStatusChange: (id: string) => void
+  /** Stream the transient dispatch (in-flight/failed) status of nominated agents. */
+  onDispatchStatus?: (s: DispatchStatus) => void
   /** Optional pause gate (the server wires it to its per-run pause control). */
   gate?: (signal: AbortSignal) => Promise<void>
 }): DiscussionDeps {
@@ -410,6 +473,7 @@ export function defaultDiscussionDeps(hooks: {
     maxSpeechChars: getMaxSpeechChars(),
     onMessage: hooks.onMessage,
     onStatusChange: hooks.onStatusChange,
+    ...(hooks.onDispatchStatus ? { onDispatchStatus: hooks.onDispatchStatus } : {}),
     ...(hooks.gate ? { gate: hooks.gate } : {}),
   }
 }

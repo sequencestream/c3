@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import type { Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import {
   agendaProgressView,
+  applyDispatchStatus,
   autoGrowHeight,
+  clearDispatchAgent,
   discussionDetailTabs,
   discussionMessageToChat,
   discussionMessagesToChat,
@@ -11,6 +13,7 @@ import {
   reconcileRunState,
   rowVisibility,
   statusLabel,
+  type DispatchView,
 } from './discussion-view'
 
 function disc(over: Partial<Discussion> = {}): Discussion {
@@ -248,5 +251,69 @@ describe('discussion-view — reconcileRunState(运行态快照对账)', () => {
     expect(next).not.toBe(prev)
     expect(prev).toEqual({ d1: 'running' })
     expect(next).toEqual({})
+  })
+})
+
+describe('applyDispatchStatus / clearDispatchAgent (transient dispatch status)', () => {
+  const A = { id: 'a', name: 'Alice' }
+  const B = { id: 'b', name: 'Bob' }
+  const empty: DispatchView = { pending: [], errors: [] }
+
+  it('pending: 把派发的 agent 并入在途(broadcast 多个)', () => {
+    const v = applyDispatchStatus(undefined, { phase: 'pending', agents: [A, B] })
+    expect(v.pending).toEqual([A, B])
+    expect(v.errors).toEqual([])
+  })
+
+  it('pending: 重复 id 去重,保持到达顺序', () => {
+    const v1 = applyDispatchStatus(empty, { phase: 'pending', agents: [A] })
+    const v2 = applyDispatchStatus(v1, { phase: 'pending', agents: [A, B] })
+    expect(v2.pending).toEqual([A, B])
+  })
+
+  it('cleared: 从在途移除对应 agent(回复落库后清除)', () => {
+    const v1 = applyDispatchStatus(empty, { phase: 'pending', agents: [A, B] })
+    const v2 = applyDispatchStatus(v1, { phase: 'cleared', agents: [A] })
+    expect(v2.pending).toEqual([B])
+  })
+
+  it('failed: 移除在途并记录瞬态错误', () => {
+    const v1 = applyDispatchStatus(empty, { phase: 'pending', agents: [A, B] })
+    const v2 = applyDispatchStatus(v1, { phase: 'failed', agents: [A], error: 'boom' })
+    expect(v2.pending).toEqual([B])
+    expect(v2.errors).toEqual([{ id: 'a', name: 'Alice', error: 'boom' }])
+  })
+
+  it('failed: 同 agent 再次失败按 id 去重(不堆叠重复错误)', () => {
+    const v1 = applyDispatchStatus(empty, { phase: 'failed', agents: [A], error: 'e1' })
+    const v2 = applyDispatchStatus(v1, { phase: 'failed', agents: [A], error: 'e2' })
+    expect(v2.errors).toEqual([{ id: 'a', name: 'Alice', error: 'e2' }])
+  })
+
+  it('pending: 重新派发的 agent 清掉它的旧错误', () => {
+    const v1 = applyDispatchStatus(empty, { phase: 'failed', agents: [A], error: 'boom' })
+    const v2 = applyDispatchStatus(v1, { phase: 'pending', agents: [A] })
+    expect(v2.errors).toEqual([])
+    expect(v2.pending).toEqual([A])
+  })
+
+  it('不可变:不修改入参', () => {
+    const prev: DispatchView = { pending: [A], errors: [] }
+    const next = applyDispatchStatus(prev, { phase: 'cleared', agents: [A] })
+    expect(next).not.toBe(prev)
+    expect(prev.pending).toEqual([A])
+  })
+
+  it('clearDispatchAgent: 按 speakerAgentId 清除在途(消息到达的主清除路径)', () => {
+    const prev: DispatchView = { pending: [A, B], errors: [] }
+    const next = clearDispatchAgent(prev, 'a')
+    expect(next?.pending).toEqual([B])
+  })
+
+  it('clearDispatchAgent: 无匹配 / null 时原样返回(幂等)', () => {
+    const prev: DispatchView = { pending: [A], errors: [] }
+    expect(clearDispatchAgent(prev, 'zzz')).toBe(prev)
+    expect(clearDispatchAgent(prev, null)).toBe(prev)
+    expect(clearDispatchAgent(undefined, 'a')).toBeUndefined()
   })
 })

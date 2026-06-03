@@ -50,7 +50,7 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   - pure view helpers in `web/src/lib/discussion-view.ts`) carries:
     a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary
     row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /
-    in_progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
+    in*progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
     (`expandedId`, at most one open) that expands a **tab bar + single content area** beneath the row
     (`discussionDetailTabs`): one tab per non-empty field (Goal / Context / Conclusion,
     empty fields dropped) whose body is **Markdown-rendered** via `MarkdownText :markdown` (the shared
@@ -58,7 +58,7 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
     structured meta (type / status / created / completed). The active tab resets to the first
     content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
     the selected field. **Row click is a single combined action** (`openRow`): it emits `open` to load
-    the transcript + orchestration view in the right pane _and_ toggles that row's inline detail
+    the transcript + orchestration view in the right pane \_and* toggles that row's inline detail
     accordion in one gesture (re-clicking the same row collapses the detail; `open` stays idempotent).
     There is no chevron and no per-row "Open chat" button. All list copy is English (web/CLAUDE.md).
 - **Organizer engine** (`server/src/discussions/orchestrator.ts` + pure
@@ -84,6 +84,14 @@ completed`, appends every turn (`appendMessage`) and streams it (`discussion_mes
   `discussions` list send also carries a `runStates` snapshot (active runs only) — a refresh or
   reconnect authoritatively reconciles each listed discussion's run-state from it, so a run already
   going in the background shows correctly even on a freshly-(re)connected view.
+- **Dispatch (in-flight) status**: before each dispatched turn the engine emits the nominated
+  agent(s) as `pending` via `discussion_dispatch_status` (`speak` one, `broadcast` the whole batch),
+  emits `cleared` when the turn resolves, and `failed` (with a brief error) when it throws — so a
+  failed reply is surfaced in the chat tail instead of being silently swallowed, while the round still
+  proceeds. The chat tail shows `"<name> is replying…"` per pending agent and a failure line per
+  error. Runtime-only (never persisted, never a `discussion_messages` row) and — unlike run-state —
+  **not** snapshotted on the list: it self-heals via `cleared`/`failed`/the reply message/run
+  `ended`/discussion switch, so a refresh/reconnect leaves no stuck pending.
 
 - **Conclusion → requirement bridge** (`discussion_to_requirement`): a completed discussion's
   title-bar **Convert to Requirement** button seeds the requirement domain. The server resolves the

@@ -20,6 +20,9 @@ import {
   discussionMessageToChat,
   discussionMessagesToChat,
   reconcileRunState,
+  applyDispatchStatus,
+  clearDispatchAgent,
+  type DispatchView,
 } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
@@ -251,6 +254,11 @@ const discussionMaxSeq = ref(0)
 // decoupled from the persisted status. Absent = no live run; driven by the
 // `discussion_run_status` event. Drives the Pause/Resume control + composer mode.
 const discussionRunState = ref<Record<string, 'running' | 'paused'>>({})
+// Transient in-flight/failed status of dispatched agents, per discussion (id →
+// pending agents + errors). Runtime-only; driven by `discussion_dispatch_status`
+// and cleared by the reply message / run `ended` / discussion switch. Not persisted
+// and not reconciled on reconnect (starts empty, self-heals) — see discussion-view.
+const discussionDispatch = ref<Record<string, DispatchView>>({})
 // Draft for the discussion composer (human speak / follow-up question).
 const discussionInput = ref('')
 
@@ -624,7 +632,15 @@ function handleMessage(msg: ServerToClient) {
       discussionMaxSeq.value = msg.messages.length ? msg.messages[msg.messages.length - 1].seq : 0
       persistViewMode()
       break
-    case 'discussion_message':
+    case 'discussion_message': {
+      // A landed reply clears its author's in-flight (pending) status — the snappy
+      // primary clear for the message path (redundant with the server's `cleared`).
+      const cleared = clearDispatchAgent(
+        discussionDispatch.value[msg.discussionId],
+        msg.message.speakerAgentId,
+      )
+      if (cleared !== discussionDispatch.value[msg.discussionId])
+        discussionDispatch.value = { ...discussionDispatch.value, [msg.discussionId]: cleared! }
       // Live append while the organizer engine runs. Only for the open discussion,
       // and only messages newer than what the snapshot already rendered.
       if (
@@ -638,12 +654,28 @@ function handleMessage(msg: ServerToClient) {
         })
       }
       break
+    }
+    case 'discussion_dispatch_status': {
+      // Transient in-flight/failed status of dispatched agents (pending → cleared/
+      // failed). Aggregate per discussion; never persisted.
+      discussionDispatch.value = {
+        ...discussionDispatch.value,
+        [msg.discussionId]: applyDispatchStatus(discussionDispatch.value[msg.discussionId], msg),
+      }
+      break
+    }
     case 'discussion_run_status': {
       // Track the live run-state; `ended` drops the entry (fall back to status).
       const next = { ...discussionRunState.value }
       if (msg.state === 'ended') delete next[msg.discussionId]
       else next[msg.discussionId] = msg.state
       discussionRunState.value = next
+      // The run ending clears any lingering dispatch status for that discussion.
+      if (msg.state === 'ended' && discussionDispatch.value[msg.discussionId]) {
+        const d = { ...discussionDispatch.value }
+        delete d[msg.discussionId]
+        discussionDispatch.value = d
+      }
       break
     }
     case 'user_text':
@@ -945,6 +977,13 @@ function openDiscussion(discussionId: string) {
   if (discussionId === activeDiscussionId.value) return
   activeDiscussionId.value = discussionId
   discussionInput.value = ''
+  // Reset any stale dispatch (in-flight/failed) status for the freshly-opened
+  // discussion — it loads a clean transcript and re-populates from live events.
+  if (discussionDispatch.value[discussionId]) {
+    const d = { ...discussionDispatch.value }
+    delete d[discussionId]
+    discussionDispatch.value = d
+  }
   persistViewMode()
   client?.send({ type: 'open_discussion', discussionId })
 }
@@ -1034,6 +1073,13 @@ function startDiscussion() {
 const activeDiscussionRunState = computed<'running' | 'paused' | undefined>(() =>
   activeDiscussionId.value ? discussionRunState.value[activeDiscussionId.value] : undefined,
 )
+
+// The open discussion's transient dispatch (in-flight/failed) status, rendered in
+// the chat tail. Empty when nothing is dispatched.
+const activeDiscussionDispatch = computed<DispatchView>(() => {
+  const id = activeDiscussionId.value
+  return (id && discussionDispatch.value[id]) || { pending: [], errors: [] }
+})
 
 // Pause / resume the live orchestration of the open discussion.
 function pauseDiscussion() {
@@ -1303,6 +1349,7 @@ function listCommands() {
       :active-discussion="activeDiscussion"
       :active-run-state="activeDiscussionRunState"
       :messages="discussionMessages"
+      :dispatch="activeDiscussionDispatch"
       :input="discussionInput"
       @open="openDiscussion"
       @create="createDiscussion"

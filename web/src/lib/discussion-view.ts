@@ -82,6 +82,95 @@ export function reconcileRunState(
 }
 
 /*
+ * Dispatch (in-flight) status — the transient per-discussion view of which agents
+ * the organizer just dispatched are replying (`pending`) and which failed
+ * (`errors`). Driven by the runtime-only `discussion_dispatch_status` event plus
+ * the reply-message stream; never persisted. Pure reducers, unit-tested DOM-free.
+ *
+ * Self-healing (mirrors `discussion_run_status`): a `pending` agent leaves the set
+ * via `cleared`, `failed`, or its reply `discussion_message`; the whole view is
+ * dropped on discussion switch / run `ended`. So a refresh/reconnect (which starts
+ * empty) never leaves a stuck pending — any late clear/fail/message is a no-op.
+ */
+export interface DispatchAgentView {
+  id: string
+  name: string
+}
+
+export interface DispatchErrorView {
+  id: string
+  name: string
+  error: string
+}
+
+export interface DispatchView {
+  /** Agents currently replying, in arrival order (a broadcast adds several at once). */
+  pending: DispatchAgentView[]
+  /** Transient failures surfaced in the chat tail. */
+  errors: DispatchErrorView[]
+}
+
+/** Shape of the `discussion_dispatch_status` event (sans `type`/`discussionId`). */
+export interface DispatchStatusEvent {
+  phase: 'pending' | 'cleared' | 'failed'
+  agents: DispatchAgentView[]
+  error?: string
+}
+
+const EMPTY_DISPATCH: DispatchView = { pending: [], errors: [] }
+
+/**
+ * Apply one `discussion_dispatch_status` event to a discussion's dispatch view.
+ *
+ * - `pending`: append the agents (de-duped by id, arrival order preserved) and drop
+ *   any stale error for those agents (a re-dispatch supersedes a prior failure).
+ * - `cleared`: remove the agents from `pending`.
+ * - `failed`: remove the agent from `pending` and record an error (de-duped by id).
+ *
+ * Returns a new object (never mutates `prev`).
+ */
+export function applyDispatchStatus(
+  prev: DispatchView | undefined,
+  ev: DispatchStatusEvent,
+): DispatchView {
+  const base = prev ?? EMPTY_DISPATCH
+  if (ev.phase === 'cleared') {
+    const drop = new Set(ev.agents.map((a) => a.id))
+    return { pending: base.pending.filter((a) => !drop.has(a.id)), errors: base.errors }
+  }
+  if (ev.phase === 'failed') {
+    const a = ev.agents[0]
+    if (!a) return { pending: [...base.pending], errors: [...base.errors] }
+    return {
+      pending: base.pending.filter((p) => p.id !== a.id),
+      errors: [
+        ...base.errors.filter((e) => e.id !== a.id),
+        { id: a.id, name: a.name, error: ev.error ?? 'failed to reply' },
+      ],
+    }
+  }
+  // pending
+  const add = new Set(ev.agents.map((a) => a.id))
+  const pending = [...base.pending.filter((a) => !add.has(a.id)), ...ev.agents]
+  const errors = base.errors.filter((e) => !add.has(e.id))
+  return { pending, errors }
+}
+
+/**
+ * Clear a single agent's `pending` entry when its reply message arrives (matched by
+ * `speakerAgentId`). Snappy primary clear for the message path — redundant with the
+ * server's `cleared`, idempotent. Returns `prev` unchanged when nothing matches.
+ */
+export function clearDispatchAgent(
+  prev: DispatchView | undefined,
+  agentId: string | null | undefined,
+): DispatchView | undefined {
+  if (!prev || !agentId) return prev
+  if (!prev.pending.some((a) => a.id === agentId)) return prev
+  return { pending: prev.pending.filter((a) => a.id !== agentId), errors: prev.errors }
+}
+
+/*
  * Detail accordion tabs — the expanded row shows one field at a time behind a tab
  * bar instead of stacking goal / context / conclusion vertically. Goal / context /
  * conclusion tabs render their text as Markdown (via MarkdownText :markdown); a

@@ -10,7 +10,12 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { AgentConfig, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
-import { runDiscussion, type DiscussionDeps, type DiscussionStore } from './orchestrator.js'
+import {
+  runDiscussion,
+  type DiscussionDeps,
+  type DiscussionStore,
+  type DispatchStatus,
+} from './orchestrator.js'
 
 const agent = (id: string, name: string): AgentConfig => ({
   id,
@@ -89,6 +94,7 @@ interface Harness {
   deps: DiscussionDeps
   statusChanges: string[]
   streamed: DiscussionMessage[]
+  dispatched: DispatchStatus[]
 }
 
 function harness(opts: {
@@ -104,6 +110,7 @@ function harness(opts: {
 }): Harness {
   const statusChanges: string[] = []
   const streamed: DiscussionMessage[] = []
+  const dispatched: DispatchStatus[] = []
   const queue = [...opts.organizerScript]
   const deps: DiscussionDeps = {
     ask: async (_a, prompt) => {
@@ -118,10 +125,11 @@ function harness(opts: {
     participants: () => opts.participants,
     onMessage: (m) => streamed.push(m),
     onStatusChange: (id) => statusChanges.push(id),
+    onDispatchStatus: (s) => dispatched.push(s),
     ...(opts.maxTotalRounds !== undefined ? { maxTotalRounds: opts.maxTotalRounds } : {}),
     ...(opts.maxRoundsPerStage !== undefined ? { maxRoundsPerStage: opts.maxRoundsPerStage } : {}),
   }
-  return { deps, statusChanges, streamed }
+  return { deps, statusChanges, streamed, dispatched }
 }
 
 describe('runDiscussion', () => {
@@ -467,5 +475,156 @@ describe('runDiscussion', () => {
     // discuss; then summarize + confirm each cap at 2 speaks (no agenda) = 6 more.
     expect(get().agendaIndex).toBe(get().agenda.length)
     expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(2 + 2 + 2 + 2)
+  })
+
+  it('emits pending before a speak reply and clears it after the reply lands', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        '{"action":"speak","speaker":"gpt","note":""}',
+        '{"action":"conclude","conclusion":"Done."}',
+      ],
+      participantReply: 'GPT view',
+    })
+    // When GPT is actually asked, the pending status must already have been emitted —
+    // proving the in-flight signal precedes the (later-appended) reply.
+    const baseAsk = h.deps.ask
+    h.deps.ask = async (a, prompt, cwd, signal) => {
+      if (!isOrganizerPrompt(prompt)) {
+        expect(h.dispatched).toContainEqual({
+          phase: 'pending',
+          agents: [{ id: 'gpt', name: 'GPT' }],
+        })
+      }
+      return baseAsk(a, prompt, cwd, signal)
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    // pending → cleared for GPT, in order; the reply was appended.
+    expect(h.dispatched).toEqual([
+      { phase: 'pending', agents: [{ id: 'gpt', name: 'GPT' }] },
+      { phase: 'cleared', agents: [{ id: 'gpt', name: 'GPT' }] },
+    ])
+    expect(messages.some((m) => m.speakerKind === 'agent' && m.content === 'GPT view')).toBe(true)
+  })
+
+  it('exposes a failed speak as `failed` instead of silently skipping it', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        '{"action":"speak","speaker":"gpt","note":""}',
+        '{"action":"conclude","conclusion":"Done."}',
+      ],
+    })
+    // The organizer drives the script; GPT's participant turn throws.
+    const queue = [
+      '{"action":"speak","speaker":"gpt","note":""}',
+      '{"action":"conclude","conclusion":"Done."}',
+    ]
+    h.deps.ask = async (_a, prompt) => {
+      if (isOrganizerPrompt(prompt))
+        return queue.shift() ?? '{"action":"conclude","conclusion":"x"}'
+      throw new Error('boom')
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    // The failure surfaced as `failed` (not swallowed into an empty speech); no agent
+    // message was appended, no `cleared` for the failed agent, and the round proceeded.
+    expect(h.dispatched).toContainEqual({
+      phase: 'failed',
+      agent: { id: 'gpt', name: 'GPT' },
+      error: 'boom',
+    })
+    expect(h.dispatched.some((s) => s.phase === 'cleared')).toBe(false)
+    expect(messages.some((m) => m.speakerKind === 'agent')).toBe(false)
+    expect(get().status).toBe('completed')
+  })
+
+  it('emits pending for the whole batch and clears it after (broadcast)', async () => {
+    const { store, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const queue = [
+      '{"action":"broadcast","speakers":["system","gpt"],"note":"各自给出方案"}',
+      '{"action":"advance","note":""}',
+      '{"action":"advance","note":""}',
+      '{"action":"advance","note":""}',
+      '{"action":"conclude","conclusion":"Use Redis."}',
+    ]
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [],
+    })
+    h.deps.ask = async (_a, prompt) =>
+      isOrganizerPrompt(prompt)
+        ? (queue.shift() ?? '{"action":"conclude","conclusion":"x"}')
+        : 'a view'
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    // The whole batch goes pending at once (broadcast concurrency), then clears together.
+    const both = [
+      { id: 'system', name: 'System' },
+      { id: 'gpt', name: 'GPT' },
+    ]
+    expect(h.dispatched).toEqual([
+      { phase: 'pending', agents: both },
+      { phase: 'cleared', agents: both },
+    ])
+  })
+
+  it('exposes one failed agent in a broadcast while the rest proceed', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const queue = [
+      '{"action":"broadcast","speakers":["system","gpt"],"note":"各自给出方案"}',
+      '{"action":"advance","note":""}',
+      '{"action":"advance","note":""}',
+      '{"action":"advance","note":""}',
+      '{"action":"conclude","conclusion":"Use Redis."}',
+    ]
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [],
+    })
+    h.deps.ask = async (a, prompt) => {
+      if (isOrganizerPrompt(prompt))
+        return queue.shift() ?? '{"action":"conclude","conclusion":"x"}'
+      if (a.id === 'system') throw new Error('system down')
+      return 'GPT view'
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    // System failed (exposed, not appended); GPT proceeded and cleared.
+    expect(h.dispatched).toEqual([
+      {
+        phase: 'pending',
+        agents: [
+          { id: 'system', name: 'System' },
+          { id: 'gpt', name: 'GPT' },
+        ],
+      },
+      { phase: 'failed', agent: { id: 'system', name: 'System' }, error: 'system down' },
+      { phase: 'cleared', agents: [{ id: 'gpt', name: 'GPT' }] },
+    ])
+    const agentMsgs = messages.filter((m) => m.speakerKind === 'agent')
+    expect(agentMsgs.map((m) => m.speakerName)).toEqual(['GPT'])
   })
 })

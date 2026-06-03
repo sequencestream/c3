@@ -305,6 +305,43 @@ header h1 {
   margin-left: var(--sp-2);
 }
 
+/* Transient dispatch status strip at the chat tail: in-flight (pending) replies +
+   reply failures. Runtime-only — not part of the persisted transcript. */
+.disc-dispatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+  border-top: 1px solid var(--c-border);
+}
+.disc-dispatch-pending,
+.disc-dispatch-error {
+  margin: 0;
+  font-size: var(--fs-caption);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.disc-dispatch-pending {
+  color: var(--c-text-muted);
+}
+.disc-dispatch-dot {
+  color: var(--c-primary);
+  animation: disc-dispatch-pulse 1.2s ease-in-out infinite;
+}
+@keyframes disc-dispatch-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.disc-dispatch-error {
+  color: var(--c-error);
+}
+
 /* Discussion composer: human interjection / follow-up question row. */
 .disc-composer {
   display: flex;

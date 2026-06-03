@@ -10,7 +10,7 @@ import DiscussionList from './components/DiscussionList/DiscussionList.vue'
 import AgendaProgress from './components/AgendaProgress/AgendaProgress.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
-import { discussionRunLabel } from '../../lib/discussion-view'
+import { discussionRunLabel, type DispatchView } from '../../lib/discussion-view'
 import type { Discussion } from '@ccc/shared/protocol'
 import type { ChatMsg } from '../../lib/chat-types'
 
@@ -21,6 +21,9 @@ const props = defineProps<{
   activeDiscussion: Discussion | null
   activeRunState: 'running' | 'paused' | undefined
   messages: ChatMsg[]
+  // Transient in-flight (pending) / failed status of dispatched agents, rendered in
+  // the chat tail. Runtime-only; never part of the persisted transcript.
+  dispatch: DispatchView
   input: string
 }>()
 
@@ -108,6 +111,21 @@ function statusLabel(status: Discussion['status']): string {
       @respond="() => {}"
       @submit-ask="() => {}"
     />
+    <!-- Transient dispatch status at the chat tail: which agents are replying right
+         now (broadcast shows several), plus any reply failures. Runtime-only — clears
+         when the reply lands / the run ends / the discussion is switched. -->
+    <div
+      v-if="activeDiscussion && (dispatch.pending.length || dispatch.errors.length)"
+      class="disc-dispatch"
+    >
+      <p v-for="a in dispatch.pending" :key="`p-${a.id}`" class="disc-dispatch-pending">
+        <span class="disc-dispatch-dot" aria-hidden="true">●</span>
+        {{ a.name }} is replying…
+      </p>
+      <p v-for="e in dispatch.errors" :key="`e-${e.id}`" class="disc-dispatch-error">
+        ⚠ {{ e.name }} failed to reply: {{ e.error }}
+      </p>
+    </div>
     <!-- Discussion composer: human interjection while running, or a follow-up
          question that drives a new round once concluded. Hidden for a draft. -->
     <form

@@ -840,6 +840,30 @@ export type ServerToClient =
    */
   | { type: 'discussion_run_status'; discussionId: string; state: 'running' | 'paused' | 'ended' }
   /**
+   * Runtime-only, transient in-flight status of the agents the organizer just
+   * dispatched in a round — surfaced in the chat tail so viewers see which agents
+   * are replying (and which failed) before anything lands in the transcript.
+   * Decoupled from `discussion_message`: never persisted, never an entry in
+   * `discussion_messages`, and (unlike `discussion_run_status`) NOT snapshotted on
+   * the `discussions` list — it self-heals via `cleared`/`failed`/the reply message
+   * /run `ended`/discussion switch, so a refresh or reconnect leaves no stuck pending.
+   *
+   * - `pending`: `agents` were dispatched and are now replying (a `broadcast` lists
+   *   several at once).
+   * - `cleared`: `agents` finished (reply appended, or an empty/skipped speech that
+   *   produces no `discussion_message`) — drop them from the in-flight set. The
+   *   reliable clear for the no-message case; the reply-message path also clears.
+   * - `failed`: `agents` (a single agent) failed to reply; `error` is a brief reason.
+   *   The discussion continues (the speech is skipped, the round is not blocked).
+   */
+  | {
+      type: 'discussion_dispatch_status'
+      discussionId: string
+      phase: 'pending' | 'cleared' | 'failed'
+      agents: { id: string; name: string }[]
+      error?: string
+    }
+  /**
    * Echo of a user prompt, emitted into the session's stream when a turn starts.
    * Lets every viewer (including one switching back to a background session) see
    * the prompt that drove the in-flight turn, since it isn't part of the on-disk

@@ -39,6 +39,39 @@ export function statusLabel(s: DiscussionStatus): string {
   return STATUS_LABELS[s] ?? s
 }
 
+/*
+ * Detail accordion tabs — the expanded row shows one field at a time behind a tab
+ * bar instead of stacking goal / context / conclusion vertically. Goal / context /
+ * conclusion tabs render their text as Markdown (via MarkdownText :markdown); a
+ * trailing always-present `details` tab carries the structured meta (type / status /
+ * timestamps), which the component renders itself rather than as Markdown.
+ *
+ * Empty markdown fields are dropped so no blank tab shows; `details` always exists,
+ * so the list is never empty and the first tab is a safe default. Pure, so it is
+ * unit-tested DOM-free; the component just reads the order and resets the active
+ * tab to `tabs[0]` when the expanded row changes.
+ */
+export type DiscussionTabKind = 'goal' | 'context' | 'conclusion' | 'details'
+
+export interface DiscussionTab {
+  kind: DiscussionTabKind
+  label: string
+  /** Markdown body for goal/context/conclusion; `null` for the structured `details` tab. */
+  body: string | null
+}
+
+export function discussionDetailTabs(d: Discussion): DiscussionTab[] {
+  const tabs: DiscussionTab[] = []
+  const goal = d.goal?.trim()
+  const context = d.context?.trim()
+  const conclusion = d.conclusion?.trim()
+  if (goal) tabs.push({ kind: 'goal', label: 'Goal', body: d.goal })
+  if (context) tabs.push({ kind: 'context', label: 'Context', body: d.context })
+  if (conclusion) tabs.push({ kind: 'conclusion', label: 'Conclusion', body: d.conclusion })
+  tabs.push({ kind: 'details', label: 'Details', body: null })
+  return tabs
+}
+
 /** Header toggle button copy + title, reflecting the state it switches *to* on click. */
 export interface ToggleLabel {
   icon: string

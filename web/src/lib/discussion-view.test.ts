@@ -3,6 +3,7 @@ import type { Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import {
   agendaProgressView,
   autoGrowHeight,
+  discussionDetailTabs,
   discussionMessageToChat,
   discussionMessagesToChat,
   panelToggleLabel,
@@ -104,6 +105,34 @@ describe('discussion-view — 列表面板视图纯函数', () => {
   it('rowVisibility:展开态显示次要元信息,收缩态隐藏', () => {
     expect(rowVisibility(false)).toEqual({ showMeta: true })
     expect(rowVisibility(true)).toEqual({ showMeta: false })
+  })
+})
+
+describe('discussion-view — discussionDetailTabs(展开详情 Tab)', () => {
+  it('全字段非空:goal/context/conclusion + details 顺序', () => {
+    const tabs = discussionDetailTabs(disc({ goal: 'G', context: 'C', conclusion: 'X' }))
+    expect(tabs.map((t) => t.kind)).toEqual(['goal', 'context', 'conclusion', 'details'])
+    expect(tabs.map((t) => t.label)).toEqual(['Goal', 'Context', 'Conclusion', 'Details'])
+    expect(tabs[0].body).toBe('G')
+    expect(tabs.at(-1)?.body).toBeNull()
+  })
+
+  it('空 / 纯空白字段被剔除:仅保留非空字段 + details', () => {
+    const tabs = discussionDetailTabs(disc({ goal: 'G', context: '   ', conclusion: null }))
+    expect(tabs.map((t) => t.kind)).toEqual(['goal', 'details'])
+  })
+
+  it('全空:仅剩 details 兜底 Tab(列表永不为空)', () => {
+    const tabs = discussionDetailTabs(disc({ goal: '', context: '', conclusion: null }))
+    expect(tabs.map((t) => t.kind)).toEqual(['details'])
+    expect(tabs[0].body).toBeNull()
+  })
+
+  it('body 透传原文(不 trim,trim 仅用于空判定)', () => {
+    const tabs = discussionDetailTabs(
+      disc({ goal: '  # 标题\n正文  ', context: '', conclusion: null }),
+    )
+    expect(tabs[0].body).toBe('  # 标题\n正文  ')
   })
 })
 

@@ -38,8 +38,13 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary
   row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /
   in_progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
-  (`expandedId`, at most one open) that expands goal / context / conclusion + type / status /
-  created / completed beneath the clicked row. A persistent per-row **Open chat** button still emits
+  (`expandedId`, at most one open) that expands a **tab bar + single content area** beneath the
+  clicked row (`discussionDetailTabs`): one tab per non-empty field (Goal / Context / Conclusion,
+  empty fields dropped) whose body is **Markdown-rendered** via `MarkdownText :markdown` (the shared
+  markdown-it `html:false` → DOMPurify pipeline), plus an always-present **Details** tab carrying the
+  structured meta (type / status / created / completed). The active tab resets to the first
+  content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
+  the selected field. A persistent per-row **Open chat** button still emits
   `open` to load the transcript + orchestration view in the right pane (accordion browsing and the
   right pane coexist). All list copy is English (web/CLAUDE.md).
 - **Organizer engine** (`server/src/discussions/orchestrator.ts` + pure

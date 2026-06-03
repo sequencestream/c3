@@ -5,18 +5,21 @@
  * 数据由 App 提供(读路径)。点击某讨论上抛 `open` 事件,由 App 拉取详情;
  * 顶部「+」展开内联新建表单(类型/目标/上下文),提交上抛 `create`(写路径)。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Discussion } from '@ccc/shared/protocol'
 import { listDiscussionTypes } from '@ccc/shared/discussion-types'
 import { formatDate } from '../lib/req-list-view'
 import {
   autoGrowHeight,
+  discussionDetailTabs,
   panelToggleLabel,
   rowVisibility,
   statusLabel,
 } from '../lib/discussion-view'
+import type { DiscussionTabKind } from '../lib/discussion-view'
+import MarkdownText from './MarkdownText.vue'
 
-defineProps<{
+const props = defineProps<{
   discussions: Discussion[]
   activeId: string | null
 }>()
@@ -77,9 +80,34 @@ function typeLabel(d: Discussion): string {
 
 // 手风琴展开状态:记录当前展开项的 id,null 表示全部收起;天然保证至多一项展开。
 const expandedId = ref<string | null>(null)
+// 当前展开项的详情 Tab 选中态(goal/context/conclusion/details)。
+const activeTab = ref<DiscussionTabKind>('details')
+
+const discussionsById = computed(() => new Map(props.discussions.map((d) => [d.id, d] as const)))
+// 当前展开讨论的可见 Tab 列表(空字段已剔除,末尾恒有 details)。
+const expandedTabs = computed(() => {
+  const d = discussionsById.value.get(expandedId.value ?? '')
+  return d ? discussionDetailTabs(d) : []
+})
+
 function toggleDetail(id: string): void {
-  expandedId.value = expandedId.value === id ? null : id
+  if (expandedId.value === id) {
+    expandedId.value = null
+    return
+  }
+  // 展开 / 切换讨论项:重置选中到第一个有内容的 Tab(不跨项记忆)。
+  expandedId.value = id
+  const d = discussionsById.value.get(id)
+  const tabs = d ? discussionDetailTabs(d) : []
+  activeTab.value = tabs[0]?.kind ?? 'details'
 }
+
+// 实时更新可能让当前选中字段变空(对应 Tab 消失):回落到首个可见 Tab。
+watch(expandedTabs, (tabs) => {
+  if (tabs.length && !tabs.some((t) => t.kind === activeTab.value)) {
+    activeTab.value = tabs[0].kind
+  }
+})
 
 // 面板折叠态:本地 UI 状态。收缩态收窄面板并隐藏行内次要元信息。
 const collapsed = ref(false)
@@ -188,21 +216,49 @@ function togglePanel(): void {
           </div>
         </div>
         <div v-if="d.id === expandedId" class="disc-detail">
-          <p v-if="d.goal" class="disc-detail-block"><strong>Goal:</strong> {{ d.goal }}</p>
-          <p v-if="d.context" class="disc-detail-block">
-            <strong>Context:</strong> {{ d.context }}
-          </p>
-          <p v-if="d.conclusion" class="disc-detail-block">
-            <strong>Conclusion:</strong> {{ d.conclusion }}
-          </p>
-        </div>
-        <div v-if="d.id === expandedId" class="disc-detail-meta">
-          <span class="disc-meta-item">Type: {{ typeLabel(d) }}</span>
-          <span class="disc-meta-item">Status: {{ statusLabel(d.status) }}</span>
-          <span class="disc-meta-item">Created: {{ formatDate(d.createdAt) }}</span>
-          <span v-if="d.completedAt" class="disc-meta-item"
-            >Completed: {{ formatDate(d.completedAt) }}</span
-          >
+          <div class="disc-tabs" role="tablist">
+            <button
+              v-for="t in expandedTabs"
+              :key="t.kind"
+              type="button"
+              role="tab"
+              class="disc-tab"
+              :class="{ active: t.kind === activeTab }"
+              :aria-selected="t.kind === activeTab"
+              @click="activeTab = t.kind"
+            >
+              {{ t.label }}
+            </button>
+          </div>
+          <div class="disc-tab-body">
+            <!-- Goal / Context / Conclusion:markdown 渲染(html:false → DOMPurify) -->
+            <template v-for="t in expandedTabs" :key="t.kind">
+              <MarkdownText
+                v-if="t.kind === activeTab && t.body !== null"
+                :text="t.body"
+                :markdown="true"
+              />
+            </template>
+            <!-- Details:结构化元信息,非 markdown -->
+            <dl v-if="activeTab === 'details'" class="disc-meta-list">
+              <div class="disc-meta-row">
+                <dt>Type</dt>
+                <dd>{{ typeLabel(d) }}</dd>
+              </div>
+              <div class="disc-meta-row">
+                <dt>Status</dt>
+                <dd>{{ statusLabel(d.status) }}</dd>
+              </div>
+              <div class="disc-meta-row">
+                <dt>Created</dt>
+                <dd>{{ formatDate(d.createdAt) }}</dd>
+              </div>
+              <div v-if="d.completedAt" class="disc-meta-row">
+                <dt>Completed</dt>
+                <dd>{{ formatDate(d.completedAt) }}</dd>
+              </div>
+            </dl>
+          </div>
         </div>
       </div>
     </div>
@@ -487,39 +543,79 @@ function togglePanel(): void {
   border-color: var(--c-primary);
   color: var(--c-primary);
 }
-/* 手风琴展开详情:正文块,保留换行 */
+/* 手风琴展开详情:Tab 栏 + 单一内容区 */
 .disc-detail {
   margin-top: var(--sp-1);
-  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-sm);
   background: var(--c-hover);
   border: 1px solid var(--c-border);
   color: var(--c-text);
-  font-size: var(--fs-body);
-  line-height: 1.6;
+  overflow: hidden;
 }
-.disc-detail-block {
-  margin: 0 0 var(--sp-1);
-  white-space: pre-wrap;
-  word-break: break-word;
+/* Tab 栏:窄屏可横向滚动而非溢出/换行错位 */
+.disc-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2) 0;
+  border-bottom: 1px solid var(--c-border);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.disc-detail-block:last-child {
-  margin-bottom: 0;
+.disc-tabs::-webkit-scrollbar {
+  display: none;
 }
-/* 展开详情下方的次要元信息行:type/status/时间,字号小且灰 */
-.disc-detail-meta {
-  margin-top: var(--sp-1);
-  padding: var(--sp-1) var(--sp-3) 0;
+.disc-tab {
+  flex-shrink: 0;
+  padding: var(--sp-1) var(--sp-2);
+  font: inherit;
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
-  line-height: 1.8;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.disc-meta-item {
-  display: inline;
+.disc-tab:hover {
+  color: var(--c-text);
 }
-.disc-meta-item + .disc-meta-item::before {
-  content: '·';
-  margin: 0 var(--sp-1);
-  color: var(--c-border);
+.disc-tab.active {
+  color: var(--c-primary);
+  border-bottom-color: var(--c-primary);
+}
+/* 单一内容区:markdown 正文或结构化元信息 */
+.disc-tab-body {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  word-break: break-word;
+}
+.disc-tab-body :deep(.md-body) > :first-child {
+  margin-top: 0;
+}
+.disc-tab-body :deep(.md-body) > :last-child {
+  margin-bottom: 0;
+}
+/* Details Tab:type/status/时间的标签-值列表 */
+.disc-meta-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.disc-meta-row {
+  display: flex;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+}
+.disc-meta-row dt {
+  flex-shrink: 0;
+  width: 76px;
+  color: var(--c-text-muted);
+}
+.disc-meta-row dd {
+  margin: 0;
+  color: var(--c-text);
 }
 </style>

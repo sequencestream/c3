@@ -982,6 +982,12 @@ function onSelectSchedule(id: string) {
   client?.send({ type: 'get_schedule_detail', scheduleId: id })
 }
 
+// 列表行的 enable/disable 开关:映射到 update_schedule 的 status(无独立 pause/resume
+// 协议消息)。enabled → active(评估),disabled → paused(跳过评估)。
+function onToggleScheduleEnabled(id: string, enabled: boolean) {
+  updateSchedule(id, { status: enabled ? 'active' : 'paused' })
+}
+
 // ---- Schedule create/edit form (write path) ----
 // The modal serves both create (target = null) and edit (target = a schedule).
 // On save it sends create_schedule / update_schedule; the server then
@@ -1250,6 +1256,8 @@ function listCommands() {
       :schedules="currentSchedules"
       :active-id="selectedScheduleId"
       @select="onSelectSchedule"
+      @new-schedule="openScheduleForm(null)"
+      @toggle-enabled="onToggleScheduleEnabled"
     />
 
     <div class="content">

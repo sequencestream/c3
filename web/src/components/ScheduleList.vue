@@ -2,7 +2,11 @@
 /**
  * ScheduleList.vue — schedules view 左栏:定时任务列表。
  *
- * 数据由 App 提供(读路径)。点击某行上抛 `select` 事件,由 App 切换右栏详情。
+ * 数据由 App 提供(读路径)。范式对齐 RequirementList / DiscussionList:
+ * - 标题右侧「+」上抛 `new-schedule`,由 App 打开创建表单(写路径)。
+ * - 每行 enable/disable 开关上抛 `toggle-enabled`(enabled=active,disabled=paused),
+ *   由 App 映射到 update_schedule 的 status(无独立 pause/resume 协议消息)。
+ * - 点击行 accordion 单开:展开行内轻量摘要,同时上抛 `select` 联动右栏 ScheduleDetail。
  * 首次挂载后每 30s 更新下次执行倒计时。
  */
 import { ref, onMounted, onUnmounted } from 'vue'
@@ -15,6 +19,8 @@ defineProps<{
 
 const emit = defineEmits<{
   select: [id: string]
+  'new-schedule': []
+  'toggle-enabled': [id: string, enabled: boolean]
 }>()
 
 // Live countdown: refreshed every 30s so relative times stay current.
@@ -53,6 +59,27 @@ function scheduleLabel(s: Schedule): string {
   return `${tag} · ${name || s.cronExpression}`
 }
 
+// enable/disable 开关:启用态 = status==='active';error/paused 视为未启用。
+// 切换上抛目标态(enabled),由 App 映射到 update_schedule 的 active/paused。
+function isEnabled(s: Schedule): boolean {
+  return s.status === 'active'
+}
+function toggleEnabled(s: Schedule): void {
+  emit('toggle-enabled', s.id, !isEnabled(s))
+}
+
+// 手风琴展开状态:记录当前展开项的 id,null 表示全部收起;天然保证至多一项展开。
+// 展开时同时 emit select,使右栏 ScheduleDetail / Edit 联动(经用户确认)。
+const expandedId = ref<string | null>(null)
+function toggleDetail(s: Schedule): void {
+  if (expandedId.value === s.id) {
+    expandedId.value = null
+    return
+  }
+  expandedId.value = s.id
+  emit('select', s.id)
+}
+
 // 面板折叠切换(与 DiscussionList 一致)。
 const collapsed = ref(false)
 function togglePanel(): void {
@@ -75,6 +102,16 @@ function togglePanel(): void {
         </button>
         <span v-show="!collapsed" class="sched-list-title">Schedules</span>
       </div>
+      <button
+        v-show="!collapsed"
+        type="button"
+        class="sched-new-btn"
+        aria-label="New schedule"
+        title="New schedule"
+        @click="emit('new-schedule')"
+      >
+        +
+      </button>
     </div>
     <div v-show="!collapsed" class="sched-items">
       <p v-if="schedules.length === 0" class="sched-empty">No schedules yet.</p>
@@ -83,16 +120,63 @@ function togglePanel(): void {
         :key="s.id"
         class="sched-item"
         :class="{ active: s.id === activeId }"
-        role="button"
-        tabindex="0"
-        @click="emit('select', s.id)"
-        @keydown.enter.prevent="emit('select', s.id)"
-        @keydown.space.prevent="emit('select', s.id)"
       >
-        <div class="sched-item-head">
-          <span class="sched-label">{{ scheduleLabel(s) }}</span>
-          <span class="sched-countdown">{{ timeLeft(s.nextRunAt) }}</span>
-          <span class="sched-status" :class="s.status">{{ s.status }}</span>
+        <div
+          class="sched-item-main"
+          role="button"
+          tabindex="0"
+          :aria-expanded="s.id === expandedId"
+          @click="toggleDetail(s)"
+          @keydown.enter.prevent="toggleDetail(s)"
+          @keydown.space.prevent="toggleDetail(s)"
+        >
+          <div class="sched-item-head">
+            <span
+              class="sched-chevron"
+              :class="{ 'sched-chevron--open': s.id === expandedId }"
+              aria-hidden="true"
+              >▸</span
+            >
+            <span class="sched-label">{{ scheduleLabel(s) }}</span>
+            <span class="sched-countdown">{{ timeLeft(s.nextRunAt) }}</span>
+            <span class="sched-status" :class="s.status">{{ s.status }}</span>
+            <!-- enable/disable 开关:on=active。切换映射到 update_schedule 的 status。 -->
+            <button
+              type="button"
+              class="sched-toggle"
+              role="switch"
+              :class="{ on: isEnabled(s) }"
+              :aria-checked="isEnabled(s)"
+              :title="isEnabled(s) ? 'Enabled — click to pause' : 'Disabled — click to enable'"
+              @click.stop="toggleEnabled(s)"
+            >
+              <span class="sched-toggle-knob" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <div v-if="s.id === expandedId" class="sched-detail-inline">
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Type</span>
+            <span class="sched-meta-val">{{ s.type }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Cron</span>
+            <span class="sched-meta-val"
+              ><code>{{ s.cronExpression }}</code></span
+            >
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Next run</span>
+            <span class="sched-meta-val">{{ timeLeft(s.nextRunAt) }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">MCP mode</span>
+            <span class="sched-meta-val">{{ s.mcpMode }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Status</span>
+            <span class="sched-meta-val">{{ s.status }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -101,7 +185,7 @@ function togglePanel(): void {
 
 <style scoped>
 .sched-list {
-  width: 420px;
+  width: 960px;
   flex-shrink: 0;
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
@@ -110,17 +194,19 @@ function togglePanel(): void {
   overflow: hidden;
   transition: width 0.2s ease;
 }
+/* 收缩态:宽度减半(与 .req-list / .disc-list 一致) */
 .sched-list.collapsed {
-  width: 60px;
+  width: 480px;
 }
+/* 窄屏回退:侧栏按视口比例收窄,避免挤压聊天区(与 .disc-list 一致) */
 @media (max-width: 1024px) {
   .sched-list {
-    width: min(420px, 40vw);
-    min-width: 300px;
+    width: min(960px, 68vw);
+    min-width: 450px;
   }
   .sched-list.collapsed {
-    width: 60px;
-    min-width: 60px;
+    width: min(480px, 34vw);
+    min-width: 280px;
   }
 }
 .sched-list-head {
@@ -158,6 +244,27 @@ function togglePanel(): void {
   background: var(--c-hover);
   color: var(--c-text);
 }
+/* 标题右侧「+」:对齐 .disc-new-btn */
+.sched-new-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: var(--fs-title-sm);
+  line-height: 1;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sched-new-btn:hover {
+  color: var(--c-text);
+  border-color: var(--c-primary);
+}
 .sched-items {
   flex: 1;
   overflow-y: auto;
@@ -176,7 +283,9 @@ function togglePanel(): void {
   border: 1px solid var(--c-border);
   border-radius: var(--radius-md);
   padding: var(--sp-2);
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
 }
 .sched-item:hover {
   border-color: var(--c-primary);
@@ -185,10 +294,22 @@ function togglePanel(): void {
   border-color: var(--c-primary);
   background: var(--c-primary-soft);
 }
+.sched-item-main {
+  cursor: pointer;
+}
 .sched-item-head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+.sched-chevron {
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  color: var(--c-text-muted);
+  transition: transform 0.15s ease;
+}
+.sched-chevron--open {
+  transform: rotate(90deg);
 }
 .sched-label {
   flex: 1;
@@ -227,5 +348,65 @@ function togglePanel(): void {
 .sched-status.error {
   background: rgba(239, 68, 68, 0.12);
   color: var(--c-error);
+}
+/* enable/disable 开关:小型 pill 滑块,on=绿色 active。 */
+.sched-toggle {
+  flex-shrink: 0;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-pill);
+  background: var(--c-hover-strong);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sched-toggle.on {
+  background: var(--c-success);
+  border-color: var(--c-success);
+}
+.sched-toggle-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.sched-toggle.on .sched-toggle-knob {
+  transform: translateX(14px);
+}
+/* 行内展开摘要:标签-值列表,轻量呈现(完整详情在右栏 ScheduleDetail)。 */
+.sched-detail-inline {
+  border-radius: var(--radius-sm);
+  background: var(--c-hover);
+  border: 1px solid var(--c-border);
+  padding: var(--sp-2) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.sched-meta-row {
+  display: flex;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+}
+.sched-meta-label {
+  flex-shrink: 0;
+  width: 76px;
+  color: var(--c-text-muted);
+}
+.sched-meta-val {
+  color: var(--c-text);
+  word-break: break-word;
+}
+.sched-meta-val code {
+  font-family: var(--ff-mono, monospace);
+  background: var(--c-card);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
 }
 </style>

@@ -251,7 +251,10 @@ Wire shapes are defined in the [shared protocol](../../../shared/api-conventions
 - **Run now:** Given an existing schedule, When the user clicks "Run Now", Then an execution is
   immediately dispatched (bypassing the scheduler tick), a new `running` execution log appears.
 - **Pause and resume:** Given an active schedule, When the user pauses it (via queue), Then it is
-  no longer evaluated. Resuming returns it to evaluation.
+  no longer evaluated. Resuming returns it to evaluation. In the web-console schedule list, each row
+  carries an **enable/disable switch** (on = `active`, off = `paused`; an `error`-state row reads as
+  off) that maps to this pause/resume transition — toggling it issues an `update_schedule` with the
+  target `status`. `archived` is not part of the switch's range (it is terminal, SCH-R14).
 - **Archive a schedule:** Given a schedule, When the user archives it, Then it is frozen,
   its logs preserved, and it cannot be un-archived.
 - **Write queue safety (anti-scenario):** Changing a schedule's trigger time or command must

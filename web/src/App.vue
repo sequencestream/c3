@@ -1241,6 +1241,7 @@ function listCommands() {
       :available-commands="availableCommands"
       :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
       @create-session="createSession"
+      @refresh-sessions="() => refreshSessions(currentWorkspace)"
       @select-session="selectSession"
       @delete-session="deleteSession"
       @rename-session="renameSession"

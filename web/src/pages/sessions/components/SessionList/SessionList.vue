@@ -22,6 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'create-session': [path: string]
+  'refresh-sessions': []
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -76,6 +77,10 @@ function createSession() {
   if (props.currentWorkspace) emit('create-session', props.currentWorkspace)
 }
 
+function refreshSessions() {
+  if (props.currentWorkspace) emit('refresh-sessions')
+}
+
 function deleteSession(sessionId: string) {
   if (!props.currentWorkspace) return
   if (window.confirm('Delete this session and its transcript? This cannot be undone.'))
@@ -94,6 +99,7 @@ function renameSession(sessionId: string, current: string) {
     <div class="sidebar-head">
       <span class="sidebar-title">Sessions</span>
       <span v-if="currentWorkspace" class="sidebar-actions">
+        <button class="icon-btn" title="Refresh sessions" @click="refreshSessions">⟳</button>
         <button class="icon-btn" title="New session" @click="createSession">＋</button>
       </span>
     </div>

@@ -85,10 +85,19 @@ describe('SessionList.vue — 当前工作区会话列表', () => {
   it('新建 ＋ → emit create-session(path)', async () => {
     const w = mountList()
     const btns = w.findAll('.sidebar-head .icon-btn')
-    // 需求入口已迁至顶栏 tab nav(AppHeader),会话头部只剩 ＋ 新建。
-    expect(btns.length).toBe(1)
-    await btns[0].trigger('click')
+    // 需求入口已迁至顶栏 tab nav(AppHeader);会话头部为「刷新 + 新建」两枚按钮。
+    expect(btns.length).toBe(2)
+    await w.find('.sidebar-head .icon-btn[title="New session"]').trigger('click')
     expect(w.emitted('create-session')).toEqual([[WS]])
+  })
+
+  it('刷新按钮 → emit refresh-sessions;无工作区时不渲染', async () => {
+    const w = mountList()
+    await w.find('.sidebar-head .icon-btn[title="Refresh sessions"]').trigger('click')
+    expect(w.emitted('refresh-sessions')).toEqual([[]])
+
+    const none = mountList({ currentWorkspace: null })
+    expect(none.find('.sidebar-head .icon-btn[title="Refresh sessions"]').exists()).toBe(false)
   })
 
   it('重命名:prompt 有值 → emit rename-session(path, id, title)', async () => {

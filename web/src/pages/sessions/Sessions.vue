@@ -50,6 +50,7 @@ defineProps<{
 
 const emit = defineEmits<{
   'create-session': [path: string]
+  'refresh-sessions': []
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -81,6 +82,7 @@ defineExpose({
     :active-session="activeSession"
     :active-title="activeTitle"
     @create-session="(path: string) => emit('create-session', path)"
+    @refresh-sessions="emit('refresh-sessions')"
     @select-session="(path: string, sessionId: string) => emit('select-session', path, sessionId)"
     @delete-session="(path: string, sessionId: string) => emit('delete-session', path, sessionId)"
     @rename-session="

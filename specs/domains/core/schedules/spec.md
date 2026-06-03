@@ -86,6 +86,20 @@ stateDiagram-v2
 An execution log is **append-only** once `startedAt` is set and follows the forward-only status
 chain from `pending` to a terminal state.
 
+### History display (read path)
+
+Selecting a schedule in the web-console left list focuses the right pane on that schedule's
+execution history. The client sends `get_schedule_detail { scheduleId }`; the server replies with
+`schedule_detail { schedule, logs }`, where `logs` are the schedule's execution logs ordered
+**most-recently-started first** (`started_at DESC`, fetched by `listExecutionLogs(scheduleId)`).
+
+The right pane renders one row per execution showing its **status** badge, **started / finished**
+times, **duration**, **exit code**, **output**, and **error**. A schedule with no logs shows an
+empty state. The history re-fetches for the currently selected schedule whenever a `schedules`
+broadcast arrives (e.g. after an execution completes), so finished runs appear without a manual
+refresh. Switching selection in the left list swaps the right pane to the newly selected schedule's
+history.
+
 ## Task types
 
 | Type         | Config                              | Execution model                                                                                                                                                  |

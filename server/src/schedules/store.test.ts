@@ -17,6 +17,8 @@ import {
   resolveWriteApproval,
   getWorkspaceMcpConfig,
   saveWorkspaceMcpConfig,
+  appendExecutionLog,
+  listExecutionLogs,
 } from './store.js'
 
 let dir: string
@@ -217,5 +219,88 @@ describe('workspace_mcp_configs', () => {
     const updated = getWorkspaceMcpConfig(proj)
     expect(updated.mcpServers).toEqual({})
     expect(updated.denylist).toEqual(['Write'])
+  })
+})
+
+describe('listExecutionLogs', () => {
+  function makeSchedule() {
+    return createSchedule({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspacePath: proj,
+      cronExpression: '*/5 * * * *',
+      mcpMode: 'read-only',
+    })
+  }
+
+  it('returns a schedule logs most-recently-started first', () => {
+    const sch = makeSchedule()
+    // Insert out of chronological order to prove DESC ordering is by started_at.
+    appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 2_000,
+      finishedAt: 2_500,
+      exitCode: 0,
+      output: 'second',
+      error: null,
+      status: 'success',
+    })
+    appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 1_000,
+      finishedAt: 1_500,
+      exitCode: 0,
+      output: 'first',
+      error: null,
+      status: 'success',
+    })
+    appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 3_000,
+      finishedAt: null,
+      exitCode: null,
+      output: 'third',
+      error: null,
+      status: 'running',
+    })
+
+    const logs = listExecutionLogs(sch.id)
+    expect(logs).toHaveLength(3)
+    expect(logs.map((l) => l.startedAt)).toEqual([3_000, 2_000, 1_000])
+    expect(logs[0].status).toBe('running')
+    expect(logs[0].finishedAt).toBeNull()
+  })
+
+  it('filters by scheduleId — other schedules logs are excluded', () => {
+    const a = makeSchedule()
+    const b = makeSchedule()
+    appendExecutionLog({
+      scheduleId: a.id,
+      startedAt: 1_000,
+      finishedAt: 1_500,
+      exitCode: 0,
+      output: 'a',
+      error: null,
+      status: 'success',
+    })
+    appendExecutionLog({
+      scheduleId: b.id,
+      startedAt: 1_000,
+      finishedAt: 1_500,
+      exitCode: 1,
+      output: 'b',
+      error: 'boom',
+      status: 'failed',
+    })
+
+    const logsA = listExecutionLogs(a.id)
+    expect(logsA).toHaveLength(1)
+    expect(logsA[0].output).toBe('a')
+    expect(logsA[0].scheduleId).toBe(a.id)
+  })
+
+  it('returns an empty array for a schedule with no logs', () => {
+    const sch = makeSchedule()
+    expect(listExecutionLogs(sch.id)).toEqual([])
   })
 })

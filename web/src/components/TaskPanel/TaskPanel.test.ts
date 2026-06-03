@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TaskPanel from './TaskPanel.vue'
-import type { TaskListModel, TaskStatus } from '../lib/task-list'
+import type { TaskListModel, TaskStatus } from '../../lib/task-list'
 
 /** 直接构造一份任务模型;`order` 取数组下标(与快照推断一致)。 */
 const model = (...defs: [id: string, status: TaskStatus][]): TaskListModel => ({

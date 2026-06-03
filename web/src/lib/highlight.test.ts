@@ -1,7 +1,8 @@
-// 放在 components/ 下以走 happy-dom 环境(highlight 依赖 DOMPurify → 需要 DOM;
-// 且会动态 import('shiki') 真实跑高亮,作为转换管线的端到端回归)。
+// @vitest-environment happy-dom
+// highlight 依赖 DOMPurify → 需要 DOM,且会动态 import('shiki') 真实跑高亮(转换
+// 管线的端到端回归)。lib/ 测试默认走 node 环境,故用上方指令单独切到 happy-dom。
 import { describe, it, expect } from 'vitest'
-import { highlight, langFromClass } from '../lib/highlight'
+import { highlight, langFromClass } from './highlight'
 
 describe('langFromClass — 从 markdown-it 的 language-* class 取语言', () => {
   it('提取标准前缀', () => {

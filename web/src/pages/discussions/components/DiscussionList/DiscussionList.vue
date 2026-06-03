@@ -8,16 +8,16 @@
 import { computed, ref, watch } from 'vue'
 import type { Discussion } from '@ccc/shared/protocol'
 import { listDiscussionTypes } from '@ccc/shared/discussion-types'
-import { formatDate } from '../lib/req-list-view'
+import { formatDate } from '../../../../lib/req-list-view'
 import {
   autoGrowHeight,
   discussionDetailTabs,
   panelToggleLabel,
   rowVisibility,
   statusLabel,
-} from '../lib/discussion-view'
-import type { DiscussionTabKind } from '../lib/discussion-view'
-import MarkdownText from './MarkdownText.vue'
+} from '../../../../lib/discussion-view'
+import type { DiscussionTabKind } from '../../../../lib/discussion-view'
+import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 
 const props = withDefaults(
   defineProps<{

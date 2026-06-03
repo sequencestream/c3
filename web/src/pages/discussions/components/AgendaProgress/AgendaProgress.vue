@@ -11,7 +11,7 @@
  */
 import { computed } from 'vue'
 import type { Discussion } from '@ccc/shared/protocol'
-import { agendaProgressView } from '../lib/discussion-view'
+import { agendaProgressView } from '../../../../lib/discussion-view'
 
 const props = defineProps<{ discussion: Discussion | null }>()
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SessionTitleBar from './SessionTitleBar.vue'
-import BaseDropdown from './BaseDropdown.vue'
+import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
 import type { PermissionMode } from '@ccc/shared/protocol'
 
 const MODE_OPTIONS = [

@@ -7,7 +7,7 @@
  *    按钮改由左栏需求列表头部承载)。
  * presentational:所有交互上抛由 App 处理。
  */
-import BaseDropdown from './BaseDropdown.vue'
+import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
 import type { PermissionMode } from '@ccc/shared/protocol'
 
 withDefaults(

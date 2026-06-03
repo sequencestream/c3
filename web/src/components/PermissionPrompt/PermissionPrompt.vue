@@ -14,9 +14,9 @@ import {
   initAskDraft,
   type AskQuestionView,
   type AskDraftSlot,
-} from '../lib/ask'
-import { fmt, oneLine } from '../lib/format'
-import type { PermissionMsg } from '../lib/chat-types'
+} from '../../lib/ask'
+import { fmt, oneLine } from '../../lib/format'
+import type { PermissionMsg } from '../../lib/chat-types'
 import type { ProposedRequirement } from '@ccc/shared/protocol'
 
 // `actionable` is true only for the live, still-pending permission the user can

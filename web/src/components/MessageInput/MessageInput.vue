@@ -7,8 +7,8 @@
  */
 import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
-import { useSpeechRecognition } from '../composables/useSpeechRecognition'
-import { composerAction, mergeIntoDraft } from '../lib/pending-queue'
+import { useSpeechRecognition } from '../../composables/useSpeechRecognition'
+import { composerAction, mergeIntoDraft } from '../../lib/pending-queue'
 
 const props = defineProps<{
   running: boolean

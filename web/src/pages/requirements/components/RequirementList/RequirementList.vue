@@ -7,7 +7,7 @@
  */
 import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
-import MarkdownText from './MarkdownText.vue'
+import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import {
   compareByCompletion,
   formatDate,
@@ -17,7 +17,7 @@ import {
   rowVisibility,
   showRunStatus,
   statusLabel,
-} from '../lib/req-list-view'
+} from '../../../../lib/req-list-view'
 
 const props = defineProps<{
   project: string

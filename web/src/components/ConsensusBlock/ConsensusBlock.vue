@@ -4,7 +4,7 @@
  *
  * 两种形态：AskUserQuestion 的逐题自动作答，以及其它工具的 allow/deny 裁定。
  */
-import type { ChatMsg } from '../lib/chat-types'
+import type { ChatMsg } from '../../lib/chat-types'
 
 defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
 </script>

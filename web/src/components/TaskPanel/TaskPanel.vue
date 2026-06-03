@@ -8,7 +8,7 @@
  * 在此编辑 task;聊天日志里 task 工具原有的 tool_use/tool_result 行另行保留为历史。
  */
 import { computed } from 'vue'
-import { taskPanelView, type TaskListModel } from '../lib/task-list'
+import { taskPanelView, type TaskListModel } from '../../lib/task-list'
 
 const props = defineProps<{ model: TaskListModel }>()
 

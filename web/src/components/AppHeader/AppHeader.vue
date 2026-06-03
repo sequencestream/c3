@@ -3,7 +3,7 @@
  * AppHeader.vue — 顶部栏:工作区切换器、tab nav、设置入口、连接状态。
  * 会话标题与权限模式已下移到聊天列顶部的 SessionTitleBar(WC-R9)。
  */
-import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
+import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 
 defineProps<{

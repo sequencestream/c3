@@ -6,7 +6,7 @@
  * 故每条带 修改(✎)/ 删除(🗑):修改回填输入框、删除移除该条。当前查看的会话回到
  * 就绪且队列非空时,由 App 合并为一条 prompt flush 出去并清空。
  */
-import type { PendingItem } from '../lib/pending-queue'
+import type { PendingItem } from '../../lib/pending-queue'
 
 defineProps<{
   items: PendingItem[]

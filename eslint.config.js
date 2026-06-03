@@ -49,6 +49,14 @@ export default tseslint.config(
     },
   },
 
+  {
+    // Top-level page containers (pages/<page>/<Page>.vue) are route-level views,
+    // single-word by convention (like App.vue). Their private components live one
+    // dir deeper (components/<Name>/<Name>.vue) and keep the multi-word rule.
+    files: ['web/src/pages/*/*.vue'],
+    rules: { 'vue/multi-word-component-names': 'off' },
+  },
+
   // Keep last: disables every stylistic rule that would fight Prettier.
   prettier,
 )

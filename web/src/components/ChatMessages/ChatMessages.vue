@@ -6,11 +6,11 @@
  * 可折叠的 batch。工具调用/结果在此内联渲染，权限提示与共识结果委托给子组件。
  */
 import { ref, computed, nextTick, watch } from 'vue'
-import PermissionPrompt from './PermissionPrompt.vue'
-import ConsensusBlock from './ConsensusBlock.vue'
-import MarkdownText from './MarkdownText.vue'
-import { fmt, oneLine } from '../lib/format'
-import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../lib/chat-types'
+import PermissionPrompt from '../PermissionPrompt/PermissionPrompt.vue'
+import ConsensusBlock from '../ConsensusBlock/ConsensusBlock.vue'
+import MarkdownText from '../MarkdownText/MarkdownText.vue'
+import { fmt, oneLine } from '../../lib/format'
+import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../../lib/chat-types'
 
 const props = defineProps<{
   messages: ChatMsg[]

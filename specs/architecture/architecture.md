@@ -42,21 +42,23 @@ c3 is a single local process with two halves connected by one WebSocket:
 
 ## Module map
 
-| Module                   | File                         | Role                                                                                                   |
-| ------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| CLI entry                | `server/src/cli.ts`          | `commander` entry; `start` is the default command; `--project` defaults to cwd, `--port` to 3000       |
-| HTTP/WS server           | `server/src/server.ts`       | Hono app, `/ws` upgrade, static serving, per-connection viewed session + dispatch + status broadcast   |
-| Session-runtime registry | `server/src/runs.ts`         | Module-level `Map<sessionId, SessionRuntime>`: run handle, baseline+buffer, viewers, status (ADR 0006) |
-| Agent loop               | `server/src/claude.ts`       | SDK `query()` (cwd/resume), `canUseTool`, claude PATH lookup, message mapping                          |
-| Session registry         | `server/src/state.ts`        | Persisted workspace registry, per-session mode, last active session                                    |
-| Session IO               | `server/src/sessions.ts`     | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                         |
-| Permission registry      | `server/src/permissions.ts`  | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                   |
-| Result formatting        | `server/src/format.ts`       | Flatten SDK `tool_result` content to a display string                                                  |
-| Requirement ledger       | `server/src/requirements/`   | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_requirements` tool (ADR 0007)      |
-| Static embed             | `server/src/static-embed.ts` | Generated; Bun-inlined web bundle                                                                      |
-| Wire protocol            | `shared/src/protocol.ts`     | `ClientToServer` / `ServerToClient` unions + workspace/session types                                   |
-| WS client                | `web/src/lib/ws.ts`          | Browser WebSocket wrapper                                                                              |
-| UI                       | `web/src/App.vue`            | Sidebar + chat view + permission dialog + mode select                                                  |
+| Module                   | File                         | Role                                                                                                            |
+| ------------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| CLI entry                | `server/src/cli.ts`          | `commander` entry; `start` is the default command; `--project` defaults to cwd, `--port` to 3000                |
+| HTTP/WS server           | `server/src/server.ts`       | Hono app, `/ws` upgrade, static serving, per-connection viewed session + dispatch + status broadcast            |
+| Session-runtime registry | `server/src/runs.ts`         | Module-level `Map<sessionId, SessionRuntime>`: run handle, baseline+buffer, viewers, status (ADR 0006)          |
+| Agent loop               | `server/src/claude.ts`       | SDK `query()` (cwd/resume), `canUseTool`, claude PATH lookup, message mapping                                   |
+| Session registry         | `server/src/state.ts`        | Persisted workspace registry, per-session mode, last active session                                             |
+| Session IO               | `server/src/sessions.ts`     | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                                  |
+| Permission registry      | `server/src/permissions.ts`  | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                            |
+| Result formatting        | `server/src/format.ts`       | Flatten SDK `tool_result` content to a display string                                                           |
+| Requirement ledger       | `server/src/requirements/`   | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_requirements` tool (ADR 0007)               |
+| Static embed             | `server/src/static-embed.ts` | Generated; Bun-inlined web bundle                                                                               |
+| Wire protocol            | `shared/src/protocol.ts`     | `ClientToServer` / `ServerToClient` unions + workspace/session types                                            |
+| WS client                | `web/src/lib/ws.ts`          | Browser WebSocket wrapper                                                                                       |
+| UI shell                 | `web/src/App.vue`            | Shell: owns WS client + `handleMessage` + all shared state; dispatches by tab to page containers                |
+| Pages                    | `web/src/pages/<page>/`      | Per-page containers (`sessions`/`requirements`/`discussions`/`schedules`/`systemsettings`) + private components |
+| Shared components        | `web/src/components/<Name>/` | Cross-page components, one dir each with colocated `.test.ts`                                                   |
 
 ## Cross-cutting conventions
 
@@ -83,6 +85,23 @@ c3 is a single local process with two halves connected by one WebSocket:
   requirement-communication agent reuses the runtime registry and permission gateway as a
   read-only `requirement`-kind run.
 - **Build order:** `web` then `server` — the server embeds the web bundle.
+- **Web module structure.** The frontend follows a page/component directory convention:
+  - Shared (cross-page) components: `web/src/components/<Name>/<Name>.vue`, one dir per component
+    with its colocated `<Name>.test.ts`.
+  - Page-private components: `web/src/pages/<page>/components/<Name>/<Name>.vue` (+ colocated test).
+  - Page containers: `web/src/pages/<page>/<Page>.vue`. Pages are
+    `sessions` / `requirements` / `discussions` / `schedules` / `systemsettings`.
+  - `App.vue` is the shell: it owns the WS client, `handleMessage`, and all shared/tab state, and
+    dispatches to page containers by `activeTab`. Page containers are **pure** (props in / emit up) —
+    no domain state of their own (the queue-edit `composer.prefill` is forwarded via `defineExpose`).
+    `lib/` (pure logic + unit-tested view helpers) and `composables/` sit at `web/src/` and are
+    imported by both layers.
+  - The `sessions` and `requirements` pages share the chat column by each assembling it from the same
+    shared components (`ChatMessages` / `MessageInput` / …), not via a wrapper component.
+  - Page containers are route-level views and may be single-word (`vue/multi-word-component-names` is
+    disabled for `web/src/pages/*/*.vue`); their private components keep the multi-word rule.
+  - Vitest runs SFC-mounting tests under `web/src/components/**` and `web/src/pages/**` in happy-dom;
+    other tests run in node.
 
 ## Key decisions
 

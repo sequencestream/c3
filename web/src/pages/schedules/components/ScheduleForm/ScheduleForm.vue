@@ -23,7 +23,7 @@ import type {
   UpdateScheduleInput,
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
-import MarkdownText from './MarkdownText.vue'
+import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 
 const props = defineProps<{
   open: boolean

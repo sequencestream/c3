@@ -10,25 +10,15 @@ import {
   shouldFlush,
   type PendingItem,
 } from './lib/pending-queue'
-import AppHeader from './components/AppHeader.vue'
-import SessionList from './components/SessionList.vue'
-import ChatMessages from './components/ChatMessages.vue'
-import MessageInput from './components/MessageInput.vue'
-import PendingQueue from './components/PendingQueue.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
-import SessionStatusBar from './components/SessionStatusBar.vue'
-import SessionTitleBar from './components/SessionTitleBar.vue'
-import TaskPanel from './components/TaskPanel.vue'
-import RequirementList from './components/RequirementList.vue'
-import DiscussionList from './components/DiscussionList.vue'
-import AgendaProgress from './components/AgendaProgress.vue'
-import ScheduleList from './components/ScheduleList.vue'
-import ScheduleDetail from './components/ScheduleDetail.vue'
-import ScheduleForm from './components/ScheduleForm.vue'
+import AppHeader from './components/AppHeader/AppHeader.vue'
+import Sessions from './pages/sessions/Sessions.vue'
+import Requirements from './pages/requirements/Requirements.vue'
+import Discussions from './pages/discussions/Discussions.vue'
+import Schedules from './pages/schedules/Schedules.vue'
+import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
 import {
   discussionMessageToChat,
   discussionMessagesToChat,
-  discussionRunLabel,
   reconcileRunState,
 } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
@@ -142,7 +132,9 @@ const activeIsTeam = computed(
 // normal user_prompt path. No server/protocol change.
 const pendingQueues = ref<Record<string, PendingItem[]>>({})
 let nextQueueId = 1
-const composer = ref<InstanceType<typeof MessageInput> | null>(null)
+// The active page container (Sessions / Requirements) exposes `prefill`; this ref
+// binds to whichever is mounted so queue-edit can fold text back into the composer.
+const composer = ref<{ prefill: (text: string) => void } | null>(null)
 
 const currentQueue = computed<PendingItem[]>(() =>
   activeSession.value ? (pendingQueues.value[activeSession.value] ?? []) : [],
@@ -1043,13 +1035,6 @@ const activeDiscussionRunState = computed<'running' | 'paused' | undefined>(() =
   activeDiscussionId.value ? discussionRunState.value[activeDiscussionId.value] : undefined,
 )
 
-// Title-bar status label. A `draft` reads as "Researching…" (the context-research
-// agent runs after create and auto-starts the orchestration on success); the
-// pure mapper lives in discussion-view so it stays unit-tested.
-function discussionStatusLabel(status: Discussion['status']): string {
-  return discussionRunLabel(status, activeDiscussionRunState.value)
-}
-
 // Pause / resume the live orchestration of the open discussion.
 function pauseDiscussion() {
   const id = activeDiscussionId.value
@@ -1233,25 +1218,62 @@ function listCommands() {
   />
 
   <div class="body">
-    <SessionList
+    <Sessions
       v-if="activeTab === 'console'"
+      ref="composer"
       :current-workspace="currentWorkspace"
       :sessions="currentSessions"
       :session-status="sessionStatus"
       :active-workspace="activeWorkspace"
       :active-session="activeSession"
       :active-title="activeTitle"
+      :has-active-session="hasActiveSession"
+      :mode="mode"
+      :mode-options="modeOptions"
+      :messages="messages"
+      :actionable-permission-id="actionablePermId"
+      :task-model="taskModel"
+      :running="running"
+      :team-active="activeIsTeam"
+      :connection="status"
+      :activity="activity"
+      :queue="currentQueue"
+      :available-commands="availableCommands"
+      :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
       @create-session="createSession"
       @select-session="selectSession"
       @delete-session="deleteSession"
       @rename-session="renameSession"
+      @set-mode="setMode"
+      @respond="respond"
+      @submit-ask="submitAsk"
+      @refresh="refreshStatus"
+      @edit-queued="onEditQueued"
+      @delete-queued="onDeleteQueued"
+      @submit="onSubmit"
+      @enqueue="onEnqueue"
+      @stop="stopRun"
+      @list-commands="listCommands"
     />
 
-    <RequirementList
-      v-if="activeTab === 'requirements' && requirementsProject"
+    <Requirements
+      v-else-if="activeTab === 'requirements' && requirementsProject"
+      ref="composer"
       :project="requirementsProject"
       :requirements="currentRequirements"
       :automation="currentAutomation"
+      :active-title="activeTitle"
+      :has-active-session="hasActiveSession"
+      :messages="messages"
+      :actionable-permission-id="actionablePermId"
+      :task-model="taskModel"
+      :running="running"
+      :team-active="activeIsTeam"
+      :connection="status"
+      :activity="activity"
+      :queue="currentQueue"
+      :available-commands="availableCommands"
+      :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
       @filter="setRequirementFilter"
       @refine="refineRequirement"
       @start-dev="startDevelopment"
@@ -1261,183 +1283,60 @@ function listCommands() {
       @start-automation="startAutomation"
       @stop-automation="stopAutomation"
       @new-requirement="newRequirementChat"
+      @respond="respond"
+      @submit-ask="submitAsk"
+      @refresh="refreshStatus"
+      @edit-queued="onEditQueued"
+      @delete-queued="onDeleteQueued"
+      @submit="onSubmit"
+      @enqueue="onEnqueue"
+      @stop="stopRun"
+      @list-commands="listCommands"
     />
 
-    <DiscussionList
-      v-if="activeTab === 'discussion' && discussionsProject"
+    <Discussions
+      v-else-if="activeTab === 'discussion' && discussionsProject"
       :discussions="currentDiscussions"
       :active-id="activeDiscussionId"
       :run-state="discussionRunState"
+      :active-discussion="activeDiscussion"
+      :active-run-state="activeDiscussionRunState"
+      :messages="discussionMessages"
+      :input="discussionInput"
       @open="openDiscussion"
       @create="createDiscussion"
+      @start="startDiscussion"
+      @pause="pauseDiscussion"
+      @resume="resumeDiscussion"
+      @convert="convertDiscussionToRequirement"
+      @update:input="discussionInput = $event"
+      @submit-input="submitDiscussionInput"
     />
 
-    <ScheduleList
-      v-if="activeTab === 'schedules' && schedulesProject"
+    <Schedules
+      v-else-if="activeTab === 'schedules' && schedulesProject"
       :schedules="currentSchedules"
       :active-id="selectedScheduleId"
+      :schedule="selectedSchedule"
+      :logs="selectedScheduleLogs"
+      :transcripts="executionTranscripts"
+      :form-open="scheduleFormOpen"
+      :form-target="scheduleFormTarget"
+      :workspace-path="schedulesProject ?? ''"
       @select="onSelectSchedule"
-      @new-schedule="openScheduleForm(null)"
+      @open-form="openScheduleForm"
       @toggle-enabled="onToggleScheduleEnabled"
+      @load-session="onLoadExecutionSession"
+      @close-form="scheduleFormOpen = false"
+      @create="createSchedule"
+      @update="updateSchedule"
     />
-
-    <div class="content">
-      <!-- Discussion tab: read-only history of the opened discussion. No input,
-           status bar, or task panel — R1 has no live discussion session. -->
-      <template v-if="activeTab === 'discussion'">
-        <SessionTitleBar
-          v-if="activeDiscussion"
-          :active-title="activeDiscussion.title"
-          :show-mode="false"
-        >
-          <template #action>
-            <!-- A draft auto-starts after research; the Start button stays as a
-                 manual fallback (e.g. research failed or stalled). -->
-            <button
-              v-if="activeDiscussion.status === 'draft'"
-              type="button"
-              class="disc-start-btn"
-              @click="startDiscussion"
-            >
-              Start
-            </button>
-            <button
-              v-if="
-                activeDiscussion.status === 'in_progress' && activeDiscussionRunState === 'running'
-              "
-              type="button"
-              class="disc-start-btn"
-              @click="pauseDiscussion"
-            >
-              Pause
-            </button>
-            <button
-              v-else-if="
-                activeDiscussion.status === 'in_progress' && activeDiscussionRunState === 'paused'
-              "
-              type="button"
-              class="disc-start-btn"
-              @click="resumeDiscussion"
-            >
-              Resume
-            </button>
-            <button
-              v-if="activeDiscussion.status === 'completed'"
-              type="button"
-              class="disc-start-btn"
-              @click="convertDiscussionToRequirement"
-            >
-              Convert to Requirement
-            </button>
-            <span class="disc-status" :class="activeDiscussion.status">
-              {{ discussionStatusLabel(activeDiscussion.status) }}
-            </span>
-          </template>
-        </SessionTitleBar>
-        <!-- Agenda progress: subtopic list + current subtopic + completion, live as
-             the organizer engine advances the agenda index. -->
-        <AgendaProgress :discussion="activeDiscussion" />
-        <ChatMessages
-          :messages="discussionMessages"
-          :has-active-session="activeDiscussionId !== null"
-          :actionable-permission-id="null"
-          @respond="() => {}"
-          @submit-ask="() => {}"
-        />
-        <!-- Discussion composer: human interjection while running, or a follow-up
-             question that drives a new round once concluded. Hidden for a draft. -->
-        <form
-          v-if="
-            activeDiscussion &&
-            (activeDiscussion.status === 'in_progress' || activeDiscussion.status === 'completed')
-          "
-          class="disc-composer"
-          @submit.prevent="submitDiscussionInput"
-        >
-          <input
-            v-model="discussionInput"
-            type="text"
-            class="disc-composer-input"
-            :placeholder="
-              activeDiscussion.status === 'completed'
-                ? 'Ask a follow-up to start a new round…'
-                : 'Speak in this discussion…'
-            "
-          />
-          <button type="submit" class="disc-start-btn" :disabled="!discussionInput.trim()">
-            {{ activeDiscussion.status === 'completed' ? 'Continue' : 'Speak' }}
-          </button>
-        </form>
-      </template>
-      <!-- Schedules tab: the right pane shows the selected schedule's execution
-           logs. (Create/Edit entry points live in the left list.) -->
-      <template v-else-if="activeTab === 'schedules'">
-        <ScheduleDetail
-          :schedule="selectedSchedule"
-          :logs="selectedScheduleLogs"
-          :transcripts="executionTranscripts"
-          @load-session="onLoadExecutionSession"
-        />
-      </template>
-      <template v-else>
-        <SessionTitleBar
-          v-if="activeTab === 'console' && hasActiveSession"
-          :active-title="activeTitle"
-          :mode="mode"
-          :mode-options="modeOptions"
-          @set-mode="setMode"
-        />
-        <SessionTitleBar
-          v-else-if="activeTab === 'requirements' && requirementsProject"
-          :active-title="activeTitle || 'Requirement chat'"
-          :show-mode="false"
-        />
-        <ChatMessages
-          :messages="messages"
-          :has-active-session="hasActiveSession"
-          :actionable-permission-id="actionablePermId"
-          @respond="respond"
-          @submit-ask="submitAsk"
-        />
-        <TaskPanel :model="taskModel" />
-        <SessionStatusBar
-          :has-active-session="hasActiveSession"
-          :running="running"
-          :team-active="activeIsTeam"
-          :connection="status"
-          :activity="activity"
-          @refresh="refreshStatus"
-        />
-        <PendingQueue :items="currentQueue" @edit="onEditQueued" @delete="onDeleteQueued" />
-        <MessageInput
-          ref="composer"
-          :running="running"
-          :team-active="activeIsTeam"
-          :has-active-session="hasActiveSession"
-          :available-commands="availableCommands"
-          :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-          @submit="onSubmit"
-          @enqueue="onEnqueue"
-          @stop="stopRun"
-          @list-commands="listCommands"
-        />
-      </template>
-    </div>
   </div>
 
-  <SettingsPanel
+  <SystemSettingsPage
     :open="settingsOpen"
     :settings="serverSettings"
     @close="settingsOpen = false"
     @save="saveSettings"
-  />
-
-  <ScheduleForm
-    :open="scheduleFormOpen"
-    :schedule="scheduleFormTarget"
-    :workspace-path="schedulesProject ?? ''"
-    @close="scheduleFormOpen = false"
-    @create="createSchedule"
-    @update="updateSchedule"
   />
 </template>

@@ -13,8 +13,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
-import type { TextMsg } from '../lib/chat-types'
-import { highlight, langFromClass } from '../lib/highlight'
+import type { TextMsg } from '../../lib/chat-types'
+import { highlight, langFromClass } from '../../lib/highlight'
 
 const props = defineProps<{
   text: string

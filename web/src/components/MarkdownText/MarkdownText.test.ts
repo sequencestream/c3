@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MarkdownText from './MarkdownText.vue'
-import type { TextMsg } from '../lib/chat-types'
+import type { TextMsg } from '../../lib/chat-types'
 
 function mountMd(text: string, kind: TextMsg['kind'] = 'assistant') {
   return mount(MarkdownText, { props: { text, kind } })

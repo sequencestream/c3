@@ -7,7 +7,7 @@
  * （前端从事件流推断）决定细粒度文案。右侧刷新按钮在怀疑状态过期时重新同步视图。
  */
 import { computed } from 'vue'
-import type { RunActivity } from '../lib/chat-types'
+import type { RunActivity } from '../../lib/chat-types'
 
 const props = defineProps<{
   hasActiveSession: boolean

@@ -24,17 +24,27 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   review / planning / retro, each carrying an ordered `discuss → summarize → confirm → conclude`
   workflow with organizer-facing stage prompts. Pure data + pure functions, unit tested.
 - **Create flow**: `create_discussion` (see [protocol](../../../shared/api-conventions/websocket-protocol.md))
-  persists a `draft` (title derived from `goal`), then a **read-only research agent** —
-  `discussion-research` gate reusing the requirement read set (Read/Grep/Glob + WebSearch/WebFetch),
-  no save tool, write/exec/sub-agent tools hard-disabled — completes its `context`
-  (`server/src/discussions/research.ts`). The completed `context` is **strictly status-only**: the
-  researcher collects relevant facts / current state / constraints / open questions, and is hard-forbidden
-  from emitting any options, candidate solutions, recommendations, or conclusions — so the discussion's
-  divergent brainstorm is not pre-anchored by a preset answer. The server captures the agent's final text
-  and writes it back, pushing `discussions` on draft insert and again on completion.
+  persists a `draft` (title derived from `goal`), **immediately replies to the creating connection
+  with `discussion_detail`** (so the right pane opens the new discussion without a click) and pushes
+  the `discussions` list, then a **read-only research agent** — `discussion-research` gate reusing the
+  requirement read set (Read/Grep/Glob + WebSearch/WebFetch), no save tool, write/exec/sub-agent tools
+  hard-disabled — completes its `context` (`server/src/discussions/research.ts`). The completed
+  `context` is **strictly status-only**: the researcher collects relevant facts / current state /
+  constraints / open questions, and is hard-forbidden from emitting any options, candidate solutions,
+  recommendations, or conclusions — so the discussion's divergent brainstorm is not pre-anchored by a
+  preset answer. The server captures the agent's final text and writes it back, pushing `discussions`
+  on draft insert and again on completion. **On research success the server auto-starts the
+  orchestration** (`startDiscussionRun`, equivalent to an automatic `start_discussion`), re-validating
+  on the freshest record via the pure `canAutoStartDiscussion` guard (`status === 'draft'` and no live
+  run — skipping if the human Started/cancelled it mid-research). `researchDiscussionContext` returns
+  an `{ ok, context }` result; a **research failure** (`ok === false`) leaves the discussion a `draft`
+  for a manual **Start** fallback and never auto-starts.
 - Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
-  the right pane shows a **Start** button on a `draft` and appends streamed messages live once the
-  engine runs. The create form's Goal / Context textareas **auto-grow** with their content up to a
+  on submit the right pane **auto-opens the new discussion** (server `discussion_detail` reply) and
+  its title bar reads **"Researching…"** while a `draft`, flipping to **"Running"** automatically once
+  the server auto-starts the engine (via the refreshed `discussions` + `discussion_run_status`
+  broadcasts). A manual **Start** button stays on a `draft` as a fallback (research failed/stalled),
+  and streamed messages append live once the engine runs. The create form's Goal / Context textareas **auto-grow** with their content up to a
   pixel cap (`autoGrowHeight` in `discussion-view.ts`), scrolling internally only past the cap and
   resetting when the form closes. The **left list** mirrors the requirement list's interaction paradigm
   (`web/src/components/DiscussionList.vue` + pure view helpers in `web/src/lib/discussion-view.ts`):

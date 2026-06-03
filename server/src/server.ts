@@ -89,7 +89,7 @@ import {
   appendMessage as appendDiscussionMessage,
   updateDiscussionStatus as updateDiscussionStatus,
 } from './discussions/store.js'
-import { researchDiscussionContext } from './discussions/research.js'
+import { researchDiscussionContext, canAutoStartDiscussion } from './discussions/research.js'
 import { runDiscussion, defaultDiscussionDeps } from './discussions/orchestrator.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
 import {
@@ -1358,15 +1358,27 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 context: msg.context ?? '',
                 status: 'draft',
               })
-              // Push the draft immediately so the list shows it, then run the
-              // read-only research agent in the background to complete its context
-              // and push again. Fire-and-forget: research never blocks creation.
+              // Open the new discussion on the creating connection right away (so
+              // the right pane shows it without a manual click) and push the draft
+              // to every connection's list. Then run the read-only research agent
+              // in the background to complete its context; when it succeeds we
+              // auto-start the orchestration (equivalent to an auto `start_discussion`).
+              // Fire-and-forget: research never blocks creation.
+              send(ws, { type: 'discussion_detail', discussion: created, messages: [] })
               broadcastDiscussions(proj)
               void researchDiscussionContext(created)
-                .then((context) => {
+                .then(({ ok, context }) => {
                   if (context !== created.context) {
                     setDiscussionContext(created.id, context)
                     broadcastDiscussions(proj)
+                  }
+                  // Research failed → leave it a draft for a manual Start. On success,
+                  // re-validate on the freshest record (it may have been manually
+                  // Started or cancelled mid-research) before auto-starting.
+                  if (!ok) return
+                  const latest = getDiscussion(created.id)
+                  if (canAutoStartDiscussion(latest, discussionRuns.has(created.id))) {
+                    startDiscussionRun(latest as Discussion)
                   }
                 })
                 .catch((err) => {

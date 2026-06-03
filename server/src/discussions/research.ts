@@ -39,11 +39,39 @@ export function buildResearchPrompt(
 }
 
 /**
- * Run the read-only research agent for a freshly-created discussion and resolve to
- * its completed `context`. Best-effort: on any failure (or empty output) resolves to
- * the discussion's existing context, so a research miss never blocks creation.
+ * Outcome of a research run. `ok` is `false` only when the agent run threw — the
+ * caller uses it to gate auto-start (a failed research never auto-starts the
+ * discussion; it stays a `draft` for a manual Start). `context` is best-effort:
+ * the completed text on success, or the discussion's original context on empty
+ * output / failure, so a research miss never blocks creation.
  */
-export async function researchDiscussionContext(discussion: Discussion): Promise<string> {
+export interface DiscussionResearchResult {
+  ok: boolean
+  context: string
+}
+
+/**
+ * Decide whether a discussion is eligible for auto-start after research completes.
+ * Pure (no I/O) so it is unit-tested. Eligible only when the (re-fetched) record
+ * still exists, is a `draft`, and has no live run — guarding against a discussion
+ * that was manually Started or cancelled while research was in flight.
+ */
+export function canAutoStartDiscussion(
+  discussion: Discussion | null | undefined,
+  hasActiveRun: boolean,
+): boolean {
+  return !!discussion && discussion.status === 'draft' && !hasActiveRun
+}
+
+/**
+ * Run the read-only research agent for a freshly-created discussion and resolve to
+ * its completed `context` plus an `ok` flag. Best-effort: on any failure (or empty
+ * output) resolves to the discussion's existing context with `ok=false` only when
+ * the run threw, so a research miss never blocks creation.
+ */
+export async function researchDiscussionContext(
+  discussion: Discussion,
+): Promise<DiscussionResearchResult> {
   const def = getDiscussionType(discussion.type)
   const prompt = buildResearchPrompt(
     { goal: discussion.goal, context: discussion.context, projectPath: discussion.projectPath },
@@ -51,6 +79,7 @@ export async function researchDiscussionContext(discussion: Discussion): Promise
   )
   const abort = new AbortController()
   let captured = ''
+  let ok = true
   try {
     await runClaude({
       prompt,
@@ -67,6 +96,7 @@ export async function researchDiscussionContext(discussion: Discussion): Promise
       },
     })
   } catch (err) {
+    ok = false
     console.warn(
       `[c3] discussion research failed (${discussion.id}): ${
         err instanceof Error ? err.message : String(err)
@@ -74,5 +104,5 @@ export async function researchDiscussionContext(discussion: Discussion): Promise
     )
   }
   const out = captured.trim()
-  return out || discussion.context
+  return { ok, context: out || discussion.context }
 }

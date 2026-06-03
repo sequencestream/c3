@@ -39,6 +39,23 @@ export function statusLabel(s: DiscussionStatus): string {
   return STATUS_LABELS[s] ?? s
 }
 
+/**
+ * Title-bar status text for the open discussion's right pane. A `draft` reads as
+ * `Researching…` — after create the context-research agent runs and the server
+ * auto-starts the orchestration on success, so a lingering draft means research
+ * has not yet completed-and-auto-started (a manual Start stays as a fallback).
+ * `in_progress` reflects the live run-state (paused vs running); terminal states
+ * map to their label. Pure, so it is unit-tested DOM-free.
+ */
+export function discussionRunLabel(
+  status: DiscussionStatus,
+  runState: 'running' | 'paused' | undefined,
+): string {
+  if (status === 'draft') return 'Researching…'
+  if (status === 'in_progress') return runState === 'paused' ? 'Paused' : 'Running'
+  return status === 'completed' ? 'Completed' : 'Cancelled'
+}
+
 /*
  * Detail accordion tabs — the expanded row shows one field at a time behind a tab
  * bar instead of stacking goal / context / conclusion vertically. Goal / context /

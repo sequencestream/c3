@@ -25,7 +25,11 @@ import AgendaProgress from './components/AgendaProgress.vue'
 import ScheduleList from './components/ScheduleList.vue'
 import ScheduleDetail from './components/ScheduleDetail.vue'
 import ScheduleForm from './components/ScheduleForm.vue'
-import { discussionMessageToChat, discussionMessagesToChat } from './lib/discussion-view'
+import {
+  discussionMessageToChat,
+  discussionMessagesToChat,
+  discussionRunLabel,
+} from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
@@ -934,8 +938,11 @@ function openDiscussion(discussionId: string) {
 }
 
 // "+" form submit in the discussion list: create a discussion. The server
-// persists a draft, pushes the refreshed list, then completes its context via a
-// read-only research agent and pushes again — both arrive as `discussions`.
+// persists a draft and immediately replies with `discussion_detail` (so the right
+// pane opens the new discussion without a click), pushes the refreshed list, then
+// completes its context via a read-only research agent and — on success —
+// auto-starts the orchestration. The title bar reads "Researching…" until then
+// and flips to "Running" once the engine starts; no extra client wiring needed.
 function createDiscussion(payload: { type: string; goal: string; context: string }) {
   if (!discussionsProject.value) return
   client?.send({
@@ -998,12 +1005,11 @@ const activeDiscussionRunState = computed<'running' | 'paused' | undefined>(() =
   activeDiscussionId.value ? discussionRunState.value[activeDiscussionId.value] : undefined,
 )
 
-// Title-bar status label for a non-draft discussion (draft shows the Start button).
+// Title-bar status label. A `draft` reads as "Researching…" (the context-research
+// agent runs after create and auto-starts the orchestration on success); the
+// pure mapper lives in discussion-view so it stays unit-tested.
 function discussionStatusLabel(status: Discussion['status']): string {
-  if (status === 'in_progress') {
-    return activeDiscussionRunState.value === 'paused' ? 'Paused' : 'Running'
-  }
-  return status === 'completed' ? 'Completed' : 'Cancelled'
+  return discussionRunLabel(status, activeDiscussionRunState.value)
 }
 
 // Pause / resume the live orchestration of the open discussion.
@@ -1244,6 +1250,8 @@ function listCommands() {
           :show-mode="false"
         >
           <template #action>
+            <!-- A draft auto-starts after research; the Start button stays as a
+                 manual fallback (e.g. research failed or stalled). -->
             <button
               v-if="activeDiscussion.status === 'draft'"
               type="button"
@@ -1252,40 +1260,37 @@ function listCommands() {
             >
               Start
             </button>
-            <template v-else>
-              <button
-                v-if="
-                  activeDiscussion.status === 'in_progress' &&
-                  activeDiscussionRunState === 'running'
-                "
-                type="button"
-                class="disc-start-btn"
-                @click="pauseDiscussion"
-              >
-                Pause
-              </button>
-              <button
-                v-else-if="
-                  activeDiscussion.status === 'in_progress' && activeDiscussionRunState === 'paused'
-                "
-                type="button"
-                class="disc-start-btn"
-                @click="resumeDiscussion"
-              >
-                Resume
-              </button>
-              <button
-                v-if="activeDiscussion.status === 'completed'"
-                type="button"
-                class="disc-start-btn"
-                @click="convertDiscussionToRequirement"
-              >
-                Convert to Requirement
-              </button>
-              <span class="disc-status" :class="activeDiscussion.status">
-                {{ discussionStatusLabel(activeDiscussion.status) }}
-              </span>
-            </template>
+            <button
+              v-if="
+                activeDiscussion.status === 'in_progress' && activeDiscussionRunState === 'running'
+              "
+              type="button"
+              class="disc-start-btn"
+              @click="pauseDiscussion"
+            >
+              Pause
+            </button>
+            <button
+              v-else-if="
+                activeDiscussion.status === 'in_progress' && activeDiscussionRunState === 'paused'
+              "
+              type="button"
+              class="disc-start-btn"
+              @click="resumeDiscussion"
+            >
+              Resume
+            </button>
+            <button
+              v-if="activeDiscussion.status === 'completed'"
+              type="button"
+              class="disc-start-btn"
+              @click="convertDiscussionToRequirement"
+            >
+              Convert to Requirement
+            </button>
+            <span class="disc-status" :class="activeDiscussion.status">
+              {{ discussionStatusLabel(activeDiscussion.status) }}
+            </span>
           </template>
         </SessionTitleBar>
         <!-- Agenda progress: subtopic list + current subtopic + completion, live as

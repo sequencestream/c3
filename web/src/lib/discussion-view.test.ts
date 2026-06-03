@@ -6,6 +6,7 @@ import {
   discussionDetailTabs,
   discussionMessageToChat,
   discussionMessagesToChat,
+  discussionRunLabel,
   panelToggleLabel,
   rowVisibility,
   statusLabel,
@@ -105,6 +106,23 @@ describe('discussion-view — 列表面板视图纯函数', () => {
   it('rowVisibility:展开态显示次要元信息,收缩态隐藏', () => {
     expect(rowVisibility(false)).toEqual({ showMeta: true })
     expect(rowVisibility(true)).toEqual({ showMeta: false })
+  })
+
+  it('discussionRunLabel:draft 显示 Researching…(研究中/待自动启动)', () => {
+    expect(discussionRunLabel('draft', undefined)).toBe('Researching…')
+    // run-state 对 draft 无意义,始终是 Researching…
+    expect(discussionRunLabel('draft', 'running')).toBe('Researching…')
+  })
+
+  it('discussionRunLabel:in_progress 跟随 run-state(Running / Paused)', () => {
+    expect(discussionRunLabel('in_progress', 'running')).toBe('Running')
+    expect(discussionRunLabel('in_progress', undefined)).toBe('Running')
+    expect(discussionRunLabel('in_progress', 'paused')).toBe('Paused')
+  })
+
+  it('discussionRunLabel:终态映射到 Completed / Cancelled', () => {
+    expect(discussionRunLabel('completed', undefined)).toBe('Completed')
+    expect(discussionRunLabel('cancelled', undefined)).toBe('Cancelled')
   })
 })
 

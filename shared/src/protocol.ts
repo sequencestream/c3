@@ -635,10 +635,15 @@ export type ClientToServer =
   | { type: 'list_discussions'; projectPath: string; status?: DiscussionStatus }
   /**
    * Create a discussion from the "+" form. The server persists it as `draft`
-   * (title derived from `goal`), pushes a refreshed `discussions` list, then runs
-   * a read-only research agent that reads project material + searches the web to
-   * complete its `context` and pushes `discussions` again. `type` must name a
-   * known discussion type (see `discussion-types.ts`).
+   * (title derived from `goal`), **replies to the creating connection with
+   * `discussion_detail`** so the right pane opens the new discussion immediately,
+   * and pushes a refreshed `discussions` list. It then runs a read-only research
+   * agent that reads project material + searches the web to complete its `context`
+   * (pushing `discussions` again); **on success the server auto-starts the
+   * orchestration** (equivalent to an automatic `start_discussion`, re-validating
+   * the discussion is still a `draft` with no live run). Research failure leaves it
+   * a `draft` for a manual Start (the title bar reads "Researching…" until it
+   * auto-starts). `type` must name a known discussion type (see `discussion-types.ts`).
    */
   | {
       type: 'create_discussion'

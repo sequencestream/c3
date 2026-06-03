@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
+import type { Discussion } from '@ccc/shared/protocol'
 import { getDiscussionType } from '@ccc/shared/discussion-types'
-import { buildResearchPrompt, DISCUSSION_RESEARCH_PROMPT } from './research.js'
+import {
+  buildResearchPrompt,
+  canAutoStartDiscussion,
+  DISCUSSION_RESEARCH_PROMPT,
+} from './research.js'
 
 describe('buildResearchPrompt', () => {
   const base = {
@@ -27,6 +32,42 @@ describe('buildResearchPrompt', () => {
   it('always ends by asking for the completed context only', () => {
     const p = buildResearchPrompt(base, getDiscussionType('brainstorm'))
     expect(p.trimEnd().endsWith('只输出 context 本身)。')).toBe(true)
+  })
+})
+
+describe('canAutoStartDiscussion', () => {
+  const draft: Discussion = {
+    id: 'd1',
+    projectPath: '/p',
+    title: 'T',
+    type: 'decision',
+    goal: 'g',
+    context: 'c',
+    status: 'draft',
+    agenda: [],
+    agendaIndex: 0,
+    conclusion: null,
+    createdAt: 1,
+    updatedAt: 1,
+    completedAt: null,
+  }
+
+  it('auto-starts a draft with no live run', () => {
+    expect(canAutoStartDiscussion(draft, false)).toBe(true)
+  })
+
+  it('does not auto-start when a run is already live (manually Started mid-research)', () => {
+    expect(canAutoStartDiscussion(draft, true)).toBe(false)
+  })
+
+  it('does not auto-start a non-draft (already in_progress / completed / cancelled)', () => {
+    expect(canAutoStartDiscussion({ ...draft, status: 'in_progress' }, false)).toBe(false)
+    expect(canAutoStartDiscussion({ ...draft, status: 'completed' }, false)).toBe(false)
+    expect(canAutoStartDiscussion({ ...draft, status: 'cancelled' }, false)).toBe(false)
+  })
+
+  it('does not auto-start a vanished discussion', () => {
+    expect(canAutoStartDiscussion(undefined, false)).toBe(false)
   })
 })
 

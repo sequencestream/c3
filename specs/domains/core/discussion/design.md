@@ -162,8 +162,13 @@ change the stage. The read path (`getDiscussion` / `listDiscussions` / `discussi
 
 **State machine.**
 
+`start_discussion` is also invoked **automatically** after `create_discussion`'s background research
+succeeds: the server re-validates the freshest record with the pure `canAutoStartDiscussion` guard
+(`status === 'draft'` and no live run) and calls `startDiscussionRun`. A manual `start_discussion`
+stays as a fallback (research failed/stalled, where the discussion remains a `draft`).
+
 ```
-draft ──start_discussion──▶ in_progress ──(walk workflow stages)──▶ completed (conclusion written)
+draft ──start_discussion / auto-start after research──▶ in_progress ──(walk workflow stages)──▶ completed (conclusion written)
                               │   ▲                                       │
                   pause ──────┤   │ resume                                │ continue_discussion
                   (gate parks)│   │                                       │ (append human Q)

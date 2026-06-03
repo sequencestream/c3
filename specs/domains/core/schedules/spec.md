@@ -242,10 +242,12 @@ Wire shapes are defined in the [shared protocol](../../../shared/api-conventions
 ## User scenarios
 
 - **Create a one-shot command:** Given a workspace, When the user fills the schedule form
-  (`command` type, trigger time, execution identity) and confirms the queue, Then a schedule is
-  created in `active` state and evaluated by the scheduler. The display `name` is generated
-  server-side from the task content (command / prompt) on create — the form does not collect a
-  name. There is no `description` field; any present in legacy rows is ignored.
+  (task type `command`/`llm` plus its body, schedule timing via the Advanced segmented builder —
+  frequency / interval / time / days — and execution identity) and confirms the queue, Then a
+  schedule is created in `active` state and evaluated by the scheduler. The display `name` is
+  generated server-side from the task content (command / prompt) on create — the form collects
+  neither a name nor a description. There is no `description` field; any present in legacy rows is
+  ignored.
 - **Run now:** Given an existing schedule, When the user clicks "Run Now", Then an execution is
   immediately dispatched (bypassing the scheduler tick), a new `running` execution log appears.
 - **Pause and resume:** Given an active schedule, When the user pauses it (via queue), Then it is

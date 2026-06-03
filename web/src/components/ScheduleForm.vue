@@ -3,10 +3,10 @@
  * ScheduleForm.vue — modal for creating and editing a schedule.
  *
  * One component serves both flows: `schedule === null` is a create, otherwise an
- * edit (type is immutable on edit, per the protocol). The cron expression can be
- * built three ways — a natural-language box, one-click presets, or an Advanced
- * segmented builder — all of which feed a single `cronExpression`, with a live
- * "next run" preview computed by the same `computeNextRunAt` the server uses.
+ * edit (type is immutable on edit, per the protocol). The cron expression is
+ * built with an Advanced segmented builder (frequency / interval / time / days)
+ * that feeds a single `cronExpression`, with a live "next run" preview computed
+ * by the same `computeNextRunAt` the server uses.
  *
  * The schedule's display name is auto-generated server-side from the task
  * content on create — the form does not collect a name or description.
@@ -23,7 +23,6 @@ import type {
   UpdateScheduleInput,
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
-import { nlToCron, CRON_PRESETS } from '@ccc/shared/nl-cron'
 import MarkdownText from './MarkdownText.vue'
 
 const props = defineProps<{
@@ -65,11 +64,6 @@ const command = ref('')
 const prompt = ref('')
 const cronExpression = ref('*/30 * * * *')
 
-// Cron builder mode.
-type CronTab = 'nl' | 'presets' | 'advanced'
-const cronTab = ref<CronTab>('nl')
-const nlText = ref('')
-
 // Advanced segmented builder.
 type Frequency = 'minutely' | 'hourly' | 'daily' | 'weekly'
 const advFreq = ref<Frequency>('daily')
@@ -97,25 +91,16 @@ watch(
       cronExpression.value = sched.cronExpression
       command.value = readConfigField(sched.config, 'command')
       prompt.value = readConfigField(sched.config, 'prompt')
-      cronTab.value = 'advanced'
     } else {
       type.value = 'command'
       mcpMode.value = 'sandboxed'
       cronExpression.value = '*/30 * * * *'
       command.value = ''
       prompt.value = ''
-      cronTab.value = 'nl'
-      nlText.value = ''
     }
   },
   { immediate: true },
 )
-
-// ---- Natural-language mode ----------------------------------------------
-const nlParsed = computed(() => (nlText.value.trim() ? nlToCron(nlText.value) : null))
-watch(nlParsed, (cron) => {
-  if (cronTab.value === 'nl' && cron) cronExpression.value = cron
-})
 
 // ---- Advanced mode -------------------------------------------------------
 function renderDow(days: number[]): string {
@@ -142,23 +127,13 @@ const advancedCron = computed(() => {
   return '*/30 * * * *'
 })
 watch(advancedCron, (cron) => {
-  if (cronTab.value === 'advanced') cronExpression.value = cron
+  cronExpression.value = cron
 })
 
 function toggleDay(num: number): void {
   const i = advDays.value.indexOf(num)
   if (i >= 0) advDays.value.splice(i, 1)
   else advDays.value.push(num)
-}
-
-function selectTab(tab: CronTab): void {
-  cronTab.value = tab
-  if (tab === 'advanced') cronExpression.value = advancedCron.value
-  else if (tab === 'nl' && nlParsed.value) cronExpression.value = nlParsed.value
-}
-
-function applyPreset(cron: string): void {
-  cronExpression.value = cron
 }
 
 // ---- Live preview --------------------------------------------------------
@@ -275,61 +250,9 @@ function save(): void {
         <!-- Schedule (cron) builder -->
         <div class="sf-field">
           <span class="sf-label">Schedule</span>
-          <div class="sf-tabs">
-            <button
-              type="button"
-              class="sf-tab"
-              :class="{ active: cronTab === 'nl' }"
-              @click="selectTab('nl')"
-            >
-              Natural language
-            </button>
-            <button
-              type="button"
-              class="sf-tab"
-              :class="{ active: cronTab === 'presets' }"
-              @click="selectTab('presets')"
-            >
-              Presets
-            </button>
-            <button
-              type="button"
-              class="sf-tab"
-              :class="{ active: cronTab === 'advanced' }"
-              @click="selectTab('advanced')"
-            >
-              Advanced
-            </button>
-          </div>
-
-          <!-- NL -->
-          <div v-if="cronTab === 'nl'" class="sf-tabpane">
-            <input
-              v-model="nlText"
-              class="sf-input"
-              placeholder="e.g. weekdays at 8am, every 30 minutes, every Monday at 3am"
-            />
-            <p v-if="nlText.trim() && !nlParsed" class="sf-warn">
-              Couldn't understand that phrasing — try a preset or the Advanced builder.
-            </p>
-          </div>
-
-          <!-- Presets -->
-          <div v-else-if="cronTab === 'presets'" class="sf-tabpane sf-presets">
-            <button
-              v-for="p in CRON_PRESETS"
-              :key="p.cron"
-              type="button"
-              class="sf-preset-card"
-              :class="{ active: cronExpression === p.cron }"
-              @click="applyPreset(p.cron)"
-            >
-              {{ p.label }}
-            </button>
-          </div>
 
           <!-- Advanced segmented builder -->
-          <div v-else class="sf-tabpane sf-advanced">
+          <div class="sf-tabpane sf-advanced">
             <label class="sf-adv-row">
               <span class="sf-adv-label">Frequency</span>
               <select v-model="advFreq" class="sf-input sf-adv-control">
@@ -537,8 +460,7 @@ function save(): void {
 }
 
 /* Segmented control (task type, execution identity) */
-.sf-segmented,
-.sf-tabs {
+.sf-segmented {
   display: flex;
   gap: var(--sp-1);
   background: var(--c-card);
@@ -546,8 +468,7 @@ function save(): void {
   border-radius: var(--radius-sm);
   padding: 2px;
 }
-.sf-seg,
-.sf-tab {
+.sf-seg {
   flex: 1;
   background: transparent;
   border: none;
@@ -557,12 +478,10 @@ function save(): void {
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.sf-seg:hover:not(:disabled),
-.sf-tab:hover {
+.sf-seg:hover:not(:disabled) {
   color: var(--c-text);
 }
-.sf-seg.active,
-.sf-tab.active {
+.sf-seg.active {
   background: var(--c-primary);
   color: #fff;
 }
@@ -573,30 +492,6 @@ function save(): void {
 
 .sf-tabpane {
   margin-top: var(--sp-2);
-}
-
-/* Presets */
-.sf-presets {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: var(--sp-2);
-}
-.sf-preset-card {
-  background: var(--c-card);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-md);
-  color: var(--c-text);
-  font-size: var(--fs-caption);
-  padding: var(--sp-3);
-  cursor: pointer;
-  text-align: left;
-}
-.sf-preset-card:hover {
-  border-color: var(--c-primary);
-}
-.sf-preset-card.active {
-  border-color: var(--c-primary);
-  background: var(--c-primary-soft);
 }
 
 /* Advanced */

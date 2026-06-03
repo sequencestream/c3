@@ -778,8 +778,19 @@ export type ServerToClient =
    * the requirement list's automation button reflects the live run.
    */
   | { type: 'automation_status'; status: AutomationStatus }
-  /** A project's discussion list (reply to `list_discussions`/`open_discussion` entry, or a push after a change). */
-  | { type: 'discussions'; projectPath: string; items: Discussion[] }
+  /**
+   * A project's discussion list (reply to `list_discussions`/`open_discussion` entry, or a push
+   * after a change). `runStates` is a live snapshot of which listed discussions have an active
+   * orchestration run (id → `running`/`paused`) — only active entries are present. It rides every
+   * list send (first fetch / reconnect re-fetch / state-change push), so a refresh or reconnect
+   * authoritatively reconciles the run-state of background runs (decoupled from persisted `status`).
+   */
+  | {
+      type: 'discussions'
+      projectPath: string
+      items: Discussion[]
+      runStates?: Record<string, 'running' | 'paused'>
+    }
   /** One discussion plus its full message history (reply to `open_discussion`). */
   | { type: 'discussion_detail'; discussion: Discussion; messages: DiscussionMessage[] }
   /**

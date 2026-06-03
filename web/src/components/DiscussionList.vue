@@ -19,10 +19,22 @@ import {
 import type { DiscussionTabKind } from '../lib/discussion-view'
 import MarkdownText from './MarkdownText.vue'
 
-const props = defineProps<{
-  discussions: Discussion[]
-  activeId: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    discussions: Discussion[]
+    activeId: string | null
+    // Live orchestration run-state per discussion (id → running/paused), decoupled from the
+    // persisted `status`. Absent id = no live run. Drives the per-row live badge so concurrent
+    // background runs are each visible; accurate after refresh/reconnect via the list snapshot.
+    runState?: Record<string, 'running' | 'paused'>
+  }>(),
+  { runState: () => ({}) },
+)
+
+// The live run-state for a row, or undefined when it has no active run.
+function liveState(d: Discussion): 'running' | 'paused' | undefined {
+  return props.runState[d.id]
+}
 
 const emit = defineEmits<{
   open: [discussionId: string]
@@ -202,6 +214,17 @@ function togglePanel(): void {
             <span class="disc-date">{{ datePrefix(d) }}</span>
             <span v-if="rowVis.showMeta && d.type" class="disc-type">{{ typeLabel(d) }}</span>
             <span class="disc-title" :title="d.goal || d.title">{{ d.title }}</span>
+            <!-- Live run badge: distinct from the static status pill. Running pulses; paused is
+                 a steady amber. Absent when the discussion has no active orchestration run. -->
+            <span
+              v-if="liveState(d)"
+              class="disc-run"
+              :class="liveState(d)"
+              :title="liveState(d) === 'running' ? 'Orchestration running' : 'Orchestration paused'"
+            >
+              <span class="disc-run-dot" aria-hidden="true" />
+              {{ liveState(d) === 'running' ? 'Running' : 'Paused' }}
+            </span>
             <span class="disc-status" :class="d.status">{{ statusLabel(d.status) }}</span>
           </div>
           <div class="disc-actions" @click.stop>
@@ -523,6 +546,54 @@ function togglePanel(): void {
 .disc-status.cancelled {
   background: rgba(239, 68, 68, 0.12);
   color: var(--c-error);
+}
+/* Live run badge: a lit pill with a leading dot, set apart from the static status pill so a
+   background run reads as "live now" rather than merely persisted `in_progress`. */
+.disc-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+}
+.disc-run-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+/* Running: green + pulsing dot to signal active progress. */
+.disc-run.running {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--c-success);
+}
+.disc-run.running .disc-run-dot {
+  animation: disc-run-pulse 1.4s ease-in-out infinite;
+}
+/* Paused: steady amber, no animation. */
+.disc-run.paused {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--c-warning);
+}
+@keyframes disc-run-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .disc-run.running .disc-run-dot {
+    animation: none;
+  }
 }
 .disc-actions {
   display: flex;

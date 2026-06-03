@@ -22,10 +22,23 @@ function disc(id: string, title: string, over: Partial<Discussion> = {}): Discus
   }
 }
 
-function mountList(props: Partial<{ discussions: Discussion[]; activeId: string | null }> = {}) {
+function mountList(
+  props: Partial<{
+    discussions: Discussion[]
+    activeId: string | null
+    runState: Record<string, 'running' | 'paused'>
+  }> = {},
+) {
   return mount(DiscussionList, {
     props: { discussions: [], activeId: null, ...props },
   })
+}
+
+// Click the detail tab whose label matches `label` (the expanded accordion shows one field at a time).
+async function clickTab(w: ReturnType<typeof mountList>, label: string): Promise<void> {
+  const tab = w.findAll('.disc-tab').find((t) => t.text() === label)
+  if (!tab) throw new Error(`tab not found: ${label}`)
+  await tab.trigger('click')
 }
 
 describe('DiscussionList.vue — 讨论列表(读路径)', () => {
@@ -42,24 +55,25 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha')] })
     await w.find('.disc-item-main').trigger('click')
     expect(w.emitted('open')).toBeUndefined()
-    expect(w.find('.disc-detail-meta').exists()).toBe(true)
+    // 无 goal/context/conclusion → 仅 Details Tab,展开即显示结构化元信息列表。
+    expect(w.find('.disc-detail').exists()).toBe(true)
+    expect(w.find('.disc-meta-list').exists()).toBe(true)
   })
 
   it('手风琴互斥:至多一项展开,再次点击收起', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')] })
     const mains = w.findAll('.disc-item-main')
     await mains[0].trigger('click')
-    expect(w.findAll('.disc-detail-meta').length).toBe(1)
+    expect(w.findAll('.disc-detail').length).toBe(1)
     // 展开第二项 → 第一项自动收起(互斥)
     await mains[1].trigger('click')
-    const metas = w.findAll('.disc-detail-meta')
-    expect(metas.length).toBe(1)
+    expect(w.findAll('.disc-detail').length).toBe(1)
     // 再次点击第二项 → 全部收起
     await mains[1].trigger('click')
-    expect(w.findAll('.disc-detail-meta').length).toBe(0)
+    expect(w.findAll('.disc-detail').length).toBe(0)
   })
 
-  it('展开详情显示 goal/context/conclusion 与元信息', async () => {
+  it('展开详情:Tab 切换显示 goal/context/conclusion 与元信息', async () => {
     const w = mountList({
       discussions: [
         disc('d1', 'Alpha', {
@@ -72,13 +86,17 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
       ],
     })
     await w.find('.disc-item-main').trigger('click')
-    const detail = w.find('.disc-detail').text()
-    expect(detail).toContain('Decide TTL')
-    expect(detail).toContain('Redis')
-    expect(detail).toContain('Use 60s')
-    const meta = w.find('.disc-detail-meta').text()
-    expect(meta).toContain('Created:')
-    expect(meta).toContain('Completed:')
+    // 首个有内容的 Tab(Goal)默认激活,内容区一次只渲染一个字段。
+    expect(w.find('.disc-tab-body').text()).toContain('Decide TTL')
+    await clickTab(w, 'Context')
+    expect(w.find('.disc-tab-body').text()).toContain('Redis')
+    await clickTab(w, 'Conclusion')
+    expect(w.find('.disc-tab-body').text()).toContain('Use 60s')
+    // Details Tab:结构化元信息(Created / Completed)。
+    await clickTab(w, 'Details')
+    const meta = w.find('.disc-meta-list').text()
+    expect(meta).toContain('Created')
+    expect(meta).toContain('Completed')
   })
 
   it('activeId 对应项标记 active', () => {
@@ -190,5 +208,40 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     // 再次点击恢复展开态
     await w.find('.disc-collapse-btn').trigger('click')
     expect(w.find('.disc-list').classes()).not.toContain('collapsed')
+  })
+
+  it('实时运行徽标:running/paused 渲染且与静态状态 pill 区分', () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')],
+      runState: { d1: 'running' },
+    })
+    const items = w.findAll('.disc-item')
+    // d1 有 running 徽标(带脉冲点),且静态 status pill 仍在(两者并存、可区分)。
+    const run1 = items[0].find('.disc-run')
+    expect(run1.exists()).toBe(true)
+    expect(run1.classes()).toContain('running')
+    expect(run1.text()).toBe('Running')
+    expect(run1.find('.disc-run-dot').exists()).toBe(true)
+    expect(items[0].find('.disc-status').exists()).toBe(true)
+    // d2 无活跃 run → 不渲染徽标。
+    expect(items[1].find('.disc-run').exists()).toBe(false)
+  })
+
+  it('并发多项:各讨论按自身 run-state 各自渲染徽标', () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta'), disc('d3', 'Gamma')],
+      runState: { d1: 'running', d2: 'paused' },
+    })
+    const items = w.findAll('.disc-item')
+    expect(items[0].find('.disc-run').classes()).toContain('running')
+    const run2 = items[1].find('.disc-run')
+    expect(run2.classes()).toContain('paused')
+    expect(run2.text()).toBe('Paused')
+    expect(items[2].find('.disc-run').exists()).toBe(false)
+  })
+
+  it('默认无 run-state prop 时不渲染任何徽标', () => {
+    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
+    expect(w.find('.disc-run').exists()).toBe(false)
   })
 })

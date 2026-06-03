@@ -29,6 +29,7 @@ import {
   discussionMessageToChat,
   discussionMessagesToChat,
   discussionRunLabel,
+  reconcileRunState,
 } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
@@ -578,6 +579,16 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'discussions': {
       discussions.value = { ...discussions.value, [msg.projectPath]: msg.items }
+      // Authoritatively reconcile the live run-state for THIS list's discussions from the
+      // snapshot (only active runs present). This survives refresh/reconnect — a freshly
+      // (re)connected view misses the transition-only `discussion_run_status` events, and a
+      // soft reconnect may have missed an `ended`. Only listed ids are touched, so other
+      // projects' run-state entries are left intact (see `reconcileRunState`).
+      discussionRunState.value = reconcileRunState(
+        discussionRunState.value,
+        msg.items,
+        msg.runStates,
+      )
       // Keep the open discussion's status/conclusion in sync with the refreshed
       // list (the engine pushes this on every state change).
       if (activeDiscussionId.value) {
@@ -1229,6 +1240,7 @@ function listCommands() {
       v-if="activeTab === 'discussion' && discussionsProject"
       :discussions="currentDiscussions"
       :active-id="activeDiscussionId"
+      :run-state="discussionRunState"
       @open="openDiscussion"
       @create="createDiscussion"
     />

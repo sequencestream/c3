@@ -56,6 +56,31 @@ export function discussionRunLabel(
   return status === 'completed' ? 'Completed' : 'Cancelled'
 }
 
+/**
+ * Reconcile the global per-discussion run-state map against a project's `discussions` snapshot.
+ *
+ * The server rides a `runStates` snapshot (id → running/paused, only active runs present) on every
+ * `discussions` send. A freshly-(re)connected view misses the transition-only `discussion_run_status`
+ * events, and a soft reconnect may have missed an `ended` — so on each list arrival we make the map
+ * authoritative for THIS list's discussions: each listed id is set from the snapshot or dropped when
+ * absent. Other projects' entries (ids not in `items`) are left intact, so the cross-project map stays
+ * correct. Returns a new object (never mutates `prev`). Pure, so it is unit-tested DOM-free.
+ */
+export function reconcileRunState(
+  prev: Record<string, 'running' | 'paused'>,
+  items: Pick<Discussion, 'id'>[],
+  snapshot: Record<string, 'running' | 'paused'> | undefined,
+): Record<string, 'running' | 'paused'> {
+  if (!snapshot) return prev
+  const next = { ...prev }
+  for (const { id } of items) {
+    const state = snapshot[id]
+    if (state) next[id] = state
+    else delete next[id]
+  }
+  return next
+}
+
 /*
  * Detail accordion tabs — the expanded row shows one field at a time behind a tab
  * bar instead of stacking goal / context / conclusion vertically. Goal / context /

@@ -77,7 +77,12 @@ completed`, appends every turn (`appendMessage`) and streams it (`discussion_mes
   (`continue_discussion` appends the follow-up question, flips `completed → in_progress`, and re-runs
   the engine over the full transcript to a fresh `conclusion`). The live run-state (`running` /
   `paused` / `ended`) is broadcast as `discussion_run_status`, **decoupled from** the persisted
-  `DiscussionStatus` (pause is runtime-only, not persisted).
+  `DiscussionStatus` (pause is runtime-only, not persisted). The left list renders a per-row **live
+  run badge** (running pulses, paused steady) distinct from the static status pill, so multiple
+  background runs are each visible. Because `discussion_run_status` only fires on transitions, every
+  `discussions` list send also carries a `runStates` snapshot (active runs only) — a refresh or
+  reconnect authoritatively reconciles each listed discussion's run-state from it, so a run already
+  going in the background shows correctly even on a freshly-(re)connected view.
 
 - **Conclusion → requirement bridge** (`discussion_to_requirement`): a completed discussion's
   title-bar **Convert to Requirement** button seeds the requirement domain. The server resolves the

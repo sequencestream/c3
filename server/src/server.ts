@@ -242,7 +242,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     if (!isDiscussionStoreAvailable()) return
     const proj = resolve(projectPath)
     const items = listDiscussions(proj)
-    for (const deliver of connections) deliver({ type: 'discussions', projectPath: proj, items })
+    const runStates = discussionRunSnapshot(items)
+    for (const deliver of connections)
+      deliver({ type: 'discussions', projectPath: proj, items, runStates })
   }
 
   // Push a workspace's schedule list to every connection. Used after create,
@@ -267,6 +269,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Live discussion-engine runs, keyed by discussion id. A present entry is the
   // "already running" re-entry guard for `start_discussion` / `continue_discussion`.
   const discussionRuns = new Map<string, DiscussionRunControl>()
+
+  // Live run-state snapshot for a discussion list: id → `running`/`paused` for every listed
+  // discussion that currently has an active run (absent = no live run, falls back to status).
+  // Rides the `discussions` message so a refresh/reconnect reconciles background runs accurately —
+  // `discussion_run_status` only fires on transitions and is missed by a freshly-(re)connected view.
+  const discussionRunSnapshot = (items: Discussion[]): Record<string, 'running' | 'paused'> => {
+    const snapshot: Record<string, 'running' | 'paused'> = {}
+    for (const d of items) {
+      const ctrl = discussionRuns.get(d.id)
+      if (ctrl) snapshot[d.id] = ctrl.paused ? 'paused' : 'running'
+    }
+    return snapshot
+  }
 
   // Stream one freshly-appended discussion message to every connection (the
   // frontend appends it when viewing that discussion).
@@ -1321,10 +1336,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
                 return
               }
+              const discItems = listDiscussions(proj, msg.status)
               send(ws, {
                 type: 'discussions',
                 projectPath: proj,
-                items: listDiscussions(proj, msg.status),
+                items: discItems,
+                runStates: discussionRunSnapshot(discItems),
               })
               return
             }

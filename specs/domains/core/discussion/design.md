@@ -208,7 +208,20 @@ changes — and agenda changes (`set_agenda`/`focus_subtopic`) — fire `deps.on
 (`running` / `paused` / `ended`) is a separate `discussion_run_status` broadcast — runtime-only and
 **decoupled** from the persisted `DiscussionStatus` (a paused run is still `in_progress` on disk; the
 state is lost on server restart). The frontend keys a per-discussion run-state map off it (dropping
-the entry on `ended`) to render the Pause/Resume control and the composer mode (Speak vs Continue).
+the entry on `ended`) to render the Pause/Resume control, the composer mode (Speak vs Continue), and
+the left list's per-row live badge (running pulses / paused steady, distinct from the static status
+pill), so concurrent background runs are each visible.
+
+**Run-state snapshot (refresh/reconnect accuracy).** `discussion_run_status` only fires on
+_transitions_, so a freshly-(re)connected view never learns about runs that were already going. To
+close this, every `discussions` list message carries a `runStates` snapshot — `discussionRunSnapshot(items)`
+reads `discussionRuns` and maps each _listed_ discussion with an active run to `running`/`paused`
+(active entries only). It rides all three list sends: the `list_discussions` reply, the post-change
+`broadcastDiscussions` push, and (via the frontend re-issuing `list_discussions`) reconnect. The
+frontend's `reconcileRunState(prev, items, snapshot)` then makes its global run-state map authoritative
+for _that list's_ ids — each listed id is set from the snapshot or dropped when absent (clearing an
+`ended` missed during a disconnect) — while leaving other projects' entries untouched. The
+transition-only `discussion_run_status` event still drives fine-grained updates between list sends.
 
 **Termination.** Stages move forward only and `conclude` is terminal; `maxRoundsPerStage`
 forces an advance out of a stuck stage; `maxTotalRounds` (default 40) is the hard backstop,

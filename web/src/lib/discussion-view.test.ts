@@ -8,6 +8,7 @@ import {
   discussionMessagesToChat,
   discussionRunLabel,
   panelToggleLabel,
+  reconcileRunState,
   rowVisibility,
   statusLabel,
 } from './discussion-view'
@@ -216,5 +217,36 @@ describe('discussion-view — agendaProgressView(议程进度选择器)', () => 
     expect(neg.items.map((i) => i.status)).toEqual(['current', 'upcoming'])
     expect(neg.current).toBe('A')
     expect(neg.percent).toBe(0)
+  })
+})
+
+describe('discussion-view — reconcileRunState(运行态快照对账)', () => {
+  const items = (...ids: string[]) => ids.map((id) => ({ id }))
+
+  it('快照缺省(undefined)→ 原样返回,不改动', () => {
+    const prev = { d1: 'running' as const }
+    expect(reconcileRunState(prev, items('d1'), undefined)).toBe(prev)
+  })
+
+  it('按快照对列表内讨论 set/delete:活跃置态,缺席清除(修重连残留)', () => {
+    const prev = { d1: 'running' as const, d2: 'paused' as const }
+    // d1 仍活跃→running;d2 不在快照→清除(断连期间错过的 ended);d3 新增→paused。
+    const next = reconcileRunState(prev, items('d1', 'd2', 'd3'), { d1: 'running', d3: 'paused' })
+    expect(next).toEqual({ d1: 'running', d3: 'paused' })
+  })
+
+  it('只触碰列表内 id:其他项目的运行态条目保持不变', () => {
+    const prev = { other: 'running' as const, d1: 'paused' as const }
+    // 本次列表只含 d1;other(他项目)不在 items → 保留。
+    const next = reconcileRunState(prev, items('d1'), { d1: 'running' })
+    expect(next).toEqual({ other: 'running', d1: 'running' })
+  })
+
+  it('返回新对象,不可变(不修改入参)', () => {
+    const prev = { d1: 'running' as const }
+    const next = reconcileRunState(prev, items('d1'), {})
+    expect(next).not.toBe(prev)
+    expect(prev).toEqual({ d1: 'running' })
+    expect(next).toEqual({})
   })
 })

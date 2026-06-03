@@ -105,47 +105,46 @@ function columnExists(d: Db, table: string, column: string): boolean {
 // Migration functions — run after the base schema to evolve the database across versions.
 //
 // IMPORTANT: `PRAGMA user_version` is database-global and shared with the sibling
-// requirement/discussion stores. A fresh db (user_version=0) has already had the
-// LATEST base SCHEMA applied (CREATE TABLE IF NOT EXISTS with the newest column
-// shape) before this runs, so every migration step must be idempotent — guard
-// `ALTER TABLE ADD COLUMN` with a column-existence check, and use `IF NOT EXISTS`
-// for tables. Otherwise a fresh db re-runs the old ALTER and fails on a duplicate
-// column.
-function runMigrations(d: Db, currentVersion: number): void {
-  // v1 → v2: add status column to schedule_execution_logs
-  if (currentVersion < 2 && !columnExists(d, 'schedule_execution_logs', 'status')) {
+// requirement/discussion stores, which set it to THEIR own SCHEMA_VERSION. So this
+// store can never trust `user_version` to gate its migrations: requirements (v5)
+// may have stamped it to 5 before we run, making any `currentVersion < N` check
+// wrongly skip our ALTERs (the bug that left old `schedule_execution_logs` tables
+// without `session_id`). Mirror the requirement/discussion stores: drive every
+// migration off `PRAGMA table_info` / `IF NOT EXISTS` so each step is idempotent
+// regardless of the shared version counter — a fresh db already has the latest
+// SCHEMA, an old db gets backfilled here, and re-runs are no-ops.
+function runMigrations(d: Db): void {
+  // add status column to schedule_execution_logs (historic rows default 'running').
+  if (!columnExists(d, 'schedule_execution_logs', 'status')) {
     d.exec(`ALTER TABLE schedule_execution_logs ADD COLUMN status TEXT NOT NULL DEFAULT 'running'`)
   }
-  // v2 → v3: add write_approvals and workspace_mcp_configs tables. The base SCHEMA
-  // already creates them with IF NOT EXISTS; this re-runs the DDL for older db
-  // files opened before the SCHEMA block carried these tables.
-  if (currentVersion < 3) {
-    d.exec(`
-      CREATE TABLE IF NOT EXISTS write_approvals (
-        id             TEXT PRIMARY KEY,
-        schedule_id    TEXT NOT NULL,
-        workspace_path TEXT NOT NULL,
-        tool_name      TEXT NOT NULL,
-        tool_input     TEXT NOT NULL DEFAULT '{}',
-        diff_preview   TEXT NOT NULL DEFAULT '',
-        created_at     INTEGER NOT NULL,
-        expires_at     INTEGER NOT NULL,
-        status         TEXT NOT NULL DEFAULT 'pending',
-        resolved_by    TEXT,
-        resolved_at    INTEGER
-      );
-      CREATE INDEX IF NOT EXISTS idx_wa_workspace ON write_approvals(workspace_path);
-      CREATE INDEX IF NOT EXISTS idx_wa_status ON write_approvals(status);
-      CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
-        workspace_path TEXT PRIMARY KEY,
-        config_json    TEXT NOT NULL DEFAULT '{}',
-        updated_at     INTEGER NOT NULL
-      );
-    `)
-  }
-  // v3 → v4: add session_id column to schedule_execution_logs (llm-type runs
-  // record their agent session id so the transcript can be loaded on demand).
-  if (currentVersion < 4 && !columnExists(d, 'schedule_execution_logs', 'session_id')) {
+  // add write_approvals and workspace_mcp_configs for db files opened before the
+  // base SCHEMA carried these tables (IF NOT EXISTS makes this a no-op otherwise).
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS write_approvals (
+      id             TEXT PRIMARY KEY,
+      schedule_id    TEXT NOT NULL,
+      workspace_path TEXT NOT NULL,
+      tool_name      TEXT NOT NULL,
+      tool_input     TEXT NOT NULL DEFAULT '{}',
+      diff_preview   TEXT NOT NULL DEFAULT '',
+      created_at     INTEGER NOT NULL,
+      expires_at     INTEGER NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'pending',
+      resolved_by    TEXT,
+      resolved_at    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_wa_workspace ON write_approvals(workspace_path);
+    CREATE INDEX IF NOT EXISTS idx_wa_status ON write_approvals(status);
+    CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
+      workspace_path TEXT PRIMARY KEY,
+      config_json    TEXT NOT NULL DEFAULT '{}',
+      updated_at     INTEGER NOT NULL
+    );
+  `)
+  // add session_id column to schedule_execution_logs (llm-type runs record their
+  // agent session id so the transcript can be loaded on demand).
+  if (!columnExists(d, 'schedule_execution_logs', 'session_id')) {
     d.exec(`ALTER TABLE schedule_execution_logs ADD COLUMN session_id TEXT`)
   }
 }
@@ -158,8 +157,7 @@ function db(): Db | null {
   if (!d) return null
   if (!schemaReady) {
     d.exec(SCHEMA)
-    const current = d.get<{ user_version: number }>('PRAGMA user_version')?.['user_version'] ?? 0
-    runMigrations(d, current)
+    runMigrations(d)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }

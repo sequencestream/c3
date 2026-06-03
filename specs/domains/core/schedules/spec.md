@@ -90,7 +90,10 @@ chain from `pending` to a terminal state.
 ### History display (read path)
 
 Selecting a schedule in the web-console left list focuses the right pane on that schedule's
-execution history. The client sends `get_schedule_detail { scheduleId }`; the server replies with
+execution history. The schedule's **configuration summary** (type, cron, next/upcoming runs, MCP
+mode, tool allow/deny lists, config JSON, timestamps) is shown in the left list's inline accordion,
+not the right pane; the right pane is dedicated to logs. The client sends
+`get_schedule_detail { scheduleId }`; the server replies with
 `schedule_detail { schedule, logs }`, where `logs` are the schedule's execution logs ordered
 **most-recently-started first** (`started_at DESC`, fetched by `listExecutionLogs(scheduleId)`).
 

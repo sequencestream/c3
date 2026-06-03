@@ -21,5 +21,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // 唯一可能超 500KB 的产物是 shiki 单语言 grammar chunk(如 ruby —— 其自包含的内嵌
+    // 语法含 cpp,无法被 Vite 拆出共享)。这些是首屏不加载、仅在对应代码块出现时才拉取的
+    // 懒加载 chunk,体积大不影响首屏,故按 Vite 官方建议放宽阈值消除噪音告警。
+    chunkSizeWarningLimit: 800,
   },
 })

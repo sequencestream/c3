@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /**
- * ScheduleDetail.vue — schedules 视图右栏:详情面板。
+ * ScheduleDetail.vue — schedules 视图右栏:执行日志面板。
  *
- * 未选中时显示空态提示;选中后展示当前配置完整摘要、未来执行预览(时间轴 +
- * 倒计时)以及历史执行日志(起止时间 / 退出码 / output / error)。
+ * 未选中时显示空态提示;选中后只展示历史执行日志(起止时间 / 退出码 / output /
+ * error,以及 llm 任务的 session 记录)。Schedule 的配置信息(类型、cron、
+ * 工具名单、config、未来执行预览等)放在左侧列表的行内展开框里。
  */
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule, ScheduleExecutionLog, TranscriptItem } from '@ccc/shared/protocol'
-import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 
 const props = withDefaults(
   defineProps<{
@@ -29,6 +29,19 @@ const emit = defineEmits<{
 // Whether this schedule produces agent sessions (only llm prompts do). Command
 // schedules never show the "View session" entry.
 const isLlm = computed(() => props.schedule?.type === 'llm')
+
+// Right-pane title: the schedule's display name (config.name, falling back to
+// the cron expression) followed by "Logs".
+const detailTitle = computed(() => {
+  const s = props.schedule
+  if (!s) return ''
+  const cfg = s.config
+  const name =
+    cfg && typeof cfg === 'object' && typeof (cfg as Record<string, unknown>).name === 'string'
+      ? ((cfg as Record<string, unknown>).name as string).trim()
+      : ''
+  return `${name || s.cronExpression} Logs`
+})
 
 // executionIds whose session view is currently expanded.
 const expandedSessions = ref<Set<string>>(new Set())
@@ -64,11 +77,7 @@ function fmtToolInput(input: unknown): string {
   }
 }
 
-// 未来预览要展示几次执行(验收要求 3-5 次)。
-const UPCOMING_COUNT = 5
-
-// Live countdown: refreshed every 30s so relative times stay current
-// (mirrors ScheduleList).
+// Live clock: refreshed every 30s so running executions' durations stay current.
 const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -83,53 +92,6 @@ onUnmounted(() => {
 function fmtDate(ts: number): string {
   return new Date(ts).toLocaleString()
 }
-
-function fmtNextRun(ts: number | null): string {
-  if (ts === null) return 'Not scheduled'
-  return new Date(ts).toLocaleString()
-}
-
-// Relative countdown, identical formatting to ScheduleList.
-function timeLeft(ts: number): string {
-  const diff = ts - now.value
-  if (diff <= 0) return 'Due now'
-  const mins = Math.floor(diff / 60_000)
-  const hrs = Math.floor(mins / 60)
-  const days = Math.floor(hrs / 24)
-  if (days > 0) return `in ${days}d ${hrs % 24}h`
-  if (hrs > 0) return `in ${hrs}h ${mins % 60}m`
-  if (mins > 0) return `in ${mins}m`
-  return '< 1m'
-}
-
-// 未来 N 次执行时间:从"现在"起反复推进 cron。无效/无下次时返回空数组。
-const upcomingRuns = computed<number[]>(() => {
-  const cron = props.schedule?.cronExpression
-  if (!cron || !isValidCron(cron)) return []
-  const runs: number[] = []
-  let after = now.value
-  for (let i = 0; i < UPCOMING_COUNT; i++) {
-    try {
-      const next = computeNextRunAt(cron, after)
-      if (!Number.isFinite(next) || next <= after) break
-      runs.push(next)
-      after = next
-    } catch {
-      break
-    }
-  }
-  return runs
-})
-
-const configText = computed(() => {
-  const c = props.schedule?.config
-  if (c === null || c === undefined) return '—'
-  try {
-    return JSON.stringify(c, null, 2)
-  } catch {
-    return String(c)
-  }
-})
 
 // 一次执行的耗时(ms → 人类可读),未结束则显示运行时长。
 function fmtDuration(log: ScheduleExecutionLog): string {
@@ -153,88 +115,10 @@ function logStatus(log: ScheduleExecutionLog): string {
 <template>
   <div class="sched-detail">
     <template v-if="schedule">
-      <h2 class="sched-detail-title">Schedule Detail</h2>
-
-      <div class="sched-detail-grid">
-        <div class="sched-field">
-          <span class="sched-field-label">ID</span>
-          <span class="sched-field-value mono">{{ schedule.id }}</span>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Type</span>
-          <span class="sched-field-value">{{ schedule.type }}</span>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Status</span>
-          <span class="sched-field-value">
-            <span class="detail-status-badge" :class="schedule.status">{{ schedule.status }}</span>
-          </span>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Cron Expression</span>
-          <span class="sched-field-value"
-            ><code>{{ schedule.cronExpression }}</code></span
-          >
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Next Run</span>
-          <span class="sched-field-value">{{ fmtNextRun(schedule.nextRunAt) }}</span>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">MCP Mode</span>
-          <span class="sched-field-value">{{ schedule.mcpMode }}</span>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Tool Allowlist</span>
-          <span class="sched-field-value">{{
-            schedule.toolAllowlist.length ? schedule.toolAllowlist.join(', ') : '—'
-          }}</span>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Tool Denylist</span>
-          <span class="sched-field-value">{{
-            schedule.toolDenylist.length ? schedule.toolDenylist.join(', ') : '—'
-          }}</span>
-        </div>
-
-        <div class="sched-field sched-field--full">
-          <span class="sched-field-label">Config</span>
-          <pre class="sched-config">{{ configText }}</pre>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Created</span>
-          <span class="sched-field-value">{{ fmtDate(schedule.createdAt) }}</span>
-        </div>
-
-        <div class="sched-field">
-          <span class="sched-field-label">Updated</span>
-          <span class="sched-field-value">{{ fmtDate(schedule.updatedAt) }}</span>
-        </div>
-      </div>
-
-      <!-- Upcoming runs: next few execution times computed from the cron expr. -->
-      <section class="sched-section">
-        <h3 class="sched-section-title">Upcoming runs</h3>
-        <ol v-if="upcomingRuns.length" class="sched-timeline">
-          <li v-for="(ts, i) in upcomingRuns" :key="ts" class="sched-timeline-item">
-            <span class="sched-timeline-dot" :class="{ next: i === 0 }" />
-            <span class="sched-timeline-time">{{ fmtDate(ts) }}</span>
-            <span class="sched-timeline-rel">{{ timeLeft(ts) }}</span>
-          </li>
-        </ol>
-        <p v-else class="sched-section-empty">No upcoming runs for this schedule.</p>
-      </section>
+      <h2 class="sched-detail-title">{{ detailTitle }}</h2>
 
       <!-- Execution history: most-recent first (server orders by started_at DESC). -->
-      <section class="sched-section">
+      <section class="sched-section sched-section--first">
         <h3 class="sched-section-title">Execution history</h3>
         <ul v-if="logs.length" class="sched-log-list">
           <li v-for="log in logs" :key="log.id" class="sched-log">
@@ -331,76 +215,6 @@ function logStatus(log: ScheduleExecutionLog): string {
   padding-bottom: var(--sp-2);
   border-bottom: 1px solid var(--c-border);
 }
-.sched-detail-grid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-.sched-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-.sched-field--full {
-  /* config may be long — full width, no max-height restriction */
-}
-.sched-field-label {
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-.sched-field-value {
-  font-size: var(--fs-body);
-  color: var(--c-text);
-  word-break: break-word;
-}
-.sched-field-value.mono {
-  font-family: var(--ff-mono, monospace);
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-}
-.sched-field-value code {
-  font-family: var(--ff-mono, monospace);
-  font-size: var(--fs-caption);
-  background: var(--c-hover);
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
-}
-.detail-status-badge {
-  font-size: var(--fs-badge);
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: var(--radius-pill);
-  background: var(--c-hover-strong);
-  color: var(--c-text-muted);
-  text-transform: capitalize;
-}
-.detail-status-badge.active {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--c-success);
-}
-.detail-status-badge.paused {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--c-warning);
-}
-.detail-status-badge.error {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--c-error);
-}
-.sched-config {
-  font-family: var(--ff-mono, monospace);
-  font-size: var(--fs-caption);
-  background: var(--c-card);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-2);
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-x: auto;
-  margin: 0;
-}
 .sched-detail-empty {
   flex: 1;
   display: flex;
@@ -410,9 +224,12 @@ function logStatus(log: ScheduleExecutionLog): string {
   font-size: var(--fs-body);
 }
 
-/* ---- Upcoming runs + execution history ---- */
+/* ---- Execution history ---- */
 .sched-section {
   margin-top: var(--sp-5);
+}
+.sched-section--first {
+  margin-top: 0;
 }
 .sched-section-title {
   font-size: var(--fs-body);
@@ -425,41 +242,6 @@ function logStatus(log: ScheduleExecutionLog): string {
   color: var(--c-text-muted);
   font-size: var(--fs-caption);
   margin: 0;
-}
-
-/* Timeline */
-.sched-timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.sched-timeline-item {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.sched-timeline-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--c-text-muted);
-  flex: 0 0 auto;
-}
-.sched-timeline-dot.next {
-  background: var(--c-success);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
-}
-.sched-timeline-time {
-  font-size: var(--fs-body);
-  color: var(--c-text);
-}
-.sched-timeline-rel {
-  margin-left: auto;
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
 }
 
 /* Execution log entries */

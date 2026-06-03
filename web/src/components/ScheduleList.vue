@@ -11,6 +11,7 @@
  */
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule } from '@ccc/shared/protocol'
+import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 
 defineProps<{
   schedules: Schedule[]
@@ -57,6 +58,48 @@ function scheduleLabel(s: Schedule): string {
       ? ((cfg as Record<string, unknown>).name as string).trim()
       : ''
   return `${tag} · ${name || s.cronExpression}`
+}
+
+function fmtDate(ts: number): string {
+  return new Date(ts).toLocaleString()
+}
+
+function fmtNextRun(ts: number | null): string {
+  if (ts === null) return 'Not scheduled'
+  return new Date(ts).toLocaleString()
+}
+
+// 展开行的完整配置 JSON(美化输出);无配置时返回 "—"。
+function configText(s: Schedule): string {
+  const c = s.config
+  if (c === null || c === undefined) return '—'
+  try {
+    return JSON.stringify(c, null, 2)
+  } catch {
+    return String(c)
+  }
+}
+
+// 未来预览要展示几次执行(验收要求 3-5 次)。
+const UPCOMING_COUNT = 5
+
+// 未来 N 次执行时间:从"现在"起反复推进 cron。无效/无下次时返回空数组。
+function upcomingRuns(s: Schedule): number[] {
+  const cron = s.cronExpression
+  if (!cron || !isValidCron(cron)) return []
+  const runs: number[] = []
+  let after = now.value
+  for (let i = 0; i < UPCOMING_COUNT; i++) {
+    try {
+      const next = computeNextRunAt(cron, after)
+      if (!Number.isFinite(next) || next <= after) break
+      runs.push(next)
+      after = next
+    } catch {
+      break
+    }
+  }
+  return runs
 }
 
 // enable/disable 开关:启用态 = status==='active';error/paused 视为未启用。
@@ -156,8 +199,16 @@ function togglePanel(): void {
         </div>
         <div v-if="s.id === expandedId" class="sched-detail-inline">
           <div class="sched-meta-row">
+            <span class="sched-meta-label">ID</span>
+            <span class="sched-meta-val mono">{{ s.id }}</span>
+          </div>
+          <div class="sched-meta-row">
             <span class="sched-meta-label">Type</span>
             <span class="sched-meta-val">{{ s.type }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Status</span>
+            <span class="sched-meta-val">{{ s.status }}</span>
           </div>
           <div class="sched-meta-row">
             <span class="sched-meta-label">Cron</span>
@@ -167,15 +218,50 @@ function togglePanel(): void {
           </div>
           <div class="sched-meta-row">
             <span class="sched-meta-label">Next run</span>
-            <span class="sched-meta-val">{{ timeLeft(s.nextRunAt) }}</span>
+            <span class="sched-meta-val"
+              >{{ fmtNextRun(s.nextRunAt) }} ({{ timeLeft(s.nextRunAt) }})</span
+            >
           </div>
           <div class="sched-meta-row">
             <span class="sched-meta-label">MCP mode</span>
             <span class="sched-meta-val">{{ s.mcpMode }}</span>
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Status</span>
-            <span class="sched-meta-val">{{ s.status }}</span>
+            <span class="sched-meta-label">Allowlist</span>
+            <span class="sched-meta-val">{{
+              s.toolAllowlist.length ? s.toolAllowlist.join(', ') : '—'
+            }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Denylist</span>
+            <span class="sched-meta-val">{{
+              s.toolDenylist.length ? s.toolDenylist.join(', ') : '—'
+            }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Created</span>
+            <span class="sched-meta-val">{{ fmtDate(s.createdAt) }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">Updated</span>
+            <span class="sched-meta-val">{{ fmtDate(s.updatedAt) }}</span>
+          </div>
+          <div class="sched-meta-row sched-meta-row--col">
+            <span class="sched-meta-label">Config</span>
+            <pre class="sched-meta-config">{{ configText(s) }}</pre>
+          </div>
+
+          <!-- Upcoming runs: next few execution times computed from the cron expr. -->
+          <div class="sched-meta-row sched-meta-row--col">
+            <span class="sched-meta-label">Upcoming runs</span>
+            <ol v-if="upcomingRuns(s).length" class="sched-upcoming">
+              <li v-for="(ts, i) in upcomingRuns(s)" :key="ts" class="sched-upcoming-item">
+                <span class="sched-upcoming-dot" :class="{ next: i === 0 }" />
+                <span class="sched-upcoming-time">{{ fmtDate(ts) }}</span>
+                <span class="sched-upcoming-rel">{{ timeLeft(ts) }}</span>
+              </li>
+            </ol>
+            <span v-else class="sched-meta-val">No upcoming runs.</span>
           </div>
         </div>
       </div>
@@ -394,6 +480,10 @@ function togglePanel(): void {
   gap: var(--sp-2);
   font-size: var(--fs-caption);
 }
+.sched-meta-row--col {
+  flex-direction: column;
+  gap: var(--sp-1);
+}
 .sched-meta-label {
   flex-shrink: 0;
   width: 76px;
@@ -403,10 +493,58 @@ function togglePanel(): void {
   color: var(--c-text);
   word-break: break-word;
 }
+.sched-meta-val.mono {
+  font-family: var(--ff-mono, monospace);
+  color: var(--c-text-muted);
+}
 .sched-meta-val code {
   font-family: var(--ff-mono, monospace);
   background: var(--c-card);
   padding: 1px 4px;
   border-radius: var(--radius-sm);
+}
+.sched-meta-config {
+  font-family: var(--ff-mono, monospace);
+  font-size: var(--fs-caption);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+/* Upcoming runs timeline (mirrors the former ScheduleDetail timeline). */
+.sched-upcoming {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.sched-upcoming-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.sched-upcoming-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-text-muted);
+  flex: 0 0 auto;
+}
+.sched-upcoming-dot.next {
+  background: var(--c-success);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+.sched-upcoming-time {
+  color: var(--c-text);
+}
+.sched-upcoming-rel {
+  margin-left: auto;
+  color: var(--c-text-muted);
 }
 </style>

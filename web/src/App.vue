@@ -1369,27 +1369,9 @@ function listCommands() {
           </button>
         </form>
       </template>
-      <!-- Schedules tab: a small write toolbar (New / Edit) above the selected
-           schedule's config summary. -->
+      <!-- Schedules tab: the right pane shows the selected schedule's execution
+           logs. (Create/Edit entry points live in the left list.) -->
       <template v-else-if="activeTab === 'schedules'">
-        <div class="sched-toolbar">
-          <button
-            type="button"
-            class="sched-toolbar-btn primary"
-            :disabled="!schedulesProject"
-            @click="openScheduleForm(null)"
-          >
-            + New schedule
-          </button>
-          <button
-            type="button"
-            class="sched-toolbar-btn"
-            :disabled="!selectedSchedule"
-            @click="openScheduleForm(selectedSchedule)"
-          >
-            Edit
-          </button>
-        </div>
         <ScheduleDetail
           :schedule="selectedSchedule"
           :logs="selectedScheduleLogs"

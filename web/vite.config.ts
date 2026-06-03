@@ -1,9 +1,18 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import VueI18nPlugin from '@intlify/unplugin-vue-i18n/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    // 编译期预编译 i18n 消息;runtimeOnly 让运行期不再携带消息编译器
+    VueI18nPlugin({
+      runtimeOnly: true,
+      compositionOnly: true,
+      include: [fileURLToPath(new URL('./src/locales/**', import.meta.url))],
+    }),
+  ],
   resolve: {
     alias: {
       '@ccc/shared': fileURLToPath(new URL('../shared/src', import.meta.url)),

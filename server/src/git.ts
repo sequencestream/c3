@@ -7,9 +7,40 @@
  *
  * Every call is scoped to `cwd` via `git -C`; nothing here touches process.cwd().
  */
-import { execFile } from 'node:child_process'
+import { exec, execFile } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
+
+/**
+ * Why a commit/push attempt failed, so the automation orchestrator can decide
+ * whether to self-heal (`commit-hook` — a pre-commit lint failure is retryable)
+ * or stop hard (`other` — push rejected, no upstream, auth, conflict-state, no
+ * repo: a human must look). Defaults to `other` — only a clearly lint/hook-shaped
+ * commit failure is `commit-hook`.
+ */
+export type CommitFailureKind = 'commit-hook' | 'other'
+
+export interface CommitResult {
+  ok: boolean
+  committed: boolean
+  error?: string
+  /** Only meaningful when `ok` is false; absent on success. */
+  failure?: CommitFailureKind
+}
+
+// Markers that a non-zero `git commit` failed inside the pre-commit hook chain
+// (lint-staged → eslint/prettier), as opposed to git itself rejecting the commit.
+const LINT_HOOK_MARKERS = ['eslint', 'prettier', 'lint-staged', 'husky', 'pre-commit', '✖']
+
+/**
+ * Classify a failed `git commit`'s combined output: `commit-hook` when it carries
+ * a lint/format pre-commit-hook signature (so it may be auto-fixable), else
+ * `other`. Pure (string in, kind out) so the heuristic is unit-testable.
+ */
+export function classifyCommitFailure(output: string): CommitFailureKind {
+  const hay = output.toLowerCase()
+  return LINT_HOOK_MARKERS.some((m) => hay.includes(m.toLowerCase())) ? 'commit-hook' : 'other'
+}
 
 /** Run `git <args>` in `cwd`; resolve with stdout/stderr/exit code (never rejects). */
 function git(
@@ -150,11 +181,16 @@ async function commitAndPushRepo(
   repo: string,
   message: string,
   label: string,
-): Promise<{ ok: boolean; committed: boolean; error?: string }> {
+): Promise<CommitResult> {
   const prefix = label ? `子仓库 ${label}: ` : ''
   const add = await git(repo, ['-C', repo, 'add', '-A'])
   if (add.code !== 0)
-    return { ok: false, committed: false, error: `${prefix}git add 失败: ${oneLine(add.stderr)}` }
+    return {
+      ok: false,
+      committed: false,
+      error: `${prefix}git add 失败: ${oneLine(add.stderr)}`,
+      failure: 'other',
+    }
 
   // Commit only when something is staged; an empty tree means the agent already
   // committed (or there was nothing to change) — fall through to push regardless.
@@ -164,10 +200,14 @@ async function commitAndPushRepo(
   if (hasChanges) {
     const commit = await git(repo, ['-C', repo, 'commit', '-m', message])
     if (commit.code !== 0) {
+      // Classify so the orchestrator can self-heal a lint/pre-commit-hook failure
+      // (retryable) versus stop hard on anything else (RM-A6).
+      const out = commit.stderr || commit.stdout
       return {
         ok: false,
         committed: false,
-        error: `${prefix}git commit 失败: ${oneLine(commit.stderr || commit.stdout)}`,
+        error: `${prefix}git commit 失败: ${oneLine(out)}`,
+        failure: classifyCommitFailure(out),
       }
     }
     committed = true
@@ -181,6 +221,7 @@ async function commitAndPushRepo(
       ok: false,
       committed,
       error: `${prefix}git push 失败: ${oneLine(push.stderr || push.stdout)}`,
+      failure: 'other',
     }
   }
   return { ok: true, committed }
@@ -205,17 +246,19 @@ async function isAhead(repo: string): Promise<boolean> {
  * alone. Any repo's push failure is a hard stop, and the error names the repo.
  * Finding no git repo at all is also an error (nothing can be committed).
  */
-export async function commitAndPush(
-  projectPath: string,
-  message: string,
-): Promise<{ ok: boolean; committed: boolean; error?: string }> {
+export async function commitAndPush(projectPath: string, message: string): Promise<CommitResult> {
   if (isGitRepo(projectPath)) {
     return commitAndPushRepo(projectPath, message, '')
   }
 
   const repos = discoverSubRepos(projectPath)
   if (repos.length === 0) {
-    return { ok: false, committed: false, error: '工作区内未找到 git 仓库,无法提交' }
+    return {
+      ok: false,
+      committed: false,
+      error: '工作区内未找到 git 仓库,无法提交',
+      failure: 'other',
+    }
   }
 
   let anyCommitted = false
@@ -227,6 +270,7 @@ export async function commitAndPush(
         ok: false,
         committed: anyCommitted,
         error: `子仓库 ${label}: git status 失败: ${oneLine(status.stderr)}`,
+        failure: 'other',
       }
     }
     const dirty = status.stdout.trim() !== ''
@@ -235,7 +279,15 @@ export async function commitAndPush(
     if (!dirty && !(await isAhead(repo))) continue
 
     const res = await commitAndPushRepo(repo, message, label)
-    if (!res.ok) return { ok: false, committed: anyCommitted || res.committed, error: res.error }
+    // Propagate the per-repo failure kind so the orchestrator's lint self-heal
+    // triggers on a sub-repo's pre-commit-hook failure too.
+    if (!res.ok)
+      return {
+        ok: false,
+        committed: anyCommitted || res.committed,
+        error: res.error,
+        failure: res.failure,
+      }
     anyCommitted = anyCommitted || res.committed
   }
   return { ok: true, committed: anyCommitted }
@@ -244,4 +296,32 @@ export async function commitAndPush(
 /** Collapse multi-line git output into a single trimmed line for the UI. */
 function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim().slice(0, 300)
+}
+
+/**
+ * Run the project's configured lint-fix command (e.g. `pnpm lint:fix`) in `cwd`
+ * as the **command-first** stage of the automation orchestrator's lint self-heal.
+ * The command is a free-form shell string (it may carry args/pipes), so it runs
+ * via `exec` (a shell), scoped to `cwd`, with a timeout and a bounded buffer.
+ *
+ * A blank `command` is a no-op: the caller (orchestrator) then skips straight to
+ * the agent-fallback stage. `ok` reflects the command's exit code (0 ⇒ ok), but a
+ * non-ok command is not fatal — the orchestrator retries the commit regardless and
+ * lets the agent fallback take over if the lint failure persists. Never rejects.
+ */
+export function runLintFix(
+  cwd: string,
+  command: string,
+  timeoutMs = 180_000,
+): Promise<{ ok: boolean; output: string }> {
+  const cmd = command.trim()
+  if (!cmd) return Promise.resolve({ ok: false, output: '(未配置 lint 修复命令)' })
+  return new Promise((resolve) => {
+    exec(cmd, { cwd, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({
+        ok: !err,
+        output: oneLine(`${stdout?.toString() ?? ''}\n${stderr?.toString() ?? ''}`),
+      })
+    })
+  })
 }

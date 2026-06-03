@@ -3,7 +3,13 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { commitAndPush, gitDiffStat, gitRecentLog } from './git.js'
+import {
+  classifyCommitFailure,
+  commitAndPush,
+  gitDiffStat,
+  gitRecentLog,
+  runLintFix,
+} from './git.js'
 
 // These tests drive the REAL `git` CLI against throwaway repos in a temp dir, with
 // bare repos as push targets — so they exercise discovery + per-repo commit/push
@@ -135,7 +141,7 @@ describe('commitAndPush — repository discovery & per-repo commit', () => {
     expect(aheadCount(clean)).toBe(0)
   })
 
-  it('push failure is a hard stop, and the error names the failing repo', async () => {
+  it('push failure is a hard stop (failure: other), and the error names the failing repo', async () => {
     // A dirty subrepo with NO remote/upstream → push fails.
     const broken = join(work, 'broken')
     initRepo(broken, 'broken', false)
@@ -146,8 +152,62 @@ describe('commitAndPush — repository discovery & per-repo commit', () => {
     expect(res.ok).toBe(false)
     expect(res.error).toContain('broken')
     expect(res.error).toContain('git push 失败')
+    expect(res.failure).toBe('other') // not a lint/pre-commit-hook failure → no self-heal
     // It committed locally before the push failed.
     expect(lastCommitMsg(broken)).toBe('feat: 需求标题')
+  })
+
+  it('a pre-commit hook lint failure is classified failure: commit-hook (self-heal eligible)', async () => {
+    initRepo(work, 'root')
+    // A pre-commit hook that fails like a lint hook would (eslint output, non-zero).
+    writeFileSync(
+      join(work, '.git', 'hooks', 'pre-commit'),
+      '#!/bin/sh\necho "✖ eslint: 2 problems (2 errors, 0 warnings)" 1>&2\nexit 1\n',
+      { mode: 0o755 },
+    )
+    writeFileSync(join(work, 'bad.ts'), 'export const bad = 1\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('git commit 失败')
+    expect(res.failure).toBe('commit-hook') // lint signature → orchestrator self-heals
+  })
+})
+
+describe('classifyCommitFailure — lint/pre-commit-hook vs other', () => {
+  it('treats eslint / prettier / lint-staged / husky / pre-commit output as commit-hook', () => {
+    expect(classifyCommitFailure('✖ 3 problems\nESLint found errors')).toBe('commit-hook')
+    expect(classifyCommitFailure('[warn] Code style issues found, run Prettier')).toBe(
+      'commit-hook',
+    )
+    expect(classifyCommitFailure('✖ lint-staged failed')).toBe('commit-hook')
+    expect(classifyCommitFailure('husky - pre-commit hook exited with code 1')).toBe('commit-hook')
+  })
+
+  it('treats non-lint commit failures as other', () => {
+    expect(classifyCommitFailure('error: failed to push some refs')).toBe('other')
+    expect(classifyCommitFailure('nothing to commit, working tree clean')).toBe('other')
+    expect(classifyCommitFailure('')).toBe('other')
+  })
+})
+
+describe('runLintFix', () => {
+  it('runs the configured command in cwd and reports ok on exit 0', async () => {
+    const r = await runLintFix(work, 'echo fixed-by-lint')
+    expect(r.ok).toBe(true)
+    expect(r.output).toContain('fixed-by-lint')
+  })
+
+  it('reports not-ok on a non-zero command (so the orchestrator falls through)', async () => {
+    const r = await runLintFix(work, 'exit 3')
+    expect(r.ok).toBe(false)
+  })
+
+  it('is a no-op for a blank command (caller skips straight to the agent stage)', async () => {
+    const r = await runLintFix(work, '   ')
+    expect(r.ok).toBe(false)
+    expect(r.output).toContain('未配置')
   })
 
   it('no git repo anywhere: reports an error and does not commit', async () => {

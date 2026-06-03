@@ -105,6 +105,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
   const showToolSessions = raw?.showToolSessions === true
   const devSkill = normalizeDevSkill(raw?.devSkill)
+  const lintFixCommand = normalizeLintFixCommand(raw?.lintFixCommand)
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
   const maxSpeechChars = normalizeMaxSpeechChars(raw?.maxSpeechChars)
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
@@ -116,6 +117,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     voiceLang,
     showToolSessions,
     devSkill,
+    lintFixCommand,
     maxRoundsPerStage,
     maxSpeechChars,
     degradationChain,
@@ -177,6 +179,20 @@ function normalizeDevSkill(raw: unknown): string {
   const trimmed = typeof raw === 'string' ? raw.trim() : ''
   if (!trimmed) return ''
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+/** The lint-fix command used when none is configured (the common pnpm setup). */
+export const DEFAULT_LINT_FIX_COMMAND = 'pnpm lint:fix'
+
+/**
+ * Force the automation lint-fix command into shape. UNSET (missing / non-string)
+ * ⇒ the {@link DEFAULT_LINT_FIX_COMMAND}; an explicit string is trimmed and kept
+ * verbatim — including an explicit empty string, which deliberately means "skip
+ * the command stage, go straight to the agent fallback".
+ */
+function normalizeLintFixCommand(raw: unknown): string {
+  if (typeof raw !== 'string') return DEFAULT_LINT_FIX_COMMAND
+  return raw.trim()
 }
 
 export function loadSettings(): SystemSettings {
@@ -332,6 +348,15 @@ export function getShowToolSessions(): boolean {
 /** The slash command prefixed to a requirement when launching development; empty ⇒ no prefix. */
 export function getDevSkill(): string {
   return normalizeDevSkill(loadSettings().devSkill)
+}
+
+/**
+ * The automation lint self-heal command-first command (normalized). Defaults to
+ * {@link DEFAULT_LINT_FIX_COMMAND} when unset; an explicit empty string skips the
+ * command stage (the orchestrator goes straight to the agent fallback).
+ */
+export function getLintFixCommand(): string {
+  return normalizeLintFixCommand(loadSettings().lintFixCommand)
 }
 
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */

@@ -6,6 +6,7 @@ import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { SystemSettings } from '@ccc/shared/protocol'
 import {
   getDevSkill,
+  getLintFixCommand,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
   saveSettings,
@@ -15,6 +16,7 @@ import {
   MIN_ROUNDS_PER_STAGE,
   DEFAULT_SPEECH_CHARS,
   MIN_SPEECH_CHARS,
+  DEFAULT_LINT_FIX_COMMAND,
 } from './settings.js'
 
 // Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
@@ -113,6 +115,42 @@ describe('getMaxRoundsPerStage normalization', () => {
     expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
     saveWithMaxRounds(-3)
     expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+  })
+})
+
+/** Persist just a `lintFixCommand` value (with the required baseline fields). */
+function saveWithLintFixCommand(value: unknown): void {
+  saveSettings({
+    agents: [],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    lintFixCommand: value,
+  } as unknown as SystemSettings)
+}
+
+describe('getLintFixCommand normalization', () => {
+  it('defaults to `pnpm lint:fix` when unset', () => {
+    saveWithLintFixCommand(undefined)
+    expect(getLintFixCommand()).toBe(DEFAULT_LINT_FIX_COMMAND)
+  })
+
+  it('defaults to `pnpm lint:fix` for a non-string value', () => {
+    saveWithLintFixCommand(123)
+    expect(getLintFixCommand()).toBe(DEFAULT_LINT_FIX_COMMAND)
+  })
+
+  it('keeps an explicit empty string (skips the command stage)', () => {
+    saveWithLintFixCommand('')
+    expect(getLintFixCommand()).toBe('')
+  })
+
+  it('trims a whitespace-only value down to empty (skips the command stage)', () => {
+    saveWithLintFixCommand('   ')
+    expect(getLintFixCommand()).toBe('')
+  })
+
+  it('trims and keeps a real command verbatim', () => {
+    saveWithLintFixCommand('  npm run lint -- --fix  ')
+    expect(getLintFixCommand()).toBe('npm run lint -- --fix')
   })
 })
 

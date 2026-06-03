@@ -136,6 +136,13 @@ export interface SystemSettings {
   /** Slash command (leading `/`) prefixed to the requirement content when launching
    * development. Optional; empty/unset ⇒ no skill prefix. */
   devSkill?: string
+  /**
+   * Shell command the automation orchestrator runs as the command-first stage of
+   * its lint self-heal when an auto-commit is blocked by a pre-commit lint hook
+   * (e.g. `pnpm lint:fix`). Unset ⇒ default `pnpm lint:fix`; an explicit empty
+   * string skips the command stage and goes straight to the agent fallback.
+   */
+  lintFixCommand?: string
   /** Per-stage round cap for multi-agent discussions. Minimum 8 (lower values are
    * clamped up); an unset/invalid value falls back to a sane default (≥ 8). */
   maxRoundsPerStage?: number

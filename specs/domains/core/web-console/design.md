@@ -70,6 +70,12 @@ Component-local UI state (not in App): prompt draft + slash menu in MessageInput
 expand sets in ChatMessages; per-question answer draft in PermissionPrompt; session-list pagination
 in SessionList; editable settings draft in SettingsPanel.
 
+The MessageInput composer textarea **auto-grows** with its draft: a single `watch(input)` resizes it
+after every text mutation (typing, voice append, send-queue prefill, slash-command apply, post-send
+clear) to the content height, capped at 200px after which it scrolls internally; the CSS `min-height`
+floors the single-line idle state. The geometry is the shared pure helper `autoGrowHeight`
+(`web/src/lib/textarea.ts`, reused by the discussion create-form textareas).
+
 `ChatMsg` is a discriminated union over `kind`: `user` · `assistant` · `tool-use` ·
 `tool-result` · `permission` · `consensus` · `system`, each with a numeric `id`.
 

@@ -45,7 +45,7 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   the server auto-starts the engine (via the refreshed `discussions` + `discussion_run_status`
   broadcasts). A manual **Start** button stays on a `draft` as a fallback (research failed/stalled),
   and streamed messages append live once the engine runs. The create form's Goal / Context textareas **auto-grow** with their content up to a
-  pixel cap (`autoGrowHeight` in `discussion-view.ts`), scrolling internally only past the cap and
+  pixel cap (shared `autoGrowHeight` in `lib/textarea.ts`), scrolling internally only past the cap and
   resetting when the form closes. The **left list** (`web/src/pages/discussions/components/DiscussionList/DiscussionList.vue`
   - pure view helpers in `web/src/lib/discussion-view.ts`) carries:
     a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary

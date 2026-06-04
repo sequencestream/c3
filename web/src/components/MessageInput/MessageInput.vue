@@ -9,6 +9,7 @@ import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
 import { useSpeechRecognition } from '../../composables/useSpeechRecognition'
 import { composerAction, mergeIntoDraft } from '../../lib/pending-queue'
+import { autoGrowHeight } from '../../lib/textarea'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -44,6 +45,23 @@ const emit = defineEmits<{
 
 const input = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+// Auto-grow: the composer grows with its content up to this cap, then scrolls
+// internally so a long draft never pushes the layout. The CSS `min-height`
+// (56px) floors the single-line state, so clearing/sending shrinks back to it.
+const MAX_TEXTAREA_PX = 200
+function resizeInput(): void {
+  const el = inputEl.value
+  if (!el) return
+  el.style.height = 'auto'
+  const { height, overflowY } = autoGrowHeight(el.scrollHeight, MAX_TEXTAREA_PX)
+  el.style.height = `${height}px`
+  el.style.overflowY = overflowY
+}
+// One source of truth for every text mutation — typing (v-model), voice append,
+// prefill from the send queue, slash-command apply, and the post-send clear all
+// flow through `input`, so a single watch keeps the height in sync after render.
+watch(input, () => nextTick(resizeInput))
 
 // 语音输入：聆听开始时记录 baseText（已有内容），识别结果追加其后。
 let voiceBase = ''

@@ -314,25 +314,6 @@ export function rowVisibility(collapsed: boolean): RowVisibility {
   return { showMeta: !collapsed }
 }
 
-/**
- * Auto-grow geometry for a textarea: given its natural content height
- * (`scrollHeight`, measured after resetting `height` to `auto`) and a pixel cap,
- * return the height to apply and whether an inner scrollbar is needed. The
- * textarea grows with its content up to `maxPx`; beyond that it stays fixed and
- * scrolls internally. Pure, so it is unit-tested without a DOM.
- */
-export interface AutoGrowStyle {
-  height: number
-  overflowY: 'auto' | 'hidden'
-}
-
-export function autoGrowHeight(scrollHeight: number, maxPx: number): AutoGrowStyle {
-  return {
-    height: Math.min(scrollHeight, maxPx),
-    overflowY: scrollHeight > maxPx ? 'auto' : 'hidden',
-  }
-}
-
 /*
  * Agenda progress view — the explicit agenda the organizer engine decomposes the
  * discussion goal into (see discussion `agenda-engine`). `Discussion.agenda` is the

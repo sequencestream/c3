@@ -10,13 +10,13 @@ import type { Discussion } from '@ccc/shared/protocol'
 import { listDiscussionTypes } from '@ccc/shared/discussion-types'
 import { formatDate } from '../../../../lib/req-list-view'
 import {
-  autoGrowHeight,
   discussionDetailTabs,
   panelToggleLabel,
   rowVisibility,
   statusLabel,
 } from '../../../../lib/discussion-view'
 import type { DiscussionTabKind } from '../../../../lib/discussion-view'
+import { autoGrowHeight } from '../../../../lib/textarea'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import { useTypedI18n } from '@/i18n'
 

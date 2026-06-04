@@ -833,6 +833,11 @@
         "label": "Completed"
       }
     },
+    "tabs": {
+      "research": {
+        "label": "Research"
+      }
+    },
     "consensus": {
       "title": {
         "label": "🤝 Multi-agent consensus ·"

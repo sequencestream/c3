@@ -833,6 +833,11 @@
         "label": "完了"
       }
     },
+    "tabs": {
+      "research": {
+        "label": "研究"
+      }
+    },
     "consensus": {
       "title": {
         "label": "🤝 マルチエージェントの合意 ·"

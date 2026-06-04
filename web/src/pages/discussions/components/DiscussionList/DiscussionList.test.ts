@@ -114,6 +114,52 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.find('[data-testid="disc-meta-completed"]').exists()).toBe(true)
   })
 
+  it('Research tab:researchResult 非空时出现并渲染 Markdown;为空时不出现', async () => {
+    // 非空:tab 出现在 context 与 conclusion 之间,body 经 MarkdownText 渲染
+    const withResearch = mountList({
+      discussions: [
+        disc('d1', 'Alpha', {
+          goal: 'G',
+          context: 'C',
+          researchResult: '# 研究员产出\n- a\n- b',
+          conclusion: 'X',
+        }),
+      ],
+    })
+    await withResearch.find('.disc-item-main').trigger('click')
+    // 5 个 tab(goal/context/research/conclusion/details)按顺序
+    const tabs = withResearch.findAll('.disc-tab')
+    expect(tabs.map((t) => t.attributes('data-testid'))).toEqual([
+      'disc-tab-goal',
+      'disc-tab-context',
+      'disc-tab-research',
+      'disc-tab-conclusion',
+      'disc-tab-details',
+    ])
+    // 切换到 research:MarkdownText 渲染出 h1 + 列表
+    await clickTab(withResearch, 'research')
+    const body = withResearch.find('.disc-tab-body .md-body')
+    expect(body.exists()).toBe(true)
+    expect(body.find('h1').text()).toBe('研究员产出')
+    expect(body.findAll('li').length).toBe(2)
+    // tab label 经 i18n("Research")
+    expect(tabs[2].text()).toBe('Research')
+
+    // 空:不出现 research tab,context 之后直接 conclusion
+    const noResearch = mountList({
+      discussions: [disc('d2', 'Beta', { goal: 'G', context: 'C', conclusion: 'X' })],
+    })
+    await noResearch.find('.disc-item-main').trigger('click')
+    const tabs2 = noResearch.findAll('.disc-tab')
+    expect(tabs2.map((t) => t.attributes('data-testid'))).toEqual([
+      'disc-tab-goal',
+      'disc-tab-context',
+      'disc-tab-conclusion',
+      'disc-tab-details',
+    ])
+    expect(noResearch.find('[data-testid="disc-tab-research"]').exists()).toBe(false)
+  })
+
   it('activeId 对应项标记 active', () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')], activeId: 'd2' })
     const items = w.findAll('.disc-item')

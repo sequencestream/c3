@@ -833,6 +833,11 @@
         "label": "已完成"
       }
     },
+    "tabs": {
+      "research": {
+        "label": "研究"
+      }
+    },
     "consensus": {
       "title": {
         "label": "🤝 多智能体共识 ·"

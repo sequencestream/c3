@@ -81,6 +81,13 @@ const T = (
   return 'Agent'
 }
 
+// Stub for the discussionDetailTabs i18n key — keeps the typed t contract local
+// to this test file (the real typed `t` from useTypedI18n is wider; this narrow
+// shape is assignable to the (key: 'discussion.tabs.research.label') => string
+// parameter the function expects).
+const TABS_T = (k: 'discussion.tabs.research.label') =>
+  k === 'discussion.tabs.research.label' ? 'Research' : k
+
 const AGENTS: AgentConfig[] = [
   agent({ id: 'default', name: 'Default Agent', icon: '🧠' }),
   agent({ id: 'reviewer', name: 'Reviewer', icon: '🔍' }),
@@ -332,30 +339,75 @@ describe('discussion-view — 列表面板视图纯函数', () => {
 })
 
 describe('discussion-view — discussionDetailTabs(展开详情 Tab)', () => {
-  it('全字段非空:goal/context/conclusion + details 顺序', () => {
-    const tabs = discussionDetailTabs(disc({ goal: 'G', context: 'C', conclusion: 'X' }))
-    expect(tabs.map((t) => t.kind)).toEqual(['goal', 'context', 'conclusion', 'details'])
-    expect(tabs.map((t) => t.label)).toEqual(['Goal', 'Context', 'Conclusion', 'Details'])
+  it('全字段非空:goal/context/research/conclusion + details 顺序,Research label 走 i18n', () => {
+    const tabs = discussionDetailTabs(
+      disc({ goal: 'G', context: 'C', researchResult: 'R', conclusion: 'X' }),
+      TABS_T,
+    )
+    expect(tabs.map((t) => t.kind)).toEqual([
+      'goal',
+      'context',
+      'research',
+      'conclusion',
+      'details',
+    ])
+    expect(tabs.map((t) => t.label)).toEqual([
+      'Goal',
+      'Context',
+      'Research',
+      'Conclusion',
+      'Details',
+    ])
     expect(tabs[0].body).toBe('G')
+    expect(tabs[2].body).toBe('R')
     expect(tabs.at(-1)?.body).toBeNull()
   })
 
-  it('空 / 纯空白字段被剔除:仅保留非空字段 + details', () => {
-    const tabs = discussionDetailTabs(disc({ goal: 'G', context: '   ', conclusion: null }))
-    expect(tabs.map((t) => t.kind)).toEqual(['goal', 'details'])
+  it('空 / 纯空白字段被剔除:仅保留非空字段 + details(research 空串 / 纯空白同样剔除)', () => {
+    const empty = discussionDetailTabs(
+      disc({ goal: 'G', context: '   ', researchResult: '', conclusion: null }),
+      TABS_T,
+    )
+    expect(empty.map((t) => t.kind)).toEqual(['goal', 'details'])
+    const blank = discussionDetailTabs(
+      disc({ goal: 'G', context: 'C', researchResult: '   \n  ', conclusion: null }),
+      TABS_T,
+    )
+    expect(blank.map((t) => t.kind)).toEqual(['goal', 'context', 'details'])
   })
 
   it('全空:仅剩 details 兜底 Tab(列表永不为空)', () => {
-    const tabs = discussionDetailTabs(disc({ goal: '', context: '', conclusion: null }))
+    const tabs = discussionDetailTabs(
+      disc({ goal: '', context: '', researchResult: '', conclusion: null }),
+      TABS_T,
+    )
     expect(tabs.map((t) => t.kind)).toEqual(['details'])
     expect(tabs[0].body).toBeNull()
   })
 
   it('body 透传原文(不 trim,trim 仅用于空判定)', () => {
     const tabs = discussionDetailTabs(
-      disc({ goal: '  # 标题\n正文  ', context: '', conclusion: null }),
+      disc({
+        goal: '  # 标题\n正文  ',
+        context: '',
+        researchResult: '  # 研究\n要点  ',
+        conclusion: null,
+      }),
+      TABS_T,
     )
     expect(tabs[0].body).toBe('  # 标题\n正文  ')
+    // research 排第二(goal 之后),body 仍是原文
+    expect(tabs[1].body).toBe('  # 研究\n要点  ')
+  })
+
+  it('仅 researchResult 非空:出现 research + details 兜底', () => {
+    const tabs = discussionDetailTabs(
+      disc({ goal: '', context: '', researchResult: 'R', conclusion: null }),
+      TABS_T,
+    )
+    expect(tabs.map((t) => t.kind)).toEqual(['research', 'details'])
+    expect(tabs[0].label).toBe('Research')
+    expect(tabs[0].body).toBe('R')
   })
 })
 

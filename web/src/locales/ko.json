@@ -833,6 +833,11 @@
         "label": "완료"
       }
     },
+    "tabs": {
+      "research": {
+        "label": "리서치"
+      }
+    },
     "consensus": {
       "title": {
         "label": "🤝 멀티 에이전트 합의 ·"

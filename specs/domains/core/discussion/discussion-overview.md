@@ -68,10 +68,14 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
     row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /
     in*progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
     (`expandedId`, at most one open) that expands a **tab bar + single content area** beneath the row
-    (`discussionDetailTabs`): one tab per non-empty field (Goal / Context / Conclusion,
+    (`discussionDetailTabs`): one tab per non-empty field (Goal / Context / **Research** / Conclusion,
     empty fields dropped) whose body is **Markdown-rendered** via `MarkdownText :markdown` (the shared
     markdown-it `html:false` → DOMPurify pipeline), plus an always-present **Details** tab carrying the
-    structured meta (type / status / created / completed). The active tab resets to the first
+    structured meta (type / status / created / completed). The **Research** tab surfaces the persisted
+    `researchResult` written by the `discussion-research` gate (read-only researcher that runs once per
+    draft, between create and auto-start); it appears in the order `Goal → Context → Research →
+Conclusion → Details` so the read-order follows the right-pane's two-phase timeline (research
+    stream → discussion stream). The active tab resets to the first
     content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
     the selected field. **Row click is a single combined action** (`openRow`): it emits `open` to load
     the transcript + orchestration view in the right pane \_and* toggles that row's inline detail

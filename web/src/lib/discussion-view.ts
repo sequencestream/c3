@@ -333,22 +333,41 @@ export function clearDispatchAgent(
  * unit-tested DOM-free; the component just reads the order and resets the active
  * tab to `tabs[0]` when the expanded row changes.
  */
-export type DiscussionTabKind = 'goal' | 'context' | 'conclusion' | 'details'
+export type DiscussionTabKind = 'goal' | 'context' | 'research' | 'conclusion' | 'details'
 
 export interface DiscussionTab {
   kind: DiscussionTabKind
   label: string
-  /** Markdown body for goal/context/conclusion; `null` for the structured `details` tab. */
+  /** Markdown body for goal/context/research/conclusion; `null` for the structured `details` tab. */
   body: string | null
 }
 
-export function discussionDetailTabs(d: Discussion): DiscussionTab[] {
+/**
+ * Labels for tabs whose copy is i18n-typed. The four always-present tabs (goal /
+ * context / conclusion / details) keep their hard-coded English labels as part
+ * of the existing i18n extraction follow-up — only `research` flows through the
+ * typed `t` so the new tab stays consistent with the i18n M1+ extraction policy.
+ */
+export type DiscussionDetailTabI18nKey = 'discussion.tabs.research.label'
+
+export function discussionDetailTabs(
+  d: Discussion,
+  t: (key: DiscussionDetailTabI18nKey) => string,
+): DiscussionTab[] {
   const tabs: DiscussionTab[] = []
   const goal = d.goal?.trim()
   const context = d.context?.trim()
+  const researchResult = d.researchResult?.trim()
   const conclusion = d.conclusion?.trim()
   if (goal) tabs.push({ kind: 'goal', label: 'Goal', body: d.goal })
   if (context) tabs.push({ kind: 'context', label: 'Context', body: d.context })
+  if (researchResult) {
+    tabs.push({
+      kind: 'research',
+      label: t('discussion.tabs.research.label'),
+      body: d.researchResult,
+    })
+  }
   if (conclusion) tabs.push({ kind: 'conclusion', label: 'Conclusion', body: d.conclusion })
   tabs.push({ kind: 'details', label: 'Details', body: null })
   return tabs

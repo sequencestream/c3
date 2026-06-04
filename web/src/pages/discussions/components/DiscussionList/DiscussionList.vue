@@ -102,7 +102,7 @@ const discussionsById = computed(() => new Map(props.discussions.map((d) => [d.i
 // 当前展开讨论的可见 Tab 列表(空字段已剔除,末尾恒有 details)。
 const expandedTabs = computed(() => {
   const d = discussionsById.value.get(expandedId.value ?? '')
-  return d ? discussionDetailTabs(d) : []
+  return d ? discussionDetailTabs(d, t) : []
 })
 
 function toggleDetail(id: string): void {
@@ -113,7 +113,7 @@ function toggleDetail(id: string): void {
   // 展开 / 切换讨论项:重置选中到第一个有内容的 Tab(不跨项记忆)。
   expandedId.value = id
   const d = discussionsById.value.get(id)
-  const tabs = d ? discussionDetailTabs(d) : []
+  const tabs = d ? discussionDetailTabs(d, t) : []
   activeTab.value = tabs[0]?.kind ?? 'details'
 }
 

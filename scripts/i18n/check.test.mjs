@@ -6,6 +6,8 @@ import {
   diffKeys,
   scanCodeKeys,
   runCheck,
+  scanServerCodes,
+  runCodeCheck,
 } from './check.mjs'
 
 describe('flatten', () => {
@@ -127,5 +129,73 @@ describe('runCheck', () => {
       codeFiles: [{ file: 'x.vue', content: `t('common.ok')\nt('greet')` }],
     })
     expect(errors).toEqual([])
+  })
+})
+
+describe('scanServerCodes', () => {
+  it("captures error: { code: '...' } literals with line numbers", () => {
+    const sites = scanServerCodes([
+      {
+        file: 'server.ts',
+        content:
+          `send(ws, { type: 'error', error: { code: 'requirement.notFound' } })\n` +
+          `send(ws, { type: 'error', error: { code: 'session.listFailed', params: { detail } } })`,
+      },
+    ])
+    expect(sites.map((s) => s.code)).toEqual(['requirement.notFound', 'session.listFailed'])
+    expect(sites[1].line).toBe(2)
+  })
+  it('ignores raw `message` error sends (no code)', () => {
+    expect(scanServerCodes([{ file: 'a.ts', content: `{ type: 'error', message: 'x' }` }])).toEqual(
+      [],
+    )
+  })
+})
+
+describe('runCodeCheck', () => {
+  const base = flatten({
+    error: {
+      requirement: { notFound: 'Requirement not found.' },
+      session: { listFailed: 'Failed: {detail}' },
+    },
+  })
+  const uiCodes = {
+    'requirement.notFound': { key: 'error.requirement.notFound' },
+    'session.listFailed': { key: 'error.session.listFailed', params: ['detail'] },
+  }
+
+  it('passes when SoT keys exist and params match placeholders', () => {
+    const { errors } = runCodeCheck({
+      uiCodes,
+      base,
+      serverCodeSites: [{ file: 's', code: 'requirement.notFound', line: 1 }],
+    })
+    expect(errors).toEqual([])
+  })
+  it('errors when a code maps to a key missing from en.json', () => {
+    const { errors } = runCodeCheck({ uiCodes: { 'x.y': { key: 'error.x.y' } }, base })
+    expect(
+      errors.some((e) => e.startsWith('[code->locale]') && e.includes("'error.x.y' not in")),
+    ).toBe(true)
+  })
+  it('errors when declared params diverge from key placeholders', () => {
+    const { errors } = runCodeCheck({
+      uiCodes: { 'session.listFailed': { key: 'error.session.listFailed', params: ['oops'] } },
+      base,
+    })
+    expect(errors.some((e) => e.includes('diverge from key'))).toBe(true)
+  })
+  it('errors when server emits a code not in the SoT', () => {
+    const { errors } = runCodeCheck({
+      uiCodes,
+      base,
+      serverCodeSites: [{ file: 's', code: 'ghost.code', line: 9 }],
+    })
+    expect(errors.some((e) => e.includes("emits code 'ghost.code' not in"))).toBe(true)
+  })
+  it('warns (not errors) when a SoT code is never emitted by the server', () => {
+    const { errors, warnings } = runCodeCheck({ uiCodes, base, serverCodeSites: [] })
+    expect(errors).toEqual([])
+    expect(warnings.some((w) => w.startsWith('[unused-code]'))).toBe(true)
   })
 })

@@ -49,6 +49,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import { applyLocale, setStoredLocale, i18n, useTypedI18n, type Locale } from './i18n'
+import { translateUiError } from './i18n/errors'
 import { useModeLabel } from './composables/useModeLabel'
 
 const { t } = useTypedI18n()
@@ -817,7 +818,8 @@ function handleMessage(msg: ServerToClient) {
       add({ kind: 'system', text: `— ${msg.message} —` })
       break
     case 'error':
-      add({ kind: 'system', text: `— ${msg.message} —` })
+      // Machine-readable code translated locally via the web i18n catalog (spec 003).
+      add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
       break
   }
 }

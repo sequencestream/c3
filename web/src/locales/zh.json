@@ -681,6 +681,44 @@
   "error": {
     "uiLang": {
       "saveFailed": "保存语言设置失败。已还原。"
+    },
+    "workspace": {
+      "unknown": "未知工作区:{path}"
+    },
+    "path": {
+      "notDirectory": "不是目录:{path}"
+    },
+    "command": {
+      "listFailed": "列出命令失败:{detail}"
+    },
+    "session": {
+      "listFailed": "列出会话失败:{detail}",
+      "openFailed": "打开会话失败:{detail}",
+      "deleteFailed": "删除会话失败:{detail}",
+      "renameFailed": "重命名会话失败:{detail}",
+      "notSelected": "请先选择或创建一个会话。",
+      "turnRunning": "该会话已有一轮正在运行。"
+    },
+    "requirement": {
+      "notFound": "需求不存在。",
+      "dbUnavailable": "需求功能不可用 (c3.db)。",
+      "chatOpenFailed": "打开需求对话失败。",
+      "cannotStartDev": "当前状态({status})不可启动开发。"
+    },
+    "discussion": {
+      "dbUnavailable": "讨论功能不可用 (c3.db)。",
+      "notFound": "讨论不存在。",
+      "unknown": "未知讨论:{id}",
+      "unknownType": "未知讨论类型:{type}",
+      "notConcludable": "仅已完成且有结论的讨论可转为需求。",
+      "alreadyStarted": "讨论已开始或已结束,无法重复启动。",
+      "notEndedForContinue": "只有已结束的讨论可以追加新一轮。"
+    },
+    "schedule": {
+      "dbUnavailable": "定时任务功能不可用 (c3.db)。",
+      "notFound": "定时任务不存在。",
+      "executionNotFound": "执行记录不存在。",
+      "approvalNotFound": "审批条目不存在或已被处理。"
     }
   },
   "discussion": {

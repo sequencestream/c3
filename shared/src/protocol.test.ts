@@ -60,7 +60,7 @@ describe('protocol wire format', () => {
     { type: 'permission_request', requestId: 'r1', toolName: 'Write', input: {} },
     { type: 'turn_end', reason: 'complete' },
     { type: 'turn_end', reason: 'error', error: 'boom' },
-    { type: 'error', message: 'bad path' },
+    { type: 'error', error: { code: 'workspace.unknown', params: { path: '/bad' } } },
     { type: 'pong' },
     { type: 'agent_failed', agentId: 'sys', agentName: 'System', error: 'rate limit' },
     {

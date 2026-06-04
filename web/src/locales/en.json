@@ -681,6 +681,44 @@
   "error": {
     "uiLang": {
       "saveFailed": "Failed to save language setting. Reverted."
+    },
+    "workspace": {
+      "unknown": "Unknown workspace: {path}"
+    },
+    "path": {
+      "notDirectory": "Not a directory: {path}"
+    },
+    "command": {
+      "listFailed": "Failed to list commands: {detail}"
+    },
+    "session": {
+      "listFailed": "Failed to list sessions: {detail}",
+      "openFailed": "Failed to open session: {detail}",
+      "deleteFailed": "Failed to delete session: {detail}",
+      "renameFailed": "Failed to rename session: {detail}",
+      "notSelected": "Select or create a session first.",
+      "turnRunning": "A turn is already running in this session."
+    },
+    "requirement": {
+      "notFound": "Requirement not found.",
+      "dbUnavailable": "Requirements feature unavailable (c3.db).",
+      "chatOpenFailed": "Failed to open requirement chat.",
+      "cannotStartDev": "Cannot start development from status \"{status}\"."
+    },
+    "discussion": {
+      "dbUnavailable": "Discussions feature unavailable (c3.db).",
+      "notFound": "Discussion not found.",
+      "unknown": "Unknown discussion: {id}",
+      "unknownType": "Unknown discussion type: {type}",
+      "notConcludable": "Only a concluded discussion with an outcome can become a requirement.",
+      "alreadyStarted": "Discussion already started or ended; cannot start again.",
+      "notEndedForContinue": "Only an ended discussion can start a new round."
+    },
+    "schedule": {
+      "dbUnavailable": "Schedules feature unavailable (c3.db).",
+      "notFound": "Schedule not found.",
+      "executionNotFound": "Execution record not found.",
+      "approvalNotFound": "Approval entry not found or already handled."
     }
   },
   "discussion": {

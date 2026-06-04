@@ -3,6 +3,9 @@
  * Path: /ws
  */
 
+// Type-only import keeps protocol.ts zero-runtime; the runtime SoT lives in ui-codes.ts.
+import type { UiError } from './ui-codes.js'
+
 /**
  * Permission modes the c3 UI can switch between. These are a subset of the
  * Agent SDK's `PermissionMode` union, all valid values to pass to `query()`'s
@@ -948,8 +951,12 @@ export type ServerToClient =
       agents: Array<{ agentId: string; agentName: string; error: string }>
       message: string
     }
-  /** A requested operation failed (bad path, missing session, etc.). */
-  | { type: 'error'; message: string }
+  /**
+   * A requested operation failed (bad path, missing session, etc.). Carries a
+   * machine-readable `{ code, params }` (see ui-codes.ts) — never translated text;
+   * the web renders it through its i18n catalog. The server holds no UI copy.
+   */
+  | { type: 'error'; error: UiError }
   /** A workspace's schedule list (reply to `list_schedules` or broadcast after create/update/delete). */
   | { type: 'schedules'; workspacePath: string; items: Schedule[] }
   /** Full schedule detail with execution logs (reply to `get_schedule_detail`). */

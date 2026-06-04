@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 // i18n quality gate. Run via `pnpm i18n:check`.
 //
-// Three checks against the base locale (en):
+// Four checks against the base locale (en):
 //   1. coverage      — every base key present in each other locale (missing = ERROR), extra = WARN
 //   2. placeholder   — {name}/{0}/ICU blocks and `|` plural-branch count preserved per key (mismatch = ERROR)
 //   3. code -> key   — literal t('key') / $t('key') in web/src must exist in en.json (missing = ERROR);
 //                      dynamic keys -> WARN (cannot statically verify); base keys never referenced -> WARN
+//   4. code -> locale — the UI error-code SoT (shared/src/ui-codes.ts): every code's key exists in
+//                      en.json and its declared params match that key's placeholders (mismatch = ERROR);
+//                      every `error: { code: '...' }` emitted by server/src is in the SoT (unknown = ERROR);
+//                      SoT codes never emitted by the server -> WARN.
 //
 // ERROR -> exit 1 (CI red). Only warnings -> exit 0 (green). Empty en.json with no t() calls -> green.
 // CLI args (e.g. filenames lint-staged appends) are ignored — the gate always scans the whole project.
@@ -19,6 +23,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..', '..')
 const LOCALES_DIR = join(REPO_ROOT, 'web', 'src', 'locales')
 const CODE_DIR = join(REPO_ROOT, 'web', 'src')
+const SERVER_DIR = join(REPO_ROOT, 'server', 'src')
 const BASE_LOCALE = 'en'
 // The typed-t wrapper itself calls `t(key, ...)` with a variable; not a usage site.
 const CODE_SCAN_IGNORE = [join('web', 'src', 'i18n', 'index.ts')]
@@ -191,6 +196,65 @@ export function runCheck({ baseLocale = BASE_LOCALE, locales, codeFiles = [] }) 
   return { errors, warnings }
 }
 
+/** Find `error: { code: '...' }` literals in server source — the UI error sites. */
+export function scanServerCodes(codeFiles) {
+  const sites = []
+  // `error:` `{` `code:` `'<code>'` — the machine-readable UI error payload shape.
+  const re = /error:\s*\{\s*code:\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
+  for (const { file, content } of codeFiles) {
+    let m
+    re.lastIndex = 0
+    while ((m = re.exec(content))) sites.push({ file, code: m[2], line: lineAt(content, m.index) })
+  }
+  return sites
+}
+
+/** Simple `{name}` placeholder names in a message value (ICU/list tokens excluded). */
+function placeholderNames(value) {
+  return extractTokens(value)
+    .placeholders.map((p) => p.replace(/^\{|\}$/g, '').trim())
+    .filter((n) => /^[A-Za-z0-9_]+$/.test(n))
+}
+
+/**
+ * Fourth check — UI error-code SoT (ui-codes.ts) consistency. Pure; caller supplies
+ * `uiCodes` (UI_ERROR_CODES), `base` (flattened en.json), and `serverCodeSites`
+ * (from {@link scanServerCodes}). Returns { errors[], warnings[] }.
+ */
+export function runCodeCheck({ uiCodes = {}, base = {}, serverCodeSites = [] }) {
+  const errors = []
+  const warnings = []
+  const emitted = new Set(serverCodeSites.map((s) => s.code))
+
+  for (const code of Object.keys(uiCodes)) {
+    const def = uiCodes[code]
+    if (!(def.key in base)) {
+      errors.push(
+        `[code->locale] code '${code}' maps to key '${def.key}' not in ${BASE_LOCALE}.json`,
+      )
+      continue
+    }
+    const declared = [...(def.params ?? [])].sort()
+    const actual = placeholderNames(base[def.key]).sort()
+    const same = declared.length === actual.length && declared.every((p, i) => p === actual[i])
+    if (!same) {
+      errors.push(
+        `[code->locale] code '${code}' params ${JSON.stringify(declared)} diverge from key ` +
+          `'${def.key}' placeholders ${JSON.stringify(actual)}`,
+      )
+    }
+    if (!emitted.has(code))
+      warnings.push(`[unused-code] code '${code}' in SoT is never emitted by server/src`)
+  }
+  for (const s of serverCodeSites) {
+    if (!(s.code in uiCodes))
+      errors.push(
+        `[code->locale] ${s.file}:${s.line} server emits code '${s.code}' not in UI_ERROR_CODES (SoT)`,
+      )
+  }
+  return { errors, warnings }
+}
+
 // ---------------------------------------------------------------------------
 // I/O + CLI
 // ---------------------------------------------------------------------------
@@ -204,12 +268,12 @@ function loadLocales() {
   return locales
 }
 
-async function loadCodeFiles() {
+async function loadCodeFiles(dir, ignoreList = []) {
   const out = []
-  const ignore = new Set(CODE_SCAN_IGNORE.map((p) => join(REPO_ROOT, p)))
-  async function walk(dir) {
-    for (const ent of await readdir(dir, { withFileTypes: true })) {
-      const full = join(dir, ent.name)
+  const ignore = new Set(ignoreList.map((p) => join(REPO_ROOT, p)))
+  async function walk(d) {
+    for (const ent of await readdir(d, { withFileTypes: true })) {
+      const full = join(d, ent.name)
       if (ent.isDirectory()) {
         await walk(full)
       } else if (/\.(ts|vue)$/.test(ent.name) && !ent.name.endsWith('.d.ts') && !ignore.has(full)) {
@@ -217,14 +281,26 @@ async function loadCodeFiles() {
       }
     }
   }
-  await walk(CODE_DIR)
+  await walk(dir)
   return out
 }
 
 async function main() {
   const locales = loadLocales()
-  const codeFiles = await loadCodeFiles()
+  const codeFiles = await loadCodeFiles(CODE_DIR, CODE_SCAN_IGNORE)
   const { errors, warnings } = runCheck({ locales, codeFiles })
+
+  // Fourth check: UI error-code SoT consistency (web codeFiles already loaded above).
+  const { loadUiCodes } = await import('./load-ui-codes.mjs')
+  const uiCodes = await loadUiCodes()
+  const serverFiles = await loadCodeFiles(SERVER_DIR)
+  const code = runCodeCheck({
+    uiCodes,
+    base: flatten(locales[BASE_LOCALE] ?? {}),
+    serverCodeSites: scanServerCodes(serverFiles),
+  })
+  errors.push(...code.errors)
+  warnings.push(...code.warnings)
 
   for (const w of warnings) console.warn(`  warn  ${w}`)
   for (const e of errors) console.error(`  error ${e}`)

@@ -1,0 +1,77 @@
+/**
+ * Single source of truth (SoT) for UI-facing error codes.
+ *
+ * The server sends machine-readable `{ code, params }` for anything shown in the
+ * browser — never translated text. The web maps `code` to an i18n leaf key via
+ * this table and renders `t(key, params)`. So translations live ONCE, in the web
+ * locale catalog; the server stays language-free (its logs/debug output remain
+ * English and are NOT modeled here).
+ *
+ * Both `code` (the wire identifier) and `key` (the web i18n leaf) are English
+ * constants and MUST NOT be translated. A build-time generator derives the
+ * `code → key` map from this file, and `pnpm i18n:check` asserts every `key`
+ * exists in `en.json` and that the declared `params` match its placeholders.
+ *
+ * This is the one runtime module in `@ccc/shared` (the rest is type-only); web
+ * imports `UI_ERROR_CODES` to translate, the server imports `UiErrorCode` for
+ * type-safe `send()` payloads. See specs/shared/api-conventions/websocket-protocol.md
+ * and changes/.../2026-06-04-003-server-code-params-protocol/spec.md.
+ */
+
+/** One UI error code's mapping: the web i18n leaf key it renders through. */
+export interface UiErrorDef {
+  /** Leaf key under the frozen `error` namespace in the web locale catalog. */
+  readonly key: string
+  /** Allowed interpolation param names for `key`; checked against en.json placeholders. */
+  readonly params?: readonly string[]
+}
+
+/**
+ * The registry. Add a code here, add its `error.*` key to `en.json` (+ every
+ * other locale), and `i18n:check` keeps the three in sync. Codes are dot-cased
+ * `<domain>.<reason>` mirroring the `error.<domain>.<reason>` locale key.
+ */
+export const UI_ERROR_CODES = {
+  // workspace / path / commands
+  'workspace.unknown': { key: 'error.workspace.unknown', params: ['path'] },
+  'path.notDirectory': { key: 'error.path.notDirectory', params: ['path'] },
+  'command.listFailed': { key: 'error.command.listFailed', params: ['detail'] },
+  // session
+  'session.listFailed': { key: 'error.session.listFailed', params: ['detail'] },
+  'session.openFailed': { key: 'error.session.openFailed', params: ['detail'] },
+  'session.deleteFailed': { key: 'error.session.deleteFailed', params: ['detail'] },
+  'session.renameFailed': { key: 'error.session.renameFailed', params: ['detail'] },
+  'session.notSelected': { key: 'error.session.notSelected' },
+  'session.turnRunning': { key: 'error.session.turnRunning' },
+  // requirement
+  'requirement.notFound': { key: 'error.requirement.notFound' },
+  'requirement.dbUnavailable': { key: 'error.requirement.dbUnavailable' },
+  'requirement.chatOpenFailed': { key: 'error.requirement.chatOpenFailed' },
+  'requirement.cannotStartDev': { key: 'error.requirement.cannotStartDev', params: ['status'] },
+  // discussion
+  'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
+  'discussion.notFound': { key: 'error.discussion.notFound' },
+  'discussion.unknown': { key: 'error.discussion.unknown', params: ['id'] },
+  'discussion.unknownType': { key: 'error.discussion.unknownType', params: ['type'] },
+  'discussion.notConcludable': { key: 'error.discussion.notConcludable' },
+  'discussion.alreadyStarted': { key: 'error.discussion.alreadyStarted' },
+  'discussion.notEndedForContinue': { key: 'error.discussion.notEndedForContinue' },
+  // schedule
+  'schedule.dbUnavailable': { key: 'error.schedule.dbUnavailable' },
+  'schedule.notFound': { key: 'error.schedule.notFound' },
+  'schedule.executionNotFound': { key: 'error.schedule.executionNotFound' },
+  'schedule.approvalNotFound': { key: 'error.schedule.approvalNotFound' },
+} as const satisfies Record<string, UiErrorDef>
+
+/** Every registered UI error code. */
+export type UiErrorCode = keyof typeof UI_ERROR_CODES
+
+/**
+ * Machine-readable error payload sent server → web. `params` carries values for
+ * the target key's placeholders (e.g. `{ detail }`); values may be English
+ * technical detail (exception text) — that is debug data, not UI copy.
+ */
+export interface UiError {
+  code: UiErrorCode
+  params?: Record<string, string | number>
+}

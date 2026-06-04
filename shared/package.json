@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
+    "./ui-codes": "./src/ui-codes.ts",
     "./discussion-types": "./src/discussion-types.ts",
     "./cron": "./src/cron.ts",
     "./nl-cron": "./src/nl-cron.ts"

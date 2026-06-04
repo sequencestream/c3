@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "i18n:check": "node scripts/i18n/check.mjs",
     "i18n:extract": "node scripts/i18n/extract.mjs",
+    "i18n:gen-codes": "node scripts/i18n/gen-code-map.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "node scripts/e2e/run-all.mjs",

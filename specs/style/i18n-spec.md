@@ -126,16 +126,20 @@ i18n 抽取会改变所有可见文案;组件测试中**依赖可见英文文案
 
 ### 5.1 `pnpm i18n:check`(脚本 `scripts/i18n/check.mjs`)
 
-以 `en` 为基准,全量扫描(忽略命令行传入的文件名,故可安全挂 lint-staged),三类校验:
+以 `en` 为基准,全量扫描(忽略命令行传入的文件名,故可安全挂 lint-staged),**四类**校验
+(前三类守 web 文案,第四类守服务端 `code+params`):
 
-| 校验                | 含义                                                                  | 级别               |
-| ------------------- | --------------------------------------------------------------------- | ------------------ |
-| 覆盖(coverage)      | 各非 `en` locale 必须覆盖 `en` 的全部叶子 key                         | 缺 key = **error** |
-| 多余 key(extra)     | locale 含 `en` 没有的 key                                             | **warn**           |
-| 占位符(placeholder) | 同一 key 两端的 `{...}` token 多重集 + 竖线 `\|` 复数分支数必须一致   | 篡改 = **error**   |
-| code→key            | `web/src` 中 `t('…')`/`$t('…')` 字面量引用的 key 必须存在于 `en.json` | 缺失 = **error**   |
-| 动态 key            | `t(变量)` / 含插值的模板串,无法静态判定                               | **warn**(跳过)     |
-| 未使用 key          | `en.json` 中从未被字面量引用的 key                                    | **warn**           |
+| 校验                | 含义                                                                                             | 级别               |
+| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------ |
+| 覆盖(coverage)      | 各非 `en` locale 必须覆盖 `en` 的全部叶子 key                                                    | 缺 key = **error** |
+| 多余 key(extra)     | locale 含 `en` 没有的 key                                                                        | **warn**           |
+| 占位符(placeholder) | 同一 key 两端的 `{...}` token 多重集 + 竖线 `\|` 复数分支数必须一致                              | 篡改 = **error**   |
+| code→key            | `web/src` 中 `t('…')`/`$t('…')` 字面量引用的 key 必须存在于 `en.json`                            | 缺失 = **error**   |
+| 动态 key            | `t(变量)` / 含插值的模板串,无法静态判定                                                          | **warn**(跳过)     |
+| 未使用 key          | `en.json` 中从未被字面量引用的 key                                                               | **warn**           |
+| code→locale(SoT)    | `shared/src/ui-codes.ts` 每个 code 的 `key` 须在 `en.json`;声明的 `params` 须与该 key 占位符一致 | 不符 = **error**   |
+| code 越界           | `server/src` 中 `error: { code: '…' }` 发送的 code 须登记于 SoT                                  | 未登记 = **error** |
+| 未发送 code         | SoT 中从未被 `server/src` 发送的 code                                                            | **warn**           |
 
 退出码:有 **error → 1(CI 红)**;仅 warn → 0(绿)。**空 `en.json` 且无 `t()` 调用 → 绿**。
 
@@ -203,3 +207,38 @@ i18n 抽取会改变所有可见文案;组件测试中**依赖可见英文文案
 
 > 当前基线:`en.json` 已由本工具产出首版骨架(243 key,源语言覆盖率 100%,`i18n:check` 绿)。
 > 组件模板尚未接 `t()`(留作下游接线任务),故现阶段全部 key 在 `i18n:check` 表现为 `unused` warning(不卡 CI)。
+
+## 7. 服务端 code+params 协议(单一数据源)
+
+> 适用范围:**服务端 → 前端展示**的错误/通知/toast。目标:消除 server 与 web 双份译文漂移
+> —— 翻译只存 web 语言包,server 永不传译文。Hono 服务端日志/调试、发给 LLM 的 prompt 文案
+> **保留英文,不纳入 i18n**。
+
+### 7.1 原则
+
+- server 对前端展示项**只回传机器可读 `{ code, params }`**(协议 `error: UiError`,见
+  `websocket-protocol.md`),绝不回传译文。`params` 值可含英文技术细节(异常串)—— 属调试数据。
+- web 收 `code` → 经**单一数据源** `UI_ERROR_CODES` 映射到 `error.*` key → `t(key, params)`。
+- shared 协议层 key 与数据结构保持**英文常量不译**;`code`、`key` 皆英文。
+
+### 7.2 单一数据源(SoT)= `shared/src/ui-codes.ts`
+
+`UI_ERROR_CODES: Record<UiErrorCode, { key; params? }>` 一处登记 code→key(及允许的插值名);
+`UiErrorCode` 由其 `keyof` 推导,server `send()` 因此类型安全。web 直接 import(shared 为
+workspace 源链接,无运行期独立映射文件)。**这是唯一权威**;`en.json` 与 server 发送点都对它对齐。
+
+### 7.3 构建期生成 + 校验
+
+- `pnpm i18n:gen-codes`(`scripts/i18n/gen-code-map.mjs`):从 SoT 确定性派生
+  `scripts/i18n/code-key.map.json`(排序、生成物 `.gitignore`,同 `extract.candidates.json` 模式)
+  —— 供查阅/文档,**非第二数据源**。
+- `pnpm i18n:check` 第四类校验(§5.1 末三行)守 SoT ↔ `en.json` ↔ `server/src` 三方一致,已接 CI:
+  发未登记 code、key 缺失、params 与占位符漂移 → **CI 红**。
+
+### 7.4 落地节奏
+
+- Loop 1(基建先行):协议 `UiError`、SoT、生成脚本、第四类校验、2 样板 code。
+- Loop 2(全量迁移,**已完成**):`server/src` 全部可见 error 点(24 code)迁到 `code+params`,
+  协议 `error` **已移除 `message`、转必填**。`grep "type: 'error'" server/src` 全为 `error:{code}`。
+- 仍属后续(spec 003 §9):web `.ts` composable 硬编码、no-raw-text 扩 `.ts`、枚举/原因码
+  display label。

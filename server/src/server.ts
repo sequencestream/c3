@@ -747,7 +747,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           const sessions = await listWorkspaceSessions(workspacePath)
           send(ws, { type: 'sessions', workspacePath, sessions })
         } catch (err) {
-          send(ws, { type: 'error', message: `Failed to list sessions: ${errMsg(err)}` })
+          send(ws, {
+            type: 'error',
+            error: { code: 'session.listFailed', params: { detail: errMsg(err) } },
+          })
         }
       }
 
@@ -797,7 +800,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'add_workspace': {
               const abs = addWorkspace(msg.path, Date.now())
               if (!abs) {
-                send(ws, { type: 'error', message: `Not a directory: ${msg.path}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'path.notDirectory', params: { path: msg.path } },
+                })
                 return
               }
               sendWorkspaces(ws)
@@ -834,7 +840,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 const commands = await listCommands(cwd)
                 send(ws, { type: 'commands', commands })
               } catch (err) {
-                send(ws, { type: 'error', message: `Failed to list commands: ${errMsg(err)}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'command.listFailed', params: { detail: errMsg(err) } },
+                })
               }
               return
             }
@@ -842,7 +851,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'create_session': {
               const abs = resolve(msg.workspacePath)
               if (!hasWorkspace(abs)) {
-                send(ws, { type: 'error', message: `Unknown workspace: ${msg.workspacePath}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'workspace.unknown', params: { path: msg.workspacePath } },
+                })
                 return
               }
               // Switching views never stops a run — just stop watching the old one.
@@ -902,7 +914,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 addViewer(msg.sessionId, deliver)
                 sendWorkspaces(ws)
               } catch (err) {
-                send(ws, { type: 'error', message: `Failed to open session: ${errMsg(err)}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'session.openFailed', params: { detail: errMsg(err) } },
+                })
               }
               return
             }
@@ -917,7 +932,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 await sendSessions(ws, abs)
                 broadcastStatuses()
               } catch (err) {
-                send(ws, { type: 'error', message: `Failed to delete session: ${errMsg(err)}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'session.deleteFailed', params: { detail: errMsg(err) } },
+                })
               }
               return
             }
@@ -928,7 +946,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 await renameWorkspaceSession(abs, msg.sessionId, msg.title)
                 await sendSessions(ws, abs)
               } catch (err) {
-                send(ws, { type: 'error', message: `Failed to rename session: ${errMsg(err)}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'session.renameFailed', params: { detail: errMsg(err) } },
+                })
               }
               return
             }
@@ -967,7 +988,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'user_prompt': {
               const rt = viewing ? getRuntime(viewing) : undefined
               if (!rt) {
-                send(ws, { type: 'error', message: 'Select or create a session first.' })
+                send(ws, { type: 'error', error: { code: 'session.notSelected' } })
                 return
               }
               // Team session: the lead process is alive across turns, so feed the
@@ -980,7 +1001,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 return
               }
               if (rt.run) {
-                send(ws, { type: 'error', message: 'A turn is already running in this session.' })
+                send(ws, { type: 'error', error: { code: 'session.turnRunning' } })
                 return
               }
               const isRequirement = rt.kind === 'requirement'
@@ -1014,7 +1035,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'list_requirements': {
               const proj = resolve(msg.projectPath)
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               send(ws, {
@@ -1028,11 +1049,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'open_requirement_chat': {
               const proj = resolve(msg.projectPath)
               if (!hasWorkspace(proj)) {
-                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+                })
                 return
               }
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               // Stop viewing whatever this connection had open.
@@ -1056,7 +1080,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               }
               const rt = getRuntime(chatId)
               if (!rt) {
-                send(ws, { type: 'error', message: 'Failed to open requirement chat.' })
+                send(ws, { type: 'error', error: { code: 'requirement.chatOpenFailed' } })
                 return
               }
               viewing = chatId
@@ -1139,11 +1163,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'new_requirement_chat': {
               const proj = resolve(msg.projectPath)
               if (!hasWorkspace(proj)) {
-                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+                })
                 return
               }
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               // Open a brand-new comm session: setChatSession resets the prior
@@ -1177,12 +1204,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'refine_requirement': {
               const proj = resolve(msg.projectPath)
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               const req = getRequirement(msg.requirementId)
               if (!req) {
-                send(ws, { type: 'error', message: '需求不存在。' })
+                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
                 return
               }
               // Restart the comm session as a fresh one seeded with this requirement.
@@ -1215,16 +1242,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'discussion_to_requirement': {
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               const discussion = getDiscussion(msg.discussionId)
               if (!discussion) {
-                send(ws, { type: 'error', message: '讨论不存在。' })
+                send(ws, { type: 'error', error: { code: 'discussion.notFound' } })
                 return
               }
               if (discussion.status !== 'completed' || !discussion.conclusion) {
-                send(ws, { type: 'error', message: '仅已完成且有结论的讨论可转为需求。' })
+                send(ws, { type: 'error', error: { code: 'discussion.notConcludable' } })
                 return
               }
               const proj = resolve(discussion.projectPath)
@@ -1259,16 +1286,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'start_development': {
               const proj = resolve(msg.projectPath)
               if (!hasWorkspace(proj)) {
-                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+                })
                 return
               }
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               const req = getRequirement(msg.requirementId)
               if (!req) {
-                send(ws, { type: 'error', message: '需求不存在。' })
+                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
                 return
               }
               // Allow `todo`, or `in_progress` whose dev session has gone missing
@@ -1277,7 +1307,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 req.status === 'in_progress' &&
                 (!req.lastDevSessionId || !(await sessionExists(proj, req.lastDevSessionId)))
               if (req.status !== 'todo' && !dangling) {
-                send(ws, { type: 'error', message: `当前状态(${req.status})不可启动开发。` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'requirement.cannotStartDev', params: { status: req.status } },
+                })
                 return
               }
               const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
@@ -1305,12 +1338,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'update_requirement_status': {
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               const req = getRequirement(msg.requirementId)
               if (!req) {
-                send(ws, { type: 'error', message: '需求不存在。' })
+                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
                 return
               }
               updateStatus(msg.requirementId, msg.status)
@@ -1326,12 +1359,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'set_requirement_automate': {
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               const req = getRequirement(msg.requirementId)
               if (!req) {
-                send(ws, { type: 'error', message: '需求不存在。' })
+                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
                 return
               }
               setAutomate(msg.requirementId, msg.automate)
@@ -1342,11 +1375,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'start_automation': {
               const proj = resolve(msg.projectPath)
               if (!hasWorkspace(proj)) {
-                send(ws, { type: 'error', message: `Unknown workspace: ${msg.projectPath}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+                })
                 return
               }
               if (!isStoreAvailable()) {
-                send(ws, { type: 'error', message: '需求功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
                 return
               }
               broadcastAutomation(startAutomation(proj, automationHooks, Date.now()))
@@ -1362,7 +1398,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             case 'list_discussions': {
               const proj = resolve(msg.projectPath)
               if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
                 return
               }
               const discItems = listDiscussions(proj, msg.status)
@@ -1377,13 +1413,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'create_discussion': {
               if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
                 return
               }
               if (!isDiscussionType(msg.discussionType)) {
                 send(ws, {
                   type: 'error',
-                  message: `Unknown discussion type: ${msg.discussionType}`,
+                  error: { code: 'discussion.unknownType', params: { type: msg.discussionType } },
                 })
                 return
               }
@@ -1435,12 +1471,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'open_discussion': {
               if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
                 return
               }
               const discussion = getDiscussion(msg.discussionId)
               if (!discussion) {
-                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
+                })
                 return
               }
               send(ws, {
@@ -1453,18 +1492,21 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'start_discussion': {
               if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
                 return
               }
               const discussion = getDiscussion(msg.discussionId)
               if (!discussion) {
-                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
+                })
                 return
               }
               // Idempotent guards: only a `draft` can be started, and never twice.
               if (discussionRuns.has(discussion.id)) return
               if (discussion.status !== 'draft') {
-                send(ws, { type: 'error', message: '讨论已开始或已结束,无法重复启动。' })
+                send(ws, { type: 'error', error: { code: 'discussion.alreadyStarted' } })
                 return
               }
               startDiscussionRun(discussion)
@@ -1491,12 +1533,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'discussion_speak': {
               if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
                 return
               }
               const discussion = getDiscussion(msg.discussionId)
               if (!discussion) {
-                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
+                })
                 return
               }
               const text = msg.text.trim()
@@ -1527,18 +1572,21 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'continue_discussion': {
               if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', message: '讨论功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
                 return
               }
               const discussion = getDiscussion(msg.discussionId)
               if (!discussion) {
-                send(ws, { type: 'error', message: `Unknown discussion: ${msg.discussionId}` })
+                send(ws, {
+                  type: 'error',
+                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
+                })
                 return
               }
               // Re-entry guard + only a concluded discussion can start a new round.
               if (discussionRuns.has(discussion.id)) return
               if (discussion.status !== 'completed') {
-                send(ws, { type: 'error', message: '只有已结束的讨论可以追加新一轮。' })
+                send(ws, { type: 'error', error: { code: 'discussion.notEndedForContinue' } })
                 return
               }
               const text = msg.text.trim()
@@ -1560,7 +1608,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'create_schedule': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               // Name is auto-generated server-side from the task content; any
@@ -1573,7 +1621,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'list_schedules': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const proj = resolve(msg.workspacePath)
@@ -1584,12 +1632,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'update_schedule': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const existing = getSchedule(msg.scheduleId)
               if (!existing) {
-                send(ws, { type: 'error', message: '定时任务不存在。' })
+                send(ws, { type: 'error', error: { code: 'schedule.notFound' } })
                 return
               }
               updateScheduleStore(msg.scheduleId, msg.input)
@@ -1599,12 +1647,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'delete_schedule': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const existing = getSchedule(msg.scheduleId)
               if (!existing) {
-                send(ws, { type: 'error', message: '定时任务不存在。' })
+                send(ws, { type: 'error', error: { code: 'schedule.notFound' } })
                 return
               }
               deleteScheduleStore(msg.scheduleId)
@@ -1614,12 +1662,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'get_schedule_detail': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const detail = getScheduleDetail(msg.scheduleId)
               if (!detail.schedule) {
-                send(ws, { type: 'error', message: '定时任务不存在。' })
+                send(ws, { type: 'error', error: { code: 'schedule.notFound' } })
                 return
               }
               send(ws, {
@@ -1632,12 +1680,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'get_execution_transcript': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const transcript = await readExecutionTranscript(msg.executionId)
               if (!transcript) {
-                send(ws, { type: 'error', message: '执行记录不存在。' })
+                send(ws, { type: 'error', error: { code: 'schedule.executionNotFound' } })
                 return
               }
               send(ws, {
@@ -1651,7 +1699,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'schedule_run_now': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               void triggerRunNow(msg.scheduleId).then(() => {
@@ -1663,7 +1711,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'get_workspace_mcp_config': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const config = storeGetWorkspaceMcpConfig(msg.workspacePath)
@@ -1673,7 +1721,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'save_workspace_mcp_config': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               storeSaveWorkspaceMcpConfig(msg.workspacePath, msg.config)
@@ -1687,7 +1735,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'list_pending_write_approvals': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const items = storeListPendingApprovals(msg.workspacePath)
@@ -1697,12 +1745,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
             case 'approve_write_approval': {
               if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', message: '定时任务功能不可用 (c3.db)。' })
+                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
                 return
               }
               const ok = resolveApproval(msg.approvalId, msg.decision, 'owner')
               if (!ok) {
-                send(ws, { type: 'error', message: '审批条目不存在或已被处理' })
+                send(ws, { type: 'error', error: { code: 'schedule.approvalNotFound' } })
               }
               // Broadcast resolved event is already handled inside resolveApproval
               return

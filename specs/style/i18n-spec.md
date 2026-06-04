@@ -65,7 +65,21 @@ key 段结构:
 走 vue-i18n 原生机制:
 
 - 具名插值:`"discussion.agendaItem.count": "{count} items"` → `t('discussion.agendaItem.count', { count: 3 })`
-- 复数:`"common.item.count": "no items | one item | {count} items"` → `t('common.item.count', n)`
+- 复数:`"common.item.count": "one item | {count} items"` → `t('common.item.count', n)`(传 number 触发分支选择;消息内 `{count}` / `{n}` 自动暴露)
+
+**复数基数随语言变(CLDR cardinal)**,分支数按 locale 不同:
+
+- en:2 分支 `one | other`(默认规则即可)。
+- zh / ja / ko:1 分支(无 `|`,单形式;`t(key, n)` 直接返回该形式并插值)。
+- ru:3 分支 `one | few | many`,默认规则错误,须在 `i18n/index.ts` 注册 `pluralRules.ru`(末位 1 非 11→one、末位 2–4 非 12–14→few、其余→many)。
+
+### 2.5 日期 / 数字本地化
+
+绝对日期 / 数字走 vue-i18n `d()` / `n()`(底层 `Intl.DateTimeFormat` / `Intl.NumberFormat`,随 `uiLang`):
+
+- 命名预设单一数据源:`web/src/lib/datetime-formats.ts`(`DATE_FORMATS` = `short`/`full`/`datetime`;`NUMBER_FORMATS` = `integer`/`decimal`),同时供 `i18n/index.ts` 注册 `datetimeFormats`/`numberFormats` 与纯 lib(`req-list-view.ts` 的 `formatDate`,Node 单测直调 `Intl`)。
+- 组件内 `const { d, n } = useTypedI18n()` → `d(ms, 'short')` / `n(value, 'integer')`(模板已占用 `d` 名时别名,如 `d: fmtDateTime`)。
+- 纯展示 lib 的 `formatDate(ms, locale, opts)` / `compareByCompletion(a, b, locale)` **接收 locale**,保持 Node 可测。
 
 ## 3. 用法
 
@@ -129,23 +143,27 @@ i18n 抽取会改变所有可见文案;组件测试中**依赖可见英文文案
 以 `en` 为基准,全量扫描(忽略命令行传入的文件名,故可安全挂 lint-staged),**四类**校验
 (前三类守 web 文案,第四类守服务端 `code+params`):
 
-| 校验                | 含义                                                                                             | 级别               |
-| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------ |
-| 覆盖(coverage)      | 各非 `en` locale 必须覆盖 `en` 的全部叶子 key                                                    | 缺 key = **error** |
-| 多余 key(extra)     | locale 含 `en` 没有的 key                                                                        | **warn**           |
-| 占位符(placeholder) | 同一 key 两端的 `{...}` token 多重集 + 竖线 `\|` 复数分支数必须一致                              | 篡改 = **error**   |
-| code→key            | `web/src` 中 `t('…')`/`$t('…')` 字面量引用的 key 必须存在于 `en.json`                            | 缺失 = **error**   |
-| 动态 key            | `t(变量)` / 含插值的模板串,无法静态判定                                                          | **warn**(跳过)     |
-| 未使用 key          | `en.json` 中从未被字面量引用的 key                                                               | **warn**           |
-| code→locale(SoT)    | `shared/src/ui-codes.ts` 每个 code 的 `key` 须在 `en.json`;声明的 `params` 须与该 key 占位符一致 | 不符 = **error**   |
-| code 越界           | `server/src` 中 `error: { code: '…' }` 发送的 code 须登记于 SoT                                  | 未登记 = **error** |
-| 未发送 code         | SoT 中从未被 `server/src` 发送的 code                                                            | **warn**           |
+| 校验                | 含义                                                                                                                                            | 级别               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 覆盖(coverage)      | 各非 `en` locale 必须覆盖 `en` 的全部叶子 key                                                                                                   | 缺 key = **error** |
+| 多余 key(extra)     | locale 含 `en` 没有的 key                                                                                                                       | **warn**           |
+| 占位符(placeholder) | 非复数 key:两端 `{...}` token 多重集 + 竖线分支数必须一致。复数 key(en 含 `\|`):分支数随 locale(CLDR),仅比对去除 `{count}`/`{n}` 后的占位符集合 | 篡改 = **error**   |
+| code→key            | `web/src` 中 `t('…')`/`$t('…')` 字面量引用的 key 必须存在于 `en.json`                                                                           | 缺失 = **error**   |
+| 动态 key            | `t(变量)` / 含插值的模板串,无法静态判定                                                                                                         | **warn**(跳过)     |
+| 未使用 key          | `en.json` 中从未被字面量引用的 key                                                                                                              | **warn**           |
+| code→locale(SoT)    | `shared/src/ui-codes.ts` 每个 code 的 `key` 须在 `en.json`;声明的 `params` 须与该 key 占位符一致                                                | 不符 = **error**   |
+| code 越界           | `server/src` 中 `error: { code: '…' }` 发送的 code 须登记于 SoT                                                                                 | 未登记 = **error** |
+| 未发送 code         | SoT 中从未被 `server/src` 发送的 code                                                                                                           | **warn**           |
 
 退出码:有 **error → 1(CI 红)**;仅 warn → 0(绿)。**空 `en.json` 且无 `t()` 调用 → 绿**。
 
 占位符校验采用「变量→不可译 token→比对」:把每条消息里的 `{name}`/`{0}`/ICU 块
 (`{count, plural, …}`,嵌套花括号整块保留)抽成 token 多重集,翻译端重命名 / 增删 token
-或改变复数分支数即报错——保护 `{name}` `{n}` 与复数块不被改坏。
+即报错——保护 `{name}` `{n}` 不被改坏。
+
+**复数感知**:当 base(en)为复数(含 `|`)时,复数基数是语言相关的(en=2、ru=3、zh/ja/ko=1),
+故**不比对分支数**,改为比对去除 `{count}`/`{n}` 后的「去重占位符集合」(`{count}` 可能只出现在部分
+分支,如 en `one item` 无 `{count}`)。base 非复数时仍按严格多重集 + 分支数=1,堵截误加竖线。
 
 ### 5.2 `no-raw-text`(ESLint,`@intlify/eslint-plugin-vue-i18n`)
 

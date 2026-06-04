@@ -1,5 +1,6 @@
 import { createI18n } from 'vue-i18n'
 import { useI18n } from 'vue-i18n'
+import { DATE_FORMATS, NUMBER_FORMATS } from '../lib/datetime-formats'
 import en from '../locales/en.json'
 import zh from '../locales/zh.json'
 import ja from '../locales/ja.json'
@@ -69,6 +70,36 @@ function stripLocaleMeta(obj: MessageSchema): MessageSchema {
 
 /** 默认/兜底语言。 */
 const DEFAULT_LOCALE: Locale = 'en'
+
+/**
+ * 每 locale 复用同一份命名预设(`d()` / `n()` 的 key)。Intl 按 locale 本地化排布,
+ * 故选项无需逐语言定制;预设单一数据源在 `lib/datetime-formats.ts`。
+ */
+const datetimeFormats = Object.fromEntries(
+  SUPPORTED_LOCALES.map((l) => [l, DATE_FORMATS]),
+) as Record<Locale, typeof DATE_FORMATS>
+const numberFormats = Object.fromEntries(
+  SUPPORTED_LOCALES.map((l) => [l, NUMBER_FORMATS]),
+) as Record<Locale, typeof NUMBER_FORMATS>
+
+/**
+ * 俄语基数复数规则(CLDR cardinal),映射到 3 分支消息 `one | few | many`:
+ *   - one : 末位 1 且非 11(1, 21, 31…)
+ *   - few : 末位 2–4 且非 12–14(2–4, 22–24…)
+ *   - many: 其余(0, 5–20, 11–14…)
+ * vue-i18n 默认规则按「n===1 ? 0 : 1」二分,对俄语错误,故需此自定义规则。
+ * zh/ja/ko 为单形式消息(无 `|`),无需自定义规则。
+ */
+function russianPluralIndex(choice: number, choicesLength: number): number {
+  const n = Math.abs(choice)
+  const mod10 = n % 10
+  const mod100 = n % 100
+  let idx: number
+  if (mod10 === 1 && mod100 !== 11) idx = 0
+  else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) idx = 1
+  else idx = 2
+  return Math.min(idx, choicesLength - 1)
+}
 
 /** localStorage 里持久化用户显式选择的 UI 语言的 key。 */
 const LOCALE_KEY = 'c3.uiLang'
@@ -158,6 +189,11 @@ export const i18n = createI18n<[MessageSchema], Locale, false>({
     ko: stripLocaleMeta(ko),
     ru: stripLocaleMeta(ru),
   },
+  // 日期/数字本地化:命名预设经 Intl(DateTimeFormat / NumberFormat)按 locale 渲染。
+  datetimeFormats,
+  numberFormats,
+  // 俄语复数 3 分支(one/few/many);其余语言走 vue-i18n 默认(en 二分、CJK 单形式)。
+  pluralRules: { ru: russianPluralIndex },
 })
 
 /**

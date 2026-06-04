@@ -83,12 +83,24 @@ describe('comparePlaceholders', () => {
   it('fails when a placeholder is dropped', () => {
     expect(comparePlaceholders('{a} {b}', '{a}').ok).toBe(false)
   })
-  it('fails when plural-branch count changes', () => {
-    expect(comparePlaceholders('a | b | c', 'a | b').ok).toBe(false)
+  it('allows differing plural-branch counts when base is plural (CLDR per-locale)', () => {
+    // Plural cardinality is language-specific: en=2, ru=3, zh/ja/ko=1. A plural base
+    // must NOT force the target to the same branch count.
+    expect(comparePlaceholders('a | b | c', 'a | b').ok).toBe(true)
+    expect(comparePlaceholders('one item | {count} items', '{count} 项').ok).toBe(true) // en→zh (1 branch)
+    expect(
+      comparePlaceholders('one item | {count} items', '{count} a | {count} b | {count} c').ok, // en→ru (3 branches)
+    ).toBe(true)
+  })
+  it('catches a stray pipe added to a NON-plural base key', () => {
+    // Base has no plural; a target sneaking in a `|` is still an error.
+    expect(comparePlaceholders('just text', 'just | text').ok).toBe(false)
+  })
+  it('catches a real (non-counter) placeholder dropped from a plural message', () => {
+    // {count}/{n} are excluded as per-branch counters, but {name} must survive.
+    expect(comparePlaceholders('one {name} | {count} {name}s', '{count} items').ok).toBe(false)
   })
   it('passes a 3+ plural branch in both base and target', () => {
-    // Smoke for the new 3+ branch test above: with the same number of `|` at
-    // the top level, comparePlaceholders should consider it ok.
     expect(comparePlaceholders('a | b | c | d', 'A | B | C | D').ok).toBe(true)
   })
   it('FLAGS translating text INSIDE an ICU block (known checker limitation)', () => {

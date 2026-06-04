@@ -14,7 +14,7 @@ import type { Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { useTypedI18n } from '@/i18n'
 
-const { t } = useTypedI18n()
+const { t, d } = useTypedI18n()
 
 defineProps<{
   schedules: Schedule[]
@@ -64,7 +64,7 @@ function scheduleLabel(s: Schedule): string {
 }
 
 function fmtDate(ts: number): string {
-  return new Date(ts).toLocaleString()
+  return d(ts, 'datetime')
 }
 
 // 展开行的完整配置 JSON(美化输出);无配置时返回 "—"。

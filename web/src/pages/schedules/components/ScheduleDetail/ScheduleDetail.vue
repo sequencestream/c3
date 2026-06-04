@@ -10,7 +10,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule, ScheduleExecutionLog, TranscriptItem } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 
-const { t } = useTypedI18n()
+const { t, d } = useTypedI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -93,7 +93,7 @@ onUnmounted(() => {
 })
 
 function fmtDate(ts: number): string {
-  return new Date(ts).toLocaleString()
+  return d(ts, 'datetime')
 }
 
 // 一次执行的耗时(ms → 人类可读),未结束则显示运行时长。

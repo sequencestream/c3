@@ -78,8 +78,8 @@
   },
   "permission": {
     "history": {
-      "askQuestion": "🙋 Запрошен ответ на {count} вопрос(ов) · AskUserQuestion",
-      "saveRequirements": "💾 Запрошено сохранение {count} требования(й)",
+      "askQuestion": "🙋 Запрошен ответ на {count} вопрос · AskUserQuestion | 🙋 Запрошен ответ на {count} вопроса · AskUserQuestion | 🙋 Запрошен ответ на {count} вопросов · AskUserQuestion",
+      "saveRequirements": "💾 Запрошено сохранить {count} требование | 💾 Запрошено сохранить {count} требования | 💾 Запрошено сохранить {count} требований",
       "useTool": "🔧 Запрошено использование инструмента {toolName}"
     },
     "ask": {
@@ -327,7 +327,7 @@
       "awaitingFor": "⏸ Ожидание авторизации для «{title}»",
       "workingOn": "Работа над «{title}»",
       "preparing": "Подготовка…",
-      "completedCount": "✅ Завершено {count} элемент(ов)",
+      "completedCount": "✅ Завершено {count} элемент | ✅ Завершено {count} элемента | ✅ Завершено {count} элементов",
       "nothingToAutomate": "✅ Нет требований для автоматизации"
     },
     "action": {

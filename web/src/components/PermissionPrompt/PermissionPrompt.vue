@@ -65,10 +65,11 @@ const isStatic = computed(() => props.m.decision === null && !props.actionable)
 /** The one-line label for a static history record, per tool type. */
 const historyLine = computed<string>(() => {
   if (props.m.toolName === 'AskUserQuestion') {
-    return t('permission.history.askQuestion', { count: askQuestionsOf(props.m.input).length })
+    // 复数 key:传 number 形参触发分支选择,消息内 {count} 自动暴露。
+    return t('permission.history.askQuestion', askQuestionsOf(props.m.input).length)
   }
   if (props.m.toolName === SAVE_REQUIREMENTS_TOOL) {
-    return t('permission.history.saveRequirements', { count: proposedRequirements.value.length })
+    return t('permission.history.saveRequirements', proposedRequirements.value.length)
   }
   return t('permission.history.useTool', { toolName: props.m.toolName })
 })

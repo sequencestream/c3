@@ -78,8 +78,8 @@
   },
   "permission": {
     "history": {
-      "askQuestion": "🙋 Asked to answer {count} question(s) · AskUserQuestion",
-      "saveRequirements": "💾 Asked to save {count} requirement(s)",
+      "askQuestion": "🙋 Asked to answer one question · AskUserQuestion | 🙋 Asked to answer {count} questions · AskUserQuestion",
+      "saveRequirements": "💾 Asked to save one requirement | 💾 Asked to save {count} requirements",
       "useTool": "🔧 Asked to use tool {toolName}"
     },
     "ask": {
@@ -327,7 +327,7 @@
       "awaitingFor": "⏸ Awaiting authorization for \"{title}\"",
       "workingOn": "Working on \"{title}\"",
       "preparing": "Preparing…",
-      "completedCount": "✅ Completed {count} item(s)",
+      "completedCount": "✅ Completed one item | ✅ Completed {count} items",
       "nothingToAutomate": "✅ No requirements to automate"
     },
     "action": {

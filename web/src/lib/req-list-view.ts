@@ -7,6 +7,7 @@
  */
 
 import type { Requirement, RequirementRunStatus, RequirementStatus } from '@ccc/shared/protocol'
+import { DATE_FORMATS, type DateStyleName } from './datetime-formats'
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
 export const STATUS_LABELS: Record<RequirementStatus, string> = {
@@ -81,13 +82,18 @@ export type CompletionOrderInput = Pick<Requirement, 'completedAt' | 'updatedAt'
 /**
  * 终止态需求的比较器:完成/取消时间倒序为主键,优先级 P0→P3 为次键。
  * 时刻取 `completedAt`;`cancelled` 项无 `completedAt` 时回退到 `updatedAt`。
- * `priority` 为 `P0..P3`,字符串升序即优先级从高到低,直接 localeCompare 即可。
+ * `priority` 为 `P0..P3`,字符串升序即优先级从高到低;`locale` 透传给 `localeCompare`,
+ * 使次键排序随 UI 语言走(P0..P3 与 locale 无关,但保持本地化签名一致)。
  */
-export function compareByCompletion(a: CompletionOrderInput, b: CompletionOrderInput): number {
+export function compareByCompletion(
+  a: CompletionOrderInput,
+  b: CompletionOrderInput,
+  locale: string,
+): number {
   const ta = a.completedAt ?? a.updatedAt
   const tb = b.completedAt ?? b.updatedAt
   if (ta !== tb) return tb - ta
-  return a.priority.localeCompare(b.priority)
+  return a.priority.localeCompare(b.priority, locale)
 }
 
 /** 时刻格式化选项。`short` → MM/DD,`full` → YYYY-MM-DD HH:mm(默认)。 */
@@ -96,22 +102,17 @@ export interface FormatDateOpts {
 }
 
 /**
- * 将毫秒时间戳格式化为可读日期字符串。
+ * 将毫秒时间戳按 `locale` 本地化为可读日期字符串(经 `Intl.DateTimeFormat`)。
+ * 预设取自 {@link DATE_FORMATS}(与 vue-i18n `datetimeFormats` 同源):
  *
- * - `short`: `MM/DD` 风格，月日补零两位，与现有行内日期前缀一致。
- * - `full` (默认): `YYYY-MM-DD HH:mm` 完整格式，用于元信息区。
+ * - `short`: 月/日两位,排布随 locale(en `05/31`、ja `05/31`、ko `05. 31.`)。
+ * - `full` (默认): 年月日 时:分(24h),排布随 locale。
+ *
+ * 纯函数,Node 单测环境亦可调用(Intl 内建)。
  */
-export function formatDate(ms: number, opts?: FormatDateOpts): string {
-  const d = new Date(ms)
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  if (opts?.style === 'short') {
-    return `${mo}/${dd}`
-  }
-  const h = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${mo}-${dd} ${h}:${mi}`
+export function formatDate(ms: number, locale: string, opts?: FormatDateOpts): string {
+  const style: DateStyleName = opts?.style === 'short' ? 'short' : 'full'
+  return new Intl.DateTimeFormat(locale, DATE_FORMATS[style]).format(ms)
 }
 
 /** 单项依赖的描述信息。 */

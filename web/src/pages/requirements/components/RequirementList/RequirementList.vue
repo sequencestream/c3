@@ -20,7 +20,7 @@ import {
   statusLabel,
 } from '../../../../lib/req-list-view'
 
-const { t } = useTypedI18n()
+const { t, locale } = useTypedI18n()
 
 const props = defineProps<{
   project: string
@@ -64,7 +64,7 @@ const autoNote = computed<string>(() => {
   }
   if (a.state === 'done')
     return a.completedIds.length
-      ? t('requirement.automation.completedCount', { count: a.completedIds.length })
+      ? t('requirement.automation.completedCount', a.completedIds.length)
       : t('requirement.automation.nothingToAutomate')
   return ''
 })
@@ -95,12 +95,13 @@ function setFilter(value: RequirementStatus | null) {
 // 「已完成」筛选视图:整列在客户端按同样规则重排。
 // 其它单状态筛选:由服务端返回该状态数据,原样展示不再排序。
 const displayRequirements = computed<Requirement[]>(() => {
-  if (filter.value === 'done') return [...props.requirements].sort(compareByCompletion)
+  if (filter.value === 'done')
+    return [...props.requirements].sort((a, b) => compareByCompletion(a, b, locale.value))
   if (filter.value !== null) return props.requirements
   const pending = props.requirements.filter((r) => r.status !== 'done' && r.status !== 'cancelled')
   const terminated = props.requirements
     .filter((r) => r.status === 'done' || r.status === 'cancelled')
-    .sort(compareByCompletion)
+    .sort((a, b) => compareByCompletion(a, b, locale.value))
   return [...pending, ...terminated]
 })
 
@@ -141,7 +142,7 @@ function togglePanel(): void {
 
 // 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt;月日补零两位。
 function datePrefix(r: Requirement): string {
-  return formatDate(r.completedAt ?? r.createdAt, { style: 'short' })
+  return formatDate(r.completedAt ?? r.createdAt, locale.value, { style: 'short' })
 }
 </script>
 
@@ -280,10 +281,11 @@ function datePrefix(r: Requirement): string {
         </div>
         <div v-if="r.id === expandedId" class="req-meta">
           <span class="req-meta-item"
-            >{{ t('requirement.meta.created.label') }} {{ formatDate(r.createdAt) }}</span
+            >{{ t('requirement.meta.created.label') }} {{ formatDate(r.createdAt, locale) }}</span
           >
           <span v-if="r.completedAt" class="req-meta-item"
-            >{{ t('requirement.meta.completed.label') }} {{ formatDate(r.completedAt) }}</span
+            >{{ t('requirement.meta.completed.label') }}
+            {{ formatDate(r.completedAt, locale) }}</span
           >
           <span v-if="formatDependsOn(r, props.requirements).length" class="req-meta-item">
             {{ t('requirement.meta.dependsOn.label') }}

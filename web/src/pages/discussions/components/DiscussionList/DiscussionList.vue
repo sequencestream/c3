@@ -20,7 +20,7 @@ import type { DiscussionTabKind } from '../../../../lib/discussion-view'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import { useTypedI18n } from '@/i18n'
 
-const { t } = useTypedI18n()
+const { t, locale } = useTypedI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -84,7 +84,7 @@ function submitForm(): void {
 
 // 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 updatedAt。
 function datePrefix(d: Discussion): string {
-  return formatDate(d.completedAt ?? d.updatedAt, { style: 'short' })
+  return formatDate(d.completedAt ?? d.updatedAt, locale.value, { style: 'short' })
 }
 
 // 该讨论类型的可读标签;未知类型回退到原始 id。
@@ -286,11 +286,11 @@ function togglePanel(): void {
               </div>
               <div class="disc-meta-row" data-testid="disc-meta-created">
                 <dt>{{ t('discussion.meta.created.label') }}</dt>
-                <dd>{{ formatDate(d.createdAt) }}</dd>
+                <dd>{{ formatDate(d.createdAt, locale) }}</dd>
               </div>
               <div v-if="d.completedAt" class="disc-meta-row" data-testid="disc-meta-completed">
                 <dt>{{ t('discussion.meta.completed.label') }}</dt>
-                <dd>{{ formatDate(d.completedAt) }}</dd>
+                <dd>{{ formatDate(d.completedAt, locale) }}</dd>
               </div>
             </dl>
           </div>

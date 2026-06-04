@@ -3,7 +3,10 @@
 //
 // Four checks against the base locale (en):
 //   1. coverage      — every base key present in each other locale (missing = ERROR), extra = WARN
-//   2. placeholder   — {name}/{0}/ICU blocks and `|` plural-branch count preserved per key (mismatch = ERROR)
+//   2. placeholder   — {name}/{0}/ICU tokens preserved per key (mismatch = ERROR). Non-plural base:
+//                      strict multiset + branch count. Plural base (en `|`): CLDR per-locale branch
+//                      counts allowed (en=2, ru=3, zh/ja/ko=1); only the non-counter placeholder SET
+//                      is compared ({count}/{n} excluded, as they vary per branch).
 //   3. code -> key   — literal t('key') / $t('key') in web/src must exist in en.json (missing = ERROR);
 //                      dynamic keys -> WARN (cannot statically verify); base keys never referenced -> WARN
 //   4. code -> locale — the UI error-code SoT (shared/src/ui-codes.ts): every code's key exists in
@@ -102,10 +105,40 @@ export function extractTokens(value) {
   return { placeholders, pluralBranches: pipes + 1 }
 }
 
-/** Compare placeholder multiset + plural-branch count between source and target. */
+/** The implicit plural counters vue-i18n injects (`{count}` / `{n}`). They may legitimately
+ *  appear in some plural branches and not others (e.g. en "one item" omits `{count}`), so the
+ *  plural-aware comparison ignores them. */
+const PLURAL_COUNTER_RE = /^\{\s*(?:count|n)\s*\}$/
+
+/**
+ * Compare placeholder skeletons between base and target.
+ *
+ * Two regimes, keyed off whether the BASE (en) value is pluralized (`|` branches):
+ *
+ *  - **Base non-plural** → strict: identical placeholder multiset AND identical branch count.
+ *    A target sneaking in a stray `|` (or dropping/renaming a token) is caught.
+ *
+ *  - **Base plural** → CLDR-aware: plural *cardinality is language-specific* (en=2, ru=3/4,
+ *    zh/ja/ko=1), so branch count is NOT compared. We compare only the SET of distinct
+ *    non-counter placeholders (`{count}`/`{n}` excluded, since they appear per-branch).
+ *    A renamed/dropped real placeholder (e.g. `{name}`) is still caught.
+ */
 export function comparePlaceholders(srcValue, tgtValue) {
   const a = extractTokens(srcValue)
   const b = extractTokens(tgtValue)
+
+  if (a.pluralBranches > 1) {
+    const norm = (toks) => [...new Set(toks.filter((t) => !PLURAL_COUNTER_RE.test(t)))].sort()
+    const sa = norm(a.placeholders)
+    const sb = norm(b.placeholders)
+    const ok = sa.length === sb.length && sa.every((x, i) => x === sb[i])
+    return {
+      ok,
+      expected: { placeholders: sa, pluralBranches: 'cldr (per-locale)' },
+      actual: { placeholders: sb, pluralBranches: b.pluralBranches },
+    }
+  }
+
   const sa = [...a.placeholders].sort()
   const sb = [...b.placeholders].sort()
   const samePlaceholders = sa.length === sb.length && sa.every((x, i) => x === sb[i])

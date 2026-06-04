@@ -26,7 +26,8 @@ import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import { useTypedI18n } from '@/i18n'
 
-const { t } = useTypedI18n()
+// `d` 别名为 `fmtDateTime`:模板里 `v-for="d in WEEKDAYS"` 已占用 `d`,避免 shadow。
+const { t, d: fmtDateTime } = useTypedI18n()
 
 const props = defineProps<{
   open: boolean
@@ -157,7 +158,7 @@ const cronSummary = computed(() => (cronValid.value ? describeCron(cronExpressio
 const nextRunPreview = computed(() => {
   if (!cronValid.value) return null
   try {
-    return new Date(computeNextRunAt(cronExpression.value, Date.now())).toLocaleString()
+    return fmtDateTime(computeNextRunAt(cronExpression.value, Date.now()), 'datetime')
   } catch {
     return null
   }

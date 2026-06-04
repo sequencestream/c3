@@ -87,47 +87,49 @@ describe('compareByCompletion', () => {
     priority: 'P2',
     ...o,
   })
+  // locale 透传给 localeCompare;P0..P3 排序与 locale 无关,固定用 'en' 即可。
+  const cmp = (a: CompletionOrderInput, b: CompletionOrderInput) => compareByCompletion(a, b, 'en')
 
   it('不同完成时间按时间倒序(最近完成在前)', () => {
     const older = make({ completedAt: 100 })
     const newer = make({ completedAt: 200 })
-    expect(compareByCompletion(newer, older)).toBeLessThan(0)
-    expect(compareByCompletion(older, newer)).toBeGreaterThan(0)
-    expect([older, newer].sort(compareByCompletion)).toEqual([newer, older])
+    expect(cmp(newer, older)).toBeLessThan(0)
+    expect(cmp(older, newer)).toBeGreaterThan(0)
+    expect([older, newer].sort(cmp)).toEqual([newer, older])
   })
 
   it('同完成时间按优先级 P0→P3', () => {
     const p0 = make({ completedAt: 100, priority: 'P0' })
     const p3 = make({ completedAt: 100, priority: 'P3' })
-    expect(compareByCompletion(p0, p3)).toBeLessThan(0)
-    expect([p3, p0].sort(compareByCompletion)).toEqual([p0, p3])
+    expect(cmp(p0, p3)).toBeLessThan(0)
+    expect([p3, p0].sort(cmp)).toEqual([p0, p3])
   })
 
   it('缺失 completedAt 时回退到 updatedAt 比较', () => {
     const a = make({ completedAt: null, updatedAt: 300 })
     const b = make({ completedAt: null, updatedAt: 100 })
-    expect(compareByCompletion(a, b)).toBeLessThan(0)
-    expect([b, a].sort(compareByCompletion)).toEqual([a, b])
+    expect(cmp(a, b)).toBeLessThan(0)
+    expect([b, a].sort(cmp)).toEqual([a, b])
   })
 
   it('一方有 completedAt、一方回退 updatedAt 时按各自时刻比较', () => {
     const completed = make({ completedAt: 150, updatedAt: 0 })
     const fallback = make({ completedAt: null, updatedAt: 100 })
     // completed 的时刻 150 > fallback 的 100,应排在前
-    expect(compareByCompletion(completed, fallback)).toBeLessThan(0)
+    expect(cmp(completed, fallback)).toBeLessThan(0)
   })
 
   it('完成时刻与优先级均相同则视为相等(返回 0)', () => {
     const a = make({ completedAt: 100, priority: 'P1' })
     const b = make({ completedAt: 100, priority: 'P1' })
-    expect(compareByCompletion(a, b)).toBe(0)
+    expect(cmp(a, b)).toBe(0)
   })
 
   it('cancelled 与 done 混合排序:终止态统一按时刻倒序+优先级', () => {
     const doneLater = make({ completedAt: 300, priority: 'P1' })
     const cancelledMid = make({ completedAt: null, updatedAt: 200, priority: 'P2' })
     const doneEarly = make({ completedAt: 100, priority: 'P0' })
-    const sorted = [doneEarly, cancelledMid, doneLater].sort(compareByCompletion)
+    const sorted = [doneEarly, cancelledMid, doneLater].sort(cmp)
     // 300 > 200 > 100
     expect(sorted).toEqual([doneLater, cancelledMid, doneEarly])
   })
@@ -136,30 +138,39 @@ describe('compareByCompletion', () => {
     const a = make({ completedAt: null, updatedAt: 200, priority: 'P1' })
     const b = make({ completedAt: null, updatedAt: 100, priority: 'P2' })
     // a 的 updatedAt 200 > b 的 100
-    expect(compareByCompletion(a, b)).toBeLessThan(0)
-    expect([b, a].sort(compareByCompletion)).toEqual([a, b])
+    expect(cmp(a, b)).toBeLessThan(0)
+    expect([b, a].sort(cmp)).toEqual([a, b])
   })
 })
 
 describe('formatDate', () => {
-  it('short 风格输出 MM/DD', () => {
-    const d = new Date(2026, 4, 31, 14, 30)
-    expect(formatDate(d.getTime(), { style: 'short' })).toBe('05/31')
+  // 2026-05-31 14:30(本地时区);各 locale 经 Intl 本地化排布。
+  const ms = new Date(2026, 4, 31, 14, 30).getTime()
+
+  it('short 风格:en 输出月/日两位 MM/DD', () => {
+    expect(formatDate(ms, 'en', { style: 'short' })).toBe('05/31')
   })
 
-  it('月份日期的单数字自动补零', () => {
-    const d = new Date(2026, 0, 5, 8, 3)
-    expect(formatDate(d.getTime(), { style: 'short' })).toBe('01/05')
+  it('short 风格:单数字月日补零两位', () => {
+    const jan5 = new Date(2026, 0, 5, 8, 3).getTime()
+    expect(formatDate(jan5, 'en', { style: 'short' })).toBe('01/05')
   })
 
-  it('full 风格(默认)输出 YYYY-MM-DD HH:mm', () => {
-    const d = new Date(2026, 4, 31, 14, 30)
-    expect(formatDate(d.getTime())).toBe('2026-05-31 14:30')
+  it('full 风格(默认):en 月/日在前,含年与 24h 时分', () => {
+    const out = formatDate(ms, 'en')
+    // en-US 排布:MM/DD/YYYY, HH:mm —— 不强断标点,校验各部件齐全。
+    expect(out).toMatch(/05/)
+    expect(out).toMatch(/31/)
+    expect(out).toMatch(/2026/)
+    expect(out).toMatch(/14:30/)
   })
 
-  it('full 风格不传入 opts 时默认使用完整格式', () => {
-    const d = new Date(2026, 0, 1, 9, 5)
-    expect(formatDate(d.getTime())).toBe('2026-01-01 09:05')
+  it('日期随 locale 本地化:en 与 ja 排布不同,ja 年在前', () => {
+    const en = formatDate(ms, 'en')
+    const ja = formatDate(ms, 'ja')
+    expect(en).not.toBe(ja)
+    // 年在前是 ja/zh/ko 的共性;日(31)出现在年(2026)之后。
+    expect(ja.indexOf('2026')).toBeLessThan(ja.indexOf('31'))
   })
 })
 

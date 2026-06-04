@@ -12,7 +12,7 @@ import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { SessionInfo, SessionStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 
-const { t } = useTypedI18n()
+const { t, d } = useTypedI18n()
 
 const props = defineProps<{
   currentWorkspace: string | null
@@ -55,12 +55,9 @@ function pendingInCurrent(): boolean {
   )
 }
 
-// "MM/DD" prefix from a session's last-modified time, e.g. "05/28".
+// Localized month/day prefix from a session's last-modified time (e.g. en "05/28").
 function datePrefix(ms: number): string {
-  const d = new Date(ms)
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${mm}/${dd}`
+  return d(ms, 'short')
 }
 
 // Sessions actually rendered, capped to the current limit.

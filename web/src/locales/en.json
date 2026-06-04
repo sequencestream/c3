@@ -657,7 +657,7 @@
       },
       "nextRun": {
         "label": "Next run:",
-        "utcHint": "(schedule times are interpreted as UTC)"
+        "utcHint": "(shown in the configured time zone, e.g. Asia/Shanghai)"
       },
       "execIdentity": {
         "label": "Execution identity"

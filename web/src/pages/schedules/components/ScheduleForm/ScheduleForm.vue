@@ -161,10 +161,10 @@ const cronSummary = computed(() => (cronValid.value ? describeCron(cronExpressio
 const nextRunPreview = computed(() => {
   if (!cronValid.value) return null
   try {
-    return fmtDateTime(
-      computeNextRunAt(cronExpression.value, Date.now(), props.timezone),
-      'datetime',
-    )
+    return fmtDateTime(computeNextRunAt(cronExpression.value, Date.now(), props.timezone), {
+      key: 'datetime',
+      timeZone: props.timezone,
+    })
   } catch {
     return null
   }

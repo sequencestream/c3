@@ -657,7 +657,7 @@
       },
       "nextRun": {
         "label": "次回の実行:",
-        "utcHint": "(スケジュールの時刻は UTC として解釈されます)"
+        "utcHint": "(設定したタイムゾーンで表示、例: Asia/Shanghai)"
       },
       "execIdentity": {
         "label": "実行アイデンティティ"

@@ -65,8 +65,10 @@ function scheduleLabel(s: Schedule): string {
   return `${tag} · ${name || s.cronExpression}`
 }
 
+// 按系统配置时区(props.timezone)格式化,使展示口径与 cron 计算一致:
+// 配 Asia/Shanghai 时 `0 11 * * *` 显示 11:00,与浏览器本地时区解耦。
 function fmtDate(ts: number): string {
-  return d(ts, 'datetime')
+  return d(ts, { key: 'datetime', timeZone: props.timezone })
 }
 
 // 展开行的完整配置 JSON(美化输出);无配置时返回 "—"。

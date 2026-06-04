@@ -657,7 +657,7 @@
       },
       "nextRun": {
         "label": "다음 실행:",
-        "utcHint": "(예약 시간은 UTC로 해석됩니다)"
+        "utcHint": "(설정된 시간대로 표시, 예: Asia/Shanghai)"
       },
       "execIdentity": {
         "label": "실행 ID"

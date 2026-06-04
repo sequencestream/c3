@@ -126,4 +126,16 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect(input.config).not.toHaveProperty('description')
     expect(input).not.toHaveProperty('type')
   })
+
+  // next-run 预览按配置时区(props.timezone)计算并格式化:配 Asia/Shanghai 时
+  // `0 11 * * *` 的预览显示 11:00,与 cron 字面一致(消除「显示 19:00 但 cron 写 11」)。
+  it('next-run 预览:Asia/Shanghai + `0 11 * * *` 显示 11:00', () => {
+    const w = mountForm({
+      schedule: sched({ cronExpression: '0 11 * * *' }),
+      timezone: 'Asia/Shanghai',
+    })
+    const preview = w.find('.sf-nextrun strong')
+    expect(preview.exists()).toBe(true)
+    expect(preview.text()).toContain('11:00')
+  })
 })

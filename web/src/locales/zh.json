@@ -657,7 +657,7 @@
       },
       "nextRun": {
         "label": "下次运行:",
-        "utcHint": "(排期时间按 UTC 解释)"
+        "utcHint": "(按配置时区显示,如 Asia/Shanghai)"
       },
       "execIdentity": {
         "label": "执行身份"

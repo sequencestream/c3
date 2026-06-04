@@ -21,8 +21,8 @@ function sched(over: Partial<Schedule> = {}): Schedule {
   }
 }
 
-function mountList(schedules: Schedule[]) {
-  return mount(ScheduleList, { props: { schedules, activeId: null, timezone: 'UTC' } })
+function mountList(schedules: Schedule[], timezone = 'UTC') {
+  return mount(ScheduleList, { props: { schedules, activeId: null, timezone } })
 }
 
 describe('ScheduleList.vue — 左栏列表交互', () => {
@@ -84,5 +84,33 @@ describe('ScheduleList.vue — 左栏列表交互', () => {
     const w = mountList([])
     await w.find('.sched-new-btn').trigger('click')
     expect(w.emitted('new-schedule')).toHaveLength(1)
+  })
+
+  // 时区显示:upcoming runs 与固定时间戳均按配置时区(props.timezone)格式化,
+  // 与 cron 计算口径一致,消除「显示 19:00 但 cron 写 11」的错位。
+  // 例外:此处断言可见时间文本(而非 testid/结构),因为「按时区渲染」正是被测行为。
+  describe('按配置时区显示', () => {
+    it('upcoming runs:Asia/Shanghai + `0 11 * * *` 显示 11:00(cron 字面一致)', async () => {
+      const w = mountList([sched({ id: 'a', cronExpression: '0 11 * * *' })], 'Asia/Shanghai')
+      await w.find('.sched-item-main').trigger('click')
+      const times = w.findAll('.sched-upcoming-time')
+      expect(times.length).toBeGreaterThan(0)
+      // 每个 upcoming 时刻在配置时区下都落在 11:00。
+      for (const t of times) expect(t.text()).toContain('11:00')
+    })
+
+    it('同一固定时间戳随配置时区变化(证明格式化用 props.timezone,与机器时区无关)', async () => {
+      // createdAt = 1_700_000_000_000 → 2023-11-14T22:13:20Z
+      //   Asia/Shanghai(+08): 06:13   |   UTC: 22:13
+      const sh = mountList([sched({ id: 'a' })], 'Asia/Shanghai')
+      await sh.find('.sched-item-main').trigger('click')
+      expect(sh.html()).toContain('06:13')
+      expect(sh.html()).not.toContain('22:13')
+
+      const utc = mountList([sched({ id: 'a' })], 'UTC')
+      await utc.find('.sched-item-main').trigger('click')
+      expect(utc.html()).toContain('22:13')
+      expect(utc.html()).not.toContain('06:13')
+    })
   })
 })

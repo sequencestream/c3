@@ -7,7 +7,7 @@
 import { computed, ref, watch } from 'vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
-import { useTypedI18n } from '@/i18n'
+import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 
 const { t } = useTypedI18n()
@@ -31,15 +31,26 @@ const VOICE_LANGS = computed<{ value: string; label: string }[]>(() => [
   { value: 'zh-HK', label: t('settings.voiceLang.zhHK.label') },
 ])
 
-// UI 显示语言。本阶段仅放出 en + 简体中文;ja/ko/ru 已在协议 UiLang 联合里预留,
-// 待母需求补译文后追加到此列表即可解锁(code 预留扩展)。
-const UI_LANGS: { value: UiLang; label: string }[] = [
-  { value: 'en', label: 'English' },
-  { value: 'zh', label: '简体中文' },
-  // { value: 'ja', label: '日本語' },
-  // { value: 'ko', label: '한국어' },
-  // { value: 'ru', label: 'Русский' },
-]
+// UI 显示语言。本阶段的下放开关在 `web/src/i18n/index.ts` 的 `ENABLED_LOCALES`
+// 集合(模型不自动写;ja/ko 走完人校 + `__humanReviewed__: true` 才进集合)。
+// 此处全表声明,渲染时再按 `isLocaleEnabled` 过滤,避免模型/人类各自维护一份
+// 注释掉的 ja/ko,容易漂移。
+//
+// 标签是「语言原生名」——BCP-47 惯例,语言名 = 语言本身的标识符。把 "日本語"
+// 翻成 "Japanese" 等于把下拉项变成翻译,违背语言切换的语义。豁免于
+// web/CLAUDE.md 的 no-raw-text 规则,作用域仅限此 UI_LANG_LABELS 注册表。
+const UI_LANG_LABELS: Record<Locale, string> = {
+  en: 'English',
+  zh: '简体中文',
+  ja: '日本語',
+  ko: '한국어',
+  ru: 'Русский',
+}
+const UI_LANGS = computed<{ value: UiLang; label: string }[]>(() =>
+  (['en', 'zh', 'ja', 'ko', 'ru'] as const)
+    .filter((l): l is Locale => isLocaleEnabled(l))
+    .map((l) => ({ value: l, label: UI_LANG_LABELS[l] })),
+)
 
 const props = defineProps<{
   open: boolean

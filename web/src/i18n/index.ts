@@ -2,6 +2,9 @@ import { createI18n } from 'vue-i18n'
 import { useI18n } from 'vue-i18n'
 import en from '../locales/en.json'
 import zh from '../locales/zh.json'
+import ja from '../locales/ja.json'
+import ko from '../locales/ko.json'
+import ru from '../locales/ru.json'
 
 /**
  * en.json 是文案基准:类型 schema 即由它推导。
@@ -41,6 +44,29 @@ export type LocaleKey = LocaleLeafKeys<MessageSchema>
 export const SUPPORTED_LOCALES = ['en', 'zh', 'ja', 'ko', 'ru'] as const
 export type Locale = (typeof SUPPORTED_LOCALES)[number]
 
+/**
+ * Locale-file metadata key. A double-underscore-bracketed top-level key that
+ * holds per-file metadata (e.g. `__humanReviewed__: true`) instead of a
+ * translation. Stripped before being passed to vue-i18n and skipped by
+ * `scripts/i18n/check.mjs`'s `flatten()` so it doesn't pollute the keyspace.
+ *
+ * Convention: model never writes this field; humans edit the locale JSON
+ * directly to flip `__humanReviewed__` after proofreading.
+ */
+const META_KEY_RE = /^__[A-Za-z][A-Za-z0-9_]*__$/
+
+/** Strip top-level `__*__` metadata keys so vue-i18n only sees translations.
+ *  Returns the same MessageSchema type the input had — the meta key is structurally
+ *  optional and never read by vue-i18n, so casting to MessageSchema is sound. */
+function stripLocaleMeta(obj: MessageSchema): MessageSchema {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) {
+    if (META_KEY_RE.test(k)) continue
+    out[k] = v
+  }
+  return out as MessageSchema
+}
+
 /** 默认/兜底语言。 */
 const DEFAULT_LOCALE: Locale = 'en'
 
@@ -49,6 +75,23 @@ const LOCALE_KEY = 'c3.uiLang'
 
 function isSupported(v: unknown): v is Locale {
   return typeof v === 'string' && (SUPPORTED_LOCALES as readonly string[]).includes(v)
+}
+
+/**
+ * Locales exposed in the UI language dropdown. Derived from SUPPORTED_LOCALES +
+ * the `__humanReviewed__` field of each locale's source file. en / zh are
+ * always exposed (M1 ship default); other locales only after a human flips
+ * `__humanReviewed__` to `true` in the locale's JSON.
+ *
+ * The model NEVER writes `__humanReviewed__`. Humans edit the JSON directly.
+ * This keeps the gate honest: a translation can be drafted and CI-validated
+ * (presence, placeholder integrity, coverage) without leaking into the UI.
+ */
+export const ENABLED_LOCALES: ReadonlySet<Locale> = new Set<Locale>(['en', 'zh'])
+
+/** True if `locale` should appear in the UI language dropdown. */
+export function isLocaleEnabled(locale: Locale): boolean {
+  return ENABLED_LOCALES.has(locale)
 }
 
 /** 读取持久化的 UI 语言;不存在/不合法/不可用时返回 null。 */
@@ -99,15 +142,21 @@ export const i18n = createI18n<[MessageSchema], Locale, false>({
   // 缺 key / 走 fallback 时显式 console warning,不静默
   missingWarn: true,
   fallbackWarn: true,
-  // en + zh 为 M1 首发真译文;ja/ko/ru 暂指向 en 占位(切过去即走 fallback 显示英文,
-  // 满足 createI18n 对每个 locale 都要有 messages 的类型约束)。补出对应语言文件后,
-  // 把占位项替换为真正的译文导入即可。
+  // en/zh(M1)+ ja/ko(M2)+ ru(M3)均为真译文,330 key 全量覆盖。
+  //
+  // 注意:「真译文已加载」与「是否出现在 UI 下拉」是两件事 —— 后者由
+  // `ENABLED_LOCALES`(读 `__humanReviewed__`)控制,人校通过前不进下拉。
+  // 故 ja/ko/ru 译文虽已加载,仍未进 `ENABLED_LOCALES`,下拉暂只放 en/zh。
+  //
+  // `stripLocaleMeta` 删掉 `__*__` 顶层元数据,避免 vue-i18n 把它当 key 看待。
+  // (vue-i18n 实际只遍历 string 值,boolean 不会崩;但删掉更干净,也让
+  // `missingWarn` 不为这个 key 报警。)
   messages: {
-    en,
-    zh,
-    ja: en,
-    ko: en,
-    ru: en,
+    en: stripLocaleMeta(en),
+    zh: stripLocaleMeta(zh),
+    ja: stripLocaleMeta(ja),
+    ko: stripLocaleMeta(ko),
+    ru: stripLocaleMeta(ru),
   },
 })
 

@@ -208,6 +208,49 @@ i18n 抽取会改变所有可见文案;组件测试中**依赖可见英文文案
 > 当前基线:`en.json` 已由本工具产出首版骨架(243 key,源语言覆盖率 100%,`i18n:check` 绿)。
 > 组件模板尚未接 `t()`(留作下游接线任务),故现阶段全部 key 在 `i18n:check` 表现为 `unused` warning(不卡 CI)。
 
+#### 6.4.1 freeze 机制(脚本化)
+
+freeze 由脚本落地,`en.json` 的 SHA-256 记入 `web/src/locales/.freeze-manifest.json`(随仓库提交):
+
+- `pnpm i18n:freeze` — 写/刷新 manifest(刻意编辑 `en.json` 后须重跑)
+- `pnpm i18n:unfreeze` — 删 manifest(回到"未冻结"WARN 态)
+- `pnpm i18n:check-freeze` — 独立校验;并已内联进 `pnpm i18n:check` 头部:hash 漂移即 ERROR(CI 红),无 manifest 仅 WARN
+
+刻意改 `en.json` 的正确姿势:`i18n:unfreeze` → 改 → `i18n:freeze`,把新 hash 一并提交。
+
+### 6.5 M2 第二批语种(ja / ko)上线 + 逐语言 DoD 开关
+
+第二批语种的"译文已落地"与"是否出现在 UI 下拉"是**两件事**,由两道闸分开管控:
+
+1. **译文落地**:`web/src/locales/<loc>.json` 从 `en.json` 拷骨架后逐值翻译,接进 `web/src/i18n/index.ts` 的 `messages`。`i18n:check` 守零缺 key + 占位符守恒。术语/禁译走 [`i18n-terms.md`](./i18n-terms.md)(已含 ja/ko 列)。
+2. **进 UI 下拉**:由 `web/src/i18n/index.ts` 的 `ENABLED_LOCALES` 集合控制;`SettingsPanel` 的语言下拉按 `isLocaleEnabled()` 过滤渲染。未进集合的语种,即便译文已加载也不暴露给用户。
+
+**人校信号 = `__humanReviewed__` 字段**:locale JSON 顶部加 `"__humanReviewed__": true`(双下划线包裹的顶层元数据键;`flatten()` 跳过它,不算 key,不进 vue-i18n)。约定:**模型只读不写此字段**,由人在母语校对通过后手工编辑翻转;翻转后该语种才进 `ENABLED_LOCALES`。
+
+> 当前状态(2026-06-04):ja/ko 机翻 + 占位符校验已过、译文已接线,`pnpm i18n:check` 四语 0 错;CJK 渲染经 headless 截图验证零 tofu、长 hint 无溢出。**但 ja/ko 尚未经母语校对**,故未进 `ENABLED_LOCALES`,下拉仍只放 en/zh。等人校翻 `__humanReviewed__` 后再下放。
+
+### 6.6 M3 末批语种(ru)上线 + 西里尔排版验证
+
+第三批(末批)语种 `ru`(俄语)走与 M2 **完全相同**的两道闸(译文落地 / 进 UI 下拉),
+基建无新增,仅复用 `ENABLED_LOCALES` + `__humanReviewed__` + freeze + `checkPlaceholderNames`
+白名单。差异点:验证对象从 CJK 字形换成**西里尔字形 + 排版**(俄语普遍比英文长 ~15–30%,
+重点防按钮/标签/表头溢出)。
+
+- **译文落地**:`web/src/locales/ru.json` 从 `en.json` 拷骨架后由俄语母语级译者逐值翻译
+  (330 key 全覆盖);术语走 [`i18n-terms.md`](./i18n-terms.md) 新增的 ru 列;接进
+  `web/src/i18n/index.ts` 的 `messages`(`ru: stripLocaleMeta(ru)`,替换原 `ru: en` 占位)。
+- **西里尔字形覆盖**:`web/src/standard.css` 的 `--font-ui` 栈(`-apple-system` / `Segoe UI`
+  / `Roboto` / `Noto Sans`)已覆盖西里尔,**无需改字体栈**;截图验证零 tofu。
+- **占位符白名单单测**:`scripts/i18n/check.test.mjs` 增 `Cyrillic (ru) placeholder integrity`
+  组(西里尔正文中 ASCII 占位符 `{name}` 守恒、占位符被西里尔化即报错、西里尔正文不触发
+  ASCII 命名白名单 WARN)—— 证明完整性闸 script-agnostic。
+
+> 当前状态(2026-06-04):ru 机翻 + 占位符校验已过(`i18n:check` **5 locale 0 错**)、译文已接线,
+> `pnpm typecheck`/`pnpm build` 绿、bundle 确认含西里尔译文。Chrome headless CDP 截图验证 home +
+> 系统设置(文案最密集页)**零 tofu + 长串无溢出**(macOS 真实字体),UI 语言下拉确认**只有 en/zh、
+> 无 Русский**(ru 未泄漏)。**但 ru 尚未经母语校对**,故未进 `ENABLED_LOCALES`。等人校翻
+> `__humanReviewed__` 后再下放 —— 与 ja/ko 同一闸门契约。
+
 ## 7. 服务端 code+params 协议(单一数据源)
 
 > 适用范围:**服务端 → 前端展示**的错误/通知/toast。目标:消除 server 与 web 双份译文漂移

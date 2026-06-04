@@ -28,14 +28,32 @@ const BASE_LOCALE = 'en'
 // The typed-t wrapper itself calls `t(key, ...)` with a variable; not a usage site.
 const CODE_SCAN_IGNORE = [join('web', 'src', 'i18n', 'index.ts')]
 
+/**
+ * Top-level keys that are locale-file metadata, not translations. The double-
+ * underscore bracket (`__foo__`) makes them visually distinct and prevents
+ * collisions with normal i18n leaf keys (which use `[a-zA-Z][a-zA-Z0-9._-]*`).
+ * Only the top level is scanned: nested `__*__` keys are still real keys.
+ */
+const META_KEY_RE = /^__[A-Za-z][A-Za-z0-9_]*__$/
+/**
+ * Placeholder-name whitelist applied via WARNING. Allows translation-domain
+ * names (`name`, `count`, `path`) and ICU list placeholders (`0`, `1`); catches
+ * typos that happen to be valid JS identifiers but off-baseline (`{naem}`).
+ * Frozen as WARN (not ERROR) to avoid false positives on legitimate ICU forms.
+ */
+const PLACEHOLDER_NAME_WHITELIST = /^(?:[a-z][a-zA-Z0-9_]*|\d+)$/
+
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested in check.test.mjs)
 // ---------------------------------------------------------------------------
 
-/** Flatten a nested message object into a flat map of dot-joined leaf keys. */
+/** Flatten a nested message object into a flat map of dot-joined leaf keys.
+ *  Top-level `__*__` keys are metadata (e.g. `__humanReviewed__`) and skipped —
+ *  they would otherwise be flagged as `[extra]` against the base locale. */
 export function flatten(obj, prefix = '') {
   const out = {}
   for (const [k, v] of Object.entries(obj ?? {})) {
+    if (prefix === '' && META_KEY_RE.test(k)) continue
     const key = prefix ? `${prefix}.${k}` : k
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       Object.assign(out, flatten(v, key))
@@ -97,6 +115,39 @@ export function comparePlaceholders(srcValue, tgtValue) {
     expected: { placeholders: sa, pluralBranches: a.pluralBranches },
     actual: { placeholders: sb, pluralBranches: b.pluralBranches },
   }
+}
+
+/** Names inside `{...}` tokens that look like simple identifiers (skip ICU/list
+ *  forms whose contents are not a single identifier). */
+function placeholderIdentNames(token) {
+  // Strip the outer braces, then trim. ICU forms like `{count, plural, ...}` won't
+  // match a pure identifier pattern and are skipped.
+  const inner = token.replace(/^\{|\}$/g, '').trim()
+  return /^[A-Za-z][A-Za-z0-9_]*$|^\d+$/.test(inner) ? [inner] : []
+}
+
+/** Return warning strings for placeholder names that fall outside the whitelist.
+ *  Applies to BOTH base and target — a base typo is a future translator trap. */
+export function checkPlaceholderNames(base, target, targetLocale) {
+  const warnings = []
+  function scan(map, loc) {
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof v !== 'string') continue
+      for (const tok of extractTokens(v).placeholders) {
+        for (const name of placeholderIdentNames(tok)) {
+          if (!PLACEHOLDER_NAME_WHITELIST.test(name)) {
+            warnings.push(
+              `[placeholder-name] locale '${loc}' key '${k}' uses non-whitelisted ` +
+                `placeholder name '${name}' (expected ^[a-z][a-zA-Z0-9_]*$|^\\d+$)`,
+            )
+          }
+        }
+      }
+    }
+  }
+  scan(base, BASE_LOCALE)
+  if (targetLocale) scan(target, targetLocale)
+  return warnings
 }
 
 /** Keys present in base but not target (missing), and present in target but not base (extra). */
@@ -173,7 +224,11 @@ export function runCheck({ baseLocale = BASE_LOCALE, locales, codeFiles = [] }) 
         )
       }
     }
+    // Whitelist check fires per-target. Base scan runs once outside the loop.
+    warnings.push(...checkPlaceholderNames({}, target, loc))
   }
+  // Base placeholder-name scan (catches typos in en.json before they reach translators).
+  warnings.push(...checkPlaceholderNames(base, {}, null))
 
   const scan = scanCodeKeys(codeFiles)
   const used = new Set()
@@ -262,7 +317,9 @@ export function runCodeCheck({ uiCodes = {}, base = {}, serverCodeSites = [] }) 
 function loadLocales() {
   const locales = {}
   for (const f of readdirSync(LOCALES_DIR)) {
-    if (!f.endsWith('.json')) continue
+    // Skip dotfiles (e.g. `.freeze-manifest.json`) — they are tooling state,
+    // not locale catalogs. Only `xx.json` are real locales.
+    if (!f.endsWith('.json') || f.startsWith('.')) continue
     locales[basename(f, '.json')] = JSON.parse(readFileSync(join(LOCALES_DIR, f), 'utf8'))
   }
   return locales
@@ -286,6 +343,16 @@ async function loadCodeFiles(dir, ignoreList = []) {
 }
 
 async function main() {
+  // Freeze check first — fail fast on en.json drift before doing other work.
+  const { runFreezeCheck } = await import('./check-freeze.mjs')
+  const freeze = runFreezeCheck()
+  for (const w of freeze.warnings) console.warn(`  warn  ${w}`)
+  for (const e of freeze.errors) console.error(`  error ${e}`)
+  if (!freeze.ok) {
+    console.error(`\ni18n:check FAILED at freeze gate — ${freeze.errors.length} error(s).`)
+    process.exit(1)
+  }
+
   const locales = loadLocales()
   const codeFiles = await loadCodeFiles(CODE_DIR, CODE_SCAN_IGNORE)
   const { errors, warnings } = runCheck({ locales, codeFiles })

@@ -8,7 +8,10 @@ import {
   runCheck,
   scanServerCodes,
   runCodeCheck,
+  checkPlaceholderNames,
 } from './check.mjs'
+import { checkFreeze } from './check-freeze.mjs'
+import { hash } from './freeze.mjs'
 
 describe('flatten', () => {
   it('flattens nested objects into dot-joined leaf keys', () => {
@@ -16,6 +19,19 @@ describe('flatten', () => {
   })
   it('treats empty object as no keys', () => {
     expect(flatten({})).toEqual({})
+  })
+  it('skips top-level `__*__` metadata keys (e.g. `__humanReviewed__`)', () => {
+    // Meta keys are file-level flags, not translations. Surfacing them as leaf
+    // keys would flag every locale file as `[extra]` against the base.
+    const out = flatten({ __humanReviewed__: true, common: { ok: 'OK' } })
+    expect(out).toEqual({ 'common.ok': 'OK' })
+    expect(out).not.toHaveProperty('__humanReviewed__')
+  })
+  it('does NOT skip nested `__*__` keys (only top-level is metadata)', () => {
+    // A nested `__foo__` is a real key, just unusually named. The meta
+    // convention is scoped to the file's top level.
+    const out = flatten({ a: { __foo__: 'x' } })
+    expect(out).toEqual({ 'a.__foo__': 'x' })
   })
 })
 
@@ -33,6 +49,28 @@ describe('extractTokens', () => {
     expect(placeholders).toEqual(['{count, plural, one {# item} other {# items}}'])
     expect(pluralBranches).toBe(1)
   })
+  it('counts 3+ pipe branches correctly', () => {
+    // Edge: more than the 2-branch case in the simple "1 vs other" plural.
+    // Some locales (e.g. Arabic) use 6 branches; the brace counter must not
+    // miscount `|` inside ICU sub-blocks.
+    const { pluralBranches } = extractTokens('zero | one | two | few | many | other')
+    expect(pluralBranches).toBe(6)
+  })
+  it('keeps a multi-branch nested ICU plural as ONE outer token', () => {
+    // A whole ICU plural block at the top level counts as a single placeholder
+    // token (its inner pipes are NOT a top-level branch count).
+    const { placeholders, pluralBranches } = extractTokens(
+      '{n, plural, =0 {none} =1 {one} other {many}}',
+    )
+    expect(placeholders).toHaveLength(1)
+    expect(placeholders[0]).toMatch(/^\{n, plural,/)
+    expect(pluralBranches).toBe(1)
+  })
+  it('handles list placeholders like {0} and {1}', () => {
+    // vue-i18n list mode uses positional {0}, {1}; verify they are tokenized.
+    const { placeholders } = extractTokens('{0} and {1}')
+    expect(placeholders).toEqual(['{0}', '{1}'])
+  })
 })
 
 describe('comparePlaceholders', () => {
@@ -47,6 +85,21 @@ describe('comparePlaceholders', () => {
   })
   it('fails when plural-branch count changes', () => {
     expect(comparePlaceholders('a | b | c', 'a | b').ok).toBe(false)
+  })
+  it('passes a 3+ plural branch in both base and target', () => {
+    // Smoke for the new 3+ branch test above: with the same number of `|` at
+    // the top level, comparePlaceholders should consider it ok.
+    expect(comparePlaceholders('a | b | c | d', 'A | B | C | D').ok).toBe(true)
+  })
+  it('FLAGS translating text INSIDE an ICU block (known checker limitation)', () => {
+    // The whole ICU block is captured as ONE token and compared verbatim, so any
+    // change to its inner sub-messages (incl. legitimate translation) trips the
+    // check. en.json currently has NO ICU plural/select blocks, so this is moot
+    // for the ja/ko milestone — but if ICU is introduced later, inner text can't
+    // be translated through this gate as-is. Documented in the spec's risk table.
+    const base = '{n, plural, =0 {none} =1 {one} other {many}}'
+    const tgt = '{n, plural, =0 {ゼロ} =1 {一} other {多}}'
+    expect(comparePlaceholders(base, tgt).ok).toBe(false)
   })
 })
 
@@ -197,5 +250,85 @@ describe('runCodeCheck', () => {
     const { errors, warnings } = runCodeCheck({ uiCodes, base, serverCodeSites: [] })
     expect(errors).toEqual([])
     expect(warnings.some((w) => w.startsWith('[unused-code]'))).toBe(true)
+  })
+})
+
+describe('checkPlaceholderNames', () => {
+  it('passes whitelisted lowerCamel names', () => {
+    const w = checkPlaceholderNames({ a: 'Hi {name}, {userCount} left' }, {}, null)
+    expect(w).toEqual([])
+  })
+  it('passes positional list placeholders {0} {1}', () => {
+    const w = checkPlaceholderNames({ a: '{0} of {1}' }, {}, null)
+    expect(w).toEqual([])
+  })
+  it('warns on a capitalized / off-baseline placeholder name', () => {
+    const w = checkPlaceholderNames({ a: 'Hi {Name}' }, {}, null)
+    expect(w).toHaveLength(1)
+    expect(w[0]).toMatch(/\[placeholder-name\]/)
+    expect(w[0]).toContain("'Name'")
+  })
+  it('does NOT warn on ICU blocks (not a bare identifier)', () => {
+    const w = checkPlaceholderNames({ a: '{count, plural, one {#} other {#}}' }, {}, null)
+    expect(w).toEqual([])
+  })
+  it('scans the target locale too when given', () => {
+    const w = checkPlaceholderNames({}, { a: 'Hola {Nombre}' }, 'es')
+    expect(w.some((x) => x.includes("locale 'es'") && x.includes("'Nombre'"))).toBe(true)
+  })
+})
+
+describe('Cyrillic (ru) placeholder integrity', () => {
+  // M3: ru is the first Cyrillic locale. Placeholder names stay ASCII even when
+  // the surrounding text is Cyrillic — these assertions pin that the integrity
+  // gate is script-agnostic (the {name} token survives, a Cyrillicized name is
+  // caught, and Cyrillic body text does not trip the ASCII name whitelist).
+  it('preserves an ASCII placeholder inside Cyrillic text', () => {
+    expect(comparePlaceholders('Open chat: {title}', 'Открыть чат: {title}').ok).toBe(true)
+  })
+  it('catches a placeholder accidentally Cyrillicized (renamed)', () => {
+    // {title} -> {заголовок}: the token multiset diverges, so it must fail.
+    expect(comparePlaceholders('Open chat: {title}', 'Открыть чат: {заголовок}').ok).toBe(false)
+  })
+  it('does NOT warn on Cyrillic body text with ASCII placeholder names', () => {
+    const w = checkPlaceholderNames({}, { a: 'Завершено {count} из {total}' }, 'ru')
+    expect(w).toEqual([])
+  })
+  it('runCheck: a Cyrillic target with intact placeholders has no errors', () => {
+    const base = { greet: 'Hi {name}', done: 'Completed {count}' }
+    const ru = { greet: 'Привет, {name}', done: 'Завершено {count}' }
+    const { errors } = runCheck({ locales: { en: base, ru } })
+    expect(errors).toEqual([])
+  })
+  it('runCheck: a Cyrillicized placeholder in ru is a [placeholder] error', () => {
+    const base = { greet: 'Hi {name}' }
+    const ru = { greet: 'Привет, {имя}' }
+    const { errors } = runCheck({ locales: { en: base, ru } })
+    expect(errors.some((e) => e.startsWith('[placeholder]') && e.includes('greet'))).toBe(true)
+  })
+})
+
+describe('checkFreeze', () => {
+  const en = '{"common":{"ok":"OK"}}'
+  it('warns (not errors) when there is no manifest', () => {
+    const { ok, errors, warnings } = checkFreeze(null, en)
+    expect(ok).toBe(true)
+    expect(errors).toEqual([])
+    expect(warnings.some((w) => w.startsWith('[freeze]'))).toBe(true)
+  })
+  it('passes when the hash matches', () => {
+    const { ok, errors } = checkFreeze({ hash: hash(en) }, en)
+    expect(ok).toBe(true)
+    expect(errors).toEqual([])
+  })
+  it('errors when en.json has drifted from the manifest hash', () => {
+    const { ok, errors } = checkFreeze({ hash: hash(en) }, en + ' ')
+    expect(ok).toBe(false)
+    expect(errors.some((e) => e.includes('drifted from freeze manifest'))).toBe(true)
+  })
+  it('errors when manifest present but en content unavailable', () => {
+    const { ok, errors } = checkFreeze({ hash: 'abc' }, null)
+    expect(ok).toBe(false)
+    expect(errors.some((e) => e.includes('content unavailable'))).toBe(true)
   })
 })

@@ -1,0 +1,850 @@
+{
+  "common": {
+    "action": {
+      "allow": {
+        "label": "許可"
+      },
+      "deny": {
+        "label": "拒否"
+      },
+      "cancel": {
+        "label": "キャンセル"
+      },
+      "save": {
+        "label": "保存"
+      },
+      "close": {
+        "tooltip": "閉じる"
+      }
+    },
+    "unknown": {
+      "label": "不明"
+    }
+  },
+  "nav": {
+    "tab": {
+      "console": {
+        "label": "セッション"
+      },
+      "requirements": {
+        "label": "要件"
+      },
+      "discussion": {
+        "label": "ディスカッション"
+      },
+      "schedules": {
+        "label": "スケジュール"
+      }
+    },
+    "mode": {
+      "default": {
+        "label": "デフォルト"
+      },
+      "auto": {
+        "label": "自動"
+      },
+      "plan": {
+        "label": "プラン"
+      },
+      "acceptEdits": {
+        "label": "編集を承認"
+      },
+      "bypassPermissions": {
+        "label": "権限をバイパス"
+      }
+    },
+    "settings": {
+      "tooltip": "システム設定"
+    },
+    "workspace": {
+      "trigger": {
+        "empty": {
+          "tooltip": "ワークスペースが未選択です",
+          "label": "ワークスペースなし"
+        }
+      },
+      "add": {
+        "tooltip": "ワークスペースを追加",
+        "prompt": "ワークスペースのディレクトリ(絶対パス):"
+      },
+      "remove": {
+        "tooltip": "ワークスペースを削除",
+        "confirm": "このワークスペースをサイドバーから削除しますか?\n{path}\n\n(ディスク上のセッションは保持されます。)"
+      },
+      "list": {
+        "empty": "まだワークスペースがありません。+ をクリックしてディレクトリを追加してください。"
+      }
+    }
+  },
+  "permission": {
+    "history": {
+      "askQuestion": "🙋 {count} 件の質問への回答を要求 · AskUserQuestion",
+      "saveRequirements": "💾 {count} 件の要件の保存を要求",
+      "useTool": "🔧 ツール {toolName} の使用を要求"
+    },
+    "ask": {
+      "answerQuestion": {
+        "label": "🙋 質問に回答 ·"
+      },
+      "multiAgentSuggestion": {
+        "label": "マルチエージェントの提案"
+      },
+      "customReply": {
+        "label": "✏️ カスタム返信",
+        "hint": "自分で回答を入力します"
+      },
+      "custom": {
+        "placeholder": "カスタム返信を入力…"
+      },
+      "submit": {
+        "label": "回答を送信"
+      }
+    },
+    "save": {
+      "label": "💾 要件を保存 ·",
+      "dependsOn": "依存:",
+      "dependsOnBatch": "依存(このバッチ):"
+    },
+    "tool": {
+      "allow": {
+        "label": "ツールを許可:"
+      }
+    },
+    "consensus": {
+      "disagree": {
+        "label": "🤝 エージェントの意見が一致しません:"
+      }
+    },
+    "status": {
+      "answered": "回答済み",
+      "denied": "拒否済み",
+      "allowed": "許可済み",
+      "saved": "保存済み",
+      "cancelled": "キャンセル済み"
+    },
+    "notification": {
+      "title": "c3 — 権限が必要です",
+      "body": "{title} があなたの承認を待っています。"
+    }
+  },
+  "settings": {
+    "title": {
+      "label": "システム設定"
+    },
+    "agents": {
+      "title": {
+        "label": "エージェント"
+      },
+      "hint": {
+        "text": "新しいセッションはデフォルトのエージェントで Claude Code を起動します。システムエージェントはオーバーライドを使用せず(既存の {claude} ログインを利用)、編集や削除はできません。{on} を切り替えてエージェントを有効にします。無効なエージェントはディスカッションの参加者、合意の投票、デグラデーションチェーン、デフォルトの選択対象から除外されます — ただしバインドやフォールバックでの起動は引き続き動作するため、既存のセッションがロックアウトされることはありません。",
+        "claude": "claude",
+        "on": "On"
+      },
+      "col": {
+        "on": {
+          "label": "On"
+        },
+        "default": {
+          "label": "デフォルト"
+        },
+        "name": {
+          "label": "名前"
+        },
+        "baseUrl": {
+          "label": "Base URL"
+        },
+        "apiKey": {
+          "label": "API キー"
+        },
+        "model": {
+          "label": "モデル"
+        },
+        "icon": {
+          "label": "アイコン"
+        }
+      },
+      "toggle": {
+        "tooltip": "このエージェントを有効 / 無効にします"
+      },
+      "default": {
+        "tooltip": "有効なエージェントのみデフォルトに設定できます"
+      },
+      "remove": {
+        "tooltip": "エージェントを削除"
+      },
+      "name": {
+        "placeholder": "エージェント名"
+      },
+      "systemName": {
+        "placeholder": "システム"
+      },
+      "baseUrl": {
+        "placeholder": "ANTHROPIC_BASE_URL"
+      },
+      "apiKey": {
+        "placeholder": "API キー"
+      },
+      "model": {
+        "placeholder": "例: claude-opus-4-8"
+      },
+      "icon": {
+        "placeholder": "🤖"
+      },
+      "builtin": {
+        "label": "組み込み"
+      },
+      "add": {
+        "label": "+ エージェントを追加"
+      }
+    },
+    "defaultMode": {
+      "title": {
+        "label": "デフォルトモード"
+      },
+      "hint": "新しいセッションが開始する権限モードです。セッションのモードはヘッダーからいつでも切り替えられます。"
+    },
+    "devSkill": {
+      "title": {
+        "label": "開発スキル"
+      },
+      "hint": "開発タスクを開始するとき、このスラッシュコマンドが要件のテキストの先頭に付加されます。スキルのプレフィックスを付けない場合は空のままにしてください。",
+      "placeholder": "/your-skill (プレフィックス不要なら空のまま)"
+    },
+    "rounds": {
+      "title": {
+        "label": "ステージごとのディスカッションラウンド数"
+      },
+      "hint": "マルチエージェントのディスカッションが各ワークフローステージで費やす発言ラウンドの最大数です。これを超えると主催者が強制的に次へ進めます。値を大きくすると、より深く長いディスカッションが可能になります。最小値は {min}(これより小さい値は保存時に切り上げられます)。"
+    },
+    "speechChars": {
+      "title": {
+        "label": "ディスカッション発言の文字数上限"
+      },
+      "hint": "参加者がプロンプトのガイダンスで目にする 1 ターンあたりの文字数の目安です。参加者にはこの上限内に返信を収めるよう求めますが、超過した返信もそのまま受け入れられます(強制的な切り詰めはありません)。最小値は {min}(これより小さい値は保存時に切り上げられます)。"
+    },
+    "displayLang": {
+      "title": {
+        "label": "表示言語"
+      },
+      "hint": "c3 Web コンソール UI の言語です。変更は再読み込みなしで即座に適用され、サーバーに保存されます。下記の音声入力言語とは独立しています。"
+    },
+    "voiceLang": {
+      "title": {
+        "label": "音声入力言語"
+      },
+      "hint": "メッセージボックスでマイクを使用するときに、ブラウザの音声認識が聞き取る言語です。音声入力はブラウザ(Chrome/Edge)が提供し、ネットワーク接続が必要な場合があります。",
+      "zhCN": {
+        "label": "中国語(標準語)"
+      },
+      "enUS": {
+        "label": "英語(米国)"
+      },
+      "zhTW": {
+        "label": "中国語(繁体字)"
+      },
+      "zhHK": {
+        "label": "広東語"
+      }
+    },
+    "consensus": {
+      "title": {
+        "label": "合意"
+      },
+      "hint1": {
+        "text": "有効にすると、許可/拒否の権限プロンプトはまず設定済みの {other} 個のエージェントにかけられます。各エージェントは直近のコンテキストからツール呼び出しを判断し、理由を添えて許可/拒否に投票します。その後、セッション自身のエージェントが意見を要約します。すべての投票者が一致した場合、プロンプトは人の判断なしで自動的に解決されます — そうでなければ、各エージェントの投票と理由が表示された上であなたが決定します。エラー、タイムアウト、解析できない回答はすべて棄権として扱われ、判断はあなたに委ねられます。セッション自身以外に少なくとも 1 つのエージェントが必要です。",
+        "other": "other"
+      },
+      "hint2": {
+        "text": "{ask}(エージェントが {you} に選択式の質問をする場合)は質問ごとに別の経路をたどります。c3 は常に回答パネルを表示し、あなたの選択をエージェントに戻します — これがターミナルなしで回答する唯一の方法であり、このトグルに関係なく動作します。合意の部分が働くのは {on} のときだけです。投票者がすべての質問に回答し、決定者が同じ意味の回答を要約・整理するため、全員が一致した質問は事前入力または自動回答され、残りだけがあなたに委ねられます。合意がオフの場合は投票は行われず、パネル全体をあなた自身が入力します。",
+        "ask": "AskUserQuestion",
+        "you": "you",
+        "on": "on"
+      },
+      "toggle": {
+        "label": "マルチエージェントの合意投票を有効にする"
+      }
+    },
+    "display": {
+      "title": {
+        "label": "表示"
+      },
+      "showToolSessions": {
+        "label": "ツールセッションを表示"
+      }
+    }
+  },
+  "requirement": {
+    "startDev": {
+      "confirmUnfinishedDeps": "この要件には未完了の依存があります。それでも開発を開始しますか?"
+    },
+    "chat": {
+      "title": {
+        "label": "要件チャット"
+      }
+    },
+    "list": {
+      "title": {
+        "label": "要件"
+      },
+      "new": {
+        "label": "新しい要件: 新しいチャットセッションを開始"
+      },
+      "empty": "まだ要件がありません。右側のアシスタントとチャットして保存してください。"
+    },
+    "filter": {
+      "all": {
+        "label": "すべて"
+      },
+      "todo": {
+        "label": "未着手"
+      },
+      "inProgress": {
+        "label": "進行中"
+      },
+      "done": {
+        "label": "完了"
+      },
+      "cancelled": {
+        "label": "キャンセル済み"
+      },
+      "draft": {
+        "label": "下書き"
+      }
+    },
+    "automation": {
+      "start": {
+        "label": "▶ 自動化",
+        "tooltip": "自動化を開始: 自動化対象としてマークされた要件を、優先度と依存に従って 1 つずつ完了させます"
+      },
+      "stop": {
+        "label": "■ 自動化を停止",
+        "tooltip": "自動化プロセスを停止します"
+      },
+      "error": {
+        "fallback": "エラー"
+      },
+      "awaiting": "⏸ 承認待ち",
+      "awaitingFor": "⏸ \"{title}\" の承認待ち",
+      "workingOn": "\"{title}\" を処理中",
+      "preparing": "準備中…",
+      "completedCount": "✅ {count} 件を完了しました",
+      "nothingToAutomate": "✅ 自動化する要件はありません"
+    },
+    "action": {
+      "refine": {
+        "label": "推敲"
+      },
+      "startDev": {
+        "label": "開発開始"
+      },
+      "session": {
+        "label": "セッション"
+      },
+      "markDone": {
+        "label": "完了にする"
+      }
+    },
+    "automate": {
+      "queued": {
+        "tooltip": "自動キュー内"
+      },
+      "manual": {
+        "tooltip": "手動トリガーモード"
+      }
+    },
+    "meta": {
+      "created": {
+        "label": "作成:"
+      },
+      "completed": {
+        "label": "完了:"
+      },
+      "dependsOn": {
+        "label": "依存:"
+      }
+    },
+    "deps": {
+      "unfinishedList": "⚠ 未完了の依存:{list}",
+      "unfinished": {
+        "tooltip": "未完了の依存があります"
+      }
+    }
+  },
+  "session": {
+    "fallback": {
+      "label": "バックグラウンドセッション"
+    },
+    "turn": {
+      "error": "— エラー: {error} —"
+    },
+    "team": {
+      "upgraded": "— チームセッションにアップグレードしました: 「チームを終了」をクリックするまで、チームリードが実行を続けてチームメイトを調整します —"
+    },
+    "agent": {
+      "failed": "— エージェント \"{agentName}\" が失敗しました: {error} —"
+    },
+    "list": {
+      "title": {
+        "label": "セッション"
+      },
+      "refresh": {
+        "tooltip": "セッションを更新"
+      },
+      "new": {
+        "tooltip": "新しいセッション"
+      },
+      "noWorkspace": "ワークスペースが未選択です。",
+      "empty": "セッションがありません。",
+      "toolBadge": {
+        "label": "TOOL"
+      },
+      "more": {
+        "label": "▾ もっと見る",
+        "tooltip": "セッションをもっと表示"
+      },
+      "deleteConfirm": "このセッションとトランスクリプトを削除しますか? この操作は取り消せません。",
+      "renamePrompt": "セッション名を変更:"
+    },
+    "row": {
+      "rename": {
+        "tooltip": "名前を変更"
+      },
+      "delete": {
+        "tooltip": "削除"
+      }
+    },
+    "titleBar": {
+      "mode": {
+        "ariaLabel": "権限モード"
+      }
+    },
+    "statusBar": {
+      "error": "エラー: {message}",
+      "ready": "準備完了",
+      "awaiting": "権限待ち",
+      "teamRunning": "チーム実行中 · チームメイトを待っています",
+      "runningTool": "{toolName} を実行中…",
+      "thinking": "思考中…",
+      "disconnected": "· 切断されました。再接続中…",
+      "refresh": {
+        "tooltip": "セッションステータスを再同期"
+      }
+    },
+    "input": {
+      "placeholder": {
+        "noSession": "セッションを選択または作成して開始してください",
+        "team": "チーム実行中 — メッセージを入力するとチームリードに送信できます(いつでも)",
+        "running": "ターン進行中 — メッセージはキューに入り、次のターンにマージされます",
+        "listening": "聞き取り中… 停止するにはマイクを再度クリックするか Esc を押してください",
+        "ready": "プロンプトを入力 — Enter×2 または ⌘/Ctrl+Enter で送信、/ でコマンド"
+      },
+      "voice": {
+        "tooltip": "音声入力",
+        "start": {
+          "ariaLabel": "音声入力を開始"
+        },
+        "stop": {
+          "ariaLabel": "音声入力を停止"
+        }
+      },
+      "stop": {
+        "label": "停止",
+        "tooltip": "実行中のターンを停止します"
+      },
+      "endTeam": {
+        "label": "チームを終了",
+        "tooltip": "チームを終了: チームリードとすべてのチームメイトを停止します"
+      },
+      "sendHint": {
+        "running": "ターン進行中 — メッセージはキューに入ります",
+        "ready": "Enter を 2 回、または ⌘/Ctrl+Enter で送信"
+      },
+      "send": {
+        "label": "送信",
+        "queue": "キューに追加"
+      }
+    },
+    "queue": {
+      "ariaLabel": "保留中のキュー",
+      "head": "キュー待ち · 次のターンにマージされます({count})",
+      "edit": {
+        "tooltip": "編集: 入力ボックスに戻して再編集します",
+        "ariaLabel": "編集"
+      },
+      "delete": {
+        "tooltip": "削除: キューから取り除きます",
+        "ariaLabel": "削除"
+      }
+    },
+    "task": {
+      "ariaLabel": "現在のタスク",
+      "moreCompleted": "+{count} 件完了"
+    },
+    "chat": {
+      "empty": "セッションを選択するか、ワークスペースで新しく作成してください。",
+      "toolsFallback": "ツール",
+      "resultError": "(エラー)"
+    }
+  },
+  "schedule": {
+    "list": {
+      "title": {
+        "label": "スケジュール"
+      },
+      "new": {
+        "label": "新しいスケジュール"
+      },
+      "empty": "まだスケジュールがありません。",
+      "expand": {
+        "tooltip": "パネルを展開"
+      },
+      "collapse": {
+        "tooltip": "パネルを折りたたむ"
+      },
+      "noUpcoming": "予定された実行はありません。",
+      "type": {
+        "command": "Cmd",
+        "llm": "LLM"
+      },
+      "timeLeft": {
+        "dueNow": "実行時刻です",
+        "days": "{days}日 {hours}時間後",
+        "hours": "{hours}時間 {minutes}分後",
+        "minutes": "{minutes}分後",
+        "lessThanMinute": "< 1分"
+      },
+      "toggle": {
+        "enabled": {
+          "tooltip": "有効 — クリックで一時停止"
+        },
+        "disabled": {
+          "tooltip": "無効 — クリックで有効化"
+        }
+      }
+    },
+    "meta": {
+      "id": {
+        "label": "ID"
+      },
+      "type": {
+        "label": "種類"
+      },
+      "status": {
+        "label": "ステータス"
+      },
+      "cron": {
+        "label": "Cron"
+      },
+      "mode": {
+        "label": "モード"
+      },
+      "created": {
+        "label": "作成"
+      },
+      "updated": {
+        "label": "更新"
+      },
+      "config": {
+        "label": "設定"
+      },
+      "upcoming": {
+        "label": "予定された実行"
+      }
+    },
+    "detail": {
+      "title": "{name} のログ",
+      "history": {
+        "label": "実行履歴"
+      },
+      "duration": "所要時間: {duration}",
+      "exit": "· 終了コード {code}",
+      "started": {
+        "label": "開始"
+      },
+      "finished": {
+        "label": "終了"
+      },
+      "running": "実行中…",
+      "viewSession": {
+        "label": "▸ セッションを表示"
+      },
+      "hideSession": {
+        "label": "▾ セッションを非表示"
+      },
+      "loadingSession": "セッションを読み込み中…",
+      "noSessionRecord": "この実行のセッション記録はありません。",
+      "role": {
+        "assistant": "アシスタント",
+        "user": "ユーザー",
+        "tool": "ツール · {name}",
+        "result": "結果",
+        "resultError": "結果(エラー)"
+      },
+      "noHistory": "まだ実行履歴がありません。",
+      "empty": "詳細を表示するにはスケジュールを選択してください。"
+    },
+    "form": {
+      "newTitle": "新しいスケジュール",
+      "editTitle": "スケジュールを編集",
+      "taskType": {
+        "label": "タスクの種類",
+        "locked": "タスクの種類は作成後に変更できません。"
+      },
+      "type": {
+        "command": {
+          "label": "コマンド"
+        },
+        "llm": {
+          "label": "LLM プロンプト"
+        }
+      },
+      "command": {
+        "label": "コマンド",
+        "placeholder": "pnpm build && pnpm test"
+      },
+      "prompt": {
+        "label": "プロンプト",
+        "placeholder": "セキュリティ監査を実行し、検出結果を要約…"
+      },
+      "preview": {
+        "label": "プレビュー",
+        "empty": "ここに Markdown プレビューが表示されます。"
+      },
+      "schedule": {
+        "label": "スケジュール"
+      },
+      "frequency": {
+        "label": "頻度"
+      },
+      "freq": {
+        "minutely": {
+          "label": "N 分ごと"
+        },
+        "hourly": {
+          "label": "N 時間ごと"
+        },
+        "daily": {
+          "label": "毎日"
+        },
+        "weekly": {
+          "label": "毎週(曜日を選択)"
+        }
+      },
+      "interval": {
+        "label": "間隔",
+        "minutes": "分",
+        "hours": "時間"
+      },
+      "time": {
+        "label": "時刻",
+        "hourlyHint": "毎時の分",
+        "hint": "時 : 分(UTC)"
+      },
+      "days": {
+        "label": "曜日"
+      },
+      "cron": {
+        "invalid": "無効な cron 式です"
+      },
+      "nextRun": {
+        "label": "次回の実行:",
+        "utcHint": "(スケジュールの時刻は UTC として解釈されます)"
+      },
+      "execIdentity": {
+        "label": "実行アイデンティティ"
+      },
+      "saveChanges": {
+        "label": "変更を保存"
+      },
+      "create": {
+        "label": "スケジュールを作成"
+      },
+      "mcpMode": {
+        "readOnly": {
+          "label": "読み取り専用",
+          "hint": "読み取りのみのツール。書き込みはブロックされます。"
+        },
+        "sandboxed": {
+          "label": "サンドボックス",
+          "hint": "書き込みは許可されますが、承認のためにキューに入ります。"
+        },
+        "fullAccess": {
+          "label": "フルアクセス",
+          "hint": "制限なし — 慎重に使用してください。"
+        }
+      },
+      "weekday": {
+        "sun": "日",
+        "mon": "月",
+        "tue": "火",
+        "wed": "水",
+        "thu": "木",
+        "fri": "金",
+        "sat": "土"
+      }
+    }
+  },
+  "error": {
+    "uiLang": {
+      "saveFailed": "言語設定の保存に失敗しました。元に戻しました。"
+    },
+    "workspace": {
+      "unknown": "不明なワークスペース: {path}"
+    },
+    "path": {
+      "notDirectory": "ディレクトリではありません: {path}"
+    },
+    "command": {
+      "listFailed": "コマンドの一覧取得に失敗しました: {detail}"
+    },
+    "session": {
+      "listFailed": "セッションの一覧取得に失敗しました: {detail}",
+      "openFailed": "セッションを開けませんでした: {detail}",
+      "deleteFailed": "セッションの削除に失敗しました: {detail}",
+      "renameFailed": "セッション名の変更に失敗しました: {detail}",
+      "notSelected": "先にセッションを選択または作成してください。",
+      "turnRunning": "このセッションではすでにターンが実行中です。"
+    },
+    "requirement": {
+      "notFound": "要件が見つかりません。",
+      "dbUnavailable": "要件機能は利用できません(c3.db)。",
+      "chatOpenFailed": "要件チャットを開けませんでした。",
+      "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。"
+    },
+    "discussion": {
+      "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",
+      "notFound": "ディスカッションが見つかりません。",
+      "unknown": "不明なディスカッション: {id}",
+      "unknownType": "不明なディスカッションの種類: {type}",
+      "notConcludable": "結論と成果のあるディスカッションのみ要件に変換できます。",
+      "alreadyStarted": "ディスカッションはすでに開始または終了しています。再開はできません。",
+      "notEndedForContinue": "終了したディスカッションのみ新しいラウンドを開始できます。"
+    },
+    "schedule": {
+      "dbUnavailable": "スケジュール機能は利用できません(c3.db)。",
+      "notFound": "スケジュールが見つかりません。",
+      "executionNotFound": "実行記録が見つかりません。",
+      "approvalNotFound": "承認エントリが見つからないか、すでに処理済みです。"
+    }
+  },
+  "discussion": {
+    "action": {
+      "start": {
+        "label": "開始"
+      },
+      "pause": {
+        "label": "一時停止"
+      },
+      "resume": {
+        "label": "再開"
+      },
+      "convert": {
+        "label": "要件に変換"
+      }
+    },
+    "dispatch": {
+      "replying": "{name} が返信中…",
+      "failed": "⚠ {name} の返信に失敗しました: {error}"
+    },
+    "composer": {
+      "speak": {
+        "placeholder": "このディスカッションで発言…",
+        "label": "発言"
+      },
+      "followUp": {
+        "placeholder": "フォローアップを尋ねて新しいラウンドを開始…"
+      },
+      "continue": {
+        "label": "続ける"
+      }
+    },
+    "agenda": {
+      "label": "ディスカッションの議題",
+      "title": {
+        "label": "議題"
+      }
+    },
+    "speaker": {
+      "you": "あなた",
+      "organizer": "主催者",
+      "agent": "エージェント"
+    },
+    "list": {
+      "title": {
+        "label": "ディスカッション"
+      },
+      "new": {
+        "label": "新しいディスカッション"
+      },
+      "empty": "まだディスカッションがありません。"
+    },
+    "form": {
+      "type": {
+        "label": "種類"
+      },
+      "goal": {
+        "label": "ゴール",
+        "placeholder": "このディスカッションで何を達成しますか?"
+      },
+      "context": {
+        "label": "コンテキスト",
+        "placeholder": "背景資料(リサーチエージェントが補完します)"
+      },
+      "create": {
+        "label": "作成"
+      }
+    },
+    "item": {
+      "openChat": {
+        "label": "チャットを開く: {title}"
+      },
+      "run": {
+        "running": {
+          "label": "実行中",
+          "tooltip": "オーケストレーション実行中"
+        },
+        "paused": {
+          "label": "一時停止中",
+          "tooltip": "オーケストレーション一時停止中"
+        }
+      }
+    },
+    "meta": {
+      "type": {
+        "label": "種類"
+      },
+      "status": {
+        "label": "ステータス"
+      },
+      "created": {
+        "label": "作成"
+      },
+      "completed": {
+        "label": "完了"
+      }
+    },
+    "consensus": {
+      "title": {
+        "label": "🤝 マルチエージェントの合意 ·"
+      },
+      "autoAnswered": {
+        "label": "質問ごとに自動回答"
+      },
+      "disagreementManual": {
+        "label": "(不一致 → 手動)"
+      },
+      "abstained": {
+        "label": "棄権"
+      },
+      "autoAllowed": {
+        "label": "自動許可"
+      },
+      "autoDenied": {
+        "label": "自動拒否"
+      },
+      "disagreement": {
+        "label": "不一致"
+      }
+    }
+  }
+}

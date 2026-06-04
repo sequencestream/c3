@@ -1,0 +1,850 @@
+{
+  "common": {
+    "action": {
+      "allow": {
+        "label": "허용"
+      },
+      "deny": {
+        "label": "거부"
+      },
+      "cancel": {
+        "label": "취소"
+      },
+      "save": {
+        "label": "저장"
+      },
+      "close": {
+        "tooltip": "닫기"
+      }
+    },
+    "unknown": {
+      "label": "알 수 없음"
+    }
+  },
+  "nav": {
+    "tab": {
+      "console": {
+        "label": "세션"
+      },
+      "requirements": {
+        "label": "요구사항"
+      },
+      "discussion": {
+        "label": "토론"
+      },
+      "schedules": {
+        "label": "예약 작업"
+      }
+    },
+    "mode": {
+      "default": {
+        "label": "기본"
+      },
+      "auto": {
+        "label": "자동"
+      },
+      "plan": {
+        "label": "계획"
+      },
+      "acceptEdits": {
+        "label": "편집 자동 수락"
+      },
+      "bypassPermissions": {
+        "label": "권한 우회"
+      }
+    },
+    "settings": {
+      "tooltip": "시스템 설정"
+    },
+    "workspace": {
+      "trigger": {
+        "empty": {
+          "tooltip": "선택된 작업 공간 없음",
+          "label": "작업 공간 없음"
+        }
+      },
+      "add": {
+        "tooltip": "작업 공간 추가",
+        "prompt": "작업 공간 디렉터리 (절대 경로):"
+      },
+      "remove": {
+        "tooltip": "작업 공간 제거",
+        "confirm": "사이드바에서 작업 공간을 제거할까요?\n{path}\n\n(디스크의 세션은 유지됩니다.)"
+      },
+      "list": {
+        "empty": "아직 작업 공간이 없습니다. +를 클릭하여 디렉터리를 추가하세요."
+      }
+    }
+  },
+  "permission": {
+    "history": {
+      "askQuestion": "🙋 {count}개 질문에 답변 요청됨 · AskUserQuestion",
+      "saveRequirements": "💾 {count}개 요구사항 저장 요청됨",
+      "useTool": "🔧 {toolName} 도구 사용 요청됨"
+    },
+    "ask": {
+      "answerQuestion": {
+        "label": "🙋 질문 답변 ·"
+      },
+      "multiAgentSuggestion": {
+        "label": "멀티 에이전트 제안"
+      },
+      "customReply": {
+        "label": "✏️ 사용자 지정 답변",
+        "hint": "직접 답변 입력"
+      },
+      "custom": {
+        "placeholder": "사용자 지정 답변을 입력하세요…"
+      },
+      "submit": {
+        "label": "답변 제출"
+      }
+    },
+    "save": {
+      "label": "💾 요구사항 저장 ·",
+      "dependsOn": "의존:",
+      "dependsOnBatch": "의존 (이번 배치):"
+    },
+    "tool": {
+      "allow": {
+        "label": "도구 허용:"
+      }
+    },
+    "consensus": {
+      "disagree": {
+        "label": "🤝 에이전트 의견 불일치:"
+      }
+    },
+    "status": {
+      "answered": "답변됨",
+      "denied": "거부됨",
+      "allowed": "허용됨",
+      "saved": "저장됨",
+      "cancelled": "취소됨"
+    },
+    "notification": {
+      "title": "c3 — 권한 필요",
+      "body": "{title}이(가) 승인을 기다리고 있습니다."
+    }
+  },
+  "settings": {
+    "title": {
+      "label": "시스템 설정"
+    },
+    "agents": {
+      "title": {
+        "label": "에이전트"
+      },
+      "hint": {
+        "text": "새 세션은 기본 에이전트로 Claude Code를 실행합니다. 시스템 에이전트는 어떤 재정의도 사용하지 않으며(기존 {claude} 로그인 사용) 편집하거나 제거할 수 없습니다. {on}을 켜서 에이전트를 활성화하세요. 비활성화된 에이전트는 토론 참여자, 합의 투표, 강등 체인, 기본값 선택에서 제외됩니다. 다만 바인딩되거나 폴백으로 실행된 경우에는 계속 작동하므로 기존 세션이 잠기는 일은 없습니다.",
+        "claude": "claude",
+        "on": "켜기"
+      },
+      "col": {
+        "on": {
+          "label": "켜기"
+        },
+        "default": {
+          "label": "기본"
+        },
+        "name": {
+          "label": "이름"
+        },
+        "baseUrl": {
+          "label": "Base URL"
+        },
+        "apiKey": {
+          "label": "API Key"
+        },
+        "model": {
+          "label": "모델"
+        },
+        "icon": {
+          "label": "아이콘"
+        }
+      },
+      "toggle": {
+        "tooltip": "이 에이전트 활성화 / 비활성화"
+      },
+      "default": {
+        "tooltip": "활성화된 에이전트만 기본값이 될 수 있습니다"
+      },
+      "remove": {
+        "tooltip": "에이전트 제거"
+      },
+      "name": {
+        "placeholder": "에이전트 이름"
+      },
+      "systemName": {
+        "placeholder": "시스템"
+      },
+      "baseUrl": {
+        "placeholder": "ANTHROPIC_BASE_URL"
+      },
+      "apiKey": {
+        "placeholder": "API key"
+      },
+      "model": {
+        "placeholder": "예: claude-opus-4-8"
+      },
+      "icon": {
+        "placeholder": "🤖"
+      },
+      "builtin": {
+        "label": "내장"
+      },
+      "add": {
+        "label": "+ 에이전트 추가"
+      }
+    },
+    "defaultMode": {
+      "title": {
+        "label": "기본 모드"
+      },
+      "hint": "새 세션이 시작될 때의 권한 모드입니다. 세션 헤더에서 언제든지 세션의 모드를 변경할 수 있습니다."
+    },
+    "devSkill": {
+      "title": {
+        "label": "개발 스킬"
+      },
+      "hint": "개발 작업을 시작할 때 이 슬래시 명령이 요구사항 텍스트 앞에 추가됩니다. 스킬 접두사를 추가하지 않으려면 비워 두세요.",
+      "placeholder": "/your-skill (접두사 없으려면 비워 두기)"
+    },
+    "rounds": {
+      "title": {
+        "label": "단계별 토론 라운드 수"
+      },
+      "hint": "멀티 에이전트 토론이 진행자가 강제로 다음 단계로 넘어가기 전에 각 워크플로 단계에서 사용하는 최대 발언 라운드 수입니다. 값이 클수록 더 깊고 긴 토론이 가능합니다. 최소 {min} (더 낮은 값은 저장 시 자동으로 상향됩니다)."
+    },
+    "speechChars": {
+      "title": {
+        "label": "토론 발언 글자 수 제한"
+      },
+      "hint": "참여자가 프롬프트 안내에서 보게 되는 턴당 글자 수 예산입니다. 참여자는 답변을 이 제한 내로 유지하도록 요청받지만, 제한을 초과한 답변도 그대로 허용됩니다(강제 잘림 없음). 최소 {min} (더 낮은 값은 저장 시 자동으로 상향됩니다)."
+    },
+    "displayLang": {
+      "title": {
+        "label": "표시 언어"
+      },
+      "hint": "c3 웹 콘솔 UI의 언어입니다. 변경 사항은 새로고침 없이 즉시 적용되며 서버에 저장됩니다. 아래의 음성 입력 언어와는 별개입니다."
+    },
+    "voiceLang": {
+      "title": {
+        "label": "음성 입력 언어"
+      },
+      "hint": "메시지 입력란에서 마이크를 사용할 때 브라우저의 음성 인식이 인식하는 언어입니다. 음성 입력은 브라우저(Chrome/Edge)에서 제공되며 네트워크 연결이 필요할 수 있습니다.",
+      "zhCN": {
+        "label": "중국어 (표준어)"
+      },
+      "enUS": {
+        "label": "영어 (미국)"
+      },
+      "zhTW": {
+        "label": "중국어 (번체)"
+      },
+      "zhHK": {
+        "label": "광둥어"
+      }
+    },
+    "consensus": {
+      "title": {
+        "label": "합의"
+      },
+      "hint1": {
+        "text": "활성화하면 허용/거부 권한 요청이 먼저 구성된 {other}개의 에이전트에게 제시됩니다. 각 에이전트는 최근 컨텍스트를 바탕으로 도구 호출을 판단하고 이유와 함께 허용/거부에 투표하며, 이후 세션의 자체 에이전트가 그 의견들을 요약합니다. 모든 투표자가 동의하면 사람의 개입 없이 요청이 자동으로 해결됩니다. 그렇지 않으면 각 에이전트의 투표와 이유가 표시된 상태에서 사용자가 결정합니다. 오류, 시간 초과, 해석 불가능한 답변은 기권으로 간주되어 결정권이 사용자에게 남습니다. 세션 자체 에이전트 외에 최소 하나의 에이전트가 필요합니다.",
+        "other": "다른"
+      },
+      "hint2": {
+        "text": "{ask}(에이전트가 {you}에게 객관식 질문을 하는 경우)은 질문별로 별도의 경로를 따릅니다. c3는 항상 답변 패널을 표시하고 사용자의 선택을 에이전트에게 다시 주입합니다. 이는 터미널 없이 답변할 수 있는 유일한 방법이므로 이 토글과 무관하게 작동합니다. 합의 부분은 {on} 상태일 때만 작동합니다. 투표자들이 모든 질문에 답하고 결정자가 같은 의미의 답변을 요약·조정하므로, 모두가 동의하는 질문은 미리 채워지거나 자동 답변되고 나머지만 사용자에게 남습니다. 합의를 끄면 투표가 실행되지 않고 사용자가 전체 패널을 직접 채웁니다.",
+        "ask": "AskUserQuestion",
+        "you": "사용자",
+        "on": "켜기"
+      },
+      "toggle": {
+        "label": "멀티 에이전트 합의 투표 활성화"
+      }
+    },
+    "display": {
+      "title": {
+        "label": "표시"
+      },
+      "showToolSessions": {
+        "label": "도구 세션 표시"
+      }
+    }
+  },
+  "requirement": {
+    "startDev": {
+      "confirmUnfinishedDeps": "이 요구사항에는 완료되지 않은 의존성이 있습니다. 그래도 개발을 시작할까요?"
+    },
+    "chat": {
+      "title": {
+        "label": "요구사항 채팅"
+      }
+    },
+    "list": {
+      "title": {
+        "label": "요구사항"
+      },
+      "new": {
+        "label": "새 요구사항: 새 채팅 세션 시작"
+      },
+      "empty": "아직 요구사항이 없습니다. 오른쪽 어시스턴트와 대화하고 저장하세요."
+    },
+    "filter": {
+      "all": {
+        "label": "전체"
+      },
+      "todo": {
+        "label": "할 일"
+      },
+      "inProgress": {
+        "label": "진행 중"
+      },
+      "done": {
+        "label": "완료"
+      },
+      "cancelled": {
+        "label": "취소됨"
+      },
+      "draft": {
+        "label": "초안"
+      }
+    },
+    "automation": {
+      "start": {
+        "label": "▶ 자동화",
+        "tooltip": "자동화 시작: 자동화 표시된 요구사항을 우선순위와 의존성에 따라 하나씩 완료합니다"
+      },
+      "stop": {
+        "label": "■ 자동화 중지",
+        "tooltip": "자동화 프로세스 중지"
+      },
+      "error": {
+        "fallback": "오류"
+      },
+      "awaiting": "⏸ 승인 대기 중",
+      "awaitingFor": "⏸ \"{title}\" 승인 대기 중",
+      "workingOn": "\"{title}\" 작업 중",
+      "preparing": "준비 중…",
+      "completedCount": "✅ {count}개 항목 완료",
+      "nothingToAutomate": "✅ 자동화할 요구사항이 없습니다"
+    },
+    "action": {
+      "refine": {
+        "label": "다듬기"
+      },
+      "startDev": {
+        "label": "개발 시작"
+      },
+      "session": {
+        "label": "세션"
+      },
+      "markDone": {
+        "label": "완료 표시"
+      }
+    },
+    "automate": {
+      "queued": {
+        "tooltip": "자동 대기열에 있음"
+      },
+      "manual": {
+        "tooltip": "수동 트리거 모드"
+      }
+    },
+    "meta": {
+      "created": {
+        "label": "생성됨:"
+      },
+      "completed": {
+        "label": "완료:"
+      },
+      "dependsOn": {
+        "label": "의존:"
+      }
+    },
+    "deps": {
+      "unfinishedList": "⚠ 완료되지 않은 의존성:{list}",
+      "unfinished": {
+        "tooltip": "완료되지 않은 의존성이 있음"
+      }
+    }
+  },
+  "session": {
+    "fallback": {
+      "label": "백그라운드 세션"
+    },
+    "turn": {
+      "error": "— 오류: {error} —"
+    },
+    "team": {
+      "upgraded": "— 팀 세션으로 업그레이드됨: \"팀 종료\"를 클릭할 때까지 팀 리드가 계속 실행되며 팀원을 조율합니다 —"
+    },
+    "agent": {
+      "failed": "— 에이전트 \"{agentName}\" 실패: {error} —"
+    },
+    "list": {
+      "title": {
+        "label": "세션"
+      },
+      "refresh": {
+        "tooltip": "세션 새로고침"
+      },
+      "new": {
+        "tooltip": "새 세션"
+      },
+      "noWorkspace": "선택된 작업 공간이 없습니다.",
+      "empty": "세션이 없습니다.",
+      "toolBadge": {
+        "label": "TOOL"
+      },
+      "more": {
+        "label": "▾ 더 보기",
+        "tooltip": "더 많은 세션 표시"
+      },
+      "deleteConfirm": "이 세션과 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+      "renamePrompt": "세션 이름 변경:"
+    },
+    "row": {
+      "rename": {
+        "tooltip": "이름 변경"
+      },
+      "delete": {
+        "tooltip": "삭제"
+      }
+    },
+    "titleBar": {
+      "mode": {
+        "ariaLabel": "권한 모드"
+      }
+    },
+    "statusBar": {
+      "error": "오류: {message}",
+      "ready": "준비됨",
+      "awaiting": "권한 대기 중",
+      "teamRunning": "팀 실행 중 · 팀원 대기 중",
+      "runningTool": "{toolName} 실행 중…",
+      "thinking": "생각 중…",
+      "disconnected": "· 연결 끊김, 재연결 중…",
+      "refresh": {
+        "tooltip": "세션 상태 다시 동기화"
+      }
+    },
+    "input": {
+      "placeholder": {
+        "noSession": "시작하려면 세션을 선택하거나 만드세요",
+        "team": "팀 실행 중 — 팀 리드에게 보낼 메시지를 입력하세요 (언제든지)",
+        "running": "턴 진행 중 — 메시지는 대기열에 추가되어 다음 턴에 병합됩니다",
+        "listening": "듣는 중… 마이크를 다시 클릭하거나 Esc를 눌러 중지하세요",
+        "ready": "프롬프트 입력 — Enter×2 또는 ⌘/Ctrl+Enter로 전송, /로 명령"
+      },
+      "voice": {
+        "tooltip": "음성 입력",
+        "start": {
+          "ariaLabel": "음성 입력 시작"
+        },
+        "stop": {
+          "ariaLabel": "음성 입력 중지"
+        }
+      },
+      "stop": {
+        "label": "중지",
+        "tooltip": "실행 중인 턴 중지"
+      },
+      "endTeam": {
+        "label": "팀 종료",
+        "tooltip": "팀 종료: 팀 리드와 모든 팀원을 종료합니다"
+      },
+      "sendHint": {
+        "running": "턴 진행 중 — 메시지는 대기열에 추가됩니다",
+        "ready": "Enter를 두 번 누르거나 ⌘/Ctrl+Enter로 전송"
+      },
+      "send": {
+        "label": "전송",
+        "queue": "대기열에 추가"
+      }
+    },
+    "queue": {
+      "ariaLabel": "대기 중인 대기열",
+      "head": "대기 중 · 다음 턴에 병합됨 ({count})",
+      "edit": {
+        "tooltip": "편집: 입력란으로 다시 가져와 수정",
+        "ariaLabel": "편집"
+      },
+      "delete": {
+        "tooltip": "삭제: 대기열에서 제거",
+        "ariaLabel": "삭제"
+      }
+    },
+    "task": {
+      "ariaLabel": "현재 작업",
+      "moreCompleted": "+{count}개 완료"
+    },
+    "chat": {
+      "empty": "세션을 선택하거나 작업 공간에서 새 세션을 만드세요.",
+      "toolsFallback": "도구",
+      "resultError": "(오류)"
+    }
+  },
+  "schedule": {
+    "list": {
+      "title": {
+        "label": "예약 작업"
+      },
+      "new": {
+        "label": "새 예약 작업"
+      },
+      "empty": "아직 예약 작업이 없습니다.",
+      "expand": {
+        "tooltip": "패널 펼치기"
+      },
+      "collapse": {
+        "tooltip": "패널 접기"
+      },
+      "noUpcoming": "예정된 실행이 없습니다.",
+      "type": {
+        "command": "Cmd",
+        "llm": "LLM"
+      },
+      "timeLeft": {
+        "dueNow": "지금 실행 예정",
+        "days": "{days}일 {hours}시간 후",
+        "hours": "{hours}시간 {minutes}분 후",
+        "minutes": "{minutes}분 후",
+        "lessThanMinute": "< 1분"
+      },
+      "toggle": {
+        "enabled": {
+          "tooltip": "활성화됨 — 클릭하여 일시 중지"
+        },
+        "disabled": {
+          "tooltip": "비활성화됨 — 클릭하여 활성화"
+        }
+      }
+    },
+    "meta": {
+      "id": {
+        "label": "ID"
+      },
+      "type": {
+        "label": "유형"
+      },
+      "status": {
+        "label": "상태"
+      },
+      "cron": {
+        "label": "Cron"
+      },
+      "mode": {
+        "label": "모드"
+      },
+      "created": {
+        "label": "생성됨"
+      },
+      "updated": {
+        "label": "업데이트됨"
+      },
+      "config": {
+        "label": "구성"
+      },
+      "upcoming": {
+        "label": "예정된 실행"
+      }
+    },
+    "detail": {
+      "title": "{name} 로그",
+      "history": {
+        "label": "실행 기록"
+      },
+      "duration": "소요 시간: {duration}",
+      "exit": "· 종료 코드 {code}",
+      "started": {
+        "label": "시작됨"
+      },
+      "finished": {
+        "label": "완료됨"
+      },
+      "running": "실행 중…",
+      "viewSession": {
+        "label": "▸ 세션 보기"
+      },
+      "hideSession": {
+        "label": "▾ 세션 숨기기"
+      },
+      "loadingSession": "세션 불러오는 중…",
+      "noSessionRecord": "이 실행에 대한 세션 기록이 없습니다.",
+      "role": {
+        "assistant": "어시스턴트",
+        "user": "사용자",
+        "tool": "도구 · {name}",
+        "result": "결과",
+        "resultError": "결과 (오류)"
+      },
+      "noHistory": "아직 실행 기록이 없습니다.",
+      "empty": "세부 정보를 보려면 예약 작업을 선택하세요."
+    },
+    "form": {
+      "newTitle": "새 예약 작업",
+      "editTitle": "예약 작업 편집",
+      "taskType": {
+        "label": "작업 유형",
+        "locked": "생성 후에는 작업 유형을 변경할 수 없습니다."
+      },
+      "type": {
+        "command": {
+          "label": "명령"
+        },
+        "llm": {
+          "label": "LLM 프롬프트"
+        }
+      },
+      "command": {
+        "label": "명령",
+        "placeholder": "pnpm build && pnpm test"
+      },
+      "prompt": {
+        "label": "프롬프트",
+        "placeholder": "보안 감사를 실행하고 발견된 내용을 요약하세요…"
+      },
+      "preview": {
+        "label": "미리보기",
+        "empty": "여기에 Markdown 미리보기가 표시됩니다."
+      },
+      "schedule": {
+        "label": "일정"
+      },
+      "frequency": {
+        "label": "빈도"
+      },
+      "freq": {
+        "minutely": {
+          "label": "N분마다"
+        },
+        "hourly": {
+          "label": "N시간마다"
+        },
+        "daily": {
+          "label": "매일"
+        },
+        "weekly": {
+          "label": "매주 (요일 선택)"
+        }
+      },
+      "interval": {
+        "label": "간격",
+        "minutes": "분",
+        "hours": "시간"
+      },
+      "time": {
+        "label": "시간",
+        "hourlyHint": "매시간 몇 분",
+        "hint": "시 : 분 (UTC)"
+      },
+      "days": {
+        "label": "요일"
+      },
+      "cron": {
+        "invalid": "잘못된 cron 표현식"
+      },
+      "nextRun": {
+        "label": "다음 실행:",
+        "utcHint": "(예약 시간은 UTC로 해석됩니다)"
+      },
+      "execIdentity": {
+        "label": "실행 ID"
+      },
+      "saveChanges": {
+        "label": "변경 사항 저장"
+      },
+      "create": {
+        "label": "예약 작업 만들기"
+      },
+      "mcpMode": {
+        "readOnly": {
+          "label": "읽기 전용",
+          "hint": "읽기만 하는 도구. 쓰기는 차단됩니다."
+        },
+        "sandboxed": {
+          "label": "샌드박스",
+          "hint": "쓰기는 허용되지만 승인 대기열에 추가됩니다."
+        },
+        "fullAccess": {
+          "label": "전체 액세스",
+          "hint": "제한 없음 — 주의해서 사용하세요."
+        }
+      },
+      "weekday": {
+        "sun": "일",
+        "mon": "월",
+        "tue": "화",
+        "wed": "수",
+        "thu": "목",
+        "fri": "금",
+        "sat": "토"
+      }
+    }
+  },
+  "error": {
+    "uiLang": {
+      "saveFailed": "언어 설정 저장에 실패했습니다. 되돌렸습니다."
+    },
+    "workspace": {
+      "unknown": "알 수 없는 작업 공간: {path}"
+    },
+    "path": {
+      "notDirectory": "디렉터리가 아닙니다: {path}"
+    },
+    "command": {
+      "listFailed": "명령 목록을 불러오지 못했습니다: {detail}"
+    },
+    "session": {
+      "listFailed": "세션 목록을 불러오지 못했습니다: {detail}",
+      "openFailed": "세션을 열지 못했습니다: {detail}",
+      "deleteFailed": "세션을 삭제하지 못했습니다: {detail}",
+      "renameFailed": "세션 이름을 변경하지 못했습니다: {detail}",
+      "notSelected": "먼저 세션을 선택하거나 만드세요.",
+      "turnRunning": "이 세션에서 이미 턴이 실행 중입니다."
+    },
+    "requirement": {
+      "notFound": "요구사항을 찾을 수 없습니다.",
+      "dbUnavailable": "요구사항 기능을 사용할 수 없습니다 (c3.db).",
+      "chatOpenFailed": "요구사항 채팅을 열지 못했습니다.",
+      "cannotStartDev": "\"{status}\" 상태에서는 개발을 시작할 수 없습니다."
+    },
+    "discussion": {
+      "dbUnavailable": "토론 기능을 사용할 수 없습니다 (c3.db).",
+      "notFound": "토론을 찾을 수 없습니다.",
+      "unknown": "알 수 없는 토론: {id}",
+      "unknownType": "알 수 없는 토론 유형: {type}",
+      "notConcludable": "결과가 있는 종결된 토론만 요구사항으로 전환할 수 있습니다.",
+      "alreadyStarted": "토론이 이미 시작되었거나 종료되었습니다. 다시 시작할 수 없습니다.",
+      "notEndedForContinue": "종료된 토론만 새 라운드를 시작할 수 있습니다."
+    },
+    "schedule": {
+      "dbUnavailable": "예약 작업 기능을 사용할 수 없습니다 (c3.db).",
+      "notFound": "예약 작업을 찾을 수 없습니다.",
+      "executionNotFound": "실행 기록을 찾을 수 없습니다.",
+      "approvalNotFound": "승인 항목을 찾을 수 없거나 이미 처리되었습니다."
+    }
+  },
+  "discussion": {
+    "action": {
+      "start": {
+        "label": "시작"
+      },
+      "pause": {
+        "label": "일시 중지"
+      },
+      "resume": {
+        "label": "재개"
+      },
+      "convert": {
+        "label": "요구사항으로 전환"
+      }
+    },
+    "dispatch": {
+      "replying": "{name}이(가) 답변 중…",
+      "failed": "⚠ {name}이(가) 답변에 실패했습니다: {error}"
+    },
+    "composer": {
+      "speak": {
+        "placeholder": "이 토론에서 발언하기…",
+        "label": "발언"
+      },
+      "followUp": {
+        "placeholder": "후속 질문을 하여 새 라운드를 시작하세요…"
+      },
+      "continue": {
+        "label": "계속"
+      }
+    },
+    "agenda": {
+      "label": "토론 안건",
+      "title": {
+        "label": "안건"
+      }
+    },
+    "speaker": {
+      "you": "사용자",
+      "organizer": "진행자",
+      "agent": "에이전트"
+    },
+    "list": {
+      "title": {
+        "label": "토론"
+      },
+      "new": {
+        "label": "새 토론"
+      },
+      "empty": "아직 토론이 없습니다."
+    },
+    "form": {
+      "type": {
+        "label": "유형"
+      },
+      "goal": {
+        "label": "목표",
+        "placeholder": "이 토론으로 무엇을 달성해야 하나요?"
+      },
+      "context": {
+        "label": "컨텍스트",
+        "placeholder": "배경 자료 (리서치 에이전트가 보완합니다)"
+      },
+      "create": {
+        "label": "새로 만들기"
+      }
+    },
+    "item": {
+      "openChat": {
+        "label": "채팅 열기: {title}"
+      },
+      "run": {
+        "running": {
+          "label": "실행 중",
+          "tooltip": "오케스트레이션 실행 중"
+        },
+        "paused": {
+          "label": "일시 중지됨",
+          "tooltip": "오케스트레이션 일시 중지됨"
+        }
+      }
+    },
+    "meta": {
+      "type": {
+        "label": "유형"
+      },
+      "status": {
+        "label": "상태"
+      },
+      "created": {
+        "label": "생성됨"
+      },
+      "completed": {
+        "label": "완료"
+      }
+    },
+    "consensus": {
+      "title": {
+        "label": "🤝 멀티 에이전트 합의 ·"
+      },
+      "autoAnswered": {
+        "label": "질문별 자동 답변됨"
+      },
+      "disagreementManual": {
+        "label": "(의견 불일치 → 수동)"
+      },
+      "abstained": {
+        "label": "기권"
+      },
+      "autoAllowed": {
+        "label": "자동 허용됨"
+      },
+      "autoDenied": {
+        "label": "자동 거부됨"
+      },
+      "disagreement": {
+        "label": "의견 불일치"
+      }
+    }
+  }
+}

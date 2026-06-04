@@ -164,6 +164,334 @@ export interface ServerOptions {
   dev: boolean
 }
 
+// Top-level helpers (no closure-captured state). Hoisted out of `startServer` so
+// the slice 1/3 golden-standard contract tests can drive `launchRun` directly
+// with a fake deps bag — see `LaunchRunDeps` and ADR-0009.
+//
+// Backoff before the single socket-disconnect auto-`resume` (AS-R18 / AVAIL-7):
+// 3–5s jittered. Bounded — exactly one such wait per turn (no unbounded retry).
+function socketReconnectBackoffMs(): number {
+  return 3_000 + Math.floor(Math.random() * 2_000)
+}
+
+// Abortable delay: resolves after `ms`, or immediately if the run is stopped.
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve()
+    const t = setTimeout(resolve, ms)
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(t)
+        resolve()
+      },
+      { once: true },
+    )
+  })
+}
+
+/**
+ * Closure-captured dependencies that `launchRun` reads from its enclosing scope.
+ * Hoisted to a top-level `LaunchRunDeps` so the slice 1/3 contract tests can
+ * drive `launchRun` end-to-end with a fake deps bag (mock `broadcastStatuses`,
+ * mock `broadcastRequirements`). Production wires the real closures from
+ * `startServer`. See ADR-0009 (kernel/transport unidirectional boundaries).
+ *
+ * Slice 2/3 will replace this with a true `AppContext` field; slice 1/3 keeps
+ * the shared state in the startServer closure, so callers pass a deps bag at
+ * the call site instead of relying on closure capture.
+ */
+export interface LaunchRunDeps {
+  broadcastStatuses: () => void
+  broadcastRequirements: (projectPath: string) => void
+}
+
+/**
+ * Shared run launcher, hoisted out of `startServer` so the slice 1/3
+ * golden-standard contract tests (see `server/test/contracts/`) can drive it
+ * directly with a fake `LaunchRunDeps`. Owns only registry/emit concerns:
+ * abort wiring, the prompt echo, status flips, the SDK run, and
+ * pending→real id binding. Everything connection-specific (session_started,
+ * `viewing`, `activeSessionId`, session-list refresh) is injected via the
+ * callbacks, so background launches (`start_development`) and seeded launches
+ * (`refine_requirement`) can reuse it. Requirement runtimes get the read-only
+ * gate, the disallowed-tools lock, the comm system prompt, the
+ * `save_requirements` MCP tool, and a forced `default` permission mode (so
+ * `canUseTool` always fires).
+ */
+export async function launchRun(
+  rt: SessionRuntime,
+  prompt: string,
+  deps: LaunchRunDeps,
+  cbs: {
+    onSessionId?: (prevId: string, realId: string) => void
+    onSettled?: (workspacePath: string) => void | Promise<void>
+  } = {},
+): Promise<void> {
+  const workspacePath = rt.workspacePath
+  let runId = rt.sessionId
+  const isRequirement = rt.kind === 'requirement'
+
+  // Build the ordered list of agent configs to try.
+  // Entry 0 is always the session's current agent (bound or default).
+  // Subsequent entries come from the degradation chain (if configured).
+  const chain = getDegradationChain()
+  const firstLaunch = resolveSessionLaunch(runId)
+  const agentsToTry: Array<{
+    agentId: string
+    envOverrides?: Record<string, string>
+    model?: string
+  }> = [firstLaunch]
+  if (chain && chain.length > 0) {
+    for (const id of chain) {
+      // Skip the first agent (already in agentsToTry[0]) and self-references.
+      if (id !== firstLaunch.agentId && !agentsToTry.some((a) => a.agentId === id)) {
+        const agent = resolveAgent(id)
+        agentsToTry.push({ agentId: agent.id, ...launchForAgent(agent) })
+      }
+    }
+  }
+  const hasDegradation = agentsToTry.length > 1
+
+  // Single AbortController for the entire cycle. When the user hits stop,
+  // this is aborted, which cascades to the current attempt via each
+  // attempt's per-attempt controller.
+  // IMPORTANT: we set rt.run.abort = cycleAbort so stopRun() kills the
+  // entire cycle, not just one attempt.
+  const cycleAbort = new AbortController()
+  rt.run = { abort: cycleAbort, handle: null }
+
+  // Echo the prompt into the stream once (first attempt only).
+  emit(runId, { type: 'user_text', text: prompt })
+
+  const failedAgents: Array<{ agentId: string; agentName: string; error: string }> = []
+  let success = false
+  // True once the first attempt's onSessionId has fired (so retry
+  // attempts skip cbs.onSessionId — no duplicate session_started).
+  let hasBound = false
+  // Turn-scoped: whether this turn has spent its single socket-disconnect
+  // auto-`resume` (AS-R18 / AVAIL-7). Bounds the reconnect to exactly one.
+  let socketRetryUsed = false
+
+  try {
+    for (let attempt = 0; attempt < agentsToTry.length; attempt++) {
+      if (cycleAbort.signal.aborted) break
+
+      const agentCfg = agentsToTry[attempt]
+
+      // Emit agent_failed for the PREVIOUS attempt before starting the next.
+      if (attempt > 0 && failedAgents.length > 0) {
+        const prev = failedAgents[failedAgents.length - 1]
+        emit(runId, {
+          type: 'agent_failed',
+          agentId: prev.agentId,
+          agentName: prev.agentName,
+          error: prev.error,
+        })
+      }
+
+      let degraded = false
+      // Socket-disconnect path resolved this attempt (auto-resume succeeded, or a
+      // gated/exhausted disconnect emitted its own terminal `turn_end`). A socket
+      // disconnect is NOT degradable, so when set we leave the agent loop rather
+      // than trying the next agent (AS-R18).
+      let socketTerminated = false
+
+      // Inner sub-loop: the normal run plus AT MOST one auto-`resume` pass after a
+      // socket disconnect (AS-R18). `socketRetryUsed` (turn-scoped) bounds it to a
+      // single retry — no unbounded reconnect billing. `reconnecting` is true only
+      // on the resume pass, which forces `resume: runId` to preserve full context.
+      for (let reconnecting = false; ; ) {
+        // Per-call abort that cascades user stop from the cycle controller.
+        const attemptAbort = new AbortController()
+        rt.run = { abort: cycleAbort, handle: null }
+        const onCycleAbort = (): void => attemptAbort.abort()
+        cycleAbort.signal.addEventListener('abort', onCycleAbort, { once: true })
+
+        setStatus(runId, 'running')
+
+        // The socket disconnect verdict for THIS run pass (null ⇒ no disconnect).
+        let socketInfo: { error: string; sideEffectPending: boolean } | null = null
+
+        try {
+          await runClaude({
+            prompt,
+            cwd: workspacePath,
+            signal: attemptAbort.signal,
+            // Requirement chats are pinned to `default` so the gateway always runs.
+            permissionMode: isRequirement ? 'default' : rt.mode,
+            // Reconnect forces `resume: runId` (same SDK session, full context —
+            // AS-R18). First attempt resumes an existing session; degradation
+            // retries never resume (each gets a fresh SDK session).
+            resume: reconnecting
+              ? runId
+              : attempt === 0
+                ? runId.startsWith(PENDING_SESSION_PREFIX)
+                  ? undefined
+                  : runId
+                : undefined,
+            reconnectAttempt: reconnecting,
+            envOverrides: agentCfg.envOverrides,
+            model: agentCfg.model,
+            currentAgentId: agentCfg.agentId,
+            ...(isRequirement
+              ? {
+                  appendSystemPrompt: REQUIREMENT_AGENT_PROMPT,
+                  disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
+                  mcpServers: createRequirementMcpServer(workspacePath, deps.broadcastRequirements),
+                  gate: 'requirement' as const,
+                }
+              : // Socket auto-resume is for ordinary user sessions only — the
+                // requirement comm agent is excluded (different lifecycle).
+                {
+                  onSocketDisconnect: (info) => {
+                    socketInfo = info
+                  },
+                }),
+            send: (m) => emit(runId, m),
+            onStart: (h) => {
+              if (rt.run) rt.run.handle = h
+            },
+            onSessionId: (sid) => {
+              if (runId !== sid) {
+                const prev = runId
+                // First binding (pending→real): call bindPending + external cb.
+                // Retry binding (already bound): skip bindPending + external cb
+                // to avoid duplicate `session_started` on the wire. The new SDK
+                // session id is ephemeral — we don't track it for resume.
+                if (prev.startsWith(PENDING_SESSION_PREFIX)) {
+                  bindPending(prev, sid)
+                  runId = sid
+                  if (!hasBound) {
+                    hasBound = true
+                    cbs.onSessionId?.(prev, sid)
+                  }
+                } else if (!hasBound) {
+                  // First binding on a non-pending session (e.g. resume flow).
+                  // This path runs once per launchRun.
+                  hasBound = true
+                  cbs.onSessionId?.(prev, sid)
+                }
+                // If hasBound is already true (retry), skip everything — the
+                // runtime keeps its original Map key.
+                deps.broadcastStatuses()
+              }
+            },
+            onTeam: () => {
+              // The run became a persistent agent team: the lead process now stays
+              // alive across turns. Mark the runtime (so `turn_end` holds at `team`
+              // and the next prompt feeds the live run), tell the client once, and
+              // surface the team status.
+              rt.team = true
+              emit(runId, { type: 'team_upgraded' })
+              setStatus(runId, 'team')
+            },
+            onDegradableError: (errMsg) => {
+              degraded = true
+              const agent = resolveAgent(agentCfg.agentId)
+              failedAgents.push({ agentId: agent.id, agentName: agent.name, error: errMsg })
+            },
+          })
+        } finally {
+          cycleAbort.signal.removeEventListener('abort', onCycleAbort)
+        }
+
+        // User stop wins over any reconnect decision.
+        if (cycleAbort.signal.aborted) {
+          socketTerminated = true
+          break
+        }
+        // No socket disconnect ⇒ normal completion / degradable / internal error;
+        // leave the sub-loop and let the agent-loop logic below take over.
+        if (!socketInfo) break
+
+        const disconnect: { error: string; sideEffectPending: boolean } = socketInfo
+        // Decide: single same-session auto-resume, or refuse → manual continue.
+        const decision = decideSocketResume(disconnect.error, {
+          autoResumeEnabled: getSocketAutoResume(),
+          sideEffectPending: disconnect.sideEffectPending,
+          retryAlreadyUsed: socketRetryUsed,
+          isPendingSession: runId.startsWith(PENDING_SESSION_PREFIX),
+          isTeam: rt.team,
+          aborted: cycleAbort.signal.aborted,
+        })
+        if (decision.action === 'auto-resume') {
+          socketRetryUsed = true
+          // Hold the session in `reconnecting` over the bounded backoff so the
+          // sidebar shows the transient state; reconcileLiveness won't reap it
+          // (it only converges `running`/aborted/idle).
+          setStatus(runId, 'reconnecting')
+          await sleepAbortable(socketReconnectBackoffMs(), cycleAbort.signal)
+          if (cycleAbort.signal.aborted) {
+            socketTerminated = true
+            break
+          }
+          reconnecting = true
+          continue // re-invoke runClaude with resume: runId
+        }
+        // Refused (gate blocked / switch off / pending id / exhausted resume): emit
+        // the gated terminal `turn_end` and stop — finalizeRun settles to idle.
+        emit(runId, decision.turnEnd)
+        socketTerminated = true
+        break
+      }
+
+      if (cycleAbort.signal.aborted) break
+      // A socket disconnect is terminal for this turn (resumed-OK, or manual-error
+      // already emitted) and is never degradable — never try the next agent.
+      if (socketTerminated) {
+        clearPending(runId)
+        break
+      }
+      if (degraded) {
+        // Clear any pending permission prompts from the failed attempt.
+        clearPending(runId)
+        continue // try next agent
+      }
+
+      // Success!
+      success = true
+      break
+    }
+  } catch (err) {
+    emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
+  } finally {
+    if (rt.run) rt.run = null
+    // The run is fully over (team sessions only reach here on user stop), so the
+    // team is no longer live — clear the flag and fall back to idle.
+    rt.team = false
+    // Drop any still-pending permission prompt: the run is gone, so it can no
+    // longer be answered. Clearing keeps a stale id from holding a *future* turn
+    // (same runtime, resumed session) at awaiting_permission.
+    clearPending(runId)
+
+    // On chain exhaustion: emit terminal failure banner + turn_end error.
+    // Skip this if the user stopped the cycle mid-degradation (finalizeRun
+    // will emit turn_end { complete } for the stop).
+    if (!success && hasDegradation && failedAgents.length > 0 && !cycleAbort.signal.aborted) {
+      emit(runId, {
+        type: 'all_agents_failed',
+        agents: failedAgents,
+        message: `All ${failedAgents.length} agent(s) failed. Last error: ${failedAgents[failedAgents.length - 1].error}`,
+      })
+      emit(runId, {
+        type: 'turn_end',
+        reason: 'error',
+        error: `All agents failed: ${failedAgents[failedAgents.length - 1].error}`,
+      })
+    } else if (!success && !cycleAbort.signal.aborted && !hasDegradation) {
+      // Single-attempt (no degradation) failure: the runClaude internal
+      // catch already emitted turn_end { error }. This branch covers
+      // the case where runClaude threw unexpectedly.
+    }
+
+    // Authoritative terminal-state backstop. The run is fully over; guarantee a
+    // terminal `turn_end` is broadcast and the session settles to `idle`.
+    finalizeRun(runId)
+    await cbs.onSettled?.(workspacePath)
+  }
+}
+
 export async function startServer(opts: ServerOptions): Promise<void> {
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
@@ -233,23 +561,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // forcefully converged to `idle`. Conservative — long-running tools (build, deploy)
   // emit no intermediate events but finish much faster than this threshold.
   const RUN_STALE_MS = 5 * 60_000
-  // Backoff before the single socket-disconnect auto-`resume` (AS-R18 / AVAIL-7):
-  // 3–5s jittered. Bounded — exactly one such wait per turn (no unbounded retry).
-  const socketReconnectBackoffMs = (): number => 3_000 + Math.floor(Math.random() * 2_000)
-  // Abortable delay: resolves after `ms`, or immediately if the run is stopped.
-  const sleepAbortable = (ms: number, signal: AbortSignal): Promise<void> =>
-    new Promise<void>((resolve) => {
-      if (signal.aborted) return resolve()
-      const t = setTimeout(resolve, ms)
-      signal.addEventListener(
-        'abort',
-        () => {
-          clearTimeout(t)
-          resolve()
-        },
-        { once: true },
-      )
-    })
+  // `socketReconnectBackoffMs` and `sleepAbortable` were hoisted to top-level
+  // (see above) so the slice 1/3 contract tests can drive `launchRun` directly
+  // with a fake deps bag. Production callers (inside `startServer`) still use
+  // the top-level helpers; no behavioral change.
 
   setInterval(() => {
     // Reap stale/hung runs before broadcasting, so the snapshot is authoritative.
@@ -476,287 +791,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     for (const deliver of connections) deliver({ type: 'automation_status', status })
   }
 
-  /**
-   * Shared run launcher, extracted from `user_prompt`. Owns only registry/emit
-   * concerns: abort wiring, the prompt echo, status flips, the SDK run, and
-   * pending→real id binding. Everything connection-specific (session_started,
-   * `viewing`, `activeSessionId`, session-list refresh) is injected via the
-   * callbacks, so background launches (`start_development`) and seeded launches
-   * (`refine_requirement`) can reuse it. Requirement runtimes get the read-only
-   * gate, the disallowed-tools lock, the comm system prompt, the `save_requirements`
-   * MCP tool, and a forced `default` permission mode (so `canUseTool` always fires).
-   */
-  const launchRun = async (
-    rt: SessionRuntime,
-    prompt: string,
-    cbs: {
-      onSessionId?: (prevId: string, realId: string) => void
-      onSettled?: (workspacePath: string) => void | Promise<void>
-    } = {},
-  ): Promise<void> => {
-    const workspacePath = rt.workspacePath
-    let runId = rt.sessionId
-    const isRequirement = rt.kind === 'requirement'
-
-    // Build the ordered list of agent configs to try.
-    // Entry 0 is always the session's current agent (bound or default).
-    // Subsequent entries come from the degradation chain (if configured).
-    const chain = getDegradationChain()
-    const firstLaunch = resolveSessionLaunch(runId)
-    const agentsToTry: Array<{
-      agentId: string
-      envOverrides?: Record<string, string>
-      model?: string
-    }> = [firstLaunch]
-    if (chain && chain.length > 0) {
-      for (const id of chain) {
-        // Skip the first agent (already in agentsToTry[0]) and self-references.
-        if (id !== firstLaunch.agentId && !agentsToTry.some((a) => a.agentId === id)) {
-          const agent = resolveAgent(id)
-          agentsToTry.push({ agentId: agent.id, ...launchForAgent(agent) })
-        }
-      }
-    }
-    const hasDegradation = agentsToTry.length > 1
-
-    // Single AbortController for the entire cycle. When the user hits stop,
-    // this is aborted, which cascades to the current attempt via each
-    // attempt's per-attempt controller.
-    // IMPORTANT: we set rt.run.abort = cycleAbort so stopRun() kills the
-    // entire cycle, not just one attempt.
-    const cycleAbort = new AbortController()
-    rt.run = { abort: cycleAbort, handle: null }
-
-    // Echo the prompt into the stream once (first attempt only).
-    emit(runId, { type: 'user_text', text: prompt })
-
-    const failedAgents: Array<{ agentId: string; agentName: string; error: string }> = []
-    let success = false
-    // True once the first attempt's onSessionId has fired (so retry
-    // attempts skip cbs.onSessionId — no duplicate session_started).
-    let hasBound = false
-    // Turn-scoped: whether this turn has spent its single socket-disconnect
-    // auto-`resume` (AS-R18 / AVAIL-7). Bounds the reconnect to exactly one.
-    let socketRetryUsed = false
-
-    try {
-      for (let attempt = 0; attempt < agentsToTry.length; attempt++) {
-        if (cycleAbort.signal.aborted) break
-
-        const agentCfg = agentsToTry[attempt]
-
-        // Emit agent_failed for the PREVIOUS attempt before starting the next.
-        if (attempt > 0 && failedAgents.length > 0) {
-          const prev = failedAgents[failedAgents.length - 1]
-          emit(runId, {
-            type: 'agent_failed',
-            agentId: prev.agentId,
-            agentName: prev.agentName,
-            error: prev.error,
-          })
-        }
-
-        let degraded = false
-        // Socket-disconnect path resolved this attempt (auto-resume succeeded, or a
-        // gated/exhausted disconnect emitted its own terminal `turn_end`). A socket
-        // disconnect is NOT degradable, so when set we leave the agent loop rather
-        // than trying the next agent (AS-R18).
-        let socketTerminated = false
-
-        // Inner sub-loop: the normal run plus AT MOST one auto-`resume` pass after a
-        // socket disconnect (AS-R18). `socketRetryUsed` (turn-scoped) bounds it to a
-        // single retry — no unbounded reconnect billing. `reconnecting` is true only
-        // on the resume pass, which forces `resume: runId` to preserve full context.
-        for (let reconnecting = false; ; ) {
-          // Per-call abort that cascades user stop from the cycle controller.
-          const attemptAbort = new AbortController()
-          rt.run = { abort: cycleAbort, handle: null }
-          const onCycleAbort = (): void => attemptAbort.abort()
-          cycleAbort.signal.addEventListener('abort', onCycleAbort, { once: true })
-
-          setStatus(runId, 'running')
-
-          // The socket disconnect verdict for THIS run pass (null ⇒ no disconnect).
-          let socketInfo: { error: string; sideEffectPending: boolean } | null = null
-
-          try {
-            await runClaude({
-              prompt,
-              cwd: workspacePath,
-              signal: attemptAbort.signal,
-              // Requirement chats are pinned to `default` so the gateway always runs.
-              permissionMode: isRequirement ? 'default' : rt.mode,
-              // Reconnect forces `resume: runId` (same SDK session, full context —
-              // AS-R18). First attempt resumes an existing session; degradation
-              // retries never resume (each gets a fresh SDK session).
-              resume: reconnecting
-                ? runId
-                : attempt === 0
-                  ? runId.startsWith(PENDING_SESSION_PREFIX)
-                    ? undefined
-                    : runId
-                  : undefined,
-              reconnectAttempt: reconnecting,
-              envOverrides: agentCfg.envOverrides,
-              model: agentCfg.model,
-              currentAgentId: agentCfg.agentId,
-              ...(isRequirement
-                ? {
-                    appendSystemPrompt: REQUIREMENT_AGENT_PROMPT,
-                    disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
-                    mcpServers: createRequirementMcpServer(workspacePath, broadcastRequirements),
-                    gate: 'requirement' as const,
-                  }
-                : // Socket auto-resume is for ordinary user sessions only — the
-                  // requirement comm agent is excluded (different lifecycle).
-                  {
-                    onSocketDisconnect: (info) => {
-                      socketInfo = info
-                    },
-                  }),
-              send: (m) => emit(runId, m),
-              onStart: (h) => {
-                if (rt.run) rt.run.handle = h
-              },
-              onSessionId: (sid) => {
-                if (runId !== sid) {
-                  const prev = runId
-                  // First binding (pending→real): call bindPending + external cb.
-                  // Retry binding (already bound): skip bindPending + external cb
-                  // to avoid duplicate `session_started` on the wire. The new SDK
-                  // session id is ephemeral — we don't track it for resume.
-                  if (prev.startsWith(PENDING_SESSION_PREFIX)) {
-                    bindPending(prev, sid)
-                    runId = sid
-                    if (!hasBound) {
-                      hasBound = true
-                      cbs.onSessionId?.(prev, sid)
-                    }
-                  } else if (!hasBound) {
-                    // First binding on a non-pending session (e.g. resume flow).
-                    // This path runs once per launchRun.
-                    hasBound = true
-                    cbs.onSessionId?.(prev, sid)
-                  }
-                  // If hasBound is already true (retry), skip everything — the
-                  // runtime keeps its original Map key.
-                  broadcastStatuses()
-                }
-              },
-              onTeam: () => {
-                // The run became a persistent agent team: the lead process now stays
-                // alive across turns. Mark the runtime (so `turn_end` holds at `team`
-                // and the next prompt feeds the live run), tell the client once, and
-                // surface the team status.
-                rt.team = true
-                emit(runId, { type: 'team_upgraded' })
-                setStatus(runId, 'team')
-              },
-              onDegradableError: (errMsg) => {
-                degraded = true
-                const agent = resolveAgent(agentCfg.agentId)
-                failedAgents.push({ agentId: agent.id, agentName: agent.name, error: errMsg })
-              },
-            })
-          } finally {
-            cycleAbort.signal.removeEventListener('abort', onCycleAbort)
-          }
-
-          // User stop wins over any reconnect decision.
-          if (cycleAbort.signal.aborted) {
-            socketTerminated = true
-            break
-          }
-          // No socket disconnect ⇒ normal completion / degradable / internal error;
-          // leave the sub-loop and let the agent-loop logic below take over.
-          if (!socketInfo) break
-
-          const disconnect: { error: string; sideEffectPending: boolean } = socketInfo
-          // Decide: single same-session auto-resume, or refuse → manual continue.
-          const decision = decideSocketResume(disconnect.error, {
-            autoResumeEnabled: getSocketAutoResume(),
-            sideEffectPending: disconnect.sideEffectPending,
-            retryAlreadyUsed: socketRetryUsed,
-            isPendingSession: runId.startsWith(PENDING_SESSION_PREFIX),
-            isTeam: rt.team,
-            aborted: cycleAbort.signal.aborted,
-          })
-          if (decision.action === 'auto-resume') {
-            socketRetryUsed = true
-            // Hold the session in `reconnecting` over the bounded backoff so the
-            // sidebar shows the transient state; reconcileLiveness won't reap it
-            // (it only converges `running`/aborted/idle).
-            setStatus(runId, 'reconnecting')
-            await sleepAbortable(socketReconnectBackoffMs(), cycleAbort.signal)
-            if (cycleAbort.signal.aborted) {
-              socketTerminated = true
-              break
-            }
-            reconnecting = true
-            continue // re-invoke runClaude with resume: runId
-          }
-          // Refused (gate blocked / switch off / pending id / exhausted resume): emit
-          // the gated terminal `turn_end` and stop — finalizeRun settles to idle.
-          emit(runId, decision.turnEnd)
-          socketTerminated = true
-          break
-        }
-
-        if (cycleAbort.signal.aborted) break
-        // A socket disconnect is terminal for this turn (resumed-OK, or manual-error
-        // already emitted) and is never degradable — never try the next agent.
-        if (socketTerminated) {
-          clearPending(runId)
-          break
-        }
-        if (degraded) {
-          // Clear any pending permission prompts from the failed attempt.
-          clearPending(runId)
-          continue // try next agent
-        }
-
-        // Success!
-        success = true
-        break
-      }
-    } catch (err) {
-      emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
-    } finally {
-      if (rt.run) rt.run = null
-      // The run is fully over (team sessions only reach here on user stop), so the
-      // team is no longer live — clear the flag and fall back to idle.
-      rt.team = false
-      // Drop any still-pending permission prompt: the run is gone, so it can no
-      // longer be answered. Clearing keeps a stale id from holding a *future* turn
-      // (same runtime, resumed session) at awaiting_permission.
-      clearPending(runId)
-
-      // On chain exhaustion: emit terminal failure banner + turn_end error.
-      // Skip this if the user stopped the cycle mid-degradation (finalizeRun
-      // will emit turn_end { complete } for the stop).
-      if (!success && hasDegradation && failedAgents.length > 0 && !cycleAbort.signal.aborted) {
-        emit(runId, {
-          type: 'all_agents_failed',
-          agents: failedAgents,
-          message: `All ${failedAgents.length} agent(s) failed. Last error: ${failedAgents[failedAgents.length - 1].error}`,
-        })
-        emit(runId, {
-          type: 'turn_end',
-          reason: 'error',
-          error: `All agents failed: ${failedAgents[failedAgents.length - 1].error}`,
-        })
-      } else if (!success && !cycleAbort.signal.aborted && !hasDegradation) {
-        // Single-attempt (no degradation) failure: the runClaude internal
-        // catch already emitted turn_end { error }. This branch covers
-        // the case where runClaude threw unexpectedly.
-      }
-
-      // Authoritative terminal-state backstop. The run is fully over; guarantee a
-      // terminal `turn_end` is broadcast and the session settles to `idle`.
-      finalizeRun(runId)
-      await cbs.onSettled?.(workspacePath)
-    }
-  }
+  // `launchRun` is hoisted to top-level (see `export async function launchRun`
+  // above `startServer`) so the slice 1/3 contract tests can drive it directly
+  // with a fake deps bag. Production callers in `startServer` still call the
+  // top-level function with the real closure deps — no behavior change.
 
   /**
    * Run one dev turn for the automation orchestrator and resolve once it settles.
@@ -874,13 +912,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         setStatus(rt.sessionId, 'running')
         rt.run.handle.pushInput(input.prompt)
       } else {
-        void launchRun(rt, input.prompt, {
-          onSessionId: (_prev, sid) => {
-            setSessionMode(sid, rt.mode)
-            // Surface the bind to the orchestrator immediately (early in_progress flip).
-            input.onSessionId?.(sid)
+        void launchRun(
+          rt,
+          input.prompt,
+          { broadcastStatuses, broadcastRequirements },
+          {
+            onSessionId: (_prev, sid) => {
+              setSessionMode(sid, rt.mode)
+              // Surface the bind to the orchestrator immediately (early in_progress flip).
+              input.onSessionId?.(sid)
+            },
           },
-        })
+        )
       }
     })
 
@@ -1175,30 +1218,35 @@ export async function startServer(opts: ServerOptions): Promise<void> {
                 return
               }
               const isRequirement = rt.kind === 'requirement'
-              await launchRun(rt, msg.text, {
-                onSessionId: (prev, sid) => {
-                  if (isRequirement) {
-                    // Comm session: re-key its store mapping; never touch the
-                    // persisted active/normal-mode state (it's a hidden session).
-                    rebindChatSession(prev, sid)
-                    if (viewing === prev) viewing = sid
-                  } else {
-                    setSessionMode(sid, rt.mode)
-                    if (viewing === prev) {
-                      viewing = sid
-                      setActiveSessionId(sid)
+              await launchRun(
+                rt,
+                msg.text,
+                { broadcastStatuses, broadcastRequirements },
+                {
+                  onSessionId: (prev, sid) => {
+                    if (isRequirement) {
+                      // Comm session: re-key its store mapping; never touch the
+                      // persisted active/normal-mode state (it's a hidden session).
+                      rebindChatSession(prev, sid)
+                      if (viewing === prev) viewing = sid
+                    } else {
+                      setSessionMode(sid, rt.mode)
+                      if (viewing === prev) {
+                        viewing = sid
+                        setActiveSessionId(sid)
+                      }
                     }
-                  }
-                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                  },
+                  // Requirement comm sessions are hidden from the normal list, so
+                  // there's nothing to refresh for them.
+                  onSettled: isRequirement
+                    ? undefined
+                    : async (wp) => {
+                        await sendSessions(ws, wp)
+                      },
                 },
-                // Requirement comm sessions are hidden from the normal list, so
-                // there's nothing to refresh for them.
-                onSettled: isRequirement
-                  ? undefined
-                  : async (wp) => {
-                      await sendSessions(ws, wp)
-                    },
-              })
+              )
               return
             }
 
@@ -1400,13 +1448,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               })
               send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
               const firstPrompt = `开始完善需求 ${req.id}。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_requirements。`
-              await launchRun(rt, firstPrompt, {
-                onSessionId: (prev, sid) => {
-                  rebindChatSession(prev, sid)
-                  if (viewing === prev) viewing = sid
-                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+              await launchRun(
+                rt,
+                firstPrompt,
+                { broadcastStatuses, broadcastRequirements },
+                {
+                  onSessionId: (prev, sid) => {
+                    rebindChatSession(prev, sid)
+                    if (viewing === prev) viewing = sid
+                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                  },
                 },
-              })
+              )
               return
             }
 
@@ -1443,13 +1496,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               })
               send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
               const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_requirements。`
-              await launchRun(rt, firstPrompt, {
-                onSessionId: (prev, sid) => {
-                  rebindChatSession(prev, sid)
-                  if (viewing === prev) viewing = sid
-                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+              await launchRun(
+                rt,
+                firstPrompt,
+                { broadcastStatuses, broadcastRequirements },
+                {
+                  onSessionId: (prev, sid) => {
+                    rebindChatSession(prev, sid)
+                    if (viewing === prev) viewing = sid
+                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                  },
                 },
-              })
+              )
               return
             }
 
@@ -1491,18 +1549,23 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               const devPrompt = `${skillPrefix}${req.title}\n\n${req.content}${depNote}`
               // Background launch: don't await — it runs detached, surviving this
               // connection. Status flips to in_progress once the SDK id binds.
-              void launchRun(devRt, devPrompt, {
-                onSessionId: (prev, sid) => {
-                  setSessionMode(sid, devRt.mode)
-                  setLastDevSession(req.id, sid)
-                  updateStatus(req.id, 'in_progress')
-                  broadcastRequirements(proj)
-                  send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+              void launchRun(
+                devRt,
+                devPrompt,
+                { broadcastStatuses, broadcastRequirements },
+                {
+                  onSessionId: (prev, sid) => {
+                    setSessionMode(sid, devRt.mode)
+                    setLastDevSession(req.id, sid)
+                    updateStatus(req.id, 'in_progress')
+                    broadcastRequirements(proj)
+                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
+                  },
+                  onSettled: async (wp) => {
+                    await sendSessions(ws, wp)
+                  },
                 },
-                onSettled: async (wp) => {
-                  await sendSessions(ws, wp)
-                },
-              })
+              )
               return
             }
 

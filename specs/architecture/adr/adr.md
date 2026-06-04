@@ -31,3 +31,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0006](0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections                           | accepted   |
 | [0007](0007-read-only-requirement-agent.md)             | Read-only requirement agent; save via confirmation; cross-runtime SQLite | accepted   |
 | [0008](0008-streaming-input-for-agent-teams.md)         | Streaming-input prompts for persistent agent teams                       | accepted   |
+| [0009](0009-unidirectional-boundaries.md)               | Unidirectional boundaries: kernel → transport/features, no back-edges    | accepted   |

@@ -21,7 +21,11 @@ export default defineConfig({
       ['web/src/components/**', 'happy-dom'],
       ['web/src/pages/**', 'happy-dom'],
     ],
-    include: ['{server,shared,web}/src/**/*.test.ts', 'scripts/**/*.test.mjs'],
+    include: [
+      '{server,shared,web}/src/**/*.test.ts',
+      'server/test/**/*.test.ts',
+      'scripts/**/*.test.mjs',
+    ],
     setupFiles: ['./web/src/test-setup.ts'],
     globals: false,
   },

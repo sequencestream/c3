@@ -26,9 +26,24 @@ const props = defineProps<{
    * separator) — the degradation path must never break the bar.
    */
   currentAgentName?: string
+  /**
+   * The viewed session's agent run hit a socket disconnect and is backing off
+   * before a single auto-`resume` of the same run (SessionStatus `reconnecting`,
+   * AVAIL-7). A transient running-state hold — distinct from `connection`, which
+   * is the browser↔server WebSocket link (AVAIL-6).
+   */
+  reconnecting?: boolean
+  /**
+   * The last turn's auto-resume was refused by the side-effect gate: a write-class
+   * `tool_use` (Edit/Write/Bash) was unclosed when the socket dropped, so c3 ended
+   * the turn (`turn_end { side_effect_pending: true }`) and settled to idle. The
+   * user must confirm no side effects and continue manually (AS-R19). Mutually
+   * exclusive with `reconnecting` (that's the auto path; this is the refused path).
+   */
+  sideEffectPending?: boolean
 }>()
 
-const emit = defineEmits<{ refresh: []; stop: [] }>()
+const emit = defineEmits<{ refresh: []; stop: []; continue: [] }>()
 
 // Stop control lives here now (not the composer). It's actionable whenever the
 // viewed session has work to interrupt: an ordinary turn in flight OR a live
@@ -38,6 +53,17 @@ const canStop = computed(() => props.running || props.teamActive)
 
 // Dot color class + label + whether to spin, derived from running + activity.
 const view = computed(() => {
+  // Agent-run reconnect (AVAIL-7): a transient running-state hold while c3 backs
+  // off before a single auto-resume. Takes precedence over the generic running
+  // labels so the user sees *why* the turn paused, not a plain "Thinking…".
+  if (props.reconnecting) {
+    return { dot: 'reconnecting', label: t('session.statusBar.reconnecting'), spin: true }
+  }
+  // Danger state (AS-R19): auto-resume refused, turn ended to idle, awaiting a
+  // manual continue. Surfaced even though `running` is false (it's idle now).
+  if (props.sideEffectPending) {
+    return { dot: 'error', label: t('session.statusBar.sideEffectPending'), spin: false }
+  }
   if (props.activity.phase === 'error') {
     return {
       dot: 'error',
@@ -83,6 +109,14 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
     <span v-if="connection === 'closed'" class="status-muted">{{
       t('session.statusBar.disconnected')
     }}</span>
+    <button
+      v-if="sideEffectPending"
+      class="status-continue"
+      :title="t('session.statusBar.continue.tooltip')"
+      @click="emit('continue')"
+    >
+      {{ t('session.statusBar.continue.label') }}
+    </button>
     <button
       class="status-stop"
       :disabled="!canStop"

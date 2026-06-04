@@ -8,6 +8,7 @@
  */
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule, ScheduleExecutionLog, TranscriptItem } from '@ccc/shared/protocol'
+import SessionTitleBar from '../../../../components/SessionTitleBar/SessionTitleBar.vue'
 import { useTypedI18n } from '@/i18n'
 
 const { t, d } = useTypedI18n()
@@ -116,121 +117,125 @@ function logStatus(log: ScheduleExecutionLog): string {
 </script>
 
 <template>
-  <div class="sched-detail">
-    <template v-if="schedule">
-      <h2 class="sched-detail-title">{{ detailTitle }}</h2>
-
-      <!-- Execution history: most-recent first (server orders by started_at DESC). -->
-      <section class="sched-section sched-section--first">
-        <h3 class="sched-section-title">{{ t('schedule.detail.history.label') }}</h3>
-        <ul v-if="logs.length" class="sched-log-list">
-          <li v-for="log in logs" :key="log.id" class="sched-log">
-            <div class="sched-log-head">
-              <span class="log-status-badge" :class="logStatus(log)">{{ logStatus(log) }}</span>
-              <span class="sched-log-time">{{ fmtDate(log.startedAt) }}</span>
-              <span class="sched-log-meta">
-                <span>{{ t('schedule.detail.duration', { duration: fmtDuration(log) }) }}</span>
-                <span v-if="log.exitCode !== null">{{
-                  t('schedule.detail.exit', { code: log.exitCode })
-                }}</span>
-              </span>
-            </div>
-            <div class="sched-log-row">
-              <span class="sched-log-label">{{ t('schedule.detail.started.label') }}</span>
-              <span class="sched-log-val">{{ fmtDate(log.startedAt) }}</span>
-            </div>
-            <div class="sched-log-row">
-              <span class="sched-log-label">{{ t('schedule.detail.finished.label') }}</span>
-              <span class="sched-log-val">{{
-                log.finishedAt === null ? t('schedule.detail.running') : fmtDate(log.finishedAt)
-              }}</span>
-            </div>
-            <pre v-if="log.output" class="sched-log-output">{{ log.output }}</pre>
-            <pre v-if="log.error" class="sched-log-error">{{ log.error }}</pre>
-
-            <!-- Session transcript entry: only for llm (prompt) executions. -->
-            <template v-if="isLlm">
-              <button type="button" class="sched-session-toggle" @click="toggleSession(log.id)">
-                {{
-                  isExpanded(log.id)
-                    ? t('schedule.detail.hideSession.label')
-                    : t('schedule.detail.viewSession.label')
-                }}
-              </button>
-              <div v-if="isExpanded(log.id)" class="sched-session">
-                <p v-if="transcriptOf(log.id) === undefined" class="sched-session-empty">
-                  {{ t('schedule.detail.loadingSession') }}
-                </p>
-                <p v-else-if="transcriptOf(log.id)!.length === 0" class="sched-session-empty">
-                  {{ t('schedule.detail.noSessionRecord') }}
-                </p>
-                <ul v-else class="sched-msg-list">
-                  <li
-                    v-for="(item, i) in transcriptOf(log.id)"
-                    :key="i"
-                    class="sched-msg"
-                    :class="`sched-msg--${item.kind}`"
-                  >
-                    <template v-if="item.kind === 'assistant' || item.kind === 'user'">
-                      <span class="sched-msg-role">{{
-                        item.kind === 'assistant'
-                          ? t('schedule.detail.role.assistant')
-                          : t('schedule.detail.role.user')
-                      }}</span>
-                      <pre class="sched-msg-text">{{ item.text }}</pre>
-                    </template>
-                    <template v-else-if="item.kind === 'tool_use'">
-                      <span class="sched-msg-role">{{
-                        t('schedule.detail.role.tool', { name: item.toolName })
-                      }}</span>
-                      <pre class="sched-msg-text">{{ fmtToolInput(item.input) }}</pre>
-                    </template>
-                    <template v-else-if="item.kind === 'tool_result'">
-                      <span class="sched-msg-role" :class="{ 'is-error': item.isError }">
-                        {{
-                          item.isError
-                            ? t('schedule.detail.role.resultError')
-                            : t('schedule.detail.role.result')
-                        }}
-                      </span>
-                      <pre class="sched-msg-text">{{ item.content }}</pre>
-                    </template>
-                    <template v-else>
-                      <span class="sched-msg-notice">{{ item.text }}</span>
-                    </template>
-                  </li>
-                </ul>
+  <div class="sched-detail-wrap">
+    <!-- 右栏标题栏:与 Discussions 右栏一致的 SessionTitleBar 样式(36px 横条 +
+         底部边框),与左侧 ScheduleList 标题对齐。 -->
+    <SessionTitleBar v-if="schedule" :active-title="detailTitle" :show-mode="false" />
+    <div class="sched-detail">
+      <template v-if="schedule">
+        <!-- Execution history: most-recent first (server orders by started_at DESC). -->
+        <section class="sched-section sched-section--first">
+          <h3 class="sched-section-title">{{ t('schedule.detail.history.label') }}</h3>
+          <ul v-if="logs.length" class="sched-log-list">
+            <li v-for="log in logs" :key="log.id" class="sched-log">
+              <div class="sched-log-head">
+                <span class="log-status-badge" :class="logStatus(log)">{{ logStatus(log) }}</span>
+                <span class="sched-log-time">{{ fmtDate(log.startedAt) }}</span>
+                <span class="sched-log-meta">
+                  <span>{{ t('schedule.detail.duration', { duration: fmtDuration(log) }) }}</span>
+                  <span v-if="log.exitCode !== null">{{
+                    t('schedule.detail.exit', { code: log.exitCode })
+                  }}</span>
+                </span>
               </div>
-            </template>
-          </li>
-        </ul>
-        <p v-else class="sched-section-empty">{{ t('schedule.detail.noHistory') }}</p>
-      </section>
-    </template>
+              <div class="sched-log-row">
+                <span class="sched-log-label">{{ t('schedule.detail.started.label') }}</span>
+                <span class="sched-log-val">{{ fmtDate(log.startedAt) }}</span>
+              </div>
+              <div class="sched-log-row">
+                <span class="sched-log-label">{{ t('schedule.detail.finished.label') }}</span>
+                <span class="sched-log-val">{{
+                  log.finishedAt === null ? t('schedule.detail.running') : fmtDate(log.finishedAt)
+                }}</span>
+              </div>
+              <pre v-if="log.output" class="sched-log-output">{{ log.output }}</pre>
+              <pre v-if="log.error" class="sched-log-error">{{ log.error }}</pre>
 
-    <div v-else class="sched-detail-empty">
-      <p>{{ t('schedule.detail.empty') }}</p>
+              <!-- Session transcript entry: only for llm (prompt) executions. -->
+              <template v-if="isLlm">
+                <button type="button" class="sched-session-toggle" @click="toggleSession(log.id)">
+                  {{
+                    isExpanded(log.id)
+                      ? t('schedule.detail.hideSession.label')
+                      : t('schedule.detail.viewSession.label')
+                  }}
+                </button>
+                <div v-if="isExpanded(log.id)" class="sched-session">
+                  <p v-if="transcriptOf(log.id) === undefined" class="sched-session-empty">
+                    {{ t('schedule.detail.loadingSession') }}
+                  </p>
+                  <p v-else-if="transcriptOf(log.id)!.length === 0" class="sched-session-empty">
+                    {{ t('schedule.detail.noSessionRecord') }}
+                  </p>
+                  <ul v-else class="sched-msg-list">
+                    <li
+                      v-for="(item, i) in transcriptOf(log.id)"
+                      :key="i"
+                      class="sched-msg"
+                      :class="`sched-msg--${item.kind}`"
+                    >
+                      <template v-if="item.kind === 'assistant' || item.kind === 'user'">
+                        <span class="sched-msg-role">{{
+                          item.kind === 'assistant'
+                            ? t('schedule.detail.role.assistant')
+                            : t('schedule.detail.role.user')
+                        }}</span>
+                        <pre class="sched-msg-text">{{ item.text }}</pre>
+                      </template>
+                      <template v-else-if="item.kind === 'tool_use'">
+                        <span class="sched-msg-role">{{
+                          t('schedule.detail.role.tool', { name: item.toolName })
+                        }}</span>
+                        <pre class="sched-msg-text">{{ fmtToolInput(item.input) }}</pre>
+                      </template>
+                      <template v-else-if="item.kind === 'tool_result'">
+                        <span class="sched-msg-role" :class="{ 'is-error': item.isError }">
+                          {{
+                            item.isError
+                              ? t('schedule.detail.role.resultError')
+                              : t('schedule.detail.role.result')
+                          }}
+                        </span>
+                        <pre class="sched-msg-text">{{ item.content }}</pre>
+                      </template>
+                      <template v-else>
+                        <span class="sched-msg-notice">{{ item.text }}</span>
+                      </template>
+                    </li>
+                  </ul>
+                </div>
+              </template>
+            </li>
+          </ul>
+          <p v-else class="sched-section-empty">{{ t('schedule.detail.noHistory') }}</p>
+        </section>
+      </template>
+
+      <div v-else class="sched-detail-empty">
+        <p>{{ t('schedule.detail.empty') }}</p>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sched-detail {
+/* 外层容器:撑满右栏,纵向排布(标题栏 + 可滚动内容区)。 */
+.sched-detail-wrap {
   flex: 1;
   height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-panel);
+  color: var(--c-text);
+}
+.sched-detail {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   padding: var(--sp-4);
-  background: var(--c-panel);
-  color: var(--c-text);
-}
-.sched-detail-title {
-  font-size: var(--fs-title);
-  font-weight: 600;
-  margin: 0 0 var(--sp-4);
-  padding-bottom: var(--sp-2);
-  border-bottom: 1px solid var(--c-border);
 }
 .sched-detail-empty {
   flex: 1;

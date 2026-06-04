@@ -132,6 +132,15 @@ const running = computed(
   () => hasActiveSession.value && statusOf(activeSession.value as string) !== 'idle',
 )
 
+// The viewed session's agent run is in the transient socket-disconnect hold
+// (SessionStatus `reconnecting`, AVAIL-7): backing off before a single
+// auto-`resume` of the same run. Surfaced as a distinct "reconnecting…" middle
+// state in the status bar — it's still `running` (input stays locked), so this
+// only refines the label, like `activity`.
+const reconnecting = computed(
+  () => hasActiveSession.value && statusOf(activeSession.value as string) === 'reconnecting',
+)
+
 // Sessions upgraded to a persistent agent team (server `team_upgraded`). The lead
 // process stays alive across turns, so the composer stays usable (messages route
 // to the live lead) and a "结束团队" control ends it. Pruned when a session goes
@@ -214,6 +223,23 @@ const actionablePermId = computed<string | null>(() =>
 // (see RunActivity). `running` is the authoritative on/off; this only refines
 // the label. Reset on session switch; the replayed buffer tail re-derives it.
 const activity = ref<RunActivity>({ phase: 'idle' })
+
+// Per-session "danger state" flag (AS-R19): set when a turn ended with
+// `turn_end { side_effect_pending: true }` — the side-effect gate refused an
+// auto-resume because a write-class tool_use was unclosed at the disconnect, so
+// the turn settled to idle awaiting a MANUAL continue. Drives the status bar's
+// confirm + 「continue」control. Cleared the moment the session runs again
+// (manual continue via onSubmit, or any new prompt) and on (re)select.
+const sideEffectPendingBySession = ref<Record<string, boolean>>({})
+const sideEffectPending = computed(
+  () => hasActiveSession.value && !!sideEffectPendingBySession.value[activeSession.value as string],
+)
+function clearSideEffectPending(sessionId: string) {
+  if (!sideEffectPendingBySession.value[sessionId]) return
+  const next = { ...sideEffectPendingBySession.value }
+  delete next[sessionId]
+  sideEffectPendingBySession.value = next
+}
 
 // Which agent the viewed session is really running, inferred client-side like
 // RunActivity. Stored as the session's CHAIN INDEX (position in the server's
@@ -617,6 +643,10 @@ function handleMessage(msg: ServerToClient) {
       // History (on-disk baseline) renders first; the live buffer tail, if any,
       // follows as normal stream events (user_text/assistant_text/…).
       activity.value = { phase: 'idle' }
+      // A (re)select re-derives status from the authoritative snapshot; clear any
+      // stale danger flag so a re-entered/resumed session doesn't show a leftover
+      // 「continue」 control (the flag re-arms only on a fresh `turn_end`).
+      clearSideEffectPending(msg.sessionId)
       // Reset the agent prefix to the default agent on every (re)select; the
       // degradation index isn't persisted across switches (see currentAgentName).
       currentAgentIndexBySession.value = {
@@ -832,6 +862,14 @@ function handleMessage(msg: ServerToClient) {
           text: t('session.turn.error', { error: msg.error ?? t('common.unknown.label') }),
         })
         activity.value = { phase: 'error', message: msg.error ?? 'unknown' }
+        // Danger state (AS-R19): the side-effect gate refused auto-resume. Flag
+        // the session so the status bar shows the confirm + manual 「continue」.
+        if (msg.side_effect_pending && activeSession.value) {
+          sideEffectPendingBySession.value = {
+            ...sideEffectPendingBySession.value,
+            [activeSession.value]: true,
+          }
+        }
       } else {
         activity.value = { phase: 'idle' }
       }
@@ -1317,6 +1355,17 @@ function onSubmit(text: string) {
   sessionStatus.value = { ...sessionStatus.value, [activeSession.value as string]: 'running' }
   // Clear any held error and show progress immediately (don't wait for the echo).
   activity.value = { phase: 'thinking' }
+  // A new turn is starting — the danger state (if any) is being resolved by this
+  // very continue/prompt; drop the flag so the 「continue」 control disappears.
+  clearSideEffectPending(activeSession.value as string)
+}
+
+// Manual continue from the side-effect danger state (AS-R19): resume the same
+// session by sending an ordinary prompt — the next turn `resume`s the SDK session
+// with full context. A fixed "continue" nudge (locale-independent: it's a prompt
+// to Claude, not UI copy) is enough; the backend reuses the same session.
+function onContinue() {
+  onSubmit('continue')
 }
 
 function stopRun() {
@@ -1394,6 +1443,8 @@ function listCommands() {
       :connection="status"
       :activity="activity"
       :current-agent-name="currentAgentName"
+      :reconnecting="reconnecting"
+      :side-effect-pending="sideEffectPending"
       :queue="currentQueue"
       :available-commands="availableCommands"
       :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
@@ -1411,6 +1462,7 @@ function listCommands() {
       @submit="onSubmit"
       @enqueue="onEnqueue"
       @stop="stopRun"
+      @continue="onContinue"
       @list-commands="listCommands"
     />
 
@@ -1430,6 +1482,8 @@ function listCommands() {
       :connection="status"
       :activity="activity"
       :current-agent-name="currentAgentName"
+      :reconnecting="reconnecting"
+      :side-effect-pending="sideEffectPending"
       :queue="currentQueue"
       :available-commands="availableCommands"
       :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
@@ -1450,6 +1504,7 @@ function listCommands() {
       @submit="onSubmit"
       @enqueue="onEnqueue"
       @stop="stopRun"
+      @continue="onContinue"
       @list-commands="listCommands"
     />
 

@@ -427,6 +427,12 @@
       "runningTool": "{toolName} を実行中…",
       "thinking": "思考中…",
       "disconnected": "· 切断されました。再接続中…",
+      "reconnecting": "接続が切断されました。再接続中…",
+      "sideEffectPending": "未完了の書き込みを検出しました。副作用がないことを確認してから続行してください",
+      "continue": {
+        "label": "続行",
+        "tooltip": "副作用がないことを確認してから手動で続行"
+      },
       "stop": {
         "tooltip": "実行中のターンを停止します",
         "endTeamTooltip": "チームを終了: チームリードとすべてのチームメイトを停止します",

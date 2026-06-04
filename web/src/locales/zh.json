@@ -427,6 +427,12 @@
       "runningTool": "正在运行 {toolName}…",
       "thinking": "思考中…",
       "disconnected": "· 已断开,正在重连…",
+      "reconnecting": "连接断开,正在重连…",
+      "sideEffectPending": "检测到未完成的写操作,确认无副作用后继续",
+      "continue": {
+        "label": "继续",
+        "tooltip": "确认无副作用后手动续接"
+      },
       "stop": {
         "tooltip": "停止正在进行的回合",
         "endTeamTooltip": "结束团队:关闭团队负责人和所有成员",

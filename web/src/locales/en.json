@@ -427,6 +427,12 @@
       "runningTool": "Running {toolName}…",
       "thinking": "Thinking…",
       "disconnected": "· Disconnected, reconnecting…",
+      "reconnecting": "Connection lost, reconnecting…",
+      "sideEffectPending": "Unfinished write detected — continue after confirming no side effects",
+      "continue": {
+        "label": "Continue",
+        "tooltip": "Continue manually after confirming no side effects"
+      },
       "stop": {
         "tooltip": "Stop the running turn",
         "endTeamTooltip": "End team: shut down the team lead and all teammates",

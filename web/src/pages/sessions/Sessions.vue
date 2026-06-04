@@ -45,6 +45,10 @@ defineProps<{
   activity: RunActivity
   /** Display name of the agent the viewed session is currently running. */
   currentAgentName?: string
+  /** Agent run is backing off before a single auto-resume (SessionStatus `reconnecting`). */
+  reconnecting?: boolean
+  /** Auto-resume refused by the side-effect gate; awaiting a manual continue (AS-R19). */
+  sideEffectPending?: boolean
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
   voiceLang: string
@@ -65,6 +69,7 @@ const emit = defineEmits<{
   submit: [text: string]
   enqueue: [text: string]
   stop: []
+  continue: []
   'list-commands': []
 }>()
 
@@ -116,8 +121,11 @@ defineExpose({
       :connection="connection"
       :activity="activity"
       :current-agent-name="currentAgentName"
+      :reconnecting="reconnecting"
+      :side-effect-pending="sideEffectPending"
       @refresh="emit('refresh')"
       @stop="emit('stop')"
+      @continue="emit('continue')"
     />
     <PendingQueue
       :items="queue"

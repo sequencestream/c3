@@ -47,9 +47,14 @@
   --c-purple-text: #c084fc;
 
   /* ---- 排印 ---- */
+  /* CJK 回退:在通用兜底前逐字回退到 Noto，避免缺 CJK system font 的环境出现 tofu（□）。
+     SC 优先，照顾汉字统一码下 zh 字形优先；五语均非 RTL。仅追加字体名，不自托管 web 字体。 */
   --font-ui:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Inter, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Inter, 'Noto Sans SC',
+    'Noto Sans JP', 'Noto Sans KR', 'Noto Sans', sans-serif;
+  --font-mono:
+    'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'Noto Sans SC', 'Noto Sans JP',
+    'Noto Sans KR', 'Noto Sans', monospace;
 
   --fs-title-lg: 20px;
   --fs-title-sm: 16px;
@@ -137,6 +142,26 @@
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--c-text-muted);
+}
+
+/* ---- 多语言长字段防溢出（规范 2.x） ----
+ * 五语（尤其 CJK 无空格断词）+ 长 token（路径/URL/ID）易溢出或被裁剪。
+ * 提供两个可复用原子类，长字段按需引用；本期仅提供工具与基线，不回扫逐字段套用。 */
+
+/* 单行截断：容器须可收缩（min-width:0），溢出以省略号收尾 */
+.u-truncate {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 多行换行：任意位置断行（含 CJK 与超长无空格 token），行高 1.5 */
+.u-wrap-anywhere {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: var(--lh-normal);
 }
 
 /* 焦点可见性（规范 6） */

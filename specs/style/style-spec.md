@@ -36,8 +36,9 @@
 
 ### 2.2 字体排印
 
-- **UI 字体**：系统 UI 栈 `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Inter, sans-serif`
-- **代码字体**：`"JetBrains Mono", "Fira Code", "Cascadia Code", monospace`
+- **UI 字体**：系统 UI 栈，末尾补 CJK 回退 `…, Inter, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", "Noto Sans", sans-serif`
+- **代码字体**：`"JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", "Noto Sans", monospace`
+- **CJK 防 tofu**：在通用兜底（`sans-serif` / `monospace`）之前追加 `Noto Sans SC/JP/KR + Noto Sans`，使缺 CJK system font 的环境逐字回退到 Noto 而非渲染豆腐块（□）。`SC` 优先（汉字统一码下 zh 字形优先）。仅追加字体名、不自托管 web 字体。五语均非 RTL。
 - **字号比例**（以 16px 为基准）：
   - 标题大：20px / 1.3
   - 标题小：16px / 1.4，`font-weight: 600`
@@ -45,7 +46,16 @@
   - 辅助说明：12px / 1.5
   - 代码：13px / 1.6
 
-### 2.3 间距与圆角
+### 2.3 多语言长字段防溢出
+
+CJK 无空格断词 + 长 token（路径 / URL / ID）易溢出或被裁剪。`standard.css` 提供两个可复用原子类，长字段按需引用：
+
+- `.u-truncate`：单行截断（`min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis`），容器须可收缩。
+- `.u-wrap-anywhere`：多行换行（`min-width:0; overflow-wrap:anywhere; word-break:break-word; line-height:1.5`），任意位置断行（含 CJK 与超长无空格 token）。
+
+> `overflow-wrap:anywhere` 仅限原子类内，不做全局，避免破坏 flex 布局。
+
+### 2.4 间距与圆角
 
 - **基础单位**：4px
 - **内边距**：常用 8px, 12px, 16px, 24px
@@ -57,7 +67,7 @@
   - 大型面板、侧栏：16px
   - 圆角按钮/胶囊：全圆角（`9999px`）
 
-### 2.4 阴影与层级
+### 2.5 阴影与层级
 
 不依赖实色边界，用阴影和透明度区分层级：
 

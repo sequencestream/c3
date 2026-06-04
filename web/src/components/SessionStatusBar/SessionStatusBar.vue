@@ -21,7 +21,13 @@ const props = defineProps<{
   activity: RunActivity
 }>()
 
-const emit = defineEmits<{ refresh: [] }>()
+const emit = defineEmits<{ refresh: []; stop: [] }>()
+
+// Stop control lives here now (not the composer). It's actionable whenever the
+// viewed session has work to interrupt: an ordinary turn in flight OR a live
+// team. Both route through the same `stop_run` link (App.stopRun); the title
+// distinguishes "stop this turn" from "end the whole team".
+const canStop = computed(() => props.running || props.teamActive)
 
 // Dot color class + label + whether to spin, derived from running + activity.
 const view = computed(() => {
@@ -65,6 +71,17 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
     <span v-if="connection === 'closed'" class="status-muted">{{
       t('session.statusBar.disconnected')
     }}</span>
+    <button
+      class="status-stop"
+      :disabled="!canStop"
+      :title="
+        teamActive
+          ? t('session.statusBar.stop.endTeamTooltip')
+          : t('session.statusBar.stop.tooltip')
+      "
+      :aria-label="t('session.statusBar.stop.ariaLabel')"
+      @click="emit('stop')"
+    />
     <button
       class="status-refresh"
       :disabled="!canRefresh"

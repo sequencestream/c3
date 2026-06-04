@@ -426,6 +426,11 @@
       "runningTool": "{toolName} を実行中…",
       "thinking": "思考中…",
       "disconnected": "· 切断されました。再接続中…",
+      "stop": {
+        "tooltip": "実行中のターンを停止します",
+        "endTeamTooltip": "チームを終了: チームリードとすべてのチームメイトを停止します",
+        "ariaLabel": "停止"
+      },
       "refresh": {
         "tooltip": "セッションステータスを再同期"
       }
@@ -447,21 +452,12 @@
           "ariaLabel": "音声入力を停止"
         }
       },
-      "stop": {
-        "label": "停止",
-        "tooltip": "実行中のターンを停止します"
-      },
-      "endTeam": {
-        "label": "チームを終了",
-        "tooltip": "チームを終了: チームリードとすべてのチームメイトを停止します"
-      },
       "sendHint": {
         "running": "ターン進行中 — メッセージはキューに入ります",
         "ready": "Enter を 2 回、または ⌘/Ctrl+Enter で送信"
       },
       "send": {
-        "label": "送信",
-        "queue": "キューに追加"
+        "label": "送信"
       }
     },
     "queue": {

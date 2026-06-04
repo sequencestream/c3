@@ -110,6 +110,7 @@ defineExpose({
       :connection="connection"
       :activity="activity"
       @refresh="emit('refresh')"
+      @stop="emit('stop')"
     />
     <PendingQueue
       :items="queue"
@@ -125,7 +126,6 @@ defineExpose({
       :voice-lang="voiceLang"
       @submit="(text: string) => emit('submit', text)"
       @enqueue="(text: string) => emit('enqueue', text)"
-      @stop="emit('stop')"
       @list-commands="emit('list-commands')"
     />
   </div>

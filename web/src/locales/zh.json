@@ -426,6 +426,11 @@
       "runningTool": "正在运行 {toolName}…",
       "thinking": "思考中…",
       "disconnected": "· 已断开,正在重连…",
+      "stop": {
+        "tooltip": "停止正在进行的回合",
+        "endTeamTooltip": "结束团队:关闭团队负责人和所有成员",
+        "ariaLabel": "停止"
+      },
       "refresh": {
         "tooltip": "重新同步会话状态"
       }
@@ -447,21 +452,12 @@
           "ariaLabel": "停止语音输入"
         }
       },
-      "stop": {
-        "label": "停止",
-        "tooltip": "停止正在进行的回合"
-      },
-      "endTeam": {
-        "label": "结束团队",
-        "tooltip": "结束团队:关闭团队负责人和所有成员"
-      },
       "sendHint": {
         "running": "回合进行中——你的消息会被排队",
         "ready": "按两次 Enter,或 ⌘/Ctrl+Enter 发送"
       },
       "send": {
-        "label": "发送",
-        "queue": "排队"
+        "label": "发送"
       }
     },
     "queue": {

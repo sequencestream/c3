@@ -821,6 +821,30 @@ header h1 {
   color: var(--c-text-disabled);
   cursor: default;
 }
+/* Stop / End-team control — a small red square, sits at the right next to ↻.
+   Enabled only while there's a turn or team to interrupt; greys out when idle. */
+.status-stop {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--c-error);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+.status-stop:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.status-stop:disabled {
+  background: var(--c-text-disabled);
+  opacity: 0.5;
+  cursor: default;
+}
 @keyframes status-spin {
   to {
     transform: rotate(360deg);
@@ -1567,18 +1591,6 @@ button.deny {
   border: 1px solid var(--c-error);
 }
 button.deny:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.12);
-  filter: none;
-}
-
-/* 停止正在运行的 turn —— 页脚大按钮，与 56px 输入框等高 */
-button.stop-btn {
-  height: 56px;
-  background: transparent;
-  color: var(--c-error);
-  border: 1px solid var(--c-error);
-}
-button.stop-btn:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.12);
   filter: none;
 }

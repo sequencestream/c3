@@ -426,6 +426,11 @@
       "runningTool": "{toolName} 실행 중…",
       "thinking": "생각 중…",
       "disconnected": "· 연결 끊김, 재연결 중…",
+      "stop": {
+        "tooltip": "실행 중인 턴 중지",
+        "endTeamTooltip": "팀 종료: 팀 리드와 모든 팀원을 종료합니다",
+        "ariaLabel": "중지"
+      },
       "refresh": {
         "tooltip": "세션 상태 다시 동기화"
       }
@@ -447,21 +452,12 @@
           "ariaLabel": "음성 입력 중지"
         }
       },
-      "stop": {
-        "label": "중지",
-        "tooltip": "실행 중인 턴 중지"
-      },
-      "endTeam": {
-        "label": "팀 종료",
-        "tooltip": "팀 종료: 팀 리드와 모든 팀원을 종료합니다"
-      },
       "sendHint": {
         "running": "턴 진행 중 — 메시지는 대기열에 추가됩니다",
         "ready": "Enter를 두 번 누르거나 ⌘/Ctrl+Enter로 전송"
       },
       "send": {
-        "label": "전송",
-        "queue": "대기열에 추가"
+        "label": "전송"
       }
     },
     "queue": {

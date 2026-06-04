@@ -426,6 +426,11 @@
       "runningTool": "Running {toolName}…",
       "thinking": "Thinking…",
       "disconnected": "· Disconnected, reconnecting…",
+      "stop": {
+        "tooltip": "Stop the running turn",
+        "endTeamTooltip": "End team: shut down the team lead and all teammates",
+        "ariaLabel": "Stop"
+      },
       "refresh": {
         "tooltip": "Resync session status"
       }
@@ -447,21 +452,12 @@
           "ariaLabel": "Stop voice input"
         }
       },
-      "stop": {
-        "label": "Stop",
-        "tooltip": "Stop the running turn"
-      },
-      "endTeam": {
-        "label": "End team",
-        "tooltip": "End team: shut down the team lead and all teammates"
-      },
       "sendHint": {
         "running": "Turn in progress — your message will be queued",
         "ready": "Press Enter twice, or ⌘/Ctrl+Enter to send"
       },
       "send": {
-        "label": "Send",
-        "queue": "Queue"
+        "label": "Send"
       }
     },
     "queue": {

@@ -13,7 +13,7 @@ import MessageInput from './MessageInput.vue'
  * deterministic. We assert the inline `height`/`overflowY` the component writes.
  */
 
-function mountInput() {
+function mountInput(over: Partial<Record<string, unknown>> = {}) {
   return mount(MessageInput, {
     props: {
       running: false,
@@ -21,6 +21,7 @@ function mountInput() {
       hasActiveSession: true,
       availableCommands: [],
       voiceLang: 'en-US',
+      ...over,
     },
   })
 }
@@ -112,5 +113,34 @@ describe('MessageInput.vue — 输入框自动增高(auto-grow)', () => {
 
     expect(w.emitted('submit')).toBeTruthy()
     expect(el.style.height).toBe('24px')
+  })
+})
+
+describe('MessageInput.vue — 停止控件已上移到状态栏', () => {
+  it('普通运行中:输入区不再有 Stop 按钮,Send 文案保持不变', () => {
+    const idle = mountInput({ running: false })
+    const running = mountInput({ running: true })
+    // No Stop/End-team button in the composer anymore.
+    expect(running.find('.stop-btn').exists()).toBe(false)
+    // Send copy is fixed: identical between idle and running.
+    expect(running.find('.send-btn').text()).toBe(idle.find('.send-btn').text())
+  })
+
+  it('团队会话:输入区不再有 End team 按钮', () => {
+    const w = mountInput({ running: true, teamActive: true })
+    expect(w.find('.stop-btn').exists()).toBe(false)
+  })
+
+  it('组件不再声明 stop 事件(停止经由状态栏)', () => {
+    const w = mountInput({ running: true })
+    expect(w.vm.$options.emits).not.toContain('stop')
+  })
+
+  it('普通运行中点击 Send:入队(enqueue)而非提交,功能不变', async () => {
+    const w = mountInput({ running: true })
+    await w.find('textarea').setValue('hello')
+    await w.find('.send-btn').trigger('click')
+    expect(w.emitted('enqueue')).toHaveLength(1)
+    expect(w.emitted('submit')).toBeFalsy()
   })
 })

@@ -39,7 +39,6 @@ const ordinaryRunning = computed(() => props.running && !props.teamActive)
 const emit = defineEmits<{
   submit: [text: string]
   enqueue: [text: string]
-  stop: []
   'list-commands': []
 }>()
 
@@ -287,24 +286,8 @@ function onKey(e: KeyboardEvent) {
         <rect x="19.6" y="8" width="2.4" height="8" rx="1.2" />
       </svg>
     </button>
-    <!-- Ordinary in-flight turn: Stop is available alongside Send (which queues). -->
-    <button
-      v-if="ordinaryRunning"
-      class="stop-btn"
-      :title="t('session.input.stop.tooltip')"
-      @click="emit('stop')"
-    >
-      {{ t('session.input.stop.label') }}
-    </button>
-    <!-- Team session: end the whole team (lead + teammates) explicitly. -->
-    <button
-      v-else-if="teamActive"
-      class="stop-btn"
-      :title="t('session.input.endTeam.tooltip')"
-      @click="emit('stop')"
-    >
-      {{ t('session.input.endTeam.label') }}
-    </button>
+    <!-- Send is fixed copy; while a turn is in flight it enqueues (composerAction). Stop/End
+         team live in the status bar now, not here. -->
     <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
       <div v-if="showSendHint" class="send-hint" role="tooltip">
         {{
@@ -312,7 +295,7 @@ function onKey(e: KeyboardEvent) {
         }}
       </div>
       <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
-        {{ ordinaryRunning ? t('session.input.send.queue') : t('session.input.send.label') }}
+        {{ t('session.input.send.label') }}
       </button>
     </div>
   </footer>

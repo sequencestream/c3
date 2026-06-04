@@ -60,3 +60,26 @@ export function workspaceSwitchEffects(
   if (target === current) return { noop: true, refreshSessions: false, enterConsole: false }
   return { noop: false, refreshSessions: true, enterConsole: true }
 }
+
+/** The side effects a top-bar 「会话」(console) tab click should produce. */
+export interface ConsoleTabEntryEffects {
+  /** Re-bind the chat column to the console tab's own session (it may currently
+   *  show another tab's comm session). */
+  rebind: boolean
+  /** Force a fresh `list_sessions` for the current workspace, so a cached,
+   *  possibly-stale list is re-fetched on entry. */
+  refreshSessions: boolean
+}
+
+/**
+ * Decide what clicking the 「会话」(console) tab does. Both effects fire only when
+ * arriving from another tab (`wasOther`): clicking the already-active console tab
+ * is a no-op for the view (no re-bind, no refresh). The actual `list_sessions`
+ * send carries its own empty-workspace guard in `refreshSessions` (App.vue).
+ *
+ * Pure / DOM-free; orchestration (re-binding, sending `list_sessions`) lives in
+ * App.vue's `switchToConsoleTab`.
+ */
+export function consoleTabEntryEffects(wasOther: boolean): ConsoleTabEntryEffects {
+  return { rebind: wasOther, refreshSessions: wasOther }
+}

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './tab-view'
+import {
+  consoleEntryTarget,
+  consoleTabEntryEffects,
+  workspaceSwitchEffects,
+  type SessionRef,
+} from './tab-view'
 import type { SessionInfo } from '@ccc/shared/protocol'
 
 const sess = (sessionId: string): SessionInfo => ({
@@ -69,5 +74,15 @@ describe('workspaceSwitchEffects', () => {
       refreshSessions: true,
       enterConsole: true,
     })
+  })
+})
+
+describe('consoleTabEntryEffects', () => {
+  it('从其他 tab 进入(wasOther=true) → 重绑 + 强制刷新当前工作区', () => {
+    expect(consoleTabEntryEffects(true)).toEqual({ rebind: true, refreshSessions: true })
+  })
+
+  it('已在 console tab 再点(wasOther=false) → 不重绑不刷新', () => {
+    expect(consoleTabEntryEffects(false)).toEqual({ rebind: false, refreshSessions: false })
   })
 })

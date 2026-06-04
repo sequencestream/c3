@@ -25,7 +25,12 @@ import {
   type DispatchView,
 } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
-import { consoleEntryTarget, workspaceSwitchEffects, type SessionRef } from './lib/tab-view'
+import {
+  consoleEntryTarget,
+  consoleTabEntryEffects,
+  workspaceSwitchEffects,
+  type SessionRef,
+} from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
 import type {
   AutomationStatus,
@@ -978,11 +983,14 @@ function enterConsole() {
 // Top-bar 「会话」tab click: flip to the console tab AND re-bind the chat column
 // to the console tab's OWN session. Only re-binds when arriving from another tab
 // (the chat column may currently show the requirement comm session); clicking
-// the already-active console tab is a no-op for the view.
+// the already-active console tab is a no-op for the view. Arriving from another
+// tab also force-refreshes the current workspace's session list, so a cached,
+// possibly-stale sidebar list is re-fetched on entry.
 function switchToConsoleTab() {
-  const wasOther = activeTab.value !== 'console'
+  const fx = consoleTabEntryEffects(activeTab.value !== 'console')
   enterConsole()
-  if (wasOther) bindConsoleSession()
+  if (fx.rebind) bindConsoleSession()
+  if (fx.refreshSessions) refreshSessions(currentWorkspace.value)
 }
 
 // Resolve and apply the console tab's session on (re)entry: re-select the

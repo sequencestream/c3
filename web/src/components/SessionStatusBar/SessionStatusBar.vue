@@ -19,6 +19,13 @@ const props = defineProps<{
   teamActive: boolean
   connection: 'connecting' | 'open' | 'closed'
   activity: RunActivity
+  /**
+   * Display name of the agent the viewed session is currently running (client-
+   * inferred, advances down the degradation chain on `agent_failed`). Rendered as
+   * a prefix before the status label. Empty/undefined ⇒ no prefix (no leftover
+   * separator) — the degradation path must never break the bar.
+   */
+  currentAgentName?: string
 }>()
 
 const emit = defineEmits<{ refresh: []; stop: [] }>()
@@ -67,7 +74,12 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
   <div v-if="hasActiveSession" class="status-bar">
     <span class="status-dot" :class="view.dot" />
     <span v-if="view.spin" class="status-spinner" />
-    <span class="status-label">{{ view.label }}</span>
+    <span class="status-label">
+      <span v-if="currentAgentName" class="status-agent">{{
+        t('session.statusBar.agentPrefix', { agent: currentAgentName })
+      }}</span>
+      <span>{{ view.label }}</span>
+    </span>
     <span v-if="connection === 'closed'" class="status-muted">{{
       t('session.statusBar.disconnected')
     }}</span>

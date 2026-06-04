@@ -419,6 +419,7 @@
       }
     },
     "statusBar": {
+      "agentPrefix": "{agent} ·",
       "error": "エラー: {message}",
       "ready": "準備完了",
       "awaiting": "権限待ち",

@@ -419,6 +419,7 @@
       }
     },
     "statusBar": {
+      "agentPrefix": "{agent} ·",
       "error": "Ошибка: {message}",
       "ready": "Готово",
       "awaiting": "Ожидание разрешения",

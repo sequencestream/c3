@@ -32,6 +32,7 @@ import {
   type SessionRef,
 } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
+import { advanceOnFailure, agentNameAt } from './lib/agent-prefix'
 import type {
   AutomationStatus,
   CreateScheduleInput,
@@ -213,6 +214,19 @@ const actionablePermId = computed<string | null>(() =>
 // (see RunActivity). `running` is the authoritative on/off; this only refines
 // the label. Reset on session switch; the replayed buffer tail re-derives it.
 const activity = ref<RunActivity>({ phase: 'idle' })
+
+// Which agent the viewed session is really running, inferred client-side like
+// RunActivity. Stored as the session's CHAIN INDEX (position in the server's
+// degradation order), not a name — so renaming/switching the default agent
+// refreshes the prefix via the computed below, with no per-event reset. Index 0
+// = the default agent; `agent_failed` advances it down the chain. Reset to 0 on
+// (re)select (we don't track per-session bound agents — see agent-prefix.ts).
+const currentAgentIndexBySession = ref<Record<string, number>>({})
+const currentAgentName = computed(() =>
+  activeSession.value
+    ? agentNameAt(serverSettings.value, currentAgentIndexBySession.value[activeSession.value] ?? 0)
+    : '',
+)
 
 // Available commands/skills for the active session's cwd (fetched lazily on the
 // first `/`). Cleared on session switch so the next `/` refetches for the new cwd.
@@ -603,6 +617,12 @@ function handleMessage(msg: ServerToClient) {
       // History (on-disk baseline) renders first; the live buffer tail, if any,
       // follows as normal stream events (user_text/assistant_text/…).
       activity.value = { phase: 'idle' }
+      // Reset the agent prefix to the default agent on every (re)select; the
+      // degradation index isn't persisted across switches (see currentAgentName).
+      currentAgentIndexBySession.value = {
+        ...currentAgentIndexBySession.value,
+        [msg.sessionId]: 0,
+      }
       // Task panel re-infers from scratch on every (re)select so replay matches live.
       taskModel.value = emptyTaskModel()
       taskToolPending = new Map()
@@ -833,6 +853,19 @@ function handleMessage(msg: ServerToClient) {
         kind: 'system',
         text: t('session.agent.failed', { agentName: msg.agentName, error: msg.error }),
       })
+      // The failed agent (msg.agentId) is handing off to the next in the chain —
+      // advance the viewed session's prefix to match what's now running.
+      if (activeSession.value) {
+        const sid = activeSession.value
+        currentAgentIndexBySession.value = {
+          ...currentAgentIndexBySession.value,
+          [sid]: advanceOnFailure(
+            serverSettings.value,
+            currentAgentIndexBySession.value[sid] ?? 0,
+            msg.agentId,
+          ),
+        }
+      }
       break
     case 'all_agents_failed':
       // Every agent in the degradation chain failed. The turn ends with error.
@@ -1360,6 +1393,7 @@ function listCommands() {
       :team-active="activeIsTeam"
       :connection="status"
       :activity="activity"
+      :current-agent-name="currentAgentName"
       :queue="currentQueue"
       :available-commands="availableCommands"
       :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
@@ -1395,6 +1429,7 @@ function listCommands() {
       :team-active="activeIsTeam"
       :connection="status"
       :activity="activity"
+      :current-agent-name="currentAgentName"
       :queue="currentQueue"
       :available-commands="availableCommands"
       :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"

@@ -127,5 +127,10 @@ Sends `user_prompt`, `permission_response`, `set_mode`, `stop_run`, `add_workspa
   `awaiting_permission` highlight, shown for every session including backgrounded ones (WC-R12).
 - **Run activity** — fine-grained state of the viewed session inferred from the event stream
   (`idle` / `thinking` / `tool <name>` / `awaiting` / `error`), shown in the status bar above
-  the input; refines `running` for display only and carries no authority (WC-R15).
+  the input; refines `running` for display only and carries no authority (WC-R15). The status
+  bar prefixes the activity label with the display name of the agent the session is currently
+  running (`<agent> · <status>`), also client-inferred: it starts at the default agent and
+  advances down the degradation chain on each `agent_failed` event, resetting to the default on
+  (re)select. The prefix is omitted when no agent name resolves, so the degradation path never
+  breaks the bar.
 - **Unanswered prompt** — a permission Chat Message with no decision yet.

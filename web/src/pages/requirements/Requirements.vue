@@ -40,6 +40,8 @@ defineProps<{
   teamActive: boolean
   connection: 'connecting' | 'open' | 'closed'
   activity: RunActivity
+  /** Display name of the agent the viewed session is currently running. */
+  currentAgentName?: string
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
   voiceLang: string
@@ -109,6 +111,7 @@ defineExpose({
       :team-active="teamActive"
       :connection="connection"
       :activity="activity"
+      :current-agent-name="currentAgentName"
       @refresh="emit('refresh')"
       @stop="emit('stop')"
     />

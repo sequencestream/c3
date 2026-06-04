@@ -419,6 +419,7 @@
       }
     },
     "statusBar": {
+      "agentPrefix": "{agent} ·",
       "error": "Error: {message}",
       "ready": "Ready",
       "awaiting": "Awaiting permission",

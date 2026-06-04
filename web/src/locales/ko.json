@@ -419,6 +419,7 @@
       }
     },
     "statusBar": {
+      "agentPrefix": "{agent} ·",
       "error": "오류: {message}",
       "ready": "준비됨",
       "awaiting": "권한 대기 중",

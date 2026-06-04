@@ -93,7 +93,15 @@ function addAgent() {
   // Locally-unique id so the default-agent radio can target it before save; the
   // server keeps it as-is (only id-less agents get a fresh uuid on normalize).
   const id = `new-${Date.now()}-${draft.value.agents.length}`
-  draft.value.agents.push({ id, name: '', baseUrl: '', apiKey: '', model: '', enabled: true })
+  draft.value.agents.push({
+    id,
+    name: '',
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    icon: '',
+    enabled: true,
+  })
 }
 
 // An agent counts as enabled unless explicitly disabled (back-compat with
@@ -144,6 +152,7 @@ function onUiLangChange(e: Event) {
           <div class="agent-row agent-row-head">
             <span class="col-on">{{ t('settings.agents.col.on.label') }}</span>
             <span class="col-default">{{ t('settings.agents.col.default.label') }}</span>
+            <span class="col-icon">{{ t('settings.agents.col.icon.label') }}</span>
             <span class="col-name">{{ t('settings.agents.col.name.label') }}</span>
             <span class="col-url">{{ t('settings.agents.col.baseUrl.label') }}</span>
             <span class="col-key">{{ t('settings.agents.col.apiKey.label') }}</span>
@@ -170,6 +179,12 @@ function onUiLangChange(e: Event) {
                 @change="draft.defaultAgentId = a.id"
               />
             </label>
+            <input
+              v-model="a.icon"
+              class="agent-field col-icon"
+              :placeholder="t('settings.agents.icon.placeholder')"
+              maxlength="16"
+            />
             <input
               v-model="a.name"
               class="agent-field col-name"

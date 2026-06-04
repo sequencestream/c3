@@ -16,6 +16,7 @@ A Claude Code launch profile.
 | `apiKey`  | text       | API key / auth token override; empty ⇒ no override (AC-R5)                                                                                                                                                                  |
 | `model`   | text       | Model alias or id; empty ⇒ no override (AC-R5)                                                                                                                                                                              |
 | `enabled` | bool (opt) | Enabled flag; absent/`true` ⇒ enabled, only explicit `false` disables. Disabled agents drop out of every list consumer (participants, voters, degradation chain, default picker) but remain valid launch fallbacks (AC-R10) |
+| `icon`    | text (opt) | Optional display icon (emoji / short text). Empty/absent ⇒ no custom icon. Trimmed and capped to 16 chars; not validated as a real emoji. Old configs without the field load as `''` (AC-R11)                               |
 
 Relationships: zero or more Sessions bind to an Agent; an unbound session uses the default.
 
@@ -24,7 +25,9 @@ Relationships: zero or more Sessions bind to an Agent; an unbound session uses t
 The built-in agent. Same shape as Agent, but `id === 'system'` and all three overrides are
 always empty (AC-R1). Always present, never removable. Its `enabled` flag IS honoured, so the
 system agent can be disabled like any other (AC-R10) — it then leaves the list consumers but
-still serves as a launch fallback.
+still serves as a launch fallback. Its `icon` field is honoured the same way — a custom icon on
+the system agent is preserved through normalize (AC-R11), independently of AC-R1's override
+clearing.
 
 ## SystemSettings
 

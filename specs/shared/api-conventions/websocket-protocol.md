@@ -107,9 +107,12 @@ See the [session-registry spec](../../domains/core/session-registry/spec.md).
 
 ## System-config types
 
-- **`AgentConfig`** — `{ id, name, baseUrl, apiKey, model }`. One agent profile: a named set
-  of Claude Code launch overrides. The built-in agent `id === SYSTEM_AGENT_ID` (`'system'`)
-  has empty `baseUrl`/`apiKey`/`model` (no overrides) and cannot be removed.
+- **`AgentConfig`** — `{ id, name, baseUrl, apiKey, model, enabled?, icon? }`. One agent
+  profile: a named set of Claude Code launch overrides. The built-in agent
+  `id === SYSTEM_AGENT_ID` (`'system'`) has empty `baseUrl`/`apiKey`/`model` (no overrides)
+  and cannot be removed. `enabled` is an optional flag (absent/`true` ⇒ enabled; only an
+  explicit `false` disables — see AC-R10). `icon` is an optional emoji/short-text display
+  marker (empty/absent ⇒ no custom icon, see AC-R11).
 - **`SystemSettings`** — `{ agents: AgentConfig[], defaultAgentId: string, defaultMode?: PermissionMode, consensus?: { enabled }, maxRoundsPerStage?: number }`.
   The full configuration; always contains the system agent, and `defaultAgentId` references an
   existing agent. `defaultMode` is the permission mode new sessions start in (one of the five

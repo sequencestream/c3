@@ -44,6 +44,10 @@ export const MIN_SPEECH_CHARS = 300
 /** Default character budget for participant speech when unset/invalid. */
 export const DEFAULT_SPEECH_CHARS = 300
 
+/** Hard cap for an agent's `icon` string. Generous enough for family/ZWJ emoji
+ *  sequences (can be 7-11 code units), short enough to deter abuse. */
+export const AGENT_ICON_MAX_CHARS = 16
+
 interface SessionAgentState {
   version: 1
   /** sessionId → agentId. A missing entry means "use the default agent". */
@@ -62,8 +66,8 @@ function stateFile(): string {
   return join(c3Dir(), 'state.json')
 }
 
-function systemAgent(enabled = true): AgentConfig {
-  return { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', enabled }
+function systemAgent(enabled = true, icon = ''): AgentConfig {
+  return { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', enabled, icon }
 }
 
 function defaultSettings(): SystemSettings {
@@ -90,10 +94,14 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // The system agent's Claude overrides are always ignored (AC-R1), but its
   // `enabled` flag IS honoured: a disabled system agent drops out of every
   // list consumer (it can still be a launch fallback). Absent ⇒ enabled.
+  // `icon` is honoured the same way (it's a display field, not a launch
+  // override); absent/empty ⇒ no custom icon.
   const systemIncoming = incoming.find(
     (a) => a && typeof a === 'object' && a.id === SYSTEM_AGENT_ID,
   )
-  const agents: AgentConfig[] = [systemAgent(systemIncoming?.enabled !== false)]
+  const agents: AgentConfig[] = [
+    systemAgent(systemIncoming?.enabled !== false, normalizeIcon(systemIncoming?.icon)),
+  ]
   for (const a of incoming) {
     if (!a || typeof a !== 'object') continue
     const id = typeof a.id === 'string' && a.id ? a.id : randomUUID()
@@ -107,6 +115,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
       model: typeof a.model === 'string' ? a.model.trim() : '',
       // Back-compat: missing/true ⇒ enabled; only an explicit false disables.
       enabled: a.enabled !== false,
+      icon: normalizeIcon(a.icon),
     })
   }
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : SYSTEM_AGENT_ID
@@ -198,6 +207,19 @@ function normalizeDevSkill(raw: unknown): string {
   const trimmed = typeof raw === 'string' ? raw.trim() : ''
   if (!trimmed) return ''
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+/**
+ * Force an agent icon into shape: a trimmed string truncated to
+ * {@link AGENT_ICON_MAX_CHARS}; anything missing / non-string / empty-after-trim
+ * ⇒ `''` (no custom icon). Back-compat: old configs without `icon` are treated
+ * the same as empty.
+ */
+export function normalizeIcon(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  return trimmed.length > AGENT_ICON_MAX_CHARS ? trimmed.slice(0, AGENT_ICON_MAX_CHARS) : trimmed
 }
 
 export function loadSettings(): SystemSettings {

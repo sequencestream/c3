@@ -15,12 +15,14 @@ import {
   resolveSessionLaunch,
   saveSettings,
   normalizeDegradationChain,
+  normalizeIcon,
   resetSettingsCacheForTests,
   DEFAULT_ROUNDS_PER_STAGE,
   DEFAULT_UI_LANG,
   MIN_ROUNDS_PER_STAGE,
   DEFAULT_SPEECH_CHARS,
   MIN_SPEECH_CHARS,
+  AGENT_ICON_MAX_CHARS,
 } from './settings.js'
 
 // Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
@@ -345,5 +347,103 @@ describe('getUiLang normalization', () => {
     } as SystemSettings)
     expect(getUiLang()).toBe('zh')
     expect(loadSettings().voiceLang).toBe('en-US')
+  })
+})
+
+describe('normalizeIcon (AC-R11)', () => {
+  it('returns "" for missing / non-string input', () => {
+    expect(normalizeIcon(undefined)).toBe('')
+    expect(normalizeIcon(null)).toBe('')
+    expect(normalizeIcon(42)).toBe('')
+    expect(normalizeIcon({})).toBe('')
+  })
+
+  it('trims surrounding whitespace', () => {
+    expect(normalizeIcon('  🤖  ')).toBe('🤖')
+  })
+
+  it('returns "" for whitespace-only input', () => {
+    expect(normalizeIcon('   ')).toBe('')
+    expect(normalizeIcon('\t\n')).toBe('')
+  })
+
+  it('keeps a short emoji or text verbatim', () => {
+    expect(normalizeIcon('🤖')).toBe('🤖')
+    expect(normalizeIcon('fox')).toBe('fox')
+  })
+
+  it('truncates a string longer than AGENT_ICON_MAX_CHARS', () => {
+    const long = 'a'.repeat(AGENT_ICON_MAX_CHARS + 5)
+    const out = normalizeIcon(long)
+    expect(out).toBe('a'.repeat(AGENT_ICON_MAX_CHARS))
+    expect(out.length).toBe(AGENT_ICON_MAX_CHARS)
+  })
+})
+
+describe('AgentConfig.icon persistence (AC-R11)', () => {
+  it('persists a valid icon on a non-system agent', () => {
+    const saved = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '', icon: '🤖' } as never,
+    ])
+    expect(saved.agents.find((a) => a.id === 'a1')?.icon).toBe('🤖')
+  })
+
+  it('defaults icon to "" when the incoming agent has no `icon` field (back-compat)', () => {
+    // No `icon` field on the incoming agent → treated as empty.
+    const saved = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '' } as never,
+    ])
+    expect(saved.agents.find((a) => a.id === 'a1')?.icon).toBe('')
+  })
+
+  it('loads an old config (no icon field) without error and yields ""', () => {
+    // Simulate a legacy on-disk shape: no icon at all.
+    saveSettings({
+      agents: [{ id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '' }],
+      defaultAgentId: 'a1',
+    } as SystemSettings)
+    const reloaded = loadSettings()
+    expect(reloaded.agents.find((a) => a.id === 'a1')?.icon).toBe('')
+    // System agent also gets the default empty icon.
+    expect(reloaded.agents.find((a) => a.id === SYSTEM_AGENT_ID)?.icon).toBe('')
+  })
+
+  it('honours an icon set on the system agent (overrides still ignored — AC-R1)', () => {
+    const saved = saveAgents([
+      // Try to both set an icon and override the system agent's Claude config.
+      {
+        id: SYSTEM_AGENT_ID,
+        name: 'hacked',
+        baseUrl: 'https://evil',
+        apiKey: 'k',
+        model: 'm',
+        icon: '🛡️',
+      },
+    ])
+    const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
+    expect(sys.icon).toBe('🛡️')
+    expect(sys.baseUrl).toBe('')
+    expect(sys.apiKey).toBe('')
+    expect(sys.model).toBe('')
+  })
+
+  it('truncates an over-long icon on save', () => {
+    const tooLong = '🦊'.repeat(20) // well over AGENT_ICON_MAX_CHARS
+    const saved = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '', icon: tooLong } as never,
+    ])
+    const out = saved.agents.find((a) => a.id === 'a1')?.icon ?? ''
+    expect(out.length).toBe(AGENT_ICON_MAX_CHARS)
+  })
+
+  it('persists a system-agent icon across load (system agent can have one too)', () => {
+    saveSettings({
+      agents: [
+        { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', icon: '⚙️' },
+      ],
+      defaultAgentId: SYSTEM_AGENT_ID,
+    } as SystemSettings)
+    const sys = loadSettings().agents.find((a) => a.id === SYSTEM_AGENT_ID)!
+    expect(sys.icon).toBe('⚙️')
   })
 })

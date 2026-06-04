@@ -117,6 +117,15 @@ export interface AgentConfig {
    * locked out). The system agent may be disabled too.
    */
   enabled?: boolean
+  /**
+   * Optional display icon: an emoji or short text used to identify this agent
+   * in multi-speaker contexts (e.g. discussion chat bubbles). Empty/absent
+   * ⇒ no custom icon (consumers fall back to a default marker). Stored
+   * verbatim aside from trim and a length cap; not validated as a real emoji.
+   * Back-compat: old configs without the field load as `''`. The system agent
+   * may have an icon too.
+   */
+  icon?: string
 }
 
 /**

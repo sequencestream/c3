@@ -158,6 +158,9 @@
         },
         "model": {
           "label": "模型"
+        },
+        "icon": {
+          "label": "图标"
         }
       },
       "toggle": {
@@ -183,6 +186,9 @@
       },
       "model": {
         "placeholder": "例如 claude-opus-4-8"
+      },
+      "icon": {
+        "placeholder": "🤖"
       },
       "builtin": {
         "label": "内置"

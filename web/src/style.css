@@ -1896,7 +1896,15 @@ button.stop-btn:hover:not(:disabled) {
 }
 .agent-row {
   display: grid;
-  grid-template-columns: 40px 64px 180px minmax(220px, 1fr) minmax(180px, 1fr) 220px 44px;
+  grid-template-columns:
+    40px /* on */
+    64px /* default */
+    64px /* icon */
+    180px /* name */
+    minmax(220px, 1fr) /* baseUrl */
+    minmax(180px, 1fr) /* apiKey */
+    220px /* model */
+    44px; /* actions */
   align-items: center;
   gap: var(--sp-3);
 }
@@ -1911,6 +1919,10 @@ button.stop-btn:hover:not(:disabled) {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+.col-icon {
+  text-align: center;
+  font-size: var(--fs-body);
 }
 .col-actions {
   display: flex;

@@ -158,6 +158,9 @@
         },
         "model": {
           "label": "Model"
+        },
+        "icon": {
+          "label": "Icon"
         }
       },
       "toggle": {
@@ -183,6 +186,9 @@
       },
       "model": {
         "placeholder": "e.g. claude-opus-4-8"
+      },
+      "icon": {
+        "placeholder": "🤖"
       },
       "builtin": {
         "label": "built-in"

@@ -3,7 +3,8 @@
  * `discussion-research` gate (see `claude.ts`): the agent may read project material
  * (Read/Grep/Glob/…) and search the web (WebFetch/WebSearch) but cannot write, run
  * shells, or spawn sub-agents. There is no save tool — the server captures the
- * agent's final text and writes it back as the discussion's completed `context`.
+ * agent's final text and writes it back to the discussion's `researchResult` field
+ * (the user's original `context` is left untouched).
  */
 import type { Discussion } from '@ccc/shared/protocol'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
@@ -41,13 +42,14 @@ export function buildResearchPrompt(
 /**
  * Outcome of a research run. `ok` is `false` only when the agent run threw — the
  * caller uses it to gate auto-start (a failed research never auto-starts the
- * discussion; it stays a `draft` for a manual Start). `context` is best-effort:
- * the completed text on success, or the discussion's original context on empty
- * output / failure, so a research miss never blocks creation.
+ * discussion; it stays a `draft` for a manual Start). `researchResult` is the
+ * completed text on success, or `''` on empty output / failure — the user's
+ * original `context` is never substituted in, so a research miss leaves
+ * `researchResult` empty rather than echoing the user's input.
  */
 export interface DiscussionResearchResult {
   ok: boolean
-  context: string
+  researchResult: string
 }
 
 /**
@@ -65,9 +67,10 @@ export function canAutoStartDiscussion(
 
 /**
  * Run the read-only research agent for a freshly-created discussion and resolve to
- * its completed `context` plus an `ok` flag. Best-effort: on any failure (or empty
- * output) resolves to the discussion's existing context with `ok=false` only when
- * the run threw, so a research miss never blocks creation.
+ * its completed `researchResult` plus an `ok` flag. Best-effort: on empty output
+ * `researchResult` is `''`; `ok=false` only when the run threw, so a research miss
+ * never blocks creation. The discussion's `context` is read as a clue but never
+ * written back.
  */
 export async function researchDiscussionContext(
   discussion: Discussion,
@@ -104,5 +107,5 @@ export async function researchDiscussionContext(
     )
   }
   const out = captured.trim()
-  return { ok, context: out || discussion.context }
+  return { ok, researchResult: out }
 }

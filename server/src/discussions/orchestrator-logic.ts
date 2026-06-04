@@ -327,7 +327,9 @@ function header(discussion: Discussion, def: DiscussionTypeDef | undefined): str
   return [
     `讨论类型: ${def ? `${def.label} — ${def.description}` : discussion.type}`,
     `目标: ${discussion.goal || '(未填写)'}`,
-    `背景: ${discussion.context || '(无)'}`,
+    // Prefer the research agent's output as background; fall back to the user's
+    // original context when research produced nothing.
+    `背景: ${discussion.researchResult || discussion.context || '(无)'}`,
   ].join('\n')
 }
 

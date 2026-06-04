@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   type          TEXT NOT NULL,
   goal          TEXT NOT NULL DEFAULT '',
   context       TEXT NOT NULL DEFAULT '',
+  research_result TEXT NOT NULL DEFAULT '',
   status        TEXT NOT NULL,
   agenda        TEXT NOT NULL DEFAULT '[]',
   agenda_index  INTEGER NOT NULL DEFAULT 0,
@@ -86,6 +87,7 @@ function db(): Db | null {
     // so it's a no-op on a fresh schema and safe across runs.
     ensureColumn(d, 'discussions', 'goal', "TEXT NOT NULL DEFAULT ''")
     ensureColumn(d, 'discussions', 'context', "TEXT NOT NULL DEFAULT ''")
+    ensureColumn(d, 'discussions', 'research_result', "TEXT NOT NULL DEFAULT ''")
     ensureColumn(d, 'discussions', 'agenda', "TEXT NOT NULL DEFAULT '[]'")
     ensureColumn(d, 'discussions', 'agenda_index', 'INTEGER NOT NULL DEFAULT 0')
     ensureColumn(d, 'discussions', 'conclusion', 'TEXT')
@@ -137,6 +139,7 @@ interface DiscussionRow {
   type: string
   goal: string
   context: string
+  research_result: string
   status: string
   agenda: string | null
   agenda_index: number | null
@@ -165,6 +168,7 @@ function toDiscussion(r: DiscussionRow): Discussion {
     type: r.type,
     goal: r.goal,
     context: r.context,
+    researchResult: r.research_result ?? '',
     status: r.status as DiscussionStatus,
     agenda: parseAgenda(r.agenda),
     agendaIndex: r.agenda_index ?? 0,
@@ -277,10 +281,21 @@ export function setAgenda(id: string, items: readonly string[], index: number): 
   )
 }
 
-/** Replace the discussion's background context (the research agent's completed output). */
+/** Replace the discussion's user-supplied background context. */
 export function setDiscussionContext(id: string, context: string): void {
   const d = requireDb()
   d.run('UPDATE discussions SET context=?, updated_at=? WHERE id=?', context, Date.now(), id)
+}
+
+/** Store the read-only research agent's completed output (kept apart from the user's `context`). */
+export function setDiscussionResearchResult(id: string, researchResult: string): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE discussions SET research_result=?, updated_at=? WHERE id=?',
+    researchResult,
+    Date.now(),
+    id,
+  )
 }
 
 // ---- Discussion messages ----

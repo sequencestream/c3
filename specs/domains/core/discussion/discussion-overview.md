@@ -7,7 +7,7 @@ organizer, agents, and the human) plus its ordered messages, persisted in the sh
 **Status: live — persistence + create flow + organizer engine + human-in-the-loop.** This domain
 provides the data model and SQLite persistence layer (tables + store CRUD), the read path (list +
 open), the **create flow** (data-driven type catalog with per-type workflow, the "+" form, and a
-read-only research agent that completes a new discussion's context), the **organizer-driven
+read-only research agent that fills a new discussion's research result), the **organizer-driven
 multi-agent orchestration loop** (`start_discussion` runs a `draft` to a `conclusion` in the
 background, the organizer nominating speakers among the configured agents and driving the type's
 workflow, each turn a one-shot `askAgentOnce`, every message streamed live as `discussion_message`),
@@ -28,16 +28,20 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   with `discussion_detail`** (so the right pane opens the new discussion without a click) and pushes
   the `discussions` list, then a **read-only research agent** — `discussion-research` gate reusing the
   requirement read set (Read/Grep/Glob + WebSearch/WebFetch), no save tool, write/exec/sub-agent tools
-  hard-disabled — completes its `context` (`server/src/discussions/research.ts`). The completed
-  `context` is **strictly status-only**: the researcher collects relevant facts / current state /
+  hard-disabled — produces a `researchResult` (`server/src/discussions/research.ts`). The research
+  output is **strictly status-only**: the researcher collects relevant facts / current state /
   constraints / open questions, and is hard-forbidden from emitting any options, candidate solutions,
   recommendations, or conclusions — so the discussion's divergent brainstorm is not pre-anchored by a
-  preset answer. The server captures the agent's final text and writes it back, pushing `discussions`
-  on draft insert and again on completion. **On research success the server auto-starts the
+  preset answer. The server captures the agent's final text and writes it to the **`researchResult`**
+  field via `setDiscussionResearchResult` (only when non-empty); the user's original **`context` is
+  never overwritten**, so both coexist. It pushes `discussions` on draft insert and again on research
+  completion. The organizer engine reads `researchResult || context` as its prompt background (research
+  output when present, the user's original context otherwise). **On research success the server auto-starts the
   orchestration** (`startDiscussionRun`, equivalent to an automatic `start_discussion`), re-validating
   on the freshest record via the pure `canAutoStartDiscussion` guard (`status === 'draft'` and no live
   run — skipping if the human Started/cancelled it mid-research). `researchDiscussionContext` returns
-  an `{ ok, context }` result; a **research failure** (`ok === false`) leaves the discussion a `draft`
+  an `{ ok, researchResult }` result (`researchResult` is `''` on empty output — never the user's
+  context); a **research failure** (`ok === false`) leaves the discussion a `draft`
   for a manual **Start** fallback and never auto-starts.
 - Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
   on submit the right pane **auto-opens the new discussion** (server `discussion_detail` reply) and

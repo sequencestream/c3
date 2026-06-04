@@ -34,7 +34,10 @@ Two tables, ensured lazily on the discussion store's first access via `exec(SCHE
 (`CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`):
 
 - `discussions` — `id` (PK), `project_path`, `title`, `type`, `goal` (`TEXT NOT NULL DEFAULT ''`),
-  `context` (`TEXT NOT NULL DEFAULT ''`), `status`, `agenda` (`TEXT NOT NULL DEFAULT '[]'` — the
+  `context` (`TEXT NOT NULL DEFAULT ''` — the user's original input, never overwritten by research),
+  `research_result` (`TEXT NOT NULL DEFAULT ''` — the read-only research agent's completed output,
+  stored apart from `context`; `''` until research yields a non-empty result), `status`,
+  `agenda` (`TEXT NOT NULL DEFAULT '[]'` — the
   organizer's ordered subtopics, a JSON string array), `agenda_index` (`INTEGER NOT NULL DEFAULT 0`
   — 0-based current subtopic; `=== agenda.length` ⇒ all done), `conclusion` (nullable), `created_at`,
   `updated_at`, `completed_at` (nullable). Indexed by `idx_disc_project_status (project_path,
@@ -51,7 +54,7 @@ number. The value is informational only.
 
 **Idempotent migration (`ensureColumn`).** After `exec(SCHEMA)` and before writing `user_version`,
 the store runs `ensureColumn` for the optional/nullable columns
-(`goal`, `context`, `agenda`, `agenda_index`, `conclusion`, `completed_at`): each checks
+(`goal`, `context`, `research_result`, `agenda`, `agenda_index`, `conclusion`, `completed_at`): each checks
 `PRAGMA table_info(discussions)` and
 only runs `ALTER TABLE … ADD COLUMN` when the column is absent. This is a **defensive forward-compat
 backfill** — a `discussions` table created by an earlier in-development build that predated these
@@ -79,6 +82,9 @@ feature, consistent with the requirement store's degradation contract.
 - `updateDiscussionStatus(id, status)` — updates status + `updated_at`; `completed_at = completed ?
 now : null` (mirrors the requirement store's done-stamping rule, including clearing on revert).
 - `setConclusion(id, conclusion)` — sets `conclusion` + bumps `updated_at`.
+- `setDiscussionContext(id, context)` — replaces the user-supplied `context` + bumps `updated_at`.
+- `setDiscussionResearchResult(id, researchResult)` — stores the research agent's completed output in
+  the `research_result` column (kept apart from `context`) + bumps `updated_at`.
 - `setAgenda(id, items, index)` — persists the agenda (`JSON.stringify(items)` into `agenda`) and
   the 0-based current `agenda_index` (`items.length` ⇒ all subtopics done) + bumps `updated_at`.
   `toDiscussion` parses `agenda` back to a `string[]` (null/blank/corrupt JSON → `[]`).
@@ -166,6 +172,11 @@ change the stage. The read path (`getDiscussion` / `listDiscussions` / `discussi
 succeeds: the server re-validates the freshest record with the pure `canAutoStartDiscussion` guard
 (`status === 'draft'` and no live run) and calls `startDiscussionRun`. A manual `start_discussion`
 stays as a fallback (research failed/stalled, where the discussion remains a `draft`).
+
+The research agent's output is written to `research_result` via `setDiscussionResearchResult` (only
+when non-empty); the user's original `context` is **never** overwritten. The organizer engine's
+prompt background source is `researchResult || context` — the research output feeds the discussion
+when present, falling back to the user's original context otherwise.
 
 ```
 draft ──start_discussion / auto-start after research──▶ in_progress ──(walk workflow stages)──▶ completed (conclusion written)
@@ -268,7 +279,7 @@ messages (monotonic per-discussion seq, seq independence across discussions, `up
 ordered list, nullable speaker fields → null); **agenda** (`setAgenda` round-trips subtopics + index,
 index reaching `length`, create default `[]`/`0`, real-file persistence); migration (old db with
 **no** discussion tables → created; old `discussions` table with **only core columns** →
-`ensureColumn` backfills `goal`/`context`/`agenda`/`agenda_index`/`conclusion`/`completed_at`, historic
+`ensureColumn` backfills `goal`/`context`/`research_result`/`agenda`/`agenda_index`/`conclusion`/`completed_at`, historic
 row survives, idempotent on re-ensure); fail-soft degradation (reads empty/null, write throws).
 
 `server/src/discussions/orchestrator-logic.test.ts` (pure): `parseOrganizerDecision` (JSON / fenced /

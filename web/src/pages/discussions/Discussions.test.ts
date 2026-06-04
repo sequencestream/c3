@@ -12,6 +12,7 @@ function disc(over: Partial<Discussion> = {}): Discussion {
     type: 'design',
     goal: '',
     context: '',
+    researchResult: '',
     status: 'in_progress',
     agenda: [],
     agendaIndex: 0,

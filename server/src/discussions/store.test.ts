@@ -24,6 +24,7 @@ import {
   resetStoreForTests,
   setAgenda,
   setConclusion,
+  setDiscussionResearchResult,
   updateDiscussionStatus,
 } from './store.js'
 
@@ -70,6 +71,7 @@ describe('discussions CRUD', () => {
     expect(d.status).toBe('draft') // default
     expect(d.goal).toBe('') // default
     expect(d.context).toBe('')
+    expect(d.researchResult).toBe('') // default — research not yet run
     expect(d.conclusion).toBeNull()
     expect(d.completedAt).toBeNull()
     expect(d.agenda).toEqual([]) // default empty agenda
@@ -92,6 +94,19 @@ describe('discussions CRUD', () => {
     expect(d.goal).toBe('decide X')
     expect(d.context).toBe('background Y')
     expect(d.status).toBe('in_progress')
+  })
+
+  it('setDiscussionResearchResult writes research_result and leaves context untouched', () => {
+    const d = createDiscussion({
+      projectPath: proj,
+      title: 'T',
+      type: 'design',
+      context: 'USER ORIGINAL',
+    })
+    setDiscussionResearchResult(d.id, 'RESEARCH OUTPUT')
+    const got = getDiscussion(d.id)
+    expect(got?.researchResult).toBe('RESEARCH OUTPUT')
+    expect(got?.context).toBe('USER ORIGINAL') // original context never overwritten
   })
 
   it('orders by updated_at descending and filters by status', () => {
@@ -250,6 +265,7 @@ describe('migration', () => {
     expect(got?.title).toBe('Legacy') // historic row survives
     expect(got?.goal).toBe('') // backfilled default
     expect(got?.context).toBe('') // backfilled default
+    expect(got?.researchResult).toBe('') // backfilled default (missing col → '')
     expect(got?.conclusion).toBeNull() // new nullable column
     expect(got?.completedAt).toBeNull()
     expect(got?.agenda).toEqual([]) // backfilled default '[]' → parsed to empty list
@@ -260,6 +276,7 @@ describe('migration', () => {
       expect.arrayContaining([
         'goal',
         'context',
+        'research_result',
         'agenda',
         'agenda_index',
         'conclusion',

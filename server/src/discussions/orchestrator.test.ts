@@ -79,6 +79,7 @@ const seedDiscussion = (): Discussion => ({
   type: 'decision',
   goal: 'Choose a caching layer',
   context: '',
+  researchResult: '',
   status: 'draft',
   agenda: [],
   agendaIndex: 0,

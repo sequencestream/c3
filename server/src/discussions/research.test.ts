@@ -1,11 +1,21 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { Discussion } from '@ccc/shared/protocol'
 import { getDiscussionType } from '@ccc/shared/discussion-types'
-import {
+
+// Mock the SDK runner so `researchDiscussionContext` can be unit-tested without a
+// real agent. Each test installs a `runClaudeImpl` that drives `send`/throws.
+let runClaudeImpl: (opts: { send: (m: { type: string; text?: string }) => void }) => Promise<void>
+vi.mock('../claude.js', () => ({
+  runClaude: (opts: { send: (m: { type: string; text?: string }) => void }) => runClaudeImpl(opts),
+  REQUIREMENT_DISALLOWED_TOOLS: [],
+}))
+
+const {
   buildResearchPrompt,
   canAutoStartDiscussion,
   DISCUSSION_RESEARCH_PROMPT,
-} from './research.js'
+  researchDiscussionContext,
+} = await import('./research.js')
 
 describe('buildResearchPrompt', () => {
   const base = {
@@ -43,6 +53,7 @@ describe('canAutoStartDiscussion', () => {
     type: 'decision',
     goal: 'g',
     context: 'c',
+    researchResult: '',
     status: 'draft',
     agenda: [],
     agendaIndex: 0,
@@ -84,5 +95,50 @@ describe('DISCUSSION_RESEARCH_PROMPT', () => {
 
   it('still collects 未知点/待澄清项', () => {
     expect(DISCUSSION_RESEARCH_PROMPT).toContain('未知点')
+  })
+})
+
+describe('researchDiscussionContext', () => {
+  const disc: Discussion = {
+    id: 'd1',
+    projectPath: '/p',
+    title: 'T',
+    type: 'decision',
+    goal: 'g',
+    context: 'USER ORIGINAL CONTEXT',
+    researchResult: '',
+    status: 'draft',
+    agenda: [],
+    agendaIndex: 0,
+    conclusion: null,
+    createdAt: 1,
+    updatedAt: 1,
+    completedAt: null,
+  }
+
+  it('returns the agent final text as researchResult and never echoes the user context', async () => {
+    runClaudeImpl = async ({ send }) => {
+      send({ type: 'assistant_text', text: '  RESEARCHED FACTS  ' })
+    }
+    const res = await researchDiscussionContext(disc)
+    expect(res).toEqual({ ok: true, researchResult: 'RESEARCHED FACTS' })
+    // The user's original context must not leak into the research output.
+    expect(res.researchResult).not.toContain('USER ORIGINAL CONTEXT')
+  })
+
+  it('empty agent output yields researchResult "" (not the user context)', async () => {
+    runClaudeImpl = async () => {
+      /* agent emits nothing */
+    }
+    const res = await researchDiscussionContext(disc)
+    expect(res).toEqual({ ok: true, researchResult: '' })
+  })
+
+  it('a thrown run resolves ok=false with empty researchResult', async () => {
+    runClaudeImpl = async () => {
+      throw new Error('boom')
+    }
+    const res = await researchDiscussionContext(disc)
+    expect(res).toEqual({ ok: false, researchResult: '' })
   })
 })

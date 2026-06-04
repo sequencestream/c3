@@ -90,7 +90,7 @@ import {
   listDiscussions,
   getDiscussion,
   createDiscussion,
-  setDiscussionContext,
+  setDiscussionResearchResult,
   listMessages as listDiscussionMessages,
   appendMessage as appendDiscussionMessage,
   updateDiscussionStatus as updateDiscussionStatus,
@@ -1542,9 +1542,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               send(ws, { type: 'discussion_detail', discussion: created, messages: [] })
               broadcastDiscussions(proj)
               void researchDiscussionContext(created)
-                .then(({ ok, context }) => {
-                  if (context !== created.context) {
-                    setDiscussionContext(created.id, context)
+                .then(({ ok, researchResult }) => {
+                  // Store the research output in its own field; the user's original
+                  // `context` is never overwritten. Empty output leaves it as ''.
+                  if (researchResult) {
+                    setDiscussionResearchResult(created.id, researchResult)
                     broadcastDiscussions(proj)
                   }
                   // Research failed → leave it a draft for a manual Start. On success,

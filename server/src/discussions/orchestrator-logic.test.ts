@@ -26,6 +26,7 @@ const discussion: Discussion = {
   type: 'decision',
   goal: 'Choose a caching layer',
   context: 'High read load.',
+  researchResult: '',
   status: 'in_progress',
   agenda: [],
   agendaIndex: 0,
@@ -354,6 +355,28 @@ describe('prompt builders', () => {
     expect(p).toContain('set_agenda|focus_subtopic|broadcast|speak|advance|conclude')
     // The broadcast action is documented as the preferred discuss mechanism.
     expect(p).toContain('broadcast:')
+  })
+
+  it('header background prefers researchResult over the user context, falling back to context', () => {
+    const withResearch = buildOrganizerPrompt({
+      discussion: { ...discussion, researchResult: 'RESEARCHED BACKGROUND' },
+      def,
+      stage,
+      messages: [],
+      participants: [{ id: 'gpt', name: 'GPT' }],
+    })
+    expect(withResearch).toContain('RESEARCHED BACKGROUND')
+    expect(withResearch).not.toContain('High read load.') // user context not used when research exists
+
+    // No research → fall back to the user's original context.
+    const fallback = buildOrganizerPrompt({
+      discussion, // researchResult: ''
+      def,
+      stage,
+      messages: [],
+      participants: [{ id: 'gpt', name: 'GPT' }],
+    })
+    expect(fallback).toContain('High read load.')
   })
 
   it('organizer prompt in discuss carries the agenda and marks the current subtopic', () => {

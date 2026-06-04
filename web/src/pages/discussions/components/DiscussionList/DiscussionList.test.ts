@@ -11,6 +11,7 @@ function disc(id: string, title: string, over: Partial<Discussion> = {}): Discus
     type: 'design',
     goal: '',
     context: '',
+    researchResult: '',
     status: 'in_progress',
     agenda: [],
     agendaIndex: 0,

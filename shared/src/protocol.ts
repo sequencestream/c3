@@ -476,8 +476,14 @@ export interface Discussion {
   type: string
   /** What the discussion aims to achieve. */
   goal: string
-  /** Background material seeding the discussion. */
+  /** Background material seeding the discussion — the user's original input, never overwritten. */
   context: string
+  /**
+   * The read-only research agent's completed output, stored independently of the user's
+   * `context` (which stays as entered). `''` until research produces a non-empty result
+   * (or when research is skipped/fails).
+   */
+  researchResult: string
   status: DiscussionStatus
   /**
    * Ordered subtopics the organizer decomposed `goal` into (the explicit agenda).

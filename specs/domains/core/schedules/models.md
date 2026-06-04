@@ -7,21 +7,21 @@ Wire shapes are defined once in the [shared protocol](../../../shared/api-conven
 
 A time-bound task: a shell command or LLM prompt that fires at a configured time.
 
-| Attribute           | Type                                         | Description                                                                                                        |
-| ------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `id`                | text (UUID)                                  | Unique identifier for the schedule                                                                                 |
-| `workspaceId`       | text (UUID)                                  | FK → session-registry workspace; immutable after creation (SCH-R1)                                                 |
-| `name`              | text                                         | Human-readable display name, **auto-generated server-side** from the task content on create; never client-supplied |
-| `taskType`          | enum `command \| llm_prompt`                 | Type of task to execute; immutable after creation (SCH-R2)                                                         |
-| `taskConfig`        | JSON (typed per taskType)                    | Task configuration: `command` ⇒ `{ command: string }`; `llm_prompt` ⇒ `{ prompt: string, mode?: PermissionMode }`  |
-| `triggerAt`         | timestamp \| null                            | One-shot trigger time (exactly one timing field is set, SCH-R3)                                                    |
-| `cronExpression`    | text \| null                                 | Cron expression for recurring schedules (v1-excluded, always null in v1)                                           |
-| `state`             | enum `active \| paused \| archived`          | Current lifecycle state (SCH-R5)                                                                                   |
-| `executionIdentity` | enum `read-only \| sandboxed \| full-access` | Identity persona at execution time (SCH-R4)                                                                        |
-| `lastExecutedAt`    | timestamp \| null                            | When the last execution started; null if never executed                                                            |
-| `createdBy`         | text                                         | Creator identifier (user session id)                                                                               |
-| `createdAt`         | timestamp                                    | Creation time                                                                                                      |
-| `updatedAt`         | timestamp                                    | Last modification time                                                                                             |
+| Attribute           | Type                                         | Description                                                                                                                                                      |
+| ------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                | text (UUID)                                  | Unique identifier for the schedule                                                                                                                               |
+| `workspaceId`       | text (UUID)                                  | FK → session-registry workspace; immutable after creation (SCH-R1)                                                                                               |
+| `name`              | text                                         | Human-readable display name, **auto-generated server-side** from the task content on create; never client-supplied                                               |
+| `taskType`          | enum `command \| llm_prompt`                 | Type of task to execute; immutable after creation (SCH-R2)                                                                                                       |
+| `taskConfig`        | JSON (typed per taskType)                    | Task configuration: `command` ⇒ `{ command: string }`; `llm_prompt` ⇒ `{ prompt: string, mode?: PermissionMode }`                                                |
+| `triggerAt`         | timestamp \| null                            | One-shot trigger time (exactly one timing field is set, SCH-R3)                                                                                                  |
+| `cronExpression`    | text \| null                                 | Cron expression for recurring schedules; interpreted in the system IANA time zone (`SystemSettings.timezone`, SCH-R3a), not UTC (v1-excluded, always null in v1) |
+| `state`             | enum `active \| paused \| archived`          | Current lifecycle state (SCH-R5)                                                                                                                                 |
+| `executionIdentity` | enum `read-only \| sandboxed \| full-access` | Identity persona at execution time (SCH-R4)                                                                                                                      |
+| `lastExecutedAt`    | timestamp \| null                            | When the last execution started; null if never executed                                                                                                          |
+| `createdBy`         | text                                         | Creator identifier (user session id)                                                                                                                             |
+| `createdAt`         | timestamp                                    | Creation time                                                                                                                                                    |
+| `updatedAt`         | timestamp                                    | Last modification time                                                                                                                                           |
 
 Relationships: belongs to exactly one Workspace (by `workspaceId`). Has zero or more ExecutionLogs.
 The workspace deletion cascades to **archiving** the schedule (not deleting it — SCH-R1).

@@ -51,6 +51,61 @@ describe('computeNextRunAt', () => {
     const exact = Date.UTC(2026, 5, 3, 13, 0, 0)
     expect(computeNextRunAt('0 13 * * *', exact)).toBeGreaterThan(exact)
   })
+
+  it("an explicit 'UTC' zone matches the default UTC behaviour exactly", () => {
+    // Regression guard: passing 'UTC' must be byte-identical to the no-zone path.
+    for (const expr of ['*/30 * * * *', '0 8 * * 1-5', '0 3 * * 1', '0 13 * * *']) {
+      expect(computeNextRunAt(expr, REF, 'UTC')).toBe(computeNextRunAt(expr, REF))
+    }
+  })
+})
+
+describe('computeNextRunAt — zoned (Asia/Shanghai, UTC+8, no DST)', () => {
+  const TZ = 'Asia/Shanghai'
+
+  it('interprets the hour field in the zone, mapping to the right UTC instant', () => {
+    // 2026-06-03T00:00Z = 08:00 Shanghai → 11:00 Shanghai today (= 03:00 UTC).
+    expect(iso(computeNextRunAt('0 11 * * *', Date.UTC(2026, 5, 3, 0, 0), TZ))).toBe(
+      '2026-06-03T03:00:00.000Z',
+    )
+    // REF = 2026-06-03T12:30Z = 20:30 Shanghai → today's 11:00 has passed, next is
+    // 2026-06-04 11:00 Shanghai (= 03:00 UTC next day).
+    expect(iso(computeNextRunAt('0 11 * * *', REF, TZ))).toBe('2026-06-04T03:00:00.000Z')
+  })
+
+  it('differs from the UTC interpretation of the same expression by the offset', () => {
+    // Under UTC, `0 11 * * *` from REF (12:30Z) skips to the next day 11:00 UTC.
+    expect(iso(computeNextRunAt('0 11 * * *', REF))).toBe('2026-06-04T11:00:00.000Z')
+    // Under Asia/Shanghai it's 8h earlier in UTC terms (03:00Z vs 11:00Z).
+    expect(iso(computeNextRunAt('0 11 * * *', REF, TZ))).toBe('2026-06-04T03:00:00.000Z')
+  })
+})
+
+describe('computeNextRunAt — zoned DST (America/New_York)', () => {
+  const TZ = 'America/New_York'
+  // 2026 spring-forward: 02:00 EST (-5) jumps to 03:00 EDT (-4) on Sun 2026-03-08.
+
+  it('uses the standard-time offset before the transition', () => {
+    // 2026-03-07 (Sat), still EST(-5): 12:00 ET = 17:00 UTC.
+    expect(iso(computeNextRunAt('0 12 * * *', Date.UTC(2026, 2, 7, 0, 0), TZ))).toBe(
+      '2026-03-07T17:00:00.000Z',
+    )
+  })
+
+  it('uses the daylight offset after the transition (same wall-clock, new offset)', () => {
+    // After the jump, EDT(-4): the next 12:00 ET (2026-03-09) = 16:00 UTC — an
+    // hour earlier in UTC than the pre-DST run, proving the offset switched.
+    expect(iso(computeNextRunAt('0 12 * * *', Date.UTC(2026, 2, 8, 20, 0), TZ))).toBe(
+      '2026-03-09T16:00:00.000Z',
+    )
+  })
+
+  it('skips a wall-clock time that does not exist in the spring-forward gap', () => {
+    // 02:30 ET does not exist on 2026-03-08 (02:00→03:00). The run must land on
+    // the next day's 02:30 EDT (= 06:30 UTC), never on the gap day.
+    const next = computeNextRunAt('30 2 * * *', Date.UTC(2026, 2, 8, 0, 0), TZ)
+    expect(iso(next)).toBe('2026-03-09T06:30:00.000Z')
+  })
 })
 
 describe('describeCron', () => {

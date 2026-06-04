@@ -26,6 +26,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../db.js'
+import { getTimezone } from '../settings.js'
 import { fallbackName } from './naming.js'
 
 /**
@@ -315,7 +316,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
   // so without this the first run would never fire. Invalid crons stay null
   // (never due) rather than throwing and rejecting the create.
   const nextRunAt = isValidCron(input.cronExpression)
-    ? computeNextRunAt(input.cronExpression, now)
+    ? computeNextRunAt(input.cronExpression, now, getTimezone())
     : null
   d.run(
     `INSERT INTO schedules
@@ -365,7 +366,11 @@ export function updateSchedule(id: string, patch: UpdateScheduleInput): void {
     // Recompute next_run_at so the new cron takes effect on the next tick rather
     // than firing against the previous expression's stale timestamp.
     sets.push('next_run_at=?')
-    params.push(isValidCron(patch.cronExpression) ? computeNextRunAt(patch.cronExpression) : null)
+    params.push(
+      isValidCron(patch.cronExpression)
+        ? computeNextRunAt(patch.cronExpression, Date.now(), getTimezone())
+        : null,
+    )
   }
   if (patch.mcpMode !== undefined) {
     sets.push('mcp_mode=?')

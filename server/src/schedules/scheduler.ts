@@ -15,6 +15,7 @@
 import { getSchedule } from './store.js'
 import type { Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt } from '@ccc/shared/cron'
+import { getTimezone } from '../settings.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
 
 export { computeNextRunAt }
@@ -216,7 +217,7 @@ function dispatchAndTrack(schedule: Schedule): void {
       try {
         const updated = store.getSchedule(schedule.id)
         if (updated && updated.status === 'active') {
-          const next = computeNextRunAt(updated.cronExpression, Date.now())
+          const next = computeNextRunAt(updated.cronExpression, Date.now(), getTimezone())
           store.updateNextRunAt(schedule.id, next)
           console.log(
             '[scheduler] schedule %s next run at %s',

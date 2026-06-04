@@ -169,6 +169,16 @@ export interface SystemSettings {
   /** UI display language for the web console. `en` when unset. Decoupled from
    * {@link voiceLang}. See {@link UiLang}. */
   uiLang?: UiLang
+  /**
+   * System-wide IANA time zone (e.g. `Asia/Shanghai`, `America/New_York`) used
+   * to interpret every schedule's cron fields when computing `next_run_at`. The
+   * cron expression `0 11 * * *` means 11:00 in this zone, not 11:00 UTC. The
+   * stored `next_run_at` is still an absolute Unix-ms instant; the zone only
+   * decides which instant a wall-clock cron maps to (DST-aware). Unset/invalid
+   * ⇒ the server's local time zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`).
+   * Changing it shifts the actual trigger moment of existing schedules.
+   */
+  timezone?: string
   /** When true, tool-created sessions (completion judge, consensus advisor) appear
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean

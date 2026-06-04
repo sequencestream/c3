@@ -109,32 +109,34 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
     <span v-if="connection === 'closed'" class="status-muted">{{
       t('session.statusBar.disconnected')
     }}</span>
-    <button
-      v-if="sideEffectPending"
-      class="status-continue"
-      :title="t('session.statusBar.continue.tooltip')"
-      @click="emit('continue')"
-    >
-      {{ t('session.statusBar.continue.label') }}
-    </button>
-    <button
-      class="status-stop"
-      :disabled="!canStop"
-      :title="
-        teamActive
-          ? t('session.statusBar.stop.endTeamTooltip')
-          : t('session.statusBar.stop.tooltip')
-      "
-      :aria-label="t('session.statusBar.stop.ariaLabel')"
-      @click="emit('stop')"
-    />
-    <button
-      class="status-refresh"
-      :disabled="!canRefresh"
-      :title="t('session.statusBar.refresh.tooltip')"
-      @click="emit('refresh')"
-    >
-      ↻
-    </button>
+    <div class="status-actions">
+      <button
+        v-if="sideEffectPending"
+        class="status-continue"
+        :title="t('session.statusBar.continue.tooltip')"
+        @click="emit('continue')"
+      >
+        {{ t('session.statusBar.continue.label') }}
+      </button>
+      <button
+        class="status-stop"
+        :disabled="!canStop"
+        :title="
+          teamActive
+            ? t('session.statusBar.stop.endTeamTooltip')
+            : t('session.statusBar.stop.tooltip')
+        "
+        :aria-label="t('session.statusBar.stop.ariaLabel')"
+        @click="emit('stop')"
+      />
+      <button
+        class="status-refresh"
+        :disabled="!canRefresh"
+        :title="t('session.statusBar.refresh.tooltip')"
+        @click="emit('refresh')"
+      >
+        ↻
+      </button>
+    </div>
   </div>
 </template>

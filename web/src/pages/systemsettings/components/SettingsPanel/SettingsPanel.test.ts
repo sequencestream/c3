@@ -157,3 +157,33 @@ describe('SettingsPanel.vue — UI display language', () => {
     expect(emitted[0][0].uiLang).toBe('en')
   })
 })
+
+describe('SettingsPanel.vue — time zone', () => {
+  it('seeds the timezone select from server settings', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, timezone: 'Asia/Shanghai' } },
+    })
+    const select = w.find('[data-testid="settings-timezone"]')
+    expect(select.exists()).toBe(true)
+    expect((select.element as HTMLSelectElement).value).toBe('Asia/Shanghai')
+  })
+
+  it('defaults the timezone select to the browser zone when settings omit it', () => {
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, timezone: undefined } },
+    })
+    const select = w.find('[data-testid="settings-timezone"]')
+    expect((select.element as HTMLSelectElement).value).toBe(browserTz)
+  })
+
+  it('carries the selected timezone into the Save payload', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, timezone: 'Asia/Shanghai' } },
+    })
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].timezone).toBe('America/New_York')
+  })
+})

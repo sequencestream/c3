@@ -5,8 +5,14 @@
  * both compute identical next-run timestamps. Supports the standard 5 fields
  * (minute hour day-of-month month day-of-week); no seconds, no `@yearly` macros.
  *
- * All computation is in UTC — callers must treat the schedule timeline as server
- * (UTC) time. There is no per-schedule timezone.
+ * Cron fields are interpreted in a caller-supplied IANA time zone (the system
+ * `timezone` setting — see `server/src/settings.ts:getTimezone`). The returned
+ * value is always an absolute Unix-ms instant. When the zone is omitted (or the
+ * literal `'UTC'`), computation stays in UTC — identical to the original
+ * UTC-only behaviour, kept as a regression-safe default. The zoned path uses
+ * `Intl.DateTimeFormat` to convert between the zone's wall-clock and UTC,
+ * handling daylight-saving transitions (gap times are skipped; fold times take
+ * the earlier offset).
  */
 
 interface CronField {
@@ -85,35 +91,120 @@ function matches(field: CronField, value: number): boolean {
   return field.all || field.values.has(value)
 }
 
+const MAX_LOOKAHEAD = 365 * 2 + 1 // days
+const FAR_FUTURE_MS = 365 * 24 * 60 * 60 * 1000
+
 /**
- * Compute the next run timestamp (Unix ms) at or after `after` for a cron expression.
- * Walks forward minute-by-minute until all fields match. Throws if no match found
- * within a reasonable look-ahead (2 years) to avoid infinite loops on impossible
- * expressions.
+ * Standard cron day matching: when BOTH day-of-month and day-of-week are
+ * restricted, the day matches if EITHER matches (union). When one is '*', only
+ * the other constrains the day. (A naive `dom || dow` would make a
+ * day-of-week-only expression like "0 3 * * 1" fire every day, since dom='*'
+ * always matches.)
  */
-export function computeNextRunAt(cronExpression: string, after: number = Date.now()): number {
+function dayMatches(cron: ParsedCron, dayOfMonth: number, dayOfWeek: number): boolean {
+  const domMatch = matches(cron.dayOfMonth, dayOfMonth)
+  const dowMatch = matches(cron.dayOfWeek, dayOfWeek)
+  return !cron.dayOfMonth.all && !cron.dayOfWeek.all ? domMatch || dowMatch : domMatch && dowMatch
+}
+
+/** The zone-local wall-clock fields of a UTC instant, via `Intl.DateTimeFormat`. */
+interface WallParts {
+  year: number
+  month: number // 1-12
+  day: number // 1-31
+  hour: number // 0-23
+  minute: number // 0-59
+  second: number // 0-59
+}
+
+function wallParts(ms: number, timeZone: string): WallParts {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  const out: Record<string, number> = {}
+  for (const p of dtf.formatToParts(new Date(ms))) {
+    if (p.type !== 'literal') out[p.type] = parseInt(p.value, 10)
+  }
+  // `h23` can render midnight as hour 24; normalise to 0.
+  if (out.hour === 24) out.hour = 0
+  return {
+    year: out.year,
+    month: out.month,
+    day: out.day,
+    hour: out.hour,
+    minute: out.minute,
+    second: out.second,
+  }
+}
+
+/** The zone's UTC offset (ms) at a given instant: (wall-clock-as-UTC) − instant. */
+function tzOffsetMs(ms: number, timeZone: string): number {
+  const p = wallParts(ms, timeZone)
+  const asUTC = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
+  return asUTC - ms
+}
+
+/**
+ * Convert a wall-clock time in `timeZone` to its absolute Unix-ms instant.
+ * Applies the offset, then refines once: the offset sampled at the first guess
+ * may differ from the offset that actually applies at the resulting instant
+ * (a DST boundary), so a second sample corrects it.
+ */
+function zonedWallToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string,
+): number {
+  const asUTC = Date.UTC(year, month - 1, day, hour, minute, 0, 0)
+  const off1 = tzOffsetMs(asUTC, timeZone)
+  let ts = asUTC - off1
+  const off2 = tzOffsetMs(ts, timeZone)
+  if (off2 !== off1) ts = asUTC - off2
+  return ts
+}
+
+/**
+ * Compute the next run timestamp (Unix ms) strictly after `after` for a cron
+ * expression. Walks forward day-by-day, then hour/minute within each matching
+ * day, until all fields match. Throws-free: returns a far-future timestamp if no
+ * match is found within a reasonable look-ahead (2 years) to avoid infinite
+ * loops on impossible expressions.
+ *
+ * `timeZone` (an IANA name, e.g. `Asia/Shanghai`) selects the zone the cron
+ * fields are interpreted in. Omitted or `'UTC'` ⇒ UTC computation, identical to
+ * the historical behaviour.
+ */
+export function computeNextRunAt(
+  cronExpression: string,
+  after: number = Date.now(),
+  timeZone?: string,
+): number {
   const cron = parseCron(cronExpression)
+
+  if (timeZone && timeZone !== 'UTC') {
+    return computeNextRunAtZoned(cron, after, timeZone)
+  }
+
   const start = new Date(after)
   // Round to next full minute
   start.setUTCSeconds(0, 0)
   start.setUTCMinutes(start.getUTCMinutes() + 1)
 
-  const MAX_LOOKAHEAD = 365 * 2 + 1 // days
-
   for (let d = 0; d < MAX_LOOKAHEAD; d++) {
     const date = new Date(start)
     date.setUTCDate(date.getUTCDate() + d)
     if (!matches(cron.month, date.getUTCMonth() + 1)) continue
-    // Standard cron day matching: when BOTH day-of-month and day-of-week are
-    // restricted, the day matches if EITHER matches (union). When one is '*',
-    // only the other constrains the day. (A naive `dom || dow` would make a
-    // day-of-week-only expression like "0 3 * * 1" fire every day, since dom='*'
-    // always matches.)
-    const domMatch = matches(cron.dayOfMonth, date.getUTCDate())
-    const dowMatch = matches(cron.dayOfWeek, date.getUTCDay())
-    const dayMatch =
-      !cron.dayOfMonth.all && !cron.dayOfWeek.all ? domMatch || dowMatch : domMatch && dowMatch
-    if (!dayMatch) continue
+    if (!dayMatches(cron, date.getUTCDate(), date.getUTCDay())) continue
 
     for (let h = 0; h < 24; h++) {
       if (!matches(cron.hour, h)) continue
@@ -126,7 +217,48 @@ export function computeNextRunAt(cronExpression: string, after: number = Date.no
     }
   }
   // Fallback: schedule far in the future to avoid tight loop on invalid cron
-  return after + 365 * 24 * 60 * 60 * 1000
+  return after + FAR_FUTURE_MS
+}
+
+/**
+ * Zoned variant: iterate candidate days/times in the target zone's calendar.
+ * A UTC `Date` is used purely as a calendar carrier for the zone-local Y/M/D
+ * (day-of-week via `getUTCDay` is calendar-only, zone-independent); each
+ * candidate wall-clock is mapped back to an absolute instant via
+ * {@link zonedWallToUtc}. Candidates whose round-tripped wall-clock does not
+ * match the requested fields are skipped — this naturally drops the
+ * non-existent local times in a spring-forward DST gap.
+ */
+function computeNextRunAtZoned(cron: ParsedCron, after: number, timeZone: string): number {
+  const startWall = wallParts(after, timeZone)
+  // Calendar carrier: a UTC date holding the zone-local calendar date of `after`.
+  const carrier = new Date(Date.UTC(startWall.year, startWall.month - 1, startWall.day))
+
+  for (let d = 0; d < MAX_LOOKAHEAD; d++) {
+    const date = new Date(carrier)
+    date.setUTCDate(date.getUTCDate() + d)
+    const year = date.getUTCFullYear()
+    const month = date.getUTCMonth() + 1
+    const dom = date.getUTCDate()
+    if (!matches(cron.month, month)) continue
+    if (!dayMatches(cron, dom, date.getUTCDay())) continue
+
+    for (let h = 0; h < 24; h++) {
+      if (!matches(cron.hour, h)) continue
+      for (let m = 0; m < 60; m++) {
+        if (!matches(cron.minute, m)) continue
+        const ts = zonedWallToUtc(year, month, dom, h, m, timeZone)
+        if (ts <= after) continue
+        // Reject DST-gap times: the requested wall-clock doesn't exist, so its
+        // round-trip lands on a different local time.
+        const back = wallParts(ts, timeZone)
+        if (back.year !== year || back.month !== month || back.day !== dom) continue
+        if (back.hour !== h || back.minute !== m) continue
+        return ts
+      }
+    }
+  }
+  return after + FAR_FUTURE_MS
 }
 
 const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']

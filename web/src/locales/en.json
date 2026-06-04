@@ -246,6 +246,12 @@
         "label": "Cantonese"
       }
     },
+    "timezone": {
+      "title": {
+        "label": "Time zone"
+      },
+      "hint": "The IANA time zone used to interpret every schedule's cron expression when computing its next run. For example, 0 11 * * * means 11:00 in this zone. Defaults to the server's local time zone; changing it shifts when existing schedules actually fire."
+    },
     "consensus": {
       "title": {
         "label": "Consensus"

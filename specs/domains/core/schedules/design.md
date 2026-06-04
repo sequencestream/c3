@@ -46,6 +46,20 @@ Design notes:
 - Timing is **cron-driven**: `cron_expression` + computed `next_run_at` (Unix ms). The scheduler
   polls `SELECT * FROM schedules WHERE status='active' AND next_run_at <= ?`. After each execution,
   `next_run_at` is recomputed from the cron expression.
+- **Time zone:** cron fields are interpreted in the **system-wide IANA time zone**
+  (`SystemSettings.timezone`, see [system-config](../../system-config/) / `server/src/settings.ts`),
+  not in UTC. `computeNextRunAt(expr, after, timeZone)` in `shared/src/cron.ts` takes the zone and
+  maps the wall-clock cron to an absolute `next_run_at` instant, handling daylight-saving transitions
+  (spring-forward gap times are skipped; fall-back fold times take the earlier offset). Both server
+  call sites (`store.ts` create/update, `scheduler.ts` post-run recompute) pass `getTimezone()`; the
+  web preview passes the same zone so its next/upcoming-run display matches the scheduled instant.
+  The default zone is the **server's local time zone**
+  (`Intl.DateTimeFormat().resolvedOptions().timeZone`) — an invalid/unset value falls back to it.
+  Omitting the zone (or passing `'UTC'`) keeps the historical UTC computation, unchanged.
+  **Behaviour change:** this replaces the previous UTC-only interpretation. On upgrade, existing
+  schedules' actual trigger moments shift from UTC to the server-local (or configured) zone — e.g.
+  `0 11 * * *` moves from 11:00 UTC to 11:00 local. This is intentional (it aligns cron with what the
+  user sees) and requires no migration: `next_run_at` is recomputed on the next create/update/run.
 - `type` maps to the spec's `task_type` but uses `'llm'` instead of `'llm_prompt'` for brevity.
 - `config` is a JSON blob validated at the application layer. There is no check constraint —
   validation is type-dependent and happens at create/update time.

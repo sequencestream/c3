@@ -10,8 +10,11 @@ import {
   getDevSkill,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
+  getServerTimezone,
   getSocketAutoResume,
+  getTimezone,
   getUiLang,
+  isValidTimeZone,
   loadSettings,
   resolveSessionLaunch,
   saveSettings,
@@ -375,6 +378,52 @@ describe('getUiLang normalization', () => {
     } as SystemSettings)
     expect(getUiLang()).toBe('zh')
     expect(loadSettings().voiceLang).toBe('en-US')
+  })
+})
+
+/** Persist just a `timezone` value (with the required baseline fields). */
+function saveWithTimezone(timezone: unknown): void {
+  saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, timezone } as SystemSettings)
+}
+
+describe('isValidTimeZone', () => {
+  it('accepts well-known IANA zone names', () => {
+    expect(isValidTimeZone('Asia/Shanghai')).toBe(true)
+    expect(isValidTimeZone('America/New_York')).toBe(true)
+    expect(isValidTimeZone('UTC')).toBe(true)
+  })
+
+  it('rejects unknown / non-string / empty values', () => {
+    expect(isValidTimeZone('Not/AZone')).toBe(false)
+    expect(isValidTimeZone('')).toBe(false)
+    expect(isValidTimeZone('   ')).toBe(false)
+    expect(isValidTimeZone(42)).toBe(false)
+    expect(isValidTimeZone(undefined)).toBe(false)
+  })
+})
+
+describe('getTimezone normalization', () => {
+  it('defaults to the server local zone when unset', () => {
+    saveWithTimezone(undefined)
+    expect(getTimezone()).toBe(getServerTimezone())
+  })
+
+  it('keeps a valid IANA zone', () => {
+    saveWithTimezone('Asia/Shanghai')
+    expect(getTimezone()).toBe('Asia/Shanghai')
+    expect(loadSettings().timezone).toBe('Asia/Shanghai')
+  })
+
+  it('falls back to the server local zone for an invalid value', () => {
+    saveWithTimezone('Not/AZone')
+    expect(getTimezone()).toBe(getServerTimezone())
+    // Persisted value is the normalized (valid) zone, not the bogus input.
+    expect(loadSettings().timezone).toBe(getServerTimezone())
+  })
+
+  it('falls back to the server local zone for a non-string value', () => {
+    saveWithTimezone(123)
+    expect(getTimezone()).toBe(getServerTimezone())
   })
 })
 

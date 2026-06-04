@@ -34,6 +34,31 @@ const UI_LANGS: readonly UiLang[] = ['en', 'zh', 'ja', 'ko', 'ru']
 /** UI language when unset/invalid. Decoupled from {@link voiceLang}. */
 export const DEFAULT_UI_LANG: UiLang = 'en'
 
+/**
+ * The server's own IANA time zone — the default when `timezone` is unset/invalid.
+ * Computed at call time so it tracks the host (and so tests can stub it via the
+ * environment). Falls back to `'UTC'` on the (unexpected) chance the runtime
+ * can't resolve a zone.
+ */
+export function getServerTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+/** True when `tz` is an IANA time-zone name the runtime's `Intl` accepts. */
+export function isValidTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== 'string' || !tz.trim()) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Hard floor for the per-stage discussion round cap; lower values are clamped up. */
 export const MIN_ROUNDS_PER_STAGE = 8
 /** Fallback per-stage round cap when unset/invalid (kept above the floor for depth). */
@@ -131,6 +156,9 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const uiLang = UI_LANGS.includes(raw?.uiLang as UiLang)
     ? (raw!.uiLang as UiLang)
     : DEFAULT_UI_LANG
+  // System time zone: a valid IANA name is kept; anything else falls back to the
+  // server's own zone (so a fresh install schedules in local time out of the box).
+  const timezone = isValidTimeZone(raw?.timezone) ? raw!.timezone! : getServerTimezone()
   const showToolSessions = raw?.showToolSessions === true
   const devSkill = normalizeDevSkill(raw?.devSkill)
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
@@ -145,6 +173,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     consensus,
     voiceLang,
     uiLang,
+    timezone,
     showToolSessions,
     devSkill,
     maxRoundsPerStage,
@@ -398,6 +427,16 @@ export function getShowToolSessions(): boolean {
 /** The UI display language (normalized; always a known {@link UiLang}, `en` by default). */
 export function getUiLang(): UiLang {
   return loadSettings().uiLang ?? DEFAULT_UI_LANG
+}
+
+/**
+ * The system IANA time zone schedules are computed in (normalized; a valid zone,
+ * defaulting to the server's own zone). Passed to `computeNextRunAt` so cron
+ * fields are interpreted in this zone.
+ */
+export function getTimezone(): string {
+  const tz = loadSettings().timezone
+  return isValidTimeZone(tz) ? tz : getServerTimezone()
 }
 
 /** The slash command prefixed to a requirement when launching development; empty ⇒ no prefix. */

@@ -11,8 +11,9 @@
  * The schedule's display name is auto-generated server-side from the task
  * content on create — the form does not collect a name or description.
  *
- * Schedule times are interpreted as server (UTC) time — there is no per-schedule
- * timezone.
+ * Cron fields are interpreted in the system `timezone` (the `timezone` prop,
+ * sourced from the server settings); the preview passes it to `computeNextRunAt`
+ * so the previewed instant matches the one the server will schedule.
  */
 import { ref, computed, watch } from 'vue'
 import type {
@@ -35,6 +36,8 @@ const props = defineProps<{
   schedule: Schedule | null
   /** Owning workspace for new schedules. */
   workspacePath: string
+  /** System IANA time zone the cron next-run preview is computed in. */
+  timezone: string
 }>()
 
 const emit = defineEmits<{
@@ -158,7 +161,10 @@ const cronSummary = computed(() => (cronValid.value ? describeCron(cronExpressio
 const nextRunPreview = computed(() => {
   if (!cronValid.value) return null
   try {
-    return fmtDateTime(computeNextRunAt(cronExpression.value, Date.now()), 'datetime')
+    return fmtDateTime(
+      computeNextRunAt(cronExpression.value, Date.now(), props.timezone),
+      'datetime',
+    )
   } catch {
     return null
   }

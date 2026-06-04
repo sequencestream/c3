@@ -25,6 +25,8 @@ defineProps<{
   formOpen: boolean
   formTarget: Schedule | null
   workspacePath: string
+  /** System IANA time zone the cron next-run preview is computed in. */
+  timezone: string
 }>()
 
 defineEmits<{
@@ -42,6 +44,7 @@ defineEmits<{
   <ScheduleList
     :schedules="schedules"
     :active-id="activeId"
+    :timezone="timezone"
     @select="(id: string) => $emit('select', id)"
     @new-schedule="$emit('open-form', null)"
     @toggle-enabled="(id: string, enabled: boolean) => $emit('toggle-enabled', id, enabled)"
@@ -62,6 +65,7 @@ defineEmits<{
     :open="formOpen"
     :schedule="formTarget"
     :workspace-path="workspacePath"
+    :timezone="timezone"
     @close="$emit('close-form')"
     @create="(input: CreateScheduleInput) => $emit('create', input)"
     @update="(id: string, input: UpdateScheduleInput) => $emit('update', id, input)"

@@ -807,8 +807,16 @@ header h1 {
 .status-muted {
   color: var(--c-text-disabled);
 }
-.status-refresh {
+/* Trailing action group (continue / stop / refresh) — pushed to the right as a
+   single unit so the buttons stay tight together instead of each grabbing its
+   own auto margin and drifting toward the center. */
+.status-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.status-refresh {
   flex-shrink: 0;
   padding: 0 var(--sp-1);
   background: transparent;
@@ -830,7 +838,6 @@ header h1 {
 /* Stop / End-team control — a small red square, sits at the right next to ↻.
    Enabled only while there's a turn or team to interrupt; greys out when idle. */
 .status-stop {
-  margin-left: auto;
   flex-shrink: 0;
   width: 12px;
   height: 12px;
@@ -1255,7 +1262,10 @@ main {
 /* 折叠态:摘要后追加首个 tool-use 的单行请求预览(muted),与摘要同处一行,
    共享 .batch-summary 的 nowrap + ellipsis,超长自动以 … 截断。 */
 .batch-preview {
-  color: var(--c-text-muted);
+  /* 比工具名/数字(muted)更暗的灰,弱化为次要信息并与之区分 */
+  color: var(--c-text-disabled);
+  /* 预览字体压到原来的 2/3 */
+  font-size: 0.667em;
 }
 
 /* 展开态：内部逐项工具卡片沿用现有结构 */

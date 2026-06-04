@@ -447,6 +447,14 @@ const settingsOpen = ref(false)
 // Latest server settings; SettingsPanel deep-copies this into its own draft.
 const serverSettings = ref<SystemSettings | null>(null)
 
+// The time zone schedule cron fields are interpreted in for the live preview /
+// upcoming-runs list, so the client computes the same instants the server does.
+// Falls back to the browser's own zone until the server settings arrive (which
+// is also the server's default for a fresh install — see settings.ts).
+const scheduleTimezone = computed(
+  () => serverSettings.value?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+)
+
 function openSettings() {
   settingsOpen.value = true
   client?.send({ type: 'get_settings' })
@@ -516,8 +524,10 @@ onMounted(() => {
         if (activeDiscussionId.value)
           client?.send({ type: 'open_discussion', discussionId: activeDiscussionId.value })
       } else if (activeTab.value === 'schedules' && schedulesProject.value) {
-        // Re-fetch the schedule list (read path, no live session).
+        // Re-fetch the schedule list (read path, no live session) + settings (for
+        // the timezone-aware next-run preview).
         client?.send({ type: 'list_schedules', workspacePath: schedulesProject.value })
+        client?.send({ type: 'get_settings' })
       } else if (activeWorkspace.value && activeSession.value) {
         client?.send({
           type: 'select_session',
@@ -1165,6 +1175,9 @@ function openSchedules(path: string) {
   selectedScheduleId.value = null
   persistViewMode()
   client?.send({ type: 'list_schedules', workspacePath: path })
+  // Pull settings so the next-run preview uses the configured `timezone` rather
+  // than the browser-zone fallback (settings aren't fetched elsewhere on entry).
+  client?.send({ type: 'get_settings' })
 }
 
 // Click a schedule in the list: switch the right panel to show its detail and
@@ -1538,6 +1551,7 @@ function listCommands() {
       :form-open="scheduleFormOpen"
       :form-target="scheduleFormTarget"
       :workspace-path="schedulesProject ?? ''"
+      :timezone="scheduleTimezone"
       @select="onSelectSchedule"
       @open-form="openScheduleForm"
       @toggle-enabled="onToggleScheduleEnabled"

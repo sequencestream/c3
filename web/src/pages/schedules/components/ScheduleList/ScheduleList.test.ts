@@ -22,7 +22,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
 }
 
 function mountList(schedules: Schedule[]) {
-  return mount(ScheduleList, { props: { schedules, activeId: null } })
+  return mount(ScheduleList, { props: { schedules, activeId: null, timezone: 'UTC' } })
 }
 
 describe('ScheduleList.vue — 左栏列表交互', () => {

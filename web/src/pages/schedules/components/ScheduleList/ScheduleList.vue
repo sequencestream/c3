@@ -16,9 +16,11 @@ import { useTypedI18n } from '@/i18n'
 
 const { t, d } = useTypedI18n()
 
-defineProps<{
+const props = defineProps<{
   schedules: Schedule[]
   activeId: string | null
+  /** System IANA time zone the cron upcoming-runs are computed in. */
+  timezone: string
 }>()
 
 const emit = defineEmits<{
@@ -89,7 +91,7 @@ function upcomingRuns(s: Schedule): number[] {
   let after = now.value
   for (let i = 0; i < UPCOMING_COUNT; i++) {
     try {
-      const next = computeNextRunAt(cron, after)
+      const next = computeNextRunAt(cron, after, props.timezone)
       if (!Number.isFinite(next) || next <= after) break
       runs.push(next)
       after = next

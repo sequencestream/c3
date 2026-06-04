@@ -5,10 +5,21 @@ import { isValidCron } from '@ccc/shared/cron'
 import ScheduleForm from './ScheduleForm.vue'
 
 function mountForm(
-  props: Partial<{ open: boolean; schedule: Schedule | null; workspacePath: string }> = {},
+  props: Partial<{
+    open: boolean
+    schedule: Schedule | null
+    workspacePath: string
+    timezone: string
+  }> = {},
 ) {
   return mount(ScheduleForm, {
-    props: { open: true, schedule: null, workspacePath: '/home/proj', ...props },
+    props: {
+      open: true,
+      schedule: null,
+      workspacePath: '/home/proj',
+      timezone: 'UTC',
+      ...props,
+    },
   })
 }
 

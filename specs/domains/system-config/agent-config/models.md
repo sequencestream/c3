@@ -33,13 +33,14 @@ clearing.
 
 The whole configuration, persisted at `~/.c3/settings.json`.
 
-| Field               | Type                    | Description                                                                                                                                                              |
-| ------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agents`            | `Agent[]`               | The registry; always includes the system agent (AC-R1)                                                                                                                   |
-| `defaultAgentId`    | text                    | Id of an existing agent; falls back to system agent (AC-R2)                                                                                                              |
-| `defaultMode`       | `PermissionMode` (opt.) | Permission mode new sessions start in; one of the five `PermissionMode` values, falls back to `default` (AC-R8). Seeds a new session's mode in session-registry (SR-R6). |
-| `consensus`         | `{enabled}` (opt.)      | Multi-agent consensus voting on permission prompts; off by default. Consumed by the permission gateway — see [consensus.md](../../core/permission-gateway/consensus.md). |
-| `maxRoundsPerStage` | number (opt.)           | Per-stage round cap for multi-agent discussions; normalized to ≥ 8, default 12 (AC-R9). Consumed by the discussion engine.                                               |
+| Field               | Type                    | Description                                                                                                                                                                                                                                                                  |
+| ------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents`            | `Agent[]`               | The registry; always includes the system agent (AC-R1)                                                                                                                                                                                                                       |
+| `defaultAgentId`    | text                    | Id of an existing agent; falls back to system agent (AC-R2)                                                                                                                                                                                                                  |
+| `defaultMode`       | `PermissionMode` (opt.) | Permission mode new sessions start in; one of the five `PermissionMode` values, falls back to `default` (AC-R8). Seeds a new session's mode in session-registry (SR-R6).                                                                                                     |
+| `consensus`         | `{enabled}` (opt.)      | Multi-agent consensus voting on permission prompts; off by default. Consumed by the permission gateway — see [consensus.md](../../core/permission-gateway/consensus.md).                                                                                                     |
+| `maxRoundsPerStage` | number (opt.)           | Per-stage round cap for multi-agent discussions; normalized to ≥ 8, default 12 (AC-R9). Consumed by the discussion engine.                                                                                                                                                   |
+| `timezone`          | text (opt.)             | System-wide IANA time zone (e.g. `Asia/Shanghai`) used to interpret every schedule's cron fields; invalid/unset falls back to the server's local zone (`Intl…resolvedOptions().timeZone`). Consumed by the [schedules](../../core/schedules/design.md) engine — see SCH-R3a. |
 
 ## Session binding (state.json, `~/.c3`)
 

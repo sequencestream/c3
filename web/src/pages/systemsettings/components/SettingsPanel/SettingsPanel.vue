@@ -23,6 +23,9 @@ const DEFAULT_ROUNDS_PER_STAGE = 12
 const MIN_SPEECH_CHARS = 300
 const DEFAULT_SPEECH_CHARS = 300
 
+// 浏览器本地时区，作为 timezone 草稿的默认值与 timezone 列表不可用时的兜底项。
+const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
+
 // 浏览器语音输入的可选识别语言（BCP-47）。与 UI 语言（UI_LANGS）彻底解耦。
 const VOICE_LANGS = computed<{ value: string; label: string }[]>(() => [
   { value: 'zh-CN', label: t('settings.voiceLang.zhCN.label') },
@@ -72,10 +75,28 @@ const draft = ref<SystemSettings>({
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
   uiLang: 'en',
+  timezone: BROWSER_TZ,
   showToolSessions: false,
   devSkill: '',
   maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
   maxSpeechChars: DEFAULT_SPEECH_CHARS,
+})
+
+// 系统时区可选项：全量 IANA 列表（Intl.supportedValuesOf 受支持时），否则退化为
+// 只含浏览器时区的单项。服务端会再校验并在非法时回退到服务器本地时区。
+const TIMEZONES = computed<string[]>(() => {
+  const sv = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf
+  let zones: string[]
+  try {
+    zones = typeof sv === 'function' ? sv('timeZone') : []
+  } catch {
+    zones = []
+  }
+  if (!zones.length) zones = [BROWSER_TZ]
+  // 确保当前草稿值始终在列表里(例如服务端传来的历史值不在枚举中)。
+  const current = draft.value.timezone
+  if (current && !zones.includes(current)) zones = [current, ...zones]
+  return zones
 })
 
 // Re-seed the draft whenever the panel opens or fresh server settings arrive.
@@ -91,6 +112,7 @@ watch(
       consensus: { enabled: settings.consensus?.enabled ?? false },
       voiceLang: settings.voiceLang ?? 'zh-CN',
       uiLang: settings.uiLang ?? 'en',
+      timezone: settings.timezone ?? BROWSER_TZ,
       showToolSessions: settings.showToolSessions ?? false,
       devSkill: settings.devSkill ?? '',
       maxRoundsPerStage: settings.maxRoundsPerStage ?? DEFAULT_ROUNDS_PER_STAGE,
@@ -308,6 +330,14 @@ function onUiLangChange(e: Event) {
         <p class="settings-hint">{{ t('settings.voiceLang.hint') }}</p>
         <select v-model="draft.voiceLang" class="mode-select">
           <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
+        </select>
+      </section>
+
+      <section class="settings-section">
+        <p class="settings-section-title">{{ t('settings.timezone.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.timezone.hint') }}</p>
+        <select v-model="draft.timezone" class="mode-select" data-testid="settings-timezone">
+          <option v-for="tz in TIMEZONES" :key="tz" :value="tz">{{ tz }}</option>
         </select>
       </section>
 

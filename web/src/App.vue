@@ -44,8 +44,11 @@ import type {
   SlashCommandInfo,
   SystemSettings,
   TranscriptItem,
+  UiLang,
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { applyLocale, setStoredLocale, i18n, type Locale } from './i18n'
 
 const messages = ref<ChatMsg[]>([])
 const status = ref<'connecting' | 'open' | 'closed'>('connecting')
@@ -404,6 +407,44 @@ function saveSettings(settings: SystemSettings) {
   settingsOpen.value = false
 }
 
+// ---- UI language (runtime switch; decoupled from voiceLang) ----
+
+// A transient, auto-dismissing global toast. Minimal by design (single message,
+// error-only today); the language-switch rollback surfaces failures through it.
+const toast = ref<string | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+function showToast(text: string) {
+  toast.value = text
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => (toast.value = null), 4000)
+}
+
+/**
+ * Switch the UI language at runtime (no page reload): flip vue-i18n locale +
+ * <html lang>, persist to localStorage, then push the change to the server
+ * (authoritative source). If the WS send fails, roll the UI back and toast.
+ */
+function setLocale(next: UiLang) {
+  const prev = i18n.global.locale.value as Locale
+  if (next === prev) return
+  applyLocale(next)
+  setStoredLocale(next)
+  try {
+    if (!client) throw new Error('no connection')
+    const base: SystemSettings = serverSettings.value ?? {
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+    }
+    const settings: SystemSettings = { ...base, uiLang: next }
+    client.send({ type: 'save_settings', settings })
+    serverSettings.value = settings
+  } catch {
+    applyLocale(prev)
+    setStoredLocale(prev)
+    showToast('Failed to save language setting. Reverted.')
+  }
+}
+
 let client: ReturnType<typeof createWsClient> | null = null
 
 onMounted(() => {
@@ -573,6 +614,13 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'settings':
       serverSettings.value = msg.settings
+      // Server is the single source of truth for UI language. Reconcile exactly
+      // once and only when it disagrees with the live locale, to avoid a
+      // save→settings→apply→save loop and any flicker.
+      if (msg.settings.uiLang && msg.settings.uiLang !== i18n.global.locale.value) {
+        applyLocale(msg.settings.uiLang)
+        setStoredLocale(msg.settings.uiLang)
+      }
       break
     case 'requirements':
       requirements.value = { ...requirements.value, [msg.projectPath]: msg.items }
@@ -1386,5 +1434,25 @@ function listCommands() {
     :settings="serverSettings"
     @close="settingsOpen = false"
     @save="saveSettings"
+    @set-ui-lang="setLocale"
   />
+
+  <div v-if="toast" class="toast" role="status">{{ toast }}</div>
 </template>
+
+<style scoped>
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: 90vw;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #b00020;
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+</style>

@@ -6,7 +6,7 @@
  */
 import { ref, watch } from 'vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { AgentConfig, PermissionMode, SystemSettings } from '@ccc/shared/protocol'
+import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
 
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 
@@ -18,12 +18,22 @@ const DEFAULT_ROUNDS_PER_STAGE = 12
 const MIN_SPEECH_CHARS = 300
 const DEFAULT_SPEECH_CHARS = 300
 
-// 浏览器语音输入的可选识别语言（BCP-47）。
+// 浏览器语音输入的可选识别语言（BCP-47）。与 UI 语言（UI_LANGS）彻底解耦。
 const VOICE_LANGS: { value: string; label: string }[] = [
   { value: 'zh-CN', label: 'Chinese (Mandarin)' },
   { value: 'en-US', label: 'English (US)' },
   { value: 'zh-TW', label: 'Chinese (Traditional)' },
   { value: 'zh-HK', label: 'Cantonese' },
+]
+
+// UI 显示语言。本阶段仅放出 en + 简体中文;ja/ko/ru 已在协议 UiLang 联合里预留,
+// 待母需求补译文后追加到此列表即可解锁(code 预留扩展)。
+const UI_LANGS: { value: UiLang; label: string }[] = [
+  { value: 'en', label: 'English' },
+  { value: 'zh', label: '简体中文' },
+  // { value: 'ja', label: '日本語' },
+  // { value: 'ko', label: '한국어' },
+  // { value: 'ru', label: 'Русский' },
 ]
 
 const props = defineProps<{
@@ -34,6 +44,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   save: [settings: SystemSettings]
+  // Live, no-reload UI-language switch (fires on select change, before Save).
+  'set-ui-lang': [lang: UiLang]
 }>()
 
 // A local, editable copy of the server settings; committed on Save.
@@ -43,6 +55,7 @@ const draft = ref<SystemSettings>({
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
+  uiLang: 'en',
   showToolSessions: false,
   devSkill: '',
   maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
@@ -61,6 +74,7 @@ watch(
       defaultMode: settings.defaultMode ?? 'default',
       consensus: { enabled: settings.consensus?.enabled ?? false },
       voiceLang: settings.voiceLang ?? 'zh-CN',
+      uiLang: settings.uiLang ?? 'en',
       showToolSessions: settings.showToolSessions ?? false,
       devSkill: settings.devSkill ?? '',
       maxRoundsPerStage: settings.maxRoundsPerStage ?? DEFAULT_ROUNDS_PER_STAGE,
@@ -91,6 +105,14 @@ function removeAgent(id: string) {
 
 function isSystemAgent(a: AgentConfig): boolean {
   return a.id === SYSTEM_AGENT_ID
+}
+
+// Live-switch the UI language on select change (App applies + persists + pushes
+// to server); the draft is also updated so a later Save carries the same value.
+function onUiLangChange(e: Event) {
+  const lang = (e.target as HTMLSelectElement).value as UiLang
+  draft.value.uiLang = lang
+  emit('set-ui-lang', lang)
 }
 </script>
 
@@ -243,6 +265,22 @@ function isSystemAgent(a: AgentConfig): boolean {
           :min="MIN_SPEECH_CHARS"
           step="1"
         />
+      </section>
+
+      <section class="settings-section">
+        <p class="settings-section-title">Display language</p>
+        <p class="settings-hint">
+          The language of the c3 web console UI. Changes apply immediately without a reload and are
+          saved to the server. Independent from the voice input language below.
+        </p>
+        <select
+          v-model="draft.uiLang"
+          class="lang-select mode-select"
+          data-testid="settings-ui-lang"
+          @change="onUiLangChange"
+        >
+          <option v-for="l in UI_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
+        </select>
       </section>
 
       <section class="settings-section">

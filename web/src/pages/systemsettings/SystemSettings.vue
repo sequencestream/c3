@@ -6,7 +6,7 @@
  * 状态(settingsOpen / serverSettings)仍由 App.vue 持有。
  */
 import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
-import type { SystemSettings } from '@ccc/shared/protocol'
+import type { SystemSettings, UiLang } from '@ccc/shared/protocol'
 
 defineProps<{
   open: boolean
@@ -16,6 +16,7 @@ defineProps<{
 defineEmits<{
   close: []
   save: [settings: SystemSettings]
+  'set-ui-lang': [lang: UiLang]
 }>()
 </script>
 
@@ -25,5 +26,6 @@ defineEmits<{
     :settings="settings"
     @close="$emit('close')"
     @save="(s: SystemSettings) => $emit('save', s)"
+    @set-ui-lang="(l: UiLang) => $emit('set-ui-lang', l)"
   />
 </template>

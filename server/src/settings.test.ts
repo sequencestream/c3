@@ -10,12 +10,14 @@ import {
   getDevSkill,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
+  getUiLang,
   loadSettings,
   resolveSessionLaunch,
   saveSettings,
   normalizeDegradationChain,
   resetSettingsCacheForTests,
   DEFAULT_ROUNDS_PER_STAGE,
+  DEFAULT_UI_LANG,
   MIN_ROUNDS_PER_STAGE,
   DEFAULT_SPEECH_CHARS,
   MIN_SPEECH_CHARS,
@@ -304,5 +306,44 @@ describe('getMaxSpeechChars normalization', () => {
     expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
     saveWithMaxSpeechChars(-3)
     expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+  })
+})
+
+/** Persist just a `uiLang` value (with the required baseline fields). */
+function saveWithUiLang(uiLang: unknown): void {
+  saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, uiLang } as SystemSettings)
+}
+
+describe('getUiLang normalization', () => {
+  it('defaults to en when unset', () => {
+    saveWithUiLang(undefined)
+    expect(getUiLang()).toBe(DEFAULT_UI_LANG)
+    expect(getUiLang()).toBe('en')
+  })
+
+  it('keeps a known language code', () => {
+    saveWithUiLang('zh')
+    expect(getUiLang()).toBe('zh')
+  })
+
+  it('falls back to en for an unknown code', () => {
+    saveWithUiLang('xx')
+    expect(getUiLang()).toBe('en')
+  })
+
+  it('falls back to en for a non-string value', () => {
+    saveWithUiLang(42)
+    expect(getUiLang()).toBe('en')
+  })
+
+  it('is independent from voiceLang (decoupled)', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      uiLang: 'zh',
+      voiceLang: 'en-US',
+    } as SystemSettings)
+    expect(getUiLang()).toBe('zh')
+    expect(loadSettings().voiceLang).toBe('en-US')
   })
 })

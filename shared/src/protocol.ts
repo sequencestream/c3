@@ -127,6 +127,15 @@ export interface ConsensusConfig {
 }
 
 /**
+ * The UI display language for the web console. A short language code (no region
+ * subtag). Independent from {@link SystemSettings.voiceLang} (browser speech
+ * recognition): the two never read or default off each other. Unset ⇒ `en`.
+ * Only `en`/`zh` ship translations today; `ja`/`ko`/`ru` are reserved for the
+ * i18n rollout and fall back to `en` messages until translated.
+ */
+export type UiLang = 'en' | 'zh' | 'ja' | 'ko' | 'ru'
+
+/**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
  */
@@ -140,6 +149,9 @@ export interface SystemSettings {
   consensus?: ConsensusConfig
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
+  /** UI display language for the web console. `en` when unset. Decoupled from
+   * {@link voiceLang}. See {@link UiLang}. */
+  uiLang?: UiLang
   /** When true, tool-created sessions (completion judge, consensus advisor) appear
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean

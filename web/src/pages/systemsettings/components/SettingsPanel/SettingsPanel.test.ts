@@ -10,6 +10,7 @@ const baseSettings: SystemSettings = {
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
+  uiLang: 'zh',
   showToolSessions: false,
   devSkill: '',
   maxRoundsPerStage: 14,
@@ -113,5 +114,46 @@ describe('SettingsPanel.vue — discussion speech character limit', () => {
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].maxSpeechChars).toBe(600)
+  })
+})
+
+describe('SettingsPanel.vue — UI display language', () => {
+  it('seeds the language select from server settings', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const select = w.find('[data-testid="settings-ui-lang"]')
+    expect(select.exists()).toBe(true)
+    expect((select.element as HTMLSelectElement).value).toBe('zh')
+  })
+
+  it('defaults the language select to en when settings omit uiLang', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, uiLang: undefined } },
+    })
+    const select = w.find('[data-testid="settings-ui-lang"]')
+    expect((select.element as HTMLSelectElement).value).toBe('en')
+  })
+
+  it('only offers en + zh in the current phase (ja/ko/ru reserved)', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const values = w
+      .findAll('[data-testid="settings-ui-lang"] option')
+      .map((o) => (o.element as HTMLOptionElement).value)
+    expect(values).toEqual(['en', 'zh'])
+  })
+
+  it('emits set-ui-lang immediately on select change (no Save needed)', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-ui-lang"]').setValue('en')
+    const emitted = w.emitted('set-ui-lang') as [string][]
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0]).toBe('en')
+  })
+
+  it('carries the selected language into the Save payload', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-ui-lang"]').setValue('en')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].uiLang).toBe('en')
   })
 })

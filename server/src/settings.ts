@@ -17,7 +17,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { AgentConfig, PermissionMode, SystemSettings } from '@ccc/shared/protocol'
+import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 
 const PERMISSION_MODES: readonly PermissionMode[] = [
@@ -27,6 +27,12 @@ const PERMISSION_MODES: readonly PermissionMode[] = [
   'acceptEdits',
   'bypassPermissions',
 ]
+
+/** UI display languages. Only `en`/`zh` ship translations today; the rest are
+ * reserved for the i18n rollout (fall back to `en` messages until translated). */
+const UI_LANGS: readonly UiLang[] = ['en', 'zh', 'ja', 'ko', 'ru']
+/** UI language when unset/invalid. Decoupled from {@link voiceLang}. */
+export const DEFAULT_UI_LANG: UiLang = 'en'
 
 /** Hard floor for the per-stage discussion round cap; lower values are clamped up. */
 export const MIN_ROUNDS_PER_STAGE = 8
@@ -111,6 +117,11 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const consensus = { enabled: raw?.consensus?.enabled === true }
   const voiceLang =
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
+  // UI display language: a known code is kept; anything else falls back to `en`.
+  // Deliberately independent from `voiceLang`.
+  const uiLang = UI_LANGS.includes(raw?.uiLang as UiLang)
+    ? (raw!.uiLang as UiLang)
+    : DEFAULT_UI_LANG
   const showToolSessions = raw?.showToolSessions === true
   const devSkill = normalizeDevSkill(raw?.devSkill)
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
@@ -122,6 +133,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     defaultMode,
     consensus,
     voiceLang,
+    uiLang,
     showToolSessions,
     devSkill,
     maxRoundsPerStage,
@@ -348,6 +360,11 @@ export function isConsensusEnabled(): boolean {
 /** Whether tool-created sessions should appear in the sidebar session list. */
 export function getShowToolSessions(): boolean {
   return loadSettings().showToolSessions === true
+}
+
+/** The UI display language (normalized; always a known {@link UiLang}, `en` by default). */
+export function getUiLang(): UiLang {
+  return loadSettings().uiLang ?? DEFAULT_UI_LANG
 }
 
 /** The slash command prefixed to a requirement when launching development; empty ⇒ no prefix. */

@@ -1201,6 +1201,11 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 折叠态:摘要后追加首个 tool-use 的单行请求预览(muted),与摘要同处一行,
+   共享 .batch-summary 的 nowrap + ellipsis,超长自动以 … 截断。 */
+.batch-preview {
+  color: var(--c-text-muted);
+}
 
 /* 展开态：内部逐项工具卡片沿用现有结构 */
 .batch.open > .batch-head {

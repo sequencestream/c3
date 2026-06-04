@@ -96,6 +96,16 @@ const blocks = computed<Block[]>(() => {
       for (const m of msgs)
         if (m.kind === 'permission') counts.set(m.toolName, (counts.get(m.toolName) ?? 0) + 1)
     const summary = [...counts].map(([name, n]) => `${name}.${n}`).join('  ')
+    // Collapsed-header hint: a single-line preview of the first tool-use's input,
+    // so the batch shows *what* it's doing, not just the per-tool counts. '' when
+    // the batch carries no executed tool-use (e.g. permission-only) — then the
+    // header degrades to the bare summary (no preview appended).
+    let preview = ''
+    for (const m of msgs)
+      if (m.kind === 'tool-use') {
+        preview = oneLine(fmt(m.input))
+        break
+      }
     // Only a genuinely actionable (live, pending) permission forces the batch
     // open. Historical permissions replayed from the buffer stay collapsed.
     const hasPending = msgs.some(
@@ -108,6 +118,7 @@ const blocks = computed<Block[]>(() => {
       msgs,
       rows: orderRows(msgs),
       summary,
+      preview,
       hasPending,
     })
   }
@@ -173,7 +184,20 @@ function toggle(id: number): void {
       <div v-else class="batch" :class="{ open: isBatchOpen(b) }">
         <div class="batch-head" @click="toggleBatch(b.id)">
           <span class="caret">{{ isBatchOpen(b) ? '▾' : '▸' }}</span>
-          <span class="batch-summary">{{ b.summary || t('session.chat.toolsFallback') }}</span>
+          <!--
+            Collapsed header: `Name.count` summary, then a one-line preview of the
+            first tool-use's input. The preview shows only while collapsed (open
+            bodies already render each input in full); the leading space is baked
+            into the interpolation so Vue's whitespace condense can't drop it. The
+            whole line shares `.batch-summary`'s nowrap + ellipsis, so overflow
+            truncates with `…` without breaking the header layout.
+          -->
+          <span class="batch-summary"
+            >{{ b.summary || t('session.chat.toolsFallback')
+            }}<span v-if="b.preview && !isBatchOpen(b)" class="batch-preview">{{
+              ' ' + b.preview
+            }}</span></span
+          >
         </div>
         <div v-if="isBatchOpen(b)" class="batch-body">
           <div

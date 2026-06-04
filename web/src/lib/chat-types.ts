@@ -66,7 +66,8 @@ export type TextMsg = Extract<ChatMsg, { kind: 'user' | 'assistant' | 'system' }
 /**
  * A rendered chat block: either a free-standing text message, or a *batch* of
  * consecutive tool messages (tool-use / tool-result / permission) bounded by
- * text output. A batch is collapsed by default and shows a `Name.count` summary.
+ * text output. A batch is collapsed by default and shows a `Name.count` summary
+ * plus a one-line preview of the first tool-use's input (collapsed header only).
  */
 export type Block =
   | { type: 'text'; key: string; msg: TextMsg }
@@ -78,5 +79,7 @@ export type Block =
       /** Render order: each tool-result moved directly under its tool-use, flagged for indent. */
       rows: { msg: ChatMsg; indent: boolean }[]
       summary: string
+      /** One-line `oneLine(fmt(input))` of the batch's first tool-use; '' when the batch has none. */
+      preview: string
       hasPending: boolean
     }

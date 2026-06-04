@@ -145,6 +145,135 @@ export function isDegradableError(message: string): boolean {
 }
 
 /**
+ * Narrow classifier for the one SDK failure mode the socket auto-resume path
+ * handles: the transport dropped mid-turn ("socket connection was closed
+ * unexpectedly"). Deliberately SEPARATE from {@link isDegradableError} (the
+ * degradation-chain classifier) — a socket disconnect is NOT degradable (the
+ * agent/key is fine), so it must never enter `agentsToTry`; it gets a single
+ * same-session `resume` instead (AS-R18). The two classifiers are mutually
+ * exclusive: this phrase does not match any `isDegradableError` pattern, and
+ * this matcher is intentionally a single exact phrase so a generic connection
+ * error never lands here. Case-insensitive.
+ */
+export function isSocketDisconnect(message: string): boolean {
+  return /socket connection was closed unexpectedly/i.test(message)
+}
+
+/**
+ * The side-effect-free tool allowlist for the auto-resume gate (AS-R19). A tool
+ * in this set produces no durable local side effect, so an unclosed `tool_use`
+ * for it at disconnect time is safe to auto-resume past. CONSERVATIVE by design:
+ * everything NOT in this set — `Write/Edit/MultiEdit/NotebookEdit/Bash`, and any
+ * unknown / MCP tool — is treated as a side-effect tool. We would rather miss an
+ * auto-resume (fall back to manual continue) than wrongly auto-resume after a
+ * write may have half-applied.
+ */
+const SIDE_EFFECT_FREE_TOOLS = new Set([
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'TodoWrite',
+  'AskUserQuestion',
+])
+
+/** Whether a tool may have durable side effects for the auto-resume gate (AS-R19). */
+export function isSideEffectTool(name: string): boolean {
+  return !SIDE_EFFECT_FREE_TOOLS.has(name)
+}
+
+/** A simplified SDK message flow item for {@link computeSideEffectPending}. */
+export type ToolFlowItem =
+  | { type: 'tool_use'; id: string; name: string }
+  | { type: 'tool_result'; toolUseId: string }
+  | { type: 'text' }
+
+/**
+ * Pure tool_use↔tool_result pairing inference (AS-R19). Walk the message flow,
+ * adding a side-effect tool's `tool_use` id to an open set and removing it when
+ * its `tool_result` returns; the final set being non-empty means a write-class
+ * tool call was in flight (no result yet) — so `side_effect_pending` is true and
+ * auto-resume must be refused. A trailing plain `text` message, or a flow where
+ * every side-effect `tool_use` already has its `tool_result`, yields false.
+ */
+export function computeSideEffectPending(flow: ToolFlowItem[]): boolean {
+  const open = new Set<string>()
+  for (const m of flow) {
+    if (m.type === 'tool_use') {
+      if (isSideEffectTool(m.name)) open.add(m.id)
+    } else if (m.type === 'tool_result') {
+      open.delete(m.toolUseId)
+    }
+  }
+  return open.size > 0
+}
+
+/** Inputs to the socket auto-resume decision (AS-R18/R19), all caller-resolved. */
+export interface SocketResumeContext {
+  /** The `socketAutoResume` gray-out switch (default true). */
+  autoResumeEnabled: boolean
+  /** The AS-R19 gate verdict: an unclosed write-class tool_use was in flight. */
+  sideEffectPending: boolean
+  /** Whether this turn has already spent its single auto-resume. */
+  retryAlreadyUsed: boolean
+  /** Whether the session id is still a `pending:…` placeholder (no real id to resume). */
+  isPendingSession: boolean
+  /** Whether the session is a persistent agent team (teams use pushInput, not resume). */
+  isTeam: boolean
+  /** Whether the run was already aborted (user stop). */
+  aborted: boolean
+}
+
+/** The terminal `turn_end` a refused/exhausted socket disconnect emits. */
+export interface SocketManualTurnEnd {
+  type: 'turn_end'
+  reason: 'error'
+  original_error: string
+  side_effect_pending: boolean
+  reconnect_attempted: boolean
+  retry_count: number
+}
+
+export type SocketResumeDecision =
+  | { action: 'auto-resume' }
+  | { action: 'manual-error'; turnEnd: SocketManualTurnEnd }
+
+/**
+ * Pure decision for a socket disconnect (AS-R18/R19): auto-`resume` the same run
+ * once, or refuse and end the turn so the user continues manually. Auto-resume is
+ * a strict conjunction — the switch is on, the side-effect gate is clear, the
+ * single retry is unspent, there is a real session id to resume, it is not a team
+ * lead, and the run was not stopped. Any miss falls to a `manual-error` turn_end
+ * that records the original error, the gate verdict, and whether a reconnect was
+ * attempted (true only when the retry was already spent — i.e. the resume itself
+ * disconnected again). Bounded by construction: `manual-error` is terminal.
+ */
+export function decideSocketResume(error: string, ctx: SocketResumeContext): SocketResumeDecision {
+  const canAuto =
+    ctx.autoResumeEnabled &&
+    !ctx.sideEffectPending &&
+    !ctx.retryAlreadyUsed &&
+    !ctx.isPendingSession &&
+    !ctx.isTeam &&
+    !ctx.aborted
+  if (canAuto) return { action: 'auto-resume' }
+  return {
+    action: 'manual-error',
+    turnEnd: {
+      type: 'turn_end',
+      reason: 'error',
+      original_error: error,
+      side_effect_pending: ctx.sideEffectPending,
+      reconnect_attempted: ctx.retryAlreadyUsed,
+      retry_count: ctx.retryAlreadyUsed ? 1 : 0,
+    },
+  }
+}
+
+/**
  * Inject `AskUserQuestion` answers into the tool input so the SDK echoes them as
  * the tool result (verified: the tool reads a pre-supplied `answers` map keyed by
  * question text). This is a deliberate, AskUserQuestion-only exception to the
@@ -300,6 +429,24 @@ export interface RunOptions {
    * emitted as usual.
    */
   onDegradableError?: (error: string) => void
+  /**
+   * Optional callback invoked when the run hits a socket disconnect
+   * ({@link isSocketDisconnect}). Like {@link onDegradableError} this run then
+   * does NOT emit a terminal `turn_end` — it returns so the caller can decide
+   * whether to auto-`resume` (AS-R18). `sideEffectPending` is the AS-R19 gate
+   * verdict at disconnect time: when true, an unclosed write-class `tool_use`
+   * was in flight, so the caller must refuse auto-resume and surface a manual
+   * `turn_end { error }`. Absent ⇒ a socket disconnect is treated as any other
+   * error (terminal `turn_end`), preserving the prior behaviour.
+   */
+  onSocketDisconnect?: (info: { error: string; sideEffectPending: boolean }) => void
+  /**
+   * True when this run is itself the single auto-`resume` attempt after a socket
+   * disconnect (AS-R18). Stamps the turn's terminal `turn_end` with
+   * `reconnect_attempted: true` + `retry_count` so the viewer/telemetry records
+   * that the turn survived a reconnect. Absent ⇒ a normal first attempt.
+   */
+  reconnectAttempt?: boolean
 }
 
 /**
@@ -401,8 +548,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     onSessionId,
     onTeam,
     onDegradableError,
+    onSocketDisconnect,
+    reconnectAttempt,
   } = opts
   let reportedSessionId = false
+  // Open side-effect tool_use ids (no tool_result yet) — the live mirror of
+  // computeSideEffectPending, consulted only on a socket disconnect (AS-R19).
+  const openSideEffects = new Set<string>()
+  // The terminal `turn_end` reconnect telemetry, applied to every complete-path
+  // turn_end this run emits (AS-R18). Empty for a normal first attempt.
+  const reconnectFields = reconnectAttempt ? { reconnect_attempted: true, retry_count: 1 } : {}
   // Once a team tool is seen the lead stays alive past `result` (streaming input
   // never auto-closes), so teammates can report back and re-wake the lead.
   let isTeam = false
@@ -687,6 +842,11 @@ export async function runClaude(opts: RunOptions): Promise<void> {
                 isTeam = true
                 onTeam?.()
               }
+              // Track unclosed write-class tool calls for the auto-resume gate
+              // (AS-R19): a side-effect tool_use opens here, its tool_result
+              // (below) closes it. If a socket disconnect fires while one is
+              // open, auto-resume is refused.
+              if (isSideEffectTool(b.name)) openSideEffects.add(b.id)
               send({
                 type: 'tool_use',
                 toolUseId: b.id,
@@ -709,6 +869,8 @@ export async function runClaude(opts: RunOptions): Promise<void> {
               is_error?: boolean
             }
             if (b.type === 'tool_result' && b.tool_use_id) {
+              // The tool returned — close its side-effect gate entry (AS-R19).
+              openSideEffects.delete(b.tool_use_id)
               send({
                 type: 'tool_result',
                 toolUseId: b.tool_use_id,
@@ -726,7 +888,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         // a muted notice so the viewer knows the turn ran and deliberately produced
         // no reply. Emit before `turn_end` so it lands inside the finished turn.
         if (!sawVisibleOutput) send({ type: 'notice', text: EMPTY_TURN_NOTICE })
-        send({ type: 'turn_end', reason: 'complete' })
+        send({ type: 'turn_end', reason: 'complete', ...reconnectFields })
         // Arm the next turn (a team lead reuses this process across turns).
         sawVisibleOutput = false
         // Non-team run: close the input so the query ends and the Claude Code
@@ -739,6 +901,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   } catch (err) {
     if (!signal.aborted) {
       const errorMsg = err instanceof Error ? err.message : String(err)
+      // Socket disconnect (transport dropped mid-turn): checked BEFORE degradable
+      // so the two classifiers stay strictly separate (a disconnect must never
+      // enter the degradation chain). Signal the caller with the side-effect gate
+      // verdict (AS-R19) and skip the terminal `turn_end` so it can decide whether
+      // to auto-`resume` the same session (AS-R18).
+      if (onSocketDisconnect && isSocketDisconnect(errorMsg)) {
+        sawResult = true
+        onSocketDisconnect({ error: errorMsg, sideEffectPending: openSideEffects.size > 0 })
+        return
+      }
       // Degradable error (rate-limit / session-limit / auth / connection):
       // signal the caller and skip the terminal `turn_end` so the caller can
       // retry with a different agent configuration.
@@ -754,6 +926,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         type: 'turn_end',
         reason: 'error',
         error: errorMsg,
+        ...reconnectFields,
       })
     }
   } finally {
@@ -766,7 +939,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     // server's `finalizeRun` is the outer backstop; `sawResult`/`sawTurnEnd` keep
     // the two from emitting a duplicate.
     if (!sawResult && !isTeam && !signal.aborted) {
-      send({ type: 'turn_end', reason: 'complete' })
+      send({ type: 'turn_end', reason: 'complete', ...reconnectFields })
     }
   }
 }

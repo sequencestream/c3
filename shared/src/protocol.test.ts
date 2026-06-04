@@ -60,6 +60,19 @@ describe('protocol wire format', () => {
     { type: 'permission_request', requestId: 'r1', toolName: 'Write', input: {} },
     { type: 'turn_end', reason: 'complete' },
     { type: 'turn_end', reason: 'error', error: 'boom' },
+    // Socket auto-resume telemetry (AS-R18): a turn that survived a reconnect.
+    { type: 'turn_end', reason: 'complete', reconnect_attempted: true, retry_count: 1 },
+    // A socket disconnect the side-effect gate refused (AS-R19) → manual continue.
+    {
+      type: 'turn_end',
+      reason: 'error',
+      original_error: 'socket connection was closed unexpectedly',
+      side_effect_pending: true,
+      reconnect_attempted: false,
+      retry_count: 0,
+    },
+    // The transient reconnecting status (AS-R18).
+    { type: 'session_status', statuses: [{ sessionId: 's1', status: 'reconnecting' }] },
     { type: 'error', error: { code: 'workspace.unknown', params: { path: '/bad' } } },
     { type: 'pong' },
     { type: 'agent_failed', agentId: 'sys', agentName: 'System', error: 'rate limit' },

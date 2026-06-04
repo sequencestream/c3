@@ -67,11 +67,14 @@ Relationships: exists only while a run is in flight; cleared to none when the ru
 The inputs to `runClaude` (`RunOptions`). Business-relevant additions beyond the SDK options
 listed in [design.md](design.md) § Run construction:
 
-| Attribute         | Type     | Description                                                                           |
-| ----------------- | -------- | ------------------------------------------------------------------------------------- |
-| `onStart(handle)` | callback | Fires once with the **Run Handle** so the caller can drive the live run               |
-| `onSessionId(id)` | callback | Fires once with the SDK session id from the `init` message (AS-R10)                   |
-| `onTeam()`        | callback | Fires once when the first team tool is detected — the run becomes persistent (AS-R14) |
+| Attribute                                        | Type     | Description                                                                                                                                                      |
+| ------------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onStart(handle)`                                | callback | Fires once with the **Run Handle** so the caller can drive the live run                                                                                          |
+| `onSessionId(id)`                                | callback | Fires once with the SDK session id from the `init` message (AS-R10)                                                                                              |
+| `onTeam()`                                       | callback | Fires once when the first team tool is detected — the run becomes persistent (AS-R14)                                                                            |
+| `onDegradableError(error)`                       | callback | Fires on a rate-limit/auth/connection error so the caller can switch agents (degradation chain); the run skips its terminal `turn_end`                           |
+| `onSocketDisconnect({error, sideEffectPending})` | callback | Fires on `socket connection was closed unexpectedly` with the AS-R19 gate verdict so the caller can decide a single auto-`resume`; run skips `turn_end` (AS-R18) |
+| `reconnectAttempt`                               | boolean  | True when this run **is** the single post-disconnect auto-`resume`; stamps the turn's `turn_end` with `reconnect_attempted`/`retry_count` (AS-R18)               |
 
 ## PermissionMode (enum)
 

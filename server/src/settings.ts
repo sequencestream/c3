@@ -136,6 +136,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
   const maxSpeechChars = normalizeMaxSpeechChars(raw?.maxSpeechChars)
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
+  // Socket-disconnect auto-resume: enabled unless explicitly disabled (default true).
+  const socketAutoResume = raw?.socketAutoResume !== false
   return {
     agents,
     defaultAgentId,
@@ -148,6 +150,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     maxRoundsPerStage,
     maxSpeechChars,
     degradationChain,
+    socketAutoResume,
   }
 }
 
@@ -377,6 +380,14 @@ export function resolveSessionLaunch(sessionId: string | null): {
 /** Whether multi-agent consensus voting is enabled in the system settings. */
 export function isConsensusEnabled(): boolean {
   return loadSettings().consensus?.enabled === true
+}
+
+/**
+ * Whether socket-disconnect single auto-`resume` is enabled (AS-R18 / AVAIL-7).
+ * Default true; only an explicit `socketAutoResume: false` disables it.
+ */
+export function getSocketAutoResume(): boolean {
+  return loadSettings().socketAutoResume !== false
 }
 
 /** Whether tool-created sessions should appear in the sidebar session list. */

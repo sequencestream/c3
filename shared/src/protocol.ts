@@ -33,8 +33,13 @@ export interface WorkspaceInfo {
  *   between turns, coordinating background teammates. The run is still in-flight
  *   (not idle) even when no turn is actively producing output; it only ends when
  *   the user explicitly stops it.
+ * - `reconnecting` — a transient hold: a normal session's turn hit a socket
+ *   disconnect and is backing off before a single auto-`resume` of the same run
+ *   (AS-R18). The run is still in flight (not idle); it resolves to `running` on
+ *   the resume attempt, or to `idle` via `turn_end` if the resume is refused
+ *   (side-effect gate) or exhausted.
  */
-export type SessionStatus = 'idle' | 'running' | 'awaiting_permission' | 'team'
+export type SessionStatus = 'idle' | 'running' | 'awaiting_permission' | 'team' | 'reconnecting'
 
 /** One session's live run status, broadcast to every connection for the sidebar. */
 export interface SessionRunStatus {
@@ -193,6 +198,16 @@ export interface SystemSettings {
    * is treated as absent (no degradation).
    */
   degradationChain?: string[]
+  /**
+   * Gray-out switch for the socket-disconnect single auto-`resume` (AS-R18 /
+   * AVAIL-7). When true (the default), a normal user session whose turn hits a
+   * `socket connection was closed unexpectedly` error auto-resumes once (same
+   * runId, preserving context) provided the tool side-effect gate is clear.
+   * Set to false to disable auto-resume entirely (every socket disconnect then
+   * ends the turn with `turn_end { reason: 'error' }`, user continues manually).
+   * Absent / non-false ⇒ enabled.
+   */
+  socketAutoResume?: boolean
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */
@@ -927,8 +942,25 @@ export type ServerToClient =
    * `error` = it failed. This NEVER means the session ended — the session stays
    * active for the next prompt. A session only truly ends when the user clears it.
    * For a team session this fires per lead turn; the lead process keeps running.
+   *
+   * Socket-disconnect auto-resume telemetry (AS-R18, all optional / absent on a
+   * normal turn): `reconnect_attempted` — this turn went through a single
+   * auto-`resume` after a socket disconnect; `retry_count` — how many resume
+   * attempts were spent (0 or 1, bounded); `original_error` — the socket
+   * disconnect message that triggered the resume path; `side_effect_pending` —
+   * the side-effect gate refused auto-resume because an unclosed write-class
+   * `tool_use` was in flight when the socket dropped (AS-R19), so this `error`
+   * turn ends and the user must continue manually.
    */
-  | { type: 'turn_end'; reason: 'complete' | 'error'; error?: string }
+  | {
+      type: 'turn_end'
+      reason: 'complete' | 'error'
+      error?: string
+      reconnect_attempted?: boolean
+      retry_count?: number
+      original_error?: string
+      side_effect_pending?: boolean
+    }
   /**
    * The session was upgraded to a persistent agent team: the run detected a team
    * tool (TeamCreate / SendMessage / a background Agent) and the lead process now

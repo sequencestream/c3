@@ -148,6 +148,36 @@ The `for await` loop over `query()` maps each SDK message (AS-R9):
   `finally` emits a synthetic `turn_end { reason: 'complete' }` so the viewing input unlocks.
 - The loop checks `signal.aborted` each iteration and breaks.
 
+### Socket-disconnect auto-resume (AS-R18 / AS-R19, AVAIL-7)
+
+The catch block classifies the error in a fixed order so the two paths never cross:
+
+1. **`isSocketDisconnect(msg)`** (a narrow, single-phrase matcher for `socket connection was
+closed unexpectedly`, deliberately disjoint from `isDegradableError`) — if an
+   `onSocketDisconnect` callback is wired, the run defers (no `turn_end`) and reports
+   `{ error, sideEffectPending }`. `sideEffectPending` comes from a live `Set` mirroring
+   `computeSideEffectPending`: a **side-effect-class** `tool_use` opens an entry, its
+   `tool_result` closes it; a non-empty set at disconnect time means a write may be half-applied
+   (AS-R19). The allowlist of side-effect-**free** tools is conservative — anything not in it
+   (incl. `Bash` and unknown/MCP tools) counts as a side effect.
+2. **`isDegradableError(msg)`** — the existing degradation-chain bypass (`onDegradableError`).
+3. Otherwise — a terminal `turn_end { reason: 'error' }`.
+
+The server's `launchRun` owns the bounded retry guard. On `onSocketDisconnect`, `decideSocketResume`
+(pure) returns `auto-resume` only when the conjunction holds (`socketAutoResume` on, gate clear,
+single retry unspent, a real `runId`, not a team, not aborted). On `auto-resume`: mark the retry
+spent, `setStatus('reconnecting')`, await a 3–5s abortable backoff, then re-invoke `runClaude`
+with `resume: runId` + `reconnectAttempt: true` (same SDK session ⇒ full context). The resumed run
+re-pushes the original prompt as the continuation turn; this is safe _because_ the gate already
+guaranteed no unclosed **write** `tool_use` (AS-R19) — at worst a read is repeated, never a write
+duplicated. The successful resume emits its own `turn_end { reason: 'complete', reconnect_attempted: true, retry_count: 1 }`.
+Otherwise `decideSocketResume` returns `manual-error`, whose `turn_end { reason: 'error',
+side_effect_pending, original_error, … }` the server emits before settling to `idle`. A socket
+disconnect is **never** degradable — it leaves the `agentsToTry` loop rather than trying the next
+agent — and is bounded to **one** resume per turn. Because the resume reuses the same `runId`
+(single live runtime instance, `rt.run` never null across the backoff), it cannot race
+`reconcileLiveness` zombie cleanup.
+
 ## Team sessions (persistent agent teams)
 
 A run becomes a persistent **agent team** when the lead delegates work that must outlive the

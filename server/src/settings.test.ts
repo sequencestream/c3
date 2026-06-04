@@ -10,6 +10,7 @@ import {
   getDevSkill,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
+  getSocketAutoResume,
   getUiLang,
   loadSettings,
   resolveSessionLaunch,
@@ -48,6 +49,33 @@ afterEach(() => {
 function saveWithDevSkill(devSkill: string | undefined): void {
   saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, devSkill } as SystemSettings)
 }
+
+describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
+  const save = (socketAutoResume: boolean | undefined): void => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      socketAutoResume,
+    } as SystemSettings)
+  }
+
+  it('defaults to true when unset', () => {
+    save(undefined)
+    expect(getSocketAutoResume()).toBe(true)
+    expect(loadSettings().socketAutoResume).toBe(true)
+  })
+
+  it('stays true when explicitly enabled', () => {
+    save(true)
+    expect(getSocketAutoResume()).toBe(true)
+  })
+
+  it('is false only when explicitly disabled', () => {
+    save(false)
+    expect(getSocketAutoResume()).toBe(false)
+    expect(loadSettings().socketAutoResume).toBe(false)
+  })
+})
 
 describe('getDevSkill normalization', () => {
   it('defaults to empty (no prefix) when unset', () => {

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Discussion } from '@ccc/shared/protocol'
 import Discussions from './Discussions.vue'
-import type { DispatchView } from '../../lib/discussion-view'
+import type { DispatchView, DiscussionPhase } from '../../lib/discussion-view'
+import type { ChatMsg } from '../../lib/chat-types'
 
 function disc(over: Partial<Discussion> = {}): Discussion {
   return {
@@ -26,15 +27,29 @@ function disc(over: Partial<Discussion> = {}): Discussion {
 
 // Mount the container with the heavy children stubbed — the dispatch strip is
 // rendered by Discussions.vue itself, between ChatMessages and the composer.
-function mountDiscussions(dispatch: DispatchView, activeDiscussion: Discussion | null = disc()) {
+function mountDiscussions(
+  dispatch: DispatchView,
+  activeDiscussion: Discussion | null = disc(),
+  over: {
+    phase?: DiscussionPhase
+    showStart?: boolean
+    researchMessages?: ChatMsg[]
+    activeRunState?: 'running' | 'paused' | undefined
+  } = {},
+) {
   return mount(Discussions, {
     props: {
       discussions: [],
       activeId: 'd1',
       runState: {},
       activeDiscussion,
-      activeRunState: 'running' as const,
+      activeRunState: over.activeRunState ?? ('running' as const),
       messages: [],
+      researchMessages: over.researchMessages ?? [],
+      // Default to the discussion phase so the dispatch-strip tests below see the
+      // discussion stream (research phase hides the strip).
+      phase: over.phase ?? 'discussion',
+      showStart: over.showStart ?? false,
       dispatch,
       input: '',
     },
@@ -42,7 +57,7 @@ function mountDiscussions(dispatch: DispatchView, activeDiscussion: Discussion |
       stubs: {
         DiscussionList: true,
         AgendaProgress: true,
-        SessionTitleBar: true,
+        SessionTitleBar: false,
         ChatMessages: true,
       },
     },
@@ -85,5 +100,59 @@ describe('Discussions.vue — transient dispatch strip', () => {
   it('renders nothing when no discussion is open', () => {
     const w = mountDiscussions({ pending: [{ id: 'a', name: 'Alice' }], errors: [] }, null)
     expect(w.find('.disc-dispatch').exists()).toBe(false)
+  })
+})
+
+describe('Discussions.vue — right-pane phase switch', () => {
+  const empty: DispatchView = { pending: [], errors: [] }
+
+  it('shows the research stream (not the discussion stream) while phase = research', () => {
+    const w = mountDiscussions(empty, disc({ status: 'draft' }), { phase: 'research' })
+    expect(w.find('[data-testid="research-stream"]').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(false)
+  })
+
+  it('shows the discussion stream (not the research stream) while phase = discussion', () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(true)
+    expect(w.find('[data-testid="research-stream"]').exists()).toBe(false)
+  })
+
+  it('hides the dispatch strip during the research phase', () => {
+    const w = mountDiscussions(
+      { pending: [{ id: 'a', name: 'Alice' }], errors: [] },
+      disc({ status: 'draft' }),
+      { phase: 'research' },
+    )
+    expect(w.find('.disc-dispatch').exists()).toBe(false)
+  })
+})
+
+describe('Discussions.vue — Start button visibility', () => {
+  const empty: DispatchView = { pending: [], errors: [] }
+
+  it('shows Start only when showStart is true (research ended/dead, discussion not started)', () => {
+    const w = mountDiscussions(empty, disc({ status: 'draft' }), {
+      phase: 'discussion',
+      showStart: true,
+    })
+    expect(w.find('.disc-start-btn').exists()).toBe(true)
+  })
+
+  it('hides Start while research is running (phase = research, showStart false)', () => {
+    const w = mountDiscussions(empty, disc({ status: 'draft' }), {
+      phase: 'research',
+      showStart: false,
+    })
+    expect(w.find('.disc-start-btn').exists()).toBe(false)
+  })
+
+  it('emits start when the Start button is clicked', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'draft' }), {
+      phase: 'discussion',
+      showStart: true,
+    })
+    await w.find('.disc-start-btn').trigger('click')
+    expect(w.emitted('start')).toBeTruthy()
   })
 })

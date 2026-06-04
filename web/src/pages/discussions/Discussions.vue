@@ -10,7 +10,11 @@ import DiscussionList from './components/DiscussionList/DiscussionList.vue'
 import AgendaProgress from './components/AgendaProgress/AgendaProgress.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
-import { discussionRunLabel, type DispatchView } from '../../lib/discussion-view'
+import {
+  discussionRunLabel,
+  type DispatchView,
+  type DiscussionPhase,
+} from '../../lib/discussion-view'
 import { useTypedI18n } from '@/i18n'
 import type { Discussion } from '@ccc/shared/protocol'
 import type { ChatMsg } from '../../lib/chat-types'
@@ -24,6 +28,15 @@ const props = defineProps<{
   activeDiscussion: Discussion | null
   activeRunState: 'running' | 'paused' | undefined
   messages: ChatMsg[]
+  // The live research stream for the open discussion (shown while `phase === 'research'`).
+  // Runtime-only; resets on switch (see App.vue).
+  researchMessages: ChatMsg[]
+  // Right-pane phase: 'research' shows the live research stream, 'discussion' shows the
+  // discussion stream (agenda + transcript + dispatch + composer).
+  phase: DiscussionPhase
+  // Whether the manual Start fallback shows (a draft whose research ended/died and whose
+  // orchestration hasn't started). Replaces the old `status === 'draft'` rule.
+  showStart: boolean
   // Transient in-flight (pending) / failed status of dispatched agents, rendered in
   // the chat tail. Runtime-only; never part of the persisted transcript.
   dispatch: DispatchView
@@ -65,14 +78,10 @@ function statusLabel(status: Discussion['status']): string {
       :show-mode="false"
     >
       <template #action>
-        <!-- A draft auto-starts after research; the Start button stays as a
-             manual fallback (e.g. research failed or stalled). -->
-        <button
-          v-if="activeDiscussion.status === 'draft'"
-          type="button"
-          class="disc-start-btn"
-          @click="emit('start')"
-        >
+        <!-- A draft auto-starts after research; Start is the manual fallback, shown
+             only once research has ended/died and the orchestration hasn't started
+             (e.g. research failed) — never while research is still running. -->
+        <button v-if="showStart" type="button" class="disc-start-btn" @click="emit('start')">
           {{ t('discussion.action.start.label') }}
         </button>
         <button
@@ -104,21 +113,46 @@ function statusLabel(status: Discussion['status']): string {
         </span>
       </template>
     </SessionTitleBar>
-    <!-- Agenda progress: subtopic list + current subtopic + completion, live as
-         the organizer engine advances the agenda index. -->
-    <AgendaProgress :discussion="activeDiscussion" />
-    <ChatMessages
-      :messages="messages"
-      :has-active-session="activeId !== null"
-      :actionable-permission-id="null"
-      @respond="() => {}"
-      @submit-ask="() => {}"
-    />
+    <!-- Right pane, phase 1 — research: the live research stream while the read-only
+         research agent works. No agenda/dispatch/composer (research isn't a discussion
+         run). Switches to phase 2 when research ends and the orchestration auto-starts. -->
+    <div
+      v-if="activeDiscussion && phase === 'research'"
+      class="disc-research-stream"
+      data-testid="research-stream"
+    >
+      <ChatMessages
+        :messages="researchMessages"
+        :has-active-session="activeId !== null"
+        :actionable-permission-id="null"
+        @respond="() => {}"
+        @submit-ask="() => {}"
+      />
+    </div>
+    <!-- Right pane, phase 2 — discussion: agenda + transcript + dispatch + composer. -->
+    <template v-else>
+      <!-- Agenda progress: subtopic list + current subtopic + completion, live as
+           the organizer engine advances the agenda index. -->
+      <AgendaProgress :discussion="activeDiscussion" />
+      <ChatMessages
+        :messages="messages"
+        :has-active-session="activeId !== null"
+        :actionable-permission-id="null"
+        data-testid="discussion-stream"
+        @respond="() => {}"
+        @submit-ask="() => {}"
+      />
+    </template>
     <!-- Transient dispatch status at the chat tail: which agents are replying right
          now (broadcast shows several), plus any reply failures. Runtime-only — clears
-         when the reply lands / the run ends / the discussion is switched. -->
+         when the reply lands / the run ends / the discussion is switched. Discussion
+         phase only. -->
     <div
-      v-if="activeDiscussion && (dispatch.pending.length || dispatch.errors.length)"
+      v-if="
+        activeDiscussion &&
+        phase === 'discussion' &&
+        (dispatch.pending.length || dispatch.errors.length)
+      "
       class="disc-dispatch"
     >
       <p

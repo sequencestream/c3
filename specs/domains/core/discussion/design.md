@@ -173,6 +173,19 @@ succeeds: the server re-validates the freshest record with the pure `canAutoStar
 (`status === 'draft'` and no live run) and calls `startDiscussionRun`. A manual `start_discussion`
 stays as a fallback (research failed/stalled, where the discussion remains a `draft`).
 
+**Research as an observable run.** `startResearchRun` mirrors `startDiscussionRun`: a `researchRuns`
+map (id → `AbortController`, presence = liveness) registers the run, `research_run_status` broadcasts
+`running` then `ended` (on finish/failure/dead process — the run is awaited via `runClaude`, so a
+dead process settles the promise to `ended`), and `researchDiscussionContext`'s `onMessage` callback
+streams each observable turn as `research_message` (`kind: 'text'` per assistant turn, `kind: 'tool'`
+per tool call, `seq` monotonic per run). Research messages and liveness are **runtime-only** — never
+persisted, mirroring `discussion_dispatch_status`; only liveness is snapshotted (`researchStates` on
+every `discussions` send). On settle the server broadcasts `ended` **before** auto-starting the
+orchestration, so the right pane switches research → discussion stream in one batch; a failed research
+broadcasts `ended` without auto-start, surfacing the manual Start fallback. Frontend phase
+(`discussionPhase`) and Start visibility (`showDiscussionStart` = `status === 'draft' &&
+!researchLive && !discussionLive`) are pure helpers rebuilt from the snapshots on reconnect.
+
 The research agent's output is written to `research_result` via `setDiscussionResearchResult` (only
 when non-empty); the user's original `context` is **never** overwritten. The organizer engine's
 prompt background source is `researchResult || context` — the research output feeds the discussion

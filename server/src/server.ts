@@ -10,6 +10,7 @@ import type {
   ClientToServer,
   Discussion,
   DiscussionMessage,
+  ResearchMessage,
   Requirement,
   RequirementRunStatus,
   ServerToClient,
@@ -95,7 +96,11 @@ import {
   appendMessage as appendDiscussionMessage,
   updateDiscussionStatus as updateDiscussionStatus,
 } from './discussions/store.js'
-import { researchDiscussionContext, canAutoStartDiscussion } from './discussions/research.js'
+import {
+  researchDiscussionContext,
+  canAutoStartDiscussion,
+  type ResearchStreamItem,
+} from './discussions/research.js'
 import {
   runDiscussion,
   defaultDiscussionDeps,
@@ -272,8 +277,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     const proj = resolve(projectPath)
     const items = listDiscussions(proj)
     const runStates = discussionRunSnapshot(items)
+    const researchStates = researchRunSnapshot(items)
     for (const deliver of connections)
-      deliver({ type: 'discussions', projectPath: proj, items, runStates })
+      deliver({ type: 'discussions', projectPath: proj, items, runStates, researchStates })
   }
 
   // Push a workspace's schedule list to every connection. Used after create,
@@ -309,6 +315,21 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       const ctrl = discussionRuns.get(d.id)
       if (ctrl) snapshot[d.id] = ctrl.paused ? 'paused' : 'running'
     }
+    return snapshot
+  }
+
+  // Live research runs, keyed by discussion id. A present entry means the read-only
+  // research agent is still working (its abort controller tears it down on teardown).
+  // The map's presence IS the liveness: settle (success/fail/dead process) deletes it.
+  const researchRuns = new Map<string, AbortController>()
+
+  // Research-phase companion to `discussionRunSnapshot` — id → `running` for every listed
+  // discussion with a live research run. Rides the `discussions` send so a refresh/reconnect
+  // mid-research rebuilds the research phase (the transition-only `research_run_status` is missed
+  // by a freshly-(re)connected view).
+  const researchRunSnapshot = (items: Discussion[]): Record<string, 'running'> => {
+    const snapshot: Record<string, 'running'> = {}
+    for (const d of items) if (researchRuns.has(d.id)) snapshot[d.id] = 'running'
     return snapshot
   }
 
@@ -348,6 +369,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   ): void => {
     for (const deliver of connections)
       deliver({ type: 'discussion_run_status', discussionId, state })
+  }
+
+  // Stream one research turn to every connection (runtime-only — research messages
+  // are never persisted; the frontend appends to the right pane's research stream).
+  const broadcastResearchMessage = (discussionId: string, item: ResearchStreamItem): void => {
+    const message: ResearchMessage = { ...item, discussionId, createdAt: Date.now() }
+    for (const deliver of connections) deliver({ type: 'research_message', discussionId, message })
+  }
+
+  // Broadcast a discussion's research-run liveness (running while the agent works,
+  // ended on finish/fail/dead process). Runtime-only, mirrors discussion_run_status.
+  const broadcastResearchRunStatus = (discussionId: string, state: 'running' | 'ended'): void => {
+    for (const deliver of connections) deliver({ type: 'research_run_status', discussionId, state })
   }
 
   // The pause gate handed to the engine: resolves at once unless paused, else
@@ -390,6 +424,49 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         discussionRuns.delete(discussion.id)
         broadcastDiscussionRunStatus(discussion.id, 'ended')
         broadcastDiscussions(discussion.projectPath)
+      })
+  }
+
+  // Start the read-only research run for a freshly-created discussion as an observable
+  // run (mirrors startDiscussionRun): register liveness, broadcast `running`, stream each
+  // turn, and on settle persist the result, broadcast `ended`, then auto-start the
+  // orchestration on success. Fire-and-forget — research never blocks creation. The
+  // `ended`-before-auto-start order means the right pane switches research → discussion in
+  // one batch; a failed research broadcasts `ended` without auto-start, surfacing the
+  // manual Start fallback.
+  const startResearchRun = (discussion: Discussion): void => {
+    const abort = new AbortController()
+    researchRuns.set(discussion.id, abort)
+    broadcastResearchRunStatus(discussion.id, 'running')
+    broadcastDiscussions(discussion.projectPath)
+    void researchDiscussionContext(discussion, {
+      onMessage: (item) => broadcastResearchMessage(discussion.id, item),
+    })
+      .then(({ ok, researchResult }) => {
+        // Store the research output in its own field; the user's original `context` is
+        // never overwritten. Empty output leaves it as ''.
+        if (researchResult) {
+          setDiscussionResearchResult(discussion.id, researchResult)
+        }
+        researchRuns.delete(discussion.id)
+        broadcastResearchRunStatus(discussion.id, 'ended')
+        broadcastDiscussions(discussion.projectPath)
+        // Research failed → leave it a draft for a manual Start. On success, re-validate
+        // on the freshest record (it may have been manually Started or cancelled
+        // mid-research) before auto-starting the orchestration.
+        if (!ok) return
+        const latest = getDiscussion(discussion.id)
+        if (canAutoStartDiscussion(latest, discussionRuns.has(discussion.id))) {
+          startDiscussionRun(latest as Discussion)
+        }
+      })
+      .catch((err) => {
+        // Defensive: research itself swallows its run error (returns ok=false), so this
+        // only fires on a wiring fault. Still converge liveness so the phase doesn't hang.
+        researchRuns.delete(discussion.id)
+        broadcastResearchRunStatus(discussion.id, 'ended')
+        broadcastDiscussions(discussion.projectPath)
+        console.warn(`[c3] discussion research wiring error: ${errMsg(err)}`)
       })
   }
 
@@ -1541,26 +1618,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
               // Fire-and-forget: research never blocks creation.
               send(ws, { type: 'discussion_detail', discussion: created, messages: [] })
               broadcastDiscussions(proj)
-              void researchDiscussionContext(created)
-                .then(({ ok, researchResult }) => {
-                  // Store the research output in its own field; the user's original
-                  // `context` is never overwritten. Empty output leaves it as ''.
-                  if (researchResult) {
-                    setDiscussionResearchResult(created.id, researchResult)
-                    broadcastDiscussions(proj)
-                  }
-                  // Research failed → leave it a draft for a manual Start. On success,
-                  // re-validate on the freshest record (it may have been manually
-                  // Started or cancelled mid-research) before auto-starting.
-                  if (!ok) return
-                  const latest = getDiscussion(created.id)
-                  if (canAutoStartDiscussion(latest, discussionRuns.has(created.id))) {
-                    startDiscussionRun(latest as Discussion)
-                  }
-                })
-                .catch((err) => {
-                  console.warn(`[c3] discussion research wiring error: ${errMsg(err)}`)
-                })
+              // Run the read-only research agent as an observable run: it streams its
+              // turns to the right pane and broadcasts its liveness, then auto-starts the
+              // orchestration on success (see startResearchRun).
+              startResearchRun(created)
               return
             }
 

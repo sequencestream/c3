@@ -4,9 +4,10 @@ import { getDiscussionType } from '@ccc/shared/discussion-types'
 
 // Mock the SDK runner so `researchDiscussionContext` can be unit-tested without a
 // real agent. Each test installs a `runClaudeImpl` that drives `send`/throws.
-let runClaudeImpl: (opts: { send: (m: { type: string; text?: string }) => void }) => Promise<void>
+type SendMsg = { type: string; text?: string; toolName?: string }
+let runClaudeImpl: (opts: { send: (m: SendMsg) => void }) => Promise<void>
 vi.mock('../claude.js', () => ({
-  runClaude: (opts: { send: (m: { type: string; text?: string }) => void }) => runClaudeImpl(opts),
+  runClaude: (opts: { send: (m: SendMsg) => void }) => runClaudeImpl(opts),
   REQUIREMENT_DISALLOWED_TOOLS: [],
 }))
 
@@ -140,5 +141,32 @@ describe('researchDiscussionContext', () => {
     }
     const res = await researchDiscussionContext(disc)
     expect(res).toEqual({ ok: false, researchResult: '' })
+  })
+
+  it('streams each assistant turn and tool call via onMessage with monotonic seq', async () => {
+    runClaudeImpl = async ({ send }) => {
+      send({ type: 'assistant_text', text: 'thinking…' })
+      send({ type: 'tool_use', toolName: 'Read' })
+      send({ type: 'tool_result' }) // ignored — not an observable research turn
+      send({ type: 'assistant_text', text: 'FINAL FACTS' })
+    }
+    const items: { seq: number; kind: string; content: string }[] = []
+    const res = await researchDiscussionContext(disc, { onMessage: (m) => items.push(m) })
+    // The last assistant turn is still the captured result.
+    expect(res).toEqual({ ok: true, researchResult: 'FINAL FACTS' })
+    // text + tool turns stream in order; tool_result is not streamed.
+    expect(items).toEqual([
+      { seq: 1, kind: 'text', content: 'thinking…' },
+      { seq: 2, kind: 'tool', content: 'Read' },
+      { seq: 3, kind: 'text', content: 'FINAL FACTS' },
+    ])
+  })
+
+  it('works without an onMessage callback (streaming is optional)', async () => {
+    runClaudeImpl = async ({ send }) => {
+      send({ type: 'assistant_text', text: 'X' })
+    }
+    const res = await researchDiscussionContext(disc)
+    expect(res).toEqual({ ok: true, researchResult: 'X' })
   })
 })

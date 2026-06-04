@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import type { AgentConfig, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  Discussion,
+  DiscussionMessage,
+  ResearchMessage,
+} from '@ccc/shared/protocol'
 import {
   agendaProgressView,
   applyDispatchStatus,
@@ -7,11 +12,15 @@ import {
   discussionDetailTabs,
   discussionMessageToChat,
   discussionMessagesToChat,
+  discussionPhase,
   discussionRunLabel,
   panelToggleLabel,
   reconcileRunState,
+  reconcileResearchState,
+  researchMessageToChat,
   resolveDiscussionSpeaker,
   rowVisibility,
+  showDiscussionStart,
   statusLabel,
   type DispatchView,
 } from './discussion-view'
@@ -489,5 +498,53 @@ describe('applyDispatchStatus / clearDispatchAgent (transient dispatch status)',
     expect(clearDispatchAgent(prev, 'zzz')).toBe(prev)
     expect(clearDispatchAgent(prev, null)).toBe(prev)
     expect(clearDispatchAgent(undefined, 'a')).toBeUndefined()
+  })
+})
+
+describe('discussion-view — research phase', () => {
+  function rmsg(over: Partial<ResearchMessage> = {}): ResearchMessage {
+    return { discussionId: 'd1', seq: 1, kind: 'text', content: '现状要点', createdAt: 0, ...over }
+  }
+  const labels = { researcher: '研究员', tool: (n: string) => `🔍 ${n}` }
+
+  it('discussionPhase: research live → research,否则 discussion', () => {
+    expect(discussionPhase(true)).toBe('research')
+    expect(discussionPhase(false)).toBe('discussion')
+  })
+
+  it('showDiscussionStart: 仅 draft 且研究结束/死亡且讨论未启动时为 true', () => {
+    // 研究进行中 → 不显示
+    expect(showDiscussionStart('draft', true, false)).toBe(false)
+    // 研究结束/死亡且讨论未启动 → 兜底显示
+    expect(showDiscussionStart('draft', false, false)).toBe(true)
+    // 讨论已启动 → 不显示
+    expect(showDiscussionStart('draft', false, true)).toBe(false)
+    // 非 draft 一律不显示
+    expect(showDiscussionStart('in_progress', false, false)).toBe(false)
+    expect(showDiscussionStart('completed', false, false)).toBe(false)
+  })
+
+  it('researchMessageToChat: text → 研究员 assistant 气泡', () => {
+    const body = researchMessageToChat(rmsg({ kind: 'text', content: '现状要点' }), labels)
+    expect(body).toMatchObject({ kind: 'assistant', text: '现状要点' })
+    expect(body.kind === 'assistant' && body.speaker?.name).toBe('研究员')
+  })
+
+  it('researchMessageToChat: tool → system 行(经 labels.tool 格式化)', () => {
+    const body = researchMessageToChat(rmsg({ kind: 'tool', content: 'Grep' }), labels)
+    expect(body).toMatchObject({ kind: 'system', text: '🔍 Grep' })
+  })
+
+  it('reconcileResearchState: 快照置 running / 缺失则删 / 不动其他项目', () => {
+    const prev = { d1: 'running' as const, other: 'running' as const }
+    // d1 仍在快照 → 保留;d2 新增 → 置 running;d1 列表内但快照缺失会被删
+    const next = reconcileResearchState(prev, [{ id: 'd1' }, { id: 'd2' }], { d2: 'running' })
+    expect(next).toEqual({ d2: 'running', other: 'running' })
+    expect(next).not.toBe(prev)
+  })
+
+  it('reconcileResearchState: 无快照时原样返回', () => {
+    const prev = { d1: 'running' as const }
+    expect(reconcileResearchState(prev, [{ id: 'd1' }], undefined)).toBe(prev)
   })
 })

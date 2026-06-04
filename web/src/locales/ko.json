@@ -776,7 +776,8 @@
     "speaker": {
       "you": "사용자",
       "organizer": "진행자",
-      "agent": "에이전트"
+      "agent": "에이전트",
+      "researcher": "리서처"
     },
     "list": {
       "title": {
@@ -854,6 +855,9 @@
       "disagreement": {
         "label": "의견 불일치"
       }
+    },
+    "research": {
+      "toolActivity": "🔍 {tool}(으)로 조사 중…"
     }
   }
 }

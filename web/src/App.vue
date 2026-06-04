@@ -20,9 +20,14 @@ import {
   discussionMessageToChat,
   discussionMessagesToChat,
   reconcileRunState,
+  reconcileResearchState,
+  researchMessageToChat,
+  discussionPhase,
+  showDiscussionStart,
   applyDispatchStatus,
   clearDispatchAgent,
   type DispatchView,
+  type DiscussionPhase,
 } from './lib/discussion-view'
 import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
 import {
@@ -307,6 +312,16 @@ const discussionMaxSeq = ref(0)
 // decoupled from the persisted status. Absent = no live run; driven by the
 // `discussion_run_status` event. Drives the Pause/Resume control + composer mode.
 const discussionRunState = ref<Record<string, 'running' | 'paused'>>({})
+// Live research-phase state of each discussion (id → running), runtime-only and
+// decoupled from status: driven by `research_run_status` and reconciled from the
+// `discussions` list's `researchStates` snapshot. Present = the read-only research
+// run is live → the right pane shows the research stream and Start stays hidden.
+const researchState = ref<Record<string, 'running'>>({})
+// The open discussion's research stream, normalized into chat bubbles. Runtime-only
+// (research messages are never persisted), so it resets on switch and is not replayed
+// on reconnect — only liveness is reconciled. `researchMaxSeq` dedupes the stream.
+const researchMessages = ref<ChatMsg[]>([])
+const researchMaxSeq = ref(0)
 // Transient in-flight/failed status of dispatched agents, per discussion (id →
 // pending agents + errors). Runtime-only; driven by `discussion_dispatch_status`
 // and cleared by the reply message / run `ended` / discussion switch. Not persisted
@@ -710,6 +725,14 @@ function handleMessage(msg: ServerToClient) {
         msg.items,
         msg.runStates,
       )
+      // Same authoritative reconcile for the research phase (id → running). Survives
+      // refresh/reconnect mid-research so the right pane stays on the research stream
+      // and Start stays hidden (see `reconcileResearchState`).
+      researchState.value = reconcileResearchState(
+        researchState.value,
+        msg.items,
+        msg.researchStates,
+      )
       // Keep the open discussion's status/conclusion in sync with the refreshed
       // list (the engine pushes this on every state change).
       if (activeDiscussionId.value) {
@@ -759,6 +782,11 @@ function handleMessage(msg: ServerToClient) {
         id: i + 1,
       }))
       discussionMaxSeq.value = msg.messages.length ? msg.messages[msg.messages.length - 1].seq : 0
+      // Research messages are runtime-only (never in `discussion_detail`); reset the
+      // stream on every open/switch so a reconnect mid-research shows only the live
+      // tail (liveness comes from the `researchStates` snapshot).
+      researchMessages.value = []
+      researchMaxSeq.value = 0
       persistViewMode()
       break
     }
@@ -810,6 +838,30 @@ function handleMessage(msg: ServerToClient) {
         delete d[msg.discussionId]
         discussionDispatch.value = d
       }
+      break
+    }
+    case 'research_message': {
+      // Live append of a research turn while the read-only research agent works.
+      // Only for the open discussion, and only items newer than what's rendered.
+      if (msg.discussionId === activeDiscussionId.value && msg.message.seq > researchMaxSeq.value) {
+        researchMaxSeq.value = msg.message.seq
+        researchMessages.value.push({
+          ...researchMessageToChat(msg.message, {
+            researcher: t('discussion.speaker.researcher'),
+            tool: (toolName) => t('discussion.research.toolActivity', { tool: toolName }),
+          }),
+          id: researchMessages.value.length + 1,
+        })
+      }
+      break
+    }
+    case 'research_run_status': {
+      // Track research liveness; `ended` drops the entry (the phase flips to the
+      // discussion stream, which the server auto-starts on success).
+      const next = { ...researchState.value }
+      if (msg.state === 'ended') delete next[msg.discussionId]
+      else next[msg.discussionId] = 'running'
+      researchState.value = next
       break
     }
     case 'user_text':
@@ -1246,6 +1298,29 @@ const activeDiscussionDispatch = computed<DispatchView>(() => {
   return (id && discussionDispatch.value[id]) || { pending: [], errors: [] }
 })
 
+// Whether the open discussion's research run is live (drives the right-pane phase
+// and the Start fallback).
+const activeResearchLive = computed<boolean>(() =>
+  activeDiscussionId.value ? researchState.value[activeDiscussionId.value] === 'running' : false,
+)
+
+// Right-pane phase: the live research stream, or the discussion stream.
+const activeDiscussionPhase = computed<DiscussionPhase>(() =>
+  discussionPhase(activeResearchLive.value),
+)
+
+// Manual Start fallback visibility: a draft whose research has ended/died and whose
+// orchestration has not started (e.g. research failed and never auto-started).
+const showStart = computed<boolean>(() => {
+  const d = activeDiscussion.value
+  if (!d) return false
+  const discussionLive =
+    activeDiscussionRunState.value !== undefined ||
+    d.status === 'in_progress' ||
+    d.status === 'completed'
+  return showDiscussionStart(d.status, activeResearchLive.value, discussionLive)
+})
+
 // Pause / resume the live orchestration of the open discussion.
 function pauseDiscussion() {
   const id = activeDiscussionId.value
@@ -1529,6 +1604,9 @@ function listCommands() {
       :active-discussion="activeDiscussion"
       :active-run-state="activeDiscussionRunState"
       :messages="discussionMessages"
+      :research-messages="researchMessages"
+      :phase="activeDiscussionPhase"
+      :show-start="showStart"
       :dispatch="activeDiscussionDispatch"
       :input="discussionInput"
       @open="openDiscussion"

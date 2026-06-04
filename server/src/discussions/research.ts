@@ -6,7 +6,7 @@
  * agent's final text and writes it back to the discussion's `researchResult` field
  * (the user's original `context` is left untouched).
  */
-import type { Discussion } from '@ccc/shared/protocol'
+import type { Discussion, ResearchMessage } from '@ccc/shared/protocol'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude, REQUIREMENT_DISALLOWED_TOOLS } from '../claude.js'
 
@@ -52,6 +52,19 @@ export interface DiscussionResearchResult {
   researchResult: string
 }
 
+/** One streamed research item before the server stamps `discussionId`/`createdAt`. */
+export type ResearchStreamItem = Pick<ResearchMessage, 'seq' | 'kind' | 'content'>
+
+/** Options for {@link researchDiscussionContext}. `onMessage` streams the run's turns. */
+export interface ResearchRunOptions {
+  /**
+   * Called for each observable research turn so the caller can broadcast it live:
+   * an `assistant_text` turn (`kind: 'text'`) or a tool call (`kind: 'tool'`,
+   * `content` is the tool name). `seq` is monotonic (1-based) within this run.
+   */
+  onMessage?: (item: ResearchStreamItem) => void
+}
+
 /**
  * Decide whether a discussion is eligible for auto-start after research completes.
  * Pure (no I/O) so it is unit-tested. Eligible only when the (re-fetched) record
@@ -74,6 +87,7 @@ export function canAutoStartDiscussion(
  */
 export async function researchDiscussionContext(
   discussion: Discussion,
+  opts: ResearchRunOptions = {},
 ): Promise<DiscussionResearchResult> {
   const def = getDiscussionType(discussion.type)
   const prompt = buildResearchPrompt(
@@ -82,6 +96,7 @@ export async function researchDiscussionContext(
   )
   const abort = new AbortController()
   let captured = ''
+  let seq = 0
   let ok = true
   try {
     await runClaude({
@@ -94,8 +109,15 @@ export async function researchDiscussionContext(
       disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
       gate: 'discussion-research',
       send: (m) => {
-        // The agent's last assistant turn is the completed context.
-        if (m.type === 'assistant_text') captured = m.text
+        // The agent's last assistant turn is the completed context; every assistant
+        // turn and tool call is also streamed out so the right pane shows the run
+        // flowing live (best-effort — a streaming throw must not fail research).
+        if (m.type === 'assistant_text') {
+          captured = m.text
+          opts.onMessage?.({ seq: ++seq, kind: 'text', content: m.text })
+        } else if (m.type === 'tool_use') {
+          opts.onMessage?.({ seq: ++seq, kind: 'tool', content: m.toolName })
+        }
       },
     })
   } catch (err) {

@@ -776,7 +776,8 @@
     "speaker": {
       "you": "Вы",
       "organizer": "Организатор",
-      "agent": "Агент"
+      "agent": "Агент",
+      "researcher": "Исследователь"
     },
     "list": {
       "title": {
@@ -854,6 +855,9 @@
       "disagreement": {
         "label": "Разногласие"
       }
+    },
+    "research": {
+      "toolActivity": "🔍 Исследование через {tool}…"
     }
   }
 }

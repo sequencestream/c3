@@ -36,7 +36,14 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   field via `setDiscussionResearchResult` (only when non-empty); the user's original **`context` is
   never overwritten**, so both coexist. It pushes `discussions` on draft insert and again on research
   completion. The organizer engine reads `researchResult || context` as its prompt background (research
-  output when present, the user's original context otherwise). **On research success the server auto-starts the
+  output when present, the user's original context otherwise). The research run is **observable**
+  (`startResearchRun`, mirroring `startDiscussionRun`): it **streams each turn** as `research_message`
+  (assistant text + tool calls) and broadcasts its **liveness** as `research_run_status`
+  (`running` while the agent works, `ended` on finish/failure/dead process — the run is awaited, so a
+  dead process settles to `ended`). Research messages and liveness are **runtime-only** (never
+  persisted), and every `discussions` send carries a `researchStates` snapshot (active research only)
+  so a refresh/reconnect mid-research authoritatively rebuilds the research phase. **On research
+  success the server auto-starts the
   orchestration** (`startDiscussionRun`, equivalent to an automatic `start_discussion`), re-validating
   on the freshest record via the pure `canAutoStartDiscussion` guard (`status === 'draft'` and no live
   run — skipping if the human Started/cancelled it mid-research). `researchDiscussionContext` returns
@@ -44,11 +51,16 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   context); a **research failure** (`ok === false`) leaves the discussion a `draft`
   for a manual **Start** fallback and never auto-starts.
 - Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
-  on submit the right pane **auto-opens the new discussion** (server `discussion_detail` reply) and
-  its title bar reads **"Researching…"** while a `draft`, flipping to **"Running"** automatically once
-  the server auto-starts the engine (via the refreshed `discussions` + `discussion_run_status`
-  broadcasts). A manual **Start** button stays on a `draft` as a fallback (research failed/stalled),
-  and streamed messages append live once the engine runs. The create form's Goal / Context textareas **auto-grow** with their content up to a
+  on submit the right pane **auto-opens the new discussion** (server `discussion_detail` reply). The
+  right pane is **two-phase** (`discussionPhase` in `web/src/lib/discussion-view.ts`): while the
+  research run is live (`researchStates`/`research_run_status` → `running`) it shows the **research
+  stream** (streamed `research_message` turns; researcher bubbles + tool-activity lines, no
+  agenda/dispatch/composer); when research ends and the orchestration auto-starts it switches to the
+  **discussion stream** (agenda + transcript + dispatch + composer). The **Start** button is a manual
+  fallback shown **only when research has ended/died and the orchestration has not started**
+  (`showDiscussionStart`: `status === 'draft' && !researchLive && !discussionLive`) — never while
+  research is still running — replacing the old `status === 'draft'` rule. Both phase and button
+  rebuild on refresh/reconnect from the `researchStates`/`runStates` snapshots. The create form's Goal / Context textareas **auto-grow** with their content up to a
   pixel cap (shared `autoGrowHeight` in `lib/textarea.ts`), scrolling internally only past the cap and
   resetting when the form closes. The **left list** (`web/src/pages/discussions/components/DiscussionList/DiscussionList.vue`
   - pure view helpers in `web/src/lib/discussion-view.ts`) carries:

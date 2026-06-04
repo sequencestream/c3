@@ -3,6 +3,7 @@ import type {
   Discussion,
   DiscussionMessage,
   DiscussionStatus,
+  ResearchMessage,
 } from '@ccc/shared/protocol'
 import type { ChatBody, SpeakerView } from './chat-types'
 
@@ -157,6 +158,75 @@ export function reconcileRunState(
   for (const { id } of items) {
     const state = snapshot[id]
     if (state) next[id] = state
+    else delete next[id]
+  }
+  return next
+}
+
+/*
+ * Research phase — the right pane's two phases (research stream → discussion stream)
+ * and the manual Start fallback. Research liveness is runtime-only: streamed
+ * `research_message` items + a `running`/`ended` `research_run_status`, snapshotted on
+ * the `discussions` list as `researchStates` (id → `running`) so a reconnect mid-research
+ * stays on the research phase. Pure helpers, unit-tested DOM-free.
+ */
+
+const RESEARCHER_ICON = '🔍'
+
+/** Right-pane phase for the open discussion: the live research stream, or the discussion stream. */
+export type DiscussionPhase = 'research' | 'discussion'
+
+/** Research is showing iff its run is live; otherwise the discussion stream owns the pane. */
+export function discussionPhase(researchLive: boolean): DiscussionPhase {
+  return researchLive ? 'research' : 'discussion'
+}
+
+/**
+ * Whether the manual Start fallback shows. Replaces the old `status === 'draft'` rule:
+ * a draft auto-starts after research, so Start is only the fallback for a draft whose
+ * research has ended/died (`!researchLive`) and whose orchestration has not started
+ * (`!discussionLive`) — e.g. research failed and never auto-started. Pure.
+ */
+export function showDiscussionStart(
+  status: DiscussionStatus,
+  researchLive: boolean,
+  discussionLive: boolean,
+): boolean {
+  return status === 'draft' && !researchLive && !discussionLive
+}
+
+/**
+ * Map one streamed `ResearchMessage` to a `ChatBody` for the research stream. A `text`
+ * turn renders as an assistant bubble under the 「researcher」 speaker; a `tool` turn
+ * renders as a system line (`labels.tool` formats the tool name). Pure & DOM-free.
+ */
+export function researchMessageToChat(
+  m: ResearchMessage,
+  labels: { researcher: string; tool: (toolName: string) => string },
+): ChatBody {
+  if (m.kind === 'tool') return { kind: 'system', text: labels.tool(m.content) }
+  return {
+    kind: 'assistant',
+    text: m.content,
+    speaker: { icon: RESEARCHER_ICON, name: labels.researcher },
+  }
+}
+
+/**
+ * Reconcile the global per-discussion research-state map against a `discussions` snapshot.
+ * Mirrors {@link reconcileRunState} but the only live value is `running`: each listed id is
+ * set from the snapshot (present) or dropped (absent, research ended). Other projects' ids
+ * are left intact. Returns a new object. Pure, unit-tested DOM-free.
+ */
+export function reconcileResearchState(
+  prev: Record<string, 'running'>,
+  items: Pick<Discussion, 'id'>[],
+  snapshot: Record<string, 'running'> | undefined,
+): Record<string, 'running'> {
+  if (!snapshot) return prev
+  const next = { ...prev }
+  for (const { id } of items) {
+    if (snapshot[id]) next[id] = 'running'
     else delete next[id]
   }
   return next

@@ -521,6 +521,22 @@ export interface DiscussionMessage {
   createdAt: number
 }
 
+/**
+ * One streamed item from a discussion's read-only research run. Runtime-only —
+ * NOT persisted (unlike `DiscussionMessage`), mirroring `discussion_dispatch_status`:
+ * a reconnect mid-research reconciles the run's liveness from the `researchStates`
+ * snapshot but does not replay the transcript; later live items still append.
+ * `seq` is monotonic (1-based) within a single research run.
+ */
+export interface ResearchMessage {
+  discussionId: string
+  seq: number
+  /** `text` = an assistant turn's text; `tool` = a tool-activity marker (`content` is the tool name). */
+  kind: 'text' | 'tool'
+  content: string
+  createdAt: number
+}
+
 // ---- Schedules ----
 
 export type ScheduleType = 'command' | 'llm'
@@ -876,6 +892,14 @@ export type ServerToClient =
       projectPath: string
       items: Discussion[]
       runStates?: Record<string, 'running' | 'paused'>
+      /**
+       * Companion snapshot for the read-only research phase (id → `running`, only discussions
+       * with a live research run present). Rides every list send like `runStates`, so a refresh
+       * or reconnect mid-research authoritatively rebuilds the research phase (right pane stays on
+       * the research stream, Start stays hidden) — the transition-only `research_run_status` is
+       * missed by a freshly-(re)connected view.
+       */
+      researchStates?: Record<string, 'running'>
     }
   /** One discussion plus its full message history (reply to `open_discussion`). */
   | { type: 'discussion_detail'; discussion: Discussion; messages: DiscussionMessage[] }
@@ -918,6 +942,23 @@ export type ServerToClient =
       agents: { id: string; name: string }[]
       error?: string
     }
+  /**
+   * A streamed item from a discussion's read-only research run, pushed live while the
+   * research agent works (the client appends it to the right pane's research stream when
+   * viewing that discussion). Runtime-only, mirrors `discussion_message` but for the
+   * research phase; the research transcript is never persisted, so it is not replayed on
+   * reconnect (only the `researchStates` liveness snapshot is).
+   */
+  | { type: 'research_message'; discussionId: string; message: ResearchMessage }
+  /**
+   * Live run-state of a discussion's read-only research run: `running` while the research
+   * agent works, `ended` when it finishes, fails, or its underlying process dies (the run
+   * is awaited, so a dead process settles the promise and yields `ended`). Runtime-only —
+   * not persisted. On `ended` the frontend drops the research phase; the server then
+   * auto-starts the orchestration (emitting `discussion_run_status: running`) on success,
+   * or leaves a `draft` for a manual Start on failure.
+   */
+  | { type: 'research_run_status'; discussionId: string; state: 'running' | 'ended' }
   /**
    * Echo of a user prompt, emitted into the session's stream when a turn starts.
    * Lets every viewer (including one switching back to a background session) see

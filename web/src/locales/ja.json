@@ -776,7 +776,8 @@
     "speaker": {
       "you": "あなた",
       "organizer": "主催者",
-      "agent": "エージェント"
+      "agent": "エージェント",
+      "researcher": "リサーチャー"
     },
     "list": {
       "title": {
@@ -854,6 +855,9 @@
       "disagreement": {
         "label": "不一致"
       }
+    },
+    "research": {
+      "toolActivity": "🔍 {tool} で調査中…"
     }
   }
 }

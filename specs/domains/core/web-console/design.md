@@ -267,6 +267,65 @@ reply: <error>"` per error. UI copy is English (`web/CLAUDE.md`).
   the SFC (children stubbed) and asserts the per-agent replying lines, the failure line, and that
   nothing renders when empty / no discussion is open.
 
+## Discussion speaker rendering (multi-speaker chat header)
+
+The discussion right pane reuses `ChatMessages` to render the persisted transcript, so each
+`DiscussionMessage` is normalized into a `ChatBody`. The session path maps `user_text` → `user` and
+`assistant_text` → `assistant` and never sets any extra meta; the discussion path attaches a small
+「icon + name」 line above each body so the multi-agent discussion reads as a real chat — and crucially
+the session path keeps its single-speaker layout bit-for-bit.
+
+- **Wire model.** `DiscussionMessage` (`shared/src/protocol.ts`) carries `speakerKind` ∈
+  `{organizer, agent, human}`, the participating agent's id (`speakerAgentId`, nullable), and the
+  server-resolved display name (`speakerName`, nullable). `AgentConfig.icon` (`shared/src/protocol.ts`)
+  is the optional emoji/text set by the operator in the system settings. The web client reads them
+  read-only and never pushes back; the SoT is the server-side appender.
+
+- **`ChatBody.speaker`.** A new optional `speaker?: { icon: string; name: string }` field is added to
+  the `user` and `assistant` variants of `ChatBody` (`web/src/lib/chat-types.ts`). It is set by the
+  discussion path (so the renderer draws the small line) and never by the session path. The field is
+  optional and absent on the `system` variant, which the discussion path never produces.
+
+- **Pure resolver** `resolveDiscussionSpeaker(m, agents, defaultAgentId, t)` in
+  `web/src/lib/discussion-view.ts` (DOM-free, unit-tested) returns `{ icon, name }` per the rules:
+  - `human` → fixed icon `🙋` + i18n `discussion.speaker.you` (= "You"). Humans have no agent
+    profile, so there is nothing to look up.
+  - `organizer` → `agents.find(a => a.id === defaultAgentId)` (server-side `resolveAgent(null)`).
+    Hit: `{ icon: agent.icon?.trim() || '🤖', name: agent.name }`. Miss / empty icon / null id:
+    `{ icon: '🤖', name: t('discussion.speaker.organizer') }`.
+  - `agent` → `agents.find(a => a.id === m.speakerAgentId)`. Hit: `{ icon: agent.icon?.trim() || '🤖',
+name: m.speakerName ?? agent.name }`. Miss / empty icon: `{ icon: '🤖', name: m.speakerName ||
+t('discussion.speaker.agent') }` (defensive — the server should always set a name for an agent
+    turn).
+
+  The two fallback icons are module-private constants (`HUMAN_FALLBACK_ICON`, `AGENT_FALLBACK_ICON`).
+  Whitespace-only icons (operator typo) are trimmed and treated as empty. The resolver never throws
+  and never returns an empty icon, so a fresh `serverSettings === null` on first paint degrades to the
+  generic icons + i18n role labels without rendering errors.
+
+- **Mapper change.** `discussionMessageToChat(m, agents, defaultAgentId, t)` and
+  `discussionMessagesToChat(messages, agents, defaultAgentId, t)` now take the agent roster and
+  default id (plus the typed `t`) and attach the resolved `speaker` to the returned `ChatBody`. The
+  body text is **never** prefixed with `speakerName: ` — the name lives on the speaker line, so the
+  body is verbatim content. Both call sites in `App.vue` (`discussion_detail` snapshot path and
+  `discussion_message` live-append path) pass `serverSettings.value?.agents ?? []` and
+  `serverSettings.value?.defaultAgentId ?? SYSTEM_AGENT_ID`; the resolver handles null and the
+  early-paint window without special casing.
+
+- **Renderer.** `ChatMessages.vue` renders, in the `text` block, a `<div class="speaker">` (icon +
+  name) above the existing `<MarkdownText>` body **only when `b.msg.speaker` is set**. The template
+  re-narrows `b.msg` to `user | assistant` first so the `speaker` access is type-safe; the `system`
+  variant is left header-less. The scoped style uses `--c-text-muted` + `--fs-caption` (the project's
+  caption token) for a small muted row; session bubbles are untouched.
+
+- **Tests.** The pure resolver is covered DOM-free in `discussion-view.test.ts` (human, organizer
+  hit, organizer miss, organizer default-id null, agent hit, agent hit with blank icon, agent
+  miss, agent miss with null name, blank-icon trim). The `discussionMessageToChat` / `ToChat` cases
+  assert: body text is verbatim (no `name: ` prefix), `speaker` is set with the right icon/name per
+  speakerKind, and the batched mapper preserves order. The five-branch coverage matches the spec
+  acceptance criteria (organizer/agent/human all show their own row; agent without icon → default
+  icon, no error; body never carries a `name: ` prefix).
+
 ## Per-tab viewed session (no cross-tab pollution)
 
 The 「会话」(console) and 「需求」(requirements) tabs each maintain their **own** current

@@ -674,17 +674,29 @@ function handleMessage(msg: ServerToClient) {
         [msg.executionId]: msg.items,
       }
       break
-    case 'discussion_detail':
+    case 'discussion_detail': {
       activeDiscussion.value = msg.discussion
       activeDiscussionId.value = msg.discussion.id
       // Render the persisted history as read-only chat bubbles (own id space).
-      discussionMessages.value = discussionMessagesToChat(msg.messages).map((b, i) => ({
+      // The speaker resolver needs the configured agents + default agent id so
+      // each message can show its 「icon + name」 small line; `serverSettings`
+      // may be null on first paint — the resolver tolerates an empty list and
+      // falls back to the generic icons (see discussion-view).
+      const agents = serverSettings.value?.agents ?? []
+      const defaultAgentId = serverSettings.value?.defaultAgentId ?? SYSTEM_AGENT_ID
+      discussionMessages.value = discussionMessagesToChat(
+        msg.messages,
+        agents,
+        defaultAgentId,
+        t,
+      ).map((b, i) => ({
         ...b,
         id: i + 1,
       }))
       discussionMaxSeq.value = msg.messages.length ? msg.messages[msg.messages.length - 1].seq : 0
       persistViewMode()
       break
+    }
     case 'discussion_message': {
       // A landed reply clears its author's in-flight (pending) status — the snappy
       // primary clear for the message path (redundant with the server's `cleared`).
@@ -701,8 +713,12 @@ function handleMessage(msg: ServerToClient) {
         msg.message.seq > discussionMaxSeq.value
       ) {
         discussionMaxSeq.value = msg.message.seq
+        // Same agents / default-agent id as the snapshot path above; see that
+        // comment for the `serverSettings.value` null tolerance.
+        const liveAgents = serverSettings.value?.agents ?? []
+        const liveDefaultAgentId = serverSettings.value?.defaultAgentId ?? SYSTEM_AGENT_ID
         discussionMessages.value.push({
-          ...discussionMessageToChat(msg.message),
+          ...discussionMessageToChat(msg.message, liveAgents, liveDefaultAgentId, t),
           id: discussionMessages.value.length + 1,
         })
       }

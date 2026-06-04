@@ -764,6 +764,11 @@
         "label": "议程"
       }
     },
+    "speaker": {
+      "you": "你",
+      "organizer": "组织者",
+      "agent": "智能体"
+    },
     "list": {
       "title": {
         "label": "讨论"

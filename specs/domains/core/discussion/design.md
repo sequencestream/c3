@@ -305,7 +305,18 @@ agent finishes first; streaming mirrors the append order), and the **converging 
 
 - **SQLite (shared adapter)** — `server/src/db.ts` (`node:sqlite` / `bun:sqlite`, both `external`).
 - **shared protocol** — `Discussion` / `DiscussionMessage` / `DiscussionStatus` /
-  `DiscussionSpeakerKind` entity types.
+  `DiscussionSpeakerKind` entity types; `AgentConfig.icon` (operator-set emoji / short text per
+  agent) is the wire-level source of truth for the multi-speaker chat header.
 - **discussion types** — `shared/src/discussion-types.ts` (workflow stages + `nextDiscussionStage`).
 - **agent runtime** — `server/src/agent-once.ts` (`askAgentOnce`) and `server/src/settings.ts`
   (`resolveAgent` / `loadSettings` / `launchForAgent`) for the organizer + participants.
+
+## Client-side rendering (cross-reference)
+
+The server appends messages with `speakerName` set from the agent profile; the wire model is the
+source of truth, and the organizer/agent ids resolve to the live `SystemSettings.agents` roster on
+the client. The web client draws a small 「icon + name」 line above every discussion message body
+and the resolution rules (organizer ⇒ default agent, agent ⇒ by id, fallbacks, blank-icon trim)
+live in the web-console design — see
+[Discussion speaker rendering](../web-console/design.md#discussion-speaker-rendering-multi-speaker-chat-header).
+No server changes are required for that surface; the icon field is consumed read-only.

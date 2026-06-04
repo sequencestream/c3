@@ -764,6 +764,11 @@
         "label": "Agenda"
       }
     },
+    "speaker": {
+      "you": "You",
+      "organizer": "Organizer",
+      "agent": "Agent"
+    },
     "list": {
       "title": {
         "label": "Discussions"

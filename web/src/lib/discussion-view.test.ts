@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { Discussion, DiscussionMessage } from '@ccc/shared/protocol'
+import type { AgentConfig, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import {
   agendaProgressView,
   applyDispatchStatus,
@@ -11,6 +11,7 @@ import {
   discussionRunLabel,
   panelToggleLabel,
   reconcileRunState,
+  resolveDiscussionSpeaker,
   rowVisibility,
   statusLabel,
   type DispatchView,
@@ -49,42 +50,233 @@ function msg(over: Partial<DiscussionMessage>): DiscussionMessage {
   }
 }
 
+function agent(over: Partial<AgentConfig>): AgentConfig {
+  return {
+    id: 'a',
+    name: 'A',
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    ...over,
+  }
+}
+
+// Tiny i18n stand-in: maps the three discussion.speaker.* keys to fixed labels
+// so the resolver tests don't have to drag in the full i18n setup. The
+// production caller (App.vue) passes the real typed `t` from useTypedI18n().
+const T = (
+  k: 'discussion.speaker.you' | 'discussion.speaker.organizer' | 'discussion.speaker.agent',
+) => {
+  if (k === 'discussion.speaker.you') return 'You'
+  if (k === 'discussion.speaker.organizer') return 'Organizer'
+  return 'Agent'
+}
+
+const AGENTS: AgentConfig[] = [
+  agent({ id: 'default', name: 'Default Agent', icon: '🧠' }),
+  agent({ id: 'reviewer', name: 'Reviewer', icon: '🔍' }),
+  agent({ id: 'noicon', name: 'Plain', icon: '' }),
+]
+const DEFAULT_ID = 'default'
+
 describe('discussion-view — DiscussionMessage → ChatBody', () => {
-  it('human → user 气泡,正文不加前缀', () => {
-    const b = discussionMessageToChat(msg({ speakerKind: 'human', content: 'hi' }))
-    expect(b).toEqual({ kind: 'user', text: 'hi' })
-  })
-
-  it('agent → assistant 气泡,带 speakerName 前缀', () => {
+  it('human → user 气泡,正文不拼前缀,带 speaker(You + 人类默认图标)', () => {
     const b = discussionMessageToChat(
-      msg({ speakerKind: 'agent', speakerName: 'Reviewer', content: 'lgtm' }),
+      msg({ speakerKind: 'human', content: 'hi' }),
+      AGENTS,
+      DEFAULT_ID,
+      T,
     )
-    expect(b).toEqual({ kind: 'assistant', text: 'Reviewer: lgtm' })
+    expect(b).toEqual({ kind: 'user', text: 'hi', speaker: { icon: '🙋', name: 'You' } })
   })
 
-  it('organizer → assistant 气泡', () => {
+  it('agent → assistant 气泡,正文不拼前缀,带 speaker(命中 agent 的 icon + speakerName)', () => {
+    const b = discussionMessageToChat(
+      msg({
+        speakerKind: 'agent',
+        speakerAgentId: 'reviewer',
+        speakerName: 'Reviewer',
+        content: 'lgtm',
+      }),
+      AGENTS,
+      DEFAULT_ID,
+      T,
+    )
+    expect(b).toEqual({
+      kind: 'assistant',
+      text: 'lgtm',
+      speaker: { icon: '🔍', name: 'Reviewer' },
+    })
+  })
+
+  it('organizer → assistant 气泡,正文不拼前缀,带 speaker(默认 agent 的 icon + name)', () => {
     const b = discussionMessageToChat(
       msg({ speakerKind: 'organizer', speakerName: 'Org', content: 'go' }),
+      AGENTS,
+      DEFAULT_ID,
+      T,
     )
-    expect(b).toEqual({ kind: 'assistant', text: 'Org: go' })
+    expect(b).toEqual({
+      kind: 'assistant',
+      text: 'go',
+      speaker: { icon: '🧠', name: 'Default Agent' },
+    })
   })
 
-  it('无 speakerName 时不加前缀', () => {
+  it('agent 未配 icon → 回退通用默认图标,但 speakerName 仍取自消息', () => {
     const b = discussionMessageToChat(
-      msg({ speakerKind: 'agent', speakerName: null, content: 'x' }),
+      msg({ speakerKind: 'agent', speakerAgentId: 'noicon', speakerName: 'Plain', content: 'x' }),
+      AGENTS,
+      DEFAULT_ID,
+      T,
     )
-    expect(b).toEqual({ kind: 'assistant', text: 'x' })
+    expect(b).toEqual({ kind: 'assistant', text: 'x', speaker: { icon: '🤖', name: 'Plain' } })
   })
 
-  it('批量映射保持顺序', () => {
-    const out = discussionMessagesToChat([
-      msg({ seq: 1, speakerKind: 'human', content: 'q' }),
-      msg({ seq: 2, speakerKind: 'agent', speakerName: 'A', content: 'a' }),
-    ])
+  it('agent 不在配置中 → 通用回退(图标 + i18n Agent)', () => {
+    const b = discussionMessageToChat(
+      msg({ speakerKind: 'agent', speakerAgentId: 'ghost', speakerName: null, content: 'x' }),
+      AGENTS,
+      DEFAULT_ID,
+      T,
+    )
+    expect(b).toEqual({ kind: 'assistant', text: 'x', speaker: { icon: '🤖', name: 'Agent' } })
+  })
+
+  it('agent 命中但 speakerName 为空 → 退到 agent 自身的 name', () => {
+    const b = discussionMessageToChat(
+      msg({ speakerKind: 'agent', speakerAgentId: 'reviewer', speakerName: null, content: 'x' }),
+      AGENTS,
+      DEFAULT_ID,
+      T,
+    )
+    expect(b).toEqual({ kind: 'assistant', text: 'x', speaker: { icon: '🔍', name: 'Reviewer' } })
+  })
+
+  it('organizer 默认 agent 缺失 → 通用回退(图标 + i18n Organizer)', () => {
+    const b = discussionMessageToChat(
+      msg({ speakerKind: 'organizer', content: 'go' }),
+      [], // 空 agents
+      'missing',
+      T,
+    )
+    expect(b).toEqual({ kind: 'assistant', text: 'go', speaker: { icon: '🤖', name: 'Organizer' } })
+  })
+
+  it('serverSettings 尚未到位(空 agents + system 默认 id)→ 全部回退不报错', () => {
+    const b = discussionMessageToChat(
+      msg({ speakerKind: 'agent', speakerAgentId: 'a1', speakerName: 'A', content: 'x' }),
+      [],
+      'system',
+      T,
+    )
+    expect(b).toEqual({ kind: 'assistant', text: 'x', speaker: { icon: '🤖', name: 'A' } })
+  })
+
+  it('批量映射保持顺序,每条都带 speaker', () => {
+    const out = discussionMessagesToChat(
+      [
+        msg({ seq: 1, speakerKind: 'human', content: 'q' }),
+        msg({
+          seq: 2,
+          speakerKind: 'agent',
+          speakerAgentId: 'reviewer',
+          speakerName: 'A',
+          content: 'a',
+        }),
+      ],
+      AGENTS,
+      DEFAULT_ID,
+      T,
+    )
     expect(out).toEqual([
-      { kind: 'user', text: 'q' },
-      { kind: 'assistant', text: 'A: a' },
+      { kind: 'user', text: 'q', speaker: { icon: '🙋', name: 'You' } },
+      { kind: 'assistant', text: 'a', speaker: { icon: '🔍', name: 'A' } },
     ])
+  })
+})
+
+describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', () => {
+  it('human:固定人类图标 + i18n You', () => {
+    expect(resolveDiscussionSpeaker(msg({ speakerKind: 'human' }), AGENTS, DEFAULT_ID, T)).toEqual({
+      icon: '🙋',
+      name: 'You',
+    })
+  })
+
+  it('organizer:命中默认 agent → agent.icon + agent.name', () => {
+    expect(
+      resolveDiscussionSpeaker(msg({ speakerKind: 'organizer' }), AGENTS, DEFAULT_ID, T),
+    ).toEqual({ icon: '🧠', name: 'Default Agent' })
+  })
+
+  it('organizer:默认 agent 缺 icon → 通用图标,保留 name', () => {
+    const agentsNoIcon = [agent({ id: 'default', name: 'Default Agent', icon: '' })]
+    expect(
+      resolveDiscussionSpeaker(msg({ speakerKind: 'organizer' }), agentsNoIcon, 'default', T),
+    ).toEqual({ icon: '🤖', name: 'Default Agent' })
+  })
+
+  it('organizer:默认 agent 不存在或默认 id 为空 → 通用图标 + i18n Organizer', () => {
+    expect(resolveDiscussionSpeaker(msg({ speakerKind: 'organizer' }), [], 'missing', T)).toEqual({
+      icon: '🤖',
+      name: 'Organizer',
+    })
+    expect(resolveDiscussionSpeaker(msg({ speakerKind: 'organizer' }), AGENTS, null, T)).toEqual({
+      icon: '🤖',
+      name: 'Organizer',
+    })
+  })
+
+  it('agent:命中 → agent.icon + speakerName(消息自带)', () => {
+    expect(
+      resolveDiscussionSpeaker(
+        msg({ speakerKind: 'agent', speakerAgentId: 'reviewer', speakerName: 'Rev' }),
+        AGENTS,
+        DEFAULT_ID,
+        T,
+      ),
+    ).toEqual({ icon: '🔍', name: 'Rev' })
+  })
+
+  it('agent:命中但 agent.icon 为空 / 仅空白 → 通用图标,名字保持', () => {
+    expect(
+      resolveDiscussionSpeaker(
+        msg({ speakerKind: 'agent', speakerAgentId: 'noicon', speakerName: 'Plain' }),
+        AGENTS,
+        DEFAULT_ID,
+        T,
+      ),
+    ).toEqual({ icon: '🤖', name: 'Plain' })
+    // icon 字段为纯空白(用户误填)也走回退
+    const blankIcon = [agent({ id: 'noicon', name: 'Plain', icon: '   ' })]
+    expect(
+      resolveDiscussionSpeaker(
+        msg({ speakerKind: 'agent', speakerAgentId: 'noicon', speakerName: 'Plain' }),
+        blankIcon,
+        DEFAULT_ID,
+        T,
+      ),
+    ).toEqual({ icon: '🤖', name: 'Plain' })
+  })
+
+  it('agent:未命中 / speakerAgentId 为空 → 通用图标,名字按 消息名→i18n Agent 顺序兜底', () => {
+    expect(
+      resolveDiscussionSpeaker(
+        msg({ speakerKind: 'agent', speakerAgentId: 'ghost', speakerName: 'G' }),
+        AGENTS,
+        DEFAULT_ID,
+        T,
+      ),
+    ).toEqual({ icon: '🤖', name: 'G' })
+    expect(
+      resolveDiscussionSpeaker(
+        msg({ speakerKind: 'agent', speakerAgentId: null, speakerName: null }),
+        AGENTS,
+        DEFAULT_ID,
+        T,
+      ),
+    ).toEqual({ icon: '🤖', name: 'Agent' })
   })
 })
 

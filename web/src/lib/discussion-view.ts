@@ -1,5 +1,10 @@
-import type { Discussion, DiscussionMessage, DiscussionStatus } from '@ccc/shared/protocol'
-import type { ChatBody } from './chat-types'
+import type {
+  AgentConfig,
+  Discussion,
+  DiscussionMessage,
+  DiscussionStatus,
+} from '@ccc/shared/protocol'
+import type { ChatBody, SpeakerView } from './chat-types'
 
 /*
  * discussion-view — pure mappers for the read-only discussion transcript.
@@ -7,17 +12,93 @@ import type { ChatBody } from './chat-types'
  * The discussion right pane reuses the session chat renderer (ChatMessages), so
  * each persisted `DiscussionMessage` is normalized into a `ChatBody`. The human
  * speaks as `user`; the organizer and agents render as `assistant`. The renderer
- * shows plain text only, so a speaker name is prefixed (for non-human turns) to
- * keep multi-agent discussions legible.
+ * shows a small 「icon + name」 line above each body when `ChatBody.speaker` is
+ * set (set here for discussion messages; never set by the session path), so the
+ * multi-agent discussion reads as a real chat. Name prefixes are no longer
+ * inlined into the body — they live on the speaker line.
  */
-export function discussionMessageToChat(m: DiscussionMessage): ChatBody {
-  if (m.speakerKind === 'human') return { kind: 'user', text: m.content }
-  const text = m.speakerName ? `${m.speakerName}: ${m.content}` : m.content
-  return { kind: 'assistant', text }
+
+/**
+ * Fallback icons used when the configured agent has no `icon` (or the speaker
+ * can't be resolved to an agent). Kept module-private: callers always go
+ * through `resolveDiscussionSpeaker` so the fallback is consistent.
+ */
+const HUMAN_FALLBACK_ICON = '🙋'
+const AGENT_FALLBACK_ICON = '🤖'
+
+/**
+ * Resolve the speaker meta for a discussion message. The rules:
+ *
+ * - `human` — always renders the fixed human icon and the i18n 「You」 label
+ *   (humans have no agent profile, so there is nothing to look up).
+ * - `organizer` — the organizer is the default agent (server-side
+ *   `resolveAgent(null) === agents.find(a => a.id === defaultAgentId)`); use
+ *   that agent's `icon` and `name`. If the agent can't be found or has no icon,
+ *   fall back to the generic agent icon and the i18n 「Organizer」 label.
+ * - `agent` — look up `m.speakerAgentId` in `agents`; use the agent's `icon` and
+ *   `m.speakerName`. If the agent is missing or has no icon, fall back to the
+ *   generic agent icon; the name falls back to `m.speakerName` itself, or the
+ *   i18n 「Agent」 label as a last resort (defensive — the server should always
+ *   set a name for an agent turn).
+ *
+ * Pure & defensive: empty `agents` list, missing `defaultAgentId`, or unknown
+ * ids all fall through to the fixed fallbacks — never throws, never returns an
+ * empty icon.
+ */
+export function resolveDiscussionSpeaker(
+  m: DiscussionMessage,
+  agents: readonly AgentConfig[],
+  defaultAgentId: string | null | undefined,
+  t: (
+    key: 'discussion.speaker.you' | 'discussion.speaker.organizer' | 'discussion.speaker.agent',
+  ) => string,
+): SpeakerView {
+  if (m.speakerKind === 'human') {
+    return { icon: HUMAN_FALLBACK_ICON, name: t('discussion.speaker.you') }
+  }
+  if (m.speakerKind === 'organizer') {
+    const agent = defaultAgentId ? agents.find((a) => a.id === defaultAgentId) : undefined
+    if (agent) {
+      return { icon: agent.icon?.trim() || AGENT_FALLBACK_ICON, name: agent.name }
+    }
+    return { icon: AGENT_FALLBACK_ICON, name: t('discussion.speaker.organizer') }
+  }
+  // 'agent'
+  const agent = m.speakerAgentId ? agents.find((a) => a.id === m.speakerAgentId) : undefined
+  if (agent) {
+    return {
+      icon: agent.icon?.trim() || AGENT_FALLBACK_ICON,
+      name: m.speakerName ?? agent.name,
+    }
+  }
+  return {
+    icon: AGENT_FALLBACK_ICON,
+    name: m.speakerName || t('discussion.speaker.agent'),
+  }
 }
 
-export function discussionMessagesToChat(messages: DiscussionMessage[]): ChatBody[] {
-  return messages.map(discussionMessageToChat)
+export function discussionMessageToChat(
+  m: DiscussionMessage,
+  agents: readonly AgentConfig[],
+  defaultAgentId: string | null | undefined,
+  t: (
+    key: 'discussion.speaker.you' | 'discussion.speaker.organizer' | 'discussion.speaker.agent',
+  ) => string,
+): ChatBody {
+  const speaker = resolveDiscussionSpeaker(m, agents, defaultAgentId, t)
+  if (m.speakerKind === 'human') return { kind: 'user', text: m.content, speaker }
+  return { kind: 'assistant', text: m.content, speaker }
+}
+
+export function discussionMessagesToChat(
+  messages: DiscussionMessage[],
+  agents: readonly AgentConfig[],
+  defaultAgentId: string | null | undefined,
+  t: (
+    key: 'discussion.speaker.you' | 'discussion.speaker.organizer' | 'discussion.speaker.agent',
+  ) => string,
+): ChatBody[] {
+  return messages.map((m) => discussionMessageToChat(m, agents, defaultAgentId, t))
 }
 
 /*

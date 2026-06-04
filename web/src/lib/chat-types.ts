@@ -5,9 +5,23 @@ import type { AnyConsensusOutcome } from '@ccc/shared/protocol'
  * normalized entry in the flat transcript buffer; `Block` is the grouped render
  * unit (free-standing text, or a collapsible batch of tool messages).
  */
+
+/**
+ * Optional speaker meta attached to a `user` / `assistant` text bubble. Set by
+ * the discussion path (multi-speaker chat) so the renderer can draw a small
+ * 「icon + name」 line above the body; the session path never sets it, so the
+ * shared `ChatMessages` renderer leaves the bubble header-less.
+ */
+export interface SpeakerView {
+  /** Display icon: an emoji or short text. Never empty — resolvers always fall back. */
+  icon: string
+  /** Display name (agent's name, or an i18n role label for unnamed human turns). */
+  name: string
+}
+
 export type ChatBody =
-  | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string }
+  | { kind: 'user'; text: string; speaker?: SpeakerView }
+  | { kind: 'assistant'; text: string; speaker?: SpeakerView }
   | { kind: 'tool-use'; toolUseId?: string; toolName: string; input: unknown }
   | { kind: 'tool-result'; toolUseId?: string; content: string; isError: boolean }
   | {

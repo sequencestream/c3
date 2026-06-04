@@ -154,6 +154,20 @@ function toggle(id: number): void {
     </p>
     <template v-for="b in blocks" :key="b.key">
       <div v-if="b.type === 'text'" class="msg" :class="b.msg.kind">
+        <!--
+          Multi-speaker header (set by the discussion path via ChatBody.speaker):
+          a small line with the speaker's icon + name above the body. The
+          session path never sets `speaker`, so the bubble renders header-less —
+          the existing single-speaker layout is preserved bit-for-bit.
+          The `v-if` re-narrows `b.msg` to user|assistant (the only variants
+          that carry `speaker`); `system` keeps the original header-less layout.
+        -->
+        <template v-if="b.msg.kind === 'user' || b.msg.kind === 'assistant'">
+          <div v-if="b.msg.speaker" class="speaker">
+            <span class="speaker-icon">{{ b.msg.speaker.icon }}</span>
+            <span class="speaker-name">{{ b.msg.speaker.name }}</span>
+          </div>
+        </template>
         <MarkdownText :text="b.msg.text" :kind="b.msg.kind" />
       </div>
       <div v-else class="batch" :class="{ open: isBatchOpen(b) }">
@@ -205,3 +219,27 @@ function toggle(id: number): void {
     </template>
   </main>
 </template>
+
+<style scoped>
+/* Multi-speaker header on a text bubble. Small muted line above the body,
+   visually echoing chat-app speaker rows. Only rendered when ChatBody.speaker
+   is set (the discussion path); session bubbles never get this row. */
+.speaker {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  margin: 0 0 0.25em;
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.2;
+}
+.speaker-icon {
+  /* Icons are user-supplied emoji / short text — keep them baseline-aligned
+     with the name so multi-codepoint glyphs (ZWJ, flags) sit nicely. */
+  font-size: 1.1em;
+  line-height: 1;
+}
+.speaker-name {
+  font-weight: 600;
+}
+</style>

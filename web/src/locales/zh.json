@@ -1,0 +1,801 @@
+{
+  "common": {
+    "action": {
+      "allow": {
+        "label": "允许"
+      },
+      "deny": {
+        "label": "拒绝"
+      },
+      "cancel": {
+        "label": "取消"
+      },
+      "save": {
+        "label": "保存"
+      },
+      "close": {
+        "tooltip": "关闭"
+      }
+    },
+    "unknown": {
+      "label": "未知"
+    }
+  },
+  "nav": {
+    "tab": {
+      "console": {
+        "label": "会话"
+      },
+      "requirements": {
+        "label": "需求"
+      },
+      "discussion": {
+        "label": "讨论"
+      },
+      "schedules": {
+        "label": "定时任务"
+      }
+    },
+    "mode": {
+      "default": {
+        "label": "默认"
+      },
+      "auto": {
+        "label": "自动"
+      },
+      "plan": {
+        "label": "计划"
+      },
+      "acceptEdits": {
+        "label": "接受编辑"
+      },
+      "bypassPermissions": {
+        "label": "跳过权限"
+      }
+    },
+    "settings": {
+      "tooltip": "系统设置"
+    },
+    "workspace": {
+      "trigger": {
+        "empty": {
+          "tooltip": "未选择工作区",
+          "label": "无工作区"
+        }
+      },
+      "add": {
+        "tooltip": "添加工作区",
+        "prompt": "工作区目录(绝对路径):"
+      },
+      "remove": {
+        "tooltip": "移除工作区",
+        "confirm": "从侧边栏移除该工作区?\n{path}\n\n(磁盘上的会话会保留。)"
+      },
+      "list": {
+        "empty": "还没有工作区。点击 + 添加一个目录。"
+      }
+    }
+  },
+  "permission": {
+    "history": {
+      "askQuestion": "🙋 请求回答 {count} 个问题 · AskUserQuestion",
+      "saveRequirements": "💾 请求保存 {count} 项需求",
+      "useTool": "🔧 请求使用工具 {toolName}"
+    },
+    "ask": {
+      "answerQuestion": {
+        "label": "🙋 回答问题 ·"
+      },
+      "multiAgentSuggestion": {
+        "label": "多智能体建议"
+      },
+      "customReply": {
+        "label": "✏️ 自定义回复",
+        "hint": "输入你自己的回答"
+      },
+      "custom": {
+        "placeholder": "输入自定义回复…"
+      },
+      "submit": {
+        "label": "提交回答"
+      }
+    },
+    "save": {
+      "label": "💾 保存需求 ·",
+      "dependsOn": "依赖:",
+      "dependsOnBatch": "依赖(本批次):"
+    },
+    "tool": {
+      "allow": {
+        "label": "允许工具:"
+      }
+    },
+    "consensus": {
+      "disagree": {
+        "label": "🤝 智能体意见不一致:"
+      }
+    },
+    "status": {
+      "answered": "已回答",
+      "denied": "已拒绝",
+      "allowed": "已允许",
+      "saved": "已保存",
+      "cancelled": "已取消"
+    },
+    "notification": {
+      "title": "c3 — 需要授权",
+      "body": "{title} 正在等待你的批准。"
+    }
+  },
+  "settings": {
+    "title": {
+      "label": "系统设置"
+    },
+    "agents": {
+      "title": {
+        "label": "智能体"
+      },
+      "hint": {
+        "text": "新会话会以默认智能体启动 Claude Code。系统智能体不使用任何覆盖配置(沿用你现有的 {claude} 登录),且无法编辑或移除。打开 {on} 即可启用某个智能体;被禁用的智能体会从讨论参与者、共识投票、降级链和默认选择器中排除——但绑定或回退启动仍然有效,因此不会有任何现有会话被锁在外面。",
+        "claude": "claude",
+        "on": "开"
+      },
+      "col": {
+        "on": {
+          "label": "开"
+        },
+        "default": {
+          "label": "默认"
+        },
+        "name": {
+          "label": "名称"
+        },
+        "baseUrl": {
+          "label": "Base URL"
+        },
+        "apiKey": {
+          "label": "API Key"
+        },
+        "model": {
+          "label": "模型"
+        }
+      },
+      "toggle": {
+        "tooltip": "启用 / 禁用该智能体"
+      },
+      "default": {
+        "tooltip": "只有已启用的智能体才能设为默认"
+      },
+      "remove": {
+        "tooltip": "移除智能体"
+      },
+      "name": {
+        "placeholder": "智能体名称"
+      },
+      "systemName": {
+        "placeholder": "系统"
+      },
+      "baseUrl": {
+        "placeholder": "ANTHROPIC_BASE_URL"
+      },
+      "apiKey": {
+        "placeholder": "API key"
+      },
+      "model": {
+        "placeholder": "例如 claude-opus-4-8"
+      },
+      "builtin": {
+        "label": "内置"
+      },
+      "add": {
+        "label": "+ 添加智能体"
+      }
+    },
+    "defaultMode": {
+      "title": {
+        "label": "默认模式"
+      },
+      "hint": "新会话启动时所处的权限模式。你随时可以从会话头部切换它的模式。"
+    },
+    "devSkill": {
+      "title": {
+        "label": "开发技能"
+      },
+      "hint": "开始开发任务时,这个斜杠命令会被前置到需求文本前。留空则不添加技能前缀。",
+      "placeholder": "/your-skill (leave empty for no prefix)"
+    },
+    "rounds": {
+      "title": {
+        "label": "每阶段讨论轮数"
+      },
+      "hint": "多智能体讨论在每个工作流阶段中,组织者被迫推进前最多进行的发言轮数。值越大,讨论越深入、越长。最小值为 {min}(保存时低于此值会被上调钳制)。"
+    },
+    "speechChars": {
+      "title": {
+        "label": "讨论发言字数上限"
+      },
+      "hint": "参与者在其提示指引中看到的每轮发言字数预算。参与者被要求将回复控制在此上限内,但超长回复会被原样接受(不做硬截断)。最小值为 {min}(保存时低于此值会被上调钳制)。"
+    },
+    "displayLang": {
+      "title": {
+        "label": "显示语言"
+      },
+      "hint": "c3 网页控制台界面的语言。更改无需刷新立即生效,并会保存到服务器。与下方的语音输入语言相互独立。"
+    },
+    "voiceLang": {
+      "title": {
+        "label": "语音输入语言"
+      },
+      "hint": "当你使用消息框中的麦克风时,浏览器语音识别所监听的语言。语音输入由浏览器(Chrome/Edge)提供,可能需要网络连接。",
+      "zhCN": {
+        "label": "中文(普通话)"
+      },
+      "enUS": {
+        "label": "英语(美国)"
+      },
+      "zhTW": {
+        "label": "中文(繁体)"
+      },
+      "zhHK": {
+        "label": "粤语"
+      }
+    },
+    "consensus": {
+      "title": {
+        "label": "共识"
+      },
+      "hint1": {
+        "text": "启用后,允许/拒绝类权限提示会先交给其它 {other} 个已配置的智能体。每个智能体根据近期上下文判断该工具调用,并给出允许/拒绝的投票及理由;随后由会话自身的智能体汇总它们的意见。如果所有投票者一致同意,该提示会自动处理、无需人工介入——否则由你来决定,届时会展示每个智能体的投票和理由。任何错误、超时或无法解析的回答都计为弃权,从而把决定权保留给你。至少需要会话自身之外的一个智能体。",
+        "other": "其它"
+      },
+      "hint2": {
+        "text": "{ask}(智能体向{you}提出一个多选题)走单独的逐题路径。c3 始终向你展示一个回答面板,并把你的选择注入回智能体——这是无需终端回答它的唯一方式,因此无论此开关如何都能工作。共识部分只在它{on}时才生效:投票者回答每个问题,决策者汇总并调和含义相同的回答,于是大家一致同意的问题会被预填或自动回答,只把其余问题留给你。共识关闭时,不进行任何投票,整个面板由你自己填写。",
+        "ask": "AskUserQuestion",
+        "you": "你",
+        "on": "开"
+      },
+      "toggle": {
+        "label": "启用多智能体共识投票"
+      }
+    },
+    "display": {
+      "title": {
+        "label": "显示"
+      },
+      "showToolSessions": {
+        "label": "显示工具会话"
+      }
+    }
+  },
+  "requirement": {
+    "startDev": {
+      "confirmUnfinishedDeps": "该需求存在未完成的依赖。仍要开始开发吗?"
+    },
+    "chat": {
+      "title": {
+        "label": "需求对话"
+      }
+    },
+    "list": {
+      "title": {
+        "label": "需求"
+      },
+      "new": {
+        "label": "新需求:开启一个新的对话会话"
+      },
+      "empty": "还没有需求。在右侧与助手对话并保存它们。"
+    },
+    "filter": {
+      "all": {
+        "label": "全部"
+      },
+      "todo": {
+        "label": "待办"
+      },
+      "inProgress": {
+        "label": "进行中"
+      },
+      "done": {
+        "label": "已完成"
+      },
+      "cancelled": {
+        "label": "已取消"
+      },
+      "draft": {
+        "label": "草稿"
+      }
+    },
+    "automation": {
+      "start": {
+        "label": "▶ 自动化",
+        "tooltip": "开始自动化:按优先级和依赖关系,逐个完成标记为自动化的需求"
+      },
+      "stop": {
+        "label": "■ 停止自动化",
+        "tooltip": "停止自动化流程"
+      },
+      "error": {
+        "fallback": "错误"
+      },
+      "awaiting": "⏸ 等待授权",
+      "awaitingFor": "⏸ 等待对 \"{title}\" 的授权",
+      "workingOn": "正在处理 \"{title}\"",
+      "preparing": "准备中…",
+      "completedCount": "✅ 已完成 {count} 项",
+      "nothingToAutomate": "✅ 没有可自动化的需求"
+    },
+    "action": {
+      "refine": {
+        "label": "优化"
+      },
+      "startDev": {
+        "label": "开始开发"
+      },
+      "session": {
+        "label": "会话"
+      },
+      "markDone": {
+        "label": "标记完成"
+      }
+    },
+    "automate": {
+      "queued": {
+        "tooltip": "在自动化队列中"
+      },
+      "manual": {
+        "tooltip": "手动触发模式"
+      }
+    },
+    "meta": {
+      "created": {
+        "label": "已创建:"
+      },
+      "completed": {
+        "label": "已完成:"
+      },
+      "dependsOn": {
+        "label": "依赖:"
+      }
+    },
+    "deps": {
+      "unfinishedList": "⚠ 未完成的依赖:{list}",
+      "unfinished": {
+        "tooltip": "存在未完成的依赖"
+      }
+    }
+  },
+  "session": {
+    "fallback": {
+      "label": "一个后台会话"
+    },
+    "turn": {
+      "error": "— 错误:{error} —"
+    },
+    "team": {
+      "upgraded": "— 已升级为团队会话:团队负责人会持续运行并协调成员,直到你点击 \"End team\" —"
+    },
+    "agent": {
+      "failed": "— 智能体 \"{agentName}\" 失败:{error} —"
+    },
+    "list": {
+      "title": {
+        "label": "会话"
+      },
+      "refresh": {
+        "tooltip": "刷新会话"
+      },
+      "new": {
+        "tooltip": "新建会话"
+      },
+      "noWorkspace": "未选择工作区。",
+      "empty": "暂无会话。",
+      "toolBadge": {
+        "label": "工具"
+      },
+      "more": {
+        "label": "▾ 更多",
+        "tooltip": "显示更多会话"
+      },
+      "deleteConfirm": "删除该会话及其转录记录?此操作无法撤销。",
+      "renamePrompt": "重命名会话:"
+    },
+    "row": {
+      "rename": {
+        "tooltip": "重命名"
+      },
+      "delete": {
+        "tooltip": "删除"
+      }
+    },
+    "titleBar": {
+      "mode": {
+        "ariaLabel": "权限模式"
+      }
+    },
+    "statusBar": {
+      "error": "错误:{message}",
+      "ready": "就绪",
+      "awaiting": "等待权限",
+      "teamRunning": "团队运行中 · 等待成员",
+      "runningTool": "正在运行 {toolName}…",
+      "thinking": "思考中…",
+      "disconnected": "· 已断开,正在重连…",
+      "refresh": {
+        "tooltip": "重新同步会话状态"
+      }
+    },
+    "input": {
+      "placeholder": {
+        "noSession": "选择或创建一个会话以开始",
+        "team": "团队运行中——输入消息发送给团队负责人(随时可发)",
+        "running": "回合进行中——你的消息会被排队并合并到下一回合",
+        "listening": "正在聆听…再次点击麦克风或按 Esc 停止",
+        "ready": "输入提示词——Enter×2 或 ⌘/Ctrl+Enter 发送,/ 调出命令"
+      },
+      "voice": {
+        "tooltip": "语音输入",
+        "start": {
+          "ariaLabel": "开始语音输入"
+        },
+        "stop": {
+          "ariaLabel": "停止语音输入"
+        }
+      },
+      "stop": {
+        "label": "停止",
+        "tooltip": "停止正在进行的回合"
+      },
+      "endTeam": {
+        "label": "结束团队",
+        "tooltip": "结束团队:关闭团队负责人和所有成员"
+      },
+      "sendHint": {
+        "running": "回合进行中——你的消息会被排队",
+        "ready": "按两次 Enter,或 ⌘/Ctrl+Enter 发送"
+      },
+      "send": {
+        "label": "发送",
+        "queue": "排队"
+      }
+    },
+    "queue": {
+      "ariaLabel": "待处理队列",
+      "head": "已排队 · 合并到下一回合({count})",
+      "edit": {
+        "tooltip": "编辑:拉回输入框重新编辑",
+        "ariaLabel": "编辑"
+      },
+      "delete": {
+        "tooltip": "删除:从队列中移除",
+        "ariaLabel": "删除"
+      }
+    },
+    "task": {
+      "ariaLabel": "当前任务",
+      "moreCompleted": "+{count} 已完成"
+    },
+    "chat": {
+      "empty": "选择一个会话,或在工作区中新建一个。",
+      "toolsFallback": "工具",
+      "resultError": "(错误)"
+    }
+  },
+  "schedule": {
+    "list": {
+      "title": {
+        "label": "定时任务"
+      },
+      "new": {
+        "label": "新建定时任务"
+      },
+      "empty": "还没有定时任务。",
+      "expand": {
+        "tooltip": "展开面板"
+      },
+      "collapse": {
+        "tooltip": "收起面板"
+      },
+      "noUpcoming": "没有即将到来的运行。",
+      "type": {
+        "command": "命令",
+        "llm": "LLM"
+      },
+      "timeLeft": {
+        "dueNow": "现在到期",
+        "days": "{days} 天 {hours} 小时后",
+        "hours": "{hours} 小时 {minutes} 分钟后",
+        "minutes": "{minutes} 分钟后",
+        "lessThanMinute": "< 1 分钟"
+      },
+      "toggle": {
+        "enabled": {
+          "tooltip": "已启用——点击暂停"
+        },
+        "disabled": {
+          "tooltip": "已禁用——点击启用"
+        }
+      }
+    },
+    "meta": {
+      "id": {
+        "label": "ID"
+      },
+      "type": {
+        "label": "类型"
+      },
+      "status": {
+        "label": "状态"
+      },
+      "cron": {
+        "label": "Cron"
+      },
+      "mode": {
+        "label": "模式"
+      },
+      "created": {
+        "label": "已创建"
+      },
+      "updated": {
+        "label": "已更新"
+      },
+      "config": {
+        "label": "配置"
+      },
+      "upcoming": {
+        "label": "即将到来的运行"
+      }
+    },
+    "detail": {
+      "title": "{name} 日志",
+      "history": {
+        "label": "执行历史"
+      },
+      "duration": "耗时:{duration}",
+      "exit": "· 退出码 {code}",
+      "started": {
+        "label": "开始"
+      },
+      "finished": {
+        "label": "完成"
+      },
+      "running": "运行中…",
+      "viewSession": {
+        "label": "▸ 查看会话"
+      },
+      "hideSession": {
+        "label": "▾ 隐藏会话"
+      },
+      "loadingSession": "正在加载会话…",
+      "noSessionRecord": "本次执行没有会话记录。",
+      "role": {
+        "assistant": "助手",
+        "user": "用户",
+        "tool": "工具 · {name}",
+        "result": "结果",
+        "resultError": "结果(错误)"
+      },
+      "noHistory": "还没有执行历史。",
+      "empty": "选择一个定时任务以查看详情。"
+    },
+    "form": {
+      "newTitle": "新建定时任务",
+      "editTitle": "编辑定时任务",
+      "taskType": {
+        "label": "任务类型",
+        "locked": "任务类型创建后无法更改。"
+      },
+      "type": {
+        "command": {
+          "label": "命令"
+        },
+        "llm": {
+          "label": "LLM 提示词"
+        }
+      },
+      "command": {
+        "label": "命令",
+        "placeholder": "pnpm build && pnpm test"
+      },
+      "prompt": {
+        "label": "提示词",
+        "placeholder": "运行一次安全审计并总结发现…"
+      },
+      "preview": {
+        "label": "预览",
+        "empty": "Markdown 预览会显示在这里。"
+      },
+      "schedule": {
+        "label": "排期"
+      },
+      "frequency": {
+        "label": "频率"
+      },
+      "freq": {
+        "minutely": {
+          "label": "每 N 分钟"
+        },
+        "hourly": {
+          "label": "每 N 小时"
+        },
+        "daily": {
+          "label": "每天"
+        },
+        "weekly": {
+          "label": "每周(选择日期)"
+        }
+      },
+      "interval": {
+        "label": "间隔",
+        "minutes": "分钟",
+        "hours": "小时"
+      },
+      "time": {
+        "label": "时间",
+        "hourlyHint": "每小时的第几分钟",
+        "hint": "时 : 分(UTC)"
+      },
+      "days": {
+        "label": "日期"
+      },
+      "cron": {
+        "invalid": "无效的 cron 表达式"
+      },
+      "nextRun": {
+        "label": "下次运行:",
+        "utcHint": "(排期时间按 UTC 解释)"
+      },
+      "execIdentity": {
+        "label": "执行身份"
+      },
+      "saveChanges": {
+        "label": "保存更改"
+      },
+      "create": {
+        "label": "新建定时任务"
+      },
+      "mcpMode": {
+        "readOnly": {
+          "label": "只读",
+          "hint": "仅允许读取的工具;写操作被阻止。"
+        },
+        "sandboxed": {
+          "label": "沙箱",
+          "hint": "允许写操作,但需排队等待审批。"
+        },
+        "fullAccess": {
+          "label": "完全访问",
+          "hint": "无任何限制——请谨慎使用。"
+        }
+      },
+      "weekday": {
+        "sun": "周日",
+        "mon": "周一",
+        "tue": "周二",
+        "wed": "周三",
+        "thu": "周四",
+        "fri": "周五",
+        "sat": "周六"
+      }
+    }
+  },
+  "error": {
+    "uiLang": {
+      "saveFailed": "保存语言设置失败。已还原。"
+    }
+  },
+  "discussion": {
+    "action": {
+      "start": {
+        "label": "开始"
+      },
+      "pause": {
+        "label": "暂停"
+      },
+      "resume": {
+        "label": "继续"
+      },
+      "convert": {
+        "label": "转为需求"
+      }
+    },
+    "dispatch": {
+      "replying": "{name} 正在回复…",
+      "failed": "⚠ {name} 回复失败:{error}"
+    },
+    "composer": {
+      "speak": {
+        "placeholder": "在本次讨论中发言…",
+        "label": "发言"
+      },
+      "followUp": {
+        "placeholder": "追问以开启新一轮…"
+      },
+      "continue": {
+        "label": "继续"
+      }
+    },
+    "agenda": {
+      "label": "讨论议程",
+      "title": {
+        "label": "议程"
+      }
+    },
+    "list": {
+      "title": {
+        "label": "讨论"
+      },
+      "new": {
+        "label": "新建讨论"
+      },
+      "empty": "还没有讨论。"
+    },
+    "form": {
+      "type": {
+        "label": "类型"
+      },
+      "goal": {
+        "label": "目标",
+        "placeholder": "这次讨论要达成什么?"
+      },
+      "context": {
+        "label": "背景",
+        "placeholder": "背景材料(研究智能体会补全它)"
+      },
+      "create": {
+        "label": "新建"
+      }
+    },
+    "item": {
+      "openChat": {
+        "label": "打开对话:{title}"
+      },
+      "run": {
+        "running": {
+          "label": "运行中",
+          "tooltip": "编排运行中"
+        },
+        "paused": {
+          "label": "已暂停",
+          "tooltip": "编排已暂停"
+        }
+      }
+    },
+    "meta": {
+      "type": {
+        "label": "类型"
+      },
+      "status": {
+        "label": "状态"
+      },
+      "created": {
+        "label": "已创建"
+      },
+      "completed": {
+        "label": "已完成"
+      }
+    },
+    "consensus": {
+      "title": {
+        "label": "🤝 多智能体共识 ·"
+      },
+      "autoAnswered": {
+        "label": "逐题自动回答"
+      },
+      "disagreementManual": {
+        "label": "(意见不一致 → 手动)"
+      },
+      "abstained": {
+        "label": "已弃权"
+      },
+      "autoAllowed": {
+        "label": "自动允许"
+      },
+      "autoDenied": {
+        "label": "自动拒绝"
+      },
+      "disagreement": {
+        "label": "意见不一致"
+      }
+    }
+  }
+}

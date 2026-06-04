@@ -7,6 +7,9 @@
  * 就绪且队列非空时,由 App 合并为一条 prompt flush 出去并清空。
  */
 import type { PendingItem } from '../../lib/pending-queue'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 defineProps<{
   items: PendingItem[]
@@ -19,22 +22,22 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div v-if="items.length" class="pending-queue" aria-label="Pending queue">
-    <div class="pending-head">Queued · merged into the next turn ({{ items.length }})</div>
+  <div v-if="items.length" class="pending-queue" :aria-label="t('session.queue.ariaLabel')">
+    <div class="pending-head">{{ t('session.queue.head', { count: items.length }) }}</div>
     <div v-for="item in items" :key="item.id" class="pending-item">
       <span class="pending-text">{{ item.text }}</span>
       <button
         class="pending-act"
-        title="Edit: pull back into the input box to re-edit"
-        aria-label="Edit"
+        :title="t('session.queue.edit.tooltip')"
+        :aria-label="t('session.queue.edit.ariaLabel')"
         @click="emit('edit', item)"
       >
         ✎
       </button>
       <button
         class="pending-act"
-        title="Delete: remove from the queue"
-        aria-label="Delete"
+        :title="t('session.queue.delete.tooltip')"
+        :aria-label="t('session.queue.delete.ariaLabel')"
         @click="emit('delete', item.id)"
       >
         🗑

@@ -5,6 +5,9 @@
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 defineProps<{
   workspaces: WorkspaceInfo[]
@@ -38,18 +41,22 @@ const emit = defineEmits<{
     />
     <nav class="header-tabs" :class="{ disabled: tabsEnabled === false }">
       <button
-        v-for="t in tabs"
-        :key="t.key"
+        v-for="tab in tabs"
+        :key="tab.key"
         class="header-tab"
-        :class="{ active: t.key === activeTab }"
+        :class="{ active: tab.key === activeTab }"
         :disabled="tabsEnabled === false"
-        @click="emit('select-tab', t.key)"
+        @click="emit('select-tab', tab.key)"
       >
-        {{ t.label }}
+        {{ tab.label }}
       </button>
     </nav>
     <div class="header-right">
-      <button class="icon-btn settings-btn" title="System settings" @click="emit('open-settings')">
+      <button
+        class="icon-btn settings-btn"
+        :title="t('nav.settings.tooltip')"
+        @click="emit('open-settings')"
+      >
         ⚙
       </button>
       <span class="status" :class="status === 'open' ? 'ok' : 'err'">

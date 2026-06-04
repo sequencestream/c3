@@ -48,7 +48,11 @@ import type {
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import { applyLocale, setStoredLocale, i18n, type Locale } from './i18n'
+import { applyLocale, setStoredLocale, i18n, useTypedI18n, type Locale } from './i18n'
+import { useModeLabel } from './composables/useModeLabel'
+
+const { t } = useTypedI18n()
+const modeLabel = useModeLabel()
 
 const messages = ref<ChatMsg[]>([])
 const status = ref<'connecting' | 'open' | 'closed'>('connecting')
@@ -57,7 +61,7 @@ const status = ref<'connecting' | 'open' | 'closed'>('connecting')
 const sessionStatus = ref<Record<string, SessionStatus>>({})
 const mode = ref<PermissionMode>('default')
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
-const modeOptions = MODES.map((m) => ({ value: m, label: m }))
+const modeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
 let nextId = 1
 
 // Inferred "current task list" of the viewed session (client-only, like RunActivity;
@@ -215,12 +219,12 @@ const availableCommands = ref<SlashCommandInfo[]>([])
 // session IS the viewed session, so it shares the chat column; only the left
 // requirement list is extra.
 type TabKey = 'console' | 'requirements' | 'discussion' | 'schedules'
-const HEADER_TABS: { key: TabKey; label: string }[] = [
-  { key: 'console', label: 'Sessions' },
-  { key: 'requirements', label: 'Requirements' },
-  { key: 'discussion', label: 'Discussions' },
-  { key: 'schedules', label: 'Schedules' },
-]
+const HEADER_TABS = computed<{ key: TabKey; label: string }[]>(() => [
+  { key: 'console', label: t('nav.tab.console.label') },
+  { key: 'requirements', label: t('nav.tab.requirements.label') },
+  { key: 'discussion', label: t('nav.tab.discussion.label') },
+  { key: 'schedules', label: t('nav.tab.schedules.label') },
+])
 const activeTab = ref<TabKey>('console')
 const requirementsProject = ref<string | null>(null)
 // Per-project requirement lists (the server pushes `requirements`; we ignore
@@ -441,7 +445,7 @@ function setLocale(next: UiLang) {
   } catch {
     applyLocale(prev)
     setStoredLocale(prev)
-    showToast('Failed to save language setting. Reverted.')
+    showToast(t('error.uiLang.saveFailed'))
   }
 }
 
@@ -781,7 +785,10 @@ function handleMessage(msg: ServerToClient) {
       // input unlocks via sessionStatus (server broadcasts idle). Only surface a
       // line on error; a normal completion just frees the input.
       if (msg.reason === 'error') {
-        add({ kind: 'system', text: `— error: ${msg.error ?? 'unknown'} —` })
+        add({
+          kind: 'system',
+          text: t('session.turn.error', { error: msg.error ?? t('common.unknown.label') }),
+        })
         activity.value = { phase: 'error', message: msg.error ?? 'unknown' }
       } else {
         activity.value = { phase: 'idle' }
@@ -794,16 +801,16 @@ function handleMessage(msg: ServerToClient) {
       if (activeSession.value) {
         teamSessions.value = new Set(teamSessions.value).add(activeSession.value)
       }
-      add({
-        kind: 'system',
-        text: '— Upgraded to a team session: the team lead keeps running and coordinating teammates until you click "End team" —',
-      })
+      add({ kind: 'system', text: t('session.team.upgraded') })
       break
     case 'agent_failed':
       // The current agent hit a rate-limit/auth/connection error — the server
       // is trying the next agent in the degradation chain. Surface which agent
       // failed and why.
-      add({ kind: 'system', text: `— Agent "${msg.agentName}" failed: ${msg.error} —` })
+      add({
+        kind: 'system',
+        text: t('session.agent.failed', { agentName: msg.agentName, error: msg.error }),
+      })
       break
     case 'all_agents_failed':
       // Every agent in the degradation chain failed. The turn ends with error.
@@ -854,7 +861,7 @@ function sessionTitleById(id: string): string {
     const s = list.find((x) => x.sessionId === id)
     if (s) return s.title
   }
-  return 'A background session'
+  return t('session.fallback.label')
 }
 
 // Browser notification for a background session needing approval. Lazily asks
@@ -862,8 +869,8 @@ function sessionTitleById(id: string): string {
 function notifyAwaitingPermission(id: string) {
   if (typeof Notification === 'undefined') return
   const show = () =>
-    new Notification('c3 — permission needed', {
-      body: `${sessionTitleById(id)} is waiting for your approval.`,
+    new Notification(t('permission.notification.title'), {
+      body: t('permission.notification.body', { title: sessionTitleById(id) }),
     })
   if (Notification.permission === 'granted') show()
   else if (Notification.permission !== 'denied')
@@ -1197,11 +1204,7 @@ function refineRequirement(requirementId: string) {
 
 function startDevelopment(requirementId: string, hasUnfinishedDeps: boolean) {
   if (!requirementsProject.value) return
-  if (
-    hasUnfinishedDeps &&
-    !window.confirm('This requirement has unfinished dependencies. Start development anyway?')
-  )
-    return
+  if (hasUnfinishedDeps && !window.confirm(t('requirement.startDev.confirmUnfinishedDeps'))) return
   client?.send({
     type: 'start_development',
     projectPath: requirementsProject.value,

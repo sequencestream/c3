@@ -8,6 +8,9 @@
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{
   workspaces: WorkspaceInfo[]
@@ -54,7 +57,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function addWorkspace() {
-  const path = window.prompt('Workspace directory (absolute path):')?.trim()
+  const path = window.prompt(t('nav.workspace.add.prompt'))?.trim()
   if (path) emit('add-workspace', path)
 }
 
@@ -64,8 +67,7 @@ function selectWorkspace(path: string) {
 }
 
 function removeWorkspace(path: string) {
-  if (window.confirm(`Remove workspace from sidebar?\n${path}\n\n(Sessions on disk are kept.)`))
-    emit('remove-workspace', path)
+  if (window.confirm(t('nav.workspace.remove.confirm', { path }))) emit('remove-workspace', path)
 }
 
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, true))
@@ -75,20 +77,28 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
   <div ref="rootEl" class="ws-switcher" :class="{ open }" @keydown="onKeydown">
     <button
       class="ws-switcher-trigger"
-      :title="currentWorkspace ?? 'No workspace selected'"
+      :title="currentWorkspace ?? t('nav.workspace.trigger.empty.tooltip')"
       aria-haspopup="listbox"
       :aria-expanded="open"
       @click="toggle"
     >
       <span v-if="currentWorkspace" class="ws-switcher-name">{{ currentName }}</span>
-      <span v-else class="ws-switcher-name empty">No workspace</span>
+      <span v-else class="ws-switcher-name empty">{{
+        t('nav.workspace.trigger.empty.label')
+      }}</span>
       <span class="ws-switcher-arrow" aria-hidden="true">▾</span>
     </button>
-    <button class="icon-btn ws-switcher-add" title="Add workspace" @click="addWorkspace">+</button>
+    <button
+      class="icon-btn ws-switcher-add"
+      :title="t('nav.workspace.add.tooltip')"
+      @click="addWorkspace"
+    >
+      +
+    </button>
 
     <ul v-if="open" class="ws-switcher-panel" role="listbox">
       <li v-if="workspaces.length === 0" class="ws-switcher-empty">
-        No workspaces yet. Click + to add a directory.
+        {{ t('nav.workspace.list.empty') }}
       </li>
       <li
         v-for="w in workspaces"
@@ -108,7 +118,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
         >
         <button
           class="icon-btn ws-switcher-remove"
-          title="Remove workspace"
+          :title="t('nav.workspace.remove.tooltip')"
           @click.stop="removeWorkspace(w.path)"
         >
           ✕

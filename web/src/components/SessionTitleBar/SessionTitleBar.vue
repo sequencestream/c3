@@ -9,6 +9,9 @@
  */
 import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
 import type { PermissionMode } from '@ccc/shared/protocol'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 withDefaults(
   defineProps<{
@@ -37,7 +40,7 @@ const emit = defineEmits<{
       <BaseDropdown
         :model-value="mode"
         :options="modeOptions"
-        aria-label="Permission mode"
+        :aria-label="t('session.titleBar.mode.ariaLabel')"
         @update:model-value="emit('set-mode', $event)"
       />
     </label>

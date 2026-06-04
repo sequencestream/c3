@@ -9,6 +9,9 @@ import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
 import { useSpeechRecognition } from '../../composables/useSpeechRecognition'
 import { composerAction, mergeIntoDraft } from '../../lib/pending-queue'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{
   running: boolean
@@ -232,14 +235,14 @@ function onKey(e: KeyboardEvent) {
       v-model="input"
       :placeholder="
         !hasActiveSession
-          ? 'Select or create a session to start'
+          ? t('session.input.placeholder.noSession')
           : teamActive
-            ? 'Team running — type a message to send to the team lead (anytime)'
+            ? t('session.input.placeholder.team')
             : ordinaryRunning
-              ? 'Turn in progress — your message will be queued and merged into the next turn'
+              ? t('session.input.placeholder.running')
               : voiceState === 'listening'
-                ? 'Listening… click the mic again or press Esc to stop'
-                : 'Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands'
+                ? t('session.input.placeholder.listening')
+                : t('session.input.placeholder.ready')
       "
       :disabled="inputDisabled"
       @keydown="onKey"
@@ -249,8 +252,12 @@ function onKey(e: KeyboardEvent) {
       class="mic-btn"
       :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
       :disabled="!hasActiveSession"
-      :title="voiceState === 'error' ? voiceError : 'Voice input'"
-      :aria-label="voiceState === 'listening' ? 'Stop voice input' : 'Start voice input'"
+      :title="voiceState === 'error' ? voiceError : t('session.input.voice.tooltip')"
+      :aria-label="
+        voiceState === 'listening'
+          ? t('session.input.voice.stop.ariaLabel')
+          : t('session.input.voice.start.ariaLabel')
+      "
       :aria-pressed="voiceState === 'listening'"
       @click="toggleMic"
     >
@@ -266,30 +273,28 @@ function onKey(e: KeyboardEvent) {
     <button
       v-if="ordinaryRunning"
       class="stop-btn"
-      title="Stop the running turn"
+      :title="t('session.input.stop.tooltip')"
       @click="emit('stop')"
     >
-      Stop
+      {{ t('session.input.stop.label') }}
     </button>
     <!-- Team session: end the whole team (lead + teammates) explicitly. -->
     <button
       v-else-if="teamActive"
       class="stop-btn"
-      title="End team: shut down the team lead and all teammates"
+      :title="t('session.input.endTeam.tooltip')"
       @click="emit('stop')"
     >
-      End team
+      {{ t('session.input.endTeam.label') }}
     </button>
     <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
       <div v-if="showSendHint" class="send-hint" role="tooltip">
         {{
-          ordinaryRunning
-            ? 'Turn in progress — your message will be queued'
-            : 'Press Enter twice, or ⌘/Ctrl+Enter to send'
+          ordinaryRunning ? t('session.input.sendHint.running') : t('session.input.sendHint.ready')
         }}
       </div>
       <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
-        {{ ordinaryRunning ? 'Queue' : 'Send' }}
+        {{ ordinaryRunning ? t('session.input.send.queue') : t('session.input.send.label') }}
       </button>
     </div>
   </footer>

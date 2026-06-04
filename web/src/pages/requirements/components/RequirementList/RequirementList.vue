@@ -7,6 +7,7 @@
  */
 import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
+import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import {
   compareByCompletion,
@@ -18,6 +19,8 @@ import {
   showRunStatus,
   statusLabel,
 } from '../../../../lib/req-list-view'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{
   project: string
@@ -40,7 +43,9 @@ const emit = defineEmits<{
 // Automation orchestrator UI state derived from the pushed status.
 const autoRunning = computed(() => props.automation?.state === 'running')
 const autoError = computed(() =>
-  props.automation?.state === 'error' ? (props.automation.error ?? 'Error') : null,
+  props.automation?.state === 'error'
+    ? (props.automation.error ?? t('requirement.automation.error.fallback'))
+    : null,
 )
 // Short status line shown to the right of the automation button.
 const autoNote = computed<string>(() => {
@@ -50,13 +55,17 @@ const autoNote = computed<string>(() => {
     const cur = a.currentRequirementId
     const title = cur ? (titleById.value[cur] ?? cur) : ''
     if (a.awaitingPermission)
-      return title ? `⏸ Awaiting authorization for "${title}"` : '⏸ Awaiting authorization'
-    return title ? `Working on "${title}"` : 'Preparing…'
+      return title
+        ? t('requirement.automation.awaitingFor', { title })
+        : t('requirement.automation.awaiting')
+    return title
+      ? t('requirement.automation.workingOn', { title })
+      : t('requirement.automation.preparing')
   }
   if (a.state === 'done')
     return a.completedIds.length
-      ? `✅ Completed ${a.completedIds.length} item(s)`
-      : '✅ No requirements to automate'
+      ? t('requirement.automation.completedCount', { count: a.completedIds.length })
+      : t('requirement.automation.nothingToAutomate')
   return ''
 })
 
@@ -66,14 +75,14 @@ function toggleAutomation() {
 }
 
 // Status filter. `null` = All. Local UI state; changing it asks App to refetch.
-const FILTERS: { value: RequirementStatus | null; label: string }[] = [
-  { value: null, label: 'All' },
-  { value: 'todo', label: 'To do' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'done', label: 'Done' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'draft', label: 'Draft' },
-]
+const FILTERS = computed<{ value: RequirementStatus | null; label: string }[]>(() => [
+  { value: null, label: t('requirement.filter.all.label') },
+  { value: 'todo', label: t('requirement.filter.todo.label') },
+  { value: 'in_progress', label: t('requirement.filter.inProgress.label') },
+  { value: 'done', label: t('requirement.filter.done.label') },
+  { value: 'cancelled', label: t('requirement.filter.cancelled.label') },
+  { value: 'draft', label: t('requirement.filter.draft.label') },
+])
 const filter = ref<RequirementStatus | null>(null)
 
 function setFilter(value: RequirementStatus | null) {
@@ -149,7 +158,7 @@ function datePrefix(r: Requirement): string {
         >
           {{ toggleLabel.icon }}
         </button>
-        <span class="req-list-title">Requirements</span>
+        <span class="req-list-title">{{ t('requirement.list.title.label') }}</span>
       </div>
       <div class="req-head-right">
         <button
@@ -157,12 +166,16 @@ function datePrefix(r: Requirement): string {
           :class="{ running: autoRunning, error: !!autoError }"
           :title="
             autoRunning
-              ? 'Stop the automation process'
-              : 'Start automation: complete the requirements marked for automation one by one, by priority and dependencies'
+              ? t('requirement.automation.stop.tooltip')
+              : t('requirement.automation.start.tooltip')
           "
           @click="toggleAutomation"
         >
-          {{ autoRunning ? '■ Stop automation' : '▶ Automation' }}
+          {{
+            autoRunning
+              ? t('requirement.automation.stop.label')
+              : t('requirement.automation.start.label')
+          }}
         </button>
         <select
           class="req-filter"
@@ -176,8 +189,8 @@ function datePrefix(r: Requirement): string {
         <button
           type="button"
           class="req-new-btn"
-          aria-label="New requirement: start a new chat session"
-          title="New requirement: start a new chat session"
+          :aria-label="t('requirement.list.new.label')"
+          :title="t('requirement.list.new.label')"
           @click="emit('new-requirement')"
         >
           +
@@ -188,7 +201,7 @@ function datePrefix(r: Requirement): string {
     <div v-else-if="autoNote" class="auto-status">{{ autoNote }}</div>
     <div class="req-items">
       <p v-if="requirements.length === 0" class="req-empty">
-        No requirements yet. Chat with the assistant on the right and save them.
+        {{ t('requirement.list.empty') }}
       </p>
       <div v-for="r in displayRequirements" :key="r.id" class="req-item" :class="r.status">
         <div
@@ -220,37 +233,41 @@ function datePrefix(r: Requirement): string {
           </div>
           <div v-if="rowVis.showActions" class="req-actions" @click.stop>
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
-              Refine
+              {{ t('requirement.action.refine.label') }}
             </button>
             <button v-if="r.status === 'todo'" class="req-btn primary" @click="startDev(r)">
-              Start dev
+              {{ t('requirement.action.startDev.label') }}
             </button>
             <button
               v-if="r.lastDevSessionId"
               class="req-btn"
               @click="emit('open-dev', r.lastDevSessionId as string)"
             >
-              Session
+              {{ t('requirement.action.session.label') }}
             </button>
             <button
               v-if="r.status !== 'done' && r.status !== 'cancelled'"
               class="req-btn"
               @click="emit('set-status', r.id, 'done')"
             >
-              Mark done
+              {{ t('requirement.action.markDone.label') }}
             </button>
             <button
               v-if="r.status !== 'done' && r.status !== 'cancelled'"
               class="req-btn"
               @click="emit('set-status', r.id, 'cancelled')"
             >
-              Cancel
+              {{ t('common.action.cancel.label') }}
             </button>
             <button
               type="button"
               class="req-automate"
               :class="{ active: r.automate }"
-              :title="r.automate ? 'in auto queue' : 'manual trigger mode'"
+              :title="
+                r.automate
+                  ? t('requirement.automate.queued.tooltip')
+                  : t('requirement.automate.manual.tooltip')
+              "
               :aria-pressed="r.automate"
               @click.stop="emit('set-automate', r.id, !r.automate)"
             >
@@ -262,26 +279,34 @@ function datePrefix(r: Requirement): string {
           <MarkdownText :text="r.content" markdown />
         </div>
         <div v-if="r.id === expandedId" class="req-meta">
-          <span class="req-meta-item">Created: {{ formatDate(r.createdAt) }}</span>
+          <span class="req-meta-item"
+            >{{ t('requirement.meta.created.label') }} {{ formatDate(r.createdAt) }}</span
+          >
           <span v-if="r.completedAt" class="req-meta-item"
-            >Completed: {{ formatDate(r.completedAt) }}</span
+            >{{ t('requirement.meta.completed.label') }} {{ formatDate(r.completedAt) }}</span
           >
           <span v-if="formatDependsOn(r, props.requirements).length" class="req-meta-item">
-            Depends on:
+            {{ t('requirement.meta.dependsOn.label') }}
             <span
               v-for="(dep, di) in formatDependsOn(r, props.requirements)"
               :key="dep.id"
               :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
             >
-              {{ di > 0 ? ', ' : '' }}{{ dep.title }}{{ dep.done ? '' : ' ⚠' }}
+              <span v-if="di > 0">, </span>{{ dep.title }}<span v-if="!dep.done"> ⚠</span>
             </span>
           </span>
         </div>
-        <div v-if="unfinishedDeps(r).length" class="req-deps" title="Has unfinished dependencies">
-          ⚠ Unfinished dependencies:{{
-            unfinishedDeps(r)
-              .map((d) => titleById[d.id] ?? d.id)
-              .join(', ')
+        <div
+          v-if="unfinishedDeps(r).length"
+          class="req-deps"
+          :title="t('requirement.deps.unfinished.tooltip')"
+        >
+          {{
+            t('requirement.deps.unfinishedList', {
+              list: unfinishedDeps(r)
+                .map((d) => titleById[d.id] ?? d.id)
+                .join(', '),
+            })
           }}
         </div>
       </div>

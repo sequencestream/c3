@@ -24,6 +24,9 @@ import type {
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{
   open: boolean
@@ -41,21 +44,33 @@ const emit = defineEmits<{
 
 const isEdit = computed(() => props.schedule !== null)
 
-const MCP_MODES: { value: McpMode; label: string; hint: string }[] = [
-  { value: 'read-only', label: 'Read-only', hint: 'Tools that only read; writes are blocked.' },
-  { value: 'sandboxed', label: 'Sandboxed', hint: 'Writes allowed, but queued for approval.' },
-  { value: 'full-access', label: 'Full access', hint: 'No restrictions — use with care.' },
-]
+const MCP_MODES = computed<{ value: McpMode; label: string; hint: string }[]>(() => [
+  {
+    value: 'read-only',
+    label: t('schedule.form.mcpMode.readOnly.label'),
+    hint: t('schedule.form.mcpMode.readOnly.hint'),
+  },
+  {
+    value: 'sandboxed',
+    label: t('schedule.form.mcpMode.sandboxed.label'),
+    hint: t('schedule.form.mcpMode.sandboxed.hint'),
+  },
+  {
+    value: 'full-access',
+    label: t('schedule.form.mcpMode.fullAccess.label'),
+    hint: t('schedule.form.mcpMode.fullAccess.hint'),
+  },
+])
 
-const WEEKDAYS = [
-  { num: 0, label: 'Sun' },
-  { num: 1, label: 'Mon' },
-  { num: 2, label: 'Tue' },
-  { num: 3, label: 'Wed' },
-  { num: 4, label: 'Thu' },
-  { num: 5, label: 'Fri' },
-  { num: 6, label: 'Sat' },
-]
+const WEEKDAYS = computed<{ num: number; label: string }[]>(() => [
+  { num: 0, label: t('schedule.form.weekday.sun') },
+  { num: 1, label: t('schedule.form.weekday.mon') },
+  { num: 2, label: t('schedule.form.weekday.tue') },
+  { num: 3, label: t('schedule.form.weekday.wed') },
+  { num: 4, label: t('schedule.form.weekday.thu') },
+  { num: 5, label: t('schedule.form.weekday.fri') },
+  { num: 6, label: t('schedule.form.weekday.sat') },
+])
 
 // ---- Form draft ----------------------------------------------------------
 const type = ref<ScheduleType>('command')
@@ -188,13 +203,19 @@ function save(): void {
   <div v-if="open" class="sf-overlay" @click.self="emit('close')">
     <div class="sf-modal" role="dialog" aria-modal="true">
       <div class="sf-head">
-        <h2>{{ isEdit ? 'Edit Schedule' : 'New Schedule' }}</h2>
-        <button class="sf-icon-btn" title="Close" @click="emit('close')">✕</button>
+        <h2>{{ isEdit ? t('schedule.form.editTitle') : t('schedule.form.newTitle') }}</h2>
+        <button
+          class="sf-icon-btn"
+          :title="t('common.action.close.tooltip')"
+          @click="emit('close')"
+        >
+          ✕
+        </button>
       </div>
 
       <div class="sf-body">
         <div class="sf-field">
-          <span class="sf-label">Task type</span>
+          <span class="sf-label">{{ t('schedule.form.taskType.label') }}</span>
           <div class="sf-segmented">
             <button
               type="button"
@@ -203,7 +224,7 @@ function save(): void {
               :disabled="isEdit"
               @click="type = 'command'"
             >
-              Command
+              {{ t('schedule.form.type.command.label') }}
             </button>
             <button
               type="button"
@@ -212,59 +233,59 @@ function save(): void {
               :disabled="isEdit"
               @click="type = 'llm'"
             >
-              LLM prompt
+              {{ t('schedule.form.type.llm.label') }}
             </button>
           </div>
-          <span v-if="isEdit" class="sf-hint">Task type cannot be changed after creation.</span>
+          <span v-if="isEdit" class="sf-hint">{{ t('schedule.form.taskType.locked') }}</span>
         </div>
 
         <!-- Command body -->
         <label v-if="type === 'command'" class="sf-field">
-          <span class="sf-label">Command</span>
+          <span class="sf-label">{{ t('schedule.form.command.label') }}</span>
           <textarea
             v-model="command"
             class="sf-textarea sf-mono"
             rows="2"
-            placeholder="pnpm build && pnpm test"
+            :placeholder="t('schedule.form.command.placeholder')"
           />
         </label>
 
         <!-- LLM prompt with live markdown preview -->
         <div v-else class="sf-field">
-          <span class="sf-label">Prompt</span>
+          <span class="sf-label">{{ t('schedule.form.prompt.label') }}</span>
           <div class="sf-prompt-grid">
             <textarea
               v-model="prompt"
               class="sf-textarea"
               rows="6"
-              placeholder="Run a security audit and summarize findings…"
+              :placeholder="t('schedule.form.prompt.placeholder')"
             />
             <div class="sf-prompt-preview">
-              <span class="sf-preview-tag">Preview</span>
+              <span class="sf-preview-tag">{{ t('schedule.form.preview.label') }}</span>
               <MarkdownText v-if="prompt.trim()" :text="prompt" kind="assistant" />
-              <p v-else class="sf-preview-empty">Markdown preview appears here.</p>
+              <p v-else class="sf-preview-empty">{{ t('schedule.form.preview.empty') }}</p>
             </div>
           </div>
         </div>
 
         <!-- Schedule (cron) builder -->
         <div class="sf-field">
-          <span class="sf-label">Schedule</span>
+          <span class="sf-label">{{ t('schedule.form.schedule.label') }}</span>
 
           <!-- Advanced segmented builder -->
           <div class="sf-tabpane sf-advanced">
             <label class="sf-adv-row">
-              <span class="sf-adv-label">Frequency</span>
+              <span class="sf-adv-label">{{ t('schedule.form.frequency.label') }}</span>
               <select v-model="advFreq" class="sf-input sf-adv-control">
-                <option value="minutely">Every N minutes</option>
-                <option value="hourly">Every N hours</option>
-                <option value="daily">Every day</option>
-                <option value="weekly">Weekly (pick days)</option>
+                <option value="minutely">{{ t('schedule.form.freq.minutely.label') }}</option>
+                <option value="hourly">{{ t('schedule.form.freq.hourly.label') }}</option>
+                <option value="daily">{{ t('schedule.form.freq.daily.label') }}</option>
+                <option value="weekly">{{ t('schedule.form.freq.weekly.label') }}</option>
               </select>
             </label>
 
             <label v-if="advFreq === 'minutely' || advFreq === 'hourly'" class="sf-adv-row">
-              <span class="sf-adv-label">Interval</span>
+              <span class="sf-adv-label">{{ t('schedule.form.interval.label') }}</span>
               <input
                 v-model.number="advInterval"
                 type="number"
@@ -272,14 +293,18 @@ function save(): void {
                 :max="advFreq === 'minutely' ? 59 : 23"
                 class="sf-input sf-adv-control"
               />
-              <span class="sf-hint">{{ advFreq === 'minutely' ? 'minutes' : 'hours' }}</span>
+              <span class="sf-hint">{{
+                advFreq === 'minutely'
+                  ? t('schedule.form.interval.minutes')
+                  : t('schedule.form.interval.hours')
+              }}</span>
             </label>
 
             <div
               v-if="advFreq === 'hourly' || advFreq === 'daily' || advFreq === 'weekly'"
               class="sf-adv-row"
             >
-              <span class="sf-adv-label">Time</span>
+              <span class="sf-adv-label">{{ t('schedule.form.time.label') }}</span>
               <template v-if="advFreq !== 'hourly'">
                 <input
                   v-model.number="advHour"
@@ -298,12 +323,14 @@ function save(): void {
                 class="sf-input sf-adv-time"
               />
               <span class="sf-hint">{{
-                advFreq === 'hourly' ? 'minute past each hour' : 'hour : minute (UTC)'
+                advFreq === 'hourly'
+                  ? t('schedule.form.time.hourlyHint')
+                  : t('schedule.form.time.hint')
               }}</span>
             </div>
 
             <div v-if="advFreq === 'weekly'" class="sf-adv-row">
-              <span class="sf-adv-label">Days</span>
+              <span class="sf-adv-label">{{ t('schedule.form.days.label') }}</span>
               <div class="sf-days">
                 <button
                   v-for="d in WEEKDAYS"
@@ -323,17 +350,17 @@ function save(): void {
           <div class="sf-preview-bar">
             <code class="sf-cron" :class="{ invalid: !cronValid }">{{ cronExpression }}</code>
             <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
-            <span v-else class="sf-warn">Invalid cron expression</span>
+            <span v-else class="sf-warn">{{ t('schedule.form.cron.invalid') }}</span>
           </div>
           <p v-if="nextRunPreview" class="sf-nextrun">
-            Next run: <strong>{{ nextRunPreview }}</strong>
-            <span class="sf-hint"> (schedule times are interpreted as UTC)</span>
+            {{ t('schedule.form.nextRun.label') }} <strong>{{ nextRunPreview }}</strong>
+            <span class="sf-hint"> {{ t('schedule.form.nextRun.utcHint') }}</span>
           </p>
         </div>
 
         <!-- Execution identity -->
         <div class="sf-field">
-          <span class="sf-label">Execution identity</span>
+          <span class="sf-label">{{ t('schedule.form.execIdentity.label') }}</span>
           <div class="sf-segmented">
             <button
               v-for="m in MCP_MODES"
@@ -351,9 +378,11 @@ function save(): void {
       </div>
 
       <div class="sf-foot">
-        <button class="sf-btn ghost" @click="emit('close')">Cancel</button>
+        <button class="sf-btn ghost" @click="emit('close')">
+          {{ t('common.action.cancel.label') }}
+        </button>
         <button class="sf-btn primary" :disabled="!canSave" @click="save">
-          {{ isEdit ? 'Save changes' : 'Create schedule' }}
+          {{ isEdit ? t('schedule.form.saveChanges.label') : t('schedule.form.create.label') }}
         </button>
       </div>
     </div>

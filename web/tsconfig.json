@@ -6,7 +6,8 @@
     "jsx": "preserve",
     "noEmit": true,
     "paths": {
-      "@ccc/shared/*": ["../shared/src/*"]
+      "@ccc/shared/*": ["../shared/src/*"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*", "../shared/src/**/*", "src/**/*.vue"]

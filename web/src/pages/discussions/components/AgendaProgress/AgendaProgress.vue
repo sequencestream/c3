@@ -12,6 +12,9 @@
 import { computed } from 'vue'
 import type { Discussion } from '@ccc/shared/protocol'
 import { agendaProgressView } from '../../../../lib/discussion-view'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{ discussion: Discussion | null }>()
 
@@ -19,9 +22,9 @@ const view = computed(() => agendaProgressView(props.discussion))
 </script>
 
 <template>
-  <div v-if="view.visible" class="agenda-panel" aria-label="Discussion agenda">
+  <div v-if="view.visible" class="agenda-panel" :aria-label="t('discussion.agenda.label')">
     <div class="agenda-head">
-      <span class="agenda-title">Agenda</span>
+      <span class="agenda-title">{{ t('discussion.agenda.title.label') }}</span>
       <span class="agenda-count">{{ view.completed }}/{{ view.total }} ({{ view.percent }}%)</span>
     </div>
     <div class="agenda-bar" role="progressbar" :aria-valuenow="view.percent">

@@ -18,6 +18,9 @@ import {
 } from '../../../../lib/discussion-view'
 import type { DiscussionTabKind } from '../../../../lib/discussion-view'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -149,13 +152,13 @@ function togglePanel(): void {
         >
           {{ toggleLabel.icon }}
         </button>
-        <span class="disc-list-title">Discussions</span>
+        <span class="disc-list-title">{{ t('discussion.list.title.label') }}</span>
       </div>
       <button
         type="button"
         class="disc-new-btn"
-        aria-label="New discussion"
-        title="New discussion"
+        :aria-label="t('discussion.list.new.label')"
+        :title="t('discussion.list.new.label')"
         @click="showForm ? closeForm() : openForm()"
       >
         +
@@ -163,38 +166,42 @@ function togglePanel(): void {
     </div>
     <form v-if="showForm" class="disc-form" @submit.prevent="submitForm">
       <label class="disc-field">
-        <span class="disc-field-label">Type</span>
+        <span class="disc-field-label">{{ t('discussion.form.type.label') }}</span>
         <select v-model="formType" class="disc-input">
-          <option v-for="t in TYPES" :key="t.id" :value="t.id">{{ t.label }}</option>
+          <option v-for="ty in TYPES" :key="ty.id" :value="ty.id">{{ ty.label }}</option>
         </select>
       </label>
       <label class="disc-field">
-        <span class="disc-field-label">Goal</span>
+        <span class="disc-field-label">{{ t('discussion.form.goal.label') }}</span>
         <textarea
           v-model="formGoal"
           class="disc-input disc-textarea"
           rows="2"
-          placeholder="What should this discussion achieve?"
+          :placeholder="t('discussion.form.goal.placeholder')"
           @input="autoGrow"
         />
       </label>
       <label class="disc-field">
-        <span class="disc-field-label">Context</span>
+        <span class="disc-field-label">{{ t('discussion.form.context.label') }}</span>
         <textarea
           v-model="formContext"
           class="disc-input disc-textarea"
           rows="3"
-          placeholder="Background material (a research agent will complete it)"
+          :placeholder="t('discussion.form.context.placeholder')"
           @input="autoGrow"
         />
       </label>
       <div class="disc-form-actions">
-        <button type="button" class="disc-btn" @click="closeForm">Cancel</button>
-        <button type="submit" class="disc-btn primary" :disabled="!formGoal.trim()">Create</button>
+        <button type="button" class="disc-btn" @click="closeForm">
+          {{ t('common.action.cancel.label') }}
+        </button>
+        <button type="submit" class="disc-btn primary" :disabled="!formGoal.trim()">
+          {{ t('discussion.form.create.label') }}
+        </button>
       </div>
     </form>
     <div class="disc-items">
-      <p v-if="discussions.length === 0" class="disc-empty">No discussions yet.</p>
+      <p v-if="discussions.length === 0" class="disc-empty">{{ t('discussion.list.empty') }}</p>
       <div
         v-for="d in discussions"
         :key="d.id"
@@ -208,7 +215,7 @@ function togglePanel(): void {
           role="button"
           tabindex="0"
           :aria-expanded="d.id === expandedId"
-          :aria-label="`Open chat: ${d.title}`"
+          :aria-label="t('discussion.item.openChat.label', { title: d.title })"
           @click="openRow(d.id)"
           @keydown.enter.prevent="openRow(d.id)"
           @keydown.space.prevent="openRow(d.id)"
@@ -223,11 +230,18 @@ function togglePanel(): void {
               v-if="liveState(d)"
               class="disc-run"
               :class="liveState(d)"
-              :title="liveState(d) === 'running' ? 'Orchestration running' : 'Orchestration paused'"
-              data-i18n-key=""
+              :title="
+                liveState(d) === 'running'
+                  ? t('discussion.item.run.running.tooltip')
+                  : t('discussion.item.run.paused.tooltip')
+              "
             >
               <span class="disc-run-dot" aria-hidden="true" />
-              {{ liveState(d) === 'running' ? 'Running' : 'Paused' }}
+              {{
+                liveState(d) === 'running'
+                  ? t('discussion.item.run.running.label')
+                  : t('discussion.item.run.paused.label')
+              }}
             </span>
             <span class="disc-status" :class="d.status" data-i18n-key="">{{
               statusLabel(d.status)
@@ -237,45 +251,45 @@ function togglePanel(): void {
         <div v-if="d.id === expandedId" class="disc-detail">
           <div class="disc-tabs" role="tablist">
             <button
-              v-for="t in expandedTabs"
-              :key="t.kind"
+              v-for="tab in expandedTabs"
+              :key="tab.kind"
               type="button"
               role="tab"
               class="disc-tab"
-              :data-testid="`disc-tab-${t.kind}`"
+              :data-testid="`disc-tab-${tab.kind}`"
               data-i18n-key=""
-              :class="{ active: t.kind === activeTab }"
-              :aria-selected="t.kind === activeTab"
-              @click="activeTab = t.kind"
+              :class="{ active: tab.kind === activeTab }"
+              :aria-selected="tab.kind === activeTab"
+              @click="activeTab = tab.kind"
             >
-              {{ t.label }}
+              {{ tab.label }}
             </button>
           </div>
           <div class="disc-tab-body">
             <!-- Goal / Context / Conclusion:markdown 渲染(html:false → DOMPurify) -->
-            <template v-for="t in expandedTabs" :key="t.kind">
+            <template v-for="tab in expandedTabs" :key="tab.kind">
               <MarkdownText
-                v-if="t.kind === activeTab && t.body !== null"
-                :text="t.body"
+                v-if="tab.kind === activeTab && tab.body !== null"
+                :text="tab.body"
                 :markdown="true"
               />
             </template>
             <!-- Details:结构化元信息,非 markdown -->
             <dl v-if="activeTab === 'details'" class="disc-meta-list">
               <div class="disc-meta-row" data-testid="disc-meta-type">
-                <dt data-i18n-key="">Type</dt>
+                <dt>{{ t('discussion.meta.type.label') }}</dt>
                 <dd>{{ typeLabel(d) }}</dd>
               </div>
               <div class="disc-meta-row" data-testid="disc-meta-status">
-                <dt data-i18n-key="">Status</dt>
+                <dt>{{ t('discussion.meta.status.label') }}</dt>
                 <dd>{{ statusLabel(d.status) }}</dd>
               </div>
               <div class="disc-meta-row" data-testid="disc-meta-created">
-                <dt data-i18n-key="">Created</dt>
+                <dt>{{ t('discussion.meta.created.label') }}</dt>
                 <dd>{{ formatDate(d.createdAt) }}</dd>
               </div>
               <div v-if="d.completedAt" class="disc-meta-row" data-testid="disc-meta-completed">
-                <dt data-i18n-key="">Completed</dt>
+                <dt>{{ t('discussion.meta.completed.label') }}</dt>
                 <dd>{{ formatDate(d.completedAt) }}</dd>
               </div>
             </dl>

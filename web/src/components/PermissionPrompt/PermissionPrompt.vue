@@ -16,8 +16,16 @@ import {
   type AskDraftSlot,
 } from '../../lib/ask'
 import { fmt, oneLine } from '../../lib/format'
+import { useTypedI18n } from '@/i18n'
 import type { PermissionMsg } from '../../lib/chat-types'
 import type { ProposedRequirement } from '@ccc/shared/protocol'
+
+const { t } = useTypedI18n()
+
+// Fixed tool identifiers shown verbatim in <code> tags (do-not-translate; bound
+// via a const so `no-raw-text` doesn't flag them as hard-coded copy).
+const ASK_TOOL_LABEL = 'AskUserQuestion'
+const SAVE_TOOL_LABEL = 'save_requirements'
 
 // `actionable` is true only for the live, still-pending permission the user can
 // answer. When false and undecided, this prompt is a history record replayed
@@ -57,12 +65,12 @@ const isStatic = computed(() => props.m.decision === null && !props.actionable)
 /** The one-line label for a static history record, per tool type. */
 const historyLine = computed<string>(() => {
   if (props.m.toolName === 'AskUserQuestion') {
-    return `🙋 Asked to answer ${askQuestionsOf(props.m.input).length} question(s) · AskUserQuestion`
+    return t('permission.history.askQuestion', { count: askQuestionsOf(props.m.input).length })
   }
   if (props.m.toolName === SAVE_REQUIREMENTS_TOOL) {
-    return `💾 Asked to save ${proposedRequirements.value.length} requirement(s)`
+    return t('permission.history.saveRequirements', { count: proposedRequirements.value.length })
   }
-  return `🔧 Asked to use tool ${props.m.toolName}`
+  return t('permission.history.useTool', { toolName: props.m.toolName })
 })
 
 const emit = defineEmits<{
@@ -154,8 +162,10 @@ function submitAsk() {
   <!-- AskUserQuestion: per-question answer panel -->
   <template v-else-if="m.toolName === 'AskUserQuestion'">
     <div class="label">
-      🙋 Answer question · <code>AskUserQuestion</code>
-      <span v-if="m.consensus" class="consensus-badge split">Multi-agent suggestion</span>
+      {{ t('permission.ask.answerQuestion.label') }} <code>{{ ASK_TOOL_LABEL }}</code>
+      <span v-if="m.consensus" class="consensus-badge split">{{
+        t('permission.ask.multiAgentSuggestion.label')
+      }}</span>
     </div>
     <div v-if="m.consensus" class="consensus-summary ask-summary">🤝 {{ m.consensus.summary }}</div>
     <div class="ask-panel">
@@ -211,8 +221,8 @@ function submitAsk() {
               @change="toggleAskCustomOption(q)"
             />
             <span class="ask-option-body">
-              <span class="ask-option-label">✏️ Custom reply</span>
-              <span class="ask-option-desc">Type your own answer</span>
+              <span class="ask-option-label">{{ t('permission.ask.customReply.label') }}</span>
+              <span class="ask-option-desc">{{ t('permission.ask.customReply.hint') }}</span>
             </span>
             <span class="ask-agents">
               <span
@@ -237,22 +247,30 @@ function submitAsk() {
           v-if="actionable && isCustomChosen(q.index)"
           class="ask-custom"
           type="text"
-          placeholder="Type a custom reply…"
+          :placeholder="t('permission.ask.custom.placeholder')"
           :value="askCustomOf(q.index)"
           @input="setAskCustom(q.index, ($event.target as HTMLInputElement).value)"
         />
       </div>
     </div>
     <div v-if="actionable" class="actions">
-      <button class="deny" @click="respond('deny')">Deny</button>
-      <button :disabled="!isAskAnswered()" @click="submitAsk()">Submit answers</button>
+      <button class="deny" @click="respond('deny')">{{ t('common.action.deny.label') }}</button>
+      <button :disabled="!isAskAnswered()" @click="submitAsk()">
+        {{ t('permission.ask.submit.label') }}
+      </button>
     </div>
-    <div v-else class="decided">— {{ m.decision === 'allow' ? 'answered' : 'denied' }} —</div>
+    <div v-else class="decided">
+      —
+      {{ m.decision === 'allow' ? t('permission.status.answered') : t('permission.status.denied') }}
+      —
+    </div>
   </template>
 
   <!-- save_requirements: render the proposed requirements as cards -->
   <template v-else-if="m.toolName === SAVE_REQUIREMENTS_TOOL">
-    <div class="label">💾 Save requirements · <code>save_requirements</code></div>
+    <div class="label">
+      {{ t('permission.save.label') }} <code>{{ SAVE_TOOL_LABEL }}</code>
+    </div>
     <div class="req-confirm">
       <div v-for="(r, i) in proposedRequirements" :key="i" class="req-confirm-card">
         <div class="req-confirm-head">
@@ -261,31 +279,37 @@ function submitAsk() {
         </div>
         <div class="req-confirm-content">{{ r.content }}</div>
         <div v-if="r.dependsOn && r.dependsOn.length" class="req-confirm-deps">
-          Depends on:{{ r.dependsOn.join(', ') }}
+          {{ t('permission.save.dependsOn') }}{{ r.dependsOn.join(', ') }}
         </div>
         <div v-if="batchDepLabels(r).length" class="req-confirm-deps">
-          Depends on (this batch):{{ batchDepLabels(r).join(', ') }}
+          {{ t('permission.save.dependsOnBatch') }}{{ batchDepLabels(r).join(', ') }}
         </div>
       </div>
     </div>
     <div v-if="actionable" class="actions">
-      <button class="deny" @click="respond('deny')">Cancel</button>
-      <button @click="respond('allow')">Save</button>
+      <button class="deny" @click="respond('deny')">{{ t('common.action.cancel.label') }}</button>
+      <button @click="respond('allow')">{{ t('common.action.save.label') }}</button>
     </div>
-    <div v-else class="decided">— {{ m.decision === 'allow' ? 'Saved' : 'Cancelled' }} —</div>
+    <div v-else class="decided">
+      —
+      {{ m.decision === 'allow' ? t('permission.status.saved') : t('permission.status.cancelled') }}
+      —
+    </div>
   </template>
 
   <!-- Every other tool: allow / deny -->
   <template v-else>
     <div class="label">
-      Allow tool: <code>{{ m.toolName }}</code> ?
+      {{ t('permission.tool.allow.label') }} <code>{{ m.toolName }}</code> ?
     </div>
     <pre v-if="expandedInput" class="tool-body">{{ fmt(m.input) }}</pre>
     <div v-else class="tool-oneline" @click="expandedInput = true">
       {{ oneLine(fmt(m.input)) }}
     </div>
     <div v-if="m.consensus && m.consensus.kind === 'tool'" class="consensus consensus-split">
-      <div class="consensus-summary">🤝 Agents disagree: {{ m.consensus.summary }}</div>
+      <div class="consensus-summary">
+        {{ t('permission.consensus.disagree.label') }} {{ m.consensus.summary }}
+      </div>
       <ul class="consensus-votes">
         <li v-for="v in m.consensus.votes" :key="v.agentId">
           <span class="vote-name">{{ v.agentName }}</span>
@@ -295,9 +319,13 @@ function submitAsk() {
       </ul>
     </div>
     <div v-if="actionable" class="actions">
-      <button class="deny" @click="respond('deny')">Deny</button>
-      <button @click="respond('allow')">Allow</button>
+      <button class="deny" @click="respond('deny')">{{ t('common.action.deny.label') }}</button>
+      <button @click="respond('allow')">{{ t('common.action.allow.label') }}</button>
     </div>
-    <div v-else class="decided">— {{ m.decision === 'allow' ? 'allowed' : 'denied' }} —</div>
+    <div v-else class="decided">
+      —
+      {{ m.decision === 'allow' ? t('permission.status.allowed') : t('permission.status.denied') }}
+      —
+    </div>
   </template>
 </template>

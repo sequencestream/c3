@@ -7,6 +7,7 @@
  * 经 props 注入,动作经 emit 上抛。composer ref 经 defineExpose 转发。
  */
 import { ref } from 'vue'
+import { useTypedI18n } from '@/i18n'
 import RequirementList from './components/RequirementList/RequirementList.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
@@ -65,6 +66,8 @@ const emit = defineEmits<{
   'list-commands': []
 }>()
 
+const { t } = useTypedI18n()
+
 const composer = ref<InstanceType<typeof MessageInput> | null>(null)
 defineExpose({
   prefill: (text: string) => composer.value?.prefill(text),
@@ -88,7 +91,10 @@ defineExpose({
   />
 
   <div class="content">
-    <SessionTitleBar :active-title="activeTitle || 'Requirement chat'" :show-mode="false" />
+    <SessionTitleBar
+      :active-title="activeTitle || t('requirement.chat.title.label')"
+      :show-mode="false"
+    />
     <ChatMessages
       :messages="messages"
       :has-active-session="hasActiveSession"

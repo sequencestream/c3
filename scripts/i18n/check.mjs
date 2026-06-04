@@ -119,11 +119,22 @@ export function scanCodeKeys(codeFiles) {
   // `t(` / `$t(` / `.t(` not preceded by an identifier char (so `count(`, `await(` don't match).
   const litRe = /(?<![\w$])\$?t\s*\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
   const callRe = /(?<![\w$])\$?t\s*\(\s*([^\s)])/g
+  // `<i18n-t keypath="key">` (and `:keypath="'key'"`) — the Translation component's
+  // static key. Matched as a literal usage so its key isn't flagged unused.
+  const keypathRe = /\bkeypath\s*=\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
   for (const { file, content } of codeFiles) {
     let m
     litRe.lastIndex = 0
     while ((m = litRe.exec(content)))
       literal.push({ file, key: m[2], line: lineAt(content, m.index) })
+    keypathRe.lastIndex = 0
+    while ((m = keypathRe.exec(content))) {
+      let key = m[2]
+      // `:keypath="'key'"` — strip the inner quotes of the bound string literal.
+      const inner = key.match(/^\s*(['"])(.*)\1\s*$/)
+      if (inner) key = inner[2]
+      literal.push({ file, key, line: lineAt(content, m.index) })
+    }
     callRe.lastIndex = 0
     while ((m = callRe.exec(content))) {
       const first = m[1]

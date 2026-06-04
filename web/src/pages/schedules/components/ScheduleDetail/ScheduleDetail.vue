@@ -8,6 +8,9 @@
  */
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule, ScheduleExecutionLog, TranscriptItem } from '@ccc/shared/protocol'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -40,7 +43,7 @@ const detailTitle = computed(() => {
     cfg && typeof cfg === 'object' && typeof (cfg as Record<string, unknown>).name === 'string'
       ? ((cfg as Record<string, unknown>).name as string).trim()
       : ''
-  return `${name || s.cronExpression} Logs`
+  return t('schedule.detail.title', { name: name || s.cronExpression })
 })
 
 // executionIds whose session view is currently expanded.
@@ -119,25 +122,27 @@ function logStatus(log: ScheduleExecutionLog): string {
 
       <!-- Execution history: most-recent first (server orders by started_at DESC). -->
       <section class="sched-section sched-section--first">
-        <h3 class="sched-section-title">Execution history</h3>
+        <h3 class="sched-section-title">{{ t('schedule.detail.history.label') }}</h3>
         <ul v-if="logs.length" class="sched-log-list">
           <li v-for="log in logs" :key="log.id" class="sched-log">
             <div class="sched-log-head">
               <span class="log-status-badge" :class="logStatus(log)">{{ logStatus(log) }}</span>
               <span class="sched-log-time">{{ fmtDate(log.startedAt) }}</span>
               <span class="sched-log-meta">
-                <span>Duration: {{ fmtDuration(log) }}</span>
-                <span v-if="log.exitCode !== null">· Exit {{ log.exitCode }}</span>
+                <span>{{ t('schedule.detail.duration', { duration: fmtDuration(log) }) }}</span>
+                <span v-if="log.exitCode !== null">{{
+                  t('schedule.detail.exit', { code: log.exitCode })
+                }}</span>
               </span>
             </div>
             <div class="sched-log-row">
-              <span class="sched-log-label">Started</span>
+              <span class="sched-log-label">{{ t('schedule.detail.started.label') }}</span>
               <span class="sched-log-val">{{ fmtDate(log.startedAt) }}</span>
             </div>
             <div class="sched-log-row">
-              <span class="sched-log-label">Finished</span>
+              <span class="sched-log-label">{{ t('schedule.detail.finished.label') }}</span>
               <span class="sched-log-val">{{
-                log.finishedAt === null ? 'Running…' : fmtDate(log.finishedAt)
+                log.finishedAt === null ? t('schedule.detail.running') : fmtDate(log.finishedAt)
               }}</span>
             </div>
             <pre v-if="log.output" class="sched-log-output">{{ log.output }}</pre>
@@ -146,14 +151,18 @@ function logStatus(log: ScheduleExecutionLog): string {
             <!-- Session transcript entry: only for llm (prompt) executions. -->
             <template v-if="isLlm">
               <button type="button" class="sched-session-toggle" @click="toggleSession(log.id)">
-                {{ isExpanded(log.id) ? '▾ Hide session' : '▸ View session' }}
+                {{
+                  isExpanded(log.id)
+                    ? t('schedule.detail.hideSession.label')
+                    : t('schedule.detail.viewSession.label')
+                }}
               </button>
               <div v-if="isExpanded(log.id)" class="sched-session">
                 <p v-if="transcriptOf(log.id) === undefined" class="sched-session-empty">
-                  Loading session…
+                  {{ t('schedule.detail.loadingSession') }}
                 </p>
                 <p v-else-if="transcriptOf(log.id)!.length === 0" class="sched-session-empty">
-                  No session record for this execution.
+                  {{ t('schedule.detail.noSessionRecord') }}
                 </p>
                 <ul v-else class="sched-msg-list">
                   <li
@@ -164,17 +173,25 @@ function logStatus(log: ScheduleExecutionLog): string {
                   >
                     <template v-if="item.kind === 'assistant' || item.kind === 'user'">
                       <span class="sched-msg-role">{{
-                        item.kind === 'assistant' ? 'Assistant' : 'User'
+                        item.kind === 'assistant'
+                          ? t('schedule.detail.role.assistant')
+                          : t('schedule.detail.role.user')
                       }}</span>
                       <pre class="sched-msg-text">{{ item.text }}</pre>
                     </template>
                     <template v-else-if="item.kind === 'tool_use'">
-                      <span class="sched-msg-role">Tool · {{ item.toolName }}</span>
+                      <span class="sched-msg-role">{{
+                        t('schedule.detail.role.tool', { name: item.toolName })
+                      }}</span>
                       <pre class="sched-msg-text">{{ fmtToolInput(item.input) }}</pre>
                     </template>
                     <template v-else-if="item.kind === 'tool_result'">
                       <span class="sched-msg-role" :class="{ 'is-error': item.isError }">
-                        Result{{ item.isError ? ' (error)' : '' }}
+                        {{
+                          item.isError
+                            ? t('schedule.detail.role.resultError')
+                            : t('schedule.detail.role.result')
+                        }}
                       </span>
                       <pre class="sched-msg-text">{{ item.content }}</pre>
                     </template>
@@ -187,12 +204,12 @@ function logStatus(log: ScheduleExecutionLog): string {
             </template>
           </li>
         </ul>
-        <p v-else class="sched-section-empty">No execution history yet.</p>
+        <p v-else class="sched-section-empty">{{ t('schedule.detail.noHistory') }}</p>
       </section>
     </template>
 
     <div v-else class="sched-detail-empty">
-      <p>Select a schedule to view details.</p>
+      <p>{{ t('schedule.detail.empty') }}</p>
     </div>
   </div>
 </template>

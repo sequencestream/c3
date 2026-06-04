@@ -11,6 +11,14 @@ import ConsensusBlock from '../ConsensusBlock/ConsensusBlock.vue'
 import MarkdownText from '../MarkdownText/MarkdownText.vue'
 import { fmt, oneLine } from '../../lib/format'
 import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../../lib/chat-types'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
+
+// Fixed protocol identifiers shown verbatim (do-not-translate; bound via consts
+// so `no-raw-text` doesn't flag them as hard-coded copy).
+const TOOL_USE_LABEL = 'tool_use'
+const TOOL_RESULT_LABEL = 'tool_result'
 
 const props = defineProps<{
   messages: ChatMsg[]
@@ -142,7 +150,7 @@ function toggle(id: number): void {
 <template>
   <main ref="mainEl">
     <p v-if="!hasActiveSession" class="empty-main">
-      Select a session, or create a new one in a workspace.
+      {{ t('session.chat.empty') }}
     </p>
     <template v-for="b in blocks" :key="b.key">
       <div v-if="b.type === 'text'" class="msg" :class="b.msg.kind">
@@ -151,7 +159,7 @@ function toggle(id: number): void {
       <div v-else class="batch" :class="{ open: isBatchOpen(b) }">
         <div class="batch-head" @click="toggleBatch(b.id)">
           <span class="caret">{{ isBatchOpen(b) ? '▾' : '▸' }}</span>
-          <span class="batch-summary">{{ b.summary || 'tools' }}</span>
+          <span class="batch-summary">{{ b.summary || t('session.chat.toolsFallback') }}</span>
         </div>
         <div v-if="isBatchOpen(b)" class="batch-body">
           <div
@@ -163,7 +171,7 @@ function toggle(id: number): void {
             <template v-if="m.kind === 'tool-use'">
               <div class="label tool-label" @click="toggle(m.id)">
                 <span class="caret">{{ isExpanded(m.id) ? '▾' : '▸' }}</span>
-                tool_use · {{ m.toolName }}
+                {{ TOOL_USE_LABEL }} · {{ m.toolName }}
               </div>
               <pre v-if="isExpanded(m.id)" class="tool-body">{{ fmt(m.input) }}</pre>
               <div v-else class="tool-oneline" @click="toggle(m.id)">
@@ -174,7 +182,8 @@ function toggle(id: number): void {
               <template v-if="isExpanded(m.id)">
                 <div class="label tool-label" @click="toggle(m.id)">
                   <span class="caret">▾</span>
-                  tool_result {{ m.isError ? '(error)' : '' }}
+                  {{ TOOL_RESULT_LABEL
+                  }}<template v-if="m.isError"> {{ t('session.chat.resultError') }}</template>
                 </div>
                 <pre class="tool-body">{{ m.content }}</pre>
               </template>

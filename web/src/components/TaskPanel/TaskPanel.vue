@@ -9,6 +9,9 @@
  */
 import { computed } from 'vue'
 import { taskPanelView, type TaskListModel } from '../../lib/task-list'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{ model: TaskListModel }>()
 
@@ -16,31 +19,36 @@ const view = computed(() => taskPanelView(props.model))
 </script>
 
 <template>
-  <div v-if="view.visible" class="task-panel" aria-label="Current tasks">
+  <div v-if="view.visible" class="task-panel" :aria-label="t('session.task.ariaLabel')">
     <div
-      v-for="t in view.inProgress"
-      :key="t.id"
+      v-for="task in view.inProgress"
+      :key="task.id"
       class="task-row task-active"
-      :title="t.description"
+      :title="task.description"
     >
       <span class="task-mark">▶</span>
-      <span class="task-subject">{{ t.subject }}</span>
-    </div>
-    <div v-for="t in view.pending" :key="t.id" class="task-row task-pending" :title="t.description">
-      <span class="task-mark">○</span>
-      <span class="task-subject">{{ t.subject }}</span>
-    </div>
-    <div v-for="t in view.completed" :key="t.id" class="task-row task-done" :title="t.description">
-      <span class="task-mark">✓</span>
-      <span class="task-subject">{{ t.subject }}</span>
+      <span class="task-subject">{{ task.subject }}</span>
     </div>
     <div
-      v-if="view.hiddenCompleted > 0"
-      class="task-more"
-      data-testid="task-more-completed"
-      data-i18n-key=""
+      v-for="task in view.pending"
+      :key="task.id"
+      class="task-row task-pending"
+      :title="task.description"
     >
-      +{{ view.hiddenCompleted }} completed
+      <span class="task-mark">○</span>
+      <span class="task-subject">{{ task.subject }}</span>
+    </div>
+    <div
+      v-for="task in view.completed"
+      :key="task.id"
+      class="task-row task-done"
+      :title="task.description"
+    >
+      <span class="task-mark">✓</span>
+      <span class="task-subject">{{ task.subject }}</span>
+    </div>
+    <div v-if="view.hiddenCompleted > 0" class="task-more" data-testid="task-more-completed">
+      {{ t('session.task.moreCompleted', { count: view.hiddenCompleted }) }}
     </div>
   </div>
 </template>

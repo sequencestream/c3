@@ -12,6 +12,9 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 defineProps<{
   schedules: Schedule[]
@@ -39,19 +42,19 @@ onUnmounted(() => {
 function timeLeft(ts: number | null): string {
   if (ts === null) return '—'
   const diff = ts - now.value
-  if (diff <= 0) return 'Due now'
+  if (diff <= 0) return t('schedule.list.timeLeft.dueNow')
   const mins = Math.floor(diff / 60_000)
   const hrs = Math.floor(mins / 60)
   const days = Math.floor(hrs / 24)
-  if (days > 0) return `in ${days}d ${hrs % 24}h`
-  if (hrs > 0) return `in ${hrs}h ${mins % 60}m`
-  if (mins > 0) return `in ${mins}m`
-  return '< 1m'
+  if (days > 0) return t('schedule.list.timeLeft.days', { days, hours: hrs % 24 })
+  if (hrs > 0) return t('schedule.list.timeLeft.hours', { hours: hrs, minutes: mins % 60 })
+  if (mins > 0) return t('schedule.list.timeLeft.minutes', { minutes: mins })
+  return t('schedule.list.timeLeft.lessThanMinute')
 }
 
 // 每行的标签:类型前缀 + 名称(若 config 里有)否则回退到 cron 表达式。
 function scheduleLabel(s: Schedule): string {
-  const tag = s.type === 'command' ? 'Cmd' : 'LLM'
+  const tag = s.type === 'command' ? t('schedule.list.type.command') : t('schedule.list.type.llm')
   const cfg = s.config
   const name =
     cfg && typeof cfg === 'object' && typeof (cfg as Record<string, unknown>).name === 'string'
@@ -132,27 +135,31 @@ function togglePanel(): void {
         <button
           type="button"
           class="sched-collapse-btn"
-          :title="collapsed ? 'Expand panel' : 'Collapse panel'"
+          :title="
+            collapsed ? t('schedule.list.expand.tooltip') : t('schedule.list.collapse.tooltip')
+          "
           :aria-pressed="collapsed"
           @click="togglePanel"
         >
           {{ collapsed ? '▸' : '◂' }}
         </button>
-        <span v-show="!collapsed" class="sched-list-title">Schedules</span>
+        <span v-show="!collapsed" class="sched-list-title">{{
+          t('schedule.list.title.label')
+        }}</span>
       </div>
       <button
         v-show="!collapsed"
         type="button"
         class="sched-new-btn"
-        aria-label="New schedule"
-        title="New schedule"
+        :aria-label="t('schedule.list.new.label')"
+        :title="t('schedule.list.new.label')"
         @click="emit('new-schedule')"
       >
         +
       </button>
     </div>
     <div v-show="!collapsed" class="sched-items">
-      <p v-if="schedules.length === 0" class="sched-empty">No schedules yet.</p>
+      <p v-if="schedules.length === 0" class="sched-empty">{{ t('schedule.list.empty') }}</p>
       <div
         v-for="s in schedules"
         :key="s.id"
@@ -185,7 +192,11 @@ function togglePanel(): void {
               role="switch"
               :class="{ on: isEnabled(s) }"
               :aria-checked="isEnabled(s)"
-              :title="isEnabled(s) ? 'Enabled — click to pause' : 'Disabled — click to enable'"
+              :title="
+                isEnabled(s)
+                  ? t('schedule.list.toggle.enabled.tooltip')
+                  : t('schedule.list.toggle.disabled.tooltip')
+              "
               @click.stop="toggleEnabled(s)"
             >
               <span class="sched-toggle-knob" aria-hidden="true" />
@@ -194,43 +205,43 @@ function togglePanel(): void {
         </div>
         <div v-if="s.id === expandedId" class="sched-detail-inline">
           <div class="sched-meta-row">
-            <span class="sched-meta-label">ID</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.id.label') }}</span>
             <span class="sched-meta-val mono">{{ s.id }}</span>
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Type</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.type.label') }}</span>
             <span class="sched-meta-val">{{ s.type }}</span>
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Status</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.status.label') }}</span>
             <span class="sched-meta-val">{{ s.status }}</span>
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Cron</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.cron.label') }}</span>
             <span class="sched-meta-val"
               ><code>{{ s.cronExpression }}</code></span
             >
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Mode</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.mode.label') }}</span>
             <span class="sched-meta-val">{{ s.mcpMode }}</span>
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Created</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.created.label') }}</span>
             <span class="sched-meta-val">{{ fmtDate(s.createdAt) }}</span>
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">Updated</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.updated.label') }}</span>
             <span class="sched-meta-val">{{ fmtDate(s.updatedAt) }}</span>
           </div>
           <div class="sched-meta-row sched-meta-row--col">
-            <span class="sched-meta-label">Config</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.config.label') }}</span>
             <pre class="sched-meta-config">{{ configText(s) }}</pre>
           </div>
 
           <!-- Upcoming runs: next few execution times computed from the cron expr. -->
           <div class="sched-meta-row sched-meta-row--col">
-            <span class="sched-meta-label">Upcoming runs</span>
+            <span class="sched-meta-label">{{ t('schedule.meta.upcoming.label') }}</span>
             <ol v-if="upcomingRuns(s).length" class="sched-upcoming">
               <li v-for="(ts, i) in upcomingRuns(s)" :key="ts" class="sched-upcoming-item">
                 <span class="sched-upcoming-dot" :class="{ next: i === 0 }" />
@@ -238,7 +249,7 @@ function togglePanel(): void {
                 <span class="sched-upcoming-rel">{{ timeLeft(ts) }}</span>
               </li>
             </ol>
-            <span v-else class="sched-meta-val">No upcoming runs.</span>
+            <span v-else class="sched-meta-val">{{ t('schedule.list.noUpcoming') }}</span>
           </div>
         </div>
       </div>

@@ -11,8 +11,11 @@ import AgendaProgress from './components/AgendaProgress/AgendaProgress.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import { discussionRunLabel, type DispatchView } from '../../lib/discussion-view'
+import { useTypedI18n } from '@/i18n'
 import type { Discussion } from '@ccc/shared/protocol'
 import type { ChatMsg } from '../../lib/chat-types'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{
   discussions: Discussion[]
@@ -70,7 +73,7 @@ function statusLabel(status: Discussion['status']): string {
           class="disc-start-btn"
           @click="emit('start')"
         >
-          Start
+          {{ t('discussion.action.start.label') }}
         </button>
         <button
           v-if="activeDiscussion.status === 'in_progress' && activeRunState === 'running'"
@@ -78,7 +81,7 @@ function statusLabel(status: Discussion['status']): string {
           class="disc-start-btn"
           @click="emit('pause')"
         >
-          Pause
+          {{ t('discussion.action.pause.label') }}
         </button>
         <button
           v-else-if="activeDiscussion.status === 'in_progress' && activeRunState === 'paused'"
@@ -86,7 +89,7 @@ function statusLabel(status: Discussion['status']): string {
           class="disc-start-btn"
           @click="emit('resume')"
         >
-          Resume
+          {{ t('discussion.action.resume.label') }}
         </button>
         <button
           v-if="activeDiscussion.status === 'completed'"
@@ -94,7 +97,7 @@ function statusLabel(status: Discussion['status']): string {
           class="disc-start-btn"
           @click="emit('convert')"
         >
-          Convert to Requirement
+          {{ t('discussion.action.convert.label') }}
         </button>
         <span class="disc-status" :class="activeDiscussion.status">
           {{ statusLabel(activeDiscussion.status) }}
@@ -123,19 +126,17 @@ function statusLabel(status: Discussion['status']): string {
         :key="`p-${a.id}`"
         class="disc-dispatch-pending"
         data-testid="discussion-pending"
-        data-i18n-key=""
       >
         <span class="disc-dispatch-dot" aria-hidden="true">●</span>
-        {{ a.name }} is replying…
+        {{ t('discussion.dispatch.replying', { name: a.name }) }}
       </p>
       <p
         v-for="e in dispatch.errors"
         :key="`e-${e.id}`"
         class="disc-dispatch-error"
         data-testid="discussion-error"
-        data-i18n-key=""
       >
-        ⚠ {{ e.name }} failed to reply: {{ e.error }}
+        {{ t('discussion.dispatch.failed', { name: e.name, error: e.error }) }}
       </p>
     </div>
     <!-- Discussion composer: human interjection while running, or a follow-up
@@ -154,13 +155,17 @@ function statusLabel(status: Discussion['status']): string {
         class="disc-composer-input"
         :placeholder="
           activeDiscussion.status === 'completed'
-            ? 'Ask a follow-up to start a new round…'
-            : 'Speak in this discussion…'
+            ? t('discussion.composer.followUp.placeholder')
+            : t('discussion.composer.speak.placeholder')
         "
         @input="emit('update:input', ($event.target as HTMLInputElement).value)"
       />
       <button type="submit" class="disc-start-btn" :disabled="!input.trim()">
-        {{ activeDiscussion.status === 'completed' ? 'Continue' : 'Speak' }}
+        {{
+          activeDiscussion.status === 'completed'
+            ? t('discussion.composer.continue.label')
+            : t('discussion.composer.speak.label')
+        }}
       </button>
     </form>
   </div>

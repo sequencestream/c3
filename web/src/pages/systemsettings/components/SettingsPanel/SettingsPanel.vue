@@ -4,9 +4,14 @@
  *
  * 编辑用本地草稿，打开时从 App 注入的服务端设置深拷贝而来，保存时整体上抛。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
+import { useTypedI18n } from '@/i18n'
+import { useModeLabel } from '@/composables/useModeLabel'
+
+const { t } = useTypedI18n()
+const modeLabel = useModeLabel()
 
 const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
 
@@ -19,12 +24,12 @@ const MIN_SPEECH_CHARS = 300
 const DEFAULT_SPEECH_CHARS = 300
 
 // 浏览器语音输入的可选识别语言（BCP-47）。与 UI 语言（UI_LANGS）彻底解耦。
-const VOICE_LANGS: { value: string; label: string }[] = [
-  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
-  { value: 'en-US', label: 'English (US)' },
-  { value: 'zh-TW', label: 'Chinese (Traditional)' },
-  { value: 'zh-HK', label: 'Cantonese' },
-]
+const VOICE_LANGS = computed<{ value: string; label: string }[]>(() => [
+  { value: 'zh-CN', label: t('settings.voiceLang.zhCN.label') },
+  { value: 'en-US', label: t('settings.voiceLang.enUS.label') },
+  { value: 'zh-TW', label: t('settings.voiceLang.zhTW.label') },
+  { value: 'zh-HK', label: t('settings.voiceLang.zhHK.label') },
+])
 
 // UI 显示语言。本阶段仅放出 en + 简体中文;ja/ko/ru 已在协议 UiLang 联合里预留,
 // 待母需求补译文后追加到此列表即可解锁(code 预留扩展)。
@@ -119,27 +124,30 @@ function onUiLangChange(e: Event) {
 <template>
   <div v-if="open" class="settings-page">
     <div class="settings-head">
-      <h2>System Settings</h2>
-      <button class="icon-btn" title="Close" @click="emit('close')">✕</button>
+      <h2>{{ t('settings.title.label') }}</h2>
+      <button class="icon-btn" :title="t('common.action.close.tooltip')" @click="emit('close')">
+        ✕
+      </button>
     </div>
     <div class="settings-body">
       <section class="settings-section">
-        <p class="settings-section-title">Agents</p>
-        <p class="settings-hint">
-          New sessions launch Claude Code with the default agent. The system agent uses no overrides
-          (your existing <code>claude</code> login) and cannot be edited or removed. Toggle
-          <strong>On</strong> to enable an agent; a disabled agent is excluded from discussion
-          participants, consensus voting, the degradation chain, and the default picker — but bound
-          or fallback launches still work, so no existing session is locked out.
-        </p>
+        <p class="settings-section-title">{{ t('settings.agents.title.label') }}</p>
+        <i18n-t keypath="settings.agents.hint.text" tag="p" class="settings-hint">
+          <template #claude
+            ><code>{{ t('settings.agents.hint.claude') }}</code></template
+          >
+          <template #on
+            ><strong>{{ t('settings.agents.hint.on') }}</strong></template
+          >
+        </i18n-t>
         <div class="agent-table">
           <div class="agent-row agent-row-head">
-            <span class="col-on">On</span>
-            <span class="col-default">Default</span>
-            <span class="col-name">Name</span>
-            <span class="col-url">Base URL</span>
-            <span class="col-key">API Key</span>
-            <span class="col-model">Model</span>
+            <span class="col-on">{{ t('settings.agents.col.on.label') }}</span>
+            <span class="col-default">{{ t('settings.agents.col.default.label') }}</span>
+            <span class="col-name">{{ t('settings.agents.col.name.label') }}</span>
+            <span class="col-url">{{ t('settings.agents.col.baseUrl.label') }}</span>
+            <span class="col-key">{{ t('settings.agents.col.apiKey.label') }}</span>
+            <span class="col-model">{{ t('settings.agents.col.model.label') }}</span>
             <span class="col-actions"></span>
           </div>
           <div v-for="a in draft.agents" :key="a.id" class="agent-row">
@@ -147,7 +155,7 @@ function onUiLangChange(e: Event) {
               <input
                 type="checkbox"
                 :checked="isEnabled(a)"
-                title="Enable / disable this agent"
+                :title="t('settings.agents.toggle.tooltip')"
                 @change="a.enabled = ($event.target as HTMLInputElement).checked"
               />
             </label>
@@ -158,20 +166,24 @@ function onUiLangChange(e: Event) {
                 :value="a.id"
                 :checked="draft.defaultAgentId === a.id"
                 :disabled="!isEnabled(a)"
-                title="Only an enabled agent can be the default"
+                :title="t('settings.agents.default.tooltip')"
                 @change="draft.defaultAgentId = a.id"
               />
             </label>
             <input
               v-model="a.name"
               class="agent-field col-name"
-              :placeholder="isSystemAgent(a) ? 'System' : 'Agent name'"
+              :placeholder="
+                isSystemAgent(a)
+                  ? t('settings.agents.systemName.placeholder')
+                  : t('settings.agents.name.placeholder')
+              "
               :disabled="isSystemAgent(a)"
             />
             <input
               v-model="a.baseUrl"
               class="agent-field col-url"
-              :placeholder="isSystemAgent(a) ? '—' : 'ANTHROPIC_BASE_URL'"
+              :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.baseUrl.placeholder')"
               :disabled="isSystemAgent(a)"
             />
             <input
@@ -179,68 +191,55 @@ function onUiLangChange(e: Event) {
               class="agent-field col-key"
               type="password"
               autocomplete="off"
-              :placeholder="isSystemAgent(a) ? '—' : 'API key'"
+              :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.apiKey.placeholder')"
               :disabled="isSystemAgent(a)"
             />
             <input
               v-model="a.model"
               class="agent-field col-model"
-              :placeholder="isSystemAgent(a) ? '—' : 'e.g. claude-opus-4-8'"
+              :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.model.placeholder')"
               :disabled="isSystemAgent(a)"
             />
             <span class="col-actions">
               <button
                 v-if="!isSystemAgent(a)"
                 class="icon-btn"
-                title="Remove agent"
+                :title="t('settings.agents.remove.tooltip')"
                 @click="removeAgent(a.id)"
               >
                 🗑
               </button>
-              <span v-else class="agent-badge">built-in</span>
+              <span v-else class="agent-badge">{{ t('settings.agents.builtin.label') }}</span>
             </span>
           </div>
         </div>
-        <button
-          class="agent-add"
-          data-testid="settings-add-agent"
-          data-i18n-key=""
-          @click="addAgent"
-        >
-          + Add agent
+        <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
+          {{ t('settings.agents.add.label') }}
         </button>
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Default mode</p>
-        <p class="settings-hint">
-          The permission mode new sessions start in. You can still switch a session's mode at any
-          time from its header.
-        </p>
+        <p class="settings-section-title">{{ t('settings.defaultMode.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.defaultMode.hint') }}</p>
         <select v-model="draft.defaultMode" class="mode-select">
-          <option v-for="m in MODES" :key="m" :value="m">{{ m }}</option>
+          <option v-for="m in MODES" :key="m" :value="m">{{ modeLabel(m) }}</option>
         </select>
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Dev skill</p>
-        <p class="settings-hint">
-          When starting a development task, this slash command is prepended to the requirement text.
-          Leave it empty to add no skill prefix.
-        </p>
+        <p class="settings-section-title">{{ t('settings.devSkill.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.devSkill.hint') }}</p>
         <input
           v-model="draft.devSkill"
           class="agent-field dev-skill-input"
-          placeholder="/your-skill (leave empty for no prefix)"
+          :placeholder="t('settings.devSkill.placeholder')"
         />
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Discussion rounds per stage</p>
+        <p class="settings-section-title">{{ t('settings.rounds.title.label') }}</p>
         <p class="settings-hint">
-          The maximum number of speaking rounds a multi-agent discussion spends in each workflow
-          stage before the organizer is forced to advance. Higher values allow deeper, longer
-          discussions. Minimum {{ MIN_ROUNDS_PER_STAGE }} (lower values are clamped up on save).
+          {{ t('settings.rounds.hint', { min: MIN_ROUNDS_PER_STAGE }) }}
         </p>
         <input
           v-model.number="draft.maxRoundsPerStage"
@@ -252,11 +251,9 @@ function onUiLangChange(e: Event) {
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Discussion speech character limit</p>
+        <p class="settings-section-title">{{ t('settings.speechChars.title.label') }}</p>
         <p class="settings-hint">
-          The per-turn character budget participants see in their prompt guidance. Participants are
-          asked to keep replies within this limit, but over-long replies are accepted verbatim (no
-          hard truncation). Minimum {{ MIN_SPEECH_CHARS }} (lower values are clamped up on save).
+          {{ t('settings.speechChars.hint', { min: MIN_SPEECH_CHARS }) }}
         </p>
         <input
           v-model.number="draft.maxSpeechChars"
@@ -268,11 +265,8 @@ function onUiLangChange(e: Event) {
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Display language</p>
-        <p class="settings-hint">
-          The language of the c3 web console UI. Changes apply immediately without a reload and are
-          saved to the server. Independent from the voice input language below.
-        </p>
+        <p class="settings-section-title">{{ t('settings.displayLang.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.displayLang.hint') }}</p>
         <select
           v-model="draft.uiLang"
           class="lang-select mode-select"
@@ -284,56 +278,49 @@ function onUiLangChange(e: Event) {
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Voice input language</p>
-        <p class="settings-hint">
-          The language the browser's speech recognition listens for when you use the microphone in
-          the message box. Voice input is provided by the browser (Chrome/Edge) and may require a
-          network connection.
-        </p>
+        <p class="settings-section-title">{{ t('settings.voiceLang.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.voiceLang.hint') }}</p>
         <select v-model="draft.voiceLang" class="mode-select">
           <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
         </select>
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Consensus</p>
-        <p class="settings-hint">
-          When enabled, an allow/deny permission prompt is first put to the
-          <em>other</em> configured agents. Each judges the tool call from the recent context and
-          votes allow/deny with a reason; the session's own agent then summarizes their opinions. If
-          every voter agrees, the prompt auto-resolves with no human needed — otherwise you decide,
-          with each agent's vote and reason shown. Any error, timeout, or unparseable answer counts
-          as an abstain, which keeps the decision with you. Needs at least one agent besides the
-          session's own.
-        </p>
-        <p class="settings-hint">
-          <strong>AskUserQuestion</strong> (where the agent asks <em>you</em> a multiple-choice
-          question) takes a separate per-question path. c3 always shows you an answer panel and
-          injects your picks back to the agent — that is the only way to answer it without a
-          terminal, so it works regardless of this toggle. The consensus part only kicks in when
-          it's <em>on</em>: the voters answer every question and the decider summarizes and
-          reconciles answers that mean the same thing, so questions everyone agrees on get
-          pre-filled or auto-answered and only the rest are left for you. With consensus off, no
-          voting runs and you fill the whole panel yourself.
-        </p>
+        <p class="settings-section-title">{{ t('settings.consensus.title.label') }}</p>
+        <i18n-t keypath="settings.consensus.hint1.text" tag="p" class="settings-hint">
+          <template #other
+            ><em>{{ t('settings.consensus.hint1.other') }}</em></template
+          >
+        </i18n-t>
+        <i18n-t keypath="settings.consensus.hint2.text" tag="p" class="settings-hint">
+          <template #ask
+            ><strong>{{ t('settings.consensus.hint2.ask') }}</strong></template
+          >
+          <template #you
+            ><em>{{ t('settings.consensus.hint2.you') }}</em></template
+          >
+          <template #on
+            ><em>{{ t('settings.consensus.hint2.on') }}</em></template
+          >
+        </i18n-t>
         <label v-if="draft.consensus" class="consensus-toggle">
           <input v-model="draft.consensus.enabled" type="checkbox" />
-          Enable multi-agent consensus voting
+          {{ t('settings.consensus.toggle.label') }}
         </label>
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">Display</p>
+        <p class="settings-section-title">{{ t('settings.display.title.label') }}</p>
         <label class="consensus-toggle">
           <input v-model="draft.showToolSessions" type="checkbox" />
-          Show tool sessions
+          {{ t('settings.display.showToolSessions.label') }}
         </label>
       </section>
     </div>
     <div class="settings-foot">
-      <button class="ghost" @click="emit('close')">Cancel</button>
-      <button data-testid="settings-save" data-i18n-key="" @click="emit('save', draft)">
-        Save
+      <button class="ghost" @click="emit('close')">{{ t('common.action.cancel.label') }}</button>
+      <button data-testid="settings-save" @click="emit('save', draft)">
+        {{ t('common.action.save.label') }}
       </button>
     </div>
   </div>

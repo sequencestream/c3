@@ -51,9 +51,9 @@ export default tseslint.config(
   },
 
   {
-    // i18n gate: forbid hard-coded UI text in web templates. Currently `warn`
-    // (the existing pages are not yet extracted — see specs/style/i18n-spec.md);
-    // flip to `error` once extraction is done so hard-coding fails CI.
+    // i18n gate: forbid hard-coded UI text in web templates. M1 extraction is
+    // complete (all web/src/*.vue copy goes through t()), so this is `error` —
+    // any new hard-coded copy fails lint/CI. See specs/style/i18n-spec.md §5.2.
     files: ['web/src/**/*.vue'],
     plugins: { '@intlify/vue-i18n': vueI18n },
     settings: {
@@ -64,7 +64,7 @@ export default tseslint.config(
     },
     rules: {
       '@intlify/vue-i18n/no-raw-text': [
-        'warn',
+        'error',
         {
           // Ignore text that is purely symbols / digits / punctuation (not translatable copy).
           ignorePattern: '^[\\s\\d\\p{P}\\p{S}]+$',

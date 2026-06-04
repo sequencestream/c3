@@ -10,6 +10,9 @@
 import { ref } from 'vue'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { SessionInfo, SessionStatus } from '@ccc/shared/protocol'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{
   currentWorkspace: string | null
@@ -83,13 +86,13 @@ function refreshSessions() {
 
 function deleteSession(sessionId: string) {
   if (!props.currentWorkspace) return
-  if (window.confirm('Delete this session and its transcript? This cannot be undone.'))
+  if (window.confirm(t('session.list.deleteConfirm')))
     emit('delete-session', props.currentWorkspace, sessionId)
 }
 
 function renameSession(sessionId: string, current: string) {
   if (!props.currentWorkspace) return
-  const title = window.prompt('Rename session:', current)?.trim()
+  const title = window.prompt(t('session.list.renamePrompt'), current)?.trim()
   if (title) emit('rename-session', props.currentWorkspace, sessionId, title)
 }
 </script>
@@ -97,22 +100,20 @@ function renameSession(sessionId: string, current: string) {
 <template>
   <aside class="sidebar">
     <div class="sidebar-head">
-      <span class="sidebar-title">Sessions</span>
+      <span class="sidebar-title">{{ t('session.list.title.label') }}</span>
       <span v-if="currentWorkspace" class="sidebar-actions">
         <button
           class="icon-btn"
-          title="Refresh sessions"
+          :title="t('session.list.refresh.tooltip')"
           data-testid="session-list-refresh"
-          data-i18n-key=""
           @click="refreshSessions"
         >
           ⟳
         </button>
         <button
           class="icon-btn"
-          title="New session"
+          :title="t('session.list.new.tooltip')"
           data-testid="session-list-new"
-          data-i18n-key=""
           @click="createSession"
         >
           ＋
@@ -120,13 +121,8 @@ function renameSession(sessionId: string, current: string) {
       </span>
     </div>
     <div class="ws-list">
-      <p
-        v-if="!currentWorkspace"
-        class="empty-hint"
-        data-testid="session-list-empty"
-        data-i18n-key=""
-      >
-        No workspace selected.
+      <p v-if="!currentWorkspace" class="empty-hint" data-testid="session-list-empty">
+        {{ t('session.list.noWorkspace') }}
       </p>
       <div v-else class="session-list">
         <div v-if="pendingInCurrent()" class="session active pending">
@@ -138,7 +134,7 @@ function renameSession(sessionId: string, current: string) {
           ></span>
           <span class="session-title">{{ activeTitle }}</span>
         </div>
-        <p v-if="sessions.length === 0" class="empty-hint sub">No sessions.</p>
+        <p v-if="sessions.length === 0" class="empty-hint sub">{{ t('session.list.empty') }}</p>
         <div
           v-for="s in visibleSessions()"
           :key="s.sessionId"
@@ -157,23 +153,24 @@ function renameSession(sessionId: string, current: string) {
           ></span>
           <span class="session-title" :title="s.title"
             ><span class="session-date">{{ datePrefix(s.lastModified) }}</span
-            ><span v-if="s.isToolSession" class="session-tool-badge">TOOL</span>{{ s.title }}</span
+            ><span v-if="s.isToolSession" class="session-tool-badge">{{
+              t('session.list.toolBadge.label')
+            }}</span
+            >{{ s.title }}</span
           >
           <span class="session-actions">
             <button
               class="icon-btn"
-              title="Rename"
+              :title="t('session.row.rename.tooltip')"
               data-testid="session-row-rename"
-              data-i18n-key=""
               @click.stop="renameSession(s.sessionId, s.title)"
             >
               ✎
             </button>
             <button
               class="icon-btn"
-              title="Delete"
+              :title="t('session.row.delete.tooltip')"
               data-testid="session-row-delete"
-              data-i18n-key=""
               @click.stop="deleteSession(s.sessionId)"
             >
               🗑
@@ -183,10 +180,10 @@ function renameSession(sessionId: string, current: string) {
         <button
           v-if="hasMoreSessions()"
           class="session-more"
-          title="Show more sessions"
+          :title="t('session.list.more.tooltip')"
           @click="showMoreSessions"
         >
-          ▾ more
+          {{ t('session.list.more.label') }}
         </button>
       </div>
     </div>

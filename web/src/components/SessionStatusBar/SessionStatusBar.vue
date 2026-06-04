@@ -8,6 +8,9 @@
  */
 import { computed } from 'vue'
 import type { RunActivity } from '../../lib/chat-types'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 const props = defineProps<{
   hasActiveSession: boolean
@@ -23,22 +26,30 @@ const emit = defineEmits<{ refresh: [] }>()
 // Dot color class + label + whether to spin, derived from running + activity.
 const view = computed(() => {
   if (props.activity.phase === 'error') {
-    return { dot: 'error', label: `Error: ${props.activity.message}`, spin: false }
+    return {
+      dot: 'error',
+      label: t('session.statusBar.error', { message: props.activity.message }),
+      spin: false,
+    }
   }
   if (!props.running) {
-    return { dot: 'idle', label: 'Ready', spin: false }
+    return { dot: 'idle', label: t('session.statusBar.ready'), spin: false }
   }
   if (props.activity.phase === 'awaiting') {
-    return { dot: 'awaiting', label: 'Awaiting permission', spin: false }
+    return { dot: 'awaiting', label: t('session.statusBar.awaiting'), spin: false }
   }
   // Team session between lead turns: not "thinking", but waiting on teammates.
   if (props.teamActive && props.activity.phase === 'idle') {
-    return { dot: 'team', label: 'Team running · waiting on teammates', spin: true }
+    return { dot: 'team', label: t('session.statusBar.teamRunning'), spin: true }
   }
   if (props.activity.phase === 'tool') {
-    return { dot: 'running', label: `Running ${props.activity.toolName}…`, spin: true }
+    return {
+      dot: 'running',
+      label: t('session.statusBar.runningTool', { toolName: props.activity.toolName }),
+      spin: true,
+    }
   }
-  return { dot: 'running', label: 'Thinking…', spin: true }
+  return { dot: 'running', label: t('session.statusBar.thinking'), spin: true }
 })
 
 // Refresh re-selects the session, so it only works on an open socket; the
@@ -51,11 +62,13 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
     <span class="status-dot" :class="view.dot" />
     <span v-if="view.spin" class="status-spinner" />
     <span class="status-label">{{ view.label }}</span>
-    <span v-if="connection === 'closed'" class="status-muted">· Disconnected, reconnecting…</span>
+    <span v-if="connection === 'closed'" class="status-muted">{{
+      t('session.statusBar.disconnected')
+    }}</span>
     <button
       class="status-refresh"
       :disabled="!canRefresh"
-      title="Resync session status"
+      :title="t('session.statusBar.refresh.tooltip')"
       @click="emit('refresh')"
     >
       ↻

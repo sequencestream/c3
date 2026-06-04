@@ -5,6 +5,9 @@
  * 两种形态：AskUserQuestion 的逐题自动作答，以及其它工具的 allow/deny 裁定。
  */
 import type { ChatMsg } from '../../lib/chat-types'
+import { useTypedI18n } from '@/i18n'
+
+const { t } = useTypedI18n()
 
 defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
 </script>
@@ -13,8 +16,8 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
   <!-- AskUserQuestion: per-question auto-answer -->
   <template v-if="m.outcome.kind === 'ask'">
     <div class="label">
-      🤝 Multi-agent consensus · <code>{{ m.toolName }}</code>
-      <span class="consensus-badge allow">Auto-answered per question</span>
+      {{ t('discussion.consensus.title.label') }} <code>{{ m.toolName }}</code>
+      <span class="consensus-badge allow">{{ t('discussion.consensus.autoAnswered.label') }}</span>
     </div>
     <div class="consensus">
       <div class="consensus-summary">{{ m.outcome.summary }}</div>
@@ -23,14 +26,16 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
           <div class="cq-head">
             <span v-if="q.header" class="ask-q-header">{{ q.header }}</span>
             <span class="cq-agreed" :class="{ split: !q.unanimous }">{{
-              q.unanimous ? q.agreed : '(disagreement → manual)'
+              q.unanimous ? q.agreed : t('discussion.consensus.disagreementManual.label')
             }}</span>
           </div>
           <div class="cq-votes">
             <span v-for="a in q.answers" :key="a.agentId" class="cq-vote">
               <span class="vote-name">{{ a.agentName }}</span>
               <span class="vote-reason">{{
-                a.abstain ? 'Abstained' : a.optionLabels.join('/') || a.custom
+                a.abstain
+                  ? t('discussion.consensus.abstained.label')
+                  : a.optionLabels.join('/') || a.custom
               }}</span>
             </span>
           </div>
@@ -42,14 +47,14 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
   <!-- Every other tool: allow / deny verdict -->
   <template v-else>
     <div class="label">
-      🤝 Multi-agent consensus ·
+      {{ t('discussion.consensus.title.label') }}
       <code>{{ m.toolName }}</code>
       <span class="consensus-badge" :class="m.outcome.decision ?? 'split'">{{
         m.outcome.decision === 'allow'
-          ? 'Auto-allowed'
+          ? t('discussion.consensus.autoAllowed.label')
           : m.outcome.decision === 'deny'
-            ? 'Auto-denied'
-            : 'Disagreement'
+            ? t('discussion.consensus.autoDenied.label')
+            : t('discussion.consensus.disagreement.label')
       }}</span>
     </div>
     <div class="consensus">

@@ -1,6 +1,7 @@
 import { createI18n } from 'vue-i18n'
 import { useI18n } from 'vue-i18n'
 import en from '../locales/en.json'
+import zh from '../locales/zh.json'
 
 /**
  * en.json 是文案基准:类型 schema 即由它推导。
@@ -98,12 +99,12 @@ export const i18n = createI18n<[MessageSchema], Locale, false>({
   // 缺 key / 走 fallback 时显式 console warning,不静默
   missingWarn: true,
   fallbackWarn: true,
-  // 仅 en 有真译文;zh/ja/ko/ru 本阶段先指向 en 占位(切过去即显示英文,等同
-  // fallback,但满足 createI18n 对每个 locale 都要有 messages 的类型约束)。母需求
-  // 补出各语言文件后,把对应项替换为真正的译文导入即可。
+  // en + zh 为 M1 首发真译文;ja/ko/ru 暂指向 en 占位(切过去即走 fallback 显示英文,
+  // 满足 createI18n 对每个 locale 都要有 messages 的类型约束)。补出对应语言文件后,
+  // 把占位项替换为真正的译文导入即可。
   messages: {
     en,
-    zh: en,
+    zh,
     ja: en,
     ko: en,
     ru: en,

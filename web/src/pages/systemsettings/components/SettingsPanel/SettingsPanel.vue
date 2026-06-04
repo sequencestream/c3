@@ -179,7 +179,14 @@ function isSystemAgent(a: AgentConfig): boolean {
             </span>
           </div>
         </div>
-        <button class="agent-add" @click="addAgent">+ Add agent</button>
+        <button
+          class="agent-add"
+          data-testid="settings-add-agent"
+          data-i18n-key=""
+          @click="addAgent"
+        >
+          + Add agent
+        </button>
       </section>
 
       <section class="settings-section">
@@ -287,7 +294,9 @@ function isSystemAgent(a: AgentConfig): boolean {
     </div>
     <div class="settings-foot">
       <button class="ghost" @click="emit('close')">Cancel</button>
-      <button @click="emit('save', draft)">Save</button>
+      <button data-testid="settings-save" data-i18n-key="" @click="emit('save', draft)">
+        Save
+      </button>
     </div>
   </div>
 </template>

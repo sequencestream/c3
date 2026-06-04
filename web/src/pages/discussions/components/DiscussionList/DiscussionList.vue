@@ -224,11 +224,14 @@ function togglePanel(): void {
               class="disc-run"
               :class="liveState(d)"
               :title="liveState(d) === 'running' ? 'Orchestration running' : 'Orchestration paused'"
+              data-i18n-key=""
             >
               <span class="disc-run-dot" aria-hidden="true" />
               {{ liveState(d) === 'running' ? 'Running' : 'Paused' }}
             </span>
-            <span class="disc-status" :class="d.status">{{ statusLabel(d.status) }}</span>
+            <span class="disc-status" :class="d.status" data-i18n-key="">{{
+              statusLabel(d.status)
+            }}</span>
           </div>
         </div>
         <div v-if="d.id === expandedId" class="disc-detail">
@@ -239,6 +242,8 @@ function togglePanel(): void {
               type="button"
               role="tab"
               class="disc-tab"
+              :data-testid="`disc-tab-${t.kind}`"
+              data-i18n-key=""
               :class="{ active: t.kind === activeTab }"
               :aria-selected="t.kind === activeTab"
               @click="activeTab = t.kind"
@@ -257,20 +262,20 @@ function togglePanel(): void {
             </template>
             <!-- Details:结构化元信息,非 markdown -->
             <dl v-if="activeTab === 'details'" class="disc-meta-list">
-              <div class="disc-meta-row">
-                <dt>Type</dt>
+              <div class="disc-meta-row" data-testid="disc-meta-type">
+                <dt data-i18n-key="">Type</dt>
                 <dd>{{ typeLabel(d) }}</dd>
               </div>
-              <div class="disc-meta-row">
-                <dt>Status</dt>
+              <div class="disc-meta-row" data-testid="disc-meta-status">
+                <dt data-i18n-key="">Status</dt>
                 <dd>{{ statusLabel(d.status) }}</dd>
               </div>
-              <div class="disc-meta-row">
-                <dt>Created</dt>
+              <div class="disc-meta-row" data-testid="disc-meta-created">
+                <dt data-i18n-key="">Created</dt>
                 <dd>{{ formatDate(d.createdAt) }}</dd>
               </div>
-              <div v-if="d.completedAt" class="disc-meta-row">
-                <dt>Completed</dt>
+              <div v-if="d.completedAt" class="disc-meta-row" data-testid="disc-meta-completed">
+                <dt data-i18n-key="">Completed</dt>
                 <dd>{{ formatDate(d.completedAt) }}</dd>
               </div>
             </dl>

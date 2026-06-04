@@ -34,8 +34,7 @@ describe('SettingsPanel.vue — discussion rounds per stage', () => {
   it('emits the edited rounds value on save', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     await w.find('.rounds-input').setValue(20)
-    const saveBtn = w.findAll('.settings-foot button').find((b) => b.text() === 'Save')!
-    await saveBtn.trigger('click')
+    await w.find('[data-testid="settings-save"]').trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].maxRoundsPerStage).toBe(20)
@@ -73,15 +72,15 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
     const checks = w.findAll('.col-on input[type="checkbox"]')
     await checks[1].setValue(false) // disable a1
-    const saveBtn = w.findAll('.settings-foot button').find((b) => b.text() === 'Save')!
-    await saveBtn.trigger('click')
+    await w.find('[data-testid="settings-save"]').trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
   })
 
   it('new agents default to enabled', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const addBtn = w.findAll('button').find((b) => b.text().includes('Add agent'))!
+    const addBtn = w.find('[data-testid="settings-add-agent"]')
+    expect(addBtn.exists()).toBe(true)
     await addBtn.trigger('click')
     const checks = w.findAll('.col-on input[type="checkbox"]')
     // System row + the freshly added one, both checked.
@@ -110,8 +109,7 @@ describe('SettingsPanel.vue — discussion speech character limit', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const inputs = w.findAll('.rounds-input')
     await inputs[1].setValue(600)
-    const saveBtn = w.findAll('.settings-foot button').find((b) => b.text() === 'Save')!
-    await saveBtn.trigger('click')
+    await w.find('[data-testid="settings-save"]').trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].maxSpeechChars).toBe(600)

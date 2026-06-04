@@ -36,7 +36,7 @@ afterEach(() => {
 describe('SessionList.vue — 当前工作区会话列表', () => {
   it('无工作区 → 空提示,不渲染列表', () => {
     const w = mountList({ currentWorkspace: null })
-    expect(w.find('.empty-hint').text()).toContain('No workspace selected')
+    expect(w.find('[data-testid="session-list-empty"]').exists()).toBe(true)
     expect(w.findAll('.session').length).toBe(0)
   })
 
@@ -87,37 +87,37 @@ describe('SessionList.vue — 当前工作区会话列表', () => {
     const btns = w.findAll('.sidebar-head .icon-btn')
     // 需求入口已迁至顶栏 tab nav(AppHeader);会话头部为「刷新 + 新建」两枚按钮。
     expect(btns.length).toBe(2)
-    await w.find('.sidebar-head .icon-btn[title="New session"]').trigger('click')
+    await w.find('[data-testid="session-list-new"]').trigger('click')
     expect(w.emitted('create-session')).toEqual([[WS]])
   })
 
   it('刷新按钮 → emit refresh-sessions;无工作区时不渲染', async () => {
     const w = mountList()
-    await w.find('.sidebar-head .icon-btn[title="Refresh sessions"]').trigger('click')
+    await w.find('[data-testid="session-list-refresh"]').trigger('click')
     expect(w.emitted('refresh-sessions')).toEqual([[]])
 
     const none = mountList({ currentWorkspace: null })
-    expect(none.find('.sidebar-head .icon-btn[title="Refresh sessions"]').exists()).toBe(false)
+    expect(none.find('[data-testid="session-list-refresh"]').exists()).toBe(false)
   })
 
   it('重命名:prompt 有值 → emit rename-session(path, id, title)', async () => {
     vi.spyOn(window, 'prompt').mockReturnValue('  New Name  ')
     const w = mountList({ sessions: [session('s1', 'Alpha')] })
-    await w.find('.session-actions .icon-btn[title="Rename"]').trigger('click')
+    await w.find('[data-testid="session-row-rename"]').trigger('click')
     expect(w.emitted('rename-session')).toEqual([[WS, 's1', 'New Name']])
   })
 
   it('重命名:prompt 取消(null)→ 不 emit', async () => {
     vi.spyOn(window, 'prompt').mockReturnValue(null)
     const w = mountList({ sessions: [session('s1', 'Alpha')] })
-    await w.find('.session-actions .icon-btn[title="Rename"]').trigger('click')
+    await w.find('[data-testid="session-row-rename"]').trigger('click')
     expect(w.emitted('rename-session')).toBeUndefined()
   })
 
   it('删除:confirm 通过 → emit delete-session;取消 → 不 emit', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const w = mountList({ sessions: [session('s1', 'Alpha')] })
-    const delBtn = () => w.find('.session-actions .icon-btn[title="Delete"]')
+    const delBtn = () => w.find('[data-testid="session-row-delete"]')
     await delBtn().trigger('click')
     expect(w.emitted('delete-session')).toBeUndefined()
     confirm.mockReturnValue(true)

@@ -70,14 +70,14 @@ describe('TaskPanel.vue — 挂载渲染', () => {
     // order 最大的两笔(c3、c4)按升序展示。
     const doneSubjects = w.findAll('.task-row.task-done').map((r) => r.find('.task-subject').text())
     expect(doneSubjects).toEqual(['c3', 'c4'])
-    expect(w.find('.task-more').text()).toBe('+2 completed')
+    expect(w.find('[data-testid="task-more-completed"]').exists()).toBe(true)
   })
 
   it('恰好 2 笔已完成时不显示折叠提示', () => {
     const w = mount(TaskPanel, {
       props: { model: model(['c1', 'completed'], ['c2', 'completed'], ['run', 'in_progress']) },
     })
-    expect(w.find('.task-more').exists()).toBe(false)
+    expect(w.find('[data-testid="task-more-completed"]').exists()).toBe(false)
   })
 
   it('TaskUpdate(props 变更)时实时切换分组与显隐', async () => {

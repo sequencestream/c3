@@ -1,1 +1,451 @@
-{}
+{
+  "discussion": {
+    "agendaProgress": {
+      "agenda": "Agenda",
+      "discussionAgenda": {
+        "label": "Discussion agenda"
+      }
+    },
+    "consensusBlock": {
+      "abstained": "Abstained",
+      "autoAllowed": "Auto-allowed",
+      "autoAnsweredPerQuestion": "Auto-answered per question",
+      "autoDenied": "Auto-denied",
+      "disagreement": "Disagreement",
+      "disagreementManual": "(disagreement → manual)",
+      "multiAgentConsensus": "🤝 Multi-agent consensus ·"
+    },
+    "discussionList": {
+      "backgroundMaterialAResearchAgent": {
+        "placeholder": "Background material (a research agent will complete it)"
+      },
+      "cancel": "Cancel",
+      "completed": "Completed",
+      "context": "Context",
+      "create": "Create",
+      "created": "Created",
+      "discussions": "Discussions",
+      "goal": "Goal",
+      "newDiscussion": {
+        "label": "New discussion",
+        "tooltip": "New discussion"
+      },
+      "noDiscussionsYet": "No discussions yet.",
+      "openChat": {
+        "label": "Open chat: {title}"
+      },
+      "orchestrationPaused": {
+        "tooltip": "Orchestration paused"
+      },
+      "orchestrationRunning": {
+        "tooltip": "Orchestration running"
+      },
+      "paused": {
+        "label": "Paused"
+      },
+      "running": {
+        "label": "Running"
+      },
+      "status": "Status",
+      "type": "Type",
+      "whatShouldThisDiscussionAchieve": {
+        "placeholder": "What should this discussion achieve?"
+      }
+    },
+    "discussions": {
+      "continue": {
+        "label": "Continue"
+      },
+      "convertToRequirement": "Convert to Requirement",
+      "failedToReply": "failed to reply:",
+      "isReplying": "is replying…",
+      "pause": "Pause",
+      "placeholder": {
+        "followUp": "Ask a follow-up to start a new round…",
+        "speak": "Speak in this discussion…"
+      },
+      "resume": "Resume",
+      "speak": {
+        "label": "Speak"
+      },
+      "start": "Start"
+    }
+  },
+  "nav": {
+    "appHeader": {
+      "systemSettings": {
+        "tooltip": "System settings"
+      }
+    },
+    "workspaceSwitcher": {
+      "addWorkspace": {
+        "tooltip": "Add workspace"
+      },
+      "noWorkspace": "No workspace",
+      "noWorkspaceSelected": {
+        "tooltip": "No workspace selected"
+      },
+      "noWorkspacesYetClickTo": "No workspaces yet. Click + to add a directory.",
+      "removeWorkspace": {
+        "tooltip": "Remove workspace"
+      }
+    }
+  },
+  "permission": {
+    "permissionPrompt": {
+      "agentsDisagree": "🤝 Agents disagree:",
+      "allow": "Allow",
+      "allowTool": "Allow tool:",
+      "allowed": "allowed",
+      "answerQuestion": "🙋 Answer question ·",
+      "answered": "answered",
+      "askuserquestion": "AskUserQuestion",
+      "cancel": "Cancel",
+      "cancelled": "Cancelled",
+      "customReply": "✏️ Custom reply",
+      "denied": "denied",
+      "deny": "Deny",
+      "dependsOn": "Depends on:",
+      "dependsOnThisBatch": "Depends on (this batch):",
+      "multiAgentSuggestion": "Multi-agent suggestion",
+      "save": "Save",
+      "saveRequirements": "💾 Save requirements ·",
+      "saved": "Saved",
+      "submitAnswers": "Submit answers",
+      "typeACustomReply": {
+        "placeholder": "Type a custom reply…"
+      },
+      "typeYourOwnAnswer": "Type your own answer"
+    }
+  },
+  "requirement": {
+    "requirementList": {
+      "automation": {
+        "label": "▶ Automation"
+      },
+      "cancel": "Cancel",
+      "completed": "Completed:",
+      "created": "Created:",
+      "dependsOn": "Depends on:",
+      "hasUnfinishedDependencies": {
+        "tooltip": "Has unfinished dependencies"
+      },
+      "inAutoQueue": {
+        "tooltip": "in auto queue"
+      },
+      "manualTriggerMode": {
+        "tooltip": "manual trigger mode"
+      },
+      "markDone": "Mark done",
+      "newRequirementStartANew": {
+        "label": "New requirement: start a new chat session",
+        "tooltip": "New requirement: start a new chat session"
+      },
+      "noRequirementsYetChatWith": "No requirements yet. Chat with the assistant on the right and save them.",
+      "refine": "Refine",
+      "requirements": "Requirements",
+      "session": "Session",
+      "startAutomation": {
+        "tooltip": "Start automation: complete the requirements marked for automation one by one, by priority and dependencies"
+      },
+      "startDev": "Start dev",
+      "stopAutomation": {
+        "label": "■ Stop automation",
+        "tooltip": "Stop the automation process"
+      },
+      "unfinishedDependencies": "⚠ Unfinished dependencies:"
+    }
+  },
+  "schedule": {
+    "scheduleDetail": {
+      "assistant": {
+        "label": "Assistant"
+      },
+      "duration": "Duration:",
+      "error": {
+        "label": "(error)"
+      },
+      "executionHistory": "Execution history",
+      "exit": "· Exit",
+      "finished": "Finished",
+      "hideSession": {
+        "label": "▾ Hide session"
+      },
+      "loadingSession": "Loading session…",
+      "noExecutionHistoryYet": "No execution history yet.",
+      "noSessionRecordForThis": "No session record for this execution.",
+      "result": "Result",
+      "running": "Running…",
+      "selectAScheduleToView": "Select a schedule to view details.",
+      "started": "Started",
+      "tool": "Tool ·",
+      "user": {
+        "label": "User"
+      },
+      "viewSession": {
+        "label": "▸ View session"
+      }
+    },
+    "scheduleForm": {
+      "cancel": "Cancel",
+      "close": {
+        "tooltip": "Close"
+      },
+      "command": "Command",
+      "createSchedule": {
+        "label": "Create schedule"
+      },
+      "days": "Days",
+      "editSchedule": {
+        "label": "Edit Schedule"
+      },
+      "everyDay": "Every day",
+      "everyNHours": "Every N hours",
+      "everyNMinutes": "Every N minutes",
+      "executionIdentity": "Execution identity",
+      "frequency": "Frequency",
+      "hourMinuteUtc": {
+        "label": "hour : minute (UTC)"
+      },
+      "hours": {
+        "label": "hours"
+      },
+      "interval": "Interval",
+      "invalidCronExpression": "Invalid cron expression",
+      "llmPrompt": "LLM prompt",
+      "markdownPreviewAppearsHere": "Markdown preview appears here.",
+      "minutePastEachHour": {
+        "label": "minute past each hour"
+      },
+      "minutes": {
+        "label": "minutes"
+      },
+      "newSchedule": {
+        "label": "New Schedule"
+      },
+      "nextRun": "Next run:",
+      "pnpmBuildPnpmTest": {
+        "placeholder": "pnpm build && pnpm test"
+      },
+      "preview": "Preview",
+      "prompt": "Prompt",
+      "runASecurityAuditAnd": {
+        "placeholder": "Run a security audit and summarize findings…"
+      },
+      "saveChanges": {
+        "label": "Save changes"
+      },
+      "schedule": "Schedule",
+      "scheduleTimesAreInterpretedAs": "(schedule times are interpreted as UTC)",
+      "taskType": "Task type",
+      "taskTypeCannotBeChanged": "Task type cannot be changed after creation.",
+      "time": "Time",
+      "weeklyPickDays": "Weekly (pick days)"
+    },
+    "scheduleList": {
+      "collapsePanel": {
+        "tooltip": "Collapse panel"
+      },
+      "config": "Config",
+      "created": "Created",
+      "cron": "Cron",
+      "disabledClickToEnable": {
+        "tooltip": "Disabled — click to enable"
+      },
+      "enabledClickToPause": {
+        "tooltip": "Enabled — click to pause"
+      },
+      "expandPanel": {
+        "tooltip": "Expand panel"
+      },
+      "id": "ID",
+      "mode": "Mode",
+      "newSchedule": {
+        "label": "New schedule",
+        "tooltip": "New schedule"
+      },
+      "noSchedulesYet": "No schedules yet.",
+      "noUpcomingRuns": "No upcoming runs.",
+      "schedules": "Schedules",
+      "status": "Status",
+      "type": "Type",
+      "upcomingRuns": "Upcoming runs",
+      "updated": "Updated"
+    }
+  },
+  "session": {
+    "chatMessages": {
+      "error": {
+        "label": "(error)"
+      },
+      "selectASessionOrCreate": "Select a session, or create a new one in a workspace.",
+      "toolResult": "tool_result",
+      "toolUse": "tool_use ·",
+      "toolsFallback": "tools"
+    },
+    "messageInput": {
+      "endTeam": "End team",
+      "endTeamShutDownThe": {
+        "tooltip": "End team: shut down the team lead and all teammates"
+      },
+      "hint": {
+        "default": "Press Enter twice, or ⌘/Ctrl+Enter to send",
+        "turnInProgress": "Turn in progress — your message will be queued"
+      },
+      "placeholder": {
+        "default": "Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands",
+        "listening": "Listening… click the mic again or press Esc to stop",
+        "noSession": "Select or create a session to start",
+        "teamRunning": "Team running — type a message to send to the team lead (anytime)",
+        "turnInProgress": "Turn in progress — your message will be queued and merged into the next turn"
+      },
+      "queue": {
+        "label": "Queue"
+      },
+      "send": {
+        "label": "Send"
+      },
+      "startVoiceInput": {
+        "label": "Start voice input"
+      },
+      "stop": "Stop",
+      "stopTheRunningTurn": {
+        "tooltip": "Stop the running turn"
+      },
+      "stopVoiceInput": {
+        "label": "Stop voice input"
+      },
+      "voiceInput": {
+        "tooltip": "Voice input"
+      }
+    },
+    "pendingQueue": {
+      "delete": {
+        "label": "Delete"
+      },
+      "deleteRemoveFromTheQueue": {
+        "tooltip": "Delete: remove from the queue"
+      },
+      "edit": {
+        "label": "Edit"
+      },
+      "editPullBackIntoThe": {
+        "tooltip": "Edit: pull back into the input box to re-edit"
+      },
+      "pendingQueue": {
+        "label": "Pending queue"
+      },
+      "queuedMergedIntoTheNext": "Queued · merged into the next turn ("
+    },
+    "sessionList": {
+      "delete": {
+        "tooltip": "Delete"
+      },
+      "more": "▾ more",
+      "newSession": {
+        "tooltip": "New session"
+      },
+      "noSessions": "No sessions.",
+      "noWorkspaceSelected": "No workspace selected.",
+      "refreshSessions": {
+        "tooltip": "Refresh sessions"
+      },
+      "rename": {
+        "tooltip": "Rename"
+      },
+      "sessions": "Sessions",
+      "showMoreSessions": {
+        "tooltip": "Show more sessions"
+      },
+      "tool": "TOOL"
+    },
+    "sessionStatusBar": {
+      "disconnectedReconnecting": "· Disconnected, reconnecting…",
+      "resyncSessionStatus": {
+        "tooltip": "Resync session status"
+      }
+    },
+    "sessionTitleBar": {
+      "permissionMode": {
+        "label": "Permission mode"
+      }
+    },
+    "taskPanel": {
+      "completed": "completed",
+      "currentTasks": {
+        "label": "Current tasks"
+      }
+    }
+  },
+  "settings": {
+    "settingsPanel": {
+      "aMultipleChoiceQuestionTakes": "a multiple-choice\n          question) takes a separate per-question path. c3 always shows you an answer panel and\n          injects your picks back to the agent — that is the only way to answer it without a\n          terminal, so it works regardless of this toggle. The consensus part only kicks in when\n          it's",
+      "addAgent": "+ Add agent",
+      "agentName": {
+        "placeholder": "Agent name"
+      },
+      "agents": "Agents",
+      "apiKey": {
+        "label": "API Key",
+        "placeholder": "API key"
+      },
+      "askuserquestion": "AskUserQuestion",
+      "baseUrl": "Base URL",
+      "builtIn": "built-in",
+      "cancel": "Cancel",
+      "claude": "claude",
+      "close": {
+        "tooltip": "Close"
+      },
+      "configuredAgentsEachJudgesThe": "configured agents. Each judges the tool call from the recent context and\n          votes allow/deny with a reason; the session's own agent then summarizes their opinions. If\n          every voter agrees, the prompt auto-resolves with no human needed — otherwise you decide,\n          with each agent's vote and reason shown. Any error, timeout, or unparseable answer counts\n          as an abstain, which keeps the decision with you. Needs at least one agent besides the\n          session's own.",
+      "consensus": "Consensus",
+      "default": "Default",
+      "defaultMode": "Default mode",
+      "devSkill": "Dev skill",
+      "discussionRoundsPerStage": "Discussion rounds per stage",
+      "discussionSpeechCharacterLimit": "Discussion speech character limit",
+      "display": "Display",
+      "enableDisableThisAgent": {
+        "tooltip": "Enable / disable this agent"
+      },
+      "enableMultiAgentConsensusVoting": "Enable multi-agent consensus voting",
+      "loginAndCannotBeEdited": "login) and cannot be edited or removed. Toggle",
+      "lowerValuesAreClampedUp": "(lower values are clamped up on save).",
+      "model": {
+        "label": "Model",
+        "placeholder": "e.g. claude-opus-4-8"
+      },
+      "name": "Name",
+      "newSessionsLaunchClaudeCode": "New sessions launch Claude Code with the default agent. The system agent uses no overrides\n          (your existing",
+      "on": "On",
+      "onState": "on",
+      "onlyAnEnabledAgentCan": {
+        "tooltip": "Only an enabled agent can be the default"
+      },
+      "other": "other",
+      "removeAgent": {
+        "tooltip": "Remove agent"
+      },
+      "save": "Save",
+      "showToolSessions": "Show tool sessions",
+      "system": {
+        "placeholder": "System"
+      },
+      "systemSettings": "System Settings",
+      "theLanguageTheBrowsersSpeech": "The language the browser's speech recognition listens for when you use the microphone in\n          the message box. Voice input is provided by the browser (Chrome/Edge) and may require a\n          network connection.",
+      "theMaximumNumberOfSpeaking": "The maximum number of speaking rounds a multi-agent discussion spends in each workflow\n          stage before the organizer is forced to advance. Higher values allow deeper, longer\n          discussions. Minimum",
+      "thePerTurnCharacterBudget": "The per-turn character budget participants see in their prompt guidance. Participants are\n          asked to keep replies within this limit, but over-long replies are accepted verbatim (no\n          hard truncation). Minimum",
+      "thePermissionModeNewSessions": "The permission mode new sessions start in. You can still switch a session's mode at any\n          time from its header.",
+      "theVotersAnswerEveryQuestion": ": the voters answer every question and the decider summarizes and\n          reconciles answers that mean the same thing, so questions everyone agrees on get\n          pre-filled or auto-answered and only the rest are left for you. With consensus off, no\n          voting runs and you fill the whole panel yourself.",
+      "toEnableAnAgentA": "to enable an agent; a disabled agent is excluded from discussion\n          participants, consensus voting, the degradation chain, and the default picker — but bound\n          or fallback launches still work, so no existing session is locked out.",
+      "voiceInputLanguage": "Voice input language",
+      "whenEnabledAnAllowDeny": "When enabled, an allow/deny permission prompt is first put to the",
+      "whenStartingADevelopmentTask": "When starting a development task, this slash command is prepended to the requirement text.\n          Leave it empty to add no skill prefix.",
+      "whereTheAgentAsks": "(where the agent asks",
+      "you": "you",
+      "yourSkillLeaveEmptyFor": {
+        "placeholder": "/your-skill (leave empty for no prefix)"
+      }
+    }
+  }
+}

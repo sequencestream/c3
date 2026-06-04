@@ -13,6 +13,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "i18n:check": "node scripts/i18n/check.mjs",
+    "i18n:extract": "node scripts/i18n/extract.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "node scripts/e2e/run-all.mjs",
@@ -20,6 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@intlify/eslint-plugin-vue-i18n": "^4.5.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.10",
     "concurrently": "^9.1.0",
@@ -29,12 +32,14 @@
     "globals": "^17.6.0",
     "happy-dom": "^15.11.7",
     "husky": "^9.1.7",
+    "jsonc-eslint-parser": "^3.1.0",
     "lint-staged": "^17.0.5",
     "prettier": "^3.8.3",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.60.0",
     "vitest": "^2.1.8",
     "vue": "^3.5.35",
-    "vue-eslint-parser": "^10.4.0"
+    "vue-eslint-parser": "^10.4.0",
+    "yaml-eslint-parser": "^2.0.0"
   }
 }

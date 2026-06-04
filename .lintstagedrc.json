@@ -1,4 +1,5 @@
 {
   "*.{ts,vue,js,mjs,cjs}": ["eslint --fix", "prettier --write"],
-  "*.{json,css,md}": ["prettier --write"]
+  "*.{json,css,md}": ["prettier --write"],
+  "web/src/**/*.{ts,vue,json}": "pnpm i18n:check"
 }

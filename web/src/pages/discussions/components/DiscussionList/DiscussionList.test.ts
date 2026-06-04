@@ -34,10 +34,11 @@ function mountList(
   })
 }
 
-// Click the detail tab whose label matches `label` (the expanded accordion shows one field at a time).
-async function clickTab(w: ReturnType<typeof mountList>, label: string): Promise<void> {
-  const tab = w.findAll('.disc-tab').find((t) => t.text() === label)
-  if (!tab) throw new Error(`tab not found: ${label}`)
+// Click the detail tab by its stable kind (goal/context/conclusion/details) — never by
+// the visible label, so the assertion survives i18n extraction of the tab copy.
+async function clickTab(w: ReturnType<typeof mountList>, kind: string): Promise<void> {
+  const tab = w.find(`[data-testid="disc-tab-${kind}"]`)
+  if (!tab.exists()) throw new Error(`tab not found: ${kind}`)
   await tab.trigger('click')
 }
 
@@ -102,15 +103,14 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     await w.find('.disc-item-main').trigger('click')
     // 首个有内容的 Tab(Goal)默认激活,内容区一次只渲染一个字段。
     expect(w.find('.disc-tab-body').text()).toContain('Decide TTL')
-    await clickTab(w, 'Context')
+    await clickTab(w, 'context')
     expect(w.find('.disc-tab-body').text()).toContain('Redis')
-    await clickTab(w, 'Conclusion')
+    await clickTab(w, 'conclusion')
     expect(w.find('.disc-tab-body').text()).toContain('Use 60s')
-    // Details Tab:结构化元信息(Created / Completed)。
-    await clickTab(w, 'Details')
-    const meta = w.find('.disc-meta-list').text()
-    expect(meta).toContain('Created')
-    expect(meta).toContain('Completed')
+    // Details Tab:结构化元信息行按 testid 断言存在,不依赖标签译文。
+    await clickTab(w, 'details')
+    expect(w.find('[data-testid="disc-meta-created"]').exists()).toBe(true)
+    expect(w.find('[data-testid="disc-meta-completed"]').exists()).toBe(true)
   })
 
   it('activeId 对应项标记 active', () => {
@@ -157,10 +157,10 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.find('.disc-form').exists()).toBe(false)
   })
 
-  it('状态以彩色 pill 呈现:文案 + 状态 CSS 类', () => {
+  it('状态以彩色 pill 呈现:状态 CSS 类(不依赖文案译文)', () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha', { status: 'completed' })] })
     const pill = w.find('.disc-status')
-    expect(pill.text()).toBe('Completed')
+    expect(pill.exists()).toBe(true)
     expect(pill.classes()).toContain('completed')
     expect(w.find('.disc-item').classes()).toContain('completed')
   })
@@ -234,7 +234,6 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     const run1 = items[0].find('.disc-run')
     expect(run1.exists()).toBe(true)
     expect(run1.classes()).toContain('running')
-    expect(run1.text()).toBe('Running')
     expect(run1.find('.disc-run-dot').exists()).toBe(true)
     expect(items[0].find('.disc-status').exists()).toBe(true)
     // d2 无活跃 run → 不渲染徽标。
@@ -250,7 +249,6 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(items[0].find('.disc-run').classes()).toContain('running')
     const run2 = items[1].find('.disc-run')
     expect(run2.classes()).toContain('paused')
-    expect(run2.text()).toBe('Paused')
     expect(items[2].find('.disc-run').exists()).toBe(false)
   })
 

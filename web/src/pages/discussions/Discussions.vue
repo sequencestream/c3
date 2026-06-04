@@ -118,11 +118,23 @@ function statusLabel(status: Discussion['status']): string {
       v-if="activeDiscussion && (dispatch.pending.length || dispatch.errors.length)"
       class="disc-dispatch"
     >
-      <p v-for="a in dispatch.pending" :key="`p-${a.id}`" class="disc-dispatch-pending">
+      <p
+        v-for="a in dispatch.pending"
+        :key="`p-${a.id}`"
+        class="disc-dispatch-pending"
+        data-testid="discussion-pending"
+        data-i18n-key=""
+      >
         <span class="disc-dispatch-dot" aria-hidden="true">●</span>
         {{ a.name }} is replying…
       </p>
-      <p v-for="e in dispatch.errors" :key="`e-${e.id}`" class="disc-dispatch-error">
+      <p
+        v-for="e in dispatch.errors"
+        :key="`e-${e.id}`"
+        class="disc-dispatch-error"
+        data-testid="discussion-error"
+        data-i18n-key=""
+      >
         ⚠ {{ e.name }} failed to reply: {{ e.error }}
       </p>
     </div>

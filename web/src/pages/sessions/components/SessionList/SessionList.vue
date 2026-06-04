@@ -99,12 +99,35 @@ function renameSession(sessionId: string, current: string) {
     <div class="sidebar-head">
       <span class="sidebar-title">Sessions</span>
       <span v-if="currentWorkspace" class="sidebar-actions">
-        <button class="icon-btn" title="Refresh sessions" @click="refreshSessions">⟳</button>
-        <button class="icon-btn" title="New session" @click="createSession">＋</button>
+        <button
+          class="icon-btn"
+          title="Refresh sessions"
+          data-testid="session-list-refresh"
+          data-i18n-key=""
+          @click="refreshSessions"
+        >
+          ⟳
+        </button>
+        <button
+          class="icon-btn"
+          title="New session"
+          data-testid="session-list-new"
+          data-i18n-key=""
+          @click="createSession"
+        >
+          ＋
+        </button>
       </span>
     </div>
     <div class="ws-list">
-      <p v-if="!currentWorkspace" class="empty-hint">No workspace selected.</p>
+      <p
+        v-if="!currentWorkspace"
+        class="empty-hint"
+        data-testid="session-list-empty"
+        data-i18n-key=""
+      >
+        No workspace selected.
+      </p>
       <div v-else class="session-list">
         <div v-if="pendingInCurrent()" class="session active pending">
           <span
@@ -140,11 +163,19 @@ function renameSession(sessionId: string, current: string) {
             <button
               class="icon-btn"
               title="Rename"
+              data-testid="session-row-rename"
+              data-i18n-key=""
               @click.stop="renameSession(s.sessionId, s.title)"
             >
               ✎
             </button>
-            <button class="icon-btn" title="Delete" @click.stop="deleteSession(s.sessionId)">
+            <button
+              class="icon-btn"
+              title="Delete"
+              data-testid="session-row-delete"
+              data-i18n-key=""
+              @click.stop="deleteSession(s.sessionId)"
+            >
               🗑
             </button>
           </span>

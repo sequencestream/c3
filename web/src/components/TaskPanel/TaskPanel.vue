@@ -34,7 +34,12 @@ const view = computed(() => taskPanelView(props.model))
       <span class="task-mark">✓</span>
       <span class="task-subject">{{ t.subject }}</span>
     </div>
-    <div v-if="view.hiddenCompleted > 0" class="task-more">
+    <div
+      v-if="view.hiddenCompleted > 0"
+      class="task-more"
+      data-testid="task-more-completed"
+      data-i18n-key=""
+    >
       +{{ view.hiddenCompleted }} completed
     </div>
   </div>

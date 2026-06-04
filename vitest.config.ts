@@ -14,7 +14,7 @@ export default defineConfig({
       ['web/src/components/**', 'happy-dom'],
       ['web/src/pages/**', 'happy-dom'],
     ],
-    include: ['{server,shared,web}/src/**/*.test.ts'],
+    include: ['{server,shared,web}/src/**/*.test.ts', 'scripts/**/*.test.mjs'],
     globals: false,
   },
 })

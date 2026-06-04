@@ -1,6 +1,7 @@
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import vue from 'eslint-plugin-vue'
+import vueI18n from '@intlify/eslint-plugin-vue-i18n'
 import prettier from 'eslint-config-prettier'
 import globals from 'globals'
 
@@ -45,6 +46,29 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+
+  {
+    // i18n gate: forbid hard-coded UI text in web templates. Currently `warn`
+    // (the existing pages are not yet extracted — see specs/style/i18n-spec.md);
+    // flip to `error` once extraction is done so hard-coding fails CI.
+    files: ['web/src/**/*.vue'],
+    plugins: { '@intlify/vue-i18n': vueI18n },
+    settings: {
+      'vue-i18n': {
+        localeDir: './web/src/locales/*.json',
+        messageSyntaxVersion: '^11.0.0',
+      },
+    },
+    rules: {
+      '@intlify/vue-i18n/no-raw-text': [
+        'warn',
+        {
+          // Ignore text that is purely symbols / digits / punctuation (not translatable copy).
+          ignorePattern: '^[\\s\\d\\p{P}\\p{S}]+$',
+        },
       ],
     },
   },

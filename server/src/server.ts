@@ -7,7 +7,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
   AutomationStatus,
-  ClientToServer,
   Discussion,
   DiscussionMessage,
   ResearchMessage,
@@ -16,85 +15,40 @@ import type {
   ServerToClient,
 } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { runClaude, REQUIREMENT_DISALLOWED_TOOLS, decideSocketResume } from './claude.js'
+import { addWorkspace, getActiveSessionId, listWorkspaces, setSessionMode } from './state.js'
+import { listWorkspaceSessions, sessionExists } from './sessions.js'
 import {
-  runClaude,
-  registerPermissionResolver,
-  REQUIREMENT_DISALLOWED_TOOLS,
-  decideSocketResume,
-} from './claude.js'
-import { listCommands } from './commands.js'
-import {
-  addWorkspace,
-  getActiveSessionId,
-  getSessionMode,
-  hasWorkspace,
-  listWorkspaces,
-  removeWorkspace,
-  setActiveSessionId,
-  setSessionMode,
-  touchWorkspace,
-} from './state.js'
-import {
-  listWorkspaceSessions,
-  loadHistory,
-  loadLastAssistantMessages,
-  removeSession,
-  renameWorkspaceSession,
-  sessionExists,
-  sessionTitle,
-} from './sessions.js'
-import {
-  loadSettings,
-  saveSettings,
   resolveSessionLaunch,
   resolveAgent,
   launchForAgent,
   getDegradationChain,
   getSocketAutoResume,
   getDefaultMode,
-  getDevSkill,
 } from './settings.js'
 import {
   addViewer,
   bindPending,
   ensureRuntime,
-  getRuntime,
   listStatuses,
   reconcileLiveness,
-  removeRuntime,
-  removeRuntimesForWorkspace,
   removeViewer,
   setOnStatusChange,
   setStatus,
   finalizeRun,
   stopRun,
   emit,
-  resolvePending,
   clearPending,
   isRunning,
   type SessionRuntime,
   type Viewer,
 } from './runs.js'
-import {
-  getChatSession,
-  getRequirement,
-  isStoreAvailable,
-  listRequirements,
-  rebindChatSession,
-  setAutomate,
-  setChatSession,
-  setLastDevSession,
-  updateStatus,
-} from './requirements/store.js'
+import { isStoreAvailable, listRequirements } from './requirements/store.js'
 import {
   isStoreAvailable as isDiscussionStoreAvailable,
   listDiscussions,
   getDiscussion,
-  createDiscussion,
   setDiscussionResearchResult,
-  listMessages as listDiscussionMessages,
-  appendMessage as appendDiscussionMessage,
-  updateDiscussionStatus as updateDiscussionStatus,
 } from './discussions/store.js'
 import {
   researchDiscussionContext,
@@ -106,56 +60,35 @@ import {
   defaultDiscussionDeps,
   type DispatchStatus,
 } from './discussions/orchestrator.js'
-import { isDiscussionType } from '@ccc/shared/discussion-types'
 import {
   isStoreAvailable as isScheduleStoreAvailable,
   listSchedules,
   getSchedule,
-  createSchedule,
   updateSchedule as updateScheduleStore,
-  deleteSchedule as deleteScheduleStore,
-  getScheduleDetail,
-  listExecutionLogs,
   appendExecutionLog,
   getDueSchedules,
   updateNextRunAt,
   updateExecutionLog,
-  listPendingWriteApprovals as storeListPendingApprovals,
-  getWorkspaceMcpConfig as storeGetWorkspaceMcpConfig,
-  saveWorkspaceMcpConfig as storeSaveWorkspaceMcpConfig,
 } from './schedules/store.js'
-import {
-  startScheduler,
-  stopScheduler,
-  triggerRunNow,
-  setExecutionStore,
-} from './schedules/scheduler.js'
-import { readExecutionTranscript } from './schedules/transcript.js'
+import { startScheduler, stopScheduler, setExecutionStore } from './schedules/scheduler.js'
 import {
   setBroadcast as setApprovalBroadcast,
   startExpiryScanner,
   stopExpiryScanner,
-  resolveApproval,
-  cancelAllForWorkspace as cancelAllApprovalsForWorkspace,
 } from './schedules/queue.js'
-import { onWorkspaceRemoved } from './schedules/archiver.js'
-import { generateScheduleName } from './schedules/naming.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
-import { reconcileInProgress } from './requirements/reconcile.js'
-import { judgeCompletion } from './requirements/judge.js'
-import { commitAndPush } from './git.js'
 import {
-  getAutomationStatus,
   hasPendingQuestion,
-  startAutomation,
-  stopAutomation,
   type AutomationHooks,
   type DevTurnResult,
   type RunDevTurnInput,
 } from './requirements/automation.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
+import { type AppContext, assertNoTransportFields } from './kernel/types.js'
+import { dispatch, type Conn } from './transport/index.js'
+import { registerHandlers } from './features/index.js'
 
 export interface ServerOptions {
   /** Optional seed workspace — added to the registry and made discoverable. */
@@ -935,42 +868,78 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     isRunning,
   }
 
+  // ── Composition root (ADR-0009 R3): construct the AppContext ONCE, explicitly,
+  // and inject it into every handler at dispatch time. Slice 1/3 holds references
+  // to the closures/state above (shared state still owned by this closure); slice
+  // 2/3 moves ownership into the context and routes broadcasts through a kernel
+  // event bus. `launchDeps` is the bag the top-level `launchRun` reads.
+  const launchDeps = { broadcastStatuses, broadcastRequirements }
+  const ctx: AppContext = {
+    launchDeps,
+    launchRun: (rt, prompt, cbs) => launchRun(rt, prompt, launchDeps, cbs),
+    broadcastStatuses,
+    broadcastRequirements,
+    broadcastDiscussions,
+    broadcastSchedules,
+    broadcastAutomation,
+    broadcastDiscussionMessage,
+    broadcastDiscussionRunStatus,
+    enrichRunStatus,
+    runStatusCache,
+    judgedSessions,
+    discussionRuns,
+    researchRuns,
+    discussionRunSnapshot,
+    researchRunSnapshot,
+    startDiscussionRun,
+    startResearchRun,
+    automationHooks,
+  }
+  // R6 boot-time guard: no transport field (sock/viewer/connections) may cross
+  // the kernel boundary.
+  assertNoTransportFields(ctx)
+
+  // The startup handler registry: an exhaustive `Record<ClientToServer['type'],
+  // Handler>` (a missing handler is a compile-time error). The 40+ case switch
+  // below collapses to a single `dispatch(reg, ctx, conn, raw)`.
+  const handlerRegistry = registerHandlers()
+
   app.get(
     '/ws',
     upgradeWebSocket(() => {
-      // This connection is a *view* onto sessions, not an owner of runs. It holds
-      // which session it currently shows; runs live in the module-level registry
-      // and survive switching away, refreshes, and disconnects.
-      let viewing: string | null = null
+      // This connection is a *view* onto sessions, not an owner of runs (ADR-0006).
+      // Per-connection state (which session it watches + how to deliver) lives on
+      // `conn`; shared run state lives in the module-level registry and `ctx`.
       let sock: { send: (d: string) => void } | null = null
-      // Stable per-connection delivery: live stream events for the viewed session
-      // and broadcast statuses both flow through this.
-      const deliver: Viewer = (msg) => {
-        if (sock) send(sock, msg)
-      }
-
-      const sendWorkspaces = (ws: { send: (d: string) => void }): void =>
-        send(ws, { type: 'workspaces', workspaces: listWorkspaces() })
-
-      const sendSessions = async (
-        ws: { send: (d: string) => void },
-        workspacePath: string,
-      ): Promise<void> => {
-        try {
-          const sessions = await listWorkspaceSessions(workspacePath)
-          send(ws, { type: 'sessions', workspacePath, sessions })
-        } catch (err) {
-          send(ws, {
-            type: 'error',
-            error: { code: 'session.listFailed', params: { detail: errMsg(err) } },
-          })
-        }
+      const conn: Conn = {
+        send: (msg) => {
+          if (sock) send(sock, msg)
+        },
+        viewing: null,
+        deliver: (msg) => {
+          if (sock) send(sock, msg)
+        },
+        sendWorkspaces: () => {
+          if (sock) send(sock, { type: 'workspaces', workspaces: listWorkspaces() })
+        },
+        sendSessions: async (workspacePath) => {
+          if (!sock) return
+          try {
+            const sessions = await listWorkspaceSessions(workspacePath)
+            send(sock, { type: 'sessions', workspacePath, sessions })
+          } catch (err) {
+            send(sock, {
+              type: 'error',
+              error: { code: 'session.listFailed', params: { detail: errMsg(err) } },
+            })
+          }
+        },
       }
 
       return {
         onOpen(_evt, ws) {
           sock = ws
-          connections.add(deliver)
+          connections.add(conn.deliver)
           send(ws, {
             type: 'ready',
             workspaces: listWorkspaces(),
@@ -978,1008 +947,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             statuses: listStatuses(),
           })
         },
-        async onMessage(evt, ws) {
-          let msg: ClientToServer
-          try {
-            msg = JSON.parse(String(evt.data)) as ClientToServer
-          } catch {
-            return
-          }
-
-          switch (msg.type) {
-            case 'ping':
-              send(ws, { type: 'pong' })
-              return
-
-            case 'request_session_status':
-              send(ws, { type: 'session_status', statuses: listStatuses() })
-              return
-
-            case 'get_settings':
-              send(ws, { type: 'settings', settings: loadSettings() })
-              return
-
-            case 'save_settings':
-              send(ws, { type: 'settings', settings: saveSettings(msg.settings) })
-              return
-
-            case 'permission_response':
-              // Clear the pending-prompt guard first so the run's eventual
-              // `turn_end` can settle to idle (the prompt is now decided).
-              resolvePending(msg.requestId)
-              registerPermissionResolver.resolve(msg.requestId, msg.decision, msg.answers)
-              return
-
-            case 'add_workspace': {
-              const abs = addWorkspace(msg.path, Date.now())
-              if (!abs) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'path.notDirectory', params: { path: msg.path } },
-                })
-                return
-              }
-              sendWorkspaces(ws)
-              await sendSessions(ws, abs)
-              return
-            }
-
-            case 'remove_workspace': {
-              const abs = resolve(msg.path)
-              // Tear down any background runs under this workspace.
-              removeRuntimesForWorkspace(abs)
-              // Pause all schedules under this workspace (SCH-R1).
-              if (isScheduleStoreAvailable()) {
-                onWorkspaceRemoved(abs)
-              }
-              removeWorkspace(abs)
-              if (viewing && getRuntime(viewing) === undefined) viewing = null
-              sendWorkspaces(ws)
-              broadcastStatuses()
-              return
-            }
-
-            case 'list_sessions':
-              await sendSessions(ws, resolve(msg.workspacePath))
-              return
-
-            case 'list_commands': {
-              const cwd = viewing ? getRuntime(viewing)?.workspacePath : null
-              if (!cwd) {
-                send(ws, { type: 'commands', commands: [] })
-                return
-              }
-              try {
-                const commands = await listCommands(cwd)
-                send(ws, { type: 'commands', commands })
-              } catch (err) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'command.listFailed', params: { detail: errMsg(err) } },
-                })
-              }
-              return
-            }
-
-            case 'create_session': {
-              const abs = resolve(msg.workspacePath)
-              if (!hasWorkspace(abs)) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'workspace.unknown', params: { path: msg.workspacePath } },
-                })
-                return
-              }
-              // Switching views never stops a run — just stop watching the old one.
-              if (viewing) removeViewer(viewing, deliver)
-              const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-              const defaultMode = getDefaultMode()
-              ensureRuntime(pendingId, abs, defaultMode, [])
-              viewing = pendingId
-              addViewer(pendingId, deliver)
-              touchWorkspace(abs, Date.now())
-              send(ws, {
-                type: 'session_selected',
-                workspacePath: abs,
-                sessionId: pendingId,
-                title: 'New session',
-                mode: defaultMode,
-                history: [],
-                status: 'idle',
-              })
-              sendWorkspaces(ws)
-              return
-            }
-
-            case 'select_session': {
-              const abs = resolve(msg.workspacePath)
-              if (viewing) removeViewer(viewing, deliver)
-              try {
-                const existing = getRuntime(msg.sessionId)
-                const title = await sessionTitle(abs, msg.sessionId)
-                // Cold session ⇒ read disk once and seed a runtime; warm session ⇒
-                // reuse its in-memory runtime (baseline + live buffer). After this
-                // point there is no `await`, so the replay below is atomic w.r.t.
-                // concurrent `emit`s.
-                const rt = existing
-                  ? existing
-                  : ensureRuntime(
-                      msg.sessionId,
-                      abs,
-                      getSessionMode(msg.sessionId),
-                      await loadHistory(abs, msg.sessionId),
-                    )
-                viewing = msg.sessionId
-                touchWorkspace(abs, Date.now())
-                setActiveSessionId(msg.sessionId)
-                send(ws, {
-                  type: 'session_selected',
-                  workspacePath: abs,
-                  sessionId: msg.sessionId,
-                  title,
-                  mode: rt.mode,
-                  history: rt.baseline,
-                  status: rt.status,
-                })
-                // Replay everything emitted since the baseline (current + past
-                // turns), then start receiving live events.
-                for (const e of rt.buffer) send(ws, e)
-                addViewer(msg.sessionId, deliver)
-                sendWorkspaces(ws)
-              } catch (err) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'session.openFailed', params: { detail: errMsg(err) } },
-                })
-              }
-              return
-            }
-
-            case 'delete_session': {
-              const abs = resolve(msg.workspacePath)
-              try {
-                removeRuntime(msg.sessionId)
-                await removeSession(abs, msg.sessionId)
-                if (viewing === msg.sessionId) viewing = null
-                if (getActiveSessionId() === msg.sessionId) setActiveSessionId(null)
-                await sendSessions(ws, abs)
-                broadcastStatuses()
-              } catch (err) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'session.deleteFailed', params: { detail: errMsg(err) } },
-                })
-              }
-              return
-            }
-
-            case 'rename_session': {
-              const abs = resolve(msg.workspacePath)
-              try {
-                await renameWorkspaceSession(abs, msg.sessionId, msg.title)
-                await sendSessions(ws, abs)
-              } catch (err) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'session.renameFailed', params: { detail: errMsg(err) } },
-                })
-              }
-              return
-            }
-
-            case 'set_mode': {
-              const rt = viewing ? getRuntime(viewing) : undefined
-              // Requirement comm sessions are pinned to `default` (the gateway
-              // must always fire); ignore mode changes for them.
-              if (rt && rt.kind === 'requirement') {
-                send(ws, { type: 'mode_changed', mode: 'default' })
-                return
-              }
-              if (rt) {
-                rt.mode = msg.mode
-                // Persist for real sessions; pending sessions persist on bind.
-                if (!rt.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
-                  setSessionMode(rt.sessionId, msg.mode)
-                }
-                if (rt.run?.handle) {
-                  try {
-                    await rt.run.handle.setPermissionMode(msg.mode)
-                  } catch {
-                    /* query may have finished between check and call — ignore */
-                  }
-                }
-              }
-              send(ws, { type: 'mode_changed', mode: msg.mode })
-              return
-            }
-
-            case 'stop_run': {
-              if (viewing) stopRun(viewing)
-              return
-            }
-
-            case 'user_prompt': {
-              const rt = viewing ? getRuntime(viewing) : undefined
-              if (!rt) {
-                send(ws, { type: 'error', error: { code: 'session.notSelected' } })
-                return
-              }
-              // Team session: the lead process is alive across turns, so feed the
-              // prompt into the *same* run (no resume launch). The user may send
-              // even while the lead is mid-turn — the SDK queues it.
-              if (rt.team && rt.run?.handle) {
-                emit(rt.sessionId, { type: 'user_text', text: msg.text })
-                setStatus(rt.sessionId, 'running')
-                rt.run.handle.pushInput(msg.text)
-                return
-              }
-              if (rt.run) {
-                send(ws, { type: 'error', error: { code: 'session.turnRunning' } })
-                return
-              }
-              const isRequirement = rt.kind === 'requirement'
-              await launchRun(
-                rt,
-                msg.text,
-                { broadcastStatuses, broadcastRequirements },
-                {
-                  onSessionId: (prev, sid) => {
-                    if (isRequirement) {
-                      // Comm session: re-key its store mapping; never touch the
-                      // persisted active/normal-mode state (it's a hidden session).
-                      rebindChatSession(prev, sid)
-                      if (viewing === prev) viewing = sid
-                    } else {
-                      setSessionMode(sid, rt.mode)
-                      if (viewing === prev) {
-                        viewing = sid
-                        setActiveSessionId(sid)
-                      }
-                    }
-                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
-                  },
-                  // Requirement comm sessions are hidden from the normal list, so
-                  // there's nothing to refresh for them.
-                  onSettled: isRequirement
-                    ? undefined
-                    : async (wp) => {
-                        await sendSessions(ws, wp)
-                      },
-                },
-              )
-              return
-            }
-
-            case 'list_requirements': {
-              const proj = resolve(msg.projectPath)
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              send(ws, {
-                type: 'requirements',
-                projectPath: proj,
-                items: listRequirements(proj, msg.status),
-              })
-              return
-            }
-
-            case 'open_requirement_chat': {
-              const proj = resolve(msg.projectPath)
-              if (!hasWorkspace(proj)) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
-                })
-                return
-              }
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              // Stop viewing whatever this connection had open.
-              if (viewing) removeViewer(viewing, deliver)
-              // Resume the project's persisted comm session, or open a new one.
-              // This is the single path hit on first entry, WS reconnect, and a
-              // hard refresh — all "auto-reload the last comm session".
-              const existing = getChatSession(proj)
-              let chatId: string
-              if (existing) {
-                chatId = existing
-                if (!getRuntime(chatId)) {
-                  const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
-                  const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
-                  ensureRuntime(chatId, proj, 'default', baseline, 'requirement')
-                }
-              } else {
-                chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-                ensureRuntime(chatId, proj, 'default', [], 'requirement')
-                setChatSession(proj, chatId)
-              }
-              const rt = getRuntime(chatId)
-              if (!rt) {
-                send(ws, { type: 'error', error: { code: 'requirement.chatOpenFailed' } })
-                return
-              }
-              viewing = chatId
-              touchWorkspace(proj, Date.now())
-              send(ws, {
-                type: 'session_selected',
-                workspacePath: proj,
-                sessionId: chatId,
-                title: 'New Requirement',
-                mode: 'default',
-                history: rt.baseline,
-                status: rt.status,
-              })
-              for (const e of rt.buffer) send(ws, e)
-              addViewer(chatId, deliver)
-
-              // (A) Send the requirement list IMMEDIATELY so the panel renders
-              // without waiting on reconciliation. runStatus comes from the live
-              // registry / cache (enrichRunStatus); the expensive part — judging
-              // dead dev sessions — runs in the background below and re-broadcasts
-              // the refreshed list once it settles.
-              send(ws, {
-                type: 'requirements',
-                projectPath: proj,
-                items: enrichRunStatus(listRequirements(proj)),
-              })
-              send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
-
-              // Reconcile in_progress requirements in the background: for each,
-              // check liveness and auto-complete if the process is dead but the
-              // judge confirms done. Never blocks the list send above.
-              const inProgReqs = listRequirements(proj).filter((r) => r.status === 'in_progress')
-              // (B) Skip a requirement whose CURRENT dead session was already judged
-              // (same verdict, saved LLM call). Live processes and brand-new session
-              // ids fall through and still get (re)judged.
-              const toReconcile = inProgReqs.filter((r) => {
-                const dead = !(r.lastDevSessionId && isRunning(r.lastDevSessionId))
-                if (!dead) return true
-                return !r.lastDevSessionId || judgedSessions.get(r.id) !== r.lastDevSessionId
-              })
-              if (toReconcile.length > 0) {
-                const signal = new AbortController()
-                const sessionById = new Map(inProgReqs.map((r) => [r.id, r.lastDevSessionId]))
-                void reconcileInProgress(
-                  toReconcile,
-                  proj,
-                  {
-                    isRunning,
-                    loadTranscriptMessages: (p, sid, count) =>
-                      loadLastAssistantMessages(p, sid, count),
-                    judgeCompletion,
-                    commitAndPush,
-                    updateStatus,
-                  },
-                  signal.signal,
-                )
-                  .then((reconciled) => {
-                    if (reconciled.length === 0) return
-                    for (const r of reconciled) {
-                      // Cache the derived runStatus for enrichRunStatus. Auto-completed
-                      // items left in_progress, so their entry won't be read again.
-                      runStatusCache.set(r.requirementId, r.runStatus)
-                      // Record the dead session we judged so (B) can skip it next
-                      // time; a still-running process keeps being re-derived instead.
-                      const sid = sessionById.get(r.requirementId)
-                      if (sid && r.runStatus !== 'running') judgedSessions.set(r.requirementId, sid)
-                    }
-                    // Push the refreshed list (updated runStatus + any auto-completes).
-                    broadcastRequirements(proj)
-                  })
-                  .catch((err) => {
-                    console.warn(
-                      `[c3:reconcile] 对账异常: ${err instanceof Error ? err.message : String(err)}`,
-                    )
-                  })
-              }
-              return
-            }
-
-            case 'new_requirement_chat': {
-              const proj = resolve(msg.projectPath)
-              if (!hasWorkspace(proj)) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
-                })
-                return
-              }
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              // Open a brand-new comm session: setChatSession resets the prior
-              // is_current row to 0 and marks this one current, so a refresh /
-              // reconnect via open_requirement_chat resumes THIS session.
-              if (viewing) removeViewer(viewing, deliver)
-              const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-              const rt = ensureRuntime(chatId, proj, 'default', [], 'requirement')
-              setChatSession(proj, chatId)
-              viewing = chatId
-              touchWorkspace(proj, Date.now())
-              addViewer(chatId, deliver)
-              send(ws, {
-                type: 'session_selected',
-                workspacePath: proj,
-                sessionId: chatId,
-                title: 'New Requirement',
-                mode: 'default',
-                history: [],
-                status: rt.status,
-              })
-              send(ws, {
-                type: 'requirements',
-                projectPath: proj,
-                items: enrichRunStatus(listRequirements(proj)),
-              })
-              send(ws, { type: 'automation_status', status: getAutomationStatus(proj) })
-              return
-            }
-
-            case 'refine_requirement': {
-              const proj = resolve(msg.projectPath)
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              const req = getRequirement(msg.requirementId)
-              if (!req) {
-                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
-                return
-              }
-              // Restart the comm session as a fresh one seeded with this requirement.
-              if (viewing) removeViewer(viewing, deliver)
-              const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-              const rt = ensureRuntime(chatId, proj, 'default', [], 'requirement')
-              setChatSession(proj, chatId)
-              viewing = chatId
-              addViewer(chatId, deliver)
-              send(ws, {
-                type: 'session_selected',
-                workspacePath: proj,
-                sessionId: chatId,
-                title: 'New Requirement',
-                mode: 'default',
-                history: [],
-                status: 'idle',
-              })
-              send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
-              const firstPrompt = `开始完善需求 ${req.id}。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_requirements。`
-              await launchRun(
-                rt,
-                firstPrompt,
-                { broadcastStatuses, broadcastRequirements },
-                {
-                  onSessionId: (prev, sid) => {
-                    rebindChatSession(prev, sid)
-                    if (viewing === prev) viewing = sid
-                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
-                  },
-                },
-              )
-              return
-            }
-
-            case 'discussion_to_requirement': {
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              const discussion = getDiscussion(msg.discussionId)
-              if (!discussion) {
-                send(ws, { type: 'error', error: { code: 'discussion.notFound' } })
-                return
-              }
-              if (discussion.status !== 'completed' || !discussion.conclusion) {
-                send(ws, { type: 'error', error: { code: 'discussion.notConcludable' } })
-                return
-              }
-              const proj = resolve(discussion.projectPath)
-              // Seed a fresh comm session with the conclusion — a refine variant.
-              if (viewing) removeViewer(viewing, deliver)
-              const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-              const rt = ensureRuntime(chatId, proj, 'default', [], 'requirement')
-              setChatSession(proj, chatId)
-              viewing = chatId
-              addViewer(chatId, deliver)
-              send(ws, {
-                type: 'session_selected',
-                workspacePath: proj,
-                sessionId: chatId,
-                title: 'New Requirement',
-                mode: 'default',
-                history: [],
-                status: 'idle',
-              })
-              send(ws, { type: 'requirements', projectPath: proj, items: listRequirements(proj) })
-              const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_requirements。`
-              await launchRun(
-                rt,
-                firstPrompt,
-                { broadcastStatuses, broadcastRequirements },
-                {
-                  onSessionId: (prev, sid) => {
-                    rebindChatSession(prev, sid)
-                    if (viewing === prev) viewing = sid
-                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
-                  },
-                },
-              )
-              return
-            }
-
-            case 'start_development': {
-              const proj = resolve(msg.projectPath)
-              if (!hasWorkspace(proj)) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
-                })
-                return
-              }
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              const req = getRequirement(msg.requirementId)
-              if (!req) {
-                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
-                return
-              }
-              // Allow `todo`, or `in_progress` whose dev session has gone missing
-              // (a dangling launch — let the user restart rather than stay stuck).
-              const dangling =
-                req.status === 'in_progress' &&
-                (!req.lastDevSessionId || !(await sessionExists(proj, req.lastDevSessionId)))
-              if (req.status !== 'todo' && !dangling) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'requirement.cannotStartDev', params: { status: req.status } },
-                })
-                return
-              }
-              const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-              const devRt = ensureRuntime(devId, proj, getDefaultMode(), [], 'normal')
-              const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
-              const skill = getDevSkill()
-              const skillPrefix = skill ? `${skill} ` : ''
-              const devPrompt = `${skillPrefix}${req.title}\n\n${req.content}${depNote}`
-              // Background launch: don't await — it runs detached, surviving this
-              // connection. Status flips to in_progress once the SDK id binds.
-              void launchRun(
-                devRt,
-                devPrompt,
-                { broadcastStatuses, broadcastRequirements },
-                {
-                  onSessionId: (prev, sid) => {
-                    setSessionMode(sid, devRt.mode)
-                    setLastDevSession(req.id, sid)
-                    updateStatus(req.id, 'in_progress')
-                    broadcastRequirements(proj)
-                    send(ws, { type: 'session_started', clientId: prev, sessionId: sid })
-                  },
-                  onSettled: async (wp) => {
-                    await sendSessions(ws, wp)
-                  },
-                },
-              )
-              return
-            }
-
-            case 'update_requirement_status': {
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              const req = getRequirement(msg.requirementId)
-              if (!req) {
-                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
-                return
-              }
-              updateStatus(msg.requirementId, msg.status)
-              // If the requirement leaves in_progress, clear its cache entry so
-              // a future restart doesn't show a stale dangling/ running label.
-              if (req.status === 'in_progress' && msg.status !== 'in_progress') {
-                runStatusCache.delete(msg.requirementId)
-                judgedSessions.delete(msg.requirementId)
-              }
-              broadcastRequirements(req.projectPath)
-              return
-            }
-
-            case 'set_requirement_automate': {
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              const req = getRequirement(msg.requirementId)
-              if (!req) {
-                send(ws, { type: 'error', error: { code: 'requirement.notFound' } })
-                return
-              }
-              setAutomate(msg.requirementId, msg.automate)
-              broadcastRequirements(req.projectPath)
-              return
-            }
-
-            case 'start_automation': {
-              const proj = resolve(msg.projectPath)
-              if (!hasWorkspace(proj)) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
-                })
-                return
-              }
-              if (!isStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'requirement.dbUnavailable' } })
-                return
-              }
-              broadcastAutomation(startAutomation(proj, automationHooks, Date.now()))
-              return
-            }
-
-            case 'stop_automation': {
-              const proj = resolve(msg.projectPath)
-              broadcastAutomation(stopAutomation(proj))
-              return
-            }
-
-            case 'list_discussions': {
-              const proj = resolve(msg.projectPath)
-              if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
-                return
-              }
-              const discItems = listDiscussions(proj, msg.status)
-              send(ws, {
-                type: 'discussions',
-                projectPath: proj,
-                items: discItems,
-                runStates: discussionRunSnapshot(discItems),
-              })
-              return
-            }
-
-            case 'create_discussion': {
-              if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
-                return
-              }
-              if (!isDiscussionType(msg.discussionType)) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'discussion.unknownType', params: { type: msg.discussionType } },
-                })
-                return
-              }
-              const proj = resolve(msg.projectPath)
-              // Title is derived from the goal (the form has no title field): first
-              // non-empty line, trimmed and capped.
-              const firstLine =
-                msg.goal
-                  .split('\n')
-                  .map((l) => l.trim())
-                  .find(Boolean) ?? ''
-              const title = (firstLine || 'Discussion').slice(0, 80)
-              const created = createDiscussion({
-                projectPath: proj,
-                title,
-                type: msg.discussionType,
-                goal: msg.goal,
-                context: msg.context ?? '',
-                status: 'draft',
-              })
-              // Open the new discussion on the creating connection right away (so
-              // the right pane shows it without a manual click) and push the draft
-              // to every connection's list. Then run the read-only research agent
-              // in the background to complete its context; when it succeeds we
-              // auto-start the orchestration (equivalent to an auto `start_discussion`).
-              // Fire-and-forget: research never blocks creation.
-              send(ws, { type: 'discussion_detail', discussion: created, messages: [] })
-              broadcastDiscussions(proj)
-              // Run the read-only research agent as an observable run: it streams its
-              // turns to the right pane and broadcasts its liveness, then auto-starts the
-              // orchestration on success (see startResearchRun).
-              startResearchRun(created)
-              return
-            }
-
-            case 'open_discussion': {
-              if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
-                return
-              }
-              const discussion = getDiscussion(msg.discussionId)
-              if (!discussion) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
-                })
-                return
-              }
-              send(ws, {
-                type: 'discussion_detail',
-                discussion,
-                messages: listDiscussionMessages(msg.discussionId),
-              })
-              return
-            }
-
-            case 'start_discussion': {
-              if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
-                return
-              }
-              const discussion = getDiscussion(msg.discussionId)
-              if (!discussion) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
-                })
-                return
-              }
-              // Idempotent guards: only a `draft` can be started, and never twice.
-              if (discussionRuns.has(discussion.id)) return
-              if (discussion.status !== 'draft') {
-                send(ws, { type: 'error', error: { code: 'discussion.alreadyStarted' } })
-                return
-              }
-              startDiscussionRun(discussion)
-              return
-            }
-
-            case 'pause_discussion': {
-              const ctrl = discussionRuns.get(msg.discussionId)
-              if (!ctrl || ctrl.paused) return
-              ctrl.paused = true
-              broadcastDiscussionRunStatus(msg.discussionId, 'paused')
-              return
-            }
-
-            case 'resume_discussion': {
-              const ctrl = discussionRuns.get(msg.discussionId)
-              if (!ctrl || !ctrl.paused) return
-              ctrl.paused = false
-              const waiters = ctrl.resumeWaiters.splice(0)
-              for (const wake of waiters) wake()
-              broadcastDiscussionRunStatus(msg.discussionId, 'running')
-              return
-            }
-
-            case 'discussion_speak': {
-              if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
-                return
-              }
-              const discussion = getDiscussion(msg.discussionId)
-              if (!discussion) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
-                })
-                return
-              }
-              const text = msg.text.trim()
-              if (!text) return
-              // Pause the live run (if any) so the human message lands at a round
-              // boundary, append + stream it, then resume — the organizer's next
-              // round picks it up from the transcript.
-              const ctrl = discussionRuns.get(msg.discussionId)
-              if (ctrl) {
-                ctrl.paused = true
-                broadcastDiscussionRunStatus(msg.discussionId, 'paused')
-              }
-              const message = appendDiscussionMessage({
-                discussionId: msg.discussionId,
-                speakerKind: 'human',
-                speakerName: 'Human',
-                content: text,
-              })
-              broadcastDiscussionMessage(msg.discussionId, message)
-              if (ctrl) {
-                ctrl.paused = false
-                const waiters = ctrl.resumeWaiters.splice(0)
-                for (const wake of waiters) wake()
-                broadcastDiscussionRunStatus(msg.discussionId, 'running')
-              }
-              return
-            }
-
-            case 'continue_discussion': {
-              if (!isDiscussionStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'discussion.dbUnavailable' } })
-                return
-              }
-              const discussion = getDiscussion(msg.discussionId)
-              if (!discussion) {
-                send(ws, {
-                  type: 'error',
-                  error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
-                })
-                return
-              }
-              // Re-entry guard + only a concluded discussion can start a new round.
-              if (discussionRuns.has(discussion.id)) return
-              if (discussion.status !== 'completed') {
-                send(ws, { type: 'error', error: { code: 'discussion.notEndedForContinue' } })
-                return
-              }
-              const text = msg.text.trim()
-              if (!text) return
-              // Append the human's follow-up, flip back to in_progress, and re-run
-              // the engine over the full transcript (prior conclusion + new question).
-              const message = appendDiscussionMessage({
-                discussionId: discussion.id,
-                speakerKind: 'human',
-                speakerName: 'Human',
-                content: text,
-              })
-              broadcastDiscussionMessage(discussion.id, message)
-              updateDiscussionStatus(discussion.id, 'in_progress')
-              broadcastDiscussions(discussion.projectPath)
-              startDiscussionRun({ ...discussion, status: 'in_progress' })
-              return
-            }
-
-            case 'create_schedule': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              // Name is auto-generated server-side from the task content; any
-              // client-supplied name in config is ignored (stripped by the store).
-              const generatedName = await generateScheduleName(msg.input)
-              const created = createSchedule(msg.input, generatedName)
-              broadcastSchedules(created.workspacePath)
-              return
-            }
-
-            case 'list_schedules': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const proj = resolve(msg.workspacePath)
-              const items = listSchedules(proj)
-              send(ws, { type: 'schedules', workspacePath: proj, items })
-              return
-            }
-
-            case 'update_schedule': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const existing = getSchedule(msg.scheduleId)
-              if (!existing) {
-                send(ws, { type: 'error', error: { code: 'schedule.notFound' } })
-                return
-              }
-              updateScheduleStore(msg.scheduleId, msg.input)
-              broadcastSchedules(existing.workspacePath)
-              return
-            }
-
-            case 'delete_schedule': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const existing = getSchedule(msg.scheduleId)
-              if (!existing) {
-                send(ws, { type: 'error', error: { code: 'schedule.notFound' } })
-                return
-              }
-              deleteScheduleStore(msg.scheduleId)
-              broadcastSchedules(existing.workspacePath)
-              return
-            }
-
-            case 'get_schedule_detail': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const detail = getScheduleDetail(msg.scheduleId)
-              if (!detail.schedule) {
-                send(ws, { type: 'error', error: { code: 'schedule.notFound' } })
-                return
-              }
-              send(ws, {
-                type: 'schedule_detail',
-                schedule: detail.schedule,
-                logs: detail.logs,
-              })
-              return
-            }
-
-            case 'get_execution_transcript': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const transcript = await readExecutionTranscript(msg.executionId)
-              if (!transcript) {
-                send(ws, { type: 'error', error: { code: 'schedule.executionNotFound' } })
-                return
-              }
-              send(ws, {
-                type: 'execution_transcript',
-                executionId: msg.executionId,
-                sessionId: transcript.sessionId,
-                items: transcript.items,
-              })
-              return
-            }
-
-            case 'schedule_run_now': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              void triggerRunNow(msg.scheduleId).then(() => {
-                const s = getSchedule(msg.scheduleId)
-                if (s) broadcastSchedules(s.workspacePath)
-              })
-              return
-            }
-
-            case 'get_workspace_mcp_config': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const config = storeGetWorkspaceMcpConfig(msg.workspacePath)
-              send(ws, { type: 'workspace_mcp_config', workspacePath: msg.workspacePath, config })
-              return
-            }
-
-            case 'save_workspace_mcp_config': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              storeSaveWorkspaceMcpConfig(msg.workspacePath, msg.config)
-              send(ws, {
-                type: 'workspace_mcp_config',
-                workspacePath: msg.workspacePath,
-                config: storeGetWorkspaceMcpConfig(msg.workspacePath),
-              })
-              return
-            }
-
-            case 'list_pending_write_approvals': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const items = storeListPendingApprovals(msg.workspacePath)
-              send(ws, { type: 'pending_write_approvals', workspacePath: msg.workspacePath, items })
-              return
-            }
-
-            case 'approve_write_approval': {
-              if (!isScheduleStoreAvailable()) {
-                send(ws, { type: 'error', error: { code: 'schedule.dbUnavailable' } })
-                return
-              }
-              const ok = resolveApproval(msg.approvalId, msg.decision, 'owner')
-              if (!ok) {
-                send(ws, { type: 'error', error: { code: 'schedule.approvalNotFound' } })
-              }
-              // Broadcast resolved event is already handled inside resolveApproval
-              return
-            }
-          }
+        // The 40+ case switch collapsed to a single registry dispatch (ADR-0009):
+        // parse + validate + exhaustive lookup all live in `dispatch`.
+        async onMessage(evt) {
+          await dispatch(handlerRegistry, ctx, conn, String(evt.data))
         },
         onClose() {
           // Keep runs alive in the background; just stop delivering to this view.
-          if (viewing) removeViewer(viewing, deliver)
-          connections.delete(deliver)
+          if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+          connections.delete(conn.deliver)
           sock = null
         },
       }

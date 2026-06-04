@@ -1,0 +1,133 @@
+/**
+ * Feature handler assembly — slice 1/3 (ADR-0009).
+ *
+ * Builds the EXHAUSTIVE `HandlerMap` from the per-feature handler modules and
+ * returns a `HandlerRegistry`. Because the map is typed `HandlerMap`
+ * (`{ [K in ClientToServer['type']]: Handler<K> }`), omitting any message type
+ * is a COMPILE-TIME error — `pnpm typecheck` is the missed-handler gate.
+ *
+ * The map is assembled once at startup (`createHandlerRegistry`); per-connection
+ * state stays on `Conn`, shared services on `AppContext` — both injected at
+ * dispatch time, not captured here.
+ */
+import {
+  createHandlerRegistry,
+  type HandlerMap,
+  type HandlerRegistry,
+} from '../transport/handler-registry.js'
+import { ping, requestSessionStatus } from './meta/index.js'
+import { getSettings, saveSettingsHandler } from './settings/index.js'
+import { permissionResponse } from './permissions/index.js'
+import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
+import {
+  createSession,
+  deleteSession,
+  listCommandsHandler,
+  listSessions,
+  renameSession,
+  selectSession,
+  setMode,
+  stopRunHandler,
+  userPrompt,
+} from './sessions/index.js'
+import {
+  discussionToRequirement,
+  listRequirementsHandler,
+  newRequirementChat,
+  openRequirementChat,
+  refineRequirement,
+  setRequirementAutomate,
+  startAutomationHandler,
+  startDevelopment,
+  stopAutomationHandler,
+  updateRequirementStatus,
+} from './requirements/index.js'
+import {
+  continueDiscussion,
+  createDiscussionHandler,
+  discussionSpeak,
+  listDiscussionsHandler,
+  openDiscussion,
+  pauseDiscussion,
+  resumeDiscussion,
+  startDiscussion,
+} from './discussions/index.js'
+import {
+  approveWriteApproval,
+  createScheduleHandler,
+  deleteScheduleHandler,
+  getExecutionTranscript,
+  getScheduleDetailHandler,
+  getWorkspaceMcpConfig,
+  listPendingWriteApprovals,
+  listSchedulesHandler,
+  saveWorkspaceMcpConfig,
+  scheduleRunNow,
+  updateScheduleHandler,
+} from './schedules/index.js'
+
+/**
+ * The complete handler map. One entry per `ClientToServer['type']` — the
+ * `HandlerMap` type makes a missing one a compile error (the exhaustiveness
+ * gate from ADR-0009).
+ */
+export const handlerMap: HandlerMap = {
+  // meta
+  ping,
+  request_session_status: requestSessionStatus,
+  // settings
+  get_settings: getSettings,
+  save_settings: saveSettingsHandler,
+  // permissions
+  permission_response: permissionResponse,
+  // workspaces
+  add_workspace: addWorkspaceHandler,
+  remove_workspace: removeWorkspaceHandler,
+  // sessions
+  list_sessions: listSessions,
+  list_commands: listCommandsHandler,
+  create_session: createSession,
+  select_session: selectSession,
+  delete_session: deleteSession,
+  rename_session: renameSession,
+  set_mode: setMode,
+  stop_run: stopRunHandler,
+  user_prompt: userPrompt,
+  // requirements
+  list_requirements: listRequirementsHandler,
+  open_requirement_chat: openRequirementChat,
+  new_requirement_chat: newRequirementChat,
+  refine_requirement: refineRequirement,
+  discussion_to_requirement: discussionToRequirement,
+  start_development: startDevelopment,
+  update_requirement_status: updateRequirementStatus,
+  set_requirement_automate: setRequirementAutomate,
+  start_automation: startAutomationHandler,
+  stop_automation: stopAutomationHandler,
+  // discussions
+  list_discussions: listDiscussionsHandler,
+  create_discussion: createDiscussionHandler,
+  open_discussion: openDiscussion,
+  start_discussion: startDiscussion,
+  pause_discussion: pauseDiscussion,
+  resume_discussion: resumeDiscussion,
+  discussion_speak: discussionSpeak,
+  continue_discussion: continueDiscussion,
+  // schedules
+  create_schedule: createScheduleHandler,
+  list_schedules: listSchedulesHandler,
+  update_schedule: updateScheduleHandler,
+  delete_schedule: deleteScheduleHandler,
+  get_schedule_detail: getScheduleDetailHandler,
+  get_execution_transcript: getExecutionTranscript,
+  schedule_run_now: scheduleRunNow,
+  get_workspace_mcp_config: getWorkspaceMcpConfig,
+  save_workspace_mcp_config: saveWorkspaceMcpConfig,
+  list_pending_write_approvals: listPendingWriteApprovals,
+  approve_write_approval: approveWriteApproval,
+}
+
+/** Assemble the startup handler registry from the exhaustive map. */
+export function registerHandlers(): HandlerRegistry {
+  return createHandlerRegistry(handlerMap)
+}

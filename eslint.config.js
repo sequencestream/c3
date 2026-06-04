@@ -51,6 +51,41 @@ export default tseslint.config(
   },
 
   {
+    // ADR-0009 R1/R2: the `kernel/` layer is pure domain. It MUST NOT import from
+    // `transport/` or `features/` (R1, one-directional boundary), and MUST NOT
+    // touch ws/HTTP semantics (R2 — no Hono, no raw WebSocket, no JSON.stringify
+    // of wire frames). eslint is the mechanical guard; a violation fails lint/CI.
+    files: ['server/src/kernel/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/transport/**', '**/features/**'],
+              message:
+                'ADR-0009 R1: kernel/ must not import from transport/ or features/ (one-directional boundary).',
+            },
+            {
+              group: ['hono', 'hono/*', '@hono/*'],
+              message:
+                'ADR-0009 R2: kernel/ must not touch ws/HTTP transport (Hono). Broadcasts live in transport/.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name='JSON'][property.name='stringify']",
+          message:
+            'ADR-0009 R2: kernel/ must not serialize wire frames (JSON.stringify is a transport concern).',
+        },
+      ],
+    },
+  },
+
+  {
     // i18n gate: forbid hard-coded UI text in web templates. M1 extraction is
     // complete (all web/src/*.vue copy goes through t()), so this is `error` —
     // any new hard-coded copy fails lint/CI. See specs/style/i18n-spec.md §5.2.

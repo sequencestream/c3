@@ -10,8 +10,6 @@ import type {
   Discussion,
   DiscussionMessage,
   ResearchMessage,
-  Requirement,
-  RequirementRunStatus,
   ServerToClient,
 } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
@@ -44,12 +42,23 @@ import {
   type Viewer,
 } from './runs.js'
 import { isStoreAvailable, listRequirements } from './requirements/store.js'
+import { enrichRunStatus } from './requirements/run-status.js'
 import {
   isStoreAvailable as isDiscussionStoreAvailable,
   listDiscussions,
   getDiscussion,
   setDiscussionResearchResult,
 } from './discussions/store.js'
+import {
+  deleteDiscussionRun,
+  deleteResearchRun,
+  discussionRunSnapshot,
+  hasDiscussionRun,
+  researchRunSnapshot,
+  setDiscussionRun,
+  setResearchRun,
+  type DiscussionRunControl,
+} from './discussions/run-controls.js'
 import {
   researchDiscussionContext,
   canAutoStartDiscussion,
@@ -86,7 +95,7 @@ import {
 } from './requirements/automation.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
-import { type AppContext, assertNoTransportFields } from './kernel/types.js'
+import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { dispatch, type Conn } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
 
@@ -445,45 +454,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Any runtime status change (run start/finish, permission wait) re-broadcasts.
   setOnStatusChange(broadcastStatuses)
 
-  /**
-   * Per-requirement runStatus cache, populated by reconcileInProgress on
-   * open_requirement_chat and consumed by enrichRunStatus during requirement
-   * broadcasts. This is a DERIVED-field cache (runStatus is not stored in the
-   * DB); the key is requirement id, and entries are overwritten on each fresh
-   * reconcile. Cleared when a requirement leaves in_progress.
-   */
-  const runStatusCache = new Map<string, RequirementRunStatus>()
-
-  /**
-   * Dead-session de-dup for reconcile (perf). Maps requirement id → the
-   * `lastDevSessionId` we last ran the completion judge against while its
-   * process was dead. Judging a dead session is an LLM call that yields the
-   * same verdict every time, yet open_requirement_chat fires on every entry,
-   * refresh, and WS reconnect — so we skip a requirement whose CURRENT dead
-   * session is already recorded here. A live process (re-derived cheaply) or a
-   * brand-new session id (differs from the record) still gets (re)judged.
-   * Cleared when a requirement leaves in_progress.
-   */
-  const judgedSessions = new Map<string, string>()
-
-  /**
-   * Enrich a requirements list with the correct (derived) runStatus for each
-   * in_progress item. Priority order:
-   * 1. Process still running in the runtime registry → `running`.
-   * 2. Cached from the most recent reconcile → `dangling` (or `idle` for
-   *    auto-completed items whose status hasn't been re-read yet).
-   * 3. Fallback → `idle` (no reconcile data — first entry or status changed).
-   */
-  function enrichRunStatus(items: Requirement[]): Requirement[] {
-    return items.map((r) => {
-      if (r.status !== 'in_progress') return r
-      if (r.lastDevSessionId && isRunning(r.lastDevSessionId))
-        return { ...r, runStatus: 'running' as const }
-      const cached = runStatusCache.get(r.id)
-      if (cached) return { ...r, runStatus: cached }
-      return r
-    })
-  }
+  // The requirement runStatus cache + judged-session de-dup + `enrichRunStatus`
+  // are feature-private (server refactor 2/3a): they live in
+  // `requirements/run-status` now, consumed here only by `broadcastRequirements`.
 
   // ---- Session-layer status heartbeat ----
 
@@ -539,47 +512,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     for (const deliver of connections) deliver({ type: 'schedules', workspacePath: proj, items })
   }
 
-  // Per-run control for a live discussion orchestration. `abort` tears it down
-  // (server teardown); `paused` + `resumeWaiters` implement a pause gate the loop
-  // awaits at each round boundary (no new speech while paused) — resume and abort
-  // both wake the waiters so neither resume nor teardown can hang on a paused loop.
-  interface DiscussionRunControl {
-    abort: AbortController
-    paused: boolean
-    resumeWaiters: Array<() => void>
-  }
-
-  // Live discussion-engine runs, keyed by discussion id. A present entry is the
-  // "already running" re-entry guard for `start_discussion` / `continue_discussion`.
-  const discussionRuns = new Map<string, DiscussionRunControl>()
-
-  // Live run-state snapshot for a discussion list: id → `running`/`paused` for every listed
-  // discussion that currently has an active run (absent = no live run, falls back to status).
-  // Rides the `discussions` message so a refresh/reconnect reconciles background runs accurately —
-  // `discussion_run_status` only fires on transitions and is missed by a freshly-(re)connected view.
-  const discussionRunSnapshot = (items: Discussion[]): Record<string, 'running' | 'paused'> => {
-    const snapshot: Record<string, 'running' | 'paused'> = {}
-    for (const d of items) {
-      const ctrl = discussionRuns.get(d.id)
-      if (ctrl) snapshot[d.id] = ctrl.paused ? 'paused' : 'running'
-    }
-    return snapshot
-  }
-
-  // Live research runs, keyed by discussion id. A present entry means the read-only
-  // research agent is still working (its abort controller tears it down on teardown).
-  // The map's presence IS the liveness: settle (success/fail/dead process) deletes it.
-  const researchRuns = new Map<string, AbortController>()
-
-  // Research-phase companion to `discussionRunSnapshot` — id → `running` for every listed
-  // discussion with a live research run. Rides the `discussions` send so a refresh/reconnect
-  // mid-research rebuilds the research phase (the transition-only `research_run_status` is missed
-  // by a freshly-(re)connected view).
-  const researchRunSnapshot = (items: Discussion[]): Record<string, 'running'> => {
-    const snapshot: Record<string, 'running'> = {}
-    for (const d of items) if (researchRuns.has(d.id)) snapshot[d.id] = 'running'
-    return snapshot
-  }
+  // Live discussion/research run controls + their list snapshots are
+  // feature-private (server refactor 2/3a): they live in
+  // `discussions/run-controls` now, consumed here by the broadcasts + run starters.
 
   // Stream one freshly-appended discussion message to every connection (the
   // frontend appends it when viewing that discussion).
@@ -652,7 +587,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const startDiscussionRun = (discussion: Discussion): void => {
     const abort = new AbortController()
     const ctrl: DiscussionRunControl = { abort, paused: false, resumeWaiters: [] }
-    discussionRuns.set(discussion.id, ctrl)
+    setDiscussionRun(discussion.id, ctrl)
     broadcastDiscussionRunStatus(discussion.id, 'running')
     const deps = defaultDiscussionDeps({
       onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
@@ -669,7 +604,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         console.warn(`[c3] discussion orchestration error: ${errMsg(err)}`)
       })
       .finally(() => {
-        discussionRuns.delete(discussion.id)
+        deleteDiscussionRun(discussion.id)
         broadcastDiscussionRunStatus(discussion.id, 'ended')
         broadcastDiscussions(discussion.projectPath)
       })
@@ -684,7 +619,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // manual Start fallback.
   const startResearchRun = (discussion: Discussion): void => {
     const abort = new AbortController()
-    researchRuns.set(discussion.id, abort)
+    setResearchRun(discussion.id, abort)
     broadcastResearchRunStatus(discussion.id, 'running')
     broadcastDiscussions(discussion.projectPath)
     void researchDiscussionContext(discussion, {
@@ -696,7 +631,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         if (researchResult) {
           setDiscussionResearchResult(discussion.id, researchResult)
         }
-        researchRuns.delete(discussion.id)
+        deleteResearchRun(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
         broadcastDiscussions(discussion.projectPath)
         // Research failed → leave it a draft for a manual Start. On success, re-validate
@@ -704,14 +639,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         // mid-research) before auto-starting the orchestration.
         if (!ok) return
         const latest = getDiscussion(discussion.id)
-        if (canAutoStartDiscussion(latest, discussionRuns.has(discussion.id))) {
+        if (canAutoStartDiscussion(latest, hasDiscussionRun(discussion.id))) {
           startDiscussionRun(latest as Discussion)
         }
       })
       .catch((err) => {
         // Defensive: research itself swallows its run error (returns ok=false), so this
         // only fires on a wiring fault. Still converge liveness so the phase doesn't hang.
-        researchRuns.delete(discussion.id)
+        deleteResearchRun(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
         broadcastDiscussions(discussion.projectPath)
         console.warn(`[c3] discussion research wiring error: ${errMsg(err)}`)
@@ -868,13 +803,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     isRunning,
   }
 
-  // ── Composition root (ADR-0009 R3): construct the AppContext ONCE, explicitly,
-  // and inject it into every handler at dispatch time. Slice 1/3 holds references
-  // to the closures/state above (shared state still owned by this closure); slice
-  // 2/3 moves ownership into the context and routes broadcasts through a kernel
-  // event bus. `launchDeps` is the bag the top-level `launchRun` reads.
+  // ── Composition root (ADR-0009 R3): construct the KernelContext ONCE,
+  // explicitly, and inject it into every handler at dispatch time. It holds the
+  // cross-feature services (launcher, broadcasts, run starters, automation hooks);
+  // feature-private state now lives in each feature's store (2/3a), and slice 2/3b
+  // folds the broadcasts into a single transport/Broadcaster. `launchDeps` is the
+  // bag the top-level `launchRun` reads.
   const launchDeps = { broadcastStatuses, broadcastRequirements }
-  const ctx: AppContext = {
+  const ctx: KernelContext = {
     launchDeps,
     launchRun: (rt, prompt, cbs) => launchRun(rt, prompt, launchDeps, cbs),
     broadcastStatuses,
@@ -884,13 +820,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastAutomation,
     broadcastDiscussionMessage,
     broadcastDiscussionRunStatus,
-    enrichRunStatus,
-    runStatusCache,
-    judgedSessions,
-    discussionRuns,
-    researchRuns,
-    discussionRunSnapshot,
-    researchRunSnapshot,
     startDiscussionRun,
     startResearchRun,
     automationHooks,

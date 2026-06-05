@@ -7,7 +7,7 @@
  * is a COMPILE-TIME error — `pnpm typecheck` is the missed-handler gate.
  *
  * The map is assembled once at startup (`createHandlerRegistry`); per-connection
- * state stays on `Conn`, shared services on `AppContext` — both injected at
+ * state stays on `Conn`, shared services on `KernelContext` — both injected at
  * dispatch time, not captured here.
  */
 import {

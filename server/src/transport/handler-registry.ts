@@ -11,12 +11,16 @@
  * kernel must not import transport — ADR-0009 R1).
  */
 import type { ClientToServer, ServerToClient } from '@ccc/shared/protocol'
-import type { AppContext } from '../kernel/types.js'
+import type { KernelContext } from '../kernel/types.js'
 
 /**
  * A connection is a *view* (ADR-0006): it holds which session it watches and
  * how to deliver to its socket. Mutable `viewing` and the per-connection
- * helpers live here (transport), not on the kernel `AppContext`.
+ * helpers live here (transport), not on the long-lived `KernelContext`.
+ *
+ * This IS the short-lived RequestContext of the ADR-0009 split: `viewing` is the
+ * current view, `send`/`deliver` are the ws sink. Constructed per connection at
+ * `onOpen`, discarded at `onClose`. See the `RequestContext` alias below.
  */
 export interface Conn {
   /** Send one wire frame to this connection's socket. */
@@ -32,11 +36,19 @@ export interface Conn {
 }
 
 /**
+ * The short-lived per-connection context (ADR-0009 split). Alias of `Conn`: a
+ * connection's `viewing` (current view) + `send`/`deliver` (ws sink) ARE the
+ * request context. Named so the kernel/request boundary reads explicitly at call
+ * sites without changing the handler signature.
+ */
+export type RequestContext = Conn
+
+/**
  * A message handler. Unified signature `(ctx, conn, msg) => void | Promise<void>`.
  * `M` narrows `msg` to the exact union member for the registered type.
  */
 export type Handler<M extends ClientToServer['type'] = ClientToServer['type']> = (
-  ctx: AppContext,
+  ctx: KernelContext,
   conn: Conn,
   msg: Extract<ClientToServer, { type: M }>,
 ) => void | Promise<void>
@@ -56,7 +68,7 @@ export function assertExhaustive(x: never): never {
 
 export interface HandlerRegistry {
   /** Look up and run the handler for `msg.type`. */
-  dispatch: (ctx: AppContext, conn: Conn, msg: ClientToServer) => void | Promise<void>
+  dispatch: (ctx: KernelContext, conn: Conn, msg: ClientToServer) => void | Promise<void>
 }
 
 /**

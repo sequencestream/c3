@@ -13,7 +13,7 @@
  * `onMessage` rejection used to be.
  */
 import type { ClientToServer } from '@ccc/shared/protocol'
-import type { AppContext } from '../kernel/types.js'
+import type { KernelContext } from '../kernel/types.js'
 import type { Conn, HandlerRegistry } from './handler-registry.js'
 
 function errMsg(err: unknown): string {
@@ -28,7 +28,7 @@ function errMsg(err: unknown): string {
  */
 export async function dispatch(
   reg: HandlerRegistry,
-  ctx: AppContext,
+  ctx: KernelContext,
   conn: Conn,
   raw: string,
 ): Promise<void> {

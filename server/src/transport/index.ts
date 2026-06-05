@@ -5,7 +5,13 @@
  * connection-side broadcaster. `transport/` MAY import from `kernel/`; the
  * reverse is forbidden (R1).
  */
-export type { Conn, Handler, HandlerMap, HandlerRegistry } from './handler-registry.js'
+export type {
+  Conn,
+  RequestContext,
+  Handler,
+  HandlerMap,
+  HandlerRegistry,
+} from './handler-registry.js'
 export { createHandlerRegistry, assertExhaustive } from './handler-registry.js'
 export { dispatch } from './dispatch.js'
 export type { Broadcaster, Deliver } from './broadcaster.js'

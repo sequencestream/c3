@@ -1,28 +1,24 @@
 /**
- * Kernel boundary types — slice 1/3 of the server refactor (ADR-0009).
+ * Kernel boundary types — server refactor (ADR-0009).
  *
- * `AppContext` is the explicit composition-root injection: it is constructed
+ * `KernelContext` is the explicit composition-root injection: it is constructed
  * ONCE at startup (inside `startServer`) and threaded to every handler as its
- * first argument. It carries references to the shared domain services and live
- * runtime state.
+ * first argument. It is the long-lived, cross-feature service bag — shared
+ * domain services and the broadcast/launch hooks that more than one feature uses.
  *
- * IMPORTANT (ADR-0009 R1/R2/R6, slice-1 reality):
+ * IMPORTANT (ADR-0009 R1/R2/R6):
  * - This file is `kernel/` and MUST NOT import from `transport/` or `features/`,
  *   and MUST NOT touch ws/HTTP semantics. It only DECLARES types — the function
  *   *implementations* (broadcasts, launchers) still live in the `server.ts`
- *   entry closure for this slice; `AppContext` merely holds references to them.
- * - "共享状态暂留闭包": the `Map`s below are the SAME objects the `server.ts`
- *   closure owns; `AppContext` borrows references, it does not (yet) own them.
- *   Slice 2/3 moves true ownership here and routes broadcasts through a kernel
- *   event bus consumed by `transport/`.
+ *   entry closure; `KernelContext` holds references to them (slice 2/3b folds the
+ *   broadcasts into a single `transport/Broadcaster`).
+ * - Slice 2/3a moved the feature-PRIVATE state out of here: the requirement
+ *   runStatus cache + judged-session de-dup now live in `requirements/run-status`,
+ *   the live discussion/research run maps in `discussions/run-controls`. Only
+ *   genuinely cross-feature services remain on the context (the hard rule:
+ *   transport-shared / cross-feature → context; feature-private → feature store).
  */
-import type {
-  AutomationStatus,
-  Discussion,
-  DiscussionMessage,
-  Requirement,
-  RequirementRunStatus,
-} from '@ccc/shared/protocol'
+import type { AutomationStatus, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import type { AutomationHooks } from '../requirements/automation.js'
 import type { SessionRuntime } from '../runs.js'
 
@@ -43,23 +39,14 @@ export interface LaunchRunDeps {
 }
 
 /**
- * Per-run control for a live discussion orchestration. `abort` tears it down;
- * `paused` + `resumeWaiters` implement a pause gate the loop awaits at each
- * round boundary. (Moved here from the `server.ts` closure so `AppContext` can
- * type `discussionRuns` without a cycle — behavior unchanged.)
+ * The long-lived kernel context injected into every handler as its first
+ * argument. It carries the cross-feature shared services — the run launcher, the
+ * broadcast hooks, the discussion run starters, the automation hooks. Per-request
+ * state (which session a connection watches, how to deliver) lives on `Conn` /
+ * `RequestContext` in `transport/`, NOT here. Feature-private state lives in the
+ * owning feature's store, NOT here.
  */
-export interface DiscussionRunControl {
-  abort: AbortController
-  paused: boolean
-  resumeWaiters: Array<() => void>
-}
-
-/**
- * The application context injected into every handler. Slice 1/3: a reference
- * bag over the `server.ts` closure (state still owned there). Slice 2/3: the
- * real owner of this state, with broadcasts moved behind a kernel event bus.
- */
-export interface AppContext {
+export interface KernelContext {
   // ── run launcher dependencies (the launcher itself is the top-level `launchRun`) ──
   readonly launchDeps: LaunchRunDeps
   /**
@@ -70,8 +57,8 @@ export interface AppContext {
    */
   readonly launchRun: (rt: SessionRuntime, prompt: string, cbs?: LaunchCbs) => Promise<void>
 
-  // ── broadcasts (transport-owned in spirit; slice 2/3 moves them behind the
-  //    kernel event bus — for slice 1 they are closure refs reached via ctx) ──
+  // ── broadcasts (transport-owned in spirit; slice 2/3b folds them into a single
+  //    transport/Broadcaster — for now they are closure refs reached via ctx) ──
   readonly broadcastStatuses: () => void
   readonly broadcastRequirements: (projectPath: string) => void
   readonly broadcastDiscussions: (projectPath: string) => void
@@ -83,18 +70,8 @@ export interface AppContext {
     state: 'running' | 'paused' | 'ended',
   ) => void
 
-  // ── derived-field enrichment (R4: pure, read-only over its input) ──
-  readonly enrichRunStatus: (items: Requirement[]) => Requirement[]
-
-  // ── shared runtime state (same Map objects as the closure owns) ──
-  readonly runStatusCache: Map<string, RequirementRunStatus>
-  readonly judgedSessions: Map<string, string>
-  readonly discussionRuns: Map<string, DiscussionRunControl>
-  readonly researchRuns: Map<string, AbortController>
-  readonly discussionRunSnapshot: (items: Discussion[]) => Record<string, 'running' | 'paused'>
-  readonly researchRunSnapshot: (items: Discussion[]) => Record<string, 'running'>
-
-  // ── background run starters (still live in the server.ts closure) ──
+  // ── background run starters (still live in the server.ts closure; move to the
+  //    discussions feature in slice 2/3c) ──
   readonly startDiscussionRun: (discussion: Discussion) => void
   readonly startResearchRun: (discussion: Discussion) => void
 

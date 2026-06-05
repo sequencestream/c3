@@ -2,9 +2,10 @@
  * `requirements` feature handlers — slice 1/3 (ADR-0009).
  *
  * Requirement ledger view: list, comm-session open/new/refine, dev launch,
- * status/automation toggles, and the automation orchestrator start/stop. Shared
- * state (runStatus cache, judged-sessions de-dup, automation hooks, launcher) is
- * reached via `ctx`; per-connection `viewing` + delivery via `conn`.
+ * status/automation toggles, and the automation orchestrator start/stop. The
+ * runStatus cache + judged-sessions de-dup are feature-private in
+ * `requirements/run-status`; cross-feature services (automation hooks, launcher,
+ * broadcasts) are reached via `ctx`; per-connection `viewing` + delivery via `conn`.
  */
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -26,6 +27,14 @@ import {
 } from '../../requirements/store.js'
 import { reconcileInProgress } from '../../requirements/reconcile.js'
 import { judgeCompletion } from '../../requirements/judge.js'
+import {
+  cacheRunStatus,
+  clearJudgedSession,
+  clearRunStatus,
+  enrichRunStatus,
+  getJudgedSession,
+  setJudgedSession,
+} from '../../requirements/run-status.js'
 import {
   getAutomationStatus,
   startAutomation,
@@ -106,7 +115,7 @@ export const openRequirementChat: Handler<'open_requirement_chat'> = async (ctx,
   conn.send({
     type: 'requirements',
     projectPath: proj,
-    items: ctx.enrichRunStatus(listRequirements(proj)),
+    items: enrichRunStatus(listRequirements(proj)),
   })
   conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
 
@@ -120,7 +129,7 @@ export const openRequirementChat: Handler<'open_requirement_chat'> = async (ctx,
   const toReconcile = inProgReqs.filter((r) => {
     const dead = !(r.lastDevSessionId && isRunning(r.lastDevSessionId))
     if (!dead) return true
-    return !r.lastDevSessionId || ctx.judgedSessions.get(r.id) !== r.lastDevSessionId
+    return !r.lastDevSessionId || getJudgedSession(r.id) !== r.lastDevSessionId
   })
   if (toReconcile.length > 0) {
     const signal = new AbortController()
@@ -142,11 +151,11 @@ export const openRequirementChat: Handler<'open_requirement_chat'> = async (ctx,
         for (const r of reconciled) {
           // Cache the derived runStatus for enrichRunStatus. Auto-completed items
           // left in_progress, so their entry won't be read again.
-          ctx.runStatusCache.set(r.requirementId, r.runStatus)
+          cacheRunStatus(r.requirementId, r.runStatus)
           // Record the dead session we judged so (B) can skip it next time; a
           // still-running process keeps being re-derived instead.
           const sid = sessionById.get(r.requirementId)
-          if (sid && r.runStatus !== 'running') ctx.judgedSessions.set(r.requirementId, sid)
+          if (sid && r.runStatus !== 'running') setJudgedSession(r.requirementId, sid)
         }
         // Push the refreshed list (updated runStatus + any auto-completes).
         ctx.broadcastRequirements(proj)
@@ -192,7 +201,7 @@ export const newRequirementChat: Handler<'new_requirement_chat'> = (ctx, conn, m
   conn.send({
     type: 'requirements',
     projectPath: proj,
-    items: ctx.enrichRunStatus(listRequirements(proj)),
+    items: enrichRunStatus(listRequirements(proj)),
   })
   conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
 }
@@ -347,8 +356,8 @@ export const updateRequirementStatus: Handler<'update_requirement_status'> = (ct
   // If the requirement leaves in_progress, clear its cache entry so a future
   // restart doesn't show a stale dangling/running label.
   if (req.status === 'in_progress' && msg.status !== 'in_progress') {
-    ctx.runStatusCache.delete(msg.requirementId)
-    ctx.judgedSessions.delete(msg.requirementId)
+    clearRunStatus(msg.requirementId)
+    clearJudgedSession(msg.requirementId)
   }
   ctx.broadcastRequirements(req.projectPath)
 }

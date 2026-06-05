@@ -2,8 +2,8 @@
  * `discussions` feature handlers — slice 1/3 (ADR-0009).
  *
  * Discussion list/detail + the orchestration lifecycle (start/pause/resume/
- * speak/continue). Live run controls (`discussionRuns`) and the run starters
- * live on `ctx`; per-connection delivery on `conn`.
+ * speak/continue). Live run controls live in `discussions/run-controls` (feature-
+ * private); the run starters live on `ctx`; per-connection delivery on `conn`.
  */
 import { resolve } from 'node:path'
 import {
@@ -16,6 +16,11 @@ import {
   updateDiscussionStatus,
 } from '../../discussions/store.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
+import {
+  discussionRunSnapshot,
+  getDiscussionRun,
+  hasDiscussionRun,
+} from '../../discussions/run-controls.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, msg) => {
@@ -29,7 +34,7 @@ export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, m
     type: 'discussions',
     projectPath: proj,
     items: discItems,
-    runStates: ctx.discussionRunSnapshot(discItems),
+    runStates: discussionRunSnapshot(discItems),
   })
 }
 
@@ -110,7 +115,7 @@ export const startDiscussion: Handler<'start_discussion'> = (ctx, conn, msg) => 
     return
   }
   // Idempotent guards: only a `draft` can be started, and never twice.
-  if (ctx.discussionRuns.has(discussion.id)) return
+  if (hasDiscussionRun(discussion.id)) return
   if (discussion.status !== 'draft') {
     conn.send({ type: 'error', error: { code: 'discussion.alreadyStarted' } })
     return
@@ -119,14 +124,14 @@ export const startDiscussion: Handler<'start_discussion'> = (ctx, conn, msg) => 
 }
 
 export const pauseDiscussion: Handler<'pause_discussion'> = (ctx, _conn, msg) => {
-  const ctrl = ctx.discussionRuns.get(msg.discussionId)
+  const ctrl = getDiscussionRun(msg.discussionId)
   if (!ctrl || ctrl.paused) return
   ctrl.paused = true
   ctx.broadcastDiscussionRunStatus(msg.discussionId, 'paused')
 }
 
 export const resumeDiscussion: Handler<'resume_discussion'> = (ctx, _conn, msg) => {
-  const ctrl = ctx.discussionRuns.get(msg.discussionId)
+  const ctrl = getDiscussionRun(msg.discussionId)
   if (!ctrl || !ctrl.paused) return
   ctrl.paused = false
   const waiters = ctrl.resumeWaiters.splice(0)
@@ -152,7 +157,7 @@ export const discussionSpeak: Handler<'discussion_speak'> = (ctx, conn, msg) => 
   // Pause the live run (if any) so the human message lands at a round boundary,
   // append + stream it, then resume — the organizer's next round picks it up
   // from the transcript.
-  const ctrl = ctx.discussionRuns.get(msg.discussionId)
+  const ctrl = getDiscussionRun(msg.discussionId)
   if (ctrl) {
     ctrl.paused = true
     ctx.broadcastDiscussionRunStatus(msg.discussionId, 'paused')
@@ -186,7 +191,7 @@ export const continueDiscussion: Handler<'continue_discussion'> = (ctx, conn, ms
     return
   }
   // Re-entry guard + only a concluded discussion can start a new round.
-  if (ctx.discussionRuns.has(discussion.id)) return
+  if (hasDiscussionRun(discussion.id)) return
   if (discussion.status !== 'completed') {
     conn.send({ type: 'error', error: { code: 'discussion.notEndedForContinue' } })
     return

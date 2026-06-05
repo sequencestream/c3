@@ -151,7 +151,11 @@ jobs:
     name: 'build macos-arm64'
     needs: [pregate]
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    runs-on: macos-14
+    # Apple Silicon self-hosted runner — native arm64 build (bytecode on).
+    # The OS+arch labels (auto-applied to every self-hosted runner) pin the
+    # job to the mac box so it can't land on a non-mac self-hosted runner.
+    # macos-x64 stays on GitHub's macos-13: this host can't natively build x64.
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 30
     env:
       BUN_INSTALL: ${{ github.workspace }}/.bun
@@ -355,7 +359,8 @@ jobs:
   smoke-macos-arm64:
     name: 'smoke macos-arm64 (--version + headless)'
     needs: [build-macos-arm64]
-    runs-on: macos-14
+    # Same Apple Silicon self-hosted runner — native arm64 headless smoke.
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

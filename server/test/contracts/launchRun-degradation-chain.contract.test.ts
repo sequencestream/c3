@@ -69,7 +69,7 @@ vi.mock('../../src/kernel/config/index.js', async () => {
   }
 })
 
-import { launchRun } from '../../src/server.js'
+import { launchRun } from '../../src/kernel/run/run-lifecycle.js'
 import { ensureRuntime, getRuntime, addViewer, removeRuntime, type Viewer } from '../../src/runs.js'
 
 // A degradable error (rate limit) — runClaude routes it to onDegradableError.

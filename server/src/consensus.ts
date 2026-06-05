@@ -24,7 +24,8 @@ import type {
   ConsensusVote,
   QuestionConsensus,
 } from '@ccc/shared/protocol'
-import { consensusVoters, isConsensusEnabled, resolveAgent } from './settings.js'
+import { consensusVoters, resolveAgent } from './kernel/agent-config/index.js'
+import { isConsensusEnabled } from './kernel/config/index.js'
 import { askAgentOnce } from './agent-once.js'
 import {
   askQuestions,

@@ -5,8 +5,14 @@ import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { SystemSettings } from '@ccc/shared/protocol'
 import {
+  AGENT_ICON_MAX_CHARS,
   consensusVoters,
   enabledAgents,
+  normalizeDegradationChain,
+  normalizeIcon,
+  resolveSessionLaunch,
+} from './agent-config/index.js'
+import {
   getDevSkill,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
@@ -16,18 +22,14 @@ import {
   getUiLang,
   isValidTimeZone,
   loadSettings,
-  resolveSessionLaunch,
   saveSettings,
-  normalizeDegradationChain,
-  normalizeIcon,
   resetSettingsCacheForTests,
   DEFAULT_ROUNDS_PER_STAGE,
   DEFAULT_UI_LANG,
   MIN_ROUNDS_PER_STAGE,
   DEFAULT_SPEECH_CHARS,
   MIN_SPEECH_CHARS,
-  AGENT_ICON_MAX_CHARS,
-} from './settings.js'
+} from './config/index.js'
 
 // Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
 // these tests never touch the developer's real settings.json.

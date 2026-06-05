@@ -26,7 +26,7 @@ vi.mock('../../git.js', () => ({
 // don't depend on the developer's on-disk config and can exercise a custom skill.
 // Default is empty (no prefix), matching the real default.
 const devSkillMock = vi.fn(() => '')
-vi.mock('../../settings.js', () => ({ getDevSkill: () => devSkillMock() }))
+vi.mock('../../kernel/config/index.js', () => ({ getDevSkill: () => devSkillMock() }))
 
 // Imported AFTER the mocks so automation.ts binds to the mocked modules.
 const { startAutomation, stopAutomation, getAutomationStatus } = await import('./automation.js')

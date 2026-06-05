@@ -36,7 +36,7 @@
  */
 import type { Requirement } from '@ccc/shared/protocol'
 import { askOneShot } from '../../claude.js'
-import { resolveSessionLaunch } from '../../settings.js'
+import { resolveSessionLaunch } from '../../kernel/agent-config/index.js'
 
 export type JudgeVerdict = { verdict: 'done' | 'in_progress' | 'stuck'; reason: string }
 

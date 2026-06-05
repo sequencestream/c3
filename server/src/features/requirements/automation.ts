@@ -29,7 +29,7 @@ import type { AutomationStatus, Requirement, ServerToClient } from '@ccc/shared/
 import { getRequirement, listRequirements, setLastDevSession, updateStatus } from './store.js'
 import { judgeCompletion } from './judge.js'
 import { commitAndPush, gitDiffStat, gitRecentLog } from '../../git.js'
-import { getDevSkill } from '../../settings.js'
+import { getDevSkill } from '../../kernel/config/index.js'
 
 /** Outcome of one dev turn, as observed by the orchestrator's internal viewer. */
 export interface DevTurnResult {

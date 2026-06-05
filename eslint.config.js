@@ -86,6 +86,21 @@ export default tseslint.config(
   },
 
   {
+    // ADR-0009 R2 carve-out (server refactor 3/3): the kernel config/infra
+    // persistence sublayers serialize plain config/state to DISK — `settings.json`,
+    // `state.json`, and the requirement/discussion/schedule stores via `db` — which
+    // is NOT a wire frame. The `JSON.stringify` ban (no-restricted-syntax) targets
+    // wire-frame serialization, a transport concern; disk persistence is a
+    // legitimate kernel/infra job. The R1/R2 *import* bans (no transport/features,
+    // no Hono) stay fully in force here — inherited from the kernel block above —
+    // so these files still cannot reach the transport layer.
+    files: ['server/src/kernel/config/**/*.ts', 'server/src/kernel/infra/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
+    },
+  },
+
+  {
     // i18n gate: forbid hard-coded UI text in web templates. M1 extraction is
     // complete (all web/src/*.vue copy goes through t()), so this is `error` —
     // any new hard-coded copy fails lint/CI. See specs/style/i18n-spec.md §5.2.

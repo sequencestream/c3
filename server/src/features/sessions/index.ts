@@ -26,7 +26,7 @@ import {
   setSessionMode,
   touchWorkspace,
 } from '../../state.js'
-import { getDefaultMode } from '../../settings.js'
+import { getDefaultMode } from '../../kernel/config/index.js'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { rebindChatSession } from '../requirements/store.js'

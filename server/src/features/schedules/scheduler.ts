@@ -15,7 +15,7 @@
 import { getSchedule } from './store.js'
 import type { Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt } from '@ccc/shared/cron'
-import { getTimezone } from '../../settings.js'
+import { getTimezone } from '../../kernel/config/index.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
 
 export { computeNextRunAt }

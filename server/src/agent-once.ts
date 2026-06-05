@@ -14,7 +14,7 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentConfig } from '@ccc/shared/protocol'
-import { launchForAgent } from './settings.js'
+import { launchForAgent } from './kernel/agent-config/index.js'
 import { findClaudeExecutable } from './claude.js'
 import { addToolSession } from './sessions.js'
 

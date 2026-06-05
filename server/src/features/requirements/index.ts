@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { addViewer, ensureRuntime, getRuntime, isRunning, removeViewer } from '../../runs.js'
 import { hasWorkspace, setSessionMode, touchWorkspace } from '../../state.js'
-import { getDefaultMode, getDevSkill } from '../../settings.js'
+import { getDefaultMode, getDevSkill } from '../../kernel/config/index.js'
 import { loadHistory, loadLastAssistantMessages, sessionExists } from '../../sessions.js'
 import {
   getChatSession,

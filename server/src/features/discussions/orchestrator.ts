@@ -35,12 +35,8 @@ import {
   type DiscussionStageKind,
 } from '@ccc/shared/discussion-types'
 import { askAgentOnce } from '../../agent-once.js'
-import {
-  enabledAgents,
-  getMaxRoundsPerStage,
-  getMaxSpeechChars,
-  resolveAgent,
-} from '../../settings.js'
+import { enabledAgents, resolveAgent } from '../../kernel/agent-config/index.js'
+import { getMaxRoundsPerStage, getMaxSpeechChars } from '../../kernel/config/index.js'
 import {
   appendMessage as storeAppendMessage,
   getDiscussion as storeGetDiscussion,

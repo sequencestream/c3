@@ -21,9 +21,8 @@ import {
   resolveAgent,
   launchForAgent,
   getDegradationChain,
-  getSocketAutoResume,
-  getDefaultMode,
-} from './settings.js'
+} from './kernel/agent-config/index.js'
+import { getSocketAutoResume, getDefaultMode } from './kernel/config/index.js'
 import {
   addViewer,
   bindPending,

@@ -22,7 +22,7 @@ import {
   isToolSessionRecorded,
   deleteToolSessionRecord,
 } from './features/requirements/store.js'
-import { getShowToolSessions } from './settings.js'
+import { getShowToolSessions } from './kernel/config/index.js'
 
 /**
  * Module-level tracker for tool-created sessions (completion judge, consensus

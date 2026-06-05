@@ -1,24 +1,32 @@
 /**
- * System configuration for the agent module, persisted under `~/.c3/`:
+ * System configuration store + reads (server refactor 3/3, ADR-0009 — sunk from
+ * the old root `settings.ts`). Persisted under `~/.c3/`:
  *   1. `settings.json` — the agent registry + which agent is the default.
  *   2. `state.json`    — per-session agent assignment (sessionId → agentId).
  *
- * An *agent* names a set of Claude Code launch overrides (baseUrl / apiKey /
- * model). A session launches Claude Code using its assigned agent, or the
- * default agent when unassigned (see {@link resolveSessionLaunch}). The built-in
- * system agent ({@link SYSTEM_AGENT_ID}) always exists, has empty overrides, and
- * cannot be removed — binding to it means "no overrides, use the SDK defaults".
+ * This module owns the persistence mechanics (atomic write, in-memory caches),
+ * the whole-settings `normalize`, and the *config-flavoured* reads (timezone,
+ * ui-lang, dev-skill, round/speech caps, consensus/auto-resume switches). The
+ * *agent-flavoured* reads (resolve agent / launch overrides / degradation chain)
+ * live in `kernel/agent-config`, which imports `loadSettings` from here. The
+ * pure agent-shape normalizers it shares with `normalize` come from
+ * `agent-config/normalize` (a leaf), so there is no import cycle.
  *
  * Both files are written atomically; on any read/parse error we fall back to a
  * clean default (system agent only) so c3 still boots.
  */
-
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import {
+  defaultSettings,
+  normalizeDegradationChain,
+  normalizeIcon,
+  systemAgent,
+} from '../agent-config/normalize.js'
 
 const PERMISSION_MODES: readonly PermissionMode[] = [
   'default',
@@ -69,10 +77,6 @@ export const MIN_SPEECH_CHARS = 300
 /** Default character budget for participant speech when unset/invalid. */
 export const DEFAULT_SPEECH_CHARS = 300
 
-/** Hard cap for an agent's `icon` string. Generous enough for family/ZWJ emoji
- *  sequences (can be 7-11 code units), short enough to deter abuse. */
-export const AGENT_ICON_MAX_CHARS = 16
-
 interface SessionAgentState {
   version: 1
   /** sessionId → agentId. A missing entry means "use the default agent". */
@@ -89,14 +93,6 @@ function settingsFile(): string {
 
 function stateFile(): string {
   return join(c3Dir(), 'state.json')
-}
-
-function systemAgent(enabled = true, icon = ''): AgentConfig {
-  return { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', enabled, icon }
-}
-
-function defaultSettings(): SystemSettings {
-  return { agents: [systemAgent()], defaultAgentId: SYSTEM_AGENT_ID }
 }
 
 function writeAtomic(file: string, data: unknown): void {
@@ -207,31 +203,6 @@ export function normalizeMaxSpeechChars(raw: unknown): number {
 }
 
 /**
- * Normalise the degradation chain: keep only ids that reference an *enabled*
- * agent in `agents`, preserve order, and strip duplicates. Disabled agents are
- * dropped (they must not appear in the fallback chain). If the result is empty
- * (nothing was valid/enabled, or the input was absent/empty) return undefined ⇒
- * no degradation (current behaviour, single-agent fallback).
- */
-export function normalizeDegradationChain(
-  raw: unknown,
-  agents: AgentConfig[],
-): string[] | undefined {
-  const valid = new Set(agents.filter((a) => a.enabled !== false).map((a) => a.id))
-  if (!Array.isArray(raw)) return undefined
-  const seen = new Set<string>()
-  const result: string[] = []
-  for (const id of raw) {
-    if (typeof id !== 'string' || !id) continue
-    if (!valid.has(id)) continue
-    if (seen.has(id)) continue
-    seen.add(id)
-    result.push(id)
-  }
-  return result.length > 0 ? result : undefined
-}
-
-/**
  * Force a development-skill value into shape: trim it, default to empty (no skill
  * prefix at launch), and prepend a missing leading `/` when non-empty.
  */
@@ -239,19 +210,6 @@ function normalizeDevSkill(raw: unknown): string {
   const trimmed = typeof raw === 'string' ? raw.trim() : ''
   if (!trimmed) return ''
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
-}
-
-/**
- * Force an agent icon into shape: a trimmed string truncated to
- * {@link AGENT_ICON_MAX_CHARS}; anything missing / non-string / empty-after-trim
- * ⇒ `''` (no custom icon). Back-compat: old configs without `icon` are treated
- * the same as empty.
- */
-export function normalizeIcon(raw: unknown): string {
-  if (typeof raw !== 'string') return ''
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  return trimmed.length > AGENT_ICON_MAX_CHARS ? trimmed.slice(0, AGENT_ICON_MAX_CHARS) : trimmed
 }
 
 export function loadSettings(): SystemSettings {
@@ -277,37 +235,9 @@ export function saveSettings(next: SystemSettings): SystemSettings {
   return settingsCache ?? normalized
 }
 
-export function getDefaultAgentId(): string {
-  return loadSettings().defaultAgentId
-}
-
 /** The permission mode new sessions start in (`default` when unconfigured). */
 export function getDefaultMode(): PermissionMode {
   return loadSettings().defaultMode ?? 'default'
-}
-
-/**
- * The enabled agents only — the canonical "list of agents" every consumer pool
- * draws from (discussion participants, consensus voters, default-agent picker).
- * Back-compat: an agent with no `enabled` field counts as enabled. NOTE this is
- * deliberately NOT used by {@link resolveAgent}/{@link resolveSessionLaunch}: a
- * disabled agent is still a valid launch fallback so a session is never locked
- * out (AC-R10).
- */
-export function enabledAgents(settings: SystemSettings = loadSettings()): AgentConfig[] {
-  return settings.agents.filter((a) => a.enabled !== false)
-}
-
-/** The agent for an id, or the default agent if the id is null/unknown. */
-export function resolveAgent(agentId: string | null): AgentConfig {
-  const settings = loadSettings()
-  const byId = agentId ? settings.agents.find((a) => a.id === agentId) : undefined
-  return (
-    byId ??
-    settings.agents.find((a) => a.id === settings.defaultAgentId) ??
-    settings.agents.find((a) => a.id === SYSTEM_AGENT_ID) ??
-    systemAgent()
-  )
 }
 
 // ---- Session → agent assignment ----
@@ -355,55 +285,6 @@ export function deleteSessionAgentId(sessionId: string): void {
     delete state.sessionAgents[sessionId]
     persistState()
   }
-}
-
-/**
- * Map one agent's Claude config to SDK launch overrides. Empty fields produce
- * no override, so the system agent yields `{}` (SDK defaults apply). Shared by
- * session launches ({@link resolveSessionLaunch}) and consensus advisor calls.
- */
-export function launchForAgent(agent: AgentConfig): {
-  envOverrides?: Record<string, string>
-  model?: string
-} {
-  const env: Record<string, string> = {}
-  if (agent.baseUrl) env.ANTHROPIC_BASE_URL = agent.baseUrl
-  if (agent.apiKey) {
-    // Cover both auth schemes: ANTHROPIC_API_KEY for first-party, ANTHROPIC_AUTH_TOKEN
-    // for gateways/proxies that expect a bearer token.
-    env.ANTHROPIC_API_KEY = agent.apiKey
-    env.ANTHROPIC_AUTH_TOKEN = agent.apiKey
-  }
-  // WORKAROUND (remove later): recent Claude Code introduced an "adaptive
-  // thinking" mechanism that changes the request message format. Third-party
-  // Anthropic-compatible gateways (e.g. DeepSeek) don't yet accept that format —
-  // they reject the inline `system`-role messages with a 400
-  // (`messages[].role: unknown variant system`). CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
-  // turns off just that mechanism, restoring the compatible message format while
-  // keeping CLAUDE.md/memory, Skills, and hooks (unlike the heavier
-  // CLAUDE_CODE_SIMPLE=1 / `--bare` fallback).
-  // REMOVE this injection once the third-party providers support the new format.
-  // Applied only to non-system agents; the system agent (first-party Anthropic)
-  // needs no fallback.
-  if (agent.id !== SYSTEM_AGENT_ID) env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
-  return {
-    ...(Object.keys(env).length > 0 ? { envOverrides: env } : {}),
-    ...(agent.model ? { model: agent.model } : {}),
-  }
-}
-
-/**
- * Resolve how to launch Claude Code for a session: the resolved agent's id plus
- * its Claude config mapped to SDK launch overrides.
- */
-export function resolveSessionLaunch(sessionId: string | null): {
-  agentId: string
-  envOverrides?: Record<string, string>
-  model?: string
-} {
-  const agentId = sessionId ? getSessionAgentId(sessionId) : null
-  const agent = resolveAgent(agentId)
-  return { agentId: agent.id, ...launchForAgent(agent) }
 }
 
 /** Whether multi-agent consensus voting is enabled in the system settings. */
@@ -456,39 +337,6 @@ export function getMaxRoundsPerStage(): number {
  */
 export function getMaxSpeechChars(): number {
   return normalizeMaxSpeechChars(loadSettings().maxSpeechChars)
-}
-
-/**
- * The degradation chain for the current settings. Returns undefined when
- * unconfigured — the caller then runs a single attempt with no fallback
- * (the existing behaviour). The returned array is always non-empty when
- * present (normalizeDegradationChain filters down to known agent ids).
- */
-export function getDegradationChain(): string[] | undefined {
-  return loadSettings().degradationChain
-}
-
-/**
- * Resolve an agent by its chain position, returning the same shape as
- * {@link resolveSessionLaunch}. Returns null when the chain is absent or
- * the index is out of range.
- */
-export function resolveDegradationAgent(
-  chainIndex: number,
-): { agentId: string; envOverrides?: Record<string, string>; model?: string } | null {
-  const chain = getDegradationChain()
-  if (!chain || chainIndex < 0 || chainIndex >= chain.length) return null
-  const agent = resolveAgent(chain[chainIndex])
-  return { agentId: agent.id, ...launchForAgent(agent) }
-}
-
-/**
- * The agents that vote in a consensus round: every *enabled* agent except the
- * one the session itself runs on (`currentAgentId`, already resolved). Disabled
- * agents never vote.
- */
-export function consensusVoters(currentAgentId: string | null): AgentConfig[] {
-  return enabledAgents().filter((a) => a.id !== currentAgentId)
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

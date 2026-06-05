@@ -32,3 +32,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0007](0007-read-only-requirement-agent.md)             | Read-only requirement agent; save via confirmation; cross-runtime SQLite | accepted   |
 | [0008](0008-streaming-input-for-agent-teams.md)         | Streaming-input prompts for persistent agent teams                       | accepted   |
 | [0009](0009-unidirectional-boundaries.md)               | Unidirectional boundaries: kernel → transport/features, no back-edges    | accepted   |
+| [0010](0010-release-and-distribution-trust.md)          | Release & distribution trust (orchestration skeleton)                    | accepted   |

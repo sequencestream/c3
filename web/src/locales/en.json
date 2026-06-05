@@ -419,6 +419,14 @@
       "new": {
         "tooltip": "New session"
       },
+      "toggle": {
+        "expand": {
+          "tooltip": "Expand the session list (double its width)"
+        },
+        "collapse": {
+          "tooltip": "Collapse the session list back to normal width"
+        }
+      },
       "noWorkspace": "No workspace selected.",
       "empty": "No sessions.",
       "toolBadge": {

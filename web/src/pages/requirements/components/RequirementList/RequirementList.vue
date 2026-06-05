@@ -8,6 +8,7 @@
 import { computed, ref } from 'vue'
 import type { AutomationStatus, Requirement, RequirementStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import {
   compareByCompletion,
@@ -131,8 +132,8 @@ function toggleDetail(id: string): void {
   expandedId.value = expandedId.value === id ? null : id
 }
 
-// 面板折叠态:本地 UI 状态(同 expandedId 范式)。收缩态收窄面板并隐藏模块名/操作区。
-const collapsed = ref(false)
+// 面板折叠态:持久化 UI 状态。收缩态收窄面板并隐藏模块名/操作区;跨页面切换后保持原状。
+const collapsed = usePersistentToggle('c3.requirementListCollapsed')
 const toggleLabel = computed(() => panelToggleLabel(collapsed.value))
 const rowVis = computed(() => rowVisibility(collapsed.value))
 

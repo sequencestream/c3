@@ -8,6 +8,7 @@
     "build": "pnpm -F @ccc/web build && pnpm -F @ccc/server build",
     "start": "node server/dist/cli.cjs start",
     "binary": "pnpm build && pnpm -F @ccc/server binary",
+    "release:build": "node scripts/release/release-build.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

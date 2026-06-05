@@ -419,6 +419,14 @@
       "new": {
         "tooltip": "新しいセッション"
       },
+      "toggle": {
+        "expand": {
+          "tooltip": "セッション一覧を展開(幅を2倍に)"
+        },
+        "collapse": {
+          "tooltip": "セッション一覧を通常の幅に戻す"
+        }
+      },
       "noWorkspace": "ワークスペースが未選択です。",
       "empty": "セッションがありません。",
       "toolBadge": {

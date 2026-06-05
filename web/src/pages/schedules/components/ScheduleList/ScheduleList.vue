@@ -13,6 +13,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { useTypedI18n } from '@/i18n'
+import { usePersistentToggle } from '@/composables/usePersistentToggle'
 
 const { t, d } = useTypedI18n()
 
@@ -125,34 +126,32 @@ function toggleDetail(s: Schedule): void {
   emit('select', s.id)
 }
 
-// 面板折叠切换(与 DiscussionList 一致)。
-const collapsed = ref(false)
-function togglePanel(): void {
-  collapsed.value = !collapsed.value
+// 面板展开切换(与 SessionList 一致):默认窄,展开把宽度翻倍,内容始终可见。
+// 持久化:跨页面切换后保持原状。
+const expanded = usePersistentToggle('c3.scheduleListExpanded')
+function toggleExpand(): void {
+  expanded.value = !expanded.value
 }
 </script>
 
 <template>
-  <section class="sched-list" :class="{ collapsed }">
+  <section class="sched-list" :class="{ expanded }">
     <div class="sched-list-head">
       <div class="sched-list-head-left">
         <button
           type="button"
           class="sched-collapse-btn"
           :title="
-            collapsed ? t('schedule.list.expand.tooltip') : t('schedule.list.collapse.tooltip')
+            expanded ? t('schedule.list.collapse.tooltip') : t('schedule.list.expand.tooltip')
           "
-          :aria-pressed="collapsed"
-          @click="togglePanel"
+          :aria-pressed="expanded"
+          @click="toggleExpand"
         >
-          {{ collapsed ? '▸' : '◂' }}
+          {{ expanded ? '⇤' : '⇥' }}
         </button>
-        <span v-show="!collapsed" class="sched-list-title">{{
-          t('schedule.list.title.label')
-        }}</span>
+        <span class="sched-list-title">{{ t('schedule.list.title.label') }}</span>
       </div>
       <button
-        v-show="!collapsed"
         type="button"
         class="sched-new-btn"
         :aria-label="t('schedule.list.new.label')"
@@ -162,7 +161,7 @@ function togglePanel(): void {
         +
       </button>
     </div>
-    <div v-show="!collapsed" class="sched-items">
+    <div class="sched-items">
       <p v-if="schedules.length === 0" class="sched-empty">{{ t('schedule.list.empty') }}</p>
       <div
         v-for="s in schedules"
@@ -263,7 +262,7 @@ function togglePanel(): void {
 
 <style scoped>
 .sched-list {
-  width: 960px;
+  width: 480px;
   flex-shrink: 0;
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
@@ -272,19 +271,19 @@ function togglePanel(): void {
   overflow: hidden;
   transition: width 0.2s ease;
 }
-/* 收缩态:宽度减半(与 .req-list / .disc-list 一致) */
-.sched-list.collapsed {
-  width: 480px;
+/* 展开态:宽度翻倍,便于阅读较长的任务标题(与 .sidebar.expanded 折叠范式一致) */
+.sched-list.expanded {
+  width: 960px;
 }
-/* 窄屏回退:侧栏按视口比例收窄,避免挤压聊天区(与 .disc-list 一致) */
+/* 窄屏回退:侧栏按视口比例收窄,避免挤压聊天区 */
 @media (max-width: 1024px) {
   .sched-list {
-    width: min(960px, 68vw);
-    min-width: 450px;
-  }
-  .sched-list.collapsed {
     width: min(480px, 34vw);
     min-width: 280px;
+  }
+  .sched-list.expanded {
+    width: min(960px, 68vw);
+    min-width: 450px;
   }
 }
 .sched-list-head {
@@ -315,6 +314,7 @@ function togglePanel(): void {
   border-radius: var(--radius-sm);
   padding: 2px 8px;
   font-size: var(--fs-caption);
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
 }

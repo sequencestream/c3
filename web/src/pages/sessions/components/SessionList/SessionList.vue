@@ -11,6 +11,7 @@ import { ref } from 'vue'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { SessionInfo, SessionStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { usePersistentToggle } from '@/composables/usePersistentToggle'
 
 const { t, d } = useTypedI18n()
 
@@ -34,6 +35,14 @@ const emit = defineEmits<{
 // How many sessions are visible; grows by SESSION_PAGE on demand.
 const SESSION_PAGE = 10
 const sessionLimit = ref(SESSION_PAGE)
+
+// 面板展开态:持久化 UI 状态(同 RequirementList 的折叠范式)。展开态把侧栏宽度翻倍,
+// 便于阅读较长的会话标题;收缩态回到默认窄宽。跨页面切换后保持原状。
+const expanded = usePersistentToggle('c3.sessionListExpanded')
+
+function toggleExpand(): void {
+  expanded.value = !expanded.value
+}
 
 // Status of one session (idle when unknown). Drives list badges.
 function statusOf(sessionId: string): SessionStatus {
@@ -95,9 +104,25 @@ function renameSession(sessionId: string, current: string) {
 </script>
 
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ expanded }">
     <div class="sidebar-head">
-      <span class="sidebar-title">{{ t('session.list.title.label') }}</span>
+      <div class="sidebar-head-left">
+        <button
+          type="button"
+          class="sidebar-collapse-btn"
+          :title="
+            expanded
+              ? t('session.list.toggle.collapse.tooltip')
+              : t('session.list.toggle.expand.tooltip')
+          "
+          :aria-pressed="expanded"
+          data-testid="session-list-toggle"
+          @click="toggleExpand"
+        >
+          {{ expanded ? '⇤' : '⇥' }}
+        </button>
+        <span class="sidebar-title">{{ t('session.list.title.label') }}</span>
+      </div>
       <span v-if="currentWorkspace" class="sidebar-actions">
         <button
           class="icon-btn"

@@ -3,6 +3,16 @@
 - **Status:** accepted
 - **Date:** 2026-05-29
 
+> **Evolution (2026-06-05, [ADR-0010](0010-release-and-distribution-trust.md)):** the
+> single-binary decision stands. The **build mechanism** below — generate a real
+> `server/src/static-embed.ts` then reset it to a stub in a `finally` — is **superseded**:
+> it caused a parallel-build race over a shared file. The embed now lives outside `src/`
+> (`dist/static-embed.generated.ts`, generated once) and the compile path redirects to it
+> via a `Bun.build` `onResolve` plugin, leaving `server/src/static-embed.ts` a permanent
+> committed empty stub. Note: that stub is **committed, not gitignored** (the "gitignored"
+> wording below predates this and was never accurate for the stub). The original decision
+> rationale is unchanged.
+
 ## Context
 
 c3 should be easy to run on a developer's machine without a full Node toolchain or

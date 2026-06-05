@@ -419,6 +419,14 @@
       "new": {
         "tooltip": "新建会话"
       },
+      "toggle": {
+        "expand": {
+          "tooltip": "展开会话列表(宽度翻倍)"
+        },
+        "collapse": {
+          "tooltip": "收起会话列表,恢复默认宽度"
+        }
+      },
       "noWorkspace": "未选择工作区。",
       "empty": "暂无会话。",
       "toolBadge": {

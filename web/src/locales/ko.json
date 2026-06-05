@@ -419,6 +419,14 @@
       "new": {
         "tooltip": "새 세션"
       },
+      "toggle": {
+        "expand": {
+          "tooltip": "세션 목록 펼치기(너비 2배)"
+        },
+        "collapse": {
+          "tooltip": "세션 목록을 기본 너비로 접기"
+        }
+      },
       "noWorkspace": "선택된 작업 공간이 없습니다.",
       "empty": "세션이 없습니다.",
       "toolBadge": {

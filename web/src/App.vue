@@ -561,6 +561,16 @@ onMounted(() => {
     client?.send({ type: 'request_session_status' })
   }, 15_000)
 
+  // While the user stays on the 「会话」(console) tab — i.e. the session list is
+  // visible — re-fetch the current workspace's sessions every 10s so newly
+  // created/removed sessions appear without a manual refresh. Skipped when the
+  // tab is hidden or no workspace is selected to avoid useless traffic.
+  const sessionsTimer = setInterval(() => {
+    if (activeTab.value === 'console' && currentWorkspace.value) {
+      refreshSessions(currentWorkspace.value)
+    }
+  }, 10_000)
+
   // Tab restored from background → fetch fresh status (browsers may deprioritise
   // WebSocket messages for backgrounded tabs).
   const onVis = () => {
@@ -574,6 +584,7 @@ onMounted(() => {
   // onUnmounted registers against the component, not the outer onMounted.
   onUnmounted(() => {
     clearInterval(hbTimer)
+    clearInterval(sessionsTimer)
     document.removeEventListener('visibilitychange', onVis)
   })
 })

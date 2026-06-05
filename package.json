@@ -17,6 +17,7 @@
     "release:smoke": "node scripts/release/smoke.mjs",
     "release:verify-dist": "node scripts/release/postgate.mjs",
     "release:keygen": "node scripts/release/keygen.mjs",
+    "publish:binaries": "node scripts/publish/publish-binaries.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

@@ -134,6 +134,16 @@ stream stays open and the lead process keeps running until stopped (AS-R15/R16).
 
 The exact classification is owned by the SDK; c3 selects the mode and surfaces it.
 
+> **Vendor dimension (ADR-0011).** The five modes above are Claude's `PermissionMode`,
+> the wire/UI surface today. Underneath, `kernel/agent/adapters/` introduces a vendor-neutral
+> abstraction so this domain can drive Codex / OpenCode as well as Claude: the run lifecycle is an
+> `AgentDriver`, the gateway is an `ApprovalBridge`, history is a `SessionStore`, and the five-way
+> mode is reduced to a neutral `ActionMode{plan,build} × ToolGate{...}` grid each adapter translates
+> into. Per-vendor divergence (Codex has no per-tool approval; only Claude forks/streams) lives in a
+> probed `AdapterCapabilities` ledger, not this spec's mode table. The Claude path described here is
+> the **reference adapter**; the run loop is not yet rewritten to route through the driver (additive
+> phase). No vendor SDK type crosses into the neutral surface or `shared/protocol.ts` (ADR-0009).
+
 ## Domain events (wire)
 
 Emits `mode_changed`, `user_text`, `assistant_text`, `tool_use`, `tool_result`, `turn_end`,

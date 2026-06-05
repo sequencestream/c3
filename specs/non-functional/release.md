@@ -451,6 +451,35 @@ external/irreversible effect (no signing, no tag, no `gh`); `--no-publish` signs
 stops before the tag + GitHub Release. The package stays `private: true` (binaries ship via
 GitHub Releases, never npm).
 
+## Public-mirror publish (private source → public binaries)
+
+The source repo (`sequencestream/claude-code-center`) is **private**, but the signed binaries
+ship from a **public** distribution repo (`sequencestream/c3`). CI builds the artifacts in the
+private repo; the binaries are then signed locally and published to the public mirror by an
+operator who holds the minisign secret key:
+
+1. `scripts/publish/download-artifacts.sh <run-id>` — pull a CI run's per-target artifacts into
+   `dist/release-artifacts/<version>/<artifact>/…` (each subdir = one target's package + its
+   `manifest.json`).
+2. `pnpm publish:binaries [<version>]` (`scripts/publish/publish-binaries.mjs`) — on the trusted
+   local machine:
+   - **merge** the per-target subdirs into one flat set (reuses `merge-dist.mjs`),
+   - **sign** every package with the secret key (`sign.mjs` — same byte-identical outer sidecars
+     as `release:publish`; default key source `dist/c3-minisign-secret.key`, overridable via
+     `C3_MINISIGN_SECRET_KEY[_FILE]`), write a shippable `minisign.pub`, and self-verify one
+     signature against it,
+   - **verify-dist** (`postgate.mjs`) — manifest ↔ SHA256SUMS ↔ on-disk; required-target set is
+     narrowed to what was downloaded (build/CI already gated P0 completeness), missing P0 logged,
+   - **bootstrap** the public repo's default branch with one README commit if it is still empty
+     (outward-facing — confirmed before push, skip with `--yes`),
+   - **`gh release create`** on the **public** repo (`--repo`, default `$C3_PUBLISH_REPO` or
+     `sequencestream/c3`) with every artifact + sidecar + `SHA256SUMS`(`.minisig`) + `minisign.pub`.
+
+`--dry-run` prints the full plan (version, key id, targets, bootstrap-needed, create-vs-clobber)
+and touches nothing — no merge, sign, commit, or `gh`. `--clobber` re-uploads assets to an
+existing tag; `--allow-unsigned` (not recommended) ships hashes without `.minisig`. This flow is
+distinct from CI's `release:publish`, which cuts the Release **in the private source repo**.
+
 ## Commands
 
 ```bash
@@ -474,6 +503,11 @@ pnpm e2e --obfuscated                                 # e2e against the obfuscat
 pnpm release                                          # gate → build(+smoke) → notes → publish (full)
 pnpm release:keygen                                   # mint a minisign keypair
 pnpm binary                                          # native single binary (self-use quickcut, bytecode auto on host match)
+# Public mirror (private source → public binaries):
+scripts/publish/download-artifacts.sh <run-id>        # pull a CI run's artifacts → dist/release-artifacts/<version>/
+pnpm publish:binaries --dry-run                        # rehearse public-mirror publish: plan only, no merge/sign/commit/gh
+pnpm publish:binaries [<version>]                      # sign locally + cut a GitHub Release on sequencestream/c3
+pnpm publish:binaries --repo=owner/name --clobber      # override target repo / re-upload to an existing tag
 # CI:
 #   .github/workflows/release.yml  →  workflow_dispatch (manual) or push tags: v*
 ```
@@ -496,6 +530,7 @@ pnpm binary                                          # native single binary (sel
 - minisign core: `scripts/release/minisign.mjs` (`generateKeypair`, `signContent`, `verifyContent`)
 - Signing: `scripts/release/sign.mjs` (`signArtifacts`, `artifactsFromManifest`, `secretFromEnv`)
 - Notes / publish / keygen: `scripts/release/notes.mjs` (`buildNotes`), `publish.mjs` (`publish`), `keygen.mjs`
+- Public-mirror publish: `scripts/publish/download-artifacts.sh` (pull CI artifacts), `scripts/publish/publish-binaries.mjs` (`publishBinaries`; merge → sign → verify-dist → bootstrap → `gh release` on the public repo)
 - Embedded pubkey + verify: `server/src/release-pubkey.ts`, `server/src/verify.ts` (`verifyArtifact`, `runVerify`), CLI `c3 verify`
 - Runtime version: `server/src/version.ts` (`versionString`)
 - Snapshot generator: `server/scripts/generate-static-embed.mjs`

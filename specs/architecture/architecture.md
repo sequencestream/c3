@@ -42,23 +42,24 @@ c3 is a single local process with two halves connected by one WebSocket:
 
 ## Module map
 
-| Module                   | File                         | Role                                                                                                            |
-| ------------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| CLI entry                | `server/src/cli.ts`          | `commander` entry; `start` is the default command; `--project` defaults to cwd, `--port` to 3000                |
-| HTTP/WS server           | `server/src/server.ts`       | Hono app, `/ws` upgrade, static serving, per-connection viewed session + dispatch + status broadcast            |
-| Session-runtime registry | `server/src/runs.ts`         | Module-level `Map<sessionId, SessionRuntime>`: run handle, baseline+buffer, viewers, status (ADR 0006)          |
-| Agent loop               | `server/src/claude.ts`       | SDK `query()` (cwd/resume), `canUseTool`, claude PATH lookup, message mapping                                   |
-| Session registry         | `server/src/state.ts`        | Persisted workspace registry, per-session mode, last active session                                             |
-| Session IO               | `server/src/sessions.ts`     | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                                  |
-| Permission registry      | `server/src/permissions.ts`  | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                            |
-| Result formatting        | `server/src/format.ts`       | Flatten SDK `tool_result` content to a display string                                                           |
-| Requirement ledger       | `server/src/requirements/`   | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_requirements` tool (ADR 0007)               |
-| Static embed             | `server/src/static-embed.ts` | Generated; Bun-inlined web bundle                                                                               |
-| Wire protocol            | `shared/src/protocol.ts`     | `ClientToServer` / `ServerToClient` unions + workspace/session types                                            |
-| WS client                | `web/src/lib/ws.ts`          | Browser WebSocket wrapper                                                                                       |
-| UI shell                 | `web/src/App.vue`            | Shell: owns WS client + `handleMessage` + all shared state; dispatches by tab to page containers                |
-| Pages                    | `web/src/pages/<page>/`      | Per-page containers (`sessions`/`requirements`/`discussions`/`schedules`/`systemsettings`) + private components |
-| Shared components        | `web/src/components/<Name>/` | Cross-page components, one dir each with colocated `.test.ts`                                                   |
+| Module                   | File                                | Role                                                                                                                                                                               |
+| ------------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI entry                | `server/src/cli.ts`                 | `commander` entry; `start` is the default command; `--project` defaults to cwd, `--port` to 3000                                                                                   |
+| HTTP/WS server           | `server/src/server.ts`              | Hono app, `/ws` upgrade, static serving, per-connection viewed session + dispatch + status broadcast                                                                               |
+| Session-runtime registry | `server/src/runs.ts`                | Module-level `Map<sessionId, SessionRuntime>`: run handle, baseline+buffer, viewers, status (ADR 0006)                                                                             |
+| Agent loop               | `server/src/claude.ts`              | SDK `query()` (cwd/resume), `canUseTool`, claude PATH lookup, message mapping                                                                                                      |
+| Vendor-neutral adapters  | `server/src/kernel/agent/adapters/` | Neutral three-piece interface (`AgentDriver`/`ApprovalBridge`/`SessionStore`) + capability ledger + permission grid + canonical message model; Claude reference adapter (ADR-0011) |
+| Session registry         | `server/src/state.ts`               | Persisted workspace registry, per-session mode, last active session                                                                                                                |
+| Session IO               | `server/src/sessions.ts`            | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                                                                                                     |
+| Permission registry      | `server/src/permissions.ts`         | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                                                                                               |
+| Result formatting        | `server/src/format.ts`              | Flatten SDK `tool_result` content to a display string                                                                                                                              |
+| Requirement ledger       | `server/src/requirements/`          | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_requirements` tool (ADR 0007)                                                                                  |
+| Static embed             | `server/src/static-embed.ts`        | Generated; Bun-inlined web bundle                                                                                                                                                  |
+| Wire protocol            | `shared/src/protocol.ts`            | `ClientToServer` / `ServerToClient` unions + workspace/session types                                                                                                               |
+| WS client                | `web/src/lib/ws.ts`                 | Browser WebSocket wrapper                                                                                                                                                          |
+| UI shell                 | `web/src/App.vue`                   | Shell: owns WS client + `handleMessage` + all shared state; dispatches by tab to page containers                                                                                   |
+| Pages                    | `web/src/pages/<page>/`             | Per-page containers (`sessions`/`requirements`/`discussions`/`schedules`/`systemsettings`) + private components                                                                    |
+| Shared components        | `web/src/components/<Name>/`        | Cross-page components, one dir each with colocated `.test.ts`                                                                                                                      |
 
 ## Cross-cutting conventions
 
@@ -84,6 +85,17 @@ c3 is a single local process with two halves connected by one WebSocket:
   requirement features degrade but c3 still boots and serves normal sessions. The
   requirement-communication agent reuses the runtime registry and permission gateway as a
   read-only `requirement`-kind run.
+- **Vendor neutrality lives in `kernel/agent/adapters/` (ADR-0011).** A neutral three-piece interface
+  (`AgentDriver` lifecycle + canonical message stream, `ApprovalBridge` intercept/suspend/write-back,
+  `SessionStore` history behind one face) plus an `AdapterCapabilities` ledger lets c3 drive Claude,
+  Codex, or OpenCode through one shape. Required capabilities have no flag; six optional/degradable
+  ones (`interrupt`/`setActionMode`/`streamingPush`/`inProcessMcp`/`forkSession`/`perToolApproval`) are
+  probed before use. Permission is a neutral `(toolName, input, ctx) → allow|ask|deny` policy over an
+  orthogonal `ActionMode{plan,build} × ToolGate{always-ask|on-sensitive|trusted-prefix|never-ask}` grid
+  (Claude's five-way `PermissionMode` no longer maps 1:1). **No vendor SDK type crosses into
+  `adapters/types.ts` or `shared/protocol.ts`** — SDK values enter an adapter as `unknown` and are
+  narrowed there (ADR-0009). Today the Claude reference adapter delegates to the existing `runClaude` /
+  gateway / `sessions.ts`; the run-loop rewrite that makes the driver the only path is a later phase.
 - **Build order:** `web` then `server` — the server embeds the web bundle.
 - **Web module structure.** The frontend follows a page/component directory convention:
   - Shared (cross-page) components: `web/src/components/<Name>/<Name>.vue`, one dir per component
@@ -105,12 +117,14 @@ c3 is a single local process with two halves connected by one WebSocket:
 
 ## Key decisions
 
-| ADR                                                         | Decision                                                                                                               |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| [0001](adr/deprecated/0001-c3-sole-permission-authority.md) | _(superseded by 0005)_ c3 is the sole permission authority                                                             |
-| [0002](adr/0002-websocket-as-permission-transport.md)       | WebSocket is the permission transport                                                                                  |
-| [0003](adr/0003-single-binary-via-bun-compile.md)           | Ship as a single binary via `bun build --compile`                                                                      |
-| [0004](adr/0004-persist-workspace-session-registry.md)      | Persist a c3-owned workspace & session registry                                                                        |
-| [0005](adr/0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the permission gateway (`settingSources: ['user', 'project']`)                  |
-| [0006](adr/0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections; runs live in a module-level registry                                   |
-| [0007](adr/0007-read-only-requirement-agent.md)             | Read-only requirement-communication agent; `save_requirements` via the permission gateway; cross-runtime SQLite ledger |
+| ADR                                                         | Decision                                                                                                                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [0001](adr/deprecated/0001-c3-sole-permission-authority.md) | _(superseded by 0005)_ c3 is the sole permission authority                                                                                                    |
+| [0002](adr/0002-websocket-as-permission-transport.md)       | WebSocket is the permission transport                                                                                                                         |
+| [0003](adr/0003-single-binary-via-bun-compile.md)           | Ship as a single binary via `bun build --compile`                                                                                                             |
+| [0004](adr/0004-persist-workspace-session-registry.md)      | Persist a c3-owned workspace & session registry                                                                                                               |
+| [0005](adr/0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the permission gateway (`settingSources: ['user', 'project']`)                                                         |
+| [0006](adr/0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections; runs live in a module-level registry                                                                          |
+| [0007](adr/0007-read-only-requirement-agent.md)             | Read-only requirement-communication agent; `save_requirements` via the permission gateway; cross-runtime SQLite ledger                                        |
+| [0009](adr/0009-unidirectional-boundaries.md)               | Unidirectional boundaries: kernel → transport/features; SDK types never leave the kernel                                                                      |
+| [0011](adr/0011-vendor-neutral-agent-abstraction.md)        | Vendor-neutral Agent abstraction: required three-piece interface + probed capability ledger; `PermissionMode` 1:1 dropped for an `ActionMode × ToolGate` grid |

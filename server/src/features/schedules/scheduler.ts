@@ -12,7 +12,6 @@
  *   scheduler.stop()
  */
 
-import { getSchedule } from './store.js'
 import type { Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import { getTimezone } from '../../kernel/config/index.js'
@@ -52,7 +51,7 @@ export interface ScheduleScheduler {
 
 const GRACE_WINDOW_MS = 5 * 60 * 1000 // 5 minutes
 const DEFAULT_TICK_MS = 10_000 // 10 seconds
-const MAX_OUTPUT_CHARS = 1_000_000 // ~1 MB
+const _MAX_OUTPUT_CHARS = 1_000_000 // ~1 MB
 
 let store: ExecutionStore
 let timer: ReturnType<typeof setInterval> | null = null
@@ -73,7 +72,7 @@ export function startScheduler(tickMs = DEFAULT_TICK_MS): void {
 }
 
 /** Stop the tick loop and await in-flight executions. */
-export async function stopScheduler(timeoutMs = 30_000): Promise<void> {
+export async function stopScheduler(_timeoutMs = 30_000): Promise<void> {
   if (timer !== null) {
     clearInterval(timer)
     timer = null
@@ -85,7 +84,7 @@ export async function stopScheduler(timeoutMs = 30_000): Promise<void> {
     [...inFlight.values()].map((p) => p.catch(() => {})),
     // Use a timeout via a race
   )
-  const timedOut = results.filter((r) => r.status === 'fulfilled' && r.value === undefined)
+  const _timedOut = results.filter((r) => r.status === 'fulfilled' && r.value === undefined)
   console.log('[scheduler] %d executions settled', inFlight.size)
   inFlight.clear()
 }

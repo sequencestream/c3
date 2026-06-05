@@ -118,7 +118,7 @@ export function freezeTools(
   scheduleAllowlist: string[],
   scheduleDenylist: string[],
   workspaceConfig: WorkspaceMcpConfig,
-  mcpMode: McpMode,
+  _mcpMode: McpMode,
 ): FrozenToolSet {
   // Collect all known tool names:
   // - SDK built-ins (the universal set)

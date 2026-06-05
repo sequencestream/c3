@@ -22,7 +22,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { resolve, dirname, join, basename } from 'node:path'
+import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { binaryName, packageName, packageExt } from './artifact-name.mjs'
 import { signContent, parseSecretBlob } from './minisign.mjs'

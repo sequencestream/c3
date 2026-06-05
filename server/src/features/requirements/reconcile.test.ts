@@ -4,8 +4,7 @@
  * disk access.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Requirement, RequirementRunStatus } from '@ccc/shared/protocol'
-import type { JudgeVerdict } from './judge.js'
+import type { Requirement } from '@ccc/shared/protocol'
 import type { ReconcileDeps } from './reconcile.js'
 
 const { reconcileInProgress } = await import('./reconcile.js')

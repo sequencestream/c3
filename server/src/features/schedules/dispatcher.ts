@@ -433,7 +433,6 @@ async function executeLlmPrompt(
     })
 
     let text = ''
-    let result = ''
     let sessionId = ''
 
     for await (const m of q) {
@@ -459,7 +458,6 @@ async function executeLlmPrompt(
           }
         }
       } else if (m.type === 'result') {
-        result = (m as { result?: { status?: string } }).result?.status ?? ''
         break
       }
     }

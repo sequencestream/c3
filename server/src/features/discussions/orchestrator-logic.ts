@@ -439,7 +439,7 @@ export function buildParticipantPrompt(input: {
   lines.push(
     '',
     `请围绕当前阶段给出你的观点,用中文,不要复述他人已说的内容,只输出你的发言正文(不要加你的名字前缀)。` +
-      `严格控制篇幅:控制在约 ${budget} 字以内,直击要点。`,
+      `严格控制篇幅:用「一个段落」表达,约 ${budget} 字以内,直击要点。`,
   )
   return lines.join('\n')
 }

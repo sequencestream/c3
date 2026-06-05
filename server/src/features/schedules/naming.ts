@@ -12,7 +12,7 @@
  */
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { CreateScheduleInput, ScheduleType } from '@ccc/shared/protocol'
-import { findClaudeExecutable } from '../../claude.js'
+import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
 
 /** Max characters for a generated/fallback name. */
 const MAX_NAME_LEN = 60

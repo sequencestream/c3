@@ -29,7 +29,8 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   },
 }))
 
-import { runClaude, KEEPALIVE_ENV_DEFAULTS, buildChildEnv } from './claude.js'
+import { runClaude } from './kernel/agent/index.js'
+import { KEEPALIVE_ENV_DEFAULTS, buildChildEnv } from './kernel/infra/child-env.js'
 
 /** Drive one runClaude turn and return the env it spawned the SDK with. */
 async function runAndCaptureEnv(

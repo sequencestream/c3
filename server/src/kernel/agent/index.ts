@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { McpServerConfig, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type {
@@ -9,66 +8,13 @@ import type {
   ServerToClient,
 } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
-import { waitForDecision, resolveDecision, type Decision } from './permissions.js'
-import { runAskConsensus, runConsensusVote } from './consensus.js'
-import { askQuestions } from './consensus-tally.js'
-import { stringifyToolResult } from './format.js'
-import { addToolSession } from './sessions.js'
-
-// In a Bun-compiled binary the SDK's bundled `cli-<platform>` lookup misses
-// (no node_modules to walk). Resolve `claude` from the host PATH and hand it
-// to the SDK via pathToClaudeCodeExecutable. Override with CLAUDE_PATH.
-let cachedClaudePath: string | null | undefined
-export function findClaudeExecutable(): string | undefined {
-  if (cachedClaudePath !== undefined) return cachedClaudePath ?? undefined
-  if (process.env.CLAUDE_PATH) {
-    cachedClaudePath = process.env.CLAUDE_PATH
-    return cachedClaudePath
-  }
-  try {
-    const r = spawnSync('sh', ['-c', 'command -v claude'], { encoding: 'utf-8' })
-    const found = r.status === 0 ? r.stdout.trim() : ''
-    cachedClaudePath = found || null
-    return cachedClaudePath ?? undefined
-  } catch {
-    cachedClaudePath = null
-    return undefined
-  }
-}
-
-/**
- * Keepalive / transport-resilience env vars injected into every Claude Code child
- * `runClaude` spawns — the **prevention layer** (scheme E, first line of defence)
- * against `socket connection was closed unexpectedly`, the Bun/JSC + CC SDK runtime
- * defect that fatally trips long agentic turns mid-session. These lower the *rate*
- * of disconnects at the source; the kernel auto-`resume` (AS-R18/R19) recovers from
- * the ones that still happen. Values are tunable defaults — and **lowest priority**:
- * a same-named value the user (shell `process.env`) or agent (`envOverrides`) set
- * always wins (see {@link buildChildEnv}).
- */
-export const KEEPALIVE_ENV_DEFAULTS: Record<string, string> = {
-  // CC keeps the remote (server↔SDK) connection warm with periodic keepalives.
-  CLAUDE_CODE_REMOTE_SEND_KEEPALIVES: 'true',
-  // Tolerate a longer idle gap before Bun's HTTP client drops the socket.
-  BUN_CONFIG_HTTP_IDLE_TIMEOUT: '120',
-  // Retry transient HTTP failures a few times before surfacing an error.
-  BUN_CONFIG_HTTP_RETRY_COUNT: '3',
-}
-
-/**
- * Build the env passed to a spawned Claude Code child. Precedence (low → high):
- * keepalive defaults < `process.env` (user shell) < `envOverrides` (active agent).
- * So keepalive vars are always present yet never clobber a value the user/agent set
- * explicitly (user priority). `env` must carry the *full* environment, so we merge
- * over `process.env` rather than replace it.
- */
-export function buildChildEnv(envOverrides?: Record<string, string>): Record<string, string> {
-  return {
-    ...KEEPALIVE_ENV_DEFAULTS,
-    ...(process.env as Record<string, string>),
-    ...(envOverrides ?? {}),
-  }
-}
+import { waitForDecision, resolveDecision, type Decision } from '../../permissions.js'
+import { runAskConsensus, runConsensusVote } from '../../consensus.js'
+import { askQuestions } from '../../consensus-tally.js'
+import { stringifyToolResult } from '../../format.js'
+import { addToolSession } from '../../sessions.js'
+import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
+import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
 
 /** The c3 `save_requirements` MCP tool's fully-qualified name (server name `c3`). */
 export const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
@@ -147,51 +93,9 @@ export const registerPermissionResolver = {
   },
 }
 
-/**
- * Heuristic check: does this error message describe a transient / degradable
- * failure that warrants switching to a different agent? Matches rate-limit,
- * session-limit, authentication, and connection errors — the kinds of errors
- * that a different API key or base URL might avoid. A regular tool-execution
- * or model-response error is NOT degradable (the agent itself is fine).
- */
-export function isDegradableError(message: string): boolean {
-  const lower = message.toLowerCase()
-  // Rate limit (HTTP 429, SDK rate-limit messages)
-  if (/rate\s*limit|rate_limit|429|too\s*many\s*requests/i.test(lower)) return true
-  // Session limit
-  if (/session\s*limit|session_limit|concurrent\s*session/i.test(lower)) return true
-  // Authentication / token errors
-  if (/401|auth|unauthorized|authentication|invalid\s*api.?key|invalid\s*token/i.test(lower))
-    return true
-  // Connection / network errors
-  if (
-    /econnrefused|econnreset|etimedout|ehostunreach|network|connection\s*(refused|reset|failed|error)/i.test(
-      lower,
-    )
-  )
-    return true
-  // Server-side temporary errors
-  if (/5\d{2}|service\s*unavailable|internal\s*server\s*error|bad\s*gateway/i.test(lower))
-    return true
-  // API-level exhaustion / quota
-  if (/quota|exhausted|insufficient\s*quota/i.test(lower)) return true
-  return false
-}
-
-/**
- * Narrow classifier for the one SDK failure mode the socket auto-resume path
- * handles: the transport dropped mid-turn ("socket connection was closed
- * unexpectedly"). Deliberately SEPARATE from {@link isDegradableError} (the
- * degradation-chain classifier) — a socket disconnect is NOT degradable (the
- * agent/key is fine), so it must never enter `agentsToTry`; it gets a single
- * same-session `resume` instead (AS-R18). The two classifiers are mutually
- * exclusive: this phrase does not match any `isDegradableError` pattern, and
- * this matcher is intentionally a single exact phrase so a generic connection
- * error never lands here. Case-insensitive.
- */
-export function isSocketDisconnect(message: string): boolean {
-  return /socket connection was closed unexpectedly/i.test(message)
-}
+// `isDegradableError` / `isSocketDisconnect` (the error-classification pair the
+// run loop's catch consults) moved to `kernel/agent-config/errors.js` (server
+// refactor 3/3) and are imported at the top of this file.
 
 /**
  * The side-effect-free tool allowlist for the auto-resume gate (AS-R19). A tool

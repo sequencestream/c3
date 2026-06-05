@@ -25,6 +25,7 @@ export {
   normalizeIcon,
   systemAgent,
 } from './normalize.js'
+export { isDegradableError, isSocketDisconnect } from './errors.js'
 
 export function getDefaultAgentId(): string {
   return loadSettings().defaultAgentId

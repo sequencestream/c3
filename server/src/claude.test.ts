@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { isDegradableError, isSocketDisconnect } from './kernel/agent-config/errors.js'
 import {
-  isDegradableError,
-  isSocketDisconnect,
   isSideEffectTool,
   computeSideEffectPending,
   decideSocketResume,
   type ToolFlowItem,
-} from './claude.js'
+} from './kernel/agent/index.js'
 
 describe('isDegradableError', () => {
   // -- Rate limit --

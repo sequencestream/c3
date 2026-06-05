@@ -12,7 +12,9 @@ import type { Requirement } from '@ccc/shared/protocol'
 
 // Capture the prompt handed to the one-shot Claude and control its reply.
 const askMock = vi.fn<(args: { prompt: string }) => Promise<string>>()
-vi.mock('../../claude.js', () => ({ askOneShot: (a: { prompt: string }) => askMock(a) }))
+vi.mock('../../kernel/agent/index.js', () => ({
+  askOneShot: (a: { prompt: string }) => askMock(a),
+}))
 vi.mock('../../settings.js', () => ({
   resolveSessionLaunch: () => ({ model: 'test-model', envOverrides: {} }),
 }))

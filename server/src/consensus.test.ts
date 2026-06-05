@@ -30,7 +30,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   },
 }))
 
-vi.mock('./claude.js', () => ({ findClaudeExecutable: () => undefined }))
+vi.mock('./kernel/infra/child-env.js', () => ({ findClaudeExecutable: () => undefined }))
 
 const agent = (id: string) => ({ id, name: id.toUpperCase() })
 

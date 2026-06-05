@@ -27,7 +27,7 @@ import type {
   SessionStatus,
   TranscriptItem,
 } from '@ccc/shared/protocol'
-import type { RunHandle } from './claude.js'
+import type { RunHandle } from './kernel/agent/index.js'
 
 export type Viewer = (event: ServerToClient) => void
 

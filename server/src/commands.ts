@@ -1,6 +1,6 @@
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
-import { findClaudeExecutable } from './claude.js'
+import { findClaudeExecutable } from './kernel/infra/child-env.js'
 
 // Enumerating slash commands depends on the working directory (a project's
 // `.claude` adds project commands/skills). Cache per cwd for the process

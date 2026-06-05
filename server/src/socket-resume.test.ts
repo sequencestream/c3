@@ -44,7 +44,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   },
 }))
 
-import { runClaude, decideSocketResume } from './claude.js'
+import { runClaude, decideSocketResume } from './kernel/agent/index.js'
 
 const SOCKET_ERR = 'socket connection was closed unexpectedly'
 

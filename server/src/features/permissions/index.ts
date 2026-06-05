@@ -2,7 +2,7 @@
  * `permissions` feature handler — slice 1/3 (ADR-0009).
  */
 import { resolvePending } from '../../runs.js'
-import { registerPermissionResolver } from '../../claude.js'
+import { registerPermissionResolver } from '../../kernel/agent/index.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const permissionResponse: Handler<'permission_response'> = (_ctx, _conn, msg) => {

@@ -17,7 +17,7 @@ import {
   SAVE_REQUIREMENTS_TOOL,
   VIEW_REQUIREMENT_TOOL,
   withAnswers,
-} from './claude.js'
+} from './kernel/agent/index.js'
 
 describe('requirement gate — disallowed-tools lock', () => {
   it('hard-disables every write/exec/escape tool the design requires (§4.3)', () => {

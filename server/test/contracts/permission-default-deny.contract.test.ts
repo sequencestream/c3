@@ -45,7 +45,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   },
 }))
 
-import { runClaude } from '../../src/claude.js'
+import { runClaude } from '../../src/kernel/agent/index.js'
 import { waitForDecision, resolveDecision, pendingCount } from '../../src/permissions.js'
 
 beforeEach(() => {

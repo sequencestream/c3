@@ -28,13 +28,27 @@ export const P1_TARGETS = []
  * this set only once its platform CI smoke is green. windows-x64 is the last holdout:
  * the 6/7 GH Actions matrix includes a windows-latest job that runs the smoke natively,
  * so removing it is a one-line change once that job is green.
+ *
+ * Experimental targets are STILL buildable — `release:build` accepts them via
+ * `KNOWN_TARGETS` (below) and a failed experimental build is treated as best-effort
+ * (warns + drops, never blocks the P0 cut). The flag exists for the manifest entry /
+ * README ⚠️, not for gating the build itself.
  */
 export const EXPERIMENTAL_TARGETS = ['windows-x64']
 
-/** Friendly target names the orchestrator accepts (P0 + P1; later waves extend). */
-export const KNOWN_TARGETS = [...P0_TARGETS, ...P1_TARGETS]
+/**
+ * Friendly target names the orchestrator accepts (P0 + P1 + experimental).
+ * The experimental set must be included so `--targets=windows-x64` (the
+ * windows-latest probe job in the GH Actions matrix) is accepted; gating
+ * still lives in `postgate` (P0-only) and `release-build.mjs`
+ * (`isExperimental` → best-effort drop on failure).
+ */
+export const KNOWN_TARGETS = [...P0_TARGETS, ...P1_TARGETS, ...EXPERIMENTAL_TARGETS]
 
-/** Default build matrix when `--targets` is omitted: the full P0 + P1 wave. */
+/** Default build matrix when `--targets` is omitted: the full P0 + P1 wave
+ *  (experimental targets must be opted in explicitly so a casual
+ *  `pnpm release:build` on a dev box never accidentally tries to build
+ *  an unsupported platform). */
 export const DEFAULT_TARGETS = [...P0_TARGETS, ...P1_TARGETS]
 
 /** Whether `target`'s artifact must be marked experimental (smoke-unverified on its OS). */

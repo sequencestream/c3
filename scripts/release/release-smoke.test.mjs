@@ -41,11 +41,17 @@ describe('targets', () => {
     expect(P0_TARGETS).toEqual(['macos-arm64', 'macos-x64', 'linux-x64'])
   })
 
-  it('P1 is empty in 6/7; KNOWN_TARGETS equals P0 (windows-x64 de-experimental next wave)', () => {
+  it('P1 is empty in 6/7; KNOWN_TARGETS = P0 ∪ experimental (windows-x64 is buildable, not P1-promotable yet)', () => {
     // P1 set is reserved for the next de-experimental candidate. macos-x64 moved to P0;
     // windows-x64 is still the only experimental. The slot is intentionally empty.
+    //
+    // windows-x64 is NOT in P1 — it's in EXPERIMENTAL_TARGETS. But it IS in KNOWN_TARGETS
+    // so the windows-latest build job (`pnpm release:build --targets=windows-x64`) is
+    // accepted; gating (best-effort drop on failure) still lives in release-build.mjs via
+    // `isExperimental`. Adding to P1 would be the wrong move: P1 promotion implies the
+    // smoke is green, which it isn't yet.
     expect(P1_TARGETS).toEqual([])
-    expect(KNOWN_TARGETS).toEqual(['macos-arm64', 'macos-x64', 'linux-x64'])
+    expect(KNOWN_TARGETS).toEqual([...P0_TARGETS, ...EXPERIMENTAL_TARGETS])
   })
 
   it('only windows-x64 is experimental (smoke-unverified on its OS)', () => {

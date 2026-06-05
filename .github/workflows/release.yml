@@ -115,17 +115,24 @@ jobs:
         run: curl -fsSL https://bun.sh/install | bash
         shell: bash
 
+      # NOTE: don't override PATH in `env:` — `${{ env.PATH }}` resolves to the
+      # job-start PATH (which is empty in the env context), so the env-block
+      # override wipes the system PATH that pnpm's shim (sed/dirname/uname/node)
+      # needs. Prepend $BUN_INSTALL/bin inside the run step instead — that
+      # preserves PATH from the runner image.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm install --frozen-lockfile
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin:${{ env.PATH }}
 
       - name: Build linux-x64
-        run: pnpm release:build --targets=linux-x64 --skip-smoke --harden=basic
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm release:build --targets=linux-x64 --skip-smoke --harden=basic
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin:${{ env.PATH }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -166,17 +173,23 @@ jobs:
         run: curl -fsSL https://bun.sh/install | bash
         shell: bash
 
+      # NOTE: don't override PATH in `env:` — `${{ env.PATH }}` resolves to the
+      # job-start PATH (which is empty in the env context), so the env-block
+      # override wipes the system PATH that pnpm's shim (sed/dirname/uname/node)
+      # needs. Prepend $BUN_INSTALL/bin inside the run step instead.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm install --frozen-lockfile
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin:${{ env.PATH }}
 
       - name: Build macos-arm64
-        run: pnpm release:build --targets=macos-arm64 --skip-smoke --harden=basic
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm release:build --targets=macos-arm64 --skip-smoke --harden=basic
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin:${{ env.PATH }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -217,17 +230,23 @@ jobs:
         run: curl -fsSL https://bun.sh/install | bash
         shell: bash
 
+      # NOTE: don't override PATH in `env:` — `${{ env.PATH }}` resolves to the
+      # job-start PATH (which is empty in the env context), so the env-block
+      # override wipes the system PATH that pnpm's shim (sed/dirname/uname/node)
+      # needs. Prepend $BUN_INSTALL/bin inside the run step instead.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm install --frozen-lockfile
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin:${{ env.PATH }}
 
       - name: Build macos-x64
-        run: pnpm release:build --targets=macos-x64 --skip-smoke --harden=basic
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm release:build --targets=macos-x64 --skip-smoke --harden=basic
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin:${{ env.PATH }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -270,17 +289,23 @@ jobs:
       - name: Install Bun
         run: irm bun.sh/install.ps1 | iex
 
+      # NOTE: don't override PATH in `env:` — `${{ env.PATH }}` resolves to the
+      # job-start PATH (which is empty in the env context), so the env-block
+      # override wipes the system PATH that pnpm's shim (sed/dirname/uname/node)
+      # needs. Prepend $env:BUN_INSTALL/bin inside the run step instead.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          $env:PATH = "$env:BUN_INSTALL/bin;$env:PATH"
+          pnpm install --frozen-lockfile
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin;${{ env.PATH }}
 
       - name: Build windows-x64
-        run: pnpm release:build --targets=windows-x64 --skip-smoke --harden=basic
+        run: |
+          $env:PATH = "$env:BUN_INSTALL/bin;$env:PATH"
+          pnpm release:build --targets=windows-x64 --skip-smoke --harden=basic
         env:
           BUN_INSTALL: ${{ env.BUN_INSTALL }}
-          PATH: ${{ env.BUN_INSTALL }}/bin;${{ env.PATH }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

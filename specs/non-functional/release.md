@@ -113,10 +113,15 @@ smoke:<target>       (same OS as build)  needs: [build:<target>]
   └─ pnpm release:smoke --file=<artifact>  (--version + headless HTTP probe)
 verify-dist          (ubuntu-latest)     needs: [setup, smoke:{linux,macos-arm64,macos-x64,windows}-x64]
   └─ if: !cancelled()  (a deselected target is SKIPPED, not red — postgate is the real gate)
-  └─ download all artifacts → postgate (manifest↔SHA256SUMS↔disk + required-target completeness)
+  └─ download artifacts (per-target subdirs, NO merge-multiple) → merge-dist → postgate
+     (each build job emits its own dist/manifest.json; merge-multiple would COLLIDE them so
+      only one target survives — merge-dist folds the subdirs into one complete manifest +
+      SHA256SUMS, then postgate checks manifest↔SHA256SUMS↔disk + required-target completeness)
 provenance           (ubuntu-latest)     needs: [setup, verify-dist]   if: !cancelled() && !failure()
+  └─ download all artifacts (merge-multiple OK — packages have unique names, no manifest needed)
   └─ actions/attest-build-provenance@v2 per SELECTED target (OIDC keyless; SLSA L3)
 publish              (ubuntu-latest)     needs: [setup, provenance]    if: !cancelled() && !failure()
+  └─ download artifacts (per-target subdirs) → merge-dist (publish.mjs reads the merged manifest)
   └─ pnpm release:publish (sign + verify-dist re-check + tag + gh release)
 ```
 

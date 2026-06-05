@@ -514,11 +514,18 @@ jobs:
         with:
           node-version: 22
 
+      # Download into PER-ARTIFACT subdirs (no merge-multiple): each build job
+      # emits its own dist/manifest.json, and merging would collide them so only
+      # one target's manifest survives (the "required target(s) missing" abort).
+      # merge-dist folds the per-target subdirs into one flat dist/ with a complete
+      # manifest.json + SHA256SUMS.
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
-          merge-multiple: true
+
+      - name: Merge per-target artifacts
+        run: node scripts/release/merge-dist.mjs --dist=dist
 
       - name: List dist
         run: ls -la dist
@@ -616,11 +623,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Per-artifact subdirs + merge-dist (same reason as verify-dist): publish.mjs
+      # reads dist/manifest.json for its artifact/upload list, so it needs the
+      # COMPLETE merged manifest, not just the last target that survived a collision.
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
-          merge-multiple: true
+
+      - name: Merge per-target artifacts
+        run: node scripts/release/merge-dist.mjs --dist=dist
 
       - name: Determine --no-publish flag
         id: flags

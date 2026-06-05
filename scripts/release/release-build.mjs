@@ -67,7 +67,16 @@ function findBun() {
 
 function run(cmd, args, label) {
   return new Promise((res, rej) => {
-    const p = spawn(cmd, args, { stdio: 'inherit', cwd: repoRoot })
+    // Windows: Node's spawn (no shell) only auto-appends `.exe`, so it can't
+    // resolve a `.CMD`/`.cmd` shim like `pnpm` — Phase0's `spawn('pnpm', …)`
+    // ENOENTs. Route through the shell on win32 so PATHEXT resolution finds
+    // `pnpm.CMD`. POSIX keeps the direct exec; the args here are fixed and
+    // space-free (target dirs / flags), so shell quoting is a non-issue.
+    const p = spawn(cmd, args, {
+      stdio: 'inherit',
+      cwd: repoRoot,
+      shell: process.platform === 'win32',
+    })
     p.on('error', rej)
     p.on('exit', (code) =>
       code === 0 ? res() : rej(new Error(`[release:build] ${label} → exit ${code}`)),

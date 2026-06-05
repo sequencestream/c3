@@ -764,45 +764,55 @@ header h1 {
   border-top: 1px solid var(--c-border);
   background: var(--c-panel);
 }
-.status-dot {
+/* Unified session/run status indicator — `<icon> <agent>.<status>`. Shared by the
+   SessionStatusBar (global) and the DiscussionList row (which inherits these via
+   its own template + a couple of scoped layout tweaks). The emoji icon carries the
+   semantic; `tone` tints the text and `.spin` pulses the icon for active states. */
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.status-icon {
   flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--c-text-muted);
+  line-height: 1;
 }
-.status-dot.running {
-  background: var(--c-success);
-}
-.status-dot.awaiting {
-  background: var(--c-warning);
+/* Active run/reconnect states pulse the icon (replaces the old dot+spinner). */
+.status-icon.spin {
   animation: status-pulse 1.4s var(--ease-standard) infinite;
 }
-.status-dot.error {
-  background: var(--c-error);
+@media (prefers-reduced-motion: reduce) {
+  .status-icon.spin {
+    animation: none;
+  }
 }
-.status-dot.team {
-  background: var(--c-primary-2);
-}
-/* Agent-run reconnect (AVAIL-7): transient hold before a single auto-resume.
-   Warning hue + pulse signals "paused, retrying" rather than steady running. */
-.status-dot.reconnecting {
-  background: var(--c-warning);
-  animation: status-pulse 1.4s var(--ease-standard) infinite;
-}
-.status-spinner {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid var(--c-border);
-  border-top-color: var(--c-success);
-  border-radius: 50%;
-  animation: status-spin 0.7s linear infinite;
-}
-.status-label {
+.status-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Tone → text color. The icon glyph already encodes the state; the tint keeps the
+   label legible-by-status and consistent across both consumers. */
+.status-indicator.running {
+  color: var(--c-success);
+}
+.status-indicator.completed {
+  color: var(--c-success);
+}
+.status-indicator.paused,
+.status-indicator.awaiting,
+.status-indicator.reconnecting,
+.status-indicator.in_progress {
+  color: var(--c-warning);
+}
+.status-indicator.error,
+.status-indicator.cancelled {
+  color: var(--c-error);
+}
+.status-indicator.idle,
+.status-indicator.draft {
+  color: var(--c-text-muted);
 }
 .status-muted {
   color: var(--c-text-disabled);
@@ -878,11 +888,6 @@ header h1 {
 .status-continue:hover {
   background: var(--c-warning);
   color: var(--c-bg);
-}
-@keyframes status-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* ---- Pending send queue (between status bar and composer) ---- */

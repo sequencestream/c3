@@ -445,7 +445,6 @@
       }
     },
     "statusBar": {
-      "agentPrefix": "{agent} ·",
       "error": "Error: {message}",
       "ready": "Ready",
       "awaiting": "Awaiting permission",
@@ -756,6 +755,9 @@
       "approvalNotFound": "Approval entry not found or already handled."
     }
   },
+  "statusIndicator": {
+    "agentStatus": "{agent}.{status}"
+  },
   "discussion": {
     "action": {
       "start": {
@@ -838,6 +840,12 @@
           "tooltip": "Orchestration paused"
         }
       }
+    },
+    "status": {
+      "draft": "Draft",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
     },
     "meta": {
       "type": {

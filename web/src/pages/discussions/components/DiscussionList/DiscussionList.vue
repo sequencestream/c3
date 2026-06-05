@@ -16,6 +16,7 @@ import {
   statusLabel,
 } from '../../../../lib/discussion-view'
 import type { DiscussionTabKind } from '../../../../lib/discussion-view'
+import { discussionRowIndicator, TONE_ICON } from '../../../../lib/status-indicator'
 import { autoGrowHeight } from '../../../../lib/textarea'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import { useTypedI18n } from '@/i18n'
@@ -27,17 +28,43 @@ const props = withDefaults(
     discussions: Discussion[]
     activeId: string | null
     // Live orchestration run-state per discussion (id → running/paused), decoupled from the
-    // persisted `status`. Absent id = no live run. Drives the per-row live badge so concurrent
-    // background runs are each visible; accurate after refresh/reconnect via the list snapshot.
+    // persisted `status`. Absent id = no live run. Drives the per-row status indicator so
+    // concurrent background runs are each visible; accurate after refresh/reconnect via the
+    // list snapshot.
     runState?: Record<string, 'running' | 'paused'>
+    // Name of the in-flight / dispatched agent for a live run (id → agent name), used as the
+    // `<agent>` segment of the run-state indicator. Only the active discussion has one (its
+    // dispatch view lives in the parent); absent id ⇒ the segment is gracefully omitted.
+    runAgentNames?: Record<string, string>
   }>(),
-  { runState: () => ({}) },
+  { runState: () => ({}), runAgentNames: () => ({}) },
 )
 
 // The live run-state for a row, or undefined when it has no active run.
 function liveState(d: Discussion): 'running' | 'paused' | undefined {
   return props.runState[d.id]
 }
+
+// Per-row unified status indicator (`<icon> <agent>.<status>`): show the live run
+// when present, else the persisted lifecycle. Resolves icon + joined text here so the
+// row template renders a single indicator. Reactive via `t`/runState/runAgentNames.
+const rowStatuses = computed(
+  () =>
+    new Map(
+      props.discussions.map((d) => {
+        const ind = discussionRowIndicator({
+          status: d.status,
+          runState: liveState(d),
+          agentName: props.runAgentNames[d.id],
+        })
+        const status = ind.statusParams ? t(ind.statusKey, ind.statusParams) : t(ind.statusKey)
+        const text = ind.agent
+          ? t('statusIndicator.agentStatus', { agent: ind.agent, status })
+          : status
+        return [d.id, { tone: ind.tone, spin: ind.spin, icon: TONE_ICON[ind.tone], text }] as const
+      }),
+    ),
+)
 
 const emit = defineEmits<{
   open: [discussionId: string]
@@ -224,28 +251,22 @@ function togglePanel(): void {
             <span class="disc-date">{{ datePrefix(d) }}</span>
             <span v-if="rowVis.showMeta && d.type" class="disc-type">{{ typeLabel(d) }}</span>
             <span class="disc-title" :title="d.goal || d.title">{{ d.title }}</span>
-            <!-- Live run badge: distinct from the static status pill. Running pulses; paused is
-                 a steady amber. Absent when the discussion has no active orchestration run. -->
+            <!-- Single unified status indicator `<icon> <agent>.<status>`: shows the live
+                 run-state when there's an active run, else falls back to the persisted
+                 lifecycle status (no agent segment then). Replaces the old dual
+                 run-badge + status-pill. -->
             <span
-              v-if="liveState(d)"
-              class="disc-run"
-              :class="liveState(d)"
-              :title="
-                liveState(d) === 'running'
-                  ? t('discussion.item.run.running.tooltip')
-                  : t('discussion.item.run.paused.tooltip')
-              "
+              class="status-indicator disc-status-indicator"
+              :class="rowStatuses.get(d.id)?.tone"
             >
-              <span class="disc-run-dot" aria-hidden="true" />
-              {{
-                liveState(d) === 'running'
-                  ? t('discussion.item.run.running.label')
-                  : t('discussion.item.run.paused.label')
-              }}
+              <span
+                class="status-icon"
+                :class="{ spin: rowStatuses.get(d.id)?.spin }"
+                aria-hidden="true"
+                >{{ rowStatuses.get(d.id)?.icon }}</span
+              >
+              <span class="status-text" data-i18n-key="">{{ rowStatuses.get(d.id)?.text }}</span>
             </span>
-            <span class="disc-status" :class="d.status" data-i18n-key="">{{
-              statusLabel(d.status)
-            }}</span>
           </div>
         </div>
         <div v-if="d.id === expandedId" class="disc-detail">
@@ -524,79 +545,14 @@ function togglePanel(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 状态徽标:彩色 pill,按状态映射语义色,对齐 RequirementList 的 .req-status */
-.disc-status {
+/* Unified status indicator (`<icon> <agent>.<status>`): trailing row badge. Visuals
+   (icon, tone color, spin) come from the shared global `.status-indicator`; here we
+   only pin the row layout (no shrink, capped width, badge weight). */
+.disc-status-indicator {
+  flex-shrink: 0;
+  max-width: 220px;
   font-size: var(--fs-badge);
   font-weight: 700;
-  padding: 1px 6px;
-  border-radius: var(--radius-pill);
-  background: var(--c-hover-strong);
-  color: var(--c-text-muted);
-  flex-shrink: 0;
-}
-.disc-status.draft {
-  background: var(--c-hover-strong);
-  color: var(--c-text-muted);
-}
-.disc-status.in_progress {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--c-warning);
-}
-.disc-status.completed {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--c-success);
-}
-.disc-status.cancelled {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--c-error);
-}
-/* Live run badge: a lit pill with a leading dot, set apart from the static status pill so a
-   background run reads as "live now" rather than merely persisted `in_progress`. */
-.disc-run {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  font-size: var(--fs-badge);
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: var(--radius-pill);
-}
-.disc-run-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-/* Running: green + pulsing dot to signal active progress. */
-.disc-run.running {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--c-success);
-}
-.disc-run.running .disc-run-dot {
-  animation: disc-run-pulse 1.4s ease-in-out infinite;
-}
-/* Paused: steady amber, no animation. */
-.disc-run.paused {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--c-warning);
-}
-@keyframes disc-run-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.7);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .disc-run.running .disc-run-dot {
-    animation: none;
-  }
 }
 /* 手风琴展开详情:Tab 栏 + 单一内容区 */
 .disc-detail {

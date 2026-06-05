@@ -65,8 +65,8 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   resetting when the form closes. The **left list** (`web/src/pages/discussions/components/DiscussionList/DiscussionList.vue`
   - pure view helpers in `web/src/lib/discussion-view.ts`) carries:
     a header **collapse/expand** toggle (`panelToggleLabel`) that narrows the panel and hides secondary
-    row info (`rowVisibility` → type / timestamps), a colored **status pill** per row (draft grey /
-    in*progress amber / completed green / cancelled red, matching `.req-status`), and an **accordion**
+    row info (`rowVisibility` → type / timestamps), a single **unified status indicator** per row
+    (`<icon> <agent>.<status>` — see the run-state note below), and an **accordion**
     (`expandedId`, at most one open) that expands a **tab bar + single content area** beneath the row
     (`discussionDetailTabs`): one tab per non-empty field (Goal / Context / **Research** / Conclusion,
     empty fields dropped) whose body is **Markdown-rendered** via `MarkdownText :markdown` (the shared
@@ -78,7 +78,7 @@ Conclusion → Details` so the read-order follows the right-pane's two-phase tim
     stream → discussion stream). The active tab resets to the first
     content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
     the selected field. **Row click is a single combined action** (`openRow`): it emits `open` to load
-    the transcript + orchestration view in the right pane \_and* toggles that row's inline detail
+    the transcript + orchestration view in the right pane \_and\* toggles that row's inline detail
     accordion in one gesture (re-clicking the same row collapses the detail; `open` stays idempotent).
     There is no chevron and no per-row "Open chat" button. All list copy is English (web/CLAUDE.md).
 - **Organizer engine** (`server/src/discussions/orchestrator.ts` + pure
@@ -98,9 +98,14 @@ completed`, appends every turn (`appendMessage`) and streams it (`discussion_mes
   (`continue_discussion` appends the follow-up question, flips `completed → in_progress`, and re-runs
   the engine over the full transcript to a fresh `conclusion`). The live run-state (`running` /
   `paused` / `ended`) is broadcast as `discussion_run_status`, **decoupled from** the persisted
-  `DiscussionStatus` (pause is runtime-only, not persisted). The left list renders a per-row **live
-  run badge** (running pulses, paused steady) distinct from the static status pill, so multiple
-  background runs are each visible. Because `discussion_run_status` only fires on transitions, every
+  `DiscussionStatus` (pause is runtime-only, not persisted). The left list renders **one unified
+  status indicator** per row — `<icon> <agent>.<status>` (shared `web/src/lib/status-indicator.ts`:
+  status→icon map + the `statusIndicator.agentStatus` join key, reused by `SessionStatusBar`): when a
+  live run is present it shows the run-state (running pulses, paused steady) with the in-flight
+  dispatched agent as the `<agent>` segment (omitted when unresolvable — no leftover separator);
+  otherwise it falls back to the persisted lifecycle status (draft / in_progress / completed /
+  cancelled, no agent). This replaces the former dual run-badge + status-pill, so multiple background
+  runs are each visible in one indicator. Because `discussion_run_status` only fires on transitions, every
   `discussions` list send also carries a `runStates` snapshot (active runs only) — a refresh or
   reconnect authoritatively reconciles each listed discussion's run-state from it, so a run already
   going in the background shows correctly even on a freshly-(re)connected view.

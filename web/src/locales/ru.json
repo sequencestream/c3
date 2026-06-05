@@ -445,7 +445,6 @@
       }
     },
     "statusBar": {
-      "agentPrefix": "{agent} ·",
       "error": "Ошибка: {message}",
       "ready": "Готово",
       "awaiting": "Ожидание разрешения",
@@ -756,6 +755,9 @@
       "approvalNotFound": "Запись на одобрение не найдена или уже обработана."
     }
   },
+  "statusIndicator": {
+    "agentStatus": "{agent}.{status}"
+  },
   "discussion": {
     "action": {
       "start": {
@@ -838,6 +840,12 @@
           "tooltip": "Оркестрация приостановлена"
         }
       }
+    },
+    "status": {
+      "draft": "Черновик",
+      "in_progress": "В процессе",
+      "completed": "Завершено",
+      "cancelled": "Отменено"
     },
     "meta": {
       "type": {

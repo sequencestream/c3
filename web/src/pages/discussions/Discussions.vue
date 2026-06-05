@@ -6,6 +6,7 @@
  * AgendaProgress + ChatMessages + composer)。所有数据与运行态由 App.vue 持有,经
  * props 注入;用户动作(打开/创建/开始/暂停/恢复/转需求/发言)经 emit 上抛。
  */
+import { computed } from 'vue'
 import DiscussionList from './components/DiscussionList/DiscussionList.vue'
 import AgendaProgress from './components/AgendaProgress/AgendaProgress.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
@@ -58,6 +59,14 @@ const emit = defineEmits<{
 function statusLabel(status: Discussion['status']): string {
   return discussionRunLabel(status, props.activeRunState)
 }
+
+// `<agent>` segment for the active discussion's run-state row indicator: the first
+// in-flight dispatched agent. Only the active discussion has a dispatch view, so the
+// map carries at most one entry; other rows omit the agent (graceful fallback).
+const runAgentNames = computed<Record<string, string>>(() => {
+  const name = props.dispatch.pending[0]?.name
+  return props.activeId && name ? { [props.activeId]: name } : {}
+})
 </script>
 
 <template>
@@ -65,6 +74,7 @@ function statusLabel(status: Discussion['status']): string {
     :discussions="discussions"
     :active-id="activeId"
     :run-state="runState"
+    :run-agent-names="runAgentNames"
     @open="(id: string) => emit('open', id)"
     @create="(payload) => emit('create', payload)"
   />

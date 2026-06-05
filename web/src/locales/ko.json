@@ -445,7 +445,6 @@
       }
     },
     "statusBar": {
-      "agentPrefix": "{agent} ·",
       "error": "오류: {message}",
       "ready": "준비됨",
       "awaiting": "권한 대기 중",
@@ -756,6 +755,9 @@
       "approvalNotFound": "승인 항목을 찾을 수 없거나 이미 처리되었습니다."
     }
   },
+  "statusIndicator": {
+    "agentStatus": "{agent}.{status}"
+  },
   "discussion": {
     "action": {
       "start": {
@@ -838,6 +840,12 @@
           "tooltip": "오케스트레이션 일시 중지됨"
         }
       }
+    },
+    "status": {
+      "draft": "초안",
+      "in_progress": "진행 중",
+      "completed": "완료됨",
+      "cancelled": "취소됨"
     },
     "meta": {
       "type": {

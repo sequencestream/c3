@@ -8,6 +8,7 @@
  */
 import { computed } from 'vue'
 import type { RunActivity } from '../../lib/chat-types'
+import { sessionStatusIndicator, TONE_ICON } from '../../lib/status-indicator'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -51,44 +52,30 @@ const emit = defineEmits<{ refresh: []; stop: []; continue: [] }>()
 // distinguishes "stop this turn" from "end the whole team".
 const canStop = computed(() => props.running || props.teamActive)
 
-// Dot color class + label + whether to spin, derived from running + activity.
-const view = computed(() => {
-  // Agent-run reconnect (AVAIL-7): a transient running-state hold while c3 backs
-  // off before a single auto-resume. Takes precedence over the generic running
-  // labels so the user sees *why* the turn paused, not a plain "Thinking…".
-  if (props.reconnecting) {
-    return { dot: 'reconnecting', label: t('session.statusBar.reconnecting'), spin: true }
-  }
-  // Danger state (AS-R19): auto-resume refused, turn ended to idle, awaiting a
-  // manual continue. Surfaced even though `running` is false (it's idle now).
-  if (props.sideEffectPending) {
-    return { dot: 'error', label: t('session.statusBar.sideEffectPending'), spin: false }
-  }
-  if (props.activity.phase === 'error') {
-    return {
-      dot: 'error',
-      label: t('session.statusBar.error', { message: props.activity.message }),
-      spin: false,
-    }
-  }
-  if (!props.running) {
-    return { dot: 'idle', label: t('session.statusBar.ready'), spin: false }
-  }
-  if (props.activity.phase === 'awaiting') {
-    return { dot: 'awaiting', label: t('session.statusBar.awaiting'), spin: false }
-  }
-  // Team session between lead turns: not "thinking", but waiting on teammates.
-  if (props.teamActive && props.activity.phase === 'idle') {
-    return { dot: 'team', label: t('session.statusBar.teamRunning'), spin: true }
-  }
-  if (props.activity.phase === 'tool') {
-    return {
-      dot: 'running',
-      label: t('session.statusBar.runningTool', { toolName: props.activity.toolName }),
-      spin: true,
-    }
-  }
-  return { dot: 'running', label: t('session.statusBar.thinking'), spin: true }
+// Unified indicator: the shared `sessionStatusIndicator` reduces running +
+// activity + reconnecting + sideEffectPending to one `StatusIndicator` (tone,
+// spin, status i18n key/params, optional agent), preserving the old precedence.
+// Rendered as `<icon> <agent>.<status>` via the shared icon map + join key.
+const indicator = computed(() =>
+  sessionStatusIndicator({
+    running: props.running,
+    teamActive: props.teamActive,
+    activity: props.activity,
+    currentAgentName: props.currentAgentName,
+    reconnecting: props.reconnecting,
+    sideEffectPending: props.sideEffectPending,
+  }),
+)
+
+const icon = computed(() => TONE_ICON[indicator.value.tone])
+
+// `<agent>.<status>` text. The status segment resolves first (params for the
+// error/tool variants); the agent prefix is joined via `statusIndicator.agentStatus`
+// and dropped entirely when there's no resolved agent (no leftover dot).
+const statusText = computed(() => {
+  const ind = indicator.value
+  const status = ind.statusParams ? t(ind.statusKey, ind.statusParams) : t(ind.statusKey)
+  return ind.agent ? t('statusIndicator.agentStatus', { agent: ind.agent, status }) : status
 })
 
 // Refresh re-selects the session, so it only works on an open socket; the
@@ -98,13 +85,11 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
 
 <template>
   <div v-if="hasActiveSession" class="status-bar">
-    <span class="status-dot" :class="view.dot" />
-    <span v-if="view.spin" class="status-spinner" />
-    <span class="status-label">
-      <span v-if="currentAgentName" class="status-agent">{{
-        t('session.statusBar.agentPrefix', { agent: currentAgentName })
+    <span class="status-indicator" :class="indicator.tone">
+      <span class="status-icon" :class="{ spin: indicator.spin }" aria-hidden="true">{{
+        icon
       }}</span>
-      <span>{{ view.label }}</span>
+      <span class="status-text">{{ statusText }}</span>
     </span>
     <span v-if="connection === 'closed'" class="status-muted">{{
       t('session.statusBar.disconnected')

@@ -28,6 +28,7 @@ function mountList(
     discussions: Discussion[]
     activeId: string | null
     runState: Record<string, 'running' | 'paused'>
+    runAgentNames: Record<string, string>
   }> = {},
 ) {
   return mount(DiscussionList, {
@@ -204,11 +205,11 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.find('.disc-form').exists()).toBe(false)
   })
 
-  it('状态以彩色 pill 呈现:状态 CSS 类(不依赖文案译文)', () => {
+  it('生命周期态以统一指示器 tone class 呈现(不依赖文案译文)', () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha', { status: 'completed' })] })
-    const pill = w.find('.disc-status')
-    expect(pill.exists()).toBe(true)
-    expect(pill.classes()).toContain('completed')
+    const ind = w.find('.disc-status-indicator')
+    expect(ind.exists()).toBe(true)
+    expect(ind.classes()).toContain('completed')
     expect(w.find('.disc-item').classes()).toContain('completed')
   })
 
@@ -271,36 +272,62 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.find('.disc-list').classes()).not.toContain('collapsed')
   })
 
-  it('实时运行徽标:running/paused 渲染且与静态状态 pill 区分', () => {
+  it('单一统一指示器:有 run 显 run 态,旧双指示器(disc-run/disc-status)已合并', () => {
     const w = mountList({
-      discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')],
+      discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta', { status: 'in_progress' })],
       runState: { d1: 'running' },
     })
     const items = w.findAll('.disc-item')
-    // d1 有 running 徽标(带脉冲点),且静态 status pill 仍在(两者并存、可区分)。
-    const run1 = items[0].find('.disc-run')
-    expect(run1.exists()).toBe(true)
-    expect(run1.classes()).toContain('running')
-    expect(run1.find('.disc-run-dot').exists()).toBe(true)
-    expect(items[0].find('.disc-status').exists()).toBe(true)
-    // d2 无活跃 run → 不渲染徽标。
-    expect(items[1].find('.disc-run').exists()).toBe(false)
+    // 旧的双指示器类已不存在(合并为单一)。
+    expect(w.find('.disc-run').exists()).toBe(false)
+    expect(w.find('.disc-status').exists()).toBe(false)
+    // d1:每行恰好一个统一指示器,run 在场显 running tone + 脉冲图标。
+    expect(items[0].findAll('.disc-status-indicator')).toHaveLength(1)
+    const ind1 = items[0].find('.disc-status-indicator')
+    expect(ind1.classes()).toContain('running')
+    expect(ind1.find('.status-icon').classes()).toContain('spin')
+    // d2 无活跃 run → 回退生命周期(in_progress)tone,不脉冲。
+    const ind2 = items[1].find('.disc-status-indicator')
+    expect(ind2.classes()).toContain('in_progress')
+    expect(ind2.find('.status-icon').classes()).not.toContain('spin')
   })
 
-  it('并发多项:各讨论按自身 run-state 各自渲染徽标', () => {
+  it('并发多项:各行按「有 run 显 run、否则生命周期」各自映射 tone', () => {
     const w = mountList({
-      discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta'), disc('d3', 'Gamma')],
+      discussions: [
+        disc('d1', 'Alpha'),
+        disc('d2', 'Beta'),
+        disc('d3', 'Gamma', { status: 'completed' }),
+      ],
       runState: { d1: 'running', d2: 'paused' },
     })
     const items = w.findAll('.disc-item')
-    expect(items[0].find('.disc-run').classes()).toContain('running')
-    const run2 = items[1].find('.disc-run')
-    expect(run2.classes()).toContain('paused')
-    expect(items[2].find('.disc-run').exists()).toBe(false)
+    expect(items[0].find('.disc-status-indicator').classes()).toContain('running')
+    expect(items[1].find('.disc-status-indicator').classes()).toContain('paused')
+    // d3 无 run → 生命周期 completed tone。
+    expect(items[2].find('.disc-status-indicator').classes()).toContain('completed')
   })
 
-  it('默认无 run-state prop 时不渲染任何徽标', () => {
-    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
-    expect(w.find('.disc-run').exists()).toBe(false)
+  it('默认无 run-state prop:回退生命周期态(单一指示器仍在,不脉冲)', () => {
+    const w = mountList({ discussions: [disc('d1', 'Alpha', { status: 'draft' })] })
+    const ind = w.find('.disc-status-indicator')
+    expect(ind.exists()).toBe(true)
+    expect(ind.classes()).toContain('draft')
+    expect(ind.find('.status-icon').classes()).not.toContain('spin')
+  })
+
+  it('run 态 <agent> 段:有名以 `<agent>.` 起头,无名优雅省略(无残留点号)', () => {
+    const withAgent = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      runState: { d1: 'running' },
+      runAgentNames: { d1: 'Planner' },
+    })
+    expect(withAgent.find('.disc-status-indicator .status-text').text()).toMatch(/^Planner\./)
+    // 同一 run 无 agent 名 → 不以点号起头。
+    const noAgent = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      runState: { d1: 'running' },
+    })
+    expect(noAgent.find('.disc-status-indicator .status-text').text()).not.toMatch(/^\./)
   })
 })

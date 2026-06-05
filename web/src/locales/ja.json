@@ -445,7 +445,6 @@
       }
     },
     "statusBar": {
-      "agentPrefix": "{agent} ·",
       "error": "エラー: {message}",
       "ready": "準備完了",
       "awaiting": "権限待ち",
@@ -756,6 +755,9 @@
       "approvalNotFound": "承認エントリが見つからないか、すでに処理済みです。"
     }
   },
+  "statusIndicator": {
+    "agentStatus": "{agent}.{status}"
+  },
   "discussion": {
     "action": {
       "start": {
@@ -838,6 +840,12 @@
           "tooltip": "オーケストレーション一時停止中"
         }
       }
+    },
+    "status": {
+      "draft": "下書き",
+      "in_progress": "進行中",
+      "completed": "完了",
+      "cancelled": "キャンセル済み"
     },
     "meta": {
       "type": {

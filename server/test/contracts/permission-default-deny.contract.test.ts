@@ -46,7 +46,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }))
 
 import { runClaude } from '../../src/kernel/agent/index.js'
-import { waitForDecision, resolveDecision, pendingCount } from '../../src/permissions.js'
+import {
+  waitForDecision,
+  resolveDecision,
+  pendingCount,
+} from '../../src/kernel/permission/registry.js'
 
 beforeEach(() => {
   sdk.canUseToolResult = null

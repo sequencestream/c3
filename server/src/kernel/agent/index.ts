@@ -8,7 +8,7 @@ import type {
   ServerToClient,
 } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
-import { waitForDecision, resolveDecision, type Decision } from '../../permissions.js'
+import { waitForDecision, resolveDecision, type Decision } from '../permission/registry.js'
 import { runAskConsensus, runConsensusVote } from '../../consensus.js'
 import { askQuestions } from '../../consensus-tally.js'
 import { stringifyToolResult } from '../../format.js'

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { waitForDecision, resolveDecision, pendingCount } from './permissions.js'
+import { waitForDecision, resolveDecision, pendingCount } from './registry.js'
 
 describe('permission registry', () => {
   it('resolves with the decision delivered via resolveDecision', async () => {

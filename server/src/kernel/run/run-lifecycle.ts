@@ -17,7 +17,7 @@
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
-import { decideSocketResume } from './resume.js'
+import { decideResume, type RunOutcome } from './decide-resume.js'
 import {
   getDegradationChain,
   resolveSessionLaunch,
@@ -162,14 +162,26 @@ export async function launchRun(
   // auto-`resume` (AS-R18 / AVAIL-7). Bounds the reconnect to exactly one.
   let socketRetryUsed = false
 
+  // Single attempt loop driven by the pure `decideResume` FSM: it folds the old
+  // nested loops (degradation-chain stepping + the single socket auto-resume) into
+  // one. The imperative shell only runs `runClaude` and applies the chosen action's
+  // side effects (emit / registry / status); all branching lives in `decideResume`.
+  // `reconnecting` marks a socket-resume pass (re-run the same agent with `resume:`);
+  // `justAdvanced` marks a fresh fallback step, gating the between-attempts
+  // `agent_failed` so a resume pass never re-announces a failure.
+  let attemptIndex = 0
+  let reconnecting = false
+  let justAdvanced = false
   try {
-    for (let attempt = 0; attempt < agentsToTry.length; attempt++) {
+    while (attemptIndex < agentsToTry.length) {
       if (cycleAbort.signal.aborted) break
 
-      const agentCfg = agentsToTry[attempt]
+      const agentCfg = agentsToTry[attemptIndex]
 
-      // Emit agent_failed for the PREVIOUS attempt before starting the next.
-      if (attempt > 0 && failedAgents.length > 0) {
+      // Emit agent_failed for the agent that just failed, right before the next
+      // attempt starts — only on a fresh fallback advance, NOT on a socket-resume
+      // pass (which re-runs the same agent and must not re-announce a failure).
+      if (justAdvanced && failedAgents.length > 0) {
         const prev = failedAgents[failedAgents.length - 1]
         emit(runId, {
           type: 'agent_failed',
@@ -177,168 +189,165 @@ export async function launchRun(
           agentName: prev.agentName,
           error: prev.error,
         })
+        justAdvanced = false
       }
 
       let degraded = false
-      // Socket-disconnect path resolved this attempt (auto-resume succeeded, or a
-      // gated/exhausted disconnect emitted its own terminal `turn_end`). A socket
-      // disconnect is NOT degradable, so when set we leave the agent loop rather
-      // than trying the next agent (AS-R18).
-      let socketTerminated = false
 
-      // Inner sub-loop: the normal run plus AT MOST one auto-`resume` pass after a
-      // socket disconnect (AS-R18). `socketRetryUsed` (turn-scoped) bounds it to a
-      // single retry — no unbounded reconnect billing. `reconnecting` is true only
-      // on the resume pass, which forces `resume: runId` to preserve full context.
-      for (let reconnecting = false; ; ) {
-        // Per-call abort that cascades user stop from the cycle controller.
-        const attemptAbort = new AbortController()
-        rt.run = { abort: cycleAbort, handle: null }
-        const onCycleAbort = (): void => attemptAbort.abort()
-        cycleAbort.signal.addEventListener('abort', onCycleAbort, { once: true })
+      // Per-call abort that cascades user stop from the cycle controller.
+      const attemptAbort = new AbortController()
+      rt.run = { abort: cycleAbort, handle: null }
+      const onCycleAbort = (): void => attemptAbort.abort()
+      cycleAbort.signal.addEventListener('abort', onCycleAbort, { once: true })
 
-        setStatus(runId, 'running')
+      setStatus(runId, 'running')
 
-        // The socket disconnect verdict for THIS run pass (null ⇒ no disconnect).
-        let socketInfo: { error: string; sideEffectPending: boolean } | null = null
+      // The socket disconnect verdict for THIS run pass (null ⇒ no disconnect).
+      let socketInfo: { error: string; sideEffectPending: boolean } | null = null
 
-        try {
-          await runClaude({
-            prompt,
-            cwd: workspacePath,
-            signal: attemptAbort.signal,
-            // Requirement chats are pinned to `default` so the gateway always runs.
-            permissionMode: isRequirement ? 'default' : rt.mode,
-            // Reconnect forces `resume: runId` (same SDK session, full context —
-            // AS-R18). First attempt resumes an existing session; degradation
-            // retries never resume (each gets a fresh SDK session).
-            resume: reconnecting
-              ? runId
-              : attempt === 0
-                ? runId.startsWith(PENDING_SESSION_PREFIX)
-                  ? undefined
-                  : runId
-                : undefined,
-            reconnectAttempt: reconnecting,
-            envOverrides: agentCfg.envOverrides,
-            model: agentCfg.model,
-            currentAgentId: agentCfg.agentId,
-            ...(isRequirement
-              ? // The requirement read-only profile (gate + disallowed-tools lock +
-                // comm prompt + save_requirements tool) is injected at the
-                // composition root so the kernel launcher never imports features/.
-                deps.requirementProfile!(workspacePath)
-              : // Socket auto-resume is for ordinary user sessions only — the
-                // requirement comm agent is excluded (different lifecycle).
-                {
-                  onSocketDisconnect: (info) => {
-                    socketInfo = info
-                  },
-                }),
-            send: (m) => emit(runId, m),
-            onStart: (h) => {
-              if (rt.run) rt.run.handle = h
-            },
-            onSessionId: (sid) => {
-              if (runId !== sid) {
-                const prev = runId
-                // First binding (pending→real): call bindPending + external cb.
-                // Retry binding (already bound): skip bindPending + external cb
-                // to avoid duplicate `session_started` on the wire. The new SDK
-                // session id is ephemeral — we don't track it for resume.
-                if (prev.startsWith(PENDING_SESSION_PREFIX)) {
-                  bindPending(prev, sid)
-                  runId = sid
-                  if (!hasBound) {
-                    hasBound = true
-                    cbs.onSessionId?.(prev, sid)
-                  }
-                } else if (!hasBound) {
-                  // First binding on a non-pending session (e.g. resume flow).
-                  // This path runs once per launchRun.
+      try {
+        await runClaude({
+          prompt,
+          cwd: workspacePath,
+          signal: attemptAbort.signal,
+          // Requirement chats are pinned to `default` so the gateway always runs.
+          permissionMode: isRequirement ? 'default' : rt.mode,
+          // Reconnect forces `resume: runId` (same SDK session, full context —
+          // AS-R18). First attempt resumes an existing session; degradation
+          // retries never resume (each gets a fresh SDK session).
+          resume: reconnecting
+            ? runId
+            : attemptIndex === 0
+              ? runId.startsWith(PENDING_SESSION_PREFIX)
+                ? undefined
+                : runId
+              : undefined,
+          reconnectAttempt: reconnecting,
+          envOverrides: agentCfg.envOverrides,
+          model: agentCfg.model,
+          currentAgentId: agentCfg.agentId,
+          ...(isRequirement
+            ? // The requirement read-only profile (gate + disallowed-tools lock +
+              // comm prompt + save_requirements tool) is injected at the
+              // composition root so the kernel launcher never imports features/.
+              deps.requirementProfile!(workspacePath)
+            : // Socket auto-resume is for ordinary user sessions only — the
+              // requirement comm agent is excluded (different lifecycle).
+              {
+                onSocketDisconnect: (info) => {
+                  socketInfo = info
+                },
+              }),
+          send: (m) => emit(runId, m),
+          onStart: (h) => {
+            if (rt.run) rt.run.handle = h
+          },
+          onSessionId: (sid) => {
+            if (runId !== sid) {
+              const prev = runId
+              // First binding (pending→real): call bindPending + external cb.
+              // Retry binding (already bound): skip bindPending + external cb
+              // to avoid duplicate `session_started` on the wire. The new SDK
+              // session id is ephemeral — we don't track it for resume.
+              if (prev.startsWith(PENDING_SESSION_PREFIX)) {
+                bindPending(prev, sid)
+                runId = sid
+                if (!hasBound) {
                   hasBound = true
                   cbs.onSessionId?.(prev, sid)
                 }
-                // If hasBound is already true (retry), skip everything — the
-                // runtime keeps its original Map key.
-                deps.broadcastStatuses()
+              } else if (!hasBound) {
+                // First binding on a non-pending session (e.g. resume flow).
+                // This path runs once per launchRun.
+                hasBound = true
+                cbs.onSessionId?.(prev, sid)
               }
-            },
-            onTeam: () => {
-              // The run became a persistent agent team: the lead process now stays
-              // alive across turns. Mark the runtime (so `turn_end` holds at `team`
-              // and the next prompt feeds the live run), tell the client once, and
-              // surface the team status.
-              rt.team = true
-              emit(runId, { type: 'team_upgraded' })
-              setStatus(runId, 'team')
-            },
-            onDegradableError: (errMsg) => {
-              degraded = true
-              const agent = resolveAgent(agentCfg.agentId)
-              failedAgents.push({ agentId: agent.id, agentName: agent.name, error: errMsg })
-            },
-          })
-        } finally {
-          cycleAbort.signal.removeEventListener('abort', onCycleAbort)
-        }
-
-        // User stop wins over any reconnect decision.
-        if (cycleAbort.signal.aborted) {
-          socketTerminated = true
-          break
-        }
-        // No socket disconnect ⇒ normal completion / degradable / internal error;
-        // leave the sub-loop and let the agent-loop logic below take over.
-        if (!socketInfo) break
-
-        const disconnect: { error: string; sideEffectPending: boolean } = socketInfo
-        // Decide: single same-session auto-resume, or refuse → manual continue.
-        const decision = decideSocketResume(disconnect.error, {
-          autoResumeEnabled: getSocketAutoResume(),
-          sideEffectPending: disconnect.sideEffectPending,
-          retryAlreadyUsed: socketRetryUsed,
-          isPendingSession: runId.startsWith(PENDING_SESSION_PREFIX),
-          isTeam: rt.team,
-          aborted: cycleAbort.signal.aborted,
+              // If hasBound is already true (retry), skip everything — the
+              // runtime keeps its original Map key.
+              deps.broadcastStatuses()
+            }
+          },
+          onTeam: () => {
+            // The run became a persistent agent team: the lead process now stays
+            // alive across turns. Mark the runtime (so `turn_end` holds at `team`
+            // and the next prompt feeds the live run), tell the client once, and
+            // surface the team status.
+            rt.team = true
+            emit(runId, { type: 'team_upgraded' })
+            setStatus(runId, 'team')
+          },
+          onDegradableError: (errMsg) => {
+            degraded = true
+            const agent = resolveAgent(agentCfg.agentId)
+            failedAgents.push({ agentId: agent.id, agentName: agent.name, error: errMsg })
+          },
         })
-        if (decision.action === 'auto-resume') {
-          socketRetryUsed = true
-          // Hold the session in `reconnecting` over the bounded backoff so the
-          // sidebar shows the transient state; reconcileLiveness won't reap it
-          // (it only converges `running`/aborted/idle).
-          setStatus(runId, 'reconnecting')
-          await sleepAbortable(socketReconnectBackoffMs(), cycleAbort.signal)
-          if (cycleAbort.signal.aborted) {
-            socketTerminated = true
-            break
-          }
-          reconnecting = true
-          continue // re-invoke runClaude with resume: runId
+      } finally {
+        cycleAbort.signal.removeEventListener('abort', onCycleAbort)
+      }
+
+      // Classify how the attempt ended (user stop wins; then a socket disconnect;
+      // then a degradable error; else a clean completion), and let the FSM decide.
+      let outcome: RunOutcome
+      if (cycleAbort.signal.aborted) {
+        outcome = { kind: 'aborted' }
+      } else if (socketInfo) {
+        const disconnect: { error: string; sideEffectPending: boolean } = socketInfo
+        outcome = {
+          kind: 'socket',
+          error: disconnect.error,
+          ctx: {
+            autoResumeEnabled: getSocketAutoResume(),
+            sideEffectPending: disconnect.sideEffectPending,
+            retryAlreadyUsed: socketRetryUsed,
+            isPendingSession: runId.startsWith(PENDING_SESSION_PREFIX),
+            isTeam: rt.team,
+            aborted: cycleAbort.signal.aborted,
+          },
         }
-        // Refused (gate blocked / switch off / pending id / exhausted resume): emit
-        // the gated terminal `turn_end` and stop — finalizeRun settles to idle.
-        emit(runId, decision.turnEnd)
-        socketTerminated = true
+      } else if (degraded) {
+        outcome = { kind: 'degradable' }
+      } else {
+        outcome = { kind: 'completed' }
+      }
+      const action = decideResume({ attemptIndex, chainLength: agentsToTry.length }, outcome)
+
+      if (action.type === 'succeed') {
+        success = true
         break
       }
-
-      if (cycleAbort.signal.aborted) break
-      // A socket disconnect is terminal for this turn (resumed-OK, or manual-error
-      // already emitted) and is never degradable — never try the next agent.
-      if (socketTerminated) {
+      if (action.type === 'stop') {
+        // A refused socket disconnect carries its terminal turn_end and clears the
+        // pending prompt; a user stop carries neither (finalizeRun settles it).
+        if (action.turnEnd) {
+          emit(runId, action.turnEnd)
+          clearPending(runId)
+        }
+        break
+      }
+      if (action.type === 'exhausted') {
+        // The chain is spent — clear any pending prompt from the last failed
+        // attempt; the `finally` emits all_agents_failed + the terminal turn_end.
         clearPending(runId)
         break
       }
-      if (degraded) {
-        // Clear any pending permission prompts from the failed attempt.
-        clearPending(runId)
-        continue // try next agent
+      if (action.type === 'resume') {
+        socketRetryUsed = true
+        // Hold the session in `reconnecting` over the bounded backoff so the
+        // sidebar shows the transient state; reconcileLiveness won't reap it
+        // (it only converges `running`/aborted/idle).
+        setStatus(runId, 'reconnecting')
+        await sleepAbortable(socketReconnectBackoffMs(), cycleAbort.signal)
+        if (cycleAbort.signal.aborted) break
+        reconnecting = true
+        continue // re-invoke runClaude with resume: runId (same agent)
       }
-
-      // Success!
-      success = true
-      break
+      // action.type === 'fallback': clear the failed attempt's pending prompt and
+      // advance to the next agent. The next iteration's top emits its agent_failed.
+      clearPending(runId)
+      attemptIndex = action.nextIndex
+      reconnecting = false
+      justAdvanced = true
     }
   } catch (err) {
     emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })

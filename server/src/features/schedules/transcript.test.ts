@@ -9,7 +9,7 @@ import type { TranscriptItem } from '@ccc/shared/protocol'
 const loadHistory = vi.fn<(dir: string, sessionId: string) => Promise<TranscriptItem[]>>()
 vi.mock('../../sessions.js', () => ({ loadHistory: (d: string, s: string) => loadHistory(d, s) }))
 
-import { resetDbForTests } from '../../db.js'
+import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetStoreForTests, createSchedule, appendExecutionLog } from './store.js'
 import { readExecutionTranscript } from './transcript.js'
 

@@ -18,7 +18,7 @@ import type {
   RequirementRunStatus,
   RequirementStatus,
 } from '@ccc/shared/protocol'
-import { getDb, isDbAvailable, type Db } from '../../db.js'
+import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
 const SCHEMA_VERSION = 5
 

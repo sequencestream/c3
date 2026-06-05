@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resetDbForTests } from '../../db.js'
+import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetStoreForTests, getWriteApproval, listPendingWriteApprovals } from './store.js'
 import {
   pendWriteApproval,

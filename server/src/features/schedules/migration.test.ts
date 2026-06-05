@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getDb, resetDbForTests, type Db } from '../../db.js'
+import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
 import { appendExecutionLog, listExecutionLogs, resetStoreForTests } from './store.js'
 
 let dir: string

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AutomationStatus } from '@ccc/shared/protocol'
-import { resetDbForTests } from '../../db.js'
+import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   getRequirement,
   insertRequirements,

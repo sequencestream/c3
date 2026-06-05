@@ -20,7 +20,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (orig) => {
   return { ...actual, listSessions: listSessionsMock }
 })
 
-import { resetDbForTests } from './db.js'
+import { resetDbForTests } from './kernel/infra/db.js'
 import { resetStoreForTests, setChatSession } from './features/requirements/store.js'
 import { listWorkspaceSessions } from './sessions.js'
 

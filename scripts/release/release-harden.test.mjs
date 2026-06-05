@@ -65,8 +65,10 @@ describe('manifest', () => {
 
   it('builds a complete manifest whose sha256/bytes match the real files', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'c3-manifest-'))
-    const a = resolve(dir, 'c3-macos-arm64')
-    const b = resolve(dir, 'c3-linux-x64')
+    // Release 8/7: the manifest's `file` is the PACKAGE name, not the raw
+    // binary. `binary` / `binarySha256` describe the in-package binary.
+    const a = resolve(dir, 'c3-v0.9.0-macos-arm64.tar.gz')
+    const b = resolve(dir, 'c3-v0.9.0-linux-x64.tar.gz')
     writeFileSync(a, 'AAAA')
     writeFileSync(b, 'BBBBBB')
     const versionInfo = { version: '0.9.0', commit: 'deadbee', buildTime: 'T0' }
@@ -74,8 +76,8 @@ describe('manifest', () => {
       versionInfo,
       harden: 'basic',
       artifacts: [
-        { target: 'macos-arm64', file: a },
-        { target: 'linux-x64', file: b },
+        { target: 'macos-arm64', file: a, binary: 'c3', binarySha256: 'a'.repeat(64) },
+        { target: 'linux-x64', file: b, binary: 'c3', binarySha256: 'b'.repeat(64) },
       ],
     })
     expect(m.schema).toBe(MANIFEST_SCHEMA)
@@ -91,6 +93,8 @@ describe('manifest', () => {
       [m.artifacts[1], b],
     ]) {
       expect(art.file).toBe(basename(file))
+      expect(art.binary).toBe('c3')
+      expect(art.binarySha256).toMatch(/^[0-9a-f]{64}$/)
       expect(art.bytes).toBe(readFileSync(file).length)
       expect(art.sha256).toBe(createHash('sha256').update(readFileSync(file)).digest('hex'))
     }
@@ -98,14 +102,19 @@ describe('manifest', () => {
 
   it('records the requested harden tier verbatim (standard is a placeholder)', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'c3-manifest-'))
-    const f = resolve(dir, 'c3-macos-arm64')
+    // Release 8/7: package filename (.zip on Windows) is the manifest's `file`.
+    const f = resolve(dir, 'c3-v1.0.0-windows-x64.zip')
     writeFileSync(f, 'x')
     const m = buildManifest({
       versionInfo: { version: '1', commit: 'c', buildTime: 't' },
       harden: 'standard',
-      artifacts: [{ target: 'macos-arm64', file: f }],
+      artifacts: [
+        { target: 'windows-x64', file: f, binary: 'c3.exe', binarySha256: '0'.repeat(64) },
+      ],
     })
     expect(m.harden).toBe('standard')
+    expect(m.artifacts[0].file).toBe('c3-v1.0.0-windows-x64.zip')
+    expect(m.artifacts[0].binary).toBe('c3.exe')
   })
 })
 

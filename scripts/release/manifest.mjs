@@ -12,16 +12,24 @@
 //           and the artifact shipped as the un-obfuscated (minified) bundle (graceful
 //           fallback; the build kept going and a WARN was logged). For non-standard
 //           tiers the field is omitted so v1 consumers see identical bytes.
-//   Both schemas are accepted by postgate (it only checks sha256 ↔ SHA256SUMS ↔ disk
-//   and P0 completeness; it doesn't introspect per-artifact fields).
+//   v1.2  — release 8/7 (binary→package split). `artifacts[].file` is now the
+//           PACKAGE filename (`c3-v{ver}-{target}{.tar.gz|.zip}`), and two new
+//           fields describe the in-package binary: `binary` (`c3` / `c3.exe`) and
+//           `binarySha256` (sha256 of the inner binary). `bytes` and `sha256` are
+//           the package's; `binarySha256` is the inner binary's. v1.1 readers
+//           ignore the new fields (so the rename is non-breaking for old
+//           consumers). The postgate still only checks `sha256` ↔ SHA256SUMS ↔
+//           disk and P0 completeness — it doesn't introspect `binarySha256`.
+//   All schemas are accepted by postgate (it only checks sha256 ↔ SHA256SUMS ↔
+//   disk and P0 completeness; it doesn't introspect per-artifact fields).
 //
 // Pure Node, no deps.
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 
-/** v1.1 — release 7/7. v1 readers ignore unknown fields. */
-export const MANIFEST_SCHEMA = 'c3-release-manifest/v1.1'
+/** v1.2 — release 8/7. v1/v1.1 readers ignore unknown fields. */
+export const MANIFEST_SCHEMA = 'c3-release-manifest/v1.2'
 
 /** SHA-256 hex digest of a file's bytes. */
 export function sha256File(path) {
@@ -36,12 +44,18 @@ export function sha256File(path) {
  * @param {Array<{
  *   target: string,
  *   file: string,
+ *   bytes?: number,                     // release 8/7: optional. If absent, re-read from disk.
+ *   sha256?: string,                     // release 8/7: optional. If absent, re-read from disk.
+ *   binary?: string,                     // release 8/7: in-package binary name (`c3` / `c3.exe`)
+ *   binarySha256?: string,               // release 8/7: sha256 of the INNER binary
  *   experimental?: boolean,
- *   obfuscated?: boolean,                  // release 7/7 — when present (standard tier only)
- *   obfDurationMs?: number,                // release 7/7 — when obfuscated, ms spent
+ *   obfuscated?: boolean,                // release 7/7 — when present (standard tier only)
+ *   obfDurationMs?: number,              // release 7/7 — when obfuscated, ms spent
  * }>} o.artifacts
- *   file = absolute path; experimental = ships ⚠️experimental (smoke-unverified, release 4/7)
- *   obfuscated + obfDurationMs = standard-tier obfuscation result (release 7/7)
+ *   file = absolute path to the PACKAGE (e.g. dist/c3-v0.2.0-macos-arm64.tar.gz).
+ *   The `binary` + `binarySha256` pair identify the in-package binary.
+ *   `bytes` / `sha256` default to disk reads (caller can pass them to avoid an
+ *   extra stat / hash — release 8/7: pack.mjs already computed them).
  */
 export function buildManifest({ versionInfo, harden, artifacts }) {
   const isStandard = harden === 'standard'
@@ -52,14 +66,16 @@ export function buildManifest({ versionInfo, harden, artifacts }) {
     buildTime: versionInfo.buildTime,
     harden,
     artifacts: artifacts.map((a) => {
-      // Only stamp the flags when true — keeps basic/none entries byte-identical
-      // to schema v1 (experimental) and v1.0 baseline. The standard tier always
+      // Only stamp the flags when true — keeps basic/none entries close to
+      // schema v1 (experimental) and v1.0 baseline. The standard tier always
       // carries the obfuscation block (applied: true|false — false = fallback fired).
       const entry = {
         target: a.target,
         file: basename(a.file),
-        bytes: statSync(a.file).size,
-        sha256: sha256File(a.file),
+        bytes: typeof a.bytes === 'number' ? a.bytes : statSync(a.file).size,
+        sha256: typeof a.sha256 === 'string' ? a.sha256 : sha256File(a.file),
+        ...(a.binary ? { binary: a.binary } : {}),
+        ...(a.binarySha256 ? { binarySha256: a.binarySha256 } : {}),
         ...(a.experimental ? { experimental: true } : {}),
         ...(isStandard
           ? {

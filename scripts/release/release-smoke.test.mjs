@@ -15,7 +15,7 @@ import {
 } from './targets.mjs'
 import { assertVersionOutput, freePort, smokeArtifact } from './smoke.mjs'
 import { parseSha256Sums } from './postgate.mjs'
-import { artifactName } from './artifact-name.mjs'
+import { artifactName, binaryName, packageName, packageExt } from './artifact-name.mjs'
 import { defaultOutfile, TARGETS } from '../../server/scripts/release/build-target.mjs'
 
 describe('targets', () => {
@@ -55,11 +55,34 @@ describe('targets', () => {
     expect(isExperimental('macos-arm64')).toBe(false)
   })
 
-  it('TARGETS carries the P1 bun triples; windows artifact name gets .exe', () => {
+  it('TARGETS carries the P1 bun triples; package name uses .zip for windows, .tar.gz elsewhere', () => {
+    // Release 8/7: `artifactName` is now an alias of `packageName` (the
+    // distribution archive). The BINARY is always `c3` (or `c3.exe`) and
+    // is named separately via `binaryName`. The package's `.zip` vs `.tar.gz`
+    // is governed by `packageExt` (Windows-conventional).
     expect(TARGETS['macos-x64']).toBe('bun-darwin-x64')
     expect(TARGETS['windows-x64']).toBe('bun-windows-x64')
-    expect(artifactName('0.2.0', 'windows-x64')).toBe('c3-v0.2.0-windows-x64.exe')
-    expect(artifactName('0.2.0', 'macos-x64')).toBe('c3-v0.2.0-macos-x64')
+
+    // Package (the distributable archive; the unit of `shasum` / `gh release`).
+    expect(artifactName('0.2.0', 'windows-x64')).toBe('c3-v0.2.0-windows-x64.zip')
+    expect(artifactName('0.2.0', 'macos-x64')).toBe('c3-v0.2.0-macos-x64.tar.gz')
+    expect(artifactName('0.2.0', 'linux-x64')).toBe('c3-v0.2.0-linux-x64.tar.gz')
+    expect(artifactName('0.2.0', 'macos-arm64')).toBe('c3-v0.2.0-macos-arm64.tar.gz')
+    // Back-compat: `artifactName` is an alias of `packageName`.
+    expect(artifactName).toBe(packageName)
+    // `normalizeVersion`: a v-prefixed version is not doubled.
+    expect(packageName('v0.2.0', 'macos-arm64')).toBe('c3-v0.2.0-macos-arm64.tar.gz')
+
+    // Binary (always `c3` / `c3.exe`; the in-dist + in-package filename).
+    expect(binaryName('macos-arm64')).toBe('c3')
+    expect(binaryName('macos-x64')).toBe('c3')
+    expect(binaryName('linux-x64')).toBe('c3')
+    expect(binaryName('windows-x64')).toBe('c3.exe')
+
+    // Per-target archive extension.
+    expect(packageExt('windows-x64')).toBe('.zip')
+    expect(packageExt('macos-arm64')).toBe('.tar.gz')
+    expect(packageExt('linux-x64')).toBe('.tar.gz')
   })
 })
 
@@ -77,10 +100,10 @@ describe('assertVersionOutput', () => {
 })
 
 describe('parseSha256Sums', () => {
-  it('parses `<hex>  <name>` lines into a name→hex map', () => {
+  it('parses `<hex>  <name>` lines into a name→hex map (release 8/7: name is the PACKAGE)', () => {
     const hex = 'a'.repeat(64)
-    const map = parseSha256Sums(`${hex}  c3-v0.1.0-macos-arm64\n# comment\n`)
-    expect(map.get('c3-v0.1.0-macos-arm64')).toBe(hex)
+    const map = parseSha256Sums(`${hex}  c3-v0.1.0-macos-arm64.tar.gz\n# comment\n`)
+    expect(map.get('c3-v0.1.0-macos-arm64.tar.gz')).toBe(hex)
     expect(map.size).toBe(1)
   })
 })

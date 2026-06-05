@@ -1,6 +1,6 @@
 # Non-Functional — Release & Distribution
 
-> **Status:** release 7/7 + 6/7 + 5/7 + 4/7. Orchestration + P0 matrix (1/7), version injection
+> **Status:** release 8/7 + 7/7 + 6/7 + 5/7 + 4/7. Orchestration + P0 matrix (1/7), version injection
 >
 > - manifest + harden-tier framework (2/7), distribution trust — SHA256SUMS + minisign +
 >   macOS ad-hoc + `c3 verify` (3/7), **layered quality gates** — pre-build blocking gate +
@@ -9,14 +9,17 @@
 >   (4/7), the **GH Actions native matrix** — workflow with `needs:` chain physically enforcing
 >   the five-layer gate order, bytecode auto-on for native host builds (cross-compile kept off,
 >   oven-sh/bun#18416), macOS ad-hoc codesign runs on darwin runners for real, SLSA provenance
->   (P1) via OIDC keyless, `macos-x64` promoted from P1 to P0 (6/7) — and the **standard
+>   (P1) via OIDC keyless, `macos-x64` promoted from P1 to P0 (6/7), the **standard
 >   obfuscation tier (7/7)** — `javascript-obfuscator` with string-array + identifier rename,
 >   e2e/smoke as logic-regression hard evidence, graceful fallback to bare compile on failure,
->   manifest `v1.1` per-artifact `obfuscation.applied` field, source maps local-only — are
->   live. macOS notarization (Developer ID + notarytool) and Windows Authenticode
->   (signtool + PFX) are deferred to **release 8/7** — they need real certificates in
->   GitHub Secrets, which we don't have yet. Source of truth — keep in sync with
->   `scripts/release/`, `server/scripts/release/`, and `.github/workflows/release.yml`.
+>   manifest `v1.1` per-artifact `obfuscation.applied` field, source maps local-only — and
+>   the **binary → package split (8/7)** — the binary is always `c3` (or `c3.exe` on
+>   Windows); version + platform info live ONLY in the package filename
+>   (`c3-v{version}-{target}{.tar.gz|.zip}`); manifest `v1.2` adds `binary` + `binarySha256`
+>   per artifact — are live. macOS notarization (Developer ID + notarytool) and Windows
+>   Authenticode (signtool + PFX) are deferred to a later wave — they need real
+>   certificates in GitHub Secrets, which we don't have yet. Source of truth — keep in
+>   sync with `scripts/release/`, `server/scripts/release/`, and `.github/workflows/release.yml`.
 
 `release` is a thin **orchestration** layer over the existing build/binary primitives.
 It does not replace `pnpm build` (esbuild CJS bundle) or `pnpm binary` (single native
@@ -29,11 +32,12 @@ executable); it sequences and fans them out for multi-platform output. See
 The build runs in strict, race-free phases. Phase0/1 happen exactly once; Phase2 fans
 out and is a pure reader, so N targets never write a shared file (the old race root).
 
-| Phase  | Step                    | Cardinality                   | Writes                                            |
-| ------ | ----------------------- | ----------------------------- | ------------------------------------------------- |
-| Phase0 | web build               | once, platform-agnostic       | `web/dist/**`                                     |
-| Phase1 | generate-static-embed   | once                          | `dist/static-embed.generated.ts` (gitignored)     |
-| Phase2 | `bun --compile` fan-out | once per target, **parallel** | `dist/c3-<os>-<arch>` (read-only on the snapshot) |
+| Phase    | Step                    | Cardinality                              | Writes                                                            |
+| -------- | ----------------------- | ---------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Phase0   | web build               | once, platform-agnostic                  | `web/dist/**`                                                     |
+| Phase1   | generate-static-embed   | once                                     | `dist/static-embed.generated.ts` (gitignored)                     |
+| Phase2   | `bun --compile` fan-out | once per target, **parallel**            | `dist/<target>/c3` (per-target subdir, read-only on the snapshot) |
+| Phase2.5 | pack                    | once per target, **serial** after Phase2 | `dist/c3-v{ver}-{target}{.tar.gz                                  | .zip}`+`dist/<target>/c3.sha256`+`c3.minisig` (inner sidecars inside the per-target subdir, which the tarball then tars up) |
 
 `static-embed` lives **outside `src/`**: `server/src/static-embed.ts` is a permanent
 committed empty stub (esbuild/dev/typecheck consume it); the Bun compile path redirects
@@ -102,7 +106,7 @@ build:macos-x64      (macos-13)          needs: [pregate]
 build:windows-x64    (windows-latest)    needs: [pregate]    ⚠️experimental
   └─ pnpm release:build --targets=<one> --skip-smoke --harden=basic
   └─ ad-hoc codesign on darwin runners (no-op on linux/windows)
-  └─ actions/upload-artifact@v4 → c3-<target>
+  └─ actions/upload-artifact@v4 → c3-<target>  (uploads the package sidecars, not the binary)
 smoke:<target>       (same OS as build)  needs: [build:<target>]
   └─ pnpm release:smoke --file=<artifact>  (--version + headless HTTP probe)
 verify-dist          (ubuntu-latest)     needs: [smoke:linux-x64, smoke:macos-arm64,
@@ -215,13 +219,38 @@ removing `'windows-x64'` from `EXPERIMENTAL_TARGETS` is the one-line change that
 tag (it cascades: manifest entry loses `"experimental": true`, README loses ⚠️, postgate
 keeps enforcing P0 completeness unchanged because the P1 set is empty either way).
 
-## Artifact naming
+## Artifact naming (release 8/7)
 
-`release:build` output is **version-stamped**: `dist/c3-v{version}-<os>-<arch>{.exe?}` (e.g.
-`c3-v0.2.0-macos-arm64`, `c3-v0.2.0-linux-x64`; the P1 Windows target appends `.exe` →
-`c3-v0.2.0-windows-x64.exe`). `darwin`→`macos` and `win32`→`windows`; the leading `v` is fixed and a `v`-prefixed version is not
-doubled (`artifact-name.mjs`). `pnpm binary` (self-use quickcut) keeps the **un-versioned**
-`dist/c3-<os>-<arch>`. Channel suffixes (e.g. `-nightly`) remain a later-wave placeholder.
+`release:build` produces TWO distinct outputs per target, by design:
+
+- The **binary** is always `dist/<target>/c3` (or `dist/<target>/c3.exe` on Windows).
+  The version and platform info do **not** live in the binary filename — the
+  binary is the consumer's `c3`, period. Per-target subdirs are internal
+  scratch (one per native target so multiple platforms coexist in a multi-
+  target build).
+- The **package** is the distributable archive the GitHub Release ships:
+  `dist/c3-v{version}-{target}.tar.gz` for POSIX, `dist/c3-v{version}-{target}.zip`
+  for Windows. Inside the archive, the top-level files are `c3`, `c3.sha256`,
+  `c3.minisig` (flat, no enclosing dir), so `tar -xzf … && ./c3 --version`
+  works out of the box.
+
+`darwin`→`macos` and `win32`→`windows`; the leading `v` is fixed and a
+`v`-prefixed version is not doubled (`normalizeVersion` in
+`artifact-name.mjs`).
+
+`pnpm binary` (self-use quickcut) keeps the **un-versioned, un-packaged**
+`dist/<hostTarget>/c3` and does not use the package helper.
+
+Channel suffixes (e.g. `-nightly`) remain a later-wave placeholder.
+
+The naming API surface (single SoT — `artifact-name.mjs`):
+
+- `binaryName(target)` → `c3` / `c3.exe` (the in-dist + in-package binary name)
+- `packageName(version, target)` → `c3-v{ver}-{target}{.tar.gz|.zip}` (the
+  on-dist package filename)
+- `packageExt(target)` → `.zip` on Windows, `.tar.gz` elsewhere
+- `artifactName` is kept as a back-compat alias of `packageName` (older call
+  sites)
 
 ## Version SoT (release 2/7)
 
@@ -319,37 +348,64 @@ The expected order of magnitude is **+10–30%** on size and **+5–15%** on sta
 (string-array indirection is the dominant cost; identifier rename is mostly compile-time
 and minified by the `minify: true` that ships with the standard tier).
 
-## Manifest (release 2/7)
+## Manifest (release 2/7, v1.2 in release 8/7)
 
 For `harden` ≠ `none`, `pnpm release:build` writes `dist/manifest.json` — a verify-now
 distribution-trust record (signing is a later wave). `scripts/release/manifest.mjs`
-(`schema: c3-release-manifest/v1`):
+(`schema: c3-release-manifest/v1.2`):
 
 ```json
 {
-  "schema": "c3-release-manifest/v1",
+  "schema": "c3-release-manifest/v1.2",
   "version": "0.1.0",
   "commit": "c58a0b5",
   "buildTime": "2026-06-05T07:22:53.535Z",
   "harden": "basic",
   "artifacts": [
-    { "target": "macos-arm64", "file": "c3-macos-arm64", "bytes": 68300642, "sha256": "ed0a…2a11" }
+    {
+      "target": "macos-arm64",
+      "file": "c3-v0.1.0-macos-arm64.tar.gz",
+      "binary": "c3",
+      "binarySha256": "9b74c989…bac",
+      "bytes": 25100384,
+      "sha256": "ed0a…2a11"
+    }
   ]
 }
 ```
 
-A consumer can `shasum -a 256 c3-<os>-<arch>` and match `artifacts[].sha256`. The manifest
+- `file` is the **package** name; `bytes` / `sha256` are the package's.
+- `binary` is the in-package binary name (`c3` on POSIX, `c3.exe` on Windows).
+- `binarySha256` is the hex of the **inner binary**, matching what
+  `c3 verify <package>` reports for the inner-binary check.
+
+A consumer can `shasum -a 256 c3-v{ver}-{target}{.tar.gz|.zip}` and match
+`artifacts[].sha256`; the inner-binary `binarySha256` matches what
+`c3 verify` reports when run on the extracted binary. The manifest
 is a **multi-artifact** distribution record; `pnpm binary` (single self-use binary) does
 not emit one. An experimental P1 artifact (release 4/7) additionally carries
-`"experimental": true` on its entry (absent on P0/verified entries — schema stays `v1`).
+`"experimental": true` on its entry (absent on P0/verified entries — schema stays `v1.2`).
+The standard tier (release 7/7) adds the per-artifact `obfuscation: { applied, durationMs }`
+block, preserved across the v1.2 rename.
 
-## Distribution trust (release 3/7)
+## Distribution trust (release 3/7, two-layer in 8/7)
 
-The trust floor is a **signing chain** (see security.md DIST-1/SEC-8). `release:sign` (and
-`release:publish`) read `dist/manifest.json` and emit, per artifact, a `.sha256` and an
-Ed25519 **minisign** `.minisig`, plus aggregate `SHA256SUMS`(`.minisig`). All sidecars cover
-the **final** bytes (after macOS ad-hoc `codesign`, which runs inside the compile primitive so
-hashing sees the signed Mach-O).
+The trust floor is a **signing chain** (see security.md DIST-1/SEC-8). After release 8/7,
+signing happens at **two distinct layers**:
+
+- **Inner sidecars** (in the package, next to the `c3` binary): `c3.sha256` and
+  `c3.minisig` — generated by `pack.mjs` against the post-codesign binary bytes.
+  `c3 verify c3` (after untar) checks the binary against these.
+- **Outer sidecars** (at dist root, next to the package): `<package>.sha256` and
+  `<package>.minisig` — generated by `release:sign` (and `release:publish`) over
+  the package bytes. Aggregate `SHA256SUMS`(+`.minisig`) at dist root covers
+  every package.
+
+`release:sign` (and `release:publish`) read `dist/manifest.json` and emit the
+**outer** sidecars + aggregate `SHA256SUMS`(`.minisig`). All outer sidecars
+cover the **final** bytes of the package (post tar/zip); the inner sidecars
+cover the **final** bytes of the binary (after macOS ad-hoc `codesign`, which
+runs inside the compile primitive so hashing sees the signed Mach-O).
 
 - **Keys.** Standard minisign format (`scripts/release/minisign.mjs`, pure `node:crypto`,
   interoperable with the official `minisign` CLI). The secret is a raw `keyId||seed` blob held
@@ -381,7 +437,8 @@ pnpm release:build --dry-run                        # print the plan, execute no
 pnpm release:sign                                    # SHA256SUMS + .sha256 + .minisig (reads manifest)
 pnpm release:notes                                   # release notes (version + top CHANGELOG section)
 pnpm release:gate                                    # pregate: typecheck→lint→test→i18n:check→check-freeze
-pnpm release:smoke -- --file=dist/c3-…               # headless smoke one artifact (or read manifest if no --file)
+pnpm release:smoke -- --file=dist/<target>/c3      # headless smoke the inner BINARY (extract tarball first in CI)
+pnpm release:smoke -- --manifest=dist/manifest.json # or: pick the inner binary from the package via the manifest
 pnpm release:verify-dist                              # publish final check: manifest↔SHA256SUMS↔disk + P0
 pnpm release:publish --dry-run                        # rehearse publish: plan only, no tag/gh/sign
 pnpm release --no-publish                             # gate + build + sign + notes, no GitHub Release
@@ -408,7 +465,8 @@ pnpm binary                                          # native single binary (sel
 - Standard-tier obfuscation helper: `server/scripts/release/obfuscate.mjs` (`obfuscateStage()`, `isObfuscationEnabled()`, `decideFallback()`, `OBFUSCATOR_OPTIONS` — locked set, no aggressive options exposed)
 - Version SoT helper: `scripts/release/version-info.mjs` (`computeVersionInfo`, `versionDefines`)
 - Manifest helper: `scripts/release/manifest.mjs` (`buildManifest`, `sha256File`)
-- Artifact naming: `scripts/release/artifact-name.mjs` (`artifactName`, `normalizeVersion`)
+- Artifact naming: `scripts/release/artifact-name.mjs` (`binaryName`, `packageName`, `packageExt`, `normalizeVersion`; `artifactName` is a back-compat alias of `packageName`)
+- Packaging: `scripts/release/pack.mjs` (`packOne`, `packAll`; inner sidecars + `.tar.gz` / `.zip` archive)
 - minisign core: `scripts/release/minisign.mjs` (`generateKeypair`, `signContent`, `verifyContent`)
 - Signing: `scripts/release/sign.mjs` (`signArtifacts`, `artifactsFromManifest`, `secretFromEnv`)
 - Notes / publish / keygen: `scripts/release/notes.mjs` (`buildNotes`), `publish.mjs` (`publish`), `keygen.mjs`

@@ -156,35 +156,57 @@ describe('obfuscateStage()', () => {
   })
 })
 
-describe('manifest v1.1 obfuscation block', () => {
+describe('manifest v1.2 obfuscation block + binary/package split', () => {
   it('stamps per-artifact obfuscation { applied, durationMs } when standard', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'c3-manifest-'))
-    const a = resolve(dir, 'c3-macos-arm64')
+    // Release 8/7: manifest `file` is the PACKAGE, not the raw binary. The
+    // obfuscation block is preserved across the rename (it's per-artifact
+    // metadata, not file-shape data).
+    const a = resolve(dir, 'c3-v0.7.7-macos-arm64.tar.gz')
+    const b = resolve(dir, 'c3-v0.7.7-linux-x64.tar.gz')
     writeFileSync(a, 'AAAA')
+    writeFileSync(b, 'BBBB')
     const m = buildManifest({
       versionInfo: { version: '0.7.7', commit: 'r777777', buildTime: 'T' },
       harden: 'standard',
       artifacts: [
-        { target: 'macos-arm64', file: a, obfuscated: true, obfDurationMs: 4321 },
-        { target: 'linux-x64', file: a, obfuscated: false, obfDurationMs: 0 }, // fallback
+        {
+          target: 'macos-arm64',
+          file: a,
+          binary: 'c3',
+          binarySha256: 'a'.repeat(64),
+          obfuscated: true,
+          obfDurationMs: 4321,
+        },
+        {
+          target: 'linux-x64',
+          file: b,
+          binary: 'c3',
+          binarySha256: 'b'.repeat(64),
+          obfuscated: false,
+          obfDurationMs: 0, // fallback
+        },
       ],
     })
-    expect(m.schema).toBe('c3-release-manifest/v1.1')
+    expect(m.schema).toBe('c3-release-manifest/v1.2')
     expect(m.harden).toBe('standard')
     expect(m.artifacts).toHaveLength(2)
     expect(m.artifacts[0].obfuscation).toEqual({ applied: true, durationMs: 4321 })
     expect(m.artifacts[1].obfuscation).toEqual({ applied: false })
+    // Release 8/7: binary + binarySha256 are recorded on each artifact.
+    expect(m.artifacts[0].binary).toBe('c3')
+    expect(m.artifacts[0].binarySha256).toMatch(/^[0-9a-f]{64}$/)
   })
 
   it('OMITS the obfuscation block for basic/none (v1 byte-identical output preserved)', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'c3-manifest-'))
-    const a = resolve(dir, 'c3-macos-arm64')
+    const a = resolve(dir, 'c3-v0.7.7-macos-arm64.tar.gz')
     writeFileSync(a, 'AAAA')
     for (const harden of ['basic', 'none']) {
       const m = buildManifest({
         versionInfo: { version: '0.7.7', commit: 'r777777', buildTime: 'T' },
         harden,
-        artifacts: [{ target: 'macos-arm64', file: a }],
+        artifacts: [{ target: 'macos-arm64', file: a, binary: 'c3', binarySha256: 'a'.repeat(64) }],
       })
       expect(m.harden).toBe(harden)
       for (const art of m.artifacts) {
@@ -193,26 +215,28 @@ describe('manifest v1.1 obfuscation block', () => {
     }
   })
 
-  it('schema is v1.1 (not v1) so postgate/verify-dist readers can branch if needed', () => {
-    expect(MANIFEST_SCHEMA).toBe('c3-release-manifest/v1.1')
+  it('schema is v1.2 (binary/package split + obfuscation block, v1.1 readers tolerate)', () => {
+    expect(MANIFEST_SCHEMA).toBe('c3-release-manifest/v1.2')
   })
 })
 
-describe('postgate (publish final check) tolerates v1 and v1.1', () => {
+describe('postgate (publish final check) tolerates v1, v1.1 and v1.2', () => {
   // postgate only checks sha256 ↔ SHA256SUMS ↔ disk + P0 completeness, never
-  // reads the obfuscation field. We feed it a v1.1 manifest and assert it
-  // still accepts the distribution set. The v1 path is covered by the existing
-  // release-build.test.mjs / postgate unit tests (out of scope to duplicate here).
-  it('accepts a v1.1 manifest with the obfuscation block', () => {
+  // reads the obfuscation field. We feed it a v1.2 manifest and assert it
+  // still accepts the distribution set. v1/v1.1 paths are covered by the
+  // existing release-build.test.mjs / postgate unit tests.
+  it('accepts a v1.2 manifest with binary/package split + obfuscation block', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'c3-postgate-'))
-    const a = resolve(dir, 'c3-macos-arm64')
-    const b = resolve(dir, 'c3-linux-x64')
+    // Release 8/7: the manifest records PACKAGE filenames in `file`; the
+    // SHA256SUMS lines key on the package too.
+    const a = resolve(dir, 'c3-v0.7.7-macos-arm64.tar.gz')
+    const b = resolve(dir, 'c3-v0.7.7-linux-x64.tar.gz')
     writeFileSync(a, 'A'.repeat(100))
     writeFileSync(b, 'B'.repeat(200))
     const shaA = createHash('sha256').update('A'.repeat(100)).digest('hex')
     const shaB = createHash('sha256').update('B'.repeat(200)).digest('hex')
     const m = {
-      schema: 'c3-release-manifest/v1.1',
+      schema: 'c3-release-manifest/v1.2',
       version: '0.7.7',
       commit: 'r777777',
       buildTime: 'T',
@@ -220,14 +244,18 @@ describe('postgate (publish final check) tolerates v1 and v1.1', () => {
       artifacts: [
         {
           target: 'macos-arm64',
-          file: 'c3-macos-arm64',
+          file: 'c3-v0.7.7-macos-arm64.tar.gz',
+          binary: 'c3',
+          binarySha256: 'a'.repeat(64),
           bytes: 100,
           sha256: shaA,
           obfuscation: { applied: true, durationMs: 1000 },
         },
         {
           target: 'linux-x64',
-          file: 'c3-linux-x64',
+          file: 'c3-v0.7.7-linux-x64.tar.gz',
+          binary: 'c3',
+          binarySha256: 'b'.repeat(64),
           bytes: 200,
           sha256: shaB,
           obfuscation: { applied: false },
@@ -237,15 +265,22 @@ describe('postgate (publish final check) tolerates v1 and v1.1', () => {
     // P0 includes macos-x64 which we don't have here — so we can't run verifyDist
     // on this synthetic set; instead we assert postgate's parseSha256Sums works
     // and that the manifest shape postgate reads is well-formed.
-    const sums = parseSha256Sums(`${shaA}  c3-macos-arm64\n${shaB}  c3-linux-x64\n`)
-    expect(sums.get('c3-macos-arm64')).toBe(shaA)
-    expect(sums.get('c3-linux-x64')).toBe(shaB)
-    // Shape check: postgate reads .target, .file, .sha256 — obfuscation is
-    // orthogonal and ignored. If this changes, the test fails before runtime.
+    const sums = parseSha256Sums(
+      `${shaA}  c3-v0.7.7-macos-arm64.tar.gz\n${shaB}  c3-v0.7.7-linux-x64.tar.gz\n`,
+    )
+    expect(sums.get('c3-v0.7.7-macos-arm64.tar.gz')).toBe(shaA)
+    expect(sums.get('c3-v0.7.7-linux-x64.tar.gz')).toBe(shaB)
+    // Shape check: postgate reads .target, .file, .sha256 — obfuscation +
+    // binary / binarySha256 are orthogonal and ignored. If this changes, the
+    // test fails before runtime.
     for (const a of m.artifacts) {
       expect(a.target).toBeTruthy()
       expect(a.file).toBeTruthy()
       expect(a.sha256).toMatch(/^[0-9a-f]{64}$/)
+      // v1.2-only fields, also ignored by postgate (postgate is name-agnostic
+      // beyond the `name` key in SHA256SUMS).
+      expect(a.binary).toBe('c3')
+      expect(a.binarySha256).toMatch(/^[0-9a-f]{64}$/)
     }
   })
 })

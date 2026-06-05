@@ -1,7 +1,7 @@
 // Smoke/unit tests for the release orchestration skeleton (release 1/7).
 // Proves: (1) phase order is Phase0 → Phase1 → Phase2, (2) target validation,
 // (3) friendly→bun target mapping & outfile naming, (4) a built native product
-// is executable (conditional — only when dist/c3-<native> exists).
+// is executable (conditional — only when dist/<native>/c3 exists).
 import { describe, it, expect } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
@@ -71,9 +71,14 @@ describe('build-target primitive', () => {
     expect(TARGETS['linux-x64']).toBe('bun-linux-x64')
   })
 
-  it('names outfiles c3-<friendly> under dist/', () => {
-    expect(defaultOutfile('macos-arm64').endsWith('/dist/c3-macos-arm64')).toBe(true)
-    expect(defaultOutfile('linux-x64').endsWith('/dist/c3-linux-x64')).toBe(true)
+  it('names outfiles <friendly>/c3 under dist/ (per-target subdirs; binary is always `c3`)', () => {
+    // Release 8/7: the BINARY is `c3` (or `c3.exe` on Windows). The per-target
+    // subdir is internal scratch so parallel targets don't clobber each other.
+    // The package (the distribution unit) carries the version + platform info.
+    expect(defaultOutfile('macos-arm64').endsWith('/dist/macos-arm64/c3')).toBe(true)
+    expect(defaultOutfile('linux-x64').endsWith('/dist/linux-x64/c3')).toBe(true)
+    expect(defaultOutfile('macos-x64').endsWith('/dist/macos-x64/c3')).toBe(true)
+    expect(defaultOutfile('windows-x64').endsWith('/dist/windows-x64/c3.exe')).toBe(true)
   })
 })
 

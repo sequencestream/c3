@@ -59,6 +59,11 @@ function isBun(): boolean {
   return typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
 }
 
+/** The builtin SQLite driver this runtime requires: Bun → `bun:sqlite`, else `node:sqlite`. */
+function driverName(): string {
+  return isBun() ? 'bun:sqlite' : 'node:sqlite'
+}
+
 // A `require` that works in every execution context: native in the esbuild CJS
 // bundle, and `createRequire(import.meta.url)` under ESM (tsx dev / Bun binary).
 // `eval('import.meta.url')` keeps esbuild from statically tripping on import.meta
@@ -130,11 +135,38 @@ export function getDb(): Db | null {
     instance = db
     available = true
   } catch (err) {
-    console.error('[c3] c3.db unavailable:', err)
+    console.error(`[c3] c3.db unavailable (driver ${driverName()}):`, err)
     instance = null
     available = false
   }
   return instance
+}
+
+/**
+ * Startup probe for the platform's builtin SQLite driver. A Bun single binary
+ * needs `bun:sqlite`; a Node bundle needs `node:sqlite` — and a platform/runtime
+ * that ships without its driver (the realistic risk on a freshly-supported target
+ * like a Windows Bun binary) must fail LOUD at boot, not silently degrade to a
+ * persistence-less app that "works" until the first write quietly no-ops. Opens an
+ * in-memory db and runs `SELECT 1`; returns true if usable, else prints an explicit,
+ * actionable error and returns false (callers still degrade via {@link isDbAvailable},
+ * but the operator was told exactly what broke and on which platform).
+ */
+export function checkDbDriver(): boolean {
+  const driver = driverName()
+  try {
+    const probe = isBun() ? bunAdapter(':memory:') : nodeAdapter(':memory:')
+    probe.exec('SELECT 1;')
+    probe.close()
+    return true
+  } catch (err) {
+    console.error(
+      `[c3] FATAL: SQLite driver "${driver}" unavailable on ${process.platform}/${process.arch} ` +
+        `(${isBun() ? 'Bun' : 'Node'} runtime). Persistence (requirements, discussions, schedules) ` +
+        `will not work. Cause: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return false
+  }
 }
 
 /** Whether the c3 database opened successfully (callers degrade if not). */

@@ -20,6 +20,7 @@ import { createRequirementMcpServer } from './features/requirements/save-tool.js
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
+import { checkDbDriver } from './kernel/infra/db.js'
 import {
   createBroadcasts,
   createDiscussionRuns,
@@ -48,6 +49,13 @@ const STATUS_HEARTBEAT_MS = 15_000
 const RUN_STALE_MS = 5 * 60_000
 
 export async function startServer(opts: ServerOptions): Promise<void> {
+  // Probe the platform's builtin SQLite driver up front (release 4/7). On a newly
+  // supported target (e.g. a Windows Bun binary) a missing `bun:sqlite` would
+  // otherwise surface as a silent persistence-less degrade discovered much later;
+  // detect it loudly at boot instead. The app still starts (callers degrade), but
+  // the operator is told exactly what broke.
+  checkDbDriver()
+
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 

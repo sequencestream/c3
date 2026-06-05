@@ -46,10 +46,15 @@ export function resolveHarden(harden) {
   return HARDEN_TIERS[harden]
 }
 
-// Friendly target name → Bun --target triple. P0 wave: macOS-arm64 + Linux-x64-glibc.
+// Friendly target name → Bun --target triple.
+//   P0 wave: macOS-arm64 + Linux-x64-glibc.
+//   P1 wave (release 4/7): macOS-x64 (Intel) + Windows-x64 (ships ⚠️experimental).
+// Keep in sync with KNOWN_TARGETS in scripts/release/targets.mjs.
 export const TARGETS = {
   'macos-arm64': 'bun-darwin-arm64',
   'linux-x64': 'bun-linux-x64',
+  'macos-x64': 'bun-darwin-x64',
+  'windows-x64': 'bun-windows-x64',
 }
 
 export function defaultOutfile(friendly) {
@@ -114,7 +119,11 @@ export async function buildTarget({
   const friendly =
     Object.keys(TARGETS).find((k) => TARGETS[k] === bunTarget) ??
     target.replace(/^bun-/, '').replace('darwin', 'macos')
-  const out = outfile ?? defaultOutfile(friendly)
+  // Bun appends `.exe` for a windows target if the outfile lacks it. Mirror that here
+  // so the post-build `existsSync(out)` check (and the returned path) match what Bun
+  // actually writes — otherwise a standalone windows build would "fail" on a present file.
+  let out = outfile ?? defaultOutfile(friendly)
+  if (friendly.startsWith('windows') && !out.toLowerCase().endsWith('.exe')) out += '.exe'
   const embed = embedPath ?? defaultEmbedPath()
   const entry = resolve(serverDir, 'src', 'cli.ts')
 

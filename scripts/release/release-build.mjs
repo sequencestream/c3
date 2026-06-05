@@ -20,7 +20,7 @@ import { existsSync } from 'node:fs'
 import { computeVersionInfo } from './version-info.mjs'
 import { buildManifest, writeManifest } from './manifest.mjs'
 import { artifactName } from './artifact-name.mjs'
-import { KNOWN_TARGETS, DEFAULT_TARGETS } from './targets.mjs'
+import { KNOWN_TARGETS, DEFAULT_TARGETS, isExperimental } from './targets.mjs'
 import { smokeBuiltArtifacts } from './smoke.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -40,10 +40,17 @@ function parseArgs(argv) {
 
 function findBun() {
   if (process.env.BUN_BIN) return process.env.BUN_BIN
-  const which = spawnSync('sh', ['-c', 'command -v bun'], { encoding: 'utf-8' })
-  const fromPath = which.stdout?.trim()
+  // Windows has no `sh`; use `where bun` there (release 4/7 — windows-latest must build).
+  const isWin = process.platform === 'win32'
+  const which = isWin
+    ? spawnSync('where', ['bun'], { encoding: 'utf-8' })
+    : spawnSync('sh', ['-c', 'command -v bun'], { encoding: 'utf-8' })
+  const fromPath = which.stdout?.split('\n')[0]?.trim()
   if (which.status === 0 && fromPath) return fromPath
-  const fallback = resolve(process.env.HOME ?? '', '.bun', 'bin', 'bun')
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  const fallback = isWin
+    ? resolve(home, '.bun', 'bin', 'bun.exe')
+    : resolve(home, '.bun', 'bin', 'bun')
   if (existsSync(fallback)) return fallback
   console.error('[release:build] bun not found. Install from https://bun.sh, or set BUN_BIN.')
   process.exit(1)
@@ -95,6 +102,7 @@ const buildTargetScript = resolve(repoRoot, 'server', 'scripts', 'release', 'bui
 const plan = targets.map((t) => ({
   target: t,
   outfile: resolve(repoRoot, 'dist', artifactName(versionInfo.version, t)),
+  experimental: isExperimental(t),
 }))
 
 console.log('[release:build] plan:')
@@ -104,7 +112,8 @@ console.log(`  manifest ${emitManifest ? `write → ${manifestPath}` : 'skipped 
 console.log(`  Phase0  web build${args['skip-web'] ? ' (skipped)' : ''}`)
 console.log('  Phase1  generate-static-embed → dist/static-embed.generated.ts')
 console.log(`  Phase2  compile (parallel): ${plan.map((p) => p.target).join(', ')}`)
-for (const p of plan) console.log(`            ${p.target} → ${p.outfile}`)
+for (const p of plan)
+  console.log(`            ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile}`)
 console.log(
   `  Phase3  artifact gate (--version + headless smoke)${args['skip-smoke'] ? ' (skipped)' : ', host-runnable targets only'}`,
 )
@@ -153,24 +162,45 @@ const results = await Promise.allSettled(
 )
 
 const failed = results
-  .map((r, i) => ({ r, t: plan[i].target }))
+  .map((r, i) => ({ r, t: plan[i].target, experimental: plan[i].experimental }))
   .filter((x) => x.r.status === 'rejected')
 
-if (failed.length) {
-  for (const f of failed)
+// Experimental targets (release 4/7) are BEST-EFFORT: a failed experimental build
+// (e.g. windows cross-compile hiccup) warns and is dropped — it MUST NOT block the
+// P0 release. Only a non-experimental failure aborts.
+const experimentalFailed = failed.filter((f) => f.experimental)
+const blockingFailed = failed.filter((f) => !f.experimental)
+
+for (const f of experimentalFailed)
+  console.warn(
+    `[release:build] ⚠️ experimental target ${f.t} failed — dropping (does NOT block release): ` +
+      `${f.r.reason?.message ?? f.r.reason}`,
+  )
+
+if (blockingFailed.length) {
+  for (const f of blockingFailed)
     console.error(`[release:build] FAILED: ${f.t} — ${f.r.reason?.message ?? f.r.reason}`)
   process.exit(1)
 }
 
+// The targets that actually produced an artifact — drop dropped experimentals so the
+// manifest and smoke gate only see real outputs.
+const builtPlan = plan.filter((p) => !experimentalFailed.some((f) => f.t === p.target))
+
 console.log('\n[release:build] OK — all targets built:')
-for (const p of plan) console.log(`  ${p.target} → ${p.outfile}`)
+for (const p of builtPlan)
+  console.log(`  ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile}`)
 
 // Manifest (release 2/7) — per-artifact sha256 + provenance, for verify-now trust.
 if (emitManifest) {
   const manifest = buildManifest({
     versionInfo,
     harden,
-    artifacts: plan.map((p) => ({ target: p.target, file: p.outfile })),
+    artifacts: builtPlan.map((p) => ({
+      target: p.target,
+      file: p.outfile,
+      experimental: p.experimental,
+    })),
   })
   writeManifest(manifestPath, manifest)
   console.log(`\n[release:build] manifest → ${manifestPath}`)
@@ -184,7 +214,7 @@ if (emitManifest) {
 if (!args['skip-smoke']) {
   console.log('\n[release:build] Phase3 — artifact gate (--version + headless smoke)')
   await smokeBuiltArtifacts({
-    artifacts: plan.map((p) => ({ target: p.target, path: p.outfile })),
+    artifacts: builtPlan.map((p) => ({ target: p.target, path: p.outfile })),
     log: (m) => console.log(m),
   })
 }

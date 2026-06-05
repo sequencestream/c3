@@ -9,10 +9,10 @@
  * (reviewer's fix), and the open-failure degradation contract.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getDb, isDbAvailable, resetDbForTests } from './db.js'
+import { checkDbDriver, getDb, isDbAvailable, resetDbForTests } from './db.js'
 
 let dir: string
 
@@ -92,5 +92,31 @@ describe('db adapter — file-backed (node:sqlite)', () => {
     process.env.C3_DB_PATH = join(dir, 'other.db')
     const second = getDb()
     expect(second).not.toBe(first)
+  })
+})
+
+describe('db driver startup probe + home resolution (release 4/7)', () => {
+  it('checkDbDriver() reports the builtin SQLite driver usable on this runtime', () => {
+    // The boot-time probe (server.ts) — opens :memory: + SELECT 1 on the platform
+    // driver. Under vitest/Node that's node:sqlite; it must succeed (return true).
+    expect(checkDbDriver()).toBe(true)
+  })
+
+  it('defaults the db dir to `<homedir>/.c3` when neither C3_DB_PATH nor C3_DIR is set', () => {
+    // The Windows-correctness item: home resolution goes through os.homedir()
+    // (→ %USERPROFILE% on win32), never a raw `~`. os.homedir() honours $HOME on
+    // POSIX, so point it at a throwaway and assert the db lands under <home>/.c3.
+    const prevHome = process.env.HOME
+    delete process.env.C3_DB_PATH
+    delete process.env.C3_DIR
+    process.env.HOME = dir
+    try {
+      const db = getDb()
+      expect(db).not.toBeNull()
+      expect(existsSync(join(dir, '.c3', 'c3.db'))).toBe(true)
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME
+      else process.env.HOME = prevHome
+    }
   })
 })

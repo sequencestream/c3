@@ -8,18 +8,39 @@
 /** The P0 wave: macOS-arm64 + Linux-x64-glibc. Every release MUST ship all of these. */
 export const P0_TARGETS = ['macos-arm64', 'linux-x64']
 
-/** Friendly target names the orchestrator accepts (P0 today; later waves extend). */
-export const KNOWN_TARGETS = ['macos-arm64', 'linux-x64']
+/**
+ * The P1 wave (release 4/7): additive platforms. NOT required for a release — a P1
+ * absence never blocks publish (postgate gates only on P0). macos-x64 is host-runnable
+ * on Intel macs; windows-x64 ships experimental until a real windows-latest smoke is green.
+ */
+export const P1_TARGETS = ['macos-x64', 'windows-x64']
 
-/** Default build matrix when `--targets` is omitted. */
-export const DEFAULT_TARGETS = [...P0_TARGETS]
+/**
+ * Targets whose binaries ship marked `⚠️experimental` because they have NOT yet passed
+ * a real headless smoke on their own OS runner (release 4/7). A target leaves this set
+ * only once its platform CI smoke is green. windows-x64 is cross-compiled here but never
+ * executed on windows-latest in this repo's current state (no release CI workflow yet),
+ * so it stays experimental.
+ */
+export const EXPERIMENTAL_TARGETS = ['windows-x64']
+
+/** Friendly target names the orchestrator accepts (P0 + P1; later waves extend). */
+export const KNOWN_TARGETS = [...P0_TARGETS, ...P1_TARGETS]
+
+/** Default build matrix when `--targets` is omitted: the full P0 + P1 wave. */
+export const DEFAULT_TARGETS = [...P0_TARGETS, ...P1_TARGETS]
+
+/** Whether `target`'s artifact must be marked experimental (smoke-unverified on its OS). */
+export function isExperimental(target) {
+  return EXPERIMENTAL_TARGETS.includes(target)
+}
 
 /**
  * The friendly target name runnable on THIS host (`<os>-<arch>`), e.g. `macos-arm64`.
- * `darwin` normalizes to `macos` to match the artifact naming convention.
+ * `darwin` → `macos` and `win32` → `windows` to match the artifact naming convention.
  */
 export function hostTarget(platform = process.platform, arch = process.arch) {
-  const os = platform === 'darwin' ? 'macos' : platform
+  const os = platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform
   return `${os}-${arch}`
 }
 

@@ -78,11 +78,20 @@ Release binaries are published on **GitHub Releases** (this package is `private`
 **not** on npm). Each platform artifact ships with a `.sha256` and an Ed25519 **minisign**
 signature `.minisig`; an aggregate `SHA256SUMS`(`.minisig`) covers all of them.
 
-| Platform                                       | Artifact                    | Sidecars               |
-| ---------------------------------------------- | --------------------------- | ---------------------- |
-| macOS arm64                                    | `c3-v{version}-macos-arm64` | `.sha256` + `.minisig` |
-| Linux x64                                      | `c3-v{version}-linux-x64`   | `.sha256` + `.minisig` |
-| _(more platforms land in later release waves)_ |                             |
+| Platform                                       | Artifact                        | Sidecars               |
+| ---------------------------------------------- | ------------------------------- | ---------------------- |
+| macOS arm64 (P0)                               | `c3-v{version}-macos-arm64`     | `.sha256` + `.minisig` |
+| Linux x64 (P0)                                 | `c3-v{version}-linux-x64`       | `.sha256` + `.minisig` |
+| macOS x64 (P1)                                 | `c3-v{version}-macos-x64`       | `.sha256` + `.minisig` |
+| Windows x64 (P1) ⚠️ **experimental**           | `c3-v{version}-windows-x64.exe` | `.sha256` + `.minisig` |
+| _(more platforms land in later release waves)_ |                                 |
+
+> **⚠️ Windows x64 is experimental.** The Windows binary is cross-compiled and the platform
+> code paths (`claude` discovery via `where`, `%USERPROFILE%\.c3` home, `bun:sqlite` startup
+> probe) are in place, but it has **not yet passed a real headless smoke on a windows-latest
+> runner**. It is signed and shipped alongside the rest, but treat it as unverified until a
+> future release wave runs that smoke and drops the experimental tag. P0/P1 macOS + Linux
+> artifacts are smoke-verified on their own OS.
 
 **minisign public key** (also embedded in the binary for `c3 verify`):
 

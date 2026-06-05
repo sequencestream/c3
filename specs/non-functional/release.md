@@ -1,11 +1,14 @@
 # Non-Functional — Release & Distribution
 
-> **Status:** release 5/7. Orchestration + P0 matrix (1/7), version injection + manifest +
+> **Status:** release 5/7 + 4/7. Orchestration + P0 matrix (1/7), version injection + manifest +
 > harden-tier framework (2/7), distribution trust — SHA256SUMS + minisign + macOS ad-hoc +
-> `c3 verify` (3/7), and **layered quality gates** — pre-build blocking gate + artifact-level
-> headless smoke + publish final check (5/7) — are live; later waves (extra platforms, Apple
-> Developer ID / notarization, Windows Authenticode, the GitHub Actions release workflow that
-> consumes the gate order below) fill in the remaining placeholders. Source of truth — keep in
+> `c3 verify` (3/7), **layered quality gates** — pre-build blocking gate + artifact-level
+> headless smoke + publish final check (5/7), and the **P1 platform wave + Windows branches**
+> — macOS-x64 + Windows-x64 in the matrix, Windows platform code paths, Windows-x64 shipping
+> `⚠️experimental` until a real windows-latest smoke is green (4/7) — are live; later waves
+> (more platforms, Apple Developer ID / notarization, Windows Authenticode, the GitHub Actions
+> release workflow that consumes the gate order below and runs the windows-latest smoke that
+> de-experimentalizes Windows) fill in the remaining placeholders. Source of truth — keep in
 > sync with `scripts/release/` and `server/scripts/release/`.
 
 `release` is a thin **orchestration** layer over the existing build/binary primitives.
@@ -76,21 +79,52 @@ release-only (too heavy for every commit).
 
 ## Platform waves
 
-| Wave   | Target                              | bun target         | bytecode | minify | Status      |
-| ------ | ----------------------------------- | ------------------ | -------- | ------ | ----------- |
-| **P0** | macOS-arm64                         | `bun-darwin-arm64` | ✗        | ✓      | live        |
-| **P0** | Linux-x64-glibc                     | `bun-linux-x64`    | ✗        | ✓      | live        |
-| later  | Linux-arm64, x64-mac, musl, Windows | _tbd_              | _tbd_    | _tbd_  | placeholder |
+| Wave   | Target               | bun target         | bytecode | minify | Status                    |
+| ------ | -------------------- | ------------------ | -------- | ------ | ------------------------- |
+| **P0** | macOS-arm64          | `bun-darwin-arm64` | ✗        | ✓      | live                      |
+| **P0** | Linux-x64-glibc      | `bun-linux-x64`    | ✗        | ✓      | live                      |
+| **P1** | macOS-x64 (Intel)    | `bun-darwin-x64`   | ✗        | ✓      | live                      |
+| **P1** | Windows-x64          | `bun-windows-x64`  | ✗        | ✓      | live — **⚠️experimental** |
+| later  | Linux-arm64, musl, … | _tbd_              | _tbd_    | _tbd_  | placeholder               |
 
 **`--bytecode` is never enabled** for cross-compiled targets — it segfaults
-(oven-sh/bun#18416). P0 keeps it off uniformly. `minify`/`sourcemap` are governed by the
-harden tier (see below), not hard-coded. CI and local share the same scripts.
+(oven-sh/bun#18416). The whole matrix keeps it off uniformly. `minify`/`sourcemap` are
+governed by the harden tier (see below), not hard-coded. CI and local share the same scripts.
+
+**P0 vs P1 (release 4/7).** P0 is the **required** set — `release:build` defaults to the full
+P0+P1 matrix, but **publish gates only on P0** (`postgate`): a P1 absence never blocks a release,
+and a P1 build failure is **best-effort** — `release-build.mjs` warns and drops the failed
+experimental target instead of aborting, so a Windows cross-compile hiccup can't sink the P0 cut.
+The friendly-name SoT for P0/P1/experimental is `scripts/release/targets.mjs`
+(`P0_TARGETS`, `P1_TARGETS`, `EXPERIMENTAL_TARGETS`, `isExperimental`).
+
+### Windows: experimental until a real smoke (release 4/7)
+
+The **Windows platform code paths** are merged ahead of any smoke (they're part of the P1 wave):
+
+- **`claude` discovery** — `findClaudeExecutable` branches on platform (`claudeLookupCommand`):
+  `where claude` on `win32` (no `sh` there), portable `sh -c command -v claude` on POSIX.
+- **Home dir** — `~/.c3` resolves through `os.homedir()` (→ `%USERPROFILE%\.c3` on Windows),
+  never a raw `~`. Already true repo-wide (`db.ts`, `kernel/config`); 4/7 only adds coverage.
+- **`bun:sqlite` startup probe** — `checkDbDriver()` (db.ts) opens an in-memory db + `SELECT 1`
+  on the platform driver at server boot. A missing `bun:sqlite` on a Windows Bun binary now
+  fails **loud** (`[c3] FATAL: SQLite driver "bun:sqlite" unavailable …`) instead of silently
+  degrading to a persistence-less app. The app still boots (callers degrade), but loudly.
+- **Build host** — `release-build.mjs` `findBun` also branches (`where bun` on win32) so a
+  windows-latest runner can build + smoke.
+
+**De-experimental gate.** `windows-x64` stays in `EXPERIMENTAL_TARGETS` (its manifest entry
+carries `"experimental": true`, README marks it ⚠️) **until a real headless smoke passes on a
+windows-latest runner** — its own OS, since cross-compiled binaries can't be smoke-run on a
+foreign host (`isHostRunnable`). That smoke is wired by the (later-wave) GitHub Actions release
+workflow; until then Windows ships signed-but-unverified. Removing it from `EXPERIMENTAL_TARGETS`
+is the one-line change that drops the tag once that smoke is green.
 
 ## Artifact naming
 
 `release:build` output is **version-stamped**: `dist/c3-v{version}-<os>-<arch>{.exe?}` (e.g.
-`c3-v0.2.0-macos-arm64`, `c3-v0.2.0-linux-x64`; Windows targets append `.exe`, forward-looking).
-`darwin` is normalized to `macos`; the leading `v` is fixed and a `v`-prefixed version is not
+`c3-v0.2.0-macos-arm64`, `c3-v0.2.0-linux-x64`; the P1 Windows target appends `.exe` →
+`c3-v0.2.0-windows-x64.exe`). `darwin`→`macos` and `win32`→`windows`; the leading `v` is fixed and a `v`-prefixed version is not
 doubled (`artifact-name.mjs`). `pnpm binary` (self-use quickcut) keeps the **un-versioned**
 `dist/c3-<os>-<arch>`. Channel suffixes (e.g. `-nightly`) remain a later-wave placeholder.
 
@@ -161,7 +195,8 @@ distribution-trust record (signing is a later wave). `scripts/release/manifest.m
 
 A consumer can `shasum -a 256 c3-<os>-<arch>` and match `artifacts[].sha256`. The manifest
 is a **multi-artifact** distribution record; `pnpm binary` (single self-use binary) does
-not emit one.
+not emit one. An experimental P1 artifact (release 4/7) additionally carries
+`"experimental": true` on its entry (absent on P0/verified entries — schema stays `v1`).
 
 ## Distribution trust (release 3/7)
 
@@ -215,7 +250,8 @@ pnpm binary                                          # native single binary (sel
 
 - Build orchestrator: `scripts/release/release-build.mjs` (`--targets`, `--harden`, `--dry-run`, `--skip-smoke`; Phase3 smoke)
 - Top-level orchestrator: `scripts/release/release.mjs` (`--dry-run`, `--no-publish`, `--skip-gate`, passthrough; pregate + e2e on standard)
-- Target SoT: `scripts/release/targets.mjs` (`P0_TARGETS`, `KNOWN_TARGETS`, `hostTarget`, `isHostRunnable`)
+- Target SoT: `scripts/release/targets.mjs` (`P0_TARGETS`, `P1_TARGETS`, `EXPERIMENTAL_TARGETS`, `KNOWN_TARGETS`, `DEFAULT_TARGETS`, `isExperimental`, `hostTarget`, `isHostRunnable`)
+- Platform branches: `server/src/kernel/infra/child-env.ts` (`claudeLookupCommand`), `server/src/kernel/infra/db.ts` (`checkDbDriver`), `server/scripts/release/build-target.mjs` (`TARGETS` incl. P1 + windows `.exe`)
 - Pregate (source gate): `scripts/release/pregate.mjs` (`GATES`, `runPregate`)
 - Artifact smoke: `scripts/release/smoke.mjs` (`smokeArtifact`, `smokeBuiltArtifacts`, `assertVersionOutput`, `freePort`)
 - Publish final check: `scripts/release/postgate.mjs` (`verifyDist`, `parseSha256Sums`)

@@ -7,6 +7,18 @@
  */
 import { spawnSync } from 'node:child_process'
 
+/**
+ * The platform-correct "find an executable on PATH" command. POSIX has no portable
+ * `which`, but every shell carries `command -v`; Windows has no `sh`, so we use the
+ * `where.exe` builtin instead (`Get-Command` would need a PowerShell host). Pure so
+ * it's unit-testable without spawning a process.
+ */
+export function claudeLookupCommand(
+  platform: NodeJS.Platform = process.platform,
+): [cmd: string, args: string[]] {
+  return platform === 'win32' ? ['where', ['claude']] : ['sh', ['-c', 'command -v claude']]
+}
+
 // In a Bun-compiled binary the SDK's bundled `cli-<platform>` lookup misses
 // (no node_modules to walk). Resolve `claude` from the host PATH and hand it
 // to the SDK via pathToClaudeCodeExecutable. Override with CLAUDE_PATH.
@@ -18,8 +30,11 @@ export function findClaudeExecutable(): string | undefined {
     return cachedClaudePath
   }
   try {
-    const r = spawnSync('sh', ['-c', 'command -v claude'], { encoding: 'utf-8' })
-    const found = r.status === 0 ? r.stdout.trim() : ''
+    const [cmd, args] = claudeLookupCommand()
+    const r = spawnSync(cmd, args, { encoding: 'utf-8' })
+    // `where` can print multiple matches (one per line); take the first. `command -v`
+    // prints a single line. Trim either way.
+    const found = r.status === 0 ? (r.stdout.split('\n')[0]?.trim() ?? '') : ''
     cachedClaudePath = found || null
     return cachedClaudePath ?? undefined
   } catch {

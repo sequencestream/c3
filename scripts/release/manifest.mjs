@@ -22,7 +22,8 @@ export function sha256File(path) {
  * @param {object} o
  * @param {{ version: string, commit: string, buildTime: string }} o.versionInfo
  * @param {string} o.harden                 the requested harden tier (recorded verbatim)
- * @param {Array<{ target: string, file: string }>} o.artifacts  file = absolute path
+ * @param {Array<{ target: string, file: string, experimental?: boolean }>} o.artifacts
+ *        file = absolute path; experimental = ships ⚠️experimental (smoke-unverified, release 4/7)
  */
 export function buildManifest({ versionInfo, harden, artifacts }) {
   return {
@@ -36,6 +37,8 @@ export function buildManifest({ versionInfo, harden, artifacts }) {
       file: basename(a.file),
       bytes: statSync(a.file).size,
       sha256: sha256File(a.file),
+      // Only stamp the flag when true — keeps P0 entries identical to schema v1.
+      ...(a.experimental ? { experimental: true } : {}),
     })),
   }
 }

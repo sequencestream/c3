@@ -259,10 +259,19 @@ if (emitPack) {
         experimental: p.experimental,
         obfuscated: p.obfuscated,
         obfDurationMs: p.obfDurationMs,
-        file: pk.package,
+        // `pk.package` is the bare package FILENAME (c3-v{ver}-{target}.{tar.gz|zip}).
+        // Resolve it to an absolute path here so the manifest's disk fallback
+        // (statSync/sha256File on a.file) can't ENOENT against a cwd-relative name —
+        // buildManifest still stores basename(file), so the on-disk manifest is unchanged.
+        file: resolve(repoRoot, 'dist', pk.package),
         binary: pk.binary,
         bytes: pk.bytes,
-        innerSha256: pk.sha256,
+        // pk.sha256 is the PACKAGE hash (matches SHA256SUMS); pk.innerSha256 is the
+        // in-package binary hash. Keep them in the right fields — they were swapped
+        // before (innerSha256 := pk.sha256, sha256 dropped), which left manifest
+        // `sha256` undefined and forced the cwd-relative disk fallback → ENOENT.
+        sha256: pk.sha256,
+        innerSha256: pk.innerSha256,
         signed: pk.signed,
       })
     } catch (err) {

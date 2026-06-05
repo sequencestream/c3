@@ -17,11 +17,11 @@ import {
   listSchedules,
   saveWorkspaceMcpConfig as storeSaveWorkspaceMcpConfig,
   updateSchedule as updateScheduleStore,
-} from '../../schedules/store.js'
-import { triggerRunNow } from '../../schedules/scheduler.js'
-import { readExecutionTranscript } from '../../schedules/transcript.js'
-import { resolveApproval } from '../../schedules/queue.js'
-import { generateScheduleName } from '../../schedules/naming.js'
+} from './store.js'
+import { triggerRunNow } from './scheduler.js'
+import { readExecutionTranscript } from './transcript.js'
+import { resolveApproval } from './queue.js'
+import { generateScheduleName } from './naming.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const createScheduleHandler: Handler<'create_schedule'> = async (ctx, conn, msg) => {

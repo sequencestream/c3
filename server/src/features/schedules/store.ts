@@ -25,8 +25,8 @@ import type {
   WorkspaceMcpConfig,
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
-import { getDb, isDbAvailable, type Db } from '../db.js'
-import { getTimezone } from '../settings.js'
+import { getDb, isDbAvailable, type Db } from '../../db.js'
+import { getTimezone } from '../../settings.js'
 import { fallbackName } from './naming.js'
 
 /**

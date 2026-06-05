@@ -78,13 +78,13 @@ import {
   getDueSchedules,
   updateNextRunAt,
   updateExecutionLog,
-} from './schedules/store.js'
-import { startScheduler, stopScheduler, setExecutionStore } from './schedules/scheduler.js'
+} from './features/schedules/store.js'
+import { startScheduler, stopScheduler, setExecutionStore } from './features/schedules/scheduler.js'
 import {
   setBroadcast as setApprovalBroadcast,
   startExpiryScanner,
   stopExpiryScanner,
-} from './schedules/queue.js'
+} from './features/schedules/queue.js'
 import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
 import { createRequirementMcpServer } from './requirements/save-tool.js'
 import {

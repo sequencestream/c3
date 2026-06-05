@@ -4,8 +4,8 @@
 import { resolve } from 'node:path'
 import { addWorkspace, removeWorkspace } from '../../state.js'
 import { getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
-import { isStoreAvailable as isScheduleStoreAvailable } from '../../schedules/store.js'
-import { onWorkspaceRemoved } from '../../schedules/archiver.js'
+import { isStoreAvailable as isScheduleStoreAvailable } from '../schedules/store.js'
+import { onWorkspaceRemoved } from '../schedules/archiver.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const addWorkspaceHandler: Handler<'add_workspace'> = async (_ctx, conn, msg) => {

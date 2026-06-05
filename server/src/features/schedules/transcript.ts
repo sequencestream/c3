@@ -10,7 +10,7 @@
  */
 import type { TranscriptItem } from '@ccc/shared/protocol'
 import { getExecutionLog, getSchedule } from './store.js'
-import { loadHistory } from '../sessions.js'
+import { loadHistory } from '../../sessions.js'
 
 export interface ExecutionTranscript {
   sessionId: string | null

@@ -282,7 +282,7 @@ export async function launchRun(
           onDegradableError: (errMsg) => {
             degraded = true
             const agent = resolveAgent(agentCfg.agentId)
-            failedAgents.push({ agentId: agent.id, agentName: agent.name, error: errMsg })
+            failedAgents.push({ agentId: agent.id, agentName: agent.displayName, error: errMsg })
           },
         })
       } finally {

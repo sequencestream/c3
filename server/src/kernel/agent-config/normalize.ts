@@ -4,7 +4,7 @@
  * config store (which calls these inside `normalize`) and the agent readers can
  * import it without a cycle: store → here, readers → store + here, here → nobody.
  */
-import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
+import type { AgentConfig, ClaudeAgentConfig, SystemSettings, VendorId } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 
 /** Hard cap for an agent's `icon` string. Generous enough for family/ZWJ emoji
@@ -24,8 +24,34 @@ export function normalizeIcon(raw: unknown): string {
   return trimmed.length > AGENT_ICON_MAX_CHARS ? trimmed.slice(0, AGENT_ICON_MAX_CHARS) : trimmed
 }
 
+/**
+ * A vendor's *default* config sub-object — the system agent's config and the
+ * baseline for a fresh agent of that vendor. Claude's default is all-empty (no
+ * overrides ⇒ the SDK's own resolution / the user's existing `claude` login).
+ * Only `claude` has a config shape today (ADR-0011 reference adapter); a new
+ * vendor adds its branch here returning that vendor's default config.
+ */
+export function defaultConfigFor(vendor: VendorId): ClaudeAgentConfig {
+  void vendor // single-vendor today; the switch grows with each new adapter
+  return { baseUrl: '', apiKey: '', model: '' }
+}
+
+/**
+ * The built-in system agent: the vendor-agnostic shell (`id`/`displayName`/
+ * `enabled`/`icon`) plus its vendor's *default* config. Fixed to `claude` — the
+ * user's existing `claude` login — with an all-empty config so it launches with
+ * no overrides (AC-R1). `enabled`/`icon` are honoured; the config is always the
+ * vendor default and cannot carry overrides.
+ */
 export function systemAgent(enabled = true, icon = ''): AgentConfig {
-  return { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', enabled, icon }
+  return {
+    id: SYSTEM_AGENT_ID,
+    vendor: 'claude',
+    displayName: 'System',
+    enabled,
+    icon,
+    config: defaultConfigFor('claude'),
+  }
 }
 
 export function defaultSettings(): SystemSettings {

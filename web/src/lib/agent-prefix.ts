@@ -35,7 +35,7 @@ export function agentNameAt(settings: SystemSettings | null, index: number): str
   if (order.length === 0) return ''
   const clamped = Math.min(Math.max(index, 0), order.length - 1)
   const id = order[clamped]
-  return settings?.agents.find((a) => a.id === id)?.name ?? ''
+  return settings?.agents.find((a) => a.id === id)?.displayName ?? ''
 }
 
 /**

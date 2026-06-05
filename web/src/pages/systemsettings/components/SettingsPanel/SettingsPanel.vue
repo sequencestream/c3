@@ -107,7 +107,9 @@ watch(
   ([open, settings]) => {
     if (!open || !settings) return
     draft.value = {
-      agents: settings.agents.map((a) => ({ ...a })),
+      // Deep-copy each agent incl. its vendor `config` so draft edits don't
+      // mutate the rendered server state.
+      agents: settings.agents.map((a) => ({ ...a, config: { ...a.config } })),
       defaultAgentId: settings.defaultAgentId,
       defaultMode: settings.defaultMode ?? 'default',
       consensus: { enabled: settings.consensus?.enabled ?? false },
@@ -129,12 +131,11 @@ function addAgent() {
   const id = `new-${Date.now()}-${draft.value.agents.length}`
   draft.value.agents.push({
     id,
-    name: '',
-    baseUrl: '',
-    apiKey: '',
-    model: '',
+    vendor: 'claude',
+    displayName: '',
     icon: '',
     enabled: true,
+    config: { baseUrl: '', apiKey: '', model: '' },
   })
 }
 
@@ -223,7 +224,7 @@ function onUiLangChange(e: Event) {
               <EmojiPicker v-model="a.icon" />
             </div>
             <input
-              v-model="a.name"
+              v-model="a.displayName"
               class="agent-field col-name"
               :placeholder="
                 isSystemAgent(a)
@@ -233,13 +234,13 @@ function onUiLangChange(e: Event) {
               :disabled="isSystemAgent(a)"
             />
             <input
-              v-model="a.baseUrl"
+              v-model="a.config.baseUrl"
               class="agent-field col-url"
               :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.baseUrl.placeholder')"
               :disabled="isSystemAgent(a)"
             />
             <input
-              v-model="a.apiKey"
+              v-model="a.config.apiKey"
               class="agent-field col-key"
               type="password"
               autocomplete="off"
@@ -247,7 +248,7 @@ function onUiLangChange(e: Event) {
               :disabled="isSystemAgent(a)"
             />
             <input
-              v-model="a.model"
+              v-model="a.config.model"
               class="agent-field col-model"
               :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.model.placeholder')"
               :disabled="isSystemAgent(a)"

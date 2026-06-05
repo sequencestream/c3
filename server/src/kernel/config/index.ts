@@ -19,7 +19,13 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  ClaudeAgentConfig,
+  PermissionMode,
+  SystemSettings,
+  UiLang,
+} from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import {
   defaultSettings,
@@ -27,6 +33,7 @@ import {
   normalizeIcon,
   systemAgent,
 } from '../agent-config/normalize.js'
+import { parseAgentConfig } from '../agent-config/schema.js'
 
 const PERMISSION_MODES: readonly PermissionMode[] = [
   'default',
@@ -106,38 +113,76 @@ function writeAtomic(file: string, data: unknown): void {
 
 let settingsCache: SystemSettings | null = null
 
+/** True for a persisted agent record whose id is the system agent's. */
+function isSystemAgentRecord(a: unknown): a is Record<string, unknown> {
+  return !!a && typeof a === 'object' && (a as Record<string, unknown>).id === SYSTEM_AGENT_ID
+}
+
+/** Trim a claude config sub-object out of a flat-or-nested source record. */
+function buildClaudeConfig(src: Record<string, unknown>): ClaudeAgentConfig {
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
+  return { baseUrl: str(src.baseUrl), apiKey: str(src.apiKey), model: str(src.model) }
+}
+
+/**
+ * Shape one persisted agent record into a {@link AgentConfig} *candidate* for
+ * the zod schema to validate + route. Handles the back-compat migration: a
+ * legacy-flat record (no `vendor`, fields at top level) is a Claude profile by
+ * definition, so it is wrapped as `vendor: 'claude'` with its flat
+ * `baseUrl`/`apiKey`/`model` folded into `config` and its `name` carried to
+ * `displayName`. New-shape records keep their `vendor` and nested `config`.
+ * Unknown vendors are passed through verbatim so the schema rejects them (no
+ * adapter exists for them yet).
+ */
+function migrateAgentCandidate(id: string, rec: Record<string, unknown>): unknown {
+  const displayName =
+    (typeof rec.displayName === 'string' && rec.displayName.trim()) ||
+    (typeof rec.name === 'string' && rec.name.trim()) ||
+    id
+  // Back-compat: missing/true ⇒ enabled; only an explicit false disables.
+  const enabled = rec.enabled !== false
+  const icon = normalizeIcon(rec.icon)
+  // Legacy-flat configs carry no `vendor`; they are Claude profiles by definition.
+  const vendor = typeof rec.vendor === 'string' ? rec.vendor : 'claude'
+  // New shape nests launch fields under `config`; legacy-flat keeps them flat.
+  const configSrc =
+    rec.config && typeof rec.config === 'object' ? (rec.config as Record<string, unknown>) : rec
+  if (vendor === 'claude') {
+    return { id, vendor, displayName, enabled, icon, config: buildClaudeConfig(configSrc) }
+  }
+  // Unknown/unsupported vendor: hand the schema a shape it rejects ⇒ dropped.
+  return { id, vendor, displayName, enabled, icon, config: configSrc }
+}
+
 /**
  * Force the settings into a valid shape: a `system` agent always present (with
  * empty overrides) and `defaultAgentId` pointing at an existing agent.
  */
 function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
-  const incoming = Array.isArray(raw?.agents) ? raw.agents : []
-  // The system agent's Claude overrides are always ignored (AC-R1), but its
+  // Treat persisted agents as untrusted JSON: they may be the new
+  // vendor-discriminated shape OR the legacy flat Claude shape (no `vendor`/
+  // `config`, fields `name`/`baseUrl`/`apiKey`/`model` at top level).
+  const incoming: unknown[] = Array.isArray(raw?.agents) ? (raw.agents as unknown[]) : []
+  // The system agent's config is always its vendor default (AC-R1), but its
   // `enabled` flag IS honoured: a disabled system agent drops out of every
   // list consumer (it can still be a launch fallback). Absent ⇒ enabled.
   // `icon` is honoured the same way (it's a display field, not a launch
   // override); absent/empty ⇒ no custom icon.
-  const systemIncoming = incoming.find(
-    (a) => a && typeof a === 'object' && a.id === SYSTEM_AGENT_ID,
-  )
+  const systemIncoming = incoming.find(isSystemAgentRecord)
   const agents: AgentConfig[] = [
     systemAgent(systemIncoming?.enabled !== false, normalizeIcon(systemIncoming?.icon)),
   ]
   for (const a of incoming) {
     if (!a || typeof a !== 'object') continue
-    const id = typeof a.id === 'string' && a.id ? a.id : randomUUID()
+    const rec = a as Record<string, unknown>
+    const id = typeof rec.id === 'string' && rec.id ? rec.id : randomUUID()
     if (id === SYSTEM_AGENT_ID) continue // system agent is fixed; ignore overrides
     if (agents.some((x) => x.id === id)) continue // de-dupe
-    agents.push({
-      id,
-      name: typeof a.name === 'string' && a.name.trim() ? a.name.trim() : id,
-      baseUrl: typeof a.baseUrl === 'string' ? a.baseUrl.trim() : '',
-      apiKey: typeof a.apiKey === 'string' ? a.apiKey.trim() : '',
-      model: typeof a.model === 'string' ? a.model.trim() : '',
-      // Back-compat: missing/true ⇒ enabled; only an explicit false disables.
-      enabled: a.enabled !== false,
-      icon: normalizeIcon(a.icon),
-    })
+    // Migrate legacy-flat → discriminated candidate, then validate + route by
+    // `vendor` tag through the zod schema. An unknown vendor or a config that
+    // fails its arm ⇒ `null` ⇒ dropped (fail-soft, same policy as a dup id).
+    const parsed = parseAgentConfig(migrateAgentCandidate(id, rec))
+    if (parsed) agents.push(parsed)
   }
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : SYSTEM_AGENT_ID
   const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : SYSTEM_AGENT_ID

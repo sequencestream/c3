@@ -103,16 +103,16 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
         if (!parsed) {
           return {
             agentId: agent.id,
-            agentName: agent.name,
+            agentName: agent.displayName,
             decision: 'abstain',
             reason: oneLine(text).slice(0, 200) || 'no parseable answer',
           }
         }
-        return { agentId: agent.id, agentName: agent.name, ...parsed }
+        return { agentId: agent.id, agentName: agent.displayName, ...parsed }
       } catch (err) {
         return {
           agentId: agent.id,
-          agentName: agent.name,
+          agentName: agent.displayName,
           decision: 'abstain',
           reason: err instanceof Error ? err.message : String(err),
         }
@@ -188,11 +188,11 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
       const prompt = askVoterPrompt(shuffleOptions(questions), p.context)
       try {
         const text = await askAgentOnce(agent, prompt, p.cwd, p.signal)
-        return parseAskVote(text, questions, agent.id, agent.name)
+        return parseAskVote(text, questions, agent.id, agent.displayName)
       } catch {
         return questions.map(() => ({
           agentId: agent.id,
-          agentName: agent.name,
+          agentName: agent.displayName,
           optionLabels: [],
           reason: '',
           abstain: true,

@@ -162,7 +162,7 @@ export async function runDiscussion(
   const organizerCfg = deps.organizer()
   const participants: DiscussionParticipant[] = participantCfgs.map((a) => ({
     id: a.id,
-    name: a.name,
+    name: a.displayName,
   }))
   const validIds = participants.map((p) => p.id)
   const byId = new Map(participantCfgs.map((a) => [a.id, a]))

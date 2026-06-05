@@ -19,10 +19,9 @@ import {
 
 const agent = (id: string, name: string): AgentConfig => ({
   id,
-  name,
-  baseUrl: '',
-  apiKey: '',
-  model: '',
+  vendor: 'claude',
+  displayName: name,
+  config: { baseUrl: '', apiKey: '', model: '' },
 })
 
 function makeStore(seed: Discussion): {

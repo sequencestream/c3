@@ -60,7 +60,7 @@ export function resolveDiscussionSpeaker(
   if (m.speakerKind === 'organizer') {
     const agent = defaultAgentId ? agents.find((a) => a.id === defaultAgentId) : undefined
     if (agent) {
-      return { icon: agent.icon?.trim() || AGENT_FALLBACK_ICON, name: agent.name }
+      return { icon: agent.icon?.trim() || AGENT_FALLBACK_ICON, name: agent.displayName }
     }
     return { icon: AGENT_FALLBACK_ICON, name: t('discussion.speaker.organizer') }
   }
@@ -69,7 +69,7 @@ export function resolveDiscussionSpeaker(
   if (agent) {
     return {
       icon: agent.icon?.trim() || AGENT_FALLBACK_ICON,
-      name: m.speakerName ?? agent.name,
+      name: m.speakerName ?? agent.displayName,
     }
   }
   return {

@@ -6,12 +6,13 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 
 ## Module split
 
-| Concern                         | File                                   | Notes                                                                                      |
-| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                            |
-| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                           |
-| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                  |
-| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, pick default mode, save |
+| Concern                         | File                                   | Notes                                                                                                                 |
+| ------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                       |
+| Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12) |
+| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                      |
+| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                             |
+| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, pick default mode, save                            |
 
 ## Persistence (`settings.ts`)
 
@@ -22,14 +23,30 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 - **Fail-soft:** a missing/corrupt file falls back to defaults (system agent only / empty
   binding) and the system still boots (AC-R7, AVAIL).
 
+## Vendor schema + routing (`kernel/agent-config/schema.ts`, AC-R12)
+
+`AgentConfig` is a `vendor`-discriminated union. The **type** lives in `shared/protocol.ts`
+(zero-runtime, SDK-free — ADR-0009); the **runtime zod schema** lives in
+`kernel/agent-config/schema.ts` so zod never enters the wire module. A compile-time assertion
+(`z.infer<typeof agentConfigSchema>` ↔ `AgentConfig`, both directions) pins the two so they cannot
+drift — the same discipline `AdapterCapability` ↔ `AdapterCapabilities` uses. `agentConfigSchema`
+is a `z.discriminatedUnion('vendor', […])`; today the only arm is `claude`
+(`{ baseUrl, apiKey, model }`). `VENDOR_AGENT_SCHEMAS` is the per-vendor registry / **extension
+point**: a new vendor adds its `z.object` arm, appends it to the union, and the type pin forces the
+matching wire arm. `parseAgentConfig(raw)` routes by tag and returns the typed agent or `null`.
+
 ## Normalization (`normalize`)
 
-`save_settings` and every load run through `normalize` (AC-R1/R2/R3):
+`save_settings` and every load run through `normalize` (AC-R1/R2/R3/R12):
 
-- The system agent is re-injected at the front with empty overrides; any incoming `system`
-  entry is dropped.
-- Each non-system agent keeps its `id`, or gets a fresh `randomUUID()` if missing; duplicate
-  ids are dropped; string fields are trimmed; `name` falls back to the id.
+- The system agent is re-injected at the front as a `claude` agent with the vendor **default**
+  (empty) config; any incoming `system` entry is dropped (its config is never honoured).
+- Each non-system agent keeps its `id`, or gets a fresh `randomUUID()` if missing; duplicate ids
+  are dropped. The record is shaped into a candidate (`migrateAgentCandidate`) — **legacy-flat →
+  claude arm** (`name → displayName`, flat `baseUrl`/`apiKey`/`model` → `config`); new-shape records
+  keep their `vendor`/nested `config`. String fields are trimmed; `displayName` falls back to the
+  id. The candidate is then validated/routed by `parseAgentConfig`; an unknown vendor or a config
+  that fails its arm yields `null` and the agent is **dropped** (fail-soft).
 - `defaultAgentId` is kept only if it references a surviving agent; otherwise it falls back to
   `SYSTEM_AGENT_ID`.
 - `defaultMode` is kept only if it is one of the five `PermissionMode` values; otherwise it falls
@@ -66,10 +83,12 @@ launch is never blocked (AC-R10).
 agentId   = sessionAgents[sessionId] ?? null
 agent     = agents.find(id === agentId) ?? agents.find(id === defaultAgentId) ?? system agent
 overrides = {}
-  baseUrl → ANTHROPIC_BASE_URL
-  apiKey  → ANTHROPIC_API_KEY + ANTHROPIC_AUTH_TOKEN
-  model   → model
-  (non-system agent only) CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1"   // temporary workaround, see below
+  switch agent.vendor:
+    case 'claude':                       // the only arm with an adapter today (AC-R12)
+      agent.config.baseUrl → ANTHROPIC_BASE_URL
+      agent.config.apiKey  → ANTHROPIC_API_KEY + ANTHROPIC_AUTH_TOKEN
+      agent.config.model   → model
+      (non-system agent only) CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1"   // claude-scoped workaround, see below
 ```
 
 Empty fields contribute nothing, so the system agent yields `{}` and the run gets no `env`/`model`

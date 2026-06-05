@@ -109,12 +109,20 @@ See the [session-registry spec](../../domains/core/session-registry/spec.md).
 
 ## System-config types
 
-- **`AgentConfig`** — `{ id, name, baseUrl, apiKey, model, enabled?, icon? }`. One agent
-  profile: a named set of Claude Code launch overrides. The built-in agent
-  `id === SYSTEM_AGENT_ID` (`'system'`) has empty `baseUrl`/`apiKey`/`model` (no overrides)
-  and cannot be removed. `enabled` is an optional flag (absent/`true` ⇒ enabled; only an
-  explicit `false` disables — see AC-R10). `icon` is an optional emoji/short-text display
-  marker (empty/absent ⇒ no custom icon, see AC-R11).
+- **`AgentConfig`** — a `vendor`-**discriminated union**: a vendor-agnostic public shell
+  `AgentConfigBase = { id, vendor, displayName, enabled?, icon? }` intersected with a
+  vendor-specific `config` sub-object. Today the only arm is
+  `{ vendor: 'claude'; config: ClaudeAgentConfig }` where
+  `ClaudeAgentConfig = { baseUrl, apiKey, model }` (the Claude Code launch overrides; empty ⇒ no
+  override). New vendors add an arm (`codex`/`opencode` are the extension point — no adapter yet,
+  ADR-0011). The built-in agent `id === SYSTEM_AGENT_ID` (`'system'`) is `vendor: 'claude'` with an
+  all-empty config (no overrides) and cannot be removed. `enabled` is an optional flag (absent/`true`
+  ⇒ enabled; only an explicit `false` disables — see AC-R10). `icon` is an optional emoji/short-text
+  display marker (empty/absent ⇒ no custom icon, see AC-R11). Zod is **out** of this zero-runtime
+  module (ADR-0009); the runtime validation/routing lives in
+  `server/src/kernel/agent-config/schema.ts`, pinned to this type by a compile-time assertion. A
+  legacy-flat record (`{ id, name, baseUrl, apiKey, model }`, no `vendor`) migrates to the claude arm
+  on normalize (AC-R12).
 - **`SystemSettings`** — `{ agents: AgentConfig[], defaultAgentId: string, defaultMode?: PermissionMode, consensus?: { enabled }, maxRoundsPerStage?: number }`.
   The full configuration; always contains the system agent, and `defaultAgentId` references an
   existing agent. `defaultMode` is the permission mode new sessions start in (one of the five

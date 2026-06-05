@@ -32,7 +32,12 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 
 vi.mock('./kernel/infra/child-env.js', () => ({ findClaudeExecutable: () => undefined }))
 
-const agent = (id: string) => ({ id, name: id.toUpperCase() })
+const agent = (id: string) => ({
+  id,
+  vendor: 'claude' as const,
+  displayName: id.toUpperCase(),
+  config: { baseUrl: '', apiKey: '', model: '' },
+})
 
 vi.mock('./kernel/agent-config/index.js', () => ({
   consensusVoters: () => [agent('a'), agent('b')],

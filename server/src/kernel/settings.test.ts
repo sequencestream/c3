@@ -8,6 +8,7 @@ import {
   AGENT_ICON_MAX_CHARS,
   consensusVoters,
   enabledAgents,
+  launchForAgent,
   normalizeDegradationChain,
   normalizeIcon,
   resolveSessionLaunch,
@@ -158,10 +159,30 @@ describe('getMaxRoundsPerStage normalization', () => {
 })
 
 const AGENTS: import('@ccc/shared/protocol').AgentConfig[] = [
-  { id: 'sys', name: 'System', baseUrl: '', apiKey: '', model: '' },
-  { id: 'a1', name: 'Agent One', baseUrl: 'https://one.example.com', apiKey: 'key1', model: '' },
-  { id: 'a2', name: 'Agent Two', baseUrl: 'https://two.example.com', apiKey: 'key2', model: '' },
-  { id: 'a3', name: 'Agent Three', baseUrl: '', apiKey: '', model: 'claude-opus-4' },
+  {
+    id: 'sys',
+    vendor: 'claude',
+    displayName: 'System',
+    config: { baseUrl: '', apiKey: '', model: '' },
+  },
+  {
+    id: 'a1',
+    vendor: 'claude',
+    displayName: 'Agent One',
+    config: { baseUrl: 'https://one.example.com', apiKey: 'key1', model: '' },
+  },
+  {
+    id: 'a2',
+    vendor: 'claude',
+    displayName: 'Agent Two',
+    config: { baseUrl: 'https://two.example.com', apiKey: 'key2', model: '' },
+  },
+  {
+    id: 'a3',
+    vendor: 'claude',
+    displayName: 'Agent Three',
+    config: { baseUrl: '', apiKey: '', model: 'claude-opus-4' },
+  },
 ]
 
 describe('normalizeDegradationChain', () => {
@@ -207,12 +228,14 @@ describe('normalizeDegradationChain', () => {
   })
 })
 
-/** Persist a set of agents (plus the baseline fields) and re-read via loadSettings. */
-function saveAgents(
-  agents: import('@ccc/shared/protocol').AgentConfig[],
-  defaultAgentId = SYSTEM_AGENT_ID,
-): SystemSettings {
-  return saveSettings({ agents, defaultAgentId } as SystemSettings)
+/**
+ * Persist a set of agents (plus the baseline fields) and re-read via loadSettings.
+ * Typed `unknown[]` on purpose: these tests deliberately feed legacy-flat /
+ * untrusted on-disk shapes through `normalize` (the migration path), so the
+ * inputs are NOT yet valid `AgentConfig` discriminated unions.
+ */
+function saveAgents(agents: unknown[], defaultAgentId = SYSTEM_AGENT_ID): SystemSettings {
+  return saveSettings({ agents, defaultAgentId } as unknown as SystemSettings)
 }
 
 describe('enabled flag (AC-R10)', () => {
@@ -248,9 +271,9 @@ describe('enabled flag (AC-R10)', () => {
     ])
     const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
     expect(sys.enabled).toBe(false)
-    expect(sys.baseUrl).toBe('')
-    expect(sys.apiKey).toBe('')
-    expect(sys.model).toBe('')
+    expect(sys.config.baseUrl).toBe('')
+    expect(sys.config.apiKey).toBe('')
+    expect(sys.config.model).toBe('')
   })
 
   it('enabledAgents() returns only enabled agents', () => {
@@ -480,7 +503,7 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
     saveSettings({
       agents: [{ id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '' }],
       defaultAgentId: 'a1',
-    } as SystemSettings)
+    } as unknown as SystemSettings)
     const reloaded = loadSettings()
     expect(reloaded.agents.find((a) => a.id === 'a1')?.icon).toBe('')
     // System agent also gets the default empty icon.
@@ -501,9 +524,9 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
     ])
     const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
     expect(sys.icon).toBe('🛡️')
-    expect(sys.baseUrl).toBe('')
-    expect(sys.apiKey).toBe('')
-    expect(sys.model).toBe('')
+    expect(sys.config.baseUrl).toBe('')
+    expect(sys.config.apiKey).toBe('')
+    expect(sys.config.model).toBe('')
   })
 
   it('truncates an over-long icon on save', () => {
@@ -521,8 +544,88 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
         { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '', icon: '⚙️' },
       ],
       defaultAgentId: SYSTEM_AGENT_ID,
-    } as SystemSettings)
+    } as unknown as SystemSettings)
     const sys = loadSettings().agents.find((a) => a.id === SYSTEM_AGENT_ID)!
     expect(sys.icon).toBe('⚙️')
+  })
+})
+
+describe('vendor discriminated-union migration (legacy-flat → claude)', () => {
+  it('migrates a legacy-flat agent into the claude arm (name→displayName, fields→config)', () => {
+    const saved = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k1', model: 'm1' },
+    ])
+    const a1 = saved.agents.find((a) => a.id === 'a1')!
+    expect(a1.vendor).toBe('claude')
+    expect(a1.displayName).toBe('One')
+    expect(a1.config).toEqual({ baseUrl: 'https://one', apiKey: 'k1', model: 'm1' })
+    // The flat fields do not survive at the top level.
+    expect((a1 as unknown as Record<string, unknown>).baseUrl).toBeUndefined()
+    expect((a1 as unknown as Record<string, unknown>).name).toBeUndefined()
+  })
+
+  it('re-injects the system agent as a claude agent with an empty (default) config', () => {
+    const saved = saveAgents([])
+    const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
+    expect(sys.vendor).toBe('claude')
+    expect(sys.config).toEqual({ baseUrl: '', apiKey: '', model: '' })
+  })
+
+  it('keeps a new-shape claude agent through normalize (no double-wrap)', () => {
+    const saved = saveAgents([
+      {
+        id: 'a1',
+        vendor: 'claude',
+        displayName: 'One',
+        config: { baseUrl: 'https://one', apiKey: 'k', model: '' },
+      },
+    ])
+    const a1 = saved.agents.find((a) => a.id === 'a1')!
+    expect(a1.config).toEqual({ baseUrl: 'https://one', apiKey: 'k', model: '' })
+    expect(a1.displayName).toBe('One')
+  })
+
+  it('drops an agent whose vendor has no registered schema (codex/opencode have no adapter yet)', () => {
+    const saved = saveAgents([
+      { id: 'cx', vendor: 'codex', displayName: 'Codex', config: { foo: 'bar' } },
+      { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '' },
+    ])
+    expect(saved.agents.find((a) => a.id === 'cx')).toBeUndefined()
+    // The valid legacy-flat sibling still survives.
+    expect(saved.agents.find((a) => a.id === 'a1')).toBeTruthy()
+  })
+
+  it('round-trips a legacy-flat on-disk shape through load without error', () => {
+    saveSettings({
+      agents: [{ id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '' }],
+      defaultAgentId: 'a1',
+    } as unknown as SystemSettings)
+    resetSettingsCacheForTests()
+    const a1 = loadSettings().agents.find((a) => a.id === 'a1')!
+    expect(a1.vendor).toBe('claude')
+    expect(a1.config.baseUrl).toBe('https://one')
+  })
+})
+
+describe('Claude launch non-regression (AC-R4/R5)', () => {
+  it('the system agent yields no overrides (empty config ⇒ {})', () => {
+    const sys = loadSettings().agents.find((a) => a.id === SYSTEM_AGENT_ID)!
+    expect(launchForAgent(sys)).toEqual({})
+  })
+
+  it('a migrated non-system claude agent maps config → env + model + thinking workaround', () => {
+    const saved = saveAgents([
+      { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: 'm1' },
+    ])
+    const a1 = saved.agents.find((a) => a.id === 'a1')!
+    expect(launchForAgent(a1)).toEqual({
+      envOverrides: {
+        ANTHROPIC_BASE_URL: 'https://one',
+        ANTHROPIC_API_KEY: 'k',
+        ANTHROPIC_AUTH_TOKEN: 'k',
+        CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: '1',
+      },
+      model: 'm1',
+    })
   })
 })

@@ -3,7 +3,13 @@ import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
 import { advanceOnFailure, agentAttemptOrder, agentNameAt } from './agent-prefix'
 
 function agent(id: string, name: string, over: Partial<AgentConfig> = {}): AgentConfig {
-  return { id, name, baseUrl: '', apiKey: '', model: '', ...over }
+  return {
+    id,
+    vendor: 'claude',
+    displayName: name,
+    config: { baseUrl: '', apiKey: '', model: '' },
+    ...over,
+  }
 }
 
 function settings(over: Partial<SystemSettings> = {}): SystemSettings {

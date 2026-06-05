@@ -89,29 +89,26 @@ export const EMPTY_TURN_NOTICE = '— No response this turn (the model only thou
 export const PENDING_SESSION_PREFIX = 'pending:'
 
 /**
- * The built-in agent. Its Claude config (baseUrl/apiKey/model) is always empty,
- * so a session bound to it launches Claude Code with no overrides — the SDK's
- * own resolution (env vars, `claude /login` credentials) applies. It cannot be
- * deleted and always exists in {@link SystemSettings.agents}.
+ * The built-in agent. Its config sub-object is always its vendor's *default*
+ * (for the default `claude` vendor: empty baseUrl/apiKey/model), so a session
+ * bound to it launches the agent with no overrides — the SDK's own resolution
+ * (env vars, `claude /login` credentials) applies. It cannot be deleted and
+ * always exists in {@link SystemSettings.agents}.
  */
 export const SYSTEM_AGENT_ID = 'system'
 
 /**
- * One agent profile under the system-config module. An agent names a set of
- * Claude Code launch overrides; a session launches Claude Code using its agent
- * (or the default agent when unassigned).
+ * The vendor-agnostic public shell common to every agent profile (ADR-0011's
+ * `vendor` dimension applied to the config layer). The per-vendor launch
+ * specifics live in a discriminated `config` sub-object — see {@link AgentConfig}.
  */
-export interface AgentConfig {
+export interface AgentConfigBase {
   /** Stable id; `'system'` ({@link SYSTEM_AGENT_ID}) for the built-in agent. */
   id: string
+  /** Which vendor this agent drives. The discriminant of {@link AgentConfig}. */
+  vendor: VendorId
   /** Display name. */
-  name: string
-  /** ANTHROPIC_BASE_URL override. Empty ⇒ no override. */
-  baseUrl: string
-  /** API key / auth token override. Empty ⇒ no override. */
-  apiKey: string
-  /** Model alias or id. Empty ⇒ no override. */
-  model: string
+  displayName: string
   /**
    * Whether this agent is enabled. Absent/`true` ⇒ enabled (back-compat: old
    * configs without the field are treated as enabled). When `false`, the agent
@@ -132,6 +129,35 @@ export interface AgentConfig {
    */
   icon?: string
 }
+
+/**
+ * The `claude` vendor's config sub-object: the Claude Code launch overrides.
+ * Each empty field ⇒ no override (the system agent's config is all-empty).
+ */
+export interface ClaudeAgentConfig {
+  /** ANTHROPIC_BASE_URL override. Empty ⇒ no override. */
+  baseUrl: string
+  /** API key / auth token override. Empty ⇒ no override. */
+  apiKey: string
+  /** Model alias or id. Empty ⇒ no override. */
+  model: string
+}
+
+/**
+ * One agent profile under the system-config module: a vendor-agnostic public
+ * shell ({@link AgentConfigBase}) plus a `vendor`-discriminated `config`
+ * sub-object. A session launches the agent's vendor CLI using its agent (or the
+ * default agent when unassigned), routing the `config` per its `vendor` tag.
+ *
+ * Today only `claude` has a real adapter (ADR-0011 reference) and thus a config
+ * shape; `codex`/`opencode` are the extension point — a new arm
+ * (`AgentConfigBase & { vendor: 'codex'; config: CodexAgentConfig }`) lands here
+ * once its adapter + zod sub-schema exist. The runtime validation/routing lives
+ * server-side in `kernel/agent-config/schema.ts` (zod stays out of this
+ * zero-runtime, SDK-free wire module — ADR-0009); a type-level assertion there
+ * pins the zod schema to this union so the two cannot drift.
+ */
+export type AgentConfig = AgentConfigBase & { vendor: 'claude'; config: ClaudeAgentConfig }
 
 /**
  * Multi-agent consensus voting over permission prompts. When enabled, a pending

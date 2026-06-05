@@ -2,11 +2,12 @@
  * Agent resolution + degradation chain (server refactor 3/3, ADR-0009 — sunk from
  * the old root `settings.ts`).
  *
- * An *agent* names a set of Claude Code launch overrides (baseUrl / apiKey /
- * model). A session launches Claude Code using its assigned agent, or the
- * default agent when unassigned (see {@link resolveSessionLaunch}). The built-in
- * system agent ({@link SYSTEM_AGENT_ID}) always exists, has empty overrides, and
- * cannot be removed — binding to it means "no overrides, use the SDK defaults".
+ * An *agent* is a vendor-agnostic shell + a `vendor`-discriminated `config`
+ * (claude ⇒ baseUrl / apiKey / model). A session launches using its assigned
+ * agent, or the default agent when unassigned (see {@link resolveSessionLaunch}).
+ * The built-in system agent ({@link SYSTEM_AGENT_ID}) always exists as a claude
+ * agent with an empty default config, and cannot be removed — binding to it
+ * means "no overrides, use the SDK defaults".
  *
  * These readers call `loadSettings` / `getSessionAgentId` from `kernel/config`
  * (the persistence store); the pure agent-shape normalizers come from
@@ -56,37 +57,50 @@ export function resolveAgent(agentId: string | null): AgentConfig {
 }
 
 /**
- * Map one agent's Claude config to SDK launch overrides. Empty fields produce
- * no override, so the system agent yields `{}` (SDK defaults apply). Shared by
- * session launches ({@link resolveSessionLaunch}) and consensus advisor calls.
+ * Map one agent's vendor config to launch overrides, routed by its `vendor`
+ * tag. Empty fields produce no override, so the system agent yields `{}` (the
+ * vendor CLI's own defaults apply). Shared by session launches
+ * ({@link resolveSessionLaunch}) and consensus advisor calls. Today only the
+ * `claude` arm is reachable (the only vendor with an adapter); new vendors add
+ * their own `case`.
  */
 export function launchForAgent(agent: AgentConfig): {
   envOverrides?: Record<string, string>
   model?: string
 } {
   const env: Record<string, string> = {}
-  if (agent.baseUrl) env.ANTHROPIC_BASE_URL = agent.baseUrl
-  if (agent.apiKey) {
-    // Cover both auth schemes: ANTHROPIC_API_KEY for first-party, ANTHROPIC_AUTH_TOKEN
-    // for gateways/proxies that expect a bearer token.
-    env.ANTHROPIC_API_KEY = agent.apiKey
-    env.ANTHROPIC_AUTH_TOKEN = agent.apiKey
+  let model: string | undefined
+
+  switch (agent.vendor) {
+    case 'claude': {
+      const { baseUrl, apiKey, model: claudeModel } = agent.config
+      if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl
+      if (apiKey) {
+        // Cover both auth schemes: ANTHROPIC_API_KEY for first-party,
+        // ANTHROPIC_AUTH_TOKEN for gateways/proxies that expect a bearer token.
+        env.ANTHROPIC_API_KEY = apiKey
+        env.ANTHROPIC_AUTH_TOKEN = apiKey
+      }
+      if (claudeModel) model = claudeModel
+      // WORKAROUND (remove later): recent Claude Code introduced an "adaptive
+      // thinking" mechanism that changes the request message format. Third-party
+      // Anthropic-compatible gateways (e.g. DeepSeek) don't yet accept that format —
+      // they reject the inline `system`-role messages with a 400
+      // (`messages[].role: unknown variant system`). CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
+      // turns off just that mechanism, restoring the compatible message format while
+      // keeping CLAUDE.md/memory, Skills, and hooks (unlike the heavier
+      // CLAUDE_CODE_SIMPLE=1 / `--bare` fallback).
+      // REMOVE this injection once the third-party providers support the new format.
+      // Applied only to non-system agents; the system agent (first-party Anthropic)
+      // needs no fallback. Claude-specific, hence scoped to this arm.
+      if (agent.id !== SYSTEM_AGENT_ID) env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
+      break
+    }
   }
-  // WORKAROUND (remove later): recent Claude Code introduced an "adaptive
-  // thinking" mechanism that changes the request message format. Third-party
-  // Anthropic-compatible gateways (e.g. DeepSeek) don't yet accept that format —
-  // they reject the inline `system`-role messages with a 400
-  // (`messages[].role: unknown variant system`). CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
-  // turns off just that mechanism, restoring the compatible message format while
-  // keeping CLAUDE.md/memory, Skills, and hooks (unlike the heavier
-  // CLAUDE_CODE_SIMPLE=1 / `--bare` fallback).
-  // REMOVE this injection once the third-party providers support the new format.
-  // Applied only to non-system agents; the system agent (first-party Anthropic)
-  // needs no fallback.
-  if (agent.id !== SYSTEM_AGENT_ID) env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
+
   return {
     ...(Object.keys(env).length > 0 ? { envOverrides: env } : {}),
-    ...(agent.model ? { model: agent.model } : {}),
+    ...(model ? { model } : {}),
   }
 }
 

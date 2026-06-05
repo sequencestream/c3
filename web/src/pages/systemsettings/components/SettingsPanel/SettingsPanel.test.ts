@@ -5,7 +5,14 @@ import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { SystemSettings } from '@ccc/shared/protocol'
 
 const baseSettings: SystemSettings = {
-  agents: [{ id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '' }],
+  agents: [
+    {
+      id: SYSTEM_AGENT_ID,
+      vendor: 'claude',
+      displayName: 'System',
+      config: { baseUrl: '', apiKey: '', model: '' },
+    },
+  ],
   defaultAgentId: SYSTEM_AGENT_ID,
   defaultMode: 'default',
   consensus: { enabled: false },
@@ -46,9 +53,26 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
   const twoAgents: SystemSettings = {
     ...baseSettings,
     agents: [
-      { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '' },
-      { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '', enabled: true },
-      { id: 'a2', name: 'Two', baseUrl: 'https://two', apiKey: 'k', model: '', enabled: false },
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a1',
+        vendor: 'claude',
+        displayName: 'One',
+        enabled: true,
+        config: { baseUrl: 'https://one', apiKey: 'k', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        displayName: 'Two',
+        enabled: false,
+        config: { baseUrl: 'https://two', apiKey: 'k', model: '' },
+      },
     ],
   }
 
@@ -162,8 +186,19 @@ describe('SettingsPanel.vue — agent icon emoji picker', () => {
   const withAgent: SystemSettings = {
     ...baseSettings,
     agents: [
-      { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '' },
-      { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '', icon: '' },
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a1',
+        vendor: 'claude',
+        displayName: 'One',
+        icon: '',
+        config: { baseUrl: 'https://one', apiKey: 'k', model: '' },
+      },
     ],
   }
 

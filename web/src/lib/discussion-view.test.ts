@@ -62,10 +62,9 @@ function msg(over: Partial<DiscussionMessage>): DiscussionMessage {
 function agent(over: Partial<AgentConfig>): AgentConfig {
   return {
     id: 'a',
-    name: 'A',
-    baseUrl: '',
-    apiKey: '',
-    model: '',
+    vendor: 'claude',
+    displayName: 'A',
+    config: { baseUrl: '', apiKey: '', model: '' },
     ...over,
   }
 }
@@ -89,9 +88,9 @@ const TABS_T = (k: 'discussion.tabs.research.label') =>
   k === 'discussion.tabs.research.label' ? 'Research' : k
 
 const AGENTS: AgentConfig[] = [
-  agent({ id: 'default', name: 'Default Agent', icon: '🧠' }),
-  agent({ id: 'reviewer', name: 'Reviewer', icon: '🔍' }),
-  agent({ id: 'noicon', name: 'Plain', icon: '' }),
+  agent({ id: 'default', displayName: 'Default Agent', icon: '🧠' }),
+  agent({ id: 'reviewer', displayName: 'Reviewer', icon: '🔍' }),
+  agent({ id: 'noicon', displayName: 'Plain', icon: '' }),
 ]
 const DEFAULT_ID = 'default'
 
@@ -227,7 +226,7 @@ describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', ()
   })
 
   it('organizer:默认 agent 缺 icon → 通用图标,保留 name', () => {
-    const agentsNoIcon = [agent({ id: 'default', name: 'Default Agent', icon: '' })]
+    const agentsNoIcon = [agent({ id: 'default', displayName: 'Default Agent', icon: '' })]
     expect(
       resolveDiscussionSpeaker(msg({ speakerKind: 'organizer' }), agentsNoIcon, 'default', T),
     ).toEqual({ icon: '🤖', name: 'Default Agent' })
@@ -265,7 +264,7 @@ describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', ()
       ),
     ).toEqual({ icon: '🤖', name: 'Plain' })
     // icon 字段为纯空白(用户误填)也走回退
-    const blankIcon = [agent({ id: 'noicon', name: 'Plain', icon: '   ' })]
+    const blankIcon = [agent({ id: 'noicon', displayName: 'Plain', icon: '   ' })]
     expect(
       resolveDiscussionSpeaker(
         msg({ speakerKind: 'agent', speakerAgentId: 'noicon', speakerName: 'Plain' }),

@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 import { startServer } from './server.js'
 import { versionString } from './version.js'
+import { runVerify } from './verify.js'
 
 const program = new Command()
 
@@ -37,6 +38,13 @@ program
       process.exit(1)
     }
     await startServer({ projectPath, port, dev: opts.dev })
+  })
+
+program
+  .command('verify <file>')
+  .description('Verify a downloaded c3 artifact against the embedded minisign public key')
+  .action((file: string) => {
+    process.exit(runVerify(resolve(file)))
   })
 
 program.parseAsync(process.argv).catch((err) => {

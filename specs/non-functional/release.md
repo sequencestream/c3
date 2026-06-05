@@ -1,9 +1,12 @@
 # Non-Functional — Release & Distribution
 
-> **Status:** release 2/7. Orchestration + P0 matrix (1/7) and version injection +
-> manifest + harden-tier framework (2/7) are live; later waves (signing, publish, extra
-> platforms) fill in the remaining placeholders. Source of truth — keep in sync with
-> `scripts/release/` and `server/scripts/release/`.
+> **Status:** release 3/7. Orchestration + P0 matrix (1/7), version injection + manifest +
+> harden-tier framework (2/7), and distribution trust — SHA256SUMS + minisign + macOS ad-hoc
+>
+> - `c3 verify` + notes/publish orchestration (3/7) — are live; later waves (extra platforms,
+>   Apple Developer ID / notarization, Windows Authenticode, CI release workflow) fill in the
+>   remaining placeholders. Source of truth — keep in sync with `scripts/release/` and
+>   `server/scripts/release/`.
 
 `release` is a thin **orchestration** layer over the existing build/binary primitives.
 It does not replace `pnpm build` (esbuild CJS bundle) or `pnpm binary` (single native
@@ -44,9 +47,11 @@ harden tier (see below), not hard-coded. CI and local share the same scripts.
 
 ## Artifact naming
 
-`dist/c3-<os>-<arch>` (e.g. `c3-macos-arm64`, `c3-linux-x64`). `darwin` is normalized to
-`macos`. Channel/suffix conventions (e.g. `-nightly`, version stamping) are placeholders
-for a later wave.
+`release:build` output is **version-stamped**: `dist/c3-v{version}-<os>-<arch>{.exe?}` (e.g.
+`c3-v0.2.0-macos-arm64`, `c3-v0.2.0-linux-x64`; Windows targets append `.exe`, forward-looking).
+`darwin` is normalized to `macos`; the leading `v` is fixed and a `v`-prefixed version is not
+doubled (`artifact-name.mjs`). `pnpm binary` (self-use quickcut) keeps the **un-versioned**
+`dist/c3-<os>-<arch>`. Channel suffixes (e.g. `-nightly`) remain a later-wave placeholder.
 
 ## Version SoT (release 2/7)
 
@@ -117,6 +122,32 @@ A consumer can `shasum -a 256 c3-<os>-<arch>` and match `artifacts[].sha256`. Th
 is a **multi-artifact** distribution record; `pnpm binary` (single self-use binary) does
 not emit one.
 
+## Distribution trust (release 3/7)
+
+The trust floor is a **signing chain** (see security.md DIST-1/SEC-8). `release:sign` (and
+`release:publish`) read `dist/manifest.json` and emit, per artifact, a `.sha256` and an
+Ed25519 **minisign** `.minisig`, plus aggregate `SHA256SUMS`(`.minisig`). All sidecars cover
+the **final** bytes (after macOS ad-hoc `codesign`, which runs inside the compile primitive so
+hashing sees the signed Mach-O).
+
+- **Keys.** Standard minisign format (`scripts/release/minisign.mjs`, pure `node:crypto`,
+  interoperable with the official `minisign` CLI). The secret is a raw `keyId||seed` blob held
+  offline / as the `C3_MINISIGN_SECRET_KEY` GitHub Secret; the public key is committed in
+  `server/src/release-pubkey.ts` + README. `node scripts/release/keygen.mjs` mints a pair
+  (public → stdout, secret → gitignored file). Prehashed (`ED`, BLAKE2b-512) signatures.
+- **`c3 verify <file>`** (`server/src/verify.ts`) — offline self-check against the **embedded**
+  public key; verifies the `.sha256` (if present) and the mandatory `.minisig`. No network, no
+  external `minisign`. The signer (`.mjs`) and verifier (`.ts`) are cross-runtime twins, kept
+  in lockstep by tests.
+- **macOS ad-hoc** `codesign --force -s -` — gated on macOS target + darwin host + `codesign`
+  present; best-effort with a warn-and-continue otherwise. Ad-hoc only (no Developer ID /
+  notarization); users clear Gatekeeper quarantine with `xattr -dr com.apple.quarantine`.
+
+`pnpm release` chains build → notes → publish. `--dry-run` rehearses every stage with no
+external/irreversible effect (no signing, no tag, no `gh`); `--no-publish` signs locally but
+stops before the tag + GitHub Release. The package stays `private: true` (binaries ship via
+GitHub Releases, never npm).
+
 ## Commands
 
 ```bash
@@ -125,15 +156,27 @@ pnpm release:build --targets=linux-x64              # subset
 pnpm release:build --harden=none                    # no minify/manifest (debug)
 RELEASE_HARDEN=standard pnpm release:build          # placeholder tier (warns, builds as basic)
 pnpm release:build --dry-run                        # print the plan, execute nothing
+pnpm release:sign                                    # SHA256SUMS + .sha256 + .minisig (reads manifest)
+pnpm release:notes                                   # release notes (version + top CHANGELOG section)
+pnpm release:publish --dry-run                        # rehearse publish: plan only, no tag/gh/sign
+pnpm release --no-publish                             # build + sign + notes, no GitHub Release
+pnpm release                                          # build → notes → publish (full)
+pnpm release:keygen                                   # mint a minisign keypair
 pnpm binary                                          # native single binary (self-use quickcut)
 ```
 
 ## Entry points
 
-- Orchestrator: `scripts/release/release-build.mjs` (`--targets`, `--harden`, `--dry-run`)
-- Single-target primitive: `server/scripts/release/build-target.mjs` (`buildTarget()`, `HARDEN_TIERS`)
+- Build orchestrator: `scripts/release/release-build.mjs` (`--targets`, `--harden`, `--dry-run`)
+- Top-level orchestrator: `scripts/release/release.mjs` (`--dry-run`, `--no-publish`, passthrough)
+- Single-target primitive: `server/scripts/release/build-target.mjs` (`buildTarget()`, `HARDEN_TIERS`, ad-hoc codesign)
 - Version SoT helper: `scripts/release/version-info.mjs` (`computeVersionInfo`, `versionDefines`)
 - Manifest helper: `scripts/release/manifest.mjs` (`buildManifest`, `sha256File`)
+- Artifact naming: `scripts/release/artifact-name.mjs` (`artifactName`, `normalizeVersion`)
+- minisign core: `scripts/release/minisign.mjs` (`generateKeypair`, `signContent`, `verifyContent`)
+- Signing: `scripts/release/sign.mjs` (`signArtifacts`, `artifactsFromManifest`, `secretFromEnv`)
+- Notes / publish / keygen: `scripts/release/notes.mjs` (`buildNotes`), `publish.mjs` (`publish`), `keygen.mjs`
+- Embedded pubkey + verify: `server/src/release-pubkey.ts`, `server/src/verify.ts` (`verifyArtifact`, `runVerify`), CLI `c3 verify`
 - Runtime version: `server/src/version.ts` (`versionString`)
 - Snapshot generator: `server/scripts/generate-static-embed.mjs`
-- Smoke/unit: `scripts/release/release-build.test.mjs`, `scripts/release/release-harden.test.mjs`
+- Tests: `scripts/release/release-build.test.mjs`, `release-harden.test.mjs`, `release-sign.test.mjs` (the last cross-imports `server/src/verify.ts`, proving signer/verifier parity)

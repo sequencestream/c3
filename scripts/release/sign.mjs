@@ -1,0 +1,145 @@
+// Artifact signing (release 3/7) — SHA256SUMS + per-artifact .sha256 + minisign .minisig.
+//
+// Given the built artifacts (default: read from dist/manifest.json), emit the
+// distribution-trust sidecars:
+//   <artifact>.sha256          one `<hex>  <name>` line (shasum -a 256 -c compatible)
+//   SHA256SUMS                 aggregate of all artifacts
+//   <artifact>.minisig         minisign signature over the artifact bytes (if key present)
+//   SHA256SUMS.minisig         minisign signature over SHA256SUMS (if key present)
+//
+// Without a secret key, the .sha256/SHA256SUMS still emit (warn-skip the .minisig) so the
+// flow can be rehearsed unsigned. CLI key source: C3_MINISIGN_SECRET_KEY (base64
+// keyId||seed) or C3_MINISIGN_SECRET_KEY_FILE (path to such a base64 blob).
+//
+// Pure Node. CLI: node scripts/release/sign.mjs [--manifest=dist/manifest.json] [--dry-run]
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { resolve, dirname, basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { sha256File } from './manifest.mjs'
+import { signContent, parseSecretBlob } from './minisign.mjs'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const repoRoot = resolve(here, '..', '..')
+
+/**
+ * @param {object} o
+ * @param {Array<{ name: string, path: string }>} o.artifacts  path = absolute
+ * @param {string} o.outDir                                    where SHA256SUMS lands
+ * @param {string} o.version                                   for the trusted comment
+ * @param {string} [o.secretKeyB64]                            base64 keyId||seed; omit → no .minisig
+ * @param {(m: string) => void} [o.log]
+ * @returns {{ signed: boolean, sha256sums: string, written: string[] }}
+ */
+export function signArtifacts({ artifacts, outDir, version, secretKeyB64, log = () => {} }) {
+  const written = []
+  const sumsLines = []
+  const key = secretKeyB64 ? parseSecretBlob(secretKeyB64) : null
+
+  for (const a of artifacts) {
+    const hex = sha256File(a.path)
+    const line = `${hex}  ${a.name}`
+    sumsLines.push(line)
+    const sha256Path = `${a.path}.sha256`
+    writeFileSync(sha256Path, line + '\n')
+    written.push(sha256Path)
+    log(`  sha256  ${a.name}  ${hex}`)
+
+    if (key) {
+      const sig = signContent(readFileSync(a.path), {
+        seed: key.seed,
+        keyId: key.keyId,
+        trustedComment: `c3 release v${version} ${a.name}`,
+        untrustedComment: `signed by c3 release v${version}`,
+      })
+      const sigPath = `${a.path}.minisig`
+      writeFileSync(sigPath, sig)
+      written.push(sigPath)
+      log(`  minisig ${a.name}`)
+    }
+  }
+
+  const sha256sums = sumsLines.join('\n') + '\n'
+  const sumsPath = resolve(outDir, 'SHA256SUMS')
+  writeFileSync(sumsPath, sha256sums)
+  written.push(sumsPath)
+
+  if (key) {
+    const sig = signContent(Buffer.from(sha256sums), {
+      seed: key.seed,
+      keyId: key.keyId,
+      trustedComment: `c3 release v${version} SHA256SUMS`,
+      untrustedComment: `signed by c3 release v${version}`,
+    })
+    const sumsSigPath = `${sumsPath}.minisig`
+    writeFileSync(sumsSigPath, sig)
+    written.push(sumsSigPath)
+  } else {
+    log(
+      '  ⚠ no secret key (C3_MINISIGN_SECRET_KEY[_FILE]) — wrote .sha256/SHA256SUMS, skipped .minisig',
+    )
+  }
+
+  return { signed: Boolean(key), sha256sums, written }
+}
+
+/** Resolve the secret key blob from env, or null. */
+export function secretFromEnv(env = process.env) {
+  if (env.C3_MINISIGN_SECRET_KEY) return env.C3_MINISIGN_SECRET_KEY.trim()
+  if (env.C3_MINISIGN_SECRET_KEY_FILE && existsSync(env.C3_MINISIGN_SECRET_KEY_FILE)) {
+    return readFileSync(env.C3_MINISIGN_SECRET_KEY_FILE, 'utf-8').trim()
+  }
+  return undefined
+}
+
+/** Read dist/manifest.json → artifact list (name + absolute dist path). */
+export function artifactsFromManifest(manifestPath) {
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+  const distDir = dirname(manifestPath)
+  return {
+    version: manifest.version,
+    artifacts: manifest.artifacts.map((a) => ({
+      name: a.file,
+      path: resolve(distDir, basename(a.file)),
+    })),
+  }
+}
+
+// --- CLI ---
+function isMain() {
+  return process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+}
+
+if (isMain()) {
+  const args = Object.fromEntries(
+    process.argv.slice(2).map((a) => {
+      const m = /^--([^=]+)(?:=(.*))?$/.exec(a)
+      return m ? [m[1], m[2] ?? true] : [a, true]
+    }),
+  )
+  const manifestPath = resolve(repoRoot, args.manifest || 'dist/manifest.json')
+  if (!existsSync(manifestPath)) {
+    console.error(`[sign] manifest not found: ${manifestPath} — run \`pnpm release:build\` first.`)
+    process.exit(1)
+  }
+  const { version, artifacts } = artifactsFromManifest(manifestPath)
+  const secretKeyB64 = secretFromEnv()
+  console.log(`[sign] version v${version} — ${artifacts.length} artifact(s)`)
+  if (args['dry-run']) {
+    console.log(
+      '[sign] --dry-run: would write .sha256 + SHA256SUMS' +
+        (secretKeyB64 ? ' + .minisig' : ' (no key → no .minisig)'),
+    )
+    for (const a of artifacts) console.log(`  ${a.name}`)
+    process.exit(0)
+  }
+  const res = signArtifacts({
+    artifacts,
+    outDir: dirname(manifestPath),
+    version,
+    secretKeyB64,
+    log: (m) => console.log(m),
+  })
+  console.log(
+    `[sign] ${res.signed ? 'signed' : 'hashed (unsigned)'} — ${res.written.length} file(s) written.`,
+  )
+}

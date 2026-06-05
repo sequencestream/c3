@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { computeVersionInfo } from './version-info.mjs'
 import { buildManifest, writeManifest } from './manifest.mjs'
+import { artifactName } from './artifact-name.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
@@ -92,9 +93,10 @@ const manifestPath = resolve(repoRoot, 'dist', 'manifest.json')
 const embedPath = resolve(repoRoot, 'dist', 'static-embed.generated.ts')
 const buildTargetScript = resolve(repoRoot, 'server', 'scripts', 'release', 'build-target.mjs')
 
+// Version-stamped artifact names: c3-v{ver}-{os}-{arch}{.exe?} (release 3/7).
 const plan = targets.map((t) => ({
   target: t,
-  outfile: resolve(repoRoot, 'dist', `c3-${t}`),
+  outfile: resolve(repoRoot, 'dist', artifactName(versionInfo.version, t)),
 }))
 
 console.log('[release:build] plan:')

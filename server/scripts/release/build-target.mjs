@@ -12,6 +12,7 @@
 /* global Bun */
 // ^ This module runs under `bun` (Bun.build JS API); `Bun` is a runtime global.
 import { chmodSync, existsSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeVersionInfo, versionDefines } from '../../../scripts/release/version-info.mjs'
@@ -57,6 +58,36 @@ export function defaultOutfile(friendly) {
 
 export function defaultEmbedPath() {
   return resolve(repoRoot, 'dist', 'static-embed.generated.ts')
+}
+
+// macOS ad-hoc code signing (release 3/7). MUST run before any sha256/minisign — codesign
+// rewrites the Mach-O, so hashing a signed binary is the only way manifest/.sha256/.minisig
+// stay consistent (that's why this lives in the compile primitive, not the sign step).
+// Best-effort and three-gated: macOS target + darwin host + codesign present. Cross-building
+// a mac binary on a non-mac host can't ad-hoc sign — warn and leave it to a mac runner. `-s -`
+// is ad-hoc (no certificate, zero cost); it does NOT clear Gatekeeper quarantine (see README
+// `xattr -dr com.apple.quarantine`).
+function adHocCodesign(out, friendly) {
+  if (!friendly.startsWith('macos')) return
+  if (process.platform !== 'darwin') {
+    console.warn(
+      `[build-target] ${friendly}: skip ad-hoc codesign (host is ${process.platform}, not darwin — sign on a mac runner)`,
+    )
+    return
+  }
+  const probe = spawnSync('sh', ['-c', 'command -v codesign'], { encoding: 'utf-8' })
+  if (probe.status !== 0) {
+    console.warn(`[build-target] ${friendly}: skip ad-hoc codesign (codesign not found)`)
+    return
+  }
+  const res = spawnSync('codesign', ['--force', '--sign', '-', out], { encoding: 'utf-8' })
+  if (res.status === 0) {
+    console.log(`[build-target] ${friendly}: ad-hoc codesigned`)
+  } else {
+    console.warn(
+      `[build-target] ${friendly}: ad-hoc codesign failed (${(res.stderr || '').trim()}) — continuing unsigned`,
+    )
+  }
 }
 
 /**
@@ -135,6 +166,7 @@ export async function buildTarget({
     throw new Error(`[build-target] outfile missing after build: ${out}`)
   }
   chmodSync(out, 0o755)
+  adHocCodesign(out, friendly) // before any hashing/signing — codesign mutates the binary
   console.log(`[build-target] OK → ${out}`)
   return { friendly, bunTarget, outfile: out }
 }

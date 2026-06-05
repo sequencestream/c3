@@ -72,6 +72,49 @@ The binary spawns the system `claude` CLI (or `$CLAUDE_PATH`) for the SDK's
 agent process, since the SDK's bundled `cli-<platform>` lookup misses inside a
 single-file Bun binary.
 
+## Download & verify
+
+Release binaries are published on **GitHub Releases** (this package is `private` and is
+**not** on npm). Each platform artifact ships with a `.sha256` and an Ed25519 **minisign**
+signature `.minisig`; an aggregate `SHA256SUMS`(`.minisig`) covers all of them.
+
+| Platform                                       | Artifact                    | Sidecars               |
+| ---------------------------------------------- | --------------------------- | ---------------------- |
+| macOS arm64                                    | `c3-v{version}-macos-arm64` | `.sha256` + `.minisig` |
+| Linux x64                                      | `c3-v{version}-linux-x64`   | `.sha256` + `.minisig` |
+| _(more platforms land in later release waves)_ |                             |
+
+**minisign public key** (also embedded in the binary for `c3 verify`):
+
+```
+untrusted comment: c3 release signing key (minisign)
+RWQGEiNpXN1t9VEX2lXZab7nHaR+gfjfPYcCYN6Bxyid5NkuQK/Gme+l
+```
+
+Verify a download — either with the bundled self-check (no extra tools):
+
+```bash
+./c3-v0.2.0-macos-arm64 verify ./c3-v0.2.0-macos-arm64
+# ✓ VERIFIED  c3-v0.2.0-macos-arm64
+```
+
+…or with the official [`minisign`](https://jedisct1.github.io/minisign/) CLI:
+
+```bash
+minisign -Vm c3-v0.2.0-macos-arm64 -P RWQGEiNpXN1t9VEX2lXZab7nHaR+gfjfPYcCYN6Bxyid5NkuQK/Gme+l
+```
+
+> **macOS Gatekeeper**: binaries are **ad-hoc** signed (no Apple Developer ID / notarization
+> yet), so first launch is blocked by quarantine. After verifying the signature, clear it:
+>
+> ```bash
+> xattr -dr com.apple.quarantine ./c3-v0.2.0-macos-arm64
+> ```
+
+> Distribution trust is the signing chain above — `minify`/`strip` are **not** a security
+> control (see [`specs/non-functional/security.md`](specs/non-functional/security.md)
+> → "Non-goal: anti-decompilation").
+
 ## End-to-end tests
 
 `pnpm e2e` runs the whole WebSocket suite: it boots one server (with a throwaway
@@ -108,9 +151,14 @@ The smoke prompt asks Claude to write `/tmp/c3-e2e-test.txt`. The script:
 
 ```
 c3 [start] [--project <path>] [--port 3000] [--dev]
+c3 verify <file>
 ```
 
 `start` is the default command, so `c3` on its own is equivalent to `c3 start`.
+
+- `verify <file>`: offline-check a downloaded artifact against the embedded minisign public
+  key (see [Download & verify](#download--verify)). Exit 0 = `VERIFIED`, non-zero = tampered
+  or unsigned.
 
 - `--project` _(optional)_: seed workspace directory passed to the SDK as `cwd`.
   Claude reads/writes files relative to it. Defaults to the current directory;

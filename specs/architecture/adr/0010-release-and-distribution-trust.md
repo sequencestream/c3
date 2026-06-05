@@ -19,7 +19,9 @@ clean. Two structural problems block multi-platform distribution:
 
 This is the first of a 7-step release effort. Step 1 is the **orchestration skeleton**:
 make multi-platform builds race-free and add the seams for later trust work — without
-replacing the proven `build` / `binary` primitives.
+replacing the proven `build` / `binary` primitives. Steps 2 (version injection + manifest +
+harden tiers) and 3 (distribution trust: SHA256SUMS + minisign + macOS ad-hoc + `c3 verify` +
+notes/publish orchestration) build on these seams.
 
 ## Options considered
 
@@ -66,6 +68,11 @@ signing/notarization, publish — are seams (placeholders) filled by later relea
 - ADR-0003's "reset `static-embed.ts` to a stub after each build" mechanism is **superseded**
   by the committed-stub + dist-snapshot + redirect design (see the pointer added to 0003).
 - `pnpm build` (esbuild CJS) and `node cli.cjs start` filesystem fallback are unchanged.
+- The named seams paid off: step 3 hung the **distribution-trust signing chain** (SHA256SUMS
+  - minisign Ed25519 + macOS ad-hoc codesign + embedded-key `c3 verify` + notes/publish
+    orchestration) off the manifest + compile primitive with no structural change. Trust =
+    the signing chain; obfuscation is an explicit non-goal (security.md). See
+    `specs/non-functional/release.md` "Distribution trust".
 
 ## Compliance
 

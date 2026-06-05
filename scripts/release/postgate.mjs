@@ -18,6 +18,24 @@ import { P0_TARGETS } from './targets.mjs'
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
 
+/**
+ * The set of targets whose presence the dist MUST contain to publish.
+ *
+ * Default = the full P0 wave. When a release is cut for a target subset (CI passes
+ * `C3_REQUIRED_TARGETS=<comma list>`, e.g. macOS-Intel runners are starved), the
+ * required set narrows to P0 ∩ selected — so dropping a P0 target from the build
+ * also drops it from the completeness gate (the operator opted out), while
+ * experimental/non-P0 targets (windows-x64) are never hard-required regardless.
+ */
+export function requiredTargets(env = process.env) {
+  const sel = (env.C3_REQUIRED_TARGETS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (!sel.length) return P0_TARGETS
+  return P0_TARGETS.filter((t) => sel.includes(t))
+}
+
 /** Parse a SHA256SUMS body (`<hex>  <name>` per line) into a name→hex map. */
 export function parseSha256Sums(text) {
   const map = new Map()
@@ -42,10 +60,12 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   const manifest = JSON.parse(readFileSync(mp, 'utf-8'))
   const distDir = dirname(mp)
 
-  // 3. P0 completeness.
+  // 3. Required-target completeness (P0 ∩ selected — see requiredTargets()).
+  const required = requiredTargets()
   const present = new Set(manifest.artifacts.map((a) => a.target))
-  const missing = P0_TARGETS.filter((t) => !present.has(t))
-  if (missing.length) throw new Error(`P0 target(s) missing from manifest: ${missing.join(', ')}`)
+  const missing = required.filter((t) => !present.has(t))
+  if (missing.length)
+    throw new Error(`required target(s) missing from manifest: ${missing.join(', ')}`)
 
   // 2. SHA256SUMS must exist (signing ran) and agree with the manifest.
   const sumsPath = resolve(distDir, 'SHA256SUMS')
@@ -76,7 +96,7 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   }
 
   log(
-    `  ✓ P0 complete (${P0_TARGETS.join(', ')}), ${manifest.artifacts.length} artifact(s) verified.`,
+    `  ✓ required complete (${required.join(', ') || 'none'}), ${manifest.artifacts.length} artifact(s) verified.`,
   )
   return { checked: manifest.artifacts.length }
 }

@@ -98,36 +98,51 @@ is built on its **native OS runner** (`ubuntu-latest` / `macos-14` / `macos-13` 
 `windows-latest`), so cross-compile is a non-issue and bytecode auto-turns on.
 
 ```text
+setup (ubuntu-latest)
+  └─ resolve targets (default: all 4) + version → outputs.{targets,version}
 pregate (ubuntu-latest)
   └─ typecheck → lint → test → i18n:check → i18n:check-freeze
-build:linux-x64      (ubuntu-latest)     needs: [pregate]
-build:macos-arm64    (macos-14)          needs: [pregate]
-build:macos-x64      (macos-13)          needs: [pregate]
-build:windows-x64    (windows-latest)    needs: [pregate]    ⚠️experimental
-  └─ pnpm release:build --targets=<one> --skip-smoke --harden=basic
+build:linux-x64      (ubuntu-latest)     needs: [pregate, setup]   if: contains(targets,'linux-x64')
+build:macos-arm64    (macos-14)          needs: [pregate, setup]   if: contains(targets,'macos-arm64')
+build:macos-x64      (macos-13)          needs: [pregate, setup]   if: contains(targets,'macos-x64')
+build:windows-x64    (windows-latest)    needs: [pregate, setup]   if: contains(targets,'windows-x64')  ⚠️experimental
+  └─ pnpm release:build --targets=<one> --skip-smoke --harden=basic   (env C3_RELEASE_VERSION=<version>)
   └─ ad-hoc codesign on darwin runners (no-op on linux/windows)
   └─ actions/upload-artifact@v4 → c3-<target>  (uploads the package sidecars, not the binary)
 smoke:<target>       (same OS as build)  needs: [build:<target>]
   └─ pnpm release:smoke --file=<artifact>  (--version + headless HTTP probe)
-verify-dist          (ubuntu-latest)     needs: [smoke:linux-x64, smoke:macos-arm64,
-                                                        smoke:macos-x64, smoke:windows-x64]
-  └─ download all 4 artifacts → postgate (manifest↔SHA256SUMS↔disk + P0)
-provenance           (ubuntu-latest)     needs: [verify-dist]
-  └─ actions/attest-build-provenance@v2 × 4 (OIDC keyless; SLSA L3)
-publish              (ubuntu-latest)     needs: [provenance]
+verify-dist          (ubuntu-latest)     needs: [setup, smoke:{linux,macos-arm64,macos-x64,windows}-x64]
+  └─ if: !cancelled()  (a deselected target is SKIPPED, not red — postgate is the real gate)
+  └─ download all artifacts → postgate (manifest↔SHA256SUMS↔disk + required-target completeness)
+provenance           (ubuntu-latest)     needs: [setup, verify-dist]   if: !cancelled() && !failure()
+  └─ actions/attest-build-provenance@v2 per SELECTED target (OIDC keyless; SLSA L3)
+publish              (ubuntu-latest)     needs: [setup, provenance]    if: !cancelled() && !failure()
   └─ pnpm release:publish (sign + verify-dist re-check + tag + gh release)
 ```
 
-Phase ordering guarantees from `needs:`:
+Phase ordering guarantees from `needs:` + `if:`:
 
 - A red `pregate` skips all four `build:` jobs (no cross-compile attempted on a red source tree).
-- A red `build:<target>` skips its matching `smoke:<target>`, which transitively skips `verify-dist`.
-- A red `verify-dist` skips `provenance` and `publish` (no tag, no `gh`).
-- A red `provenance` skips `publish`.
+- A **deselected** target (not in `setup.outputs.targets`) leaves its `build:`/`smoke:` jobs
+  **skipped, not red**; `verify-dist` still runs (`if: !cancelled()`) and `postgate` enforces only
+  the **selected** P0 subset, so the cut proceeds without that platform (the operator opted out).
+- A red `build:<target>` for a **selected required** target ⇒ its artifact is absent from the
+  re-aggregated `dist/` ⇒ `postgate` aborts `verify-dist` on the missing required target.
+- A red `verify-dist` ⇒ `failure()` ⇒ `provenance` and `publish` skip (no tag, no `gh`).
+- A red `provenance` ⇒ `failure()` ⇒ `publish` skips.
 
 The workflow runs on `workflow_dispatch` (manual release entry) and `push tags: 'v*'`
-(re-publish re-verify). `workflow_dispatch` has an optional `skip_publish` input that
-stops at the sign+verify-dist step without cutting a tag or GitHub Release.
+(re-publish re-verify). `workflow_dispatch` inputs:
+
+- **`version`** — explicit release version, e.g. `v0.1.0`. Threaded to every build + publish
+  job as `C3_RELEASE_VERSION` (overrides `git describe`; see "Version SoT"). Empty ⇒ derive
+  from the git tag (the `push tags` path always leaves it empty).
+- **`targets`** — comma-separated subset to build (default = all four:
+  `linux-x64,macos-arm64,macos-x64,windows-x64`). Deselecting a **P0** target (e.g. drop
+  `macos-x64` when Intel runners are starved) narrows the publish completeness gate to the
+  selected set, so a partial-platform release can still be cut. Threaded to `postgate` /
+  `verify-dist` as `C3_REQUIRED_TARGETS` (required set = `P0 ∩ selected`).
+- **`skip_publish`** — stop at the sign+verify-dist step without cutting a tag or GitHub Release.
 
 Local `pnpm release` and CI share the **same node scripts** (`release:build`,
 `release:smoke`, `release:verify-dist`, `release:publish`) — the matrix is just a fan-out
@@ -186,8 +201,11 @@ local single-host `pnpm binary` quickcut also enables it when the host matches t
 local share the same scripts.
 
 **P0 vs P1 (release 4/7, refined 6/7).** P0 is the **required** set — `release:build`
-defaults to the full P0 matrix, and **publish gates only on P0** (`postgate`): a missing
-P0 target blocks the release. P1 (currently just `windows-x64`) is **best-effort**:
+defaults to the full P0 matrix, and **publish gates on the selected P0 subset** (`postgate`,
+required set = `P0 ∩ C3_REQUIRED_TARGETS`, defaulting to the full P0 when unset): a missing
+_selected_ P0 target blocks the release, while a deliberately deselected P0 target (e.g.
+`macos-x64` dropped when Intel runners are starved) drops out of the gate too — the operator
+opted out. P1 (currently just `windows-x64`) is **best-effort**:
 `release-build.mjs` warns and drops a failed experimental target instead of aborting, so
 a Windows cross-compile hiccup can't sink the P0 cut. `macos-x64` was promoted from P1
 to P0 in release 6/7 because the GH Actions native matrix runs it on a real
@@ -255,9 +273,12 @@ The naming API surface (single SoT — `artifact-name.mjs`):
 ## Version SoT (release 2/7)
 
 The version **source-of-truth is the git tag**, not a `package.json` bump — releases are
-cut by tagging (`git describe --tags --abbrev=7`). `package.json` `version` is the
-**fallback baseline**, kept in sync with the most recent tag; it is used only when no tag
-is reachable (e.g. a fresh clone with zero tags, the state today).
+cut by tagging (`git describe --tags --abbrev=7`). Precedence in `computeVersionInfo()`:
+an explicit **`C3_RELEASE_VERSION`** override (the CI `version` input, e.g. `v0.1.0`, with a
+single leading `v` normalized off) wins; else the **git tag**; else the `package.json`
+**fallback baseline**, kept in sync with the most recent tag and used only when no tag is
+reachable (e.g. a fresh clone with zero tags). The override lets a `workflow_dispatch` run
+stamp a chosen version before the tag exists — `release:publish` then cuts that exact tag.
 
 The resolved version, the short commit (`git rev-parse --short=7`), and the build time
 (ISO 8601) are injected at **compile time** via esbuild / Bun `define`

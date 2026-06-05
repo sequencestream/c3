@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { normalizeVersion } from './artifact-name.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
@@ -38,8 +39,14 @@ export function baselineVersion() {
  */
 export function computeVersionInfo({ buildTime } = {}) {
   const baseline = baselineVersion()
-  // git tag is SoT; fall back to the package.json baseline when no tag is reachable.
-  const version = git(['describe', '--tags', '--abbrev=7']) || baseline
+  // Precedence: explicit C3_RELEASE_VERSION override (CI release cut with a chosen
+  // version, e.g. `v0.1.0`) > git tag (SoT) > package.json baseline (no tag reachable).
+  // The override is normalized (a single leading `v` stripped) so it matches the
+  // v-less convention of the baseline — packageName/notes re-prefix the `v`.
+  const override = (process.env.C3_RELEASE_VERSION || '').trim()
+  const version = override
+    ? normalizeVersion(override)
+    : git(['describe', '--tags', '--abbrev=7']) || baseline
   const commit = git(['rev-parse', '--short=7', 'HEAD']) || 'unknown'
   return { version, commit, buildTime: buildTime ?? new Date().toISOString(), baseline }
 }

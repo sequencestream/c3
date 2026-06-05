@@ -15,7 +15,7 @@ const askMock = vi.fn<(args: { prompt: string }) => Promise<string>>()
 vi.mock('../../kernel/agent/index.js', () => ({
   askOneShot: (a: { prompt: string }) => askMock(a),
 }))
-vi.mock('../../settings.js', () => ({
+vi.mock('../../kernel/agent-config/index.js', () => ({
   resolveSessionLaunch: () => ({ model: 'test-model', envOverrides: {} }),
 }))
 

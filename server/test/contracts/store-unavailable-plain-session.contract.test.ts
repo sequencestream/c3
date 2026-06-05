@@ -38,9 +38,12 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   },
 }))
 
-vi.mock('../../src/settings.js', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../src/settings.js')>('../../src/settings.js')
+// Server refactor 3/3 sank the settings lookups into kernel/{agent-config,config};
+// the stubbed seam is the same public contract, just at its new home.
+vi.mock('../../src/kernel/agent-config/index.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/kernel/agent-config/index.js')>(
+    '../../src/kernel/agent-config/index.js',
+  )
   return {
     ...actual,
     getDegradationChain: () => undefined,
@@ -53,6 +56,14 @@ vi.mock('../../src/settings.js', async () => {
       model: '',
     }),
     launchForAgent: () => ({}),
+  }
+})
+vi.mock('../../src/kernel/config/index.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/kernel/config/index.js')>(
+    '../../src/kernel/config/index.js',
+  )
+  return {
+    ...actual,
     getSocketAutoResume: () => true,
   }
 })

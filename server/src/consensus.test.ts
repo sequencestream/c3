@@ -34,11 +34,13 @@ vi.mock('./kernel/infra/child-env.js', () => ({ findClaudeExecutable: () => unde
 
 const agent = (id: string) => ({ id, name: id.toUpperCase() })
 
-vi.mock('./settings.js', () => ({
-  isConsensusEnabled: () => true,
+vi.mock('./kernel/agent-config/index.js', () => ({
   consensusVoters: () => [agent('a'), agent('b')],
   launchForAgent: () => ({}),
   resolveAgent: () => agent('decider'),
+}))
+vi.mock('./kernel/config/index.js', () => ({
+  isConsensusEnabled: () => true,
 }))
 
 import { runAskConsensus } from './consensus.js'

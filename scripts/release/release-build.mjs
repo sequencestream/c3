@@ -20,15 +20,13 @@ import { existsSync } from 'node:fs'
 import { computeVersionInfo } from './version-info.mjs'
 import { buildManifest, writeManifest } from './manifest.mjs'
 import { artifactName } from './artifact-name.mjs'
+import { KNOWN_TARGETS, DEFAULT_TARGETS } from './targets.mjs'
+import { smokeBuiltArtifacts } from './smoke.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
 
 const HARDEN_TIERS = ['none', 'basic', 'standard']
-
-// Keep this list in sync with TARGETS in server/scripts/release/build-target.mjs.
-const KNOWN_TARGETS = ['macos-arm64', 'linux-x64']
-const DEFAULT_TARGETS = ['macos-arm64', 'linux-x64']
 
 function parseArgs(argv) {
   const o = {}
@@ -107,6 +105,9 @@ console.log(`  Phase0  web build${args['skip-web'] ? ' (skipped)' : ''}`)
 console.log('  Phase1  generate-static-embed → dist/static-embed.generated.ts')
 console.log(`  Phase2  compile (parallel): ${plan.map((p) => p.target).join(', ')}`)
 for (const p of plan) console.log(`            ${p.target} → ${p.outfile}`)
+console.log(
+  `  Phase3  artifact gate (--version + headless smoke)${args['skip-smoke'] ? ' (skipped)' : ', host-runnable targets only'}`,
+)
 
 if (args['dry-run']) {
   console.log('[release:build] --dry-run: nothing executed.')
@@ -174,4 +175,16 @@ if (emitManifest) {
   writeManifest(manifestPath, manifest)
   console.log(`\n[release:build] manifest → ${manifestPath}`)
   for (const a of manifest.artifacts) console.log(`  ${a.target}  ${a.sha256}  (${a.bytes}B)`)
+}
+
+// Phase3 — artifact-level quality gate (release 5/7): for every host-runnable
+// target, assert `c3 --version` and run a headless smoke (random port → HTTP
+// probe → exit). Cross-compiled targets that can't execute here are skipped and
+// left to their platform's CI runner. `--skip-smoke` opts out (debug builds).
+if (!args['skip-smoke']) {
+  console.log('\n[release:build] Phase3 — artifact gate (--version + headless smoke)')
+  await smokeBuiltArtifacts({
+    artifacts: plan.map((p) => ({ target: p.target, path: p.outfile })),
+    log: (m) => console.log(m),
+  })
 }

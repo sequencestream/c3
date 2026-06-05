@@ -1,12 +1,12 @@
 # Non-Functional — Release & Distribution
 
-> **Status:** release 3/7. Orchestration + P0 matrix (1/7), version injection + manifest +
-> harden-tier framework (2/7), and distribution trust — SHA256SUMS + minisign + macOS ad-hoc
->
-> - `c3 verify` + notes/publish orchestration (3/7) — are live; later waves (extra platforms,
->   Apple Developer ID / notarization, Windows Authenticode, CI release workflow) fill in the
->   remaining placeholders. Source of truth — keep in sync with `scripts/release/` and
->   `server/scripts/release/`.
+> **Status:** release 5/7. Orchestration + P0 matrix (1/7), version injection + manifest +
+> harden-tier framework (2/7), distribution trust — SHA256SUMS + minisign + macOS ad-hoc +
+> `c3 verify` (3/7), and **layered quality gates** — pre-build blocking gate + artifact-level
+> headless smoke + publish final check (5/7) — are live; later waves (extra platforms, Apple
+> Developer ID / notarization, Windows Authenticode, the GitHub Actions release workflow that
+> consumes the gate order below) fill in the remaining placeholders. Source of truth — keep in
+> sync with `scripts/release/` and `server/scripts/release/`.
 
 `release` is a thin **orchestration** layer over the existing build/binary primitives.
 It does not replace `pnpm build` (esbuild CJS bundle) or `pnpm binary` (single native
@@ -30,8 +30,49 @@ committed empty stub (esbuild/dev/typecheck consume it); the Bun compile path re
 that import to the Phase1 snapshot via an `onResolve` plugin. This is what keeps the
 working tree clean across parallel targets.
 
-Quality-gate ordering beyond build (typecheck / lint / tests / smoke) is a later-wave
-placeholder; today the smoke gate is `scripts/release/release-build.test.mjs`.
+Quality-gate ordering beyond build is specified in **Quality gates** below.
+
+## Quality gates (release 5/7)
+
+Three non-overlapping gate layers, ordered by cost so a cheap red never burns an
+expensive stage. This ordering **is the spec for the CI release workflow** (a later
+wave) — `scripts/release/release.mjs` implements the same sequence locally.
+
+| #   | Gate                | Layer        | Runs                                                                      | On red                       |
+| --- | ------------------- | ------------ | ------------------------------------------------------------------------- | ---------------------------- |
+| 0   | **pregate**         | source       | `typecheck → lint → test → i18n:check → i18n:check-freeze` (strict order) | abort **before** any compile |
+| 1   | **artifact gate**   | product      | per host-runnable target: `c3 --version` + headless smoke                 | fail the build               |
+| —   | e2e (standard only) | product      | `pnpm e2e` — forced when `harden=standard`                                | fail the release             |
+| 2   | **publish gate**    | distribution | manifest ↔ SHA256SUMS ↔ on-disk sha256 agree + **all P0 targets present** | abort **before** tag / `gh`  |
+
+- **Pregate** (`release:gate`, `scripts/release/pregate.mjs`) runs first in `pnpm release`
+  and fails fast: the first non-zero gate aborts, so a red typecheck never reaches the
+  multi-platform `bun --compile`. `--skip-gate` opts out; `--dry-run` lists the plan.
+- **Artifact gate** is `release-build.mjs` **Phase3** (`scripts/release/smoke.mjs`). The
+  headless smoke starts the server on a **random free port** (`net` bind-0; the CLI rejects
+  `--port 0`), HTTP-probes `/` until it answers, then kills it. It **never invokes claude** —
+  a claude call would block CI forever (no interactive answerer), and a bare server boot
+  touches claude only when a run launches. Cross-compiled binaries can't execute on a foreign
+  host, so smoke runs **only on the host-runnable target** (`isHostRunnable`); CI smokes each
+  platform on its own OS runner. `--skip-smoke` opts out. The smoke script **is** the test
+  carrier; `release-smoke.test.mjs` covers the pure helpers (so `pnpm test` — itself the
+  pregate — stays green before any artifact exists).
+- **Publish gate** (`release:verify-dist`, `scripts/release/postgate.mjs`) runs inside
+  `publish.mjs` after signing and before the tag: it re-hashes every artifact and checks the
+  manifest, `SHA256SUMS`, and on-disk bytes all agree line-for-line, and that **every P0
+  target is present** — a half-baked or drifted set blocks the release.
+
+### Gate ownership: commit-increment vs release-full
+
+| Gate                        | Scope                         | Trigger            | Owns                                       |
+| --------------------------- | ----------------------------- | ------------------ | ------------------------------------------ |
+| husky + lint-staged         | **staged files only** (delta) | every `git commit` | `eslint --fix` + `prettier` + `i18n:check` |
+| `ci.yml`                    | whole tree                    | every push / PR    | `typecheck` + `lint` + `i18n:check`        |
+| **release pregate + gates** | whole tree + every artifact   | cutting a release  | the full table above                       |
+
+husky/lint-staged guard the **commit increment**; the release gates guard the **full
+distribution**. They deliberately don't overlap — `test` and `i18n:check-freeze` are
+release-only (too heavy for every commit).
 
 ## Platform waves
 
@@ -158,17 +199,26 @@ RELEASE_HARDEN=standard pnpm release:build          # placeholder tier (warns, b
 pnpm release:build --dry-run                        # print the plan, execute nothing
 pnpm release:sign                                    # SHA256SUMS + .sha256 + .minisig (reads manifest)
 pnpm release:notes                                   # release notes (version + top CHANGELOG section)
+pnpm release:gate                                    # pregate: typecheck→lint→test→i18n:check→check-freeze
+pnpm release:smoke -- --file=dist/c3-…               # headless smoke one artifact (or read manifest if no --file)
+pnpm release:verify-dist                              # publish final check: manifest↔SHA256SUMS↔disk + P0
 pnpm release:publish --dry-run                        # rehearse publish: plan only, no tag/gh/sign
-pnpm release --no-publish                             # build + sign + notes, no GitHub Release
-pnpm release                                          # build → notes → publish (full)
+pnpm release --no-publish                             # gate + build + sign + notes, no GitHub Release
+pnpm release --skip-gate                              # skip the source pregate (debug)
+RELEASE_HARDEN=standard pnpm release                  # additionally forces `pnpm e2e`
+pnpm release                                          # gate → build(+smoke) → notes → publish (full)
 pnpm release:keygen                                   # mint a minisign keypair
 pnpm binary                                          # native single binary (self-use quickcut)
 ```
 
 ## Entry points
 
-- Build orchestrator: `scripts/release/release-build.mjs` (`--targets`, `--harden`, `--dry-run`)
-- Top-level orchestrator: `scripts/release/release.mjs` (`--dry-run`, `--no-publish`, passthrough)
+- Build orchestrator: `scripts/release/release-build.mjs` (`--targets`, `--harden`, `--dry-run`, `--skip-smoke`; Phase3 smoke)
+- Top-level orchestrator: `scripts/release/release.mjs` (`--dry-run`, `--no-publish`, `--skip-gate`, passthrough; pregate + e2e on standard)
+- Target SoT: `scripts/release/targets.mjs` (`P0_TARGETS`, `KNOWN_TARGETS`, `hostTarget`, `isHostRunnable`)
+- Pregate (source gate): `scripts/release/pregate.mjs` (`GATES`, `runPregate`)
+- Artifact smoke: `scripts/release/smoke.mjs` (`smokeArtifact`, `smokeBuiltArtifacts`, `assertVersionOutput`, `freePort`)
+- Publish final check: `scripts/release/postgate.mjs` (`verifyDist`, `parseSha256Sums`)
 - Single-target primitive: `server/scripts/release/build-target.mjs` (`buildTarget()`, `HARDEN_TIERS`, ad-hoc codesign)
 - Version SoT helper: `scripts/release/version-info.mjs` (`computeVersionInfo`, `versionDefines`)
 - Manifest helper: `scripts/release/manifest.mjs` (`buildManifest`, `sha256File`)
@@ -179,4 +229,4 @@ pnpm binary                                          # native single binary (sel
 - Embedded pubkey + verify: `server/src/release-pubkey.ts`, `server/src/verify.ts` (`verifyArtifact`, `runVerify`), CLI `c3 verify`
 - Runtime version: `server/src/version.ts` (`versionString`)
 - Snapshot generator: `server/scripts/generate-static-embed.mjs`
-- Tests: `scripts/release/release-build.test.mjs`, `release-harden.test.mjs`, `release-sign.test.mjs` (the last cross-imports `server/src/verify.ts`, proving signer/verifier parity)
+- Tests: `scripts/release/release-build.test.mjs`, `release-harden.test.mjs`, `release-sign.test.mjs` (the last cross-imports `server/src/verify.ts`, proving signer/verifier parity), `release-smoke.test.mjs` (artifact-gate helpers + conditional real smoke)

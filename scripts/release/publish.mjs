@@ -15,6 +15,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { artifactsFromManifest, signArtifacts, secretFromEnv } from './sign.mjs'
 import { buildNotes } from './notes.mjs'
+import { verifyDist } from './postgate.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
@@ -62,6 +63,9 @@ export async function publish({ dryRun = false, noPublish = false, manifestPath:
   console.log(
     `  1. sign        → SHA256SUMS + per-artifact .sha256${hasKey ? ' + .minisig' : ' (no key → skip .minisig)'}`,
   )
+  console.log(
+    '  1b. verify     → manifest ↔ SHA256SUMS ↔ on-disk + P0 complete (abort on mismatch)',
+  )
   console.log(`  2. tag         → git tag -a ${tag}`)
   if (!noPublish) {
     console.log(`  3. gh release  → gh release create ${tag} (${uploads.length} files)`)
@@ -91,8 +95,19 @@ export async function publish({ dryRun = false, noPublish = false, manifestPath:
     log: (m) => console.log(m),
   })
 
+  // 1b. final check (release 5/7) — manifest ↔ SHA256SUMS ↔ on-disk + P0 complete.
+  //     Runs after signing (needs SHA256SUMS) and before anything irreversible.
+  console.log('\n[publish] verify-dist final check…')
+  try {
+    verifyDist({ manifestPath, log: (m) => console.log(m) })
+  } catch (err) {
+    console.error(`[publish] ✗ verify-dist failed: ${err.message}`)
+    console.error('[publish] aborting — no tag, no GitHub Release.')
+    process.exit(1)
+  }
+
   if (noPublish) {
-    console.log('[publish] --no-publish: signed locally; no tag, no GitHub Release.')
+    console.log('[publish] --no-publish: signed + verified locally; no tag, no GitHub Release.')
     return { dryRun: false, noPublish: true, tag, uploads }
   }
 

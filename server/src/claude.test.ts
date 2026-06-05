@@ -5,7 +5,7 @@ import {
   computeSideEffectPending,
   decideSocketResume,
   type ToolFlowItem,
-} from './kernel/agent/index.js'
+} from './kernel/run/resume.js'
 
 describe('isDegradableError', () => {
   // -- Rate limit --

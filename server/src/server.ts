@@ -13,11 +13,8 @@ import type {
   ServerToClient,
 } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import {
-  runClaude,
-  REQUIREMENT_DISALLOWED_TOOLS,
-  decideSocketResume,
-} from './kernel/agent/index.js'
+import { runClaude, REQUIREMENT_DISALLOWED_TOOLS } from './kernel/agent/index.js'
+import { decideSocketResume } from './kernel/run/resume.js'
 import { addWorkspace, getActiveSessionId, listWorkspaces, setSessionMode } from './state.js'
 import { listWorkspaceSessions, sessionExists } from './sessions.js'
 import {

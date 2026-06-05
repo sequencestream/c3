@@ -14,10 +14,36 @@
 import { chmodSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { computeVersionInfo, versionDefines } from '../../../scripts/release/version-info.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const serverDir = resolve(here, '..', '..') // server/
 const repoRoot = resolve(serverDir, '..')
+
+// Hardening tiers (release 2/7) — govern the native binary build only. Motivation is
+// distribution trust >> obfuscation; standard is a SPEC-GATED placeholder (see
+// specs/non-functional/release.md "Hardening tiers"): no spec entry → no standard tier,
+// so it currently builds with basic behavior and warns. None ≈ the tsx dev path.
+export const HARDEN_TIERS = {
+  none: { minify: false, sourcemap: 'inline' },
+  basic: { minify: true, sourcemap: 'none' },
+  standard: { minify: true, sourcemap: 'none' }, // placeholder == basic; no obfuscation yet
+}
+
+export function resolveHarden(harden) {
+  if (!(harden in HARDEN_TIERS)) {
+    throw new Error(
+      `[build-target] unknown harden tier "${harden}"; known: ${Object.keys(HARDEN_TIERS).join(', ')}`,
+    )
+  }
+  if (harden === 'standard') {
+    console.warn(
+      '[build-target] harden="standard" has no spec entry yet — building with BASIC behavior ' +
+        '(no obfuscation). See release.md "no spec entry, no standard tier".',
+    )
+  }
+  return HARDEN_TIERS[harden]
+}
 
 // Friendly target name → Bun --target triple. P0 wave: macOS-arm64 + Linux-x64-glibc.
 export const TARGETS = {
@@ -39,9 +65,20 @@ export function defaultEmbedPath() {
  * @param {string} o.target   friendly name (key of TARGETS) or a raw bun-* triple
  * @param {string} [o.outfile]   absolute output path (default dist/c3-<friendly>)
  * @param {string} [o.embedPath] absolute path to the generated static-embed snapshot
- * @param {string} [o.harden]    hardening tier — P0 placeholder, only 'default' honored
+ * @param {string} [o.harden]    hardening tier — none | basic (default) | standard
+ * @param {string} [o.version]   injected version (else computed from git tag / baseline)
+ * @param {string} [o.commit]    injected short commit (else computed)
+ * @param {string} [o.buildTime] injected ISO build time (else now)
  */
-export async function buildTarget({ target, outfile, embedPath, harden = 'default' }) {
+export async function buildTarget({
+  target,
+  outfile,
+  embedPath,
+  harden = 'basic',
+  version,
+  commit,
+  buildTime,
+}) {
   const bunTarget = TARGETS[target] ?? target
   const friendly =
     Object.keys(TARGETS).find((k) => TARGETS[k] === bunTarget) ??
@@ -50,11 +87,13 @@ export async function buildTarget({ target, outfile, embedPath, harden = 'defaul
   const embed = embedPath ?? defaultEmbedPath()
   const entry = resolve(serverDir, 'src', 'cli.ts')
 
-  if (harden !== 'default') {
-    console.warn(
-      `[build-target] harden="${harden}" is a P0 placeholder; building with default tier.`,
-    )
-  }
+  const tier = resolveHarden(harden)
+  // Use the threaded-down version info when present (orchestrator computes it once so
+  // every artifact shares one build time); otherwise compute locally (standalone run).
+  const info = computeVersionInfo({ buildTime })
+  if (version) info.version = version
+  if (commit) info.commit = commit
+
   if (!existsSync(embed)) {
     throw new Error(
       `[build-target] embed snapshot missing: ${embed}\n` +
@@ -71,13 +110,19 @@ export async function buildTarget({ target, outfile, embedPath, harden = 'defaul
     },
   }
 
-  console.log(`[build-target] target=${friendly} (${bunTarget}) → ${out}`)
+  console.log(
+    `[build-target] target=${friendly} (${bunTarget}) harden=${harden} → ${out} ` +
+      `[v${info.version} ${info.commit}]`,
+  )
   // NB: --bytecode is intentionally never enabled — cross-compile + bytecode segfaults
-  // (oven-sh/bun#18416). --minify is kept. Bun.build defaults bytecode off.
+  // (oven-sh/bun#18416). Bun.build defaults bytecode off. minify/sourcemap come from the
+  // harden tier; version constants are injected via define.
   const result = await Bun.build({
     entrypoints: [entry],
     target: bunTarget,
-    minify: true,
+    minify: tier.minify,
+    sourcemap: tier.sourcemap,
+    define: versionDefines(info),
     compile: { target: bunTarget, outfile: out },
     plugins: [redirectStub],
   })
@@ -120,6 +165,9 @@ if (isMain) {
     target,
     outfile: a.outfile ? resolve(a.outfile) : undefined,
     embedPath: a.embed ? resolve(a.embed) : undefined,
-    harden: a.harden ?? 'default',
+    harden: a.harden || process.env.RELEASE_HARDEN || 'basic',
+    version: a['version-str'],
+    commit: a.commit,
+    buildTime: a['build-time'],
   })
 }

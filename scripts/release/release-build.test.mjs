@@ -79,9 +79,12 @@ describe('built native product (conditional)', () => {
   const candidates = ['macos-arm64', 'linux-x64'].map((t) => defaultOutfile(t))
   const product = candidates.find((p) => existsSync(p))
 
-  it.runIf(product)('runs --version and prints a semver', () => {
+  it.runIf(product)('runs --version and prints version + commit + build time', () => {
     const { stdout, status } = spawnSync(product, ['--version'], { encoding: 'utf-8' })
     expect(status).toBe(0)
-    expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+/)
+    const out = stdout.trim()
+    expect(out).toMatch(/^v?\d+\.\d+\.\d+/) // git-describe or package.json baseline
+    expect(out).toMatch(/commit [0-9a-f]{7}/)
+    expect(out).toMatch(/built \S/)
   })
 })

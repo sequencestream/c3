@@ -3,13 +3,14 @@ import { Command } from 'commander'
 import { resolve } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 import { startServer } from './server.js'
+import { versionString } from './version.js'
 
 const program = new Command()
 
 program
   .name('c3')
   .description('Claude Code Center - browser UI for Claude Code with per-tool permission prompts')
-  .version('0.1.0')
+  .version(versionString())
 
 program
   .command('start', { isDefault: true })

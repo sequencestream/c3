@@ -1,11 +1,15 @@
 import { build } from 'esbuild'
 import { rmSync, mkdirSync, chmodSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { computeVersionInfo, versionDefines } from '../scripts/release/version-info.mjs'
 
 const outDir = resolve(import.meta.dirname, 'dist')
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })
 
+// Version injection (release 2/7). This is the node bundle (`pnpm start`); harden
+// tiers govern only the native binaries (release:build), so only the version defines
+// apply here — minify/sourcemap are left as-is.
 await build({
   entryPoints: [resolve(import.meta.dirname, 'src/cli.ts')],
   bundle: true,
@@ -13,6 +17,7 @@ await build({
   target: 'node20',
   format: 'cjs',
   outfile: resolve(outDir, 'cli.cjs'),
+  define: versionDefines(computeVersionInfo()),
   external: [
     // Native bindings the SDK may dlopen at runtime
     '@anthropic-ai/claude-agent-sdk',

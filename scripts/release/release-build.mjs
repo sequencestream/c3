@@ -17,9 +17,13 @@ import { spawn, spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
+import { computeVersionInfo } from './version-info.mjs'
+import { buildManifest, writeManifest } from './manifest.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
+
+const HARDEN_TIERS = ['none', 'basic', 'standard']
 
 // Keep this list in sync with TARGETS in server/scripts/release/build-target.mjs.
 const KNOWN_TARGETS = ['macos-arm64', 'linux-x64']
@@ -68,6 +72,23 @@ if (unknown.length) {
   process.exit(1)
 }
 
+// Harden tier: --harden flag > RELEASE_HARDEN env > 'basic' (release 2/7).
+// `||` so an empty string (set-but-blank env) falls through to the default.
+const harden = String(args.harden || process.env.RELEASE_HARDEN || 'basic')
+if (!HARDEN_TIERS.includes(harden)) {
+  console.error(`[release:build] unknown harden tier: ${harden}`)
+  console.error(`[release:build] known: ${HARDEN_TIERS.join(', ')}`)
+  process.exit(1)
+}
+
+// Compute the version info ONCE here so every target (and the manifest) share one
+// version/commit/build-time. SoT is the git tag; package.json is the fallback baseline.
+const versionInfo = computeVersionInfo()
+// Manifest is a multi-artifact distribution-trust record — emitted for basic/standard,
+// skipped for none.
+const emitManifest = harden !== 'none'
+const manifestPath = resolve(repoRoot, 'dist', 'manifest.json')
+
 const embedPath = resolve(repoRoot, 'dist', 'static-embed.generated.ts')
 const buildTargetScript = resolve(repoRoot, 'server', 'scripts', 'release', 'build-target.mjs')
 
@@ -77,6 +98,9 @@ const plan = targets.map((t) => ({
 }))
 
 console.log('[release:build] plan:')
+console.log(`  version  ${versionInfo.version} (commit ${versionInfo.commit})`)
+console.log(`  harden   ${harden}`)
+console.log(`  manifest ${emitManifest ? `write → ${manifestPath}` : 'skipped (harden=none)'}`)
 console.log(`  Phase0  web build${args['skip-web'] ? ' (skipped)' : ''}`)
 console.log('  Phase1  generate-static-embed → dist/static-embed.generated.ts')
 console.log(`  Phase2  compile (parallel): ${plan.map((p) => p.target).join(', ')}`)
@@ -115,6 +139,10 @@ const results = await Promise.allSettled(
         `--target=${p.target}`,
         `--outfile=${p.outfile}`,
         `--embed=${embedPath}`,
+        `--harden=${harden}`,
+        `--version-str=${versionInfo.version}`,
+        `--commit=${versionInfo.commit}`,
+        `--build-time=${versionInfo.buildTime}`,
       ],
       `compile ${p.target}`,
     ),
@@ -133,3 +161,15 @@ if (failed.length) {
 
 console.log('\n[release:build] OK — all targets built:')
 for (const p of plan) console.log(`  ${p.target} → ${p.outfile}`)
+
+// Manifest (release 2/7) — per-artifact sha256 + provenance, for verify-now trust.
+if (emitManifest) {
+  const manifest = buildManifest({
+    versionInfo,
+    harden,
+    artifacts: plan.map((p) => ({ target: p.target, file: p.outfile })),
+  })
+  writeManifest(manifestPath, manifest)
+  console.log(`\n[release:build] manifest → ${manifestPath}`)
+  for (const a of manifest.artifacts) console.log(`  ${a.target}  ${a.sha256}  (${a.bytes}B)`)
+}

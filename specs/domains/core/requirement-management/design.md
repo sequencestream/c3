@@ -143,7 +143,7 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   `gate==='requirement'` `canUseTool` **denies by default**, routed by the pure, exported
   `classifyRequirementTool(toolName)` → `allow` | `confirm-save` | `ask` | `deny` (unit-tested in
   `requirement-gate.test.ts`, since the live closure is otherwise e2e-only): read-class tools
-  (`REQUIREMENT_READ_TOOLS` = Read/Grep/Glob/LS/NotebookRead/WebFetch/WebSearch/TodoWrite) **and**
+  (`REQUIREMENT_READ_TOOLS` = Read/Grep/Glob/LS/NotebookRead/WebFetch/WebSearch/TaskCreate/TaskList/TaskUpdate/TaskGet) **and**
   the two read-only c3 query tools (`REQUIREMENT_QUERY_TOOLS` = `mcp__c3__find_requirements` /
   `mcp__c3__view_requirement`, RM-R19) → `allow` (auto-allow, no prompt — they only read the agent's
   own project ledger); `mcp__c3__save_requirements` → `confirm-save` (raises a `permission_request`);

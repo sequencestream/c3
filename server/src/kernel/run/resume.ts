@@ -30,7 +30,10 @@ const SIDE_EFFECT_FREE_TOOLS = new Set([
   'NotebookRead',
   'WebFetch',
   'WebSearch',
-  'TodoWrite',
+  'TaskCreate',
+  'TaskList',
+  'TaskUpdate',
+  'TaskGet',
   'AskUserQuestion',
 ])
 

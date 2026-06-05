@@ -194,7 +194,10 @@ const ONESHOT_DISALLOWED_TOOLS = [
   'NotebookRead',
   'WebFetch',
   'WebSearch',
-  'TodoWrite',
+  'TaskCreate',
+  'TaskList',
+  'TaskUpdate',
+  'TaskGet',
   'Agent',
   'AskUserQuestion',
 ]

@@ -87,10 +87,16 @@ if (!args.skipGate) {
 // 1. build (+ manifest + Phase3 artifact smoke gate)
 await run('release-build.mjs', [...args.passthrough, ...dry])
 
-// 2. e2e — forced on the `standard` harden tier (placeholder tier still smokes e2e).
+// 2. e2e — forced on the `standard` harden tier (release 7/7). The e2e is the
+//    logic-regression hard evidence for the obfuscated bundle: it spawns
+//    `bun dist/.obf-stage/<hostTarget>.js` (produced by the standard build above)
+//    instead of `node server/dist/cli.cjs`. If the obfuscator rewrote something
+//    it shouldn't have, the e2e will catch it; a red e2e aborts the release
+//    before sign/publish.
 if (runE2e) {
-  if (args.dryRun) console.log('[release] --dry-run: would run `pnpm e2e` (standard tier).')
-  else await run2('pnpm', ['e2e'])
+  if (args.dryRun)
+    console.log('[release] --dry-run: would run `pnpm e2e --obfuscated` (standard tier).')
+  else await run2('pnpm', ['e2e', '--obfuscated'])
 }
 
 // 3. notes → dist/RELEASE_NOTES.md (skipped in dry-run; build produced no manifest then)

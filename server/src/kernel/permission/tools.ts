@@ -56,7 +56,10 @@ export const REQUIREMENT_READ_TOOLS = new Set([
   'NotebookRead',
   'WebFetch',
   'WebSearch',
-  'TodoWrite',
+  'TaskCreate',
+  'TaskList',
+  'TaskUpdate',
+  'TaskGet',
 ])
 
 /**

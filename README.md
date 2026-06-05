@@ -81,17 +81,30 @@ signature `.minisig`; an aggregate `SHA256SUMS`(`.minisig`) covers all of them.
 | Platform                                       | Artifact                        | Sidecars               |
 | ---------------------------------------------- | ------------------------------- | ---------------------- |
 | macOS arm64 (P0)                               | `c3-v{version}-macos-arm64`     | `.sha256` + `.minisig` |
+| macOS x64 — Intel (P0)                         | `c3-v{version}-macos-x64`       | `.sha256` + `.minisig` |
 | Linux x64 (P0)                                 | `c3-v{version}-linux-x64`       | `.sha256` + `.minisig` |
-| macOS x64 (P1)                                 | `c3-v{version}-macos-x64`       | `.sha256` + `.minisig` |
 | Windows x64 (P1) ⚠️ **experimental**           | `c3-v{version}-windows-x64.exe` | `.sha256` + `.minisig` |
 | _(more platforms land in later release waves)_ |                                 |
 
-> **⚠️ Windows x64 is experimental.** The Windows binary is cross-compiled and the platform
-> code paths (`claude` discovery via `where`, `%USERPROFILE%\.c3` home, `bun:sqlite` startup
-> probe) are in place, but it has **not yet passed a real headless smoke on a windows-latest
-> runner**. It is signed and shipped alongside the rest, but treat it as unverified until a
-> future release wave runs that smoke and drops the experimental tag. P0/P1 macOS + Linux
-> artifacts are smoke-verified on their own OS.
+All artifacts are built and smoke-verified on their **native OS** via the
+[`.github/workflows/release.yml`](.github/workflows/release.yml) native matrix: a `needs:`
+chain physically guarantees the pregate → build → smoke → verify-dist → provenance → publish
+order, native builds turn on `--bytecode` (faster cold start, lower memory peak) with
+cross-compile kept off (oven-sh/bun#18416 segfault), and macOS runners perform the ad-hoc
+codesign for real (not a no-op as on a non-darwin host). A SLSA L3 provenance attestation
+(`.intoto.jsonl`, OIDC keyless) is generated per artifact and uploaded to the release for
+`gh attestation verify`. P0 completeness is enforced by `release:verify-dist` — a missing
+P0 blocks the publish.
+
+> **⚠️ Windows x64 is experimental.** The Windows binary is built and smoke-tested on a
+> `windows-latest` runner (Windows platform code paths — `claude` discovery via `where`,
+> `%USERPROFILE%\.c3` home, `bun:sqlite` startup probe — are merged), but it is not yet
+> considered first-class until the matrix smoke is green over multiple runs. It is signed
+> and shipped alongside the rest, but the manifest entry still carries `"experimental": true`
+> and the README marks it ⚠️. De-experimental is the one-line change of removing
+> `'windows-x64'` from `EXPERIMENTAL_TARGETS` in `scripts/release/targets.mjs` once the
+> matrix smoke is stably green. The other P0 macOS + Linux artifacts are smoke-verified on
+> their own OS.
 
 **minisign public key** (also embedded in the binary for `c3 verify`):
 
@@ -112,6 +125,51 @@ Verify a download — either with the bundled self-check (no extra tools):
 ```bash
 minisign -Vm c3-v0.2.0-macos-arm64 -P RWQGEiNpXN1t9VEX2lXZab7nHaR+gfjfPYcCYN6Bxyid5NkuQK/Gme+l
 ```
+
+## Hardening tiers (release 7/7)
+
+`RELEASE_HARDEN` (env) or `--harden=` selects a hardening tier for the native binaries.
+Default is **`basic`** — minify + strip + manifest. The **standard** tier adds an opt-in
+obfuscation pass; the other two tiers are unchanged. See `specs/non-functional/release.md`
+"Hardening tiers" for the full table and `specs/non-functional/security.md` "Non-goal:
+hardening" for the full NOT-doing list.
+
+```bash
+pnpm release:build                                  # default: basic (minify + manifest, no obfuscation)
+RELEASE_HARDEN=standard pnpm release:build          # opt-in: string-array + identifier rename (release 7/7)
+RELEASE_HARDEN=standard pnpm release                 # additionally forces `pnpm e2e --obfuscated` as logic-regression hard evidence
+```
+
+**Standard tier (release 7/7) — what it does:**
+
+- Runs `javascript-obfuscator` between bundling and compiling (string-array + identifier
+  rename only — see `server/scripts/release/obfuscate.mjs` `OBFUSCATOR_OPTIONS` for the
+  locked set).
+- Source maps are written to `dist/maps/<target>.js.map` (gitignored, local-only; **not**
+  uploaded to GitHub Releases).
+- E2E suite is forced with `--obfuscated`, booting `bun dist/.obf-stage/<hostTarget>.js`
+  instead of `node server/dist/cli.cjs` — proves the obfuscator didn't break the protocol
+  flow.
+- Graceful fallback: if obfuscation throws or times out, the artifact ships as the
+  un-obfuscated minified bundle, the manifest stamps `obfuscation: { applied: false }`
+  for that artifact, and the build keeps going (exit 0, release is NOT blocked).
+
+**Standard tier — what it does NOT do** (each row in the full table in
+`specs/non-functional/security.md` has a "why"):
+
+- ❌ Control-flow flattening (e2e regressions hard to diagnose; zero defensive value)
+- ❌ String encryption (redundant with string-array; +5–10% startup)
+- ❌ Object-key transformation (breaks runtime dispatch)
+- ❌ `selfDefending` / anti-debug (false-positives CI; trivially bypassed)
+- ❌ UPX packing (`upx -d` reverses it in ~1s; triggers Defender false positives)
+- ❌ License / activation checks (conflicts with **SEC-6**; c3 has no server to validate against)
+- ❌ Anti-tamper / self-integrity-check (redundant with the manifest sha256 + minisign chain)
+
+> **Code signing certificates** (macOS Developer ID + notarization, Windows Authenticode
+> with signtool) are **deferred to release 8/7** — they require real certificates in
+> GitHub Secrets, which we don't have yet. Until then, macOS users clear Gatekeeper
+> quarantine with `xattr -dr com.apple.quarantine` (already documented above) and Windows
+> users see the standard SmartScreen warning.
 
 > **macOS Gatekeeper**: binaries are **ad-hoc** signed (no Apple Developer ID / notarization
 > yet), so first launch is blocked by quarantine. After verifying the signature, clear it:

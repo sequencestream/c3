@@ -16,7 +16,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { computeVersionInfo } from './version-info.mjs'
 import { buildManifest, writeManifest } from './manifest.mjs'
 import { artifactName } from './artifact-name.mjs'
@@ -107,11 +107,15 @@ const plan = targets.map((t) => ({
 
 console.log('[release:build] plan:')
 console.log(`  version  ${versionInfo.version} (commit ${versionInfo.commit})`)
-console.log(`  harden   ${harden}`)
+console.log(
+  `  harden   ${harden}${harden === 'standard' ? ' (string-array + identifier-rename; fallback = bare compile on failure)' : ''}`,
+)
 console.log(`  manifest ${emitManifest ? `write → ${manifestPath}` : 'skipped (harden=none)'}`)
 console.log(`  Phase0  web build${args['skip-web'] ? ' (skipped)' : ''}`)
 console.log('  Phase1  generate-static-embed → dist/static-embed.generated.ts')
-console.log(`  Phase2  compile (parallel): ${plan.map((p) => p.target).join(', ')}`)
+console.log(
+  `  Phase2  bundle${harden === 'standard' ? ' → obfuscate' : ''} → compile (parallel): ${plan.map((p) => p.target).join(', ')}`,
+)
 for (const p of plan)
   console.log(`            ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile}`)
 console.log(
@@ -141,6 +145,7 @@ await run(
 
 // Phase2 — fan-out compile (parallel, read-only on the snapshot)
 console.log('\n[release:build] Phase2 — compile (parallel)')
+const stageDir = resolve(repoRoot, 'dist', '.obf-stage')
 const results = await Promise.allSettled(
   plan.map((p) =>
     run(
@@ -157,7 +162,20 @@ const results = await Promise.allSettled(
         `--build-time=${versionInfo.buildTime}`,
       ],
       `compile ${p.target}`,
-    ),
+    ).then(() => {
+      // Read the per-target sidecar that buildTarget writes to
+      // dist/.obf-stage/<target>.result.json. It carries the obfuscation result
+      // (release 7/7) so the manifest can stamp it for audit. The sidecar is
+      // optional — if it's missing (older buildTarget, or buildTarget decided
+      // not to write one), we default to obfuscated:false.
+      const rp = resolve(stageDir, `${p.target}.result.json`)
+      if (!existsSync(rp)) return { obfuscated: false, obfDurationMs: 0 }
+      try {
+        return JSON.parse(readFileSync(rp, 'utf-8'))
+      } catch {
+        return { obfuscated: false, obfDurationMs: 0 }
+      }
+    }),
   ),
 )
 
@@ -185,13 +203,24 @@ if (blockingFailed.length) {
 
 // The targets that actually produced an artifact — drop dropped experimentals so the
 // manifest and smoke gate only see real outputs.
-const builtPlan = plan.filter((p) => !experimentalFailed.some((f) => f.t === p.target))
+const builtPlan = plan
+  .filter((p) => !experimentalFailed.some((f) => f.t === p.target))
+  .map((p) => {
+    // Find the matching fulfilled result; default obfuscated:false on miss.
+    const r = results[plan.indexOf(p)]
+    const obf = r.status === 'fulfilled' ? r.value : { obfuscated: false, obfDurationMs: 0 }
+    return { ...p, obfuscated: obf.obfuscated === true, obfDurationMs: obf.obfDurationMs ?? 0 }
+  })
 
 console.log('\n[release:build] OK — all targets built:')
-for (const p of builtPlan)
-  console.log(`  ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile}`)
+for (const p of builtPlan) {
+  const obfTag = harden === 'standard' ? ` obfuscated=${p.obfuscated}` : ''
+  console.log(`  ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile}${obfTag}`)
+}
 
-// Manifest (release 2/7) — per-artifact sha256 + provenance, for verify-now trust.
+// Manifest (release 2/7, obfuscation block added 7/7) — per-artifact sha256 + provenance,
+// for verify-now trust. The standard tier stamps obfuscation.applied per artifact; the
+// basic/none tiers omit the block (v1 byte-identical output).
 if (emitManifest) {
   const manifest = buildManifest({
     versionInfo,
@@ -200,11 +229,18 @@ if (emitManifest) {
       target: p.target,
       file: p.outfile,
       experimental: p.experimental,
+      obfuscated: p.obfuscated,
+      obfDurationMs: p.obfDurationMs,
     })),
   })
   writeManifest(manifestPath, manifest)
   console.log(`\n[release:build] manifest → ${manifestPath}`)
-  for (const a of manifest.artifacts) console.log(`  ${a.target}  ${a.sha256}  (${a.bytes}B)`)
+  for (const a of manifest.artifacts) {
+    const obfTag = a.obfuscation
+      ? ` obf=${a.obfuscation.applied}${a.obfuscation.applied && a.obfuscation.durationMs ? ` (${a.obfuscation.durationMs}ms)` : ''}`
+      : ''
+    console.log(`  ${a.target}  ${a.sha256}  (${a.bytes}B)${obfTag}`)
+  }
 }
 
 // Phase3 — artifact-level quality gate (release 5/7): for every host-runnable

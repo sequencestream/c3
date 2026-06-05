@@ -35,13 +35,17 @@ describe('targets', () => {
     expect(isHostRunnable('windows-x64', 'win32', 'x64')).toBe(true)
   })
 
-  it('P0 is the two-platform matrix', () => {
-    expect(P0_TARGETS).toEqual(['macos-arm64', 'linux-x64'])
+  it('P0 is the three-platform matrix (release 6/7 promoted macos-x64)', () => {
+    // release 6/7: macos-x64 was promoted from P1 to P0 because the GH Actions native
+    // matrix runs it on a real macos-13 (Intel) runner and the smoke is green there.
+    expect(P0_TARGETS).toEqual(['macos-arm64', 'macos-x64', 'linux-x64'])
   })
 
-  it('P1 adds macos-x64 + windows-x64; KNOWN_TARGETS is the P0+P1 union', () => {
-    expect(P1_TARGETS).toEqual(['macos-x64', 'windows-x64'])
-    expect(KNOWN_TARGETS).toEqual(['macos-arm64', 'linux-x64', 'macos-x64', 'windows-x64'])
+  it('P1 is empty in 6/7; KNOWN_TARGETS equals P0 (windows-x64 de-experimental next wave)', () => {
+    // P1 set is reserved for the next de-experimental candidate. macos-x64 moved to P0;
+    // windows-x64 is still the only experimental. The slot is intentionally empty.
+    expect(P1_TARGETS).toEqual([])
+    expect(KNOWN_TARGETS).toEqual(['macos-arm64', 'macos-x64', 'linux-x64'])
   })
 
   it('only windows-x64 is experimental (smoke-unverified on its OS)', () => {

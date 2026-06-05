@@ -207,7 +207,10 @@ describe('isSideEffectTool (auto-resume gate allowlist — AS-R19)', () => {
       'NotebookRead',
       'WebFetch',
       'WebSearch',
-      'TodoWrite',
+      'TaskCreate',
+      'TaskList',
+      'TaskUpdate',
+      'TaskGet',
       'AskUserQuestion',
     ]) {
       expect(isSideEffectTool(t)).toBe(false)

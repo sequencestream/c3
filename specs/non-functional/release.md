@@ -1,15 +1,22 @@
 # Non-Functional — Release & Distribution
 
-> **Status:** release 5/7 + 4/7. Orchestration + P0 matrix (1/7), version injection + manifest +
-> harden-tier framework (2/7), distribution trust — SHA256SUMS + minisign + macOS ad-hoc +
-> `c3 verify` (3/7), **layered quality gates** — pre-build blocking gate + artifact-level
-> headless smoke + publish final check (5/7), and the **P1 platform wave + Windows branches**
-> — macOS-x64 + Windows-x64 in the matrix, Windows platform code paths, Windows-x64 shipping
-> `⚠️experimental` until a real windows-latest smoke is green (4/7) — are live; later waves
-> (more platforms, Apple Developer ID / notarization, Windows Authenticode, the GitHub Actions
-> release workflow that consumes the gate order below and runs the windows-latest smoke that
-> de-experimentalizes Windows) fill in the remaining placeholders. Source of truth — keep in
-> sync with `scripts/release/` and `server/scripts/release/`.
+> **Status:** release 7/7 + 6/7 + 5/7 + 4/7. Orchestration + P0 matrix (1/7), version injection
+>
+> - manifest + harden-tier framework (2/7), distribution trust — SHA256SUMS + minisign +
+>   macOS ad-hoc + `c3 verify` (3/7), **layered quality gates** — pre-build blocking gate +
+>   artifact-level headless smoke + publish final check (5/7), the **P1 platform wave +
+>   Windows branches** — macOS-x64 + Windows-x64 in the matrix, Windows platform code paths
+>   (4/7), the **GH Actions native matrix** — workflow with `needs:` chain physically enforcing
+>   the five-layer gate order, bytecode auto-on for native host builds (cross-compile kept off,
+>   oven-sh/bun#18416), macOS ad-hoc codesign runs on darwin runners for real, SLSA provenance
+>   (P1) via OIDC keyless, `macos-x64` promoted from P1 to P0 (6/7) — and the **standard
+>   obfuscation tier (7/7)** — `javascript-obfuscator` with string-array + identifier rename,
+>   e2e/smoke as logic-regression hard evidence, graceful fallback to bare compile on failure,
+>   manifest `v1.1` per-artifact `obfuscation.applied` field, source maps local-only — are
+>   live. macOS notarization (Developer ID + notarytool) and Windows Authenticode
+>   (signtool + PFX) are deferred to **release 8/7** — they need real certificates in
+>   GitHub Secrets, which we don't have yet. Source of truth — keep in sync with
+>   `scripts/release/`, `server/scripts/release/`, and `.github/workflows/release.yml`.
 
 `release` is a thin **orchestration** layer over the existing build/binary primitives.
 It does not replace `pnpm build` (esbuild CJS bundle) or `pnpm binary` (single native
@@ -41,12 +48,12 @@ Three non-overlapping gate layers, ordered by cost so a cheap red never burns an
 expensive stage. This ordering **is the spec for the CI release workflow** (a later
 wave) — `scripts/release/release.mjs` implements the same sequence locally.
 
-| #   | Gate                | Layer        | Runs                                                                      | On red                       |
-| --- | ------------------- | ------------ | ------------------------------------------------------------------------- | ---------------------------- |
-| 0   | **pregate**         | source       | `typecheck → lint → test → i18n:check → i18n:check-freeze` (strict order) | abort **before** any compile |
-| 1   | **artifact gate**   | product      | per host-runnable target: `c3 --version` + headless smoke                 | fail the build               |
-| —   | e2e (standard only) | product      | `pnpm e2e` — forced when `harden=standard`                                | fail the release             |
-| 2   | **publish gate**    | distribution | manifest ↔ SHA256SUMS ↔ on-disk sha256 agree + **all P0 targets present** | abort **before** tag / `gh`  |
+| #   | Gate                | Layer        | Runs                                                                                               | On red                       |
+| --- | ------------------- | ------------ | -------------------------------------------------------------------------------------------------- | ---------------------------- |
+| 0   | **pregate**         | source       | `typecheck → lint → test → i18n:check → i18n:check-freeze` (strict order)                          | abort **before** any compile |
+| 1   | **artifact gate**   | product      | per host-runnable target: `c3 --version` + headless smoke                                          | fail the build               |
+| —   | e2e (standard only) | product      | `pnpm e2e --obfuscated` — obfuscated server bundle as logic-regression hard evidence (release 7/7) | fail the release             |
+| 2   | **publish gate**    | distribution | manifest ↔ SHA256SUMS ↔ on-disk sha256 agree + **all P0 targets present**                          | abort **before** tag / `gh`  |
 
 - **Pregate** (`release:gate`, `scripts/release/pregate.mjs`) runs first in `pnpm release`
   and fails fast: the first non-zero gate aborts, so a red typecheck never reaches the
@@ -77,26 +84,112 @@ husky/lint-staged guard the **commit increment**; the release gates guard the **
 distribution**. They deliberately don't overlap — `test` and `i18n:check-freeze` are
 release-only (too heavy for every commit).
 
+## CI: GH Actions native matrix (release 6/7)
+
+The `.github/workflows/release.yml` workflow executes the five-layer gate order on real
+GH Actions runners and uses `needs:` to **physically** enforce phase sequencing — a red
+upstream job skips every downstream job. This is what unlocks the bytecodes + macOS
+ad-hoc + SLSA gains (see "Bytecode on native" and "SLSA provenance" below): each target
+is built on its **native OS runner** (`ubuntu-latest` / `macos-14` / `macos-13` /
+`windows-latest`), so cross-compile is a non-issue and bytecode auto-turns on.
+
+```text
+pregate (ubuntu-latest)
+  └─ typecheck → lint → test → i18n:check → i18n:check-freeze
+build:linux-x64      (ubuntu-latest)     needs: [pregate]
+build:macos-arm64    (macos-14)          needs: [pregate]
+build:macos-x64      (macos-13)          needs: [pregate]
+build:windows-x64    (windows-latest)    needs: [pregate]    ⚠️experimental
+  └─ pnpm release:build --targets=<one> --skip-smoke --harden=basic
+  └─ ad-hoc codesign on darwin runners (no-op on linux/windows)
+  └─ actions/upload-artifact@v4 → c3-<target>
+smoke:<target>       (same OS as build)  needs: [build:<target>]
+  └─ pnpm release:smoke --file=<artifact>  (--version + headless HTTP probe)
+verify-dist          (ubuntu-latest)     needs: [smoke:linux-x64, smoke:macos-arm64,
+                                                        smoke:macos-x64, smoke:windows-x64]
+  └─ download all 4 artifacts → postgate (manifest↔SHA256SUMS↔disk + P0)
+provenance           (ubuntu-latest)     needs: [verify-dist]
+  └─ actions/attest-build-provenance@v2 × 4 (OIDC keyless; SLSA L3)
+publish              (ubuntu-latest)     needs: [provenance]
+  └─ pnpm release:publish (sign + verify-dist re-check + tag + gh release)
+```
+
+Phase ordering guarantees from `needs:`:
+
+- A red `pregate` skips all four `build:` jobs (no cross-compile attempted on a red source tree).
+- A red `build:<target>` skips its matching `smoke:<target>`, which transitively skips `verify-dist`.
+- A red `verify-dist` skips `provenance` and `publish` (no tag, no `gh`).
+- A red `provenance` skips `publish`.
+
+The workflow runs on `workflow_dispatch` (manual release entry) and `push tags: 'v*'`
+(re-publish re-verify). `workflow_dispatch` has an optional `skip_publish` input that
+stops at the sign+verify-dist step without cutting a tag or GitHub Release.
+
+Local `pnpm release` and CI share the **same node scripts** (`release:build`,
+`release:smoke`, `release:verify-dist`, `release:publish`) — the matrix is just a fan-out
+carrier, not a second implementation.
+
+## Bytecode on native (release 6/7)
+
+Bun `--bytecode` (Bun.build `bytecode: true`) pre-compiles JS to bytecode, shaving a few
+hundred ms off cold start and dropping memory peak. **It segfaults under cross-compile**
+(oven-sh/bun#18416), so it has to be off whenever the bun target is not the host's. The
+single gate is `isHostRunnable(friendly)` inside `buildTarget()`:
+
+- `bytecode: true` when the target's host = the build host (native).
+- `bytecode: false` otherwise (cross-compile safety belt, never the default-on path).
+
+The GH Actions matrix puts each target on its native OS runner, so every CI build is
+native and bytecode turns on automatically. The local `pnpm binary` quickcut also enables
+it when the host matches the target. The `bytecode: true|false` line in the
+`[build-target]` log makes the decision explicit per build.
+
+## SLSA provenance — P1 (release 6/7)
+
+`.github/workflows/release.yml` has a `provenance` job (`needs: [verify-dist]`) that
+runs `actions/attest-build-provenance@v2` once per artifact, using the runner's **OIDC
+token** (`permissions: id-token: write`, `attestations: write`). The resulting
+`.intoto.jsonl` SLSA L3 provenance attestations are uploaded to the GitHub Release
+alongside the binaries and are verifiable offline with `gh attestation verify <file>`.
+
+**Provenance is intentionally NOT in the `verify-dist` gate.** It is a parallel
+"supply-chain transparency" artifact; the **minisign signing chain is the trust root**
+(see "Distribution trust" below). This separation lets us add provenance without
+tightening the trust floor or making OIDC outages a release-blocker — the chain still
+completes if provenance generation fails (it just skips the attest step), and
+`release:verify-dist` is unchanged.
+
+Provenance is **P1** in the priority sense: it is generated and shipped, but the
+project does not yet depend on downstream verifiers consuming it. Future waves can
+tighten the gate by requiring attestation presence in `verify-dist`.
+
 ## Platform waves
 
 | Wave   | Target               | bun target         | bytecode | minify | Status                    |
 | ------ | -------------------- | ------------------ | -------- | ------ | ------------------------- |
-| **P0** | macOS-arm64          | `bun-darwin-arm64` | ✗        | ✓      | live                      |
-| **P0** | Linux-x64-glibc      | `bun-linux-x64`    | ✗        | ✓      | live                      |
-| **P1** | macOS-x64 (Intel)    | `bun-darwin-x64`   | ✗        | ✓      | live                      |
-| **P1** | Windows-x64          | `bun-windows-x64`  | ✗        | ✓      | live — **⚠️experimental** |
+| **P0** | macOS-arm64          | `bun-darwin-arm64` | native ✓ | ✓      | live                      |
+| **P0** | macOS-x64 (Intel)    | `bun-darwin-x64`   | native ✓ | ✓      | live (promoted in 6/7)    |
+| **P0** | Linux-x64-glibc      | `bun-linux-x64`    | native ✓ | ✓      | live                      |
+| **P1** | Windows-x64          | `bun-windows-x64`  | native ✓ | ✓      | live — **⚠️experimental** |
 | later  | Linux-arm64, musl, … | _tbd_              | _tbd_    | _tbd_  | placeholder               |
 
-**`--bytecode` is never enabled** for cross-compiled targets — it segfaults
-(oven-sh/bun#18416). The whole matrix keeps it off uniformly. `minify`/`sourcemap` are
-governed by the harden tier (see below), not hard-coded. CI and local share the same scripts.
+**`--bytecode`** is **enabled on NATIVE host builds** (release 6/7). Cross-compile + bytecode
+segfaults (oven-sh/bun#18416), so `buildTarget()` keeps the single gate
+`bytecode: isHostRunnable(friendly)` — native → on, cross-compile → off. The matrix puts
+every target on its native OS runner, so every job turns bytecode on automatically; the
+local single-host `pnpm binary` quickcut also enables it when the host matches the target.
+`minify`/`sourcemap` are governed by the harden tier (see below), not hard-coded. CI and
+local share the same scripts.
 
-**P0 vs P1 (release 4/7).** P0 is the **required** set — `release:build` defaults to the full
-P0+P1 matrix, but **publish gates only on P0** (`postgate`): a P1 absence never blocks a release,
-and a P1 build failure is **best-effort** — `release-build.mjs` warns and drops the failed
-experimental target instead of aborting, so a Windows cross-compile hiccup can't sink the P0 cut.
-The friendly-name SoT for P0/P1/experimental is `scripts/release/targets.mjs`
-(`P0_TARGETS`, `P1_TARGETS`, `EXPERIMENTAL_TARGETS`, `isExperimental`).
+**P0 vs P1 (release 4/7, refined 6/7).** P0 is the **required** set — `release:build`
+defaults to the full P0 matrix, and **publish gates only on P0** (`postgate`): a missing
+P0 target blocks the release. P1 (currently just `windows-x64`) is **best-effort**:
+`release-build.mjs` warns and drops a failed experimental target instead of aborting, so
+a Windows cross-compile hiccup can't sink the P0 cut. `macos-x64` was promoted from P1
+to P0 in release 6/7 because the GH Actions native matrix runs it on a real
+`macos-13` (Intel) runner and the headless smoke is green there. The friendly-name
+SoT for P0/P1/experimental is `scripts/release/targets.mjs` (`P0_TARGETS`,
+`P1_TARGETS`, `EXPERIMENTAL_TARGETS`, `isExperimental`).
 
 ### Windows: experimental until a real smoke (release 4/7)
 
@@ -113,12 +206,14 @@ The **Windows platform code paths** are merged ahead of any smoke (they're part 
 - **Build host** — `release-build.mjs` `findBun` also branches (`where bun` on win32) so a
   windows-latest runner can build + smoke.
 
-**De-experimental gate.** `windows-x64` stays in `EXPERIMENTAL_TARGETS` (its manifest entry
-carries `"experimental": true`, README marks it ⚠️) **until a real headless smoke passes on a
-windows-latest runner** — its own OS, since cross-compiled binaries can't be smoke-run on a
-foreign host (`isHostRunnable`). That smoke is wired by the (later-wave) GitHub Actions release
-workflow; until then Windows ships signed-but-unverified. Removing it from `EXPERIMENTAL_TARGETS`
-is the one-line change that drops the tag once that smoke is green.
+**De-experimental gate (release 6/7 wired).** `windows-x64` stays in `EXPERIMENTAL_TARGETS`
+(its manifest entry carries `"experimental": true`, README marks it ⚠️) **until a real headless
+smoke passes on a windows-latest runner** — its own OS, since cross-compiled binaries can't
+be smoke-run on a foreign host (`isHostRunnable`). That smoke is wired by the GH Actions
+release workflow (`smoke:windows-x64` job, `runs-on: windows-latest`); once that job is green,
+removing `'windows-x64'` from `EXPERIMENTAL_TARGETS` is the one-line change that drops the
+tag (it cascades: manifest entry loses `"experimental": true`, README loses ⚠️, postgate
+keeps enforcing P0 completeness unchanged because the P1 set is empty either way).
 
 ## Artifact naming
 
@@ -150,29 +245,79 @@ $ c3 --version
 The tsx dev path applies no `define` (≈ harden `none`); `version.ts` then falls back to
 `0.0.0-dev` / `unknown` / `dev` via `typeof` guards.
 
-## Hardening tiers (release 2/7)
+## Hardening tiers (release 2/7, obfuscation real in 7/7)
 
 `RELEASE_HARDEN` (env) or `--harden=` selects the tier; default **`basic`**. It governs
 the **native binaries** (`pnpm release:build`, `pnpm binary`) only — the esbuild node
 bundle (`dist/cli.cjs`, run by `pnpm start`) gets the version `define` but no harden.
 
-| Tier              | minify | sourcemap | manifest | Notes                                                   |
-| ----------------- | ------ | --------- | -------- | ------------------------------------------------------- |
-| `none`            | ✗      | inline    | ✗        | dev/debug; the tsx dev path is `none` by nature         |
-| `basic` (default) | ✓      | none      | ✓        | strip (Bun `minify` strips) + drop sourcemap + manifest |
-| `standard`        | ✓      | none      | ✓        | **placeholder** — builds with `basic` behavior + warns  |
+| Tier              | minify | sourcemap | manifest                                        | Obfuscation                                                  | Notes                                                   |
+| ----------------- | ------ | --------- | ----------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+| `none`            | ✗      | inline    | ✗                                               | —                                                            | dev/debug; the tsx dev path is `none` by nature         |
+| `basic` (default) | ✓      | none      | ✓ (`v1.1`)                                      | —                                                            | strip (Bun `minify` strips) + drop sourcemap + manifest |
+| `standard` (7/7)  | ✓      | none      | ✓ (`v1.1` + `obfuscation.applied` per artifact) | string-array + identifier rename via `javascript-obfuscator` | opt-in tier; fallback = bare compile on failure         |
 
 Motivation is **distribution trust ≫ obfuscation**: `basic` lands the trust floor
-(traceable version + verifiable artifact manifest) before any obfuscation work.
+(traceable version + verifiable artifact manifest) before any obfuscation work. The
+`standard` tier is **opt-in, never default** — `RELEASE_HARDEN=standard` (or
+`--harden=standard`) is required to enable it. Release 7/7 turns it from a
+spec-gated placeholder into a real, opt-in implementation with hard evidence and
+graceful fallback (see below).
 
-### No spec entry, no standard tier
+### Standard tier (release 7/7) — `javascript-obfuscator`
 
-`standard` is a **spec-gated** placeholder. Until a dedicated spec entry defines its
-actual hardening (symbol stripping beyond minify, reproducible builds, anti-tamper,
-obfuscation, …), selecting it does **not** enable obfuscation: `build-target.mjs` warns
-loudly and builds with `basic` behavior. The manifest records the **requested** tier
-(`harden: "standard"`) verbatim. This requirement does not implement any obfuscation
-logic.
+`harden=standard` runs `javascript-obfuscator` between bundling and compiling — the
+intermediate bundle in `dist/.obf-stage/<target>.js` is string-array-encoded + identifier-
+renamed, then `bun build --compile` produces the final native binary from that bundle.
+
+**Locked option set** (see `server/scripts/release/obfuscate.mjs` `OBFUSCATOR_OPTIONS`):
+`stringArray: true` + `stringArrayThreshold: 1.0` (ALL string literals hoisted into a
+rotating shuffled array) + `identifierNamesGenerator: 'mangled'` + `renameGlobals: false`
+(globals keep real names so bun runtime / Node builtins / dlsym lookups work) +
+`sourceMap: true` + `sourceMapMode: 'separate'`. **NOT enabled** (see security.md
+"Non-goal: hardening" for the full list + reasons): `controlFlowFlattening`,
+`stringEncryption` full set, `transformObjectKeys`, `selfDefending`, `debugProtection`,
+`numbersToExpressions`, `simplify`, `unicodeEscapeSequence`.
+
+**Sourcemap sidecar** (release 7/7): a separate source map is written for every obfuscated
+artifact to `dist/maps/<target>.js.map` (gitignored, **local-only — never uploaded to
+GitHub Releases**). On-demand re-symbolication for the maintainer when triaging an issue;
+not a release consumer artifact.
+
+### Fallback behavior (release 7/7)
+
+Obfuscation failure is **graceful**. Any error (obfuscator throws, timeout, the
+`C3_OBFUSCATE_FORCE_FAIL` test hook) leaves the bundle **un-obfuscated** and the build
+keeps going — the trust floor (minify + signing chain) is intact, and the manifest
+records what actually shipped:
+
+- `[build-target] WARN <target>: obfuscation failed (<err>) — falling back to bare compile`
+- The artifact ships as the un-obfuscated minified bundle.
+- The manifest stamps `obfuscation: { applied: false }` for that artifact (and
+  `applied: true, durationMs: N` when it succeeded).
+- Build exit code is **0** (release is NOT blocked).
+- Override: set `C3_OBFUSCATE_FAIL=abort` to flip the build to hard-fail (used by
+  tests that need a red signal, not by production).
+
+The e2e/smoke gates still run on the shipped artifact, so any logic regression
+introduced by the obfuscator is caught at the artifact gate (smoke) or the standard
+e2e path (full suite against the obfuscated server bundle).
+
+### Volume / startup overhead baseline (release 7/7)
+
+_(to be filled after the first standard-tier run on the GH Actions native matrix —
+local numbers are noisy; CI numbers are the ones that count)_
+
+| Target      | basic size | standard size | Δ     | basic `--version` (ms) | standard `--version` (ms) | Δ     |
+| ----------- | ---------- | ------------- | ----- | ---------------------- | ------------------------- | ----- |
+| macos-arm64 | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
+| macos-x64   | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
+| linux-x64   | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
+| windows-x64 | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
+
+The expected order of magnitude is **+10–30%** on size and **+5–15%** on startup
+(string-array indirection is the dominant cost; identifier rename is mostly compile-time
+and minified by the `minify: true` that ships with the standard tier).
 
 ## Manifest (release 2/7)
 
@@ -227,10 +372,11 @@ GitHub Releases, never npm).
 ## Commands
 
 ```bash
-pnpm release:build                                  # P0 matrix, parallel, harden=basic, +manifest
+pnpm release:build                                  # P0 matrix, parallel, harden=basic, +manifest, +bytecode(native)
 pnpm release:build --targets=linux-x64              # subset
 pnpm release:build --harden=none                    # no minify/manifest (debug)
-RELEASE_HARDEN=standard pnpm release:build          # placeholder tier (warns, builds as basic)
+RELEASE_HARDEN=standard pnpm release:build          # standard tier (release 7/7): bundle → javascript-obfuscator → compile
+                                                    #   (string-array + identifier rename; fallback = bare compile on failure)
 pnpm release:build --dry-run                        # print the plan, execute nothing
 pnpm release:sign                                    # SHA256SUMS + .sha256 + .minisig (reads manifest)
 pnpm release:notes                                   # release notes (version + top CHANGELOG section)
@@ -240,10 +386,13 @@ pnpm release:verify-dist                              # publish final check: man
 pnpm release:publish --dry-run                        # rehearse publish: plan only, no tag/gh/sign
 pnpm release --no-publish                             # gate + build + sign + notes, no GitHub Release
 pnpm release --skip-gate                              # skip the source pregate (debug)
-RELEASE_HARDEN=standard pnpm release                  # additionally forces `pnpm e2e`
+RELEASE_HARDEN=standard pnpm release                  # additionally forces `pnpm e2e --obfuscated` (release 7/7)
+pnpm e2e --obfuscated                                 # e2e against the obfuscated server bundle (requires standard build first)
 pnpm release                                          # gate → build(+smoke) → notes → publish (full)
 pnpm release:keygen                                   # mint a minisign keypair
-pnpm binary                                          # native single binary (self-use quickcut)
+pnpm binary                                          # native single binary (self-use quickcut, bytecode auto on host match)
+# CI:
+#   .github/workflows/release.yml  →  workflow_dispatch (manual) or push tags: v*
 ```
 
 ## Entry points
@@ -255,7 +404,8 @@ pnpm binary                                          # native single binary (sel
 - Pregate (source gate): `scripts/release/pregate.mjs` (`GATES`, `runPregate`)
 - Artifact smoke: `scripts/release/smoke.mjs` (`smokeArtifact`, `smokeBuiltArtifacts`, `assertVersionOutput`, `freePort`)
 - Publish final check: `scripts/release/postgate.mjs` (`verifyDist`, `parseSha256Sums`)
-- Single-target primitive: `server/scripts/release/build-target.mjs` (`buildTarget()`, `HARDEN_TIERS`, ad-hoc codesign)
+- Single-target primitive: `server/scripts/release/build-target.mjs` (`buildTarget()`, `HARDEN_TIERS`, bytecode native-only gate, ad-hoc codesign, bundle → (obfuscate) → compile split for the standard tier)
+- Standard-tier obfuscation helper: `server/scripts/release/obfuscate.mjs` (`obfuscateStage()`, `isObfuscationEnabled()`, `decideFallback()`, `OBFUSCATOR_OPTIONS` — locked set, no aggressive options exposed)
 - Version SoT helper: `scripts/release/version-info.mjs` (`computeVersionInfo`, `versionDefines`)
 - Manifest helper: `scripts/release/manifest.mjs` (`buildManifest`, `sha256File`)
 - Artifact naming: `scripts/release/artifact-name.mjs` (`artifactName`, `normalizeVersion`)
@@ -265,4 +415,5 @@ pnpm binary                                          # native single binary (sel
 - Embedded pubkey + verify: `server/src/release-pubkey.ts`, `server/src/verify.ts` (`verifyArtifact`, `runVerify`), CLI `c3 verify`
 - Runtime version: `server/src/version.ts` (`versionString`)
 - Snapshot generator: `server/scripts/generate-static-embed.mjs`
-- Tests: `scripts/release/release-build.test.mjs`, `release-harden.test.mjs`, `release-sign.test.mjs` (the last cross-imports `server/src/verify.ts`, proving signer/verifier parity), `release-smoke.test.mjs` (artifact-gate helpers + conditional real smoke)
+- CI release workflow: `.github/workflows/release.yml` (matrix `pregate → 4 build → 4 smoke → verify-dist → provenance → publish`; `needs:` enforces order)
+- Tests: `scripts/release/release-build.test.mjs`, `release-harden.test.mjs`, `release-sign.test.mjs` (the last cross-imports `server/src/verify.ts`, proving signer/verifier parity), `release-smoke.test.mjs` (artifact-gate helpers + conditional real smoke), `release-obfuscate.test.mjs` (release 7/7: obfuscate helper, NOT-doing option set, fallback decision, manifest v1.1 obfuscation block, postgate tolerance)

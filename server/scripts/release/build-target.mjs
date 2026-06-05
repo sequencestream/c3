@@ -1,46 +1,53 @@
 // Single-target Bun compile — the one reusable build primitive.
 //
-// Runs under `bun` (uses the Bun.build JS API). Produces ONE standalone executable
-// for ONE platform target. Pure reader of the pre-generated static-embed snapshot:
-// the import of `../static-embed.js` (the committed empty stub) is redirected at
-// build time to the generated dist/static-embed.generated.ts via an onResolve
-// plugin, so N targets can build in parallel without writing any shared file.
+// Runs under `bun` (uses the Bun.build JS API for the bundle pass, the bun CLI for
+// the compile pass). Produces ONE standalone executable for ONE platform target.
+// Pure reader of the pre-generated static-embed snapshot: the import of
+// `../static-embed.js` (the committed empty stub) is redirected at build time to
+// the generated dist/static-embed.generated.ts via an onResolve plugin, so N
+// targets can build in parallel without writing any shared file.
 //
 // `pnpm binary` (native, self-use) and `pnpm release:build` (multi-platform) both
 // route through buildTarget() — no second compile path.
 //
+// Release 7/7: the compile path is now bundle → (obfuscate) → compile, so the
+// standard harden tier can pass the intermediate bundle through javascript-obfuscator
+// (string-array + identifier rename) before compile. Obfuscation failure is
+// graceful — the build continues with the bare (minified) bundle and records
+// `obfuscation.applied: false` in the manifest. See
+// specs/non-functional/release.md "Hardening tiers" + "Fallback behavior".
+//
 /* global Bun */
 // ^ This module runs under `bun` (Bun.build JS API); `Bun` is a runtime global.
-import { chmodSync, existsSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeVersionInfo, versionDefines } from '../../../scripts/release/version-info.mjs'
+import { isHostRunnable } from '../../../scripts/release/targets.mjs'
+import { obfuscateStage, isObfuscationEnabled, decideFallback } from './obfuscate.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const serverDir = resolve(here, '..', '..') // server/
 const repoRoot = resolve(serverDir, '..')
 
 // Hardening tiers (release 2/7) — govern the native binary build only. Motivation is
-// distribution trust >> obfuscation; standard is a SPEC-GATED placeholder (see
-// specs/non-functional/release.md "Hardening tiers"): no spec entry → no standard tier,
-// so it currently builds with basic behavior and warns. None ≈ the tsx dev path.
+// distribution trust >> obfuscation.
+//
+// `none` and `basic` are unchanged (no obfuscation; minify + strip is the trust-floor
+// recipe). `standard` is the opt-in obfuscated tier (release 7/7) — the placeholder
+// rule "no spec entry, no standard tier" is removed in this release; the tier is
+// now real and gated by javascript-obfuscator (stringArray + identifierRename).
 export const HARDEN_TIERS = {
   none: { minify: false, sourcemap: 'inline' },
   basic: { minify: true, sourcemap: 'none' },
-  standard: { minify: true, sourcemap: 'none' }, // placeholder == basic; no obfuscation yet
+  standard: { minify: true, sourcemap: 'none' },
 }
 
 export function resolveHarden(harden) {
   if (!(harden in HARDEN_TIERS)) {
     throw new Error(
       `[build-target] unknown harden tier "${harden}"; known: ${Object.keys(HARDEN_TIERS).join(', ')}`,
-    )
-  }
-  if (harden === 'standard') {
-    console.warn(
-      '[build-target] harden="standard" has no spec entry yet — building with BASIC behavior ' +
-        '(no obfuscation). See release.md "no spec entry, no standard tier".',
     )
   }
   return HARDEN_TIERS[harden]
@@ -63,6 +70,14 @@ export function defaultOutfile(friendly) {
 
 export function defaultEmbedPath() {
   return resolve(repoRoot, 'dist', 'static-embed.generated.ts')
+}
+
+export function defaultStageDir() {
+  return resolve(repoRoot, 'dist', '.obf-stage')
+}
+
+export function defaultMapsDir() {
+  return resolve(repoRoot, 'dist', 'maps')
 }
 
 // macOS ad-hoc code signing (release 3/7). MUST run before any sha256/minisign — codesign
@@ -105,6 +120,7 @@ function adHocCodesign(out, friendly) {
  * @param {string} [o.version]   injected version (else computed from git tag / baseline)
  * @param {string} [o.commit]    injected short commit (else computed)
  * @param {string} [o.buildTime] injected ISO build time (else now)
+ * @returns {Promise<{ friendly: string, bunTarget: string, outfile: string, obfuscated: boolean, obfDurationMs: number }>}
  */
 export async function buildTarget({
   target,
@@ -150,34 +166,100 @@ export async function buildTarget({
     },
   }
 
+  // --bytecode: enabled on NATIVE host builds only (release 6/7). Cross-compile + bytecode
+  // segfaults (oven-sh/bun#18416), so we MUST keep it off when the target's bun target is not
+  // the host's. `isHostRunnable(target)` is the single gate — release.yml's matrix puts every
+  // target on its native OS runner, so each job turns bytecode on automatically.
+  const nativeBuild = isHostRunnable(friendly)
   console.log(
     `[build-target] target=${friendly} (${bunTarget}) harden=${harden} → ${out} ` +
-      `[v${info.version} ${info.commit}]`,
+      `[v${info.version} ${info.commit}] bytecode=${nativeBuild ? 'on (native)' : 'off (cross-compile)'}`,
   )
-  // NB: --bytecode is intentionally never enabled — cross-compile + bytecode segfaults
-  // (oven-sh/bun#18416). Bun.build defaults bytecode off. minify/sourcemap come from the
-  // harden tier; version constants are injected via define.
-  const result = await Bun.build({
+
+  // ── Phase 1: Bundle (release 7/7 split — was a single Bun.build compile call).
+  //    We produce a self-contained intermediate JS file in dist/.obf-stage/ so the
+  //    standard tier can run javascript-obfuscator on it before compile. The stage
+  //    dir is gitignored; it's scratch space, never archived.
+  const stageDir = defaultStageDir()
+  const stagePath = resolve(stageDir, `${friendly}.js`)
+  const resultPath = resolve(stageDir, `${friendly}.result.json`)
+
+  const bundleResult = await Bun.build({
     entrypoints: [entry],
     target: bunTarget,
     minify: tier.minify,
     sourcemap: tier.sourcemap,
     define: versionDefines(info),
-    compile: { target: bunTarget, outfile: out },
     plugins: [redirectStub],
   })
 
-  if (!result.success) {
-    for (const log of result.logs) console.error(log)
-    throw new Error(`[build-target] bun build failed for ${friendly}`)
+  if (!bundleResult.success) {
+    for (const log of bundleResult.logs) console.error(log)
+    throw new Error(`[build-target] bun bundle failed for ${friendly}`)
+  }
+  if (bundleResult.outputs.length === 0) {
+    throw new Error(`[build-target] bun bundle produced no outputs for ${friendly}`)
+  }
+
+  mkdirSync(stageDir, { recursive: true })
+  await Bun.write(stagePath, bundleResult.outputs[0])
+
+  // ── Phase 2: Obfuscate the bundle in place (release 7/7, standard tier only).
+  //    Graceful fallback: any failure (obfuscator throws, timeout, force-fail hook)
+  //    leaves the bundle untouched and stamps `obfuscated: false` on the result.
+  //    The build keeps going — the trust floor (minify + signing chain) is intact,
+  //    and the manifest records what actually shipped for audit.
+  let obfuscated = false
+  let obfDurationMs = 0
+  if (isObfuscationEnabled()) {
+    const mapPath = resolve(defaultMapsDir(), `${friendly}.js.map`)
+    const r = obfuscateStage({ inPath: stagePath, outPath: stagePath, mapPath })
+    obfDurationMs = r.durationMs
+    if (r.obfuscated) {
+      obfuscated = true
+      console.log(
+        `[build-target] ${friendly}: obfuscated in ${r.durationMs}ms (map: ${r.mapPath ?? 'none'})`,
+      )
+    } else {
+      const policy = decideFallback(r.error)
+      if (policy === 'abort') {
+        throw new Error(
+          `[build-target] ${friendly}: obfuscation failed (${r.error}) and C3_OBFUSCATE_FAIL=abort — refusing to ship`,
+        )
+      }
+      console.warn(
+        `[build-target] WARN ${friendly}: obfuscation failed (${r.error}) — ` +
+          `falling back to bare compile (manifest will record obfuscated: false)`,
+      )
+    }
+  }
+
+  // ── Phase 3: Compile the (possibly obfuscated) bundle to a native binary.
+  //    Spawn the bun CLI on the stage file — nesting Bun.build({compile}) on a
+  //    pre-bundled file has rough edges (it tries to re-bundle from a single file
+  //    with no package.json context); the CLI is explicit, debuggable, and one
+  //    extra process per target is negligible at the 4-target scale.
+  const compileArgs = ['build', stagePath, '--compile', `--target=${bunTarget}`, `--outfile=${out}`]
+  const compileRes = spawnSync(process.execPath, compileArgs, { encoding: 'utf-8' })
+  if (compileRes.status !== 0) {
+    console.error(compileRes.stderr || compileRes.stdout || '')
+    throw new Error(`[build-target] bun compile failed for ${friendly}`)
   }
   if (!existsSync(out)) {
     throw new Error(`[build-target] outfile missing after build: ${out}`)
   }
   chmodSync(out, 0o755)
   adHocCodesign(out, friendly) // before any hashing/signing — codesign mutates the binary
+
+  // Result sidecar (release 7/7): the orchestrator reads this to know the
+  // obfuscation status of each artifact so the manifest records it. The sidecar
+  // lives under dist/.obf-stage/ (gitignored) and is the only mechanism that
+  // survives the `run()` Promise wrapper not capturing child stdout.
+  const result = { friendly, bunTarget, outfile: out, obfuscated, obfDurationMs }
+  writeFileSync(resultPath, JSON.stringify(result, null, 2))
+
   console.log(`[build-target] OK → ${out}`)
-  return { friendly, bunTarget, outfile: out }
+  return result
 }
 
 // ── CLI entry: `bun run build-target.mjs --target=macos-arm64 [--outfile=...] [--embed=...]`

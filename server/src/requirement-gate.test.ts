@@ -107,7 +107,10 @@ describe('requirement gate — classifyRequirementTool (deny-by-default routing)
       'NotebookRead',
       'WebFetch',
       'WebSearch',
-      'TodoWrite',
+      'TaskCreate',
+      'TaskList',
+      'TaskUpdate',
+      'TaskGet',
     ]) {
       expect(classifyRequirementTool(t)).toBe('allow')
     }

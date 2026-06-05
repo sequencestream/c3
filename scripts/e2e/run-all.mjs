@@ -13,26 +13,41 @@
  * (`spike-ask-answer-injection.mjs`) is intentionally excluded — it runs no
  * server and proves an SDK detail, not a c3 flow.
  *
+ * Release 7/7 — `--obfuscated` (or `E2E_OBFUSCATED=1`): instead of `pnpm build`
+ * + `node server/dist/cli.cjs start`, the suite expects
+ * `dist/.obf-stage/<hostTarget>.js` to exist (the intermediate bundle from
+ * `pnpm release:build --harden=standard --targets=<hostTarget> --skip-smoke`)
+ * and launches it under `bun`. The e2e flow is otherwise identical — same
+ * server, same protocol, same tests; the only thing that changes is which
+ * code path the server is running. The standard tier uses this as its logic
+ * regression hard evidence: if the obfuscator rewrote something it shouldn't
+ * have, the e2e will catch it.
+ *
  * Exit codes per test: 0 = PASS, 5 = SKIP (e.g. consensus with no voters),
  * anything else = FAIL. The suite exits non-zero if any test FAILs.
  *
  * Usage:
- *   pnpm e2e                 # build, boot, run all, report
- *   pnpm e2e --no-build      # reuse the existing server/dist build
+ *   pnpm e2e                       # build, boot, run all, report
+ *   pnpm e2e --no-build            # reuse the existing server/dist build
  *   pnpm e2e --port 13550
+ *   pnpm e2e --obfuscated          # run e2e against the obfuscated server bundle
+ *                                  # (REQUIRES `pnpm release:build --harden=standard
+ *                                  #  --targets=<hostTarget> --skip-smoke` first)
  */
 import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { hostTarget } from '../release/targets.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
 
 const argv = process.argv.slice(2)
 const NO_BUILD = argv.includes('--no-build') || process.env.E2E_NO_BUILD === '1'
+const OBFUSCATED = argv.includes('--obfuscated') || process.env.E2E_OBFUSCATED === '1'
 const portArg = (() => {
   const i = argv.indexOf('--port')
   return i >= 0 ? argv[i + 1] : process.env.E2E_PORT
@@ -91,6 +106,39 @@ function waitForPort(port, tries = 60, intervalMs = 500) {
 }
 
 async function main() {
+  if (OBFUSCATED) {
+    // The obfuscated path does NOT need `pnpm build` — the obfuscated bundle is
+    // produced by the release path and lives in dist/.obf-stage/. Validate up
+    // front so the user gets a clean pointer, not a confused spawn failure.
+    const stagePath = join(ROOT, 'dist', '.obf-stage', `${hostTarget()}.js`)
+    if (!existsSync(stagePath)) {
+      console.error(
+        `[suite] --obfuscated: obfuscated bundle not found at ${stagePath}\n` +
+          `         Run first: pnpm release:build --harden=standard --targets=${hostTarget()} --skip-smoke\n` +
+          `         (this writes dist/.obf-stage/${hostTarget()}.js via javascript-obfuscator).`,
+      )
+      cleanup()
+      process.exit(2)
+    }
+    log(`--obfuscated: starting bun ${stagePath} start`)
+    const server = spawn(
+      'bun',
+      [stagePath, 'start', '--project', SEED_PROJECT, '--port', String(PORT)],
+      { cwd: ROOT, stdio: 'inherit', env: { ...process.env, C3_DB_PATH: DB_PATH } },
+    )
+    try {
+      await waitForPort(PORT)
+    } catch (err) {
+      console.error(`[suite] ${err.message}`)
+      server.kill('SIGTERM')
+      cleanup()
+      process.exit(1)
+    }
+    log('server is up (obfuscated bundle)')
+    await runE2ESuite(server)
+    return
+  }
+
   if (!NO_BUILD) {
     log('building (pnpm build) — pass --no-build to skip')
     const code = await run('pnpm', ['build'], { cwd: ROOT })
@@ -114,11 +162,6 @@ async function main() {
     ],
     { cwd: ROOT, stdio: 'inherit', env: { ...process.env, C3_DB_PATH: DB_PATH } },
   )
-  let serverExited = false
-  server.on('exit', () => {
-    serverExited = true
-  })
-
   try {
     await waitForPort(PORT)
   } catch (err) {
@@ -128,6 +171,19 @@ async function main() {
     process.exit(1)
   }
   log('server is up')
+
+  await runE2ESuite(server)
+}
+
+/**
+ * Run the full e2e suite against `server` (already up on WS_URL), tear it down,
+ * print a summary, and exit with non-zero on any FAIL.
+ */
+async function runE2ESuite(server) {
+  let serverExited = false
+  server.on('exit', () => {
+    serverExited = true
+  })
 
   const results = []
   for (const t of TESTS) {

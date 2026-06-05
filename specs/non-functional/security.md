@@ -51,9 +51,35 @@ are **not** a confidentiality or integrity control and must never be relied on a
 distribution trust comes entirely from the signing chain above (DIST-1). Treating obfuscation
 as security is a known anti-pattern; c3 does not.
 
+## Non-goal: hardening (release 7/7 — full NOT-doing list)
+
+The **standard** harden tier (`RELEASE_HARDEN=standard`, opt-in) enables a narrow obfuscation
+pass — `javascript-obfuscator` with `stringArray` + `identifierRename` only. The following
+hardening options are **explicitly NOT** part of c3's release pipeline. They were evaluated
+and rejected; the list lives here so future contributors don't re-introduce them and code
+review has a single place to point at.
+
+| Class                                  | Why we don't do it                                                                                                                                                          |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Control-flow flattening**            | E2E/smoke become hard to diagnose on regression (a stack trace tells you less); doubles bundle size; gives zero defensive value against the real threat.                    |
+| **String encryption (full)**           | Redundant with `stringArray` (which is what we use); adds 5–10% startup; would also break e2e regex assertions on the obfuscated bundle.                                    |
+| **Object-key transformation**          | Breaks runtime dispatch (`obj['key']`); high regression risk; no real defensive value.                                                                                      |
+| **`selfDefending` / anti-debug**       | False-positives our smoke tests and CI on first run; bypassed by `eval`-aware tooling in the same minute an attacker bothers.                                               |
+| **Debug-protection / anti-VM**         | Same as above — false-positives + bypass; e2e/smoke catches the noise as FAIL.                                                                                              |
+| **UPX packing / exe compression**      | `upx -d` reverses it in ~1s; triggers Windows Defender false positives; slows startup; nothing more than a fingerprint for malware scanners.                                |
+| **License / activation checks**        | Conflicts with **SEC-6** (c3 does not read, store, or transmit credentials); no server to validate against; users copying to friends is **by design**, not a vulnerability. |
+| **Anti-tamper / integrity self-check** | Adds a startup-time bypass surface; redundant with the manifest sha256 + minisign chain that already covers integrity end-to-end.                                           |
+
+The locked option set used by the standard tier is in
+`server/scripts/release/obfuscate.mjs` `OBFUSCATOR_OPTIONS`; the test
+`scripts/release/release-obfuscate.test.mjs` asserts the NOT-doing list is honored
+(`controlFlowFlattening` falsy, `selfDefending: false`, `debugProtection: false`,
+`transformObjectKeys: false`, `renameGlobals: false`, options object frozen).
+
 ## Anti-scenarios (must never happen)
 
 - A malformed WebSocket frame is interpreted as an `allow`.
 - A permission request hangs forever with no resolution.
 - Credentials appear in a log line, error message, or wire message.
 - A tampered binary passes `c3 verify`, or obfuscation is treated as a trust control.
+- A hardening option from the NOT-doing list (control-flow flattening, UPX, anti-debug, license check, …) sneaks into the standard tier's option set.

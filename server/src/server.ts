@@ -96,7 +96,7 @@ import {
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
-import { dispatch, type Conn } from './transport/index.js'
+import { dispatch, createBroadcaster, type Conn } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
 
 export interface ServerOptions {
@@ -444,12 +444,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const send = (ws: { send: (d: string) => void }, msg: ServerToClient): void =>
     ws.send(JSON.stringify(msg))
 
-  // Every live connection's deliver callback. Used to broadcast session statuses
-  // (sidebar badges) to all connections, independent of what each is viewing.
+  // Every live connection's deliver callback. The Broadcaster is the single
+  // egress over this set (server refactor 2/3b): `broadcast*` builds the frame
+  // and funnels delivery through `broadcaster.toAll`, instead of each iterating
+  // `connections` inline. Per-run delivery (emit/viewers, ADR-0006) is separate.
   const connections = new Set<Viewer>()
+  const broadcaster = createBroadcaster(connections)
   const broadcastStatuses = (): void => {
     const statuses = listStatuses()
-    for (const deliver of connections) deliver({ type: 'session_status', statuses })
+    broadcaster.toAll({ type: 'session_status', statuses })
   }
   // Any runtime status change (run start/finish, permission wait) re-broadcasts.
   setOnStatusChange(broadcastStatuses)
@@ -487,7 +490,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     if (!isStoreAvailable()) return
     const proj = resolve(projectPath)
     const items = enrichRunStatus(listRequirements(proj))
-    for (const deliver of connections) deliver({ type: 'requirements', projectPath: proj, items })
+    broadcaster.toAll({ type: 'requirements', projectPath: proj, items })
   }
 
   // Push a project's refreshed discussion list to every connection (the frontend
@@ -499,8 +502,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     const items = listDiscussions(proj)
     const runStates = discussionRunSnapshot(items)
     const researchStates = researchRunSnapshot(items)
-    for (const deliver of connections)
-      deliver({ type: 'discussions', projectPath: proj, items, runStates, researchStates })
+    broadcaster.toAll({ type: 'discussions', projectPath: proj, items, runStates, researchStates })
   }
 
   // Push a workspace's schedule list to every connection. Used after create,
@@ -509,7 +511,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     if (!isScheduleStoreAvailable()) return
     const proj = resolve(workspacePath)
     const items = listSchedules(proj)
-    for (const deliver of connections) deliver({ type: 'schedules', workspacePath: proj, items })
+    broadcaster.toAll({ type: 'schedules', workspacePath: proj, items })
   }
 
   // Live discussion/research run controls + their list snapshots are
@@ -519,8 +521,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Stream one freshly-appended discussion message to every connection (the
   // frontend appends it when viewing that discussion).
   const broadcastDiscussionMessage = (discussionId: string, message: DiscussionMessage): void => {
-    for (const deliver of connections)
-      deliver({ type: 'discussion_message', discussionId, message })
+    broadcaster.toAll({ type: 'discussion_message', discussionId, message })
   }
 
   // Broadcast the transient in-flight/failed status of agents the organizer just
@@ -542,7 +543,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
             phase: s.phase,
             agents: s.agents,
           }
-    for (const deliver of connections) deliver(evt)
+    broadcaster.toAll(evt)
   }
 
   // Broadcast a discussion's live run-state (decoupled from its persisted status).
@@ -550,21 +551,20 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     discussionId: string,
     state: 'running' | 'paused' | 'ended',
   ): void => {
-    for (const deliver of connections)
-      deliver({ type: 'discussion_run_status', discussionId, state })
+    broadcaster.toAll({ type: 'discussion_run_status', discussionId, state })
   }
 
   // Stream one research turn to every connection (runtime-only — research messages
   // are never persisted; the frontend appends to the right pane's research stream).
   const broadcastResearchMessage = (discussionId: string, item: ResearchStreamItem): void => {
     const message: ResearchMessage = { ...item, discussionId, createdAt: Date.now() }
-    for (const deliver of connections) deliver({ type: 'research_message', discussionId, message })
+    broadcaster.toAll({ type: 'research_message', discussionId, message })
   }
 
   // Broadcast a discussion's research-run liveness (running while the agent works,
   // ended on finish/fail/dead process). Runtime-only, mirrors discussion_run_status.
   const broadcastResearchRunStatus = (discussionId: string, state: 'running' | 'ended'): void => {
-    for (const deliver of connections) deliver({ type: 'research_run_status', discussionId, state })
+    broadcaster.toAll({ type: 'research_run_status', discussionId, state })
   }
 
   // The pause gate handed to the engine: resolves at once unless paused, else
@@ -656,7 +656,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Push an automation-orchestrator status to every connection (the frontend
   // keeps a per-project map and renders the one it's viewing).
   const broadcastAutomation = (status: AutomationStatus): void => {
-    for (const deliver of connections) deliver({ type: 'automation_status', status })
+    broadcaster.toAll({ type: 'automation_status', status })
   }
 
   // `launchRun` is hoisted to top-level (see `export async function launchRun`
@@ -868,7 +868,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       return {
         onOpen(_evt, ws) {
           sock = ws
-          connections.add(conn.deliver)
+          broadcaster.add(conn.deliver)
           send(ws, {
             type: 'ready',
             workspaces: listWorkspaces(),
@@ -884,7 +884,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         onClose() {
           // Keep runs alive in the background; just stop delivering to this view.
           if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
-          connections.delete(conn.deliver)
+          broadcaster.remove(conn.deliver)
           sock = null
         },
       }
@@ -964,23 +964,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     setApprovalBroadcast((event) => {
       if (event.type === 'pending') {
         const approval = event.approval as import('@ccc/shared/protocol').PendingWriteApproval
-        for (const deliver of connections) {
-          deliver({ type: 'schedule_write_approval_pending', approval })
-        }
+        broadcaster.toAll({ type: 'schedule_write_approval_pending', approval })
       } else if (event.type === 'resolved') {
         const r = event.approval as {
           approvalId: string
           status: 'approved' | 'rejected' | 'expired'
           scheduleId?: string
         }
-        for (const deliver of connections) {
-          deliver({
-            type: 'schedule_write_approval_resolved',
-            approvalId: r.approvalId,
-            status: r.status,
-            scheduleId: r.scheduleId ?? '',
-          })
-        }
+        broadcaster.toAll({
+          type: 'schedule_write_approval_resolved',
+          approvalId: r.approvalId,
+          status: r.status,
+          scheduleId: r.scheduleId ?? '',
+        })
       }
     })
     startExpiryScanner()

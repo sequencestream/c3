@@ -188,7 +188,27 @@
         "placeholder": "e.g. claude-opus-4-8"
       },
       "icon": {
-        "placeholder": "🤖"
+        "placeholder": "🤖",
+        "picker": {
+          "open": {
+            "tooltip": "Pick an emoji",
+            "aria": "Open emoji picker"
+          },
+          "search": {
+            "placeholder": "Search emoji"
+          },
+          "category": {
+            "common": "Common",
+            "faces": "Faces",
+            "people": "People",
+            "animals": "Animals",
+            "symbols": "Symbols",
+            "objects": "Objects"
+          },
+          "empty": {
+            "text": "No matching emoji"
+          }
+        }
       },
       "builtin": {
         "label": "built-in"

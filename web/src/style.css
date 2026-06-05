@@ -1953,7 +1953,7 @@ button.deny:hover:not(:disabled) {
   grid-template-columns:
     40px /* on */
     64px /* default */
-    64px /* icon */
+    104px /* icon */
     180px /* name */
     minmax(220px, 1fr) /* baseUrl */
     minmax(180px, 1fr) /* apiKey */
@@ -1977,6 +1977,17 @@ button.deny:hover:not(:disabled) {
 .col-icon {
   text-align: center;
   font-size: var(--fs-body);
+}
+/* icon 单元格:可手输的文本框 + 紧随其后的 emoji 选择器触发按钮。 */
+.icon-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.icon-cell .icon-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: center;
 }
 .col-actions {
   display: flex;

@@ -188,7 +188,27 @@
         "placeholder": "예: claude-opus-4-8"
       },
       "icon": {
-        "placeholder": "🤖"
+        "placeholder": "🤖",
+        "picker": {
+          "open": {
+            "tooltip": "이모지 선택",
+            "aria": "이모지 선택기 열기"
+          },
+          "search": {
+            "placeholder": "이모지 검색"
+          },
+          "category": {
+            "common": "자주 사용",
+            "faces": "표정",
+            "people": "사람",
+            "animals": "동물",
+            "symbols": "기호",
+            "objects": "사물"
+          },
+          "empty": {
+            "text": "일치하는 이모지가 없습니다"
+          }
+        }
       },
       "builtin": {
         "label": "내장"

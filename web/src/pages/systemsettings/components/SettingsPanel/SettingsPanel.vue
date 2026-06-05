@@ -9,6 +9,7 @@ import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
+import EmojiPicker from './EmojiPicker.vue'
 
 const { t } = useTypedI18n()
 const modeLabel = useModeLabel()
@@ -212,12 +213,15 @@ function onUiLangChange(e: Event) {
                 @change="draft.defaultAgentId = a.id"
               />
             </label>
-            <input
-              v-model="a.icon"
-              class="agent-field col-icon"
-              :placeholder="t('settings.agents.icon.placeholder')"
-              maxlength="16"
-            />
+            <div class="col-icon icon-cell">
+              <input
+                v-model="a.icon"
+                class="agent-field icon-text"
+                :placeholder="t('settings.agents.icon.placeholder')"
+                maxlength="16"
+              />
+              <EmojiPicker v-model="a.icon" />
+            </div>
             <input
               v-model="a.name"
               class="agent-field col-name"

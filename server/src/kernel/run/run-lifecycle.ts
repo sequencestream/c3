@@ -87,11 +87,11 @@ export interface LaunchRunDeps {
   }
 }
 
-/** Connection-injected callbacks the launcher fires. */
-export interface LaunchCbs {
-  onSessionId?: (prevId: string, realId: string) => void
-  onSettled?: (workspacePath: string) => void | Promise<void>
-}
+/** Connection-injected callback the launcher fires. The shape itself is the
+ * sealed-union `RunDomainEvent` (see `kernel/types.ts`); this module re-exports
+ * it so the seam tests / callers that imported it from here keep working. */
+import type { LaunchCbs } from '../types.js'
+export type { LaunchCbs } from '../types.js'
 
 /**
  * Shared run launcher. Owns only registry/emit concerns: abort wiring, the prompt
@@ -254,13 +254,16 @@ export async function launchRun(
                 runId = sid
                 if (!hasBound) {
                   hasBound = true
-                  cbs.onSessionId?.(prev, sid)
+                  // `bound` is fire-and-forget (the SDK callback is sync, so we
+                  // can't `await` here without making the whole callback chain
+                  // async). The old `onSessionId` was also fire-and-forget.
+                  void cbs.onEvent?.({ kind: 'bound', prevId: prev, realId: sid })
                 }
               } else if (!hasBound) {
                 // First binding on a non-pending session (e.g. resume flow).
                 // This path runs once per launchRun.
                 hasBound = true
-                cbs.onSessionId?.(prev, sid)
+                void cbs.onEvent?.({ kind: 'bound', prevId: prev, realId: sid })
               }
               // If hasBound is already true (retry), skip everything — the
               // runtime keeps its original Map key.
@@ -384,6 +387,6 @@ export async function launchRun(
     // Authoritative terminal-state backstop. The run is fully over; guarantee a
     // terminal `turn_end` is broadcast and the session settles to `idle`.
     finalizeRun(runId)
-    await cbs.onSettled?.(workspacePath)
+    await cbs.onEvent?.({ kind: 'settled', workspacePath })
   }
 }

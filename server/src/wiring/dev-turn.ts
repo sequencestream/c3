@@ -151,10 +151,12 @@ export function makeRunDevTurn(
         rt.run.handle.pushInput(input.prompt)
       } else {
         void launchRun(rt, input.prompt, launchDeps, {
-          onSessionId: (_prev, sid) => {
-            setSessionMode(sid, rt.mode)
-            // Surface the bind to the orchestrator immediately (early in_progress flip).
-            input.onSessionId?.(sid)
+          onEvent: (e) => {
+            if (e.kind === 'bound') {
+              setSessionMode(e.realId, rt.mode)
+              // Surface the bind to the orchestrator immediately (early in_progress flip).
+              input.onSessionId?.(e.realId)
+            }
           },
         })
       }

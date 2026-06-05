@@ -64,6 +64,11 @@ See [models.md](models.md).
   config must **never** carry overrides (AC-R1). (It may, however, be disabled — AC-R10.)
 - **Dangling default (anti-scenario):** Removing the agent that was the default must **never**
   leave `defaultAgentId` dangling — it falls back to the system agent (AC-R2).
+- **Pick an icon:** Given the settings view, When the user opens an agent row's emoji picker and
+  clicks an emoji, Then it is written into that agent's `icon` text field and saved like any manual
+  edit; the manual text input still accepts free entry. The picker is a **display-only input
+  affordance** in the web console — it writes back to the same `icon` field and changes no
+  persistence or normalization (AC-R11 still governs trim / empty / 16-char cap).
 
 ## Domain events (wire)
 

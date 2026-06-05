@@ -188,7 +188,27 @@
         "placeholder": "例: claude-opus-4-8"
       },
       "icon": {
-        "placeholder": "🤖"
+        "placeholder": "🤖",
+        "picker": {
+          "open": {
+            "tooltip": "絵文字を選択",
+            "aria": "絵文字ピッカーを開く"
+          },
+          "search": {
+            "placeholder": "絵文字を検索"
+          },
+          "category": {
+            "common": "よく使う",
+            "faces": "顔",
+            "people": "人物",
+            "animals": "動物",
+            "symbols": "記号",
+            "objects": "モノ"
+          },
+          "empty": {
+            "text": "一致する絵文字がありません"
+          }
+        }
       },
       "builtin": {
         "label": "組み込み"

@@ -204,9 +204,9 @@ export function parseOrganizerDecision(
 
 /**
  * Default character budget for participant speech prompts (used when no system
- * config is threaded in). The prompt asks for one paragraph within this budget,
- * but {@link parseParticipantSpeech} does NOT truncate — over-long replies are
- * accepted verbatim.
+ * config is threaded in). The prompt asks participants to keep replies within
+ * this budget, but {@link parseParticipantSpeech} does NOT truncate — over-long
+ * replies are accepted verbatim.
  */
 export const MAX_SPEECH_CHARS = 300
 
@@ -439,7 +439,7 @@ export function buildParticipantPrompt(input: {
   lines.push(
     '',
     `请围绕当前阶段给出你的观点,用中文,不要复述他人已说的内容,只输出你的发言正文(不要加你的名字前缀)。` +
-      `严格控制篇幅:只用一个段落、不分段、不列点,控制在约 ${budget} 字 / 6 句以内,直击要点。`,
+      `严格控制篇幅:控制在约 ${budget} 字以内,直击要点。`,
   )
   return lines.join('\n')
 }

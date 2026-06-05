@@ -188,7 +188,27 @@
         "placeholder": "例如 claude-opus-4-8"
       },
       "icon": {
-        "placeholder": "🤖"
+        "placeholder": "🤖",
+        "picker": {
+          "open": {
+            "tooltip": "选择 emoji",
+            "aria": "打开 emoji 选择器"
+          },
+          "search": {
+            "placeholder": "搜索 emoji"
+          },
+          "category": {
+            "common": "常用",
+            "faces": "表情",
+            "people": "人物",
+            "animals": "动物",
+            "symbols": "符号",
+            "objects": "物件"
+          },
+          "empty": {
+            "text": "没有匹配的 emoji"
+          }
+        }
       },
       "builtin": {
         "label": "内置"

@@ -158,6 +158,45 @@ describe('SettingsPanel.vue — UI display language', () => {
   })
 })
 
+describe('SettingsPanel.vue — agent icon emoji picker', () => {
+  const withAgent: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      { id: SYSTEM_AGENT_ID, name: 'System', baseUrl: '', apiKey: '', model: '' },
+      { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '', icon: '' },
+    ],
+  }
+
+  it('renders an emoji-picker trigger per agent row', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAgent } })
+    expect(w.findAll('[data-testid="emoji-picker-trigger"]')).toHaveLength(2)
+  })
+
+  it('writes the picked emoji back into a.icon and into the Save payload', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAgent } })
+    // Open the second row's picker (the non-system agent), then pick the first emoji.
+    const triggers = w.findAll('[data-testid="emoji-picker-trigger"]')
+    await triggers[1].trigger('click')
+    const cells = w.findAll('[data-testid="emoji-picker-cell"]')
+    expect(cells.length).toBeGreaterThan(0)
+    const picked = cells[0].text()
+    await cells[0].trigger('click')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.icon).toBe(picked)
+  })
+
+  it('keeps the manual icon text input working (legacy path)', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAgent } })
+    const text = w.findAll('.icon-text')
+    // Row order: system agent, then a1.
+    await text[1].setValue('🦊')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.icon).toBe('🦊')
+  })
+})
+
 describe('SettingsPanel.vue — time zone', () => {
   it('seeds the timezone select from server settings', () => {
     const w = mount(SettingsPanel, {

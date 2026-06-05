@@ -188,7 +188,27 @@
         "placeholder": "напр. claude-opus-4-8"
       },
       "icon": {
-        "placeholder": "🤖"
+        "placeholder": "🤖",
+        "picker": {
+          "open": {
+            "tooltip": "Выбрать эмодзи",
+            "aria": "Открыть выбор эмодзи"
+          },
+          "search": {
+            "placeholder": "Поиск эмодзи"
+          },
+          "category": {
+            "common": "Частые",
+            "faces": "Лица",
+            "people": "Люди",
+            "animals": "Животные",
+            "symbols": "Символы",
+            "objects": "Объекты"
+          },
+          "empty": {
+            "text": "Нет подходящих эмодзи"
+          }
+        }
       },
       "builtin": {
         "label": "встроенный"

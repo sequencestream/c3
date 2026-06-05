@@ -117,8 +117,8 @@ default so an unparseable reply never hangs). `resolveStep` folds the stage, the
 and the agenda (`{items, index}`, default empty) into a concrete step:
 
 - `speak` — a nominated participant takes a one-shot turn (`askAgentOnce` → `parseParticipantSpeech`);
-  its speech is appended as a `speakerKind: 'agent'` message. The participant prompt hard-caps each turn
-  to **one paragraph** (no sub-paragraphs/bullets, ≈`MAX_SPEECH_CHARS`=300 chars / 6 sentences), and
+  its speech is appended as a `speakerKind: 'agent'` message. The participant prompt asks each turn
+  to stay within a character budget (≈`MAX_SPEECH_CHARS`=300 chars; no paragraph/structure limit), and
   `parseParticipantSpeech` no longer enforces a hard truncation — over-long replies are
   accepted verbatim (the budget serves only as prompt-level guidance). When an agenda
   is set, the current subtopic (`agenda[agendaIndex]`) is injected into the participant prompt to focus

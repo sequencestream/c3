@@ -206,27 +206,27 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
   }
   const isRequirement = rt.kind === 'requirement'
   await ctx.launchRun(rt, msg.text, {
-    onSessionId: (prev, sid) => {
-      if (isRequirement) {
-        // Comm session: re-key its store mapping; never touch the persisted
-        // active/normal-mode state (it's a hidden session).
-        rebindChatSession(prev, sid)
-        if (conn.viewing === prev) conn.viewing = sid
-      } else {
-        setSessionMode(sid, rt.mode)
-        if (conn.viewing === prev) {
-          conn.viewing = sid
-          setActiveSessionId(sid)
+    onEvent: (e) => {
+      if (e.kind === 'bound') {
+        const { prevId, realId } = e
+        if (isRequirement) {
+          // Comm session: re-key its store mapping; never touch the persisted
+          // active/normal-mode state (it's a hidden session).
+          rebindChatSession(prevId, realId)
+          if (conn.viewing === prevId) conn.viewing = realId
+        } else {
+          setSessionMode(realId, rt.mode)
+          if (conn.viewing === prevId) {
+            conn.viewing = realId
+            setActiveSessionId(realId)
+          }
         }
+        conn.send({ type: 'session_started', clientId: prevId, sessionId: realId })
+      } else if (e.kind === 'settled' && !isRequirement) {
+        // Requirement comm sessions are hidden from the normal list, so there's
+        // nothing to refresh for them.
+        void conn.sendSessions(e.workspacePath)
       }
-      conn.send({ type: 'session_started', clientId: prev, sessionId: sid })
     },
-    // Requirement comm sessions are hidden from the normal list, so there's
-    // nothing to refresh for them.
-    onSettled: isRequirement
-      ? undefined
-      : async (wp) => {
-          await conn.sendSessions(wp)
-        },
   })
 }

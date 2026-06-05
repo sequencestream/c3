@@ -21,10 +21,38 @@
 import type { AutomationStatus, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import type { SessionRuntime } from '../runs.js'
 
-/** Connection-injected callbacks the run launcher fires (see `launchRun`). */
+/**
+ * The sealed-union typed DOMAIN events the run launcher fires.
+ *
+ * Why a sealed union (server refactor 3/3e-4):
+ *  - Each event is discriminated by `kind` — a `switch (event.kind)` over the
+ *    union is exhaustive by construction; a future event added without
+ *    handling every existing case is a TYPE error.
+ *  - Callers register exactly ONE callback (`onEvent`); the kernel does not
+ *    have to grow its API surface as new events are introduced (no more
+ *    `onSessionId` + `onSettled` + `onTeam` + … sprawl).
+ *  - The shape carries everything a handler needs in one place; the
+ *    `prevId`/`realId` of a bind lives on the event, not in an out-of-band
+ *    closure variable.
+ *
+ * Today two events fire (the lifecycle milestones every caller cares about);
+ * new events (`team-upgraded`, `agent-failed`, `turn-ended`, …) append to
+ * the union without breaking any handler that switches exhaustively.
+ */
+export type RunDomainEvent =
+  /** A pending session id bound to the real SDK session id (first bind only). */
+  | { readonly kind: 'bound'; readonly prevId: string; readonly realId: string }
+  /** The run is fully over (terminal state backstop reached). */
+  | { readonly kind: 'settled'; readonly workspacePath: string }
+
+/** Connection-injected callback the run launcher fires (sealed-union events). */
 export interface LaunchCbs {
-  onSessionId?: (prevId: string, realId: string) => void
-  onSettled?: (workspacePath: string) => void | Promise<void>
+  /**
+   * Single event sink for the run launcher. Returns a promise when the
+   * handler is async; the launcher awaits it before continuing the
+   * terminal-state backstop (matches the old `onSettled` Promise support).
+   */
+  onEvent?: (event: RunDomainEvent) => void | Promise<void>
 }
 
 /**

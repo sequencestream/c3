@@ -4,43 +4,32 @@
  * locate the `claude` executable on the host, and build the spawned child's
  * environment (the keepalive/transport-resilience defaults plus the active
  * agent's overrides). No SDK/run/permission knowledge.
+ *
+ * Binary discovery itself now lives in the vendor-agnostic ProcessLauncher
+ * (ADR-0012, `agent/process/launcher.ts`); the two functions below are
+ * Claude-pinned shims that delegate to it, preserving their names, the
+ * `CLAUDE_PATH` override, and the exact behavior the 4 runtime call sites rely on.
  */
-import { spawnSync } from 'node:child_process'
+import { lookupCommand, resolve as resolveHostBinary } from '../agent/process/launcher.js'
 
 /**
- * The platform-correct "find an executable on PATH" command. POSIX has no portable
- * `which`, but every shell carries `command -v`; Windows has no `sh`, so we use the
- * `where.exe` builtin instead (`Get-Command` would need a PowerShell host). Pure so
- * it's unit-testable without spawning a process.
+ * The platform-correct "find `claude` on PATH" command. Thin Claude-pinned wrapper
+ * over the launcher's vendor-agnostic {@link lookupCommand} — kept for the existing
+ * `child-env.test.ts` seam and any caller still referencing the Claude-specific name.
  */
 export function claudeLookupCommand(
   platform: NodeJS.Platform = process.platform,
 ): [cmd: string, args: string[]] {
-  return platform === 'win32' ? ['where', ['claude']] : ['sh', ['-c', 'command -v claude']]
+  return lookupCommand('claude', platform)
 }
 
 // In a Bun-compiled binary the SDK's bundled `cli-<platform>` lookup misses
-// (no node_modules to walk). Resolve `claude` from the host PATH and hand it
-// to the SDK via pathToClaudeCodeExecutable. Override with CLAUDE_PATH.
-let cachedClaudePath: string | null | undefined
+// (no node_modules to walk). Resolve `claude` from the host PATH (via the
+// ProcessLauncher, which also honors $CLAUDE_PATH) and hand it to the SDK via
+// pathToClaudeCodeExecutable. Returns `undefined` (not `null`) when absent, the
+// shape the SDK-option spread expects.
 export function findClaudeExecutable(): string | undefined {
-  if (cachedClaudePath !== undefined) return cachedClaudePath ?? undefined
-  if (process.env.CLAUDE_PATH) {
-    cachedClaudePath = process.env.CLAUDE_PATH
-    return cachedClaudePath
-  }
-  try {
-    const [cmd, args] = claudeLookupCommand()
-    const r = spawnSync(cmd, args, { encoding: 'utf-8' })
-    // `where` can print multiple matches (one per line); take the first. `command -v`
-    // prints a single line. Trim either way.
-    const found = r.status === 0 ? (r.stdout.split('\n')[0]?.trim() ?? '') : ''
-    cachedClaudePath = found || null
-    return cachedClaudePath ?? undefined
-  } catch {
-    cachedClaudePath = null
-    return undefined
-  }
+  return resolveHostBinary('claude') ?? undefined
 }
 
 /**

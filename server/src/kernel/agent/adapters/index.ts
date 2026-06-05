@@ -16,6 +16,7 @@ export type {
   PolicyVerdict,
   PolicyContext,
   PermissionPolicy,
+  AdapterCapability,
   AdapterCapabilities,
   DriverStartOptions,
   AgentDriver,
@@ -32,3 +33,4 @@ export type {
 } from './types.js'
 
 export { createClaudeAdapter } from './claude/index.js'
+export { upsertBlock, CanonicalAccumulator } from './canonical-accumulator.js'

@@ -21,6 +21,7 @@ import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
 import { checkDbDriver } from './kernel/infra/db.js'
+import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
 import {
   createBroadcasts,
   createDiscussionRuns,
@@ -55,6 +56,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // detect it loudly at boot instead. The app still starts (callers degrade), but
   // the operator is told exactly what broke.
   checkDbDriver()
+
+  // Probe host CLIs up front (ADR-0012). Each agent vendor runs as a host-CLI
+  // subprocess that can't be packed into c3's single binary; a missing one means
+  // that agent type is simply unavailable (a product convention, not a bug). Logs
+  // present/missing + install guidance loudly, like checkDbDriver — c3 still starts.
+  logHostBinaryHealth()
 
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })

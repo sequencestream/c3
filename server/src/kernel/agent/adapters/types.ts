@@ -20,97 +20,24 @@
  * and everything divergent is a probed {@link AdapterCapabilities} flag.
  */
 
-/** The agent vendors c3 can drive. New vendors extend this union (ADR-0011). */
-export type VendorId = 'claude' | 'codex' | 'opencode'
-
-// ---------------------------------------------------------------------------
-// Canonical message model (per the 010 field-diff conclusion + D3 ruling)
-// ---------------------------------------------------------------------------
+import type { AdapterCapability, CanonicalMessage, VendorId } from '@ccc/shared/protocol'
 
 /**
- * The only role the canonical model commits to. Codex carries no role on its
- * items and must synthesize one (item-type → role); Claude/OpenCode carry it
- * natively. `system`/`result` SDK frames are NOT messages — they are ignored or
- * mapped to side channels (session id, turn end), never to a CanonicalMessage.
+ * The canonical message model now lives on the WIRE (`shared/protocol.ts`) so it
+ * only ever gains a `vendor` dimension, never a second schema (ADR-0013). The
+ * kernel re-exports the definitions for its consumers (single SoT); they were
+ * first authored here in 011 and promoted to shared in 013 unchanged (D3
+ * embedded-result preserved). `AdapterCapability` (the capability enum) likewise
+ * lives on the wire; the boolean ledger below is keyed by it.
  */
-export type CanonicalRole = 'user' | 'assistant'
-
-/**
- * A vendor-spanning message. The 010 diff pinned the true common set:
- * `sessionId` is unconditional; `role`/`blocks`/`ts`/`turnId?` carry a discount
- * (synthesized, append-with-upsert, c3-stamped, or droppable respectively).
- * Anything that does not survive all three vendors lands in {@link vendorExtra},
- * never the top level ("宁丢勿强塞" — drop before you fake a union).
- */
-export interface CanonicalMessage {
-  /** Which vendor produced this (010: the `vendor` tag is required, not optional). */
-  vendor: VendorId
-  /** The one unconditional common field. Source: `session_id`/`threadId`/`sessionID`. */
-  sessionId: string
-  /** Turn grouping. Semantics differ per vendor and are not uniformly available — droppable. */
-  turnId?: string
-  /** `assistant` for model output; `user` for prompts/tool returns. Codex synthesizes this. */
-  role: CanonicalRole
-  /**
-   * Append-only with **id-upsert**: incremental vendors (Codex item, OpenCode
-   * part) revise an earlier block in place rather than stacking a new one, so a
-   * consumer keys blocks by {@link CanonicalBlock} id, not array position.
-   */
-  blocks: CanonicalBlock[]
-  /**
-   * c3 ingest timestamp (epoch ms), NOT a vendor-authoritative value — only
-   * OpenCode carries a real `time`; Claude/Codex do not. The vendor's own time,
-   * if any, goes to {@link vendorExtra}.
-   */
-  ts: number
-  /** Envelope-level overflow: `usage`, `parent_tool_use_id`, vendor `time`, … */
-  vendorExtra?: Record<string, unknown>
-}
-
-/** A tool's return, embedded on its {@link CanonicalBlock} `tool_use` (D3 ruling). */
-export interface CanonicalToolResult {
-  /** Flattened display content (vendor result shapes collapse to a string). */
-  content: string
-  /** Whether the tool errored. */
-  isError: boolean
-  /** Block-result overflow: Codex `exit_code`/`aggregated_output`, … */
-  vendorExtra?: Record<string, unknown>
-}
-
-/**
- * A content block. **D3 ruling:** there is NO standalone `tool_result` block —
- * a tool's return is embedded as `tool_use.result`, back-filled by id-upsert
- * when it arrives. This matches the incremental vendors (Codex collapses a tool
- * into a single in-place item; OpenCode correlates by `callID`) more naturally
- * than Claude's two-block split, which the Claude adapter folds inward.
- *
- * `thinking.signature` / `redacted_thinking` are dropped to `vendorExtra` (010:
- * encrypted, cross-vendor-meaningless). Block `id` granularity is not
- * interoperable across vendors; it exists for upsert correlation, not identity.
- */
-export type CanonicalBlock =
-  | {
-      type: 'text'
-      text: string
-      id?: string
-      vendorExtra?: Record<string, unknown>
-    }
-  | {
-      type: 'thinking'
-      thinking: string
-      id?: string
-      vendorExtra?: Record<string, unknown>
-    }
-  | {
-      type: 'tool_use'
-      /** Correlation id (Claude `tool_use.id`, OpenCode `callID`, Codex item id). */
-      id: string
-      name: string
-      input: unknown
-      /** Embedded return, absent until the tool completes (D3 in-place back-fill). */
-      result?: CanonicalToolResult
-      vendorExtra?: Record<string, unknown>
-    }
+export type {
+  VendorId,
+  CanonicalRole,
+  CanonicalToolResult,
+  CanonicalBlock,
+  CanonicalMessage,
+  AdapterCapability,
+} from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Neutral permission policy (PermissionMode 1:1 mapping is abandoned)
@@ -195,6 +122,17 @@ export interface AdapterCapabilities {
    */
   readonly perToolApproval: boolean
 }
+
+/**
+ * Compile-time pin: the boolean ledger's keys and the wire `AdapterCapability`
+ * enum must stay identical, in both directions. If either side adds/removes a
+ * capability without the other, one of these assignments stops type-checking —
+ * the drift is caught at build, not on the wire.
+ */
+type _CapKeysSubsetOfEnum = keyof AdapterCapabilities extends AdapterCapability ? true : never
+type _EnumSubsetOfCapKeys = AdapterCapability extends keyof AdapterCapabilities ? true : never
+const _capKeysMatchEnum: [_CapKeysSubsetOfEnum, _EnumSubsetOfCapKeys] = [true, true]
+void _capKeysMatchEnum
 
 // ---------------------------------------------------------------------------
 // The three interfaces

@@ -190,6 +190,55 @@ or, once concluded, drive a new round with a follow-up question (`continue_discu
 `setPermissionMode()`. See the [agent-session spec](../../domains/core/agent-session/spec.md)
 for what each mode means for tool gating.
 
+## Canonical agent message model (vendor-neutral) — ADR-0013
+
+The wire SoT for the **vendor-neutral envelope** (`shared/src/protocol.ts`, SDK-free). The model
+was authored in `kernel/agent/adapters/types.ts` (ADR-0011) and promoted to the wire in ADR-0013 so
+the wire only ever gains a `vendor` **dimension** — never a second schema per vendor. The kernel
+re-exports these (single SoT); no vendor SDK type appears here (ADR-0009).
+
+- **`VendorId`** — `'claude' | 'codex' | 'opencode'`. The vendor tag carried on every envelope.
+- **`AdapterCapability`** — the capability enum naming each optional/degradable adapter capability:
+  `'interrupt' | 'setActionMode' | 'streamingPush' | 'inProcessMcp' | 'forkSession' | 'perToolApproval'`.
+  The kernel's `AdapterCapabilities` boolean ledger is keyed by exactly these names (a compile-time
+  assertion pins them together). Required capabilities (start/messages/abort/list/read/onRequest)
+  are the unconditional contract and are NOT enumerated.
+- **`CanonicalRole`** — `'user' | 'assistant'`. The only roles the model commits to; Codex
+  synthesizes it from item type. `system`/`result` SDK frames are NOT messages.
+- **`CanonicalBlock`** — the **three-vendor common** block union: `text` / `thinking` / `tool_use`.
+  **There is no standalone `tool_result` block** (ADR-0011 D3): a tool's return is folded into
+  `tool_use.result` by id-upsert. Vendor-unique kinds (Codex `reasoning`, OpenCode `diff`) ride
+  `block.vendorExtra`, not their own variant (ADR-0013 D-D — 宁丢勿强塞); a `vendorTag`-discriminated
+  escape variant is the future extension point. Block `id` is for upsert correlation, not identity.
+- **`CanonicalToolResult`** — `{ content: string, isError: boolean, vendorExtra? }`. The flattened,
+  embedded tool return.
+- **`CanonicalMessage`** — `{ vendor, sessionId, turnId?, role, blocks: CanonicalBlock[], ts,
+vendorExtra? }`. `vendor`/`sessionId` are unconditional; `role`/`blocks`/`ts`/`turnId?` carry a
+  discount (synthesized / upserted / c3-stamped / droppable). Anything that does not survive all
+  three vendors lands in `vendorExtra`, never the top level.
+
+**Two-form upsert.** Both vendor message _forms_ collapse to one rule — blocks are keyed by
+`(sessionId, block.id)` and **upserted**, not append-only: Claude emits a whole message (full block
+set, idempotent re-emit), Codex emits incremental `ItemUpdated` frames revising a block in place. A
+tool result back-fills its `tool_use` monotonically (a later input-only revision never erases an
+arrived result). The reducer is `CanonicalAccumulator` / `upsertBlock`
+(`kernel/agent/adapters/canonical-accumulator.ts`).
+
+**Approval is a separate stream.** Approval/permission events are **not** `CanonicalMessage`s —
+they ride the `ApprovalBridge` (surfaced today as `permission_request` / `permission_response`), so
+the envelope never becomes a god type.
+
+**Session namespace (c3 internalization).** The outside world (URL, storage key) only ever sees an
+opaque `C3SessionId` (`"c3s_" + sha256(vendor \0 vendorSessionId)[:32]`, deterministic, vendor-free);
+the `{ vendor, vendorSessionId }` ref stays inside the kernel. `SessionAccessor`
+(`kernel/agent/session/accessor.ts`) is a **read-only** union over the available vendors'
+`SessionStore`s — native stores stay the source of truth; the `c3 → ref` index is a derived runtime
+cache rebuilt by listing, **never** a second copy of any transcript (存储形态归一、位置不归一,不双写).
+
+> This phase lands the kernel + shared types and the read-only accessor only; the **live wire frames**
+> (`assistant_text` / `tool_use` / `tool_result` / `TranscriptItem`) and the web URL/storage layer are
+> unchanged and do NOT yet carry the canonical envelope or the c3 id (deferred — ADR-0013).
+
 ## UI error codes (`UiError`)
 
 - **`UiError`** — `{ code: UiErrorCode, params?: Record<string, string | number> }`. The

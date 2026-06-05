@@ -144,6 +144,27 @@ The exact classification is owned by the SDK; c3 selects the mode and surfaces i
 > the **reference adapter**; the run loop is not yet rewritten to route through the driver (additive
 > phase). No vendor SDK type crosses into the neutral surface or `shared/protocol.ts` (ADR-0009).
 
+> **Host-binary gate (ADR-0012).** Before capabilities matter at all, a vendor's **host CLI must be
+> on PATH** — the agent runs as that subprocess and can't be packed into c3's single binary.
+> `ProcessLauncher.resolve(vendor)` is the first capability gate: the adapter registry constructs a
+> vendor's adapter only when its binary resolves, so a missing CLI means that agent type is simply
+> unavailable (install it; this is a product convention, surfaced with guidance, not a run error).
+> Claude binary discovery (`findClaudeExecutable`, `$CLAUDE_PATH`) is the Claude instance of this gate.
+
+> **Canonical envelope + c3 session namespace (ADR-0013).** The vendor-neutral message envelope
+> (`CanonicalMessage` = `{ vendor, sessionId, turnId?, role, blocks, ts, vendorExtra? }`) is promoted
+> to the wire (`shared/protocol.ts`, SDK-free): the wire gains only a `vendor` dimension, never a
+> per-vendor schema. Blocks are append-with-**id-upsert** keyed by `(sessionId, block.id)`, so the two
+> vendor forms coexist — Claude's whole-message frame and Codex's incremental `ItemUpdated` both
+> collapse to "revise in place, don't stack" (`CanonicalAccumulator`); a tool's return folds into
+> `tool_use.result` (no standalone `tool_result` block — 011 D3). **Approval/permission events stay
+> OFF this model** — they ride the `ApprovalBridge` stream so the envelope never becomes a god type.
+> Sessions are addressed by an **opaque, vendor-free `C3SessionId`** (a deterministic digest of
+> `{ vendor, vendorSessionId }`); a vendor id never enters a URL or storage key. `SessionAccessor` is a
+> **read-only** lazy-normalizing wrapper over the per-vendor `SessionStore`s — each vendor's native
+> store stays the source of truth and is never double-written (the `c3 → ref` index is a rebuildable
+> runtime cache). The live wire frames and web URL/storage are not yet rewired onto this (deferred).
+
 ## Domain events (wire)
 
 Emits `mode_changed`, `user_text`, `assistant_text`, `tool_use`, `tool_result`, `turn_end`,

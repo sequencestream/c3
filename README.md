@@ -17,9 +17,14 @@ the terminal.
                                    `claude` CLI binary
 ```
 
-> **Hard runtime dependency**: the `claude` CLI must be installed and logged in
-> (`claude /login`) on the host running `c3`. The single binary in `dist/` only
-> ships `c3` itself, not Claude Code.
+> **Hard runtime dependency — install the host CLI per agent type**: each agent
+> vendor runs as a host-CLI subprocess that **cannot** be packed into c3's single
+> binary. The binary in `dist/` ships `c3` itself and nothing else — "self-contained"
+> is an illusion. For the Claude agent type the `claude` CLI must be installed and
+> logged in (`claude /login`) on the host; override its path with `$CLAUDE_PATH`.
+> A missing host CLI is a product convention, not a bug: that agent type is simply
+> unavailable (c3 logs present/missing CLIs at startup with install guidance). See
+> [ADR-0012](specs/architecture/adr/0012-host-binary-probe-first-capability-gate.md).
 
 ## Quick start (development)
 

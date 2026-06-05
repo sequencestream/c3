@@ -27,6 +27,26 @@ executable); it sequences and fans them out for multi-platform output. See
 [ADR-0010](../architecture/adr/0010-release-and-distribution-trust.md) and
 [ADR-0003](../architecture/adr/0003-single-binary-via-bun-compile.md).
 
+## Distribution contract — the single binary is NOT self-contained (ADR-0012)
+
+The `c3` single binary ships **c3 itself and nothing else**. None of the agent vendor CLIs
+(`claude`, `codex`, `opencode`) can be packed into a `bun --compile` binary — inside it there is
+no `node_modules` for a bundled CLI to live in — so each agent type runs as a **host-CLI
+subprocess** resolved from the host PATH. "Self-contained single binary" is therefore an illusion
+the release docs must dispel explicitly:
+
+- **Install the host CLI per agent type you want to use.** The binary alone enables no agent type;
+  each requires its vendor CLI installed (and, for Claude, logged in via `claude /login`). Override
+  any path with the vendor's `*_PATH` env var (`CLAUDE_PATH` / `CODEX_PATH` / `OPENCODE_PATH`).
+- **A missing host CLI is a product convention, not a bug.** `ProcessLauncher.resolve(vendor)`
+  probes the binary; an absent one keeps that vendor's agent type unavailable and surfaces install
+  guidance. c3 still boots — `logHostBinaryHealth()` reports present/missing loudly at startup,
+  like the SQLite driver probe.
+- Today only `claude` has a runtime adapter, so the hard dependency is the `claude` CLI; `codex` /
+  `opencode` are listed for the boot health check ahead of their adapters landing.
+
+This is the distribution-facing face of ADR-0012 (host-binary probing is the first capability gate).
+
 ## Phase order (quality gate order)
 
 The build runs in strict, race-free phases. Phase0/1 happen exactly once; Phase2 fans

@@ -328,6 +328,138 @@ export interface SlashCommandInfo {
   aliases?: string[]
 }
 
+// ---- Canonical agent message model (vendor-neutral) ----
+//
+// The wire SoT for the vendor-neutral envelope (ADR-0011 → ADR-0013). The
+// canonical model was first defined inside `kernel/agent/adapters/types.ts`
+// (011); 013 promotes the definitions here so the WIRE only ever gains a
+// `vendor` dimension — it does NOT start a second schema per vendor. The kernel
+// re-exports these (single SoT); `shared/protocol.ts` stays zero-runtime and
+// SDK-free: NO `@anthropic-ai/claude-agent-sdk` (or any vendor SDK) type appears
+// here (ADR-0009). SDK values are narrowed to canonical shapes inside each
+// adapter before they ever travel on the wire.
+
+/** The agent vendors c3 can drive. New vendors extend this union (ADR-0011). */
+export type VendorId = 'claude' | 'codex' | 'opencode'
+
+/**
+ * The wire-facing capability enum (the names of every optional/degradable
+ * adapter capability). The kernel's `AdapterCapabilities` boolean ledger is
+ * keyed by exactly these names; a type-level assertion there pins the two
+ * together so they cannot drift. "Required" capabilities (start/messages/abort/
+ * list/read/onRequest) are the unconditional interface contract and are NOT
+ * enumerated here — only the probed, degradable ones are.
+ */
+export type AdapterCapability =
+  | 'interrupt'
+  | 'setActionMode'
+  | 'streamingPush'
+  | 'inProcessMcp'
+  | 'forkSession'
+  | 'perToolApproval'
+
+/**
+ * The only role the canonical model commits to. Codex carries no role on its
+ * items and must synthesize one (item-type → role); Claude/OpenCode carry it
+ * natively. `system`/`result` SDK frames are NOT messages — they map to side
+ * channels (session id, turn end) or the {@link ApprovalBridge} stream, never to
+ * a CanonicalMessage.
+ */
+export type CanonicalRole = 'user' | 'assistant'
+
+/**
+ * A tool's return, embedded on its {@link CanonicalBlock} `tool_use` (011 D3
+ * ruling): there is NO standalone `tool_result` block.
+ */
+export interface CanonicalToolResult {
+  /** Flattened display content (vendor result shapes collapse to a string). */
+  content: string
+  /** Whether the tool errored. */
+  isError: boolean
+  /** Block-result overflow: Codex `exit_code`/`aggregated_output`, … */
+  vendorExtra?: Record<string, unknown>
+}
+
+/**
+ * A content block. **011 D3 ruling:** there is NO standalone `tool_result`
+ * block — a tool's return is embedded as `tool_use.result`, back-filled by
+ * id-upsert when it arrives. This matches the incremental vendors (Codex
+ * collapses a tool into a single in-place item; OpenCode correlates by `callID`)
+ * more naturally than Claude's two-block split, which the Claude adapter folds
+ * inward.
+ *
+ * The union is the **three-vendor common set** (`text`/`thinking`/`tool_use`).
+ * Vendor-unique kinds (Codex `reasoning`, OpenCode `diff`, …) are NOT promoted
+ * to their own variant yet (ADR-0013 D-D: no adapter produces them); they ride
+ * `vendorExtra`. A future `vendorTag`-discriminated escape variant is the
+ * extension point. `thinking.signature` / `redacted_thinking` drop to
+ * `vendorExtra` (encrypted, cross-vendor-meaningless). Block `id` exists for
+ * upsert correlation, not cross-vendor identity.
+ */
+export type CanonicalBlock =
+  | {
+      type: 'text'
+      text: string
+      id?: string
+      vendorExtra?: Record<string, unknown>
+    }
+  | {
+      type: 'thinking'
+      thinking: string
+      id?: string
+      vendorExtra?: Record<string, unknown>
+    }
+  | {
+      type: 'tool_use'
+      /** Correlation id (Claude `tool_use.id`, OpenCode `callID`, Codex item id). */
+      id: string
+      name: string
+      input: unknown
+      /** Embedded return, absent until the tool completes (D3 in-place back-fill). */
+      result?: CanonicalToolResult
+      vendorExtra?: Record<string, unknown>
+    }
+
+/**
+ * A vendor-spanning message envelope. The 010 diff pinned the true common set:
+ * `vendor`/`sessionId` are unconditional; `role`/`blocks`/`ts`/`turnId?` carry a
+ * discount (synthesized, append-with-upsert, c3-stamped, or droppable). Anything
+ * that does not survive all three vendors lands in {@link vendorExtra}, never the
+ * top level ("宁丢勿强塞" — drop before you fake a union).
+ *
+ * **Two-form upsert (ADR-0013).** Blocks are append-with-**id-upsert**, not
+ * append-only: a consumer keys blocks by `(sessionId, block.id)`. Both vendor
+ * forms collapse to this rule — Claude emits a whole message (full block set,
+ * idempotent re-emit) and Codex emits incremental `ItemUpdated` frames that
+ * revise an earlier block in place. Approval/permission events are NOT part of
+ * this model — they ride the {@link ApprovalBridge} stream so the envelope never
+ * becomes a god type.
+ */
+export interface CanonicalMessage {
+  /** Which vendor produced this (010: the `vendor` tag is required, not optional). */
+  vendor: VendorId
+  /** The one unconditional common field. Source: `session_id`/`threadId`/`sessionID`. */
+  sessionId: string
+  /** Turn grouping. Semantics differ per vendor and are not uniformly available — droppable. */
+  turnId?: string
+  /** `assistant` for model output; `user` for prompts/tool returns. Codex synthesizes this. */
+  role: CanonicalRole
+  /**
+   * Append-only with **id-upsert**: incremental vendors (Codex item, OpenCode
+   * part) revise an earlier block in place rather than stacking a new one, so a
+   * consumer keys blocks by {@link CanonicalBlock} id, not array position.
+   */
+  blocks: CanonicalBlock[]
+  /**
+   * c3 ingest timestamp (epoch ms), NOT a vendor-authoritative value — only
+   * OpenCode carries a real `time`; Claude/Codex do not. The vendor's own time,
+   * if any, goes to {@link vendorExtra}.
+   */
+  ts: number
+  /** Envelope-level overflow: `usage`, `parent_tool_use_id`, vendor `time`, … */
+  vendorExtra?: Record<string, unknown>
+}
+
 // ---- Requirement management ----
 
 /** Requirement priority. `P0` highest … `P3` lowest. */

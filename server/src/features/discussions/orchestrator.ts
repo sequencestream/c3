@@ -34,13 +34,13 @@ import {
   nextDiscussionStage,
   type DiscussionStageKind,
 } from '@ccc/shared/discussion-types'
-import { askAgentOnce } from '../agent-once.js'
+import { askAgentOnce } from '../../agent-once.js'
 import {
   enabledAgents,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
   resolveAgent,
-} from '../settings.js'
+} from '../../settings.js'
 import {
   appendMessage as storeAppendMessage,
   getDiscussion as storeGetDiscussion,

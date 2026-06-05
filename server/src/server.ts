@@ -48,7 +48,7 @@ import {
   listDiscussions,
   getDiscussion,
   setDiscussionResearchResult,
-} from './discussions/store.js'
+} from './features/discussions/store.js'
 import {
   deleteDiscussionRun,
   deleteResearchRun,
@@ -58,17 +58,17 @@ import {
   setDiscussionRun,
   setResearchRun,
   type DiscussionRunControl,
-} from './discussions/run-controls.js'
+} from './features/discussions/run-controls.js'
 import {
   researchDiscussionContext,
   canAutoStartDiscussion,
   type ResearchStreamItem,
-} from './discussions/research.js'
+} from './features/discussions/research.js'
 import {
   runDiscussion,
   defaultDiscussionDeps,
   type DispatchStatus,
-} from './discussions/orchestrator.js'
+} from './features/discussions/orchestrator.js'
 import {
   isStoreAvailable as isScheduleStoreAvailable,
   listSchedules,

@@ -14,13 +14,9 @@ import {
   listDiscussions,
   listMessages as listDiscussionMessages,
   updateDiscussionStatus,
-} from '../../discussions/store.js'
+} from './store.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
-import {
-  discussionRunSnapshot,
-  getDiscussionRun,
-  hasDiscussionRun,
-} from '../../discussions/run-controls.js'
+import { discussionRunSnapshot, getDiscussionRun, hasDiscussionRun } from './run-controls.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, msg) => {

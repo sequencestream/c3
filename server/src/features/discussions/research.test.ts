@@ -6,7 +6,7 @@ import { getDiscussionType } from '@ccc/shared/discussion-types'
 // real agent. Each test installs a `runClaudeImpl` that drives `send`/throws.
 type SendMsg = { type: string; text?: string; toolName?: string }
 let runClaudeImpl: (opts: { send: (m: SendMsg) => void }) => Promise<void>
-vi.mock('../claude.js', () => ({
+vi.mock('../../claude.js', () => ({
   runClaude: (opts: { send: (m: SendMsg) => void }) => runClaudeImpl(opts),
   REQUIREMENT_DISALLOWED_TOOLS: [],
 }))

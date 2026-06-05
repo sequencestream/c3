@@ -40,7 +40,7 @@ import {
   startAutomation,
   stopAutomation,
 } from '../../requirements/automation.js'
-import { getDiscussion } from '../../discussions/store.js'
+import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush } from '../../git.js'
 import type { Handler } from '../../transport/handler-registry.js'
 

@@ -19,7 +19,7 @@ import type {
   DiscussionSpeakerKind,
   DiscussionStatus,
 } from '@ccc/shared/protocol'
-import { getDb, isDbAvailable, type Db } from '../db.js'
+import { getDb, isDbAvailable, type Db } from '../../db.js'
 
 /**
  * Discussion schema version. Independent of the requirement store's version —

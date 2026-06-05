@@ -31,7 +31,7 @@ import {
   resetStoreForTests,
   recordToolSession,
   isToolSessionRecorded,
-} from './requirements/store.js'
+} from './features/requirements/store.js'
 import { addToolSession, isToolSession, listWorkspaceSessions, removeSession } from './sessions.js'
 
 const proj = '/abs/tool-proj'

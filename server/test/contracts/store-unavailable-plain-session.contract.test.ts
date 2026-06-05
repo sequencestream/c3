@@ -58,7 +58,7 @@ vi.mock('../../src/settings.js', async () => {
 })
 
 // Force the requirement store to report "unavailable" — the failed-DB world.
-import * as reqStore from '../../src/requirements/store.js'
+import * as reqStore from '../../src/features/requirements/store.js'
 import { launchRun } from '../../src/server.js'
 import { ensureRuntime, getRuntime, addViewer, removeRuntime, type Viewer } from '../../src/runs.js'
 

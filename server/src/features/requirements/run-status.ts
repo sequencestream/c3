@@ -9,7 +9,7 @@
  * raw `Map`s leak across the boundary). Behavior is unchanged from the closure.
  */
 import type { Requirement, RequirementRunStatus } from '@ccc/shared/protocol'
-import { isRunning } from '../runs.js'
+import { isRunning } from '../../runs.js'
 
 /**
  * Per-requirement runStatus cache, populated by reconcileInProgress on

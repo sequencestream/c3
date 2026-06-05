@@ -3,9 +3,9 @@
  *
  * Requirement ledger view: list, comm-session open/new/refine, dev launch,
  * status/automation toggles, and the automation orchestrator start/stop. The
- * runStatus cache + judged-sessions de-dup are feature-private in
- * `requirements/run-status`; cross-feature services (automation hooks, launcher,
- * broadcasts) are reached via `ctx`; per-connection `viewing` + delivery via `conn`.
+ * runStatus cache + judged-sessions de-dup live in `./run-status`; the automation
+ * hooks bag in `./automation` (both feature-private). Cross-feature services
+ * (launcher, broadcasts) are reached via `ctx`; per-connection delivery via `conn`.
  */
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -24,9 +24,9 @@ import {
   setChatSession,
   setLastDevSession,
   updateStatus,
-} from '../../requirements/store.js'
-import { reconcileInProgress } from '../../requirements/reconcile.js'
-import { judgeCompletion } from '../../requirements/judge.js'
+} from './store.js'
+import { reconcileInProgress } from './reconcile.js'
+import { judgeCompletion } from './judge.js'
 import {
   cacheRunStatus,
   clearJudgedSession,
@@ -34,12 +34,13 @@ import {
   enrichRunStatus,
   getJudgedSession,
   setJudgedSession,
-} from '../../requirements/run-status.js'
+} from './run-status.js'
 import {
+  getAutomationHooks,
   getAutomationStatus,
   startAutomation,
   stopAutomation,
-} from '../../requirements/automation.js'
+} from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush } from '../../git.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -389,7 +390,7 @@ export const startAutomationHandler: Handler<'start_automation'> = (ctx, conn, m
     conn.send({ type: 'error', error: { code: 'requirement.dbUnavailable' } })
     return
   }
-  ctx.broadcastAutomation(startAutomation(proj, ctx.automationHooks, Date.now()))
+  ctx.broadcastAutomation(startAutomation(proj, getAutomationHooks(), Date.now()))
 }
 
 export const stopAutomationHandler: Handler<'stop_automation'> = (ctx, conn, msg) => {

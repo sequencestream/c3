@@ -21,7 +21,7 @@ import {
   recordToolSession,
   isToolSessionRecorded,
   deleteToolSessionRecord,
-} from './requirements/store.js'
+} from './features/requirements/store.js'
 import { getShowToolSessions } from './settings.js'
 
 /**

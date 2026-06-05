@@ -28,8 +28,8 @@
 import type { AutomationStatus, Requirement, ServerToClient } from '@ccc/shared/protocol'
 import { getRequirement, listRequirements, setLastDevSession, updateStatus } from './store.js'
 import { judgeCompletion } from './judge.js'
-import { commitAndPush, gitDiffStat, gitRecentLog } from '../git.js'
-import { getDevSkill } from '../settings.js'
+import { commitAndPush, gitDiffStat, gitRecentLog } from '../../git.js'
+import { getDevSkill } from '../../settings.js'
 
 /** Outcome of one dev turn, as observed by the orchestrator's internal viewer. */
 export interface DevTurnResult {
@@ -112,6 +112,27 @@ export interface AutomationHooks {
    * preempt it).
    */
   isRunning(sessionId: string): boolean
+}
+
+/**
+ * The injected hooks bag, wired once at startup by the composition root
+ * (`server.ts` calls `setAutomationHooks`). It is feature-private to
+ * `requirements` (only the automation handlers read it) — NOT carried on the
+ * shared `KernelContext` (ADR-0009: kernel must not import this feature module;
+ * the hard rule: feature-private state lives in the feature). Mirrors the
+ * `schedules` feature's `setExecutionStore` / `setBroadcast` injection pattern.
+ */
+let injectedHooks: AutomationHooks | null = null
+
+/** Wire the automation hooks at startup (composition root). */
+export function setAutomationHooks(hooks: AutomationHooks): void {
+  injectedHooks = hooks
+}
+
+/** The wired automation hooks; throws if startup never injected them. */
+export function getAutomationHooks(): AutomationHooks {
+  if (!injectedHooks) throw new Error('[c3] automation hooks not wired (setAutomationHooks)')
+  return injectedHooks
 }
 
 /** Max continue resumes per requirement before giving up (clears dev-skill checkpoints). */

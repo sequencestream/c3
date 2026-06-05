@@ -29,7 +29,7 @@ import {
 import { getDefaultMode } from '../../settings.js'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
-import { rebindChatSession } from '../../requirements/store.js'
+import { rebindChatSession } from '../requirements/store.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
 

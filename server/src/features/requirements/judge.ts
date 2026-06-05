@@ -35,8 +35,8 @@
  * (see automation.ts) forces a stop — the judge is the first line, not the only one.
  */
 import type { Requirement } from '@ccc/shared/protocol'
-import { askOneShot } from '../claude.js'
-import { resolveSessionLaunch } from '../settings.js'
+import { askOneShot } from '../../claude.js'
+import { resolveSessionLaunch } from '../../settings.js'
 
 export type JudgeVerdict = { verdict: 'done' | 'in_progress' | 'stuck'; reason: string }
 

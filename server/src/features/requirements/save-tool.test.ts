@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { Requirement } from '@ccc/shared/protocol'
-import { resetDbForTests } from '../db.js'
+import { resetDbForTests } from '../../db.js'
 import { createRequirementMcpServer } from './save-tool.js'
 import { insertRequirements, listRequirements, resetStoreForTests } from './store.js'
 

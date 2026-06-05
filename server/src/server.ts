@@ -41,8 +41,8 @@ import {
   type SessionRuntime,
   type Viewer,
 } from './runs.js'
-import { isStoreAvailable, listRequirements } from './requirements/store.js'
-import { enrichRunStatus } from './requirements/run-status.js'
+import { isStoreAvailable, listRequirements } from './features/requirements/store.js'
+import { enrichRunStatus } from './features/requirements/run-status.js'
 import {
   isStoreAvailable as isDiscussionStoreAvailable,
   listDiscussions,
@@ -85,14 +85,14 @@ import {
   startExpiryScanner,
   stopExpiryScanner,
 } from './features/schedules/queue.js'
-import { REQUIREMENT_AGENT_PROMPT } from './requirements/prompt.js'
-import { createRequirementMcpServer } from './requirements/save-tool.js'
+import { REQUIREMENT_AGENT_PROMPT } from './features/requirements/prompt.js'
+import { createRequirementMcpServer } from './features/requirements/save-tool.js'
 import {
   hasPendingQuestion,
-  type AutomationHooks,
+  setAutomationHooks,
   type DevTurnResult,
   type RunDevTurnInput,
-} from './requirements/automation.js'
+} from './features/requirements/automation.js'
 import { STATIC_ASSETS } from './static-embed.js'
 import { mimeFor } from './mime.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
@@ -795,20 +795,23 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       }
     })
 
-  const automationHooks: AutomationHooks = {
+  // Wire the automation hooks into the requirements feature (feature-private,
+  // ADR-0009 R1: NOT on the kernel context). Mirrors the schedules feature's
+  // setExecutionStore/setBroadcast startup injection.
+  setAutomationHooks({
     runDevTurn,
     broadcastRequirements,
     emitStatus: broadcastAutomation,
     sessionExists,
     isRunning,
-  }
+  })
 
   // ── Composition root (ADR-0009 R3): construct the KernelContext ONCE,
   // explicitly, and inject it into every handler at dispatch time. It holds the
-  // cross-feature services (launcher, broadcasts, run starters, automation hooks);
-  // feature-private state now lives in each feature's store (2/3a), and slice 2/3b
-  // folds the broadcasts into a single transport/Broadcaster. `launchDeps` is the
-  // bag the top-level `launchRun` reads.
+  // cross-feature services (launcher, broadcasts, run starters); feature-private
+  // state lives in each feature's store/module (2/3a + automation hooks above),
+  // and slice 2/3b folds the broadcasts into a single transport/Broadcaster.
+  // `launchDeps` is the bag the top-level `launchRun` reads.
   const launchDeps = { broadcastStatuses, broadcastRequirements }
   const ctx: KernelContext = {
     launchDeps,
@@ -822,7 +825,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastDiscussionRunStatus,
     startDiscussionRun,
     startResearchRun,
-    automationHooks,
   }
   // R6 boot-time guard: no transport field (sock/viewer/connections) may cross
   // the kernel boundary.

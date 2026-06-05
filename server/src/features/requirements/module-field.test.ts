@@ -18,7 +18,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
-import { getDb, resetDbForTests } from '../db.js'
+import { getDb, resetDbForTests } from '../../db.js'
 import { createRequirementMcpServer } from './save-tool.js'
 import {
   getRequirement,

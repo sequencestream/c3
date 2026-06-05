@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AutomationStatus } from '@ccc/shared/protocol'
-import { resetDbForTests } from '../db.js'
+import { resetDbForTests } from '../../db.js'
 import {
   getRequirement,
   insertRequirements,
@@ -17,7 +17,7 @@ import {
 const judgeMock = vi.fn()
 const commitMock = vi.fn()
 vi.mock('./judge.js', () => ({ judgeCompletion: (...a: unknown[]) => judgeMock(...a) }))
-vi.mock('../git.js', () => ({
+vi.mock('../../git.js', () => ({
   gitDiffStat: async () => 'M file.ts | 1 +',
   gitRecentLog: async () => 'abc123 feat: prior work',
   commitAndPush: (...a: unknown[]) => commitMock(...a),
@@ -26,7 +26,7 @@ vi.mock('../git.js', () => ({
 // don't depend on the developer's on-disk config and can exercise a custom skill.
 // Default is empty (no prefix), matching the real default.
 const devSkillMock = vi.fn(() => '')
-vi.mock('../settings.js', () => ({ getDevSkill: () => devSkillMock() }))
+vi.mock('../../settings.js', () => ({ getDevSkill: () => devSkillMock() }))
 
 // Imported AFTER the mocks so automation.ts binds to the mocked modules.
 const { startAutomation, stopAutomation, getAutomationStatus } = await import('./automation.js')

@@ -19,7 +19,6 @@
  *   transport-shared / cross-feature → context; feature-private → feature store).
  */
 import type { AutomationStatus, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
-import type { AutomationHooks } from '../requirements/automation.js'
 import type { SessionRuntime } from '../runs.js'
 
 /** Connection-injected callbacks the run launcher fires (see `launchRun`). */
@@ -70,13 +69,13 @@ export interface KernelContext {
     state: 'running' | 'paused' | 'ended',
   ) => void
 
-  // ── background run starters (still live in the server.ts closure; move to the
-  //    discussions feature in slice 2/3c) ──
+  // ── background run starters (still live in the server.ts closure) ──
   readonly startDiscussionRun: (discussion: Discussion) => void
   readonly startResearchRun: (discussion: Discussion) => void
 
-  // ── automation orchestrator hooks ──
-  readonly automationHooks: AutomationHooks
+  // The automation hooks bag is feature-private to `requirements` (wired via
+  // `setAutomationHooks`, read via `getAutomationHooks`), NOT on the kernel
+  // context — keeping the kernel free of any `features/` import (ADR-0009 R1).
 }
 
 /**

@@ -21,7 +21,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (orig) => {
 })
 
 import { resetDbForTests } from './db.js'
-import { resetStoreForTests, setChatSession } from './requirements/store.js'
+import { resetStoreForTests, setChatSession } from './features/requirements/store.js'
 import { listWorkspaceSessions } from './sessions.js'
 
 const proj = '/abs/hidden-proj'

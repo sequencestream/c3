@@ -1,124 +1,23 @@
-import { randomUUID } from 'node:crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { McpServerConfig, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type {
-  AskConsensusOutcome,
-  ConsensusOutcome,
-  PermissionMode,
-  ServerToClient,
-} from '@ccc/shared/protocol'
+import type { PermissionMode, ServerToClient } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
-import { waitForDecision, resolveDecision, type Decision } from '../permission/registry.js'
-import { runAskConsensus, runConsensusVote } from '../../consensus.js'
-import { askQuestions } from '../../consensus-tally.js'
 import { stringifyToolResult } from '../../format.js'
 import { addToolSession } from '../../sessions.js'
 import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
 import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
 import { isSideEffectTool } from '../run/resume.js'
+import { createCanUseTool, deny, REQUIREMENT_DISALLOWED_TOOLS } from '../permission/index.js'
 
-/** The c3 `save_requirements` MCP tool's fully-qualified name (server name `c3`). */
-export const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
-
-/** The c3 `find_requirements` read-only MCP tool's fully-qualified name. */
-export const FIND_REQUIREMENTS_TOOL = 'mcp__c3__find_requirements'
-
-/** The c3 `view_requirement` read-only MCP tool's fully-qualified name. */
-export const VIEW_REQUIREMENT_TOOL = 'mcp__c3__view_requirement'
-
-/**
- * The read-only c3 MCP query tools the requirement agent may call without a
- * prompt. They only read the project's own ledger (project-bound in the tool
- * closure), so the gate treats them like the read-class built-ins — unlike
- * `save_requirements`, which still raises a human confirmation.
- */
-export const REQUIREMENT_QUERY_TOOLS = new Set([FIND_REQUIREMENTS_TOOL, VIEW_REQUIREMENT_TOOL])
-
-/**
- * Tools hard-disabled (SDK level) for the requirement-communication agent — the
- * source-of-truth read-only lock, paired with the requirement gate's
- * deny-by-default. `Bash` covers every shell sub-command, so it isn't enumerated.
- * `Task` and `SlashCommand` are essential: a spawned sub-agent's tool calls don't
- * pass through the parent `canUseTool`, and a slash command could run an
- * arbitrary skill — either would bypass the gateway, so both must be cut here.
- */
-export const REQUIREMENT_DISALLOWED_TOOLS = [
-  'Write',
-  'Edit',
-  'MultiEdit',
-  'NotebookEdit',
-  'Bash',
-  'BashOutput',
-  'KillShell',
-  'Task',
-  'SlashCommand',
-]
-
-/**
- * Read-only tools the requirement-communication agent may use without a prompt
- * ("read project material freely"). Anything not here — and not
- * `save_requirements` — is denied by the requirement gate (deny-by-default).
- */
-const REQUIREMENT_READ_TOOLS = new Set([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'NotebookRead',
-  'WebFetch',
-  'WebSearch',
-  'TodoWrite',
-])
-
-/**
- * Pure classification of a tool for the requirement (read-only) gate, so the
- * routing is unit-testable (the live `canUseTool` closure is otherwise only
- * reachable via live-LLM e2e). Deny-by-default:
- *  - `allow` — read-class built-ins + the read-only c3 query tools (no prompt).
- *  - `confirm-save` — `save_requirements` (raises a human confirmation).
- *  - `ask` — `AskUserQuestion` (clarifying-only; gate still applies the
- *    `askQuestions` input guard and routes via answer-injection).
- *  - `deny` — everything else.
- */
-export type RequirementToolDecision = 'allow' | 'confirm-save' | 'ask' | 'deny'
-export function classifyRequirementTool(toolName: string): RequirementToolDecision {
-  if (REQUIREMENT_READ_TOOLS.has(toolName) || REQUIREMENT_QUERY_TOOLS.has(toolName)) return 'allow'
-  if (toolName === SAVE_REQUIREMENTS_TOOL) return 'confirm-save'
-  if (toolName === 'AskUserQuestion') return 'ask'
-  return 'deny'
-}
-
-export const registerPermissionResolver = {
-  resolve(requestId: string, decision: Decision, answers?: Record<string, string>) {
-    resolveDecision(requestId, decision, answers)
-  },
-}
-
-// `isDegradableError` / `isSocketDisconnect` (the error-classification pair the
-// run loop's catch consults) moved to `kernel/agent-config/errors.js` (server
-// refactor 3/3) and are imported at the top of this file.
-
-// The AS-R18/R19 socket auto-resume gate — the side-effect tool classifier
-// (`isSideEffectTool`, used by the run loop below), its pure mirror
-// (`computeSideEffectPending`), and the resume decision (`decideSocketResume`) —
-// moved to `kernel/run/resume.js` (server refactor 3/3, a pure leaf both the run
-// loop and its launcher import). `isSideEffectTool` is imported at the top here.
-
-/**
- * Inject `AskUserQuestion` answers into the tool input so the SDK echoes them as
- * the tool result (verified: the tool reads a pre-supplied `answers` map keyed by
- * question text). This is a deliberate, AskUserQuestion-only exception to the
- * gateway's "don't rewrite inputs" rule (PG-R6) — the only headless channel to
- * answer the prompt.
- */
-export function withAnswers(
-  input: unknown,
-  answers: Record<string, string>,
-): Record<string, unknown> {
-  const base = (input ?? {}) as Record<string, unknown>
-  const prior = (base.answers as Record<string, string> | undefined) ?? {}
-  return { ...base, answers: { ...prior, ...answers }, annotations: base.annotations ?? {} }
-}
+// Moved out of this file in server refactor 3/3 (ADR-0009), imported where needed:
+//  - the permission gate (the `canUseTool` policy + tool-name constants +
+//    `classifyRequirementTool` / `withAnswers` / `registerPermissionResolver`) →
+//    `kernel/permission/*`; the run loop below builds its gateway via
+//    `createCanUseTool` and reuses `REQUIREMENT_DISALLOWED_TOOLS` (imported above).
+//  - `isDegradableError` / `isSocketDisconnect` (error classification) →
+//    `kernel/agent-config/errors.js`.
+//  - the AS-R18/R19 socket auto-resume gate (`isSideEffectTool` /
+//    `computeSideEffectPending` / `decideSocketResume`) → `kernel/run/resume.js`.
 
 /**
  * A controlled async-iterable prompt for the SDK's streaming-input mode. Unlike a
@@ -326,7 +225,7 @@ export async function askOneShot(opts: {
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
       ...(opts.envOverrides ? { env: { ...process.env, ...opts.envOverrides } } : {}),
       ...(opts.model ? { model: opts.model } : {}),
-      canUseTool: async () => ({ behavior: 'deny', message: 'one-shot judge is read-only' }),
+      canUseTool: async () => deny('one-shot judge is read-only'),
     },
   })
   let text = ''
@@ -452,165 +351,18 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // value the user/agent set explicitly still wins.
       env: buildChildEnv(envOverrides),
       ...(model ? { model } : {}),
-      canUseTool: async (toolName, input, _ctx) => {
-        const requestId = randomUUID()
-
-        // Requirement (read-only) gate: a separate, simpler policy that never
-        // runs consensus. Read tools pass through; `save_requirements` asks the
-        // human; everything else is denied by default (defence-in-depth behind
-        // `disallowedTools`).
-        if (gate === 'requirement') {
-          const decisionClass = classifyRequirementTool(toolName)
-          // Read-class built-ins + read-only c3 query tools (find/view) pass through.
-          if (decisionClass === 'allow') {
-            return { behavior: 'allow', updatedInput: input }
-          }
-          if (decisionClass === 'confirm-save') {
-            send({ type: 'permission_request', requestId, toolName, input })
-            const { decision } = await waitForDecision(requestId, signal)
-            if (decision === 'allow') {
-              return { behavior: 'allow', updatedInput: input }
-            }
-            return { behavior: 'deny', message: 'User denied in c3 UI' }
-          }
-          // AskUserQuestion is a clarifying-only tool (no write/exec side effects),
-          // so the read-only requirement agent may use it. It needs the standard
-          // answer-injection flow — NOT a plain allow (the SDK echoes answers only
-          // when `input.answers` is pre-filled). Single agent ⇒ no consensus: just
-          // prompt the human and inject the answers (or deny on cancel).
-          if (decisionClass === 'ask' && askQuestions(input)) {
-            send({ type: 'permission_request', requestId, toolName, input })
-            const { decision, answers } = await waitForDecision(requestId, signal)
-            if (decision === 'allow') {
-              return { behavior: 'allow', updatedInput: withAnswers(input, answers ?? {}) }
-            }
-            return { behavior: 'deny', message: 'User denied in c3 UI' }
-          }
-          console.warn(`[c3] requirement gate denied tool: ${toolName}`)
-          return {
-            behavior: 'deny',
-            message: 'Requirement chat is read-only; this tool is blocked.',
-          }
-        }
-
-        // Discussion-research (read-only) gate: a one-shot research agent that
-        // completes a new discussion's `context`. It reuses the requirement read
-        // set (Read/Grep/Glob/… + WebFetch/WebSearch) so it can read project
-        // material and search the web, but has NO save tool — the server writes the
-        // agent's final text back itself — and clarifying questions are off (the
-        // run is unattended). Everything else is denied by default.
-        if (gate === 'discussion-research') {
-          if (REQUIREMENT_READ_TOOLS.has(toolName)) {
-            return { behavior: 'allow', updatedInput: input }
-          }
-          console.warn(`[c3] discussion-research gate denied tool: ${toolName}`)
-          return {
-            behavior: 'deny',
-            message: 'Discussion research is read-only; this tool is blocked.',
-          }
-        }
-
-        // AskUserQuestion is not an allow/deny tool — it needs an ANSWER per
-        // question. Consensus voters answer each question; if they all agree on
-        // every question we answer on the user's behalf, otherwise the human
-        // fills the answer panel (agreed questions pre-filled). This branch runs
-        // even with consensus disabled so the panel still renders and the answers
-        // get injected (the base AskUserQuestion support).
-        if (toolName === 'AskUserQuestion' && askQuestions(input)) {
-          // The consensus pass spawns one advisor query() subprocess per voter plus
-          // a decider — a multi-second window during which the tool-use stays
-          // pending and the request is not yet visible to the human. It is fully
-          // contained (the `.catch` ⇒ null) so an advisor error/slowness can never
-          // abort or throw into the main run; the worst case is "no opinions, ask
-          // the human" (the safe default). If the main run is nonetheless torn down
-          // in this window, `waitForDecision` resolves to deny (below) and we log it
-          // so the precise trigger can be confirmed in a live multi-agent setup.
-          const ask: AskConsensusOutcome | null = await runAskConsensus({
-            currentAgentId: currentAgentId ?? null,
-            toolName,
-            input,
-            context: recentContext,
-            cwd,
-            signal,
-          }).catch((err) => {
-            console.warn(
-              `[c3] runAskConsensus threw (deferring to human): ${
-                err instanceof Error ? err.message : String(err)
-              }`,
-            )
-            return null
-          })
-          if (ask && ask.fullyUnanimous) {
-            send({ type: 'consensus_auto', toolName, input, outcome: ask })
-            return { behavior: 'allow', updatedInput: withAnswers(input, ask.agreedAnswers) }
-          }
-          // The run was torn down *while* consensus ran: do NOT emit a
-          // permission_request the human can never answer. It would linger in the
-          // buffer as a dead "曾请求…" static line (the residue the fix forbids).
-          // Deny straight away — the turn is already ending.
-          if (signal.aborted) {
-            console.warn(
-              `[c3] AskUserQuestion ${requestId} aborted during the consensus window — ` +
-                `skipping the unanswerable permission_request (consensus-window race)`,
-            )
-            return { behavior: 'deny', message: 'Run aborted during consensus' }
-          }
-          send(
-            ask
-              ? { type: 'permission_request', requestId, toolName, input, consensus: ask }
-              : { type: 'permission_request', requestId, toolName, input },
-          )
-          const { decision, answers } = await waitForDecision(requestId, signal)
-          if (decision === 'allow') {
-            return { behavior: 'allow', updatedInput: withAnswers(input, answers ?? {}) }
-          }
-          // Distinguish a human "deny" from a run-teardown deny: the latter means an
-          // AskUserQuestion prompt the user never answered was denied because the run
-          // signal aborted during/after the consensus window — the race this log
-          // exists to catch.
-          if (signal.aborted) {
-            console.warn(
-              `[c3] AskUserQuestion ${requestId} denied by run abort before the human answered ` +
-                `(consensus-window race) — tool=${toolName}`,
-            )
-          }
-          return { behavior: 'deny', message: 'User denied in c3 UI' }
-        }
-
-        // Multi-agent consensus first (resolves to null when disabled, when there
-        // are no other agents, or if the advisor queries throw).
-        const outcome: ConsensusOutcome | null = await runConsensusVote({
-          currentAgentId: currentAgentId ?? null,
-          toolName,
-          input,
-          context: recentContext,
-          cwd,
-          signal,
-        }).catch(() => null)
-        // Unanimous ⇒ auto-resolve; surface how it was decided in the stream.
-        if (outcome && outcome.unanimous && outcome.decision) {
-          send({ type: 'consensus_auto', toolName, input, outcome })
-          if (outcome.decision === 'allow') {
-            return { behavior: 'allow', updatedInput: input }
-          }
-          return { behavior: 'deny', message: 'Denied by c3 multi-agent consensus' }
-        }
-        // Run torn down during the consensus window ⇒ skip the unanswerable prompt
-        // (same residue guard as the AskUserQuestion branch above) and deny.
-        if (signal.aborted) {
-          return { behavior: 'deny', message: 'Run aborted during consensus' }
-        }
-        // Split / no consensus ⇒ ask the human, attaching the opinions (if any).
-        const req: ServerToClient = outcome
-          ? { type: 'permission_request', requestId, toolName, input, consensus: outcome }
-          : { type: 'permission_request', requestId, toolName, input }
-        send(req)
-        const { decision } = await waitForDecision(requestId, signal)
-        if (decision === 'allow') {
-          return { behavior: 'allow', updatedInput: input }
-        }
-        return { behavior: 'deny', message: 'User denied in c3 UI' }
-      },
+      // The permission gateway — the SINGLE chokepoint (C-SEC). Every sensitive
+      // tool flows through `createCanUseTool`; the run loop never inspects or mints
+      // a verdict itself. `recentContext` is a getter because the message loop keeps
+      // appending to the rolling context the consensus voters read.
+      canUseTool: createCanUseTool({
+        gate,
+        send,
+        signal,
+        currentAgentId: currentAgentId ?? null,
+        cwd,
+        recentContext: () => recentContext,
+      }),
     },
   })
 

@@ -101,6 +101,33 @@ export default tseslint.config(
   },
 
   {
+    // C-SEC (server refactor 3/3, ADR-0009): the permission gateway is the SINGLE
+    // chokepoint. `transport/` (pure wire plumbing) and `features/` MUST NOT reach
+    // for the Claude Agent SDK directly — running the agent goes through
+    // `kernel/agent` and EVERY tool verdict through `kernel/permission` (the branded
+    // PermissionDecision no feature can mint). This stops a feature from spinning up
+    // its own `query` + `canUseTool` and bypassing the gateway. Tests are exempt
+    // (they stub the SDK); the three established scheduled-run / MCP-tool files that
+    // legitimately use the SDK carry an annotated, justified eslint-disable.
+    files: ['server/src/features/**/*.ts', 'server/src/transport/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@anthropic-ai/claude-agent-sdk'],
+              message:
+                'C-SEC: features/transport must not import the Claude Agent SDK directly — run the agent via kernel/agent and decide every tool through kernel/permission (the single gateway). Annotate a justified exception only for an established scheduled-run / MCP-tool path.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
     // i18n gate: forbid hard-coded UI text in web templates. M1 extraction is
     // complete (all web/src/*.vue copy goes through t()), so this is `error` —
     // any new hard-coded copy fails lint/CI. See specs/style/i18n-spec.md §5.2.

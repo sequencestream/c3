@@ -10,7 +10,14 @@
  */
 
 import { spawn } from 'node:child_process'
+// C-SEC exception (annotated): the schedule dispatcher runs UNATTENDED scheduled
+// agents with its OWN three-tier MCP security model (read-only / sandboxed /
+// full-access + the write-approval queue), a deliberately separate path from the
+// interactive `kernel/permission` gateway. It therefore drives `query` + its own
+// `canUseTool` directly — the only feature allowed to, and only for this purpose.
+// eslint-disable-next-line no-restricted-imports
 import { query } from '@anthropic-ai/claude-agent-sdk'
+// eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { McpMode, Schedule } from '@ccc/shared/protocol'
 import { findClaudeExecutable } from '../../kernel/infra/child-env.js'

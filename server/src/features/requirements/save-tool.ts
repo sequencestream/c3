@@ -15,7 +15,13 @@
  * `mcp__c3__save_requirements` / `mcp__c3__find_requirements` /
  * `mcp__c3__view_requirement` (see the `*_TOOL` constants in `claude.ts`).
  */
+// C-SEC exception (annotated): this DEFINES an in-process MCP tool (the
+// `save_requirements` server) handed to the kernel run loop — it does not run an
+// agent or mint a permission verdict. The tool's invocations still pass through
+// the requirement gate in `kernel/permission` (classifyRequirementTool ⇒ confirm-save).
+// eslint-disable-next-line no-restricted-imports
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+// eslint-disable-next-line no-restricted-imports
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { resolve } from 'node:path'
 import { z } from 'zod'

@@ -8,7 +8,8 @@
  */
 import type { Discussion, ResearchMessage } from '@ccc/shared/protocol'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
-import { runClaude, REQUIREMENT_DISALLOWED_TOOLS } from '../../kernel/agent/index.js'
+import { runClaude } from '../../kernel/agent/index.js'
+import { REQUIREMENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
 
 /** System-prompt append that frames the unattended, read-only research run. */
 export const DISCUSSION_RESEARCH_PROMPT = `你是讨论的「上下文研究员」。你的唯一任务:为一个即将开始的讨论补全背景资料(context)。

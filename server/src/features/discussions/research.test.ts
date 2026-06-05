@@ -8,7 +8,6 @@ type SendMsg = { type: string; text?: string; toolName?: string }
 let runClaudeImpl: (opts: { send: (m: SendMsg) => void }) => Promise<void>
 vi.mock('../../kernel/agent/index.js', () => ({
   runClaude: (opts: { send: (m: SendMsg) => void }) => runClaudeImpl(opts),
-  REQUIREMENT_DISALLOWED_TOOLS: [],
 }))
 
 const {

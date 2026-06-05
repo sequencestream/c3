@@ -75,3 +75,15 @@ export function resolveDecision(
 export function pendingCount(): number {
   return pendingApprovals.size
 }
+
+/**
+ * The thin adapter the `permissions` feature handler calls to resolve a pending
+ * request from a browser `permission_response`. Kept as a named object so the
+ * feature wires to `kernel/permission` (the chokepoint) rather than reaching for
+ * `resolveDecision` directly.
+ */
+export const registerPermissionResolver = {
+  resolve(requestId: string, decision: Decision, answers?: Record<string, string>) {
+    resolveDecision(requestId, decision, answers)
+  },
+}

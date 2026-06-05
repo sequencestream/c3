@@ -10,6 +10,10 @@
  * non-empty string. The LLM call is injected via `deps.invokeLlm` to keep the
  * generator unit-testable without the network.
  */
+// C-SEC exception (annotated): a tiny tool-less one-shot `query` to generate a
+// schedule's display name — no tool use, so no gateway is involved. Kept in the
+// schedules feature (its naming concern); not an interactive run.
+// eslint-disable-next-line no-restricted-imports
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { CreateScheduleInput, ScheduleType } from '@ccc/shared/protocol'
 import { findClaudeExecutable } from '../../kernel/infra/child-env.js'

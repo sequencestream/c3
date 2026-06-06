@@ -160,24 +160,57 @@ export interface OpencodeAgentConfig {
 }
 
 /**
+ * The Codex sandbox mode — the launch-time filesystem/network boundary chosen in
+ * the UI. Codex has NO per-tool runtime approval (Phase 0 probe 008 NO-GO), so
+ * this gate (plus {@link CodexAgentConfig.approvalPolicy}) is the substitute for
+ * in-the-loop allow/deny. Mirrors the SDK's `SandboxMode`.
+ */
+export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+
+/**
+ * The Codex approval policy — when the model is told it *may* escalate. Best-effort
+ * only: the SDK runs `codex exec` non-interactively, so in practice the sandbox is
+ * the real enforcement (008). Mirrors the SDK's `ApprovalMode`.
+ */
+export type CodexApprovalPolicy = 'never' | 'on-request' | 'on-failure' | 'untrusted'
+
+/**
+ * The `codex` vendor's config sub-object (2026-06-06-005). Beyond the neutral
+ * launch overrides (mirroring claude/opencode), Codex persists its launch-time
+ * policy gate — `sandboxMode` + `approvalPolicy` — because that gate REPLACES the
+ * per-tool approval Codex cannot do (Phase 0 008). Each empty string ⇒ no override.
+ */
+export interface CodexAgentConfig {
+  /** OpenAI-compatible base URL override. Empty ⇒ no override. */
+  baseUrl: string
+  /** API key / auth token override. Empty ⇒ no override. */
+  apiKey: string
+  /** Model alias or id. Empty ⇒ no override. */
+  model: string
+  /** Launch-time sandbox boundary (the per-tool-approval substitute). */
+  sandboxMode: CodexSandboxMode
+  /** Launch-time approval policy (best-effort; sandbox is the real gate). */
+  approvalPolicy: CodexApprovalPolicy
+}
+
+/**
  * One agent profile under the system-config module: a vendor-agnostic public
  * shell ({@link AgentConfigBase}) plus a `vendor`-discriminated `config`
  * sub-object. A session launches the agent's vendor CLI using its agent (or the
  * default agent when unassigned), routing the `config` per its `vendor` tag.
  *
- * `claude` (ADR-0011 reference) and `opencode` (Phase 1 full integration,
- * 2026-06-06-003) have real adapters and config shapes; `codex` is the remaining
- * extension point — a new arm (`AgentConfigBase & { vendor: 'codex'; config:
- * CodexAgentConfig }`) lands here once its adapter + zod sub-schema exist. The
- * runtime validation/routing lives server-side in `kernel/agent-config/schema.ts`
- * (zod stays out of this zero-runtime, SDK-free wire module — ADR-0009); a
- * type-level assertion there pins the zod schema to this union so the two cannot
- * drift.
+ * `claude` (ADR-0011 reference), `opencode` (Phase 1 full integration,
+ * 2026-06-06-003), and `codex` (read-only advisor seat, Phase 0 008 NO-GO,
+ * 2026-06-06-005) all have real adapters and config shapes. The runtime
+ * validation/routing lives server-side in `kernel/agent-config/schema.ts` (zod
+ * stays out of this zero-runtime, SDK-free wire module — ADR-0009); a type-level
+ * assertion there pins the zod schema to this union so the two cannot drift.
  */
 export type AgentConfig = AgentConfigBase &
   (
     | { vendor: 'claude'; config: ClaudeAgentConfig }
     | { vendor: 'opencode'; config: OpencodeAgentConfig }
+    | { vendor: 'codex'; config: CodexAgentConfig }
   )
 
 /**

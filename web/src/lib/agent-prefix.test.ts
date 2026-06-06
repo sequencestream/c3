@@ -3,13 +3,15 @@ import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
 import { advanceOnFailure, agentAttemptOrder, agentNameAt } from './agent-prefix'
 
 function agent(id: string, name: string, over: Partial<AgentConfig> = {}): AgentConfig {
+  // Base is a claude arm; `...over` is a Partial over the discriminated union, so
+  // the spread cannot be statically correlated — cast to the wire type (test fixture).
   return {
     id,
     vendor: 'claude',
     displayName: name,
     config: { baseUrl: '', apiKey: '', model: '' },
     ...over,
-  }
+  } as AgentConfig
 }
 
 function settings(over: Partial<SystemSettings> = {}): SystemSettings {

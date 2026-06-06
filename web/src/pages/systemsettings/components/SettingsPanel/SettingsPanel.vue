@@ -108,8 +108,10 @@ watch(
     if (!open || !settings) return
     draft.value = {
       // Deep-copy each agent incl. its vendor `config` so draft edits don't
-      // mutate the rendered server state.
-      agents: settings.agents.map((a) => ({ ...a, config: { ...a.config } })),
+      // mutate the rendered server state. `structuredClone` preserves the
+      // discriminated-union type (a manual `{ ...a, config: { ...a.config } }`
+      // spread widens `vendor`/`config` and breaks the arm correlation).
+      agents: settings.agents.map((a) => structuredClone(a)),
       defaultAgentId: settings.defaultAgentId,
       defaultMode: settings.defaultMode ?? 'default',
       consensus: { enabled: settings.consensus?.enabled ?? false },

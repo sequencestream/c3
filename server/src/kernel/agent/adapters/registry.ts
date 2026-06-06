@@ -7,15 +7,16 @@
  * its adapter is never built, so its {@link AdapterCapabilities} never come into
  * play. "Probe before construct" keeps the gate strictly ahead of capabilities.
  *
- * `claude` registers via a no-arg factory (ADR-0011 reference). `opencode` is the
+ * `claude` registers via a no-arg factory (ADR-0011 reference); `codex` likewise
+ * (read-only advisor seat, Phase 0 008 NO-GO, 2026-06-06-005) — like Claude it
+ * spawns its CLI per run via the SDK, so it needs no supervisor. `opencode` is the
  * first full non-Claude integration (2026-06-06-003) but it needs a started
  * {@link OpencodeSupervisor}, so it is NOT a no-arg factory — the composition root
- * builds its adapter and injects it here via `opts.opencode`. `codex` still has no
- * adapter even though the launcher's `HOST_BINARIES` table lists it for the
- * first-launch health check.
+ * builds its adapter and injects it here via `opts.opencode`.
  */
 import type { VendorId, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
+import { createCodexAdapter } from './codex/index.js'
 import { HOST_BINARIES, resolve as resolveHostBinary } from '../process/launcher.js'
 
 /** Builds a fresh {@link VendorAdapter}. */
@@ -27,6 +28,7 @@ type VendorFactory = () => VendorAdapter
  */
 export const VENDOR_FACTORIES: Partial<Record<VendorId, VendorFactory>> = {
   claude: createClaudeAdapter,
+  codex: () => createCodexAdapter(),
 }
 
 /** A vendor whose adapter exists but whose host CLI was not found on this host. */

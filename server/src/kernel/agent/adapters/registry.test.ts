@@ -38,6 +38,27 @@ describe('resolveAvailableAdapters', () => {
     expect(available).toHaveLength(0)
   })
 
+  // ── Codex no-arg factory (2026-06-06-005) ───────────────────────────────────
+  it('registers the codex adapter (read-only advisor, all-false ledger) when its CLI resolves', () => {
+    const { available, missing } = resolveAvailableAdapters((v) =>
+      v === 'codex' ? '/usr/local/bin/codex' : null,
+    )
+    const codex = available.find((a) => a.vendor === 'codex')
+    expect(codex).toBeDefined()
+    expect(codex?.driver.vendor).toBe('codex')
+    // Faithful to Phase 0 (008 NO-GO): no per-tool approval.
+    expect(codex?.capabilities.perToolApproval).toBe(false)
+    expect(missing.map((m) => m.vendor)).not.toContain('codex')
+  })
+
+  it('lists codex in `missing` when its host CLI is absent', () => {
+    const { missing } = resolveAvailableAdapters(() => null)
+    const codexMissing = missing.find((m) => m.vendor === 'codex')
+    expect(codexMissing).toBeDefined()
+    expect(codexMissing?.binary).toBe('codex')
+    expect(codexMissing?.installHint.length).toBeGreaterThan(0)
+  })
+
   // ── OpenCode injection (2026-06-06-003) ──────────────────────────────────────
   const fakeOpencode = { vendor: 'opencode' } as unknown as VendorAdapter
 

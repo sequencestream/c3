@@ -98,6 +98,17 @@ adapter** that delegates to the existing `runClaude` / permission gateway / `ses
 proving the interface is satisfiable. Codex / OpenCode adapters and the run-loop rewrite (folding the
 live gateway through `ApprovalBridge`) are later phases.
 
+> **Status (later phases landed).** The **OpenCode** adapter shipped as the first full non-Claude
+> integration (2026-06-06-003): supervised server, out-of-loop `perToolApproval: true`, preApproved
+> audit. The **Codex** adapter shipped as c3's **read-only advisor seat** (2026-06-06-005), honouring
+> the 008 NO-GO verbatim: capability ledger **all-false** (`perToolApproval: false`), launch-time
+> `sandboxMode`+`approvalPolicy` gate substituting for per-tool approval, run-time read-only monitor +
+> whole-turn abort, and a structural `preApproved: true` stamp on every tool item (each is auto-allowed
+> by the sandbox gate, never a c3 decision). The MCP-approval fallback (§4 escape hatch 2) is left an
+> inert skeleton — Phase 0 judged it a narrow lever (cannot gate Codex's built-in `shell`/`apply_patch`).
+> `forkSession` stays false: 008 killed the branch that would have used `resumeThread` as a fork;
+> `resumeThread` instead serves neutral session `resume`.
+
 **Probe protocol.** A capability flag reports the **vendor** ability. A caller reaching for an optional
 control checks the flag **and** `typeof run.method === 'function'` (the build-wiring probe), then
 degrades when either is false. The reference Claude adapter wires the controls reachable through

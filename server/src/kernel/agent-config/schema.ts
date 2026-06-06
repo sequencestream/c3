@@ -52,26 +52,48 @@ const opencodeAgentSchema = baseShellSchema.extend({
 })
 
 /**
+ * The `codex` vendor's config sub-object (2026-06-06-005). Carries the launch-time
+ * policy gate (`sandboxMode` + `approvalPolicy`) that substitutes for the per-tool
+ * approval Codex cannot do (Phase 0 008 NO-GO). The enums mirror the SDK's
+ * `SandboxMode`/`ApprovalMode`.
+ */
+export const codexConfigSchema = z.object({
+  baseUrl: z.string(),
+  apiKey: z.string(),
+  model: z.string(),
+  sandboxMode: z.enum(['read-only', 'workspace-write', 'danger-full-access']),
+  approvalPolicy: z.enum(['never', 'on-request', 'on-failure', 'untrusted']),
+})
+
+/** The `codex` agent arm: public shell + `vendor: 'codex'` + codex config. */
+const codexAgentSchema = baseShellSchema.extend({
+  vendor: z.literal('codex'),
+  config: codexConfigSchema,
+})
+
+/**
  * Per-vendor agent-arm schema registry — the **extension point**. A new vendor
  * registers its arm here (and in {@link agentConfigSchema} below). Partial over
  * {@link VendorId} on purpose: a vendor without an entry has no config shape yet
  * and cannot be persisted as an agent (it would have no adapter to run on).
- * `claude` + `opencode` have real adapters; `codex` remains unregistered.
+ * `claude`, `opencode`, and `codex` all have real adapters.
  */
 export const VENDOR_AGENT_SCHEMAS = {
   claude: claudeAgentSchema,
   opencode: opencodeAgentSchema,
+  codex: codexAgentSchema,
 } satisfies Partial<Record<VendorId, z.ZodTypeAny>>
 
 /**
  * The full {@link AgentConfig} schema, routed by the `vendor` discriminant:
  * `safeParse` dispatches an object to its vendor's arm and rejects an unknown
- * vendor or a config that fails that arm. claude + opencode arms today; new
+ * vendor or a config that fails that arm. claude + opencode + codex arms; new
  * vendors append their arm.
  */
 export const agentConfigSchema = z.discriminatedUnion('vendor', [
   claudeAgentSchema,
   opencodeAgentSchema,
+  codexAgentSchema,
 ])
 
 /**

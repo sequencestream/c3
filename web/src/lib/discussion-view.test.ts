@@ -60,13 +60,15 @@ function msg(over: Partial<DiscussionMessage>): DiscussionMessage {
 }
 
 function agent(over: Partial<AgentConfig>): AgentConfig {
+  // Base is a claude arm; `...over` is a Partial over the discriminated union, so
+  // the spread cannot be statically correlated — cast to the wire type (test fixture).
   return {
     id: 'a',
     vendor: 'claude',
     displayName: 'A',
     config: { baseUrl: '', apiKey: '', model: '' },
     ...over,
-  }
+  } as AgentConfig
 }
 
 // Tiny i18n stand-in: maps the three discussion.speaker.* keys to fixed labels

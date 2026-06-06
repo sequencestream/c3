@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import type { VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
+import { createCodexAdapter } from './codex/index.js'
 
 /** The six optional/degradable capability flags — the complete, closed set. */
 const OPTIONAL_CAPABILITY_KEYS = [
@@ -57,11 +58,24 @@ describe('neutral adapter contract', () => {
     assertNeutralAdapterShape(createClaudeAdapter())
   })
 
+  it('Codex adapter satisfies the same required surface (no per-tool approval)', () => {
+    assertNeutralAdapterShape(createCodexAdapter())
+  })
+
   it('distinguishes required (unflagged) from optional (flagged) capabilities', () => {
     const { capabilities } = createClaudeAdapter()
     // Exactly six optional flags — the closed degradable set.
     expect(Object.keys(capabilities)).toHaveLength(OPTIONAL_CAPABILITY_KEYS.length)
     // perToolApproval is the D2 addition beyond the original five — present & boolean.
     expect('perToolApproval' in capabilities).toBe(true)
+  })
+
+  it('Codex capability ledger is all-false, faithful to Phase 0 (008 NO-GO)', () => {
+    const { capabilities } = createCodexAdapter()
+    // Every flag false — Codex is the read-only advisor seat; the load-bearing
+    // one is perToolApproval: false (no in-the-loop approval point exists).
+    for (const key of OPTIONAL_CAPABILITY_KEYS) {
+      expect(capabilities[key]).toBe(false)
+    }
   })
 })

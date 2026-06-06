@@ -14,7 +14,7 @@
  * `./normalize` (a leaf). config → normalize and readers → config + normalize,
  * so the boundary stays acyclic.
  */
-import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
+import type { AgentConfig, SystemSettings, VendorId } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import { getSessionAgentId, loadSettings } from '../config/index.js'
 import { systemAgent } from './normalize.js'
@@ -153,8 +153,33 @@ export function resolveDegradationAgent(
 /**
  * The agents that vote in a consensus round: every *enabled* agent except the
  * one the session itself runs on (`currentAgentId`, already resolved). Disabled
- * agents never vote.
+ * agents never vote. **Vendor-homogeneous** — only same-vendor agents are kept
+ * (see {@link vendorScopedVoters}); cross-vendor agents never vote because tool
+ * names and risk semantics are not comparable across vendors.
  */
 export function consensusVoters(currentAgentId: string | null): AgentConfig[] {
-  return enabledAgents().filter((a) => a.id !== currentAgentId)
+  return vendorScopedVoters(currentAgentId).voters
+}
+
+/**
+ * Consensus is **vendor-homogeneous** (2026-06-06-006 heterogeneous-tolerance):
+ * voting is limited to agents of the **session's own vendor**, because a tool
+ * name + risk meaning the voter must judge is not comparable across vendors
+ * (a Claude `Bash` and a Codex `shell` are different verdicts). So this resolves
+ * the session agent's vendor, keeps only same-vendor enabled non-self agents as
+ * voters, and reports how many enabled non-self agents of a **different** vendor
+ * were excluded — so the gateway can label the outcome honestly rather than
+ * implying the whole heterogeneous table weighed in. A table where the session's
+ * vendor is the only one present yields `voters: []` ⇒ consensus is skipped and
+ * the human is prompted as usual (the existing no-voter fallback).
+ */
+export function vendorScopedVoters(currentAgentId: string | null): {
+  voters: AgentConfig[]
+  vendorScope: VendorId
+  crossVendorExcluded: number
+} {
+  const vendorScope = resolveAgent(currentAgentId).vendor
+  const others = enabledAgents().filter((a) => a.id !== currentAgentId)
+  const voters = others.filter((a) => a.vendor === vendorScope)
+  return { voters, vendorScope, crossVendorExcluded: others.length - voters.length }
 }

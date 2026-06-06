@@ -16,6 +16,7 @@ import {
   type AskDraftSlot,
 } from '../../lib/ask'
 import { fmt, oneLine } from '../../lib/format'
+import { VENDOR_LABEL } from '../../lib/vendor'
 import { useTypedI18n } from '@/i18n'
 import type { PermissionMsg } from '../../lib/chat-types'
 import type { ProposedRequirement } from '@ccc/shared/protocol'
@@ -169,6 +170,17 @@ function submitAsk() {
       }}</span>
     </div>
     <div v-if="m.consensus" class="consensus-summary ask-summary">🤝 {{ m.consensus.summary }}</div>
+    <div
+      v-if="m.consensus && m.consensus.vendorScope && (m.consensus.crossVendorExcluded ?? 0) > 0"
+      class="consensus-vendor-scope"
+    >
+      {{
+        t('discussion.consensus.vendorScope.label', {
+          vendor: VENDOR_LABEL[m.consensus.vendorScope],
+          count: m.consensus.crossVendorExcluded ?? 0,
+        })
+      }}
+    </div>
     <div class="ask-panel">
       <div v-for="q in askQuestionsOf(m.input)" :key="q.index" class="ask-q">
         <div class="ask-q-head">
@@ -310,6 +322,17 @@ function submitAsk() {
     <div v-if="m.consensus && m.consensus.kind === 'tool'" class="consensus consensus-split">
       <div class="consensus-summary">
         {{ t('permission.consensus.disagree.label') }} {{ m.consensus.summary }}
+      </div>
+      <div
+        v-if="m.consensus.vendorScope && (m.consensus.crossVendorExcluded ?? 0) > 0"
+        class="consensus-vendor-scope"
+      >
+        {{
+          t('discussion.consensus.vendorScope.label', {
+            vendor: VENDOR_LABEL[m.consensus.vendorScope],
+            count: m.consensus.crossVendorExcluded ?? 0,
+          })
+        }}
       </div>
       <ul class="consensus-votes">
         <li v-for="v in m.consensus.votes" :key="v.agentId">

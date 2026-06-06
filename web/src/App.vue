@@ -989,6 +989,17 @@ function handleMessage(msg: ServerToClient) {
     case 'all_agents_failed':
       // Every agent in the degradation chain failed. The turn ends with error.
       add({ kind: 'system', text: `— ${msg.message} —` })
+      // Honestly note any cross-vendor fallback that was skipped (it cannot resume
+      // this session's context, so it was never tried) — see 2026-06-06-006.
+      if (msg.crossVendorSkipped && msg.crossVendorSkipped.length > 0) {
+        add({
+          kind: 'system',
+          text: t('session.agent.crossVendorSkipped', {
+            count: msg.crossVendorSkipped.length,
+            agents: msg.crossVendorSkipped.map((a) => a.agentName).join(', '),
+          }),
+        })
+      }
       break
     case 'error':
       // Machine-readable code translated locally via the web i18n catalog (spec 003).

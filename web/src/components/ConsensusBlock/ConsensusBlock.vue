@@ -5,6 +5,7 @@
  * 两种形态：AskUserQuestion 的逐题自动作答，以及其它工具的 allow/deny 裁定。
  */
 import type { ChatMsg } from '../../lib/chat-types'
+import { VENDOR_LABEL } from '../../lib/vendor'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -21,6 +22,17 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
     </div>
     <div class="consensus">
       <div class="consensus-summary">{{ m.outcome.summary }}</div>
+      <div
+        v-if="m.outcome.vendorScope && (m.outcome.crossVendorExcluded ?? 0) > 0"
+        class="consensus-vendor-scope"
+      >
+        {{
+          t('discussion.consensus.vendorScope.label', {
+            vendor: VENDOR_LABEL[m.outcome.vendorScope],
+            count: m.outcome.crossVendorExcluded ?? 0,
+          })
+        }}
+      </div>
       <ul class="consensus-questions">
         <li v-for="q in m.outcome.perQuestion" :key="q.index">
           <div class="cq-head">
@@ -59,6 +71,17 @@ defineProps<{ m: Extract<ChatMsg, { kind: 'consensus' }> }>()
     </div>
     <div class="consensus">
       <div class="consensus-summary">{{ m.outcome.summary }}</div>
+      <div
+        v-if="m.outcome.vendorScope && (m.outcome.crossVendorExcluded ?? 0) > 0"
+        class="consensus-vendor-scope"
+      >
+        {{
+          t('discussion.consensus.vendorScope.label', {
+            vendor: VENDOR_LABEL[m.outcome.vendorScope],
+            count: m.outcome.crossVendorExcluded ?? 0,
+          })
+        }}
+      </div>
       <ul class="consensus-votes">
         <li v-for="v in m.outcome.votes" :key="v.agentId">
           <span class="vote-name">{{ v.agentName }}</span>

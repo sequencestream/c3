@@ -12,13 +12,28 @@ SDK-free for unit tests, mirroring `permissions.ts`).
 
 ## Roles
 
-| Role    | Who                                                            | Job                                                            |
-| ------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
-| Voters  | Every configured agent **except** the session's own (resolved) | Judge the tool call from recent context; return `allow`/`deny` |
-| Decider | The session's own agent                                        | Summarize the voters' opinions in one sentence (Chinese)       |
+| Role    | Who                                                                            | Job                                                            |
+| ------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Voters  | Every configured **same-vendor** agent **except** the session's own (resolved) | Judge the tool call from recent context; return `allow`/`deny` |
+| Decider | The session's own agent                                                        | Summarize the voters' opinions in one sentence (Chinese)       |
 
-If there are no voters (only the session's own agent), consensus is skipped and
-the human is prompted as usual.
+If there are no voters (only the session's own agent, **or** every other agent is a
+different vendor), consensus is skipped and the human is prompted as usual.
+
+### Vendor-homogeneous voting (2026-06-06-006)
+
+Consensus is **vendor-scoped**: only agents of the **session's own vendor** vote
+(`vendorScopedVoters` in `kernel/agent-config/`). A heterogeneous roundtable can mix
+vendors, but a cross-vendor vote is **meaningless** — the tool name + risk meaning a
+voter must judge is not comparable across vendors (a Claude `Bash`, an OpenCode shell
+tool, and a Codex `shell` are different verdicts under different risk taxonomies). So
+c3 does **not** neutralize the request into a vendor-free "intent + risk-tag" form for
+cross-vendor voting (a deliberately-deferred option — low ROI until a real need); it
+simply limits the vote to the homogeneous subset and **labels the outcome honestly**.
+The outcome carries `vendorScope` (the voting vendor) and `crossVendorExcluded` (how
+many enabled non-self agents of a different vendor were dropped); when `> 0` the console
+notes "共识限 \<vendor\> 内 · N 个跨 vendor 顾问未参与" so the human knows the whole
+heterogeneous table did **not** weigh in — never faking a cross-vendor consensus.
 
 ## Flow
 

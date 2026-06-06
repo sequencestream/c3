@@ -408,7 +408,8 @@
       "upgraded": "— Upgraded to a team session: the team lead keeps running and coordinating teammates until you click \"End team\" —"
     },
     "agent": {
-      "failed": "— Agent \"{agentName}\" failed: {error} —"
+      "failed": "— Agent \"{agentName}\" failed: {error} —",
+      "crossVendorSkipped": "— Skipped {count} cross-vendor fallback agent(s) ({agents}): a different vendor cannot resume this session's context —"
     },
     "list": {
       "title": {
@@ -897,6 +898,9 @@
       },
       "disagreement": {
         "label": "Disagreement"
+      },
+      "vendorScope": {
+        "label": "Consensus limited to {vendor} · {count} cross-vendor advisor(s) did not vote (tool/risk semantics are not comparable across vendors)"
       }
     },
     "research": {

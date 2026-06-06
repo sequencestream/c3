@@ -328,6 +328,20 @@ export interface ConsensusOutcome {
   unanimous: boolean
   /** The unanimous verdict when `unanimous`; null when split (human decides). */
   decision: 'allow' | 'deny' | null
+  /**
+   * The vendor the vote was scoped to (the session's own agent vendor). Consensus
+   * is **vendor-homogeneous**: only same-vendor agents vote, because tool names and
+   * risk semantics are not comparable across vendors (the heterogeneous-tolerance
+   * decision — see `permission-gateway/consensus.md`). The console labels the
+   * outcome honestly ("共识限 \<vendor\> 内") rather than implying a cross-vendor vote.
+   */
+  vendorScope?: VendorId
+  /**
+   * How many *enabled* agents of a **different** vendor were excluded from voting
+   * (would-be voters that a cross-vendor scope dropped). `> 0` ⇒ the console notes
+   * the excluded advisors so the human knows the heterogeneous table did not all weigh in.
+   */
+  crossVendorExcluded?: number
 }
 
 /**
@@ -386,6 +400,10 @@ export interface AskConsensusOutcome {
   agreedAnswers: Record<string, string>
   /** Decider-agent (or code-fallback) one-line summary. */
   summary: string
+  /** The vendor the vote was scoped to — see {@link ConsensusOutcome.vendorScope}. */
+  vendorScope?: VendorId
+  /** Same-vendor scope's excluded cross-vendor count — see {@link ConsensusOutcome.crossVendorExcluded}. */
+  crossVendorExcluded?: number
 }
 
 /** Either consensus shape, discriminated by `kind`. */
@@ -1286,6 +1304,16 @@ export type ServerToClient =
       type: 'all_agents_failed'
       agents: Array<{ agentId: string; agentName: string; error: string }>
       message: string
+      /**
+       * Degradation-chain agents of a **different** vendor than the session's
+       * current agent, skipped at chain-build time. Cross-vendor degradation cannot
+       * carry context (a Claude session cannot `resume` into Codex — the SDK errors;
+       * ADR-0011 / 008), so the chain is **vendor-homogeneous**: cross-vendor entries
+       * are dropped rather than launched under the wrong vendor. Surfaced here so the
+       * console honestly notes the skipped candidates ("无法承接上下文") instead of
+       * implying they were tried. Absent/empty ⇒ no cross-vendor entry was configured.
+       */
+      crossVendorSkipped?: Array<{ agentId: string; agentName: string; vendor: VendorId }>
     }
   /**
    * A requested operation failed (bad path, missing session, etc.). Carries a

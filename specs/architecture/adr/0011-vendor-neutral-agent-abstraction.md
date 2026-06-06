@@ -108,6 +108,18 @@ live gateway through `ApprovalBridge`) are later phases.
 > inert skeleton — Phase 0 judged it a narrow lever (cannot gate Codex's built-in `shell`/`apply_patch`).
 > `forkSession` stays false: 008 killed the branch that would have used `resumeThread` as a fork;
 > `resumeThread` instead serves neutral session `resume`.
+>
+> **Upper-domain heterogeneous tolerance (2026-06-06-006).** The capability ledger also gates the
+> _upper_ domains, vendor-homogeneity being their organizing principle: (1) **consensus** votes only
+> within the session's own vendor (`vendorScopedVoters`) — cross-vendor tool/risk semantics are
+> incomparable, so the outcome carries `vendorScope`/`crossVendorExcluded` for an honest UI rather than
+> faking a cross-vendor vote; (2) **agent-teams** are locked to `streamingPush` (`canFormTeam`) — only
+> Claude can host a resident lead, so a non-Claude session never upgrades to `team`; (3) the
+> **degradation chain** keeps only same-vendor fallbacks (`buildAgentsToTry`) — a different vendor cannot
+> `resume` context, so cross-vendor entries are skipped and reported (`crossVendorSkipped`). The heavier
+> cross-vendor machinery (risk-tag-neutralized voting, heterogeneous teammates, a replay-seed degradation
+> hand-off with UI-marked context discontinuity) is deferred — spec'd, not built, until a real need
+> appears. The principle is **honest UI over faked capability** (PG-R13, AS-R21/R22).
 
 **Probe protocol.** A capability flag reports the **vendor** ability. A caller reaching for an optional
 control checks the flag **and** `typeof run.method === 'function'` (the build-wiring probe), then

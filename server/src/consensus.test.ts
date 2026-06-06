@@ -41,6 +41,11 @@ const agent = (id: string) => ({
 
 vi.mock('./kernel/agent-config/index.js', () => ({
   consensusVoters: () => [agent('a'), agent('b')],
+  vendorScopedVoters: () => ({
+    voters: [agent('a'), agent('b')],
+    vendorScope: 'claude',
+    crossVendorExcluded: 0,
+  }),
   launchForAgent: () => ({}),
   resolveAgent: () => agent('decider'),
 }))

@@ -1722,6 +1722,15 @@ button.deny:hover:not(:disabled) {
   font-size: var(--fs-code);
   line-height: var(--lh-normal);
 }
+/* Honest vendor-scope note: consensus is vendor-homogeneous, so cross-vendor
+   advisors did not vote (2026-06-06-006). Muted, secondary to the summary. */
+.consensus-vendor-scope {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-xs, var(--fs-code));
+  line-height: var(--lh-normal);
+  opacity: 0.7;
+  font-style: italic;
+}
 .consensus-votes {
   margin: var(--sp-2) 0 0;
   padding: 0;

@@ -161,6 +161,11 @@ export async function runViaDriver(
   } finally {
     disposeApproval()
     if (rt.run) rt.run = null
+    // The driver path is non-Claude (opencode today). Agent-teams are Claude-locked
+    // (2026-06-06-006): no non-Claude vendor has `streamingPush`, so this path never
+    // detects a team tool and never wires `onTeam` — a driver session can never be a
+    // team. Force the flag false defensively (a team lead can only live on the
+    // runClaude path's resident process).
     rt.team = false
     clearPending(runId)
     finalizeRun(runId)

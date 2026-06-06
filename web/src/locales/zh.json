@@ -408,7 +408,8 @@
       "upgraded": "— 已升级为团队会话:团队负责人会持续运行并协调成员,直到你点击 \"End team\" —"
     },
     "agent": {
-      "failed": "— 智能体 \"{agentName}\" 失败:{error} —"
+      "failed": "— 智能体 \"{agentName}\" 失败:{error} —",
+      "crossVendorSkipped": "— 已跳过 {count} 个跨 vendor 兜底智能体（{agents}）:异种 vendor 无法承接本会话的上下文 —"
     },
     "list": {
       "title": {
@@ -897,6 +898,9 @@
       },
       "disagreement": {
         "label": "意见不一致"
+      },
+      "vendorScope": {
+        "label": "共识仅限 {vendor} 内 · {count} 个跨 vendor 顾问未参与投票（工具与风险口径跨 vendor 不可比）"
       }
     },
     "research": {

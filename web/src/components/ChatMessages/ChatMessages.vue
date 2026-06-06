@@ -11,7 +11,7 @@ import ConsensusBlock from '../ConsensusBlock/ConsensusBlock.vue'
 import MarkdownText from '../MarkdownText/MarkdownText.vue'
 import { fmt, oneLine } from '../../lib/format'
 import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../../lib/chat-types'
-import type { VendorId } from '@ccc/shared/protocol'
+import { VENDOR_LABEL } from '../../lib/vendor'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -22,14 +22,8 @@ const TOOL_USE_LABEL = 'tool_use'
 const TOOL_RESULT_LABEL = 'tool_result'
 
 // Vendor brand labels shown verbatim on a discussion speaker's vendor tag
-// (do-not-translate brand names per i18n-terms; bound via a const map so
-// `no-raw-text` doesn't flag them). A heterogeneous roundtable thus shows which
-// vendor each agent runs on while every bubble normalizes to the same layout.
-const VENDOR_LABEL: Record<VendorId, string> = {
-  claude: 'Claude',
-  opencode: 'OpenCode',
-  codex: 'Codex',
-}
+// (shared map — a heterogeneous roundtable shows which vendor each agent runs on
+// while every bubble normalizes to the same layout).
 
 const props = defineProps<{
   messages: ChatMsg[]

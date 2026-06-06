@@ -12,6 +12,7 @@ import {
   normalizeDegradationChain,
   normalizeIcon,
   resolveSessionLaunch,
+  vendorScopedVoters,
 } from './agent-config/index.js'
 import {
   getDevSkill,
@@ -303,6 +304,50 @@ describe('enabled flag (AC-R10)', () => {
     expect(voters).toContain(SYSTEM_AGENT_ID)
     expect(voters).not.toContain('a1') // self excluded
     expect(voters).not.toContain('a2') // disabled excluded
+  })
+
+  it('vendorScopedVoters keeps only same-vendor agents and counts the cross-vendor exclusions', () => {
+    // A heterogeneous table: the session runs a claude agent; an opencode agent
+    // and the claude system agent are also enabled.
+    saveAgents([
+      {
+        id: 'a1',
+        vendor: 'claude',
+        displayName: 'One',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'oc',
+        vendor: 'opencode',
+        displayName: 'OC',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ])
+    const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters('a1')
+    const ids = voters.map((a) => a.id)
+    expect(vendorScope).toBe('claude')
+    expect(ids).toContain(SYSTEM_AGENT_ID) // same-vendor claude voter kept
+    expect(ids).not.toContain('a1') // self excluded
+    expect(ids).not.toContain('oc') // cross-vendor (opencode) excluded
+    expect(crossVendorExcluded).toBe(1) // the one opencode agent
+  })
+
+  it('vendorScopedVoters yields zero voters when the session vendor is the only one present', () => {
+    // Session runs the lone opencode agent; the only other enabled agent is a
+    // different vendor (claude system) → no same-vendor voter → consensus skipped.
+    const saved = saveAgents([
+      {
+        id: 'oc',
+        vendor: 'opencode',
+        displayName: 'OC',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ])
+    expect(saved.agents.find((a) => a.id === 'oc')?.vendor).toBe('opencode')
+    const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters('oc')
+    expect(vendorScope).toBe('opencode')
+    expect(voters).toHaveLength(0)
+    expect(crossVendorExcluded).toBe(1) // the claude system agent
   })
 
   it('still launches a session bound to a disabled agent (no lock-out — AC-R10)', () => {

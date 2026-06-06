@@ -24,7 +24,7 @@ import type {
   ConsensusVote,
   QuestionConsensus,
 } from '@ccc/shared/protocol'
-import { consensusVoters, resolveAgent } from './kernel/agent-config/index.js'
+import { resolveAgent, vendorScopedVoters } from './kernel/agent-config/index.js'
 import { isConsensusEnabled } from './kernel/config/index.js'
 import { askAgentOnce } from './agent-once.js'
 import {
@@ -91,7 +91,7 @@ async function summarize(
  */
 export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOutcome | null> {
   if (!isConsensusEnabled()) return null
-  const voters = consensusVoters(p.currentAgentId)
+  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(p.currentAgentId)
   if (voters.length === 0) return null
 
   const prompt = voterPrompt(p.toolName, p.input, p.context)
@@ -130,7 +130,7 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
     p.cwd,
     p.signal,
   )
-  return { kind: 'tool', votes, summary, unanimous, decision }
+  return { kind: 'tool', votes, summary, unanimous, decision, vendorScope, crossVendorExcluded }
 }
 
 /**
@@ -174,7 +174,7 @@ async function decideAndSummarizeAsk(
  */
 export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusOutcome | null> {
   if (!isConsensusEnabled()) return null
-  const voters = consensusVoters(p.currentAgentId)
+  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(p.currentAgentId)
   if (voters.length === 0) return null
   const questions = askQuestions(p.input)
   if (!questions) return null
@@ -231,5 +231,13 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
   for (const q of perQuestion)
     if (q.unanimous && q.agreed !== null) agreedAnswers[q.question] = q.agreed
   const fullyUnanimous = perQuestion.length > 0 && perQuestion.every((q) => q.unanimous)
-  return { kind: 'ask', perQuestion, fullyUnanimous, agreedAnswers, summary }
+  return {
+    kind: 'ask',
+    perQuestion,
+    fullyUnanimous,
+    agreedAnswers,
+    summary,
+    vendorScope,
+    crossVendorExcluded,
+  }
 }

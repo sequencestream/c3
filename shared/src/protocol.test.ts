@@ -81,6 +81,29 @@ describe('protocol wire format', () => {
       agents: [{ agentId: 'sys', agentName: 'System', error: 'rate limit' }],
       message: 'All agents failed: rate limit',
     },
+    // Heterogeneous tolerance (2026-06-06-006): a degradation chain that dropped a
+    // cross-vendor fallback (it cannot carry context, so it is skipped, not tried).
+    {
+      type: 'all_agents_failed',
+      agents: [{ agentId: 'sys', agentName: 'System', error: 'rate limit' }],
+      message: 'All agents failed: rate limit',
+      crossVendorSkipped: [{ agentId: 'cx', agentName: 'Codex', vendor: 'codex' }],
+    },
+    // Consensus scoped to one vendor, noting the cross-vendor advisors it excluded.
+    {
+      type: 'consensus_auto',
+      toolName: 'Write',
+      input: {},
+      outcome: {
+        kind: 'tool',
+        votes: [],
+        summary: 'ok',
+        unanimous: true,
+        decision: 'allow',
+        vendorScope: 'claude',
+        crossVendorExcluded: 2,
+      },
+    },
   ]
 
   it('round-trips every client message through JSON unchanged', () => {

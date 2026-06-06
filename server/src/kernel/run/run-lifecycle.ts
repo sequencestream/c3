@@ -18,8 +18,10 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
+import { canFormTeam } from '../agent/adapters/capabilities.js'
 import { runViaDriver } from './run-via-driver.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
+import { buildAgentsToTry } from './build-chain.js'
 import {
   getDegradationChain,
   resolveSessionLaunch,
@@ -150,24 +152,28 @@ export async function launchRun(
     }
   }
 
-  // Build the ordered list of agent configs to try.
-  // Entry 0 is always the session's current agent (bound or default).
-  // Subsequent entries come from the degradation chain (if configured).
+  // Build the ordered list of agent configs to try (pure `buildAgentsToTry`).
+  // Entry 0 is always the session's current agent (bound or default); subsequent
+  // entries come from the degradation chain. The chain is **vendor-homogeneous**:
+  // a different-vendor fallback cannot carry context (a Claude session cannot
+  // `resume` into Codex), so it is skipped, not launched under the wrong vendor
+  // (2026-06-06-006).
   const chain = getDegradationChain()
   const firstLaunch = resolveSessionLaunch(runId)
-  const agentsToTry: Array<{
-    agentId: string
-    envOverrides?: Record<string, string>
-    model?: string
-  }> = [firstLaunch]
-  if (chain && chain.length > 0) {
-    for (const id of chain) {
-      // Skip the first agent (already in agentsToTry[0]) and self-references.
-      if (id !== firstLaunch.agentId && !agentsToTry.some((a) => a.agentId === id)) {
-        const agent = resolveAgent(id)
-        agentsToTry.push({ agentId: agent.id, ...launchForAgent(agent) })
-      }
-    }
+  const firstVendor = resolveAgent(firstLaunch.agentId).vendor
+  const { agentsToTry, crossVendorSkipped } = buildAgentsToTry(
+    firstLaunch,
+    firstVendor,
+    chain,
+    resolveAgent,
+    launchForAgent,
+  )
+  if (crossVendorSkipped.length > 0) {
+    console.warn(
+      `[c3] degradation chain skipped ${crossVendorSkipped.length} cross-vendor agent(s) ` +
+        `(session vendor: ${firstVendor}; cannot carry context across vendors): ` +
+        crossVendorSkipped.map((a) => `${a.agentId}/${a.vendor}`).join(', '),
+    )
   }
   const hasDegradation = agentsToTry.length > 1
 
@@ -304,6 +310,19 @@ export async function launchRun(
             // alive across turns. Mark the runtime (so `turn_end` holds at `team`
             // and the next prompt feeds the live run), tell the client once, and
             // surface the team status.
+            //
+            // Agent-teams are **Claude-locked** (2026-06-06-006): the lead needs
+            // `streamingPush` (resident across turns + in-process TeamCreate/
+            // SendMessage), which only Claude has. The runClaude path is only ever
+            // reached by a Claude-vendor session, so this is structurally true; the
+            // `canFormTeam` guard is a defensive assertion so a future non-Claude
+            // route can never wrongly upgrade a session that cannot host a lead.
+            if (!canFormTeam(resolveAgent(agentCfg.agentId).vendor)) {
+              console.warn(
+                `[c3] team upgrade ignored: agent ${agentCfg.agentId} vendor lacks streamingPush (agent-teams are Claude-locked)`,
+              )
+              return
+            }
             rt.team = true
             emit(runId, { type: 'team_upgraded' })
             setStatus(runId, 'team')
@@ -395,12 +414,24 @@ export async function launchRun(
 
     // On chain exhaustion: emit terminal failure banner + turn_end error.
     // Skip this if the user stopped the cycle mid-degradation (finalizeRun
-    // will emit turn_end { complete } for the stop).
-    if (!success && hasDegradation && failedAgents.length > 0 && !cycleAbort.signal.aborted) {
+    // will emit turn_end { complete } for the stop). The banner also fires when
+    // the chain had **no same-vendor** fallback because every configured fallback
+    // was a different vendor and got skipped (`crossVendorSkipped`): the single
+    // attempt failed and the user deserves to know the cross-vendor candidates
+    // were not (and could not be) tried (2026-06-06-006). `failedAgents.length > 0`
+    // keeps this to genuine degradable failures (a non-degradable throw kept
+    // runClaude's own turn_end and never populated failedAgents).
+    const exhausted =
+      !success &&
+      !cycleAbort.signal.aborted &&
+      failedAgents.length > 0 &&
+      (hasDegradation || crossVendorSkipped.length > 0)
+    if (exhausted) {
       emit(runId, {
         type: 'all_agents_failed',
         agents: failedAgents,
         message: `All ${failedAgents.length} agent(s) failed. Last error: ${failedAgents[failedAgents.length - 1].error}`,
+        ...(crossVendorSkipped.length > 0 ? { crossVendorSkipped } : {}),
       })
       emit(runId, {
         type: 'turn_end',

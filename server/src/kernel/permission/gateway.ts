@@ -177,8 +177,11 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       cwd,
       signal,
     }).catch(() => null)
-    // Unanimous ⇒ auto-resolve; surface how it was decided in the stream.
-    if (outcome && outcome.unanimous && outcome.decision) {
+    // A clear verdict ⇒ auto-resolve; surface how it was decided in the stream.
+    // `decision` is non-null only on a unanimous vote or, under the majority
+    // toggle, a strict-majority one (`tally`); a tie / no clear majority leaves
+    // it null and falls through to the human.
+    if (outcome && outcome.decision) {
       send({ type: 'consensus_auto', toolName, input, outcome })
       if (outcome.decision === 'allow') {
         return allow(input)

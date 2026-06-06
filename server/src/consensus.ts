@@ -25,7 +25,7 @@ import type {
   QuestionConsensus,
 } from '@ccc/shared/protocol'
 import { resolveAgent, vendorScopedVoters } from './kernel/agent-config/index.js'
-import { isConsensusEnabled } from './kernel/config/index.js'
+import { isConsensusEnabled, isConsensusMajorityEnabled } from './kernel/config/index.js'
 import { askAgentOnce } from './agent-once.js'
 import {
   askQuestions,
@@ -120,7 +120,10 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
     }),
   )
 
-  const { unanimous, decision } = tally(votes)
+  // Majority toggle (system setting) decides the adjudication rule; `unanimous`
+  // still reports literal unanimity so the summary/console can tell a unanimous
+  // verdict from a majority-carried one. See `permission-gateway/consensus.md`.
+  const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled())
   const summary = await summarize(
     p.currentAgentId,
     p.toolName,

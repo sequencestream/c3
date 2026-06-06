@@ -21,9 +21,26 @@ a **tie or no clear majority** still defers to the human (the fail-safe invarian
 is preserved). The flag is normalized strictly (`server/src/kernel/config`:
 `isConsensusMajorityEnabled()` returns true only for an explicit `true`;
 missing/invalid ⇒ `false`, so pre-majority configs keep unanimous behaviour). It
-is independent of `enabled` and only meaningful when consensus is also on. This
-spec documents the **configuration base**; the tally semantics that consume the
-flag live in `consensus-tally.ts`.
+is independent of `enabled` and only meaningful when consensus is also on.
+
+**Allow/deny adjudication (`tally`).** `runConsensusVote` reads
+`isConsensusMajorityEnabled()` and passes it to `tally(votes, majority)`:
+
+- `majority = false` (default): `decision` is set only when **every** voter cast
+  the same `allow`/`deny` verdict (the original unanimous-only rule); any split,
+  abstention, or empty set ⇒ `null` ⇒ human.
+- `majority = true`: abstentions are **not counted**; a **strict majority** of the
+  cast votes decides (`allow > deny` ⇒ allow, `deny > allow` ⇒ deny). A **tie**
+  (`2v2`), no clear majority, or no cast vote (all abstained / empty) ⇒ `null` ⇒
+  human, preserving the fail-safe invariant.
+
+`tally.unanimous` always reports **literal** unanimity (every voter agreed, no
+abstain) regardless of the toggle, kept separate from `decision` so the
+summary/console can honestly tell a unanimous verdict (`所有 agent 一致…`) from a
+majority-carried one (`多数派裁决…`, emitted by `fallbackSummary` when `decision`
+is set while `unanimous` is false). The gateway auto-resolves whenever
+`outcome.decision` is non-null — covering both the unanimous and the majority
+case — and otherwise prompts the human with the opinions attached.
 
 ## Roles
 
@@ -70,10 +87,10 @@ sequenceDiagram
         CO->>D: summarize(votes)  (code fallback on failure)
         D-->>CO: one-line summary
         CO-->>GW: ConsensusOutcome{votes, summary, unanimous, decision}
-        alt unanimous
+        alt decision set (unanimous, or majority when the toggle is on)
             GW->>WS: consensus_auto{toolName, input, outcome}
             Note over GW: auto allow/deny — no human needed
-        else split / abstention
+        else split / tie / abstention
             GW->>WS: permission_request{..., consensus: outcome}
             Note over GW: human decides, sees opinions
         end
@@ -94,12 +111,12 @@ capped at ~4000 chars (`claude.ts`).
 
 ## Contracts
 
-| Function                                           | Contract                                                                                                        |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `runConsensusVote(params): ConsensusOutcome\|null` | `null` ⇒ disabled or no voters (caller does the plain human prompt). Otherwise a full outcome.                  |
-| `parseVote(text)`                                  | Strict-JSON first, then a keyword scan; `null` when ambiguous/empty ⇒ the caller records an **abstain**.        |
-| `tally(votes)`                                     | `unanimous` only when every voter is the same `allow`/`deny`; any `abstain`, split, or empty set ⇒ no decision. |
-| `summarize(...)`                                   | Decider agent produces one Chinese sentence; `fallbackSummary` (deterministic tally) on error/abort.            |
+| Function                                           | Contract                                                                                                                                                                                                                                      |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runConsensusVote(params): ConsensusOutcome\|null` | `null` ⇒ disabled or no voters (caller does the plain human prompt). Otherwise a full outcome.                                                                                                                                                |
+| `parseVote(text)`                                  | Strict-JSON first, then a keyword scan; `null` when ambiguous/empty ⇒ the caller records an **abstain**.                                                                                                                                      |
+| `tally(votes, majority?)`                          | `unanimous` = literal all-agree (no abstain), independent of `majority`. `decision`: unanimous-only when `majority` is false; a strict majority of cast votes (abstain excluded) when true — tie / no clear majority / no cast vote ⇒ `null`. |
+| `summarize(...)`                                   | Decider agent produces one Chinese sentence; `fallbackSummary` (deterministic tally) on error/abort.                                                                                                                                          |
 
 ## Invariants
 

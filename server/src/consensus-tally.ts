@@ -89,18 +89,41 @@ export function parseVote(text: string): { decision: 'allow' | 'deny'; reason: s
   return null
 }
 
-/** Whether all voters returned the same allow/deny verdict, and which. */
-export function tally(votes: ConsensusVote[]): {
+/**
+ * Tally the voters' allow/deny verdicts into an auto-resolve decision.
+ *
+ * `unanimous` always reports **literal** unanimity — every voter cast the same
+ * `allow`/`deny` verdict, no abstention — regardless of `majority`. It is kept
+ * separate from `decision` so the summary/UI can honestly distinguish a fully
+ * unanimous outcome from one carried only by a majority.
+ *
+ * `decision` is the verdict the gateway auto-resolves on, or `null` ⇒ defer to
+ * the human (the fail-safe default):
+ * - `majority = false` (default, unanimous-only): `decision` is set only when the
+ *   vote is unanimous; any split, abstention, or empty set ⇒ `null`.
+ * - `majority = true`: abstentions are **not counted**; a **strict majority** of
+ *   the cast allow/deny votes decides (`allow > deny` ⇒ allow, `deny > allow` ⇒
+ *   deny). A **tie** (`2v2`), **no clear majority**, or **no cast vote** (all
+ *   abstained / empty) ⇒ `null`. A unanimous vote is naturally a majority too,
+ *   so `unanimous` and `decision` agree on the all-agree case.
+ */
+export function tally(
+  votes: ConsensusVote[],
+  majority = false,
+): {
   unanimous: boolean
   decision: 'allow' | 'deny' | null
 } {
   const decisions = votes.map((v) => v.decision)
   const allAllow = decisions.length > 0 && decisions.every((d) => d === 'allow')
   const allDeny = decisions.length > 0 && decisions.every((d) => d === 'deny')
-  return {
-    unanimous: allAllow || allDeny,
-    decision: allAllow ? 'allow' : allDeny ? 'deny' : null,
+  const unanimous = allAllow || allDeny
+  if (!majority) {
+    return { unanimous, decision: allAllow ? 'allow' : allDeny ? 'deny' : null }
   }
+  const allow = decisions.filter((d) => d === 'allow').length
+  const deny = decisions.filter((d) => d === 'deny').length
+  return { unanimous, decision: allow > deny ? 'allow' : deny > allow ? 'deny' : null }
 }
 
 export function voterPrompt(toolName: string, input: unknown, context: string): string {
@@ -394,7 +417,13 @@ export function fallbackAskSummary(perQuestion: QuestionConsensus[]): string {
   return `agent 对 ${agreed}/${n} 个问题作答一致，其余需人工选择`
 }
 
-/** Deterministic summary when the decider agent is unavailable or aborted. */
+/**
+ * Deterministic summary when the decider agent is unavailable or aborted. Reads
+ * `(unanimous, decision)` straight off the tally so it self-describes all three
+ * outcomes: a unanimous auto-resolve, a majority-carried auto-resolve (`decision`
+ * set while `unanimous` is false — only under the majority toggle), and a
+ * deferral to the human (no `decision`).
+ */
 export function fallbackSummary(
   votes: ConsensusVote[],
   unanimous: boolean,
@@ -405,8 +434,10 @@ export function fallbackSummary(
     return acc
   }, {})
   const parts = Object.entries(counts).map(([d, n]) => `${n} ${d}`)
-  if (unanimous && decision) {
-    return `所有 agent 一致${decision === 'allow' ? '允许' : '拒绝'}（${parts.join(', ')}）`
+  if (decision) {
+    const verb = decision === 'allow' ? '允许' : '拒绝'
+    if (unanimous) return `所有 agent 一致${verb}（${parts.join(', ')}）`
+    return `多数派裁决${verb}（${parts.join(', ')}）`
   }
   return `agent 意见不一致（${parts.join(', ')}），需人工裁决`
 }

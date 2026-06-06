@@ -51,6 +51,68 @@ describe('tally', () => {
   it('is non-unanimous with no voters', () => {
     expect(tally([])).toEqual({ unanimous: false, decision: null })
   })
+
+  it('unanimous-only mode requires every voter to agree (majority off)', () => {
+    // Explicit majority=false matches the default: a 2v1 split is NOT resolved.
+    expect(tally([vote('allow'), vote('allow'), vote('deny')], false)).toEqual({
+      unanimous: false,
+      decision: null,
+    })
+  })
+})
+
+describe('tally — majority rule', () => {
+  it('3v0 auto-resolves and is still unanimous', () => {
+    expect(tally([vote('allow'), vote('allow'), vote('allow')], true)).toEqual({
+      unanimous: true,
+      decision: 'allow',
+    })
+    expect(tally([vote('deny'), vote('deny'), vote('deny')], true)).toEqual({
+      unanimous: true,
+      decision: 'deny',
+    })
+  })
+
+  it('2v1 auto-resolves to the majority verdict (not unanimous)', () => {
+    expect(tally([vote('allow'), vote('allow'), vote('deny')], true)).toEqual({
+      unanimous: false,
+      decision: 'allow',
+    })
+    expect(tally([vote('deny'), vote('deny'), vote('allow')], true)).toEqual({
+      unanimous: false,
+      decision: 'deny',
+    })
+  })
+
+  it('2v2 tie defers to the human (no clear majority)', () => {
+    expect(tally([vote('allow'), vote('allow'), vote('deny'), vote('deny')], true)).toEqual({
+      unanimous: false,
+      decision: null,
+    })
+  })
+
+  it('excludes abstentions from the count — 2 allow vs 1 deny (+1 abstain) ⇒ allow', () => {
+    expect(tally([vote('allow'), vote('allow'), vote('deny'), vote('abstain')], true)).toEqual({
+      unanimous: false,
+      decision: 'allow',
+    })
+  })
+
+  it('an abstention that creates a tie among cast votes defers to the human', () => {
+    // 1 allow vs 1 deny among cast votes ⇒ tie ⇒ null, even with majority on.
+    expect(tally([vote('allow'), vote('deny'), vote('abstain')], true)).toEqual({
+      unanimous: false,
+      decision: null,
+    })
+  })
+
+  it('all abstain (or empty) ⇒ no cast vote ⇒ defers to the human', () => {
+    expect(tally([vote('abstain'), vote('abstain')], true)).toEqual({
+      unanimous: false,
+      decision: null,
+    })
+    expect(tally([], true)).toEqual({ unanimous: false, decision: null })
+  })
 })
 
 describe('fallbackSummary', () => {
@@ -60,6 +122,13 @@ describe('fallbackSummary', () => {
 
   it('flags splits as needing a human', () => {
     expect(fallbackSummary([vote('allow'), vote('deny')], false, null)).toContain('需人工裁决')
+  })
+
+  it('labels a majority-carried verdict distinctly from a unanimous one', () => {
+    // decision set but not unanimous ⇒ resolved by majority, not by full agreement.
+    const s = fallbackSummary([vote('allow'), vote('allow'), vote('deny')], false, 'allow')
+    expect(s).toContain('多数派裁决允许')
+    expect(s).not.toContain('一致')
   })
 })
 

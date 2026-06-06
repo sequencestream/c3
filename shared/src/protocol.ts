@@ -338,9 +338,19 @@ export interface ConsensusOutcome {
   votes: ConsensusVote[]
   /** Decider-agent (or code-fallback) one-line summary of the opinions. */
   summary: string
-  /** True ⇒ every voter returned the same allow/deny verdict (no abstain). */
+  /**
+   * True ⇒ every voter returned the same allow/deny verdict (no abstain).
+   * Reports **literal** unanimity regardless of the majority toggle, so the UI
+   * can distinguish a unanimous outcome from one carried only by a majority
+   * (`decision` set while `unanimous` is false).
+   */
   unanimous: boolean
-  /** The unanimous verdict when `unanimous`; null when split (human decides). */
+  /**
+   * The verdict the gateway auto-resolved on, or null ⇒ the human decides.
+   * Unanimous-only mode: set only when `unanimous`. Majority mode
+   * (`ConsensusConfig.majority`): set on a strict majority of cast votes
+   * (abstentions excluded); a tie or no clear majority leaves it null.
+   */
   decision: 'allow' | 'deny' | null
   /**
    * The vendor the vote was scoped to (the session's own agent vendor). Consensus

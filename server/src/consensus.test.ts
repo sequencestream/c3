@@ -51,6 +51,10 @@ vi.mock('./kernel/agent-config/index.js', () => ({
 }))
 vi.mock('./kernel/config/index.js', () => ({
   isConsensusEnabled: () => true,
+  // Ask path never reads this; stubbed so the allow/deny tool path (which does)
+  // doesn't hit an undefined import. The majority decision matrix itself is
+  // covered exhaustively in consensus-tally.test.ts.
+  isConsensusMajorityEnabled: () => false,
 }))
 
 import { runAskConsensus } from './consensus.js'

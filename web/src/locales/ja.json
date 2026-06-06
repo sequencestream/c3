@@ -119,6 +119,7 @@
       "answered": "回答済み",
       "denied": "拒否済み",
       "allowed": "許可済み",
+      "c3Gateway": "c3 が許可",
       "saved": "保存済み",
       "cancelled": "キャンセル済み"
     },
@@ -519,7 +520,8 @@
     "chat": {
       "empty": "セッションを選択するか、ワークスペースで新しく作成してください。",
       "toolsFallback": "ツール",
-      "resultError": "(エラー)"
+      "resultError": "(エラー)",
+      "preApproved": "ベンダー規則で事前承認"
     }
   },
   "schedule": {

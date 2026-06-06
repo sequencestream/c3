@@ -119,6 +119,7 @@
       "answered": "답변됨",
       "denied": "거부됨",
       "allowed": "허용됨",
+      "c3Gateway": "c3 허용",
       "saved": "저장됨",
       "cancelled": "취소됨"
     },
@@ -519,7 +520,8 @@
     "chat": {
       "empty": "세션을 선택하거나 작업 공간에서 새 세션을 만드세요.",
       "toolsFallback": "도구",
-      "resultError": "(오류)"
+      "resultError": "(오류)",
+      "preApproved": "벤더 규칙 사전 승인"
     }
   },
   "schedule": {

@@ -119,6 +119,7 @@
       "answered": "answered",
       "denied": "denied",
       "allowed": "allowed",
+      "c3Gateway": "c3 allowed",
       "saved": "Saved",
       "cancelled": "Cancelled"
     },
@@ -519,7 +520,8 @@
     "chat": {
       "empty": "Select a session, or create a new one in a workspace.",
       "toolsFallback": "tools",
-      "resultError": "(error)"
+      "resultError": "(error)",
+      "preApproved": "vendor pre-approved"
     }
   },
   "schedule": {

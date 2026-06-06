@@ -1164,7 +1164,22 @@ export type ServerToClient =
    * viewer switching back replays it too.
    */
   | { type: 'notice'; text: string }
-  | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
+  | {
+      type: 'tool_use'
+      toolUseId: string
+      toolName: string
+      input: unknown
+      /**
+       * Audit hint surfaced to the console (2026-06-06-004): this tool call was
+       * auto-allowed by the vendor's OWN permission rule engine WITHOUT a c3/human
+       * decision — so it never raised a `permission_request`. Carried from the
+       * neutral {@link CanonicalMessage.preApproved} marker via the driver path's
+       * `WireEmitter`. The web renders it with a distinct "vendor pre-approved"
+       * color, making "c3 is a gateway, not the sole authority" explicit (PG-R12).
+       * Absent/false on a tool c3 gated (or any claude-path tool).
+       */
+      preApproved?: boolean
+    }
   | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }
   | {
       type: 'permission_request'

@@ -11,6 +11,7 @@ import ConsensusBlock from '../ConsensusBlock/ConsensusBlock.vue'
 import MarkdownText from '../MarkdownText/MarkdownText.vue'
 import { fmt, oneLine } from '../../lib/format'
 import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../../lib/chat-types'
+import type { VendorId } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -19,6 +20,16 @@ const { t } = useTypedI18n()
 // so `no-raw-text` doesn't flag them as hard-coded copy).
 const TOOL_USE_LABEL = 'tool_use'
 const TOOL_RESULT_LABEL = 'tool_result'
+
+// Vendor brand labels shown verbatim on a discussion speaker's vendor tag
+// (do-not-translate brand names per i18n-terms; bound via a const map so
+// `no-raw-text` doesn't flag them). A heterogeneous roundtable thus shows which
+// vendor each agent runs on while every bubble normalizes to the same layout.
+const VENDOR_LABEL: Record<VendorId, string> = {
+  claude: 'Claude',
+  opencode: 'OpenCode',
+  codex: 'Codex',
+}
 
 const props = defineProps<{
   messages: ChatMsg[]
@@ -177,6 +188,17 @@ function toggle(id: number): void {
           <div v-if="b.msg.speaker" class="speaker">
             <span class="speaker-icon">{{ b.msg.speaker.icon }}</span>
             <span class="speaker-name">{{ b.msg.speaker.name }}</span>
+            <!--
+              Vendor tag — only on a discussion `agent` turn whose vendor resolved
+              (human/organizer carry none). Makes a heterogeneous roundtable (e.g. a
+              Claude agent next to an OpenCode agent) visually attributable.
+            -->
+            <span
+              v-if="b.msg.speaker.vendor"
+              class="vendor-tag"
+              :class="`vendor-${b.msg.speaker.vendor}`"
+              >{{ VENDOR_LABEL[b.msg.speaker.vendor] }}</span
+            >
           </div>
         </template>
         <MarkdownText :text="b.msg.text" :kind="b.msg.kind" />
@@ -210,6 +232,16 @@ function toggle(id: number): void {
               <div class="label tool-label" @click="toggle(m.id)">
                 <span class="caret">{{ isExpanded(m.id) ? '▾' : '▸' }}</span>
                 {{ TOOL_USE_LABEL }} · {{ m.toolName }}
+                <!--
+                  Pre-approved audit tag: the vendor's own rule engine auto-allowed
+                  this tool, so it never raised a c3 permission prompt. The amber
+                  「vendor pre-approved」 tag contrasts with PermissionPrompt's green
+                  「c3 allowed」 decided state — together they make explicit that c3
+                  is a gateway, not the sole permission authority (PG-R12).
+                -->
+                <span v-if="m.preApproved" class="approval-tag pre-approved">{{
+                  t('session.chat.preApproved')
+                }}</span>
               </div>
               <pre v-if="isExpanded(m.id)" class="tool-body">{{ fmt(m.input) }}</pre>
               <div v-else class="tool-oneline" @click="toggle(m.id)">
@@ -265,5 +297,46 @@ function toggle(id: number): void {
 }
 .speaker-name {
   font-weight: 600;
+}
+
+/* Vendor tag — a small pill on the speaker line, one hue per vendor so a
+   heterogeneous roundtable is attributable at a glance. Soft bg + colored text,
+   reusing theme tokens (no new hard-coded hues). */
+.vendor-tag {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 0 0.45em;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+}
+.vendor-claude {
+  color: var(--c-primary);
+  background: var(--c-primary-soft);
+}
+.vendor-opencode {
+  color: var(--c-purple-text);
+  background: var(--c-purple-soft);
+}
+.vendor-codex {
+  color: var(--c-info, #3b82f6);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* Approval provenance tags — the two-color legend that makes "c3 is a gateway,
+   not the sole authority" explicit. `pre-approved` (amber): the vendor's own
+   rule engine allowed the tool, c3 was a bystander. The complementary green
+   "c3 allowed" state lives on PermissionPrompt's decided row. */
+.approval-tag {
+  margin-left: 0.5em;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 0 0.45em;
+  border-radius: 999px;
+}
+.approval-tag.pre-approved {
+  color: var(--c-warning);
+  background: rgba(245, 158, 11, 0.15);
 }
 </style>

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatMessages from './ChatMessages.vue'
-import type { ChatMsg } from '../../lib/chat-types'
+import type { ChatMsg, SpeakerView } from '../../lib/chat-types'
 
 let nextId = 1
 function id(): number {
@@ -10,6 +10,12 @@ function id(): number {
 
 function toolUse(toolName: string, input: unknown): ChatMsg {
   return { id: id(), kind: 'tool-use', toolUseId: `u${nextId}`, toolName, input }
+}
+function toolUsePre(toolName: string, input: unknown, preApproved: boolean): ChatMsg {
+  return { id: id(), kind: 'tool-use', toolUseId: `u${nextId}`, toolName, input, preApproved }
+}
+function speakerMsg(text: string, speaker?: SpeakerView): ChatMsg {
+  return { id: id(), kind: 'assistant', text, speaker }
 }
 function permission(toolName: string, requestId: string): ChatMsg {
   return { id: id(), kind: 'permission', requestId, toolName, input: {}, decision: null }
@@ -79,5 +85,43 @@ describe('ChatMessages.vue — 折叠批次头追加首个工具请求预览', (
     expect(w.find('.batch.open').exists()).toBe(true)
     expect(w.find('.batch-preview').exists()).toBe(false)
     expect(w.find('.batch-body').exists()).toBe(true)
+  })
+})
+
+describe('ChatMessages.vue — 异构 vendor 徽章(2026-06-06-004)', () => {
+  it('discussion 发言带 speaker.vendor → 渲染对应 vendor-tag(claude / opencode 各色)', () => {
+    const w = mountChat([
+      speakerMsg('hi', { icon: '🤖', name: 'Claude A', vendor: 'claude' }),
+      speakerMsg('yo', { icon: '🦊', name: 'OpenCode A', vendor: 'opencode' }),
+    ])
+    // 双家同席:两个 vendor 各自的色标类都在,来源可识别。
+    expect(w.find('.vendor-tag.vendor-claude').exists()).toBe(true)
+    expect(w.find('.vendor-tag.vendor-opencode').exists()).toBe(true)
+  })
+
+  it('speaker 无 vendor(human / organizer)→ 有 speaker 行但不渲染 vendor-tag', () => {
+    const w = mountChat([speakerMsg('q', { icon: '🙋', name: 'You' })])
+    expect(w.find('.speaker').exists()).toBe(true)
+    expect(w.find('.vendor-tag').exists()).toBe(false)
+  })
+
+  it('session 路径(无 speaker)→ 既无 speaker 行也无 vendor-tag(单人布局不回归)', () => {
+    const w = mountChat([speakerMsg('plain')])
+    expect(w.find('.speaker').exists()).toBe(false)
+    expect(w.find('.vendor-tag').exists()).toBe(false)
+  })
+})
+
+describe('ChatMessages.vue — 审批双色标(预放行 vs c3 手动)(2026-06-06-004)', () => {
+  it('preApproved tool-use:展开后渲染「厂商规则预放行」色标', async () => {
+    const w = mountChat([toolUsePre('bash', { cmd: 'ls' }, true)])
+    await w.find('.batch-head').trigger('click')
+    expect(w.find('.approval-tag.pre-approved').exists()).toBe(true)
+  })
+
+  it('c3 把关的普通 tool-use(无 preApproved)→ 不渲染预放行色标', async () => {
+    const w = mountChat([toolUse('bash', { cmd: 'ls' })])
+    await w.find('.batch-head').trigger('click')
+    expect(w.find('.approval-tag.pre-approved').exists()).toBe(false)
   })
 })

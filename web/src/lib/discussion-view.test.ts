@@ -120,7 +120,7 @@ describe('discussion-view — DiscussionMessage → ChatBody', () => {
     expect(b).toEqual({
       kind: 'assistant',
       text: 'lgtm',
-      speaker: { icon: '🔍', name: 'Reviewer' },
+      speaker: { icon: '🔍', name: 'Reviewer', vendor: 'claude' },
     })
   })
 
@@ -145,7 +145,11 @@ describe('discussion-view — DiscussionMessage → ChatBody', () => {
       DEFAULT_ID,
       T,
     )
-    expect(b).toEqual({ kind: 'assistant', text: 'x', speaker: { icon: '🤖', name: 'Plain' } })
+    expect(b).toEqual({
+      kind: 'assistant',
+      text: 'x',
+      speaker: { icon: '🤖', name: 'Plain', vendor: 'claude' },
+    })
   })
 
   it('agent 不在配置中 → 通用回退(图标 + i18n Agent)', () => {
@@ -165,7 +169,11 @@ describe('discussion-view — DiscussionMessage → ChatBody', () => {
       DEFAULT_ID,
       T,
     )
-    expect(b).toEqual({ kind: 'assistant', text: 'x', speaker: { icon: '🔍', name: 'Reviewer' } })
+    expect(b).toEqual({
+      kind: 'assistant',
+      text: 'x',
+      speaker: { icon: '🔍', name: 'Reviewer', vendor: 'claude' },
+    })
   })
 
   it('organizer 默认 agent 缺失 → 通用回退(图标 + i18n Organizer)', () => {
@@ -206,7 +214,7 @@ describe('discussion-view — DiscussionMessage → ChatBody', () => {
     )
     expect(out).toEqual([
       { kind: 'user', text: 'q', speaker: { icon: '🙋', name: 'You' } },
-      { kind: 'assistant', text: 'a', speaker: { icon: '🔍', name: 'A' } },
+      { kind: 'assistant', text: 'a', speaker: { icon: '🔍', name: 'A', vendor: 'claude' } },
     ])
   })
 })
@@ -251,7 +259,7 @@ describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', ()
         DEFAULT_ID,
         T,
       ),
-    ).toEqual({ icon: '🔍', name: 'Rev' })
+    ).toEqual({ icon: '🔍', name: 'Rev', vendor: 'claude' })
   })
 
   it('agent:命中但 agent.icon 为空 / 仅空白 → 通用图标,名字保持', () => {
@@ -262,7 +270,7 @@ describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', ()
         DEFAULT_ID,
         T,
       ),
-    ).toEqual({ icon: '🤖', name: 'Plain' })
+    ).toEqual({ icon: '🤖', name: 'Plain', vendor: 'claude' })
     // icon 字段为纯空白(用户误填)也走回退
     const blankIcon = [agent({ id: 'noicon', displayName: 'Plain', icon: '   ' })]
     expect(
@@ -272,7 +280,7 @@ describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', ()
         DEFAULT_ID,
         T,
       ),
-    ).toEqual({ icon: '🤖', name: 'Plain' })
+    ).toEqual({ icon: '🤖', name: 'Plain', vendor: 'claude' })
   })
 
   it('agent:未命中 / speakerAgentId 为空 → 通用图标,名字按 消息名→i18n Agent 顺序兜底', () => {
@@ -292,6 +300,52 @@ describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', ()
         T,
       ),
     ).toEqual({ icon: '🤖', name: 'Agent' })
+  })
+})
+
+describe('discussion-view — 异构圆桌 vendor 解析(2026-06-06-004)', () => {
+  // A heterogeneous table: a Claude agent and an OpenCode agent sit together.
+  const HETERO: AgentConfig[] = [
+    agent({ id: 'claude-a', vendor: 'claude', displayName: 'Claude A', icon: '🤖' }),
+    agent({ id: 'oc-a', vendor: 'opencode', displayName: 'OpenCode A', icon: '🦊' }),
+  ]
+
+  it('agent 命中 → speaker.vendor 取自 agent 配置(claude / opencode 各自归位)', () => {
+    expect(
+      resolveDiscussionSpeaker(
+        msg({ speakerKind: 'agent', speakerAgentId: 'claude-a', speakerName: 'Claude A' }),
+        HETERO,
+        'claude-a',
+        T,
+      ),
+    ).toEqual({ icon: '🤖', name: 'Claude A', vendor: 'claude' })
+    expect(
+      resolveDiscussionSpeaker(
+        msg({ speakerKind: 'agent', speakerAgentId: 'oc-a', speakerName: 'OpenCode A' }),
+        HETERO,
+        'claude-a',
+        T,
+      ),
+    ).toEqual({ icon: '🦊', name: 'OpenCode A', vendor: 'opencode' })
+  })
+
+  it('agent 未命中 → 无 vendor(无法从配置推导,不臆测)', () => {
+    const r = resolveDiscussionSpeaker(
+      msg({ speakerKind: 'agent', speakerAgentId: 'ghost', speakerName: 'G' }),
+      HETERO,
+      'claude-a',
+      T,
+    )
+    expect(r.vendor).toBeUndefined()
+  })
+
+  it('human / organizer 不带 vendor 徽章(只有 agent 发言标注厂商来源)', () => {
+    expect(
+      resolveDiscussionSpeaker(msg({ speakerKind: 'human' }), HETERO, 'claude-a', T).vendor,
+    ).toBeUndefined()
+    expect(
+      resolveDiscussionSpeaker(msg({ speakerKind: 'organizer' }), HETERO, 'oc-a', T).vendor,
+    ).toBeUndefined()
   })
 })
 

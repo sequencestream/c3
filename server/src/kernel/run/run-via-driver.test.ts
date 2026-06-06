@@ -8,8 +8,8 @@ import type { ServerToClient } from '@ccc/shared/protocol'
 import type { CanonicalBlock, CanonicalMessage } from '../agent/adapters/types.js'
 import { WireEmitter } from './run-via-driver.js'
 
-function frame(blocks: CanonicalBlock[]): CanonicalMessage {
-  return { vendor: 'opencode', sessionId: 's', role: 'assistant', blocks, ts: 0 }
+function frame(blocks: CanonicalBlock[], extra?: Partial<CanonicalMessage>): CanonicalMessage {
+  return { vendor: 'opencode', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
 }
 
 describe('WireEmitter', () => {
@@ -48,5 +48,32 @@ describe('WireEmitter', () => {
       { type: 'tool_use', toolUseId: 'c1', toolName: 'bash', input: { cmd: 'ls' } },
       { type: 'tool_result', toolUseId: 'c1', content: 'ok', isError: false },
     ])
+  })
+
+  it('carries a message-level preApproved marker onto the first tool_use frame', () => {
+    const out: ServerToClient[] = []
+    const e = new WireEmitter((m) => out.push(m))
+    const tool: CanonicalBlock = { type: 'tool_use', id: 'c1', name: 'bash', input: { cmd: 'ls' } }
+    e.consume(frame([tool], { preApproved: true }))
+    expect(out).toEqual([
+      {
+        type: 'tool_use',
+        toolUseId: 'c1',
+        toolName: 'bash',
+        input: { cmd: 'ls' },
+        preApproved: true,
+      },
+    ])
+  })
+
+  it('omits preApproved on a gated (non-pre-approved) tool_use', () => {
+    const out: ServerToClient[] = []
+    const e = new WireEmitter((m) => out.push(m))
+    const tool: CanonicalBlock = { type: 'tool_use', id: 'c1', name: 'bash', input: { cmd: 'ls' } }
+    e.consume(frame([tool]))
+    expect(out).toEqual([
+      { type: 'tool_use', toolUseId: 'c1', toolName: 'bash', input: { cmd: 'ls' } },
+    ])
+    expect(out[0]).not.toHaveProperty('preApproved')
   })
 })

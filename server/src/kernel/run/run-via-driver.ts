@@ -60,7 +60,18 @@ export class WireEmitter {
       } else if (b.type === 'tool_use') {
         if (!this.toolSeen.has(b.id)) {
           this.toolSeen.add(b.id)
-          this.send({ type: 'tool_use', toolUseId: b.id, toolName: b.name, input: b.input ?? {} })
+          // Carry the message-level `preApproved` audit marker onto the tool_use
+          // frame (2026-06-06-004): a tool the vendor's own rule engine auto-allowed
+          // never raised a `permission_request`, so this is the only signal the web
+          // gets to color it "vendor pre-approved". Read at first-seen only — the
+          // canonical flag is sticky, so a later result back-fill never flips it.
+          this.send({
+            type: 'tool_use',
+            toolUseId: b.id,
+            toolName: b.name,
+            input: b.input ?? {},
+            ...(msg.preApproved ? { preApproved: true } : {}),
+          })
         }
         if (b.result && !this.resultSeen.has(b.id)) {
           this.resultSeen.add(b.id)

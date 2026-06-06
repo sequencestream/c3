@@ -81,6 +81,21 @@ Conclusion → Details` so the read-order follows the right-pane's two-phase tim
     the transcript + orchestration view in the right pane \_and\* toggles that row's inline detail
     accordion in one gesture (re-clicking the same row collapses the detail; `open` stays idempotent).
     There is no chevron and no per-row "Open chat" button. All list copy is English (web/CLAUDE.md).
+- **Heterogeneous roundtable (multi-vendor, 2026-06-06-004)**: a discussion is **vendor-agnostic
+  by construction** — the organizer nominates among the configured `enabledAgents()`, which may mix
+  vendors (e.g. a Claude agent and an OpenCode agent at the same table), and every turn's speech is
+  normalized to the same `CanonicalMessage` / `ChatBody` shape, so divergent multi-vendor
+  perspectives become value rather than a rendering fork. Each `agent` bubble carries a **vendor
+  tag** (one hue per vendor) so the source is identifiable; vendor is **derived from the agent
+  config** via `speakerAgentId` (`resolveDiscussionSpeaker`), **not persisted** on the message —
+  Phase 1 vendor is effectively immutable per agent, and an unresolvable agent simply shows no tag.
+  `human`/`organizer` turns carry no vendor tag. **Cost discipline:** cost is **never merged across
+  vendors** — different vendors meter differently, so any future per-turn cost is labeled per vendor
+  with no cross-vendor sum. Phase 1 has **no cost meter** (the orchestrator's one-shot `askAgentOnce`
+  tracks no cost); this is a standing principle, not a built surface. The two-color approval
+  provenance (preApproved vs c3-gated) is a `web-console` concern (WC-R20 / PG-R12), not discussion's.
+  **Out of Phase 1: no consensus, no agent-teams** on the discussion path — only the heterogeneous
+  roundtable plus the base approval gateway.
 - **Organizer engine** (`server/src/discussions/orchestrator.ts` + pure
   `orchestrator-logic.ts`): a background loop reusing the consensus `askAgentOnce` /
   `launchForAgent` paradigm. The organizer's round decision and participants' speech parsing are

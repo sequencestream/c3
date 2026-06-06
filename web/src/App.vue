@@ -889,7 +889,15 @@ function handleMessage(msg: ServerToClient) {
       add({ kind: 'system', text: msg.text })
       break
     case 'tool_use':
-      add({ kind: 'tool-use', toolUseId: msg.toolUseId, toolName: msg.toolName, input: msg.input })
+      add({
+        kind: 'tool-use',
+        toolUseId: msg.toolUseId,
+        toolName: msg.toolName,
+        input: msg.input,
+        // Audit hint from the driver path: vendor rule engine auto-allowed this
+        // tool (no permission_request raised) → render the "pre-approved" color.
+        ...(msg.preApproved ? { preApproved: true } : {}),
+      })
       feedTaskUse(msg.toolName, msg.toolUseId, msg.input)
       activity.value = { phase: 'tool', toolName: msg.toolName }
       break

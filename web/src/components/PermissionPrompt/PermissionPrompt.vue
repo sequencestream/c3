@@ -327,6 +327,16 @@ function submitAsk() {
       —
       {{ m.decision === 'allow' ? t('permission.status.allowed') : t('permission.status.denied') }}
       —
+      <!--
+        c3-gateway provenance tag — a c3/human decision gated this tool. The green
+        「c3 allowed」 tag is the deliberate counterpart to ChatMessages' amber
+        「vendor pre-approved」 tag: together the two colors make explicit that c3
+        is the gateway here, but not the sole authority (a vendor rule engine can
+        pre-approve without ever reaching this prompt). PG-R12.
+      -->
+      <span v-if="m.decision === 'allow'" class="approval-tag c3-gateway">{{
+        t('permission.status.c3Gateway')
+      }}</span>
     </div>
   </template>
 </template>

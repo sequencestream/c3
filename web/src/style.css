@@ -1684,6 +1684,23 @@ button.deny:hover:not(:disabled) {
   text-align: right;
 }
 
+/* c3-gateway provenance tag on a c3/human-allowed permission (2026-06-06-004).
+   The green 「c3 allowed」 tag is the deliberate counterpart to ChatMessages'
+   amber 「vendor pre-approved」 tag — the two-color legend that makes "c3 is a
+   gateway, not the sole authority" explicit (PG-R12). Mirrors `.approval-tag`. */
+.decided .approval-tag {
+  margin-left: 0.5em;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 0 0.45em;
+  border-radius: 999px;
+}
+.decided .approval-tag.c3-gateway {
+  color: var(--c-success);
+  background: rgba(34, 197, 94, 0.15);
+}
+
 /* 重放的历史权限：一行无操作的静态记录 */
 .perm-history {
   font-size: var(--fs-caption);

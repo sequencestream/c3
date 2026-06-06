@@ -1,4 +1,4 @@
-import type { AnyConsensusOutcome } from '@ccc/shared/protocol'
+import type { AnyConsensusOutcome, VendorId } from '@ccc/shared/protocol'
 
 /**
  * Chat model shared across the message-rendering components. A `ChatMsg` is one
@@ -17,12 +17,26 @@ export interface SpeakerView {
   icon: string
   /** Display name (agent's name, or an i18n role label for unnamed human turns). */
   name: string
+  /**
+   * The vendor backing this speaker, resolved from the agent config by
+   * `speakerAgentId` (2026-06-06-004). Set only for `agent` turns in a
+   * heterogeneous discussion so the renderer can draw a small vendor tag —
+   * a Claude turn and an OpenCode turn are visually distinguishable while both
+   * normalize to the same canonical bubble. Absent for human/organizer turns.
+   */
+  vendor?: VendorId
 }
 
 export type ChatBody =
   | { kind: 'user'; text: string; speaker?: SpeakerView }
   | { kind: 'assistant'; text: string; speaker?: SpeakerView }
-  | { kind: 'tool-use'; toolUseId?: string; toolName: string; input: unknown }
+  | {
+      kind: 'tool-use'
+      toolUseId?: string
+      toolName: string
+      input: unknown
+      preApproved?: boolean
+    }
   | { kind: 'tool-result'; toolUseId?: string; content: string; isError: boolean }
   | {
       kind: 'permission'

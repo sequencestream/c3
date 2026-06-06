@@ -216,6 +216,26 @@
       },
       "add": {
         "label": "+ Добавить агента"
+      },
+      "vendor": {
+        "tooltip": "Тип агента — какой клиент запускается"
+      },
+      "configMode": {
+        "tooltip": "Источник настроек провайдера: system (конфигурация CLI) или custom (задать Base URL / API Key / Model)",
+        "system": {
+          "label": "Системная конфигурация"
+        },
+        "custom": {
+          "label": "Пользовательская"
+        }
+      },
+      "codex": {
+        "sandboxMode": {
+          "label": "Песочница"
+        },
+        "approvalPolicy": {
+          "label": "Подтверждение"
+        }
       }
     },
     "defaultMode": {

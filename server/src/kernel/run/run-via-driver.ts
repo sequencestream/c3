@@ -20,6 +20,7 @@
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
 import { fromPermissionMode } from '../agent/adapters/claude/permission-map.js'
+import { resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import {
   bindPending,
@@ -90,8 +91,8 @@ export class WireEmitter {
 /**
  * Run one turn through a vendor adapter's driver. Owns the same registry/emit
  * concerns `launchRun` does for claude (abort wiring, prompt echo, status flips,
- * pending→real bind, terminal turn_end) but via the neutral interface. Used today
- * for `opencode`; any future driver-routed vendor reuses it.
+ * pending→real bind, terminal turn_end) but via the neutral interface. Used for
+ * `opencode` and `codex` (2026-06-06-007); any future driver-routed vendor reuses it.
  */
 export async function runViaDriver(
   rt: SessionRuntime,
@@ -126,6 +127,11 @@ export async function runViaDriver(
 
   const { actionMode, toolGate } = fromPermissionMode(rt.mode)
 
+  // Resolve the session agent's launch overrides (provider connection + codex
+  // policy gate). The claude-hardwired path applies these to the SDK; the driver
+  // path threads the neutral subset the vendor's driver understands (2026-06-06-007).
+  const { model, baseUrl, apiKey, envOverrides, codexPolicy } = resolveSessionLaunch(runId)
+
   try {
     const run = await adapter.driver.start({
       prompt,
@@ -133,6 +139,11 @@ export async function runViaDriver(
       signal: cycleAbort.signal,
       actionMode,
       toolGate,
+      ...(model ? { model } : {}),
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(apiKey ? { apiKey } : {}),
+      ...(envOverrides ? { envOverrides } : {}),
+      ...(codexPolicy ? { codexPolicy } : {}),
       // A pending session starts fresh; a real id resumes that native session.
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
     })
@@ -161,7 +172,7 @@ export async function runViaDriver(
   } finally {
     disposeApproval()
     if (rt.run) rt.run = null
-    // The driver path is non-Claude (opencode today). Agent-teams are Claude-locked
+    // The driver path is non-Claude (opencode / codex). Agent-teams are Claude-locked
     // (2026-06-06-006): no non-Claude vendor has `streamingPush`, so this path never
     // detects a team tool and never wires `onTeam` — a driver session can never be a
     // team. Force the flag false defensively (a team lead can only live on the

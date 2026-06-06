@@ -216,6 +216,26 @@
       },
       "add": {
         "label": "+ エージェントを追加"
+      },
+      "vendor": {
+        "tooltip": "エージェントの種類 — 起動するクライアント"
+      },
+      "configMode": {
+        "tooltip": "プロバイダー設定の取得元:system(CLI 自身の設定)または custom(Base URL / API Key / Model を指定)",
+        "system": {
+          "label": "システム設定"
+        },
+        "custom": {
+          "label": "カスタム"
+        }
+      },
+      "codex": {
+        "sandboxMode": {
+          "label": "サンドボックス"
+        },
+        "approvalPolicy": {
+          "label": "承認"
+        }
       }
     },
     "defaultMode": {

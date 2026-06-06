@@ -20,6 +20,7 @@ import {
 const agent = (id: string, name: string): AgentConfig => ({
   id,
   vendor: 'claude',
+  configMode: 'custom',
   displayName: name,
   config: { baseUrl: '', apiKey: '', model: '' },
 })

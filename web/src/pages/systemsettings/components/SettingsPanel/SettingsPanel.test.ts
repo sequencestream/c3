@@ -9,6 +9,7 @@ const baseSettings: SystemSettings = {
     {
       id: SYSTEM_AGENT_ID,
       vendor: 'claude',
+      configMode: 'system',
       displayName: 'System',
       config: { baseUrl: '', apiKey: '', model: '' },
     },
@@ -56,12 +57,14 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
       {
         id: SYSTEM_AGENT_ID,
         vendor: 'claude',
+        configMode: 'system',
         displayName: 'System',
         config: { baseUrl: '', apiKey: '', model: '' },
       },
       {
         id: 'a1',
         vendor: 'claude',
+        configMode: 'custom',
         displayName: 'One',
         enabled: true,
         config: { baseUrl: 'https://one', apiKey: 'k', model: '' },
@@ -69,6 +72,7 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
       {
         id: 'a2',
         vendor: 'claude',
+        configMode: 'custom',
         displayName: 'Two',
         enabled: false,
         config: { baseUrl: 'https://two', apiKey: 'k', model: '' },
@@ -189,12 +193,14 @@ describe('SettingsPanel.vue — agent icon emoji picker', () => {
       {
         id: SYSTEM_AGENT_ID,
         vendor: 'claude',
+        configMode: 'system',
         displayName: 'System',
         config: { baseUrl: '', apiKey: '', model: '' },
       },
       {
         id: 'a1',
         vendor: 'claude',
+        configMode: 'custom',
         displayName: 'One',
         icon: '',
         config: { baseUrl: 'https://one', apiKey: 'k', model: '' },

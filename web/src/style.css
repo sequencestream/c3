@@ -2006,24 +2006,64 @@ button.deny:hover:not(:disabled) {
   flex-direction: column;
   gap: var(--sp-2);
 }
-.agent-row {
-  display: grid;
-  grid-template-columns:
-    40px /* on */
-    64px /* default */
-    104px /* icon */
-    180px /* name */
-    minmax(220px, 1fr) /* baseUrl */
-    minmax(180px, 1fr) /* apiKey */
-    220px /* model */
-    44px; /* actions */
-  align-items: center;
-  gap: var(--sp-3);
+/* Single-row-per-agent layout (2026-06-06-007): identity + vendor/configMode +
+ * provider fields + codex policy all inline on ONE row; the row scrolls
+ * horizontally if it outgrows the panel rather than wrapping to a second line. */
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
 }
-.agent-row-head {
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-  padding: 0 var(--sp-1) var(--sp-1);
+.agent-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  padding-bottom: var(--sp-1);
+}
+/* In the flex row, fields size by their per-field flex below, not the default
+ * full width the `.agent-field` base rule gives them (used in other layouts). */
+.agent-row > .agent-field {
+  width: auto;
+}
+.agent-name {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.agent-vendor {
+  flex: 0 0 132px;
+}
+.agent-configmode {
+  flex: 0 0 124px;
+}
+.agent-url {
+  flex: 1 1 190px;
+  min-width: 150px;
+}
+.agent-key {
+  flex: 0 0 150px;
+}
+.agent-model {
+  flex: 0 0 150px;
+}
+.agent-sandbox {
+  flex: 0 0 156px;
+}
+.agent-approval {
+  flex: 0 0 128px;
+}
+.agent-row > .col-on {
+  flex: 0 0 30px;
+}
+.agent-row > .col-default {
+  flex: 0 0 44px;
+}
+.agent-row > .icon-cell {
+  flex: 0 0 104px;
+}
+.agent-row > .col-actions {
+  flex: 0 0 34px;
 }
 .col-on,
 .col-default {

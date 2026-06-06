@@ -97,6 +97,14 @@ export interface LaunchRunDeps {
    * kernel launcher never builds the adapter or imports the supervisor itself.
    */
   getOpencodeAdapter?: () => VendorAdapter | null
+  /**
+   * The Codex {@link VendorAdapter} (built at the composition root via the no-arg
+   * factory, host-binary gated), or null/absent when Codex's host CLI is missing.
+   * `launchRun` forks to {@link runViaDriver} when the session's vendor is `codex`
+   * (2026-06-06-007), so Codex can be a primary session driver — its launch-time
+   * sandbox/approval policy is the per-tool-approval substitute (008).
+   */
+  getCodexAdapter?: () => VendorAdapter | null
 }
 
 /** Connection-injected callback the launcher fires. The shape itself is the
@@ -133,20 +141,21 @@ export async function launchRun(
     )
   }
 
-  // Vendor fork (2026-06-06-003): an `opencode` session runs through the neutral
-  // AgentDriver path, NOT the claude-hardwired loop below (which stays unchanged).
-  // requirement runtimes are always the claude comm agent, so they never fork.
+  // Vendor fork (2026-06-06-003 / -007): an `opencode` or `codex` session runs
+  // through the neutral AgentDriver path, NOT the claude-hardwired loop below (which
+  // stays unchanged). requirement runtimes are always the claude comm agent, so they
+  // never fork. `system`/`claude` vendors fall through to the claude path.
   if (!isRequirement) {
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
-    if (vendor === 'opencode') {
-      const adapter = deps.getOpencodeAdapter?.()
+    if (vendor === 'opencode' || vendor === 'codex') {
+      const adapter = vendor === 'opencode' ? deps.getOpencodeAdapter?.() : deps.getCodexAdapter?.()
       if (adapter) return runViaDriver(rt, prompt, adapter, cbs)
+      const unavailable =
+        vendor === 'opencode'
+          ? 'OpenCode is unavailable (host CLI missing, or start c3 with --opencode-url).'
+          : 'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
       emit(runId, { type: 'user_text', text: prompt })
-      emit(runId, {
-        type: 'turn_end',
-        reason: 'error',
-        error: 'OpenCode is unavailable (host CLI missing, or start c3 with --opencode-url).',
-      })
+      emit(runId, { type: 'turn_end', reason: 'error', error: unavailable })
       finalizeRun(runId)
       return
     }

@@ -137,7 +137,7 @@
         "label": "智能体"
       },
       "hint": {
-        "text": "新会话会以默认智能体启动 Claude Code。系统智能体不使用任何覆盖配置(沿用你现有的 {claude} 登录),且无法编辑或移除。打开 {on} 即可启用某个智能体;被禁用的智能体会从讨论参与者、共识投票、降级链和默认选择器中排除——但绑定或回退启动仍然有效,因此不会有任何现有会话被锁在外面。",
+        "text": "新会话以默认 agent 启动。每个 agent 都有类型({claude} / Codex / OpenCode),并可选用系统配置或自定义 Base URL / API Key / Model。勾选 {on} 启用 agent;被禁用的 agent 会从讨论参与者、共识投票、降级链与默认选择器中剔除——但已绑定或兜底的启动仍有效,任何已有会话都不会被锁死。",
         "claude": "claude",
         "on": "开"
       },
@@ -216,6 +216,26 @@
       },
       "add": {
         "label": "+ 添加智能体"
+      },
+      "vendor": {
+        "tooltip": "Agent 类型——决定启动哪个客户端"
+      },
+      "configMode": {
+        "tooltip": "参数来源:system(用 CLI 自身配置)或 custom(自填 Base URL / API Key / Model)",
+        "system": {
+          "label": "系统配置"
+        },
+        "custom": {
+          "label": "自定义"
+        }
+      },
+      "codex": {
+        "sandboxMode": {
+          "label": "沙箱"
+        },
+        "approvalPolicy": {
+          "label": "审批策略"
+        }
       }
     },
     "defaultMode": {

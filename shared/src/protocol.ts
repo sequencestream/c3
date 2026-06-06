@@ -89,11 +89,14 @@ export const EMPTY_TURN_NOTICE = '— No response this turn (the model only thou
 export const PENDING_SESSION_PREFIX = 'pending:'
 
 /**
- * The built-in agent. Its config sub-object is always its vendor's *default*
- * (for the default `claude` vendor: empty baseUrl/apiKey/model), so a session
- * bound to it launches the agent with no overrides — the SDK's own resolution
- * (env vars, `claude /login` credentials) applies. It cannot be deleted and
- * always exists in {@link SystemSettings.agents}.
+ * The id the **synthesized fallback agent** and the **legacy system-agent
+ * migration** use (2026-06-06-007). Historically `'system'` was a reserved,
+ * undeletable singleton; that special-casing is gone — `configMode: 'system'`
+ * (see {@link AgentConfigBase.configMode}) is now the per-agent way to say "use
+ * the vendor CLI's own config, no overrides", available on any vendor. This
+ * constant survives only as ① the migration sentinel for old configs that still
+ * carry an `id === 'system'` agent, and ② the id of the agent synthesized when
+ * settings are empty/corrupt (so a session is never locked out).
  */
 export const SYSTEM_AGENT_ID = 'system'
 
@@ -103,10 +106,25 @@ export const SYSTEM_AGENT_ID = 'system'
  * specifics live in a discriminated `config` sub-object — see {@link AgentConfig}.
  */
 export interface AgentConfigBase {
-  /** Stable id; `'system'` ({@link SYSTEM_AGENT_ID}) for the built-in agent. */
+  /** Stable id (a uuid; {@link SYSTEM_AGENT_ID} only for the synthesized fallback). */
   id: string
   /** Which vendor this agent drives. The discriminant of {@link AgentConfig}. */
   vendor: VendorId
+  /**
+   * Where this agent's *provider* connection comes from — orthogonal to
+   * {@link vendor} (2026-06-06-007):
+   *  - `'system'` — use the vendor CLI's own system config / login; the
+   *    `config` provider fields (`baseUrl`/`apiKey`/`model`) are **ignored** (no
+   *    overrides), exactly like the old built-in system agent. For `claude` this
+   *    means first-party (no `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` workaround).
+   *  - `'custom'` — apply the `config` provider fields as launch overrides.
+   * This governs ONLY the provider triple; vendor-specific policy gates (e.g.
+   * Codex `sandboxMode`/`approvalPolicy`) apply in both modes.
+   * Back-compat: a legacy config without this field defaults to `'custom'` on
+   * load (so previously-configured agents surface with editable provider fields);
+   * `'system'` is only ever set explicitly in the console.
+   */
+  configMode: 'system' | 'custom'
   /** Display name. */
   displayName: string
   /**

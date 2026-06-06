@@ -28,6 +28,7 @@ import {
   createOpencodeAdapter,
   type OpencodeSupervisor,
 } from './kernel/agent/adapters/opencode/index.js'
+import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
 import type { VendorAdapter } from './kernel/agent/adapters/types.js'
 import {
   createBroadcasts,
@@ -96,6 +97,21 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
   }
 
+  // Codex lifecycle (2026-06-06-007): unlike OpenCode, Codex spawns its CLI per run
+  // via the SDK (no supervisor), so the adapter is built directly — host-binary
+  // gated like the others. Built here so the kernel launcher only sees the neutral
+  // VendorAdapter (injected via launchDeps.getCodexAdapter). Missing CLI ⇒ null, and
+  // the codex agent type is simply unavailable (a session falls back / errors loud).
+  let codexAdapter: VendorAdapter | null = null
+  if (resolveHostBinary('codex')) {
+    try {
+      codexAdapter = createCodexAdapter()
+      console.log('[c3] codex ready (per-run CLI)')
+    } catch (e) {
+      console.warn(`[c3] codex unavailable: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
@@ -130,6 +146,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // The neutral OpenCode adapter, or null when unavailable (launchRun forks to
     // the driver path for opencode sessions; 2026-06-06-003).
     getOpencodeAdapter: () => opencodeAdapter,
+    // The neutral Codex adapter, or null when its host CLI is missing (launchRun
+    // forks to the driver path for codex sessions; 2026-06-06-007).
+    getCodexAdapter: () => codexAdapter,
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).

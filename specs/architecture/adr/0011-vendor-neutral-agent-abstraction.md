@@ -109,6 +109,15 @@ live gateway through `ApprovalBridge`) are later phases.
 > `forkSession` stays false: 008 killed the branch that would have used `resumeThread` as a fork;
 > `resumeThread` instead serves neutral session `resume`.
 >
+> **Codex as a primary session driver (2026-06-06-007).** The read-only advisor framing is **widened**:
+> a Codex agent can now be a session's primary driver, not only a consensus voter. `launchRun` forks a
+> `codex` session to `runViaDriver` (joining `opencode`), the composition root injects the Codex adapter
+> via `launchDeps.getCodexAdapter` (host-binary gated), and the driver consumes the agent's configured
+> `sandboxMode`/`approvalPolicy` (threaded as `DriverStartOptions.codexPolicy`) instead of only the
+> gate-derived default. This does **not** reverse 008: there is still no per-tool runtime approval
+> (`perToolApproval: false`, `ApprovalBridge` never fires) — the launch-time sandbox/approval gate is
+> the accepted substitute, now under the user's explicit per-agent control. `danger-full-access` is a
+> deliberately exposed, clearly-labelled risk the user opts into.
 > **Upper-domain heterogeneous tolerance (2026-06-06-006).** The capability ledger also gates the
 > _upper_ domains, vendor-homogeneity being their organizing principle: (1) **consensus** votes only
 > within the session's own vendor (`vendorScopedVoters`) — cross-vendor tool/risk semantics are

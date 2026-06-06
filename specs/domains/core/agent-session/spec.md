@@ -143,14 +143,17 @@ The exact classification is owned by the SDK; c3 selects the mode and surfaces i
 > mode is reduced to a neutral `ActionMode{plan,build} × ToolGate{...}` grid each adapter translates
 > into. Per-vendor divergence (Codex has no per-tool approval; only Claude forks/streams) lives in a
 > probed `AdapterCapabilities` ledger, not this spec's mode table. The Claude path described here is
-> the **reference adapter** (still driven directly by `runClaude`, additive phase). **OpenCode is the
-> first vendor fully routed through the neutral driver** (2026-06-06-003): `launchRun` forks to
-> `runViaDriver` when the session's vendor is `opencode`, so a real OpenCode turn streams over the
+> the **reference adapter** (still driven directly by `runClaude`, additive phase). **OpenCode and
+> Codex are routed through the neutral driver**: `launchRun` forks to `runViaDriver` when the session's
+> vendor is `opencode` (2026-06-06-003) or `codex` (2026-06-06-007), so a real turn streams over the
 > `AgentDriver`/`ApprovalBridge`/`SessionStore` interfaces end-to-end while the Claude path stays
-> byte-for-byte unchanged. `runViaDriver` is deliberately the _minimal_ route — no degradation chain,
-> socket auto-resume, consensus, or requirement profile (those are Claude-shaped, out of scope for the
-> first non-Claude integration). No vendor SDK type crosses into the neutral surface or
-> `shared/protocol.ts` (ADR-0009); the SDK lives only inside `adapters/opencode/`.
+> byte-for-byte unchanged. The driver path resolves the session agent's launch overrides
+> (`model`/`baseUrl`/`apiKey`/`envOverrides` + the codex-only `codexPolicy`) via `resolveSessionLaunch`
+> and threads them into `AgentDriver.start`. `runViaDriver` is deliberately the _minimal_ route — no
+> degradation chain, socket auto-resume, consensus, or requirement profile (those are Claude-shaped).
+> Codex has no per-tool approval (008), so its `ApprovalBridge` never fires; the agent's launch-time
+> `sandboxMode`/`approvalPolicy` is the gate. No vendor SDK type crosses into the neutral surface or
+> `shared/protocol.ts` (ADR-0009); each SDK lives only inside its `adapters/<vendor>/`.
 
 > **Host-binary gate (ADR-0012).** Before capabilities matter at all, a vendor's **host CLI must be
 > on PATH** — the agent runs as that subprocess and can't be packed into c3's single binary.

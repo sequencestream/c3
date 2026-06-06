@@ -37,16 +37,18 @@ export function defaultConfigFor(vendor: VendorId): ClaudeAgentConfig {
 }
 
 /**
- * The built-in system agent: the vendor-agnostic shell (`id`/`displayName`/
- * `enabled`/`icon`) plus its vendor's *default* config. Fixed to `claude` — the
- * user's existing `claude` login — with an all-empty config so it launches with
- * no overrides (AC-R1). `enabled`/`icon` are honoured; the config is always the
- * vendor default and cannot carry overrides.
+ * The synthesized fallback agent (2026-06-06-007): a `claude` agent in
+ * `configMode: 'system'` (first-party Claude, no overrides — the user's existing
+ * `claude` login). Used as the default seed on first boot and as the ultimate
+ * safety net when settings are empty/corrupt, so a session is never locked out.
+ * It is NOT undeletable anymore — `configMode: 'system'` is just a per-agent
+ * option; this is only the synthesized instance. `enabled`/`icon` are honoured.
  */
 export function systemAgent(enabled = true, icon = ''): AgentConfig {
   return {
     id: SYSTEM_AGENT_ID,
     vendor: 'claude',
+    configMode: 'system',
     displayName: 'System',
     enabled,
     icon,

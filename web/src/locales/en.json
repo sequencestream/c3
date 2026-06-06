@@ -137,7 +137,7 @@
         "label": "Agents"
       },
       "hint": {
-        "text": "New sessions launch Claude Code with the default agent. The system agent uses no overrides (your existing {claude} login) and cannot be edited or removed. Toggle {on} to enable an agent; a disabled agent is excluded from discussion participants, consensus voting, the degradation chain, and the default picker — but bound or fallback launches still work, so no existing session is locked out.",
+        "text": "New sessions launch with the default agent. Each agent has a type ({claude} / Codex / OpenCode) and either uses system config or a custom Base URL / API Key / Model. Toggle {on} to enable an agent; a disabled agent is excluded from discussion participants, consensus voting, the degradation chain, and the default picker — but bound or fallback launches still work, so no existing session is locked out.",
         "claude": "claude",
         "on": "On"
       },
@@ -216,6 +216,26 @@
       },
       "add": {
         "label": "+ Add agent"
+      },
+      "vendor": {
+        "tooltip": "Agent type — which client launches this agent"
+      },
+      "configMode": {
+        "tooltip": "Provider config source: system (use the CLI’s own config) or custom (set Base URL / API Key / Model)",
+        "system": {
+          "label": "System config"
+        },
+        "custom": {
+          "label": "Custom"
+        }
+      },
+      "codex": {
+        "sandboxMode": {
+          "label": "Sandbox"
+        },
+        "approvalPolicy": {
+          "label": "Approval"
+        }
       }
     },
     "defaultMode": {

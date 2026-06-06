@@ -6,7 +6,15 @@
  */
 import { computed, ref, watch } from 'vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { AgentConfig, PermissionMode, SystemSettings, UiLang } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  CodexApprovalPolicy,
+  CodexSandboxMode,
+  PermissionMode,
+  SystemSettings,
+  UiLang,
+  VendorId,
+} from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import EmojiPicker from './EmojiPicker.vue'
@@ -127,18 +135,101 @@ watch(
   { immediate: true },
 )
 
+// The agent-type (vendor) options and the per-agent config-source options
+// (2026-06-06-007). Vendor decides which client launches; configMode decides
+// whether the provider triple (baseUrl/apiKey/model) is applied or the vendor
+// CLI's own system config is used.
+const VENDORS: VendorId[] = ['claude', 'codex', 'opencode']
+const CONFIG_MODES = ['system', 'custom'] as const
+const CODEX_SANDBOX_MODES: CodexSandboxMode[] = [
+  'read-only',
+  'workspace-write',
+  'danger-full-access',
+]
+const CODEX_APPROVAL_POLICIES: CodexApprovalPolicy[] = [
+  'never',
+  'on-request',
+  'on-failure',
+  'untrusted',
+]
+
+// Vendor display names are product identifiers (do-not-translate, see
+// specs/style/i18n-terms.md) rendered as bound data — same exemption pattern as
+// UI_LANG_LABELS — so they don't go through `t`.
+const VENDOR_LABELS: Record<VendorId, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+}
+
+// configMode is a c3 concept, so it IS localized (unlike the technical enum
+// tokens of sandboxMode/approvalPolicy, which render raw like timezone names).
+function configModeLabel(m: 'system' | 'custom'): string {
+  return m === 'system'
+    ? t('settings.agents.configMode.system.label')
+    : t('settings.agents.configMode.custom.label')
+}
+
+/** A fresh, vendor-correct {@link AgentConfig} preserving the shared shell fields.
+ *  Switching vendor MUST rebuild `config` (discriminated union — a half-changed
+ *  tag would be dropped by the server's zod validation, AC-R12). */
+function makeAgent(
+  vendor: VendorId,
+  base: {
+    id: string
+    configMode: 'system' | 'custom'
+    displayName: string
+    icon: string
+    enabled: boolean
+  },
+): AgentConfig {
+  switch (vendor) {
+    case 'claude':
+      return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
+    case 'opencode':
+      return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
+    case 'codex':
+      return {
+        ...base,
+        vendor,
+        config: {
+          baseUrl: '',
+          apiKey: '',
+          model: '',
+          sandboxMode: 'workspace-write',
+          approvalPolicy: 'on-request',
+        },
+      }
+  }
+}
+
 function addAgent() {
   // Locally-unique id so the default-agent radio can target it before save; the
   // server keeps it as-is (only id-less agents get a fresh uuid on normalize).
   const id = `new-${Date.now()}-${draft.value.agents.length}`
-  draft.value.agents.push({
-    id,
-    vendor: 'claude',
-    displayName: '',
-    icon: '',
-    enabled: true,
-    config: { baseUrl: '', apiKey: '', model: '' },
+  draft.value.agents.push(
+    makeAgent('claude', { id, configMode: 'custom', displayName: '', icon: '', enabled: true }),
+  )
+}
+
+/** Switch an agent's vendor, rebuilding its `config` to the new vendor's shell
+ *  while keeping the shared shell fields (id/configMode/name/icon/enabled). */
+function setVendor(a: AgentConfig, vendor: VendorId) {
+  const idx = draft.value.agents.indexOf(a)
+  if (idx < 0 || a.vendor === vendor) return
+  draft.value.agents[idx] = makeAgent(vendor, {
+    id: a.id,
+    configMode: a.configMode,
+    displayName: a.displayName,
+    icon: a.icon ?? '',
+    enabled: a.enabled !== false,
   })
+}
+
+/** The codex config arm for a row, or null — lets the template bind codex-only
+ *  policy fields (sandboxMode/approvalPolicy) with vue-tsc narrowing. */
+function codexConfig(a: AgentConfig) {
+  return a.vendor === 'codex' ? a.config : null
 }
 
 // An agent counts as enabled unless explicitly disabled (back-compat with
@@ -147,14 +238,31 @@ function isEnabled(a: AgentConfig): boolean {
   return a.enabled !== false
 }
 
-function removeAgent(id: string) {
-  if (id === SYSTEM_AGENT_ID) return
-  draft.value.agents = draft.value.agents.filter((a) => a.id !== id)
-  if (draft.value.defaultAgentId === id) draft.value.defaultAgentId = SYSTEM_AGENT_ID
+// Provider fields (baseUrl/apiKey/model) are only meaningful in `custom` mode;
+// `system` mode defers to the vendor CLI's own config (2026-06-06-007).
+function showProviderFields(a: AgentConfig): boolean {
+  return a.configMode === 'custom'
 }
 
-function isSystemAgent(a: AgentConfig): boolean {
-  return a.id === SYSTEM_AGENT_ID
+function removeAgent(id: string) {
+  draft.value.agents = draft.value.agents.filter((a) => a.id !== id)
+  // Invariant: never leave the registry empty, and keep one valid default. If the
+  // removed agent was the default, move it to the first remaining agent; if none
+  // remain, synthesize a claude+system default (mirrors the server fallback).
+  if (draft.value.agents.length === 0) {
+    draft.value.agents.push(
+      makeAgent('claude', {
+        id: SYSTEM_AGENT_ID,
+        configMode: 'system',
+        displayName: 'System',
+        icon: '',
+        enabled: true,
+      }),
+    )
+  }
+  if (!draft.value.agents.some((a) => a.id === draft.value.defaultAgentId)) {
+    draft.value.defaultAgentId = draft.value.agents[0].id
+  }
 }
 
 // Live-switch the UI language on select change (App applies + persists + pushes
@@ -185,18 +293,8 @@ function onUiLangChange(e: Event) {
             ><strong>{{ t('settings.agents.hint.on') }}</strong></template
           >
         </i18n-t>
-        <div class="agent-table">
-          <div class="agent-row agent-row-head">
-            <span class="col-on">{{ t('settings.agents.col.on.label') }}</span>
-            <span class="col-default">{{ t('settings.agents.col.default.label') }}</span>
-            <span class="col-icon">{{ t('settings.agents.col.icon.label') }}</span>
-            <span class="col-name">{{ t('settings.agents.col.name.label') }}</span>
-            <span class="col-url">{{ t('settings.agents.col.baseUrl.label') }}</span>
-            <span class="col-key">{{ t('settings.agents.col.apiKey.label') }}</span>
-            <span class="col-model">{{ t('settings.agents.col.model.label') }}</span>
-            <span class="col-actions"></span>
-          </div>
-          <div v-for="a in draft.agents" :key="a.id" class="agent-row">
+        <div class="agent-list">
+          <div v-for="a in draft.agents" :key="a.id" class="agent-row" data-testid="agent-card">
             <label class="col-on">
               <input
                 type="checkbox"
@@ -216,7 +314,7 @@ function onUiLangChange(e: Event) {
                 @change="draft.defaultAgentId = a.id"
               />
             </label>
-            <div class="col-icon icon-cell">
+            <div class="icon-cell">
               <input
                 v-model="a.icon"
                 class="agent-field icon-text"
@@ -227,44 +325,76 @@ function onUiLangChange(e: Event) {
             </div>
             <input
               v-model="a.displayName"
-              class="agent-field col-name"
-              :placeholder="
-                isSystemAgent(a)
-                  ? t('settings.agents.systemName.placeholder')
-                  : t('settings.agents.name.placeholder')
-              "
-              :disabled="isSystemAgent(a)"
+              class="agent-field agent-name"
+              :placeholder="t('settings.agents.name.placeholder')"
             />
+            <select
+              class="agent-field agent-vendor"
+              :value="a.vendor"
+              :title="t('settings.agents.vendor.tooltip')"
+              data-testid="agent-vendor"
+              @change="setVendor(a, ($event.target as HTMLSelectElement).value as VendorId)"
+            >
+              <option v-for="v in VENDORS" :key="v" :value="v">{{ VENDOR_LABELS[v] }}</option>
+            </select>
+            <select
+              v-model="a.configMode"
+              class="agent-field agent-configmode"
+              :title="t('settings.agents.configMode.tooltip')"
+              data-testid="agent-configmode"
+            >
+              <option v-for="m in CONFIG_MODES" :key="m" :value="m">
+                {{ configModeLabel(m) }}
+              </option>
+            </select>
             <input
+              v-if="showProviderFields(a)"
               v-model="a.config.baseUrl"
-              class="agent-field col-url"
-              :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.baseUrl.placeholder')"
-              :disabled="isSystemAgent(a)"
+              class="agent-field agent-url"
+              :title="t('settings.agents.col.baseUrl.label')"
+              :placeholder="t('settings.agents.baseUrl.placeholder')"
             />
             <input
+              v-if="showProviderFields(a)"
               v-model="a.config.apiKey"
-              class="agent-field col-key"
+              class="agent-field agent-key"
               type="password"
               autocomplete="off"
-              :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.apiKey.placeholder')"
-              :disabled="isSystemAgent(a)"
+              :title="t('settings.agents.col.apiKey.label')"
+              :placeholder="t('settings.agents.apiKey.placeholder')"
             />
             <input
+              v-if="showProviderFields(a)"
               v-model="a.config.model"
-              class="agent-field col-model"
-              :placeholder="isSystemAgent(a) ? '—' : t('settings.agents.model.placeholder')"
-              :disabled="isSystemAgent(a)"
+              class="agent-field agent-model"
+              :title="t('settings.agents.col.model.label')"
+              :placeholder="t('settings.agents.model.placeholder')"
             />
+            <select
+              v-if="codexConfig(a)"
+              v-model="codexConfig(a)!.sandboxMode"
+              class="agent-field agent-sandbox"
+              :title="t('settings.agents.codex.sandboxMode.label')"
+              data-testid="agent-sandbox"
+            >
+              <option v-for="s in CODEX_SANDBOX_MODES" :key="s" :value="s">{{ s }}</option>
+            </select>
+            <select
+              v-if="codexConfig(a)"
+              v-model="codexConfig(a)!.approvalPolicy"
+              class="agent-field agent-approval"
+              :title="t('settings.agents.codex.approvalPolicy.label')"
+            >
+              <option v-for="p in CODEX_APPROVAL_POLICIES" :key="p" :value="p">{{ p }}</option>
+            </select>
             <span class="col-actions">
               <button
-                v-if="!isSystemAgent(a)"
                 class="icon-btn"
                 :title="t('settings.agents.remove.tooltip')"
                 @click="removeAgent(a.id)"
               >
                 🗑
               </button>
-              <span v-else class="agent-badge">{{ t('settings.agents.builtin.label') }}</span>
             </span>
           </div>
         </div>

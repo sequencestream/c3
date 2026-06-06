@@ -20,6 +20,10 @@ import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 /** The vendor-agnostic public shell shared by every agent arm. */
 const baseShellSchema = z.object({
   id: z.string(),
+  // Provider-config source, orthogonal to vendor (2026-06-06-007): `system` ⇒ use
+  // the vendor CLI's own config (no provider overrides); `custom` ⇒ apply the
+  // config provider triple. The migrate layer infers it for legacy records.
+  configMode: z.enum(['system', 'custom']),
   displayName: z.string(),
   enabled: z.boolean().optional(),
   icon: z.string().optional(),

@@ -26,7 +26,6 @@ import type {
   SystemSettings,
   UiLang,
 } from '@ccc/shared/protocol'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import {
   defaultSettings,
   normalizeDegradationChain,
@@ -113,11 +112,6 @@ function writeAtomic(file: string, data: unknown): void {
 
 let settingsCache: SystemSettings | null = null
 
-/** True for a persisted agent record whose id is the system agent's. */
-function isSystemAgentRecord(a: unknown): a is Record<string, unknown> {
-  return !!a && typeof a === 'object' && (a as Record<string, unknown>).id === SYSTEM_AGENT_ID
-}
-
 /** Trim a claude config sub-object out of a flat-or-nested source record. */
 function buildClaudeConfig(src: Record<string, unknown>): ClaudeAgentConfig {
   const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
@@ -147,11 +141,35 @@ function migrateAgentCandidate(id: string, rec: Record<string, unknown>): unknow
   // New shape nests launch fields under `config`; legacy-flat keeps them flat.
   const configSrc =
     rec.config && typeof rec.config === 'object' ? (rec.config as Record<string, unknown>) : rec
+  // Provider-config source (2026-06-06-007). Explicit value wins; otherwise infer
+  // for legacy records: the old reserved system singleton, or an all-empty
+  // provider triple, means "use system config" — everything else is custom.
+  const configMode = inferConfigMode(rec.configMode)
   if (vendor === 'claude') {
-    return { id, vendor, displayName, enabled, icon, config: buildClaudeConfig(configSrc) }
+    return {
+      id,
+      vendor,
+      configMode,
+      displayName,
+      enabled,
+      icon,
+      config: buildClaudeConfig(configSrc),
+    }
   }
-  // Unknown/unsupported vendor: hand the schema a shape it rejects ⇒ dropped.
-  return { id, vendor, displayName, enabled, icon, config: configSrc }
+  // codex/opencode (and any unknown vendor): pass the nested config through for the
+  // schema to validate + route by tag; an unknown vendor / bad config ⇒ dropped.
+  return { id, vendor, configMode, displayName, enabled, icon, config: configSrc }
+}
+
+/**
+ * Infer an agent's {@link AgentConfigBase.configMode} (2026-06-06-007). An explicit
+ * `'system'`/`'custom'` is kept verbatim; otherwise a legacy record (no `configMode`)
+ * **defaults to `'custom'`** so the user's previously-configured agents surface in
+ * the UI with their provider fields editable. `'system'` is now purely an explicit
+ * per-agent choice in the console, never inferred from legacy data.
+ */
+function inferConfigMode(raw: unknown): 'system' | 'custom' {
+  return raw === 'system' || raw === 'custom' ? raw : 'custom'
 }
 
 /**
@@ -163,29 +181,28 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // vendor-discriminated shape OR the legacy flat Claude shape (no `vendor`/
   // `config`, fields `name`/`baseUrl`/`apiKey`/`model` at top level).
   const incoming: unknown[] = Array.isArray(raw?.agents) ? (raw.agents as unknown[]) : []
-  // The system agent's config is always its vendor default (AC-R1), but its
-  // `enabled` flag IS honoured: a disabled system agent drops out of every
-  // list consumer (it can still be a launch fallback). Absent ⇒ enabled.
-  // `icon` is honoured the same way (it's a display field, not a launch
-  // override); absent/empty ⇒ no custom icon.
-  const systemIncoming = incoming.find(isSystemAgentRecord)
-  const agents: AgentConfig[] = [
-    systemAgent(systemIncoming?.enabled !== false, normalizeIcon(systemIncoming?.icon)),
-  ]
+  // 2026-06-06-007: the system agent is no longer a forced, undeletable singleton.
+  // Every record is migrated + validated like any other; `configMode: 'system'`
+  // is now just a per-agent option. We only guarantee the registry is never empty
+  // (synthesize a fallback) and that the default points at a real agent.
+  const agents: AgentConfig[] = []
   for (const a of incoming) {
     if (!a || typeof a !== 'object') continue
     const rec = a as Record<string, unknown>
     const id = typeof rec.id === 'string' && rec.id ? rec.id : randomUUID()
-    if (id === SYSTEM_AGENT_ID) continue // system agent is fixed; ignore overrides
     if (agents.some((x) => x.id === id)) continue // de-dupe
-    // Migrate legacy-flat → discriminated candidate, then validate + route by
-    // `vendor` tag through the zod schema. An unknown vendor or a config that
-    // fails its arm ⇒ `null` ⇒ dropped (fail-soft, same policy as a dup id).
+    // Migrate legacy → discriminated candidate, then validate + route by `vendor`
+    // tag through the zod schema. An unknown vendor or a config that fails its arm
+    // ⇒ `null` ⇒ dropped (fail-soft, same policy as a dup id).
     const parsed = parseAgentConfig(migrateAgentCandidate(id, rec))
     if (parsed) agents.push(parsed)
   }
-  const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : SYSTEM_AGENT_ID
-  const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : SYSTEM_AGENT_ID
+  // Never leave the registry empty (a session must always resolve a launch agent):
+  // synthesize the claude+system fallback when nothing valid survived.
+  if (agents.length === 0) agents.push(systemAgent())
+  // The default must reference an existing agent; otherwise fall back to the first.
+  const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : ''
+  const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : agents[0].id
   const defaultMode: PermissionMode = PERMISSION_MODES.includes(raw?.defaultMode as PermissionMode)
     ? (raw!.defaultMode as PermissionMode)
     : 'default'

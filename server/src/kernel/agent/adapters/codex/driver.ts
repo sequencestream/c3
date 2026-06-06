@@ -155,8 +155,19 @@ export class CodexDriver implements AgentDriver {
     if (opts.signal.aborted) controller.abort()
     else opts.signal.addEventListener('abort', () => controller.abort(), { once: true })
 
-    const codex = this.createCodex({ env: opts.envOverrides })
-    const policy = gateToCodexPolicy(opts.actionMode, opts.toolGate)
+    // Provider connection comes from the agent's `custom` config (baseUrl/apiKey
+    // as Codex constructor options, NOT env — CodexOptions.env REPLACES process.env,
+    // which would drop PATH and break the CLI spawn). `system` configMode leaves
+    // them undefined ⇒ the Codex CLI's own login/config applies (2026-06-06-007).
+    const codex = this.createCodex({
+      env: opts.envOverrides,
+      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
+    })
+    // The user's configured launch-time policy (custom or system both carry it) is
+    // the per-tool-approval substitute (008); fall back to the gate-derived policy
+    // only when no explicit policy was threaded through.
+    const policy = opts.codexPolicy ?? gateToCodexPolicy(opts.actionMode, opts.toolGate)
     const threadOptions: ThreadOptions = {
       workingDirectory: opts.cwd,
       skipGitRepoCheck: true, // c3 may run in a non-git cwd; do not hard-fail the run.

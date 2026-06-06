@@ -20,7 +20,13 @@
  * and everything divergent is a probed {@link AdapterCapabilities} flag.
  */
 
-import type { AdapterCapability, CanonicalMessage, VendorId } from '@ccc/shared/protocol'
+import type {
+  AdapterCapability,
+  CanonicalMessage,
+  CodexApprovalPolicy,
+  CodexSandboxMode,
+  VendorId,
+} from '@ccc/shared/protocol'
 
 /**
  * The canonical message model now lives on the WIRE (`shared/protocol.ts`) so it
@@ -154,6 +160,22 @@ export interface DriverStartOptions {
   model?: string
   /** Child-process env overrides (e.g. an agent's base URL / key). */
   envOverrides?: Record<string, string>
+  /**
+   * Raw provider base URL override for driver-path vendors whose SDK takes it as
+   * a constructor option rather than an env var (Codex). Omit ⇒ vendor default /
+   * system config (2026-06-06-007). Claude carries this via {@link envOverrides}
+   * instead; opencode resolves it server-side, so its driver ignores this.
+   */
+  baseUrl?: string
+  /** Raw provider api key override, paired with {@link baseUrl} (driver-path vendors). */
+  apiKey?: string
+  /**
+   * Codex-only launch-time policy gate (2026-06-06-007). When present, the Codex
+   * driver uses these as the run's `sandboxMode`/`approvalPolicy` instead of the
+   * gate-derived defaults — the user's configured policy IS the per-tool-approval
+   * substitute (Phase 0 008). Other drivers ignore it.
+   */
+  codexPolicy?: { sandboxMode: CodexSandboxMode; approvalPolicy: CodexApprovalPolicy }
 }
 
 /**

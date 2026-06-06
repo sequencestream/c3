@@ -6,6 +6,7 @@ describe('agent-config schema — claude arm', () => {
   const validClaude = {
     id: 'a1',
     vendor: 'claude',
+    configMode: 'custom',
     displayName: 'Agent One',
     config: { baseUrl: 'https://x', apiKey: 'k', model: 'claude-opus-4' },
   }
@@ -24,14 +25,21 @@ describe('agent-config schema — claude arm', () => {
     expect(parsed?.icon).toBe('🦊')
   })
 
-  it('accepts the empty-config system-agent shape', () => {
+  it('accepts the empty-config system-mode shape', () => {
     const parsed = parseAgentConfig({
       id: SYSTEM_AGENT_ID,
       vendor: 'claude',
+      configMode: 'system',
       displayName: 'System',
       config: { baseUrl: '', apiKey: '', model: '' },
     })
     expect(parsed?.id).toBe(SYSTEM_AGENT_ID)
+    expect(parsed?.configMode).toBe('system')
+  })
+
+  it('rejects a record missing configMode (the migrate layer supplies it)', () => {
+    const { configMode: _cm, ...noMode } = validClaude
+    expect(parseAgentConfig(noMode)).toBeNull()
   })
 
   it('rejects a claude agent missing a config field', () => {

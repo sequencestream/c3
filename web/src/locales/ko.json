@@ -216,6 +216,26 @@
       },
       "add": {
         "label": "+ 에이전트 추가"
+      },
+      "vendor": {
+        "tooltip": "에이전트 유형 — 실행할 클라이언트"
+      },
+      "configMode": {
+        "tooltip": "프로바이더 설정 출처: system(CLI 자체 설정) 또는 custom(Base URL / API Key / Model 지정)",
+        "system": {
+          "label": "시스템 설정"
+        },
+        "custom": {
+          "label": "사용자 지정"
+        }
+      },
+      "codex": {
+        "sandboxMode": {
+          "label": "샌드박스"
+        },
+        "approvalPolicy": {
+          "label": "승인"
+        }
       }
     },
     "defaultMode": {

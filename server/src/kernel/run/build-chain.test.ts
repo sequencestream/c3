@@ -13,6 +13,7 @@ const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig =>
     ? {
         id,
         vendor,
+        configMode: 'custom',
         displayName: id.toUpperCase(),
         config: {
           baseUrl: '',
@@ -22,7 +23,13 @@ const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig =>
           approvalPolicy: 'never',
         },
       }
-    : { id, vendor, displayName: id.toUpperCase(), config: { baseUrl: '', apiKey: '', model: '' } }
+    : {
+        id,
+        vendor,
+        configMode: 'custom',
+        displayName: id.toUpperCase(),
+        config: { baseUrl: '', apiKey: '', model: '' },
+      }
 
 const REGISTRY: Record<string, AgentConfig> = {
   c1: agent('c1', 'claude'),

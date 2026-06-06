@@ -163,24 +163,28 @@ const AGENTS: import('@ccc/shared/protocol').AgentConfig[] = [
   {
     id: 'sys',
     vendor: 'claude',
+    configMode: 'system',
     displayName: 'System',
     config: { baseUrl: '', apiKey: '', model: '' },
   },
   {
     id: 'a1',
     vendor: 'claude',
+    configMode: 'custom',
     displayName: 'Agent One',
     config: { baseUrl: 'https://one.example.com', apiKey: 'key1', model: '' },
   },
   {
     id: 'a2',
     vendor: 'claude',
+    configMode: 'custom',
     displayName: 'Agent Two',
     config: { baseUrl: 'https://two.example.com', apiKey: 'key2', model: '' },
   },
   {
     id: 'a3',
     vendor: 'claude',
+    configMode: 'custom',
     displayName: 'Agent Three',
     config: { baseUrl: '', apiKey: '', model: 'claude-opus-4' },
   },
@@ -239,6 +243,16 @@ function saveAgents(agents: unknown[], defaultAgentId = SYSTEM_AGENT_ID): System
   return saveSettings({ agents, defaultAgentId } as unknown as SystemSettings)
 }
 
+/** A system-mode claude agent record (2026-06-06-007): the system agent is no
+ *  longer auto-injected, so tests that want one in the table add it explicitly. */
+const SYS_RECORD = {
+  id: SYSTEM_AGENT_ID,
+  vendor: 'claude',
+  configMode: 'system',
+  displayName: 'System',
+  config: { baseUrl: '', apiKey: '', model: '' },
+}
+
 describe('enabled flag (AC-R10)', () => {
   it('persists enabled as an explicit boolean; absent ⇒ enabled (back-compat)', () => {
     // No `enabled` field on the incoming agent → treated as enabled and persisted as true.
@@ -247,8 +261,6 @@ describe('enabled flag (AC-R10)', () => {
     ])
     const a1 = saved.agents.find((a) => a.id === 'a1')
     expect(a1?.enabled).toBe(true)
-    // The re-injected system agent is enabled by default too.
-    expect(saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)?.enabled).toBe(true)
   })
 
   it('keeps an explicit false (disabled) through normalize', () => {
@@ -258,13 +270,15 @@ describe('enabled flag (AC-R10)', () => {
     expect(saved.agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
   })
 
-  it('honours a disabled system agent (overrides still ignored — AC-R1)', () => {
+  it('an agent with the legacy system id is editable like any other (AC-R1 retired)', () => {
+    // 2026-06-06-007: the undeletable, override-ignoring system singleton is gone.
+    // An agent that carries the legacy `system` id is now a normal agent — its
+    // provider overrides are kept (a non-empty baseUrl ⇒ configMode `custom`).
     const saved = saveAgents([
-      // Try to both disable and override the system agent.
       {
         id: SYSTEM_AGENT_ID,
-        name: 'hacked',
-        baseUrl: 'https://evil',
+        name: 'edited',
+        baseUrl: 'https://one',
         apiKey: 'k',
         model: 'm',
         enabled: false,
@@ -272,9 +286,10 @@ describe('enabled flag (AC-R10)', () => {
     ])
     const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
     expect(sys.enabled).toBe(false)
-    expect(sys.config.baseUrl).toBe('')
-    expect(sys.config.apiKey).toBe('')
-    expect(sys.config.model).toBe('')
+    expect(sys.configMode).toBe('custom')
+    expect(sys.config.baseUrl).toBe('https://one')
+    expect(sys.config.apiKey).toBe('k')
+    expect(sys.config.model).toBe('m')
   })
 
   it('enabledAgents() returns only enabled agents', () => {
@@ -283,7 +298,6 @@ describe('enabled flag (AC-R10)', () => {
       { id: 'a2', name: 'Two', baseUrl: '', apiKey: '', model: '', enabled: false },
     ])
     const ids = enabledAgents().map((a) => a.id)
-    expect(ids).toContain(SYSTEM_AGENT_ID)
     expect(ids).toContain('a1')
     expect(ids).not.toContain('a2')
   })
@@ -301,24 +315,26 @@ describe('enabled flag (AC-R10)', () => {
       { id: 'a2', name: 'Two', baseUrl: '', apiKey: '', model: '', enabled: false },
     ])
     const voters = consensusVoters('a1').map((a) => a.id)
-    expect(voters).toContain(SYSTEM_AGENT_ID)
     expect(voters).not.toContain('a1') // self excluded
     expect(voters).not.toContain('a2') // disabled excluded
   })
 
   it('vendorScopedVoters keeps only same-vendor agents and counts the cross-vendor exclusions', () => {
     // A heterogeneous table: the session runs a claude agent; an opencode agent
-    // and the claude system agent are also enabled.
+    // and a claude (system-mode) agent are also enabled.
     saveAgents([
+      SYS_RECORD,
       {
         id: 'a1',
         vendor: 'claude',
+        configMode: 'custom',
         displayName: 'One',
         config: { baseUrl: '', apiKey: '', model: '' },
       },
       {
         id: 'oc',
         vendor: 'opencode',
+        configMode: 'custom',
         displayName: 'OC',
         config: { baseUrl: '', apiKey: '', model: '' },
       },
@@ -334,11 +350,13 @@ describe('enabled flag (AC-R10)', () => {
 
   it('vendorScopedVoters yields zero voters when the session vendor is the only one present', () => {
     // Session runs the lone opencode agent; the only other enabled agent is a
-    // different vendor (claude system) → no same-vendor voter → consensus skipped.
+    // different vendor (claude system-mode) → no same-vendor voter → consensus skipped.
     const saved = saveAgents([
+      SYS_RECORD,
       {
         id: 'oc',
         vendor: 'opencode',
+        configMode: 'custom',
         displayName: 'OC',
         config: { baseUrl: '', apiKey: '', model: '' },
       },
@@ -356,9 +374,11 @@ describe('enabled flag (AC-R10)', () => {
     ])
     // Sanity: a1 is disabled yet present.
     expect(settings.agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
-    // No binding for this session → falls back to default (system). Always resolves.
+    // No binding for this session → falls back to the default. The system agent is
+    // no longer auto-injected, so with `a1` the only agent it becomes the default
+    // (2026-06-06-007); the launch still resolves — a disabled agent never locks out.
     const launch = resolveSessionLaunch('some-session')
-    expect(launch.agentId).toBe(SYSTEM_AGENT_ID)
+    expect(launch.agentId).toBe('a1')
     // loadSettings is consistent with the saved set.
     expect(loadSettings().agents.some((a) => a.id === 'a1')).toBe(true)
   })
@@ -551,17 +571,16 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
     } as unknown as SystemSettings)
     const reloaded = loadSettings()
     expect(reloaded.agents.find((a) => a.id === 'a1')?.icon).toBe('')
-    // System agent also gets the default empty icon.
-    expect(reloaded.agents.find((a) => a.id === SYSTEM_AGENT_ID)?.icon).toBe('')
   })
 
-  it('honours an icon set on the system agent (overrides still ignored — AC-R1)', () => {
+  it('honours an icon on an agent carrying the legacy system id (AC-R1 retired)', () => {
+    // 2026-06-06-007: the system id is no longer special — both the icon and the
+    // provider overrides are kept (non-empty baseUrl ⇒ configMode `custom`).
     const saved = saveAgents([
-      // Try to both set an icon and override the system agent's Claude config.
       {
         id: SYSTEM_AGENT_ID,
-        name: 'hacked',
-        baseUrl: 'https://evil',
+        name: 'edited',
+        baseUrl: 'https://one',
         apiKey: 'k',
         model: 'm',
         icon: '🛡️',
@@ -569,9 +588,8 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
     ])
     const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
     expect(sys.icon).toBe('🛡️')
-    expect(sys.config.baseUrl).toBe('')
-    expect(sys.config.apiKey).toBe('')
-    expect(sys.config.model).toBe('')
+    expect(sys.configMode).toBe('custom')
+    expect(sys.config.baseUrl).toBe('https://one')
   })
 
   it('truncates an over-long icon on save', () => {

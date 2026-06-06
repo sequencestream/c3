@@ -7,9 +7,12 @@
  * its adapter is never built, so its {@link AdapterCapabilities} never come into
  * play. "Probe before construct" keeps the gate strictly ahead of capabilities.
  *
- * Only `claude` has a real adapter today (ADR-0011 reference); `codex`/`opencode`
- * have no factory yet, so they are not registry candidates even though the
- * launcher's `HOST_BINARIES` table lists them for the first-launch health check.
+ * `claude` registers via a no-arg factory (ADR-0011 reference). `opencode` is the
+ * first full non-Claude integration (2026-06-06-003) but it needs a started
+ * {@link OpencodeSupervisor}, so it is NOT a no-arg factory — the composition root
+ * builds its adapter and injects it here via `opts.opencode`. `codex` still has no
+ * adapter even though the launcher's `HOST_BINARIES` table lists it for the
+ * first-launch health check.
  */
 import type { VendorId, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
@@ -19,8 +22,8 @@ import { HOST_BINARIES, resolve as resolveHostBinary } from '../process/launcher
 type VendorFactory = () => VendorAdapter
 
 /**
- * The vendors c3 can actually drive right now. New vendors register their factory
- * here once their `adapters/<vendor>/` is implemented.
+ * The vendors c3 drives via a no-arg factory. `opencode` is registered separately
+ * (it needs a supervisor) — see {@link resolveAvailableAdapters}'s `opencode` opt.
  */
 export const VENDOR_FACTORIES: Partial<Record<VendorId, VendorFactory>> = {
   claude: createClaudeAdapter,
@@ -31,6 +34,16 @@ export interface MissingVendor {
   readonly vendor: VendorId
   readonly binary: string
   readonly installHint: string
+}
+
+/**
+ * The composition root's injected OpenCode adapter (built over a started
+ * supervisor). `external` true ⇒ an operator-run instance (`--opencode-url`) that
+ * bypasses the host-binary gate.
+ */
+export interface OpencodeRegistration {
+  readonly adapter: VendorAdapter
+  readonly external: boolean
 }
 
 /** The split of registrable vendors into available (probed) vs missing (host CLI absent). */
@@ -48,6 +61,7 @@ export interface AdapterRegistry {
  */
 export function resolveAvailableAdapters(
   resolve: (vendor: VendorId) => string | null = resolveHostBinary,
+  opencode?: OpencodeRegistration | null,
 ): AdapterRegistry {
   const available: VendorAdapter[] = []
   const missing: MissingVendor[] = []
@@ -61,6 +75,18 @@ export function resolveAvailableAdapters(
     } else {
       const spec = HOST_BINARIES[vendor]
       missing.push({ vendor, binary: spec.binary, installHint: spec.installHint })
+    }
+  }
+
+  // OpenCode is injected (it carries a started supervisor). An external instance
+  // (`--opencode-url`) bypasses the host-binary gate — no local CLI is needed when
+  // someone else runs the server; otherwise the same probe gates it as the others.
+  if (opencode) {
+    if (opencode.external || resolve('opencode')) {
+      available.push(opencode.adapter)
+    } else {
+      const spec = HOST_BINARIES.opencode
+      missing.push({ vendor: 'opencode', binary: spec.binary, installHint: spec.installHint })
     }
   }
 

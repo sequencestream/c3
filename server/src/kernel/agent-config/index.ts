@@ -96,6 +96,14 @@ export function launchForAgent(agent: AgentConfig): {
       if (agent.id !== SYSTEM_AGENT_ID) env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
       break
     }
+    case 'opencode': {
+      // OpenCode runs as a shared c3-supervised server (2026-06-06-003), so only
+      // the model is a per-run override; baseUrl/apiKey are server-level provider
+      // config applied at supervisor boot, not per-run child env.
+      const { model: ocModel } = agent.config
+      if (ocModel) model = ocModel
+      break
+    }
   }
 
   return {

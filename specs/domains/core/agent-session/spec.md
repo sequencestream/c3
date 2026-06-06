@@ -141,8 +141,14 @@ The exact classification is owned by the SDK; c3 selects the mode and surfaces i
 > mode is reduced to a neutral `ActionMode{plan,build} × ToolGate{...}` grid each adapter translates
 > into. Per-vendor divergence (Codex has no per-tool approval; only Claude forks/streams) lives in a
 > probed `AdapterCapabilities` ledger, not this spec's mode table. The Claude path described here is
-> the **reference adapter**; the run loop is not yet rewritten to route through the driver (additive
-> phase). No vendor SDK type crosses into the neutral surface or `shared/protocol.ts` (ADR-0009).
+> the **reference adapter** (still driven directly by `runClaude`, additive phase). **OpenCode is the
+> first vendor fully routed through the neutral driver** (2026-06-06-003): `launchRun` forks to
+> `runViaDriver` when the session's vendor is `opencode`, so a real OpenCode turn streams over the
+> `AgentDriver`/`ApprovalBridge`/`SessionStore` interfaces end-to-end while the Claude path stays
+> byte-for-byte unchanged. `runViaDriver` is deliberately the _minimal_ route — no degradation chain,
+> socket auto-resume, consensus, or requirement profile (those are Claude-shaped, out of scope for the
+> first non-Claude integration). No vendor SDK type crosses into the neutral surface or
+> `shared/protocol.ts` (ADR-0009); the SDK lives only inside `adapters/opencode/`.
 
 > **Host-binary gate (ADR-0012).** Before capabilities matter at all, a vendor's **host CLI must be
 > on PATH** — the agent runs as that subprocess and can't be packed into c3's single binary.
@@ -151,14 +157,32 @@ The exact classification is owned by the SDK; c3 selects the mode and surfaces i
 > unavailable (install it; this is a product convention, surfaced with guidance, not a run error).
 > Claude binary discovery (`findClaudeExecutable`, `$CLAUDE_PATH`) is the Claude instance of this gate.
 
+> **OpenCode server lifecycle governance (2026-06-06-003).** Unlike Claude/Codex (a fresh CLI
+> subprocess per run), OpenCode is a **long-lived local server** every run reaches over REST/SSE, and
+> the SDK abandons it after spawn (silent crash, no health, no restart, bare `SIGTERM` that leaks
+> grandchildren — 009). So c3 owns the whole lifecycle via `OpencodeSupervisor`: it (1) picks a **free
+> port** itself (`bind 0` → pass the explicit number to `opencode serve --port`, avoiding the SDK `:0`
+> quirk that grabs 4096); (2) spawns the server in its **own process group** (`detached`) so teardown
+> `kill(-pgid)` reaps the whole tree, with a `process.on(exit|SIGINT|SIGTERM)` backstop ⇒ no orphan,
+> no port leak; (3) **health-polls** `client.path.get()` and **auto-restarts** with bounded backoff,
+> marking the vendor unavailable past the ceiling (loud, non-fatal — mirrors the boot probe); (4)
+> supports an **external escape hatch** `--opencode-url`, which _attaches_ to an operator-run instance
+> (client only — no spawn/health/restart/kill) and bypasses the host-binary gate. The supervisor +
+> adapter are built once at the composition root and injected into `launchRun` via
+> `launchDeps.getOpencodeAdapter`.
+
 > **Canonical envelope + c3 session namespace (ADR-0013).** The vendor-neutral message envelope
-> (`CanonicalMessage` = `{ vendor, sessionId, turnId?, role, blocks, ts, vendorExtra? }`) is promoted
-> to the wire (`shared/protocol.ts`, SDK-free): the wire gains only a `vendor` dimension, never a
-> per-vendor schema. Blocks are append-with-**id-upsert** keyed by `(sessionId, block.id)`, so the two
-> vendor forms coexist — Claude's whole-message frame and Codex's incremental `ItemUpdated` both
-> collapse to "revise in place, don't stack" (`CanonicalAccumulator`); a tool's return folds into
-> `tool_use.result` (no standalone `tool_result` block — 011 D3). **Approval/permission events stay
-> OFF this model** — they ride the `ApprovalBridge` stream so the envelope never becomes a god type.
+> (`CanonicalMessage` = `{ vendor, sessionId, turnId?, role, blocks, ts, preApproved?, vendorExtra? }`)
+> is promoted to the wire (`shared/protocol.ts`, SDK-free): the wire gains only a `vendor` dimension,
+> never a per-vendor schema. Blocks are append-with-**id-upsert** keyed by `(sessionId, block.id)`, so
+> the two vendor forms coexist — Claude's whole-message frame and OpenCode's incremental
+> `message.part.updated` (and Codex's `ItemUpdated`) all collapse to "revise in place, don't stack"
+> (`CanonicalAccumulator`); a tool's return folds into `tool_use.result` (no standalone `tool_result`
+> block — 011 D3). **Approval/permission _request_ events stay OFF this model** — they ride the
+> `ApprovalBridge` stream so the envelope never becomes a god type. The lone exception is the top-level
+> **`preApproved?` audit flag** (2026-06-06-003): a vendor rule-engine auto-allow c3 never decided is
+> stamped onto the envelope (sticky in the accumulator) for the audit trail — a marker, not a decision
+> channel.
 > Sessions are addressed by an **opaque, vendor-free `C3SessionId`** (a deterministic digest of
 > `{ vendor, vendorSessionId }`); a vendor id never enters a URL or storage key. `SessionAccessor` is a
 > **read-only** lazy-normalizing wrapper over the per-vendor `SessionStore`s — each vendor's native

@@ -38,23 +38,41 @@ const claudeAgentSchema = baseShellSchema.extend({
   config: claudeConfigSchema,
 })
 
+/** The `opencode` vendor's config sub-object (provider launch overrides). */
+export const opencodeConfigSchema = z.object({
+  baseUrl: z.string(),
+  apiKey: z.string(),
+  model: z.string(),
+})
+
+/** The `opencode` agent arm: public shell + `vendor: 'opencode'` + opencode config. */
+const opencodeAgentSchema = baseShellSchema.extend({
+  vendor: z.literal('opencode'),
+  config: opencodeConfigSchema,
+})
+
 /**
  * Per-vendor agent-arm schema registry — the **extension point**. A new vendor
  * registers its arm here (and in {@link agentConfigSchema} below). Partial over
  * {@link VendorId} on purpose: a vendor without an entry has no config shape yet
  * and cannot be persisted as an agent (it would have no adapter to run on).
+ * `claude` + `opencode` have real adapters; `codex` remains unregistered.
  */
 export const VENDOR_AGENT_SCHEMAS = {
   claude: claudeAgentSchema,
+  opencode: opencodeAgentSchema,
 } satisfies Partial<Record<VendorId, z.ZodTypeAny>>
 
 /**
  * The full {@link AgentConfig} schema, routed by the `vendor` discriminant:
  * `safeParse` dispatches an object to its vendor's arm and rejects an unknown
- * vendor or a config that fails that arm. Today a single-arm union (claude);
- * new vendors append their arm.
+ * vendor or a config that fails that arm. claude + opencode arms today; new
+ * vendors append their arm.
  */
-export const agentConfigSchema = z.discriminatedUnion('vendor', [claudeAgentSchema])
+export const agentConfigSchema = z.discriminatedUnion('vendor', [
+  claudeAgentSchema,
+  opencodeAgentSchema,
+])
 
 /**
  * Validate + route one candidate agent object by its `vendor` tag. Returns the

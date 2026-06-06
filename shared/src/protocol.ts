@@ -144,20 +144,41 @@ export interface ClaudeAgentConfig {
 }
 
 /**
+ * The `opencode` vendor's config sub-object: the per-agent launch overrides
+ * routed into the OpenCode server's provider resolution. Mirrors the claude
+ * shape (the neutral minimal set); each empty field ⇒ no override. OpenCode runs
+ * as a c3-supervised local server (ADR-0011 reference vendor, 2026-06-06-003);
+ * these overrides flow to that server, not to a per-run CLI env like claude.
+ */
+export interface OpencodeAgentConfig {
+  /** Provider base URL override. Empty ⇒ no override. */
+  baseUrl: string
+  /** API key / auth token override. Empty ⇒ no override. */
+  apiKey: string
+  /** Model alias or id (e.g. `anthropic/claude-...`). Empty ⇒ no override. */
+  model: string
+}
+
+/**
  * One agent profile under the system-config module: a vendor-agnostic public
  * shell ({@link AgentConfigBase}) plus a `vendor`-discriminated `config`
  * sub-object. A session launches the agent's vendor CLI using its agent (or the
  * default agent when unassigned), routing the `config` per its `vendor` tag.
  *
- * Today only `claude` has a real adapter (ADR-0011 reference) and thus a config
- * shape; `codex`/`opencode` are the extension point — a new arm
- * (`AgentConfigBase & { vendor: 'codex'; config: CodexAgentConfig }`) lands here
- * once its adapter + zod sub-schema exist. The runtime validation/routing lives
- * server-side in `kernel/agent-config/schema.ts` (zod stays out of this
- * zero-runtime, SDK-free wire module — ADR-0009); a type-level assertion there
- * pins the zod schema to this union so the two cannot drift.
+ * `claude` (ADR-0011 reference) and `opencode` (Phase 1 full integration,
+ * 2026-06-06-003) have real adapters and config shapes; `codex` is the remaining
+ * extension point — a new arm (`AgentConfigBase & { vendor: 'codex'; config:
+ * CodexAgentConfig }`) lands here once its adapter + zod sub-schema exist. The
+ * runtime validation/routing lives server-side in `kernel/agent-config/schema.ts`
+ * (zod stays out of this zero-runtime, SDK-free wire module — ADR-0009); a
+ * type-level assertion there pins the zod schema to this union so the two cannot
+ * drift.
  */
-export type AgentConfig = AgentConfigBase & { vendor: 'claude'; config: ClaudeAgentConfig }
+export type AgentConfig = AgentConfigBase &
+  (
+    | { vendor: 'claude'; config: ClaudeAgentConfig }
+    | { vendor: 'opencode'; config: OpencodeAgentConfig }
+  )
 
 /**
  * Multi-agent consensus voting over permission prompts. When enabled, a pending
@@ -482,6 +503,17 @@ export interface CanonicalMessage {
    * if any, goes to {@link vendorExtra}.
    */
   ts: number
+  /**
+   * Audit marker: this turn's tool call(s) were auto-allowed by the vendor's own
+   * permission rule engine WITHOUT a c3/human decision — i.e. c3 observed the
+   * vendor reply to its own `permission.asked` (OpenCode: a `permission.replied`
+   * with no matching c3 write-back) and is reconstructing the bypass for the
+   * audit trail (2026-06-06-003). Absent/`false` ⇒ a normal turn (either no
+   * approval was needed, or c3/the human decided it). This is the ONE top-level
+   * approval-derived field on the envelope; the live approval *request* stream
+   * still rides the {@link ApprovalBridge}, never the message model.
+   */
+  preApproved?: boolean
   /** Envelope-level overflow: `usage`, `parent_tool_use_id`, vendor `time`, … */
   vendorExtra?: Record<string, unknown>
 }

@@ -68,6 +68,8 @@ interface SessionView {
   role: CanonicalRole
   blocks: CanonicalBlock[]
   ts: number
+  /** Sticky once seen: a preApproved frame marks the whole accumulated view (audit). */
+  preApproved?: boolean
   vendorExtra?: Record<string, unknown>
 }
 
@@ -95,6 +97,7 @@ export class CanonicalAccumulator {
         role: msg.role,
         blocks,
         ts: msg.ts,
+        ...(msg.preApproved ? { preApproved: true } : {}),
         vendorExtra: msg.vendorExtra,
       })
       return
@@ -107,6 +110,9 @@ export class CanonicalAccumulator {
       turnId: msg.turnId ?? prior.turnId,
       role: msg.role,
       ts: msg.ts,
+      // Sticky: once any frame is preApproved, the accumulated view stays marked
+      // (the auto-allow audit fact never un-happens within a turn).
+      preApproved: msg.preApproved || prior.preApproved,
       vendorExtra:
         msg.vendorExtra || prior.vendorExtra
           ? { ...prior.vendorExtra, ...msg.vendorExtra }
@@ -131,6 +137,7 @@ export class CanonicalAccumulator {
       role: v.role,
       blocks: v.blocks,
       ts: v.ts,
+      ...(v.preApproved ? { preApproved: true } : {}),
       vendorExtra: v.vendorExtra,
     }
   }

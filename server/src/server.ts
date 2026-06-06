@@ -22,6 +22,13 @@ import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
 import { checkDbDriver } from './kernel/infra/db.js'
 import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
+import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js'
+import {
+  createOpencodeSupervisor,
+  createOpencodeAdapter,
+  type OpencodeSupervisor,
+} from './kernel/agent/adapters/opencode/index.js'
+import type { VendorAdapter } from './kernel/agent/adapters/types.js'
 import {
   createBroadcasts,
   createDiscussionRuns,
@@ -38,6 +45,12 @@ export interface ServerOptions {
   projectPath?: string
   port: number
   dev: boolean
+  /**
+   * Attach to an operator-run OpenCode server instead of c3 spawning + supervising
+   * one (the escape hatch, 2026-06-06-003). When set, c3 only builds a client for
+   * it — no spawn / health / restart / kill.
+   */
+  opencodeUrl?: string
 }
 
 /** How often the server broadcasts a full session-status snapshot. */
@@ -62,6 +75,26 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // that agent type is simply unavailable (a product convention, not a bug). Logs
   // present/missing + install guidance loudly, like checkDbDriver — c3 still starts.
   logHostBinaryHealth()
+
+  // OpenCode lifecycle governance (2026-06-06-003, risk #2): c3 spawns + supervises
+  // the long-lived OpenCode server (or attaches to an external one via --opencode-url).
+  // Built here at the composition root so the kernel launcher only ever sees the
+  // neutral VendorAdapter (injected via launchDeps.getOpencodeAdapter). Failure is
+  // non-fatal — c3 still starts, the opencode agent type is just unavailable.
+  let opencodeAdapter: VendorAdapter | null = null
+  let opencodeSupervisor: OpencodeSupervisor | null = null
+  const opencodeExternal = !!opts.opencodeUrl
+  if (opencodeExternal || resolveHostBinary('opencode')) {
+    try {
+      const sup = createOpencodeSupervisor({ externalUrl: opts.opencodeUrl })
+      await sup.start()
+      opencodeSupervisor = sup
+      opencodeAdapter = createOpencodeAdapter(sup)
+      console.log(`[c3] opencode ready: ${sup.url ?? '?'}${opencodeExternal ? ' (external)' : ''}`)
+    } catch (e) {
+      console.warn(`[c3] opencode unavailable: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
 
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
@@ -94,6 +127,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       mcpServers: createRequirementMcpServer(workspacePath, broadcasts.broadcastRequirements),
       gate: 'requirement' as const,
     }),
+    // The neutral OpenCode adapter, or null when unavailable (launchRun forks to
+    // the driver path for opencode sessions; 2026-06-06-003).
+    getOpencodeAdapter: () => opencodeAdapter,
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).
@@ -146,6 +182,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
     await stopSchedulerWiring(30_000)
+    // Tree-kill the supervised OpenCode server so no orphan/port leaks (idempotent;
+    // the supervisor also self-registers exit handlers as a backstop).
+    opencodeSupervisor?.stop()
     server.close()
     process.exit(0)
   }

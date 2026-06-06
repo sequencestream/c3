@@ -17,6 +17,8 @@
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
+import type { VendorAdapter } from '../agent/adapters/types.js'
+import { runViaDriver } from './run-via-driver.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import {
   getDegradationChain,
@@ -85,6 +87,14 @@ export interface LaunchRunDeps {
     mcpServers: Record<string, McpServerConfig>
     gate: 'requirement'
   }
+  /**
+   * The OpenCode {@link VendorAdapter} (built at the composition root over a
+   * started supervisor), or null/absent when OpenCode is unavailable. `launchRun`
+   * forks to the neutral {@link runViaDriver} path when the session's vendor is
+   * `opencode` (2026-06-06-003); the claude path is untouched. Injected here so the
+   * kernel launcher never builds the adapter or imports the supervisor itself.
+   */
+  getOpencodeAdapter?: () => VendorAdapter | null
 }
 
 /** Connection-injected callback the launcher fires. The shape itself is the
@@ -119,6 +129,25 @@ export async function launchRun(
     throw new Error(
       '[c3] launchRun: a requirement runtime requires deps.requirementProfile (composition-root wiring missing)',
     )
+  }
+
+  // Vendor fork (2026-06-06-003): an `opencode` session runs through the neutral
+  // AgentDriver path, NOT the claude-hardwired loop below (which stays unchanged).
+  // requirement runtimes are always the claude comm agent, so they never fork.
+  if (!isRequirement) {
+    const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
+    if (vendor === 'opencode') {
+      const adapter = deps.getOpencodeAdapter?.()
+      if (adapter) return runViaDriver(rt, prompt, adapter, cbs)
+      emit(runId, { type: 'user_text', text: prompt })
+      emit(runId, {
+        type: 'turn_end',
+        reason: 'error',
+        error: 'OpenCode is unavailable (host CLI missing, or start c3 with --opencode-url).',
+      })
+      finalizeRun(runId)
+      return
+    }
   }
 
   // Build the ordered list of agent configs to try.

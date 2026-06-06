@@ -23,7 +23,11 @@ program
   )
   .option('--port <number>', 'HTTP port', '3000')
   .option('--dev', 'development mode (do not serve static frontend)', false)
-  .action(async (opts: { project?: string; port: string; dev: boolean }) => {
+  .option(
+    '--opencode-url <url>',
+    'attach to an external OpenCode server instead of c3 spawning + supervising one',
+  )
+  .action(async (opts: { project?: string; port: string; dev: boolean; opencodeUrl?: string }) => {
     let projectPath: string | undefined
     if (opts.project) {
       projectPath = resolve(opts.project)
@@ -37,7 +41,7 @@ program
       console.error(`[c3] error: invalid port: ${opts.port}`)
       process.exit(1)
     }
-    await startServer({ projectPath, port, dev: opts.dev })
+    await startServer({ projectPath, port, dev: opts.dev, opencodeUrl: opts.opencodeUrl })
   })
 
 program

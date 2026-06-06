@@ -79,7 +79,7 @@ const draft = ref<SystemSettings>({
   agents: [],
   defaultAgentId: SYSTEM_AGENT_ID,
   defaultMode: 'default',
-  consensus: { enabled: false },
+  consensus: { enabled: false, majority: false },
   voiceLang: 'zh-CN',
   uiLang: 'en',
   timezone: BROWSER_TZ,
@@ -123,7 +123,10 @@ watch(
       agents: settings.agents.map((a) => structuredClone(toRaw(a))),
       defaultAgentId: settings.defaultAgentId,
       defaultMode: settings.defaultMode ?? 'default',
-      consensus: { enabled: settings.consensus?.enabled ?? false },
+      consensus: {
+        enabled: settings.consensus?.enabled ?? false,
+        majority: settings.consensus?.majority ?? false,
+      },
       voiceLang: settings.voiceLang ?? 'zh-CN',
       uiLang: settings.uiLang ?? 'en',
       timezone: settings.timezone ?? BROWSER_TZ,
@@ -451,6 +454,14 @@ function onUiLangChange(e: Event) {
         <label v-if="draft.consensus" class="consensus-toggle">
           <input v-model="draft.consensus.enabled" type="checkbox" />
           {{ t('settings.consensus.toggle.label') }}
+        </label>
+        <label v-if="draft.consensus" class="consensus-toggle">
+          <input
+            v-model="draft.consensus.majority"
+            type="checkbox"
+            data-testid="consensus-majority"
+          />
+          {{ t('settings.consensus.majority.label') }}
         </label>
       </section>
 

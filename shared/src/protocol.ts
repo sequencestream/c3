@@ -225,6 +225,16 @@ export type AgentConfig = AgentConfigBase &
  */
 export interface ConsensusConfig {
   enabled: boolean
+  /**
+   * Majority rule. Optional; `false`/absent by default (back-compat: existing
+   * configs without the field keep the unanimous-only behaviour). When `true`,
+   * the consensus auto-resolves on a clear *majority* verdict among the voters
+   * instead of requiring **unanimity**; a tie or no clear majority still defers
+   * to the human. This is the configuration base for majority adjudication —
+   * the tally semantics live in `consensus-tally.ts` (see
+   * `permission-gateway/consensus.md`).
+   */
+  majority?: boolean
 }
 
 /**

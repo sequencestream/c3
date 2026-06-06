@@ -10,6 +10,21 @@ page). Lives in `server/src/consensus.ts` (orchestration, spawns advisor queries
 and `server/src/consensus-tally.ts` (pure vote parsing / tally / summary — kept
 SDK-free for unit tests, mirroring `permissions.ts`).
 
+### Majority toggle (config base)
+
+`SystemSettings.consensus.majority` is a second, optional system switch (checkbox
+in the settings page next to "Enable multi-agent consensus voting"). Default
+`false` ⇒ **unanimous-only**: the current behaviour where a prompt auto-resolves
+only when every voter agrees. When `true`, a consensus is allowed to auto-resolve
+on a **clear majority** verdict among the voters instead of requiring unanimity;
+a **tie or no clear majority** still defers to the human (the fail-safe invariant
+is preserved). The flag is normalized strictly (`server/src/kernel/config`:
+`isConsensusMajorityEnabled()` returns true only for an explicit `true`;
+missing/invalid ⇒ `false`, so pre-majority configs keep unanimous behaviour). It
+is independent of `enabled` and only meaningful when consensus is also on. This
+spec documents the **configuration base**; the tally semantics that consume the
+flag live in `consensus-tally.ts`.
+
 ## Roles
 
 | Role    | Who                                                                            | Job                                                            |

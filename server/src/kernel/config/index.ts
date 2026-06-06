@@ -206,7 +206,12 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const defaultMode: PermissionMode = PERMISSION_MODES.includes(raw?.defaultMode as PermissionMode)
     ? (raw!.defaultMode as PermissionMode)
     : 'default'
-  const consensus = { enabled: raw?.consensus?.enabled === true }
+  // Both flags are strict opt-ins: only an explicit `true` is truthy; anything
+  // missing/invalid normalizes to `false` (back-compat with pre-majority configs).
+  const consensus = {
+    enabled: raw?.consensus?.enabled === true,
+    majority: raw?.consensus?.majority === true,
+  }
   const voiceLang =
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
   // UI display language: a known code is kept; anything else falls back to `en`.
@@ -352,6 +357,15 @@ export function deleteSessionAgentId(sessionId: string): void {
 /** Whether multi-agent consensus voting is enabled in the system settings. */
 export function isConsensusEnabled(): boolean {
   return loadSettings().consensus?.enabled === true
+}
+
+/**
+ * Whether consensus uses majority rule (vs. unanimous-only). Default false;
+ * only an explicit `consensus.majority: true` enables it. Independent of
+ * {@link isConsensusEnabled} — meaningful only when consensus is also enabled.
+ */
+export function isConsensusMajorityEnabled(): boolean {
+  return loadSettings().consensus?.majority === true
 }
 
 /**

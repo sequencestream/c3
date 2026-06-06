@@ -50,6 +50,44 @@ describe('SettingsPanel.vue — discussion rounds per stage', () => {
   })
 })
 
+describe('SettingsPanel.vue — consensus majority toggle', () => {
+  it('seeds the majority checkbox unchecked when settings disable it', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const box = w.find('[data-testid="consensus-majority"]')
+    expect(box.exists()).toBe(true)
+    expect((box.element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('seeds the majority checkbox checked when settings enable it', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: { ...baseSettings, consensus: { enabled: true, majority: true } },
+      },
+    })
+    expect((w.find('[data-testid="consensus-majority"]').element as HTMLInputElement).checked).toBe(
+      true,
+    )
+  })
+
+  it('defaults the majority checkbox to false when the field is absent (old config)', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, consensus: { enabled: true } } },
+    })
+    expect((w.find('[data-testid="consensus-majority"]').element as HTMLInputElement).checked).toBe(
+      false,
+    )
+  })
+
+  it('emits the toggled majority value on save', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="consensus-majority"]').setValue(true)
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].consensus?.majority).toBe(true)
+  })
+})
+
 describe('SettingsPanel.vue — agent enable/disable', () => {
   const twoAgents: SystemSettings = {
     ...baseSettings,

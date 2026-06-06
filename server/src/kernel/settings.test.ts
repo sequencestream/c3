@@ -22,6 +22,8 @@ import {
   getSocketAutoResume,
   getTimezone,
   getUiLang,
+  isConsensusEnabled,
+  isConsensusMajorityEnabled,
   isValidTimeZone,
   loadSettings,
   saveSettings,
@@ -81,6 +83,50 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
     save(false)
     expect(getSocketAutoResume()).toBe(false)
     expect(loadSettings().socketAutoResume).toBe(false)
+  })
+})
+
+describe('consensus.majority normalization (isConsensusMajorityEnabled)', () => {
+  const saveConsensus = (consensus: unknown): void => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      consensus,
+    } as unknown as SystemSettings)
+  }
+
+  it('defaults to false when consensus is entirely absent (old config)', () => {
+    saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID } as SystemSettings)
+    expect(isConsensusMajorityEnabled()).toBe(false)
+    expect(loadSettings().consensus?.majority).toBe(false)
+  })
+
+  it('defaults to false when consensus exists but omits majority', () => {
+    saveConsensus({ enabled: true })
+    expect(isConsensusMajorityEnabled()).toBe(false)
+    // The sibling flag round-trips independently.
+    expect(isConsensusEnabled()).toBe(true)
+  })
+
+  it('is true only when explicitly majority: true', () => {
+    saveConsensus({ enabled: true, majority: true })
+    expect(isConsensusMajorityEnabled()).toBe(true)
+    expect(loadSettings().consensus?.majority).toBe(true)
+  })
+
+  it('treats a non-true value (truthy or not) as false', () => {
+    saveConsensus({ enabled: true, majority: 'yes' })
+    expect(isConsensusMajorityEnabled()).toBe(false)
+    saveConsensus({ enabled: true, majority: 1 })
+    expect(isConsensusMajorityEnabled()).toBe(false)
+    saveConsensus({ enabled: true, majority: false })
+    expect(isConsensusMajorityEnabled()).toBe(false)
+  })
+
+  it('is independent of enabled (majority can be true while consensus is off)', () => {
+    saveConsensus({ enabled: false, majority: true })
+    expect(isConsensusEnabled()).toBe(false)
+    expect(isConsensusMajorityEnabled()).toBe(true)
   })
 })
 

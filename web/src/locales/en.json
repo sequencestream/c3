@@ -304,6 +304,9 @@
       },
       "toggle": {
         "label": "Enable multi-agent consensus voting"
+      },
+      "majority": {
+        "label": "Allow majority rule (a tie or no clear majority still defers to you)"
       }
     },
     "display": {

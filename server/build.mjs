@@ -39,10 +39,11 @@ await build({
     '@ccc/shared/nl-cron': resolve(import.meta.dirname, '../shared/src/nl-cron.ts'),
   },
   logLevel: 'info',
-  // The dev (tsx/ESM) path in server.ts reads import.meta.url via direct eval so
-  // this CJS bundle doesn't statically see it. In the bundled CJS, __dirname is
-  // always defined and that branch is dead code — silence the spurious warning.
-  logOverride: { 'direct-eval': 'silent' },
+  // db.ts / static-assets.ts read `import.meta.url` for the ESM dev (tsx) path.
+  // In this CJS bundle esbuild rewrites it to `undefined`, but those branches are
+  // dead code (the `require`/`__dirname` ternaries short-circuit), so the
+  // empty-import-meta warning is spurious here — silence it.
+  logOverride: { 'empty-import-meta': 'silent' },
 })
 
 chmodSync(resolve(outDir, 'cli.cjs'), 0o755)

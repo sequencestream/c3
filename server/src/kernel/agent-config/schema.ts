@@ -56,17 +56,15 @@ const opencodeAgentSchema = baseShellSchema.extend({
 })
 
 /**
- * The `codex` vendor's config sub-object (2026-06-06-005). Carries the launch-time
- * policy gate (`sandboxMode` + `approvalPolicy`) that substitutes for the per-tool
- * approval Codex cannot do (Phase 0 008 NO-GO). The enums mirror the SDK's
- * `SandboxMode`/`ApprovalMode`.
+ * The `codex` vendor's config sub-object (2026-06-06-005). The neutral provider
+ * triple only: Codex's launch-time policy gate (`sandboxMode`/`approvalPolicy`) is
+ * NOT persisted — it is derived at launch from the session `defaultMode`
+ * (2026-06-06-008), so the codex arm mirrors claude/opencode exactly.
  */
 export const codexConfigSchema = z.object({
   baseUrl: z.string(),
   apiKey: z.string(),
   model: z.string(),
-  sandboxMode: z.enum(['read-only', 'workspace-write', 'danger-full-access']),
-  approvalPolicy: z.enum(['never', 'on-request', 'on-failure', 'untrusted']),
 })
 
 /** The `codex` agent arm: public shell + `vendor: 'codex'` + codex config. */

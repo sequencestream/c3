@@ -203,6 +203,9 @@
             "faces": "Faces",
             "people": "People",
             "animals": "Animals",
+            "food": "Food",
+            "travel": "Travel",
+            "activities": "Activities",
             "symbols": "Symbols",
             "objects": "Objects"
           },
@@ -227,14 +230,6 @@
         },
         "custom": {
           "label": "Custom"
-        }
-      },
-      "codex": {
-        "sandboxMode": {
-          "label": "Sandbox"
-        },
-        "approvalPolicy": {
-          "label": "Approval"
         }
       }
     },

@@ -66,11 +66,13 @@ function driverName(): string {
 
 // A `require` that works in every execution context: native in the esbuild CJS
 // bundle, and `createRequire(import.meta.url)` under ESM (tsx dev / Bun binary).
-// `eval('import.meta.url')` keeps esbuild from statically tripping on import.meta
-// in the CJS output (same trick as server.ts); the eval branch never runs there
-// because the native `require` short-circuits it.
+// In the CJS bundle esbuild rewrites `import.meta.url` to `undefined`, but the
+// ternary short-circuits to the native `require` there, so that arg is never
+// evaluated — the empty-import-meta warning it emits is silenced in build.mjs.
+// (We can't use direct eval here: Node 26 runs eval in script goal, where
+// `import.meta` is a hard SyntaxError.)
 const runtimeRequire: NodeRequire =
-  typeof require !== 'undefined' ? require : createRequire(eval('import.meta.url') as string)
+  typeof require !== 'undefined' ? require : createRequire(import.meta.url)
 
 function nodeAdapter(path: string): Db {
   const { DatabaseSync } = runtimeRequire('node:sqlite') as {

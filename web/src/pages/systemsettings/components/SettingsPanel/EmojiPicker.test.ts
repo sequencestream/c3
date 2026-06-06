@@ -3,19 +3,38 @@ import { mount } from '@vue/test-utils'
 import EmojiPicker from './EmojiPicker.vue'
 
 describe('EmojiPicker.vue', () => {
-  it('renders the trigger glyph from modelValue, falling back when empty', () => {
+  it('renders the current icon value on the trigger button', () => {
     const filled = mount(EmojiPicker, { props: { modelValue: '🦊' } })
     expect(filled.find('[data-testid="emoji-picker-trigger"]').text()).toBe('🦊')
 
+    // Empty value falls back to the placeholder glyph on the button.
     const empty = mount(EmojiPicker, { props: { modelValue: '' } })
-    // Empty value shows a non-empty fallback glyph (so the button is never blank).
-    expect(empty.find('[data-testid="emoji-picker-trigger"]').text().length).toBeGreaterThan(0)
+    expect(empty.find('[data-testid="emoji-picker-trigger"]').text()).toBe('🤖')
   })
 
-  it('starts closed and opens the panel on trigger click', async () => {
+  it('starts closed and opens the modal when the trigger button is clicked', async () => {
     const w = mount(EmojiPicker, { props: { modelValue: '' } })
     expect(w.find('.emoji-panel').exists()).toBe(false)
     await w.find('[data-testid="emoji-picker-trigger"]').trigger('click')
+    expect(w.find('.emoji-panel').exists()).toBe(true)
+  })
+
+  it('toggles the modal closed on a second trigger click', async () => {
+    const w = mount(EmojiPicker, { props: { modelValue: '' } })
+    await w.find('[data-testid="emoji-picker-trigger"]').trigger('click')
+    expect(w.find('.emoji-panel').exists()).toBe(true)
+    await w.find('[data-testid="emoji-picker-trigger"]').trigger('click')
+    expect(w.find('.emoji-panel').exists()).toBe(false)
+  })
+
+  it('emits update:modelValue on manual typing without closing the modal', async () => {
+    const w = mount(EmojiPicker, { props: { modelValue: '' } })
+    await w.find('[data-testid="emoji-picker-trigger"]').trigger('click')
+    await w.find('[data-testid="emoji-picker-manual"]').setValue('🦊')
+    const emitted = w.emitted('update:modelValue') as [string][]
+    expect(emitted).toBeTruthy()
+    expect(emitted[emitted.length - 1][0]).toBe('🦊')
+    // Manual edits keep the modal open.
     expect(w.find('.emoji-panel').exists()).toBe(true)
   })
 
@@ -28,9 +47,15 @@ describe('EmojiPicker.vue', () => {
     await cells[0].trigger('click')
     const emitted = w.emitted('update:modelValue') as [string][]
     expect(emitted).toBeTruthy()
-    expect(emitted[0][0]).toBe(picked)
-    // Panel closes after a pick.
+    expect(emitted[emitted.length - 1][0]).toBe(picked)
+    // Modal closes after a pick.
     expect(w.find('.emoji-panel').exists()).toBe(false)
+  })
+
+  it('exposes a large emoji set (500+)', async () => {
+    const w = mount(EmojiPicker, { props: { modelValue: '' } })
+    await w.find('[data-testid="emoji-picker-trigger"]').trigger('click')
+    expect(w.findAll('[data-testid="emoji-picker-cell"]').length).toBeGreaterThan(500)
   })
 
   it('filters by keyword and shows the empty hint when nothing matches', async () => {
@@ -47,11 +72,20 @@ describe('EmojiPicker.vue', () => {
     expect(w.find('.emoji-empty').exists()).toBe(true)
   })
 
+  it('closes when the backdrop is clicked', async () => {
+    const w = mount(EmojiPicker, { props: { modelValue: '' } })
+    await w.find('[data-testid="emoji-picker-trigger"]').trigger('click')
+    expect(w.find('.emoji-panel').exists()).toBe(true)
+    await w.find('[data-testid="emoji-picker-overlay"]').trigger('pointerdown')
+    expect(w.find('.emoji-panel').exists()).toBe(false)
+  })
+
   it('closes on Escape', async () => {
     const w = mount(EmojiPicker, { props: { modelValue: '' } })
     await w.find('[data-testid="emoji-picker-trigger"]').trigger('click')
     expect(w.find('.emoji-panel').exists()).toBe(true)
-    await w.find('.emoji-picker').trigger('keydown', { key: 'Escape' })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await w.vm.$nextTick()
     expect(w.find('.emoji-panel').exists()).toBe(false)
   })
 })

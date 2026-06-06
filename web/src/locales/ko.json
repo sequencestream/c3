@@ -203,6 +203,9 @@
             "faces": "표정",
             "people": "사람",
             "animals": "동물",
+            "food": "음식",
+            "travel": "여행",
+            "activities": "활동",
             "symbols": "기호",
             "objects": "사물"
           },
@@ -227,14 +230,6 @@
         },
         "custom": {
           "label": "사용자 지정"
-        }
-      },
-      "codex": {
-        "sandboxMode": {
-          "label": "샌드박스"
-        },
-        "approvalPolicy": {
-          "label": "승인"
         }
       }
     },

@@ -4,12 +4,10 @@
  *
  * 编辑用本地草稿，打开时从 App 注入的服务端设置深拷贝而来，保存时整体上抛。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
-  CodexApprovalPolicy,
-  CodexSandboxMode,
   PermissionMode,
   SystemSettings,
   UiLang,
@@ -119,7 +117,10 @@ watch(
       // mutate the rendered server state. `structuredClone` preserves the
       // discriminated-union type (a manual `{ ...a, config: { ...a.config } }`
       // spread widens `vendor`/`config` and breaks the arm correlation).
-      agents: settings.agents.map((a) => structuredClone(a)),
+      // `toRaw` first: `settings` arrives as a Vue reactive proxy, and
+      // `structuredClone` throws `DataCloneError` on a proxy — which would abort
+      // this watcher and leave `draft.agents` empty (no agents rendered at all).
+      agents: settings.agents.map((a) => structuredClone(toRaw(a))),
       defaultAgentId: settings.defaultAgentId,
       defaultMode: settings.defaultMode ?? 'default',
       consensus: { enabled: settings.consensus?.enabled ?? false },
@@ -141,17 +142,6 @@ watch(
 // CLI's own system config is used.
 const VENDORS: VendorId[] = ['claude', 'codex', 'opencode']
 const CONFIG_MODES = ['system', 'custom'] as const
-const CODEX_SANDBOX_MODES: CodexSandboxMode[] = [
-  'read-only',
-  'workspace-write',
-  'danger-full-access',
-]
-const CODEX_APPROVAL_POLICIES: CodexApprovalPolicy[] = [
-  'never',
-  'on-request',
-  'on-failure',
-  'untrusted',
-]
 
 // Vendor display names are product identifiers (do-not-translate, see
 // specs/style/i18n-terms.md) rendered as bound data — same exemption pattern as
@@ -162,8 +152,7 @@ const VENDOR_LABELS: Record<VendorId, string> = {
   opencode: 'OpenCode',
 }
 
-// configMode is a c3 concept, so it IS localized (unlike the technical enum
-// tokens of sandboxMode/approvalPolicy, which render raw like timezone names).
+// configMode is a c3 concept, so it IS localized.
 function configModeLabel(m: 'system' | 'custom'): string {
   return m === 'system'
     ? t('settings.agents.configMode.system.label')
@@ -189,17 +178,9 @@ function makeAgent(
     case 'opencode':
       return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
     case 'codex':
-      return {
-        ...base,
-        vendor,
-        config: {
-          baseUrl: '',
-          apiKey: '',
-          model: '',
-          sandboxMode: 'workspace-write',
-          approvalPolicy: 'on-request',
-        },
-      }
+      // Codex's sandbox/approval gate is derived from `defaultMode` at launch
+      // (2026-06-06-008), so its config is the neutral provider triple only.
+      return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
   }
 }
 
@@ -224,12 +205,6 @@ function setVendor(a: AgentConfig, vendor: VendorId) {
     icon: a.icon ?? '',
     enabled: a.enabled !== false,
   })
-}
-
-/** The codex config arm for a row, or null — lets the template bind codex-only
- *  policy fields (sandboxMode/approvalPolicy) with vue-tsc narrowing. */
-function codexConfig(a: AgentConfig) {
-  return a.vendor === 'codex' ? a.config : null
 }
 
 // An agent counts as enabled unless explicitly disabled (back-compat with
@@ -315,12 +290,6 @@ function onUiLangChange(e: Event) {
               />
             </label>
             <div class="icon-cell">
-              <input
-                v-model="a.icon"
-                class="agent-field icon-text"
-                :placeholder="t('settings.agents.icon.placeholder')"
-                maxlength="16"
-              />
               <EmojiPicker v-model="a.icon" />
             </div>
             <input
@@ -370,23 +339,6 @@ function onUiLangChange(e: Event) {
               :title="t('settings.agents.col.model.label')"
               :placeholder="t('settings.agents.model.placeholder')"
             />
-            <select
-              v-if="codexConfig(a)"
-              v-model="codexConfig(a)!.sandboxMode"
-              class="agent-field agent-sandbox"
-              :title="t('settings.agents.codex.sandboxMode.label')"
-              data-testid="agent-sandbox"
-            >
-              <option v-for="s in CODEX_SANDBOX_MODES" :key="s" :value="s">{{ s }}</option>
-            </select>
-            <select
-              v-if="codexConfig(a)"
-              v-model="codexConfig(a)!.approvalPolicy"
-              class="agent-field agent-approval"
-              :title="t('settings.agents.codex.approvalPolicy.label')"
-            >
-              <option v-for="p in CODEX_APPROVAL_POLICIES" :key="p" :value="p">{{ p }}</option>
-            </select>
             <span class="col-actions">
               <button
                 class="icon-btn"

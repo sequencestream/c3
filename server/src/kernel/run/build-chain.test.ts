@@ -8,28 +8,13 @@ import { describe, it, expect } from 'vitest'
 import type { AgentConfig } from '@ccc/shared/protocol'
 import { buildAgentsToTry } from './build-chain.js'
 
-const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig =>
-  vendor === 'codex'
-    ? {
-        id,
-        vendor,
-        configMode: 'custom',
-        displayName: id.toUpperCase(),
-        config: {
-          baseUrl: '',
-          apiKey: '',
-          model: '',
-          sandboxMode: 'read-only',
-          approvalPolicy: 'never',
-        },
-      }
-    : {
-        id,
-        vendor,
-        configMode: 'custom',
-        displayName: id.toUpperCase(),
-        config: { baseUrl: '', apiKey: '', model: '' },
-      }
+const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig => ({
+  id,
+  vendor,
+  configMode: 'custom',
+  displayName: id.toUpperCase(),
+  config: { baseUrl: '', apiKey: '', model: '' },
+})
 
 const REGISTRY: Record<string, AgentConfig> = {
   c1: agent('c1', 'claude'),

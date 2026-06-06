@@ -203,6 +203,9 @@
             "faces": "Лица",
             "people": "Люди",
             "animals": "Животные",
+            "food": "Еда",
+            "travel": "Путешествия",
+            "activities": "Активности",
             "symbols": "Символы",
             "objects": "Объекты"
           },
@@ -227,14 +230,6 @@
         },
         "custom": {
           "label": "Пользовательская"
-        }
-      },
-      "codex": {
-        "sandboxMode": {
-          "label": "Песочница"
-        },
-        "approvalPolicy": {
-          "label": "Подтверждение"
         }
       }
     },

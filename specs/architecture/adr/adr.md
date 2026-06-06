@@ -36,3 +36,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0011](0011-vendor-neutral-agent-abstraction.md)                | Vendor-neutral Agent abstraction: three-piece interface + capabilities   | accepted   |
 | [0012](0012-host-binary-probe-first-capability-gate.md)         | Host-binary probing is the first capability gate                         | accepted   |
 | [0013](0013-canonical-envelope-on-wire-c3-session-namespace.md) | Canonical envelope on the wire + c3 session namespace internalization    | accepted   |
+| [0014](0014-codex-in-process-responses-chat-relay.md)           | In-process Responses→Chat relay for codex Chat-Completions providers     | accepted   |

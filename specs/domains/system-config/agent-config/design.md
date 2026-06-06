@@ -84,12 +84,19 @@ agentId   = sessionAgents[sessionId] ?? null
 agent     = agents.find(id === agentId) ?? agents.find(id === defaultAgentId) ?? system agent
 overrides = {}
   switch agent.vendor:
-    case 'claude':                       // the only arm with an adapter today (AC-R12)
+    case 'claude':
       agent.config.baseUrl → ANTHROPIC_BASE_URL
       agent.config.apiKey  → ANTHROPIC_API_KEY + ANTHROPIC_AUTH_TOKEN
       agent.config.model   → model
       (non-system agent only) CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1"   // claude-scoped workaround, see below
+    case 'codex' | 'opencode':           // custom ⇒ neutral { baseUrl, apiKey, model } (AC-R5)
+      agent.config.{baseUrl,apiKey,model} → overrides   // codex's are then re-routed through the relay in its driver (AC-R15)
 ```
+
+`resolveSessionLaunch` returns the neutral overrides unchanged; the **codex driver** is what re-routes
+a custom provider through c3's in-process Responses→Chat relay (registers the real `{baseUrl, apiKey}`
+behind a token, points codex at the loopback relay; AC-R15 / ADR-0014). The relay translator + HTTP
+handler are transport (`transport/codex-relay/`), not kernel (ADR-0009 R2).
 
 Empty fields contribute nothing, so the system agent yields `{}` and the run gets no `env`/`model`
 override — the SDK's own resolution applies (AC-R4/R5). In `claude.ts`, a present `envOverrides`

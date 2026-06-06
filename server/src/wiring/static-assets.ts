@@ -60,14 +60,13 @@ export function mountDevPlaceholder(app: Hono): void {
 function resolveStaticRoot(): string | null {
   // Filesystem fallback for `node cli.cjs start` (dev / non-pkg deploy).
   // Compiled Bun binaries serve from STATIC_ASSETS instead.
-  // `import.meta.url` is wrapped in eval so esbuild's CJS bundle doesn't statically
-  // see it (avoids the "import.meta not available with cjs" warning). In the shipped
-  // CJS/Bun artifact `__dirname` is always defined, so this branch never runs there;
-  // it only serves an ESM dev runtime, where eval still resolves import.meta locally.
+  // In the shipped CJS/Bun artifact `__dirname` is always defined, so the
+  // `import.meta.url` branch never runs there; esbuild rewrites it to `undefined`
+  // and the empty-import-meta warning is silenced in build.mjs. Under the ESM dev
+  // runtime `__dirname` is undefined and the real module URL resolves the root.
+  // (No direct eval: Node 26 runs eval in script goal, where `import.meta` throws.)
   const here =
-    typeof __dirname !== 'undefined'
-      ? __dirname
-      : dirname(fileURLToPath(String(eval('import.meta.url'))))
+    typeof __dirname !== 'undefined' ? __dirname : dirname(fileURLToPath(String(import.meta.url)))
   const candidates = [
     resolve(here, '../../web/dist'),
     resolve(here, '../web/dist'),

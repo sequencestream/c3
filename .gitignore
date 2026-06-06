@@ -10,3 +10,5 @@ scripts/i18n/code-key.map.json
 
 /cli
 
+.playwright/
+.playwright-cli/

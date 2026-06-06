@@ -203,6 +203,9 @@
             "faces": "表情",
             "people": "人物",
             "animals": "动物",
+            "food": "食物",
+            "travel": "旅行",
+            "activities": "活动",
             "symbols": "符号",
             "objects": "物件"
           },
@@ -227,14 +230,6 @@
         },
         "custom": {
           "label": "自定义"
-        }
-      },
-      "codex": {
-        "sandboxMode": {
-          "label": "沙箱"
-        },
-        "approvalPolicy": {
-          "label": "审批策略"
         }
       }
     },

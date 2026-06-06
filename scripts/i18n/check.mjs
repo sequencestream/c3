@@ -30,6 +30,11 @@ const SERVER_DIR = join(REPO_ROOT, 'server', 'src')
 const BASE_LOCALE = 'en'
 // The typed-t wrapper itself calls `t(key, ...)` with a variable; not a usage site.
 const CODE_SCAN_IGNORE = [join('web', 'src', 'i18n', 'index.ts')]
+// The codex-relay transport emits OpenAI Responses-API wire errors
+// (`error: { code: 'upstream_error', … }` on `response.failed`) for codex's own
+// parser — these are protocol values, not c3 UI error codes, so exclude the dir
+// from the server UI-code SoT scan.
+const SERVER_CODE_SCAN_IGNORE = [join('server', 'src', 'transport', 'codex-relay')]
 
 /**
  * Top-level keys that are locale-file metadata, not translations. The double-
@@ -365,6 +370,7 @@ async function loadCodeFiles(dir, ignoreList = []) {
     for (const ent of await readdir(d, { withFileTypes: true })) {
       const full = join(d, ent.name)
       if (ent.isDirectory()) {
+        if (ignore.has(full)) continue // ignored directory subtree
         await walk(full)
       } else if (/\.(ts|vue)$/.test(ent.name) && !ent.name.endsWith('.d.ts') && !ignore.has(full)) {
         out.push({ file: relative(REPO_ROOT, full), content: readFileSync(full, 'utf8') })
@@ -393,7 +399,7 @@ async function main() {
   // Fourth check: UI error-code SoT consistency (web codeFiles already loaded above).
   const { loadUiCodes } = await import('./load-ui-codes.mjs')
   const uiCodes = await loadUiCodes()
-  const serverFiles = await loadCodeFiles(SERVER_DIR)
+  const serverFiles = await loadCodeFiles(SERVER_DIR, SERVER_CODE_SCAN_IGNORE)
   const code = runCodeCheck({
     uiCodes,
     base: flatten(locales[BASE_LOCALE] ?? {}),

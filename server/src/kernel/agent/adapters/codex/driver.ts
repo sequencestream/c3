@@ -23,7 +23,13 @@
  * shapes leave via {@link AgentRun.messages}.
  */
 import { Codex } from '@openai/codex-sdk'
-import type { ApprovalMode, SandboxMode, ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
+import type {
+  ApprovalMode,
+  CodexOptions,
+  SandboxMode,
+  ThreadEvent,
+  ThreadOptions,
+} from '@openai/codex-sdk'
 import type {
   ActionMode,
   AgentDriver,
@@ -34,6 +40,7 @@ import type {
 } from '../types.js'
 import { codexCapabilities } from './capabilities.js'
 import { itemToCanonical } from './translate.js'
+import { CODEX_RELAY_PROVIDER, type CodexRelay } from './relay-contract.js'
 
 /** The minimal structural face of a Codex thread the driver consumes (real `Thread` satisfies it). */
 export interface CodexThread {
@@ -55,12 +62,15 @@ export interface CodexFactoryOptions {
   baseUrl?: string
   apiKey?: string
   env?: Record<string, string>
+  /** `--config key=value` overrides (flattened by the SDK). Used to define the relay provider. */
+  config?: Record<string, unknown>
 }
 
 /** Builds a {@link CodexClient}. Injected for tests; defaults to the real SDK. */
 export type CodexFactory = (options: CodexFactoryOptions) => CodexClient
 
-const defaultFactory: CodexFactory = (options) => new Codex(options) as unknown as CodexClient
+const defaultFactory: CodexFactory = (options) =>
+  new Codex(options as CodexOptions) as unknown as CodexClient
 
 /**
  * Translate the neutral {@link ActionMode} × {@link ToolGate} grid into Codex's
@@ -144,7 +154,17 @@ export class CodexDriver implements AgentDriver {
   readonly vendor = 'codex' as const
   readonly capabilities = codexCapabilities
 
-  constructor(private readonly createCodex: CodexFactory = defaultFactory) {}
+  /**
+   * @param createCodex SDK boundary (tests inject a fake).
+   * @param relay The in-process Responses→Chat relay (ADR-0014). When present and
+   *   the run has a custom provider URL, codex is pointed at the relay instead of
+   *   the raw provider; when absent (or no custom URL), the provider connects
+   *   directly (the original path).
+   */
+  constructor(
+    private readonly createCodex: CodexFactory = defaultFactory,
+    private readonly relay?: CodexRelay,
+  ) {}
 
   async start(opts: DriverStartOptions): Promise<AgentRun> {
     const queue = new CanonicalQueue()
@@ -155,19 +175,51 @@ export class CodexDriver implements AgentDriver {
     if (opts.signal.aborted) controller.abort()
     else opts.signal.addEventListener('abort', () => controller.abort(), { once: true })
 
-    // Provider connection comes from the agent's `custom` config (baseUrl/apiKey
-    // as Codex constructor options, NOT env — CodexOptions.env REPLACES process.env,
-    // which would drop PATH and break the CLI spawn). `system` configMode leaves
-    // them undefined ⇒ the Codex CLI's own login/config applies (2026-06-06-007).
-    const codex = this.createCodex({
-      env: opts.envOverrides,
-      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
-      ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
-    })
-    // The user's configured launch-time policy (custom or system both carry it) is
-    // the per-tool-approval substitute (008); fall back to the gate-derived policy
-    // only when no explicit policy was threaded through.
-    const policy = opts.codexPolicy ?? gateToCodexPolicy(opts.actionMode, opts.toolGate)
+    // Provider connection comes from the agent's `custom` config. Two routes:
+    //  - RELAY (ADR-0014): a custom provider URL + the relay present ⇒ codex 0.137
+    //    only speaks the Responses API (over a websocket), but most third-party
+    //    providers are Chat-Completions-only. So point codex at c3's in-process
+    //    Responses→Chat relay: register the REAL upstream behind an opaque token,
+    //    pass the token as the codex API key, define a custom model_provider with
+    //    `supports_websockets=false` (forces plain HTTP POST + SSE the relay
+    //    serves), and inject NO_PROXY so the loopback hop bypasses a user proxy.
+    //  - DIRECT (original path): no relay or no custom URL ⇒ baseUrl/apiKey go
+    //    straight to the SDK as constructor options (NOT env — CodexOptions.env
+    //    REPLACES process.env and would drop PATH). `system` configMode leaves
+    //    them undefined ⇒ the Codex CLI's own login/config applies.
+    let relayToken: string | undefined
+    let codexOptions: CodexFactoryOptions
+    if (this.relay && opts.baseUrl) {
+      relayToken = this.relay.register({ baseUrl: opts.baseUrl, apiKey: opts.apiKey ?? '' })
+      codexOptions = {
+        apiKey: relayToken, // becomes CODEX_API_KEY; the relay reads it as the binding token.
+        env: relayEnv(opts.envOverrides),
+        config: {
+          model_provider: CODEX_RELAY_PROVIDER,
+          model_providers: {
+            [CODEX_RELAY_PROVIDER]: {
+              name: CODEX_RELAY_PROVIDER,
+              base_url: this.relay.baseUrl,
+              env_key: 'CODEX_API_KEY',
+              wire_api: 'responses',
+              supports_websockets: false,
+            },
+          },
+        },
+      }
+    } else {
+      codexOptions = {
+        ...(opts.envOverrides ? { env: opts.envOverrides } : {}),
+        ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+        ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
+      }
+    }
+    const codex = this.createCodex(codexOptions)
+    // Codex's launch-time policy IS the per-tool-approval substitute (008). It is
+    // derived from the session permission mode (defaultMode → neutral grid →
+    // sandbox/approval), so one permission knob drives every vendor and a codex
+    // agent needs no separate sandbox/approval config (2026-06-06-008).
+    const policy = gateToCodexPolicy(opts.actionMode, opts.toolGate)
     const threadOptions: ThreadOptions = {
       workingDirectory: opts.cwd,
       skipGitRepoCheck: true, // c3 may run in a non-git cwd; do not hard-fail the run.
@@ -225,6 +277,7 @@ export class CodexDriver implements AgentDriver {
         queue.fail(e)
       } finally {
         resolveSid(sid) // never leave sessionId() hanging if the turn never started.
+        if (relayToken) this.relay?.unregister(relayToken) // evict the per-run binding.
       }
     }
     void pump()
@@ -235,7 +288,36 @@ export class CodexDriver implements AgentDriver {
       abort: () => {
         controller.abort()
         queue.close()
+        if (relayToken) this.relay?.unregister(relayToken)
       },
     }
   }
+}
+
+/**
+ * Build the env for the relay route. `CodexOptions.env` REPLACES `process.env`, so
+ * we copy the inherited env (preserving PATH) then ensure the loopback host bypasses
+ * any configured proxy — codex routes `127.0.0.1:<c3port>` through `HTTP(S)_PROXY`
+ * otherwise, which 502s the relay hop (ADR-0014). `CODEX_API_KEY` is set by the SDK
+ * from `apiKey`, so it is not set here.
+ */
+function relayEnv(extra?: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  if (extra) Object.assign(env, extra)
+  env.NO_PROXY = withLoopback(env.NO_PROXY)
+  env.no_proxy = withLoopback(env.no_proxy)
+  return env
+}
+
+/** Add the loopback hosts to a comma-separated NO_PROXY list (idempotent). */
+function withLoopback(value?: string): string {
+  const parts = (value ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  for (const host of ['127.0.0.1', 'localhost', '::1']) {
+    if (!parts.includes(host)) parts.push(host)
+  }
+  return parts.join(',')
 }

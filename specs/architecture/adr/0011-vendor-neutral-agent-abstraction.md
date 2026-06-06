@@ -112,12 +112,21 @@ live gateway through `ApprovalBridge`) are later phases.
 > **Codex as a primary session driver (2026-06-06-007).** The read-only advisor framing is **widened**:
 > a Codex agent can now be a session's primary driver, not only a consensus voter. `launchRun` forks a
 > `codex` session to `runViaDriver` (joining `opencode`), the composition root injects the Codex adapter
-> via `launchDeps.getCodexAdapter` (host-binary gated), and the driver consumes the agent's configured
-> `sandboxMode`/`approvalPolicy` (threaded as `DriverStartOptions.codexPolicy`) instead of only the
-> gate-derived default. This does **not** reverse 008: there is still no per-tool runtime approval
-> (`perToolApproval: false`, `ApprovalBridge` never fires) — the launch-time sandbox/approval gate is
-> the accepted substitute, now under the user's explicit per-agent control. `danger-full-access` is a
-> deliberately exposed, clearly-labelled risk the user opts into.
+> via `launchDeps.getCodexAdapter` (host-binary gated). This does **not** reverse 008: there is still
+> no per-tool runtime approval (`perToolApproval: false`, `ApprovalBridge` never fires) — the
+> launch-time sandbox/approval gate is the accepted substitute.
+>
+> **Codex policy derived from `defaultMode`, not per-agent (2026-06-06-008).** The per-agent
+> `sandboxMode`/`approvalPolicy` config (and the `DriverStartOptions.codexPolicy` plumbing) of 007 is
+> **removed**: a codex agent's config is now the neutral provider triple, identical to claude/opencode.
+> The launch-time gate is derived from the session permission mode the same way every vendor's is —
+> `defaultMode` → `fromPermissionMode` (neutral `ActionMode × ToolGate` grid) → `gateToCodexPolicy` →
+> codex `sandboxMode`/`approvalPolicy` — so one permission knob drives the whole table and a codex
+> agent needs no separate permission configuration. Rationale: the neutral grid already expresses the
+> permission intent and the translation table (`gateToCodexPolicy`) already existed as the fallback;
+> 007's explicit override duplicated that knob. Accepted trade-off: `default`'s "ask on sensitive"
+> intent has no live channel in Codex's non-interactive exec, so it degrades to a static sandbox (the
+> sandbox is the real enforcement). The tighter cells dominate — `plan`/`always-ask` → `read-only`.
 > **Upper-domain heterogeneous tolerance (2026-06-06-006).** The capability ledger also gates the
 > _upper_ domains, vendor-homogeneity being their organizing principle: (1) **consensus** votes only
 > within the session's own vendor (`vendorScopedVoters`) — cross-vendor tool/risk semantics are

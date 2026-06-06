@@ -118,8 +118,7 @@ export interface AgentConfigBase {
    *    overrides), exactly like the old built-in system agent. For `claude` this
    *    means first-party (no `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` workaround).
    *  - `'custom'` — apply the `config` provider fields as launch overrides.
-   * This governs ONLY the provider triple; vendor-specific policy gates (e.g.
-   * Codex `sandboxMode`/`approvalPolicy`) apply in both modes.
+   * This governs ONLY the provider triple, uniformly across vendors.
    * Back-compat: a legacy config without this field defaults to `'custom'` on
    * load (so previously-configured agents surface with editable provider fields);
    * `'system'` is only ever set explicitly in the console.
@@ -178,25 +177,16 @@ export interface OpencodeAgentConfig {
 }
 
 /**
- * The Codex sandbox mode — the launch-time filesystem/network boundary chosen in
- * the UI. Codex has NO per-tool runtime approval (Phase 0 probe 008 NO-GO), so
- * this gate (plus {@link CodexAgentConfig.approvalPolicy}) is the substitute for
- * in-the-loop allow/deny. Mirrors the SDK's `SandboxMode`.
- */
-export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
-
-/**
- * The Codex approval policy — when the model is told it *may* escalate. Best-effort
- * only: the SDK runs `codex exec` non-interactively, so in practice the sandbox is
- * the real enforcement (008). Mirrors the SDK's `ApprovalMode`.
- */
-export type CodexApprovalPolicy = 'never' | 'on-request' | 'on-failure' | 'untrusted'
-
-/**
- * The `codex` vendor's config sub-object (2026-06-06-005). Beyond the neutral
- * launch overrides (mirroring claude/opencode), Codex persists its launch-time
- * policy gate — `sandboxMode` + `approvalPolicy` — because that gate REPLACES the
- * per-tool approval Codex cannot do (Phase 0 008). Each empty string ⇒ no override.
+ * The `codex` vendor's config sub-object (2026-06-06-005). The neutral launch
+ * overrides (mirroring claude/opencode); each empty string ⇒ no override.
+ *
+ * Codex has NO per-tool runtime approval (Phase 0 probe 008 NO-GO), so its
+ * launch-time policy gate (`sandboxMode` + `approvalPolicy`) is the substitute for
+ * in-the-loop allow/deny. That gate is NOT persisted here (2026-06-06-008):
+ * instead it is DERIVED at launch from the session's `defaultMode`
+ * ({@link SystemSettings.defaultMode}) via the neutral `ActionMode × ToolGate`
+ * grid — one permission knob drives every vendor — so a codex agent needs no
+ * separate sandbox/approval configuration.
  */
 export interface CodexAgentConfig {
   /** OpenAI-compatible base URL override. Empty ⇒ no override. */
@@ -205,10 +195,6 @@ export interface CodexAgentConfig {
   apiKey: string
   /** Model alias or id. Empty ⇒ no override. */
   model: string
-  /** Launch-time sandbox boundary (the per-tool-approval substitute). */
-  sandboxMode: CodexSandboxMode
-  /** Launch-time approval policy (best-effort; sandbox is the real gate). */
-  approvalPolicy: CodexApprovalPolicy
 }
 
 /**

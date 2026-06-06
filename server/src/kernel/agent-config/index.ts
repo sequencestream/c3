@@ -14,28 +14,22 @@
  * `./normalize` (a leaf). config → normalize and readers → config + normalize,
  * so the boundary stays acyclic.
  */
-import type {
-  AgentConfig,
-  CodexApprovalPolicy,
-  CodexSandboxMode,
-  SystemSettings,
-  VendorId,
-} from '@ccc/shared/protocol'
+import type { AgentConfig, SystemSettings, VendorId } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 
 /**
  * The launch overrides {@link launchForAgent} resolves from one agent. `claude`
  * routes provider config into {@link envOverrides} (env vars); driver-path vendors
  * (`codex`) carry raw {@link baseUrl}/{@link apiKey} their SDK takes as
- * constructor options; `model` is neutral. {@link codexPolicy} is the codex-only
- * launch-time gate. Empty/system-mode agents yield `{}` (no overrides).
+ * constructor options; `model` is neutral. Empty/system-mode agents yield `{}`
+ * (no overrides). Codex's launch-time policy gate is NOT here — it is derived from
+ * the session `defaultMode` in the driver, not from the agent config (2026-06-06-008).
  */
 export interface LaunchOverrides {
   envOverrides?: Record<string, string>
   model?: string
   baseUrl?: string
   apiKey?: string
-  codexPolicy?: { sandboxMode: CodexSandboxMode; approvalPolicy: CodexApprovalPolicy }
 }
 import { getSessionAgentId, loadSettings } from '../config/index.js'
 import { systemAgent } from './normalize.js'
@@ -83,15 +77,15 @@ export function resolveAgent(agentId: string | null): AgentConfig {
  * the vendor CLI's own config: NO provider override (`baseUrl`/`apiKey`/`model`
  * are ignored) — the old system-agent behaviour, now available on any vendor.
  * `configMode: 'custom'` ⇒ apply the provider triple. Codex's launch-time policy
- * gate (`sandboxMode`/`approvalPolicy`) is NOT a provider override, so it applies
- * in BOTH modes. Shared by session launches and consensus advisor calls.
+ * gate (`sandboxMode`/`approvalPolicy`) is NOT a provider override and is NOT
+ * carried here — the driver derives it from the session `defaultMode`
+ * (2026-06-06-008). Shared by session launches and consensus advisor calls.
  */
 export function launchForAgent(agent: AgentConfig): LaunchOverrides {
   const env: Record<string, string> = {}
   let model: string | undefined
   let baseUrl: string | undefined
   let apiKey: string | undefined
-  let codexPolicy: LaunchOverrides['codexPolicy']
 
   // `custom` applies the provider triple; `system` leaves it to the vendor CLI.
   const custom = agent.configMode === 'custom'
@@ -138,12 +132,9 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
         if (k) apiKey = k
         if (m) model = m
       }
-      // The launch-time policy gate is the per-tool-approval substitute (008); it
-      // is part of the codex config in BOTH modes, so always thread it through.
-      codexPolicy = {
-        sandboxMode: agent.config.sandboxMode,
-        approvalPolicy: agent.config.approvalPolicy,
-      }
+      // The launch-time policy gate (sandbox/approval) is the per-tool-approval
+      // substitute (008), but it is NOT stored on the agent: the codex driver
+      // derives it from the session `defaultMode` via the neutral grid (2026-06-06-008).
       break
     }
   }
@@ -153,7 +144,6 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
     ...(model ? { model } : {}),
     ...(baseUrl ? { baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
-    ...(codexPolicy ? { codexPolicy } : {}),
   }
 }
 

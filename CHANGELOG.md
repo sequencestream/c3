@@ -3,9 +3,13 @@
 All notable changes to `c3` (Claude Code Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
-## 0.2.0
+## v0.2.0
 
-### Distribution trust (release 3/7)
+- support codex/opencode
+
+## v0.1.0
+
+### Distribution trust
 
 - **Signed, verifiable releases.** Every `release:build` artifact ships with a `.sha256` and
   a minisign `.minisig` signature, plus aggregate `SHA256SUMS`(`.minisig`). Signatures use

@@ -29,6 +29,7 @@ import {
   type OpencodeSupervisor,
 } from './kernel/agent/adapters/opencode/index.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
+import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
 import type { VendorAdapter } from './kernel/agent/adapters/types.js'
 import {
   createBroadcasts,
@@ -102,10 +103,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // gated like the others. Built here so the kernel launcher only sees the neutral
   // VendorAdapter (injected via launchDeps.getCodexAdapter). Missing CLI ⇒ null, and
   // the codex agent type is simply unavailable (a session falls back / errors loud).
+  // In-process Responses→Chat relay (ADR-0014): codex 0.137 speaks only the
+  // Responses API, so a codex agent on a Chat-Completions-only provider (DeepSeek,
+  // Kimi, …) is driven through this loopback shim. Built unconditionally and mounted
+  // below; the driver only engages it for a custom provider URL.
+  const codexRelay = createCodexRelay(`http://127.0.0.1:${opts.port}`)
   let codexAdapter: VendorAdapter | null = null
   if (resolveHostBinary('codex')) {
     try {
-      codexAdapter = createCodexAdapter()
+      codexAdapter = createCodexAdapter(undefined, undefined, codexRelay)
       console.log('[c3] codex ready (per-run CLI)')
     } catch (e) {
       console.warn(`[c3] codex unavailable: ${e instanceof Error ? e.message : String(e)}`)
@@ -181,6 +187,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).
   const handlerRegistry = registerHandlers()
   app.get('/ws', createWsHandler({ upgradeWebSocket, broadcaster, ctx, handlerRegistry }))
+
+  // Codex relay loopback endpoint (ADR-0014). MUST be registered before the static
+  // catch-all (`app.get('*')`) so it is not swallowed by the SPA fallback.
+  app.post(`${CODEX_RELAY_PATH}/responses`, (c) => codexRelay.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

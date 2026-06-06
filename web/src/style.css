@@ -2047,12 +2047,6 @@ button.deny:hover:not(:disabled) {
 .agent-model {
   flex: 0 0 150px;
 }
-.agent-sandbox {
-  flex: 0 0 156px;
-}
-.agent-approval {
-  flex: 0 0 128px;
-}
 .agent-row > .col-on {
   flex: 0 0 30px;
 }
@@ -2060,7 +2054,7 @@ button.deny:hover:not(:disabled) {
   flex: 0 0 44px;
 }
 .agent-row > .icon-cell {
-  flex: 0 0 104px;
+  flex: 0 0 48px;
 }
 .agent-row > .col-actions {
   flex: 0 0 34px;
@@ -2076,16 +2070,10 @@ button.deny:hover:not(:disabled) {
   text-align: center;
   font-size: var(--fs-body);
 }
-/* icon 单元格:可手输的文本框 + 紧随其后的 emoji 选择器触发按钮。 */
+/* icon 单元格:EmojiPicker 组件——按钮即触发器,点击它弹出 emoji 模态选择器。 */
 .icon-cell {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
-}
-.icon-cell .icon-text {
-  min-width: 0;
-  flex: 1 1 auto;
-  text-align: center;
 }
 .col-actions {
   display: flex;

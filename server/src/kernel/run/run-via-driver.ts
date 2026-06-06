@@ -127,10 +127,11 @@ export async function runViaDriver(
 
   const { actionMode, toolGate } = fromPermissionMode(rt.mode)
 
-  // Resolve the session agent's launch overrides (provider connection + codex
-  // policy gate). The claude-hardwired path applies these to the SDK; the driver
-  // path threads the neutral subset the vendor's driver understands (2026-06-06-007).
-  const { model, baseUrl, apiKey, envOverrides, codexPolicy } = resolveSessionLaunch(runId)
+  // Resolve the session agent's launch overrides (provider connection only). The
+  // claude-hardwired path applies these to the SDK; the driver path threads the
+  // neutral subset the vendor's driver understands (2026-06-06-007). Codex's policy
+  // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
+  const { model, baseUrl, apiKey, envOverrides } = resolveSessionLaunch(runId)
 
   try {
     const run = await adapter.driver.start({
@@ -143,7 +144,6 @@ export async function runViaDriver(
       ...(baseUrl ? { baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(envOverrides ? { envOverrides } : {}),
-      ...(codexPolicy ? { codexPolicy } : {}),
       // A pending session starts fresh; a real id resumes that native session.
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
     })

@@ -203,6 +203,9 @@
             "faces": "顔",
             "people": "人物",
             "animals": "動物",
+            "food": "食べ物",
+            "travel": "旅行",
+            "activities": "アクティビティ",
             "symbols": "記号",
             "objects": "モノ"
           },
@@ -227,14 +230,6 @@
         },
         "custom": {
           "label": "カスタム"
-        }
-      },
-      "codex": {
-        "sandboxMode": {
-          "label": "サンドボックス"
-        },
-        "approvalPolicy": {
-          "label": "承認"
         }
       }
     },

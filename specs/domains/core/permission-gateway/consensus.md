@@ -42,6 +42,10 @@ is set while `unanimous` is false). The gateway auto-resolves whenever
 `outcome.decision` is non-null — covering both the unanimous and the majority
 case — and otherwise prompts the human with the opinions attached.
 
+The same toggle governs the **AskUserQuestion** path, but per-question rather than
+as one allow/deny verdict — each question is auto-answered on a clear plurality of
+the voters' answers. See [AskUserQuestion — per-question answering](#askuserquestion--per-question-answering).
+
 ## Roles
 
 | Role    | Who                                                                            | Job                                                            |
@@ -220,18 +224,37 @@ so there is no auto-answer and the human fills the panel unaided.
   mis-recorded as an abstain, wrongly splitting the question. The stripped-exact
   pass is what **restores** an advisor's marker-free echo (it only ever saw the
   de-biased label) to the **original exact label** the SDK must be answered with.
-- `tallyQuestion` makes a question **unanimous** only when every voter produced a
-  parseable answer (≥1, none abstained) and they all normalize identically
-  (`answerKey`: option labels sorted + comma-joined, else the custom text).
+- `tallyQuestion` makes a question literally **unanimous** only when every voter
+  produced a parseable answer (≥1, none abstained) and they all normalize
+  identically (`answerKey`: option labels sorted + comma-joined, else the custom
+  text). `unanimous` is the gate the gateway auto-answers on; the two `decidedBy*`
+  flags below mark the _non-literal_ ways a question reached that gate.
+- **Majority pre-step (`tallyQuestion(..., majority)`).** When the majority toggle
+  (`isConsensusMajorityEnabled()`, the same switch as the allow/deny path) is on
+  and the literal vote is **not** unanimous, `tallyQuestion` resolves the question
+  to its **plurality** answer: abstentions are excluded, the cast answers are
+  grouped by `answerKey`, and the **single** most-voted answer wins — the question
+  is marked `unanimous: true` with `agreed` set and `decidedByMajority: true`. A
+  **tie** for the top count, **no unique leader**, or **no cast vote** (all
+  abstained / empty) keeps it split ⇒ defer to the human. With the toggle **off**
+  the original unanimous-only rule stands. Multi-select and custom answers tally on
+  the same normalized `answerKey`, so the same pair-in-different-order or identical
+  custom text counts as one answer.
 - **Decider escalation (`decideAndSummarizeAsk`).** In ONE decider call (which
-  also writes the summary), every **split** question is put to the session's own
-  agent, which sees each advisor's actual answer + reason. Where the advisors are
-  in _effective_ consensus (a mis-parsed reply, or differently-worded answers that
-  mean the same option) the decider returns the agreed answer using an exact option
-  label; `parseDeciderAsk` re-validates it via `matchOption` and, on success,
-  **upgrades** that question to unanimous with `decidedByAgent: true`. The decider
-  only ever upgrades a split question — string-unanimous ones are never re-judged
-  (already stronger consensus), and it can never downgrade one.
+  also writes the summary), every question **still split after the majority
+  pre-step** is put to the session's own agent, which sees each advisor's actual
+  answer + reason. Where the advisors are in _effective_ consensus (a mis-parsed
+  reply, or differently-worded answers that mean the same option) the decider
+  returns the agreed answer using an exact option label; `parseDeciderAsk`
+  re-validates it via `matchOption` and, on success, **upgrades** that question to
+  unanimous with `decidedByAgent: true`. The decider only ever upgrades a split
+  question — string-unanimous **and** majority-resolved ones are never re-judged
+  (already at the gate), and it can never downgrade one.
+- **Adjudication priority — at most one ruling per question.** literal unanimous →
+  majority pre-step → decider rescue. Each later stage only acts on what the
+  earlier ones left split, so `decidedByMajority` and `decidedByAgent` are
+  **mutually exclusive** and no question is adjudicated twice (the toggle and the
+  decider coexist without overlap).
 - `fullyUnanimous` ⇒ every question agreed (by literal vote **or** decider ruling).
   Then the gateway **auto-answers**: `consensus_auto { outcome.kind: 'ask' }` and
   `allow` with the answers injected.
@@ -245,17 +268,17 @@ tool input and echoes it as the tool result. So both paths resolve via
 `{ behavior: 'allow', updatedInput: { ...input, answers } }` (`withAnswers` in
 `claude.ts`). This is the documented PG-R6 exception, AskUserQuestion-only.
 
-| Function                                             | Contract                                                                                                                                                                                                                          |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runAskConsensus(params): AskConsensusOutcome\|null` | `null` ⇒ disabled, no voters, or input has no questions (caller still shows the panel).                                                                                                                                           |
-| `askQuestions(input)`                                | Extracts/validates the questions array; `null` for non-ask input.                                                                                                                                                                 |
-| `stripRecommendation(label)`                         | Removes an end-anchored, bracketed recommendation marker (推荐/建议/默认/recommended/…); idempotent; no-op when absent. Used only for prompt presentation.                                                                        |
-| `shuffleOptions(questions, rng?)`                    | Shallow-copies `questions` with each `options` array Fisher–Yates–shuffled (labels untouched). Presentation-only; `rng` injectable for tests. Called per-voter and once for the decider; parse still uses the original questions. |
-| `matchOption(choice, options)`                       | Resolves a free-form choice to a canonical option label (exact → stripped-exact → prefix → substring); `null` if none fit. Stripped-exact restores a de-biased echo to the original label.                                        |
-| `parseAskVote(text, qs, …)`                          | One `AgentAnswer` per question; choice resolved via `matchOption`, unmatched / missing entry ⇒ `abstain`.                                                                                                                         |
-| `tallyQuestion(q, i, answers)`                       | `unanimous` only when all voters answered (no abstain) and agree; `agreed` is the SDK-ready string.                                                                                                                               |
-| `deciderAskPrompt(perQuestion, qs)`                  | Builds the combined judge+summary prompt; lists option labels only for the split questions.                                                                                                                                       |
-| `parseDeciderAsk(text, qs)`                          | `{ summary, overrides }`; an override is emitted only for `consensus:true` rulings whose answer re-validates to a label/custom — else dropped (stays split).                                                                      |
+| Function                                             | Contract                                                                                                                                                                                                                            |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runAskConsensus(params): AskConsensusOutcome\|null` | `null` ⇒ disabled, no voters, or input has no questions (caller still shows the panel).                                                                                                                                             |
+| `askQuestions(input)`                                | Extracts/validates the questions array; `null` for non-ask input.                                                                                                                                                                   |
+| `stripRecommendation(label)`                         | Removes an end-anchored, bracketed recommendation marker (推荐/建议/默认/recommended/…); idempotent; no-op when absent. Used only for prompt presentation.                                                                          |
+| `shuffleOptions(questions, rng?)`                    | Shallow-copies `questions` with each `options` array Fisher–Yates–shuffled (labels untouched). Presentation-only; `rng` injectable for tests. Called per-voter and once for the decider; parse still uses the original questions.   |
+| `matchOption(choice, options)`                       | Resolves a free-form choice to a canonical option label (exact → stripped-exact → prefix → substring); `null` if none fit. Stripped-exact restores a de-biased echo to the original label.                                          |
+| `parseAskVote(text, qs, …)`                          | One `AgentAnswer` per question; choice resolved via `matchOption`, unmatched / missing entry ⇒ `abstain`.                                                                                                                           |
+| `tallyQuestion(q, i, answers, majority?)`            | `unanimous`/`agreed` on a literal all-answer agreement. With `majority` on, a still-split question resolves to its strict-plurality answer (abstain excluded; tie / no leader / no cast vote ⇒ split), flagged `decidedByMajority`. |
+| `deciderAskPrompt(perQuestion, qs)`                  | Builds the combined judge+summary prompt; lists option labels only for the split questions.                                                                                                                                         |
+| `parseDeciderAsk(text, qs)`                          | `{ summary, overrides }`; an override is emitted only for `consensus:true` rulings whose answer re-validates to a label/custom — else dropped (stays split).                                                                        |
 
 ## Wire protocol
 
@@ -268,5 +291,10 @@ tool input and echoes it as the tool result. So both paths resolve via
 - `QuestionConsensus.decidedByAgent?: boolean` flags a question whose literal vote
   was split but the decider ruled an effective consensus — so the console can label
   an AI-adjudicated agreement honestly rather than implying a unanimous vote.
+- `QuestionConsensus.decidedByMajority?: boolean` flags a question whose literal
+  vote was not unanimous but the majority toggle carried it on a strict plurality —
+  distinguishing a majority-carried answer from a literal unanimous vote and from a
+  decider ruling (`decidedByAgent`); the two `decidedBy*` flags are mutually
+  exclusive.
 - The console renders the allow/deny verdicts (tool kind) or the per-question
   answer panel / auto-answer roll-up (ask kind).

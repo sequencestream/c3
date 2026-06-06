@@ -15,6 +15,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // Per-call advisor outputs, consumed in call order: voter A, voter B, decider.
 const responses = vi.hoisted(() => ({ queue: [] as Array<{ text: string } | { throw: true }> }))
+// Toggle for the majority rule, flipped per test (mirrors the system setting).
+const settings = vi.hoisted(() => ({ majority: false }))
+// Voter ids, overridable per test (default two; the majority case needs three).
+const roster = vi.hoisted(() => ({ ids: ['a', 'b'] }))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: () => {
@@ -40,9 +44,9 @@ const agent = (id: string) => ({
 })
 
 vi.mock('./kernel/agent-config/index.js', () => ({
-  consensusVoters: () => [agent('a'), agent('b')],
+  consensusVoters: () => roster.ids.map(agent),
   vendorScopedVoters: () => ({
-    voters: [agent('a'), agent('b')],
+    voters: roster.ids.map(agent),
     vendorScope: 'claude',
     crossVendorExcluded: 0,
   }),
@@ -51,10 +55,10 @@ vi.mock('./kernel/agent-config/index.js', () => ({
 }))
 vi.mock('./kernel/config/index.js', () => ({
   isConsensusEnabled: () => true,
-  // Ask path never reads this; stubbed so the allow/deny tool path (which does)
-  // doesn't hit an undefined import. The majority decision matrix itself is
-  // covered exhaustively in consensus-tally.test.ts.
-  isConsensusMajorityEnabled: () => false,
+  // Driven by `settings.majority` so a test can exercise the ask path's majority
+  // pre-step coexisting with the decider. The per-question decision matrix itself
+  // is covered exhaustively in consensus-tally.test.ts.
+  isConsensusMajorityEnabled: () => settings.majority,
 }))
 
 import { runAskConsensus } from './consensus.js'
@@ -86,6 +90,8 @@ const voteFor = (label: string) => ({
 describe('runAskConsensus — fail-safe to human', () => {
   beforeEach(() => {
     responses.queue = []
+    settings.majority = false
+    roster.ids = ['a', 'b']
   })
 
   it('defers to the human (not fullyUnanimous) when the voters disagree', async () => {
@@ -114,5 +120,69 @@ describe('runAskConsensus — fail-safe to human', () => {
   it('returns null (caller shows the plain panel) when the input carries no questions', async () => {
     const out = await runAskConsensus({ ...params(), input: { questions: [] } })
     expect(out).toBeNull()
+  })
+
+  it('majority pre-step and decider coexist without re-judging the same question', async () => {
+    // Three voters, two questions:
+    //   Q0 (2 options): a/b → Alpha, c → Beta  ⇒ 2v1 plurality ⇒ majority resolves it.
+    //   Q1 (3 options): a→X, b→Y, c→Z          ⇒ 3-way tie ⇒ no majority ⇒ decider rescues.
+    settings.majority = true
+    roster.ids = ['a', 'b', 'c']
+    const input = {
+      questions: [
+        {
+          question: 'Pick one',
+          header: 'H0',
+          multiSelect: false,
+          options: [{ label: 'Alpha' }, { label: 'Beta' }],
+        },
+        {
+          question: 'Pick another',
+          header: 'H1',
+          multiSelect: false,
+          options: [{ label: 'X' }, { label: 'Y' }, { label: 'Z' }],
+        },
+      ],
+    }
+    const vote = (q0: string, q1: string) => ({
+      text: JSON.stringify({
+        answers: [
+          { index: 0, choice: q0, reason: 'r' },
+          { index: 1, choice: q1, reason: 'r' },
+        ],
+      }),
+    })
+    // Voter order a, b, c then the decider, which upgrades only the still-split Q1.
+    responses.queue = [
+      vote('Alpha', 'X'),
+      vote('Alpha', 'Y'),
+      vote('Beta', 'Z'),
+      {
+        text: JSON.stringify({
+          summary: 's',
+          questions: [{ index: 1, consensus: true, choice: 'X' }],
+        }),
+      },
+    ]
+
+    const out = await runAskConsensus({ ...params(), input })
+    expect(out).not.toBeNull()
+    const [q0, q1] = out!.perQuestion
+
+    // Q0: carried by the deterministic majority pre-step (NOT a decider ruling).
+    expect(q0.unanimous).toBe(true)
+    expect(q0.agreed).toBe('Alpha')
+    expect(q0.decidedByMajority).toBe(true)
+    expect(q0.decidedByAgent).toBeUndefined()
+
+    // Q1: the majority pass left it split (3-way tie), so the decider rescued it —
+    // proving the two paths coexist and never double-adjudicate the same question.
+    expect(q1.unanimous).toBe(true)
+    expect(q1.agreed).toBe('X')
+    expect(q1.decidedByAgent).toBe(true)
+    expect(q1.decidedByMajority).toBeUndefined()
+
+    expect(out!.fullyUnanimous).toBe(true)
+    expect(out!.agreedAnswers).toEqual({ 'Pick one': 'Alpha', 'Pick another': 'X' })
   })
 })

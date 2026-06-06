@@ -424,6 +424,122 @@ describe('tallyQuestion', () => {
     const r = tallyQuestion(Q[0], 0, [a('x', ['商户端核销']), a('y', [], true)])
     expect(r.unanimous).toBe(false)
   })
+
+  it('majority off (default): a 2v1 split is not resolved', () => {
+    // Explicit majority=false matches the default — no plurality auto-answer.
+    const r = tallyQuestion(
+      Q[0],
+      0,
+      [a('x', ['商户端核销']), a('y', ['商户端核销']), a('z', ['两端都支持'])],
+      false,
+    )
+    expect(r.unanimous).toBe(false)
+    expect(r.agreed).toBeNull()
+    expect(r.decidedByMajority).toBeUndefined()
+  })
+})
+
+describe('tallyQuestion — majority rule', () => {
+  const a = (id: string, labels: string[], abstain = false) => ({
+    agentId: id,
+    agentName: id,
+    optionLabels: labels,
+    reason: '',
+    ...(abstain ? { abstain: true } : {}),
+  })
+
+  it('a literal unanimous vote stays unanimous, not flagged as majority', () => {
+    const r = tallyQuestion(Q[0], 0, [a('x', ['商户端核销']), a('y', ['商户端核销'])], true)
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('商户端核销')
+    expect(r.decidedByMajority).toBeUndefined()
+  })
+
+  it('2v1 single-select: the plurality answer auto-answers (flagged majority)', () => {
+    const r = tallyQuestion(
+      Q[0],
+      0,
+      [a('x', ['商户端核销']), a('y', ['商户端核销']), a('z', ['两端都支持'])],
+      true,
+    )
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('商户端核销')
+    expect(r.decidedByMajority).toBe(true)
+  })
+
+  it('tie for the top count defers to the human (no clear plurality)', () => {
+    const r = tallyQuestion(Q[0], 0, [a('x', ['商户端核销']), a('y', ['两端都支持'])], true)
+    expect(r.unanimous).toBe(false)
+    expect(r.agreed).toBeNull()
+    expect(r.decidedByMajority).toBeUndefined()
+  })
+
+  it('multi-select: plurality keys off the sorted-label answerKey', () => {
+    // Q[0] reused as multi-select-ish: two voters pick the SAME pair (order
+    // differs), one picks a single label ⇒ the pair wins 2v1.
+    const r = tallyQuestion(
+      Q[0],
+      0,
+      [
+        a('x', ['两端都支持', '商户端核销']),
+        a('y', ['商户端核销', '两端都支持']),
+        a('z', ['商户端核销']),
+      ],
+      true,
+    )
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('两端都支持, 商户端核销')
+    expect(r.decidedByMajority).toBe(true)
+  })
+
+  it('excludes abstentions: 2 for A, 1 for B (+1 abstain) ⇒ A wins', () => {
+    const r = tallyQuestion(
+      Q[0],
+      0,
+      [a('w', ['商户端核销']), a('x', ['商户端核销']), a('y', ['两端都支持']), a('z', [], true)],
+      true,
+    )
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('商户端核销')
+    expect(r.decidedByMajority).toBe(true)
+  })
+
+  it('an abstention that leaves a tie among cast votes defers to the human', () => {
+    const r = tallyQuestion(
+      Q[0],
+      0,
+      [a('x', ['商户端核销']), a('y', ['两端都支持']), a('z', [], true)],
+      true,
+    )
+    expect(r.unanimous).toBe(false)
+    expect(r.decidedByMajority).toBeUndefined()
+  })
+
+  it('all abstain ⇒ no cast vote ⇒ defers to the human', () => {
+    const r = tallyQuestion(Q[0], 0, [a('x', [], true), a('y', [], true)], true)
+    expect(r.unanimous).toBe(false)
+    expect(r.agreed).toBeNull()
+    expect(r.decidedByMajority).toBeUndefined()
+  })
+
+  it('custom answers tally by their text (a majority of identical customs wins)', () => {
+    const custom = (id: string, text: string) => ({
+      agentId: id,
+      agentName: id,
+      optionLabels: [] as string[],
+      custom: text,
+      reason: '',
+    })
+    const r = tallyQuestion(
+      Q[1],
+      1,
+      [custom('x', '线上线下都做'), custom('y', '线上线下都做'), a('z', ['复用现有订单支付流程'])],
+      true,
+    )
+    expect(r.unanimous).toBe(true)
+    expect(r.agreed).toBe('线上线下都做')
+    expect(r.decidedByMajority).toBe(true)
+  })
 })
 
 describe('answerKey', () => {

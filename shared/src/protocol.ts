@@ -406,6 +406,14 @@ export interface QuestionConsensus {
    * AI-adjudicated agreement from a literal unanimous vote (for honest UI/labels).
    */
   decidedByAgent?: boolean
+  /**
+   * True ⇒ the literal vote was NOT unanimous, but the majority toggle is on and a
+   * single answer won a strict plurality of the cast (non-abstaining) votes, which
+   * became {@link agreed}. A deterministic pre-step that runs before the decider,
+   * so it is mutually exclusive with {@link decidedByAgent}. Distinguishes a
+   * majority-carried answer from a literal unanimous vote (for honest UI/labels).
+   */
+  decidedByMajority?: boolean
 }
 
 /**

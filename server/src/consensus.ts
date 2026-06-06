@@ -204,17 +204,25 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
     }),
   )
 
+  // Per-question tally. When the majority toggle is on, `tallyQuestion`
+  // deterministically resolves a still-split question to its plurality answer
+  // (marking `decidedByMajority`) — a pre-step ahead of the decider, so a
+  // majority-resolved question is already `unanimous` and the decider below skips
+  // it (it only judges `!unanimous` questions). Priority: literal unanimous →
+  // majority → decider rescue; each question is adjudicated at most once.
+  const majority = isConsensusMajorityEnabled()
   const perQuestion = questions.map((q, i) =>
     tallyQuestion(
       q,
       i,
       perAgent.map((answers) => answers[i]),
+      majority,
     ),
   )
 
-  // Decider pass: summarize, and let the agent rescue split questions where the
-  // advisors are in effective (not literal) consensus. Runs whenever there is a
-  // split question; pure summary otherwise.
+  // Decider pass: summarize, and let the agent rescue the questions still split
+  // after the majority pass, where the advisors are in effective (not literal)
+  // consensus. Runs whenever there is a split question; pure summary otherwise.
   const { summary, overrides } = await decideAndSummarizeAsk(
     p.currentAgentId,
     perQuestion,

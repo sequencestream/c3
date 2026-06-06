@@ -286,19 +286,40 @@ export function answerKey(a: AgentAnswer): string {
 }
 
 /**
- * Roll up all voters' answers to one question. Unanimous ⇒ every voter produced
- * a parseable answer (≥1, none abstained) and they all normalize identically.
+ * Roll up all voters' answers to one question.
+ *
+ * `unanimous` always reports **literal** unanimity — every voter produced a
+ * parseable answer (≥1, none abstained) and they all normalize identically
+ * (`answerKey`) — regardless of `majority`, mirroring `tally`. It is the gate the
+ * gateway auto-answers on, but the two `decidedBy*` flags mark the *non-literal*
+ * ways a question reached agreement so the UI can label them honestly:
+ *
+ * - `majority = false` (default): `agreed` is set only on a literal unanimous
+ *   vote; any split, abstention, or empty set ⇒ `agreed = null` ⇒ defer to human
+ *   (or the later decider rescue).
+ * - `majority = true`: when the literal vote is **not** unanimous, abstentions are
+ *   excluded and the **single** answer with the most cast votes (strict plurality)
+ *   wins — `unanimous` is set true with `decidedByMajority: true` and that answer
+ *   as `agreed`. A **tie** for the top count, **no clear plurality**, or **no cast
+ *   vote** (all abstained / empty) keeps `agreed = null` ⇒ defer to human. A
+ *   literal unanimous vote is reported as such (no `decidedByMajority`).
+ *
+ * Majority is a deterministic pre-step that runs **before** the decider rescue in
+ * `runAskConsensus`; a question it resolves is already `unanimous` so the decider
+ * never re-judges it (no double adjudication). The two are therefore mutually
+ * exclusive: a question carries at most one of `decidedByMajority`/`decidedByAgent`.
  */
 export function tallyQuestion(
   q: AskQuestion,
   index: number,
   answers: AgentAnswer[],
+  majority = false,
 ): QuestionConsensus {
   const active = answers.filter((a) => !a.abstain)
   const keys = active.map(answerKey)
   const unanimous =
     active.length === answers.length && active.length > 0 && keys.every((k) => k === keys[0])
-  return {
+  const base: QuestionConsensus = {
     index,
     question: q.question,
     header: q.header,
@@ -307,6 +328,27 @@ export function tallyQuestion(
     unanimous,
     agreed: unanimous ? keys[0] : null,
   }
+  if (unanimous || !majority || active.length === 0) return base
+
+  // Majority toggle: abstentions already excluded (`active`). Group the cast
+  // answers by normalized key and take the single most-voted one; a tie for the
+  // top count (or no unique leader) keeps the question split ⇒ defer to human.
+  const counts = new Map<string, number>()
+  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1)
+  let topKey: string | null = null
+  let topCount = 0
+  let tied = false
+  for (const [k, n] of counts) {
+    if (n > topCount) {
+      topCount = n
+      topKey = k
+      tied = false
+    } else if (n === topCount) {
+      tied = true
+    }
+  }
+  if (topKey === null || tied) return base
+  return { ...base, unanimous: true, agreed: topKey, decidedByMajority: true }
 }
 
 /**

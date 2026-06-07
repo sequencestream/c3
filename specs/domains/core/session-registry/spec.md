@@ -79,7 +79,11 @@ agent-session AS-R8); only the connection's _view_ changes.
   When the user pastes its native id into the inline fallback and confirms, Then `select_session`
   arrives with `vendor: 'codex'`, the server binds the id to a Codex agent and seeds an empty
   baseline, and the next `user_prompt` resumes the thread natively (SR-R8, SR-R12). With no Codex
-  agent configured, an honest `session.resumeNoAgent` error is returned and nothing is bound.
+  agent configured, an honest `session.resumeNoAgent` error is returned and nothing is bound. The
+  detail view is then **resume-only**: an empty baseline plus the live buffer, with a banner stating
+  the vendor cannot back-read history and only resumes from the interruption point (web-console
+  WC-R23). c3 never captures or persists such a vendor's transcript content (the projection stores
+  metadata only).
 - **Per-session mode (anti-scenario):** Changing mode on session A must **never** change session
   B's mode (SR-R5).
 - **Switch (anti-scenario):** `select_session`/`create_session` must **never** stop another

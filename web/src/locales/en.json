@@ -574,7 +574,8 @@
       "empty": "Select a session, or create a new one in a workspace.",
       "toolsFallback": "tools",
       "resultError": "(error)",
-      "preApproved": "vendor pre-approved"
+      "preApproved": "vendor pre-approved",
+      "resumeOnly": "{vendor} doesn't support reading past messages — only new messages appear here, and you can only resume from where it left off."
     },
     "new": {
       "title": "New Session",

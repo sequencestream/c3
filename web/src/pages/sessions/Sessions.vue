@@ -9,6 +9,7 @@
 import { ref } from 'vue'
 import SessionList from './components/SessionList/SessionList.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
+import ResumeOnlyBanner from '../../components/ResumeOnlyBanner/ResumeOnlyBanner.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
 import SessionStatusBar from '../../components/SessionStatusBar/SessionStatusBar.vue'
@@ -128,6 +129,15 @@ defineExpose({
       :mode-options="modeOptions"
       @set-mode="(m: PermissionMode) => emit('set-mode', m)"
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
+    />
+    <!--
+      read='none' vendor（Codex）的 resume-only 横幅：空 baseline 时它就是用户看到的
+      唯一引导。按能力态门控（vendorSessionCaps[vendor].read），零 vendor 身份硬判定。
+    -->
+    <ResumeOnlyBanner
+      v-if="hasActiveSession && activeVendor"
+      :vendor="activeVendor"
+      :read="vendorSessionCaps?.[activeVendor]?.read"
     />
     <ChatMessages
       :messages="messages"

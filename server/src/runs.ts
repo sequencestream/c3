@@ -21,7 +21,7 @@
  * connection so sidebars can badge background sessions.
  */
 import type {
-  PermissionMode,
+  ModeToken,
   ServerToClient,
   SessionRunStatus,
   SessionStatus,
@@ -49,7 +49,8 @@ export interface SessionRuntime {
   /** Real SDK id, or a `pending:…` id until the first run binds it. */
   sessionId: string
   workspacePath: string
-  mode: PermissionMode
+  /** Vendor-native mode token (2026-06-07-012); resolved to the neutral grid at launch. */
+  mode: ModeToken
   /** Normal user session vs. read-only intent-communication session. */
   kind: SessionKind
   /** On-disk transcript snapshot at runtime creation; replayed before `buffer`. */
@@ -130,7 +131,7 @@ export function getRuntime(id: string): SessionRuntime | undefined {
 export function ensureRuntime(
   id: string,
   workspacePath: string,
-  mode: PermissionMode,
+  mode: ModeToken,
   baseline: TranscriptItem[],
   kind: SessionKind = 'normal',
 ): SessionRuntime {

@@ -19,7 +19,7 @@
  */
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
-import { fromPermissionMode } from '../agent/adapters/claude/permission-map.js'
+import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import {
@@ -125,7 +125,12 @@ export async function runViaDriver(
       : { behavior: 'deny', reason: 'User denied in c3 UI' }
   })
 
-  const { actionMode, toolGate } = fromPermissionMode(rt.mode)
+  // The session's stored mode is a vendor-native ModeToken; resolve it to the
+  // neutral grid through THIS run's vendor catalog (2026-06-07-012). A token from
+  // another vendor (e.g. a project defaultMode set under claude, now launching
+  // opencode) degrades to the launching vendor's defaultToken grid — one knob,
+  // every vendor.
+  const { actionMode, toolGate } = tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
 
   // Resolve the session agent's launch overrides (provider connection only). The
   // claude-hardwired path applies these to the SDK; the driver path threads the

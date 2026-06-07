@@ -7,6 +7,7 @@
  */
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import type { PermissionMode } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import {
   addViewer,
@@ -261,9 +262,13 @@ export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
     if (!rt.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
       setSessionMode(rt.sessionId, msg.mode)
     }
+    // A live RunHandle exists only on the claude-hardwired path (the driver path
+    // sets `handle: null`), so the session's ModeToken is a Claude `PermissionMode`
+    // here; other vendors have no live set-mode and pick up the new token on their
+    // next resume (2026-06-07-012).
     if (rt.run?.handle) {
       try {
-        await rt.run.handle.setPermissionMode(msg.mode)
+        await rt.run.handle.setPermissionMode(msg.mode as PermissionMode)
       } catch {
         /* query may have finished between check and call — ignore */
       }

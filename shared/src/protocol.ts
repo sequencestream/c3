@@ -10,9 +10,13 @@ import type { UiError } from './ui-codes.js'
 import type { TaskItem } from './task-model.js'
 
 /**
- * Permission modes the c3 UI can switch between. These are a subset of the
- * Agent SDK's `PermissionMode` union, all valid values to pass to `query()`'s
- * `permissionMode` option and `setPermissionMode()`.
+ * **Claude's** permission-mode token set — the five values valid to pass to the
+ * Agent SDK `query()`'s `permissionMode` option and `setPermissionMode()`. As of
+ * 2026-06-07-012 this is no longer the universal wire "mode" type: it is exactly
+ * `claudeModeCatalog`'s token list (one vendor's tokens). The neutral wire/
+ * persistence representation is {@link ModeToken} (a `string` carrying ANY vendor's
+ * native token), interpreted via that vendor's {@link VendorModeCatalog}. Every
+ * `PermissionMode` literal is a valid `ModeToken`, so Claude code is unaffected.
  */
 export type PermissionMode = 'default' | 'auto' | 'plan' | 'acceptEdits' | 'bypassPermissions'
 
@@ -64,8 +68,13 @@ export interface SessionInfo {
   title: string
   /** SDK last-modified time, ms since epoch. Sort key within a workspace (desc). */
   lastModified: number
-  /** c3-tracked permission mode for this session. */
-  mode: PermissionMode
+  /**
+   * c3-tracked permission mode for this session, as a vendor-native
+   * {@link ModeToken} — interpreted against this row's {@link vendor} via that
+   * vendor's {@link VendorModeCatalog} (2026-06-07-012; was the Claude-only
+   * `PermissionMode`).
+   */
+  mode: ModeToken
   /** Whether this session was created by a tool (not the user). */
   isToolSession: boolean
   /**
@@ -345,8 +354,14 @@ export type SkillApprovalKind = 'gitignore'
  * Absent or partial entries fall back to the normalized defaults.
  */
 export interface ProjectConfig {
-  /** Permission mode new sessions start in for this project. Optional; `default` when unset. */
-  defaultMode?: PermissionMode
+  /**
+   * Permission mode new sessions start in for this project, as a vendor-native
+   * {@link ModeToken} (2026-06-07-012; was the Claude-only `PermissionMode`).
+   * Optional; `'default'` when unset. Resolved at launch against the launching
+   * agent's vendor catalog — a token absent from that vendor falls back to the
+   * vendor's `defaultToken`, so the one project knob still drives every vendor.
+   */
+  defaultMode?: ModeToken
   /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
   consensus?: ConsensusConfig
   /** Slash command (leading `/`) prefixed when launching dev for this project. Optional; empty ⇒ no prefix. */
@@ -395,7 +410,7 @@ export interface SystemSettings {
    * TODO: remove after SettingsPanel is migrated to project-level config (next task).
    * Prefer the per-project getters (`loadProjectConfig`) for authoritative values.
    */
-  defaultMode?: PermissionMode
+  defaultMode?: ModeToken
   /**
    * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
    * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
@@ -614,6 +629,84 @@ export interface SlashCommandInfo {
 
 /** The agent vendors c3 can drive. New vendors extend this union (ADR-0011). */
 export type VendorId = 'claude' | 'codex' | 'opencode'
+
+// ---------------------------------------------------------------------------
+// Neutral permission grid + per-vendor mode catalog (ADR-0011, 2026-06-07-012)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the run is allowed to *do*, orthogonal to how tools are gated (ADR-0011).
+ * `plan` proposes without executing changes; `build` executes. Promoted here from
+ * the kernel's `adapters/types.ts` so it is the single, SDK-free SoT both the wire
+ * (this file) and the adapters re-export — the same promotion `CanonicalMessage`
+ * and `AdapterCapability` already took. Claude's `plan` mode, Codex's read-only
+ * `sandboxMode`, OpenCode's Plan agent all translate INTO this dimension.
+ */
+export type ActionMode = 'plan' | 'build'
+
+/**
+ * How aggressively tools are gated, orthogonal to {@link ActionMode} (ADR-0011):
+ *  - `always-ask`   — every tool prompts the human.
+ *  - `on-sensitive` — read-only auto-allow; sensitive tools prompt (the default).
+ *  - `trusted-prefix` — a trusted class (e.g. edits) auto-accepts; the rest gate.
+ *  - `never-ask`    — auto-execute everything (Claude `bypassPermissions`).
+ *
+ * Replaces Claude's five-way `PermissionMode` as the *internal* permission truth;
+ * each vendor's native mode token(s) translate into this 2-axis grid and back via
+ * its {@link VendorModeCatalog}. The grid never round-trips 1:1 — see the catalog.
+ */
+export type ToolGate = 'always-ask' | 'on-sensitive' | 'trusted-prefix' | 'never-ask'
+
+/** The neutral permission grid cell a mode token resolves to. */
+export interface NeutralMode {
+  actionMode: ActionMode
+  toolGate: ToolGate
+}
+
+/**
+ * A vendor-native permission mode token (ADR-0011, 2026-06-07-012). The neutral
+ * replacement for the Claude-centric `PermissionMode` as the wire/persistence
+ * representation of a session's mode: it carries each vendor's OWN token (Claude
+ * `plan`, Codex `read-only`, OpenCode `build`), disambiguated by the session's
+ * {@link VendorId}. A bare `string` by design — the closed set per vendor lives in
+ * that vendor's {@link VendorModeCatalog}, not in this type. `PermissionMode`
+ * (still defined above) is now just *Claude's* token set, a subset of this.
+ */
+export type ModeToken = string
+
+/**
+ * One selectable mode in a vendor's catalog: its native {@link token}, the web
+ * i18n leaf key {@link labelCode} the console renders it through, and the neutral
+ * {@link NeutralMode} grid cell it maps to (the semantic bridge the kernel reasons
+ * over). The forward map (token → grid) is total per vendor; the reverse (grid →
+ * token) picks the nearest declared token (the catalog has fewer cells than the
+ * 2×4 grid), exactly as Claude's `permission-map` did before the generalization.
+ */
+export interface VendorModeDescriptor {
+  /** Vendor-native mode token; round-trips as `SessionInfo.mode`/`set_mode`/etc. */
+  token: string
+  /** Web i18n leaf key for the label (e.g. `nav.mode.plan.label`). Not translated text. */
+  labelCode: string
+  /** The neutral grid this mode maps to (the kernel's permission truth). */
+  actionMode: ActionMode
+  toolGate: ToolGate
+}
+
+/**
+ * One vendor's full mode catalog (ADR-0011, 2026-06-07-012): the ordered list of
+ * modes the console offers for that vendor plus the {@link defaultToken} a new
+ * session starts in. The single SoT for token ⇄ grid translation — each adapter
+ * declares its catalog, the generic `tokenToGrid`/`gridToToken` helpers operate on
+ * it, and the kernel/web both consume it by `vendor` (no `if (vendor === …)`).
+ * Travels to the web on the `settings.vendorModes` field for the mode picker.
+ */
+export interface VendorModeCatalog {
+  vendor: VendorId
+  /** Selectable modes in display order. */
+  modes: VendorModeDescriptor[]
+  /** The token a new session defaults to; an invariant: it MUST be one of `modes`. */
+  defaultToken: string
+}
 
 /**
  * One vendor's host-CLI presence (ADR-0012), surfaced to the web so the
@@ -1184,8 +1277,12 @@ export type ClientToServer =
       decision: 'allow' | 'deny'
       answers?: Record<string, string>
     }
-  /** Change the active session's permission mode (per-session, persisted). */
-  | { type: 'set_mode'; mode: PermissionMode }
+  /**
+   * Change the active session's permission mode (per-session, persisted). `mode`
+   * is a vendor-native {@link ModeToken} the server resolves against the session's
+   * vendor catalog (2026-06-07-012).
+   */
+  | { type: 'set_mode'; mode: ModeToken }
   /**
    * Re-target a session's agent within its frozen vendor (ADR-0015): rewrites the
    * `sessionAgents` fact so the session's next turn `resume`s with `agentId`. The
@@ -1424,7 +1521,8 @@ export type ServerToClient =
       workspacePath: string
       sessionId: string
       title: string
-      mode: PermissionMode
+      /** Vendor-native {@link ModeToken}; interpret via `vendor`'s catalog (2026-06-07-012). */
+      mode: ModeToken
       history: TranscriptItem[]
       status: SessionStatus
       /**
@@ -1458,8 +1556,8 @@ export type ServerToClient =
       vendor: VendorId
       ok: boolean
     }
-  /** Confirms the active session's mode change. */
-  | { type: 'mode_changed'; mode: PermissionMode }
+  /** Confirms the active session's mode change. `mode` is the vendor-native {@link ModeToken}. */
+  | { type: 'mode_changed'; mode: ModeToken }
   /** Available slash commands/skills for the active session (reply to `list_commands`). */
   | { type: 'commands'; commands: SlashCommandInfo[] }
   /**
@@ -1496,6 +1594,14 @@ export type ServerToClient =
        * UI then defaults every vendor to `full` (no greying).
        */
       skillSupport?: Record<VendorId, SkillSupportState>
+      /**
+       * Each vendor's {@link VendorModeCatalog} (2026-06-07-012) — the ordered,
+       * native mode tokens + their i18n label codes the console's mode picker
+       * renders by `vendor`. The web reads the active session's vendor catalog to
+       * label `SessionInfo.mode` and to build the mode dropdown options; absent on
+       * older servers, the UI then falls back to the built-in Claude mode list.
+       */
+      vendorModes?: Record<VendorId, VendorModeCatalog>
     }
   /**
    * The normalized project configuration for a workspace (reply to

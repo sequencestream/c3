@@ -14,7 +14,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import type { PermissionMode, VendorId, WorkspaceInfo } from '@ccc/shared/protocol'
+import type { ModeToken, VendorId, WorkspaceInfo } from '@ccc/shared/protocol'
 import type { SkillSupportReport } from './kernel/agent/adapters/types.js'
 
 /**
@@ -47,7 +47,7 @@ export interface SkillAckRecord {
 interface PersistedState {
   version: 1
   workspaces: WorkspaceInfo[]
-  sessionModes: Record<string, PermissionMode>
+  sessionModes: Record<string, ModeToken>
   activeSessionId: string | null
   /** Cached per-vendor SKILL-discovery support, invalidated on SDK-version change. */
   skillSupport: Record<string, SkillSupportReport>
@@ -57,7 +57,7 @@ interface PersistedState {
   skillAcks: Record<string, SkillAckRecord>
 }
 
-const DEFAULT_MODE: PermissionMode = 'default'
+const DEFAULT_MODE: ModeToken = 'default'
 
 function configDir(): string {
   return process.env.CLAUDE_CONFIG_DIR
@@ -176,11 +176,11 @@ export function touchWorkspace(path: string, now: number): void {
   }
 }
 
-export function getSessionMode(sessionId: string): PermissionMode {
+export function getSessionMode(sessionId: string): ModeToken {
   return load().sessionModes[sessionId] ?? DEFAULT_MODE
 }
 
-export function setSessionMode(sessionId: string, mode: PermissionMode): void {
+export function setSessionMode(sessionId: string, mode: ModeToken): void {
   load().sessionModes[sessionId] = mode
   persist()
 }

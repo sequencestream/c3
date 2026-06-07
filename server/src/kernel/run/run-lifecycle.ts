@@ -15,6 +15,7 @@
  * 3c-2b refactors it onto the pure `decideResume` state machine.
  */
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import type { PermissionMode } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
@@ -287,7 +288,9 @@ export async function launchRun(
           cwd: workspacePath,
           signal: attemptAbort.signal,
           // Intent chats are pinned to `default` so the gateway always runs.
-          permissionMode: isIntent ? 'default' : rt.mode,
+          // This is the claude-hardwired path (vendor === 'claude'), so the
+          // session's ModeToken is always a Claude `PermissionMode` (2026-06-07-012).
+          permissionMode: isIntent ? 'default' : (rt.mode as PermissionMode),
           // Reconnect forces `resume: runId` (same SDK session, full context —
           // AS-R18). First attempt resumes an existing session; degradation
           // retries never resume (each gets a fresh SDK session).

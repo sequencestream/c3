@@ -15,7 +15,9 @@ import type {
   SessionCapabilities,
   SkillSupportState,
   VendorId,
+  VendorModeCatalog,
 } from '@ccc/shared/protocol'
+import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
 import {
   getSessionBindingStats,
   loadProjectConfig,

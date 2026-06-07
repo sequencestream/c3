@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path'
 import type {
   AgentConfig,
   ClaudeAgentConfig,
-  PermissionMode,
+  ModeToken,
   ProjectConfig,
   SkillRepoConfig,
   SystemSettings,
@@ -43,13 +43,12 @@ import {
 } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 
-const PERMISSION_MODES: readonly PermissionMode[] = [
-  'default',
-  'auto',
-  'plan',
-  'acceptEdits',
-  'bypassPermissions',
-]
+// `defaultMode` is no longer validated against Claude's five values: it is now a
+// vendor-native ModeToken (2026-06-07-012) the launch path resolves against the
+// launching vendor's catalog (an unknown token degrades to that vendor's
+// defaultToken). So normalization only fail-softs to `'default'` on a missing /
+// non-string value — any non-empty string token passes through untouched.
+const DEFAULT_MODE_TOKEN = 'default'
 
 /** UI display languages. Only `en`/`zh` ship translations today; the rest are
  * reserved for the i18n rollout (fall back to `en` messages until translated). */
@@ -299,7 +298,7 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
   // access them via the raw record for the one-shot migration.
   const r = raw as unknown as Record<string, unknown>
   const seed: Partial<ProjectConfig> = {}
-  if (r.defaultMode !== undefined) seed.defaultMode = r.defaultMode as PermissionMode
+  if (r.defaultMode !== undefined) seed.defaultMode = r.defaultMode as ModeToken
   if (r.consensus !== undefined) seed.consensus = r.consensus as ProjectConfig['consensus']
   if (r.devSkill !== undefined) seed.devSkill = r.devSkill as string
   if (r.maxRoundsPerStage !== undefined) seed.maxRoundsPerStage = r.maxRoundsPerStage as number
@@ -321,9 +320,10 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
  */
 export function normalizeProjectConfig(raw: unknown): ProjectConfig {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  const defaultMode: PermissionMode = PERMISSION_MODES.includes(rec.defaultMode as PermissionMode)
-    ? (rec.defaultMode as PermissionMode)
-    : 'default'
+  const defaultMode: ModeToken =
+    typeof rec.defaultMode === 'string' && rec.defaultMode.length > 0
+      ? rec.defaultMode
+      : DEFAULT_MODE_TOKEN
   const consensus = {
     enabled: (rec.consensus as { enabled?: boolean })?.enabled === true,
     majority: (rec.consensus as { majority?: boolean })?.majority === true,
@@ -442,8 +442,8 @@ export function saveSettings(next: SystemSettings): SystemSettings {
   return settingsCache ?? normalized
 }
 
-/** The permission mode new sessions start in for a project (`default` when unconfigured). */
-export function getDefaultMode(projectPath: string): PermissionMode {
+/** The mode token new sessions start in for a project (`'default'` when unconfigured). */
+export function getDefaultMode(projectPath: string): ModeToken {
   return loadProjectConfig(projectPath).defaultMode ?? 'default'
 }
 

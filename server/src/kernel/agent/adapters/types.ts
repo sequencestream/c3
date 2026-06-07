@@ -47,31 +47,25 @@ export type {
   CapabilityState,
   SessionCapability,
   SessionCapabilities,
+  // The neutral permission grid + per-vendor mode catalog were promoted to the
+  // wire (2026-06-07-012) — same SoT move as CanonicalMessage/AdapterCapability.
+  ActionMode,
+  ToolGate,
+  NeutralMode,
+  ModeToken,
+  VendorModeDescriptor,
+  VendorModeCatalog,
 } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Neutral permission policy (PermissionMode 1:1 mapping is abandoned)
 // ---------------------------------------------------------------------------
 
-/**
- * What the run is allowed to *do*, orthogonal to how tools are gated. `plan`
- * proposes without executing changes; `build` executes. Claude's `plan` mode,
- * Codex's read-only `sandboxMode`, etc. translate into this dimension.
- */
-export type ActionMode = 'plan' | 'build'
-
-/**
- * How aggressively tools are gated, orthogonal to {@link ActionMode}:
- *  - `always-ask`   — every tool prompts the human.
- *  - `on-sensitive` — read-only auto-allow; sensitive tools prompt (the default).
- *  - `trusted-prefix` — a trusted class (e.g. edits) auto-accepts; the rest gate.
- *  - `never-ask`    — auto-execute everything (Claude `bypassPermissions`).
- *
- * Replaces Claude's five-way `PermissionMode`, which did not survive contact
- * with Codex (sandbox + approvalPolicy) or OpenCode. Each adapter translates its
- * native mode(s) into this 2-axis grid; the grid never translates 1:1 back.
- */
-export type ToolGate = 'always-ask' | 'on-sensitive' | 'trusted-prefix' | 'never-ask'
+// `ActionMode` and `ToolGate` (the neutral permission grid) now live on the WIRE
+// (`shared/protocol.ts`) as the single SoT — re-exported above — alongside the
+// per-vendor `VendorModeCatalog` that translates each vendor's native mode tokens
+// into this grid and back (2026-06-07-012). They were first authored here in 011
+// and promoted unchanged.
 
 /** The three verdicts a neutral policy yields for one tool call. */
 export type PolicyVerdict = 'allow' | 'ask' | 'deny'

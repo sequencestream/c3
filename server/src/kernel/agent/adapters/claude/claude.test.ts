@@ -20,7 +20,7 @@ const ctx = (actionMode: ActionMode, toolGate: ToolGate): PolicyContext => ({
 })
 
 describe('claude capabilities', () => {
-  it('reports all six vendor abilities true', () => {
+  it('reports all six vendor abilities true and every session op `full` (the reference adapter)', () => {
     expect(claudeCapabilities).toEqual({
       interrupt: true,
       setActionMode: true,
@@ -28,6 +28,16 @@ describe('claude capabilities', () => {
       inProcessMcp: true,
       forkSession: true,
       perToolApproval: true,
+      // The structured session-lifecycle sub-ledger (ADR-0011 addendum) — every
+      // session op is `full` for the reference adapter (JSONL read, native
+      // rename/delete, SDK resume, no caveat).
+      sessions: {
+        list: 'full',
+        read: 'full',
+        resume: 'full',
+        rename: 'full',
+        delete: 'full',
+      },
     })
   })
 })

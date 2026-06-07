@@ -474,6 +474,9 @@
       },
       "delete": {
         "tooltip": "삭제"
+      },
+      "unavailable": {
+        "tooltip": "이 agent에서는 일시적으로 사용할 수 없습니다"
       }
     },
     "titleBar": {

@@ -9,7 +9,13 @@
  */
 import { ref } from 'vue'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import type { SessionInfo, SessionStatus } from '@ccc/shared/protocol'
+import type {
+  SessionCapabilities,
+  SessionCapability,
+  SessionInfo,
+  SessionStatus,
+  VendorId,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 
@@ -22,6 +28,12 @@ const props = defineProps<{
   activeWorkspace: string | null
   activeSession: string | null
   activeTitle: string
+  /**
+   * Per-vendor session-lifecycle capability ledger (ADR-0011). Drives row-action
+   * gating by capability *state*, not by vendor — see {@link rowAction}. Absent
+   * (pre-`settings`) ⇒ optimistic enable, so the list never locks on first paint.
+   */
+  vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
 }>()
 
 const emit = defineEmits<{
@@ -100,6 +112,32 @@ function renameSession(sessionId: string, current: string) {
   if (!props.currentWorkspace) return
   const title = window.prompt(t('session.list.renamePrompt'), current)?.trim()
   if (title) emit('rename-session', props.currentWorkspace, sessionId, title)
+}
+
+/** How a row action renders, derived purely from the vendor's capability state. */
+interface RowAction {
+  /** Render the button at all (`none` ⇒ the vendor structurally cannot — hide it). */
+  visible: boolean
+  /** Greyed-out, non-interactive (`temporarily-unavailable`). */
+  disabled: boolean
+  /** Tooltip text (the action's own label, or the "temporarily unavailable" note). */
+  tooltip: string
+}
+
+// Capability-state → row-action rendering, the ONE place degradation is decided —
+// zero `if (vendor === …)`. A new vendor whose ledger reports `none`/`temporarily-
+// unavailable` is degraded correctly here without touching this function.
+//   full | partial          → enabled (partial still works, just lossy elsewhere)
+//   temporarily-unavailable → visible but disabled, with the unavailable tooltip
+//   none                    → hidden (the vendor's SDK has no such operation)
+//   undefined (pre-settings)→ optimistic enable (back-compat / first paint)
+function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'delete'>): RowAction {
+  const label = op === 'rename' ? t('session.row.rename.tooltip') : t('session.row.delete.tooltip')
+  const state = props.vendorSessionCaps?.[s.vendor]?.[op]
+  if (state === 'none') return { visible: false, disabled: true, tooltip: label }
+  if (state === 'temporarily-unavailable')
+    return { visible: true, disabled: true, tooltip: t('session.row.unavailable.tooltip') }
+  return { visible: true, disabled: false, tooltip: label }
 }
 </script>
 
@@ -182,16 +220,20 @@ function renameSession(sessionId: string, current: string) {
           >
           <span class="session-actions">
             <button
+              v-if="rowAction(s, 'rename').visible"
               class="icon-btn"
-              :title="t('session.row.rename.tooltip')"
+              :title="rowAction(s, 'rename').tooltip"
+              :disabled="rowAction(s, 'rename').disabled"
               data-testid="session-row-rename"
               @click.stop="renameSession(s.sessionId, s.title)"
             >
               ✎
             </button>
             <button
+              v-if="rowAction(s, 'delete').visible"
               class="icon-btn"
-              :title="t('session.row.delete.tooltip')"
+              :title="rowAction(s, 'delete').tooltip"
+              :disabled="rowAction(s, 'delete').disabled"
               data-testid="session-row-delete"
               @click.stop="deleteSession(s.sessionId)"
             >

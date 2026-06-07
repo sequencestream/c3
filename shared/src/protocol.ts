@@ -550,6 +550,55 @@ export type AdapterCapability =
   | 'perToolApproval'
 
 /**
+ * A structured capability *state* — the honest grade of a degradable ability,
+ * richer than a `boolean` (ADR-0011 addendum). Where the six {@link AdapterCapability}
+ * live-run controls are genuinely binary (a vendor either has a mid-turn interrupt
+ * point or it does not), the **session-lifecycle** operations admit intermediate
+ * grades a flag cannot express:
+ *  - `'none'`    — the vendor has no such ability at all (Codex has no listing/read
+ *                  API; its store returns empty rather than fabricate a transcript).
+ *  - `'partial'` — the ability exists but is reduced (e.g. resumes the thread but
+ *                  cannot reconstruct full prior history).
+ *  - `'full'`    — first-class support (the Claude reference grade).
+ *  - `'temporarily-unavailable'` — the ability normally exists but is unreachable
+ *                  *right now* (a remote-backed vendor like OpenCode whose REST
+ *                  server is down). Distinct from `'none'`: the upper layer/UI
+ *                  degrades softly (greyed-out, "try again later") rather than
+ *                  hiding the affordance as structurally absent.
+ */
+export type CapabilityState = 'none' | 'partial' | 'full' | 'temporarily-unavailable'
+
+/**
+ * The session-lifecycle operations whose support a vendor self-reports as a
+ * {@link CapabilityState} (ADR-0011 addendum). Unlike the binary
+ * {@link AdapterCapability} live-run controls, these were the "required, unflagged"
+ * contract — but Phase 0 proved that contract is NOT universal (Codex has neither
+ * `list` nor `read`), so they are graded honestly instead. The kernel's
+ * `SessionCapabilities` is keyed by exactly these names (a type-level assertion
+ * pins the two together so they cannot drift).
+ */
+export type SessionCapability = 'list' | 'read' | 'resume' | 'rename' | 'delete'
+
+/**
+ * A vendor's graded support for each session-lifecycle operation (ADR-0011
+ * addendum). The upper layer (and UI) reads a state and degrades by it — never by
+ * vendor identity — so a new vendor that self-reports its grades is correctly
+ * degraded with no `if (vendor === …)` branch anywhere above the adapter.
+ */
+export interface SessionCapabilities {
+  /** Enumerate a workspace's sessions. Codex: `'none'` (the SDK has no listing API). */
+  readonly list: CapabilityState
+  /** Back-read a session's history as canonical messages. Codex: `'none'`. */
+  readonly read: CapabilityState
+  /** Continue an existing session by id (vendor-native resume). */
+  readonly resume: CapabilityState
+  /** Rename a session. Only the vendors whose store supports it report above `'none'`. */
+  readonly rename: CapabilityState
+  /** Delete a session. Only the vendors whose store supports it report above `'none'`. */
+  readonly delete: CapabilityState
+}
+
+/**
  * The only role the canonical model commits to. Codex carries no role on its
  * items and must synthesize one (item-type → role); Claude/OpenCode carry it
  * natively. `system`/`result` SDK frames are NOT messages — they map to side
@@ -1249,17 +1298,21 @@ export type ServerToClient =
   | { type: 'commands'; commands: SlashCommandInfo[] }
   /**
    * The (normalized) system configuration, in reply to `get_settings`/`save_settings`.
-   * Carries two runtime-derived companions the config object itself does not hold:
+   * Carries three runtime-derived companions the config object itself does not hold:
    * `hostStatus` — each vendor's host-CLI presence (ADR-0012), so the console can
-   * grey out an agent whose binary is not on PATH; and `bindingStats` — the
+   * grey out an agent whose binary is not on PATH; `bindingStats` — the
    * session→agent binding counts (ADR-0015), so the console can explain that a
-   * default-agent change is not retroactive.
+   * default-agent change is not retroactive; and `sessionCapabilities` — each
+   * vendor's graded {@link SessionCapabilities} (ADR-0011 addendum), the projection
+   * of the kernel ledger the UI degrades session-row actions by (per `vendor` tag,
+   * never an `if (vendor === …)` branch).
    */
   | {
       type: 'settings'
       settings: SystemSettings
       hostStatus: VendorHostStatus[]
       bindingStats: SessionBindingStats
+      sessionCapabilities: Record<VendorId, SessionCapabilities>
     }
   /** A project's requirement list (reply to `list_requirements`/`open_requirement_chat`, or a push after a change). */
   | { type: 'requirements'; projectPath: string; items: Requirement[] }

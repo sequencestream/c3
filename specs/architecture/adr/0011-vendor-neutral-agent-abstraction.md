@@ -2,6 +2,9 @@
 
 - **Status:** accepted
 - **Date:** 2026-06-05
+- **Amended:** 2026-06-07 — `AdapterCapabilities` extended with structured session-lifecycle
+  capability states (`list` / `read` / `resume` / `rename` / `delete`, each a `CapabilityState`).
+  See the _Amendment_ paragraph under "AdapterCapabilities" above for the matrix and rationale.
 
 ## Context
 
@@ -75,6 +78,36 @@ Adopt option 3. Establish `server/src/kernel/agent/adapters/` with:
   the ledger holds exactly six **optional/degradable** flags: `interrupt`, `setActionMode`,
   `streamingPush`, `inProcessMcp`, `forkSession`, and `perToolApproval`. The sixth is added beyond the
   original five Claude-proprietary controls because 008 proved per-tool approval is **not** universal.
+- **Amendment (this phase) — structured session-lifecycle capability states.** The six flags above
+  are honestly boolean (a vendor either has a mid-turn interrupt point or it does not). The
+  **session-lifecycle** operations (`list` / `read` / `resume` / `rename` / `delete`) are **not**:
+  008 proved `list`/`read` are structurally absent for Codex (the SDK has no listing/reading API),
+  009 proved OpenCode's `rename`/`delete` exist behind a REST write-back that is not yet wired,
+  and a remote server that is briefly down would be the same shape. A boolean cannot tell
+  `none` (structural NO) apart from `temporarily-unavailable` (mechanism exists, not currently
+  reachable), and that distinction is exactly what the UI must render. So these ops are graded
+  honestly as a `CapabilityState` per op: `'none' | 'partial' | 'full' | 'temporarily-unavailable'`,
+  carried on the ledger as the structured sub-ledger
+  `AdapterCapabilities.sessions: SessionCapabilities`. The method _contract_ (every vendor exposes
+  `list`/`read` on its `SessionStore`) stays the unconditional interface — methods always _exist_,
+  what each method can deliver is what the ledger honestly reports. A new vendor that self-reports
+  its grades is correctly degraded with **zero `if (vendor === …)`** in the upper layer. The
+  authoritative matrix as of this amendment:
+
+  | Op     | claude | opencode                | codex |
+  | ------ | ------ | ----------------------- | ----- |
+  | list   | full   | full                    | none  |
+  | read   | full   | full                    | none  |
+  | resume | full   | full                    | full  |
+  | rename | full   | temporarily-unavailable | none  |
+  | delete | full   | temporarily-unavailable | none  |
+
+  The console renders the rename/delete row buttons by capability _state_ (hide on `none`, disabled
+  on `temporarily-unavailable`, enabled on `full`/`partial`) — one degradation function, no vendor
+  branching. The wire carries the same matrix on a new top-level `settings.sessionCapabilities:
+Record<VendorId, SessionCapabilities>` companion (parallel to `hostStatus` / `bindingStats`),
+  orthogonal to host-CLI presence (ability vs availability).
+
 - **Canonical message model** — per 010: `vendor` tag required; `sessionId` unconditional;
   `role`/`blocks`/`ts`/`turnId?` discounted; `vendorExtra` two-level overflow (envelope + block).
   Tool returns are **embedded** on the `tool_use` block (`result?`), back-filled by id-upsert — there
@@ -174,10 +207,12 @@ method **present ⇒ its flag is true** (no false method without capability).
 - `git grep -E "from '\.\./\.\./(features|transport)'" server/src/kernel/agent/adapters/` MUST be empty
   (ADR-0009 R1).
 - `pnpm typecheck` + `pnpm lint` MUST be green.
-- `pnpm vitest run server/src/kernel/agent/adapters` MUST be green: the vendor-agnostic contract
-  (`types.test.ts`) and the Claude conformance (`claude/claude.test.ts`) pin the required surface, the
-  six-flag capability ledger, the permission grid round trip, the approval write-back, and the D3
-  embedded-result translation.
+- `pnpm vitest run` MUST be green: the vendor-agnostic contract (`types.test.ts` pins the required
+  surface + six boolean flags + the `sessions` sub-ledger; `capabilities.test.ts` pins the
+  authoritative session-capability matrix end-to-end), the Claude conformance
+  (`claude/claude.test.ts`) reports every session op `full` for the reference adapter, and the
+  web `SessionList.test.ts` exercises the row-action gating by capability _state_ (none ⇒ hidden,
+  temporarily-unavailable ⇒ disabled, full ⇒ enabled) without a single `if (vendor === …)`.
 
 ## References
 

@@ -209,11 +209,24 @@ the wire only ever gains a `vendor` **dimension** — never a second schema per 
 re-exports these (single SoT); no vendor SDK type appears here (ADR-0009).
 
 - **`VendorId`** — `'claude' | 'codex' | 'opencode'`. The vendor tag carried on every envelope.
-- **`AdapterCapability`** — the capability enum naming each optional/degradable adapter capability:
+- **`AdapterCapability`** — the capability enum naming each optional/degradable **live-run** capability:
   `'interrupt' | 'setActionMode' | 'streamingPush' | 'inProcessMcp' | 'forkSession' | 'perToolApproval'`.
   The kernel's `AdapterCapabilities` boolean ledger is keyed by exactly these names (a compile-time
   assertion pins them together). Required capabilities (start/messages/abort/list/read/onRequest)
   are the unconditional contract and are NOT enumerated.
+- **`CapabilityState`** (ADR-0011 amendment 2026-06-07) — one of
+  `'none' | 'partial' | 'full' | 'temporarily-unavailable'`. A session-lifecycle op is graded
+  honestly by state: `'none'` = structural NO (Codex has no `list`/`read` API at all), `'partial'` =
+  supported with loss, `'full'` = first-class (Claude reference), `'temporarily-unavailable'` =
+  mechanism exists but is not currently reachable (OpenCode's REST write-back for `rename`/`delete`,
+  or a briefly-down remote server). Keyed by the **`SessionCapability`** enum
+  (`'list' | 'read' | 'resume' | 'rename' | 'delete'`), carried on the kernel's
+  `AdapterCapabilities.sessions: SessionCapabilities` and on the wire's
+  `settings.sessionCapabilities: Record<VendorId, SessionCapabilities>` (top-level companion
+  alongside `hostStatus` / `bindingStats`, orthogonal to host-CLI presence — ability vs
+  availability). The console degrades session-row actions by state (hide on `none`, disabled on
+  `temporarily-unavailable`, enabled on `full`/`partial`) with **zero `if (vendor === …)`** —
+  a new vendor that self-reports its grades is correctly degraded.
 - **`CanonicalRole`** — `'user' | 'assistant'`. The only roles the model commits to; Codex
   synthesizes it from item type. `system`/`result` SDK frames are NOT messages.
 - **`CanonicalBlock`** — the **three-vendor common** block union: `text` / `thinking` / `tool_use`.

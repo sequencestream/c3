@@ -108,6 +108,17 @@ describe('protocol wire format', () => {
         { vendor: 'codex', present: false, binary: 'codex', installHint: 'install codex' },
       ],
       bindingStats: { bound: 3, pending: 1 },
+      sessionCapabilities: {
+        claude: { list: 'full', read: 'full', resume: 'full', rename: 'full', delete: 'full' },
+        codex: { list: 'none', read: 'none', resume: 'full', rename: 'none', delete: 'none' },
+        opencode: {
+          list: 'full',
+          read: 'full',
+          resume: 'full',
+          rename: 'temporarily-unavailable',
+          delete: 'temporarily-unavailable',
+        },
+      },
     },
     // Consensus scoped to one vendor, noting the cross-vendor advisors it excluded.
     {

@@ -474,6 +474,9 @@
       },
       "delete": {
         "tooltip": "删除"
+      },
+      "unavailable": {
+        "tooltip": "该操作对此 agent 暂不可用"
       }
     },
     "titleBar": {

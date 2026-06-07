@@ -51,6 +51,7 @@ import type {
   ServerToClient,
   SessionAgentSwitch,
   SessionBindingStats,
+  SessionCapabilities,
   SessionInfo,
   SessionRunStatus,
   SessionStatus,
@@ -472,6 +473,13 @@ const serverSettings = ref<SystemSettings | null>(null)
 const hostStatus = ref<VendorHostStatus[]>([])
 const bindingStats = ref<SessionBindingStats | null>(null)
 
+// Per-vendor session-lifecycle capability ledger (ADR-0011 addendum), riding the
+// `settings` message as a top-level companion alongside `hostStatus` /
+// `bindingStats`. Drives the session list's row-action gating by capability
+// *state* — with zero `if (vendor === …)`. Null until the first `settings`
+// reply arrives; the list degrades optimistically then.
+const sessionCapabilities = ref<Record<VendorId, SessionCapabilities> | null>(null)
+
 // ---- New-session agent picker (the "+" modal) ----
 const newSessionOpen = ref(false)
 // The workspace the pending modal will create a session in.
@@ -767,6 +775,7 @@ function handleMessage(msg: ServerToClient) {
       serverSettings.value = msg.settings
       hostStatus.value = msg.hostStatus
       bindingStats.value = msg.bindingStats
+      sessionCapabilities.value = msg.sessionCapabilities
       // Server is the single source of truth for UI language. Reconcile exactly
       // once and only when it disagrees with the live locale, to avoid a
       // save→settings→apply→save loop and any flicker.
@@ -1646,6 +1655,7 @@ function listCommands() {
       :active-title="activeTitle"
       :active-vendor="activeVendor"
       :active-agent-switch="activeAgentSwitch"
+      :vendor-session-caps="sessionCapabilities ?? undefined"
       :has-active-session="hasActiveSession"
       :mode="mode"
       :mode-options="modeOptions"

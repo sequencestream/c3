@@ -9,9 +9,10 @@
  *  - `bindingStats` — the session→agent binding counts (ADR-0015), so the console
  *    can show that a default-agent change is not retroactive.
  */
-import type { VendorHostStatus } from '@ccc/shared/protocol'
+import type { VendorHostStatus, SessionCapabilities, VendorId } from '@ccc/shared/protocol'
 import { getSessionBindingStats, loadSettings, saveSettings } from '../../kernel/config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
+import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 /** Map the ProcessLauncher probe into the wire shape (drop the absolute path). */
@@ -24,12 +25,27 @@ function hostStatus(): VendorHostStatus[] {
   }))
 }
 
+/**
+ * Each vendor's static session-lifecycle capability ledger (ADR-0011 addendum).
+ * The console reads this to render session-row actions by capability *state*
+ * (disable/hide rename/delete a vendor cannot do) — with **zero
+ * `if (vendor === …)`**. Lives at the top of the `settings` message, orthogonal
+ * to the per-vendor `hostStatus` (presence vs ability).
+ */
+function sessionCapabilities(): Record<VendorId, SessionCapabilities> {
+  const out = {} as Record<VendorId, SessionCapabilities>
+  for (const v of Object.keys(VENDOR_CAPABILITIES) as VendorId[])
+    out[v] = VENDOR_CAPABILITIES[v].sessions
+  return out
+}
+
 export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
   conn.send({
     type: 'settings',
     settings: loadSettings(),
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
+    sessionCapabilities: sessionCapabilities(),
   })
 }
 
@@ -39,5 +55,6 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     settings: saveSettings(msg.settings),
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
+    sessionCapabilities: sessionCapabilities(),
   })
 }

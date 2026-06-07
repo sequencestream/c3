@@ -20,6 +20,7 @@ import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
   PermissionMode,
   SessionAgentSwitch,
+  SessionCapabilities,
   SessionInfo,
   SessionStatus,
   SlashCommandInfo,
@@ -38,6 +39,8 @@ defineProps<{
   activeVendor?: VendorId | null
   /** Same-vendor agent switcher data for the active session (ADR-0015); null ⇒ no switcher. */
   activeAgentSwitch?: SessionAgentSwitch | null
+  /** Per-vendor session-lifecycle capability ledger (ADR-0011), gating row actions. */
+  vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
   // right: chat column
   hasActiveSession: boolean
   mode: PermissionMode
@@ -95,6 +98,7 @@ defineExpose({
     :active-workspace="activeWorkspace"
     :active-session="activeSession"
     :active-title="activeTitle"
+    :vendor-session-caps="vendorSessionCaps"
     @create-session="(path: string) => emit('create-session', path)"
     @refresh-sessions="emit('refresh-sessions')"
     @select-session="(path: string, sessionId: string) => emit('select-session', path, sessionId)"

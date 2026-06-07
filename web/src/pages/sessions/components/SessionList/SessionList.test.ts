@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SessionList from './SessionList.vue'
-import type { SessionInfo, SessionStatus } from '@ccc/shared/protocol'
+import type {
+  SessionCapabilities,
+  SessionInfo,
+  SessionStatus,
+  VendorId,
+} from '@ccc/shared/protocol'
 
 const WS = '/home/proj-a'
 
@@ -15,6 +20,7 @@ function mountList(
     status?: Record<string, SessionStatus>
     currentWorkspace?: string | null
     activeSession?: string | null
+    vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
   } = {},
 ) {
   return mount(SessionList, {
@@ -25,8 +31,21 @@ function mountList(
       activeWorkspace: WS,
       activeSession: opts.activeSession ?? null,
       activeTitle: '',
+      vendorSessionCaps: opts.vendorSessionCaps,
     },
   })
+}
+
+/** A full SessionCapabilities ledger with the listed overrides applied. */
+function caps(overrides: Partial<SessionCapabilities>): SessionCapabilities {
+  return {
+    list: 'full',
+    read: 'full',
+    resume: 'full',
+    rename: 'full',
+    delete: 'full',
+    ...overrides,
+  }
 }
 
 afterEach(() => {
@@ -123,5 +142,52 @@ describe('SessionList.vue — 当前工作区会话列表', () => {
     confirm.mockReturnValue(true)
     await delBtn().trigger('click')
     expect(w.emitted('delete-session')).toEqual([[WS, 's1']])
+  })
+
+  describe('按能力态降级行操作(ADR-0011,零 if-vendor)', () => {
+    it('无 vendorSessionCaps(settings 未到)→ 乐观启用:两枚按钮均渲染且可用', () => {
+      const w = mountList({ sessions: [session('s1', 'Alpha', { vendor: 'claude' })] })
+      const rename = w.find('[data-testid="session-row-rename"]')
+      const del = w.find('[data-testid="session-row-delete"]')
+      expect(rename.exists()).toBe(true)
+      expect(del.exists()).toBe(true)
+      expect((rename.element as HTMLButtonElement).disabled).toBe(false)
+      expect((del.element as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it("rename='none'(Codex)→ 重命名按钮隐藏;delete='none' → 删除按钮隐藏", () => {
+      const w = mountList({
+        sessions: [session('s1', 'Alpha', { vendor: 'codex' })],
+        vendorSessionCaps: { codex: caps({ rename: 'none', delete: 'none' }) },
+      })
+      expect(w.find('[data-testid="session-row-rename"]').exists()).toBe(false)
+      expect(w.find('[data-testid="session-row-delete"]').exists()).toBe(false)
+    })
+
+    it('temporarily-unavailable(OpenCode)→ 按钮渲染但禁用,tooltip 为暂不可用', () => {
+      const w = mountList({
+        sessions: [session('s1', 'Alpha', { vendor: 'opencode' })],
+        vendorSessionCaps: {
+          opencode: caps({ rename: 'temporarily-unavailable', delete: 'temporarily-unavailable' }),
+        },
+      })
+      const del = w.find('[data-testid="session-row-delete"]')
+      expect(del.exists()).toBe(true)
+      expect((del.element as HTMLButtonElement).disabled).toBe(true)
+      // 走的是 unavailable 文案,而非普通 delete 文案。
+      expect(del.attributes('title')).toBe('Temporarily unavailable for this agent')
+    })
+
+    it('full(Claude)→ 启用,点击照常 emit', async () => {
+      vi.spyOn(window, 'prompt').mockReturnValue('New')
+      const w = mountList({
+        sessions: [session('s1', 'Alpha', { vendor: 'claude' })],
+        vendorSessionCaps: { claude: caps({}) },
+      })
+      const rename = w.find('[data-testid="session-row-rename"]')
+      expect((rename.element as HTMLButtonElement).disabled).toBe(false)
+      await rename.trigger('click')
+      expect(w.emitted('rename-session')).toEqual([[WS, 's1', 'New']])
+    })
   })
 })

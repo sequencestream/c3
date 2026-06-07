@@ -474,6 +474,9 @@
       },
       "delete": {
         "tooltip": "削除"
+      },
+      "unavailable": {
+        "tooltip": "この agent では一時的に利用できません"
       }
     },
     "titleBar": {

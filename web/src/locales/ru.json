@@ -474,6 +474,9 @@
       },
       "delete": {
         "tooltip": "Удалить"
+      },
+      "unavailable": {
+        "tooltip": "Временно недоступно для этого агента"
       }
     },
     "titleBar": {

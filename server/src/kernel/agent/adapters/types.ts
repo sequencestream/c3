@@ -20,7 +20,13 @@
  * and everything divergent is a probed {@link AdapterCapabilities} flag.
  */
 
-import type { AdapterCapability, CanonicalMessage, VendorId } from '@ccc/shared/protocol'
+import type {
+  AdapterCapability,
+  CanonicalMessage,
+  SessionCapability,
+  SessionCapabilities,
+  VendorId,
+} from '@ccc/shared/protocol'
 
 /**
  * The canonical message model now lives on the WIRE (`shared/protocol.ts`) so it
@@ -37,6 +43,9 @@ export type {
   CanonicalBlock,
   CanonicalMessage,
   AdapterCapability,
+  CapabilityState,
+  SessionCapability,
+  SessionCapabilities,
 } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
@@ -87,20 +96,32 @@ export type PermissionPolicy = (
 ) => PolicyVerdict
 
 // ---------------------------------------------------------------------------
-// Adapter capabilities — required (no flag) vs optional/degradable (flagged)
+// Adapter capabilities — contract methods + boolean flags + structured states
 // ---------------------------------------------------------------------------
 
 /**
- * The probed capability ledger. **Required** capabilities are NOT flags here —
- * they are the interface contract every adapter satisfies unconditionally:
- * `AgentDriver.start`, `AgentRun.messages`/`abort`/`sessionId`,
- * `SessionStore.list`/`read`, and `ApprovalBridge.onRequest` always exist.
+ * The probed capability ledger. The unconditional **interface contract** — the
+ * methods every adapter exposes regardless of ability — is `AgentDriver.start`,
+ * `AgentRun.messages`/`abort`/`sessionId`, `SessionStore.list`/`read`, and
+ * `ApprovalBridge.onRequest`. Method *presence* is the contract; what each method
+ * can actually deliver is the ledger's job: the six booleans gate the optional
+ * live-run controls, and {@link sessions} carries the structured state of the
+ * session-lifecycle operations (so `SessionStore.list`/`read` always *exist* but
+ * may honestly report `none` — Codex's list/read return empty, advertised as such).
  *
- * Every field below is an **optional, degradable** capability: the upper layer
- * probes the flag, calls the matching optional method when true, and degrades
- * gracefully when false. A `false` flag means the corresponding optional method
- * on {@link AgentRun} (or behavior) is absent — calling it is a programming
- * error the probe is there to prevent.
+ * The six boolean fields below are **optional, degradable** live-run controls:
+ * the upper layer probes the flag, calls the matching optional method when true,
+ * and degrades gracefully when false. A `false` flag means the corresponding
+ * optional method on {@link AgentRun} (or behavior) is absent — calling it is a
+ * programming error the probe is there to prevent.
+ *
+ * The {@link sessions} sub-ledger is the structured-state half (ADR-0011
+ * amendment): the session-lifecycle operations (list/read/resume/rename/delete)
+ * are NOT honestly boolean — a vendor can do one `full`, `partial`, `none`, or
+ * `temporarily-unavailable`. A boolean would erase the `none` vs
+ * `temporarily-unavailable` distinction the UI must render, so those operations
+ * carry a {@link import('@ccc/shared/protocol').CapabilityState} instead of being
+ * the unflagged "required contract" they once were.
  */
 export interface AdapterCapabilities {
   /** Mid-turn interrupt without killing the run (Claude `q.interrupt`). Codex: only whole-turn abort ⇒ false. */
@@ -121,18 +142,40 @@ export interface AdapterCapabilities {
    * and degrades to launch-time policy (Codex `sandboxMode` + `approvalPolicy`).
    */
   readonly perToolApproval: boolean
+  /**
+   * Structured session-lifecycle capability states (ADR-0011 amendment). The
+   * vendor's honest self-report for list/read/resume/rename/delete — each a
+   * 4-state {@link import('@ccc/shared/protocol').CapabilityState}, the upper
+   * layer degrades on (UI gates rename/delete buttons; the run loop knows a
+   * `none`-read vendor has no back-readable history). Travels to the web on the
+   * `VendorHostStatus.sessions` field, so the console renders by state, not vendor.
+   */
+  readonly sessions: SessionCapabilities
 }
 
 /**
- * Compile-time pin: the boolean ledger's keys and the wire `AdapterCapability`
- * enum must stay identical, in both directions. If either side adds/removes a
+ * Compile-time pin: the **boolean** ledger keys and the wire `AdapterCapability`
+ * enum must stay identical, in both directions. `sessions` is excluded — it is the
+ * structured sub-ledger (pinned separately, by `SessionCapabilities`'s own keys),
+ * not a wire `AdapterCapability` name. If either side adds/removes a boolean
  * capability without the other, one of these assignments stops type-checking —
  * the drift is caught at build, not on the wire.
  */
-type _CapKeysSubsetOfEnum = keyof AdapterCapabilities extends AdapterCapability ? true : never
-type _EnumSubsetOfCapKeys = AdapterCapability extends keyof AdapterCapabilities ? true : never
+type _BooleanCapKeys = Exclude<keyof AdapterCapabilities, 'sessions'>
+type _CapKeysSubsetOfEnum = _BooleanCapKeys extends AdapterCapability ? true : never
+type _EnumSubsetOfCapKeys = AdapterCapability extends _BooleanCapKeys ? true : never
 const _capKeysMatchEnum: [_CapKeysSubsetOfEnum, _EnumSubsetOfCapKeys] = [true, true]
 void _capKeysMatchEnum
+
+/**
+ * The same drift-pin for the structured session sub-ledger: `SessionCapabilities`
+ * interface keys ↔ the wire `SessionCapability` enum, both directions. Adding a
+ * session operation to one side without the other stops type-checking here.
+ */
+type _SessKeysSubsetOfEnum = keyof SessionCapabilities extends SessionCapability ? true : never
+type _SessEnumSubsetOfKeys = SessionCapability extends keyof SessionCapabilities ? true : never
+const _sessKeysMatchEnum: [_SessKeysSubsetOfEnum, _SessEnumSubsetOfKeys] = [true, true]
+void _sessKeysMatchEnum
 
 // ---------------------------------------------------------------------------
 // The three interfaces

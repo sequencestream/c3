@@ -1,18 +1,19 @@
 /**
  * Vendor-agnostic interface contract (ADR-0011). {@link assertNeutralAdapterShape}
  * is the gate EVERY vendor adapter must pass: it pins the required three-piece
- * surface (always present, no capability flag) and the optional/degradable
- * capability ledger (exactly six boolean flags), keeping the "required vs
- * optional" line mechanically enforced. It is exercised here against the Claude
- * reference adapter and re-used by each future vendor's test.
+ * surface (always present, no capability flag), the six boolean live-run flags,
+ * and the structured `sessions` sub-ledger (ADR-0011 amendment: a 4-state
+ * {@link CapabilityState} per session-lifecycle op), keeping the contract
+ * mechanically enforced. It is exercised here against the Claude reference adapter
+ * and re-used by each future vendor's test.
  */
 import { describe, it, expect } from 'vitest'
-import type { VendorAdapter } from './types.js'
+import type { CapabilityState, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
 
-/** The six optional/degradable capability flags — the complete, closed set. */
-const OPTIONAL_CAPABILITY_KEYS = [
+/** The six boolean live-run capability flags — the complete, closed set. */
+const BOOLEAN_CAPABILITY_KEYS = [
   'interrupt',
   'setActionMode',
   'streamingPush',
@@ -21,20 +22,40 @@ const OPTIONAL_CAPABILITY_KEYS = [
   'perToolApproval',
 ] as const
 
+/** The five structured session-lifecycle operations — the complete, closed set. */
+const SESSION_CAPABILITY_KEYS = ['list', 'read', 'resume', 'rename', 'delete'] as const
+
+/** The four legal capability states — every `sessions` value must be one of these. */
+const CAPABILITY_STATES: readonly CapabilityState[] = [
+  'none',
+  'partial',
+  'full',
+  'temporarily-unavailable',
+]
+
 /** Required surface that exists unconditionally — NOT gated by any flag. */
 export function assertNeutralAdapterShape(adapter: VendorAdapter): void {
   // Vendor identity + capability ledger are present.
   expect(typeof adapter.vendor).toBe('string')
   expect(adapter.capabilities).toBeTruthy()
 
-  // The capability ledger carries EXACTLY the six optional flags, all boolean —
-  // required capabilities (start / messages / approval / read) have NO flag here.
-  expect(Object.keys(adapter.capabilities).sort()).toEqual([...OPTIONAL_CAPABILITY_KEYS].sort())
-  for (const key of OPTIONAL_CAPABILITY_KEYS) {
+  // The ledger carries EXACTLY the six boolean flags plus the `sessions` sub-ledger.
+  expect(Object.keys(adapter.capabilities).sort()).toEqual(
+    [...BOOLEAN_CAPABILITY_KEYS, 'sessions'].sort(),
+  )
+  for (const key of BOOLEAN_CAPABILITY_KEYS) {
     expect(typeof adapter.capabilities[key]).toBe('boolean')
   }
-  // No required capability leaked in as a flag.
+  // The structured sub-ledger: exactly the five ops, each a legal 4-state value.
+  expect(Object.keys(adapter.capabilities.sessions).sort()).toEqual(
+    [...SESSION_CAPABILITY_KEYS].sort(),
+  )
+  for (const key of SESSION_CAPABILITY_KEYS) {
+    expect(CAPABILITY_STATES).toContain(adapter.capabilities.sessions[key])
+  }
+  // Required contract methods are NOT flags (they exist unconditionally).
   expect('start' in adapter.capabilities).toBe(false)
+  // `read` is now a structured state under `sessions`, never a top-level flag.
   expect('read' in adapter.capabilities).toBe(false)
 
   // Required AgentDriver surface.
@@ -62,20 +83,36 @@ describe('neutral adapter contract', () => {
     assertNeutralAdapterShape(createCodexAdapter())
   })
 
-  it('distinguishes required (unflagged) from optional (flagged) capabilities', () => {
+  it('distinguishes the boolean flags from the structured sessions sub-ledger', () => {
     const { capabilities } = createClaudeAdapter()
-    // Exactly six optional flags — the closed degradable set.
-    expect(Object.keys(capabilities)).toHaveLength(OPTIONAL_CAPABILITY_KEYS.length)
+    // Six boolean flags + one `sessions` sub-ledger = seven keys, the closed set.
+    expect(Object.keys(capabilities)).toHaveLength(BOOLEAN_CAPABILITY_KEYS.length + 1)
     // perToolApproval is the D2 addition beyond the original five — present & boolean.
     expect('perToolApproval' in capabilities).toBe(true)
+    // The reference adapter reports every session-lifecycle op as `full`.
+    for (const key of SESSION_CAPABILITY_KEYS) {
+      expect(capabilities.sessions[key]).toBe('full')
+    }
   })
 
   it('Codex capability ledger is all-false, faithful to Phase 0 (008 NO-GO)', () => {
     const { capabilities } = createCodexAdapter()
-    // Every flag false — Codex is the read-only advisor seat; the load-bearing
-    // one is perToolApproval: false (no in-the-loop approval point exists).
-    for (const key of OPTIONAL_CAPABILITY_KEYS) {
+    // Every boolean flag false — Codex is the read-only advisor seat; the
+    // load-bearing one is perToolApproval: false (no in-the-loop approval point).
+    for (const key of BOOLEAN_CAPABILITY_KEYS) {
       expect(capabilities[key]).toBe(false)
     }
+  })
+
+  it('Codex reports list/read = none, yet resume = full (a boolean could not say this)', () => {
+    const { capabilities } = createCodexAdapter()
+    // The SDK has no listing/reading API — honest `none`, not a faked empty.
+    expect(capabilities.sessions.list).toBe('none')
+    expect(capabilities.sessions.read).toBe('none')
+    // …but a known thread still resumes end-to-end (`resumeThread`). The exact
+    // pair structured states exist to express; a single boolean would erase it.
+    expect(capabilities.sessions.resume).toBe('full')
+    expect(capabilities.sessions.rename).toBe('none')
+    expect(capabilities.sessions.delete).toBe('none')
   })
 })

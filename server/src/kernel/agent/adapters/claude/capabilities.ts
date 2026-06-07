@@ -7,6 +7,11 @@
  * (interrupt / setActionMode / pushInput), and exposes a method only when it is
  * actually wired (so `typeof run.method === 'function'` is the second, build-time
  * probe layered under this vendor flag — see ADR-0011 §Probe protocol).
+ *
+ * The structured {@link AdapterCapabilities.sessions} sub-ledger (ADR-0011
+ * amendment) is likewise all `full`: every session-lifecycle op is faithfully
+ * supported — JSONL back-read off disk, native rename/delete via `sessions.ts`,
+ * SDK resume — with no degradation caveat. Claude is the reference for every state.
  */
 import type { AdapterCapabilities } from '../types.js'
 
@@ -17,4 +22,11 @@ export const claudeCapabilities: AdapterCapabilities = {
   inProcessMcp: true,
   forkSession: true,
   perToolApproval: true,
+  sessions: {
+    list: 'full',
+    read: 'full',
+    resume: 'full',
+    rename: 'full',
+    delete: 'full',
+  },
 }

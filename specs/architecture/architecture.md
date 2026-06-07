@@ -91,8 +91,17 @@ c3 is a single local process with two halves connected by one WebSocket:
   `SessionStore` history behind one face) plus an `AdapterCapabilities` ledger lets c3 drive Claude,
   Codex, or OpenCode through one shape. Required capabilities have no flag; six optional/degradable
   ones (`interrupt`/`setActionMode`/`streamingPush`/`inProcessMcp`/`forkSession`/`perToolApproval`) are
-  probed before use. Permission is a neutral `(toolName, input, ctx) → allow|ask|deny` policy over an
-  orthogonal `ActionMode{plan,build} × ToolGate{always-ask|on-sensitive|trusted-prefix|never-ask}` grid
+  probed before use. **Amendment (2026-06-07):** the session-lifecycle operations
+  (`list`/`read`/`resume`/`rename`/`delete`) are graded honestly as a structured
+  `SessionCapabilities` sub-ledger on `AdapterCapabilities` — each op a
+  `'none' | 'partial' | 'full' | 'temporarily-unavailable'` `CapabilityState` — because a boolean
+  could not tell `none` (structural NO — Codex's SDK has no listing/reading API) apart from
+  `temporarily-unavailable` (mechanism exists, not currently reachable — OpenCode's REST write-back
+  for `rename`/`delete`); the wire carries the per-vendor matrix on
+  `settings.sessionCapabilities: Record<VendorId, SessionCapabilities>` and the console renders
+  session-row actions by capability _state_, with **zero `if (vendor === …)`**. Permission is a
+  neutral `(toolName, input, ctx) → allow|ask|deny` policy over an orthogonal
+  `ActionMode{plan,build} × ToolGate{always-ask|on-sensitive|trusted-prefix|never-ask}` grid
   (Claude's five-way `PermissionMode` no longer maps 1:1). **No vendor SDK type crosses into
   `adapters/types.ts` or `shared/protocol.ts`** — SDK values enter an adapter as `unknown` and are
   narrowed there (ADR-0009). Today the Claude reference adapter delegates to the existing `runClaude` /

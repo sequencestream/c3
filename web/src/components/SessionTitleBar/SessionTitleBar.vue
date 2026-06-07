@@ -9,7 +9,7 @@
  */
 import { computed } from 'vue'
 import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
-import type { PermissionMode, SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
+import type { ModeToken, SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 
@@ -18,8 +18,8 @@ const { t } = useTypedI18n()
 const props = withDefaults(
   defineProps<{
     activeTitle: string
-    mode?: PermissionMode
-    modeOptions?: { value: PermissionMode; label: string }[]
+    mode?: ModeToken
+    modeOptions?: { value: ModeToken; label: string }[]
     showMode?: boolean
     /** The session's resolved agent vendor; absent ⇒ no dot (comm sessions). */
     vendor?: VendorId | null
@@ -55,7 +55,7 @@ const agentOptions = computed(() => {
 })
 
 const emit = defineEmits<{
-  'set-mode': [mode: PermissionMode]
+  'set-mode': [mode: ModeToken]
   'set-session-agent': [agentId: string]
 }>()
 

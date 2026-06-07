@@ -104,6 +104,17 @@ function skillSupport(): Record<VendorId, SkillSupportState> | undefined {
   return anyProbed ? out : undefined
 }
 
+/**
+ * Each vendor's {@link VendorModeCatalog} (2026-06-07-012) — the ordered native
+ * mode tokens + i18n label codes the console's mode picker renders by `vendor`.
+ * A static mirror of the kernel `MODE_CATALOGS`; the web reads the active session's
+ * vendor catalog to label modes and build the dropdown, the SAME by-`vendor`,
+ * no-`if (vendor === …)` pattern as the capability ledgers above.
+ */
+function vendorModes(): Record<VendorId, VendorModeCatalog> {
+  return MODE_CATALOGS
+}
+
 export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
   conn.send({
     type: 'settings',
@@ -113,6 +124,7 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
     sessionCapabilities: sessionCapabilities(),
     vendorCapabilities: vendorCapabilities(),
     skillSupport: skillSupport(),
+    vendorModes: vendorModes(),
   })
 }
 
@@ -125,6 +137,7 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     sessionCapabilities: sessionCapabilities(),
     vendorCapabilities: vendorCapabilities(),
     skillSupport: skillSupport(),
+    vendorModes: vendorModes(),
   })
 }
 
@@ -134,6 +147,25 @@ export const loadProjectConfigHandler: Handler<'load_project_config'> = (_ctx, c
 }
 
 export const saveProjectConfigHandler: Handler<'save_project_config'> = (_ctx, conn, msg) => {
+  // Validate per-vendor defaultModes against their catalogs (2026-06-07-017).
+  const defaultModes = msg.config.defaultMode
+  if (defaultModes && typeof defaultModes === 'object') {
+    for (const [vendorId, token] of Object.entries(defaultModes)) {
+      const vendor = vendorId as VendorId
+      const cat = MODE_CATALOGS[vendor]
+      if (cat && (typeof token !== 'string' || !cat.modes.some((m) => m.token === token))) {
+        conn.send({
+          type: 'error',
+          error: {
+            code: 'projectConfig.invalidDefaultMode',
+            params: { vendor: vendorId, mode: String(token) },
+          },
+        })
+        return
+      }
+    }
+  }
+
   const config = saveProjectConfig(msg.projectPath, msg.config)
   conn.send({ type: 'project_config', projectPath: msg.projectPath, config })
 }

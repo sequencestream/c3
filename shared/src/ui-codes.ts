@@ -62,6 +62,11 @@ export const UI_ERROR_CODES = {
   'schedule.notFound': { key: 'error.schedule.notFound' },
   'schedule.executionNotFound': { key: 'error.schedule.executionNotFound' },
   'schedule.approvalNotFound': { key: 'error.schedule.approvalNotFound' },
+  // project config
+  'projectConfig.invalidDefaultMode': {
+    key: 'error.projectConfig.invalidDefaultMode',
+    params: ['vendor', 'mode'],
+  },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

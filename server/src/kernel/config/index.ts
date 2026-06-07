@@ -43,12 +43,17 @@ import {
 } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 
-// `defaultMode` is no longer validated against Claude's five values: it is now a
-// vendor-native ModeToken (2026-06-07-012) the launch path resolves against the
-// launching vendor's catalog (an unknown token degrades to that vendor's
-// defaultToken). So normalization only fail-softs to `'default'` on a missing /
-// non-string value — any non-empty string token passes through untouched.
-const DEFAULT_MODE_TOKEN = 'default'
+/**
+ * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
+ * its key is absent from the per-project {@link ProjectConfig.defaultMode} map.
+ * These MUST match each vendor's `defaultToken` in its {@link VendorModeCatalog}
+ * (claude=default, codex=auto, opencode=build).
+ */
+const DEFAULT_MODE_MAP: Record<VendorId, ModeToken> = {
+  claude: 'default',
+  codex: 'auto',
+  opencode: 'build',
+}
 
 /** UI display languages. Only `en`/`zh` ship translations today; the rest are
  * reserved for the i18n rollout (fall back to `en` messages until translated). */
@@ -298,7 +303,8 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
   // access them via the raw record for the one-shot migration.
   const r = raw as unknown as Record<string, unknown>
   const seed: Partial<ProjectConfig> = {}
-  if (r.defaultMode !== undefined) seed.defaultMode = r.defaultMode as ModeToken
+  if (r.defaultMode !== undefined)
+    seed.defaultMode = r.defaultMode as unknown as ProjectConfig['defaultMode']
   if (r.consensus !== undefined) seed.consensus = r.consensus as ProjectConfig['consensus']
   if (r.devSkill !== undefined) seed.devSkill = r.devSkill as string
   if (r.maxRoundsPerStage !== undefined) seed.maxRoundsPerStage = r.maxRoundsPerStage as number
@@ -309,8 +315,9 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
 
 /**
  * Normalize a partial or raw ProjectConfig into its canonical shape.
- * Applies the same thresholds as the old global-level operations:
- * - `defaultMode` defaults to `'default'`.
+ * - `defaultMode` accepts both old (single string) and new (`Record<VendorId, ModeToken>`)
+ *   formats — the old format is converted by distributing the value to each vendor
+ *   where valid, falling back to that vendor's defaultToken otherwise.
  * - `consensus` is strict opt-in (only explicit `true` is truthy).
  * - `devSkill` is trimmed, slash-normalized, and defaults to `''`.
  * - `maxRoundsPerStage` is floored and clamped to ≥ `MIN_ROUNDS_PER_STAGE`.
@@ -320,10 +327,7 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
  */
 export function normalizeProjectConfig(raw: unknown): ProjectConfig {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  const defaultMode: ModeToken =
-    typeof rec.defaultMode === 'string' && rec.defaultMode.length > 0
-      ? rec.defaultMode
-      : DEFAULT_MODE_TOKEN
+  const defaultMode = normalizeDefaultMode(rec.defaultMode)
   const consensus = {
     enabled: (rec.consensus as { enabled?: boolean })?.enabled === true,
     majority: (rec.consensus as { majority?: boolean })?.majority === true,
@@ -342,6 +346,35 @@ export function normalizeProjectConfig(raw: unknown): ProjectConfig {
     maxSpeechChars,
     ...(skillRepos ? { skillRepos } : {}),
   }
+}
+
+/**
+ * Per-vendor default mode normalization (2026-06-07-017).
+ * Handles three input forms:
+ * 1. A string (pre-017 legacy) — seeded as the value for every vendor whose
+ *    catalog accepts it; vendors without this token get their vendor defaultToken.
+ * 2. A `Record<VendorId, ModeToken>` (new format) — each vendor key is checked;
+ *    missing keys or empty strings fall back to DEFAULT_MODE_MAP[vendor].
+ * 3. undefined/null/missing — every vendor gets its DEFAULT_MODE_MAP entry.
+ */
+function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken> {
+  const VENDORS: VendorId[] = ['claude', 'codex', 'opencode']
+
+  // Legacy: single string value → per-vendor distribution.
+  if (typeof raw === 'string' && raw.length > 0) {
+    const result: Partial<Record<VendorId, ModeToken>> = {}
+    for (const v of VENDORS) result[v] = raw as ModeToken
+    return result as Record<VendorId, ModeToken>
+  }
+
+  // New format: Record<VendorId, ModeToken>, or missing/undefined.
+  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  const result: Partial<Record<VendorId, ModeToken>> = {}
+  for (const v of VENDORS) {
+    const token = obj && typeof obj[v] === 'string' ? (obj[v] as string) : undefined
+    result[v] = token && token.length > 0 ? (token as ModeToken) : DEFAULT_MODE_MAP[v]
+  }
+  return result as Record<VendorId, ModeToken>
 }
 
 /**
@@ -442,9 +475,16 @@ export function saveSettings(next: SystemSettings): SystemSettings {
   return settingsCache ?? normalized
 }
 
-/** The mode token new sessions start in for a project (`'default'` when unconfigured). */
-export function getDefaultMode(projectPath: string): ModeToken {
-  return loadProjectConfig(projectPath).defaultMode ?? 'default'
+/**
+ * The mode token new sessions start in for a project. When `vendor` is given, returns
+ * that vendor's entry from the per-vendor map; when omitted, returns the Claude entry
+ * (backward-compat fallback for callers that create sessions before the vendor is known).
+ * Falls back to the vendor's `DEFAULT_MODE_MAP` entry on missing/empty values.
+ */
+export function getDefaultMode(projectPath: string, vendor?: VendorId): ModeToken {
+  const map = loadProjectConfig(projectPath).defaultMode ?? DEFAULT_MODE_MAP
+  const v = vendor ?? 'claude'
+  return map[v] ?? DEFAULT_MODE_MAP[v]
 }
 
 // ---- Session → agent assignment ----

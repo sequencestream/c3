@@ -45,7 +45,8 @@ import type {
   AutomationStatus,
   CreateScheduleInput,
   Discussion,
-  PermissionMode,
+  ModeToken,
+  VendorModeCatalog,
   Intent,
   ProjectConfig as ProjectConfigType,
   Schedule,
@@ -74,7 +75,7 @@ import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import NewSessionModal from './pages/sessions/components/NewSessionModal/NewSessionModal.vue'
 import { applyLocale, setStoredLocale, i18n, useTypedI18n, type Locale } from './i18n'
 import { translateUiError } from './i18n/errors'
-import { useModeLabel } from './composables/useModeLabel'
+import { useModeLabel, CLAUDE_MODE_FALLBACK } from './composables/useModeLabel'
 
 const { t } = useTypedI18n()
 const modeLabel = useModeLabel()
@@ -84,9 +85,8 @@ const status = ref<'connecting' | 'open' | 'closed'>('connecting')
 // Live run status per session (sidebar badges + input lock for the viewed one).
 // Source of truth: server `ready.statuses` + `session_status` broadcasts.
 const sessionStatus = ref<Record<string, SessionStatus>>({})
-const mode = ref<PermissionMode>('default')
-const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
-const modeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
+// The viewed session's permission mode, a vendor-native ModeToken (2026-06-07-012).
+const mode = ref<ModeToken>('default')
 let nextId = 1
 
 // "Current task list" of the viewed session. Since 2026-06-07-009 the server
@@ -480,6 +480,11 @@ const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
 // present (no gating, old-session safe). Seeded from `settings.vendorCapabilities`.
 const vendorCapabilities = ref<Record<VendorId, Record<AdapterCapability, boolean>> | null>(null)
 
+// Each vendor's mode catalog (2026-06-07-012), seeded from `settings.vendorModes`.
+// Drives the mode picker by the active session's vendor; absent (older server) →
+// the built-in Claude fallback list keeps today's five-mode UX.
+const vendorModes = ref<Record<VendorId, VendorModeCatalog> | null>(null)
+
 // The current pending skill-load approval request, or null when idle. The
 // SkillApprovalModal renders against this; the user's decision is sent back as
 // `skill_load_approval_resolve` and clears it.
@@ -517,6 +522,17 @@ const taskStoreAvailable = computed(() => {
 // for the title-bar switcher. Null when there's no switcher (pending/comm session,
 // or a real session with an available agent and no same-vendor alternative).
 const activeAgentSwitch = ref<SessionAgentSwitch | null>(null)
+
+// The mode-picker options for the viewed session: the active vendor's catalog when
+// known, else the built-in Claude fallback. `{ value: token, label }` for BaseDropdown.
+const modeOptions = computed(() => {
+  const vendor = activeVendor.value
+  const catalog = vendor ? vendorModes.value?.[vendor] : undefined
+  const list = catalog
+    ? catalog.modes.map((m) => ({ token: m.token, labelCode: m.labelCode }))
+    : CLAUDE_MODE_FALLBACK
+  return list.map((m) => ({ value: m.token, label: modeLabel(m.labelCode) }))
+})
 
 // The time zone schedule cron fields are interpreted in for the live preview /
 // upcoming-runs list, so the client computes the same instants the server does.
@@ -822,6 +838,7 @@ function handleMessage(msg: ServerToClient) {
       bindingStats.value = msg.bindingStats
       sessionCapabilities.value = msg.sessionCapabilities
       vendorCapabilities.value = msg.vendorCapabilities ?? null
+      vendorModes.value = msg.vendorModes ?? null
       skillSupport.value = msg.skillSupport ?? null
       // Server is the single source of truth for UI language. Reconcile exactly
       // once and only when it disagrees with the live locale, to avoid a
@@ -1672,7 +1689,7 @@ function refreshStatus() {
   })
 }
 
-function setMode(next: PermissionMode) {
+function setMode(next: ModeToken) {
   if (!client || next === mode.value || !hasActiveSession.value) return
   // Optimistic; server echoes a `mode_changed` that confirms it.
   mode.value = next
@@ -1902,6 +1919,7 @@ function dismissSkillApproval() {
     :open="projectConfigOpen"
     :project-config="currentProjectConfig"
     :current-workspace="currentWorkspace"
+    :vendor-modes="vendorModes"
     @close="projectConfigOpen = false"
     @save="saveProjectConfig"
   />

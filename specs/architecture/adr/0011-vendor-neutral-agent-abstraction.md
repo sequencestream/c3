@@ -15,6 +15,9 @@
   (`adapters/codex/task-store.ts`, `adapters/opencode/task-store.ts`), establishing the **observe-only**
   archetype (agent-driven plan, `create`/`update` reject; `onUpdate` push present). See the
   _Codex + OpenCode TaskStore_ paragraph under "Decision".
+- **Amended:** 2026-06-07 (012) — `ActionMode`/`ToolGate` (the neutral permission grid) promoted from kernel
+  archetype (agent-driven plan, `create`/`update` reject; `onUpdate` push present). See the
+  _Codex + OpenCode TaskStore_ paragraph under "Decision".
 
 ## Context
 
@@ -241,6 +244,27 @@ live gateway through `ApprovalBridge`) are later phases.
 > `onUpdate` fires only for **new or changed** tasks (subject/status diff), not the whole list. Like
 > `ClaudeTaskStore`, both are **session-scoped** (bound to a session/event stream) and built per session
 > rather than wired onto the stateless `createCodexAdapter()` / `createOpencodeAdapter()`.
+
+> **Vendor mode catalog — token ⇄ grid translation (2026-06-07-012).** The neutral permission grid
+> (`ActionMode × ToolGate`) had been the kernel's internal permission truth since Phase 1, but the wire
+> representation of session `mode` was still Claude's five-value `PermissionMode`. The generalization
+> replaces it with a **per-vendor `VendorModeCatalog`** — the single SoT for one vendor's native mode
+> tokens. Each `VendorModeDescriptor` pairs a vendor's native `token` (e.g. Claude `plan`, Codex
+> `read-only`, OpenCode `build-allow`) with its `labelCode` (the web i18n leaf key) and the neutral grid
+> cell it maps to. Generic `tokenToGrid`/`gridToToken` helpers (`adapters/mode-catalog.ts`) turn that
+> declaration into the bidirectional translation every adapter needs.
+>
+> Three design rules hold. (1) **Catalog IS the interface, no hand-written switches.** Claude's former
+> `permission-map.ts` is refactored onto `tokenToGrid`/`gridToToken` driven by `claudeModeCatalog`. Codex
+> and OpenCode declare their own catalogs in `adapters/<vendor>/modes.ts`, and the single `MODE_CATALOGS`
+> record in `adapters/index.ts` (`Record<VendorId, VendorModeCatalog>`) provides the compile-time
+> exhaustiveness pin — adding a vendor without registering its catalog stops type-checking. (2) **Lossy
+> reverse but safe.** The grid → token direction picks closest declared token (exact cell → same
+> actionMode → defaultToken) and never crosses the plan/build action boundary. An unknown token on the
+> forward path degrades to the vendor's `defaultToken` grid — so a stored token from an older/other vendor
+> never throws. (3) **Wire always carries the vendor's catalog.** The `settings.vendorModes` field ships
+> the entire record to the web, where the console reads the active session's vendor catalog to label the
+> mode and build the dropdown — the same by-vendor, no-`if` pattern as the capability ledgers.
 
 **Probe protocol.** A capability flag reports the **vendor** ability. A caller reaching for an optional
 control checks the flag **and** `typeof run.method === 'function'` (the build-wiring probe), then

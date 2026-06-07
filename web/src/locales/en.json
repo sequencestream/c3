@@ -51,6 +51,18 @@
       },
       "bypassPermissions": {
         "label": "Bypass permissions"
+      },
+      "readOnly": {
+        "label": "Read-only"
+      },
+      "fullAccess": {
+        "label": "Full access"
+      },
+      "build": {
+        "label": "Build"
+      },
+      "buildAllow": {
+        "label": "Build (auto-allow)"
       }
     },
     "settings": {
@@ -878,6 +890,9 @@
       "notFound": "Schedule not found.",
       "executionNotFound": "Execution record not found.",
       "approvalNotFound": "Approval entry not found or already handled."
+    },
+    "projectConfig": {
+      "invalidDefaultMode": "Invalid default mode \"{mode}\" for vendor \"{vendor}\"."
     }
   },
   "statusIndicator": {
@@ -1049,7 +1064,18 @@
       "title": {
         "label": "Default mode"
       },
-      "hint": "The permission mode new sessions start in for this project. You can still switch a session's mode at any time from its header."
+      "hint": "Set the default permission mode for each vendor. New sessions use the launching vendor's mode; you can still switch a session's mode at any time from its header.",
+      "section": {
+        "claude": {
+          "label": "Claude"
+        },
+        "codex": {
+          "label": "Codex"
+        },
+        "opencode": {
+          "label": "OpenCode"
+        }
+      }
     },
     "devSkill": {
       "title": {

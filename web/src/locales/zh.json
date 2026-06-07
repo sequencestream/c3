@@ -51,6 +51,18 @@
       },
       "bypassPermissions": {
         "label": "跳过权限"
+      },
+      "readOnly": {
+        "label": "只读"
+      },
+      "fullAccess": {
+        "label": "完全访问"
+      },
+      "build": {
+        "label": "构建"
+      },
+      "buildAllow": {
+        "label": "构建（自动允许）"
       }
     },
     "settings": {
@@ -878,6 +890,9 @@
       "notFound": "定时任务不存在。",
       "executionNotFound": "执行记录不存在。",
       "approvalNotFound": "审批条目不存在或已被处理。"
+    },
+    "projectConfig": {
+      "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"
     }
   },
   "statusIndicator": {
@@ -1049,7 +1064,18 @@
       "title": {
         "label": "默认模式"
       },
-      "hint": "本项目新建会话默认使用的权限模式。你随时可以在会话头部切换模式。"
+      "hint": "为每个 vendor 设置默认权限模式。新会话会使用启动该会话的 vendor 的模式；你随时可以从会话头部切换它的模式。",
+      "section": {
+        "claude": {
+          "label": "Claude"
+        },
+        "codex": {
+          "label": "Codex"
+        },
+        "opencode": {
+          "label": "OpenCode"
+        }
+      }
     },
     "devSkill": {
       "title": {

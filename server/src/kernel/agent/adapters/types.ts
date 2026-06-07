@@ -21,6 +21,8 @@
  */
 
 import type {
+  ActionMode,
+  ToolGate,
   AdapterCapability,
   CanonicalMessage,
   SessionCapability,

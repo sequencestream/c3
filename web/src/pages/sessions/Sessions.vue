@@ -19,8 +19,8 @@ import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
+  ModeToken,
   OpencodeServerStatus,
-  PermissionMode,
   SessionAgentSwitch,
   SessionCapabilities,
   SessionInfo,
@@ -47,8 +47,8 @@ defineProps<{
   opencodeStatus?: OpencodeServerStatus
   // right: chat column
   hasActiveSession: boolean
-  mode: PermissionMode
-  modeOptions: { value: PermissionMode; label: string }[]
+  mode: ModeToken
+  modeOptions: { value: ModeToken; label: string }[]
   messages: ChatMsg[]
   actionablePermissionId: string | null
   taskModel: TaskListModel
@@ -76,7 +76,7 @@ const emit = defineEmits<{
   'resume-session': [path: string, sessionId: string, vendor: VendorId]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
-  'set-mode': [mode: PermissionMode]
+  'set-mode': [mode: ModeToken]
   'set-session-agent': [agentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
@@ -129,7 +129,7 @@ defineExpose({
       :agent-switch="activeAgentSwitch"
       :mode="mode"
       :mode-options="modeOptions"
-      @set-mode="(m: PermissionMode) => emit('set-mode', m)"
+      @set-mode="(m: ModeToken) => emit('set-mode', m)"
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
     />
     <!--

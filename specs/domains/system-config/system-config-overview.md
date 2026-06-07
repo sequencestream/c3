@@ -20,10 +20,12 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
 - Persists to `~/.c3/settings.json` — stored as `SystemSettings.projectConfigs` (a
   `Record<projectPath, ProjectConfig>`), written atomically alongside the main settings.
 - Separate from the session-registry's `state.json` (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
-- Migration: on first read after upgrade, legacy global `defaultMode`/`consensus`/`devSkill`/
-  `maxRoundsPerStage`/`maxSpeechChars` are captured and seeded into the project config
-  for each workspace's first `loadProjectConfig` call; subsequent reads ignore the legacy
-  fields (the migration is one-shot and idempotent).
+- **Migration (2026-06-07-017):** `defaultMode` is now a `Record<VendorId, ModeToken>` instead of a
+  single `ModeToken`. The old single-string format is detected by `normalizeProjectConfig` and
+  automatically distributed to each vendor key (the value is used as-is for every vendor; each
+  vendor's catalog validation happens at the per-vendor save handler). The read-layer one-shot
+  migration of legacy global `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars`
+  into per-project config is unchanged.
 
 ## Dependency direction
 

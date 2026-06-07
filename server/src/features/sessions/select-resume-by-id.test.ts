@@ -36,7 +36,7 @@ vi.mock('../../sessions.js', () => ({
   renameWorkspaceSession: vi.fn(),
 }))
 vi.mock('../../kernel/config/index.js', () => ({
-  getDefaultMode: vi.fn((_projectPath?: string) => 'default'),
+  getDefaultMode: vi.fn((_path?: string, _vendor?: string) => 'default'),
   getSessionAgentId: vi.fn(() => null),
 }))
 vi.mock('../../kernel/agent-config/index.js', () => ({

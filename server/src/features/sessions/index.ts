@@ -112,7 +112,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     vendor: resolvedAgent.vendor,
     agentId: intentAgentId ?? resolvedAgent.id,
   })
-  const defaultMode = getDefaultMode(abs)
+  const defaultMode = getDefaultMode(abs, resolvedAgent.vendor)
   ensureRuntime(pendingId, abs, defaultMode, [])
   conn.viewing = pendingId
   addViewer(pendingId, conn.deliver)

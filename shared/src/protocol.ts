@@ -355,13 +355,13 @@ export type SkillApprovalKind = 'gitignore'
  */
 export interface ProjectConfig {
   /**
-   * Permission mode new sessions start in for this project, as a vendor-native
-   * {@link ModeToken} (2026-06-07-012; was the Claude-only `PermissionMode`).
-   * Optional; `'default'` when unset. Resolved at launch against the launching
-   * agent's vendor catalog — a token absent from that vendor falls back to the
-   * vendor's `defaultToken`, so the one project knob still drives every vendor.
+   * Per-vendor default permission mode map (2026-06-07-017).
+   * Each vendor gets its own {@link ModeToken}, validated against that vendor's
+   * {@link VendorModeCatalog} at save time. A vendor absent from the map falls
+   * back to that vendor's `defaultToken` at launch. Migrated from the legacy
+   * single `ModeToken` (pre-017) on first read.
    */
-  defaultMode?: ModeToken
+  defaultMode?: Record<VendorId, ModeToken>
   /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
   consensus?: ConsensusConfig
   /** Slash command (leading `/`) prefixed when launching dev for this project. Optional; empty ⇒ no prefix. */

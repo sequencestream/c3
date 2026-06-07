@@ -5,15 +5,22 @@
  * 编辑用本地草稿，打开时从 App 注入的服务端配置深拷贝而来，保存时整体上抛。
  * 沿用 SettingsPanel 的草稿编辑模式。
  */
-import { ref, watch } from 'vue'
-import type { PermissionMode, ProjectConfig, SkillRepoConfig } from '@ccc/shared/protocol'
+import { ref, computed, watch } from 'vue'
+import type {
+  ProjectConfig,
+  SkillRepoConfig,
+  VendorId,
+  VendorModeCatalog,
+  ModeToken,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 
 const { t } = useTypedI18n()
 const modeLabel = useModeLabel()
 
-const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
+// Render order for per-vendor sections in the form.
+const VENDOR_ORDER: VendorId[] = ['claude', 'codex', 'opencode']
 
 // Per-stage discussion round cap: floor enforced both here and server-side.
 const MIN_ROUNDS_PER_STAGE = 8
@@ -27,6 +34,7 @@ const props = defineProps<{
   open: boolean
   projectConfig: ProjectConfig | null
   currentWorkspace: string | null
+  vendorModes: Record<VendorId, VendorModeCatalog> | null
 }>()
 
 const emit = defineEmits<{
@@ -34,9 +42,45 @@ const emit = defineEmits<{
   save: [config: ProjectConfig]
 }>()
 
+/**
+ * Build a fresh per-vendor default-mode map the form can edit.
+ * Uses the server's catalog `defaultToken` per vendor, falling back to
+ * hardcoded defaults when `vendorModes` is unavailable.
+ */
+function freshDefaultMode(
+  vendorModes: Record<VendorId, VendorModeCatalog> | null,
+): Record<VendorId, ModeToken> {
+  const out: Partial<Record<VendorId, ModeToken>> = {}
+  for (const v of VENDOR_ORDER) {
+    out[v] = (vendorModes?.[v]?.defaultToken ??
+      { claude: 'default', codex: 'auto', opencode: 'build' }[v]) as ModeToken
+  }
+  return out as Record<VendorId, ModeToken>
+}
+
+/**
+/** Section heading for a vendor using the configured i18n label. */
+function vendorSectionLabel(v: VendorId): string {
+  return t(`projectConfig.defaultMode.section.${v}.label` as const)
+}
+
+/**
+ * Read the per-vendor default-mode map from server config, handling both
+ * the new `Record<VendorId, ModeToken>` and legacy single-string formats.
+ */
+function loadDefaultMode(
+  src: Record<VendorId, ModeToken> | string | undefined,
+  vendorModes: Record<VendorId, VendorModeCatalog> | null,
+): Record<VendorId, ModeToken> {
+  if (src && typeof src === 'object') {
+    return { ...freshDefaultMode(vendorModes), ...src } as Record<VendorId, ModeToken>
+  }
+  return freshDefaultMode(vendorModes)
+}
+
 // A local, editable copy of the project config; committed on Save.
 const draft = ref<ProjectConfig>({
-  defaultMode: 'default',
+  defaultMode: freshDefaultMode(null),
   devSkill: '',
   maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
   maxSpeechChars: DEFAULT_SPEECH_CHARS,
@@ -46,11 +90,11 @@ const draft = ref<ProjectConfig>({
 
 // Re-seed the draft whenever the panel opens or fresh server config arrives.
 watch(
-  () => [props.open, props.projectConfig] as const,
-  ([open, config]) => {
+  () => [props.open, props.projectConfig, props.vendorModes] as const,
+  ([open, config, vm]) => {
     if (!open) return
     draft.value = {
-      defaultMode: config?.defaultMode ?? 'default',
+      defaultMode: loadDefaultMode(config?.defaultMode, vm),
       devSkill: config?.devSkill ?? '',
       maxRoundsPerStage: config?.maxRoundsPerStage ?? DEFAULT_ROUNDS_PER_STAGE,
       maxSpeechChars: config?.maxSpeechChars ?? DEFAULT_SPEECH_CHARS,
@@ -62,6 +106,11 @@ watch(
     }
   },
   { immediate: true },
+)
+
+// Always-non-null defaultMode ref for the template (ProjectConfig.defaultMode is optional).
+const draftDefaultMode = computed(
+  () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto', opencode: 'build' },
 )
 
 // ---- External skill repos (ADR-0016/0017) ----
@@ -135,9 +184,19 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
       <section class="project-config-section">
         <p class="project-config-section-title">{{ t('projectConfig.defaultMode.title.label') }}</p>
         <p class="project-config-hint">{{ t('projectConfig.defaultMode.hint') }}</p>
-        <select v-model="draft.defaultMode" class="mode-select">
-          <option v-for="m in MODES" :key="m" :value="m">{{ modeLabel(m) }}</option>
-        </select>
+        <div v-for="v in VENDOR_ORDER" :key="v" class="project-config-vendor-mode">
+          <p class="project-config-vendor-label">{{ vendorSectionLabel(v) }}</p>
+          <select
+            v-if="props.vendorModes"
+            v-model="draftDefaultMode[v]"
+            class="mode-select"
+            :data-testid="`default-mode-${v}`"
+          >
+            <option v-for="m in props.vendorModes[v].modes" :key="m.token" :value="m.token">
+              {{ modeLabel(m.labelCode) }}
+            </option>
+          </select>
+        </div>
       </section>
 
       <section class="project-config-section">
@@ -341,6 +400,17 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 
 .project-config-number {
   max-width: 120px;
+}
+
+.project-config-vendor-mode {
+  margin-bottom: 12px;
+}
+
+.project-config-vendor-label {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #a6adc8);
 }
 
 .project-config-toggle {

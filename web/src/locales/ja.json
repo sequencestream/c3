@@ -51,6 +51,18 @@
       },
       "bypassPermissions": {
         "label": "権限をバイパス"
+      },
+      "readOnly": {
+        "label": "読み取り専用"
+      },
+      "fullAccess": {
+        "label": "フルアクセス"
+      },
+      "build": {
+        "label": "ビルド"
+      },
+      "buildAllow": {
+        "label": "ビルド（自動許可）"
       }
     },
     "settings": {
@@ -878,6 +890,9 @@
       "notFound": "スケジュールが見つかりません。",
       "executionNotFound": "実行記録が見つかりません。",
       "approvalNotFound": "承認エントリが見つからないか、すでに処理済みです。"
+    },
+    "projectConfig": {
+      "invalidDefaultMode": "ベンダー \"{vendor}\" のデフォルトモード \"{mode}\" が無効です。"
     }
   },
   "statusIndicator": {
@@ -1049,7 +1064,18 @@
       "title": {
         "label": "デフォルトモード"
       },
-      "hint": "このプロジェクトで新しいセッションを開始する際のデフォルトの権限モード。セッションヘッダーからいつでも変更できます。"
+      "hint": "ベンダーごとにデフォルトの権限モードを設定します。新しいセッションは起動ベンダーのモードを使用しますが、セッションヘッダーからいつでも変更できます。",
+      "section": {
+        "claude": {
+          "label": "Claude"
+        },
+        "codex": {
+          "label": "Codex"
+        },
+        "opencode": {
+          "label": "OpenCode"
+        }
+      }
     },
     "devSkill": {
       "title": {

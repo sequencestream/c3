@@ -466,7 +466,22 @@
         "tooltip": "セッションをもっと表示"
       },
       "deleteConfirm": "このセッションとトランスクリプトを削除しますか? この操作は取り消せません。",
-      "renamePrompt": "セッション名を変更:"
+      "renamePrompt": "セッション名を変更:",
+      "stale": {
+        "label": "未検証"
+      },
+      "orphaned": {
+        "tooltip": "ストアがクリアされました"
+      },
+      "ghost": {
+        "retry": "再試行"
+      },
+      "titleSource": "タイトルは {vendor} 提供",
+      "codexResume": {
+        "note": "Codex セッションは一覧表示できません — セッション ID を貼り付けて再開してください。",
+        "placeholder": "Codex セッション ID",
+        "button": "再開"
+      }
     },
     "row": {
       "rename": {
@@ -796,6 +811,7 @@
       "openFailed": "セッションを開けませんでした: {detail}",
       "deleteFailed": "セッションの削除に失敗しました: {detail}",
       "renameFailed": "セッション名の変更に失敗しました: {detail}",
+      "resumeNoAgent": "{vendor} エージェントが未設定です — ID で再開するには追加してください。",
       "notSelected": "先にセッションを選択または作成してください。",
       "turnRunning": "このセッションではすでにターンが実行中です。"
     },

@@ -421,13 +421,39 @@ function persistState(): void {
  * both key spaces (ADR-0015): a `pending:` id resolves to its intent; a real id
  * resolves to its fact's agent. {@link resolveSessionLaunch} relies on this dual
  * read so a pending session launches with its desired agent before it is bound.
+ *
+ * Post-`session_metadata` projection: the pending intent now lives in the
+ * `session_metadata` table as a pending row, NOT in `state.json`. The
+ * kernel doesn't import the projection store (kernel ↛ features, ADR-0009),
+ * so the lookup is a registered callback (composition root wires it to
+ * `getPendingIntent` in `features/sessions/store.ts`). The state.json
+ * map still exists for v2→v3 migration bootstrap.
  */
 export function getSessionAgentId(sessionId: string): string | null {
   const state = loadState()
   if (sessionId.startsWith(PENDING_SESSION_PREFIX)) {
-    return state.pendingIntents[sessionId]?.agentId ?? null
+    // The kernel no longer owns the pending intent (it lives in the
+    // projection). Fall back to a registered lookup so callers still
+    // resolve a pending session's desired agent.
+    const fromState = state.pendingIntents[sessionId]?.agentId ?? null
+    if (fromState) return fromState
+    return onPendingIntentLookup?.(sessionId) ?? null
   }
   return state.sessionAgents[sessionId]?.agentId ?? null
+}
+
+// ---- Composition-time hook for the projection-backed pending intent ----
+//
+// `getSessionAgentId` (above) is called by `resolveSessionLaunch` and the
+// agent-switcher; it needs to read the pending intent from the projection
+// (post-ADR-0015 + the `session_metadata` amendment). The kernel doesn't
+// import the store directly, so the composition root wires this callback.
+
+let onPendingIntentLookup: ((pendingId: string) => string | null) | null = null
+
+/** Register the pending-intent lookup hook (composition root only). */
+export function setOnPendingIntentLookup(cb: ((pendingId: string) => string | null) | null): void {
+  onPendingIntentLookup = cb
 }
 
 /** The frozen vendor of a real session, or null if it has no fact yet (ADR-0015). */

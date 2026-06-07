@@ -795,6 +795,92 @@ header h1 {
 .session.awaiting .session-title {
   font-weight: 600;
 }
+.session.orphaned {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.session.orphaned .session-title {
+  text-decoration: line-through;
+}
+
+/* ---- Vendor filter chips (top of the unified timeline) ---- */
+.vendor-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2) var(--sp-1) var(--sp-6);
+}
+.vendor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-panel);
+  color: var(--c-text-muted);
+  font-size: var(--fs-badge);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+.vendor-chip:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
+}
+.vendor-chip.off {
+  opacity: 0.4;
+}
+.vendor-chip .vendor-dot {
+  width: 7px;
+  height: 7px;
+}
+
+/* The per-row vendor identity dot, leftmost in the indent gutter. */
+.session-vendor-dot {
+  width: 7px;
+  height: 7px;
+}
+
+/* The "title provided by {vendor}" ⓘ marker after a row title. */
+.session-title-source {
+  flex-shrink: 0;
+  color: var(--c-text-disabled);
+  font-size: 11px;
+  cursor: help;
+}
+
+/* ---- Codex resume-by-id (honest unenumerable-vendor fallback) ---- */
+.codex-resume {
+  margin-top: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-6);
+  border-top: 1px solid var(--c-border);
+}
+.codex-resume-note {
+  margin: 0 0 var(--sp-1);
+  color: var(--c-text-disabled);
+  font-size: var(--fs-badge);
+  line-height: 1.4;
+}
+.codex-resume-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.codex-resume-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  background: var(--c-bg);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-caption);
+}
+
 @keyframes status-pulse {
   0%,
   100% {
@@ -2059,9 +2145,11 @@ button.deny:hover:not(:disabled) {
 .agent-row > .agent-field {
   width: auto;
 }
+/* agent name 不参与弹性伸缩,固定 160px:长度多变的 displayName 不会撑爆该列,
+ * 也不会被挤到看不见;剩余空间由 .agent-url 弹性项吸收。 */
 .agent-name {
-  flex: 1 1 140px;
-  min-width: 120px;
+  flex: 0 0 160px;
+  width: 160px;
 }
 .agent-vendor {
   flex: 0 0 132px;

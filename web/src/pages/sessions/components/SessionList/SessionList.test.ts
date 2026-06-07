@@ -190,4 +190,91 @@ describe('SessionList.vue — 当前工作区会话列表', () => {
       expect(w.emitted('rename-session')).toEqual([[WS, 's1', 'New']])
     })
   })
+
+  describe('统一时间流:vendor 色点 + 过滤 chip + title 来源 ⓘ', () => {
+    it('每行渲染左侧 vendor 色点,颜色按 vendor 区分', () => {
+      const w = mountList({
+        sessions: [
+          session('s1', 'Alpha', { vendor: 'claude' }),
+          session('s2', 'Beta', { vendor: 'codex' }),
+        ],
+      })
+      const dots = w.findAll('[data-testid="session-vendor-dot"]')
+      expect(dots.length).toBe(2)
+      const c0 = (dots[0].element as HTMLElement).style.backgroundColor
+      const c1 = (dots[1].element as HTMLElement).style.backgroundColor
+      expect(c0).toBeTruthy()
+      expect(c1).toBeTruthy()
+      expect(c0).not.toBe(c1)
+    })
+
+    it('title 后渲染 ⓘ,tooltip 标注来源 vendor', () => {
+      const w = mountList({ sessions: [session('s1', 'Alpha', { vendor: 'claude' })] })
+      const info = w.find('.session-title-source')
+      expect(info.exists()).toBe(true)
+      expect(info.attributes('title')).toContain('Claude')
+    })
+
+    it('lastModified=0(Codex 无数据沉底)→ 不渲染日期前缀', () => {
+      const w = mountList({
+        sessions: [session('s1', 'Alpha', { vendor: 'codex', lastModified: 0 })],
+      })
+      expect(w.find('.session-date').exists()).toBe(false)
+    })
+
+    it('多 vendor → 渲染过滤 chip;单 vendor → 不渲染', () => {
+      const multi = mountList({
+        sessions: [
+          session('s1', 'Alpha', { vendor: 'claude' }),
+          session('s2', 'Beta', { vendor: 'codex' }),
+        ],
+      })
+      expect(multi.find('[data-testid="vendor-filter"]').exists()).toBe(true)
+      expect(multi.findAll('.vendor-chip').length).toBe(2)
+
+      const single = mountList({
+        sessions: [session('s1', 'Alpha', { vendor: 'claude' })],
+      })
+      expect(single.find('[data-testid="vendor-filter"]').exists()).toBe(false)
+    })
+
+    it('点击 chip 关闭某 vendor → 该 vendor 行从时间流隐藏', async () => {
+      const w = mountList({
+        sessions: [
+          session('s1', 'Alpha', { vendor: 'claude' }),
+          session('s2', 'Beta', { vendor: 'codex' }),
+        ],
+      })
+      expect(w.findAll('.session').length).toBe(2)
+      await w.find('[data-testid="vendor-chip-codex"]').trigger('click')
+      const rows = w.findAll('.session')
+      expect(rows.length).toBe(1)
+      // 余下的是 claude 行(codex 被过滤)。
+      expect(rows[0].find('.session-title').text()).toContain('Alpha')
+    })
+  })
+
+  describe('Codex resume-by-id 占位(不可枚举的诚实兜底)', () => {
+    it('有工作区 → 始终渲染占位与输入框', () => {
+      const w = mountList({ sessions: [] })
+      expect(w.find('[data-testid="codex-resume"]').exists()).toBe(true)
+      expect(w.find('[data-testid="codex-resume-input"]').exists()).toBe(true)
+    })
+
+    it('空输入 → 提交按钮禁用且不 emit;粘贴 id → emit resume-session(path, id, codex)', async () => {
+      const w = mountList({ sessions: [] })
+      const submit = () => w.find('[data-testid="codex-resume-submit"]')
+      expect((submit().element as HTMLButtonElement).disabled).toBe(true)
+
+      await w.find('[data-testid="codex-resume-input"]').setValue('  thread-123  ')
+      expect((submit().element as HTMLButtonElement).disabled).toBe(false)
+      await submit().trigger('click')
+      expect(w.emitted('resume-session')).toEqual([[WS, 'thread-123', 'codex']])
+    })
+
+    it('无工作区 → 不渲染占位', () => {
+      const w = mountList({ currentWorkspace: null })
+      expect(w.find('[data-testid="codex-resume"]').exists()).toBe(false)
+    })
+  })
 })

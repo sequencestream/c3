@@ -25,6 +25,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (orig) => {
 
 import { resetDbForTests } from './kernel/infra/db.js'
 import { resetStoreForTests } from './features/requirements/store.js'
+import { resetStoreForTests as resetSessionsStoreForTests } from './features/sessions/store.js'
 import { listWorkspaceSessions } from './sessions.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
@@ -39,6 +40,7 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetSessionsStoreForTests()
   listSessionsMock.mockReset()
 })
 
@@ -60,17 +62,23 @@ function fakeStore(summaries: SessionSummary[]): SessionStore {
 }
 
 describe('listSessionsVia — zero-regression vs listWorkspaceSessions (claude only)', () => {
-  it('reproduces the legacy output field-for-field (both carry vendor:claude)', async () => {
+  it('reproduces the legacy output field-for-field (modulo the additive `state` field)', async () => {
     listSessionsMock.mockResolvedValue(sdkSessions)
 
     const legacy = await listWorkspaceSessions(proj)
     const accessor = new SessionAccessor([{ vendor: 'claude', sessions: new ClaudeSessionStore() }])
     const swapped = await listSessionsVia(accessor, proj)
 
-    // The swapped path is byte-identical to the legacy claude-only path (the
-    // legacy path now also stamps vendor:'claude', required on the wire).
-    expect(swapped).toEqual(legacy)
+    // The swapped path is the legacy claude-only path's output plus the new
+    // additive `state` field (ADR-0013 amendment — projection table contract).
+    // The wire shape is otherwise identical: same sessionId, title, mode
+    // (from state.ts), isToolSession (from the tool-session table), and
+    // newest-first ordering.
+    expect(swapped.map((s) => ({ ...s, state: undefined }))).toEqual(
+      legacy.map((s) => ({ ...s, state: undefined })),
+    )
     expect(swapped.every((s) => s.vendor === 'claude')).toBe(true)
+    expect(swapped.every((s) => s.state === 'alive')).toBe(true)
     // Sanity: newest-first, native ids preserved on the wire.
     expect(swapped.map((s) => s.sessionId)).toEqual(['normal-2', 'normal-3', 'normal-1'])
   })
@@ -111,12 +119,25 @@ describe('listSessionsVia — cross-vendor merge (claude + opencode)', () => {
     expect(out.map((s) => s.sessionId)).toEqual(['c-new', 'o-1', 'c-old'])
     const byId = Object.fromEntries(out.map((s) => [s.sessionId, s]))
 
-    // Claude entries pass mode / isToolSession through unchanged.
+    // The projection-backed path reads `mode` from state.ts (defaults to
+    // 'default' for sessions with no persisted mode) and `isToolSession`
+    // from the tool-session table (defaults to false). The fake store's
+    // `vendorExtra` is no longer the source — that's the projection's
+    // job, and a session with no fact / no tool-session entry shows
+    // defaults. State is the new additive field.
     expect(byId['c-old']).toMatchObject({
       vendor: 'claude',
-      mode: 'plan',
-      isToolSession: true,
+      mode: 'default',
+      isToolSession: false,
       lastModified: 100,
+      state: 'alive',
+    })
+    expect(byId['c-new']).toMatchObject({
+      vendor: 'claude',
+      mode: 'default',
+      isToolSession: false,
+      lastModified: 400,
+      state: 'alive',
     })
     // OpenCode has no c3 mode / tool tag ⇒ defaults; `time.updated` is the sort key.
     expect(byId['o-1']).toMatchObject({
@@ -125,6 +146,7 @@ describe('listSessionsVia — cross-vendor merge (claude + opencode)', () => {
       isToolSession: false,
       lastModified: 300,
       title: 'OpenCode one',
+      state: 'alive',
     })
   })
 

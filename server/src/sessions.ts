@@ -12,7 +12,7 @@ import {
   renameSession,
 } from '@anthropic-ai/claude-agent-sdk'
 import { resolve } from 'node:path'
-import type { SessionInfo, TranscriptItem } from '@ccc/shared/protocol'
+import type { SessionInfo, TranscriptItem, VendorId } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
 import { getSessionMode } from './state.js'
 import { normalizeTranscriptText, stringifyToolResult } from './format.js'
@@ -22,7 +22,12 @@ import {
   isToolSessionRecorded,
   deleteToolSessionRecord,
 } from './features/requirements/store.js'
-import { getShowToolSessions } from './kernel/config/index.js'
+import {
+  deleteByPendingId,
+  deleteByVendorId,
+  updateRealRowTitle,
+} from './features/sessions/store.js'
+import { getSessionVendor, getShowToolSessions } from './kernel/config/index.js'
 
 /**
  * Module-level tracker for tool-created sessions (completion judge, consensus
@@ -265,10 +270,22 @@ export async function sessionExists(dir: string, sessionId: string): Promise<boo
 export async function removeSession(dir: string, sessionId: string): Promise<void> {
   // Delete the SDK's transcript file, then forget any c3-side tool-session tag
   // (both the in-memory cache and its persisted row) so a re-created session
-  // reusing the id isn't wrongly classed as tool-created.
+  // reusing the id isn't wrongly classed as tool-created. The projection row
+  // is removed in the same critical section so the `sessions` event sent
+  // immediately after this returns no longer carries the deleted row.
   await deleteSession(sessionId, { dir })
   toolSessionIds.delete(sessionId)
   deleteToolSessionRecord(sessionId)
+  if (sessionId.startsWith('pending:')) {
+    // A pending never run — drop the pending row directly (no c3 id minted).
+    deleteByPendingId(sessionId)
+  } else {
+    // Look up the frozen vendor to compute the c3 id. The fallback `claude`
+    // covers a session id that was never bound (degenerate — the projection
+    // simply doesn't have it).
+    const vendor: VendorId = getSessionVendor(sessionId) ?? 'claude'
+    deleteByVendorId(vendor, sessionId)
+  }
 }
 
 export async function renameWorkspaceSession(
@@ -277,4 +294,9 @@ export async function renameWorkspaceSession(
   title: string,
 ): Promise<void> {
   await renameSession(sessionId, title, { dir })
+  // Mirror the rename into the projection (F-3). Look up the frozen vendor
+  // from the binding fact so the c3 id can be computed; `claude` is the
+  // legacy fallback for a session id that was never bound.
+  const vendor: VendorId = getSessionVendor(sessionId) ?? 'claude'
+  updateRealRowTitle(sessionId, vendor, title)
 }

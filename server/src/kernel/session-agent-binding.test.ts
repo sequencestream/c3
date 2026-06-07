@@ -122,7 +122,7 @@ describe('freezeSessionAgent (bind → freeze vendor)', () => {
 
   it('copies the intent into a fact, freezes vendor, and drops the intent', () => {
     setPendingIntent('pending:p1', 'oc')
-    freezeSessionAgent('pending:p1', 'real-oc', 'oc')
+    freezeSessionAgent('pending:p1', 'real-oc', 'oc', '/abs/proj')
     expect(getSessionAgentId('real-oc')).toBe('oc')
     expect(getSessionVendor('real-oc')).toBe('opencode')
     // Intent is gone — only the fact remains.
@@ -130,16 +130,16 @@ describe('freezeSessionAgent (bind → freeze vendor)', () => {
   })
 
   it('freezes the actually-run agent even with no explicit intent', () => {
-    freezeSessionAgent('pending:p2', 'real-cx', 'cx')
+    freezeSessionAgent('pending:p2', 'real-cx', 'cx', '/abs/proj')
     expect(getSessionAgentId('real-cx')).toBe('cx')
     expect(getSessionVendor('real-cx')).toBe('codex')
   })
 
   it('is idempotent: a re-bind never re-freezes the vendor', () => {
-    freezeSessionAgent('pending:p3', 'real-claude', SYSTEM_AGENT_ID)
+    freezeSessionAgent('pending:p3', 'real-claude', SYSTEM_AGENT_ID, '/abs/proj')
     expect(getSessionVendor('real-claude')).toBe('claude')
     // A second bind to the same real id (e.g. a retry) must not overwrite the fact.
-    freezeSessionAgent('pending:p3b', 'real-claude', 'oc')
+    freezeSessionAgent('pending:p3b', 'real-claude', 'oc', '/abs/proj')
     expect(getSessionAgentId('real-claude')).toBe(SYSTEM_AGENT_ID)
     expect(getSessionVendor('real-claude')).toBe('claude')
   })

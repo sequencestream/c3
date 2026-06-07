@@ -74,6 +74,17 @@ export interface SessionInfo {
    * *tag* is, which the wire already carries elsewhere (`session_selected.vendor`).
    */
   vendor: VendorId
+  /**
+   * Lifecycle state of the projection row that backs this wire entry
+   * (ADR-0013 amendment — `session_metadata` projection). Drives the
+   * sidebar's freshness UX: `born`/`alive` are normal list items;
+   * `stale` shows a "Unvalidated" tag; `orphaned` grays the row out
+   * (the native store has cleared the session); `ghost` shows a
+   * "Retry" affordance (the native store errored, so we don't know if
+   * the row is real). The web consumer is forward-compatible: an older
+   * client that does not know this field simply ignores it.
+   */
+  state?: 'born' | 'alive' | 'stale' | 'orphaned' | 'ghost'
 }
 
 /**
@@ -1073,8 +1084,16 @@ export type ClientToServer =
   | { type: 'create_session'; workspacePath: string; agentId?: string }
   /** Delete a session from disk. */
   | { type: 'delete_session'; workspacePath: string; sessionId: string }
-  /** Make a session active; server replies with `session_selected` (history + mode). */
-  | { type: 'select_session'; workspacePath: string; sessionId: string }
+  /**
+   * Make a session active; server replies with `session_selected` (history + mode).
+   * Optional `vendor` is a caller-supplied hint for resume-by-id of a session the
+   * projection has never seen — used when a vendor cannot be enumerated (Codex):
+   * the user pastes a native session id, and the hint lets the server skip the
+   * Claude-only cold-load path, seed an empty baseline, and bind the id to a
+   * vendor-matching agent so the next turn resumes natively. Absent ⇒ the server
+   * resolves the vendor from its own facts (the normal, already-known path).
+   */
+  | { type: 'select_session'; workspacePath: string; sessionId: string; vendor?: VendorId }
   /** Rename a session's title. */
   | { type: 'rename_session'; workspacePath: string; sessionId: string; title: string }
   /** Stop the in-flight run of the currently-viewed session (if any). */

@@ -1,16 +1,21 @@
 /**
  * `create_session` records the chosen agent as the pending session's *intent*
- * (ADR-0015), and treats an absent/empty `agentId` as **Auto** (no intent, the
- * run falls back to the default agent).
+ * (ADR-0015, session_metadata projection amendment). The intent now lives in
+ * the `session_metadata` projection table as a `pending` row, not in
+ * `state.json`. An absent/empty `agentId` resolves to Auto (no intent — the
+ * projection row still gets written with the default agent's vendor + id).
  *
  * The runtime/state side effects (`ensureRuntime`, viewer wiring, workspace
- * touch) are mocked so the test exercises only the intent-writing path; the
- * config store writes to a throwaway `$HOME/.c3/state.json`.
+ * touch) are mocked so the test exercises only the intent-writing path. A
+ * real `c3.db` is opened in a throwaway temp dir so the projection store
+ * writes and reads work end-to-end.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resetDbForTests } from '../../kernel/infra/db.js'
+import { resetStoreForTests } from './store.js'
 
 vi.mock('../../runs.js', () => ({
   addViewer: vi.fn(),
@@ -23,13 +28,17 @@ vi.mock('../../state.js', () => ({
 }))
 
 import { createSession } from './index.js'
-import { getSessionAgentId, resetSettingsCacheForTests } from '../../kernel/config/index.js'
+import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
+import { getPendingIntent } from './store.js'
 
 let dir: string
 let prevHome: string | undefined
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-create-'))
+  process.env.C3_DB_PATH = join(dir, 'c3.db')
+  resetDbForTests()
+  resetStoreForTests()
   prevHome = process.env.HOME
   process.env.HOME = dir
   resetSettingsCacheForTests()
@@ -39,6 +48,9 @@ afterEach(() => {
   if (prevHome === undefined) delete process.env.HOME
   else process.env.HOME = prevHome
   resetSettingsCacheForTests()
+  resetDbForTests()
+  resetStoreForTests()
+  delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -60,8 +72,8 @@ function pendingIdOf(conn: ReturnType<typeof fakeConn>): string {
   return sel?.sessionId as string
 }
 
-describe('create_session agent intent', () => {
-  it('records the chosen agent as the pending intent', () => {
+describe('create_session agent intent (projection-backed)', () => {
+  it('records the chosen agent in the projection as a pending row', () => {
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
@@ -71,20 +83,28 @@ describe('create_session agent intent', () => {
     })
     const pendingId = pendingIdOf(conn)
     expect(pendingId).toMatch(/^pending:/)
-    expect(getSessionAgentId(pendingId)).toBe('claude-b')
+    // The intent is in the projection table (the new home after ADR-0015 +
+    // session_metadata amendment). The handler writes a pending row via
+    // `upsertPendingRow`; the intent's agent id is in the row.
+    const intent = getPendingIntent(pendingId)
+    expect(intent?.agentId).toBe('claude-b')
   })
 
-  it('Auto (no agentId) writes no intent — resolution falls back to the default', () => {
+  it('Auto (no agentId) writes a pending row with the default agent', () => {
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
       type: 'create_session',
       workspacePath: '/abs/proj',
     })
-    expect(getSessionAgentId(pendingIdOf(conn))).toBeNull()
+    const pendingId = pendingIdOf(conn)
+    const intent = getPendingIntent(pendingId)
+    // Auto mode: the handler resolves the default agent (resolveAgent(null)) and
+    // writes a pending row with the default agent's id.
+    expect(intent?.agentId).toBeTruthy()
   })
 
-  it('an empty-string agentId is Auto too (no intent written)', () => {
+  it('an empty-string agentId is Auto too (default agent, not null)', () => {
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
@@ -92,6 +112,8 @@ describe('create_session agent intent', () => {
       workspacePath: '/abs/proj',
       agentId: '',
     })
-    expect(getSessionAgentId(pendingIdOf(conn))).toBeNull()
+    const pendingId = pendingIdOf(conn)
+    const intent = getPendingIntent(pendingId)
+    expect(intent?.agentId).toBeTruthy()
   })
 })

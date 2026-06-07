@@ -116,3 +116,99 @@ in memory only, so there is no migration debt).
 - [agent-session domain spec](../../domains/core/agent-session/spec.md) — the envelope/namespace rules.
 - This phase's spec:
   `changes/2026/06/06/2026-06-06-001-protocol-vendor-tag-canonical-envelope/spec.md`.
+
+---
+
+## Amendment: `session_metadata` projection table (2026-06-07)
+
+The cross-vendor `list_sessions` path was rewired from a per-request fan-out
+to the accessor union (above) to a direct read of a `session_metadata`
+projection table in `c3.db`. This amendment records the contract.
+
+### Projection table contract
+
+The `session_metadata` table is a **rebuildable cache**, not a second copy of
+session content. The only source of truth for session _content_ (transcript,
+prompt, tool_use, tool_result, blocks) is the vendor's native store (Claude
+JSONL, OpenCode REST, Codex thread items). The projection holds **only** core
+metadata:
+
+| Column              | Purpose                                                                     |
+| ------------------- | --------------------------------------------------------------------------- |
+| `c3_id`             | Opaque c3 session id (the `C3SessionId` from `mintC3SessionId`). PK.        |
+| `workspace_path`    | The workspace this row belongs to; drives the daily read path's SQL filter. |
+| `vendor`            | Owning vendor tag (`claude` / `codex` / `opencode`).                        |
+| `vendor_session_id` | The native vendor id (nullable for pending rows).                           |
+| `agent_id`          | The agent the session runs on (binding fact or pending intent).             |
+| `title`             | Display title; rewritten by lazy validation / run-end.                      |
+| `last_modified`     | UTC ms; null for pending rows and Codex bind-time rows.                     |
+| `state`             | Lifecycle state (`born` / `alive` / `stale` / `orphaned` / `ghost`).        |
+| `state_updated_at`  | UTC ms; drives the STALE window and warmup policy.                          |
+| `kind`              | `'real'` for post-bind rows, `'pending'` for pre-bind rows.                 |
+
+**No transcript, prompt, tool_use, tool_result, or block content is ever
+written to this table.** Pinned by the column-whitelist positive assertion
+test in `features/sessions/store.test.ts`.
+
+### Lifecycle states
+
+| State      | Meaning                                                                                 |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `born`     | Just inserted; not yet seen by a native list.                                           |
+| `alive`    | Written from a recent native list or validated by one in the last STALE window.         |
+| `stale`    | Not validated in > STALE_MS (24h). Rendered with an "Unvalidated" tag.                  |
+| `orphaned` | Confirmed absent from the native store (warmup: 2 janitor passes). Rendered grayed-out. |
+| `ghost`    | Native store errored (REST down, JSONL unreadable). Rendered with a "Retry" affordance. |
+
+### Read path
+
+The daily `list_sessions` reads the projection at the SQL level (one query per
+workspace). The `isHiddenSession` / `isToolSession` filters are applied
+downstream, not denormalized into the row. Pending rows (`kind='pending'`) are
+excluded from the wire list — the per-connection "viewed session" badge is the
+pending entry, not a list item.
+
+The env flag `C3_LIST_FROM_PROJECTION` (default ON) rolls the read path back
+to the legacy `listWorkspaceSessions` (claude-only) path.
+
+### Write triggers
+
+| Trigger                              | Effect                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `createSession` (UI)                 | Insert a pending row (the new home for the ADR-0015 intent).               |
+| `freezeSessionAgent` (bind)          | Drop pending row, insert real row (single entry point for both run paths). |
+| `setSessionAgent` (same-vendor swap) | Update real row's `agent_id`.                                              |
+| `renameWorkspaceSession`             | Update real row's `title`.                                                 |
+| `finalizeRun` (run end)              | Update real row's `title` / `last_modified` / `agent_id`.                  |
+| `removeSession` (delete)             | Delete the row.                                                            |
+
+### Freshness & janitor
+
+A lazy `validateLazy` re-checks rows older than `LAZY_VALIDATE_MS` (24h)
+against the native stores; Codex rows are explicitly skipped. A daily janitor
+(`JANITOR_INTERVAL_MS = STALE_MS/2 = 12h`) transitions `born/alive → stale`
+and, after a warmup (2 passes), `stale → orphaned`.
+
+### `user_version` rule
+
+The projection store does NOT write `PRAGMA user_version` — the three domain
+stores (`requirements`, `discussions`, `session_metadata`) would clobber each
+other (see `discussions/store.ts:25-30`). All domain stores should follow this
+posture going forward; migrations key off `PRAGMA table_info` +
+`ensureColumn`, never off `user_version`.
+
+### Native-is-SoT invariant
+
+When the projection disagrees with the native store (title mismatch, session
+gone, store errored), the native store wins. The projection is refreshed, not
+preferred. When the projection is empty (a fresh install or a deleted table),
+the read path transparently rebuilds from the accessor + `sessionAgents`
+facts and re-reads. The projection is a cache, not a gate — it never blocks
+the wire.
+
+### References
+
+- `server/src/features/sessions/store.ts` — the projection store.
+- `server/src/kernel/agent/session/list-sessions.ts` — the read path.
+- `changes/2026/06/07/2026-06-07-001-session-metadata-projection/spec.md` — the
+  functional spec for this amendment.

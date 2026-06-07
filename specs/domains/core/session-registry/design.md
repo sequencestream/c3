@@ -32,21 +32,19 @@ Implements the [spec](spec.md). Lives in `server/src/state.ts` (persistence),
 | `removeSession(dir, id)`     | `deleteSession(id, { dir })`      | + drops the session's tool-session tag           |
 | `renameWorkspaceSession(…)`  | `renameSession(id, title, …)`     | —                                                |
 
-**Cross-vendor listing swap (ADR-0013).** The wire `list_sessions` path (`conn.sendSessions`,
-`wiring/ws-upgrade.ts`) lists through the read-only `SessionAccessor` union
-(`kernel/agent/session/list-sessions.ts` → `listSessionsVia`) instead of calling
-`listWorkspaceSessions` directly. The accessor merges each available vendor's `SessionStore`
-(claude always, opencode when its supervised adapter is up; **codex excluded** — not enumerable),
-and `listSessionsVia` normalizes each `C3SessionSummary` back into a `SessionInfo`: the wire
-`sessionId` is the vendor-**native** id (pulled from `vendorExtra.vendorSessionId`, so
-`select`/`delete`/`rename` still round-trip it — the c3 id on the wire is a deferred ADR-0013
-phase), plus the new `vendor` tag, with `lastModified`/`mode`/`isToolSession` read per vendor
-(opencode derives `lastModified` from `time.updated ?? time.created`, has no c3 mode/tool tag), and
-a global newest-first sort. The claude source still resolves to `ClaudeSessionStore.list` →
-`listWorkspaceSessions`, so claude output is unchanged field-for-field (only the added
-`vendor: 'claude'`) — pinned by `server/src/list-sessions.test.ts`. `C3_SESSION_LIST_ACCESSOR=0`
-rolls the wire back to the legacy claude-only `listWorkspaceSessions` (the old path is retired only
-after the transition).
+**Cross-vendor listing swap (ADR-0013, projection table amendment).** The wire
+`list_sessions` path (`conn.sendSessions`, `wiring/ws-upgrade.ts`) reads the
+`session_metadata` projection table in c3.db (`kernel/agent/session/list-sessions.ts`
+→ `listSessionsVia`) instead of calling `listWorkspaceSessions` directly. The
+projection is a rebuildable cache — the accessor union is the rebuild / lazy-
+validation source, not the daily read source. `listSessionsVia` reads per
+workspace (`WHERE workspace_path=? AND kind='real'`), maps each row to a
+`SessionInfo` (additive `state` field), applies `isHiddenSession` /
+`isToolSessionRecorded` filters, and sorts newest-first. The accessor union
+is used for (a) rebuilding an empty projection (F-10) and (b) fire-and-forget
+lazy validation (F-8). The env flag `C3_LIST_FROM_PROJECTION=0` rolls the read
+path back to the legacy claude-only `listWorkspaceSessions` (the old path is
+retired only after the transition).
 
 `listWorkspaceSessions` filters two classes out of the SDK list before mapping: the project's
 **hidden set** (requirement comm sessions, owned by requirement-management) and **tool-created

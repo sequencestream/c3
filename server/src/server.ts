@@ -11,9 +11,11 @@ import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { REQUIREMENT_DISALLOWED_TOOLS } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
-import { addWorkspace } from './state.js'
+import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
+import { addWorkspace, listWorkspaces } from './state.js'
 import { sessionExists } from './sessions.js'
-import { isRunning, reconcileLiveness, setOnStatusChange } from './runs.js'
+import { isRunning, reconcileLiveness, setOnRunEnd, setOnStatusChange } from './runs.js'
+import { getSessionAgentId, setOnPendingIntentLookup } from './kernel/config/index.js'
 import { setAutomationHooks } from './features/requirements/automation.js'
 import { REQUIREMENT_AGENT_PROMPT } from './features/requirements/prompt.js'
 import { createRequirementMcpServer } from './features/requirements/save-tool.js'
@@ -21,6 +23,15 @@ import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
 import { checkDbDriver } from './kernel/infra/db.js'
+import {
+  getPendingIntent,
+  JANITOR_INTERVAL_MS,
+  janitor,
+  touchOnRunEnd,
+  updatePendingRowAgentId,
+  updateRealRowAgentId,
+  upsertForBind,
+} from './features/sessions/store.js'
 import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
 import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
 import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js'
@@ -72,6 +83,81 @@ const RUN_STALE_MS = 5 * 60_000
 const PENDING_INTENT_SWEEP_MS = 60 * 60_000
 
 export async function startServer(opts: ServerOptions): Promise<void> {
+  // ---- Wire the `session_metadata` projection hooks (kernel ↛ features) ----
+  // The kernel layer doesn't import the projection store directly (ADR-0009);
+  // these composition-time callbacks mirror the kernel's bind / agent-swap /
+  // run-end writes into the projection. The store is fail-soft, so a missing
+  // db (any of these throws inside) is a logged-and-skipped no-op.
+  setOnBind((input) => {
+    upsertForBind(input)
+  })
+  setOnAgentSwap((input) => {
+    if (input.scope === 'pending') {
+      updatePendingRowAgentId({
+        pendingId: input.sessionId,
+        vendor: input.vendor,
+        agentId: input.agentId,
+      })
+    } else {
+      updateRealRowAgentId(input.sessionId, input.vendor, input.agentId)
+    }
+  })
+  setOnRunEnd((input) => {
+    const vendor = resolveSessionVendor(input.realId)
+    const agentId = getSessionAgentId(input.realId) ?? ''
+    touchOnRunEnd({
+      realId: input.realId,
+      vendor,
+      agentId,
+      title: input.title,
+      lastModified: null,
+    })
+  })
+  setOnPendingIntentLookup((pendingId) => {
+    const intent = getPendingIntent(pendingId)
+    return intent?.agentId ?? null
+  })
+
+  // ---- session_metadata projection janitor (F-9) ----
+  // Runs every JANITOR_INTERVAL_MS (= STALE_MS/2 = 12h). The sweep is
+  // `void`+async so a slow native `list` never blocks the heartbeat
+  // timer or the event loop. The store is fail-soft (a missing db
+  // returns an empty result), so this is safe to call even when the
+  // projection is unavailable.
+  setInterval(() => {
+    try {
+      const workspaces = listWorkspaces().map((w) => w.path)
+      void janitor({
+        nativeList: async (vendor, ws) => {
+          // Use the SessionAccessor to query native stores. The accessor
+          // is built at composition time; the janitor runs periodically.
+          // For now, skip vendors that the accessor doesn't have sources
+          // for (the accessor is the same object wired into the WS
+          // handler).
+          const sources = sessionAccessor?.list({ cwd: ws })
+          if (!sources) return null
+          const summaries = await sources
+          return {
+            sessions: summaries
+              .filter((s) => s.vendor === vendor)
+              .map((s) => {
+                const extra = s.vendorExtra ?? {}
+                const vsid = typeof extra.vendorSessionId === 'string' ? extra.vendorSessionId : ''
+                const lastMod =
+                  typeof extra.lastModified === 'number' && Number.isFinite(extra.lastModified)
+                    ? extra.lastModified
+                    : null
+                return { vendorSessionId: vsid, title: s.title, lastModified: lastMod }
+              }),
+          }
+        },
+        workspaces,
+      })
+    } catch (err) {
+      console.error('[c3] session_metadata janitor failed:', err)
+    }
+  }, JANITOR_INTERVAL_MS)
+
   // Probe the platform's builtin SQLite driver up front (release 4/7). On a newly
   // supported target (e.g. a Windows Bun binary) a missing `bun:sqlite` would
   // otherwise surface as a silent persistence-less degrade discovered much later;

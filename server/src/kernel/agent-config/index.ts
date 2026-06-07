@@ -71,6 +71,26 @@ export function enabledAgents(settings: SystemSettings = loadSettings()): AgentC
   return settings.agents.filter((a) => a.enabled !== false)
 }
 
+/**
+ * An agent that runs on `vendor`, for resume-by-id of an unenumerable vendor
+ * (Codex): the user pastes a native session id with no fact yet, so the select
+ * handler binds it to a vendor-matching agent before the first turn. Prefers the
+ * configured default agent when it already matches, then the first *enabled*
+ * agent of that vendor, then any agent of it. Returns null when no agent of the
+ * vendor is configured — the caller then refuses the resume honestly rather than
+ * binding it under the wrong vendor.
+ */
+export function firstAgentForVendor(vendor: VendorId): AgentConfig | null {
+  const settings = loadSettings()
+  const def = settings.agents.find((a) => a.id === settings.defaultAgentId)
+  if (def?.vendor === vendor) return def
+  return (
+    enabledAgents(settings).find((a) => a.vendor === vendor) ??
+    settings.agents.find((a) => a.vendor === vendor) ??
+    null
+  )
+}
+
 /** The agent for an id, or the default agent if the id is null/unknown. */
 export function resolveAgent(agentId: string | null): AgentConfig {
   const settings = loadSettings()
@@ -188,25 +208,110 @@ export function resolveSessionVendor(sessionId: string | null): VendorId {
  * `config`). `agentId` is the resolved launch agent (default fallback applied), so
  * the fact records reality. Idempotent at the storage layer (a re-bind never
  * re-freezes the vendor). Called from the run lifecycle alongside `bindPending`.
+ *
+ * Fires the {@link onBind} composition-time hook so the feature layer can
+ * mirror the bind into the `session_metadata` projection (F-5). The kernel
+ * itself does not import the store (kernel ↛ features boundary, ADR-0009);
+ * the composition root wires `onBind` to `upsertForBind` in the store.
  */
-export function freezeSessionAgent(pendingId: string, realId: string, agentId: string): void {
-  bindSessionAgent(pendingId, realId, agentId, resolveAgent(agentId).vendor)
+export function freezeSessionAgent(
+  pendingId: string,
+  realId: string,
+  agentId: string,
+  workspacePath: string,
+): void {
+  const resolved = resolveAgent(agentId)
+  bindSessionAgent(pendingId, realId, resolved.id, resolved.vendor)
+  onBind?.({
+    pendingId,
+    realId,
+    workspacePath,
+    vendor: resolved.vendor,
+    agentId: resolved.id,
+  })
 }
 
 /**
  * Re-target a session's agent (the UI / future binding path). A still-pending
- * session just updates its mutable intent (always succeeds). A real session's
- * vendor is frozen (ADR-0015): a same-vendor swap succeeds, a cross-vendor change
- * is rejected — `{ ok: false }` — because the existing transcript lives only in
- * the frozen vendor's native store. A null/empty agent clears a pending intent.
+ * session just updates its mutable intent (always succeeds) AND the
+ * projection's pending row's `agent_id` (F-6 pending branch). A real
+ * session's vendor is frozen (ADR-0015): a same-vendor swap succeeds
+ * (and the projection's real row's `agent_id` is updated), a cross-vendor
+ * change is rejected — `{ ok: false }` — because the existing transcript
+ * lives only in the frozen vendor's native store. A null/empty agent
+ * clears a pending intent.
+ *
+ * Both branches fire the {@link onAgentSwap} composition-time hook so the
+ * feature layer can mirror the swap into the projection.
  */
 export function setSessionAgent(sessionId: string, agentId: string | null): { ok: boolean } {
   if (sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+    // Dual-write: the pending intent is written to BOTH state.json
+    // (legacy, for backward compat with scripts / tests) AND the
+    // projection table (new SoT). The projection callback fires only
+    // when the composition root has wired it (production); the
+    // state.json write is unconditional (tests without a db).
     setPendingIntent(sessionId, agentId)
+    if (agentId) {
+      const resolved = resolveAgent(agentId)
+      onAgentSwap?.({
+        scope: 'pending',
+        sessionId,
+        vendor: resolved.vendor,
+        agentId: resolved.id,
+      })
+    }
     return { ok: true }
   }
   if (agentId === null || agentId === '') return { ok: false }
-  return { ok: changeSessionAgentFact(sessionId, agentId, resolveAgent(agentId).vendor) }
+  const resolved = resolveAgent(agentId)
+  const ok = changeSessionAgentFact(sessionId, resolved.id, resolved.vendor)
+  if (ok) {
+    onAgentSwap?.({
+      scope: 'real',
+      sessionId,
+      vendor: resolved.vendor,
+      agentId: resolved.id,
+    })
+  }
+  return { ok }
+}
+
+// ---- Composition-time hooks (kernel ↛ features boundary) ----
+//
+// The kernel layer doesn't import from `features/`, so write-throughs into
+// the `session_metadata` projection table go through these registered
+// callbacks. The composition root (`server.ts` / a wiring module) wires each
+// hook to its corresponding store function. The hooks default to `null` (no
+// wiring) so the kernel layer still works in tests / scripts that don't
+// bring the projection up.
+
+export interface OnBindInput {
+  pendingId: string
+  realId: string
+  workspacePath: string
+  vendor: VendorId
+  agentId: string
+}
+
+export interface OnAgentSwapInput {
+  scope: 'pending' | 'real'
+  sessionId: string
+  vendor: VendorId
+  agentId: string
+}
+
+let onBind: ((input: OnBindInput) => void) | null = null
+let onAgentSwap: ((input: OnAgentSwapInput) => void) | null = null
+
+/** Register the bind hook (composition root only). */
+export function setOnBind(cb: ((input: OnBindInput) => void) | null): void {
+  onBind = cb
+}
+
+/** Register the agent-swap hook (composition root only). */
+export function setOnAgentSwap(cb: ((input: OnAgentSwapInput) => void) | null): void {
+  onAgentSwap = cb
 }
 
 /**

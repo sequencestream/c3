@@ -157,7 +157,7 @@ export async function runViaDriver(
       bindPending(prev, sid)
       // Freeze the session→agent fact onto the agent that ran, pinning its vendor
       // for the session's life (ADR-0015).
-      freezeSessionAgent(prev, sid, agentId)
+      freezeSessionAgent(prev, sid, agentId, workspacePath)
       runId = sid
       void cbs.onEvent?.({ kind: 'bound', prevId: prev, realId: sid })
     }

@@ -466,7 +466,22 @@
         "tooltip": "더 많은 세션 표시"
       },
       "deleteConfirm": "이 세션과 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
-      "renamePrompt": "세션 이름 변경:"
+      "renamePrompt": "세션 이름 변경:",
+      "stale": {
+        "label": "미검증"
+      },
+      "orphaned": {
+        "tooltip": "스토어가 비워졌습니다"
+      },
+      "ghost": {
+        "retry": "재시도"
+      },
+      "titleSource": "제목 제공: {vendor}",
+      "codexResume": {
+        "note": "Codex 세션은 열거할 수 없습니다 — 세션 ID를 붙여넣어 재개하세요.",
+        "placeholder": "Codex 세션 ID",
+        "button": "재개"
+      }
     },
     "row": {
       "rename": {
@@ -796,6 +811,7 @@
       "openFailed": "세션을 열지 못했습니다: {detail}",
       "deleteFailed": "세션을 삭제하지 못했습니다: {detail}",
       "renameFailed": "세션 이름을 변경하지 못했습니다: {detail}",
+      "resumeNoAgent": "{vendor} 에이전트가 구성되지 않았습니다 — ID로 재개하려면 추가하세요.",
       "notSelected": "먼저 세션을 선택하거나 만드세요.",
       "turnRunning": "이 세션에서 이미 턴이 실행 중입니다."
     },

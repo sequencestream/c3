@@ -26,17 +26,21 @@ import {
   setSessionMode,
   touchWorkspace,
 } from '../../state.js'
-import { getDefaultMode, setPendingIntent } from '../../kernel/config/index.js'
+import { getDefaultMode, getSessionAgentId } from '../../kernel/config/index.js'
 import {
+  firstAgentForVendor,
+  resolveAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
+import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { rebindChatSession } from '../requirements/store.js'
+import { upsertPendingRow } from './store.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -87,10 +91,24 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   // Switching views never stops a run — just stop watching the old one.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  // Record the chosen agent as the pending session's mutable intent (ADR-0015):
-  // the first run launches with it and freezes its vendor. Absent/empty ⇒ Auto —
-  // no intent is written and `resolveSessionLaunch` falls back to the default agent.
-  if (msg.agentId) setPendingIntent(pendingId, msg.agentId)
+  // The pending intent (ADR-0015) now lives in the `session_metadata`
+  // projection table as a `pending` row (F-11). The first run launches
+  // with this agent and freezes its vendor on bind. The row is written
+  // BEFORE `session_selected` is sent so a `list_sessions` immediately
+  // after `create_session` (e.g. the sidebar refresh) sees the new row.
+  //
+  // The raw `agentId` is stored as the intent (not the resolved agent id)
+  // — the same contract as the old `setPendingIntent` — so a future
+  // `resolveSessionLaunch` re-resolves it at launch time. The vendor is
+  // resolved from the agent registry for the pending row's display.
+  const intentAgentId = msg.agentId || null
+  const resolvedAgent = resolveAgent(intentAgentId)
+  upsertPendingRow({
+    pendingId,
+    workspacePath: abs,
+    vendor: resolvedAgent.vendor,
+    agentId: intentAgentId ?? resolvedAgent.id,
+  })
   const defaultMode = getDefaultMode()
   ensureRuntime(pendingId, abs, defaultMode, [])
   conn.viewing = pendingId
@@ -116,7 +134,31 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   try {
     const existing = getRuntime(msg.sessionId)
-    const title = await sessionTitle(abs, msg.sessionId)
+    // Resume-by-id of a session whose vendor cannot cold-load history (Codex:
+    // `read: 'none'`). The `vendor` hint arrives only from the resume-by-id
+    // placeholder — the projection/native store has never seen this id, so the
+    // Claude-only `sessionTitle`/`loadHistory` below would throw → `openFailed`.
+    // Skip them, seed an empty baseline, and bind the id to a vendor-matching
+    // agent (when it has no fact yet) so the next turn resolves the right vendor
+    // and `resume`s natively. Gate by capability *state*, never vendor identity.
+    const resumeByIdVendor =
+      !existing && msg.vendor && VENDOR_CAPABILITIES[msg.vendor].sessions.read === 'none'
+        ? msg.vendor
+        : null
+    if (resumeByIdVendor && !getSessionAgentId(msg.sessionId)) {
+      const agent = firstAgentForVendor(resumeByIdVendor)
+      if (!agent) {
+        conn.send({
+          type: 'error',
+          error: { code: 'session.resumeNoAgent', params: { vendor: resumeByIdVendor } },
+        })
+        return
+      }
+      setSessionAgent(msg.sessionId, agent.id)
+    }
+    // The pasted id is the only honest title we have for a not-yet-run resume;
+    // the projection overwrites it with the native title on the first run end.
+    const title = resumeByIdVendor ? msg.sessionId : await sessionTitle(abs, msg.sessionId)
     // Cold session ⇒ read disk once and seed a runtime; warm session ⇒
     // reuse its in-memory runtime (baseline + live buffer). After this
     // point there is no `await`, so the replay below is atomic w.r.t.
@@ -127,7 +169,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
           msg.sessionId,
           abs,
           getSessionMode(msg.sessionId),
-          await loadHistory(abs, msg.sessionId),
+          resumeByIdVendor ? [] : await loadHistory(abs, msg.sessionId),
         )
     conn.viewing = msg.sessionId
     touchWorkspace(abs, Date.now())

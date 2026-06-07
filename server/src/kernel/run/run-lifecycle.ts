@@ -298,7 +298,7 @@ export async function launchRun(
                 bindPending(prev, sid)
                 // Freeze the session→agent fact onto the agent that actually ran,
                 // pinning its vendor for the session's life (ADR-0015).
-                freezeSessionAgent(prev, sid, agentCfg.agentId)
+                freezeSessionAgent(prev, sid, agentCfg.agentId, workspacePath)
                 runId = sid
                 if (!hasBound) {
                   hasBound = true

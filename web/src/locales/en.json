@@ -466,7 +466,22 @@
         "tooltip": "Show more sessions"
       },
       "deleteConfirm": "Delete this session and its transcript? This cannot be undone.",
-      "renamePrompt": "Rename session:"
+      "renamePrompt": "Rename session:",
+      "stale": {
+        "label": "Unvalidated"
+      },
+      "orphaned": {
+        "tooltip": "Store cleared"
+      },
+      "ghost": {
+        "retry": "Retry"
+      },
+      "titleSource": "title provided by {vendor}",
+      "codexResume": {
+        "note": "Codex sessions can't be listed — paste a session ID to resume.",
+        "placeholder": "Codex session ID",
+        "button": "Resume"
+      }
     },
     "row": {
       "rename": {
@@ -796,6 +811,7 @@
       "openFailed": "Failed to open session: {detail}",
       "deleteFailed": "Failed to delete session: {detail}",
       "renameFailed": "Failed to rename session: {detail}",
+      "resumeNoAgent": "No {vendor} agent configured — add one to resume by ID.",
       "notSelected": "Select or create a session first.",
       "turnRunning": "A turn is already running in this session."
     },

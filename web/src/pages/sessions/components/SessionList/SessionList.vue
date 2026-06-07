@@ -18,6 +18,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
+import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 
 const { t, d } = useTypedI18n()
 
@@ -42,7 +43,12 @@ const emit = defineEmits<{
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
+  /** Resume an unenumerable session (Codex) by a pasted native id; `vendor` is the hint. */
+  'resume-session': [path: string, sessionId: string, vendor: VendorId]
 }>()
+
+// Stable vendor order for both the dots and the filter chips.
+const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex', 'opencode']
 
 // How many sessions are visible; grows by SESSION_PAGE on demand.
 const SESSION_PAGE = 10
@@ -81,13 +87,63 @@ function datePrefix(ms: number): string {
   return d(ms, 'short')
 }
 
+// ---- Vendor filter chips (client-side, default all-shown) ----
+// We track the set of *hidden* vendors (not shown): an empty set means "all
+// shown", so a vendor appearing for the first time defaults to visible without
+// any seeding. The unified timeline is never hard-grouped by vendor — chips only
+// filter which vendors take part in the single newest-first stream.
+const hiddenVendors = ref<Set<VendorId>>(new Set())
+
+// The vendors actually present in this workspace's list, in stable order — the
+// chips to render. Hidden when fewer than two (nothing to filter between).
+function vendorChips(): VendorId[] {
+  const seen = new Set<VendorId>(props.sessions.map((s) => s.vendor))
+  return VENDOR_ORDER.filter((v) => seen.has(v))
+}
+
+function isVendorOn(v: VendorId): boolean {
+  return !hiddenVendors.value.has(v)
+}
+
+function toggleVendor(v: VendorId): void {
+  const next = new Set(hiddenVendors.value)
+  if (next.has(v)) next.delete(v)
+  else next.add(v)
+  hiddenVendors.value = next
+}
+
+// The single time-ordered stream after the vendor filter (server already sorts
+// newest-first with Codex's missing-time 0 sunk to the bottom).
+function filteredSessions(): SessionInfo[] {
+  if (hiddenVendors.value.size === 0) return props.sessions
+  return props.sessions.filter((s) => !hiddenVendors.value.has(s.vendor))
+}
+
+// The localized "title provided by {vendor}" note for the ⓘ marker — titles are
+// not normalized across vendors, so each row says whose title it shows.
+function titleSource(vendor: VendorId): string {
+  return t('session.list.titleSource', { vendor: VENDOR_LABEL[vendor] })
+}
+
 // Sessions actually rendered, capped to the current limit.
 function visibleSessions(): SessionInfo[] {
-  return props.sessions.slice(0, sessionLimit.value)
+  return filteredSessions().slice(0, sessionLimit.value)
 }
 
 function hasMoreSessions(): boolean {
-  return props.sessions.length > sessionLimit.value
+  return filteredSessions().length > sessionLimit.value
+}
+
+// ---- Codex resume-by-id (honest fallback for an unenumerable vendor) ----
+// Codex sessions cannot be listed (no SDK listing API), so the user pastes a
+// native session id to resume one the projection has never seen.
+const codexResumeId = ref('')
+
+function submitCodexResume(): void {
+  const id = codexResumeId.value.trim()
+  if (!id || !props.currentWorkspace) return
+  emit('resume-session', props.currentWorkspace, id, 'codex')
+  codexResumeId.value = ''
 }
 
 function showMoreSessions() {
@@ -185,6 +241,21 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         {{ t('session.list.noWorkspace') }}
       </p>
       <div v-else class="session-list">
+        <div v-if="vendorChips().length > 1" class="vendor-filter" data-testid="vendor-filter">
+          <button
+            v-for="v in vendorChips()"
+            :key="v"
+            type="button"
+            class="vendor-chip"
+            :class="{ off: !isVendorOn(v) }"
+            :aria-pressed="isVendorOn(v)"
+            :data-testid="`vendor-chip-${v}`"
+            @click="toggleVendor(v)"
+          >
+            <span class="vendor-dot" :style="{ backgroundColor: VENDOR_COLOR[v] }"></span>
+            {{ VENDOR_LABEL[v] }}
+          </button>
+        </div>
         <div v-if="pendingInCurrent()" class="session active pending">
           <span
             v-if="statusOf(activeSession as string) !== 'idle'"
@@ -194,7 +265,9 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           ></span>
           <span class="session-title">{{ activeTitle }}</span>
         </div>
-        <p v-if="sessions.length === 0" class="empty-hint sub">{{ t('session.list.empty') }}</p>
+        <p v-if="filteredSessions().length === 0" class="empty-hint sub">
+          {{ t('session.list.empty') }}
+        </p>
         <div
           v-for="s in visibleSessions()"
           :key="s.sessionId"
@@ -202,9 +275,21 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           :class="{
             active: s.sessionId === activeSession,
             awaiting: statusOf(s.sessionId) === 'awaiting_permission',
+            orphaned: s.state === 'orphaned',
           }"
-          @click="emit('select-session', currentWorkspace as string, s.sessionId)"
+          :title="s.state === 'orphaned' ? t('session.list.orphaned.tooltip') : undefined"
+          @click="
+            s.state !== 'orphaned'
+              ? emit('select-session', currentWorkspace as string, s.sessionId)
+              : undefined
+          "
         >
+          <span
+            class="vendor-dot session-vendor-dot"
+            :style="{ backgroundColor: VENDOR_COLOR[s.vendor] }"
+            :title="VENDOR_LABEL[s.vendor]"
+            data-testid="session-vendor-dot"
+          ></span>
           <span
             v-if="statusOf(s.sessionId) !== 'idle'"
             class="session-status"
@@ -212,13 +297,28 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
             :title="statusOf(s.sessionId)"
           ></span>
           <span class="session-title" :title="s.title"
-            ><span class="session-date">{{ datePrefix(s.lastModified) }}</span
+            ><span v-if="s.lastModified > 0" class="session-date">{{
+              datePrefix(s.lastModified)
+            }}</span
             ><span v-if="s.isToolSession" class="session-tool-badge">{{
               t('session.list.toolBadge.label')
             }}</span
+            ><span v-if="s.state === 'stale'" class="session-tool-badge">{{
+              t('session.list.stale.label')
+            }}</span
             >{{ s.title }}</span
-          >
-          <span class="session-actions">
+          ><span class="session-title-source" :title="titleSource(s.vendor)">ⓘ</span>
+          <span v-if="s.state === 'ghost'" class="session-actions">
+            <button
+              class="icon-btn"
+              :title="t('session.list.ghost.retry')"
+              data-testid="session-row-retry"
+              @click.stop="emit('select-session', currentWorkspace as string, s.sessionId)"
+            >
+              ↻
+            </button>
+          </span>
+          <span v-if="s.state !== 'ghost'" class="session-actions">
             <button
               v-if="rowAction(s, 'rename').visible"
               class="icon-btn"
@@ -249,6 +349,31 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         >
           {{ t('session.list.more.label') }}
         </button>
+        <!-- Honest fallback for Codex: its sessions can't be enumerated, so the
+             user pastes a native id to resume one the list can't show. -->
+        <div class="codex-resume" data-testid="codex-resume">
+          <p class="codex-resume-note">{{ t('session.list.codexResume.note') }}</p>
+          <div class="codex-resume-row">
+            <input
+              v-model="codexResumeId"
+              type="text"
+              class="codex-resume-input"
+              :placeholder="t('session.list.codexResume.placeholder')"
+              data-testid="codex-resume-input"
+              @keydown.enter="submitCodexResume"
+            />
+            <button
+              type="button"
+              class="icon-btn"
+              :title="t('session.list.codexResume.button')"
+              :disabled="!codexResumeId.trim()"
+              data-testid="codex-resume-submit"
+              @click="submitCodexResume"
+            >
+              ↻
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </aside>

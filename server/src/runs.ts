@@ -257,6 +257,11 @@ export function finalizeRun(id: string): void {
   if (!rt) return
   if (!rt.sawTurnEnd) emit(id, { type: 'turn_end', reason: 'complete' })
   setStatus(id, 'idle')
+  // Run-end projection upsert: the first user-prompt text is the new
+  // `title` (matches the legacy `titleOf` fallback). `lastModified` is
+  // left to the next lazy validation; the SDK mtime isn't surfaced here
+  // without a synchronous native read.
+  onRunEnd?.({ realId: id, title: firstUserTitle(rt.baseline) })
 }
 
 export function addViewer(id: string, viewer: Viewer): void {
@@ -265,6 +270,44 @@ export function addViewer(id: string, viewer: Viewer): void {
 
 export function removeViewer(id: string, viewer: Viewer): void {
   runtimes.get(id)?.viewers.delete(viewer)
+}
+
+// ---- Run-end hook (composition-time, for the projection table) ----
+//
+// `finalizeRun` is the single terminal-state backstop (called from BOTH run
+// paths' teardown). The kernel can't import the projection store directly
+// (kernel ↛ features boundary, ADR-0009), so the actual write happens via
+// this registered callback. The composition root wires it to
+// `touchOnRunEnd` in `features/sessions/store.ts`.
+
+export interface OnRunEndInput {
+  realId: string
+  /** First user-prompt text, when available — the projection's title source. */
+  title: string
+}
+
+let onRunEnd: ((input: OnRunEndInput) => void) | null = null
+
+/** Register the run-end hook (composition root only). */
+export function setOnRunEnd(cb: ((input: OnRunEndInput) => void) | null): void {
+  onRunEnd = cb
+}
+
+/**
+ * Best-effort title for a real session: the first user-prompt text from
+ * the runtime's baseline. Matches the legacy `listWorkspaceSessions`'s
+ * `titleOf` fallback (`customTitle || summary || firstPrompt` — the
+ * `firstPrompt` is the first user message in the SDK transcript). Returns
+ * `'New session'` when no baseline entry is available yet.
+ */
+function firstUserTitle(baseline: TranscriptItem[]): string {
+  for (const item of baseline) {
+    if (item.kind === 'user') {
+      const t = item.text?.trim()
+      if (t) return t
+    }
+  }
+  return 'New session'
 }
 
 /**

@@ -2,15 +2,12 @@
 /*
  * SkillApprovalModal.vue — 外部 skill 加载审批模态框(3/3 UI,mount layer 2/3)。
  *
- * 三类审批:
- *   - trust     : review-on-update 首次 / ref-change,或 unreviewed 每次挂载前
+ * 外部 skill 现在静默挂载(直取配置 ref 最新版软链),唯一审批是:
  *   - gitignore : 项目级 .gitignore 追加 _c3_* 的一次性确认
- *   - orphan    : boot-time 未消耗链接提醒(不阻塞启动)
  *
  * 渲染后端下发的 skill_load_approval_request,emit 用户决定供 App 通过 WS 回传。
  */
 import { useTypedI18n } from '@/i18n'
-import { VENDOR_LABEL } from '@/lib/vendor'
 import type { SkillApprovalKind, VendorId } from '@ccc/shared/protocol'
 
 const { t } = useTypedI18n()
@@ -46,10 +43,6 @@ function onCancel() {
   if (!props.approval) return
   emit('cancel', props.approval.requestId)
 }
-
-function vendorName(v: VendorId): string {
-  return VENDOR_LABEL[v]
-}
 </script>
 
 <template>
@@ -67,81 +60,20 @@ function vendorName(v: VendorId): string {
         </button>
       </div>
 
-      <!-- trust: review-on-update first-load / ref-change, or unreviewed per-mount -->
-      <template v-if="approval.kind === 'trust'">
-        <p class="sa-title">
-          {{ t('skillApproval.modal.trust.title', { id: approval.id }) }}
-        </p>
-        <p class="sa-detail">
-          {{
-            t('skillApproval.modal.trust.detail', {
-              repo: approval.repo,
-              ref: approval.ref,
-              vendor: vendorName(approval.vendor),
-            })
-          }}
-        </p>
-        <p class="sa-hint">{{ approval.detail }}</p>
-        <p class="sa-guidance">
-          {{
-            approval.detail.includes('first-load') || approval.detail.includes('reviewed') === false
-              ? t('skillApproval.modal.trust.firstLoad')
-              : t('skillApproval.modal.trust.refChange')
-          }}
-        </p>
-      </template>
-
-      <!-- gitignore: one-time .gitignore append confirm -->
-      <template v-else-if="approval.kind === 'gitignore'">
-        <p class="sa-title">
-          {{ t('skillApproval.modal.gitignore.title') }}
-        </p>
-        <p class="sa-hint">{{ t('skillApproval.modal.gitignore.detail') }}</p>
-        <code class="sa-gitignore-line">{{ approval.detail }}</code>
-      </template>
-
-      <!-- orphan: boot-time unconsumed link reminder -->
-      <template v-else-if="approval.kind === 'orphan'">
-        <p class="sa-title">
-          {{ t('skillApproval.modal.orphan.title', { id: approval.id }) }}
-        </p>
-        <p class="sa-hint">{{ t('skillApproval.modal.orphan.detail') }}</p>
-        <p class="sa-detail">
-          {{
-            t('skillApproval.modal.orphan.appendLine', {
-              repo: approval.repo,
-              ref: approval.ref,
-              vendor: vendorName(approval.vendor),
-            })
-          }}
-        </p>
-      </template>
+      <!-- gitignore: one-time .gitignore append confirm (the only remaining gate) -->
+      <p class="sa-title">
+        {{ t('skillApproval.modal.gitignore.title') }}
+      </p>
+      <p class="sa-hint">{{ t('skillApproval.modal.gitignore.detail') }}</p>
+      <code class="sa-gitignore-line">{{ approval.detail }}</code>
 
       <div class="sa-foot">
-        <template v-if="approval.kind === 'trust'">
-          <button class="ghost" data-testid="sa-cancel" @click="onCancel">
-            {{ t('skillApproval.modal.trust.cancel.label') }}
-          </button>
-          <button data-testid="sa-approve" @click="onApprove">
-            {{ t('skillApproval.modal.trust.approve.label') }}
-          </button>
-        </template>
-        <template v-else-if="approval.kind === 'gitignore'">
-          <button class="ghost" data-testid="sa-cancel" @click="onCancel">
-            {{ t('skillApproval.modal.gitignore.cancel.label') }}
-          </button>
-          <button data-testid="sa-approve" @click="onApprove">
-            {{ t('skillApproval.modal.gitignore.approve.label') }}
-          </button>
-        </template>
-        <template v-else-if="approval.kind === 'orphan'">
-          <button class="ghost" data-testid="sa-cancel" @click="onCancel">
-            {{ t('skillApproval.modal.orphan.remove.label') }}
-          </button>
-          <button data-testid="sa-approve" @click="onApprove">
-            {{ t('skillApproval.modal.orphan.keep.label') }}
-          </button>
-        </template>
+        <button class="ghost" data-testid="sa-cancel" @click="onCancel">
+          {{ t('skillApproval.modal.gitignore.cancel.label') }}
+        </button>
+        <button data-testid="sa-approve" @click="onApprove">
+          {{ t('skillApproval.modal.gitignore.approve.label') }}
+        </button>
       </div>
     </div>
   </div>

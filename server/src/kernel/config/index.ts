@@ -30,8 +30,6 @@ import type {
   PermissionMode,
   ProjectConfig,
   SkillRepoConfig,
-  SkillTrust,
-  SkillVendor,
   SystemSettings,
   UiLang,
   VendorId,
@@ -724,9 +722,6 @@ export function getDevSkill(projectPath: string): string {
 
 // ---- External skill repos (ADR-0016) ----
 
-/** A 40-hex git commit SHA — the only `pinCommit` shape a `pinned` repo may carry. */
-const SHA40 = /^[0-9a-f]{40}$/i
-
 /** Web repo URL parsed into a base repo + optional ref/subpath (ADR-0016 §URL 解析). */
 export interface ParsedSkillRepoUrl {
   /** Base `https://host/owner/repo`, with any `/tree/…` (or `/-/tree/…`) stripped. */
@@ -766,28 +761,18 @@ export function parseSkillRepoUrl(url: string): ParsedSkillRepoUrl {
   return { repo: u }
 }
 
-const SKILL_VENDORS: readonly SkillVendor[] = ['claude', 'codex', 'opencode', 'all']
-const SKILL_TRUSTS: readonly SkillTrust[] = ['pinned', 'review-on-update', 'unreviewed']
-
-function isSkillVendor(v: unknown): v is SkillVendor {
-  return SKILL_VENDORS.includes(v as SkillVendor)
-}
-function isSkillTrust(v: unknown): v is SkillTrust {
-  return SKILL_TRUSTS.includes(v as SkillTrust)
-}
-
 /**
  * Validate + normalize the configured external skill repos (ADR-0016), **fail-hard**.
  * Unlike the fail-soft settings `normalize` (which drops bad data so c3 still boots),
  * every violation here **throws** with a precise message, so a misconfiguration is
  * surfaced to the operator instead of silently mounting the wrong skill. Returns the
- * normalized configs (defaults applied — `vendor: 'claude'`, `trust: 'unreviewed'`;
- * `repo`/`ref`/`subpath` resolved from the URL). An absent/empty list is valid → `[]`.
+ * normalized configs (`repo`/`ref`/`subpath` resolved from the URL). An absent/empty
+ * list is valid → `[]`. Skills mount into every build-link-capable vendor at the
+ * configured `ref`'s head — there are no vendor/trust/pin knobs to validate.
  *
  * Rules: `id` required + globally unique; `repo` required; `ref` required (after
- * URL `/tree/<ref>` backfill — never a silent default-branch fallback); a `pinned`
- * repo requires a 40-hex `pinCommit`; and the `devSkill` trigger (sans leading `/`)
- * must not collide with any repo `id`.
+ * URL `/tree/<ref>` backfill — never a silent default-branch fallback); and the
+ * `devSkill` trigger (sans leading `/`) must not collide with any repo `id`.
  */
 export function validateSkillRepos(
   raw: SkillRepoConfig[] | undefined,
@@ -814,26 +799,11 @@ export function validateSkillRepos(
     if (!ref) throw new Error(`${where}(${id}).ref 必填(URL 未含 /tree/<ref> 时须显式提供)`)
     const subpath =
       (typeof r.subpath === 'string' && r.subpath.trim()) || parsed.subpath || undefined
-    const vendor: SkillVendor = isSkillVendor(r.vendor) ? r.vendor : 'claude'
-    const trust: SkillTrust = isSkillTrust(r.trust) ? r.trust : 'unreviewed'
-    let pinCommit: string | undefined
-    if (trust === 'pinned') {
-      const pc = typeof r.pinCommit === 'string' ? r.pinCommit.trim() : ''
-      if (!SHA40.test(pc))
-        throw new Error(`${where}(${id}) trust='pinned' 须提供 40 位 SHA pinCommit`)
-      pinCommit = pc.toLowerCase()
-    } else if (typeof r.pinCommit === 'string' && r.pinCommit.trim()) {
-      // Carried verbatim for non-pinned (informational); only enforced when pinned.
-      pinCommit = r.pinCommit.trim()
-    }
     out.push({
       id,
       repo: parsed.repo,
       ref,
       ...(subpath ? { subpath } : {}),
-      vendor,
-      trust,
-      ...(pinCommit ? { pinCommit } : {}),
     })
   }
   // devSkill collision: the legacy dev-skill trigger (sans leading `/`) and a repo

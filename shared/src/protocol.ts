@@ -295,30 +295,13 @@ export type UiLang = 'en' | 'zh' | 'ja' | 'ko' | 'ru'
 // ---- External skill git mount (ADR-0016) ----
 
 /**
- * How much a {@link SkillRepoConfig}'s content is trusted across updates.
- * - `pinned` — frozen to an exact commit ({@link SkillRepoConfig.pinCommit}); a
- *   `git cat-file` check after clone rejects a force-pushed fake SHA.
- * - `review-on-update` — auto-mounts the configured `ref`, but a content change
- *   since the last mount is surfaced for human review (mount-layer concern, 2/3).
- * - `unreviewed` — mounts whatever `ref` resolves to, no review gate. The default.
- */
-export type SkillTrust = 'pinned' | 'review-on-update' | 'unreviewed'
-
-/**
- * Which vendor's skill-discovery directory a repo's skills are mounted into.
- * Reuses {@link VendorId} (single SoT, never drifts from the vendor union) plus
- * `'all'` = mount into every build-link-capable vendor. Per ADR-0016 spike B,
- * `claude`/`codex` are verified mountable; `opencode` stays a valid literal but
- * the mount layer (2/3) does not build links for it until its discovery
- * mechanism is confirmed. Default when unset: `'claude'`.
- */
-export type SkillVendor = VendorId | 'all'
-
-/**
  * One external git repository configured as a skill source (ADR-0016). c3 clones
  * it into a shared `~/.c3/repo/` cache and (mount layer, 2/3) soft-links its
- * skills into the target vendor's discovery directory under a flat
- * `_c3_<id>/SKILL.md` layout (spike A: nested dirs are not discovered).
+ * skills into EVERY build-link-capable vendor's discovery directory under a flat
+ * `_c3_<id>/SKILL.md` layout (spike A: nested dirs are not discovered). The mount
+ * is silent — the configured `ref`'s current head is resolved and linked with no
+ * trust/vendor knobs and no pre-mount approval (only the one-time `.gitignore`
+ * append still asks). Vendors whose skill discovery is not `full` are skipped.
  */
 export interface SkillRepoConfig {
   /** Stable, user-meaningful id; globally unique across `skillRepos`. Also the mount dir suffix (`_c3_<id>`). */
@@ -332,12 +315,6 @@ export interface SkillRepoConfig {
   ref: string
   /** Optional sub-directory within the repo that holds the skill(s). Repo root when absent. */
   subpath?: string
-  /** Target vendor(s). Default `'claude'` when unset. See {@link SkillVendor}. */
-  vendor?: SkillVendor
-  /** Update-trust policy. Default `'unreviewed'` when unset. See {@link SkillTrust}. */
-  trust: SkillTrust
-  /** Required 40-hex commit SHA when `trust === 'pinned'`; verified post-clone via `git cat-file`. */
-  pinCommit?: string
 }
 
 /**
@@ -353,15 +330,13 @@ export type SkillSupportState = CapabilityState
 
 /**
  * Which kind of pre-launch skill-load gate the backend is asking the human to
- * resolve (mount layer 2/3; the modal UI is rendered by 3/3):
- * - `trust` — a `review-on-update` first-load / ref-change ack, or an
- *   `unreviewed` per-mount ack (cancel ⇒ the session does not launch).
+ * resolve (mount layer 2/3; the modal UI is rendered by 3/3). External skills now
+ * mount silently (the configured `ref`'s head is resolved and linked with no trust
+ * check), so the only remaining gate is:
  * - `gitignore` — the one-time confirm to append a `_c3_` + wildcard line to the
  *   project's `.gitignore` before the first mount; acked once, then silent.
- * - `orphan` — a boot-time reminder for an `unreviewed`, never-consumed link
- *   left from a prior session (informational; does not block a launch).
  */
-export type SkillApprovalKind = 'trust' | 'gitignore' | 'orphan'
+export type SkillApprovalKind = 'gitignore'
 
 /**
  * Per-project (workspace) configuration, keyed by resolved project path in
@@ -381,9 +356,9 @@ export interface ProjectConfig {
   /** Per-turn character guidance for participant speech in this project. Minimum 300 (clamped up). */
   maxSpeechChars?: number
   /** External git repositories configured as skill sources (ADR-0016). c3 clones
-   * each into a shared `~/.c3/repo/` cache and soft-links its skills into the
-   * target vendor's discovery directory. Validated by `getSkillRepos()` (fail-hard).
-   * Absent/empty ⇒ no external skills configured for this project. */
+   * each into a shared `~/.c3/repo/` cache and soft-links its skills into every
+   * build-link-capable vendor's discovery directory. Validated by `getSkillRepos()`
+   * (fail-hard). Absent/empty ⇒ no external skills configured for this project. */
   skillRepos?: SkillRepoConfig[]
 }
 
@@ -1404,9 +1379,9 @@ export type ClientToServer =
     }
   /**
    * Resolve a pending pre-launch skill-load gate (mount layer 2/3). `approve`
-   * lets the mount proceed and (for `trust`/`gitignore`) persists the ack;
-   * `cancel` aborts the mount — for an `unreviewed` `trust` gate that means the
-   * session does not launch. Correlated to a {@link SkillLoadApprovalRequest} by
+   * lets the mount proceed and persists the `.gitignore` ack; `cancel` skips
+   * appending the `.gitignore` line (the skill is then not mounted, but the
+   * session still launches). Correlated to a {@link SkillLoadApprovalRequest} by
    * `requestId`.
    */
   | { type: 'skill_load_approval_resolve'; requestId: string; decision: 'approve' | 'cancel' }
@@ -1784,11 +1759,11 @@ export type ServerToClient =
   | { type: 'pending_write_approvals'; workspacePath: string; items: PendingWriteApproval[] }
   /**
    * A pre-launch skill-load gate awaiting a human decision (mount layer 2/3; the
-   * modal is rendered by 3/3). The backend emits one before mounting an external
-   * skill when the `trust` tier or first-time `.gitignore` write needs an ack,
-   * then blocks the mount on the matching {@link SkillLoadApprovalRequest}
+   * modal is rendered by 3/3). The backend emits one before the first external-skill
+   * mount in a project, when the one-time `.gitignore` write needs an ack, then
+   * blocks that mount on the matching {@link SkillLoadApprovalRequest}
    * `skill_load_approval_resolve`. `detail` is a human-readable summary of what is
-   * about to happen (e.g. the ref change, or the `.gitignore` line to append).
+   * about to happen (the `.gitignore` line to append).
    */
   | {
       type: 'skill_load_approval_request'

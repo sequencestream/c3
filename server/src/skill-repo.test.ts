@@ -12,14 +12,13 @@ import {
   resolveSubpath,
   skillRepoCacheDir,
   skillRepoCacheRoot,
-  verifyPinnedCommit,
 } from './skill-repo.js'
 
 // These tests drive the REAL `git` CLI against a throwaway "remote" repo in a temp
 // dir (a normal working repo used as a clone source — `git clone <path>` works
-// fine). They cover clone / pull / ls-remote / subpath / cat-file individually with
-// explicit temp dirs (NO writes to the user's real ~/.c3), plus the vendor-shared
-// cache-key guarantee (ADR-0016).
+// fine). They cover clone / pull / ls-remote / subpath individually with explicit
+// temp dirs (NO writes to the user's real ~/.c3), plus the vendor-shared cache-key
+// guarantee (ADR-0016).
 
 let dir: string // temp sandbox root
 let src: string // <dir>/src — the source repo we clone from
@@ -85,20 +84,6 @@ describe('cloneRepo + pullRepo', () => {
   })
 })
 
-describe('verifyPinnedCommit', () => {
-  it('accepts a commit reachable in the clone history', async () => {
-    const dest = join(dir, 'clone')
-    await cloneRepo(src, 'main', dest)
-    expect(await verifyPinnedCommit(dest, headSha)).toBe(true)
-  })
-
-  it('rejects a SHA absent from history (force-push forgery guard)', async () => {
-    const dest = join(dir, 'clone')
-    await cloneRepo(src, 'main', dest)
-    expect(await verifyPinnedCommit(dest, 'b'.repeat(40))).toBe(false)
-  })
-})
-
 describe('resolveSubpath', () => {
   it('returns the repo dir when subpath is empty', () => {
     expect(resolveSubpath(src)).toBe(src)
@@ -137,14 +122,12 @@ describe('skillRepoCacheDir — vendor-shared cache (ADR-0016)', () => {
     )
   })
 
-  it('is identical across vendors (same repo/ref → one shared clone, zero re-download)', () => {
-    const base = { id: 'r', repo: 'https://x/y', ref: 'main', trust: 'unreviewed' as const }
-    const claude: SkillRepoConfig = { ...base, vendor: 'claude' }
-    const codex: SkillRepoConfig = { ...base, vendor: 'codex' }
-    const opencode: SkillRepoConfig = { ...base, vendor: 'opencode' }
-    const d = skillRepoCacheDir(claude.repo, claude.ref)
-    expect(skillRepoCacheDir(codex.repo, codex.ref)).toBe(d)
-    expect(skillRepoCacheDir(opencode.repo, opencode.ref)).toBe(d)
+  it('is shared regardless of how many vendors mount it (one repo/ref → one clone)', () => {
+    // The cache key is (repo, ref) only — vendor is never part of it, so every
+    // build-link-capable vendor reuses the same clone with zero re-download.
+    const cfg: SkillRepoConfig = { id: 'r', repo: 'https://x/y', ref: 'main' }
+    const d = skillRepoCacheDir(cfg.repo, cfg.ref)
+    expect(skillRepoCacheDir(cfg.repo, cfg.ref)).toBe(d)
   })
 })
 
@@ -165,29 +148,10 @@ describe('ensureSkillRepo (integration, isolated cache)', () => {
       repo: src,
       ref: 'main',
       subpath: 'skills/foo',
-      vendor: 'claude',
-      trust: 'unreviewed',
     }
     const res = await ensureSkillRepo(cfg)
     expect(res.ok).toBe(true)
     expect(res.skillDir).toBe(join(res.cacheDir, 'skills', 'foo'))
     expect(existsSync(join(res.skillDir!, 'SKILL.md'))).toBe(true)
-  })
-
-  it('verifies a pinned commit and fails on a forged SHA', async () => {
-    const good: SkillRepoConfig = {
-      id: 'r',
-      repo: src,
-      ref: 'main',
-      vendor: 'claude',
-      trust: 'pinned',
-      pinCommit: headSha,
-    }
-    expect((await ensureSkillRepo(good)).ok).toBe(true)
-
-    const forged: SkillRepoConfig = { ...good, ref: 'main', pinCommit: 'c'.repeat(40) }
-    const res = await ensureSkillRepo(forged)
-    expect(res.ok).toBe(false)
-    expect(res.error).toMatch(/force-push|pinned/)
   })
 })

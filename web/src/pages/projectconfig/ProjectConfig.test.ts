@@ -182,16 +182,11 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         repo: 'https://github.com/owner/repo',
         ref: 'main',
         subpath: 'skills/my-skill',
-        vendor: 'claude',
-        trust: 'review-on-update',
       },
       {
-        id: 'pinned-skills',
-        repo: 'https://github.com/owner/pinned',
+        id: 'more-skills',
+        repo: 'https://github.com/owner/more',
         ref: 'v1.0',
-        vendor: 'all',
-        trust: 'pinned',
-        pinCommit: 'abcdef1234567890abcdef1234567890abcdef12',
       },
     ] as SkillRepoConfig[],
   }
@@ -241,8 +236,6 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
               id: 's',
               repo: '',
               ref: '',
-              vendor: 'claude',
-              trust: 'unreviewed',
             } as SkillRepoConfig,
           ],
         },
@@ -254,51 +247,13 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
     expect(errors[0].text()).toBeTruthy()
   })
 
-  it('shows pin required error when trust is pinned but pinCommit is missing', () => {
+  it('renders only id/repo/ref/subpath fields (no vendor/trust/pin controls)', () => {
     const w = mount(ProjectConfig, {
-      props: {
-        open: true,
-        projectConfig: {
-          ...baseConfig,
-          skillRepos: [
-            {
-              id: 's',
-              repo: '',
-              ref: 'main',
-              vendor: 'claude',
-              trust: 'pinned',
-            } as SkillRepoConfig,
-          ],
-        },
-        currentWorkspace: '/test',
-      },
+      props: { open: true, projectConfig: configWithSkillRepos, currentWorkspace: '/test' },
     })
-    const errors = w.findAll('[data-testid="skill-repo-pin-error"]')
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors[0].text()).toBeTruthy()
-  })
-
-  it('no pin error when trust is pinned and pinCommit is present', () => {
-    const w = mount(ProjectConfig, {
-      props: {
-        open: true,
-        projectConfig: {
-          ...baseConfig,
-          skillRepos: [
-            {
-              id: 's',
-              repo: '',
-              ref: 'main',
-              vendor: 'claude',
-              trust: 'pinned' as const,
-              pinCommit: 'abcdef1234567890abcdef1234567890abcdef12',
-            },
-          ] as SkillRepoConfig[],
-        },
-        currentWorkspace: '/test',
-      },
-    })
-    expect(w.findAll('[data-testid="skill-repo-pin-error"]')).toHaveLength(0)
+    expect(w.find('[data-testid="skill-repo-vendor"]').exists()).toBe(false)
+    expect(w.find('[data-testid="skill-repo-trust"]').exists()).toBe(false)
+    expect(w.find('[data-testid="skill-repo-pin-commit"]').exists()).toBe(false)
   })
 
   it('carries the edited skillRepos into the Save payload', async () => {

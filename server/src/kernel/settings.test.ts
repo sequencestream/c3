@@ -489,30 +489,21 @@ describe('skillRepos migration from SystemSettings to ProjectConfig', () => {
     id: 'my-skills',
     repo: 'https://github.com/o/r',
     ref: 'main',
-    trust: 'unreviewed',
-    vendor: 'claude' as const,
   }
   const REPO_B = {
     id: 'custom',
     repo: 'https://git.example.com/skills.git',
     ref: 'v1',
-    trust: 'review-on-update',
-    vendor: 'claude' as const,
   }
   const REPO_C = {
     id: 'proj-a',
     repo: 'https://git.example.com/a.git',
     ref: 'main',
-    trust: 'unreviewed',
-    vendor: 'claude' as const,
   }
   const REPO_D = {
     id: 'proj-b',
     repo: 'https://git.example.com/b.git',
     ref: 'dev',
-    trust: 'pinned' as const,
-    pinCommit: 'a'.repeat(40),
-    vendor: 'claude' as const,
   }
 
   it('captures legacy global skillRepos into the project seed (one-shot)', () => {

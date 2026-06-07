@@ -246,8 +246,8 @@ flowchart LR
 ### 6.1. clone 与缓存
 
 - 所有 vendor 共用 `~/.c3/repo/<hash>` — hash = SHA256(repo + ref),不按 vendor 区分。
-- `ensureSkillRepo(config)` 在 1/3 实现:clone(首次)或 pull(后续),然后 `resolveSubpath`。
-- `trust='pinned'` 时 clone 后 `git cat-file -t <sha>` 校验,防 force-push 伪造。
+- `ensureSkillRepo(config)` 在 1/3 实现:clone(首次)或 pull(后续 `fetch + reset --hard FETCH_HEAD`,始终取 ref 最新 head),然后 `resolveSubpath`。
+- 静默挂载:不做 pin / `git cat-file` 防伪校验(2026-06-07 简化,见 ADR-0016/0017)。
 
 ### 6.2. 发现目录(项目级)
 
@@ -257,22 +257,20 @@ flowchart LR
 | codex    | `<projectDir>/.codex/skills/`  |
 | opencode | `<projectDir>/.agents/skills/` |
 
-「vendor=all」展开为所有 `detectSkillSupport=full` 的 vendor,各建一份软链。
+挂载固定挂入所有 `detectSkillSupport=full` 的 vendor,各建一份软链(无 per-repo vendor 选择)。
 
 ### 6.3. 准入管制
 
-- **detectSkillSupport**:结果缓存在 `state.json`,SDK 版本升级时主动失效重探。
-- **trust 三档**:`pinned`(仅 cat-file 校验)、`review-on-update`(首次+ref 变化审批)、
-  `unreviewed`(每次审批;取消则 session 不启动)。
-- **.gitignore**:首次挂载前请求 Human 确认追加 `_c3_*/` 条目;确认后永久静默。
-- **写操作审批**:挂载了外部 skill 的 session 中,写类工具走 `permission_request` 而非任何自动放行。
+- **detectSkillSupport**:结果缓存在 `state.json`,SDK 版本升级时主动失效重探;非 `full` 的 vendor 标灰、不建链,session 仍启动。
+- **静默挂载**(2026-06-07 简化):无 trust 三档、无挂载前确认,直取 `ref` 最新版软链。
+- **.gitignore**:首次挂载前请求 Human 确认追加 `_c3_*/` 条目;确认后永久静默(仅剩的人工闸)。
+- **写操作审批**:挂载了外部 skill 的 session 中(`hasMountedSkills`,与 trust 无关),写类工具走 `permission_request` 而非任何自动放行。
 
 ### 6.4. 生命周期
 
 - 挂载在 `launchRun` 中、`adapter.driver.start()` **之前**完成。
-- 幂等:已存在且 ref 未变的软链完全 skip(clone + relink 都不做)。
+- 幂等:已存在且 ref 未变的软链完全 skip(clone + relink 都不做);ref 变化则静默重链最新 head。
 - 不清理:session 结束不删软链;下次命中缓存复用。
-- 孤儿扫描:c3 启动时对 `trust=unreviewed` 且从未消费的条目做一次性 ack 提醒。
 
 ## 7. 最佳实践
 

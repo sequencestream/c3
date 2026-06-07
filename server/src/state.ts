@@ -19,12 +19,10 @@ import type { SkillSupportReport } from './kernel/agent/adapters/types.js'
 
 /**
  * One built skill mount (mount layer 2/3). Keyed in {@link PersistedState.skillLinkIndex}
- * by the idempotency key `${projectDir}:${vendor}:${id}` — a `vendor: 'all'` config
- * fans out to one record per build-link-capable vendor, which a bare `id` key could
- * not hold (spec D2). `ref` is the resolved SHA at mount time, compared against
- * `lsRemote` on a later session to detect a content change (cache invalidation).
- * `consumedAt` is set the first time a launch actually mounts/uses the link; an
- * `unreviewed` record still missing it at boot is an orphan (one-time ack reminder).
+ * by the idempotency key `${projectDir}:${vendor}:${id}` — one config fans out to one
+ * record per build-link-capable vendor, which a bare `id` key could not hold (spec D2).
+ * `ref` is the resolved SHA at mount time, compared against `lsRemote` on a later
+ * session to detect a content change (cache invalidation → relink).
  */
 export interface SkillLinkRecord {
   id: string
@@ -33,22 +31,17 @@ export interface SkillLinkRecord {
   linkPath: string
   target: string
   ref: string
-  trust: string
   createdAt: number
-  consumedAt?: number
 }
 
 /**
  * A persisted human ack for a skill-load gate (mount layer 2/3). Stored in
- * {@link PersistedState.skillAcks} under two key conventions (spec §7): the
- * `.gitignore` ack is keyed by `projectDir` (one append per project); the
- * `review-on-update` ack is keyed by the idempotency key `${projectDir}:${vendor}:${id}`
- * and records the `reviewedRef` SHA so the same ref stays silent and only a change
- * re-prompts.
+ * {@link PersistedState.skillAcks} keyed by `projectDir`: the `.gitignore` ack
+ * (one append per project, then silent) is the only remaining gate now that
+ * external skills mount silently.
  */
 export interface SkillAckRecord {
   gitignore?: boolean
-  reviewedRef?: string
 }
 
 interface PersistedState {
@@ -60,7 +53,7 @@ interface PersistedState {
   skillSupport: Record<string, SkillSupportReport>
   /** Built skill mounts, keyed by `${projectDir}:${vendor}:${id}` (the idempotency key). */
   skillLinkIndex: Record<string, SkillLinkRecord>
-  /** Human acks for skill-load gates (`.gitignore` by projectDir; trust by idempotency key). */
+  /** Human acks for skill-load gates (the one-time `.gitignore` append, keyed by projectDir). */
   skillAcks: Record<string, SkillAckRecord>
 }
 
@@ -231,20 +224,6 @@ export function getSkillLink(key: string): SkillLinkRecord | undefined {
 export function setSkillLink(key: string, record: SkillLinkRecord): void {
   load().skillLinkIndex[key] = record
   persist()
-}
-
-/** All recorded skill mounts (read-only snapshot), for orphan scans / diagnostics. */
-export function listSkillLinks(): SkillLinkRecord[] {
-  return Object.values(load().skillLinkIndex)
-}
-
-/** Mark a mount as consumed (a launch actually used it) — clears its orphan status. */
-export function markSkillLinkConsumed(key: string, now: number): void {
-  const rec = load().skillLinkIndex[key]
-  if (rec && rec.consumedAt === undefined) {
-    rec.consumedAt = now
-    persist()
-  }
 }
 
 export function getSkillAck(key: string): SkillAckRecord | undefined {

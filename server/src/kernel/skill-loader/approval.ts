@@ -1,32 +1,20 @@
 /**
- * Pre-launch skill-load approval — the trust / `.gitignore` gate state machine
- * (mount layer 2/3, ADR-0017). Two halves:
+ * Pre-launch skill-load approval — the `.gitignore` gate (mount layer 2/3,
+ * ADR-0017). External skills mount silently (the configured `ref`'s head is
+ * resolved and linked with no trust check), so the only remaining gate is the
+ * one-time `.gitignore` append. Two halves:
  *
  *  1. Transport (mirrors `features/schedules/queue.ts` but is its own in-memory
  *     map, NOT SQLite-backed): the backend emits a `skill_load_approval_request`
  *     and blocks on a Promise the WS handler resolves via
  *     `resolveSkillApproval(requestId, decision)`. The modal UI itself is 3/3.
  *
- *  2. Gate evaluation + ack persistence (pure reads/writes over `state.json`):
- *     when does a `trust` tier or a first-time `.gitignore` write actually need a
- *     human, and how is the ack recorded so the next session stays silent.
- *
- * The gate policy (spec §7):
- *  - `pinned`           — never a modal; integrity is the post-clone `cat-file`
- *                         check (1/3), a ref change is an *error*, not an ack.
- *  - `review-on-update` — ask on first load and whenever the resolved ref changed
- *                         since the recorded `reviewedRef`; silent on an unchanged ref.
- *  - `unreviewed`       — ask on every mount; a cancel aborts the launch.
- *  - `.gitignore`       — ask once per project before the first mount; acked, then silent.
+ *  2. Ack persistence (pure reads/writes over `state.json`): the first-time
+ *     `.gitignore` write is acked once per project, then stays silent.
  */
 import { randomUUID } from 'node:crypto'
-import type {
-  ServerToClient,
-  SkillApprovalKind,
-  SkillRepoConfig,
-  VendorId,
-} from '@ccc/shared/protocol'
-import { getSkillAck, setSkillAck, skillLinkKey } from '../../state.js'
+import type { ServerToClient, SkillApprovalKind, VendorId } from '@ccc/shared/protocol'
+import { getSkillAck, setSkillAck } from '../../state.js'
 
 // ---------------------------------------------------------------------------
 // Transport
@@ -118,50 +106,8 @@ export const resolveSkillApprovalHandler: (
 ) => boolean = resolveSkillApproval
 
 // ---------------------------------------------------------------------------
-// Gate evaluation + ack persistence
+// Ack persistence
 // ---------------------------------------------------------------------------
-
-/** Why a trust gate fired (or that it didn't), for the orchestrator + the request detail. */
-export type TrustGateVerdict =
-  | { needsApproval: false }
-  | { needsApproval: true; reason: 'first-load' | 'ref-change' }
-
-/**
- * Decide whether mounting `config` for `vendor` at `resolvedRef` needs a human
- * trust ack. `pinned` never does (its integrity is the cat-file check, a ref
- * change is handled as an error by the orchestrator). `unreviewed` always does.
- * `review-on-update` does on first load or when the ref changed since the ack.
- */
-export function evaluateTrustGate(
-  projectDir: string,
-  config: SkillRepoConfig,
-  vendor: VendorId,
-  resolvedRef: string,
-): TrustGateVerdict {
-  if (config.trust === 'pinned') return { needsApproval: false }
-  if (config.trust === 'unreviewed') return { needsApproval: true, reason: 'first-load' }
-  // review-on-update
-  const ack = getSkillAck(skillLinkKey(projectDir, vendor, config.id))
-  if (!ack || ack.reviewedRef === undefined) return { needsApproval: true, reason: 'first-load' }
-  if (ack.reviewedRef !== resolvedRef) return { needsApproval: true, reason: 'ref-change' }
-  return { needsApproval: false }
-}
-
-/**
- * Persist a trust ack after a human approve. Only `review-on-update` records a
- * `reviewedRef` (so the same ref stays silent); `unreviewed` records nothing (it
- * always re-asks); `pinned` has no ack.
- */
-export function recordTrustAck(
-  projectDir: string,
-  config: SkillRepoConfig,
-  vendor: VendorId,
-  resolvedRef: string,
-): void {
-  if (config.trust === 'review-on-update') {
-    setSkillAck(skillLinkKey(projectDir, vendor, config.id), { reviewedRef: resolvedRef })
-  }
-}
 
 /** Whether this project still needs the one-time `.gitignore`-append ack. */
 export function needsGitignoreAck(projectDir: string): boolean {

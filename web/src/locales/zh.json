@@ -330,7 +330,7 @@
       "title": {
         "label": "外部技能"
       },
-      "hint": "外部 Git 仓库的 SKILL.md 挂载到 vendor 技能发现目录。配置仓库 URL、ref 与信任等级。",
+      "hint": "以外部 git 仓库作为外部 skill 来源,其 SKILL.md 会按配置 ref 的最新版本挂载到所有受支持 vendor 的 skill 发现目录。",
       "empty": "尚未配置外部技能仓库。",
       "add": {
         "label": "+ 添加技能仓库"
@@ -350,15 +350,6 @@
         },
         "subpath": {
           "label": "子路径"
-        },
-        "vendor": {
-          "label": "供应商"
-        },
-        "trust": {
-          "label": "信任等级"
-        },
-        "pinCommit": {
-          "label": "锁定提交"
         }
       },
       "id": {
@@ -374,25 +365,6 @@
       },
       "subpath": {
         "placeholder": "可选子目录（如 skills/my-skill）"
-      },
-      "vendor": {
-        "all": "所有支持的",
-        "unsupported": "此供应商不支持"
-      },
-      "trust": {
-        "pinned": {
-          "label": "锁定 — 固定在某个提交"
-        },
-        "reviewOnUpdate": {
-          "label": "更新后审查"
-        },
-        "unreviewed": {
-          "label": "不审查 — 直接挂载"
-        }
-      },
-      "pinCommit": {
-        "placeholder": "40 位十六进制提交 SHA",
-        "required": "信任等级为锁定时必须填写锁定提交"
       }
     }
   },
@@ -1054,18 +1026,6 @@
       "title": {
         "label": "技能加载审批"
       },
-      "trust": {
-        "title": "审查技能内容 — {id}",
-        "firstLoad": "此技能仓库尚未经过审查，请审查内容后再挂载。",
-        "refChange": "此仓库的 resolved ref 自上次审查后已变更，请审查新内容后再挂载。",
-        "detail": "{repo} · {ref}  ·  供应商: {vendor}",
-        "approve": {
-          "label": "批准并挂载"
-        },
-        "cancel": {
-          "label": "取消 — 不启动会话"
-        }
-      },
       "gitignore": {
         "title": "需要更新 .gitignore",
         "detail": "c3 需要向此项目的 .gitignore 追加匹配 \"_c3_*\" 的条目后再挂载外部技能。",
@@ -1074,17 +1034,6 @@
         },
         "cancel": {
           "label": "取消"
-        }
-      },
-      "orphan": {
-        "title": "孤立技能链接 — {id}",
-        "detail": "此未审查的技能在上一个会话中已挂载但从未使用。请确认保留或移除。",
-        "appendLine": "{repo} · {ref}  ·  供应商: {vendor}",
-        "keep": {
-          "label": "保留链接"
-        },
-        "remove": {
-          "label": "移除链接"
         }
       }
     }
@@ -1146,7 +1095,7 @@
       "title": {
         "label": "外部技能"
       },
-      "hint": "外部 Git 仓库的 SKILL.md 挂载到 vendor 技能发现目录。配置仓库 URL、ref 与信任等级。",
+      "hint": "以外部 git 仓库作为外部 skill 来源,其 SKILL.md 会按配置 ref 的最新版本挂载到所有受支持 vendor 的 skill 发现目录。",
       "empty": "尚未配置外部技能仓库。",
       "add": {
         "label": "+ 添加技能仓库"
@@ -1166,15 +1115,6 @@
         },
         "subpath": {
           "label": "子路径"
-        },
-        "vendor": {
-          "label": "供应商"
-        },
-        "trust": {
-          "label": "信任等级"
-        },
-        "pinCommit": {
-          "label": "锁定提交"
         }
       },
       "id": {
@@ -1190,25 +1130,6 @@
       },
       "subpath": {
         "placeholder": "可选子目录（如 skills/my-skill）"
-      },
-      "vendor": {
-        "all": "所有支持的",
-        "unsupported": "此供应商不支持"
-      },
-      "trust": {
-        "pinned": {
-          "label": "锁定 — 固定在某个提交"
-        },
-        "reviewOnUpdate": {
-          "label": "更新后审查"
-        },
-        "unreviewed": {
-          "label": "不审查 — 直接挂载"
-        }
-      },
-      "pinCommit": {
-        "placeholder": "40 位十六进制提交 SHA",
-        "required": "信任等级为锁定时必须填写锁定提交"
       }
     }
   }

@@ -330,7 +330,7 @@
       "title": {
         "label": "External skills"
       },
-      "hint": "External git repositories whose SKILL.md files are mounted into the vendor's skill discovery directory. Configure the repo URL, ref, and trust level below.",
+      "hint": "External git repositories whose SKILL.md files are mounted into every supported vendor's skill discovery directory at the configured ref's latest head.",
       "empty": "No external skill repositories configured.",
       "add": {
         "label": "+ Add skill repo"
@@ -350,15 +350,6 @@
         },
         "subpath": {
           "label": "Subpath"
-        },
-        "vendor": {
-          "label": "Vendor"
-        },
-        "trust": {
-          "label": "Trust"
-        },
-        "pinCommit": {
-          "label": "Pin commit"
         }
       },
       "id": {
@@ -374,25 +365,6 @@
       },
       "subpath": {
         "placeholder": "Optional sub-directory (e.g. skills/my-skill)"
-      },
-      "vendor": {
-        "all": "All supported",
-        "unsupported": "Not supported by this vendor"
-      },
-      "trust": {
-        "pinned": {
-          "label": "Pinned — frozen to a commit"
-        },
-        "reviewOnUpdate": {
-          "label": "Review on update"
-        },
-        "unreviewed": {
-          "label": "Unreviewed — mount without checking"
-        }
-      },
-      "pinCommit": {
-        "placeholder": "40-hex commit SHA",
-        "required": "A pin commit is required when trust is Pinned"
       }
     }
   },
@@ -1054,18 +1026,6 @@
       "title": {
         "label": "Skill load approval"
       },
-      "trust": {
-        "title": "Review skill content — {id}",
-        "firstLoad": "This skill repository has not been reviewed yet. Review its content before mounting.",
-        "refChange": "The resolved ref for this repository has changed since the last review. Review the new content before mounting.",
-        "detail": "{repo} · {ref}  ·  Vendor: {vendor}",
-        "approve": {
-          "label": "Approve and mount"
-        },
-        "cancel": {
-          "label": "Cancel — do not launch session"
-        }
-      },
       "gitignore": {
         "title": ".gitignore update needed",
         "detail": "c3 needs to append entries matching \"_c3_*\" to this project's .gitignore before mounting external skills.",
@@ -1074,17 +1034,6 @@
         },
         "cancel": {
           "label": "Cancel"
-        }
-      },
-      "orphan": {
-        "title": "Orphaned skill link — {id}",
-        "detail": "This unreviewed skill was mounted in a previous session but was never used. Confirm if you'd like to keep the link going forward or remove it.",
-        "appendLine": "{repo} · {ref}  ·  Vendor: {vendor}",
-        "keep": {
-          "label": "Keep the link"
-        },
-        "remove": {
-          "label": "Remove the link"
         }
       }
     }
@@ -1146,7 +1095,7 @@
       "title": {
         "label": "External skills"
       },
-      "hint": "External git repositories whose SKILL.md files are mounted into the vendor's skill discovery directory. Configure the repo URL, ref, and trust level below.",
+      "hint": "External git repositories whose SKILL.md files are mounted into every supported vendor's skill discovery directory at the configured ref's latest head.",
       "empty": "No external skill repositories configured.",
       "add": {
         "label": "+ Add skill repo"
@@ -1166,15 +1115,6 @@
         },
         "subpath": {
           "label": "Subpath"
-        },
-        "vendor": {
-          "label": "Vendor"
-        },
-        "trust": {
-          "label": "Trust"
-        },
-        "pinCommit": {
-          "label": "Pin commit"
         }
       },
       "id": {
@@ -1190,25 +1130,6 @@
       },
       "subpath": {
         "placeholder": "Optional sub-directory (e.g. skills/my-skill)"
-      },
-      "vendor": {
-        "all": "All supported",
-        "unsupported": "Not supported by this vendor"
-      },
-      "trust": {
-        "pinned": {
-          "label": "Pinned — frozen to a commit"
-        },
-        "reviewOnUpdate": {
-          "label": "Review on update"
-        },
-        "unreviewed": {
-          "label": "Unreviewed — mount without checking"
-        }
-      },
-      "pinCommit": {
-        "placeholder": "40-hex commit SHA",
-        "required": "A pin commit is required when trust is Pinned"
       }
     }
   }

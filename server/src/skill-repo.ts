@@ -91,9 +91,8 @@ export async function lsRemote(repo: string, ref: string): Promise<string | null
 }
 
 /**
- * Clone `repo` at `ref` into `dir` (full clone — a pinned commit must be reachable
- * in history, so no `--depth`). Resolves with the git result. Caller ensures `dir`
- * does not already hold a clone (see {@link cloneOrUpdate}).
+ * Clone `repo` at `ref` into `dir`. Resolves with the git result. Caller ensures
+ * `dir` does not already hold a clone (see {@link cloneOrUpdate}).
  */
 export async function cloneRepo(repo: string, ref: string, dir: string): Promise<GitRunResult> {
   return runGit(['clone', '--branch', ref, repo, dir])
@@ -104,25 +103,13 @@ export async function cloneRepo(repo: string, ref: string, dir: string): Promise
  * `reset --hard FETCH_HEAD` so the working tree becomes exactly the fetched ref.
  * A hard reset (not a plain `checkout`, which would leave a stale local branch
  * un-advanced) keeps the tree authoritative to the remote — external skills are
- * read-only inputs, local drift is never preserved. `ref` is a branch/tag here;
- * a pinned exact commit is enforced separately via {@link verifyPinnedCommit}.
+ * read-only inputs, local drift is never preserved. c3 always mounts the `ref`'s
+ * current head (branch / tag / commit).
  */
 export async function pullRepo(dir: string, ref: string): Promise<GitRunResult> {
   const fetch = await runGit(['-C', dir, 'fetch', 'origin', ref], dir)
   if (fetch.code !== 0) return fetch
   return runGit(['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], dir)
-}
-
-/**
- * Verify `sha` exists as a commit object in the clone at `dir` (`git cat-file -t`,
- * the `git cat-file -p <sha>` check of ADR-0016). After a clone/pull of the
- * configured ref, a `trust: 'pinned'` SHA that a force-push removed from history
- * will NOT be present → this returns false, so a forged/rewritten pin is rejected
- * before the repo is ever mounted.
- */
-export async function verifyPinnedCommit(dir: string, sha: string): Promise<boolean> {
-  const r = await runGit(['-C', dir, 'cat-file', '-t', sha], dir)
-  return r.code === 0 && r.stdout.trim() === 'commit'
 }
 
 /**
@@ -163,12 +150,12 @@ export interface EnsureSkillRepoResult {
 
 /**
  * Bring a `SkillRepoConfig` to a ready-on-disk state in the shared cache: clone (or
- * update) it at its `ref`, verify a `pinned` commit, and resolve its `subpath`.
- * Returns the final skill source directory the mount layer (2/3) will link from.
- * Vendor is irrelevant here — the cache is shared across vendors by design.
+ * update) it at its `ref`, and resolve its `subpath`. Returns the final skill source
+ * directory the mount layer (2/3) will link from. Vendor is irrelevant here — the
+ * cache is shared across vendors by design.
  *
- * `config` is assumed already validated by `getSkillRepos()` (ref present, pinned
- * carries a SHA); this layer re-checks the pinned SHA against real git history.
+ * `config` is assumed already validated by `getSkillRepos()` (ref present); c3 always
+ * mounts the `ref`'s current head, with no pin verification.
  */
 export async function ensureSkillRepo(config: SkillRepoConfig): Promise<EnsureSkillRepoResult> {
   const cacheDir = skillRepoCacheDir(config.repo, config.ref)
@@ -177,16 +164,6 @@ export async function ensureSkillRepo(config: SkillRepoConfig): Promise<EnsureSk
     : await cloneRepo(config.repo, config.ref, cacheDir)
   if (git.code !== 0) {
     return { ok: false, cacheDir, error: `git 同步失败: ${oneLine(git.stderr || git.stdout)}` }
-  }
-  if (config.trust === 'pinned') {
-    const sha = config.pinCommit ?? ''
-    if (!(await verifyPinnedCommit(cacheDir, sha))) {
-      return {
-        ok: false,
-        cacheDir,
-        error: `pinned commit 未在仓库历史中找到 (疑似 force-push 伪造): ${sha}`,
-      }
-    }
   }
   try {
     const skillDir = resolveSubpath(cacheDir, config.subpath)

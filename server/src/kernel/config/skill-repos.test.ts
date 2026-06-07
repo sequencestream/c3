@@ -3,9 +3,10 @@ import type { SkillRepoConfig } from '@ccc/shared/protocol'
 import { parseSkillRepoUrl, validateSkillRepos } from './index.js'
 
 // `validateSkillRepos` is the fail-HARD validator (ADR-0016): unlike the fail-soft
-// settings `normalize`, every violation throws. These tests pin the four mandated
-// error paths (missing ref / dup id / pinned-without-SHA / devSkill collision) plus
-// the GitHub-URL ref/subpath backfill, with no disk access (pure function).
+// settings `normalize`, every violation throws. These tests pin the mandated error
+// paths (missing ref / dup id / devSkill collision) plus the GitHub-URL ref/subpath
+// backfill, with no disk access (pure function). Skills now carry only id/repo/ref/
+// subpath — no vendor/trust/pin to validate.
 
 /** Minimal valid repo config with overridable fields. */
 function repo(over: Partial<SkillRepoConfig> = {}): SkillRepoConfig {
@@ -13,7 +14,6 @@ function repo(over: Partial<SkillRepoConfig> = {}): SkillRepoConfig {
     id: 'r1',
     repo: 'https://github.com/owner/repo',
     ref: 'main',
-    trust: 'unreviewed',
     ...over,
   }
 }
@@ -54,12 +54,11 @@ describe('validateSkillRepos', () => {
     expect(validateSkillRepos(undefined)).toEqual([])
   })
 
-  it('applies vendor/trust defaults', () => {
+  it('normalizes to just id/repo/ref/subpath (no vendor/trust/pin fields)', () => {
     const [r] = validateSkillRepos([
       { id: 'r1', repo: 'https://github.com/o/r', ref: 'main' } as SkillRepoConfig,
     ])
-    expect(r.vendor).toBe('claude')
-    expect(r.trust).toBe('unreviewed')
+    expect(r).toEqual({ id: 'r1', repo: 'https://github.com/o/r', ref: 'main' })
   })
 
   it('backfills ref + subpath from the repo URL when fields are unset', () => {
@@ -67,7 +66,6 @@ describe('validateSkillRepos', () => {
       {
         id: 'r1',
         repo: 'https://github.com/o/r/tree/dev/skills/x',
-        trust: 'unreviewed',
       } as SkillRepoConfig,
     ])
     expect(r.repo).toBe('https://github.com/o/r')
@@ -81,19 +79,6 @@ describe('validateSkillRepos', () => {
 
   it('throws on duplicate ids', () => {
     expect(() => validateSkillRepos([repo({ id: 'dup' }), repo({ id: 'dup' })])).toThrow(/id 重复/)
-  })
-
-  it('throws when a pinned repo lacks a 40-hex pinCommit', () => {
-    expect(() => validateSkillRepos([repo({ trust: 'pinned' })])).toThrow(/40 位 SHA/)
-    expect(() => validateSkillRepos([repo({ trust: 'pinned', pinCommit: 'abc' })])).toThrow(
-      /40 位 SHA/,
-    )
-  })
-
-  it('accepts a pinned repo with a valid SHA (lowercased)', () => {
-    const sha = 'A'.repeat(40)
-    const [r] = validateSkillRepos([repo({ trust: 'pinned', pinCommit: sha })])
-    expect(r.pinCommit).toBe('a'.repeat(40))
   })
 
   it('throws when devSkill (sans leading /) collides with a repo id', () => {

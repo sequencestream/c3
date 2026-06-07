@@ -1,8 +1,10 @@
 /**
  * Skill mount lifecycle (mount layer 2/3, ADR-0016/0017) — turns a validated
  * `SkillRepoConfig` into a live, vendor-discovered skill by soft-linking the
- * on-disk clone (1/3's `ensureSkillRepo`) into each target vendor's project-level
- * discovery dir, gated by trust + `.gitignore` acks.
+ * on-disk clone (1/3's `ensureSkillRepo`) into EVERY build-link-capable vendor's
+ * project-level discovery dir. The mount is silent — the configured `ref`'s head
+ * is resolved and linked with no trust/vendor knobs and no pre-mount approval; the
+ * only remaining gate is the one-time `.gitignore` append ack.
  *
  * Lifecycle contract (spec §6):
  *  - **per session, before `driver.start`** — `ensureLinksForLaunch` runs in
@@ -10,12 +12,10 @@
  *  - **idempotent** — a recorded mount whose symlink still points at the same
  *    target and whose ref is unchanged is fully skipped (no clone, no relink).
  *  - **no cleanup** — links survive session end; a later session cache-hits them.
- *  - **cache invalidation** — a ref change (resolved SHA ≠ recorded) re-gates per
- *    trust tier (`unreviewed`/`review-on-update` re-ask; `pinned` re-verifies and
- *    errors on a vanished commit).
+ *  - **cache invalidation** — a ref change (resolved SHA ≠ recorded) relinks the
+ *    latest head silently.
  *  - **support-gated** — a vendor whose `detectSkillSupport` is not `full` builds
  *    NO link (greyed); the session still launches.
- *  - **unreviewed cancel ⇒ no launch** — throws {@link SkillLoadCancelled}.
  *
  * The orchestrator is dependency-injected (`requestApproval`, `ensureRepo`,
  * `resolveRef`, `loaders`, `now`) so it unit-tests without a WS, a real git
@@ -26,33 +26,13 @@ import { join, relative } from 'node:path'
 import type { SkillRepoConfig, VendorId } from '@ccc/shared/protocol'
 import type { SkillLoader } from '../agent/adapters/types.js'
 import { ensureSkillRepo, lsRemote, type EnsureSkillRepoResult } from '../../skill-repo.js'
+import { getSkillLink, setSkillLink, skillLinkKey, type SkillLinkRecord } from '../../state.js'
 import {
-  getSkillLink,
-  listSkillLinks,
-  markSkillLinkConsumed,
-  setSkillLink,
-  skillLinkKey,
-  type SkillLinkRecord,
-} from '../../state.js'
-import {
-  evaluateTrustGate,
   needsGitignoreAck,
   recordGitignoreAck,
-  recordTrustAck,
   requestSkillApproval,
   type SkillApprovalAsk,
 } from './approval.js'
-
-/** Thrown when an `unreviewed` trust gate is cancelled — the session must NOT launch. */
-export class SkillLoadCancelled extends Error {
-  constructor(
-    readonly id: string,
-    readonly vendor: VendorId,
-  ) {
-    super(`外部 skill 加载被取消 (unreviewed 未确认): ${id} → ${vendor}`)
-    this.name = 'SkillLoadCancelled'
-  }
-}
 
 /** One successfully mounted skill. */
 export interface MountedSkill {
@@ -66,7 +46,7 @@ export interface MountedSkill {
 export interface SkippedSkill {
   id: string
   vendor: VendorId
-  reason: 'unsupported' | 'cache-hit' | 'gitignore-cancelled' | 'review-cancelled' | 'repo-error'
+  reason: 'unsupported' | 'cache-hit' | 'gitignore-cancelled' | 'repo-error'
   detail?: string
 }
 
@@ -75,14 +55,6 @@ export interface SkillMountOutcome {
   skipped: SkippedSkill[]
   /** Vendors that had a config targeting them but were not `full` (console greys them). */
   greyed: VendorId[]
-  /**
-   * Idempotency keys of the links this launch actually uses (freshly mounted +
-   * cache-hit). A link is "consumed" only once the run truly starts, so the caller
-   * (`launchRun`, Phase 2) calls {@link markMountsConsumed} with these AFTER
-   * `driver.start` succeeds — a mount recorded but never started stays unconsumed
-   * and surfaces as an orphan at the next boot ({@link scanOrphans}).
-   */
-  consumableKeys: string[]
 }
 
 export interface EnsureLinksDeps {
@@ -90,7 +62,7 @@ export interface EnsureLinksDeps {
   configs: SkillRepoConfig[]
   /** vendor → its SkillLoader (from the available adapters). A missing key ⇒ vendor not available. */
   loaders: Partial<Record<VendorId, SkillLoader>>
-  /** Ask the human to resolve a gate (true = approve). Production wires this to {@link requestSkillApproval}. */
+  /** Ask the human to resolve the `.gitignore` gate (true = approve). Production wires this to {@link requestSkillApproval}. */
   requestApproval?: (ask: SkillApprovalAsk) => Promise<boolean>
   /** Aborts the launch (also resolves pending asks to cancel). */
   signal?: AbortSignal
@@ -107,18 +79,13 @@ function defaultRequestApproval(signal?: AbortSignal) {
   return (ask: SkillApprovalAsk) => requestSkillApproval(ask, signal)
 }
 
-/** The build-link target vendors for a config: its single vendor, or every available `full` vendor for `'all'`. */
+/** The build-link target vendors: every available vendor whose skill discovery is `full`. */
 async function targetVendors(
-  config: SkillRepoConfig,
   loaders: Partial<Record<VendorId, SkillLoader>>,
 ): Promise<{ supported: VendorId[]; greyed: VendorId[] }> {
-  const requested: VendorId[] =
-    config.vendor === 'all'
-      ? (Object.keys(loaders) as VendorId[])
-      : [(config.vendor ?? 'claude') as VendorId]
   const supported: VendorId[] = []
   const greyed: VendorId[] = []
-  for (const v of requested) {
+  for (const v of Object.keys(loaders) as VendorId[]) {
     const loader = loaders[v]
     if (!loader) {
       greyed.push(v)
@@ -155,8 +122,8 @@ function gitignorePatternFor(projectDir: string, loader: SkillLoader): string {
 
 /**
  * Bring every `config` to a mounted, vendor-discovered state for this launch.
- * See the module contract. Throws {@link SkillLoadCancelled} only on an
- * `unreviewed` cancel; every other failure degrades to a `skipped` entry.
+ * See the module contract. Silent: the only human gate is the one-time
+ * `.gitignore` append; every failure degrades to a `skipped` entry, never throws.
  */
 export async function ensureLinksForLaunch(deps: EnsureLinksDeps): Promise<SkillMountOutcome> {
   const {
@@ -173,10 +140,9 @@ export async function ensureLinksForLaunch(deps: EnsureLinksDeps): Promise<Skill
   const mounted: MountedSkill[] = []
   const skipped: SkippedSkill[] = []
   const greyedSet = new Set<VendorId>()
-  const consumableKeys: string[] = []
 
   for (const config of configs) {
-    const { supported, greyed } = await targetVendors(config, loaders)
+    const { supported, greyed } = await targetVendors(loaders)
     for (const v of greyed) {
       greyedSet.add(v)
       skipped.push({ id: config.id, vendor: v, reason: 'unsupported' })
@@ -196,10 +162,8 @@ export async function ensureLinksForLaunch(deps: EnsureLinksDeps): Promise<Skill
         // mount still cache-hits on an unchanged config, an unrecorded one proceeds.
       }
 
-      // Cache hit: recorded, symlink present, ref unchanged ⇒ fully skip (no clone,
-      // no relink). It IS used this launch, so it joins the consumable set.
+      // Cache hit: recorded, symlink present, ref unchanged ⇒ fully skip (no clone, no relink).
       if (existing && existing.ref === resolvedRef && existsSync(existing.linkPath)) {
-        consumableKeys.push(key)
         skipped.push({ id: config.id, vendor, reason: 'cache-hit' })
         continue
       }
@@ -223,29 +187,7 @@ export async function ensureLinksForLaunch(deps: EnsureLinksDeps): Promise<Skill
       }
       ensureGitignorePattern(projectDir, pattern)
 
-      // Trust gate.
-      const trust = evaluateTrustGate(projectDir, config, vendor, resolvedRef)
-      if (trust.needsApproval) {
-        const ok = await requestApproval({
-          kind: 'trust',
-          id: config.id,
-          vendor,
-          repo: config.repo,
-          ref: config.ref,
-          detail:
-            trust.reason === 'ref-change'
-              ? `外部 skill 内容自上次确认后变动 (ref→${resolvedRef.slice(0, 12)}),请复核: ${config.id}`
-              : `首次加载外部 skill,请确认信任: ${config.id} (${config.repo})`,
-        })
-        if (!ok) {
-          if (config.trust === 'unreviewed') throw new SkillLoadCancelled(config.id, vendor)
-          skipped.push({ id: config.id, vendor, reason: 'review-cancelled' })
-          continue
-        }
-        recordTrustAck(projectDir, config, vendor, resolvedRef)
-      }
-
-      // Bring the repo to disk (clone/pull + pinned cat-file verify).
+      // Bring the repo to disk (clone/pull the configured ref's head).
       const repo = await ensureRepo(config)
       if (!repo.ok || !repo.skillDir) {
         skipped.push({ id: config.id, vendor, reason: 'repo-error', detail: repo.error })
@@ -263,55 +205,12 @@ export async function ensureLinksForLaunch(deps: EnsureLinksDeps): Promise<Skill
         linkPath,
         target: repo.skillDir,
         ref: resolvedRef,
-        trust: config.trust,
         createdAt: now(),
-        consumedAt: now(),
       }
       setSkillLink(key, record)
-      consumableKeys.push(key)
       mounted.push({ id: config.id, vendor, linkPath, target: repo.skillDir })
     }
   }
 
-  return { mounted, skipped, greyed: [...greyedSet], consumableKeys }
-}
-
-/**
- * Mark mounts as consumed AFTER a successful `driver.start` (spec §6: consumed =
- * a run actually used the link). This prevents a mount that was *recorded* but
- * whose launch was subsequently aborted from being silently "known-good" at the
- * next boot — unconsumed mounts surface as orphans via {@link scanOrphans}.
- */
-export function markMountsConsumed(keys: string[], now: () => number = Date.now): void {
-  for (const key of keys) markSkillLinkConsumed(key, now())
-}
-
-/** One orphan link found at boot (an `unreviewed`, never-consumed mount). */
-export interface SkillOrphan {
-  key: string
-  id: string
-  vendor: VendorId
-  linkPath: string
-}
-
-/**
- * Scan recorded mounts at c3 boot for `unreviewed` links that were never consumed
- * by a launch (left from a prior session) and emit a one-time ack reminder for each
- * via `emit`. Informational only — never blocks. Returns the orphans found.
- */
-export function scanOrphans(emit?: (orphan: SkillOrphan) => void): SkillOrphan[] {
-  const orphans: SkillOrphan[] = []
-  for (const rec of listSkillLinks()) {
-    if (rec.trust === 'unreviewed' && rec.consumedAt === undefined) {
-      const orphan: SkillOrphan = {
-        key: skillLinkKey(rec.projectDir, rec.vendor, rec.id),
-        id: rec.id,
-        vendor: rec.vendor,
-        linkPath: rec.linkPath,
-      }
-      orphans.push(orphan)
-      emit?.(orphan)
-    }
-  }
-  return orphans
+  return { mounted, skipped, greyed: [...greyedSet] }
 }

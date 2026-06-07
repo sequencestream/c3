@@ -1717,15 +1717,9 @@ function cancelSkillLoad(requestId: string) {
 }
 
 function dismissSkillApproval() {
-  // Closing the modal without a decision — for a pending `trust` gate the backend
-  // stays blocked until the resolve arrives; the user re-opens the modal by
-  // re-launching. For the no-block `orphan` kind, closing is a no-op.
-  if (skillApprovalRequest.value?.kind === 'orphan') {
-    skillApprovalRequest.value = null
-  }
-  // `trust` and `gitignore` gates block the session launch; dismissing the modal
-  // without deciding would leave the backend hanging. We do NOT auto-cancel here
-  // because the user may switch away and come back. The modal stays open until
+  // The `.gitignore` gate blocks the first external-skill mount; dismissing the
+  // modal without deciding would leave the backend hanging. We do NOT auto-cancel
+  // here because the user may switch away and come back. The modal stays open until
   // a decision is made.
 }
 </script>
@@ -1908,7 +1902,6 @@ function dismissSkillApproval() {
     :open="projectConfigOpen"
     :project-config="currentProjectConfig"
     :current-workspace="currentWorkspace"
-    :skill-support="skillSupport"
     @close="projectConfigOpen = false"
     @save="saveProjectConfig"
   />

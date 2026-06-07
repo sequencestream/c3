@@ -14,13 +14,13 @@
  *
  * From repo root: `rtk proxy npx vitest run skill-loader/e2e-mount.integration.test.ts`
  */
-import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rm, readlink, stat } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { ensureLinksForLaunch, SkillLoadCancelled } from './index.js'
+import { ensureLinksForLaunch } from './index.js'
 import { resetStateCacheForTests } from '../../state.js'
 import { createClaudeSkillLoader } from '../agent/adapters/claude/skill.js'
 import { createCodexSkillLoader } from '../agent/adapters/codex/skill.js'
@@ -102,8 +102,6 @@ describe('e2e: skill mount integration', () => {
       id: 'my-test-skill',
       repo: repoDir, // use the local repo path
       ref: 'main',
-      trust: 'review-on-update',
-      vendor: 'claude',
     }
 
     // ---- First call: full flow ----
@@ -113,7 +111,7 @@ describe('e2e: skill mount integration', () => {
       loaders: { claude: createClaudeSkillLoader() },
       requestApproval: async (ask) => {
         approvalLog.push(ask)
-        // Approve the gitignore and trust gates
+        // Approve the gitignore gate
         return true
       },
     })
@@ -134,17 +132,13 @@ describe('e2e: skill mount integration', () => {
     const skillMd = await stat(join(linkTarget, 'SKILL.md'))
     expect(skillMd.isFile()).toBe(true)
 
-    // Verify consumableKeys includes the mount
-    expect(result1.consumableKeys).toHaveLength(1)
-
     // Verify .gitignore was updated
     const gitignore = await readFile(join(projectDir, '.gitignore'), 'utf-8')
     expect(gitignore).toContain('_c3_*/')
 
-    // Verify approval log: gitignore first, then trust
-    expect(approvalLog.length).toBeGreaterThanOrEqual(2)
+    // Verify approval log: the only gate is the one-time gitignore ack
+    expect(approvalLog).toHaveLength(1)
     expect(approvalLog[0].kind).toBe('gitignore')
-    expect(approvalLog[1].kind).toBe('trust')
   })
 
   it('second call is a cache hit (no clone, no relink, no re-ask)', async () => {
@@ -152,8 +146,6 @@ describe('e2e: skill mount integration', () => {
       id: 'my-test-skill',
       repo: repoDir,
       ref: 'main',
-      trust: 'review-on-update',
-      vendor: 'claude',
     }
 
     // First call — mount
@@ -181,19 +173,15 @@ describe('e2e: skill mount integration', () => {
     expect(result2.mounted).toHaveLength(0)
     // Should be in skipped as cache-hit
     expect(result2.skipped.some((s) => s.reason === 'cache-hit')).toBe(true)
-    // No new approvals (gitignore already acked, same ref trust already acked)
+    // No new approvals (gitignore already acked, same ref)
     expect(approvalLog).toHaveLength(0)
-    // ConsumableKeys still returned for the cache hit
-    expect(result2.consumableKeys).toHaveLength(1)
   })
 
-  it('vendor=all: mounts into claude + codex', async () => {
+  it('fans out into claude + codex', async () => {
     const config: SkillRepoConfig = {
       id: 'multi-vendor',
       repo: repoDir,
       ref: 'main',
-      trust: 'review-on-update',
-      vendor: 'all',
     }
 
     const codexSkillDir = join(projectDir, '.codex', 'skills')
@@ -232,37 +220,6 @@ describe('e2e: skill mount integration', () => {
     expect(codexStat.isFile()).toBe(true)
   })
 
-  it('trust=unreviewed with cancel blocks the session (SkillLoadCancelled)', async () => {
-    const config: SkillRepoConfig = {
-      id: 'blocking-skill',
-      repo: repoDir,
-      ref: 'main',
-      trust: 'unreviewed',
-      vendor: 'claude',
-    }
-
-    // Use a custom loader that doesn't need approval for gitignore
-    // but we'll cancel on the trust gate
-    let trustPromiseApproved = false
-
-    await expect(
-      ensureLinksForLaunch({
-        projectDir,
-        configs: [config],
-        loaders: { claude: createClaudeSkillLoader() },
-        requestApproval: async (ask) => {
-          if (ask.kind === 'gitignore') return true // approve gitignore
-          if (ask.kind === 'trust') {
-            trustPromiseApproved = true
-          }
-          return false // cancel trust = cancels the whole launch
-        },
-      }),
-    ).rejects.toThrow(SkillLoadCancelled)
-
-    expect(trustPromiseApproved).toBe(true)
-  })
-
   it('unsupported vendor is greyed (symlink not created)', async () => {
     // Create a loader that reports none
     const { createSkillLoader } = await import('../agent/adapters/skill-loader-base.js')
@@ -276,8 +233,6 @@ describe('e2e: skill mount integration', () => {
       id: 'grey-skill',
       repo: repoDir,
       ref: 'main',
-      trust: 'review-on-update',
-      vendor: 'claude',
     }
 
     const result = await ensureLinksForLaunch({
@@ -298,8 +253,6 @@ describe('e2e: skill mount integration', () => {
       id: 'subpath-skill',
       repo: repoDir,
       ref: 'main',
-      trust: 'review-on-update',
-      vendor: 'claude',
       subpath: 'nonexistent-dir',
     }
 
@@ -313,44 +266,5 @@ describe('e2e: skill mount integration', () => {
     expect(result.mounted).toHaveLength(0)
     expect(result.skipped.some((s) => s.reason === 'repo-error')).toBe(true)
     expect(result.skipped[0].detail).toContain('不存在')
-  })
-
-  it('trust=review-on-update with same ref is silent on second mount', async () => {
-    const config: SkillRepoConfig = {
-      id: 'silent-skill',
-      repo: repoDir,
-      ref: 'main',
-      trust: 'review-on-update',
-      vendor: 'claude',
-    }
-
-    const approvalsForRepeat: SkillApprovalAsk[] = []
-
-    // First call
-    await ensureLinksForLaunch({
-      projectDir,
-      configs: [config],
-      loaders: { claude: createClaudeSkillLoader() },
-      requestApproval: async (ask) => {
-        approvalsForRepeat.push(ask)
-        return true
-      },
-    })
-
-    const firstApprovalCount = approvalsForRepeat.length
-
-    // Second call — same ref → trust should NOT re-ask
-    await ensureLinksForLaunch({
-      projectDir,
-      configs: [config],
-      loaders: { claude: createClaudeSkillLoader() },
-      requestApproval: async (ask) => {
-        approvalsForRepeat.push(ask)
-        return true
-      },
-    })
-
-    // No new approvals (gitignore already acked, trust same ref)
-    expect(approvalsForRepeat.length).toBe(firstApprovalCount)
   })
 })

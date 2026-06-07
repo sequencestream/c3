@@ -1,37 +1,24 @@
 /**
  * Unit tests for the skill mount lifecycle orchestrator (mount layer 2/3).
  *
- * Covers:
+ * External skills now mount silently into every build-link-capable vendor at the
+ * configured ref's head — no trust knobs, no orphan/consume tracking. Covers:
  * - ensureLinksForLaunch: full path, cache hit, unsupported vendor (grey),
- *   unreviewed cancel → SkillLoadCancelled, .gitignore ack gate,
- *   trust review-on-update first-load + same-ref silent + ref-change re-ask,
- *   repo error → skip (not throw).
- * - scanOrphans: finds unreviewed unconsumed mounts.
- * - markMountsConsumed: clears orphan status.
+ *   multi-vendor fan-out, .gitignore ack gate, repo error → skip (not throw).
  *
  * From repo root: `rtk proxy npx vitest run skill-loader/index.test.ts`
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm, readlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, readlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { SkillRepoConfig, VendorId } from '@ccc/shared/protocol'
-import type { SkillLoader, SkillSupportReport } from '../agent/adapters/types.js'
-import {
-  resetStateCacheForTests,
-  setSkillSupport,
-  setSkillLink,
-  skillLinkKey,
-} from '../../state.js'
-import {
-  ensureLinksForLaunch,
-  scanOrphans,
-  markMountsConsumed,
-  SkillLoadCancelled,
-} from './index.js'
+import type { SkillLoader } from '../agent/adapters/types.js'
+import { resetStateCacheForTests } from '../../state.js'
+import { ensureLinksForLaunch } from './index.js'
 import type { EnsureSkillRepoResult } from '../../skill-repo.js'
 import type { SkillApprovalAsk } from './approval.js'
-import { recordGitignoreAck, recordTrustAck, setSkillApprovalSend } from './approval.js'
+import { setSkillApprovalSend } from './approval.js'
 
 // ---------------------------------------------------------------------------
 // Fake SkillLoader
@@ -62,8 +49,6 @@ const baseConfig: SkillRepoConfig = {
   id: 'my-skill',
   repo: 'https://github.com/test/repo',
   ref: 'main',
-  trust: 'unreviewed',
-  vendor: 'claude',
 }
 
 function okRepo(skillDir: string): (config: SkillRepoConfig) => Promise<EnsureSkillRepoResult> {
@@ -111,7 +96,7 @@ describe('ensureLinksForLaunch', () => {
     await mkdir(source, { recursive: true })
     const result = await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, trust: 'pinned', pinCommit: 'a'.repeat(40) }],
+      configs: [baseConfig],
       loaders: { claude: fakeLoader('claude', claudeSkillDir) },
       ensureRepo: okRepo(source),
       resolveRef: async () => 'sha-resolved',
@@ -130,7 +115,7 @@ describe('ensureLinksForLaunch', () => {
     // First call: mounts
     const r1 = await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, trust: 'pinned', pinCommit: 'a'.repeat(40) }],
+      configs: [baseConfig],
       loaders: { claude: fakeLoader('claude', claudeSkillDir) },
       ensureRepo: okRepo(source),
       resolveRef: async () => 'sha-1',
@@ -140,7 +125,7 @@ describe('ensureLinksForLaunch', () => {
     // Second call: cache hit
     const r2 = await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, trust: 'pinned', pinCommit: 'a'.repeat(40) }],
+      configs: [baseConfig],
       loaders: { claude: fakeLoader('claude', claudeSkillDir) },
       ensureRepo: okRepo(source),
       resolveRef: async () => 'sha-1',
@@ -164,12 +149,12 @@ describe('ensureLinksForLaunch', () => {
     expect(result.skipped.some((s) => s.reason === 'unsupported')).toBe(true)
   })
 
-  it('vendor=all → expands to all full vendors', async () => {
+  it('fans out to every build-link-capable vendor', async () => {
     const source = join(tmpRoot, 'source')
     await mkdir(source, { recursive: true })
     const result = await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, vendor: 'all', trust: 'pinned', pinCommit: 'a'.repeat(40) }],
+      configs: [baseConfig],
       loaders: {
         claude: fakeLoader('claude', claudeSkillDir),
         codex: fakeLoader('codex', codexSkillDir),
@@ -182,55 +167,10 @@ describe('ensureLinksForLaunch', () => {
     expect(result.mounted.map((m) => m.vendor).sort()).toEqual(['claude', 'codex'])
   })
 
-  it('unreviewed + cancel → throws SkillLoadCancelled', async () => {
-    // Pre-ack the gitignore gate so the trust gate is the one being tested.
-    recordGitignoreAck(tmpRoot)
-    await expect(
-      ensureLinksForLaunch({
-        projectDir: tmpRoot,
-        configs: [{ ...baseConfig, trust: 'unreviewed' }],
-        loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-        ensureRepo: okRepo(join(tmpRoot, 'source')),
-        resolveRef: async () => 'sha-1',
-        requestApproval: async () => false,
-      }),
-    ).rejects.toThrow(SkillLoadCancelled)
-  })
-
-  it('review-on-update: same ref after ack → silent (no approval needed)', async () => {
-    const source = join(tmpRoot, 'source')
-    await mkdir(source, { recursive: true })
-    let approvalCount = 0
-    const approve = async () => {
-      approvalCount++
-      return true
-    }
-    // Mount once (first-load → approval fired)
-    await ensureLinksForLaunch({
-      projectDir: tmpRoot,
-      configs: [{ ...baseConfig, vendor: 'all', trust: 'review-on-update' }],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-      ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-1',
-      requestApproval: approve,
-    })
-    const firstCount = approvalCount
-    // Remount same ref → no approval fired
-    await ensureLinksForLaunch({
-      projectDir: tmpRoot,
-      configs: [{ ...baseConfig, vendor: 'all', trust: 'review-on-update' }],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-      ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-1',
-      requestApproval: approve,
-    })
-    expect(approvalCount).toBe(firstCount) // no new approval
-  })
-
   it('repo error → skip (not throw)', async () => {
     const result = await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, trust: 'pinned', pinCommit: 'a'.repeat(40) }],
+      configs: [baseConfig],
       loaders: { claude: fakeLoader('claude', claudeSkillDir) },
       ensureRepo: failRepo('clone failed'),
       resolveRef: async () => 'sha-1',
@@ -250,7 +190,7 @@ describe('ensureLinksForLaunch', () => {
     }
     await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, trust: 'pinned', pinCommit: 'a'.repeat(40) }],
+      configs: [baseConfig],
       loaders: { claude: fakeLoader('claude', claudeSkillDir) },
       ensureRepo: okRepo(source),
       resolveRef: async () => 'sha-1',
@@ -260,7 +200,7 @@ describe('ensureLinksForLaunch', () => {
     // Second mount: gitignore already acked → no new gitignore approval
     await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, id: 's2', trust: 'pinned', pinCommit: 'b'.repeat(40) }],
+      configs: [{ ...baseConfig, id: 's2' }],
       loaders: { claude: fakeLoader('claude', claudeSkillDir) },
       ensureRepo: okRepo(source),
       resolveRef: async () => 'sha-2',
@@ -269,121 +209,16 @@ describe('ensureLinksForLaunch', () => {
     expect(gitignoreCount).toBe(1) // no new gitignore approval
   })
 
-  it('consumableKeys returned for cache-hit and mounted', async () => {
-    const source = join(tmpRoot, 'source')
-    await mkdir(source, { recursive: true })
-    const r1 = await ensureLinksForLaunch({
+  it('gitignore cancel → skip (gitignore-cancelled), session still launches', async () => {
+    const result = await ensureLinksForLaunch({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, trust: 'pinned', pinCommit: 'a'.repeat(40) }],
+      configs: [baseConfig],
       loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-      ensureRepo: okRepo(source),
+      ensureRepo: okRepo(join(tmpRoot, 'source')),
       resolveRef: async () => 'sha-1',
-      requestApproval: async () => true,
+      requestApproval: async () => false,
     })
-    expect(r1.consumableKeys).toHaveLength(1)
-    // Second call: cache hit → also returned
-    const r2 = await ensureLinksForLaunch({
-      projectDir: tmpRoot,
-      configs: [{ ...baseConfig, trust: 'pinned', pinCommit: 'a'.repeat(40) }],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-      ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-1',
-      requestApproval: async () => true,
-    })
-    expect(r2.consumableKeys).toHaveLength(1)
-  })
-})
-
-describe('scanOrphans', () => {
-  let origConfigDir: string | undefined
-  beforeEach(() => {
-    origConfigDir = process.env.CLAUDE_CONFIG_DIR
-    process.env.CLAUDE_CONFIG_DIR = join(tmpdir(), 'orphans-' + Math.random())
-    resetStateCacheForTests()
-  })
-  afterEach(() => {
-    if (origConfigDir !== undefined) process.env.CLAUDE_CONFIG_DIR = origConfigDir
-    else delete process.env.CLAUDE_CONFIG_DIR
-    resetStateCacheForTests()
-  })
-
-  it('returns empty when no links exist', () => {
-    expect(scanOrphans()).toEqual([])
-  })
-
-  it('finds unreviewed unconsumed mounts', () => {
-    setSkillLink(skillLinkKey('/p', 'claude', 's1'), {
-      id: 's1',
-      projectDir: '/p',
-      vendor: 'claude',
-      linkPath: '/p/.claude/skills/_c3_s1',
-      target: '/cache/s1',
-      ref: 'sha-1',
-      trust: 'unreviewed',
-      createdAt: 1,
-    })
-    const orphans = scanOrphans()
-    expect(orphans).toHaveLength(1)
-    expect(orphans[0].id).toBe('s1')
-  })
-
-  it('does NOT flag consumed unreviewed mounts', () => {
-    setSkillLink(skillLinkKey('/p', 'claude', 's1'), {
-      id: 's1',
-      projectDir: '/p',
-      vendor: 'claude',
-      linkPath: '/p/.claude/skills/_c3_s1',
-      target: '/cache/s1',
-      ref: 'sha-1',
-      trust: 'unreviewed',
-      createdAt: 1,
-      consumedAt: 2,
-    })
-    expect(scanOrphans()).toEqual([])
-  })
-
-  it('does NOT flag pinned mounts as orphans', () => {
-    setSkillLink(skillLinkKey('/p', 'claude', 's1'), {
-      id: 's1',
-      projectDir: '/p',
-      vendor: 'claude',
-      linkPath: '/p/.claude/skills/_c3_s1',
-      target: '/cache/s1',
-      ref: 'sha-1',
-      trust: 'pinned',
-      createdAt: 1,
-    })
-    expect(scanOrphans()).toEqual([])
-  })
-})
-
-describe('markMountsConsumed', () => {
-  let origConfigDir: string | undefined
-  beforeEach(() => {
-    origConfigDir = process.env.CLAUDE_CONFIG_DIR
-    process.env.CLAUDE_CONFIG_DIR = join(tmpdir(), 'consumed-' + Math.random())
-    resetStateCacheForTests()
-  })
-  afterEach(() => {
-    if (origConfigDir !== undefined) process.env.CLAUDE_CONFIG_DIR = origConfigDir
-    else delete process.env.CLAUDE_CONFIG_DIR
-    resetStateCacheForTests()
-  })
-
-  it('sets consumedAt on the link record', () => {
-    const key = skillLinkKey('/p', 'claude', 's1')
-    setSkillLink(key, {
-      id: 's1',
-      projectDir: '/p',
-      vendor: 'claude',
-      linkPath: '/p/.claude/skills/_c3_s1',
-      target: '/cache/s1',
-      ref: 'sha-1',
-      trust: 'unreviewed',
-      createdAt: 1,
-    })
-    markMountsConsumed([key], () => 42)
-    const orphans = scanOrphans()
-    expect(orphans).toHaveLength(0) // consumed → no longer orphan
+    expect(result.mounted).toHaveLength(0)
+    expect(result.skipped.some((s) => s.reason === 'gitignore-cancelled')).toBe(true)
   })
 })

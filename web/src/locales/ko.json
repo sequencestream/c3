@@ -330,7 +330,7 @@
       "title": {
         "label": "외부 스킬"
       },
-      "hint": "외부 Git 저장소의 SKILL.md 파일을 벤더의 스킬 검색 디렉토리에 마운트합니다. 저장소 URL, ref 및 신뢰 수준을 구성하세요.",
+      "hint": "외부 git 저장소를 외부 skill 소스로 사용합니다. SKILL.md는 설정한 ref의 최신 버전으로 지원되는 모든 vendor의 skill 검색 디렉터리에 마운트됩니다.",
       "empty": "구성된 외부 스킬 저장소가 없습니다.",
       "add": {
         "label": "+ 스킬 저장소 추가"
@@ -350,15 +350,6 @@
         },
         "subpath": {
           "label": "하위 경로"
-        },
-        "vendor": {
-          "label": "벤더"
-        },
-        "trust": {
-          "label": "신뢰 수준"
-        },
-        "pinCommit": {
-          "label": "고정 커밋"
         }
       },
       "id": {
@@ -374,25 +365,6 @@
       },
       "subpath": {
         "placeholder": "선택적 하위 디렉토리(예: skills/my-skill)"
-      },
-      "vendor": {
-        "all": "모두 지원",
-        "unsupported": "이 벤더는 지원하지 않음"
-      },
-      "trust": {
-        "pinned": {
-          "label": "고정 — 특정 커밋에 고정"
-        },
-        "reviewOnUpdate": {
-          "label": "업데이트 시 검토"
-        },
-        "unreviewed": {
-          "label": "미검토 — 확인 없이 마운트"
-        }
-      },
-      "pinCommit": {
-        "placeholder": "40자 16진수 커밋 SHA",
-        "required": "신뢰 수준이 고정인 경우 고정 커밋이 필요합니다"
       }
     }
   },
@@ -1054,18 +1026,6 @@
       "title": {
         "label": "스킬 로드 승인"
       },
-      "trust": {
-        "title": "스킬 내용 검토 — {id}",
-        "firstLoad": "이 스킬 저장소가 아직 검토되지 않았습니다. 마운트하기 전에 내용을 검토하세요.",
-        "refChange": "이 저장소의 resolved ref가 마지막 검토 이후 변경되었습니다. 새 내용을 검토하세요.",
-        "detail": "{repo} · {ref}  ·  벤더: {vendor}",
-        "approve": {
-          "label": "승인 및 마운트"
-        },
-        "cancel": {
-          "label": "취소 — 세션 시작 안 함"
-        }
-      },
       "gitignore": {
         "title": ".gitignore 업데이트 필요",
         "detail": "c3가 외부 스킬을 마운트하기 전에 이 프로젝트의 .gitignore에 \"_c3_*\" 항목을 추가해야 합니다.",
@@ -1074,17 +1034,6 @@
         },
         "cancel": {
           "label": "취소"
-        }
-      },
-      "orphan": {
-        "title": "고립된 스킬 링크 — {id}",
-        "detail": "이 미검토 스킬이 이전 세션에서 마운트되었지만 사용되지 않았습니다. 링크를 유지할지 제거할지 확인하세요.",
-        "appendLine": "{repo} · {ref}  ·  벤더: {vendor}",
-        "keep": {
-          "label": "링크 유지"
-        },
-        "remove": {
-          "label": "링크 제거"
         }
       }
     }
@@ -1146,7 +1095,7 @@
       "title": {
         "label": "외부 스킬"
       },
-      "hint": "외부 Git 저장소의 SKILL.md 파일을 벤더의 스킬 검색 디렉토리에 마운트합니다. 저장소 URL, ref 및 신뢰 수준을 구성하세요.",
+      "hint": "외부 git 저장소를 외부 skill 소스로 사용합니다. SKILL.md는 설정한 ref의 최신 버전으로 지원되는 모든 vendor의 skill 검색 디렉터리에 마운트됩니다.",
       "empty": "구성된 외부 스킬 저장소가 없습니다.",
       "add": {
         "label": "+ 스킬 저장소 추가"
@@ -1166,15 +1115,6 @@
         },
         "subpath": {
           "label": "하위 경로"
-        },
-        "vendor": {
-          "label": "벤더"
-        },
-        "trust": {
-          "label": "신뢰 수준"
-        },
-        "pinCommit": {
-          "label": "고정 커밋"
         }
       },
       "id": {
@@ -1190,25 +1130,6 @@
       },
       "subpath": {
         "placeholder": "선택적 하위 디렉토리(예: skills/my-skill)"
-      },
-      "vendor": {
-        "all": "모두 지원",
-        "unsupported": "이 벤더는 지원하지 않음"
-      },
-      "trust": {
-        "pinned": {
-          "label": "고정 — 특정 커밋에 고정"
-        },
-        "reviewOnUpdate": {
-          "label": "업데이트 시 검토"
-        },
-        "unreviewed": {
-          "label": "미검토 — 확인 없이 마운트"
-        }
-      },
-      "pinCommit": {
-        "placeholder": "40자 16진수 커밋 SHA",
-        "required": "신뢰 수준이 고정인 경우 고정 커밋이 필요합니다"
       }
     }
   }

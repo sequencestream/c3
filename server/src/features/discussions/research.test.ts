@@ -34,14 +34,14 @@ describe('buildResearchPrompt', () => {
 
   it('notes a missing type and missing context explicitly', () => {
     const p = buildResearchPrompt({ goal: '', context: '   ', projectPath: '/p' }, undefined)
-    expect(p).toContain('(未指定)')
-    expect(p).toContain('(未填写)')
-    expect(p).toContain('用户未提供初始上下文')
+    expect(p).toContain('(unspecified)')
+    expect(p).toContain('(not provided)')
+    expect(p).toContain('The user provided no initial context')
   })
 
-  it('always ends by asking for the completed context only', () => {
+  it('always ends by asking for the research findings only', () => {
     const p = buildResearchPrompt(base, getDiscussionType('brainstorm'))
-    expect(p.trimEnd().endsWith('只输出 context 本身)。')).toBe(true)
+    expect(p.trimEnd().endsWith('(output the findings only).')).toBe(true)
   })
 })
 
@@ -83,18 +83,21 @@ describe('canAutoStartDiscussion', () => {
 })
 
 describe('DISCUSSION_RESEARCH_PROMPT', () => {
-  it('no longer asks the researcher to collect 已知方案', () => {
-    expect(DISCUSSION_RESEARCH_PROMPT).not.toContain('已知方案')
+  it('frames the output as research findings, not a completed-context rewrite', () => {
+    // The output is its own `researchResult` field, not a rewrite of the user's
+    // context — the copy must say "research", never the old 补全/context-正文 framing.
+    expect(DISCUSSION_RESEARCH_PROMPT).toContain('research findings')
+    expect(DISCUSSION_RESEARCH_PROMPT).not.toContain('补全')
   })
 
-  it('hard-forbids any 方案/建议/结论 — only 现状', () => {
-    expect(DISCUSSION_RESEARCH_PROMPT).toContain('只描述现状')
-    expect(DISCUSSION_RESEARCH_PROMPT).toContain('严禁')
-    expect(DISCUSSION_RESEARCH_PROMPT).toContain('建议')
+  it('hard-forbids any options/recommendations/conclusions — current state only', () => {
+    expect(DISCUSSION_RESEARCH_PROMPT).toContain('current state only')
+    expect(DISCUSSION_RESEARCH_PROMPT).toContain('do NOT')
+    expect(DISCUSSION_RESEARCH_PROMPT).toContain('recommendations')
   })
 
-  it('still collects 未知点/待澄清项', () => {
-    expect(DISCUSSION_RESEARCH_PROMPT).toContain('未知点')
+  it('still collects open questions / points to clarify', () => {
+    expect(DISCUSSION_RESEARCH_PROMPT).toContain('open questions')
   })
 })
 

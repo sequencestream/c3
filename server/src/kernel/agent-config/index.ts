@@ -167,6 +167,16 @@ export function resolveSessionLaunch(
 }
 
 /**
+ * The vendor a session will (or did) run on (ADR-0015), for display: a real
+ * session resolves to its bound agent's vendor; a pending session to its intent's
+ * (or, when Auto, the default agent's) vendor. Always returns a vendor — it falls
+ * back through {@link resolveAgent} exactly like {@link resolveSessionLaunch}.
+ */
+export function resolveSessionVendor(sessionId: string | null): VendorId {
+  return resolveAgent(sessionId ? getSessionAgentId(sessionId) : null).vendor
+}
+
+/**
  * First bind (pending → real): freeze the session's fact onto the agent it just
  * ran with, resolving that agent's vendor here (the storage layer is vendor-blind
  * — ADR-0015 — so the resolution lives in this layer, which already depends on

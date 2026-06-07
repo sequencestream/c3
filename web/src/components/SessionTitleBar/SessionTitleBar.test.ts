@@ -39,4 +39,16 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
     await items[1].trigger('click') // plan
     expect(w.emitted('set-mode')).toEqual([['plan']])
   })
+
+  it('有 vendor 时渲染色点(颜色取自 VENDOR_COLOR)', () => {
+    const w = mountBar({ vendor: 'codex' })
+    const dot = w.find('[data-testid="session-vendor-dot"]')
+    expect(dot.exists()).toBe(true)
+    expect(dot.attributes('style')).toContain('#10a37f') // codex brand colour
+  })
+
+  it('无 vendor 时不渲染色点', () => {
+    const w = mountBar({ vendor: null })
+    expect(w.find('[data-testid="session-vendor-dot"]').exists()).toBe(false)
+  })
 })

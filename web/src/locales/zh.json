@@ -231,7 +231,8 @@
         "custom": {
           "label": "自定义"
         }
-      }
+      },
+      "defaultNote": "更改默认 agent 不会回溯:仅影响 {pending} 个待运行会话;已绑定的 {bound} 个会话维持原 vendor。"
     },
     "defaultMode": {
       "title": {
@@ -316,6 +317,14 @@
       "showToolSessions": {
         "label": "显示工具会话"
       }
+    },
+    "diagnostics": {
+      "title": {
+        "label": "Agent 宿主 CLI"
+      },
+      "hint": "每种 agent 类型都需要其厂商 CLI 在 PATH 中可用。",
+      "present": "已在 PATH",
+      "missing": "未找到"
     }
   },
   "requirement": {
@@ -541,6 +550,25 @@
       "toolsFallback": "工具",
       "resultError": "(错误)",
       "preApproved": "厂商规则预放行"
+    },
+    "new": {
+      "title": "新建会话",
+      "vendor": {
+        "label": "厂商",
+        "auto": "自动"
+      },
+      "agent": {
+        "label": "Agent",
+        "autoHint": "使用默认 agent（{name}）",
+        "autoHintNoDefault": "使用默认 agent"
+      },
+      "missing": {
+        "suffix": "binary 不在 PATH",
+        "hint": "部分 agent 的 CLI 未安装。",
+        "gotoDetection": "前往检测面板"
+      },
+      "create": "创建",
+      "cancel": "取消"
     }
   },
   "schedule": {

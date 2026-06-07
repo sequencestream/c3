@@ -8,24 +8,32 @@
  * presentational:所有交互上抛由 App 处理。
  */
 import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
-import type { PermissionMode } from '@ccc/shared/protocol'
+import type { PermissionMode, VendorId } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 
 const { t } = useTypedI18n()
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     activeTitle: string
     mode?: PermissionMode
     modeOptions?: { value: PermissionMode; label: string }[]
     showMode?: boolean
+    /** The session's resolved agent vendor; absent ⇒ no dot (comm sessions). */
+    vendor?: VendorId | null
   }>(),
   {
     mode: 'default',
     modeOptions: () => [],
     showMode: true,
+    vendor: null,
   },
 )
+
+// The vendor dot's colour + brand label (for its tooltip), or null when no vendor.
+const vendorColor = (): string | null => (props.vendor ? VENDOR_COLOR[props.vendor] : null)
+const vendorLabel = (): string => (props.vendor ? VENDOR_LABEL[props.vendor] : '')
 
 const emit = defineEmits<{
   'set-mode': [mode: PermissionMode]
@@ -34,6 +42,13 @@ const emit = defineEmits<{
 
 <template>
   <div class="session-title-bar">
+    <span
+      v-if="vendorColor()"
+      class="vendor-dot"
+      :style="{ backgroundColor: vendorColor() as string }"
+      :title="vendorLabel()"
+      data-testid="session-vendor-dot"
+    ></span>
     <span class="session-title-text" :title="activeTitle">{{ activeTitle }}</span>
     <slot name="action" />
     <label v-if="showMode" class="mode">

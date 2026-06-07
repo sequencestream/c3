@@ -9,12 +9,15 @@ import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
   PermissionMode,
+  SessionBindingStats,
   SystemSettings,
   UiLang,
+  VendorHostStatus,
   VendorId,
 } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
+import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import EmojiPicker from './EmojiPicker.vue'
 
 const { t } = useTypedI18n()
@@ -62,10 +65,34 @@ const UI_LANGS = computed<{ value: UiLang; label: string }[]>(() =>
     .map((l) => ({ value: l, label: UI_LANG_LABELS[l] })),
 )
 
-const props = defineProps<{
-  open: boolean
-  settings: SystemSettings | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    settings: SystemSettings | null
+    hostStatus?: VendorHostStatus[]
+    bindingStats?: SessionBindingStats | null
+  }>(),
+  {
+    hostStatus: () => [],
+    bindingStats: null,
+  },
+)
+
+// Host-CLI diagnostics rows, in canonical vendor order, each with its brand
+// colour/label (ADR-0012).
+const VENDOR_ORDER: VendorId[] = ['claude', 'codex', 'opencode']
+const diagnostics = computed(() => {
+  const byVendor = new Map(props.hostStatus.map((h) => [h.vendor, h]))
+  return VENDOR_ORDER.map((v) => byVendor.get(v)).filter(
+    (h): h is VendorHostStatus => h !== undefined,
+  )
+})
+function vendorColor(v: VendorId): string {
+  return VENDOR_COLOR[v]
+}
+function vendorLabel(v: VendorId): string {
+  return VENDOR_LABEL[v]
+}
 
 const emit = defineEmits<{
   close: []
@@ -356,6 +383,39 @@ function onUiLangChange(e: Event) {
         <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
           {{ t('settings.agents.add.label') }}
         </button>
+        <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">
+          {{
+            t('settings.agents.defaultNote', {
+              pending: bindingStats.pending,
+              bound: bindingStats.bound,
+            })
+          }}
+        </p>
+      </section>
+
+      <section class="settings-section" data-testid="settings-diagnostics">
+        <p class="settings-section-title">{{ t('settings.diagnostics.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.diagnostics.hint') }}</p>
+        <ul class="diagnostics-list">
+          <li v-for="h in diagnostics" :key="h.vendor" class="diagnostics-row">
+            <span
+              class="vendor-dot"
+              :style="{ backgroundColor: vendorColor(h.vendor) }"
+              :title="vendorLabel(h.vendor)"
+            ></span>
+            <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
+            <code class="diagnostics-binary">{{ h.binary }}</code>
+            <span
+              class="diagnostics-status"
+              :class="h.present ? 'present' : 'missing'"
+              :title="h.present ? '' : h.installHint"
+            >
+              {{
+                h.present ? t('settings.diagnostics.present') : t('settings.diagnostics.missing')
+              }}
+            </span>
+          </li>
+        </ul>
       </section>
 
       <section class="settings-section">

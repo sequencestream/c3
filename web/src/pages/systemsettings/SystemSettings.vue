@@ -6,11 +6,18 @@
  * 状态(settingsOpen / serverSettings)仍由 App.vue 持有。
  */
 import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
-import type { SystemSettings, UiLang } from '@ccc/shared/protocol'
+import type {
+  SessionBindingStats,
+  SystemSettings,
+  UiLang,
+  VendorHostStatus,
+} from '@ccc/shared/protocol'
 
 defineProps<{
   open: boolean
   settings: SystemSettings | null
+  hostStatus: VendorHostStatus[]
+  bindingStats: SessionBindingStats | null
 }>()
 
 defineEmits<{
@@ -24,6 +31,8 @@ defineEmits<{
   <SettingsPanel
     :open="open"
     :settings="settings"
+    :host-status="hostStatus"
+    :binding-stats="bindingStats"
     @close="$emit('close')"
     @save="(s: SystemSettings) => $emit('save', s)"
     @set-ui-lang="(l: UiLang) => $emit('set-ui-lang', l)"

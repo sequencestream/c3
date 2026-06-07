@@ -264,16 +264,6 @@ describe('SettingsPanel.vue — agent icon emoji picker', () => {
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.icon).toBe(picked)
   })
-
-  it('keeps the manual icon text input working (legacy path)', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: withAgent } })
-    const text = w.findAll('.icon-text')
-    // Row order: system agent, then a1.
-    await text[1].setValue('🦊')
-    await w.find('[data-testid="settings-save"]').trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.icon).toBe('🦊')
-  })
 })
 
 describe('SettingsPanel.vue — time zone', () => {

@@ -22,6 +22,7 @@ import type {
   SessionInfo,
   SessionStatus,
   SlashCommandInfo,
+  VendorId,
 } from '@ccc/shared/protocol'
 
 defineProps<{
@@ -32,6 +33,8 @@ defineProps<{
   activeWorkspace: string | null
   activeSession: string | null
   activeTitle: string
+  /** The active session's resolved agent vendor, for the title vendor dot. */
+  activeVendor?: VendorId | null
   // right: chat column
   hasActiveSession: boolean
   mode: PermissionMode
@@ -102,6 +105,7 @@ defineExpose({
     <SessionTitleBar
       v-if="hasActiveSession"
       :active-title="activeTitle"
+      :vendor="activeVendor"
       :mode="mode"
       :mode-options="modeOptions"
       @set-mode="(m: PermissionMode) => emit('set-mode', m)"

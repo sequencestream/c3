@@ -473,6 +473,35 @@ export interface SlashCommandInfo {
 export type VendorId = 'claude' | 'codex' | 'opencode'
 
 /**
+ * One vendor's host-CLI presence (ADR-0012), surfaced to the web so the
+ * new-session agent picker can grey out an agent whose binary is not on PATH and
+ * the settings diagnostics panel can list what is/isn't installed. No absolute
+ * path is sent (operator-facing guidance only, never a filesystem detail).
+ */
+export interface VendorHostStatus {
+  vendor: VendorId
+  /** Whether the vendor's host CLI was resolved on PATH (or via its `*_PATH` override). */
+  present: boolean
+  /** The probed executable name (e.g. `claude`). */
+  binary: string
+  /** Operator-facing install guidance shown when the binary is missing. */
+  installHint: string
+}
+
+/**
+ * Session→agent binding counts (ADR-0015) shown in the settings console to make
+ * concrete that changing the default agent is **not** retroactive: every already
+ * recorded session keeps its own agent (and frozen vendor); only future sessions
+ * adopt the new default.
+ */
+export interface SessionBindingStats {
+  /** Real sessions with a frozen vendor *fact* — they keep their agent/vendor. */
+  bound: number
+  /** Pending sessions with an explicit *intent*, not yet bound by a first run. */
+  pending: number
+}
+
+/**
  * The wire-facing capability enum (the names of every optional/degradable
  * adapter capability). The kernel's `AdapterCapabilities` boolean ledger is
  * keyed by exactly these names; a type-level assertion there pins the two
@@ -944,8 +973,15 @@ export type ClientToServer =
   | { type: 'remove_workspace'; path: string }
   /** List sessions for a workspace (server replies with `sessions`). */
   | { type: 'list_sessions'; workspacePath: string }
-  /** Create a new (pending) session in a workspace and make it active. */
-  | { type: 'create_session'; workspacePath: string }
+  /**
+   * Create a new (pending) session in a workspace and make it active. The
+   * optional `agentId` is the agent the new session should run on (ADR-0015): it
+   * is recorded as the pending session's mutable *intent*, so the first run
+   * launches with it (and freezes that agent's vendor onto the session). Absent
+   * or empty ⇒ **Auto** — no intent is written and the run falls back to the
+   * configured `defaultAgentId`.
+   */
+  | { type: 'create_session'; workspacePath: string; agentId?: string }
   /** Delete a session from disk. */
   | { type: 'delete_session'; workspacePath: string; sessionId: string }
   /** Make a session active; server replies with `session_selected` (history + mode). */
@@ -1136,6 +1172,13 @@ export type ServerToClient =
       mode: PermissionMode
       history: TranscriptItem[]
       status: SessionStatus
+      /**
+       * The session's resolved agent vendor (ADR-0015) — a real session's frozen
+       * vendor, or a pending session's intent/default vendor — used to paint the
+       * vendor colour dot beside the title. Absent for comm/requirement sessions
+       * (no agent dot there).
+       */
+      vendor?: VendorId
     }
   /** Binds a pending session's `clientId` to its real SDK `sessionId`. */
   | { type: 'session_started'; clientId: string; sessionId: string }
@@ -1143,8 +1186,20 @@ export type ServerToClient =
   | { type: 'mode_changed'; mode: PermissionMode }
   /** Available slash commands/skills for the active session (reply to `list_commands`). */
   | { type: 'commands'; commands: SlashCommandInfo[] }
-  /** The (normalized) system configuration, in reply to `get_settings`/`save_settings`. */
-  | { type: 'settings'; settings: SystemSettings }
+  /**
+   * The (normalized) system configuration, in reply to `get_settings`/`save_settings`.
+   * Carries two runtime-derived companions the config object itself does not hold:
+   * `hostStatus` — each vendor's host-CLI presence (ADR-0012), so the console can
+   * grey out an agent whose binary is not on PATH; and `bindingStats` — the
+   * session→agent binding counts (ADR-0015), so the console can explain that a
+   * default-agent change is not retroactive.
+   */
+  | {
+      type: 'settings'
+      settings: SystemSettings
+      hostStatus: VendorHostStatus[]
+      bindingStats: SessionBindingStats
+    }
   /** A project's requirement list (reply to `list_requirements`/`open_requirement_chat`, or a push after a change). */
   | { type: 'requirements'; projectPath: string; items: Requirement[] }
   /**

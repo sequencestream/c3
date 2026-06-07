@@ -49,6 +49,7 @@ import type {
   UpdateScheduleInput,
   RequirementStatus,
   ServerToClient,
+  SessionBindingStats,
   SessionInfo,
   SessionRunStatus,
   SessionStatus,
@@ -56,9 +57,12 @@ import type {
   SystemSettings,
   TranscriptItem,
   UiLang,
+  VendorHostStatus,
+  VendorId,
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import NewSessionModal from './pages/sessions/components/NewSessionModal/NewSessionModal.vue'
 import { applyLocale, setStoredLocale, i18n, useTypedI18n, type Locale } from './i18n'
 import { translateUiError } from './i18n/errors'
 import { useModeLabel } from './composables/useModeLabel'
@@ -461,6 +465,19 @@ function maybeRestoreSchedules(list: WorkspaceInfo[]) {
 const settingsOpen = ref(false)
 // Latest server settings; SettingsPanel deep-copies this into its own draft.
 const serverSettings = ref<SystemSettings | null>(null)
+// Runtime companions that ride the `settings` message (ADR-0012 / ADR-0015): each
+// vendor's host-CLI presence (drives the new-session picker greying) + the
+// session→agent binding counts (drives the "default change isn't retroactive" note).
+const hostStatus = ref<VendorHostStatus[]>([])
+const bindingStats = ref<SessionBindingStats | null>(null)
+
+// ---- New-session agent picker (the "+" modal) ----
+const newSessionOpen = ref(false)
+// The workspace the pending modal will create a session in.
+const newSessionWorkspace = ref<string | null>(null)
+// The active session's resolved agent vendor (from `session_selected`), for the
+// title vendor dot. Null for comm sessions / when unset.
+const activeVendor = ref<VendorId | null>(null)
 
 // The time zone schedule cron fields are interpreted in for the live preview /
 // upcoming-runs list, so the client computes the same instants the server does.
@@ -628,6 +645,9 @@ function handleMessage(msg: ServerToClient) {
       currentWorkspace.value = resolveCurrentWorkspace(readStoredWorkspace(), msg.workspaces)
       persistCurrentWorkspace()
       ensureSessions(currentWorkspace.value)
+      // Pull settings up front so the new-session agent picker has the agent list +
+      // per-vendor host-CLI status ready before the user clicks "+".
+      client?.send({ type: 'get_settings' })
       // Restore the requirement / discussion / schedules view if a hard refresh left us in it.
       maybeRestoreRequirements(msg.workspaces)
       maybeRestoreDiscussions(msg.workspaces)
@@ -657,6 +677,8 @@ function handleMessage(msg: ServerToClient) {
       activeWorkspace.value = msg.workspacePath
       activeSession.value = msg.sessionId
       activeTitle.value = msg.title
+      // The resolved agent vendor for the title dot (absent on comm sessions).
+      activeVendor.value = msg.vendor ?? null
       mode.value = msg.mode
       // Remember this as the console tab's own session ONLY when the selection
       // originated on the console tab. Comm-session selections (open/new/refine
@@ -710,6 +732,8 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'settings':
       serverSettings.value = msg.settings
+      hostStatus.value = msg.hostStatus
+      bindingStats.value = msg.bindingStats
       // Server is the single source of truth for UI language. Reconcile exactly
       // once and only when it disagrees with the live locale, to avoid a
       // save→settings→apply→save loop and any flicker.
@@ -1099,9 +1123,35 @@ function removeWorkspace(path: string) {
   client?.send({ type: 'remove_workspace', path })
 }
 
-function createSession(path: string) {
+// The "+" now opens the agent picker instead of creating immediately, so the new
+// session can be bound to a chosen vendor/agent (or Auto). A fresh `get_settings`
+// makes sure the picker shows the current agent list + host-CLI status.
+function openNewSession(path: string) {
+  newSessionWorkspace.value = path
+  newSessionOpen.value = true
+  client?.send({ type: 'get_settings' })
+}
+
+// Confirm the picker: create the session, optionally carrying the chosen agent as
+// its pending intent. `agentId === null` ⇒ Auto (no intent, server falls back to
+// the default agent).
+function confirmNewSession(agentId: string | null) {
+  const path = newSessionWorkspace.value
+  newSessionOpen.value = false
+  if (!path) return
   enterConsole()
-  client?.send({ type: 'create_session', workspacePath: path })
+  client?.send({
+    type: 'create_session',
+    workspacePath: path,
+    ...(agentId ? { agentId } : {}),
+  })
+}
+
+// The picker's "binary not in PATH → go to detection" link: close the picker and
+// open settings (its diagnostics section lists every vendor's host-CLI status).
+function openSettingsFromPicker() {
+  newSessionOpen.value = false
+  openSettings()
 }
 
 function selectSession(path: string, sessionId: string) {
@@ -1186,6 +1236,7 @@ function clearViewedSession() {
   activeWorkspace.value = null
   activeSession.value = null
   activeTitle.value = ''
+  activeVendor.value = null
   messages.value = []
   nextId = 1
   availableCommands.value = []
@@ -1550,6 +1601,7 @@ function listCommands() {
       :active-workspace="activeWorkspace"
       :active-session="activeSession"
       :active-title="activeTitle"
+      :active-vendor="activeVendor"
       :has-active-session="hasActiveSession"
       :mode="mode"
       :mode-options="modeOptions"
@@ -1566,7 +1618,7 @@ function listCommands() {
       :queue="currentQueue"
       :available-commands="availableCommands"
       :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-      @create-session="createSession"
+      @create-session="openNewSession"
       @refresh-sessions="() => refreshSessions(currentWorkspace)"
       @select-session="selectSession"
       @delete-session="deleteSession"
@@ -1670,9 +1722,21 @@ function listCommands() {
     />
   </div>
 
+  <NewSessionModal
+    :open="newSessionOpen"
+    :agents="serverSettings?.agents ?? []"
+    :default-agent-id="serverSettings?.defaultAgentId ?? null"
+    :host-status="hostStatus"
+    @confirm="confirmNewSession"
+    @close="newSessionOpen = false"
+    @goto-settings="openSettingsFromPicker"
+  />
+
   <SystemSettingsPage
     :open="settingsOpen"
     :settings="serverSettings"
+    :host-status="hostStatus"
+    :binding-stats="bindingStats"
     @close="settingsOpen = false"
     @save="saveSettings"
     @set-ui-lang="setLocale"

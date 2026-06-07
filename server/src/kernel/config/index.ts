@@ -529,6 +529,21 @@ export function cleanupStalePendingIntents(now: number, maxAgeMs: number): strin
   return reaped
 }
 
+/**
+ * The session→agent binding counts (ADR-0015): how many real sessions carry a
+ * frozen vendor *fact* (`bound`) and how many pending sessions still carry a
+ * mutable *intent* (`pending`). Surfaced to the console so it can show that a
+ * default-agent change is not retroactive — every bound session keeps its own
+ * agent/vendor.
+ */
+export function getSessionBindingStats(): { bound: number; pending: number } {
+  const state = loadState()
+  return {
+    bound: Object.keys(state.sessionAgents).length,
+    pending: Object.keys(state.pendingIntents).length,
+  }
+}
+
 /** Whether multi-agent consensus voting is enabled in the system settings. */
 export function isConsensusEnabled(): boolean {
   return loadSettings().consensus?.enabled === true

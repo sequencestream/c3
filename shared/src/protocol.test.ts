@@ -17,6 +17,8 @@ describe('protocol wire format', () => {
     { type: 'remove_workspace', path: '/abs/proj' },
     { type: 'list_sessions', workspacePath: '/abs/proj' },
     { type: 'create_session', workspacePath: '/abs/proj' },
+    // With an explicit agent (recorded as the pending session's intent, ADR-0015).
+    { type: 'create_session', workspacePath: '/abs/proj', agentId: 'claude-b' },
     { type: 'delete_session', workspacePath: '/abs/proj', sessionId: 's1' },
     { type: 'select_session', workspacePath: '/abs/proj', sessionId: 's1' },
     { type: 'rename_session', workspacePath: '/abs/proj', sessionId: 's1', title: 'New' },
@@ -88,6 +90,17 @@ describe('protocol wire format', () => {
       agents: [{ agentId: 'sys', agentName: 'System', error: 'rate limit' }],
       message: 'All agents failed: rate limit',
       crossVendorSkipped: [{ agentId: 'cx', agentName: 'Codex', vendor: 'codex' }],
+    },
+    // System settings reply with its runtime companions: per-vendor host-CLI
+    // presence (ADR-0012) and the session→agent binding counts (ADR-0015).
+    {
+      type: 'settings',
+      settings: { agents: [], defaultAgentId: 'system' },
+      hostStatus: [
+        { vendor: 'claude', present: true, binary: 'claude', installHint: 'install claude' },
+        { vendor: 'codex', present: false, binary: 'codex', installHint: 'install codex' },
+      ],
+      bindingStats: { bound: 3, pending: 1 },
     },
     // Consensus scoped to one vendor, noting the cross-vendor advisors it excluded.
     {

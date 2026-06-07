@@ -231,7 +231,8 @@
         "custom": {
           "label": "Custom"
         }
-      }
+      },
+      "defaultNote": "Changing the default agent is not retroactive: it affects {pending} pending session(s); {bound} bound session(s) keep their original vendor."
     },
     "defaultMode": {
       "title": {
@@ -316,6 +317,14 @@
       "showToolSessions": {
         "label": "Show tool sessions"
       }
+    },
+    "diagnostics": {
+      "title": {
+        "label": "Agent host CLIs"
+      },
+      "hint": "Each agent type needs its vendor CLI available on PATH.",
+      "present": "on PATH",
+      "missing": "not found"
     }
   },
   "requirement": {
@@ -541,6 +550,25 @@
       "toolsFallback": "tools",
       "resultError": "(error)",
       "preApproved": "vendor pre-approved"
+    },
+    "new": {
+      "title": "New Session",
+      "vendor": {
+        "label": "Vendor",
+        "auto": "Auto"
+      },
+      "agent": {
+        "label": "Agent",
+        "autoHint": "Uses the default agent ({name})",
+        "autoHintNoDefault": "Uses the default agent"
+      },
+      "missing": {
+        "suffix": "binary not in PATH",
+        "hint": "Some agent CLIs are not installed.",
+        "gotoDetection": "Open detection panel"
+      },
+      "create": "Create",
+      "cancel": "Cancel"
     }
   },
   "schedule": {

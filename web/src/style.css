@@ -274,6 +274,14 @@ header h1 {
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* Vendor identity dot beside the session title (ADR-0015 / ADR-0011). */
+.vendor-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
 .session-title-bar .mode {
   margin-left: auto;
   flex-shrink: 0;
@@ -2124,6 +2132,39 @@ button.deny:hover:not(:disabled) {
   filter: none;
   background: var(--c-hover);
   border-color: var(--c-text-muted);
+}
+
+/* Host-CLI diagnostics rows (ADR-0012): vendor dot + binary + present/missing. */
+.diagnostics-list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.diagnostics-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.diagnostics-vendor {
+  min-width: 6rem;
+  color: var(--c-text);
+}
+.diagnostics-binary {
+  color: var(--c-text-dim);
+  font-size: var(--fs-code);
+}
+.diagnostics-status {
+  margin-left: auto;
+  font-size: var(--fs-body-sm);
+}
+.diagnostics-status.present {
+  color: var(--c-ok, #3a8);
+}
+.diagnostics-status.missing {
+  color: var(--c-warn, #c08a00);
 }
 .mode-select {
   height: 34px;

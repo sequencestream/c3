@@ -1,13 +1,43 @@
 /**
  * `settings` feature handlers — slice 1/3 (ADR-0009).
+ *
+ * Beyond the persisted {@link SystemSettings}, every `settings` reply carries two
+ * runtime-derived companions the config object itself does not hold:
+ *  - `hostStatus` — each vendor's host-CLI presence (ADR-0012), probed via the
+ *    ProcessLauncher, so the console can grey out an agent whose binary is not on
+ *    PATH. No absolute path is sent (operator guidance only).
+ *  - `bindingStats` — the session→agent binding counts (ADR-0015), so the console
+ *    can show that a default-agent change is not retroactive.
  */
-import { loadSettings, saveSettings } from '../../kernel/config/index.js'
+import type { VendorHostStatus } from '@ccc/shared/protocol'
+import { getSessionBindingStats, loadSettings, saveSettings } from '../../kernel/config/index.js'
+import { probeAll } from '../../kernel/agent/process/launcher.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
+/** Map the ProcessLauncher probe into the wire shape (drop the absolute path). */
+function hostStatus(): VendorHostStatus[] {
+  return probeAll().map((p) => ({
+    vendor: p.vendor,
+    present: p.path !== null,
+    binary: p.binary,
+    installHint: p.installHint,
+  }))
+}
+
 export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
-  conn.send({ type: 'settings', settings: loadSettings() })
+  conn.send({
+    type: 'settings',
+    settings: loadSettings(),
+    hostStatus: hostStatus(),
+    bindingStats: getSessionBindingStats(),
+  })
 }
 
 export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) => {
-  conn.send({ type: 'settings', settings: saveSettings(msg.settings) })
+  conn.send({
+    type: 'settings',
+    settings: saveSettings(msg.settings),
+    hostStatus: hostStatus(),
+    bindingStats: getSessionBindingStats(),
+  })
 }

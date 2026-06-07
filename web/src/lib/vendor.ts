@@ -12,3 +12,15 @@ export const VENDOR_LABEL: Record<VendorId, string> = {
   opencode: 'OpenCode',
   codex: 'Codex',
 }
+
+/**
+ * A small brand-ish colour per vendor, used for the vendor "dot" beside a session
+ * title and in the new-session agent picker. Not part of the design-token palette
+ * (vendor identity is orthogonal to theme), so it lives here next to
+ * {@link VENDOR_LABEL} rather than in the CSS variables.
+ */
+export const VENDOR_COLOR: Record<VendorId, string> = {
+  claude: '#d97757',
+  codex: '#10a37f',
+  opencode: '#6366f1',
+}

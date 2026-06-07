@@ -10,6 +10,7 @@ import {
   cleanupStalePendingIntents,
   deleteSessionAgentId,
   getSessionAgentId,
+  getSessionBindingStats,
   getSessionVendor,
   PENDING_INTENT_TTL_MS,
   resetSettingsCacheForTests,
@@ -201,6 +202,18 @@ describe('deleteSessionAgentId clears both spaces', () => {
     expect(getSessionAgentId('pending:d')).toBeNull()
     expect(getSessionAgentId('real-d')).toBeNull()
     expect(getSessionVendor('real-d')).toBeNull()
+  })
+})
+
+describe('getSessionBindingStats', () => {
+  it('counts bound facts and pending intents independently', () => {
+    expect(getSessionBindingStats()).toEqual({ bound: 0, pending: 0 })
+    setPendingIntent('pending:a', 'oc')
+    setPendingIntent('pending:b', 'claude-b')
+    bindSessionAgent('pending:c', 'real-1', 'claude-b', 'claude')
+    // bind drops `pending:c`'s (absent) intent and writes one fact; the two
+    // standalone intents remain pending.
+    expect(getSessionBindingStats()).toEqual({ bound: 1, pending: 2 })
   })
 })
 

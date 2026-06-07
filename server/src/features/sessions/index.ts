@@ -26,7 +26,8 @@ import {
   setSessionMode,
   touchWorkspace,
 } from '../../state.js'
-import { getDefaultMode } from '../../kernel/config/index.js'
+import { getDefaultMode, setPendingIntent } from '../../kernel/config/index.js'
+import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { rebindChatSession } from '../requirements/store.js'
@@ -66,6 +67,10 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   // Switching views never stops a run — just stop watching the old one.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  // Record the chosen agent as the pending session's mutable intent (ADR-0015):
+  // the first run launches with it and freezes its vendor. Absent/empty ⇒ Auto —
+  // no intent is written and `resolveSessionLaunch` falls back to the default agent.
+  if (msg.agentId) setPendingIntent(pendingId, msg.agentId)
   const defaultMode = getDefaultMode()
   ensureRuntime(pendingId, abs, defaultMode, [])
   conn.viewing = pendingId
@@ -79,6 +84,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     mode: defaultMode,
     history: [],
     status: 'idle',
+    vendor: resolveSessionVendor(pendingId),
   })
   conn.sendWorkspaces()
 }
@@ -112,6 +118,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       mode: rt.mode,
       history: rt.baseline,
       status: rt.status,
+      vendor: resolveSessionVendor(msg.sessionId),
     })
     // Replay everything emitted since the baseline (current + past
     // turns), then start receiving live events.

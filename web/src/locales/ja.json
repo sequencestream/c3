@@ -231,7 +231,8 @@
         "custom": {
           "label": "カスタム"
         }
-      }
+      },
+      "defaultNote": "デフォルトエージェントの変更は遡及しません：保留中のセッション {pending} 件に影響します。バインド済みの {bound} 件のセッションは元のベンダーを維持します。"
     },
     "defaultMode": {
       "title": {
@@ -316,6 +317,14 @@
       "showToolSessions": {
         "label": "ツールセッションを表示"
       }
+    },
+    "diagnostics": {
+      "title": {
+        "label": "エージェントのホスト CLI"
+      },
+      "hint": "各エージェントタイプには、そのベンダー CLI が PATH 上で利用可能である必要があります。",
+      "present": "PATH にあり",
+      "missing": "見つかりません"
     }
   },
   "requirement": {
@@ -541,6 +550,25 @@
       "toolsFallback": "ツール",
       "resultError": "(エラー)",
       "preApproved": "ベンダー規則で事前承認"
+    },
+    "new": {
+      "title": "新規セッション",
+      "vendor": {
+        "label": "ベンダー",
+        "auto": "自動"
+      },
+      "agent": {
+        "label": "エージェント",
+        "autoHint": "デフォルトエージェントを使用（{name}）",
+        "autoHintNoDefault": "デフォルトエージェントを使用"
+      },
+      "missing": {
+        "suffix": "バイナリが PATH にありません",
+        "hint": "一部のエージェント CLI がインストールされていません。",
+        "gotoDetection": "検出パネルを開く"
+      },
+      "create": "作成",
+      "cancel": "キャンセル"
     }
   },
   "schedule": {

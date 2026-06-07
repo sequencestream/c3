@@ -231,7 +231,8 @@
         "custom": {
           "label": "사용자 지정"
         }
-      }
+      },
+      "defaultNote": "기본 에이전트 변경은 소급 적용되지 않습니다: 대기 중인 세션 {pending}개에 영향을 줍니다. 바인딩된 세션 {bound}개는 원래 공급자를 유지합니다."
     },
     "defaultMode": {
       "title": {
@@ -316,6 +317,14 @@
       "showToolSessions": {
         "label": "도구 세션 표시"
       }
+    },
+    "diagnostics": {
+      "title": {
+        "label": "에이전트 호스트 CLI"
+      },
+      "hint": "각 에이전트 유형에는 해당 공급자 CLI가 PATH에서 사용 가능해야 합니다.",
+      "present": "PATH에 있음",
+      "missing": "찾을 수 없음"
     }
   },
   "requirement": {
@@ -541,6 +550,25 @@
       "toolsFallback": "도구",
       "resultError": "(오류)",
       "preApproved": "벤더 규칙 사전 승인"
+    },
+    "new": {
+      "title": "새 세션",
+      "vendor": {
+        "label": "공급자",
+        "auto": "자동"
+      },
+      "agent": {
+        "label": "에이전트",
+        "autoHint": "기본 에이전트 사용 ({name})",
+        "autoHintNoDefault": "기본 에이전트 사용"
+      },
+      "missing": {
+        "suffix": "바이너리가 PATH에 없음",
+        "hint": "일부 에이전트 CLI가 설치되지 않았습니다.",
+        "gotoDetection": "감지 패널 열기"
+      },
+      "create": "생성",
+      "cancel": "취소"
     }
   },
   "schedule": {

@@ -32,6 +32,8 @@ import {
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
 import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
 import type { VendorAdapter } from './kernel/agent/adapters/types.js'
+import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
+import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
 import {
   createBroadcasts,
   createDiscussionRuns,
@@ -123,6 +125,20 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
   }
 
+  // Cross-vendor session listing (ADR-0013): the read-only union the new
+  // `list_sessions` path lists through. Sources are built explicitly (not via
+  // `resolveAvailableAdapters`) so we take only each vendor's `SessionStore` and
+  // can EXCLUDE codex — codex is not enumerable (its list entries depend on the
+  // projection table, a separate concern). claude is always present; opencode
+  // joins only when its supervised adapter came up.
+  const sessionSources: VendorSessionSource[] = [
+    { vendor: 'claude', sessions: new ClaudeSessionStore() },
+  ]
+  if (opencodeAdapter) {
+    sessionSources.push({ vendor: 'opencode', sessions: opencodeAdapter.sessions })
+  }
+  const sessionAccessor = new SessionAccessor(sessionSources)
+
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
@@ -199,7 +215,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).
   const handlerRegistry = registerHandlers()
-  app.get('/ws', createWsHandler({ upgradeWebSocket, broadcaster, ctx, handlerRegistry }))
+  app.get(
+    '/ws',
+    createWsHandler({ upgradeWebSocket, broadcaster, ctx, handlerRegistry, sessionAccessor }),
+  )
 
   // Codex relay loopback endpoint (ADR-0014). MUST be registered before the static
   // catch-all (`app.get('*')`) so it is not swallowed by the SPA fallback.

@@ -61,6 +61,12 @@ describe('SessionAccessor', () => {
       expect(s.vendorExtra?.vendorSessionId).toBeDefined()
     }
     expect(list.map((s) => s.title).sort()).toEqual(['Claude one', 'Codex one'])
+    // The vendor *tag* is stamped top-level (a display dimension), tracking the
+    // owning store — distinct from the native id, which stays in vendorExtra.
+    const byTitle = Object.fromEntries(list.map((s) => [s.title, s]))
+    expect(byTitle['Claude one'].vendor).toBe('claude')
+    expect(byTitle['Codex one'].vendor).toBe('codex')
+    expect(byTitle['Claude one'].vendorExtra?.vendorSessionId).toBe('c-1')
   })
 
   it('routes read to the owning vendor store after a list', async () => {

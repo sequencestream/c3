@@ -23,7 +23,18 @@ import { dispatch, type Broadcaster, type Conn, type HandlerRegistry } from '../
 import type { KernelContext } from '../kernel/types.js'
 import { getActiveSessionId, listWorkspaces } from '../state.js'
 import { listWorkspaceSessions } from '../sessions.js'
+import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
+import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listStatuses, removeViewer } from '../runs.js'
+
+/**
+ * Rollback escape hatch for the cross-vendor `list_sessions` swap (ADR-0013).
+ * Default ON: the wire lists via the {@link SessionAccessor} union. Set
+ * `C3_SESSION_LIST_ACCESSOR=0` to fall back to the legacy claude-only
+ * `listWorkspaceSessions` (the transition-period safety valve; the old path is
+ * retired only after the transition).
+ */
+const USE_SESSION_ACCESSOR = process.env.C3_SESSION_LIST_ACCESSOR !== '0'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -52,8 +63,10 @@ export function createWsHandler(deps: {
   broadcaster: Broadcaster
   ctx: KernelContext
   handlerRegistry: HandlerRegistry
+  /** Cross-vendor session listing union (ADR-0013); the new `list_sessions` core. */
+  sessionAccessor: SessionAccessor
 }): WsMiddleware {
-  const { upgradeWebSocket, broadcaster, ctx, handlerRegistry } = deps
+  const { upgradeWebSocket, broadcaster, ctx, handlerRegistry, sessionAccessor } = deps
   const send = (ws: { send: (d: string) => void }, msg: ServerToClient): void =>
     ws.send(JSON.stringify(msg))
 
@@ -76,7 +89,12 @@ export function createWsHandler(deps: {
       sendSessions: async (workspacePath) => {
         if (!sock) return
         try {
-          const sessions = await listWorkspaceSessions(workspacePath)
+          // New default: list across vendors via the accessor union (ADR-0013).
+          // The env flag rolls back to the legacy claude-only path (the native id
+          // stays on the wire either way — see list-sessions.ts).
+          const sessions = USE_SESSION_ACCESSOR
+            ? await listSessionsVia(sessionAccessor, workspacePath)
+            : await listWorkspaceSessions(workspacePath)
           send(sock, { type: 'sessions', workspacePath, sessions })
         } catch (err) {
           send(sock, {

@@ -82,6 +82,10 @@ export async function listWorkspaceSessions(dir: string): Promise<SessionInfo[]>
       lastModified: s.lastModified,
       mode: getSessionMode(s.sessionId),
       isToolSession: tool,
+      // This legacy path is claude-only by construction (it wraps the Claude SDK's
+      // `listSessions`); the cross-vendor path (`list-sessions.ts`) stamps vendor
+      // per source. Required on the wire either way (SessionInfo.vendor).
+      vendor: 'claude' as const,
     }))
     .sort((a, b) => b.lastModified - a.lastModified)
 }

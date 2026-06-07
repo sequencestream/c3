@@ -93,7 +93,10 @@ not redefine shapes. Both ends import the same types (`@ccc/shared`).
 ## Workspace & session types
 
 - **`WorkspaceInfo`** — `{ path, name, lastAccessed }`. A registered project directory.
-- **`SessionInfo`** — `{ sessionId, title, lastModified, mode }`. A session in a workspace.
+- **`SessionInfo`** — `{ sessionId, title, lastModified, mode, isToolSession, vendor }`. A session
+  in a workspace. `sessionId` is the vendor-**native** id (not the opaque c3 id); `vendor` is the
+  owning vendor's tag from the cross-vendor `SessionAccessor` listing (ADR-0013) — a display
+  dimension (sidebar colour dot / filtering / same-vendor agent-switch candidates).
 - **`SessionStatus`** — `'idle' | 'running' | 'awaiting_permission' | 'team'`. A session's live
   run state. `team` is a persistent agent-team session: the lead process stays alive between
   turns, so the run is still in flight (not `idle`) even when no turn is producing output; it

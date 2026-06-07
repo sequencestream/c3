@@ -47,9 +47,15 @@ export interface SessionRunStatus {
   status: SessionStatus
 }
 
-/** A Claude session inside a workspace, as surfaced to the sidebar. */
+/** A session inside a workspace, as surfaced to the sidebar. */
 export interface SessionInfo {
-  /** SDK session UUID. */
+  /**
+   * The session's wire id. Still the **vendor-native** id (Claude SDK UUID,
+   * OpenCode session id) — NOT the opaque c3 id. The c3 namespace on the wire is
+   * an ADR-0013 deferred phase; `select_session`/`delete_session`/`rename_session`
+   * round-trip this id back to the server, which resolves it against the owning
+   * vendor's native store.
+   */
   sessionId: string
   /** Display title: SDK custom title, summary, or first prompt. */
   title: string
@@ -59,6 +65,15 @@ export interface SessionInfo {
   mode: PermissionMode
   /** Whether this session was created by a tool (not the user). */
   isToolSession: boolean
+  /**
+   * The vendor whose native store this session came from (ADR-0013 cross-vendor
+   * listing via `SessionAccessor`). A display dimension — drives the sidebar
+   * vendor colour dot, cross-vendor filtering, degradation annotation, and the
+   * same-vendor candidate filter when switching a session's agent (ADR-0015).
+   * The native session *id* is never exposed cross-vendor; only this vendor
+   * *tag* is, which the wire already carries elsewhere (`session_selected.vendor`).
+   */
+  vendor: VendorId
 }
 
 /**

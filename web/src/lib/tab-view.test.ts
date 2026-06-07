@@ -13,6 +13,7 @@ const sess = (sessionId: string): SessionInfo => ({
   lastModified: 0,
   mode: 'default',
   isToolSession: false,
+  vendor: 'claude',
 })
 
 describe('consoleEntryTarget', () => {

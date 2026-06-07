@@ -41,7 +41,14 @@ describe('protocol wire format', () => {
       type: 'sessions',
       workspacePath: '/abs/proj',
       sessions: [
-        { sessionId: 's1', title: 't', lastModified: 2, mode: 'default', isToolSession: false },
+        {
+          sessionId: 's1',
+          title: 't',
+          lastModified: 2,
+          mode: 'default',
+          isToolSession: false,
+          vendor: 'claude',
+        },
       ],
     },
     {

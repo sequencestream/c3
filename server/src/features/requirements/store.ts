@@ -20,10 +20,10 @@ import type {
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS requirements (
+CREATE TABLE IF NOT EXISTS intents (
   id              TEXT PRIMARY KEY,
   project_path    TEXT NOT NULL,
   title           TEXT NOT NULL,
@@ -37,21 +37,21 @@ CREATE TABLE IF NOT EXISTS requirements (
   updated_at      INTEGER NOT NULL,
   completed_at    INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_req_project_status ON requirements(project_path, status);
+CREATE INDEX IF NOT EXISTS idx_intent_project_status ON intents(project_path, status);
 
-CREATE TABLE IF NOT EXISTS requirement_deps (
-  requirement_id  TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS intent_deps (
+  intent_id       TEXT NOT NULL,
   depends_on_id   TEXT NOT NULL,
-  PRIMARY KEY (requirement_id, depends_on_id)
+  PRIMARY KEY (intent_id, depends_on_id)
 );
 
-CREATE TABLE IF NOT EXISTS requirement_chats (
+CREATE TABLE IF NOT EXISTS intent_chats (
   session_id    TEXT PRIMARY KEY,
   project_path  TEXT NOT NULL,
   is_current    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_chat_project ON requirement_chats(project_path);
+CREATE INDEX IF NOT EXISTS idx_chat_project ON intent_chats(project_path);
 
 CREATE TABLE IF NOT EXISTS tool_sessions (
   session_id    TEXT PRIMARY KEY,
@@ -74,18 +74,69 @@ function ensureColumn(d: Db, table: string, col: string, decl: string): void {
   }
 }
 
+function tableExists(d: Db, name: string): boolean {
+  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", name)
+}
+
+function columnExists(d: Db, table: string, col: string): boolean {
+  return d.all<{ name: string }>(`PRAGMA table_info(${table})`).some((c) => c.name === col)
+}
+
+function indexExists(d: Db, name: string): boolean {
+  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", name)
+}
+
+/**
+ * v5 → v6: rename the `requirement*` tables / column / index to `intent*` IN PLACE
+ * (zero data movement — the product renamed the concept "requirement" to "intent").
+ *
+ * MUST run BEFORE `exec(SCHEMA)`: SCHEMA now declares `CREATE TABLE IF NOT EXISTS
+ * intents …`, so running it first on a legacy db would create an EMPTY `intents`
+ * and strand the data under `requirements` (the later RENAME would then no-op).
+ *
+ * Idempotent and re-entrant on a PARTIAL-migration db: every step is independently
+ * guarded via `sqlite_master` / `PRAGMA table_info`, so a db interrupted mid-rename
+ * converges to the `intent*` terminal state on any re-run. Per the project DB
+ * migration discipline, this NEVER drops a table — table renames use `ALTER … RENAME
+ * TO`; the index rename uses `DROP INDEX` (an index, not a table) and lets SCHEMA's
+ * `CREATE INDEX IF NOT EXISTS` rebuild it. Rollback is forward-fix only.
+ */
+function migrateRequirementsToIntents(d: Db): void {
+  // Tables: rename only when the legacy name exists and the new one doesn't yet.
+  if (tableExists(d, 'requirements') && !tableExists(d, 'intents')) {
+    d.exec('ALTER TABLE requirements RENAME TO intents')
+  }
+  if (tableExists(d, 'requirement_deps') && !tableExists(d, 'intent_deps')) {
+    d.exec('ALTER TABLE requirement_deps RENAME TO intent_deps')
+  }
+  if (tableExists(d, 'requirement_chats') && !tableExists(d, 'intent_chats')) {
+    d.exec('ALTER TABLE requirement_chats RENAME TO intent_chats')
+  }
+  // Column: the lone requirement-named column lives on (the now-renamed) intent_deps.
+  if (tableExists(d, 'intent_deps') && columnExists(d, 'intent_deps', 'requirement_id')) {
+    d.exec('ALTER TABLE intent_deps RENAME COLUMN requirement_id TO intent_id')
+  }
+  // Index: SQLite has no RENAME INDEX — drop the old (the table rename re-pointed it
+  // at `intents`) and let SCHEMA recreate `idx_intent_project_status`.
+  if (indexExists(d, 'idx_req_project_status')) {
+    d.exec('DROP INDEX idx_req_project_status')
+  }
+}
+
 /** Return the db with the schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
+    // v5 → v6 rename MUST precede SCHEMA (see migrateRequirementsToIntents docstring).
+    migrateRequirementsToIntents(d)
     d.exec(SCHEMA)
-    // v1 → v2: add `module` to pre-existing requirements tables (historic rows default to '').
-    ensureColumn(d, 'requirements', 'module', "TEXT NOT NULL DEFAULT ''")
+    // v1 → v2: add `module` to pre-existing intents tables (historic rows default to '').
+    ensureColumn(d, 'intents', 'module', "TEXT NOT NULL DEFAULT ''")
     // v2 → v3: add nullable `completed_at` (historic rows stay null until re-marked done).
-    ensureColumn(d, 'requirements', 'completed_at', 'INTEGER')
+    ensureColumn(d, 'intents', 'completed_at', 'INTEGER')
     // v3 → v4: add `automate` (historic rows default to 0 — opt-in to automation).
-    ensureColumn(d, 'requirements', 'automate', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(d, 'intents', 'automate', 'INTEGER NOT NULL DEFAULT 0')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -145,11 +196,11 @@ function hydrate(d: Db, rows: Row[]): Requirement[] {
   const byId = new Map<string, string[]>()
   for (const r of rows) byId.set(r.id, [])
   const placeholders = rows.map(() => '?').join(',')
-  const deps = d.all<{ requirement_id: string; depends_on_id: string }>(
-    `SELECT requirement_id, depends_on_id FROM requirement_deps WHERE requirement_id IN (${placeholders})`,
+  const deps = d.all<{ intent_id: string; depends_on_id: string }>(
+    `SELECT intent_id, depends_on_id FROM intent_deps WHERE intent_id IN (${placeholders})`,
     ...rows.map((r) => r.id),
   )
-  for (const dep of deps) byId.get(dep.requirement_id)?.push(dep.depends_on_id)
+  for (const dep of deps) byId.get(dep.intent_id)?.push(dep.depends_on_id)
   return rows.map((r) => ({
     id: r.id,
     projectPath: r.project_path,
@@ -177,12 +228,12 @@ export function listRequirements(projectPath: string, status?: RequirementStatus
   const proj = resolve(projectPath)
   const rows = status
     ? d.all<Row>(
-        'SELECT * FROM requirements WHERE project_path=? AND status=? ORDER BY priority ASC, updated_at DESC',
+        'SELECT * FROM intents WHERE project_path=? AND status=? ORDER BY priority ASC, updated_at DESC',
         proj,
         status,
       )
     : d.all<Row>(
-        'SELECT * FROM requirements WHERE project_path=? ORDER BY priority ASC, updated_at DESC',
+        'SELECT * FROM intents WHERE project_path=? ORDER BY priority ASC, updated_at DESC',
         proj,
       )
   return hydrate(d, rows)
@@ -191,7 +242,7 @@ export function listRequirements(projectPath: string, status?: RequirementStatus
 export function getRequirement(id: string): Requirement | null {
   const d = db()
   if (!d) return null
-  const row = d.get<Row>('SELECT * FROM requirements WHERE id=?', id)
+  const row = d.get<Row>('SELECT * FROM intents WHERE id=?', id)
   return row ? hydrate(d, [row])[0] : null
 }
 
@@ -231,7 +282,7 @@ export function findRequirements(
     params.push(filter.status)
   }
   const rows = d.all<Row>(
-    `SELECT * FROM requirements WHERE ${where.join(' AND ')} ORDER BY priority ASC, updated_at DESC`,
+    `SELECT * FROM intents WHERE ${where.join(' AND ')} ORDER BY priority ASC, updated_at DESC`,
     ...params,
   )
   return hydrate(d, rows)
@@ -319,7 +370,7 @@ export function insertRequirements(
       // a single shared `now` left them arbitrarily ordered (RM-A3).
       const createdAt = now + i
       d.run(
-        `INSERT INTO requirements
+        `INSERT INTO intents
            (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
@@ -336,7 +387,7 @@ export function insertRequirements(
       )
       for (const dep of deps[i]) {
         d.run(
-          'INSERT OR IGNORE INTO requirement_deps (requirement_id, depends_on_id) VALUES (?,?)',
+          'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)',
           ids[i],
           dep,
         )
@@ -345,7 +396,7 @@ export function insertRequirements(
   })
   // Re-read so callers get fully-hydrated rows (incl. dependsOn).
   const placeholders = ids.map(() => '?').join(',')
-  const rows = d.all<Row>(`SELECT * FROM requirements WHERE id IN (${placeholders})`, ...ids)
+  const rows = d.all<Row>(`SELECT * FROM intents WHERE id IN (${placeholders})`, ...ids)
   // Preserve insertion order.
   const order = new Map(ids.map((id, i) => [id, i]))
   rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
@@ -358,7 +409,7 @@ export function updateStatus(id: string, status: RequirementStatus): void {
   // `done` stamps the completion time; any other status clears it (covers reverting from done).
   const completedAt = status === 'done' ? now : null
   d.run(
-    'UPDATE requirements SET status=?, updated_at=?, completed_at=? WHERE id=?',
+    'UPDATE intents SET status=?, updated_at=?, completed_at=? WHERE id=?',
     status,
     now,
     completedAt,
@@ -369,18 +420,13 @@ export function updateStatus(id: string, status: RequirementStatus): void {
 /** Toggle a requirement's automation flag (whether the orchestrator may pick it). */
 export function setAutomate(id: string, automate: boolean): void {
   const d = requireDb()
-  d.run(
-    'UPDATE requirements SET automate=?, updated_at=? WHERE id=?',
-    automate ? 1 : 0,
-    Date.now(),
-    id,
-  )
+  d.run('UPDATE intents SET automate=?, updated_at=? WHERE id=?', automate ? 1 : 0, Date.now(), id)
 }
 
 export function setLastDevSession(id: string, sessionId: string): void {
   const d = requireDb()
   d.run(
-    'UPDATE requirements SET last_dev_session_id=?, updated_at=? WHERE id=?',
+    'UPDATE intents SET last_dev_session_id=?, updated_at=? WHERE id=?',
     sessionId,
     Date.now(),
     id,
@@ -419,23 +465,19 @@ export function updateRequirement(
       sets.push('updated_at=?')
       params.push(Date.now())
       params.push(id)
-      d.run(`UPDATE requirements SET ${sets.join(', ')} WHERE id=?`, ...params)
+      d.run(`UPDATE intents SET ${sets.join(', ')} WHERE id=?`, ...params)
     }
     if (patch.dependsOn !== undefined) {
-      d.run('DELETE FROM requirement_deps WHERE requirement_id=?', id)
+      d.run('DELETE FROM intent_deps WHERE intent_id=?', id)
       for (const dep of patch.dependsOn) {
-        d.run(
-          'INSERT OR IGNORE INTO requirement_deps (requirement_id, depends_on_id) VALUES (?,?)',
-          id,
-          dep,
-        )
+        d.run('INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)', id, dep)
       }
     }
   })
 }
 
 // ---- Communication session mapping / hidden set ----
-// `requirement_chats` doubles as the per-project "current comm session" map and
+// `intent_chats` doubles as the per-project "current comm session" map and
 // the hidden-session set (every row is hidden from the normal session list).
 
 /** The current comm session id for a project, or null. */
@@ -443,7 +485,7 @@ export function getChatSession(projectPath: string): string | null {
   const d = db()
   if (!d) return null
   const row = d.get<{ session_id: string }>(
-    'SELECT session_id FROM requirement_chats WHERE project_path=? AND is_current=1',
+    'SELECT session_id FROM intent_chats WHERE project_path=? AND is_current=1',
     resolve(projectPath),
   )
   return row?.session_id ?? null
@@ -455,9 +497,9 @@ export function setChatSession(projectPath: string, sessionId: string): void {
   const proj = resolve(projectPath)
   const now = Date.now()
   tx(d, () => {
-    d.run('UPDATE requirement_chats SET is_current=0 WHERE project_path=? AND is_current=1', proj)
+    d.run('UPDATE intent_chats SET is_current=0 WHERE project_path=? AND is_current=1', proj)
     d.run(
-      `INSERT INTO requirement_chats (session_id, project_path, is_current, updated_at)
+      `INSERT INTO intent_chats (session_id, project_path, is_current, updated_at)
        VALUES (?,?,1,?)
        ON CONFLICT(session_id) DO UPDATE SET is_current=1, project_path=excluded.project_path, updated_at=excluded.updated_at`,
       sessionId,
@@ -472,8 +514,8 @@ export function rebindChatSession(pendingId: string, realId: string): void {
   const d = requireDb()
   tx(d, () => {
     // If realId somehow already exists, drop it so the pending row can take it.
-    d.run('DELETE FROM requirement_chats WHERE session_id=?', realId)
-    d.run('UPDATE requirement_chats SET session_id=? WHERE session_id=?', realId, pendingId)
+    d.run('DELETE FROM intent_chats WHERE session_id=?', realId)
+    d.run('UPDATE intent_chats SET session_id=? WHERE session_id=?', realId, pendingId)
   })
 }
 
@@ -482,7 +524,7 @@ export function isHiddenSession(sessionId: string): boolean {
   if (!isDbAvailable()) return false
   const d = db()
   if (!d) return false
-  return !!d.get('SELECT 1 FROM requirement_chats WHERE session_id=?', sessionId)
+  return !!d.get('SELECT 1 FROM intent_chats WHERE session_id=?', sessionId)
 }
 
 /** All comm session ids for a project (the hidden set), for list filtering. */
@@ -493,7 +535,7 @@ export function listHiddenSessions(projectPath: string): string[] {
   return d
     .all<{
       session_id: string
-    }>('SELECT session_id FROM requirement_chats WHERE project_path=?', resolve(projectPath))
+    }>('SELECT session_id FROM intent_chats WHERE project_path=?', resolve(projectPath))
     .map((r) => r.session_id)
 }
 

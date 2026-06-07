@@ -86,6 +86,26 @@ c3 is a single local process with two halves connected by one WebSocket:
   requirement features degrade but c3 still boots and serves normal sessions. The
   requirement-communication agent reuses the runtime registry and permission gateway as a
   read-only `requirement`-kind run.
+- **DB migrations are idempotent, never drop tables, and roll back forward (hard rule).** Every
+  c3.db schema change runs through a domain store's once-only schema-ensure and obeys this
+  project-wide migration discipline:
+  - **Idempotent + partial-state re-entrant.** Guard each step by _probing actual schema state_
+    (`sqlite_master` / `PRAGMA table_info`), not by trusting `user_version` history alone. A db
+    interrupted mid-migration must converge on the terminal state on any re-run, with no
+    double-apply throw.
+  - **No `DROP TABLE`, ever.** Reshape in place — `ALTER TABLE … ADD COLUMN` / `RENAME TO` /
+    `RENAME COLUMN`. (Dropping an _index_ to rename it is fine; SQLite has no `RENAME INDEX`.)
+    A data-moving change copies into a new table and keeps the old one until a later, separate
+    migration retires it — never a destructive in-place swap.
+  - **Roll back by forward-fix.** A bad migration is corrected by appending a _new_ reverse
+    migration (e.g. a counter-rename), not by editing or deleting the original in history.
+  - **Migration template.** Order = run table/column reshapes BEFORE `CREATE TABLE IF NOT EXISTS`
+    (a fresh SCHEMA must not pre-create the new name and strand the old table's data); bump
+    `SCHEMA_VERSION`; cover fresh-db, legacy-db, and partial-migration-db start points with a unit
+    test that also asserts re-run idempotency.
+  - **Review checklist** (every migration PR): ☐ idempotent re-run is a no-op ☐ partial-migration
+    re-entry converges ☐ zero `DROP TABLE` ☐ no data loss (rows/edges survive) ☐ `SCHEMA_VERSION`
+    bumped ☐ reshape precedes `CREATE TABLE IF NOT EXISTS` ☐ fresh/legacy/partial start points unit-tested.
 - **Vendor neutrality lives in `kernel/agent/adapters/` (ADR-0011).** A neutral three-piece interface
   (`AgentDriver` lifecycle + canonical message stream, `ApprovalBridge` intercept/suspend/write-back,
   `SessionStore` history behind one face) plus an `AdapterCapabilities` ledger lets c3 drive Claude,

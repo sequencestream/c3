@@ -231,6 +231,13 @@ re-exports these (single SoT); no vendor SDK type appears here (ADR-0009).
   availability). The console degrades session-row actions by state (hide on `none`, disabled on
   `temporarily-unavailable`, enabled on `full`/`partial`) with **zero `if (vendor === …)`** —
   a new vendor that self-reports its grades is correctly degraded.
+- **`AdapterCapability`** — the kernel's **binary** capability ledger (`interrupt` / `setActionMode` /
+  `streamingPush` / `inProcessMcp` / `forkSession` / `perToolApproval` / `taskStore`), mirrored to the
+  wire as the optional `settings.vendorCapabilities: Record<VendorId, Record<AdapterCapability, boolean>>`
+  (2026-06-07-010, `sessions` dropped — that travels structured as `sessionCapabilities`). Lets the
+  console gate capability-bound UI by `vendor` with **zero `if (vendor === …)`** — e.g. the task panel
+  renders only when the active vendor reports `taskStore`. Optional: absent on older servers, where the
+  UI assumes every capability present (no gating, old-session safe).
 - **`CanonicalRole`** — `'user' | 'assistant'`. The only roles the model commits to; Codex
   synthesizes it from item type. `system`/`result` SDK frames are NOT messages.
 - **`CanonicalBlock`** — the **three-vendor common** block union: `text` / `thinking` / `tool_use`.

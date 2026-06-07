@@ -31,6 +31,8 @@ defineProps<{
   messages: ChatMsg[]
   actionablePermissionId: string | null
   taskModel: TaskListModel
+  /** Whether the active vendor exposes `taskStore`; gates the TaskPanel. Default open. */
+  hasTaskStore?: boolean
   running: boolean
   teamActive: boolean
   connection: 'connecting' | 'open' | 'closed'
@@ -104,7 +106,7 @@ defineExpose({
       @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
       @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
     />
-    <TaskPanel :model="taskModel" />
+    <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
     <SessionStatusBar
       :has-active-session="hasActiveSession"
       :running="running"

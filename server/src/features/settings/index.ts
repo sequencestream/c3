@@ -10,6 +10,7 @@
  *    can show that a default-agent change is not retroactive.
  */
 import type {
+  AdapterCapability,
   VendorHostStatus,
   SessionCapabilities,
   SkillSupportState,
@@ -62,6 +63,23 @@ function sessionCapabilities(): Record<VendorId, SessionCapabilities> {
 }
 
 /**
+ * Each vendor's binary {@link AdapterCapability} ledger, mirrored from the kernel
+ * `AdapterCapabilities`. The console gates capability-bound UI by `vendor` (e.g. the
+ * task panel by `taskStore`) with **zero `if (vendor === …)`**, the same pattern as
+ * `sessionCapabilities`. `sessions` is dropped (sent separately, structured); what
+ * remains IS the binary ledger, pinned key-for-key to the wire enum by the assertion
+ * in `adapters/types.ts`, so it is structurally a `Record<AdapterCapability, boolean>`.
+ */
+function vendorCapabilities(): Record<VendorId, Record<AdapterCapability, boolean>> {
+  const out = {} as Record<VendorId, Record<AdapterCapability, boolean>>
+  for (const v of Object.keys(VENDOR_CAPABILITIES) as VendorId[]) {
+    const { sessions: _sessions, ...binary } = VENDOR_CAPABILITIES[v]
+    out[v] = binary
+  }
+  return out
+}
+
+/**
  * Each vendor's external-skill mount support (ADR-0016/0017). Probed and cached by
  * `detectSkillSupport()` in the mount layer (2/3). Returns a `Record<VendorId, SkillSupportState>`
  * with every registered vendor; unprobed vendors default to `'full'` (the UI shows no greying).
@@ -91,6 +109,7 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),
+    vendorCapabilities: vendorCapabilities(),
     skillSupport: skillSupport(),
   })
 }
@@ -102,6 +121,7 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),
+    vendorCapabilities: vendorCapabilities(),
     skillSupport: skillSupport(),
   })
 }

@@ -32,7 +32,7 @@ import {
   type DispatchView,
   type DiscussionPhase,
 } from './lib/discussion-view'
-import { emptyTaskModel, type TaskItem, type TaskListModel } from './lib/task-list'
+import { applyTaskEvent, emptyTaskModel, type TaskListModel } from './lib/task-list'
 import {
   consoleEntryTarget,
   consoleTabEntryEffects,
@@ -53,6 +53,7 @@ import type {
   UpdateScheduleInput,
   OpencodeServerStatus,
   IntentStatus,
+  AdapterCapability,
   ServerToClient,
   SessionAgentSwitch,
   SessionBindingStats,
@@ -94,20 +95,6 @@ let nextId = 1
 // `tool_result.content`. Reset on session_selected, then filled from those
 // messages (`task_list` = full snapshot; per-task variants = single upsert/delete).
 const taskModel = ref<TaskListModel>(emptyTaskModel())
-
-/** Upsert one task into the model, preserving an existing entry's `order`. */
-function upsertTask(task: TaskItem) {
-  const tasks = taskModel.value.tasks
-  const idx = tasks.findIndex((t) => t.id === task.id)
-  if (idx === -1) {
-    const order = tasks.reduce((max, t) => Math.max(max, t.order), -1) + 1
-    taskModel.value = { tasks: [...tasks, { ...task, order }] }
-    return
-  }
-  const next = [...tasks]
-  next[idx] = { ...task, order: next[idx].order }
-  taskModel.value = { tasks: next }
-}
 
 // Sidebar / session state
 const workspaces = ref<WorkspaceInfo[]>([])
@@ -488,6 +475,11 @@ const sessionCapabilities = ref<Record<VendorId, SessionCapabilities> | null>(nu
 // (no UI greying). Seeded from the `settings.skillSupport` field.
 const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
 
+// Per-vendor binary AdapterCapability ledger (interrupt / … / taskStore). Rides the
+// `settings` message as an optional companion; absent → assume every capability
+// present (no gating, old-session safe). Seeded from `settings.vendorCapabilities`.
+const vendorCapabilities = ref<Record<VendorId, Record<AdapterCapability, boolean>> | null>(null)
+
 // The current pending skill-load approval request, or null when idle. The
 // SkillApprovalModal renders against this; the user's decision is sent back as
 // `skill_load_approval_resolve` and clears it.
@@ -510,6 +502,17 @@ const newSessionWorkspace = ref<string | null>(null)
 // The active session's resolved agent vendor (from `session_selected`), for the
 // title vendor dot. Null for comm sessions / when unset.
 const activeVendor = ref<VendorId | null>(null)
+// Whether the active session's vendor exposes the SDK task surface (`taskStore`).
+// Gates the TaskPanel: a vendor without it never derives a task list, so the panel
+// stays hidden. Defaults to `true` when capabilities are unknown — older servers
+// (no `vendorCapabilities`), comm/pending sessions (no vendor), or a vendor missing
+// from the ledger — so the panel degrades open, never wrongly suppressed.
+const taskStoreAvailable = computed(() => {
+  const caps = vendorCapabilities.value
+  const vendor = activeVendor.value
+  if (!caps || !vendor) return true
+  return caps[vendor]?.taskStore ?? true
+})
 // The active session's same-vendor agent-switcher data (from `session_selected`),
 // for the title-bar switcher. Null when there's no switcher (pending/comm session,
 // or a real session with an available agent and no same-vendor alternative).
@@ -818,6 +821,7 @@ function handleMessage(msg: ServerToClient) {
       hostStatus.value = msg.hostStatus
       bindingStats.value = msg.bindingStats
       sessionCapabilities.value = msg.sessionCapabilities
+      vendorCapabilities.value = msg.vendorCapabilities ?? null
       skillSupport.value = msg.skillSupport ?? null
       // Server is the single source of truth for UI language. Reconcile exactly
       // once and only when it disagrees with the live locale, to avoid a
@@ -1033,16 +1037,13 @@ function handleMessage(msg: ServerToClient) {
       break
     // Task-list wire path (2026-06-07-009): server-derived, replaces client-side
     // tool_result parsing. `task_list` = full snapshot; the per-task variants are
-    // single upsert/delete (native push from vendors that support it).
+    // single upsert/delete (native push from vendors that support it). The fold is
+    // the pure `applyTaskEvent` (unit-tested in lib/task-list.test.ts).
     case 'task_list':
-      taskModel.value = { tasks: msg.tasks }
-      break
     case 'task_created':
     case 'task_updated':
-      upsertTask(msg.task)
-      break
     case 'task_deleted':
-      taskModel.value = { tasks: taskModel.value.tasks.filter((t) => t.id !== msg.taskId) }
+      taskModel.value = applyTaskEvent(taskModel.value, msg)
       break
     case 'permission_request':
       add({
@@ -1765,6 +1766,7 @@ function dismissSkillApproval() {
       :messages="messages"
       :actionable-permission-id="actionablePermId"
       :task-model="taskModel"
+      :has-task-store="taskStoreAvailable"
       :running="running"
       :team-active="activeIsTeam"
       :connection="status"
@@ -1806,6 +1808,7 @@ function dismissSkillApproval() {
       :messages="messages"
       :actionable-permission-id="actionablePermId"
       :task-model="taskModel"
+      :has-task-store="taskStoreAvailable"
       :running="running"
       :team-active="activeIsTeam"
       :connection="status"

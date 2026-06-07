@@ -13,6 +13,47 @@ export { TASK_TOOL_NAMES, isTaskTool, emptyTaskModel, applyTaskTool } from '@ccc
 export type { TaskStatus, TaskItem, TaskListModel, TaskToolResult } from '@ccc/shared/task-model'
 
 import type { TaskItem, TaskListModel } from '@ccc/shared/task-model'
+import type { ServerToClient } from '@ccc/shared/protocol'
+
+/**
+ * The `task_*` wire messages the client folds into `taskModel` (2026-06-07-009).
+ * Narrowed off `ServerToClient` so it can never drift from the protocol.
+ */
+export type TaskEvent = Extract<
+  ServerToClient,
+  { type: 'task_list' | 'task_created' | 'task_updated' | 'task_deleted' }
+>
+
+/**
+ * Fold one server-derived `task_*` event into the current model (pure):
+ * - `task_list` — full snapshot, replaces the list wholesale.
+ * - `task_created` / `task_updated` — upsert by `id`; a new task appends at
+ *   `max(order)+1`, an existing one keeps its `order` (only its fields change).
+ * - `task_deleted` — drop the task with that `id`.
+ *
+ * The server is the single source of derivation; this only applies the typed
+ * deltas (no `tool_result.content` parsing). Unknown ids on update upsert as new.
+ */
+export function applyTaskEvent(model: TaskListModel, event: TaskEvent): TaskListModel {
+  switch (event.type) {
+    case 'task_list':
+      return { tasks: event.tasks }
+    case 'task_created':
+    case 'task_updated': {
+      const tasks = model.tasks
+      const idx = tasks.findIndex((t) => t.id === event.task.id)
+      if (idx === -1) {
+        const order = tasks.reduce((max, t) => Math.max(max, t.order), -1) + 1
+        return { tasks: [...tasks, { ...event.task, order }] }
+      }
+      const next = [...tasks]
+      next[idx] = { ...event.task, order: next[idx].order }
+      return { tasks: next }
+    }
+    case 'task_deleted':
+      return { tasks: model.tasks.filter((t) => t.id !== event.taskId) }
+  }
+}
 
 /**
  * 实时任务面板的纯展示视图(不含 DOM)。把单一列表拆成三组并施加显隐 / 截断规则:

@@ -1505,6 +1505,14 @@ export type ServerToClient =
       bindingStats: SessionBindingStats
       sessionCapabilities: Record<VendorId, SessionCapabilities>
       /**
+       * Each vendor's binary {@link AdapterCapability} ledger (interrupt / setActionMode /
+       * … / taskStore), mirrored from the kernel's `AdapterCapabilities`. Lets the console
+       * gate capability-bound UI by `vendor` with zero `if (vendor === …)` — e.g. the task
+       * panel renders only when the active vendor reports `taskStore`. Absent on older
+       * servers; the UI then assumes every capability present (no gating, old-session safe).
+       */
+      vendorCapabilities?: Record<VendorId, Record<AdapterCapability, boolean>>
+      /**
        * Each vendor's external-skill mount support (ADR-0016/0017, mount layer 2/3).
        * Probed and cached by `detectSkillSupport()`. A `none` / `temporarily-unavailable`
        * vendor gets its vendor selector in the skillRepos form greyed out — the session

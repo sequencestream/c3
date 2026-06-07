@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import type { TaskListModel, TaskStatus, TaskToolResult } from './task-list'
-import { applyTaskTool, emptyTaskModel, isTaskTool, taskPanelView } from './task-list'
+import type { TaskItem, TaskListModel, TaskStatus, TaskToolResult } from './task-list'
+import {
+  applyTaskEvent,
+  applyTaskTool,
+  emptyTaskModel,
+  isTaskTool,
+  taskPanelView,
+} from './task-list'
 
 /** 构造一个 tool_result(默认非错误)。 */
 const ok = (value: unknown): TaskToolResult => ({ content: JSON.stringify(value), isError: false })
@@ -250,6 +256,69 @@ describe('isTaskTool — task 工具名判定', () => {
     for (const n of ['Bash', 'Read', 'Task', 'taskcreate', '']) {
       expect(isTaskTool(n)).toBe(false)
     }
+  })
+})
+
+describe('applyTaskEvent — 消费 task_* wire 消息(纯折叠)', () => {
+  const task = (id: string, status: TaskStatus = 'pending', order = 0): TaskItem => ({
+    id,
+    subject: id,
+    status,
+    order,
+  })
+  const seeded = (): TaskListModel => ({
+    tasks: [task('1', 'pending', 0), task('2', 'in_progress', 1)],
+  })
+
+  it('task_list 整列表替换(全量快照)', () => {
+    const m = applyTaskEvent(seeded(), {
+      type: 'task_list',
+      tasks: [task('9', 'completed', 0)],
+    })
+    expect(m.tasks).toEqual([task('9', 'completed', 0)])
+  })
+
+  it('task_created 新增任务追加在 max(order)+1', () => {
+    const m = applyTaskEvent(seeded(), { type: 'task_created', task: task('3', 'pending', 0) })
+    expect(m.tasks.map((t) => [t.id, t.order])).toEqual([
+      ['1', 0],
+      ['2', 1],
+      ['3', 2],
+    ])
+  })
+
+  it('task_updated 按 id 更新字段、保留既有 order', () => {
+    const m = applyTaskEvent(seeded(), { type: 'task_updated', task: task('1', 'completed', 99) })
+    expect(m.tasks.find((t) => t.id === '1')).toMatchObject({ status: 'completed', order: 0 })
+    expect(m.tasks.find((t) => t.id === '2')).toMatchObject({ status: 'in_progress', order: 1 })
+  })
+
+  it('task_updated 未知 id 时 upsert 为新任务(追加)', () => {
+    const m = applyTaskEvent(seeded(), { type: 'task_updated', task: task('7', 'pending', 0) })
+    expect(m.tasks.map((t) => [t.id, t.order])).toEqual([
+      ['1', 0],
+      ['2', 1],
+      ['7', 2],
+    ])
+  })
+
+  it('task_deleted 按 id 移除', () => {
+    const m = applyTaskEvent(seeded(), { type: 'task_deleted', taskId: '1' })
+    expect(m.tasks.map((t) => t.id)).toEqual(['2'])
+  })
+
+  it('task_deleted 不存在的 id 安全无操作', () => {
+    const before = seeded()
+    const after = applyTaskEvent(before, { type: 'task_deleted', taskId: '99' })
+    expect(after.tasks.map((t) => t.id)).toEqual(['1', '2'])
+  })
+
+  it('纯函数:不原地修改入参', () => {
+    const before = seeded()
+    const snapshot = before.tasks.map((t) => ({ ...t }))
+    applyTaskEvent(before, { type: 'task_created', task: task('3') })
+    applyTaskEvent(before, { type: 'task_deleted', taskId: '1' })
+    expect(before.tasks).toEqual(snapshot)
   })
 })
 

@@ -13,13 +13,28 @@ import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
 
-const props = defineProps<{ model: TaskListModel }>()
+const props = withDefaults(
+  defineProps<{
+    model: TaskListModel
+    /**
+     * Whether the active vendor exposes the SDK task surface (`taskStore`). A vendor
+     * without it never derives a task list, so the panel stays hidden. Defaults to
+     * `true` so older sessions / unknown vendors degrade open, never wrongly suppressed.
+     */
+    hasTaskStore?: boolean
+  }>(),
+  { hasTaskStore: true },
+)
 
 const view = computed(() => taskPanelView(props.model))
 </script>
 
 <template>
-  <div v-if="view.visible" class="task-panel" :aria-label="t('session.task.ariaLabel')">
+  <div
+    v-if="hasTaskStore && view.visible"
+    class="task-panel"
+    :aria-label="t('session.task.ariaLabel')"
+  >
     <div
       v-for="task in view.inProgress"
       :key="task.id"

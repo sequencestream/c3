@@ -80,6 +80,36 @@ describe('TaskPanel.vue — 挂载渲染', () => {
     expect(w.find('[data-testid="task-more-completed"]').exists()).toBe(false)
   })
 
+  it('hasTaskStore=false → 即便有进行中任务也不渲染(能力门控)', () => {
+    const w = mount(TaskPanel, {
+      props: { model: model(['1', 'in_progress']), hasTaskStore: false },
+    })
+    expect(w.find('.task-panel').exists()).toBe(false)
+  })
+
+  it('hasTaskStore=true 且有任务 → 正常渲染', () => {
+    const w = mount(TaskPanel, {
+      props: { model: model(['1', 'in_progress']), hasTaskStore: true },
+    })
+    expect(w.find('.task-panel').exists()).toBe(true)
+  })
+
+  it('未传 hasTaskStore → 默认开放(兼容旧 session)', () => {
+    const w = mount(TaskPanel, { props: { model: model(['1', 'in_progress']) } })
+    expect(w.find('.task-panel').exists()).toBe(true)
+  })
+
+  it('能力翻转时显隐随之切换', async () => {
+    const w = mount(TaskPanel, {
+      props: { model: model(['1', 'in_progress']), hasTaskStore: true },
+    })
+    expect(w.find('.task-panel').exists()).toBe(true)
+    await w.setProps({ hasTaskStore: false })
+    expect(w.find('.task-panel').exists()).toBe(false)
+    await w.setProps({ hasTaskStore: true })
+    expect(w.find('.task-panel').exists()).toBe(true)
+  })
+
   it('TaskUpdate(props 变更)时实时切换分组与显隐', async () => {
     const w = mount(TaskPanel, {
       props: { model: model(['1', 'in_progress'], ['2', 'pending']) },

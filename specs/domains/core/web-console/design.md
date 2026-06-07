@@ -200,7 +200,8 @@ A dev session calls the SDK task tools (`TaskCreate` / `TaskList` / `TaskUpdate`
 **independent `task_*` wire path** — the console no longer re-parses `tool_result.content`. The pure
 reducer is the single SoT in `@ccc/shared/task-model` (`applyTaskTool`/`emptyTaskModel`/`isTaskTool`/
 `TASK_TOOL_NAMES` + types), re-exported by `lib/task-list.ts` which keeps only the DOM-free display
-selector `taskPanelView` (unit-tested in `task-list.test.ts`).
+selector `taskPanelView` plus the client-side fold `applyTaskEvent` (both unit-tested in
+`task-list.test.ts`).
 
 - **Server derivation.** A `runs.setTaskObserver` hook on the `emit()` fan-out folds task-tool
   `tool_use`/`tool_result` (correlated by `toolUseId`) into a per-session `TaskListModel` and emits a
@@ -213,14 +214,24 @@ selector `taskPanelView` (unit-tested in `task-list.test.ts`).
   upsert, `TaskUpdate` prefers result else applies `input` incrementally; `order` = snapshot index /
   `max(order)+1` for inserts / preserved on update; the extractor tolerates several serializations and
   never throws.
-- **Client consumption.** App.vue holds the `taskModel` ref, reset on `session_selected`, and fills
-  it from the wire: `task_list` replaces the list wholesale; `task_created`/`task_updated` upsert by
-  `id` (preserving an existing entry's `order`); `task_deleted` removes by id. Ordinary
-  `tool_use`/`tool_result` chat rows are untouched (kept as history); the task panel reads `taskModel`
-  via `taskPanelView`.
+- **Client consumption.** App.vue holds the `taskModel` ref, reset on `session_selected`, and folds
+  every `task_*` message through the pure `applyTaskEvent(model, msg)` (one `switch`, no inline
+  upsert): `task_list` replaces the list wholesale; `task_created`/`task_updated` upsert by `id`
+  (preserving an existing entry's `order`, appending unknown ids at `max(order)+1`); `task_deleted`
+  removes by id. Ordinary `tool_use`/`tool_result` chat rows are untouched (kept as history); the task
+  panel reads `taskModel` via `taskPanelView`.
 - **Per-task variants.** `task_created`/`task_updated`/`task_deleted` exist for vendors that push
   single-task updates natively (Codex/OpenCode `onUpdate`, wired later per 2026-06-07-008 §6). The
   Claude path uses `task_list` snapshots only.
+- **Capability gating (2026-06-07-010).** The `settings` message carries an optional
+  `vendorCapabilities: Record<VendorId, Record<AdapterCapability, boolean>>` (the kernel's binary
+  ledger mirrored from `VENDOR_CAPABILITIES`, `sessions` dropped). App.vue derives
+  `taskStoreAvailable` from the active vendor's `taskStore` flag and passes it to `TaskPanel`
+  (`hasTaskStore`, threaded via `Sessions.vue`/`Intents.vue`); the panel renders only when
+  `hasTaskStore && view.visible`. Unknown capabilities (older server with no `vendorCapabilities`,
+  comm/pending session with no vendor, or a vendor missing from the ledger) **default open** — never
+  wrongly suppressed. All three shipping vendors report `taskStore: true`; the gate exists for future
+  vendors without a native task API.
 
 ### Task panel (TaskPanel.vue)
 

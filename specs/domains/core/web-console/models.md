@@ -43,10 +43,12 @@ A normalized "current task list" of the dev session's task tool calls (`TaskCrea
 `TaskUpdate` / `TaskGet`). Since 2026-06-07-009 it travels its **own wire path** (`task_list` +
 `task_created`/`task_updated`/`task_deleted`): the **server** derives the model and the client just
 fills `taskModel` from those typed messages — no longer re-parsing `tool_result.content`. The pure
-reducer is the single SoT in `@ccc/shared/task-model` (re-exported by `lib/task-list.ts`, which keeps
-only the display selector `taskPanelView`). Server derivation + replay rules are in
-`specs/shared/api-conventions/websocket-protocol.md` (`task_*`) and the server task-tracker; client
-consumption is in [design.md](design.md) _Task-list (wire-driven)_.
+reducer is the single SoT in `@ccc/shared/task-model`; `lib/task-list.ts` re-exports it and adds two
+DOM-free pure helpers of its own — the display selector `taskPanelView` and the client fold
+`applyTaskEvent(model, msg)` that applies one `task_*` delta (snapshot replace / id upsert / delete).
+Server derivation + replay rules are in `specs/shared/api-conventions/websocket-protocol.md`
+(`task_*`) and the server task-tracker; client consumption is in [design.md](design.md)
+_Task-list (wire-driven)_.
 
 | Entity          | Attributes                                                                            | Source                                                   |
 | --------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
@@ -58,7 +60,10 @@ consumption is in [design.md](design.md) _Task-list (wire-driven)_.
 index, or append for incremental inserts). `blockedBy` / `blocks` / `owner` are kept only when the
 SDK result includes them. `TaskPanelView` is the read-only display projection consumed by
 `TaskPanel.vue` (grouping / completed-truncation / visibility — see [design.md](design.md)
-_Task panel_).
+_Task panel_). Since 2026-06-07-010 the panel is **additionally gated by capability**: the `settings`
+message carries `vendorCapabilities` (each vendor's binary `AdapterCapability` ledger), App.vue
+derives the active vendor's `taskStore` into `taskStoreAvailable`, and `TaskPanel` hides whenever the
+vendor lacks `taskStore` (unknown capability ⇒ defaults open, old-session safe).
 
 ## Notes
 

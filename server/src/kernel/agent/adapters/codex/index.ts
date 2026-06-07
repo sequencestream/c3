@@ -23,6 +23,7 @@ export { createCodexSkillLoader } from './skill.js'
 export { CodexDriver, gateToCodexPolicy, type CodexFactory, type CodexClient } from './driver.js'
 export { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
 export { CodexSessionStore } from './session-store.js'
+export { CodexTaskStore } from './task-store.js'
 export { itemToBlock, itemToCanonical } from './translate.js'
 export { CODEX_RELAY_PROVIDER, type CodexRelay, type RelayUpstream } from './relay-contract.js'
 

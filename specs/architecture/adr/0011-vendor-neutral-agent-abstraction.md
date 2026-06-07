@@ -11,6 +11,10 @@
 - **Amended:** 2026-06-07 — Claude `TaskStore` reference implementation landed
   (`adapters/claude/task-store.ts` + `task-parse.ts`). See the _Claude TaskStore_ paragraph under
   "Decision".
+- **Amended:** 2026-06-07 — Codex + OpenCode `TaskStore` implementations landed
+  (`adapters/codex/task-store.ts`, `adapters/opencode/task-store.ts`), establishing the **observe-only**
+  archetype (agent-driven plan, `create`/`update` reject; `onUpdate` push present). See the
+  _Codex + OpenCode TaskStore_ paragraph under "Decision".
 
 ## Context
 
@@ -209,6 +213,34 @@ live gateway through `ApprovalBridge`) are later phases.
 > as `AgentRun` methods. Tests (`task-parse.test.ts`, `task-store.test.ts`) are hermetic: the executor
 > is mocked, no `claude` process spawns, and they cover the JSON+text parse matrix and the
 > shadow-merge/degradation rules.
+
+> **Codex + OpenCode TaskStore — the observe-only archetype (2026-06-07).** The Claude reference is
+> **imperative**: its store _drives_ the SDK task tools, so `create`/`update`/`get` all do real work.
+> Codex and OpenCode reveal the second archetype, **observe-only**: their task concept is the agent's
+> own running plan, which c3 _watches_ but does not author. `CodexTaskStore`
+> (`adapters/codex/task-store.ts`) consumes the Codex `todo_list` THREAD ITEM —
+> `TodoListItem { id, items: TodoItem{text,completed}[] }`, a **full snapshot** re-emitted on
+> `item.started/updated/completed` (the driver maps it to `null` for the canonical stream, ADR-0013
+> D-D, so it lands in the store instead). `OpencodeTaskStore` (`adapters/opencode/task-store.ts`)
+> seeds from the REST full-fetch `GET /session/{id}/todo` (`init()`) then tracks the
+> `todo.updated` event (`EventTodoUpdated { sessionID, todos: Todo[] }`). Both stores: `list()`/`get()`
+> serve an in-memory snapshot; `onUpdate()` is the **live push channel** (present ⇒ the optional-method
+> probe is true, unlike Claude which omits it); and `create()`/`update()` **reject** — neither vendor
+> exposes an external write path into the agent's plan, and the honesty rule (present ≠ fabricate) bans
+> a fake one.
+>
+> Three mapping decisions. (1) **Feed seam, not a second stream:** both stores are FED by the driver's
+> single event pump — Codex via `ingest(item)`, OpenCode via `handleTodoUpdated(props)` — mirroring how
+> the approval bridges are dispatched into, so there is one connection and one jitter-recovery, not two.
+> Tests drive these seams directly, hermetic with no process/server. (2) **Id synthesis (Codex):** a
+> `TodoItem` carries no id, so a stable id is synthesised as `<listId>#<index>` (ordering is the only
+> correlation Codex offers). (3) **Status normalisation (OpenCode):** the free-string `status` folds to
+> the neutral `TaskStatus` — `cancelled → completed` (no longer active) and any unknown value →
+> `pending`, both preserving the raw string in `vendorExtra.rawStatus`; `priority` rides
+> `vendorExtra.priority`. Each frame/event is a full snapshot ⇒ the cache is replaced wholesale and
+> `onUpdate` fires only for **new or changed** tasks (subject/status diff), not the whole list. Like
+> `ClaudeTaskStore`, both are **session-scoped** (bound to a session/event stream) and built per session
+> rather than wired onto the stateless `createCodexAdapter()` / `createOpencodeAdapter()`.
 
 **Probe protocol.** A capability flag reports the **vendor** ability. A caller reaching for an optional
 control checks the flag **and** `typeof run.method === 'function'` (the build-wiring probe), then

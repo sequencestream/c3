@@ -21,6 +21,7 @@ export { createOpencodeSkillLoader } from './skill.js'
 export { OpencodeDriver } from './driver.js'
 export { OpencodeApprovalBridge } from './approval.js'
 export { OpencodeSessionStore } from './session-store.js'
+export { OpencodeTaskStore, type OpencodeTaskStoreOptions } from './task-store.js'
 export { OpencodeStreamTranslator, messageToCanonical, partToBlock } from './translate.js'
 export {
   OpencodeSupervisor,

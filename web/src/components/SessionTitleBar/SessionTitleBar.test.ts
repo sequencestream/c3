@@ -52,3 +52,55 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
     expect(w.find('[data-testid="session-vendor-dot"]').exists()).toBe(false)
   })
 })
+
+const SWITCH = {
+  current: { id: 'a1', displayName: 'Agent 1' },
+  candidates: [{ id: 'a2', displayName: 'Agent 2' }],
+  currentUnavailable: false,
+}
+
+describe('SessionTitleBar.vue — 同 vendor agent 切换器', () => {
+  it('无 agentSwitch 时不渲染切换器', () => {
+    const w = mountBar()
+    expect(w.find('[data-testid="session-agent-switch"]').exists()).toBe(false)
+  })
+
+  it('有 agentSwitch 时只列出 current + 同 vendor 候选', async () => {
+    const w = mountBar({ vendor: 'claude', agentSwitch: SWITCH })
+    const dd = w.find('[data-testid="session-agent-switch"]')
+    expect(dd.exists()).toBe(true)
+    await dd.find('.dd-trigger').trigger('click')
+    const labels = dd.findAll('.dd-item .dd-label').map((n) => n.text())
+    // current first, then the same-vendor candidate — cross-vendor never appears.
+    expect(labels).toEqual(['Agent 1', 'Agent 2'])
+  })
+
+  it('选择另一同 vendor agent → emit set-session-agent(id)', async () => {
+    const w = mountBar({ vendor: 'claude', agentSwitch: SWITCH })
+    const dd = w.find('[data-testid="session-agent-switch"]')
+    await dd.find('.dd-trigger').trigger('click')
+    await dd.findAll('.dd-item')[1].trigger('click') // Agent 2
+    expect(w.emitted('set-session-agent')).toEqual([['a2']])
+  })
+
+  it('选择当前 agent 不触发切换', async () => {
+    const w = mountBar({ vendor: 'claude', agentSwitch: SWITCH })
+    const dd = w.find('[data-testid="session-agent-switch"]')
+    await dd.find('.dd-trigger').trigger('click')
+    await dd.findAll('.dd-item')[0].trigger('click') // Agent 1 (current)
+    expect(w.emitted('set-session-agent')).toBeUndefined()
+  })
+
+  it('current agent 不可用时渲染提示条', () => {
+    const w = mountBar({
+      vendor: 'claude',
+      agentSwitch: { ...SWITCH, currentUnavailable: true },
+    })
+    expect(w.find('[data-testid="session-agent-unavailable"]').exists()).toBe(true)
+  })
+
+  it('current agent 可用时不渲染提示条', () => {
+    const w = mountBar({ vendor: 'claude', agentSwitch: SWITCH })
+    expect(w.find('[data-testid="session-agent-unavailable"]').exists()).toBe(false)
+  })
+})

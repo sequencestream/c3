@@ -49,6 +49,7 @@ import type {
   UpdateScheduleInput,
   RequirementStatus,
   ServerToClient,
+  SessionAgentSwitch,
   SessionBindingStats,
   SessionInfo,
   SessionRunStatus,
@@ -478,6 +479,10 @@ const newSessionWorkspace = ref<string | null>(null)
 // The active session's resolved agent vendor (from `session_selected`), for the
 // title vendor dot. Null for comm sessions / when unset.
 const activeVendor = ref<VendorId | null>(null)
+// The active session's same-vendor agent-switcher data (from `session_selected`),
+// for the title-bar switcher. Null when there's no switcher (pending/comm session,
+// or a real session with an available agent and no same-vendor alternative).
+const activeAgentSwitch = ref<SessionAgentSwitch | null>(null)
 
 // The time zone schedule cron fields are interpreted in for the live preview /
 // upcoming-runs list, so the client computes the same instants the server does.
@@ -679,6 +684,8 @@ function handleMessage(msg: ServerToClient) {
       activeTitle.value = msg.title
       // The resolved agent vendor for the title dot (absent on comm sessions).
       activeVendor.value = msg.vendor ?? null
+      // The same-vendor agent switcher data (absent ⇒ no switcher).
+      activeAgentSwitch.value = msg.agentSwitch ?? null
       mode.value = msg.mode
       // Remember this as the console tab's own session ONLY when the selection
       // originated on the console tab. Comm-session selections (open/new/refine
@@ -724,6 +731,32 @@ function handleMessage(msg: ServerToClient) {
     case 'session_started':
       if (activeSession.value === msg.clientId) activeSession.value = msg.sessionId
       break
+    case 'session_agent_changed': {
+      if (msg.sessionId !== activeSession.value) break
+      if (!msg.ok) {
+        // Cross-vendor rejection — vendor is frozen (AC-R17). The console only
+        // offers same-vendor candidates, so this is a defensive path; surface it
+        // and leave the switcher on its current agent.
+        showToast(t('session.titleBar.agent.changeFailed'))
+        break
+      }
+      // Re-target succeeded: rebuild the switcher locally so the dropdown shows the
+      // new current (the old current rejoins the candidates). The next turn resumes
+      // with it. A freshly-chosen candidate was host-present ⇒ no longer unavailable.
+      const s = activeAgentSwitch.value
+      if (s) {
+        const all = [s.current, ...s.candidates]
+        const picked = all.find((c) => c.id === msg.agentId)
+        if (picked) {
+          activeAgentSwitch.value = {
+            current: picked,
+            candidates: all.filter((c) => c.id !== msg.agentId),
+            currentUnavailable: false,
+          }
+        }
+      }
+      break
+    }
     case 'mode_changed':
       mode.value = msg.mode
       break
@@ -1237,6 +1270,7 @@ function clearViewedSession() {
   activeSession.value = null
   activeTitle.value = ''
   activeVendor.value = null
+  activeAgentSwitch.value = null
   messages.value = []
   nextId = 1
   availableCommands.value = []
@@ -1559,6 +1593,15 @@ function setMode(next: PermissionMode) {
   client.send({ type: 'set_mode', mode: next })
 }
 
+// Re-target the viewed session's agent to another same-vendor one (ADR-0015). The
+// server rewrites the fact and replies `session_agent_changed`; the next turn
+// resumes with it. No optimistic update — we wait for the reply so a (defensive)
+// cross-vendor rejection leaves the switcher untouched.
+function onSetSessionAgent(agentId: string) {
+  if (!client || !activeSession.value) return
+  client.send({ type: 'set_session_agent', sessionId: activeSession.value, agentId })
+}
+
 function respond(m: PermissionMsg, decision: 'allow' | 'deny') {
   if (!client || m.decision) return
   client.send({ type: 'permission_response', requestId: m.requestId, decision })
@@ -1602,6 +1645,7 @@ function listCommands() {
       :active-session="activeSession"
       :active-title="activeTitle"
       :active-vendor="activeVendor"
+      :active-agent-switch="activeAgentSwitch"
       :has-active-session="hasActiveSession"
       :mode="mode"
       :mode-options="modeOptions"
@@ -1624,6 +1668,7 @@ function listCommands() {
       @delete-session="deleteSession"
       @rename-session="renameSession"
       @set-mode="setMode"
+      @set-session-agent="onSetSessionAgent"
       @respond="respond"
       @submit-ask="submitAsk"
       @refresh="refreshStatus"

@@ -479,6 +479,12 @@
     "titleBar": {
       "mode": {
         "ariaLabel": "权限模式"
+      },
+      "agent": {
+        "ariaLabel": "切换 agent",
+        "vendorLocked": "已由 {vendor} 创建,vendor 不可变更",
+        "unavailable": "当前 agent 不可用 — 切换到另一个 {vendor} agent 以继续",
+        "changeFailed": "切换 agent 失败:会话 vendor 不可变更"
       }
     },
     "statusBar": {

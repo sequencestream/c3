@@ -14,7 +14,12 @@
  * `./normalize` (a leaf). config → normalize and readers → config + normalize,
  * so the boundary stays acyclic.
  */
-import type { AgentConfig, SystemSettings, VendorId } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  SessionAgentSwitch,
+  SystemSettings,
+  VendorId,
+} from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 
 /**
@@ -258,6 +263,50 @@ export function vendorScopedVoters(currentAgentId: string | null): {
 } {
   const vendorScope = resolveAgent(currentAgentId).vendor
   const others = enabledAgents().filter((a) => a.id !== currentAgentId)
-  const voters = others.filter((a) => a.vendor === vendorScope)
+  const voters = sameVendorEnabledAgents(vendorScope, currentAgentId)
   return { voters, vendorScope, crossVendorExcluded: others.length - voters.length }
+}
+
+/**
+ * The **same-vendor candidate rule** (2026-06-06-006 vendor-homogeneity), the
+ * single source the consensus voters, the manual agent switcher, and the
+ * degradation chain's homogeneity all agree on: every *enabled* agent of
+ * `vendorScope` except `excludeId` (the session's own agent). Cross-vendor agents
+ * are never candidates — a different vendor cannot carry context (no `resume`), so
+ * neither voting, switching, nor fallback may cross the frozen vendor boundary.
+ */
+export function sameVendorEnabledAgents(
+  vendorScope: VendorId,
+  excludeId: string | null,
+): AgentConfig[] {
+  return enabledAgents().filter((a) => a.vendor === vendorScope && a.id !== excludeId)
+}
+
+/**
+ * Resolve the title-bar agent-switcher payload for a session (ADR-0015 / AS-R22):
+ * the other same-vendor, host-binary-present, enabled agents it may switch to,
+ * plus whether the current agent's host CLI is missing. Returns null when there is
+ * no switcher to show — a pending/comm session (`sessionId` null or a pending id),
+ * or a real session with no same-vendor alternative *and* an available current
+ * agent. `presentVendors` is the set of vendors whose host CLI resolved on PATH
+ * (the caller probes via `probeAll`, keeping this layer free of the launcher).
+ */
+export function resolveSessionAgentSwitch(
+  sessionId: string | null,
+  presentVendors: Set<VendorId>,
+): SessionAgentSwitch | null {
+  if (!sessionId || sessionId.startsWith(PENDING_SESSION_PREFIX)) return null
+  const current = resolveAgent(getSessionAgentId(sessionId))
+  const vendor = current.vendor
+  const candidates = sameVendorEnabledAgents(vendor, current.id)
+    .filter((a) => presentVendors.has(a.vendor))
+    .map((a) => ({ id: a.id, displayName: a.displayName }))
+  const currentUnavailable = !presentVendors.has(vendor)
+  // Nothing actionable to surface: an available current agent with no peers.
+  if (candidates.length === 0 && !currentUnavailable) return null
+  return {
+    current: { id: current.id, displayName: current.displayName },
+    candidates,
+    currentUnavailable,
+  }
 }

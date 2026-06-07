@@ -19,6 +19,7 @@ import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
   PermissionMode,
+  SessionAgentSwitch,
   SessionInfo,
   SessionStatus,
   SlashCommandInfo,
@@ -35,6 +36,8 @@ defineProps<{
   activeTitle: string
   /** The active session's resolved agent vendor, for the title vendor dot. */
   activeVendor?: VendorId | null
+  /** Same-vendor agent switcher data for the active session (ADR-0015); null ⇒ no switcher. */
+  activeAgentSwitch?: SessionAgentSwitch | null
   // right: chat column
   hasActiveSession: boolean
   mode: PermissionMode
@@ -64,6 +67,7 @@ const emit = defineEmits<{
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
   'set-mode': [mode: PermissionMode]
+  'set-session-agent': [agentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -106,9 +110,11 @@ defineExpose({
       v-if="hasActiveSession"
       :active-title="activeTitle"
       :vendor="activeVendor"
+      :agent-switch="activeAgentSwitch"
       :mode="mode"
       :mode-options="modeOptions"
       @set-mode="(m: PermissionMode) => emit('set-mode', m)"
+      @set-session-agent="(id: string) => emit('set-session-agent', id)"
     />
     <ChatMessages
       :messages="messages"

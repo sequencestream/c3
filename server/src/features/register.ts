@@ -27,6 +27,7 @@ import {
   renameSession,
   selectSession,
   setMode,
+  setSessionAgentHandler,
   stopRunHandler,
   userPrompt,
 } from './sessions/index.js'
@@ -91,6 +92,7 @@ export const handlerMap: HandlerMap = {
   delete_session: deleteSession,
   rename_session: renameSession,
   set_mode: setMode,
+  set_session_agent: setSessionAgentHandler,
   stop_run: stopRunHandler,
   user_prompt: userPrompt,
   // requirements

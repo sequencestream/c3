@@ -77,6 +77,23 @@ export interface SessionInfo {
 }
 
 /**
+ * Title-bar same-vendor agent-switcher payload (ADR-0015 / AS-R22). The console
+ * lets the user re-target a stuck session (token-exhausted / rate-limited /
+ * host-binary blip) to another agent of the **same** vendor and `resume` it —
+ * vendor is frozen, so cross-vendor candidates are never offered. The candidate
+ * set is resolved server-side from the **same** same-vendor rule the degradation
+ * chain uses (`sameVendorEnabledAgents`), so manual and automatic fallback agree.
+ */
+export interface SessionAgentSwitch {
+  /** The session's current agent (its bound fact, or the default) — the selected option. */
+  current: { id: string; displayName: string }
+  /** Other same-vendor, host-binary-present, enabled agents (excludes the current). */
+  candidates: { id: string; displayName: string }[]
+  /** The current agent's host CLI is missing — prompt the user to switch to continue. */
+  currentUnavailable: boolean
+}
+
+/**
  * One replayed item of a session's historical transcript. Mirrors the live
  * render kinds so the console renders history and live events the same way.
  */
@@ -982,6 +999,14 @@ export type ClientToServer =
     }
   /** Change the active session's permission mode (per-session, persisted). */
   | { type: 'set_mode'; mode: PermissionMode }
+  /**
+   * Re-target a session's agent within its frozen vendor (ADR-0015): rewrites the
+   * `sessionAgents` fact so the session's next turn `resume`s with `agentId`. The
+   * server rejects a cross-vendor change (reply `session_agent_changed { ok:false }`,
+   * fact untouched). The console only offers same-vendor candidates, so a rejection
+   * is a defensive guard, not an expected path.
+   */
+  | { type: 'set_session_agent'; sessionId: string; agentId: string }
   /** Register a project directory as a workspace. */
   | { type: 'add_workspace'; path: string }
   /** Remove a workspace from the sidebar (does not delete its sessions on disk). */
@@ -1194,9 +1219,30 @@ export type ServerToClient =
        * (no agent dot there).
        */
       vendor?: VendorId
+      /**
+       * Data for the title-bar same-vendor agent switcher (ADR-0015 / AS-R22): the
+       * other **same-vendor, host-binary-present, enabled** agents this session may
+       * switch to (cross-vendor never appears — vendor is frozen), plus whether the
+       * current agent's host CLI is missing. Present only for a real, non-comm
+       * session that actually has switch candidates; absent otherwise (no switcher).
+       */
+      agentSwitch?: SessionAgentSwitch
     }
   /** Binds a pending session's `clientId` to its real SDK `sessionId`. */
   | { type: 'session_started'; clientId: string; sessionId: string }
+  /**
+   * Result of a `set_session_agent` re-target (ADR-0015): `ok` is false when the
+   * change was rejected (cross-vendor — vendor is immutable), true on a same-vendor
+   * swap. On success the session's next turn `resume`s with `agentId`. `vendor` is
+   * the session's (unchanged) frozen vendor, echoed for the client's local update.
+   */
+  | {
+      type: 'session_agent_changed'
+      sessionId: string
+      agentId: string
+      vendor: VendorId
+      ok: boolean
+    }
   /** Confirms the active session's mode change. */
   | { type: 'mode_changed'; mode: PermissionMode }
   /** Available slash commands/skills for the active session (reply to `list_commands`). */

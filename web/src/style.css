@@ -287,6 +287,30 @@ header h1 {
   flex-shrink: 0;
 }
 
+/* Same-vendor agent switcher cluster (ADR-0015): the unavailable banner + the
+   agent dropdown, anchored to the right. The group's auto margin pushes it (and
+   the trailing mode dropdown) to the right edge; when absent, `.mode` keeps its
+   own auto margin (unchanged layout). */
+.session-title-bar .agent-group {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.session-title-bar .agent-switch {
+  flex-shrink: 0;
+}
+.session-title-bar .agent-unavailable {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  color: var(--c-warn, #c08a00);
+}
+
 /* Discussion title bar: Start trigger (draft) / status label (running/done),
    pushed to the right edge of the bar. */
 .session-title-bar .disc-start-btn {

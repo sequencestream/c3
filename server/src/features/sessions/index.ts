@@ -27,12 +27,32 @@ import {
   touchWorkspace,
 } from '../../state.js'
 import { getDefaultMode, setPendingIntent } from '../../kernel/config/index.js'
-import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
+import {
+  resolveSessionAgentSwitch,
+  resolveSessionVendor,
+  setSessionAgent,
+} from '../../kernel/agent-config/index.js'
+import { probeAll } from '../../kernel/agent/process/launcher.js'
+import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { rebindChatSession } from '../requirements/store.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
+
+/** Vendors whose host CLI resolved on PATH (ADR-0012) — the switcher availability set. */
+function presentVendorSet(): Set<VendorId> {
+  return new Set(
+    probeAll()
+      .filter((p) => p.path !== null)
+      .map((p) => p.vendor),
+  )
+}
+
+/** The title-bar agent-switcher payload for a console session, or undefined (no switcher). */
+function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
+  return resolveSessionAgentSwitch(sessionId, presentVendorSet()) ?? undefined
+}
 
 export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) => {
   await conn.sendSessions(resolve(msg.workspacePath))
@@ -85,6 +105,8 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     history: [],
     status: 'idle',
     vendor: resolveSessionVendor(pendingId),
+    // Pending sessions have no fact yet ⇒ no switcher (resolveSessionAgentSwitch null).
+    agentSwitch: agentSwitchFor(pendingId),
   })
   conn.sendWorkspaces()
 }
@@ -119,6 +141,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       history: rt.baseline,
       status: rt.status,
       vendor: resolveSessionVendor(msg.sessionId),
+      agentSwitch: agentSwitchFor(msg.sessionId),
     })
     // Replay everything emitted since the baseline (current + past
     // turns), then start receiving live events.
@@ -186,6 +209,26 @@ export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
     }
   }
   conn.send({ type: 'mode_changed', mode: msg.mode })
+}
+
+/**
+ * Re-target a session's agent within its frozen vendor (ADR-0015 / AS-R22): rewrite
+ * the `sessionAgents` fact so the session's next turn `resume`s with the new agent
+ * (no immediate relaunch — the existing `launchRun`/`resolveSessionLaunch` path picks
+ * it up on the next `user_prompt`). `setSessionAgent` enforces vendor immutability:
+ * a cross-vendor change returns `{ ok: false }` and leaves the fact untouched. The
+ * reply echoes the (unchanged) vendor for the client's local update; audit then runs
+ * against the last valid agent (the rewritten fact). No-op without a viewed session.
+ */
+export const setSessionAgentHandler: Handler<'set_session_agent'> = (_ctx, conn, msg) => {
+  const { ok } = setSessionAgent(msg.sessionId, msg.agentId)
+  conn.send({
+    type: 'session_agent_changed',
+    sessionId: msg.sessionId,
+    agentId: msg.agentId,
+    vendor: resolveSessionVendor(msg.sessionId),
+    ok,
+  })
 }
 
 export const stopRunHandler: Handler<'stop_run'> = (_ctx, conn) => {

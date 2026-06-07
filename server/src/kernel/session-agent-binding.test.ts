@@ -17,7 +17,13 @@ import {
   saveSettings,
   setPendingIntent,
 } from './config/index.js'
-import { freezeSessionAgent, setSessionAgent } from './agent-config/index.js'
+import {
+  freezeSessionAgent,
+  resolveSessionAgentSwitch,
+  sameVendorEnabledAgents,
+  setSessionAgent,
+} from './agent-config/index.js'
+import type { VendorId } from '@ccc/shared/protocol'
 
 // Two-key session→agent binding space + frozen-vendor invariant (ADR-0015).
 // `~/.c3` is redirected to a throwaway dir (os.homedir() honours $HOME on POSIX)
@@ -166,6 +172,58 @@ describe('changeSessionAgentFact / setSessionAgent (same-vendor swap vs cross-ve
     expect(setSessionAgent('real-3', 'claude-b')).toEqual({ ok: true })
     expect(setSessionAgent('real-3', 'oc')).toEqual({ ok: false })
     expect(getSessionAgentId('real-3')).toBe('claude-b')
+  })
+})
+
+describe('sameVendorEnabledAgents (shared same-vendor candidate rule)', () => {
+  beforeEach(seedAgents)
+
+  it('keeps only same-vendor agents and excludes the given id', () => {
+    expect(sameVendorEnabledAgents('claude', SYSTEM_AGENT_ID).map((a) => a.id)).toEqual([
+      'claude-b',
+    ])
+    // No exclusion ⇒ both claude agents; never the opencode/codex ones.
+    expect(sameVendorEnabledAgents('claude', null).map((a) => a.id)).toEqual([
+      SYSTEM_AGENT_ID,
+      'claude-b',
+    ])
+    // A vendor with a single agent has no same-vendor peers once it's excluded.
+    expect(sameVendorEnabledAgents('opencode', 'oc')).toEqual([])
+  })
+})
+
+describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
+  beforeEach(seedAgents)
+  const allPresent = new Set<VendorId>(['claude', 'opencode', 'codex'])
+
+  it('returns null for pending and null sessions (no switcher)', () => {
+    expect(resolveSessionAgentSwitch('pending:x', allPresent)).toBeNull()
+    expect(resolveSessionAgentSwitch(null, allPresent)).toBeNull()
+  })
+
+  it('lists same-vendor available peers, marking the current agent', () => {
+    bindSessionAgent('pending:w1', 'real-1', SYSTEM_AGENT_ID, 'claude')
+    const sw = resolveSessionAgentSwitch('real-1', allPresent)
+    expect(sw).not.toBeNull()
+    expect(sw?.current).toEqual({ id: SYSTEM_AGENT_ID, displayName: 'System' })
+    expect(sw?.candidates).toEqual([{ id: 'claude-b', displayName: 'Claude B' }])
+    expect(sw?.currentUnavailable).toBe(false)
+  })
+
+  it('excludes a same-vendor peer whose host binary is missing', () => {
+    bindSessionAgent('pending:w2', 'real-2', SYSTEM_AGENT_ID, 'claude')
+    // claude present, but suppose only system is reachable — claude-b shares the
+    // claude binary, so host presence is per-vendor: claude present ⇒ both listed.
+    // Drop claude from the present set to assert the current-unavailable path below.
+    const sw = resolveSessionAgentSwitch('real-2', new Set<VendorId>(['opencode', 'codex']))
+    expect(sw?.currentUnavailable).toBe(true)
+    // No claude candidates survive when the claude binary is absent.
+    expect(sw?.candidates).toEqual([])
+  })
+
+  it('returns null when the current agent is available and has no same-vendor peer', () => {
+    bindSessionAgent('pending:w3', 'real-3', 'oc', 'opencode')
+    expect(resolveSessionAgentSwitch('real-3', allPresent)).toBeNull()
   })
 })
 

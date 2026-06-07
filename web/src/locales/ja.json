@@ -479,6 +479,12 @@
     "titleBar": {
       "mode": {
         "ariaLabel": "権限モード"
+      },
+      "agent": {
+        "ariaLabel": "エージェントを切り替え",
+        "vendorLocked": "{vendor} により作成 — ベンダーは変更できません",
+        "unavailable": "現在のエージェントは利用できません — 続行するには別の {vendor} エージェントに切り替えてください",
+        "changeFailed": "エージェントを切り替えできません:セッションのベンダーは固定です"
       }
     },
     "statusBar": {

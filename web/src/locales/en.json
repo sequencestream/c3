@@ -479,6 +479,12 @@
     "titleBar": {
       "mode": {
         "ariaLabel": "Permission mode"
+      },
+      "agent": {
+        "ariaLabel": "Switch agent",
+        "vendorLocked": "Created by {vendor} — vendor can't be changed",
+        "unavailable": "current agent unavailable — switch to another {vendor} agent to continue",
+        "changeFailed": "Couldn't switch agent: the session's vendor is fixed"
       }
     },
     "statusBar": {

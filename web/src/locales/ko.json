@@ -1141,6 +1141,75 @@
       "majority": {
         "label": "다수결 허용 (동점 또는 명확한 다수가 없는 경우에도 당신이 결정합니다)"
       }
+    },
+    "skillRepos": {
+      "title": {
+        "label": "외부 스킬"
+      },
+      "hint": "외부 Git 저장소의 SKILL.md 파일을 벤더의 스킬 검색 디렉토리에 마운트합니다. 저장소 URL, ref 및 신뢰 수준을 구성하세요.",
+      "empty": "구성된 외부 스킬 저장소가 없습니다.",
+      "add": {
+        "label": "+ 스킬 저장소 추가"
+      },
+      "remove": {
+        "tooltip": "이 스킬 저장소 제거"
+      },
+      "col": {
+        "id": {
+          "label": "ID"
+        },
+        "repo": {
+          "label": "Git 저장소 URL"
+        },
+        "ref": {
+          "label": "Ref"
+        },
+        "subpath": {
+          "label": "하위 경로"
+        },
+        "vendor": {
+          "label": "벤더"
+        },
+        "trust": {
+          "label": "신뢰 수준"
+        },
+        "pinCommit": {
+          "label": "고정 커밋"
+        }
+      },
+      "id": {
+        "placeholder": "a-unique-id"
+      },
+      "repo": {
+        "placeholder": "https://github.com/owner/repo",
+        "parseHelp": "GitHub URL을 붙여넣으면 ref와 하위 경로가 자동으로 추출됩니다"
+      },
+      "ref": {
+        "placeholder": "main",
+        "required": "Git ref(브랜치/태그/커밋)는 필수입니다"
+      },
+      "subpath": {
+        "placeholder": "선택적 하위 디렉토리(예: skills/my-skill)"
+      },
+      "vendor": {
+        "all": "모두 지원",
+        "unsupported": "이 벤더는 지원하지 않음"
+      },
+      "trust": {
+        "pinned": {
+          "label": "고정 — 특정 커밋에 고정"
+        },
+        "reviewOnUpdate": {
+          "label": "업데이트 시 검토"
+        },
+        "unreviewed": {
+          "label": "미검토 — 확인 없이 마운트"
+        }
+      },
+      "pinCommit": {
+        "placeholder": "40자 16진수 커밋 SHA",
+        "required": "신뢰 수준이 고정인 경우 고정 커밋이 필요합니다"
+      }
     }
   }
 }

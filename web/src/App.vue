@@ -1891,7 +1891,6 @@ function dismissSkillApproval() {
     :settings="serverSettings"
     :host-status="hostStatus"
     :binding-stats="bindingStats"
-    :skill-support="skillSupport"
     @close="settingsOpen = false"
     @save="saveSettings"
     @set-ui-lang="setLocale"
@@ -1901,6 +1900,7 @@ function dismissSkillApproval() {
     :open="projectConfigOpen"
     :project-config="currentProjectConfig"
     :current-workspace="currentWorkspace"
+    :skill-support="skillSupport"
     @close="projectConfigOpen = false"
     @save="saveProjectConfig"
   />

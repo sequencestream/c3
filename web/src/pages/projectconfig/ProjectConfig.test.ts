@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ProjectConfig from './ProjectConfig.vue'
-import type { ProjectConfig as ProjectConfigType } from '@ccc/shared/protocol'
+import type { ProjectConfig as ProjectConfigType, SkillRepoConfig } from '@ccc/shared/protocol'
 
 const baseConfig: ProjectConfigType = {
   defaultMode: 'plan',
@@ -170,5 +170,145 @@ describe('ProjectConfig.vue — save emits full payload', () => {
     expect(payload.maxSpeechChars).toBe(400)
     expect(payload.consensus?.enabled).toBe(true)
     expect(payload.consensus?.majority).toBe(true)
+  })
+})
+
+describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
+  const configWithSkillRepos: ProjectConfigType = {
+    ...baseConfig,
+    skillRepos: [
+      {
+        id: 'my-skills',
+        repo: 'https://github.com/owner/repo',
+        ref: 'main',
+        subpath: 'skills/my-skill',
+        vendor: 'claude',
+        trust: 'review-on-update',
+      },
+      {
+        id: 'pinned-skills',
+        repo: 'https://github.com/owner/pinned',
+        ref: 'v1.0',
+        vendor: 'all',
+        trust: 'pinned',
+        pinCommit: 'abcdef1234567890abcdef1234567890abcdef12',
+      },
+    ] as SkillRepoConfig[],
+  }
+
+  it('renders a row per skill repo when projectConfig carries skillRepos', () => {
+    const w = mount(ProjectConfig, {
+      props: { open: true, projectConfig: configWithSkillRepos, currentWorkspace: '/test' },
+    })
+    const rows = w.findAll('[data-testid="skill-repo-row"]')
+    expect(rows).toHaveLength(2)
+  })
+
+  it('shows an empty hint when skillRepos is empty', () => {
+    const w = mount(ProjectConfig, {
+      props: { open: true, projectConfig: baseConfig, currentWorkspace: '/test' },
+    })
+    expect(w.text()).toContain('No external skill repositories configured.')
+  })
+
+  it('adds a new row on + Add skill repo', async () => {
+    const w = mount(ProjectConfig, {
+      props: { open: true, projectConfig: baseConfig, currentWorkspace: '/test' },
+    })
+    await w.find('[data-testid="project-config-add-skill-repo"]').trigger('click')
+    const rows = w.findAll('[data-testid="skill-repo-row"]')
+    expect(rows).toHaveLength(1)
+  })
+
+  it('removes a row on click', async () => {
+    const w = mount(ProjectConfig, {
+      props: { open: true, projectConfig: configWithSkillRepos, currentWorkspace: '/test' },
+    })
+    const removes = w.findAll('[data-testid="skill-repo-remove"]')
+    expect(removes).toHaveLength(2)
+    await removes[0].trigger('click')
+    expect(w.findAll('[data-testid="skill-repo-row"]')).toHaveLength(1)
+  })
+
+  it('shows ref required error when ref is empty', () => {
+    const w = mount(ProjectConfig, {
+      props: {
+        open: true,
+        projectConfig: {
+          ...baseConfig,
+          skillRepos: [
+            {
+              id: 's',
+              repo: '',
+              ref: '',
+              vendor: 'claude',
+              trust: 'unreviewed',
+            } as SkillRepoConfig,
+          ],
+        },
+        currentWorkspace: '/test',
+      },
+    })
+    const errors = w.findAll('[data-testid="skill-repo-ref-error"]')
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors[0].text()).toBeTruthy()
+  })
+
+  it('shows pin required error when trust is pinned but pinCommit is missing', () => {
+    const w = mount(ProjectConfig, {
+      props: {
+        open: true,
+        projectConfig: {
+          ...baseConfig,
+          skillRepos: [
+            {
+              id: 's',
+              repo: '',
+              ref: 'main',
+              vendor: 'claude',
+              trust: 'pinned',
+            } as SkillRepoConfig,
+          ],
+        },
+        currentWorkspace: '/test',
+      },
+    })
+    const errors = w.findAll('[data-testid="skill-repo-pin-error"]')
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors[0].text()).toBeTruthy()
+  })
+
+  it('no pin error when trust is pinned and pinCommit is present', () => {
+    const w = mount(ProjectConfig, {
+      props: {
+        open: true,
+        projectConfig: {
+          ...baseConfig,
+          skillRepos: [
+            {
+              id: 's',
+              repo: '',
+              ref: 'main',
+              vendor: 'claude',
+              trust: 'pinned' as const,
+              pinCommit: 'abcdef1234567890abcdef1234567890abcdef12',
+            },
+          ] as SkillRepoConfig[],
+        },
+        currentWorkspace: '/test',
+      },
+    })
+    expect(w.findAll('[data-testid="skill-repo-pin-error"]')).toHaveLength(0)
+  })
+
+  it('carries the edited skillRepos into the Save payload', async () => {
+    const w = mount(ProjectConfig, {
+      props: { open: true, projectConfig: configWithSkillRepos, currentWorkspace: '/test' },
+    })
+    const inputs = w.findAll('[data-testid="skill-repo-ref"]')
+    await inputs[0].setValue('develop')
+    await w.find('[data-testid="project-config-save"]').trigger('click')
+    const emitted = w.emitted('save') as [ProjectConfigType][]
+    expect(emitted[0][0].skillRepos?.[0]?.ref).toBe('develop')
   })
 })

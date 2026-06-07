@@ -3,11 +3,16 @@
 > 面向开发者与 AI：解释 c3 所依赖的 `@anthropic-ai/claude-agent-sdk`（TypeScript）
 > 是什么、如何与 Claude Code 协作、数据存在哪里、如何读取 Skill，以及最佳实践。
 >
-> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.152`（见 `server/package.json`）。
+> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.158`（见 `server/package.json`）。
 > - **历史名称**：该 SDK 前身为 “Claude Code SDK”，2025 年下半年更名为 “Claude Agent SDK”。
 > - **官方文档**：<https://code.claude.com/docs/en/agent-sdk/>
 > - **源码仓库**：<https://github.com/anthropics/claude-agent-sdk-typescript>
 > - 与 c3 的关系见 [`architecture.md`](architecture.md)（`agent-session` 模块封装 `query()`）。
+
+> **关于其他 vendor SDK**：c3 还使用 `@openai/codex-sdk`（OpenAI Codex）和 `@opencode-ai/sdk`（OpenCode），
+> 它们的架构与本指南描述的 Claude Agent SDK 不同，分别封装在各自 adapter 中（`server/src/kernel/agent/adapters/codex/`、
+> `server/src/kernel/agent/adapters/opencode/`）。三者的能力差异由 `AdapterCapabilities` 管理（ADR-0011）。
+> 本指南的内容（子进程包装、`canUseTool` 回调、Skill 发现）**仅适用于 Claude**，不适用于其它 vendor。
 
 ## 1. 它是什么架构
 

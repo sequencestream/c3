@@ -1141,6 +1141,75 @@
       "majority": {
         "label": "允许多数决（平票或无明显多数时仍由你决定）"
       }
+    },
+    "skillRepos": {
+      "title": {
+        "label": "外部技能"
+      },
+      "hint": "外部 Git 仓库的 SKILL.md 挂载到 vendor 技能发现目录。配置仓库 URL、ref 与信任等级。",
+      "empty": "尚未配置外部技能仓库。",
+      "add": {
+        "label": "+ 添加技能仓库"
+      },
+      "remove": {
+        "tooltip": "移除此技能仓库"
+      },
+      "col": {
+        "id": {
+          "label": "ID"
+        },
+        "repo": {
+          "label": "Git 仓库 URL"
+        },
+        "ref": {
+          "label": "Ref"
+        },
+        "subpath": {
+          "label": "子路径"
+        },
+        "vendor": {
+          "label": "供应商"
+        },
+        "trust": {
+          "label": "信任等级"
+        },
+        "pinCommit": {
+          "label": "锁定提交"
+        }
+      },
+      "id": {
+        "placeholder": "a-unique-id"
+      },
+      "repo": {
+        "placeholder": "https://github.com/owner/repo",
+        "parseHelp": "粘贴 GitHub URL 可自动提取 ref 和子路径"
+      },
+      "ref": {
+        "placeholder": "main",
+        "required": "Git ref（分支/标签/提交）为必填项"
+      },
+      "subpath": {
+        "placeholder": "可选子目录（如 skills/my-skill）"
+      },
+      "vendor": {
+        "all": "所有支持的",
+        "unsupported": "此供应商不支持"
+      },
+      "trust": {
+        "pinned": {
+          "label": "锁定 — 固定在某个提交"
+        },
+        "reviewOnUpdate": {
+          "label": "更新后审查"
+        },
+        "unreviewed": {
+          "label": "不审查 — 直接挂载"
+        }
+      },
+      "pinCommit": {
+        "placeholder": "40 位十六进制提交 SHA",
+        "required": "信任等级为锁定时必须填写锁定提交"
+      }
     }
   }
 }

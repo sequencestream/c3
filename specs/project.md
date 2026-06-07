@@ -36,12 +36,15 @@ hard to expose to a non-terminal workflow, and hard to centralize. c3 decouples 
 
 ## Stakeholders
 
-| Role                           | Interest                                                               |
-| ------------------------------ | ---------------------------------------------------------------------- |
-| Local developer (primary user) | Runs c3 against a project, approves tool use from the browser          |
-| Maintainer                     | Owns the server, protocol, and frontend                                |
-| Claude Agent SDK               | Upstream dependency; defines `query()`, `canUseTool`, permission modes |
-| `claude` CLI                   | Host-installed binary the SDK spawns to run the agent                  |
+| Role                           | Interest                                                           |
+| ------------------------------ | ------------------------------------------------------------------ |
+| Local developer (primary user) | Runs c3 against a project, approves tool use from the browser      |
+| Maintainer                     | Owns the server, protocol, and frontend                            |
+| Agent SDKs                     | Three upstream dependencies, each with distinct SDK architecture:  |
+|                                | • `@anthropic-ai/claude-agent-sdk` — subprocess JSON stdio wrapper |
+|                                | • `@openai/codex-sdk` — subprocess HTTP/SSE + Responses→Chat relay |
+|                                | • `@opencode-ai/sdk` — remote REST + SSE service client            |
+| Host CLIs                      | `claude`, `codex`, `opencode` — must each be installed on the host |
 
 ## Success criteria
 

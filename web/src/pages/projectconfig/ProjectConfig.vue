@@ -6,9 +6,18 @@
  * 沿用 SettingsPanel 的草稿编辑模式。
  */
 import { ref, watch } from 'vue'
-import type { PermissionMode, ProjectConfig } from '@ccc/shared/protocol'
+import type {
+  PermissionMode,
+  ProjectConfig,
+  SkillRepoConfig,
+  SkillSupportState,
+  SkillTrust,
+  SkillVendor,
+  VendorId,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
+import { VENDOR_LABEL } from '@/lib/vendor'
 
 const { t } = useTypedI18n()
 const modeLabel = useModeLabel()
@@ -23,11 +32,18 @@ const DEFAULT_ROUNDS_PER_STAGE = 12
 const MIN_SPEECH_CHARS = 300
 const DEFAULT_SPEECH_CHARS = 300
 
-const props = defineProps<{
-  open: boolean
-  projectConfig: ProjectConfig | null
-  currentWorkspace: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    projectConfig: ProjectConfig | null
+    currentWorkspace: string | null
+    /** Per-vendor skill mount support (ADR-0016/0017). Absent → assume all vendors are `full`. */
+    skillSupport?: Record<VendorId, SkillSupportState> | null
+  }>(),
+  {
+    skillSupport: null,
+  },
+)
 
 const emit = defineEmits<{
   close: []
@@ -41,6 +57,7 @@ const draft = ref<ProjectConfig>({
   maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
   maxSpeechChars: DEFAULT_SPEECH_CHARS,
   consensus: { enabled: false, majority: false },
+  skillRepos: [],
 })
 
 // Re-seed the draft whenever the panel opens or fresh server config arrives.
@@ -57,10 +74,118 @@ watch(
         enabled: config?.consensus?.enabled ?? false,
         majority: config?.consensus?.majority ?? false,
       },
+      skillRepos: config?.skillRepos ? config.skillRepos.map((r) => ({ ...r })) : [],
     }
   },
   { immediate: true },
 )
+
+// ---- External skill repos (ADR-0016/0017) ----
+
+/** GitHub: https://host/owner/repo[/tree/<ref>[/<subpath>]] */
+const GITHUB_REPO_RE = /^(https?:\/\/[^/]+\/[^/]+\/[^/]+)(?:\/tree\/([^/]+)(?:\/(.+))?)?$/
+
+const SKILL_VENDORS: SkillVendor[] = ['claude', 'codex', 'opencode', 'all']
+const SKILL_TRUST_VALUES: SkillTrust[] = ['pinned', 'review-on-update', 'unreviewed']
+
+/** True if `vendor` is a real VendorId (not `'all'`) and its skill mount support is known to be `'full'`. */
+function vendorSkillSupported(vendor: SkillVendor): boolean {
+  if (vendor === 'all') return true
+  if (!props.skillSupport) return true // absent → assume full
+  const state = props.skillSupport[vendor]
+  return state === undefined || state === 'full'
+}
+
+/** Extract `{ ref?, subpath? }` from a GitHub URL pasted into the repo field. */
+function parsePastedRepoUrl(url: string): { ref: string; subpath: string } {
+  const m = GITHUB_REPO_RE.exec(url.trim())
+  if (m && (m[2] || m[3])) {
+    return {
+      ref: m[2] ?? '',
+      subpath: m[3] ?? '',
+    }
+  }
+  return { ref: '', subpath: '' }
+}
+
+/** Whether a repo entry has a `pinned` trust tier but no `pinCommit`. */
+function missingPinCommit(r: SkillRepoConfig): boolean {
+  return r.trust === 'pinned' && !r.pinCommit?.trim()
+}
+
+/** Whether a repo entry is missing a required `ref`. */
+function missingRef(r: SkillRepoConfig): boolean {
+  return !r.ref.trim()
+}
+
+let skillIdCounter = 0
+function makeSkillId(): string {
+  return `sr-${Date.now()}-${++skillIdCounter}`
+}
+
+function addSkillRepo() {
+  draft.value.skillRepos = [
+    ...(draft.value.skillRepos ?? []),
+    {
+      id: makeSkillId(),
+      repo: '',
+      ref: '',
+      subpath: '',
+      vendor: 'claude',
+      trust: 'unreviewed',
+    },
+  ]
+}
+
+function removeSkillRepo(id: string) {
+  draft.value.skillRepos = (draft.value.skillRepos ?? []).filter((r) => r.id !== id)
+}
+
+function updateSkillRepoField<TKey extends keyof SkillRepoConfig>(
+  id: string,
+  field: TKey,
+  value: SkillRepoConfig[TKey],
+) {
+  const list = draft.value.skillRepos ?? []
+  const idx = list.findIndex((r) => r.id === id)
+  if (idx < 0) return
+  // Create the updated entry: for trust changes, clear pinCommit if switching away
+  // from `pinned` so stale values don't linger.
+  let updated = { ...list[idx], [field]: value }
+  if (field === 'trust' && value !== 'pinned') {
+    updated.pinCommit = undefined
+  }
+  draft.value.skillRepos = [...list.slice(0, idx), updated, ...list.slice(idx + 1)]
+}
+
+/** Paste handler: parse GitHub URL to auto-fill ref/subpath. */
+function onRepoPaste(e: ClipboardEvent, id: string) {
+  const pasted = e.clipboardData?.getData('text') ?? ''
+  const parsed = parsePastedRepoUrl(pasted)
+  if (!parsed.ref && !parsed.subpath) return
+  e.preventDefault()
+  const list = draft.value.skillRepos ?? []
+  const idx = list.findIndex((r) => r.id === id)
+  if (idx < 0) return
+  const updated = { ...list[idx], repo: pasted }
+  if (parsed.ref) updated.ref = parsed.ref
+  if (parsed.subpath) updated.subpath = parsed.subpath
+  draft.value.skillRepos = [...list.slice(0, idx), updated, ...list.slice(idx + 1)]
+}
+
+/**
+ * Human-readable label for a skill trust tier.
+ */
+function skillTrustLabel(trust: SkillTrust): string {
+  switch (trust) {
+    case 'pinned':
+      return t('projectConfig.skillRepos.trust.pinned.label')
+    case 'review-on-update':
+      return t('projectConfig.skillRepos.trust.reviewOnUpdate.label')
+    case 'unreviewed':
+      return t('projectConfig.skillRepos.trust.unreviewed.label')
+  }
+}
 </script>
 
 <template>
@@ -148,6 +273,121 @@ watch(
           />
           {{ t('projectConfig.consensus.majority.label') }}
         </label>
+      </section>
+
+      <section class="project-config-section">
+        <p class="project-config-section-title">{{ t('projectConfig.skillRepos.title.label') }}</p>
+        <p class="project-config-hint">{{ t('projectConfig.skillRepos.hint') }}</p>
+        <div
+          v-if="!draft.skillRepos || draft.skillRepos.length === 0"
+          class="project-config-hint skill-repos-empty"
+        >
+          {{ t('projectConfig.skillRepos.empty') }}
+        </div>
+        <div
+          v-for="r in draft.skillRepos ?? []"
+          :key="r.id"
+          class="skill-repo-row"
+          data-testid="skill-repo-row"
+        >
+          <input
+            v-model="r.id"
+            class="agent-field"
+            :placeholder="t('projectConfig.skillRepos.id.placeholder')"
+            data-testid="skill-repo-id"
+          />
+          <input
+            v-model="r.repo"
+            class="agent-field"
+            :placeholder="t('projectConfig.skillRepos.repo.placeholder')"
+            :title="t('projectConfig.skillRepos.repo.parseHelp')"
+            data-testid="skill-repo-repo"
+            @paste="onRepoPaste($event, r.id)"
+          />
+          <div class="field-group">
+            <input
+              v-model="r.ref"
+              class="agent-field"
+              :placeholder="t('projectConfig.skillRepos.ref.placeholder')"
+              data-testid="skill-repo-ref"
+            />
+            <span v-if="missingRef(r)" class="field-error" data-testid="skill-repo-ref-error">{{
+              t('projectConfig.skillRepos.ref.required')
+            }}</span>
+          </div>
+          <input
+            v-model="r.subpath"
+            class="agent-field"
+            :placeholder="t('projectConfig.skillRepos.subpath.placeholder')"
+            data-testid="skill-repo-subpath"
+          />
+          <select
+            v-model="r.vendor"
+            class="agent-field"
+            data-testid="skill-repo-vendor"
+            @change="
+              updateSkillRepoField(
+                r.id,
+                'vendor',
+                ($event.target as HTMLSelectElement).value as SkillVendor,
+              )
+            "
+          >
+            <option
+              v-for="v in SKILL_VENDORS"
+              :key="v"
+              :value="v"
+              :disabled="!vendorSkillSupported(v)"
+            >
+              {{ v === 'all' ? t('projectConfig.skillRepos.vendor.all') : VENDOR_LABEL[v] }}
+              <template v-if="!vendorSkillSupported(v)">
+                — {{ t('projectConfig.skillRepos.vendor.unsupported') }}
+              </template>
+            </option>
+          </select>
+          <select
+            v-model="r.trust"
+            class="agent-field"
+            data-testid="skill-repo-trust"
+            @change="
+              updateSkillRepoField(
+                r.id,
+                'trust',
+                ($event.target as HTMLSelectElement).value as SkillTrust,
+              )
+            "
+          >
+            <option v-for="trustVal in SKILL_TRUST_VALUES" :key="trustVal" :value="trustVal">
+              {{ skillTrustLabel(trustVal) }}
+            </option>
+          </select>
+          <div class="field-group">
+            <input
+              v-model="r.pinCommit"
+              class="agent-field"
+              type="text"
+              :placeholder="t('projectConfig.skillRepos.pinCommit.placeholder')"
+              data-testid="skill-repo-pin-commit"
+            />
+            <span
+              v-if="missingPinCommit(r)"
+              class="field-error"
+              data-testid="skill-repo-pin-error"
+              >{{ t('projectConfig.skillRepos.pinCommit.required') }}</span
+            >
+          </div>
+          <button
+            class="icon-btn"
+            :title="t('projectConfig.skillRepos.remove.tooltip')"
+            data-testid="skill-repo-remove"
+            @click="removeSkillRepo(r.id)"
+          >
+            🗑
+          </button>
+        </div>
+        <button class="agent-add" data-testid="project-config-add-skill-repo" @click="addSkillRepo">
+          {{ t('projectConfig.skillRepos.add.label') }}
+        </button>
       </section>
     </div>
     <div class="project-config-foot">

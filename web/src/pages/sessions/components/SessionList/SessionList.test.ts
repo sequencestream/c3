@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SessionList from './SessionList.vue'
 import type {
+  OpencodeServerStatus,
   SessionCapabilities,
   SessionInfo,
   SessionStatus,
@@ -21,6 +22,7 @@ function mountList(
     currentWorkspace?: string | null
     activeSession?: string | null
     vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
+    opencodeStatus?: OpencodeServerStatus
   } = {},
 ) {
   return mount(SessionList, {
@@ -32,6 +34,7 @@ function mountList(
       activeSession: opts.activeSession ?? null,
       activeTitle: '',
       vendorSessionCaps: opts.vendorSessionCaps,
+      opencodeStatus: opts.opencodeStatus,
     },
   })
 }
@@ -275,6 +278,37 @@ describe('SessionList.vue — 当前工作区会话列表', () => {
     it('无工作区 → 不渲染占位', () => {
       const w = mountList({ currentWorkspace: null })
       expect(w.find('[data-testid="codex-resume"]').exists()).toBe(false)
+    })
+  })
+
+  describe('OpenCode 离线预警(first-class 状态信号)', () => {
+    it('reachability=temporarily-unavailable → 渲染离线预警', () => {
+      const w = mountList({
+        sessions: [session('s1', 'Alpha')],
+        opencodeStatus: { reachability: 'temporarily-unavailable', retrying: true },
+      })
+      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(true)
+    })
+
+    it('reachability=full → 不渲染预警', () => {
+      const w = mountList({
+        sessions: [session('s1', 'Alpha')],
+        opencodeStatus: { reachability: 'full', retrying: false },
+      })
+      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(false)
+    })
+
+    it('reachability=none(未注册)→ 不渲染预警', () => {
+      const w = mountList({
+        sessions: [session('s1', 'Alpha')],
+        opencodeStatus: { reachability: 'none', retrying: false },
+      })
+      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(false)
+    })
+
+    it('未提供 opencodeStatus → 不渲染预警(向后兼容)', () => {
+      const w = mountList({ sessions: [session('s1', 'Alpha')] })
+      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(false)
     })
   })
 })

@@ -40,6 +40,7 @@ import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { rebindChatSession } from '../requirements/store.js'
+import { ensureOpencodeRunning } from '../../opencode-status.js'
 import { upsertPendingRow } from './store.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -134,6 +135,15 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   try {
     const existing = getRuntime(msg.sessionId)
+    // OpenCode is a long-lived local REST server every back-read / resume talks to
+    // (2026-06-07-003). Lazily (re)start it within its grace window before opening an
+    // opencode session. A down server degrades honestly — `ensureOpencodeRunning` never
+    // throws, the first-class `opencode_status` signal flips to `temporarily-unavailable`
+    // + self-heals, and the console shows the offline/retry warning — so selection is
+    // NEVER fatal on a cold server. Gate by the session's resolved vendor, not identity
+    // checks scattered downstream.
+    const effectiveVendor = msg.vendor ?? resolveSessionVendor(msg.sessionId)
+    if (effectiveVendor === 'opencode') await ensureOpencodeRunning()
     // Resume-by-id of a session whose vendor cannot cold-load history (Codex:
     // `read: 'none'`). The `vendor` hint arrives only from the resume-by-id
     // placeholder — the projection/native store has never seen this id, so the

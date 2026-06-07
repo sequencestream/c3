@@ -810,6 +810,37 @@ header h1 {
   gap: var(--sp-1);
   padding: 2px var(--sp-2) var(--sp-1) var(--sp-6);
 }
+/* OpenCode server offline/reconnecting warning at the list head (2026-06-07-003). */
+.opencode-offline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px var(--sp-2) var(--sp-1) var(--sp-2);
+  padding: 4px var(--sp-2);
+  border: 1px solid var(--c-warn, #b8860b);
+  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--c-warn, #b8860b) 12%, transparent);
+  color: var(--c-text);
+  font-size: var(--fs-badge);
+  line-height: 1.3;
+}
+.opencode-offline-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-warn, #b8860b);
+  animation: opencode-offline-pulse 1.2s ease-in-out infinite;
+}
+@keyframes opencode-offline-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
 .vendor-chip {
   display: inline-flex;
   align-items: center;

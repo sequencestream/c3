@@ -26,6 +26,7 @@ export {
   pickFreePort,
   defaultSpawnServer,
   type OpencodeSupervisorConfig,
+  type SupervisorStatus,
   type SpawnedServer,
   type ServerSpawner,
 } from './supervisor.js'

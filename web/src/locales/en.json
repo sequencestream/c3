@@ -481,7 +481,8 @@
         "note": "Codex sessions can't be listed — paste a session ID to resume.",
         "placeholder": "Codex session ID",
         "button": "Resume"
-      }
+      },
+      "opencodeOffline": "{vendor} server not ready — reconnecting…"
     },
     "row": {
       "rename": {

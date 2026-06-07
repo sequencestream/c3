@@ -481,7 +481,8 @@
         "note": "Codex セッションは一覧表示できません — セッション ID を貼り付けて再開してください。",
         "placeholder": "Codex セッション ID",
         "button": "再開"
-      }
+      },
+      "opencodeOffline": "{vendor} サーバーが準備できていません — 再接続中…"
     },
     "row": {
       "rename": {

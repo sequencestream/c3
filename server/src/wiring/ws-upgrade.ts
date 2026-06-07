@@ -26,6 +26,7 @@ import { listWorkspaceSessions } from '../sessions.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listStatuses, removeViewer } from '../runs.js'
+import { getOpencodeStatus } from '../opencode-status.js'
 
 /**
  * Rollback escape hatch for the cross-vendor `list_sessions` swap (ADR-0013).
@@ -115,6 +116,10 @@ export function createWsHandler(deps: {
           activeSessionId: getActiveSessionId(),
           statuses: listStatuses(),
         })
+        // First-class OpenCode server reachability snapshot (2026-06-07-003), so a
+        // freshly-connected console paints the offline warning without waiting for
+        // the next transition broadcast.
+        send(ws, { type: 'opencode_status', status: getOpencodeStatus() })
       },
       // The 40+ case switch collapsed to a single registry dispatch (ADR-0009):
       // parse + validate + exhaustive lookup all live in `dispatch`.

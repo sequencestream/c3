@@ -610,6 +610,32 @@ export interface SessionCapabilities {
 }
 
 /**
+ * Live runtime reachability of the c3-supervised OpenCode REST server — a
+ * **first-class wire signal** (2026-06-07-003). Unlike Claude/Codex (a CLI
+ * subprocess per run) OpenCode is a long-lived local server every back-read /
+ * resume talks to; its up/down state is therefore real product state the console
+ * must reflect, not an internal detail. The server is lazily (re)started on
+ * demand (`select_session` of an opencode session) with a short grace window;
+ * failure degrades honestly (this signal flips to `temporarily-unavailable`) and
+ * a background loop self-heals — it is never fatal.
+ *
+ * `reachability` reuses {@link CapabilityState} so the degraded state is expressed
+ * by the *same* enum as the session-lifecycle capability ledger (the UI degrades
+ * by state, never by vendor): `'full'` = the server is up, `'temporarily-unavailable'`
+ * = registered but currently down / starting / retrying, `'none'` = opencode is not
+ * registered at all (no host CLI and no `--opencode-url`). `'partial'` is unused.
+ * Pushed to every connection on each state transition and as a snapshot on connect.
+ */
+export interface OpencodeServerStatus {
+  /** Graded reachability of the supervised server (`'full'`/`'temporarily-unavailable'`/`'none'`). */
+  reachability: CapabilityState
+  /** True while a lazy (re)start / self-heal attempt is in flight — drives the "retrying…" hint. */
+  retrying: boolean
+  /** The base URL the server is listening on when up (operator-facing; absent when down/unregistered). */
+  url?: string
+}
+
+/**
  * The only role the canonical model commits to. Codex carries no role on its
  * items and must synthesize one (item-type → role); Claude/OpenCode carry it
  * natively. `system`/`result` SDK frames are NOT messages — they map to side
@@ -1259,6 +1285,14 @@ export type ServerToClient =
     }
   /** Live run statuses for all sessions with a runtime; drives sidebar badges. */
   | { type: 'session_status'; statuses: SessionRunStatus[] }
+  /**
+   * The supervised OpenCode server's live reachability (2026-06-07-003) — a
+   * first-class signal pushed on every state transition (up/down/retrying) and as
+   * a snapshot on connect. Drives the session-list offline warning; the same state
+   * also overlays `settings.sessionCapabilities.opencode` (list/read/resume degrade
+   * to `'temporarily-unavailable'` while down) so the whole UI degrades by state.
+   */
+  | { type: 'opencode_status'; status: OpencodeServerStatus }
   /** Full workspace list, sorted by recent access (desc). */
   | { type: 'workspaces'; workspaces: WorkspaceInfo[] }
   /** Session list for one workspace, sorted by last-modified (desc). */

@@ -47,6 +47,7 @@ import type {
   Schedule,
   ScheduleExecutionLog,
   UpdateScheduleInput,
+  OpencodeServerStatus,
   RequirementStatus,
   ServerToClient,
   SessionAgentSwitch,
@@ -480,6 +481,12 @@ const bindingStats = ref<SessionBindingStats | null>(null)
 // reply arrives; the list degrades optimistically then.
 const sessionCapabilities = ref<Record<VendorId, SessionCapabilities> | null>(null)
 
+// First-class OpenCode server reachability (2026-06-07-003): a snapshot rides every
+// connection's `ready`, and each up/down/retrying transition pushes `opencode_status`.
+// Drives the session list's offline warning; `'none'` (unregistered) is treated as
+// "no warning" since opencode then simply isn't an available vendor here.
+const opencodeStatus = ref<OpencodeServerStatus>({ reachability: 'none', retrying: false })
+
 // ---- New-session agent picker (the "+" modal) ----
 const newSessionOpen = ref(false)
 // The workspace the pending modal will create a session in.
@@ -679,6 +686,9 @@ function handleMessage(msg: ServerToClient) {
     }
     case 'session_status':
       applyStatuses(msg.statuses)
+      break
+    case 'opencode_status':
+      opencodeStatus.value = msg.status
       break
     case 'sessions':
       sessionsByWorkspace.value = {
@@ -1666,6 +1676,7 @@ function listCommands() {
       :active-vendor="activeVendor"
       :active-agent-switch="activeAgentSwitch"
       :vendor-session-caps="sessionCapabilities ?? undefined"
+      :opencode-status="opencodeStatus"
       :has-active-session="hasActiveSession"
       :mode="mode"
       :mode-options="modeOptions"

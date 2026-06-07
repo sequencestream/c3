@@ -481,7 +481,8 @@
         "note": "Codex 会话无法枚举 — 粘贴会话 ID 以恢复。",
         "placeholder": "Codex 会话 ID",
         "button": "恢复"
-      }
+      },
+      "opencodeOffline": "{vendor} 服务未就绪 — 正在重试…"
     },
     "row": {
       "rename": {

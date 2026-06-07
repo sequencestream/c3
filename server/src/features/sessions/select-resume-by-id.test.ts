@@ -47,6 +47,7 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   setSessionAgent: vi.fn(() => ({ ok: true })),
 }))
 vi.mock('../../kernel/agent/process/launcher.js', () => ({ probeAll: vi.fn(() => []) }))
+vi.mock('../../opencode-status.js', () => ({ ensureOpencodeRunning: vi.fn(async () => {}) }))
 
 import { selectSession } from './index.js'
 import { loadHistory, sessionTitle } from '../../sessions.js'
@@ -56,6 +57,7 @@ import {
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
+import { ensureOpencodeRunning } from '../../opencode-status.js'
 
 afterEach(() => vi.clearAllMocks())
 
@@ -121,5 +123,24 @@ describe('select_session resume-by-id (Codex, unenumerable)', () => {
     expect(loadHistory).toHaveBeenCalledWith('/abs/proj', 'claude-1')
     expect(sessionTitle).toHaveBeenCalled()
     expect(firstAgentForVendor).not.toHaveBeenCalled()
+    // Claude is not server-backed ⇒ no opencode lazy-start.
+    expect(ensureOpencodeRunning).not.toHaveBeenCalled()
+  })
+
+  it('opencode select → lazily ensures the server (grace), opens the session, never fatal', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('opencode')
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspacePath: '/abs/proj',
+      sessionId: 'opencode-1',
+    })
+    // The lazy-start gate fired before reading; opencode read='full' ⇒ normal path.
+    expect(ensureOpencodeRunning).toHaveBeenCalledOnce()
+    // Honest degrade contract: a down server is NEVER fatal — the session still opens.
+    expect(conn.sent.some((m) => m.type === 'error')).toBe(false)
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.vendor).toBe('opencode')
   })
 })

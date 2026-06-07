@@ -481,7 +481,8 @@
         "note": "Codex 세션은 열거할 수 없습니다 — 세션 ID를 붙여넣어 재개하세요.",
         "placeholder": "Codex 세션 ID",
         "button": "재개"
-      }
+      },
+      "opencodeOffline": "{vendor} 서버가 준비되지 않았습니다 — 다시 연결 중…"
     },
     "row": {
       "rename": {

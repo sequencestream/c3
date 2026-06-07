@@ -27,10 +27,24 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk'
+import type { CapabilityState } from '@ccc/shared/protocol'
 import { resolve as resolveHostBinary } from '../../process/launcher.js'
 
 function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
+}
+
+/**
+ * The supervisor's live reachability snapshot (2026-06-07-003). `reachability`
+ * reuses the wire {@link CapabilityState} so the degraded state is expressed by the
+ * SAME enum as the session-lifecycle ledger: `'full'` (up) / `'temporarily-unavailable'`
+ * (down / starting / retrying). The supervisor never reports `'none'` — that grade
+ * means "opencode not registered at all", a composition-root concern.
+ */
+export interface SupervisorStatus {
+  reachability: CapabilityState
+  retrying: boolean
+  url?: string
 }
 
 /** A spawned OpenCode server process c3 owns end-to-end. */
@@ -152,6 +166,24 @@ export function pickFreePort(hostname = '127.0.0.1'): Promise<number> {
   })
 }
 
+/** Reject `p` if it does not settle within `ms` — the outer grace bound for a lazy start. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`opencode not ready within ${ms}ms`)), ms)
+    timer.unref?.()
+    p.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        reject(e instanceof Error ? e : new Error(String(e)))
+      },
+    )
+  })
+}
+
 /** Fully-resolved supervisor knobs (all defaults applied by {@link createOpencodeSupervisor}). */
 interface ResolvedOpts {
   externalUrl?: string
@@ -159,6 +191,8 @@ interface ResolvedOpts {
   healthIntervalMs: number
   maxRestarts: number
   readyTimeoutMs: number
+  /** Outer grace window for a lazy {@link OpencodeSupervisor.ensureRunning} (re)start (clamped 2–10s). */
+  graceMs: number
   env?: Record<string, string>
   binaryPath: string | null
   spawnServer: ServerSpawner
@@ -167,6 +201,8 @@ interface ResolvedOpts {
   sleep: (ms: number) => Promise<void>
   backoff: (attempt: number) => number
   onUnavailable?: (reason: string) => void
+  /** Pushed on every reachability transition (and from `ensureRunning`), so the wire can broadcast it. */
+  onStatusChange?: (status: SupervisorStatus) => void
 }
 
 /**
@@ -182,6 +218,13 @@ export class OpencodeSupervisor {
   private stopped = false
   private cleanupRegistered = false
   private unavailableReason: string | null = null
+  /** Live reachability — starts `temporarily-unavailable` until the first successful connect. */
+  private reachability: CapabilityState = 'temporarily-unavailable'
+  private retrying = false
+  /** In-flight lazy (re)start, shared so concurrent `ensureRunning` callers dedupe onto one attempt. */
+  private starting: Promise<void> | null = null
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private retryAttempt = 0
 
   constructor(private readonly opts: ResolvedOpts) {}
 
@@ -195,15 +238,108 @@ export class OpencodeSupervisor {
     return this.opts.externalUrl ?? this.currentServer?.url
   }
 
+  /** The live reachability snapshot the wire signal mirrors. */
+  get status(): SupervisorStatus {
+    return {
+      reachability: this.reachability,
+      retrying: this.retrying,
+      url: this.reachability === 'full' ? this.url : undefined,
+    }
+  }
+
+  /** Update reachability + retrying; emit the status callback only on an actual change. */
+  private setStatus(reachability: CapabilityState, retrying: boolean): void {
+    if (this.reachability === reachability && this.retrying === retrying) return
+    this.reachability = reachability
+    this.retrying = retrying
+    this.opts.onStatusChange?.(this.status)
+  }
+
   /** Bring the server up. Attach mode just builds a client; managed mode spawns + monitors. */
   async start(): Promise<void> {
     if (this.opts.externalUrl) {
       this.currentClient = this.opts.createClient(this.opts.externalUrl)
+      this.setStatus('full', false)
       return
     }
     await this.spawnAndConnect()
     this.startHealthLoop()
     this.registerCleanup()
+    this.setStatus('full', false)
+  }
+
+  /**
+   * Lazy, honest (re)start (2026-06-07-003). Idempotent and **never throws**: if a
+   * healthy client already exists it resolves fast; otherwise it (re)spawns within
+   * the grace window. On failure it flips reachability to `temporarily-unavailable`
+   * and schedules a background self-heal — the caller (`select_session`) degrades
+   * softly instead of treating a down server as fatal. Concurrent callers share the
+   * one in-flight attempt.
+   */
+  async ensureRunning(graceMs = this.opts.graceMs): Promise<void> {
+    // External: an operator owns liveness — just make sure a client exists.
+    if (this.opts.externalUrl) {
+      if (!this.currentClient) this.currentClient = this.opts.createClient(this.opts.externalUrl)
+      this.setStatus('full', false)
+      return
+    }
+    // Already healthy and running ⇒ nothing to do.
+    if (this.currentClient && !this.unavailableReason && !this.stopped) {
+      this.setStatus('full', false)
+      return
+    }
+    if (this.starting) return this.starting
+    this.starting = this.attemptStart(graceMs).finally(() => {
+      this.starting = null
+    })
+    return this.starting
+  }
+
+  /** One bounded (re)start attempt; resolves whether it succeeded or degraded (no throw). */
+  private async attemptStart(graceMs: number): Promise<void> {
+    this.setStatus('temporarily-unavailable', true)
+    this.stopped = false
+    this.unavailableReason = null
+    this.restarts = 0
+    try {
+      await withTimeout(this.spawnAndConnect(), graceMs)
+      this.startHealthLoop()
+      this.registerCleanup()
+      this.clearRetryTimer()
+      this.retryAttempt = 0
+      this.setStatus('full', false)
+    } catch (e) {
+      // Honest degrade — the dead/half-spawned server must not leak, but we do NOT
+      // mark permanently stopped: stay reachable-able and self-heal in background.
+      this.opts.onUnavailable?.(`lazy start failed: ${msg(e)}`)
+      try {
+        this.currentServer?.kill('SIGKILL')
+      } catch {
+        /* already gone */
+      }
+      this.currentServer = null
+      this.currentClient = null
+      this.setStatus('temporarily-unavailable', true)
+      this.scheduleSelfHeal()
+    }
+  }
+
+  /** Background backoff loop that re-attempts a start until the server is up. */
+  private scheduleSelfHeal(): void {
+    if (this.stopped || this.retryTimer || this.reachability === 'full') return
+    this.retryAttempt++
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      void this.ensureRunning()
+    }, this.opts.backoff(this.retryAttempt))
+    this.retryTimer.unref?.()
+  }
+
+  private clearRetryTimer(): void {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = null
+    }
   }
 
   /** The live REST/SSE client. Throws if not started or the vendor went unavailable. */
@@ -264,16 +400,37 @@ export class OpencodeSupervisor {
     }
   }
 
+  /**
+   * Health-loop restart ceiling hit (2026-06-07-003 change): instead of marking the
+   * vendor permanently dead, degrade to `temporarily-unavailable` and self-heal in
+   * the background. The dead health loop is torn down and the (probably dead) server
+   * killed so nothing leaks, but `stopped` stays false so a later `ensureRunning` (or
+   * the self-heal timer) can resurrect it. `client()` keeps throwing during the down
+   * window via `unavailableReason`.
+   */
   private markUnavailable(reason: string): void {
     this.unavailableReason = reason
-    this.stop()
     this.opts.onUnavailable?.(reason)
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer)
+      this.healthTimer = null
+    }
+    try {
+      this.currentServer?.kill('SIGKILL')
+    } catch {
+      /* already dead */
+    }
+    this.currentServer = null
+    this.currentClient = null
+    this.setStatus('temporarily-unavailable', true)
+    this.scheduleSelfHeal()
   }
 
   /** Stop monitoring and tree-kill a managed server. Idempotent; safe on process exit. */
   stop(): void {
     if (this.stopped) return
     this.stopped = true
+    this.clearRetryTimer()
     if (this.healthTimer) {
       clearInterval(this.healthTimer)
       this.healthTimer = null
@@ -305,6 +462,8 @@ export interface OpencodeSupervisorConfig {
   healthIntervalMs?: number
   maxRestarts?: number
   readyTimeoutMs?: number
+  /** Outer grace window for a lazy `ensureRunning` (re)start; clamped to [2000, 10000]ms. */
+  graceMs?: number
   /** Extra env merged into the spawned server (e.g. provider base url/key). */
   env?: Record<string, string>
   /** Host CLI path override; defaults to the launcher probe. */
@@ -316,6 +475,8 @@ export interface OpencodeSupervisorConfig {
   sleep?: (ms: number) => Promise<void>
   backoff?: (attempt: number) => number
   onUnavailable?: (reason: string) => void
+  /** Pushed on every reachability transition (and from `ensureRunning`) — wire it to the broadcaster. */
+  onStatusChange?: (status: SupervisorStatus) => void
 }
 
 /**
@@ -336,6 +497,7 @@ export function createOpencodeSupervisor(cfg: OpencodeSupervisorConfig = {}): Op
     healthIntervalMs: cfg.healthIntervalMs ?? 10_000,
     maxRestarts: cfg.maxRestarts ?? 5,
     readyTimeoutMs: cfg.readyTimeoutMs ?? 15_000,
+    graceMs: Math.min(10_000, Math.max(2_000, cfg.graceMs ?? 8_000)),
     env: cfg.env,
     binaryPath,
     spawnServer: cfg.spawnServer ?? defaultSpawnServer,
@@ -344,5 +506,6 @@ export function createOpencodeSupervisor(cfg: OpencodeSupervisorConfig = {}): Op
     sleep: cfg.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
     backoff: cfg.backoff ?? ((attempt) => Math.min(30_000, 500 * 2 ** attempt)),
     onUnavailable: cfg.onUnavailable,
+    onStatusChange: cfg.onStatusChange,
   })
 }

@@ -45,6 +45,7 @@ import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/inde
 import type { VendorAdapter } from './kernel/agent/adapters/types.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
+import { setOpencodeEnsure, setOpencodeStatus } from './opencode-status.js'
 import {
   createBroadcasts,
   createDiscussionRuns,
@@ -176,16 +177,37 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Built here at the composition root so the kernel launcher only ever sees the
   // neutral VendorAdapter (injected via launchDeps.getOpencodeAdapter). Failure is
   // non-fatal — c3 still starts, the opencode agent type is just unavailable.
+  // The supervisor's reachability is now a first-class signal (2026-06-07-003): the
+  // adapter is built **unconditionally** when opencode is registered (host CLI present
+  // or `--opencode-url`), so opencode is always an available vendor and its server is
+  // (re)started lazily on demand (`select_session`) within a grace window — boot only
+  // makes a best-effort, non-fatal attempt. Every reachability transition updates the
+  // runtime singleton + broadcasts an `opencode_status` frame. `broadcastOpencodeStatus`
+  // is late-bound (the broadcaster is built below) via a mutable thunk.
   let opencodeAdapter: VendorAdapter | null = null
   let opencodeSupervisor: OpencodeSupervisor | null = null
+  let broadcastOpencodeStatus: () => void = () => {}
   const opencodeExternal = !!opts.opencodeUrl
   if (opencodeExternal || resolveHostBinary('opencode')) {
     try {
-      const sup = createOpencodeSupervisor({ externalUrl: opts.opencodeUrl })
-      await sup.start()
+      const sup = createOpencodeSupervisor({
+        externalUrl: opts.opencodeUrl,
+        onStatusChange: (status) => {
+          setOpencodeStatus(status)
+          broadcastOpencodeStatus()
+        },
+      })
       opencodeSupervisor = sup
+      // Adapter pulls the live client lazily, so it works across (re)starts even
+      // when the boot attempt below fails — the server comes up on first demand.
       opencodeAdapter = createOpencodeAdapter(sup)
-      console.log(`[c3] opencode ready: ${sup.url ?? '?'}${opencodeExternal ? ' (external)' : ''}`)
+      setOpencodeEnsure(() => sup.ensureRunning())
+      setOpencodeStatus(sup.status)
+      // Best-effort boot start (non-fatal): ensureRunning degrades honestly + self-heals.
+      await sup.ensureRunning()
+      console.log(
+        `[c3] opencode ${sup.status.reachability}: ${sup.url ?? '?'}${opencodeExternal ? ' (external)' : ''}`,
+      )
     } catch (e) {
       console.warn(`[c3] opencode unavailable: ${e instanceof Error ? e.message : String(e)}`)
     }
@@ -238,6 +260,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const broadcaster = createBroadcaster(connections)
   const broadcasts = createBroadcasts({ broadcaster })
   setOnStatusChange(broadcasts.broadcastStatuses)
+  // Bind the late thunk now the broadcaster exists, so the supervisor's
+  // onStatusChange (registered above) fans out `opencode_status` transitions.
+  broadcastOpencodeStatus = broadcasts.broadcastOpencodeStatus
   setInterval(() => {
     // Reap stale/hung runs before broadcasting, so the snapshot is authoritative.
     reconcileLiveness(Date.now(), RUN_STALE_MS)

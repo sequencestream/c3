@@ -2,7 +2,7 @@
  * Schedule domain store over the shared {@link Db} (c3.db).
  *
  * Owns the schedule schema (created lazily, versioned via `PRAGMA user_version`)
- * and all schedule / execution-log operations. Sibling to requirement and
+ * and all schedule / execution-log operations. Sibling to intent and
  * discussion stores: all ride the one `~/.c3/c3.db` connection, each owning its
  * own tables and a private `schemaReady` flag. Every `workspacePath` arg is
  * `resolve()`d so it matches the workspace registry key.
@@ -106,11 +106,11 @@ function columnExists(d: Db, table: string, column: string): boolean {
 // Migration functions — run after the base schema to evolve the database across versions.
 //
 // IMPORTANT: `PRAGMA user_version` is database-global and shared with the sibling
-// requirement/discussion stores, which set it to THEIR own SCHEMA_VERSION. So this
-// store can never trust `user_version` to gate its migrations: requirements (v5)
+// intent/discussion stores, which set it to THEIR own SCHEMA_VERSION. So this
+// store can never trust `user_version` to gate its migrations: intents (v5)
 // may have stamped it to 5 before we run, making any `currentVersion < N` check
 // wrongly skip our ALTERs (the bug that left old `schedule_execution_logs` tables
-// without `session_id`). Mirror the requirement/discussion stores: drive every
+// without `session_id`). Mirror the intent/discussion stores: drive every
 // migration off `PRAGMA table_info` / `IF NOT EXISTS` so each step is idempotent
 // regardless of the shared version counter — a fresh db already has the latest
 // SCHEMA, an old db gets backfilled here, and re-runs are no-ops.

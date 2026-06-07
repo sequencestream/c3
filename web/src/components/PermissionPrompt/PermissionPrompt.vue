@@ -19,14 +19,14 @@ import { fmt, oneLine } from '../../lib/format'
 import { VENDOR_LABEL } from '../../lib/vendor'
 import { useTypedI18n } from '@/i18n'
 import type { PermissionMsg } from '../../lib/chat-types'
-import type { ProposedRequirement } from '@ccc/shared/protocol'
+import type { ProposedIntent } from '@ccc/shared/protocol'
 
 const { t } = useTypedI18n()
 
 // Fixed tool identifiers shown verbatim in <code> tags (do-not-translate; bound
 // via a const so `no-raw-text` doesn't flag them as hard-coded copy).
 const ASK_TOOL_LABEL = 'AskUserQuestion'
-const SAVE_TOOL_LABEL = 'save_requirements'
+const SAVE_TOOL_LABEL = 'save_intents'
 
 // `actionable` is true only for the live, still-pending permission the user can
 // answer. When false and undecided, this prompt is a history record replayed
@@ -34,13 +34,13 @@ const SAVE_TOOL_LABEL = 'save_requirements'
 // static line — no buttons, no decision verdict.
 const props = defineProps<{ m: PermissionMsg; actionable: boolean }>()
 
-/** The c3 save_requirements tool's name (mirrors SAVE_REQUIREMENTS_TOOL server-side). */
-const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
+/** The c3 save_intents tool's name (mirrors SAVE_INTENTS_TOOL server-side). */
+const SAVE_INTENTS_TOOL = 'mcp__c3__save_intents'
 
-/** The proposed requirements carried by a save_requirements permission request. */
-const proposedRequirements = computed<ProposedRequirement[]>(() => {
-  const reqs = (props.m.input as { requirements?: unknown })?.requirements
-  return Array.isArray(reqs) ? (reqs as ProposedRequirement[]) : []
+/** The proposed intents carried by a save_intents permission request. */
+const proposedIntents = computed<ProposedIntent[]>(() => {
+  const reqs = (props.m.input as { intents?: unknown })?.intents
+  return Array.isArray(reqs) ? (reqs as ProposedIntent[]) : []
 })
 
 /**
@@ -49,8 +49,8 @@ const proposedRequirements = computed<ProposedRequirement[]>(() => {
  * user sees the order relationship before allowing the save. Out-of-range indexes (the
  * server rejects them) fall back to a bare `#N`.
  */
-function batchDepLabels(r: ProposedRequirement): string[] {
-  const reqs = proposedRequirements.value
+function batchDepLabels(r: ProposedIntent): string[] {
+  const reqs = proposedIntents.value
   return (r.dependsOnIndexes ?? []).map((j) => {
     const sib = reqs[j]
     return sib ? `#${j + 1}「${sib.title}」` : `#${j + 1}`
@@ -69,8 +69,8 @@ const historyLine = computed<string>(() => {
     // 复数 key:传 number 形参触发分支选择,消息内 {count} 自动暴露。
     return t('permission.history.askQuestion', askQuestionsOf(props.m.input).length)
   }
-  if (props.m.toolName === SAVE_REQUIREMENTS_TOOL) {
-    return t('permission.history.saveRequirements', proposedRequirements.value.length)
+  if (props.m.toolName === SAVE_INTENTS_TOOL) {
+    return t('permission.history.saveIntents', proposedIntents.value.length)
   }
   return t('permission.history.useTool', { toolName: props.m.toolName })
 })
@@ -279,13 +279,13 @@ function submitAsk() {
     </div>
   </template>
 
-  <!-- save_requirements: render the proposed requirements as cards -->
-  <template v-else-if="m.toolName === SAVE_REQUIREMENTS_TOOL">
+  <!-- save_intents: render the proposed intents as cards -->
+  <template v-else-if="m.toolName === SAVE_INTENTS_TOOL">
     <div class="label">
       {{ t('permission.save.label') }} <code>{{ SAVE_TOOL_LABEL }}</code>
     </div>
     <div class="req-confirm">
-      <div v-for="(r, i) in proposedRequirements" :key="i" class="req-confirm-card">
+      <div v-for="(r, i) in proposedIntents" :key="i" class="req-confirm-card">
         <div class="req-confirm-head">
           <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
           <span class="req-confirm-title">{{ r.title }}</span>

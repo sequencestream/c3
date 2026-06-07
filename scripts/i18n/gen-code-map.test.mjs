@@ -5,10 +5,10 @@ describe('buildCodeMap', () => {
   it('projects code -> { key, params? } sorted by code (deterministic)', () => {
     const map = buildCodeMap({
       'session.listFailed': { key: 'error.session.listFailed', params: ['detail'] },
-      'requirement.notFound': { key: 'error.requirement.notFound' },
+      'intent.notFound': { key: 'error.intent.notFound' },
     })
-    expect(Object.keys(map)).toEqual(['requirement.notFound', 'session.listFailed'])
-    expect(map['requirement.notFound']).toEqual({ key: 'error.requirement.notFound' })
+    expect(Object.keys(map)).toEqual(['intent.notFound', 'session.listFailed'])
+    expect(map['intent.notFound']).toEqual({ key: 'error.intent.notFound' })
     expect(map['session.listFailed']).toEqual({
       key: 'error.session.listFailed',
       params: ['detail'],

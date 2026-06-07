@@ -84,7 +84,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const noopDeps = { broadcastStatuses: () => {}, broadcastRequirements: () => {} }
+const noopDeps = { broadcastStatuses: () => {}, broadcastIntents: () => {} }
 
 describe('C2 — socket auto-resume is a single retry (AS-R18)', () => {
   it('resumes the same session exactly once, then terminates on a second disconnect', async () => {

@@ -12,7 +12,7 @@ import {
 } from './lib/pending-queue'
 import AppHeader from './components/AppHeader/AppHeader.vue'
 import Sessions from './pages/sessions/Sessions.vue'
-import Requirements from './pages/requirements/Requirements.vue'
+import Intents from './pages/intents/Intents.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Schedules from './pages/schedules/Schedules.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
@@ -43,12 +43,12 @@ import type {
   CreateScheduleInput,
   Discussion,
   PermissionMode,
-  Requirement,
+  Intent,
   Schedule,
   ScheduleExecutionLog,
   UpdateScheduleInput,
   OpencodeServerStatus,
-  RequirementStatus,
+  IntentStatus,
   ServerToClient,
   SessionAgentSwitch,
   SessionBindingStats,
@@ -123,8 +123,8 @@ const activeTitle = ref<string>('')
 // active; this pointer lets `switchToConsoleTab` re-bind the console tab's
 // session (the server only streams to the currently-viewed session, so we
 // re-`select_session` on switch rather than caching a stale `messages`). The
-// requirement tab needs no symmetric pointer: its comm session is server-tracked
-// (`is_current` per project) and recovered by re-sending `open_requirement_chat`.
+// intent tab needs no symmetric pointer: its comm session is server-tracked
+// (`is_current` per project) and recovered by re-sending `open_intent_chat`.
 const consoleSession = ref<SessionRef | null>(null)
 
 const hasActiveSession = computed(() => activeSession.value !== null)
@@ -170,7 +170,7 @@ const activeIsTeam = computed(
 // normal user_prompt path. No server/protocol change.
 const pendingQueues = ref<Record<string, PendingItem[]>>({})
 let nextQueueId = 1
-// The active page container (Sessions / Requirements) exposes `prefill`; this ref
+// The active page container (Sessions / Intents) exposes `prefill`; this ref
 // binds to whichever is mounted so queue-edit can fold text back into the composer.
 const composer = ref<{ prefill: (text: string) => void } | null>(null)
 
@@ -273,34 +273,34 @@ const availableCommands = ref<SlashCommandInfo[]>([])
 // ---- Top-bar tabs ----
 // `activeTab` is the explicit top-bar tab selection that drives which page the
 // content area shows. The list is data so a future tab (e.g. 「讨论」) is just
-// one more entry here + one branch in the body. The requirement tab's comm
+// one more entry here + one branch in the body. The intent tab's comm
 // session IS the viewed session, so it shares the chat column; only the left
-// requirement list is extra.
-type TabKey = 'console' | 'requirements' | 'discussion' | 'schedules'
+// intent list is extra.
+type TabKey = 'console' | 'intents' | 'discussion' | 'schedules'
 const HEADER_TABS = computed<{ key: TabKey; label: string }[]>(() => [
   { key: 'console', label: t('nav.tab.console.label') },
-  { key: 'requirements', label: t('nav.tab.requirements.label') },
+  { key: 'intents', label: t('nav.tab.intents.label') },
   { key: 'discussion', label: t('nav.tab.discussion.label') },
   { key: 'schedules', label: t('nav.tab.schedules.label') },
 ])
 const activeTab = ref<TabKey>('console')
-const requirementsProject = ref<string | null>(null)
-// Per-project requirement lists (the server pushes `requirements`; we ignore
+const intentsProject = ref<string | null>(null)
+// Per-project intent lists (the server pushes `intents`; we ignore
 // projects we aren't viewing).
-const requirements = ref<Record<string, Requirement[]>>({})
+const intents = ref<Record<string, Intent[]>>({})
 
-const currentRequirements = computed<Requirement[]>(() =>
-  requirementsProject.value ? (requirements.value[requirementsProject.value] ?? []) : [],
+const currentIntents = computed<Intent[]>(() =>
+  intentsProject.value ? (intents.value[intentsProject.value] ?? []) : [],
 )
 
 // Per-project automation-orchestrator status (server pushes `automation_status`).
 const automation = ref<Record<string, AutomationStatus>>({})
 const currentAutomation = computed<AutomationStatus | null>(() =>
-  requirementsProject.value ? (automation.value[requirementsProject.value] ?? null) : null,
+  intentsProject.value ? (automation.value[intentsProject.value] ?? null) : null,
 )
 
 // ---- Discussion view (read path) ----
-// Mirrors the requirement view: the discussion tab shows a project's discussion
+// Mirrors the intent view: the discussion tab shows a project's discussion
 // list (left) and one opened discussion's read-only history (right). No live
 // session in R1 — `discussion_detail` carries the full message history at once.
 const discussionsProject = ref<string | null>(null)
@@ -361,7 +361,7 @@ const selectedScheduleLogs = computed<ScheduleExecutionLog[]>(() =>
 const executionTranscripts = ref<Record<string, TranscriptItem[]>>({})
 
 const VIEW_MODE_KEY = 'c3.viewMode'
-const REQ_PROJECT_KEY = 'c3.requirementsProject'
+const REQ_PROJECT_KEY = 'c3.intentsProject'
 const DISC_PROJECT_KEY = 'c3.discussionsProject'
 const DISC_ID_KEY = 'c3.discussionId'
 const SCHED_PROJECT_KEY = 'c3.schedulesProject'
@@ -386,12 +386,12 @@ function persistCurrentWorkspace() {
   }
 }
 
-// Persist the requirement-view selection so a hard refresh restores it (Vue's
+// Persist the intent-view selection so a hard refresh restores it (Vue's
 // in-memory state already survives a WS reconnect; this only covers reload).
 function persistViewMode() {
   try {
     localStorage.setItem(VIEW_MODE_KEY, activeTab.value)
-    if (requirementsProject.value) localStorage.setItem(REQ_PROJECT_KEY, requirementsProject.value)
+    if (intentsProject.value) localStorage.setItem(REQ_PROJECT_KEY, intentsProject.value)
     if (discussionsProject.value) localStorage.setItem(DISC_PROJECT_KEY, discussionsProject.value)
     if (activeDiscussionId.value) localStorage.setItem(DISC_ID_KEY, activeDiscussionId.value)
     else localStorage.removeItem(DISC_ID_KEY)
@@ -402,8 +402,8 @@ function persistViewMode() {
   }
 }
 
-// After `ready`, re-enter the requirement view if a hard refresh left us there.
-function maybeRestoreRequirements(list: WorkspaceInfo[]) {
+// After `ready`, re-enter the intent view if a hard refresh left us there.
+function maybeRestoreIntents(list: WorkspaceInfo[]) {
   let saved: { mode: string | null; proj: string | null }
   try {
     saved = {
@@ -413,10 +413,10 @@ function maybeRestoreRequirements(list: WorkspaceInfo[]) {
   } catch {
     return
   }
-  if (saved.mode === 'requirements' && saved.proj && list.some((w) => w.path === saved.proj)) {
-    activeTab.value = 'requirements'
-    requirementsProject.value = saved.proj
-    client?.send({ type: 'open_requirement_chat', projectPath: saved.proj })
+  if (saved.mode === 'intents' && saved.proj && list.some((w) => w.path === saved.proj)) {
+    activeTab.value = 'intents'
+    intentsProject.value = saved.proj
+    client?.send({ type: 'open_intent_chat', projectPath: saved.proj })
   }
 }
 
@@ -565,10 +565,10 @@ onMounted(() => {
     // reset). Re-select the active session so its history + live stream replay
     // and this connection re-attaches as a viewer.
     onReopen: () => {
-      // In the requirement view, resume the comm session (the server re-binds
+      // In the intent view, resume the comm session (the server re-binds
       // the project's persisted `is_current` chat); otherwise re-select normally.
-      if (activeTab.value === 'requirements' && requirementsProject.value) {
-        client?.send({ type: 'open_requirement_chat', projectPath: requirementsProject.value })
+      if (activeTab.value === 'intents' && intentsProject.value) {
+        client?.send({ type: 'open_intent_chat', projectPath: intentsProject.value })
       } else if (activeTab.value === 'discussion' && discussionsProject.value) {
         // Re-fetch the list and re-open the viewed discussion (read path, no
         // live session to re-bind — just re-pull the persisted history).
@@ -668,8 +668,8 @@ function handleMessage(msg: ServerToClient) {
       // Pull settings up front so the new-session agent picker has the agent list +
       // per-vendor host-CLI status ready before the user clicks "+".
       client?.send({ type: 'get_settings' })
-      // Restore the requirement / discussion / schedules view if a hard refresh left us in it.
-      maybeRestoreRequirements(msg.workspaces)
+      // Restore the intent / discussion / schedules view if a hard refresh left us in it.
+      maybeRestoreIntents(msg.workspaces)
       maybeRestoreDiscussions(msg.workspaces)
       maybeRestoreSchedules(msg.workspaces)
       break
@@ -707,7 +707,7 @@ function handleMessage(msg: ServerToClient) {
       mode.value = msg.mode
       // Remember this as the console tab's own session ONLY when the selection
       // originated on the console tab. Comm-session selections (open/new/refine
-      // requirement chat) always arrive while the requirement tab is active, so
+      // intent chat) always arrive while the intent tab is active, so
       // they never pollute the console pointer.
       if (activeTab.value === 'console') {
         consoleSession.value = { workspacePath: msg.workspacePath, sessionId: msg.sessionId }
@@ -794,8 +794,8 @@ function handleMessage(msg: ServerToClient) {
         setStoredLocale(msg.settings.uiLang)
       }
       break
-    case 'requirements':
-      requirements.value = { ...requirements.value, [msg.projectPath]: msg.items }
+    case 'intents':
+      intents.value = { ...intents.value, [msg.projectPath]: msg.items }
       break
     case 'automation_status':
       automation.value = { ...automation.value, [msg.status.projectPath]: msg.status }
@@ -1225,12 +1225,12 @@ function resumeSessionById(path: string, sessionId: string, vendor: VendorId) {
   client?.send({ type: 'select_session', workspacePath: path, sessionId, vendor })
 }
 
-// ---- Tab / requirement actions ----
-// Top-bar tab click: console switches back to the chat page; requirements opens
-// the current workspace's requirement page (no-op without a workspace).
+// ---- Tab / intent actions ----
+// Top-bar tab click: console switches back to the chat page; intents opens
+// the current workspace's intent page (no-op without a workspace).
 function onSelectTab(key: string) {
-  if (key === 'requirements') {
-    if (currentWorkspace.value) openRequirements(currentWorkspace.value)
+  if (key === 'intents') {
+    if (currentWorkspace.value) openIntents(currentWorkspace.value)
     return
   }
   if (key === 'discussion') {
@@ -1257,7 +1257,7 @@ function enterConsole() {
 
 // Top-bar 「会话」tab click: flip to the console tab AND re-bind the chat column
 // to the console tab's OWN session. Only re-binds when arriving from another tab
-// (the chat column may currently show the requirement comm session); clicking
+// (the chat column may currently show the intent comm session); clicking
 // the already-active console tab is a no-op for the view. Arriving from another
 // tab also force-refreshes the current workspace's session list, so a cached,
 // possibly-stale sidebar list is re-fetched on entry.
@@ -1293,7 +1293,7 @@ function bindConsoleSession() {
 
 // Reset the viewed chat column to the empty state (no session). Mirrors the
 // `session_selected` reset minus the history replay; used when the console tab
-// has no session to show, so the requirement comm session never lingers.
+// has no session to show, so the intent comm session never lingers.
 function clearViewedSession() {
   activeWorkspace.value = null
   activeSession.value = null
@@ -1308,12 +1308,12 @@ function clearViewedSession() {
   taskToolPending = new Map()
 }
 
-function openRequirements(path: string) {
-  activeTab.value = 'requirements'
-  requirementsProject.value = path
+function openIntents(path: string) {
+  activeTab.value = 'intents'
+  intentsProject.value = path
   persistViewMode()
   // The response carries both the comm `session_selected` and the list.
-  client?.send({ type: 'open_requirement_chat', projectPath: path })
+  client?.send({ type: 'open_intent_chat', projectPath: path })
 }
 
 // Enter the discussion view for a project: fetch its discussion list and reset
@@ -1492,78 +1492,78 @@ function submitDiscussionInput() {
   discussionInput.value = ''
 }
 
-// "Convert to Requirement" in a completed discussion's title bar: bridge its
-// conclusion into the requirement domain. Switch to the Requirements tab (the
+// "Convert to Intent" in a completed discussion's title bar: bridge its
+// conclusion into the intent domain. Switch to the Intents tab (the
 // reply carries the seeded comm session via `session_selected` plus the list),
 // then ask the server to restart a comm session seeded with the conclusion.
-function convertDiscussionToRequirement() {
+function convertDiscussionToIntent() {
   const d = activeDiscussion.value
   if (!d || d.status !== 'completed') return
-  requirementsProject.value = d.projectPath
-  activeTab.value = 'requirements'
+  intentsProject.value = d.projectPath
+  activeTab.value = 'intents'
   persistViewMode()
-  client?.send({ type: 'discussion_to_requirement', discussionId: d.id })
+  client?.send({ type: 'discussion_to_intent', discussionId: d.id })
 }
 
-// "+" in the requirement title bar: start a brand-new comm session. The server
+// "+" in the intent title bar: start a brand-new comm session. The server
 // resets the prior is_current row, marks the new one current, and replies with a
 // session_selected (empty history) — handleMessage clears the dialog accordingly.
-function newRequirementChat() {
-  if (!requirementsProject.value) return
-  client?.send({ type: 'new_requirement_chat', projectPath: requirementsProject.value })
+function newIntentChat() {
+  if (!intentsProject.value) return
+  client?.send({ type: 'new_intent_chat', projectPath: intentsProject.value })
 }
 
-function setRequirementFilter(status: RequirementStatus | null) {
-  if (!requirementsProject.value) return
+function setIntentFilter(status: IntentStatus | null) {
+  if (!intentsProject.value) return
   client?.send({
-    type: 'list_requirements',
-    projectPath: requirementsProject.value,
+    type: 'list_intents',
+    projectPath: intentsProject.value,
     ...(status ? { status } : {}),
   })
 }
 
-function refineRequirement(requirementId: string) {
-  if (!requirementsProject.value) return
+function refineIntent(intentId: string) {
+  if (!intentsProject.value) return
   client?.send({
-    type: 'refine_requirement',
-    projectPath: requirementsProject.value,
-    requirementId,
+    type: 'refine_intent',
+    projectPath: intentsProject.value,
+    intentId,
   })
 }
 
-function startDevelopment(requirementId: string, hasUnfinishedDeps: boolean) {
-  if (!requirementsProject.value) return
-  if (hasUnfinishedDeps && !window.confirm(t('requirement.startDev.confirmUnfinishedDeps'))) return
+function startDevelopment(intentId: string, hasUnfinishedDeps: boolean) {
+  if (!intentsProject.value) return
+  if (hasUnfinishedDeps && !window.confirm(t('intent.startDev.confirmUnfinishedDeps'))) return
   client?.send({
     type: 'start_development',
-    projectPath: requirementsProject.value,
-    requirementId,
+    projectPath: intentsProject.value,
+    intentId,
   })
 }
 
 function openDevSession(sessionId: string) {
-  if (!requirementsProject.value) return
+  if (!intentsProject.value) return
   enterConsole()
-  consoleSession.value = { workspacePath: requirementsProject.value, sessionId }
-  client?.send({ type: 'select_session', workspacePath: requirementsProject.value, sessionId })
+  consoleSession.value = { workspacePath: intentsProject.value, sessionId }
+  client?.send({ type: 'select_session', workspacePath: intentsProject.value, sessionId })
 }
 
-function setRequirementStatus(requirementId: string, status: RequirementStatus) {
-  client?.send({ type: 'update_requirement_status', requirementId, status })
+function setIntentStatus(intentId: string, status: IntentStatus) {
+  client?.send({ type: 'update_intent_status', intentId, status })
 }
 
-function setRequirementAutomate(requirementId: string, automateOn: boolean) {
-  client?.send({ type: 'set_requirement_automate', requirementId, automate: automateOn })
+function setIntentAutomate(intentId: string, automateOn: boolean) {
+  client?.send({ type: 'set_intent_automate', intentId, automate: automateOn })
 }
 
 function startAutomation() {
-  if (!requirementsProject.value) return
-  client?.send({ type: 'start_automation', projectPath: requirementsProject.value })
+  if (!intentsProject.value) return
+  client?.send({ type: 'start_automation', projectPath: intentsProject.value })
 }
 
 function stopAutomation() {
-  if (!requirementsProject.value) return
-  client?.send({ type: 'stop_automation', projectPath: requirementsProject.value })
+  if (!intentsProject.value) return
+  client?.send({ type: 'stop_automation', projectPath: intentsProject.value })
 }
 
 function deleteSession(path: string, sessionId: string) {
@@ -1713,11 +1713,11 @@ function listCommands() {
       @list-commands="listCommands"
     />
 
-    <Requirements
-      v-else-if="activeTab === 'requirements' && requirementsProject"
+    <Intents
+      v-else-if="activeTab === 'intents' && intentsProject"
       ref="composer"
-      :project="requirementsProject"
-      :requirements="currentRequirements"
+      :project="intentsProject"
+      :intents="currentIntents"
       :automation="currentAutomation"
       :active-title="activeTitle"
       :has-active-session="hasActiveSession"
@@ -1734,15 +1734,15 @@ function listCommands() {
       :queue="currentQueue"
       :available-commands="availableCommands"
       :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-      @filter="setRequirementFilter"
-      @refine="refineRequirement"
+      @filter="setIntentFilter"
+      @refine="refineIntent"
       @start-dev="startDevelopment"
       @open-dev="openDevSession"
-      @set-status="setRequirementStatus"
-      @set-automate="setRequirementAutomate"
+      @set-status="setIntentStatus"
+      @set-automate="setIntentAutomate"
       @start-automation="startAutomation"
       @stop-automation="stopAutomation"
-      @new-requirement="newRequirementChat"
+      @new-intent="newIntentChat"
       @respond="respond"
       @submit-ask="submitAsk"
       @refresh="refreshStatus"
@@ -1773,7 +1773,7 @@ function listCommands() {
       @start="startDiscussion"
       @pause="pauseDiscussion"
       @resume="resumeDiscussion"
-      @convert="convertDiscussionToRequirement"
+      @convert="convertDiscussionToIntent"
       @update:input="discussionInput = $event"
       @submit-input="submitDiscussionInput"
     />

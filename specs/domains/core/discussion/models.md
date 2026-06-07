@@ -3,7 +3,7 @@
 Entity definitions. Business-semantic types; physical wiring (SQLite schema, migrations) is in
 [design.md](design.md). The TS shapes (`Discussion`, `DiscussionMessage`, `DiscussionStatus`,
 `DiscussionSpeakerKind`) are defined once in `shared/src/protocol.ts` — the same落位 as the
-requirement entity types — and referenced here rather than redefined.
+intent entity types — and referenced here rather than redefined.
 
 ## Discussion
 

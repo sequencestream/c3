@@ -1,7 +1,7 @@
 /**
  * Shared SQLite access for c3, persisted at `~/.c3/c3.db` (overridable for tests
  * via `C3_DB_PATH`, or the dir via `C3_DIR`). The single c3.db backs every
- * persistence domain (requirements, discussions, …); each domain store owns its
+ * persistence domain (intents, discussions, …); each domain store owns its
  * own tables and schema-ensure flag over this one connection.
  *
  * Cross-runtime: c3 ships both as a Node bundle (`node cli.cjs`) and a Bun
@@ -164,7 +164,7 @@ export function checkDbDriver(): boolean {
   } catch (err) {
     console.error(
       `[c3] FATAL: SQLite driver "${driver}" unavailable on ${process.platform}/${process.arch} ` +
-        `(${isBun() ? 'Bun' : 'Node'} runtime). Persistence (requirements, discussions, schedules) ` +
+        `(${isBun() ? 'Bun' : 'Node'} runtime). Persistence (intents, discussions, schedules) ` +
         `will not work. Cause: ${err instanceof Error ? err.message : String(err)}`,
     )
     return false

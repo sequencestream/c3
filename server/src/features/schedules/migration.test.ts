@@ -22,7 +22,7 @@ afterEach(() => {
 
 /**
  * Regression: the schedule store must NOT gate its column migrations on the
- * shared global `PRAGMA user_version`. A sibling store (requirements, v5) stamps
+ * shared global `PRAGMA user_version`. A sibling store (intents, v5) stamps
  * user_version to 5; if the schedule store trusted that counter it would skip the
  * v3→v4 `session_id` ALTER and leave old tables without the column, crashing
  * appendExecutionLog with "no column named session_id".
@@ -41,7 +41,7 @@ function seedOldDb(d: Db): void {
       status        TEXT NOT NULL DEFAULT 'running'
     );
   `)
-  // Mimic a sibling store (requirements, SCHEMA_VERSION=5) having clobbered the
+  // Mimic a sibling store (intents, SCHEMA_VERSION=5) having clobbered the
   // shared version counter past the schedule store's own version (4).
   d.exec('PRAGMA user_version=5;')
 }

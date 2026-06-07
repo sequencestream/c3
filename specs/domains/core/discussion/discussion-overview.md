@@ -2,7 +2,7 @@
 
 A project-scoped **discussion** store: a discussion (a goal-directed conversation among an
 organizer, agents, and the human) plus its ordered messages, persisted in the shared
-`~/.c3/c3.db` alongside the requirement ledger.
+`~/.c3/c3.db` alongside the intent ledger.
 
 **Status: live — persistence + create flow + organizer engine + human-in-the-loop.** This domain
 provides the data model and SQLite persistence layer (tables + store CRUD), the read path (list +
@@ -27,7 +27,7 @@ message mid-run, and re-driving a _new round_ on a concluded discussion with a f
   persists a `draft` (title derived from `goal`), **immediately replies to the creating connection
   with `discussion_detail`** (so the right pane opens the new discussion without a click) and pushes
   the `discussions` list, then a **read-only research agent** — `discussion-research` gate reusing the
-  requirement read set (Read/Grep/Glob + WebSearch/WebFetch), no save tool, write/exec/sub-agent tools
+  intent read set (Read/Grep/Glob + WebSearch/WebFetch), no save tool, write/exec/sub-agent tools
   hard-disabled — produces a `researchResult` (`server/src/discussions/research.ts`). The research
   output is **strictly status-only**: the researcher collects relevant facts / current state /
   constraints / open questions, and is hard-forbidden from emitting any options, candidate solutions,
@@ -103,7 +103,7 @@ Conclusion → Details` so the read-order follows the right-pane's two-phase tim
 completed`, appends every turn (`appendMessage`) and streams it (`discussion_message`), and writes
   the `conclusion`. Termination is guaranteed (forward-only stages, per-stage + total round caps);
   a single configured agent degenerates gracefully (organizer == sole participant).
-- Reuses the shared cross-runtime SQLite adapter (`server/src/db.ts`, ADR 0007) and the requirement
+- Reuses the shared cross-runtime SQLite adapter (`server/src/db.ts`, ADR 0007) and the intent
   store's fail-soft + `PRAGMA user_version` + idempotent `ensureColumn` migration paradigm.
 - **Human-in-the-loop control** (`pause_discussion` / `resume_discussion` / `discussion_speak` /
   `continue_discussion`): the engine awaits a **pause gate** at each round boundary (paused ⇒ no new
@@ -133,13 +133,13 @@ completed`, appends every turn (`appendMessage`) and streams it (`discussion_mes
   **not** snapshotted on the list: it self-heals via `cleared`/`failed`/the reply message/run
   `ended`/discussion switch, so a refresh/reconnect leaves no stuck pending.
 
-- **Conclusion → requirement bridge** (`discussion_to_requirement`): a completed discussion's
-  title-bar **Convert to Requirement** button seeds the requirement domain. The server resolves the
-  project from the discussion, restarts the requirement communication session as a fresh one (a
-  `refine_requirement` variant) whose first prompt carries the discussion title + `conclusion`, and
-  replies with `session_selected` + `requirements`; the agent then splits it into verifiable items
-  via the **unchanged** `save_requirements` flow (see
-  [requirement-management RM-R7](../requirement-management/spec.md)). Rejected unless the discussion
+- **Conclusion → intent bridge** (`discussion_to_intent`): a completed discussion's
+  title-bar **Convert to Intent** button seeds the intent domain. The server resolves the
+  project from the discussion, restarts the intent communication session as a fresh one (a
+  `refine_intent` variant) whose first prompt carries the discussion title + `conclusion`, and
+  replies with `session_selected` + `intents`; the agent then splits it into verifiable items
+  via the **unchanged** `save_intents` flow (see
+  [intent-management RM-R7](../intent-management/spec.md)). Rejected unless the discussion
   is `completed` with a non-empty `conclusion`.
 
 ## Out of scope (now)

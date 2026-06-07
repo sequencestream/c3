@@ -44,11 +44,11 @@ export const UI_ERROR_CODES = {
   'session.resumeNoAgent': { key: 'error.session.resumeNoAgent', params: ['vendor'] },
   'session.notSelected': { key: 'error.session.notSelected' },
   'session.turnRunning': { key: 'error.session.turnRunning' },
-  // requirement
-  'requirement.notFound': { key: 'error.requirement.notFound' },
-  'requirement.dbUnavailable': { key: 'error.requirement.dbUnavailable' },
-  'requirement.chatOpenFailed': { key: 'error.requirement.chatOpenFailed' },
-  'requirement.cannotStartDev': { key: 'error.requirement.cannotStartDev', params: ['status'] },
+  // intent
+  'intent.notFound': { key: 'error.intent.notFound' },
+  'intent.dbUnavailable': { key: 'error.intent.dbUnavailable' },
+  'intent.chatOpenFailed': { key: 'error.intent.chatOpenFailed' },
+  'intent.cannotStartDev': { key: 'error.intent.cannotStartDev', params: ['status'] },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

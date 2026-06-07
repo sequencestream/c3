@@ -21,7 +21,7 @@ import {
   recordToolSession,
   isToolSessionRecorded,
   deleteToolSessionRecord,
-} from './features/requirements/store.js'
+} from './features/intents/store.js'
 import {
   deleteByPendingId,
   deleteByVendorId,
@@ -66,8 +66,8 @@ function titleOf(s: {
 
 /**
  * List a workspace's sessions, newest first, each tagged with its c3 mode.
- * Requirement-communication sessions are filtered out (they belong to the
- * requirement view, not the normal list). Tool-created sessions (completion
+ * Intent-communication sessions are filtered out (they belong to the
+ * intent view, not the normal list). Tool-created sessions (completion
  * judge, consensus advisor) are also hidden by default, controlled by the
  * `showToolSessions` system setting. Uses the resolved path as the key, to
  * match how the store records `project_path`. If the store is unavailable it

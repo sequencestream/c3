@@ -5,7 +5,7 @@
  *
  * `createCanUseTool(spec)` returns the `canUseTool` callback the SDK invokes for
  * every sensitive tool. Three gate policies branch off `spec.gate`:
- *  - `requirement` — the read-only comm agent (read tools pass, save asks, else deny);
+ *  - `intent` — the read-only comm agent (read tools pass, save asks, else deny);
  *  - `discussion-research` — the unattended read-only research agent (read tools pass, else deny);
  *  - `standard` — the normal flow (multi-agent consensus → human prompt).
  *
@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto'
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { AskConsensusOutcome, ConsensusOutcome, ServerToClient } from '@ccc/shared/protocol'
 import { allow, deny, type PermissionDecision } from './decision.js'
-import { classifyRequirementTool, REQUIREMENT_READ_TOOLS, withAnswers } from './tools.js'
+import { classifyIntentTool, INTENT_READ_TOOLS, withAnswers } from './tools.js'
 import { waitForDecision } from './registry.js'
 import { runAskConsensus, runConsensusVote } from '../../consensus.js'
 import { askQuestions } from '../../consensus-tally.js'
@@ -27,7 +27,7 @@ import { askQuestions } from '../../consensus-tally.js'
 /** Everything the gateway needs from the run it guards (all caller-resolved). */
 export interface GatewaySpec {
   /** Which gate policy applies (default `standard`). */
-  gate: 'standard' | 'requirement' | 'discussion-research'
+  gate: 'standard' | 'intent' | 'discussion-research'
   /** Push a wire frame to the viewer (the permission_request / consensus_auto). */
   send: (msg: ServerToClient) => void
   /** The run's abort signal — a teardown resolves a pending prompt to deny. */
@@ -51,12 +51,12 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
   return async (toolName, input): Promise<PermissionDecision> => {
     const requestId = randomUUID()
 
-    // Requirement (read-only) gate: a separate, simpler policy that never
-    // runs consensus. Read tools pass through; `save_requirements` asks the
+    // Intent (read-only) gate: a separate, simpler policy that never
+    // runs consensus. Read tools pass through; `save_intents` asks the
     // human; everything else is denied by default (defence-in-depth behind
     // `disallowedTools`).
-    if (gate === 'requirement') {
-      const decisionClass = classifyRequirementTool(toolName)
+    if (gate === 'intent') {
+      const decisionClass = classifyIntentTool(toolName)
       // Read-class built-ins + read-only c3 query tools (find/view) pass through.
       if (decisionClass === 'allow') {
         return allow(input)
@@ -70,7 +70,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         return deny('User denied in c3 UI')
       }
       // AskUserQuestion is a clarifying-only tool (no write/exec side effects),
-      // so the read-only requirement agent may use it. It needs the standard
+      // so the read-only intent agent may use it. It needs the standard
       // answer-injection flow — NOT a plain allow (the SDK echoes answers only
       // when `input.answers` is pre-filled). Single agent ⇒ no consensus: just
       // prompt the human and inject the answers (or deny on cancel).
@@ -82,18 +82,18 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         }
         return deny('User denied in c3 UI')
       }
-      console.warn(`[c3] requirement gate denied tool: ${toolName}`)
-      return deny('Requirement chat is read-only; this tool is blocked.')
+      console.warn(`[c3] intent gate denied tool: ${toolName}`)
+      return deny('Intent chat is read-only; this tool is blocked.')
     }
 
     // Discussion-research (read-only) gate: a one-shot research agent that
-    // completes a new discussion's `context`. It reuses the requirement read
+    // completes a new discussion's `context`. It reuses the intent read
     // set (Read/Grep/Glob/… + WebFetch/WebSearch) so it can read project
     // material and search the web, but has NO save tool — the server writes the
     // agent's final text back itself — and clarifying questions are off (the
     // run is unattended). Everything else is denied by default.
     if (gate === 'discussion-research') {
-      if (REQUIREMENT_READ_TOOLS.has(toolName)) {
+      if (INTENT_READ_TOOLS.has(toolName)) {
         return allow(input)
       }
       console.warn(`[c3] discussion-research gate denied tool: ${toolName}`)

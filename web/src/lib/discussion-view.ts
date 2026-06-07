@@ -108,8 +108,8 @@ export function discussionMessagesToChat(
 }
 
 /*
- * Left-panel view helpers — mirror the requirement list's collapse/accordion
- * paradigm (see req-list-view.ts) but with discussion-flavored wording, so the
+ * Left-panel view helpers — mirror the intent list's collapse/accordion
+ * paradigm (see intent-list-view.ts) but with discussion-flavored wording, so the
  * two lists stay visually consistent without coupling their copy. Pure, so they
  * are unit-tested in the DOM-less web test env.
  */

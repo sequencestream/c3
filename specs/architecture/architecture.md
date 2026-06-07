@@ -54,12 +54,12 @@ c3 is a single local process with two halves connected by one WebSocket:
 | Session IO               | `server/src/sessions.ts`            | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                                                                                                                                                                            |
 | Permission registry      | `server/src/permissions.ts`         | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                                                                                                                                                                      |
 | Result formatting        | `server/src/format.ts`              | Flatten SDK `tool_result` content to a display string                                                                                                                                                                                                     |
-| Requirement ledger       | `server/src/requirements/`          | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_requirements` tool (ADR 0007)                                                                                                                                                         |
+| Intent ledger            | `server/src/intents/`               | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_intents` tool (ADR 0007)                                                                                                                                                              |
 | Static embed             | `server/src/static-embed.ts`        | Generated; Bun-inlined web bundle                                                                                                                                                                                                                         |
 | Wire protocol            | `shared/src/protocol.ts`            | `ClientToServer` / `ServerToClient` unions + workspace/session types                                                                                                                                                                                      |
 | WS client                | `web/src/lib/ws.ts`                 | Browser WebSocket wrapper                                                                                                                                                                                                                                 |
 | UI shell                 | `web/src/App.vue`                   | Shell: owns WS client + `handleMessage` + all shared state; dispatches by tab to page containers                                                                                                                                                          |
-| Pages                    | `web/src/pages/<page>/`             | Per-page containers (`sessions`/`requirements`/`discussions`/`schedules`/`systemsettings`) + private components                                                                                                                                           |
+| Pages                    | `web/src/pages/<page>/`             | Per-page containers (`sessions`/`intents`/`discussions`/`schedules`/`systemsettings`) + private components                                                                                                                                                |
 | Shared components        | `web/src/components/<Name>/`        | Cross-page components, one dir each with colocated `.test.ts`                                                                                                                                                                                             |
 
 ## Cross-cutting conventions
@@ -80,12 +80,12 @@ c3 is a single local process with two halves connected by one WebSocket:
   (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`): workspaces + recent-access order,
   per-session mode, and the active session. Sessions themselves live in the SDK transcript
   store. See [ADR 0004](adr/0004-persist-workspace-session-registry.md).
-- **Requirement ledger is a separate SQLite store (ADR 0007).** Project-scoped requirements live
+- **Intent ledger is a separate SQLite store (ADR 0007).** Project-scoped intents live
   in `~/.c3/c3.db` (distinct from the registry's `~/.claude/c3/state.json`), behind a cross-runtime
   driver adapter (`node:sqlite` / `bun:sqlite`). It fails soft: if the db is unavailable,
-  requirement features degrade but c3 still boots and serves normal sessions. The
-  requirement-communication agent reuses the runtime registry and permission gateway as a
-  read-only `requirement`-kind run.
+  intent features degrade but c3 still boots and serves normal sessions. The
+  intent-communication agent reuses the runtime registry and permission gateway as a
+  read-only `intent`-kind run.
 - **DB migrations are idempotent, never drop tables, and roll back forward (hard rule).** Every
   c3.db schema change runs through a domain store's once-only schema-ensure and obeys this
   project-wide migration discipline:
@@ -139,13 +139,13 @@ c3 is a single local process with two halves connected by one WebSocket:
     with its colocated `<Name>.test.ts`.
   - Page-private components: `web/src/pages/<page>/components/<Name>/<Name>.vue` (+ colocated test).
   - Page containers: `web/src/pages/<page>/<Page>.vue`. Pages are
-    `sessions` / `requirements` / `discussions` / `schedules` / `systemsettings`.
+    `sessions` / `intents` / `discussions` / `schedules` / `systemsettings`.
   - `App.vue` is the shell: it owns the WS client, `handleMessage`, and all shared/tab state, and
     dispatches to page containers by `activeTab`. Page containers are **pure** (props in / emit up) —
     no domain state of their own (the queue-edit `composer.prefill` is forwarded via `defineExpose`).
     `lib/` (pure logic + unit-tested view helpers) and `composables/` sit at `web/src/` and are
     imported by both layers.
-  - The `sessions` and `requirements` pages share the chat column by each assembling it from the same
+  - The `sessions` and `intents` pages share the chat column by each assembling it from the same
     shared components (`ChatMessages` / `MessageInput` / …), not via a wrapper component.
   - Page containers are route-level views and may be single-word (`vue/multi-word-component-names` is
     disabled for `web/src/pages/*/*.vue`); their private components keep the multi-word rule.
@@ -162,7 +162,7 @@ c3 is a single local process with two halves connected by one WebSocket:
 | [0004](adr/0004-persist-workspace-session-registry.md)      | Persist a c3-owned workspace & session registry                                                                                                               |
 | [0005](adr/0005-inherit-user-project-settings.md)           | Inherit user & project settings; c3 is the permission gateway (`settingSources: ['user', 'project']`)                                                         |
 | [0006](adr/0006-decouple-runs-from-connections.md)          | Decouple agent runs from WebSocket connections; runs live in a module-level registry                                                                          |
-| [0007](adr/0007-read-only-requirement-agent.md)             | Read-only requirement-communication agent; `save_requirements` via the permission gateway; cross-runtime SQLite ledger                                        |
+| [0007](adr/0007-read-only-intent-agent.md)                  | Read-only intent-communication agent; `save_intents` via the permission gateway; cross-runtime SQLite ledger                                                  |
 | [0009](adr/0009-unidirectional-boundaries.md)               | Unidirectional boundaries: kernel → transport/features; SDK types never leave the kernel                                                                      |
 | [0011](adr/0011-vendor-neutral-agent-abstraction.md)        | Vendor-neutral Agent abstraction: required three-piece interface + probed capability ledger; `PermissionMode` 1:1 dropped for an `ActionMode × ToolGate` grid |
 | [0012](adr/0012-host-binary-probe-first-capability-gate.md) | Host-binary probing is the first capability gate; an absent vendor CLI ⇒ agent type unavailable (install per agent type, single binary is not self-contained) |

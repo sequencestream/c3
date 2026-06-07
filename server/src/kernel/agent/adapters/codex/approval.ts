@@ -16,7 +16,7 @@
  * its reliability rests on the model's compliance. So it is intentionally left as a
  * closed extension point (the flag + the wiring seam), NOT wired to a prompt loop
  * in this phase. Flipping {@link CodexApprovalOptions.mcpFallback} on today changes
- * nothing observable; turning it into a real channel is a separate requirement.
+ * nothing observable; turning it into a real channel is a separate intent.
  */
 import type { ApprovalBridge, ApprovalHandler, Disposer } from '../types.js'
 
@@ -24,7 +24,7 @@ import type { ApprovalBridge, ApprovalHandler, Disposer } from '../types.js'
 export interface CodexApprovalOptions {
   /**
    * Enable the MCP-approval fallback (Phase 0 §4). SKELETON: even when true, no
-   * prompt loop is wired yet — this is the seam a later requirement builds on. The
+   * prompt loop is wired yet — this is the seam a later intent builds on. The
    * handler still never fires for Codex's built-in tools, by construction.
    */
   mcpFallback?: boolean

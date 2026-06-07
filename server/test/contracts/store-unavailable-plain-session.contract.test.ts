@@ -2,10 +2,10 @@
  * GOLDEN-STANDARD CONTRACT — C3: a plain session starts even when the store is down.
  *
  * Pins a behavior that MUST survive every slice of the server refactor (ADR-0009):
- * the requirement / discussion / schedule SQLite store is a *soft* dependency.
+ * the intent / discussion / schedule SQLite store is a *soft* dependency.
  * When it is unavailable, c3 still boots and an ordinary (`normal`-kind) user
  * session launches and completes a turn — it never gates on the store and never
- * emits a `requirement.*` / `*.dbUnavailable` error.
+ * emits a `intent.*` / `*.dbUnavailable` error.
  *
  * The invariant under the handlers (which slices 2/3 will move into `features/`):
  * launchRun for a `normal` runtime NEVER consults `isStoreAvailable`. This test
@@ -68,8 +68,8 @@ vi.mock('../../src/kernel/config/index.js', async () => {
   }
 })
 
-// Force the requirement store to report "unavailable" — the failed-DB world.
-import * as reqStore from '../../src/features/requirements/store.js'
+// Force the intent store to report "unavailable" — the failed-DB world.
+import * as reqStore from '../../src/features/intents/store.js'
 import { launchRun } from '../../src/kernel/run/run-lifecycle.js'
 import { ensureRuntime, getRuntime, addViewer, removeRuntime, type Viewer } from '../../src/runs.js'
 
@@ -78,7 +78,7 @@ beforeEach(() => {
   sdk.calls = []
 })
 
-const noopDeps = { broadcastStatuses: () => {}, broadcastRequirements: () => {} }
+const noopDeps = { broadcastStatuses: () => {}, broadcastIntents: () => {} }
 
 describe('C3 — a plain session starts when the store is unavailable', () => {
   it('launches and completes a normal turn without consulting the store or erroring', async () => {
@@ -95,12 +95,12 @@ describe('C3 — a plain session starts when the store is unavailable', () => {
 
     // The normal-session launch never gated on the store.
     expect(storeProbe).not.toHaveBeenCalled()
-    // No requirement / db-unavailable error surfaced.
+    // No intent / db-unavailable error surfaced.
     expect(
       events.some(
         (e) =>
           e.type === 'error' &&
-          (e.error.code.startsWith('requirement.') || e.error.code.endsWith('dbUnavailable')),
+          (e.error.code.startsWith('intent.') || e.error.code.endsWith('dbUnavailable')),
       ),
     ).toBe(false)
     // The turn ran to a clean completion regardless of the store being down.

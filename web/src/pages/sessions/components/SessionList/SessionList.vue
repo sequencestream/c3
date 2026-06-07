@@ -3,7 +3,7 @@
  * SessionList.vue — 「会话」tab 的左栏:当前工作区的会话列表。
  *
  * 工作区的新增/切换/移除已收敛到顶部的 WorkspaceSwitcher;本组件只呈现 currentWorkspace
- * 的会话列表(只在「会话」tab 渲染,与「需求」tab 的 RequirementList 左栏对称)。会话分页
+ * 的会话列表(只在「会话」tab 渲染,与「需求」tab 的 IntentList 左栏对称)。会话分页
  * (每次可见条数)是组件自身的 UI 状态;增删改经事件上抛(含 prompt/confirm 交互),
  * 由 App 统一发往服务端。
  */
@@ -67,7 +67,7 @@ const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex', 'opencode']
 const SESSION_PAGE = 10
 const sessionLimit = ref(SESSION_PAGE)
 
-// 面板展开态:持久化 UI 状态(同 RequirementList 的折叠范式)。展开态把侧栏宽度翻倍,
+// 面板展开态:持久化 UI 状态(同 IntentList 的折叠范式)。展开态把侧栏宽度翻倍,
 // 便于阅读较长的会话标题;收缩态回到默认窄宽。跨页面切换后保持原状。
 const expanded = usePersistentToggle('c3.sessionListExpanded')
 

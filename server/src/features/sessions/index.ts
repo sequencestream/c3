@@ -39,7 +39,7 @@ import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
-import { rebindChatSession } from '../requirements/store.js'
+import { rebindChatSession } from '../intents/store.js'
 import { ensureOpencodeRunning } from '../../opencode-status.js'
 import { upsertPendingRow } from './store.js'
 import { errMsg } from '../errmsg.js'
@@ -240,9 +240,9 @@ export const renameSession: Handler<'rename_session'> = async (_ctx, conn, msg) 
 
 export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
   const rt = conn.viewing ? getRuntime(conn.viewing) : undefined
-  // Requirement comm sessions are pinned to `default` (the gateway must always
+  // Intent comm sessions are pinned to `default` (the gateway must always
   // fire); ignore mode changes for them.
-  if (rt && rt.kind === 'requirement') {
+  if (rt && rt.kind === 'intent') {
     conn.send({ type: 'mode_changed', mode: 'default' })
     return
   }
@@ -306,12 +306,12 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'session.turnRunning' } })
     return
   }
-  const isRequirement = rt.kind === 'requirement'
+  const isIntent = rt.kind === 'intent'
   await ctx.launchRun(rt, msg.text, {
     onEvent: (e) => {
       if (e.kind === 'bound') {
         const { prevId, realId } = e
-        if (isRequirement) {
+        if (isIntent) {
           // Comm session: re-key its store mapping; never touch the persisted
           // active/normal-mode state (it's a hidden session).
           rebindChatSession(prevId, realId)
@@ -324,8 +324,8 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
           }
         }
         conn.send({ type: 'session_started', clientId: prevId, sessionId: realId })
-      } else if (e.kind === 'settled' && !isRequirement) {
-        // Requirement comm sessions are hidden from the normal list, so there's
+      } else if (e.kind === 'settled' && !isIntent) {
+        // Intent comm sessions are hidden from the normal list, so there's
         // nothing to refresh for them.
         void conn.sendSessions(e.workspacePath)
       }

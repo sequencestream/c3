@@ -29,11 +29,11 @@ import type { SessionInfo, VendorId } from '@ccc/shared/protocol'
 import type { SessionAccessor } from './accessor.js'
 // ADR-0009 R1 exception: the daily `list_sessions` read path needs the
 // projection store (features/sessions) and the hidden-set filter
-// (features/requirements). The boundary is justified because the read
+// (features/intents). The boundary is justified because the read
 // path IS the composition point for the projection — it lives in the
 // kernel only because the WS handler routes through it.
 // eslint-disable-next-line no-restricted-imports
-import { isToolSessionRecorded, listHiddenSessions } from '../../../features/requirements/store.js'
+import { isToolSessionRecorded, listHiddenSessions } from '../../../features/intents/store.js'
 import { getSessionAgentId, getShowToolSessions } from '../../config/index.js'
 import { getDefaultAgentId } from '../../agent-config/index.js'
 import { getSessionMode } from '../../../state.js'

@@ -4,7 +4,7 @@
  * claude-hardwired `runClaude` loop — `launchRun` forks here when the session's
  * vendor is `opencode`. It is deliberately the *minimal* driver route (range C):
  * it does NOT reuse the claude path's degradation chain, socket auto-resume FSM,
- * consensus, or requirement profile — those are claude-shaped and out of scope for
+ * consensus, or intent profile — those are claude-shaped and out of scope for
  * the first non-Claude integration. The claude path stays byte-for-byte unchanged.
  *
  * Two translations live here:

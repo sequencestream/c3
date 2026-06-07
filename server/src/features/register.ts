@@ -32,17 +32,17 @@ import {
   userPrompt,
 } from './sessions/index.js'
 import {
-  discussionToRequirement,
-  listRequirementsHandler,
-  newRequirementChat,
-  openRequirementChat,
-  refineRequirement,
-  setRequirementAutomate,
+  discussionToIntent,
+  listIntentsHandler,
+  newIntentChat,
+  openIntentChat,
+  refineIntent,
+  setIntentAutomate,
   startAutomationHandler,
   startDevelopment,
   stopAutomationHandler,
-  updateRequirementStatus,
-} from './requirements/index.js'
+  updateIntentStatus,
+} from './intents/index.js'
 import {
   continueDiscussion,
   createDiscussionHandler,
@@ -95,15 +95,15 @@ export const handlerMap: HandlerMap = {
   set_session_agent: setSessionAgentHandler,
   stop_run: stopRunHandler,
   user_prompt: userPrompt,
-  // requirements
-  list_requirements: listRequirementsHandler,
-  open_requirement_chat: openRequirementChat,
-  new_requirement_chat: newRequirementChat,
-  refine_requirement: refineRequirement,
-  discussion_to_requirement: discussionToRequirement,
+  // intents
+  list_intents: listIntentsHandler,
+  open_intent_chat: openIntentChat,
+  new_intent_chat: newIntentChat,
+  refine_intent: refineIntent,
+  discussion_to_intent: discussionToIntent,
   start_development: startDevelopment,
-  update_requirement_status: updateRequirementStatus,
-  set_requirement_automate: setRequirementAutomate,
+  update_intent_status: updateIntentStatus,
+  set_intent_automate: setIntentAutomate,
   start_automation: startAutomationHandler,
   stop_automation: stopAutomationHandler,
   // discussions

@@ -9,7 +9,7 @@
 import type { Discussion, ResearchMessage } from '@ccc/shared/protocol'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude } from '../../kernel/agent/index.js'
-import { REQUIREMENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
+import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
 
 /** System-prompt append that frames the unattended, read-only research run. */
 export const DISCUSSION_RESEARCH_PROMPT = `You are the discussion's "context researcher". Your sole task: research and gather the background facts for an upcoming discussion.
@@ -109,7 +109,7 @@ export async function researchDiscussionContext(
       // Pinned to `default` so the gateway's canUseTool always fires.
       permissionMode: 'default',
       appendSystemPrompt: DISCUSSION_RESEARCH_PROMPT,
-      disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
+      disallowedTools: INTENT_DISALLOWED_TOOLS,
       gate: 'discussion-research',
       send: (m) => {
         // The agent's last assistant turn is the completed context; every assistant

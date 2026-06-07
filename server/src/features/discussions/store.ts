@@ -2,7 +2,7 @@
  * Discussion domain store over the shared {@link Db} (c3.db).
  *
  * Owns the discussion schema (created lazily, versioned via `PRAGMA user_version`)
- * and all discussion / message operations. Sibling to the requirement store: both
+ * and all discussion / message operations. Sibling to the intent store: both
  * ride the one `~/.c3/c3.db` connection, each owning its own tables and a private
  * `schemaReady` flag. Every `projectPath` arg is `resolve()`d so it matches the
  * workspace registry key, the runtime `workspacePath`, and the SDK `cwd`.
@@ -22,7 +22,7 @@ import type {
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
 /**
- * Discussion schema version. Independent of the requirement store's version —
+ * Discussion schema version. Independent of the intent store's version —
  * both write the single `PRAGMA user_version` and so clobber each other, but the
  * value is informational only: migrations key off `PRAGMA table_info` /
  * `CREATE TABLE IF NOT EXISTS`, never off the version number.
@@ -245,7 +245,7 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
 
 /**
  * Update a discussion's status. `completed` stamps the completion time; any other
- * status clears it (covers reverting from completed) — same rule as requirements.
+ * status clears it (covers reverting from completed) — same rule as intents.
  */
 export function updateDiscussionStatus(id: string, status: DiscussionStatus): void {
   const d = requireDb()

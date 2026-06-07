@@ -8,7 +8,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Discussion } from '@ccc/shared/protocol'
 import { listDiscussionTypes } from '@ccc/shared/discussion-types'
-import { formatDate } from '../../../../lib/req-list-view'
+import { formatDate } from '../../../../lib/intent-list-view'
 import {
   discussionDetailTabs,
   panelToggleLabel,
@@ -523,7 +523,7 @@ function togglePanel(): void {
   color: var(--c-text-muted);
   font-variant-numeric: tabular-nums;
 }
-/* 类型 pill:灰底中性色,与 RequirementList 的 .req-module 同款 */
+/* 类型 pill:灰底中性色,与 IntentList 的 .req-module 同款 */
 .disc-type {
   flex-shrink: 0;
   max-width: 120px;

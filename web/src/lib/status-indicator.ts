@@ -4,7 +4,7 @@ import type { RunActivity } from './chat-types'
 /*
  * status-indicator — the single shared model behind every session/run status
  * indicator, rendered as `<icon> <agent>.<status>` (icon + agent name + dot +
- * status label). Both the SessionStatusBar (Sessions / Requirements) and the
+ * status label). Both the SessionStatusBar (Sessions / Intents) and the
  * DiscussionList row build one of these so the icon set, the status→tone map,
  * and the `<agent>.<status>` join stay single-sourced and never drift.
  *

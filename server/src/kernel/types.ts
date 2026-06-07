@@ -12,8 +12,8 @@
  *   *implementations* (broadcasts, launchers) still live in the `server.ts`
  *   entry closure; `KernelContext` holds references to them (slice 2/3b folds the
  *   broadcasts into a single `transport/Broadcaster`).
- * - Slice 2/3a moved the feature-PRIVATE state out of here: the requirement
- *   runStatus cache + judged-session de-dup now live in `requirements/run-status`,
+ * - Slice 2/3a moved the feature-PRIVATE state out of here: the intent
+ *   runStatus cache + judged-session de-dup now live in `intents/run-status`,
  *   the live discussion/research run maps in `discussions/run-controls`. Only
  *   genuinely cross-feature services remain on the context (the hard rule:
  *   transport-shared / cross-feature → context; feature-private → feature store).
@@ -62,7 +62,7 @@ export interface LaunchCbs {
  */
 export interface LaunchRunDeps {
   broadcastStatuses: () => void
-  broadcastRequirements: (projectPath: string) => void
+  broadcastIntents: (projectPath: string) => void
 }
 
 /**
@@ -87,7 +87,7 @@ export interface KernelContext {
   // ── broadcasts (transport-owned in spirit; slice 2/3b folds them into a single
   //    transport/Broadcaster — for now they are closure refs reached via ctx) ──
   readonly broadcastStatuses: () => void
-  readonly broadcastRequirements: (projectPath: string) => void
+  readonly broadcastIntents: (projectPath: string) => void
   readonly broadcastDiscussions: (projectPath: string) => void
   readonly broadcastSchedules: (workspacePath: string) => void
   readonly broadcastAutomation: (status: AutomationStatus) => void
@@ -101,7 +101,7 @@ export interface KernelContext {
   readonly startDiscussionRun: (discussion: Discussion) => void
   readonly startResearchRun: (discussion: Discussion) => void
 
-  // The automation hooks bag is feature-private to `requirements` (wired via
+  // The automation hooks bag is feature-private to `intents` (wired via
   // `setAutomationHooks`, read via `getAutomationHooks`), NOT on the kernel
   // context — keeping the kernel free of any `features/` import (ADR-0009 R1).
 }

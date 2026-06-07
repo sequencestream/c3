@@ -192,7 +192,7 @@ and, after a warmup (2 passes), `stale → orphaned`.
 ### `user_version` rule
 
 The projection store does NOT write `PRAGMA user_version` — the three domain
-stores (`requirements`, `discussions`, `session_metadata`) would clobber each
+stores (`intents`, `discussions`, `session_metadata`) would clobber each
 other (see `discussions/store.ts:25-30`). All domain stores should follow this
 posture going forward; migrations key off `PRAGMA table_info` +
 `ensureColumn`, never off `user_version`.

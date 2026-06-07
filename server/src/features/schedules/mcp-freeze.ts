@@ -41,7 +41,7 @@ const SDK_WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'Agent', 'Bash
 
 /**
  * MCP server tool name prefixes and patterns that indicate a read-only tool.
- * The naming convention for in-process MCP servers (e.g. mcp__c3__find_requirements):
+ * The naming convention for in-process MCP servers (e.g. mcp__c3__find_intents):
  * - Prefix `mcp__<server>__` is the SDK MCP tool naming scheme
  * - After the double-underscore prefix, the tool's actual name is checked
  */
@@ -62,7 +62,7 @@ const READ_MCP_PREFIXES = [
 // ---------------------------------------------------------------------------
 
 export interface FrozenToolEntry {
-  /** Tool name as the SDK knows it (e.g. 'Read', 'mcp__c3__find_requirements'). */
+  /** Tool name as the SDK knows it (e.g. 'Read', 'mcp__c3__find_intents'). */
   name: string
   /** Whether this tool is classified as a write operation. */
   isWrite: boolean
@@ -177,7 +177,7 @@ export function freezeTools(
 
 /**
  * Check if a tool name matched a namespace prefix (for MCP server tools).
- * E.g., hasNamespaceMatch('mcp__c3__save_requirements', frozenSet) → true
+ * E.g., hasNamespaceMatch('mcp__c3__save_intents', frozenSet) → true
  * if 'mcp__c3__' is in the frozen set.
  */
 export function matchesFrozenTool(toolName: string, frozen: FrozenToolSet): boolean {

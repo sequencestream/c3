@@ -47,7 +47,7 @@ path back to the legacy claude-only `listWorkspaceSessions` (the old path is
 retired only after the transition).
 
 `listWorkspaceSessions` filters two classes out of the SDK list before mapping: the project's
-**hidden set** (requirement comm sessions, owned by requirement-management) and **tool-created
+**hidden set** (intent comm sessions, owned by intent-management) and **tool-created
 sessions** (completion judge / consensus advisor) unless the `showToolSessions` setting is on.
 Tool sessions are tagged via `addToolSession` (called when a tool query's `init` reports its
 `session_id`), which write-throughs to the persisted `tool_sessions` table so the tag — and thus

@@ -91,8 +91,8 @@ describe('matchesFrozenTool', () => {
       denylist: [],
     }
     const frozen = freezeTools([], [], config, 'sandboxed')
-    expect(matchesFrozenTool('mcp__c3__save_requirements', frozen)).toBe(true)
-    expect(matchesFrozenTool('mcp__c3__find_requirements', frozen)).toBe(true)
+    expect(matchesFrozenTool('mcp__c3__save_intents', frozen)).toBe(true)
+    expect(matchesFrozenTool('mcp__c3__find_intents', frozen)).toBe(true)
     // A different server's tool is not in scope
     expect(matchesFrozenTool('mcp__other__do_thing', frozen)).toBe(false)
   })
@@ -105,10 +105,10 @@ describe('isWriteTool — MCP naming convention', () => {
       denylist: [],
     }
     const frozen = freezeTools([], [], config, 'sandboxed')
-    expect(isWriteTool('mcp__c3__find_requirements', frozen)).toBe(false)
+    expect(isWriteTool('mcp__c3__find_intents', frozen)).toBe(false)
     expect(isWriteTool('mcp__c3__get_status', frozen)).toBe(false)
     expect(isWriteTool('mcp__c3__list_items', frozen)).toBe(false)
-    expect(isWriteTool('mcp__c3__view_requirement', frozen)).toBe(false)
+    expect(isWriteTool('mcp__c3__view_intent', frozen)).toBe(false)
   })
 
   it('classifies mcp tools without read prefix as write (conservative default)', () => {
@@ -117,7 +117,7 @@ describe('isWriteTool — MCP naming convention', () => {
       denylist: [],
     }
     const frozen = freezeTools([], [], config, 'sandboxed')
-    expect(isWriteTool('mcp__c3__save_requirements', frozen)).toBe(true)
+    expect(isWriteTool('mcp__c3__save_intents', frozen)).toBe(true)
     expect(isWriteTool('mcp__c3__delete_thing', frozen)).toBe(true)
   })
 

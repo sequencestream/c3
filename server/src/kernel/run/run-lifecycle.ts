@@ -2,13 +2,13 @@
  * The shared run launcher (server refactor 3/3, ADR-0009 — sunk from `server.ts`).
  *
  * `launchRun` is the single entry every run flows through: the 5 callers (user
- * session, `start_development`, `refine_requirement`, the requirement comm agent,
+ * session, `start_development`, `refine_intent`, the intent comm agent,
  * and the automation `runDevTurn`) all reach it. It owns only registry/emit
  * concerns — abort wiring, the prompt echo, status flips, the degradation chain,
  * the bounded socket auto-resume, and pending→real id binding. Connection-specific
  * effects (session_started, the session-list refresh) are injected via `cbs`; the
- * requirement read-only profile (its security lock) is injected via
- * `deps.requirementProfile` — both so the kernel launcher never imports
+ * intent read-only profile (its security lock) is injected via
+ * `deps.intentProfile` — both so the kernel launcher never imports
  * `transport/` or `features/` (ADR-0009 R1).
  *
  * The control flow is still the original nested loop (3c-2a is a verbatim move);
@@ -69,26 +69,26 @@ function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
  * Dependencies the launcher reads, injected at the composition root (`server.ts`)
  * so the kernel launcher stays free of any `transport/` or `features/` import
  * (ADR-0009 R1). `broadcastStatuses` re-broadcasts the session-status snapshot on
- * a pending→real bind; `broadcastRequirements` is closed over by the requirement
- * MCP tool; `requirementProfile` carries the requirement comm agent's read-only
+ * a pending→real bind; `broadcastIntents` is closed over by the intent
+ * MCP tool; `intentProfile` carries the intent comm agent's read-only
  * launch profile (see below).
  */
 export interface LaunchRunDeps {
   broadcastStatuses: () => void
-  broadcastRequirements: (projectPath: string) => void
+  broadcastIntents: (projectPath: string) => void
   /**
-   * Requirement comm-agent launch profile (read-only gate + disallowed-tools lock
-   * + comm system prompt + `save_requirements` MCP tool), injected at the
+   * Intent comm-agent launch profile (read-only gate + disallowed-tools lock
+   * + comm system prompt + `save_intents` MCP tool), injected at the
    * composition root so the kernel launcher never imports `features/` (ADR-0009
-   * R1). Only consulted for `rt.kind === 'requirement'` runtimes; omitted for
-   * plain/dev runs. A requirement runtime launched without it throws (a missing
+   * R1). Only consulted for `rt.kind === 'intent'` runtimes; omitted for
+   * plain/dev runs. A intent runtime launched without it throws (a missing
    * composition-root wiring is a bug, never a silent drop of the security lock).
    */
-  requirementProfile?: (workspacePath: string) => {
+  intentProfile?: (workspacePath: string) => {
     appendSystemPrompt: string
     disallowedTools: string[]
     mcpServers: Record<string, McpServerConfig>
-    gate: 'requirement'
+    gate: 'intent'
   }
   /**
    * The OpenCode {@link VendorAdapter} (built at the composition root over a
@@ -119,9 +119,9 @@ export type { LaunchCbs } from '../types.js'
  * echo, status flips, the SDK run, and pending→real id binding. Everything
  * connection-specific (session_started, `viewing`, `activeSessionId`, session-list
  * refresh) is injected via the callbacks, so background launches
- * (`start_development`) and seeded launches (`refine_requirement`) can reuse it.
- * Requirement runtimes get the read-only gate, the disallowed-tools lock, the comm
- * system prompt, the `save_requirements` MCP tool (via `deps.requirementProfile`),
+ * (`start_development`) and seeded launches (`refine_intent`) can reuse it.
+ * Intent runtimes get the read-only gate, the disallowed-tools lock, the comm
+ * system prompt, the `save_intents` MCP tool (via `deps.intentProfile`),
  * and a forced `default` permission mode (so `canUseTool` always fires).
  */
 export async function launchRun(
@@ -132,21 +132,21 @@ export async function launchRun(
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
-  const isRequirement = rt.kind === 'requirement'
-  // A requirement runtime MUST carry the injected read-only profile (its security
+  const isIntent = rt.kind === 'intent'
+  // A intent runtime MUST carry the injected read-only profile (its security
   // lock). A missing wiring is a composition-root bug — fail loud, never silently
-  // launch a requirement agent without its gate / disallowed-tools lock (C-SEC).
-  if (isRequirement && !deps.requirementProfile) {
+  // launch a intent agent without its gate / disallowed-tools lock (C-SEC).
+  if (isIntent && !deps.intentProfile) {
     throw new Error(
-      '[c3] launchRun: a requirement runtime requires deps.requirementProfile (composition-root wiring missing)',
+      '[c3] launchRun: a intent runtime requires deps.intentProfile (composition-root wiring missing)',
     )
   }
 
   // Vendor fork (2026-06-06-003 / -007): an `opencode` or `codex` session runs
   // through the neutral AgentDriver path, NOT the claude-hardwired loop below (which
-  // stays unchanged). requirement runtimes are always the claude comm agent, so they
+  // stays unchanged). intent runtimes are always the claude comm agent, so they
   // never fork. `system`/`claude` vendors fall through to the claude path.
-  if (!isRequirement) {
+  if (!isIntent) {
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
     if (vendor === 'opencode' || vendor === 'codex') {
       const adapter = vendor === 'opencode' ? deps.getOpencodeAdapter?.() : deps.getCodexAdapter?.()
@@ -255,8 +255,8 @@ export async function launchRun(
           prompt,
           cwd: workspacePath,
           signal: attemptAbort.signal,
-          // Requirement chats are pinned to `default` so the gateway always runs.
-          permissionMode: isRequirement ? 'default' : rt.mode,
+          // Intent chats are pinned to `default` so the gateway always runs.
+          permissionMode: isIntent ? 'default' : rt.mode,
           // Reconnect forces `resume: runId` (same SDK session, full context —
           // AS-R18). First attempt resumes an existing session; degradation
           // retries never resume (each gets a fresh SDK session).
@@ -271,13 +271,13 @@ export async function launchRun(
           envOverrides: agentCfg.envOverrides,
           model: agentCfg.model,
           currentAgentId: agentCfg.agentId,
-          ...(isRequirement
-            ? // The requirement read-only profile (gate + disallowed-tools lock +
-              // comm prompt + save_requirements tool) is injected at the
+          ...(isIntent
+            ? // The intent read-only profile (gate + disallowed-tools lock +
+              // comm prompt + save_intents tool) is injected at the
               // composition root so the kernel launcher never imports features/.
-              deps.requirementProfile!(workspacePath)
+              deps.intentProfile!(workspacePath)
             : // Socket auto-resume is for ordinary user sessions only — the
-              // requirement comm agent is excluded (different lifecycle).
+              // intent comm agent is excluded (different lifecycle).
               {
                 onSocketDisconnect: (info) => {
                   socketInfo = info

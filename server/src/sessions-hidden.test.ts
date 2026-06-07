@@ -1,6 +1,6 @@
 /**
  * Integration test for the hidden-session filter in `listWorkspaceSessions`
- * (US-3 AC-3.4, design §4.8): requirement comm sessions recorded in the store
+ * (US-3 AC-3.4, design §4.8): intent comm sessions recorded in the store
  * must NOT appear in the normal session list, and the list must degrade to
  * "show everything" when the store/db is unavailable.
  *
@@ -21,7 +21,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (orig) => {
 })
 
 import { resetDbForTests } from './kernel/infra/db.js'
-import { resetStoreForTests, setChatSession } from './features/requirements/store.js'
+import { resetStoreForTests, setChatSession } from './features/intents/store.js'
 import { listWorkspaceSessions } from './sessions.js'
 
 const proj = '/abs/hidden-proj'

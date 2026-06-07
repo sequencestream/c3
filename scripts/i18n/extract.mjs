@@ -74,7 +74,7 @@ export function slugify(text, maxWords = 5) {
 const NS_RULES = [
   [/permissionprompt/i, 'permission'],
   [/discussion/i, 'discussion'],
-  [/requirement/i, 'requirement'],
+  [/intent/i, 'intent'],
   [/schedule/i, 'schedule'],
   [/session/i, 'session'],
   [/systemsettings|settingspanel/i, 'settings'],

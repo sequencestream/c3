@@ -7,13 +7,13 @@ import { addToolSession } from '../../sessions.js'
 import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
 import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
 import { isSideEffectTool } from '../run/resume.js'
-import { createCanUseTool, deny, REQUIREMENT_DISALLOWED_TOOLS } from '../permission/index.js'
+import { createCanUseTool, deny, INTENT_DISALLOWED_TOOLS } from '../permission/index.js'
 
 // Moved out of this file in server refactor 3/3 (ADR-0009), imported where needed:
 //  - the permission gate (the `canUseTool` policy + tool-name constants +
-//    `classifyRequirementTool` / `withAnswers` / `registerPermissionResolver`) →
+//    `classifyIntentTool` / `withAnswers` / `registerPermissionResolver`) →
 //    `kernel/permission/*`; the run loop below builds its gateway via
-//    `createCanUseTool` and reuses `REQUIREMENT_DISALLOWED_TOOLS` (imported above).
+//    `createCanUseTool` and reuses `INTENT_DISALLOWED_TOOLS` (imported above).
 //  - `isDegradableError` / `isSocketDisconnect` (error classification) →
 //    `kernel/agent-config/errors.js`.
 //  - the AS-R18/R19 socket auto-resume gate (`isSideEffectTool` /
@@ -127,16 +127,16 @@ export interface RunOptions {
   appendSystemPrompt?: string
   /** Tool names hard-disabled at the SDK level (the comm agent's read-only lock). */
   disallowedTools?: string[]
-  /** In-process MCP servers to expose (e.g. the c3 `save_requirements` tool). */
+  /** In-process MCP servers to expose (e.g. the c3 `save_intents` tool). */
   mcpServers?: Record<string, McpServerConfig>
   /**
    * Permission gateway policy. `standard` (default) is the normal c3 flow
-   * (consensus + human prompt). `requirement` is the read-only communication
-   * agent: read tools auto-allow, `save_requirements` prompts the human, and
+   * (consensus + human prompt). `intent` is the read-only communication
+   * agent: read tools auto-allow, `save_intents` prompts the human, and
    * everything else is denied by default (a second line of defence behind
    * `disallowedTools`).
    */
-  gate?: 'standard' | 'requirement' | 'discussion-research'
+  gate?: 'standard' | 'intent' | 'discussion-research'
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
@@ -181,12 +181,12 @@ export interface RunOptions {
 
 /**
  * Tools blocked for {@link askOneShot}. The one-shot judge reasons purely over
- * the text handed to it (requirement, last message, git diff), so every tool is
+ * the text handed to it (intent, last message, git diff), so every tool is
  * cut at the SDK level — and {@link askOneShot}'s `canUseTool` denies anything
  * that slips through. Keeps the judge deterministic and side-effect-free.
  */
 const ONESHOT_DISALLOWED_TOOLS = [
-  ...REQUIREMENT_DISALLOWED_TOOLS,
+  ...INTENT_DISALLOWED_TOOLS,
   'Read',
   'Grep',
   'Glob',
@@ -341,7 +341,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // Hard tool lock (the comm agent's read-only set). Disabling here also
       // blocks harness-internal invocations the gateway never sees.
       ...(disallowedTools ? { disallowedTools } : {}),
-      // In-process MCP servers (e.g. the c3 `save_requirements` tool).
+      // In-process MCP servers (e.g. the c3 `save_intents` tool).
       ...(mcpServers ? { mcpServers } : {}),
       permissionMode,
       // Required by the SDK to permit switching into 'bypassPermissions' at any

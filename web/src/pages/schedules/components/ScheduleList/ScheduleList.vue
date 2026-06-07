@@ -2,7 +2,7 @@
 /**
  * ScheduleList.vue — schedules view 左栏:定时任务列表。
  *
- * 数据由 App 提供(读路径)。范式对齐 RequirementList / DiscussionList:
+ * 数据由 App 提供(读路径)。范式对齐 IntentList / DiscussionList:
  * - 标题右侧「+」上抛 `new-schedule`,由 App 打开创建表单(写路径)。
  * - 每行 enable/disable 开关上抛 `toggle-enabled`(enabled=active,disabled=paused),
  *   由 App 映射到 update_schedule 的 status(无独立 pause/resume 协议消息)。

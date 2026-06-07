@@ -9,22 +9,22 @@ that drives a discussion through its workflow. The wire protocol
 
 ## Module split
 
-| Concern               | File                              | Notes                                                                                     |
-| --------------------- | --------------------------------- | ----------------------------------------------------------------------------------------- |
-| Shared SQLite adapter | `server/src/db.ts`                | Cross-runtime `node:sqlite` / `bun:sqlite` (ADR 0007); shared with requirement-management |
-| Discussion store      | `server/src/discussions/store.ts` | Schema ownership + discussion/message CRUD                                                |
+| Concern               | File                              | Notes                                                                                |
+| --------------------- | --------------------------------- | ------------------------------------------------------------------------------------ |
+| Shared SQLite adapter | `server/src/db.ts`                | Cross-runtime `node:sqlite` / `bun:sqlite` (ADR 0007); shared with intent-management |
+| Discussion store      | `server/src/discussions/store.ts` | Schema ownership + discussion/message CRUD                                           |
 
 ## SQLite layer (shared `db.ts`)
 
 The discussion store reuses the shared adapter unchanged (see
-[requirement-management design §SQLite layer](../requirement-management/design.md) and
-[ADR 0007](../../../architecture/adr/0007-read-only-requirement-agent.md) for the full rationale):
+[intent-management design §SQLite layer](../intent-management/design.md) and
+[ADR 0007](../../../architecture/adr/0007-read-only-intent-agent.md) for the full rationale):
 one minimal **synchronous** interface (`exec`/`run`/`all`/`get`) selected by `globalThis.Bun`,
 `?`-only placeholders, rows read by field, `~/.c3/c3.db`, WAL + `busy_timeout`, esbuild `external`
 for both driver modules.
 
-`db.ts` was promoted from `server/src/requirements/db.ts` to a neutral location precisely because it
-is generic: the discussion store and the requirement store are **sibling domains** over one db, and
+`db.ts` was promoted from `server/src/intents/db.ts` to a neutral location precisely because it
+is generic: the discussion store and the intent store are **sibling domains** over one db, and
 neither should depend on the other. Both ride the single c3.db connection; each owns its own tables
 and a private `schemaReady` flag.
 
@@ -47,7 +47,7 @@ status)`.
   `idx_disc_msg_discussion (discussion_id, seq)` — the natural read path for `listMessages`.
 
 **Schema version (current: v1).** `SCHEMA_VERSION = 1`, written via `PRAGMA user_version`. The
-single c3.db `user_version` counter is **shared** with the requirement store, so the two clobber
+single c3.db `user_version` counter is **shared** with the intent store, so the two clobber
 each other on write — this is intentional and harmless: migrations key off **actual presence**
 (`PRAGMA table_info` for columns, `CREATE TABLE IF NOT EXISTS` for tables), never off the version
 number. The value is informational only.
@@ -59,13 +59,13 @@ the store runs `ensureColumn` for the optional/nullable columns
 only runs `ALTER TABLE … ADD COLUMN` when the column is absent. This is a **defensive forward-compat
 backfill** — a `discussions` table created by an earlier in-development build that predated these
 columns is upgraded in place; on a fresh schema each call is a no-op, and the whole sequence is
-idempotent across runs. Same key-off-column-presence paradigm as the requirement store's
+idempotent across runs. Same key-off-column-presence paradigm as the intent store's
 `module`/`completed_at`/`automate` migrations. Both drivers support `PRAGMA table_info` /
 `ALTER TABLE ADD COLUMN` through the shared `exec`/`all` surface.
 
 **Fail-soft.** When `getDb()` returns null (open/create failure), reads return empty/null and
 writes throw (`requireDb` → `Error('讨论库不可用')`) — c3 boots and runs without the discussion
-feature, consistent with the requirement store's degradation contract.
+feature, consistent with the intent store's degradation contract.
 
 ## Store (`store.ts`)
 
@@ -80,7 +80,7 @@ feature, consistent with the requirement store's degradation contract.
   uuid, `created_at = updated_at = now`, default `status = 'draft'`; if created directly as
   `completed`, `completed_at` is stamped.
 - `updateDiscussionStatus(id, status)` — updates status + `updated_at`; `completed_at = completed ?
-now : null` (mirrors the requirement store's done-stamping rule, including clearing on revert).
+now : null` (mirrors the intent store's done-stamping rule, including clearing on revert).
 - `setConclusion(id, conclusion)` — sets `conclusion` + bumps `updated_at`.
 - `setDiscussionContext(id, context)` — replaces the user-supplied `context` + bumps `updated_at`.
 - `setDiscussionResearchResult(id, researchResult)` — stores the research agent's completed output in
@@ -93,7 +93,7 @@ now : null` (mirrors the requirement store's done-stamping rule, including clear
   inserts the message, and bumps the discussion's `updated_at`. The transaction makes the seq
   race-free under the single synchronous connection; `seq` is independent per discussion.
 - `listMessages(discussionId)` → `DiscussionMessage[]`, `ORDER BY seq ASC`.
-- `isStoreAvailable()` / `resetStoreForTests()` mirror the requirement store.
+- `isStoreAvailable()` / `resetStoreForTests()` mirror the intent store.
 
 ## Organizer engine
 

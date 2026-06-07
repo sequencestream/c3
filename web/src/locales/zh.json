@@ -26,8 +26,8 @@
       "console": {
         "label": "会话"
       },
-      "requirements": {
-        "label": "需求"
+      "intents": {
+        "label": "意图"
       },
       "discussion": {
         "label": "讨论"
@@ -79,7 +79,7 @@
   "permission": {
     "history": {
       "askQuestion": "🙋 请求回答 {count} 个问题 · AskUserQuestion",
-      "saveRequirements": "💾 请求保存 {count} 项需求",
+      "saveIntents": "💾 请求保存 {count} 项意图",
       "useTool": "🔧 请求使用工具 {toolName}"
     },
     "ask": {
@@ -101,7 +101,7 @@
       }
     },
     "save": {
-      "label": "💾 保存需求 ·",
+      "label": "💾 保存意图 ·",
       "dependsOn": "依赖:",
       "dependsOnBatch": "依赖(本批次):"
     },
@@ -244,7 +244,7 @@
       "title": {
         "label": "开发技能"
       },
-      "hint": "开始开发任务时,这个斜杠命令会被前置到需求文本前。留空则不添加技能前缀。",
+      "hint": "开始开发任务时,这个斜杠命令会被前置到意图文本前。留空则不添加技能前缀。",
       "placeholder": "/your-skill (leave empty for no prefix)"
     },
     "rounds": {
@@ -327,23 +327,23 @@
       "missing": "未找到"
     }
   },
-  "requirement": {
+  "intent": {
     "startDev": {
-      "confirmUnfinishedDeps": "该需求存在未完成的依赖。仍要开始开发吗?"
+      "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始开发吗?"
     },
     "chat": {
       "title": {
-        "label": "需求对话"
+        "label": "意图对话"
       }
     },
     "list": {
       "title": {
-        "label": "需求"
+        "label": "意图"
       },
       "new": {
-        "label": "新需求:开启一个新的对话会话"
+        "label": "新意图:开启一个新的对话会话"
       },
-      "empty": "还没有需求。在右侧与助手对话并保存它们。"
+      "empty": "还没有意图。在右侧与助手对话并保存它们。"
     },
     "filter": {
       "all": {
@@ -368,7 +368,7 @@
     "automation": {
       "start": {
         "label": "▶ 自动化",
-        "tooltip": "开始自动化:按优先级和依赖关系,逐个完成标记为自动化的需求"
+        "tooltip": "开始自动化:按优先级和依赖关系,逐个完成标记为自动化的意图"
       },
       "stop": {
         "label": "■ 停止自动化",
@@ -382,7 +382,7 @@
       "workingOn": "正在处理 \"{title}\"",
       "preparing": "准备中…",
       "completedCount": "✅ 已完成 {count} 项",
-      "nothingToAutomate": "✅ 没有可自动化的需求"
+      "nothingToAutomate": "✅ 没有可自动化的意图"
     },
     "action": {
       "refine": {
@@ -817,10 +817,10 @@
       "notSelected": "请先选择或创建一个会话。",
       "turnRunning": "该会话已有一轮正在运行。"
     },
-    "requirement": {
-      "notFound": "需求不存在。",
-      "dbUnavailable": "需求功能不可用 (c3.db)。",
-      "chatOpenFailed": "打开需求对话失败。",
+    "intent": {
+      "notFound": "意图不存在。",
+      "dbUnavailable": "意图功能不可用 (c3.db)。",
+      "chatOpenFailed": "打开意图对话失败。",
       "cannotStartDev": "当前状态({status})不可启动开发。"
     },
     "discussion": {
@@ -828,7 +828,7 @@
       "notFound": "讨论不存在。",
       "unknown": "未知讨论:{id}",
       "unknownType": "未知讨论类型:{type}",
-      "notConcludable": "仅已完成且有结论的讨论可转为需求。",
+      "notConcludable": "仅已完成且有结论的讨论可转为意图。",
       "alreadyStarted": "讨论已开始或已结束,无法重复启动。",
       "notEndedForContinue": "只有已结束的讨论可以追加新一轮。"
     },
@@ -854,7 +854,7 @@
         "label": "继续"
       },
       "convert": {
-        "label": "转为需求"
+        "label": "转为意图"
       }
     },
     "dispatch": {

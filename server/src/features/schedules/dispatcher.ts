@@ -323,7 +323,7 @@ function createPermissionHandler(
 
 /**
  * Minimal JSON Schema validation — checks top-level type and required properties.
- * Extend this as schema requirements grow.
+ * Extend this as schema intents grow.
  */
 function validateOutput(
   output: string,

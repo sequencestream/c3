@@ -9,16 +9,16 @@
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
-import { REQUIREMENT_DISALLOWED_TOOLS } from './kernel/permission/index.js'
+import { INTENT_DISALLOWED_TOOLS } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
 import { addWorkspace, listWorkspaces } from './state.js'
 import { sessionExists } from './sessions.js'
 import { isRunning, reconcileLiveness, setOnRunEnd, setOnStatusChange } from './runs.js'
 import { getSessionAgentId, setOnPendingIntentLookup } from './kernel/config/index.js'
-import { setAutomationHooks } from './features/requirements/automation.js'
-import { REQUIREMENT_AGENT_PROMPT } from './features/requirements/prompt.js'
-import { createRequirementMcpServer } from './features/requirements/save-tool.js'
+import { setAutomationHooks } from './features/intents/automation.js'
+import { INTENT_AGENT_PROMPT } from './features/intents/prompt.js'
+import { createIntentMcpServer } from './features/intents/save-tool.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
@@ -278,16 +278,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   setInterval(sweepPendingIntents, PENDING_INTENT_SWEEP_MS)
 
   // ── Composition root (ADR-0009 R3): construct the KernelContext ONCE,
-  //    explicitly. The requirement profile is wired HERE so the kernel
+  //    explicitly. The intent profile is wired HERE so the kernel
   //    launcher stays features-free (ADR-0009 R1).
   const launchDeps: LaunchRunDeps = {
     broadcastStatuses: broadcasts.broadcastStatuses,
-    broadcastRequirements: broadcasts.broadcastRequirements,
-    requirementProfile: (workspacePath) => ({
-      appendSystemPrompt: REQUIREMENT_AGENT_PROMPT,
-      disallowedTools: REQUIREMENT_DISALLOWED_TOOLS,
-      mcpServers: createRequirementMcpServer(workspacePath, broadcasts.broadcastRequirements),
-      gate: 'requirement' as const,
+    broadcastIntents: broadcasts.broadcastIntents,
+    intentProfile: (workspacePath) => ({
+      appendSystemPrompt: INTENT_AGENT_PROMPT,
+      disallowedTools: INTENT_DISALLOWED_TOOLS,
+      mcpServers: createIntentMcpServer(workspacePath, broadcasts.broadcastIntents),
+      gate: 'intent' as const,
     }),
     // The neutral OpenCode adapter, or null when unavailable (launchRun forks to
     // the driver path for opencode sessions; 2026-06-06-003).
@@ -300,7 +300,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Feature-private: NOT on the kernel context (ADR-0009 R1).
   setAutomationHooks({
     runDevTurn,
-    broadcastRequirements: broadcasts.broadcastRequirements,
+    broadcastIntents: broadcasts.broadcastIntents,
     emitStatus: broadcasts.broadcastAutomation,
     sessionExists,
     isRunning,
@@ -311,7 +311,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     launchDeps,
     launchRun: (rt, prompt, cbs) => launchRun(rt, prompt, launchDeps, cbs),
     broadcastStatuses: broadcasts.broadcastStatuses,
-    broadcastRequirements: broadcasts.broadcastRequirements,
+    broadcastIntents: broadcasts.broadcastIntents,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastSchedules: broadcasts.broadcastSchedules,
     broadcastAutomation: broadcasts.broadcastAutomation,

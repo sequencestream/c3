@@ -39,18 +39,18 @@ interface InFlightRun {
 /**
  * What kind of session a runtime drives:
  * - `normal` — an ordinary user session (default).
- * - `requirement` — a read-only requirement-communication session; runs with the
- *   requirement permission gate + disallowed-tools lock and is hidden from the
+ * - `intent` — a read-only intent-communication session; runs with the
+ *   intent permission gate + disallowed-tools lock and is hidden from the
  *   normal session list.
  */
-export type SessionKind = 'normal' | 'requirement'
+export type SessionKind = 'normal' | 'intent'
 
 export interface SessionRuntime {
   /** Real SDK id, or a `pending:…` id until the first run binds it. */
   sessionId: string
   workspacePath: string
   mode: PermissionMode
-  /** Normal user session vs. read-only requirement-communication session. */
+  /** Normal user session vs. read-only intent-communication session. */
   kind: SessionKind
   /** On-disk transcript snapshot at runtime creation; replayed before `buffer`. */
   baseline: TranscriptItem[]

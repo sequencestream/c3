@@ -1,37 +1,55 @@
 /**
- * Permission gate policy — tool-name constants + the pure requirement classifier
+ * Permission gate policy — tool-name constants + the pure intent classifier
  * + the AskUserQuestion answer-injection helper (C-SEC, server refactor 3/3,
  * sunk from the old `claude.ts`). A pure leaf both the gateway and the run loop
  * (`kernel/agent`, for the SDK-level disallowed-tools lock) import, with no SDK /
  * consensus / registry dependency — so the gateway↔agent boundary stays acyclic.
  */
 
-/** The c3 `save_requirements` MCP tool's fully-qualified name (server name `c3`). */
-export const SAVE_REQUIREMENTS_TOOL = 'mcp__c3__save_requirements'
+/** The c3 `save_intents` MCP tool's fully-qualified name (server name `c3`). */
+export const SAVE_INTENTS_TOOL = 'mcp__c3__save_intents'
 
-/** The c3 `find_requirements` read-only MCP tool's fully-qualified name. */
-export const FIND_REQUIREMENTS_TOOL = 'mcp__c3__find_requirements'
+/** The c3 `find_intents` read-only MCP tool's fully-qualified name. */
+export const FIND_INTENTS_TOOL = 'mcp__c3__find_intents'
 
-/** The c3 `view_requirement` read-only MCP tool's fully-qualified name. */
-export const VIEW_REQUIREMENT_TOOL = 'mcp__c3__view_requirement'
+/** The c3 `view_intent` read-only MCP tool's fully-qualified name. */
+export const VIEW_INTENT_TOOL = 'mcp__c3__view_intent'
 
 /**
- * The read-only c3 MCP query tools the requirement agent may call without a
+ * Deprecated wire-name aliases (requirements→intents rename, PR-2). The old
+ * `mcp__c3__{save_requirements,find_requirements,view_requirement}` names are
+ * kept callable for ONE minor version so a cached/old caller that hardcoded a
+ * pre-rename tool name still lands on the same handler + gate verdict. The
+ * prompt advertises only the new names; these survive purely as a soft-landing.
+ * **Hard-delete next minor.**
+ */
+export const SAVE_INTENTS_TOOL_DEPRECATED = 'mcp__c3__save_requirements'
+export const FIND_INTENTS_TOOL_DEPRECATED = 'mcp__c3__find_requirements'
+export const VIEW_INTENT_TOOL_DEPRECATED = 'mcp__c3__view_requirement'
+
+/**
+ * The read-only c3 MCP query tools the intent agent may call without a
  * prompt. They only read the project's own ledger (project-bound in the tool
  * closure), so the gate treats them like the read-class built-ins — unlike
- * `save_requirements`, which still raises a human confirmation.
+ * `save_intents`, which still raises a human confirmation. Includes the
+ * deprecated old wire names so a pre-rename call is gated identically.
  */
-export const REQUIREMENT_QUERY_TOOLS = new Set([FIND_REQUIREMENTS_TOOL, VIEW_REQUIREMENT_TOOL])
+export const INTENT_QUERY_TOOLS = new Set([
+  FIND_INTENTS_TOOL,
+  VIEW_INTENT_TOOL,
+  FIND_INTENTS_TOOL_DEPRECATED,
+  VIEW_INTENT_TOOL_DEPRECATED,
+])
 
 /**
- * Tools hard-disabled (SDK level) for the requirement-communication agent — the
- * source-of-truth read-only lock, paired with the requirement gate's
+ * Tools hard-disabled (SDK level) for the intent-communication agent — the
+ * source-of-truth read-only lock, paired with the intent gate's
  * deny-by-default. `Bash` covers every shell sub-command, so it isn't enumerated.
  * `Task` and `SlashCommand` are essential: a spawned sub-agent's tool calls don't
  * pass through the parent `canUseTool`, and a slash command could run an
  * arbitrary skill — either would bypass the gateway, so both must be cut here.
  */
-export const REQUIREMENT_DISALLOWED_TOOLS = [
+export const INTENT_DISALLOWED_TOOLS = [
   'Write',
   'Edit',
   'MultiEdit',
@@ -44,11 +62,11 @@ export const REQUIREMENT_DISALLOWED_TOOLS = [
 ]
 
 /**
- * Read-only tools the requirement-communication agent may use without a prompt
+ * Read-only tools the intent-communication agent may use without a prompt
  * ("read project material freely"). Anything not here — and not
- * `save_requirements` — is denied by the requirement gate (deny-by-default).
+ * `save_intents` — is denied by the intent gate (deny-by-default).
  */
-export const REQUIREMENT_READ_TOOLS = new Set([
+export const INTENT_READ_TOOLS = new Set([
   'Read',
   'Grep',
   'Glob',
@@ -63,19 +81,20 @@ export const REQUIREMENT_READ_TOOLS = new Set([
 ])
 
 /**
- * Pure classification of a tool for the requirement (read-only) gate, so the
+ * Pure classification of a tool for the intent (read-only) gate, so the
  * routing is unit-testable (the live `canUseTool` closure is otherwise only
  * reachable via live-LLM e2e). Deny-by-default:
  *  - `allow` — read-class built-ins + the read-only c3 query tools (no prompt).
- *  - `confirm-save` — `save_requirements` (raises a human confirmation).
+ *  - `confirm-save` — `save_intents` (raises a human confirmation).
  *  - `ask` — `AskUserQuestion` (clarifying-only; gate still applies the
  *    `askQuestions` input guard and routes via answer-injection).
  *  - `deny` — everything else.
  */
-export type RequirementToolDecision = 'allow' | 'confirm-save' | 'ask' | 'deny'
-export function classifyRequirementTool(toolName: string): RequirementToolDecision {
-  if (REQUIREMENT_READ_TOOLS.has(toolName) || REQUIREMENT_QUERY_TOOLS.has(toolName)) return 'allow'
-  if (toolName === SAVE_REQUIREMENTS_TOOL) return 'confirm-save'
+export type IntentToolDecision = 'allow' | 'confirm-save' | 'ask' | 'deny'
+export function classifyIntentTool(toolName: string): IntentToolDecision {
+  if (INTENT_READ_TOOLS.has(toolName) || INTENT_QUERY_TOOLS.has(toolName)) return 'allow'
+  if (toolName === SAVE_INTENTS_TOOL || toolName === SAVE_INTENTS_TOOL_DEPRECATED)
+    return 'confirm-save'
   if (toolName === 'AskUserQuestion') return 'ask'
   return 'deny'
 }

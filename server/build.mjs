@@ -17,7 +17,20 @@ await build({
   target: 'node20',
   format: 'cjs',
   outfile: resolve(outDir, 'cli.cjs'),
-  define: versionDefines(computeVersionInfo()),
+  define: {
+    ...versionDefines(computeVersionInfo()),
+    // esbuild rewrites `import.meta.url` to an empty object in CJS output, so any
+    // dependency that runs `createRequire(import.meta.url)` at module load (e.g.
+    // @openai/codex-sdk) gets `undefined` and throws on Node 26
+    // (`createRequire(undefined)` no longer tolerated). Point it at a real file URL
+    // derived from __filename. Our own db.ts / static-assets.ts import.meta.url
+    // branches stay dead because their `require`/`__dirname` ternaries short-circuit
+    // first, so this only fixes the dependency path.
+    'import.meta.url': 'importMetaUrl',
+  },
+  banner: {
+    js: "const importMetaUrl = require('node:url').pathToFileURL(__filename).href;",
+  },
   external: [
     // Native bindings the SDK may dlopen at runtime
     '@anthropic-ai/claude-agent-sdk',
@@ -39,10 +52,8 @@ await build({
     '@ccc/shared/nl-cron': resolve(import.meta.dirname, '../shared/src/nl-cron.ts'),
   },
   logLevel: 'info',
-  // db.ts / static-assets.ts read `import.meta.url` for the ESM dev (tsx) path.
-  // In this CJS bundle esbuild rewrites it to `undefined`, but those branches are
-  // dead code (the `require`/`__dirname` ternaries short-circuit), so the
-  // empty-import-meta warning is spurious here — silence it.
+  // Any bare `import.meta` (without `.url`) still resolves to `{}` in CJS; that's
+  // fine for our remaining dead branches, so keep the warning silenced.
   logOverride: { 'empty-import-meta': 'silent' },
 })
 

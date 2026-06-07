@@ -26,8 +26,8 @@
       "console": {
         "label": "Sessions"
       },
-      "requirements": {
-        "label": "Requirements"
+      "intents": {
+        "label": "Intents"
       },
       "discussion": {
         "label": "Discussions"
@@ -79,7 +79,7 @@
   "permission": {
     "history": {
       "askQuestion": "🙋 Asked to answer one question · AskUserQuestion | 🙋 Asked to answer {count} questions · AskUserQuestion",
-      "saveRequirements": "💾 Asked to save one requirement | 💾 Asked to save {count} requirements",
+      "saveIntents": "💾 Asked to save one intent | 💾 Asked to save {count} intents",
       "useTool": "🔧 Asked to use tool {toolName}"
     },
     "ask": {
@@ -101,7 +101,7 @@
       }
     },
     "save": {
-      "label": "💾 Save requirements ·",
+      "label": "💾 Save intents ·",
       "dependsOn": "Depends on:",
       "dependsOnBatch": "Depends on (this batch):"
     },
@@ -244,7 +244,7 @@
       "title": {
         "label": "Dev skill"
       },
-      "hint": "When starting a development task, this slash command is prepended to the requirement text. Leave it empty to add no skill prefix.",
+      "hint": "When starting a development task, this slash command is prepended to the intent text. Leave it empty to add no skill prefix.",
       "placeholder": "/your-skill (leave empty for no prefix)"
     },
     "rounds": {
@@ -327,23 +327,23 @@
       "missing": "not found"
     }
   },
-  "requirement": {
+  "intent": {
     "startDev": {
-      "confirmUnfinishedDeps": "This requirement has unfinished dependencies. Start development anyway?"
+      "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start development anyway?"
     },
     "chat": {
       "title": {
-        "label": "Requirement chat"
+        "label": "Intent chat"
       }
     },
     "list": {
       "title": {
-        "label": "Requirements"
+        "label": "Intents"
       },
       "new": {
-        "label": "New requirement: start a new chat session"
+        "label": "New intent: start a new chat session"
       },
-      "empty": "No requirements yet. Chat with the assistant on the right and save them."
+      "empty": "No intents yet. Chat with the assistant on the right and save them."
     },
     "filter": {
       "all": {
@@ -368,7 +368,7 @@
     "automation": {
       "start": {
         "label": "▶ Automation",
-        "tooltip": "Start automation: complete the requirements marked for automation one by one, by priority and dependencies"
+        "tooltip": "Start automation: complete the intents marked for automation one by one, by priority and dependencies"
       },
       "stop": {
         "label": "■ Stop automation",
@@ -382,7 +382,7 @@
       "workingOn": "Working on \"{title}\"",
       "preparing": "Preparing…",
       "completedCount": "✅ Completed one item | ✅ Completed {count} items",
-      "nothingToAutomate": "✅ No requirements to automate"
+      "nothingToAutomate": "✅ No intents to automate"
     },
     "action": {
       "refine": {
@@ -817,10 +817,10 @@
       "notSelected": "Select or create a session first.",
       "turnRunning": "A turn is already running in this session."
     },
-    "requirement": {
-      "notFound": "Requirement not found.",
-      "dbUnavailable": "Requirements feature unavailable (c3.db).",
-      "chatOpenFailed": "Failed to open requirement chat.",
+    "intent": {
+      "notFound": "Intent not found.",
+      "dbUnavailable": "Intents feature unavailable (c3.db).",
+      "chatOpenFailed": "Failed to open intent chat.",
       "cannotStartDev": "Cannot start development from status \"{status}\"."
     },
     "discussion": {
@@ -828,7 +828,7 @@
       "notFound": "Discussion not found.",
       "unknown": "Unknown discussion: {id}",
       "unknownType": "Unknown discussion type: {type}",
-      "notConcludable": "Only a concluded discussion with an outcome can become a requirement.",
+      "notConcludable": "Only a concluded discussion with an outcome can become a intent.",
       "alreadyStarted": "Discussion already started or ended; cannot start again.",
       "notEndedForContinue": "Only an ended discussion can start a new round."
     },
@@ -854,7 +854,7 @@
         "label": "Resume"
       },
       "convert": {
-        "label": "Convert to Requirement"
+        "label": "Convert to Intent"
       }
     },
     "dispatch": {

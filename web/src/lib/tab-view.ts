@@ -10,7 +10,7 @@ export interface SessionRef {
  * Decide what the 「会话」(console) tab should view when it (re)becomes active.
  *
  * The console tab remembers its own last-viewed session (`remembered`),
- * independent of the requirement tab's comm session — so switching tabs never
+ * independent of the intent tab's comm session — so switching tabs never
  * crosses chat content. On entry:
  *  - honor the remembered session as-is (it carries its own workspace, which may
  *    differ from the sidebar's `currentWorkspace`);

@@ -29,17 +29,17 @@ key 段结构:
 
 ### 2.1 namespace(第一段,冻结九个)
 
-| namespace     | 用途                                 | 示例                             |
-| ------------- | ------------------------------------ | -------------------------------- |
-| `common`      | 跨页复用的通用词(按钮 / 状态 / 动作) | `common.action.save.label`       |
-| `nav`         | 导航 / 顶栏 / Tab                    | `nav.refresh.tooltip`            |
-| `permission`  | 工具调用权限提示                     | `permission.tool.allow.label`    |
-| `settings`    | 系统设置                             | `settings.theme.label`           |
-| `session`     | 会话                                 | `session.list.refresh.tooltip`   |
-| `schedule`    | 定时任务                             | `schedule.form.name.placeholder` |
-| `discussion`  | 讨论                                 | `discussion.input.placeholder`   |
-| `requirement` | 需求                                 | `requirement.detail.empty`       |
-| `error`       | 错误 / 异常文案                      | `error.network.timeout`          |
+| namespace    | 用途                                 | 示例                             |
+| ------------ | ------------------------------------ | -------------------------------- |
+| `common`     | 跨页复用的通用词(按钮 / 状态 / 动作) | `common.action.save.label`       |
+| `nav`        | 导航 / 顶栏 / Tab                    | `nav.refresh.tooltip`            |
+| `permission` | 工具调用权限提示                     | `permission.tool.allow.label`    |
+| `settings`   | 系统设置                             | `settings.theme.label`           |
+| `session`    | 会话                                 | `session.list.refresh.tooltip`   |
+| `schedule`   | 定时任务                             | `schedule.form.name.placeholder` |
+| `discussion` | 讨论                                 | `discussion.input.placeholder`   |
+| `intent`     | 需求                                 | `intent.detail.empty`            |
+| `error`      | 错误 / 异常文案                      | `error.network.timeout`          |
 
 - 通用词进 `common`,业务词归各自域;错误文案统一进 `error`。
 - 需要新 namespace 时,**先在本表登记再加 key**。
@@ -51,13 +51,13 @@ key 段结构:
 | `.label`       | 可见标签 / 按钮文字 | `session.title.label`          |
 | `.placeholder` | 输入框占位          | `discussion.input.placeholder` |
 | `.tooltip`     | 悬浮提示            | `nav.refresh.tooltip`          |
-| (无后缀)       | 普通正文 / 消息     | `requirement.detail.empty`     |
+| (无后缀)       | 普通正文 / 消息     | `intent.detail.empty`          |
 
 ### 2.3 主语在前(subject-first)
 
 主语(对象 / 实体)在前,动作 / 角色在后:
 
-- ✅ `session.list.refresh.tooltip`、`permission.tool.allow.label`、`requirement.detail.empty`
+- ✅ `session.list.refresh.tooltip`、`permission.tool.allow.label`、`intent.detail.empty`
 - ❌ `refreshSessionList`、`tooltipForRefresh`、`allowToolPermission`
 
 ### 2.4 插值与复数

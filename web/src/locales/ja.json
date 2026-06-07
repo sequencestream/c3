@@ -26,8 +26,8 @@
       "console": {
         "label": "セッション"
       },
-      "requirements": {
-        "label": "要件"
+      "intents": {
+        "label": "意図"
       },
       "discussion": {
         "label": "ディスカッション"
@@ -79,7 +79,7 @@
   "permission": {
     "history": {
       "askQuestion": "🙋 {count} 件の質問への回答を要求 · AskUserQuestion",
-      "saveRequirements": "💾 {count} 件の要件の保存を要求",
+      "saveIntents": "💾 {count} 件の意図の保存を要求",
       "useTool": "🔧 ツール {toolName} の使用を要求"
     },
     "ask": {
@@ -101,7 +101,7 @@
       }
     },
     "save": {
-      "label": "💾 要件を保存 ·",
+      "label": "💾 意図を保存 ·",
       "dependsOn": "依存:",
       "dependsOnBatch": "依存(このバッチ):"
     },
@@ -244,7 +244,7 @@
       "title": {
         "label": "開発スキル"
       },
-      "hint": "開発タスクを開始するとき、このスラッシュコマンドが要件のテキストの先頭に付加されます。スキルのプレフィックスを付けない場合は空のままにしてください。",
+      "hint": "開発タスクを開始するとき、このスラッシュコマンドが意図のテキストの先頭に付加されます。スキルのプレフィックスを付けない場合は空のままにしてください。",
       "placeholder": "/your-skill (プレフィックス不要なら空のまま)"
     },
     "rounds": {
@@ -327,23 +327,23 @@
       "missing": "見つかりません"
     }
   },
-  "requirement": {
+  "intent": {
     "startDev": {
-      "confirmUnfinishedDeps": "この要件には未完了の依存があります。それでも開発を開始しますか?"
+      "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも開発を開始しますか?"
     },
     "chat": {
       "title": {
-        "label": "要件チャット"
+        "label": "意図チャット"
       }
     },
     "list": {
       "title": {
-        "label": "要件"
+        "label": "意図"
       },
       "new": {
-        "label": "新しい要件: 新しいチャットセッションを開始"
+        "label": "新しい意図: 新しいチャットセッションを開始"
       },
-      "empty": "まだ要件がありません。右側のアシスタントとチャットして保存してください。"
+      "empty": "まだ意図がありません。右側のアシスタントとチャットして保存してください。"
     },
     "filter": {
       "all": {
@@ -368,7 +368,7 @@
     "automation": {
       "start": {
         "label": "▶ 自動化",
-        "tooltip": "自動化を開始: 自動化対象としてマークされた要件を、優先度と依存に従って 1 つずつ完了させます"
+        "tooltip": "自動化を開始: 自動化対象としてマークされた意図を、優先度と依存に従って 1 つずつ完了させます"
       },
       "stop": {
         "label": "■ 自動化を停止",
@@ -382,7 +382,7 @@
       "workingOn": "\"{title}\" を処理中",
       "preparing": "準備中…",
       "completedCount": "✅ {count} 件を完了しました",
-      "nothingToAutomate": "✅ 自動化する要件はありません"
+      "nothingToAutomate": "✅ 自動化する意図はありません"
     },
     "action": {
       "refine": {
@@ -817,10 +817,10 @@
       "notSelected": "先にセッションを選択または作成してください。",
       "turnRunning": "このセッションではすでにターンが実行中です。"
     },
-    "requirement": {
-      "notFound": "要件が見つかりません。",
-      "dbUnavailable": "要件機能は利用できません(c3.db)。",
-      "chatOpenFailed": "要件チャットを開けませんでした。",
+    "intent": {
+      "notFound": "意図が見つかりません。",
+      "dbUnavailable": "意図機能は利用できません(c3.db)。",
+      "chatOpenFailed": "意図チャットを開けませんでした。",
       "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。"
     },
     "discussion": {
@@ -828,7 +828,7 @@
       "notFound": "ディスカッションが見つかりません。",
       "unknown": "不明なディスカッション: {id}",
       "unknownType": "不明なディスカッションの種類: {type}",
-      "notConcludable": "結論と成果のあるディスカッションのみ要件に変換できます。",
+      "notConcludable": "結論と成果のあるディスカッションのみ意図に変換できます。",
       "alreadyStarted": "ディスカッションはすでに開始または終了しています。再開はできません。",
       "notEndedForContinue": "終了したディスカッションのみ新しいラウンドを開始できます。"
     },
@@ -854,7 +854,7 @@
         "label": "再開"
       },
       "convert": {
-        "label": "要件に変換"
+        "label": "意図に変換"
       }
     },
     "dispatch": {

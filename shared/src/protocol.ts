@@ -319,7 +319,7 @@ export interface SystemSettings {
   /** When true, tool-created sessions (completion judge, consensus advisor) appear
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean
-  /** Slash command (leading `/`) prefixed to the requirement content when launching
+  /** Slash command (leading `/`) prefixed to the intent content when launching
    * development. Optional; empty/unset ⇒ no skill prefix. */
   devSkill?: string
   /** Per-stage round cap for multi-agent discussions. Minimum 8 (lower values are
@@ -748,71 +748,71 @@ export interface CanonicalMessage {
   vendorExtra?: Record<string, unknown>
 }
 
-// ---- Requirement management ----
+// ---- Intent management ----
 
-/** Requirement priority. `P0` highest … `P3` lowest. */
-export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3'
+/** Intent priority. `P0` highest … `P3` lowest. */
+export type IntentPriority = 'P0' | 'P1' | 'P2' | 'P3'
 
 /**
- * Requirement lifecycle status.
+ * Intent lifecycle status.
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
  * - `in_progress` — development launched (dev session running).
  * - `done` / `cancelled` — terminal, set by the user (never auto-set).
  */
-export type RequirementStatus = 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
+export type IntentStatus = 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
 
 /**
- * Derived run-state of an in_progress requirement, computed by reconciling the
- * requirement's lastDevSessionId liveness against the process table.
+ * Derived run-state of an in_progress intent, computed by reconciling the
+ * intent's lastDevSessionId liveness against the process table.
  * - `running` — the dev session's process is still alive (tracking in-flight).
- * - `dangling` — the dev process is dead but the requirement is still in_progress
- *   (service restart / crash); a completion judge found the requirement not done.
+ * - `dangling` — the dev process is dead but the intent is still in_progress
+ *   (service restart / crash); a completion judge found the intent not done.
  * - `idle` — not in_progress, or the dev process ended and the judge confirmed done
  *   (just done, or never started).
  */
-export type RequirementRunStatus = 'running' | 'dangling' | 'idle'
+export type IntentRunStatus = 'running' | 'dangling' | 'idle'
 
-/** One persisted requirement, scoped to a project (workspace path). */
-export interface Requirement {
+/** One persisted intent, scoped to a project (workspace path). */
+export interface Intent {
   /** Stable uuid. */
   id: string
   /** Owning project — the workspace absolute path (resolved). */
   projectPath: string
   title: string
   content: string
-  priority: RequirementPriority
+  priority: IntentPriority
   /** Owning module name, inferred by the comm agent from title/content. `''` when historic/unidentified. */
   module: string
-  status: RequirementStatus
-  /** Ids of other requirements (same project) this one depends on. */
+  status: IntentStatus
+  /** Ids of other intents (same project) this one depends on. */
   dependsOn: string[]
-  /** The last dev session launched for this requirement, for the detail back-link. */
+  /** The last dev session launched for this intent, for the detail back-link. */
   lastDevSessionId: string | null
   /**
-   * Whether the automation orchestrator may pick this requirement up. User-toggled
-   * (a checkbox per requirement); `false` by default. Only `automate` requirements
+   * Whether the automation orchestrator may pick this intent up. User-toggled
+   * (a checkbox per intent); `false` by default. Only `automate` intents
    * are developed by `start_automation`.
    */
   automate: boolean
   createdAt: number
   updatedAt: number
-  /** When the requirement entered `done`; `null` until completed, cleared if it leaves `done`. */
+  /** When the intent entered `done`; `null` until completed, cleared if it leaves `done`. */
   completedAt: number | null
   /**
-   * Derived run-state of an `in_progress` requirement, computed at list-time by
+   * Derived run-state of an `in_progress` intent, computed at list-time by
    * the server's reconcile logic. `'idle'` for other statuses. Clients use this
    * to render a "tracking" badge or a "dangling" warning next to an in_progress item.
    */
-  runStatus: RequirementRunStatus
+  runStatus: IntentRunStatus
 }
 
 /**
  * Lifecycle of the per-project automation orchestrator (a single background loop
- * that develops `automate` requirements one by one, by priority + dependencies).
+ * that develops `automate` intents one by one, by priority + dependencies).
  * - `idle` — not running (never started, or stopped by the user).
- * - `running` — actively developing requirements.
- * - `done` — finished: no more eligible requirements remain.
+ * - `running` — actively developing intents.
+ * - `done` — finished: no more eligible intents remain.
  * - `error` — stopped abnormally (a dev run errored, blocked on a permission, a
  *   completion check failed, or commit/push failed). `error` text says why.
  */
@@ -823,9 +823,9 @@ export interface AutomationStatus {
   /** Owning project — the workspace absolute path (resolved). */
   projectPath: string
   state: AutomationState
-  /** The requirement currently being developed (null when not running). */
-  currentRequirementId: string | null
-  /** The dev session of the current requirement, for a back-link (null when none). */
+  /** The intent currently being developed (null when not running). */
+  currentIntentId: string | null
+  /** The dev session of the current intent, for a back-link (null when none). */
   currentSessionId: string | null
   /**
    * True while the current dev turn is paused on a permission prompt awaiting a
@@ -835,30 +835,30 @@ export interface AutomationStatus {
   awaitingPermission: boolean
   /** Why the orchestrator stopped abnormally; null unless `state === 'error'`. */
   error: string | null
-  /** Requirement ids completed (committed + pushed) in this run. */
+  /** Intent ids completed (committed + pushed) in this run. */
   completedIds: string[]
   /** When the orchestrator was started, ms since epoch; null when never started. */
   startedAt: number | null
 }
 
 /**
- * One requirement proposed by the requirement-communication agent via the
- * `save_requirements` tool. Rendered in the confirmation prompt; persisted with
+ * One intent proposed by the intent-communication agent via the
+ * `save_intents` tool. Rendered in the confirmation prompt; persisted with
  * status `todo` once the user allows.
  */
-export interface ProposedRequirement {
+export interface ProposedIntent {
   title: string
   content: string
-  priority: RequirementPriority
+  priority: IntentPriority
   /** Module name the comm agent inferred from title/content; persisted as `''` when omitted. */
   module?: string
-  /** Optional ids of existing requirements (same project) it depends on. */
+  /** Optional ids of existing intents (same project) it depends on. */
   dependsOn?: string[]
   /**
-   * Optional 0-based indexes into THIS batch's `requirements` array, naming
-   * sibling proposed requirements this item depends on. Sibling ids don't exist
+   * Optional 0-based indexes into THIS batch's `intents` array, naming
+   * sibling proposed intents this item depends on. Sibling ids don't exist
    * yet at proposal time, so intra-batch ordering can only be expressed by index;
-   * `insertRequirements` resolves each index to the sibling's freshly-minted id and
+   * `insertIntents` resolves each index to the sibling's freshly-minted id and
    * merges it into `dependsOn`. Complements (does not replace) `dependsOn`.
    * Validated on save: an out-of-range, self, or cyclic reference rejects the whole
    * batch (nothing is written). See RM-R17.
@@ -1130,44 +1130,44 @@ export type ClientToServer =
   | { type: 'get_settings' }
   /** Replace the system configuration; server normalizes and echoes `settings`. */
   | { type: 'save_settings'; settings: SystemSettings }
-  /** List a project's requirements (reply: `requirements`), optionally filtered by status. */
-  | { type: 'list_requirements'; projectPath: string; status?: RequirementStatus }
+  /** List a project's intents (reply: `intents`), optionally filtered by status. */
+  | { type: 'list_intents'; projectPath: string; status?: IntentStatus }
   /**
-   * Enter the requirement view for a project: open or resume its (persisted)
-   * communication session and return the requirement list. Replies with a
-   * `session_selected` for the comm session plus a `requirements` list.
+   * Enter the intent view for a project: open or resume its (persisted)
+   * communication session and return the intent list. Replies with a
+   * `session_selected` for the comm session plus a `intents` list.
    */
-  | { type: 'open_requirement_chat'; projectPath: string }
+  | { type: 'open_intent_chat'; projectPath: string }
   /**
    * Start a brand-new communication session for a project: resets the previous
    * `is_current` comm session to 0, creates a fresh one marked current, and
-   * replies with a `session_selected` (empty history) plus the `requirements`
-   * list. The "+" button in the requirement view title bar triggers this.
+   * replies with a `session_selected` (empty history) plus the `intents`
+   * list. The "+" button in the intent view title bar triggers this.
    */
-  | { type: 'new_requirement_chat'; projectPath: string }
+  | { type: 'new_intent_chat'; projectPath: string }
   /**
-   * Restart the comm session as a fresh one seeded with a requirement to refine;
-   * the server injects the first prompt with the requirement's id and content.
+   * Restart the comm session as a fresh one seeded with a intent to refine;
+   * the server injects the first prompt with the intent's id and content.
    */
-  | { type: 'refine_requirement'; projectPath: string; requirementId: string }
+  | { type: 'refine_intent'; projectPath: string; intentId: string }
   /**
-   * Bridge a completed discussion's conclusion into the requirement domain: a
-   * `refine_requirement` variant whose seed is the discussion's conclusion rather
-   * than an existing requirement. The server resolves the project from the
+   * Bridge a completed discussion's conclusion into the intent domain: a
+   * `refine_intent` variant whose seed is the discussion's conclusion rather
+   * than an existing intent. The server resolves the project from the
    * discussion, restarts the comm session as a fresh one, injects a first prompt
    * carrying the discussion title + conclusion, and replies with a
-   * `session_selected` (empty history) plus the `requirements` list. Rejected if
+   * `session_selected` (empty history) plus the `intents` list. Rejected if
    * the discussion is missing, not `completed`, or has no conclusion. The agent
-   * then splits it into requirements via the unchanged `save_requirements` flow.
+   * then splits it into intents via the unchanged `save_intents` flow.
    */
-  | { type: 'discussion_to_requirement'; discussionId: string }
-  /** Launch a background dev session for a `todo` requirement via the configurable development skill. */
-  | { type: 'start_development'; projectPath: string; requirementId: string }
-  /** Manually set a requirement's status (e.g. mark done/cancelled). */
-  | { type: 'update_requirement_status'; requirementId: string; status: RequirementStatus }
-  /** Toggle a requirement's automation flag (whether the orchestrator may pick it). */
-  | { type: 'set_requirement_automate'; requirementId: string; automate: boolean }
-  /** Start the project's automation orchestrator (develops `automate` requirements). */
+  | { type: 'discussion_to_intent'; discussionId: string }
+  /** Launch a background dev session for a `todo` intent via the configurable development skill. */
+  | { type: 'start_development'; projectPath: string; intentId: string }
+  /** Manually set a intent's status (e.g. mark done/cancelled). */
+  | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
+  /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
+  | { type: 'set_intent_automate'; intentId: string; automate: boolean }
+  /** Start the project's automation orchestrator (develops `automate` intents). */
   | { type: 'start_automation'; projectPath: string }
   /** Stop the project's automation orchestrator (aborts the current dev run). */
   | { type: 'stop_automation'; projectPath: string }
@@ -1230,7 +1230,7 @@ export type ClientToServer =
   | { type: 'discussion_speak'; discussionId: string; text: string }
   /**
    * Drive a *new round* on a `completed` discussion: the server appends the
-   * human's follow-up question/requirement as a `human` message, flips the
+   * human's follow-up question/intent as a `human` message, flips the
    * discussion back to `in_progress`, and re-runs the organizer engine over the
    * full transcript (the prior conclusion + the new question as context). The run
    * walks the workflow again and writes a fresh `conclusion`. Rejected if the
@@ -1317,7 +1317,7 @@ export type ServerToClient =
       /**
        * The session's resolved agent vendor (ADR-0015) — a real session's frozen
        * vendor, or a pending session's intent/default vendor — used to paint the
-       * vendor colour dot beside the title. Absent for comm/requirement sessions
+       * vendor colour dot beside the title. Absent for comm/intent sessions
        * (no agent dot there).
        */
       vendor?: VendorId
@@ -1367,12 +1367,12 @@ export type ServerToClient =
       bindingStats: SessionBindingStats
       sessionCapabilities: Record<VendorId, SessionCapabilities>
     }
-  /** A project's requirement list (reply to `list_requirements`/`open_requirement_chat`, or a push after a change). */
-  | { type: 'requirements'; projectPath: string; items: Requirement[] }
+  /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
+  | { type: 'intents'; projectPath: string; items: Intent[] }
   /**
    * The project's automation-orchestrator status. Pushed on entering the
-   * requirement view and on every state change (start/stop/progress/error), so
-   * the requirement list's automation button reflects the live run.
+   * intent view and on every state change (start/stop/progress/error), so
+   * the intent list's automation button reflects the live run.
    */
   | { type: 'automation_status'; status: AutomationStatus }
   /**

@@ -10,7 +10,7 @@
  * `bindPending` / `finalizeRun` / `rename` / delete time. The read path filters
  * by `workspace_path` at the SQL level; cold sessions stay visible.
  *
- * Pattern (mirrors `features/requirements/store.ts` and
+ * Pattern (mirrors `features/intents/store.ts` and
  * `features/discussions/store.ts`): lazy schema via a private `schemaReady`
  * flag, `ensureColumn` for idempotent backfill (we don't touch
  * `PRAGMA user_version` — the three stores would clobber each other; migrations

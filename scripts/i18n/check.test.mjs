@@ -203,11 +203,11 @@ describe('scanServerCodes', () => {
       {
         file: 'server.ts',
         content:
-          `send(ws, { type: 'error', error: { code: 'requirement.notFound' } })\n` +
+          `send(ws, { type: 'error', error: { code: 'intent.notFound' } })\n` +
           `send(ws, { type: 'error', error: { code: 'session.listFailed', params: { detail } } })`,
       },
     ])
-    expect(sites.map((s) => s.code)).toEqual(['requirement.notFound', 'session.listFailed'])
+    expect(sites.map((s) => s.code)).toEqual(['intent.notFound', 'session.listFailed'])
     expect(sites[1].line).toBe(2)
   })
   it('ignores raw `message` error sends (no code)', () => {
@@ -220,12 +220,12 @@ describe('scanServerCodes', () => {
 describe('runCodeCheck', () => {
   const base = flatten({
     error: {
-      requirement: { notFound: 'Requirement not found.' },
+      intent: { notFound: 'Intent not found.' },
       session: { listFailed: 'Failed: {detail}' },
     },
   })
   const uiCodes = {
-    'requirement.notFound': { key: 'error.requirement.notFound' },
+    'intent.notFound': { key: 'error.intent.notFound' },
     'session.listFailed': { key: 'error.session.listFailed', params: ['detail'] },
   }
 
@@ -233,7 +233,7 @@ describe('runCodeCheck', () => {
     const { errors } = runCodeCheck({
       uiCodes,
       base,
-      serverCodeSites: [{ file: 's', code: 'requirement.notFound', line: 1 }],
+      serverCodeSites: [{ file: 's', code: 'intent.notFound', line: 1 }],
     })
     expect(errors).toEqual([])
   })

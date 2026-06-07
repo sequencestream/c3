@@ -80,7 +80,7 @@ beforeEach(() => {
   sdk.calls = []
 })
 
-const noopDeps = { broadcastStatuses: () => {}, broadcastRequirements: () => {} }
+const noopDeps = { broadcastStatuses: () => {}, broadcastIntents: () => {} }
 
 describe('C1 — launchRun degradation chain (end to end)', () => {
   it('walks agent-a → agent-b, emits agent_failed between, then all_agents_failed + turn_end error', async () => {

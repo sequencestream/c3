@@ -46,7 +46,7 @@ describe('数字本地化 n()', () => {
 })
 
 describe('复数(管道 | + 俄语自定义规则)', () => {
-  const k = 'requirement.automation.completedCount'
+  const k = 'intent.automation.completedCount'
   // typed Composer.t 的重载对「宽 string key + (plural, options)」解析不友好,测试里
   // 直接按 (key, plural, { locale }) 形态调用,绕过严格泛型。
   const tc = g.t as unknown as (key: string, plural: number, opts: { locale: string }) => string

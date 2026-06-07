@@ -26,8 +26,8 @@
       "console": {
         "label": "세션"
       },
-      "requirements": {
-        "label": "요구사항"
+      "intents": {
+        "label": "의도"
       },
       "discussion": {
         "label": "토론"
@@ -79,7 +79,7 @@
   "permission": {
     "history": {
       "askQuestion": "🙋 {count}개 질문에 답변 요청됨 · AskUserQuestion",
-      "saveRequirements": "💾 {count}개 요구사항 저장 요청됨",
+      "saveIntents": "💾 {count}개 의도 저장 요청됨",
       "useTool": "🔧 {toolName} 도구 사용 요청됨"
     },
     "ask": {
@@ -101,7 +101,7 @@
       }
     },
     "save": {
-      "label": "💾 요구사항 저장 ·",
+      "label": "💾 의도 저장 ·",
       "dependsOn": "의존:",
       "dependsOnBatch": "의존 (이번 배치):"
     },
@@ -244,7 +244,7 @@
       "title": {
         "label": "개발 스킬"
       },
-      "hint": "개발 작업을 시작할 때 이 슬래시 명령이 요구사항 텍스트 앞에 추가됩니다. 스킬 접두사를 추가하지 않으려면 비워 두세요.",
+      "hint": "개발 작업을 시작할 때 이 슬래시 명령이 의도 텍스트 앞에 추가됩니다. 스킬 접두사를 추가하지 않으려면 비워 두세요.",
       "placeholder": "/your-skill (접두사 없으려면 비워 두기)"
     },
     "rounds": {
@@ -327,23 +327,23 @@
       "missing": "찾을 수 없음"
     }
   },
-  "requirement": {
+  "intent": {
     "startDev": {
-      "confirmUnfinishedDeps": "이 요구사항에는 완료되지 않은 의존성이 있습니다. 그래도 개발을 시작할까요?"
+      "confirmUnfinishedDeps": "이 의도에는 완료되지 않은 의존성이 있습니다. 그래도 개발을 시작할까요?"
     },
     "chat": {
       "title": {
-        "label": "요구사항 채팅"
+        "label": "의도 채팅"
       }
     },
     "list": {
       "title": {
-        "label": "요구사항"
+        "label": "의도"
       },
       "new": {
-        "label": "새 요구사항: 새 채팅 세션 시작"
+        "label": "새 의도: 새 채팅 세션 시작"
       },
-      "empty": "아직 요구사항이 없습니다. 오른쪽 어시스턴트와 대화하고 저장하세요."
+      "empty": "아직 의도가 없습니다. 오른쪽 어시스턴트와 대화하고 저장하세요."
     },
     "filter": {
       "all": {
@@ -368,7 +368,7 @@
     "automation": {
       "start": {
         "label": "▶ 자동화",
-        "tooltip": "자동화 시작: 자동화 표시된 요구사항을 우선순위와 의존성에 따라 하나씩 완료합니다"
+        "tooltip": "자동화 시작: 자동화 표시된 의도를 우선순위와 의존성에 따라 하나씩 완료합니다"
       },
       "stop": {
         "label": "■ 자동화 중지",
@@ -382,7 +382,7 @@
       "workingOn": "\"{title}\" 작업 중",
       "preparing": "준비 중…",
       "completedCount": "✅ {count}개 항목 완료",
-      "nothingToAutomate": "✅ 자동화할 요구사항이 없습니다"
+      "nothingToAutomate": "✅ 자동화할 의도가 없습니다"
     },
     "action": {
       "refine": {
@@ -817,10 +817,10 @@
       "notSelected": "먼저 세션을 선택하거나 만드세요.",
       "turnRunning": "이 세션에서 이미 턴이 실행 중입니다."
     },
-    "requirement": {
-      "notFound": "요구사항을 찾을 수 없습니다.",
-      "dbUnavailable": "요구사항 기능을 사용할 수 없습니다 (c3.db).",
-      "chatOpenFailed": "요구사항 채팅을 열지 못했습니다.",
+    "intent": {
+      "notFound": "의도를 찾을 수 없습니다.",
+      "dbUnavailable": "의도 기능을 사용할 수 없습니다 (c3.db).",
+      "chatOpenFailed": "의도 채팅을 열지 못했습니다.",
       "cannotStartDev": "\"{status}\" 상태에서는 개발을 시작할 수 없습니다."
     },
     "discussion": {
@@ -828,7 +828,7 @@
       "notFound": "토론을 찾을 수 없습니다.",
       "unknown": "알 수 없는 토론: {id}",
       "unknownType": "알 수 없는 토론 유형: {type}",
-      "notConcludable": "결과가 있는 종결된 토론만 요구사항으로 전환할 수 있습니다.",
+      "notConcludable": "결과가 있는 종결된 토론만 의도로 전환할 수 있습니다.",
       "alreadyStarted": "토론이 이미 시작되었거나 종료되었습니다. 다시 시작할 수 없습니다.",
       "notEndedForContinue": "종료된 토론만 새 라운드를 시작할 수 있습니다."
     },
@@ -854,7 +854,7 @@
         "label": "재개"
       },
       "convert": {
-        "label": "요구사항으로 전환"
+        "label": "의도로 전환"
       }
     },
     "dispatch": {

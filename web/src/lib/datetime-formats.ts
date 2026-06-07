@@ -3,7 +3,7 @@
  *
  * 同时供两处消费,避免格式漂移:
  *   - vue-i18n 的 `datetimeFormats` / `numberFormats`(组件内 `d()` / `n()`,见 i18n/index.ts);
- *   - 纯展示 lib(`req-list-view.ts` 的 `formatDate`,Node 单测环境直接 `new Intl.DateTimeFormat`)。
+ *   - 纯展示 lib(`intent-list-view.ts` 的 `formatDate`,Node 单测环境直接 `new Intl.DateTimeFormat`)。
  *
  * 输出顺序由 locale 决定(en → MM/DD、ja/zh/ko → 年在前),正是本地化目标。
  */

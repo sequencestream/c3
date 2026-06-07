@@ -3,7 +3,7 @@
  * E2E suite runner — boots one c3 server and runs every WebSocket e2e against it,
  * then tears the server down and reports a pass/fail summary. Wired as `pnpm e2e`.
  *
- * Isolation: the requirement db is pointed at a throwaway `C3_DB_PATH` so the run
+ * Isolation: the intent db is pointed at a throwaway `C3_DB_PATH` so the run
  * never touches the real `~/.c3/c3.db`. Agent config (`~/.c3/settings.json`) is
  * left untouched — the consensus tests need the real agents, and skip themselves
  * (exit 5) when none beyond the default are configured.
@@ -55,7 +55,7 @@ const portArg = (() => {
 const PORT = Number(portArg) || 13099
 const WS_URL = `ws://localhost:${PORT}/ws`
 
-// Throwaway state dir: isolates the requirement db; the seed workspace lives here too.
+// Throwaway state dir: isolates the intent db; the seed workspace lives here too.
 const STATE_DIR = mkdtempSync(join(tmpdir(), 'c3-e2e-suite-'))
 const DB_PATH = join(STATE_DIR, 'c3.db')
 const SEED_PROJECT = join(STATE_DIR, 'seed')
@@ -68,7 +68,7 @@ writeFileSync(join(SEED_PROJECT, 'README.md'), '# c3 e2e seed\n')
 const TESTS = [
   { name: 'smoke (permission flow)', file: 'e2e-ws-test.mjs' },
   { name: 'pending-queue flush race', file: 'e2e-pending-flush-test.mjs' },
-  { name: 'requirement (save flow)', file: 'e2e-requirement-test.mjs' },
+  { name: 'intent (save flow)', file: 'e2e-intent-test.mjs' },
   { name: 'consensus (voting)', file: 'e2e-consensus-test.mjs' },
   { name: 'ask-consensus (per-question)', file: 'e2e-ask-consensus-test.mjs' },
 ]

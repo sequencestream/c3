@@ -224,7 +224,7 @@ describe('isSideEffectTool (auto-resume gate allowlist — AS-R19)', () => {
   })
 
   it('conservatively treats unknown / MCP tools as side-effect tools', () => {
-    expect(isSideEffectTool('mcp__c3__save_requirements')).toBe(true)
+    expect(isSideEffectTool('mcp__c3__save_intents')).toBe(true)
     expect(isSideEffectTool('SomeFutureTool')).toBe(true)
   })
 })

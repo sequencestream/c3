@@ -33,7 +33,7 @@ import {
   hasPendingQuestion,
   type DevTurnResult,
   type RunDevTurnInput,
-} from '../features/requirements/automation.js'
+} from '../features/intents/automation.js'
 
 /** Deps the dev-turn factory reads. `launchDeps` matches what `launchRun` needs. */
 export interface DevTurnDeps {

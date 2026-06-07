@@ -6,7 +6,7 @@
  * tool side-effect gate verdict, the `resume`-pass turn_end stamping, and the
  * pure `decideSocketResume` decision are pinned together end-to-end. The live
  * `launchRun` closure that strings these together is server-internal and only
- * reachable via e2e (mirroring `requirement-gate.test.ts`); here we assert the
+ * reachable via e2e (mirroring `intent-gate.test.ts`); here we assert the
  * exact contract `launchRun` consumes: runClaude's `onSocketDisconnect` verdict
  * + `decideSocketResume` + the resume pass's terminal events.
  *

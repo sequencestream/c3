@@ -25,13 +25,13 @@ c3 has two business groups: `core` (the agent loop) and `system-config` (user co
 
 ### Group `core`
 
-| Domain                                                           | Responsibility                                                                                                                                                              |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`permission-gateway`](domains/core/permission-gateway/)         | Intercept SDK permission requests, route them to the browser, block until the user decides (deny on run abort)                                                              |
-| [`agent-session`](domains/core/agent-session/)                   | Drive the SDK `query()` loop, map SDK messages to the wire protocol, manage permission mode and run lifecycle                                                               |
-| [`session-registry`](domains/core/session-registry/)             | Manage workspaces & sessions; own per-session mode, recent-access order, history replay                                                                                     |
-| [`web-console`](domains/core/web-console/)                       | The browser UI: prompt input, activity stream, permission dialog, mode switch                                                                                               |
-| [`requirement-management`](domains/core/requirement-management/) | A project-scoped requirement ledger and a read-only requirement-communication agent that breaks ideas into verifiable items and launches the configurable development skill |
+| Domain                                                   | Responsibility                                                                                                                                                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`permission-gateway`](domains/core/permission-gateway/) | Intercept SDK permission requests, route them to the browser, block until the user decides (deny on run abort)                                                    |
+| [`agent-session`](domains/core/agent-session/)           | Drive the SDK `query()` loop, map SDK messages to the wire protocol, manage permission mode and run lifecycle                                                     |
+| [`session-registry`](domains/core/session-registry/)     | Manage workspaces & sessions; own per-session mode, recent-access order, history replay                                                                           |
+| [`web-console`](domains/core/web-console/)               | The browser UI: prompt input, activity stream, permission dialog, mode switch                                                                                     |
+| [`intent-management`](domains/core/intent-management/)   | A project-scoped intent ledger and a read-only intent-communication agent that breaks ideas into verifiable items and launches the configurable development skill |
 
 ### Group `system-config`
 

@@ -19,8 +19,8 @@ import type { AutomationStatus, DiscussionMessage, ResearchMessage } from '@ccc/
 import { resolve } from 'node:path'
 import type { Broadcaster } from '../transport/index.js'
 import { listStatuses } from '../runs.js'
-import { isStoreAvailable, listRequirements } from '../features/requirements/store.js'
-import { enrichRunStatus } from '../features/requirements/run-status.js'
+import { isStoreAvailable, listIntents } from '../features/intents/store.js'
+import { enrichRunStatus } from '../features/intents/run-status.js'
 import {
   isStoreAvailable as isDiscussionStoreAvailable,
   listDiscussions,
@@ -48,8 +48,8 @@ export interface Broadcasts {
   broadcastStatuses: () => void
   /** Push the supervised OpenCode server's current reachability to every connection. */
   broadcastOpencodeStatus: () => void
-  /** Push a project's refreshed requirement list (with runStatus enrichment). */
-  broadcastRequirements: (projectPath: string) => void
+  /** Push a project's refreshed intent list (with runStatus enrichment). */
+  broadcastIntents: (projectPath: string) => void
   /** Push a project's refreshed discussion list (with run/research snapshots). */
   broadcastDiscussions: (projectPath: string) => void
   /** Push a workspace's refreshed schedule list. */
@@ -92,16 +92,16 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcaster.toAll({ type: 'opencode_status', status: getOpencodeStatus() })
   }
 
-  // Push a project's requirement list to every connection. The frontend keeps
+  // Push a project's intent list to every connection. The frontend keeps
   // a per-project map and ignores projects it isn't viewing. Used after a save,
   // a status change, or a dev launch. Applies runStatus enrichment so each
   // client sees the reconciled running/dangling/idle state. No-op when the
   // store is unavailable.
-  const broadcastRequirements = (projectPath: string): void => {
+  const broadcastIntents = (projectPath: string): void => {
     if (!isStoreAvailable()) return
     const proj = resolve(projectPath)
-    const items = enrichRunStatus(listRequirements(proj))
-    broadcaster.toAll({ type: 'requirements', projectPath: proj, items })
+    const items = enrichRunStatus(listIntents(proj))
+    broadcaster.toAll({ type: 'intents', projectPath: proj, items })
   }
 
   // Push a project's refreshed discussion list. The frontend keeps a
@@ -185,7 +185,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   return {
     broadcastStatuses,
     broadcastOpencodeStatus,
-    broadcastRequirements,
+    broadcastIntents,
     broadcastDiscussions,
     broadcastSchedules,
     broadcastAutomation,

@@ -42,7 +42,7 @@ function withConnections(n: number): {
 // protocol breaks compilation here (the per-type wire contract is pinned).
 const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   { type: 'session_status', statuses: [{ sessionId: 's1', status: 'running' }] },
-  { type: 'requirements', projectPath: '/p', items: [] },
+  { type: 'intents', projectPath: '/p', items: [] },
   { type: 'discussions', projectPath: '/p', items: [], runStates: {}, researchStates: {} },
   { type: 'schedules', workspacePath: '/p', items: [] },
   {
@@ -87,7 +87,7 @@ const REPRESENTATIVE_FRAMES: ServerToClient[] = [
     status: {
       projectPath: '/p',
       state: 'idle',
-      currentRequirementId: null,
+      currentIntentId: null,
       currentSessionId: null,
       awaitingPermission: false,
       error: null,
@@ -168,14 +168,14 @@ describe('Broadcaster — golden wire shapes (high-frequency frames)', () => {
     )
   })
 
-  it('requirements', () => {
+  it('intents', () => {
     expect(
       JSON.stringify({
-        type: 'requirements',
+        type: 'intents',
         projectPath: '/p',
         items: [],
       } satisfies ServerToClient),
-    ).toBe('{"type":"requirements","projectPath":"/p","items":[]}')
+    ).toBe('{"type":"intents","projectPath":"/p","items":[]}')
   })
 
   it('discussions (carries runStates + researchStates snapshots)', () => {

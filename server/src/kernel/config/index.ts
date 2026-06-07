@@ -612,7 +612,7 @@ export function getTimezone(): string {
   return isValidTimeZone(tz) ? tz : getServerTimezone()
 }
 
-/** The slash command prefixed to a requirement when launching development; empty ⇒ no prefix. */
+/** The slash command prefixed to a intent when launching development; empty ⇒ no prefix. */
 export function getDevSkill(): string {
   return normalizeDevSkill(loadSettings().devSkill)
 }

@@ -1,7 +1,7 @@
 /**
  * C-SEC unit tests for the permission gateway chokepoint (server refactor 3/3).
  *
- * Covers the two no-consensus gate policies end to end (requirement /
+ * Covers the two no-consensus gate policies end to end (intent /
  * discussion-research) — read tools pass, everything else is DENIED BY DEFAULT
  * (PG-R4) — and asserts the load-bearing C-SEC invariant: a permission verdict is
  * EPHEMERAL. Resolving any number of prompts never writes to disk (the gateway +
@@ -16,7 +16,7 @@ import { resolveDecision } from './registry.js'
 
 function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
   return {
-    gate: 'requirement',
+    gate: 'intent',
     send: () => {},
     signal: new AbortController().signal,
     currentAgentId: null,
@@ -28,7 +28,7 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
 
 afterEach(() => vi.restoreAllMocks())
 
-describe('requirement gate — read-only, deny-by-default', () => {
+describe('intent gate — read-only, deny-by-default', () => {
   it('allows a read-class built-in with the original input (no prompt)', async () => {
     const gate = createCanUseTool(spec())
     const out = await gate('Read', { file_path: '/x' }, {} as never)
@@ -42,10 +42,10 @@ describe('requirement gate — read-only, deny-by-default', () => {
     expect((out as { message: string }).message).toMatch(/read-only/)
   })
 
-  it('routes save_requirements to a human prompt, then honours the allow', async () => {
+  it('routes save_intents to a human prompt, then honours the allow', async () => {
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(spec({ send: (m) => sent.push(m) }))
-    const p = gate('mcp__c3__save_requirements', { items: [] }, {} as never)
+    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never)
     // The gateway emitted a permission_request — answer it from the "browser".
     const req = sent.find((m) => m.type === 'permission_request')
     expect(req).toBeDefined()
@@ -53,10 +53,10 @@ describe('requirement gate — read-only, deny-by-default', () => {
     expect(await p).toMatchObject({ behavior: 'allow' })
   })
 
-  it('denies save_requirements when the human declines', async () => {
+  it('denies save_intents when the human declines', async () => {
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(spec({ send: (m) => sent.push(m) }))
-    const p = gate('mcp__c3__save_requirements', { items: [] }, {} as never)
+    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never)
     const req = sent.find((m) => m.type === 'permission_request')
     if (req && req.type === 'permission_request') resolveDecision(req.requestId, 'deny')
     expect(await p).toMatchObject({ behavior: 'deny' })
@@ -81,7 +81,7 @@ describe('C-SEC — permission verdicts are NOT persisted (no-persist)', () => {
 
     await gate('Read', { file_path: '/a' }, {} as never) // allow
     await gate('Bash', { command: 'x' }, {} as never) // deny
-    const p = gate('mcp__c3__save_requirements', { items: [] }, {} as never) // prompt
+    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never) // prompt
     const req = sent.find((m) => m.type === 'permission_request')
     if (req && req.type === 'permission_request') resolveDecision(req.requestId, 'allow')
     await p

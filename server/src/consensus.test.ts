@@ -9,7 +9,7 @@
  * `consensus-tally.ts` (pure parse/tally) is covered separately; here we drive the
  * real `runAskConsensus` with the SDK `query` and settings mocked, so the
  * orchestration's fail-safe-to-human contract is pinned deterministically (the
- * live `canUseTool` closure itself is e2e-only — see `requirement-gate.test.ts`).
+ * live `canUseTool` closure itself is e2e-only — see `intent-gate.test.ts`).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 

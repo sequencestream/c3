@@ -17,7 +17,7 @@ its own store, scheduler loop, and execution dispatcher.
 ## Data model (SQLite)
 
 Two tables in the project-level SQLite database (same database as
-[requirement-management](../requirement-management/design.md) and
+[intent-management](../intent-management/design.md) and
 [session-registry](../../core/session-registry/design.md)):
 
 ### `schedules` (implemented schema)

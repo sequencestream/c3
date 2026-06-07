@@ -24,6 +24,7 @@ defineProps<{
 const emit = defineEmits<{
   'select-tab': [key: string]
   'open-settings': []
+  'open-project-config': []
   'add-workspace': [path: string]
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
@@ -39,6 +40,14 @@ const emit = defineEmits<{
       @select-workspace="emit('select-workspace', $event)"
       @remove-workspace="emit('remove-workspace', $event)"
     />
+    <button
+      class="icon-btn project-config-btn"
+      :title="t('projectConfig.entry.tooltip')"
+      :disabled="!currentWorkspace"
+      @click="emit('open-project-config')"
+    >
+      ⚙
+    </button>
     <nav class="header-tabs" :class="{ disabled: tabsEnabled === false }">
       <button
         v-for="tab in tabs"

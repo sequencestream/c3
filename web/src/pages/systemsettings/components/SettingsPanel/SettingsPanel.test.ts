@@ -25,69 +25,6 @@ const baseSettings: SystemSettings = {
   maxSpeechChars: 400,
 }
 
-describe('SettingsPanel.vue — discussion rounds per stage', () => {
-  it('seeds the rounds input from server settings', () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const input = w.find('.rounds-input')
-    expect(input.exists()).toBe(true)
-    expect((input.element as HTMLInputElement).value).toBe('14')
-  })
-
-  it('defaults the rounds input when settings omit the field', () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...baseSettings, maxRoundsPerStage: undefined } },
-    })
-    expect((w.find('.rounds-input').element as HTMLInputElement).value).toBe('12')
-  })
-
-  it('emits the edited rounds value on save', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    await w.find('.rounds-input').setValue(20)
-    await w.find('[data-testid="settings-save"]').trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted).toBeTruthy()
-    expect(emitted[0][0].maxRoundsPerStage).toBe(20)
-  })
-})
-
-describe('SettingsPanel.vue — consensus majority toggle', () => {
-  it('seeds the majority checkbox unchecked when settings disable it', () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const box = w.find('[data-testid="consensus-majority"]')
-    expect(box.exists()).toBe(true)
-    expect((box.element as HTMLInputElement).checked).toBe(false)
-  })
-
-  it('seeds the majority checkbox checked when settings enable it', () => {
-    const w = mount(SettingsPanel, {
-      props: {
-        open: true,
-        settings: { ...baseSettings, consensus: { enabled: true, majority: true } },
-      },
-    })
-    expect((w.find('[data-testid="consensus-majority"]').element as HTMLInputElement).checked).toBe(
-      true,
-    )
-  })
-
-  it('defaults the majority checkbox to false when the field is absent (old config)', () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...baseSettings, consensus: { enabled: true } } },
-    })
-    expect((w.find('[data-testid="consensus-majority"]').element as HTMLInputElement).checked).toBe(
-      false,
-    )
-  })
-
-  it('emits the toggled majority value on save', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    await w.find('[data-testid="consensus-majority"]').setValue(true)
-    await w.find('[data-testid="settings-save"]').trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].consensus?.majority).toBe(true)
-  })
-})
-
 describe('SettingsPanel.vue — agent enable/disable', () => {
   const twoAgents: SystemSettings = {
     ...baseSettings,
@@ -152,34 +89,6 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
     const checks = w.findAll('.col-on input[type="checkbox"]')
     // System row + the freshly added one, both checked.
     expect((checks[checks.length - 1].element as HTMLInputElement).checked).toBe(true)
-  })
-})
-
-describe('SettingsPanel.vue — discussion speech character limit', () => {
-  it('seeds the speech-chars input from server settings', () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const inputs = w.findAll('.rounds-input')
-    // Second .rounds-input belongs to the speech chars field
-    expect(inputs.length).toBeGreaterThanOrEqual(2)
-    expect((inputs[1].element as HTMLInputElement).value).toBe('400')
-  })
-
-  it('defaults the speech-chars input when settings omit the field', () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...baseSettings, maxSpeechChars: undefined } },
-    })
-    const inputs = w.findAll('.rounds-input')
-    expect((inputs[1].element as HTMLInputElement).value).toBe('300')
-  })
-
-  it('emits the edited speech-chars value on save', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const inputs = w.findAll('.rounds-input')
-    await inputs[1].setValue(600)
-    await w.find('[data-testid="settings-save"]').trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted).toBeTruthy()
-    expect(emitted[0][0].maxSpeechChars).toBe(600)
   })
 })
 

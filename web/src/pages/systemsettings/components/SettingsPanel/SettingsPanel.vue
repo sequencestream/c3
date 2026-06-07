@@ -8,7 +8,6 @@ import { computed, ref, toRaw, watch } from 'vue'
 import { SYSTEM_AGENT_ID, type CapabilityState } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
-  PermissionMode,
   SessionBindingStats,
   SkillRepoConfig,
   SkillSupportState,
@@ -20,22 +19,10 @@ import type {
   VendorId,
 } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
-import { useModeLabel } from '@/composables/useModeLabel'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import EmojiPicker from './EmojiPicker.vue'
 
 const { t } = useTypedI18n()
-const modeLabel = useModeLabel()
-
-const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypassPermissions']
-
-// Per-stage discussion round cap: floor enforced both here and server-side.
-const MIN_ROUNDS_PER_STAGE = 8
-const DEFAULT_ROUNDS_PER_STAGE = 12
-
-// Discussion speech character limit: minimum enforced both here and server-side.
-const MIN_SPEECH_CHARS = 300
-const DEFAULT_SPEECH_CHARS = 300
 
 // 浏览器本地时区，作为 timezone 草稿的默认值与 timezone 列表不可用时的兜底项。
 const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -112,15 +99,10 @@ const emit = defineEmits<{
 const draft = ref<SystemSettings>({
   agents: [],
   defaultAgentId: SYSTEM_AGENT_ID,
-  defaultMode: 'default',
-  consensus: { enabled: false, majority: false },
   voiceLang: 'zh-CN',
   uiLang: 'en',
   timezone: BROWSER_TZ,
   showToolSessions: false,
-  devSkill: '',
-  maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
-  maxSpeechChars: DEFAULT_SPEECH_CHARS,
 })
 
 // 系统时区可选项：全量 IANA 列表（Intl.supportedValuesOf 受支持时），否则退化为
@@ -156,18 +138,10 @@ watch(
       // this watcher and leave `draft.agents` empty (no agents rendered at all).
       agents: settings.agents.map((a) => structuredClone(toRaw(a))),
       defaultAgentId: settings.defaultAgentId,
-      defaultMode: settings.defaultMode ?? 'default',
-      consensus: {
-        enabled: settings.consensus?.enabled ?? false,
-        majority: settings.consensus?.majority ?? false,
-      },
       voiceLang: settings.voiceLang ?? 'zh-CN',
       uiLang: settings.uiLang ?? 'en',
       timezone: settings.timezone ?? BROWSER_TZ,
       showToolSessions: settings.showToolSessions ?? false,
-      devSkill: settings.devSkill ?? '',
-      maxRoundsPerStage: settings.maxRoundsPerStage ?? DEFAULT_ROUNDS_PER_STAGE,
-      maxSpeechChars: settings.maxSpeechChars ?? DEFAULT_SPEECH_CHARS,
       // Deep-copy skillRepos with the same toRaw guard as agents (structuredClone on a
       // Vue reactive proxy throws DataCloneError, so toRaw first). Server-side defaults
       // are applied by the save/normalize path — the draft carries them raw.
@@ -542,24 +516,6 @@ function onUiLangChange(e: Event) {
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.defaultMode.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.defaultMode.hint') }}</p>
-        <select v-model="draft.defaultMode" class="mode-select">
-          <option v-for="m in MODES" :key="m" :value="m">{{ modeLabel(m) }}</option>
-        </select>
-      </section>
-
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.devSkill.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.devSkill.hint') }}</p>
-        <input
-          v-model="draft.devSkill"
-          class="agent-field dev-skill-input"
-          :placeholder="t('settings.devSkill.placeholder')"
-        />
-      </section>
-
-      <section class="settings-section">
         <p class="settings-section-title">{{ t('settings.skillRepos.title.label') }}</p>
         <p class="settings-hint">{{ t('settings.skillRepos.hint') }}</p>
         <div
@@ -675,34 +631,6 @@ function onUiLangChange(e: Event) {
       </section>
 
       <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.rounds.title.label') }}</p>
-        <p class="settings-hint">
-          {{ t('settings.rounds.hint', { min: MIN_ROUNDS_PER_STAGE }) }}
-        </p>
-        <input
-          v-model.number="draft.maxRoundsPerStage"
-          class="agent-field rounds-input"
-          type="number"
-          :min="MIN_ROUNDS_PER_STAGE"
-          step="1"
-        />
-      </section>
-
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.speechChars.title.label') }}</p>
-        <p class="settings-hint">
-          {{ t('settings.speechChars.hint', { min: MIN_SPEECH_CHARS }) }}
-        </p>
-        <input
-          v-model.number="draft.maxSpeechChars"
-          class="agent-field rounds-input"
-          type="number"
-          :min="MIN_SPEECH_CHARS"
-          step="1"
-        />
-      </section>
-
-      <section class="settings-section">
         <p class="settings-section-title">{{ t('settings.displayLang.title.label') }}</p>
         <p class="settings-hint">{{ t('settings.displayLang.hint') }}</p>
         <select
@@ -729,38 +657,6 @@ function onUiLangChange(e: Event) {
         <select v-model="draft.timezone" class="mode-select" data-testid="settings-timezone">
           <option v-for="tz in TIMEZONES" :key="tz" :value="tz">{{ tz }}</option>
         </select>
-      </section>
-
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.consensus.title.label') }}</p>
-        <i18n-t keypath="settings.consensus.hint1.text" tag="p" class="settings-hint">
-          <template #other
-            ><em>{{ t('settings.consensus.hint1.other') }}</em></template
-          >
-        </i18n-t>
-        <i18n-t keypath="settings.consensus.hint2.text" tag="p" class="settings-hint">
-          <template #ask
-            ><strong>{{ t('settings.consensus.hint2.ask') }}</strong></template
-          >
-          <template #you
-            ><em>{{ t('settings.consensus.hint2.you') }}</em></template
-          >
-          <template #on
-            ><em>{{ t('settings.consensus.hint2.on') }}</em></template
-          >
-        </i18n-t>
-        <label v-if="draft.consensus" class="consensus-toggle">
-          <input v-model="draft.consensus.enabled" type="checkbox" />
-          {{ t('settings.consensus.toggle.label') }}
-        </label>
-        <label v-if="draft.consensus" class="consensus-toggle">
-          <input
-            v-model="draft.consensus.majority"
-            type="checkbox"
-            data-testid="consensus-majority"
-          />
-          {{ t('settings.consensus.majority.label') }}
-        </label>
       </section>
 
       <section class="settings-section">

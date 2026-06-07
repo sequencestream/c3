@@ -6,17 +6,17 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 
 ## Module split
 
-| Concern                         | File                                   | Notes                                                                                                                 |
-| ------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                       |
-| Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12) |
-| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                      |
-| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                             |
-| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, pick default mode, save                            |
+| Concern                         | File                                   | Notes                                                                                                                                                                              |
+| ------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                                                                                    |
+| Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12)                                                              |
+| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                                                                                   |
+| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                                                                                          |
+| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, save. Per-project controls (defaultMode, devSkill, rounds, speechChars, consensus) moved to `ProjectConfig.vue` |
 
 ## Persistence (`settings.ts`)
 
-- **`settings.json`** at `~/.c3/settings.json` — `{ agents, defaultAgentId, defaultMode }`.
+- **`settings.json`** at `~/.c3/settings.json` — `{ agents, defaultAgentId, projectConfigs }` (per-project configs under `projectConfigs` key, see [system-config overview](../system-config-overview.md)).
 - **`state.json`** at `~/.c3/state.json` — `{ version: 2, pendingIntents, sessionAgents }`: the
   two-key binding (ADR-0015). `pendingIntents` (pending id → `{ agentId, createdAt }`) is the mutable
   intent; `sessionAgents` (real id → `{ agentId, vendor }`) is the frozen fact. A v1 single-map blob
@@ -52,9 +52,11 @@ matching wire arm. `parseAgentConfig(raw)` routes by tag and returns the typed a
   that fails its arm yields `null` and the agent is **dropped** (fail-soft).
 - `defaultAgentId` is kept only if it references a surviving agent; otherwise it falls back to
   `SYSTEM_AGENT_ID`.
-- `defaultMode` is kept only if it is one of the five `PermissionMode` values; otherwise it falls
-  back to `default` (AC-R8). Consumed by `getDefaultMode()`, which seeds a new session's runtime
-  mode in `create_session` (SR-R6).
+- Legacy global `defaultMode` (deprecated in SystemSettings) is still accepted for backward
+  compatibility during the migration window. The authoritative source is the per-project
+  `ProjectConfig.defaultMode`, read via `loadProjectConfig`; the same validation (one of the five
+  `PermissionMode` values) and fallback (`default`) apply per-project. Consumed by
+  `getDefaultMode(projectPath)`, which seeds a new session's runtime mode in `create_session` (SR-R6).
 - `enabled` is persisted as an explicit boolean using `a.enabled !== false` (absent/`true` ⇒
   `true`, only explicit `false` ⇒ `false`) — so old configs lacking the field stay enabled
   (AC-R10). The re-injected system agent's `enabled` is read from the incoming `system` entry the

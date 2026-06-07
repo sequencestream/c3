@@ -16,6 +16,7 @@ import Intents from './pages/intents/Intents.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Schedules from './pages/schedules/Schedules.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
+import ProjectConfigPage from './pages/projectconfig/ProjectConfig.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import type { ApprovalRequest } from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import {
@@ -46,6 +47,7 @@ import type {
   Discussion,
   PermissionMode,
   Intent,
+  ProjectConfig as ProjectConfigType,
   Schedule,
   ScheduleExecutionLog,
   UpdateScheduleInput,
@@ -494,6 +496,10 @@ const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
 // `skill_load_approval_resolve` and clears it.
 const skillApprovalRequest = ref<ApprovalRequest | null>(null)
 
+// ---- Project config ----
+const projectConfigOpen = ref(false)
+const currentProjectConfig = ref<ProjectConfigType | null>(null)
+
 // First-class OpenCode server reachability (2026-06-07-003): a snapshot rides every
 // connection's `ready`, and each up/down/retrying transition pushes `opencode_status`.
 // Drives the session list's offline warning; `'none'` (unregistered) is treated as
@@ -523,6 +529,18 @@ const scheduleTimezone = computed(
 function openSettings() {
   settingsOpen.value = true
   client?.send({ type: 'get_settings' })
+}
+
+function openProjectConfig() {
+  projectConfigOpen.value = true
+  const path = currentWorkspace.value
+  if (path) client?.send({ type: 'load_project_config', projectPath: path })
+}
+
+function saveProjectConfig(config: ProjectConfigType) {
+  const path = currentWorkspace.value
+  if (path) client?.send({ type: 'save_project_config', projectPath: path, config })
+  projectConfigOpen.value = false
 }
 
 function saveSettings(settings: SystemSettings) {
@@ -672,6 +690,9 @@ function handleMessage(msg: ServerToClient) {
   switch (msg.type) {
     case 'ready':
       workspaces.value = msg.workspaces
+      // Close project config on reconnect — workspace may have changed.
+      projectConfigOpen.value = false
+      currentProjectConfig.value = null
       applyStatuses(msg.statuses)
       // Restore the persisted current workspace (or fall back to most-recent),
       // then load its sessions for the sidebar.
@@ -793,6 +814,9 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'commands':
       availableCommands.value = msg.commands
+      break
+    case 'project_config':
+      currentProjectConfig.value = msg.config
       break
     case 'settings':
       serverSettings.value = msg.settings
@@ -1188,6 +1212,8 @@ function selectWorkspace(path: string) {
   if (fx.noop) return
   currentWorkspace.value = path
   persistCurrentWorkspace()
+  projectConfigOpen.value = false
+  currentProjectConfig.value = null
   if (fx.refreshSessions) refreshSessions(path)
   if (fx.enterConsole) switchToConsoleTab()
 }
@@ -1708,6 +1734,7 @@ function dismissSkillApproval() {
     :tabs-enabled="currentWorkspace !== null"
     @select-tab="onSelectTab"
     @open-settings="openSettings"
+    @open-project-config="openProjectConfig"
     @add-workspace="addWorkspace"
     @select-workspace="selectWorkspace"
     @remove-workspace="removeWorkspace"
@@ -1868,6 +1895,14 @@ function dismissSkillApproval() {
     @close="settingsOpen = false"
     @save="saveSettings"
     @set-ui-lang="setLocale"
+  />
+
+  <ProjectConfigPage
+    :open="projectConfigOpen"
+    :project-config="currentProjectConfig"
+    :current-workspace="currentWorkspace"
+    @close="projectConfigOpen = false"
+    @save="saveProjectConfig"
   />
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>

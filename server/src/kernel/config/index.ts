@@ -28,6 +28,9 @@ import type {
   AgentConfig,
   ClaudeAgentConfig,
   PermissionMode,
+  SkillRepoConfig,
+  SkillTrust,
+  SkillVendor,
   SystemSettings,
   UiLang,
   VendorId,
@@ -266,6 +269,13 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
   // Socket-disconnect auto-resume: enabled unless explicitly disabled (default true).
   const socketAutoResume = raw?.socketAutoResume !== false
+  // External skill repos (ADR-0016): fail-SOFT passthrough only — keep the array
+  // shape so the console can save/round-trip it, but the deep fail-HARD validation
+  // (missing ref, dup id, pinned-without-SHA, devSkill collision) lives in
+  // `getSkillRepos()`, not here. Boot must never crash on a misconfigured repo.
+  const skillRepos = Array.isArray(raw?.skillRepos)
+    ? (raw.skillRepos as SkillRepoConfig[])
+    : undefined
   return {
     agents,
     defaultAgentId,
@@ -280,6 +290,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     maxSpeechChars,
     degradationChain,
     socketAutoResume,
+    ...(skillRepos ? { skillRepos } : {}),
   }
 }
 
@@ -615,6 +626,138 @@ export function getTimezone(): string {
 /** The slash command prefixed to a intent when launching development; empty ⇒ no prefix. */
 export function getDevSkill(): string {
   return normalizeDevSkill(loadSettings().devSkill)
+}
+
+// ---- External skill repos (ADR-0016) ----
+
+/** A 40-hex git commit SHA — the only `pinCommit` shape a `pinned` repo may carry. */
+const SHA40 = /^[0-9a-f]{40}$/i
+
+/** Web repo URL parsed into a base repo + optional ref/subpath (ADR-0016 §URL 解析). */
+export interface ParsedSkillRepoUrl {
+  /** Base `https://host/owner/repo`, with any `/tree/…` (or `/-/tree/…`) stripped. */
+  repo: string
+  /** Ref pulled from a `/tree/<ref>` segment, if present. */
+  ref?: string
+  /** Subpath pulled from `/tree/<ref>/<subpath>`, if present. */
+  subpath?: string
+}
+
+// GitHub: https://host/owner/repo[/tree/<ref>[/<subpath>]] — the task's reference
+// pattern, wrapped with a base-capture group. `[^/]+` segments pin host/owner/repo.
+const GITHUB_URL = /^(https?:\/\/[^/]+\/[^/]+\/[^/]+)(?:\/tree\/([^/]+)(?:\/(.+))?)?$/
+// GitLab adapter placeholder: its tree segment is `/-/tree/<ref>[/<subpath>]`. Kept
+// as a distinct adapter so other forges (Bitbucket `/src/…`, …) slot in the same way.
+const GITLAB_URL = /^(https?:\/\/[^/]+\/.+?)\/-\/tree\/([^/]+)(?:\/(.+))?$/
+
+/**
+ * Parse a web repo URL into a base repo + optional ref/subpath. GitHub `/tree/`
+ * is fully supported; GitLab `/-/tree/` is a placeholder adapter (matched first,
+ * since GitHub's looser pattern would otherwise swallow the `/-/` path). A plain
+ * repo URL (no tree segment) returns just `{ repo }`; non-matching input is
+ * returned verbatim as `repo` (best-effort — real problems surface at clone time).
+ */
+export function parseSkillRepoUrl(url: string): ParsedSkillRepoUrl {
+  const u = url.trim()
+  const gl = GITLAB_URL.exec(u)
+  if (gl) {
+    const [, repo, ref, subpath] = gl
+    return { repo, ref, ...(subpath ? { subpath } : {}) }
+  }
+  const gh = GITHUB_URL.exec(u)
+  if (gh) {
+    const [, repo, ref, subpath] = gh
+    return { repo, ...(ref ? { ref } : {}), ...(subpath ? { subpath } : {}) }
+  }
+  return { repo: u }
+}
+
+const SKILL_VENDORS: readonly SkillVendor[] = ['claude', 'codex', 'opencode', 'all']
+const SKILL_TRUSTS: readonly SkillTrust[] = ['pinned', 'review-on-update', 'unreviewed']
+
+function isSkillVendor(v: unknown): v is SkillVendor {
+  return SKILL_VENDORS.includes(v as SkillVendor)
+}
+function isSkillTrust(v: unknown): v is SkillTrust {
+  return SKILL_TRUSTS.includes(v as SkillTrust)
+}
+
+/**
+ * Validate + normalize the configured external skill repos (ADR-0016), **fail-hard**.
+ * Unlike the fail-soft settings `normalize` (which drops bad data so c3 still boots),
+ * every violation here **throws** with a precise message, so a misconfiguration is
+ * surfaced to the operator instead of silently mounting the wrong skill. Returns the
+ * normalized configs (defaults applied — `vendor: 'claude'`, `trust: 'unreviewed'`;
+ * `repo`/`ref`/`subpath` resolved from the URL). An absent/empty list is valid → `[]`.
+ *
+ * Rules: `id` required + globally unique; `repo` required; `ref` required (after
+ * URL `/tree/<ref>` backfill — never a silent default-branch fallback); a `pinned`
+ * repo requires a 40-hex `pinCommit`; and the `devSkill` trigger (sans leading `/`)
+ * must not collide with any repo `id`.
+ */
+export function validateSkillRepos(
+  raw: SkillRepoConfig[] | undefined,
+  devSkill?: string,
+): SkillRepoConfig[] {
+  if (raw == null) return []
+  if (!Array.isArray(raw)) throw new Error('skillRepos 必须是数组')
+  const out: SkillRepoConfig[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < raw.length; i++) {
+    const r = raw[i] as Partial<SkillRepoConfig> | null
+    const where = `skillRepos[${i}]`
+    if (!r || typeof r !== 'object') throw new Error(`${where} 不是合法对象`)
+    const id = typeof r.id === 'string' ? r.id.trim() : ''
+    if (!id) throw new Error(`${where}.id 必填`)
+    if (seen.has(id)) throw new Error(`skillRepos.id 重复: ${id}`)
+    seen.add(id)
+    const repoRaw = typeof r.repo === 'string' ? r.repo.trim() : ''
+    if (!repoRaw) throw new Error(`${where}(${id}).repo 必填`)
+    const parsed = parseSkillRepoUrl(repoRaw)
+    // ref required — but a URL-embedded `/tree/<ref>` may supply it. Backfill first,
+    // then enforce: c3 never silently falls back to the remote's default branch.
+    const ref = (typeof r.ref === 'string' && r.ref.trim()) || parsed.ref || ''
+    if (!ref) throw new Error(`${where}(${id}).ref 必填(URL 未含 /tree/<ref> 时须显式提供)`)
+    const subpath =
+      (typeof r.subpath === 'string' && r.subpath.trim()) || parsed.subpath || undefined
+    const vendor: SkillVendor = isSkillVendor(r.vendor) ? r.vendor : 'claude'
+    const trust: SkillTrust = isSkillTrust(r.trust) ? r.trust : 'unreviewed'
+    let pinCommit: string | undefined
+    if (trust === 'pinned') {
+      const pc = typeof r.pinCommit === 'string' ? r.pinCommit.trim() : ''
+      if (!SHA40.test(pc))
+        throw new Error(`${where}(${id}) trust='pinned' 须提供 40 位 SHA pinCommit`)
+      pinCommit = pc.toLowerCase()
+    } else if (typeof r.pinCommit === 'string' && r.pinCommit.trim()) {
+      // Carried verbatim for non-pinned (informational); only enforced when pinned.
+      pinCommit = r.pinCommit.trim()
+    }
+    out.push({
+      id,
+      repo: parsed.repo,
+      ref,
+      ...(subpath ? { subpath } : {}),
+      vendor,
+      trust,
+      ...(pinCommit ? { pinCommit } : {}),
+    })
+  }
+  // devSkill collision: the legacy dev-skill trigger (sans leading `/`) and a repo
+  // id share the same "skill name" space — a clash is ambiguous, so reject it.
+  const dev = (devSkill ?? '').trim().replace(/^\/+/, '')
+  if (dev && seen.has(dev)) {
+    throw new Error(`devSkill '${dev}' 与 skillRepos.id 冲突,请改名其一`)
+  }
+  return out
+}
+
+/**
+ * The validated external skill repos from the current settings (ADR-0016).
+ * Fail-hard — throws on any misconfiguration (see {@link validateSkillRepos}).
+ */
+export function getSkillRepos(): SkillRepoConfig[] {
+  const s = loadSettings()
+  return validateSkillRepos(s.skillRepos, s.devSkill)
 }
 
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */

@@ -194,6 +194,25 @@ options: {
 > ⚠️ 待核实：以上 Skill 行为以官方文档（`agent-sdk/skills`）为依据。`plugins` 中
 > 以编程方式注入 Skill 的精确字段形态各版本可能不同，落地前请对照所用版本的类型定义。
 
+### 实证：`skills/*/SKILL.md` 是**单层** glob，嵌套目录不被发现
+
+> spike（2026-06-07，外部 skill git 化 1/3，见 [ADR 0016](adr/0016-external-skill-git-mount.md)）。
+
+在临时项目 `<cwd>/.claude/skills/` 下同时放置：
+
+- 扁平 `_c3_flat/SKILL.md`（单层）；
+- 嵌套 `_c3_session/abc123def/SKILL.md`（两层）。
+
+用与 `server/src/commands.ts` 相同的机制（streaming-input `query()` + `supportedCommands()`，
+`settingSources: ['project']`）实列，结果 **`flat=true, nested=false`**：
+
+- Claude 只把**单层** `skills/<name>/SKILL.md` 注册为 skill；
+- 两层 `skills/<name>/<id>/SKILL.md` **不会**被发现。
+
+→ c3 软链挂载外部 skill 时，目录布局必须是扁平的 `<vendorSkillsDir>/_c3_<id>/SKILL.md`
+（一个配置 id 一个目录、直挂 `SKILL.md`），不能用嵌套的 `_c3_session/<id>/`。codex（`~/.codex/skills/<name>/SKILL.md`，
+frontmatter 与 Claude 兼容）同为单层布局；opencode 本机未装，发现机制待补证。
+
 ## 6. 最佳实践
 
 ### 权限与工具控制

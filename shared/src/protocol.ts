@@ -289,6 +289,54 @@ export interface ConsensusConfig {
  */
 export type UiLang = 'en' | 'zh' | 'ja' | 'ko' | 'ru'
 
+// ---- External skill git mount (ADR-0016) ----
+
+/**
+ * How much a {@link SkillRepoConfig}'s content is trusted across updates.
+ * - `pinned` — frozen to an exact commit ({@link SkillRepoConfig.pinCommit}); a
+ *   `git cat-file` check after clone rejects a force-pushed fake SHA.
+ * - `review-on-update` — auto-mounts the configured `ref`, but a content change
+ *   since the last mount is surfaced for human review (mount-layer concern, 2/3).
+ * - `unreviewed` — mounts whatever `ref` resolves to, no review gate. The default.
+ */
+export type SkillTrust = 'pinned' | 'review-on-update' | 'unreviewed'
+
+/**
+ * Which vendor's skill-discovery directory a repo's skills are mounted into.
+ * Reuses {@link VendorId} (single SoT, never drifts from the vendor union) plus
+ * `'all'` = mount into every build-link-capable vendor. Per ADR-0016 spike B,
+ * `claude`/`codex` are verified mountable; `opencode` stays a valid literal but
+ * the mount layer (2/3) does not build links for it until its discovery
+ * mechanism is confirmed. Default when unset: `'claude'`.
+ */
+export type SkillVendor = VendorId | 'all'
+
+/**
+ * One external git repository configured as a skill source (ADR-0016). c3 clones
+ * it into a shared `~/.c3/repo/` cache and (mount layer, 2/3) soft-links its
+ * skills into the target vendor's discovery directory under a flat
+ * `_c3_<id>/SKILL.md` layout (spike A: nested dirs are not discovered).
+ */
+export interface SkillRepoConfig {
+  /** Stable, user-meaningful id; globally unique across `skillRepos`. Also the mount dir suffix (`_c3_<id>`). */
+  id: string
+  /** Git repo address, e.g. `https://github.com/owner/repo` (or an SSH/ssh-config remote). */
+  repo: string
+  /**
+   * Required git ref (branch / tag / commit) to check out. Missing is a hard
+   * config error — c3 never silently falls back to the remote's default branch.
+   */
+  ref: string
+  /** Optional sub-directory within the repo that holds the skill(s). Repo root when absent. */
+  subpath?: string
+  /** Target vendor(s). Default `'claude'` when unset. See {@link SkillVendor}. */
+  vendor?: SkillVendor
+  /** Update-trust policy. Default `'unreviewed'` when unset. See {@link SkillTrust}. */
+  trust: SkillTrust
+  /** Required 40-hex commit SHA when `trust === 'pinned'`; verified post-clone via `git cat-file`. */
+  pinCommit?: string
+}
+
 /**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
@@ -322,6 +370,15 @@ export interface SystemSettings {
   /** Slash command (leading `/`) prefixed to the intent content when launching
    * development. Optional; empty/unset ⇒ no skill prefix. */
   devSkill?: string
+  /**
+   * External git repositories configured as skill sources (ADR-0016). c3 clones
+   * each into a shared `~/.c3/repo/` cache and (mount layer, 2/3) soft-links its
+   * skills into the target vendor's discovery directory. Validated by
+   * `getSkillRepos()` (fail-hard: missing `ref`, duplicate `id`, a `pinned` repo
+   * without a 40-hex `pinCommit`, or a `devSkill` that collides with a repo id all
+   * raise). Absent/empty ⇒ no external skills. Independent of {@link devSkill}.
+   */
+  skillRepos?: SkillRepoConfig[]
   /** Per-stage round cap for multi-agent discussions. Minimum 8 (lower values are
    * clamped up); an unset/invalid value falls back to a sane default (≥ 8). */
   maxRoundsPerStage?: number

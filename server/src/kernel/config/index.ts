@@ -28,6 +28,7 @@ import type {
   AgentConfig,
   ClaudeAgentConfig,
   PermissionMode,
+  ProjectConfig,
   SkillRepoConfig,
   SkillTrust,
   SkillVendor,
@@ -212,6 +213,10 @@ function inferConfigMode(raw: unknown): 'system' | 'custom' {
   return raw === 'system' || raw === 'custom' ? raw : 'custom'
 }
 
+/** Migration cache: legacy global values captured once from an old settings.json,
+ * used as seed for projects that have no config yet. Cleared after first use. */
+let legacyProjectSeed: Partial<ProjectConfig> | null = null
+
 /**
  * Force the settings into a valid shape: a `system` agent always present (with
  * empty overrides) and `defaultAgentId` pointing at an existing agent.
@@ -243,15 +248,11 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // The default must reference an existing agent; otherwise fall back to the first.
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : ''
   const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : agents[0].id
-  const defaultMode: PermissionMode = PERMISSION_MODES.includes(raw?.defaultMode as PermissionMode)
-    ? (raw!.defaultMode as PermissionMode)
-    : 'default'
-  // Both flags are strict opt-ins: only an explicit `true` is truthy; anything
-  // missing/invalid normalizes to `false` (back-compat with pre-majority configs).
-  const consensus = {
-    enabled: raw?.consensus?.enabled === true,
-    majority: raw?.consensus?.majority === true,
-  }
+  // ---- Legacy migration (one-shot): capture old global top-level fields ----
+  // The 5 workspace-level knobs used to live at the SystemSettings top level.
+  // Capture them once for the project-level migration; they no longer survive in
+  // the normalized settings object (see `projectConfigs`).
+  captureLegacyProjectSeed(raw)
   const voiceLang =
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
   // UI display language: a known code is kept; anything else falls back to `en`.
@@ -263,9 +264,6 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // server's own zone (so a fresh install schedules in local time out of the box).
   const timezone = isValidTimeZone(raw?.timezone) ? raw!.timezone! : getServerTimezone()
   const showToolSessions = raw?.showToolSessions === true
-  const devSkill = normalizeDevSkill(raw?.devSkill)
-  const maxRoundsPerStage = normalizeMaxRoundsPerStage(raw?.maxRoundsPerStage)
-  const maxSpeechChars = normalizeMaxSpeechChars(raw?.maxSpeechChars)
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
   // Socket-disconnect auto-resume: enabled unless explicitly disabled (default true).
   const socketAutoResume = raw?.socketAutoResume !== false
@@ -276,22 +274,108 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const skillRepos = Array.isArray(raw?.skillRepos)
     ? (raw.skillRepos as SkillRepoConfig[])
     : undefined
+  // Per-project configurations passthrough (project-level knobs).
+  const projectConfigs = raw?.projectConfigs
   return {
     agents,
     defaultAgentId,
-    defaultMode,
-    consensus,
     voiceLang,
     uiLang,
     timezone,
     showToolSessions,
-    devSkill,
-    maxRoundsPerStage,
-    maxSpeechChars,
     degradationChain,
     socketAutoResume,
     ...(skillRepos ? { skillRepos } : {}),
+    ...(projectConfigs ? { projectConfigs } : {}),
   }
+}
+
+/**
+ * Capture legacy top-level global defaults from the raw settings object
+ * (one-shot migration). Called from `normalize()` when settings are loaded;
+ * the captured values are used by `loadProjectConfig` as seed for a project's
+ * first-ever config. After seeding once, `legacyProjectSeed` is cleared and
+ * this becomes a no-op.
+ */
+function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): void {
+  if (legacyProjectSeed !== null) return // already captured
+  if (!raw) return
+  // These fields were removed from SystemSettings but may still exist on disk —
+  // access them via the raw record for the one-shot migration.
+  const r = raw as unknown as Record<string, unknown>
+  const seed: Partial<ProjectConfig> = {}
+  if (r.defaultMode !== undefined) seed.defaultMode = r.defaultMode as PermissionMode
+  if (r.consensus !== undefined) seed.consensus = r.consensus as ProjectConfig['consensus']
+  if (r.devSkill !== undefined) seed.devSkill = r.devSkill as string
+  if (r.maxRoundsPerStage !== undefined) seed.maxRoundsPerStage = r.maxRoundsPerStage as number
+  if (r.maxSpeechChars !== undefined) seed.maxSpeechChars = r.maxSpeechChars as number
+  if (Object.keys(seed).length > 0) legacyProjectSeed = seed
+}
+
+/**
+ * Normalize a partial or raw ProjectConfig into its canonical shape.
+ * Applies the same thresholds as the old global-level operations:
+ * - `defaultMode` defaults to `'default'`.
+ * - `consensus` is strict opt-in (only explicit `true` is truthy).
+ * - `devSkill` is trimmed, slash-normalized, and defaults to `''`.
+ * - `maxRoundsPerStage` is floored and clamped to ≥ `MIN_ROUNDS_PER_STAGE`.
+ * - `maxSpeechChars` is floored and clamped to ≥ `MIN_SPEECH_CHARS`.
+ */
+export function normalizeProjectConfig(raw: unknown): ProjectConfig {
+  const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const defaultMode: PermissionMode = PERMISSION_MODES.includes(rec.defaultMode as PermissionMode)
+    ? (rec.defaultMode as PermissionMode)
+    : 'default'
+  const consensus = {
+    enabled: (rec.consensus as { enabled?: boolean })?.enabled === true,
+    majority: (rec.consensus as { majority?: boolean })?.majority === true,
+  }
+  const devSkill = normalizeDevSkill(rec.devSkill)
+  const maxRoundsPerStage = normalizeMaxRoundsPerStage(rec.maxRoundsPerStage)
+  const maxSpeechChars = normalizeMaxSpeechChars(rec.maxSpeechChars)
+  return { defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars }
+}
+
+/**
+ * Load the project configuration for a workspace. Returns the normalized config;
+ * falls back to normalized defaults when the project has no entry yet.
+ *
+ * **Migration (one-shot, idempotent):** the first time a project has no
+ * config entry, this function seeds it from the legacy global defaults captured
+ * by `captureLegacyProjectSeed` (from an old `settings.json`). The seed is
+ * written back so it persists, and `legacyProjectSeed` is cleared so subsequent
+ * reads fall through to defaults or existing configs.
+ */
+export function loadProjectConfig(projectPath: string): ProjectConfig {
+  const settings = loadSettings()
+  const existing = settings.projectConfigs?.[projectPath]
+  if (existing) return normalizeProjectConfig(existing)
+
+  // Migration window: seed from legacy global values (one-shot).
+  const seed = legacyProjectSeed
+  if (seed) {
+    legacyProjectSeed = null // clear — one shot only
+    const merged = normalizeProjectConfig(seed)
+    // Persist the seeded config so the next read finds it.
+    const configs = { ...(settings.projectConfigs ?? {}), [projectPath]: merged }
+    saveSettings({ ...settings, projectConfigs: configs })
+    return merged
+  }
+
+  // No existing config and no migration seed — return normalized defaults.
+  return normalizeProjectConfig(undefined)
+}
+
+/**
+ * Save a project's configuration. Returns the normalized result. The config
+ * is persisted inside `SystemSettings.projectConfigs` and written atomically.
+ */
+export function saveProjectConfig(projectPath: string, cfg: ProjectConfig): ProjectConfig {
+  const normalized = normalizeProjectConfig(cfg)
+  const settings = loadSettings()
+  const configs = { ...(settings.projectConfigs ?? {}), [projectPath]: normalized }
+  saveSettings({ ...settings, projectConfigs: configs })
+  return normalized
 }
 
 /**
@@ -350,9 +434,9 @@ export function saveSettings(next: SystemSettings): SystemSettings {
   return settingsCache ?? normalized
 }
 
-/** The permission mode new sessions start in (`default` when unconfigured). */
-export function getDefaultMode(): PermissionMode {
-  return loadSettings().defaultMode ?? 'default'
+/** The permission mode new sessions start in for a project (`default` when unconfigured). */
+export function getDefaultMode(projectPath: string): PermissionMode {
+  return loadProjectConfig(projectPath).defaultMode ?? 'default'
 }
 
 // ---- Session → agent assignment ----
@@ -581,18 +665,18 @@ export function getSessionBindingStats(): { bound: number; pending: number } {
   }
 }
 
-/** Whether multi-agent consensus voting is enabled in the system settings. */
-export function isConsensusEnabled(): boolean {
-  return loadSettings().consensus?.enabled === true
+/** Whether multi-agent consensus voting is enabled for a project. */
+export function isConsensusEnabled(projectPath: string): boolean {
+  return loadProjectConfig(projectPath).consensus?.enabled === true
 }
 
 /**
- * Whether consensus uses majority rule (vs. unanimous-only). Default false;
+ * Whether consensus uses majority rule (vs. unanimous-only) for a project. Default false;
  * only an explicit `consensus.majority: true` enables it. Independent of
  * {@link isConsensusEnabled} — meaningful only when consensus is also enabled.
  */
-export function isConsensusMajorityEnabled(): boolean {
-  return loadSettings().consensus?.majority === true
+export function isConsensusMajorityEnabled(projectPath: string): boolean {
+  return loadProjectConfig(projectPath).consensus?.majority === true
 }
 
 /**
@@ -624,8 +708,8 @@ export function getTimezone(): string {
 }
 
 /** The slash command prefixed to a intent when launching development; empty ⇒ no prefix. */
-export function getDevSkill(): string {
-  return normalizeDevSkill(loadSettings().devSkill)
+export function getDevSkill(projectPath: string): string {
+  return normalizeDevSkill(loadProjectConfig(projectPath).devSkill)
 }
 
 // ---- External skill repos (ADR-0016) ----
@@ -754,15 +838,18 @@ export function validateSkillRepos(
 /**
  * The validated external skill repos from the current settings (ADR-0016).
  * Fail-hard — throws on any misconfiguration (see {@link validateSkillRepos}).
+ * NOTE: devSkill is now per-project, so the global devSkill collision check is
+ * dropped here (it was a one-to-one name-space guard that no longer applies at
+ * the global level).
  */
 export function getSkillRepos(): SkillRepoConfig[] {
   const s = loadSettings()
-  return validateSkillRepos(s.skillRepos, s.devSkill)
+  return validateSkillRepos(s.skillRepos)
 }
 
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */
-export function getMaxRoundsPerStage(): number {
-  return normalizeMaxRoundsPerStage(loadSettings().maxRoundsPerStage)
+export function getMaxRoundsPerStage(projectPath: string): number {
+  return normalizeMaxRoundsPerStage(loadProjectConfig(projectPath).maxRoundsPerStage)
 }
 
 /**
@@ -770,8 +857,8 @@ export function getMaxRoundsPerStage(): number {
  * {@link MIN_SPEECH_CHARS}). This is a prompt-level guidance — over-long
  * replies are accepted verbatim.
  */
-export function getMaxSpeechChars(): number {
-  return normalizeMaxSpeechChars(loadSettings().maxSpeechChars)
+export function getMaxSpeechChars(projectPath: string): number {
+  return normalizeMaxSpeechChars(loadProjectConfig(projectPath).maxSpeechChars)
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

@@ -322,9 +322,9 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     return
   }
   const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const devRt = ensureRuntime(devId, proj, getDefaultMode(), [], 'normal')
+  const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'normal')
   const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
-  const skill = getDevSkill()
+  const skill = getDevSkill(proj)
   const skillPrefix = skill ? `${skill} ` : ''
   const devPrompt = `${skillPrefix}${req.title}\n\n${req.content}${depNote}`
   // Background launch: don't await — it runs detached, surviving this

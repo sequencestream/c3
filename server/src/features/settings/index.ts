@@ -15,7 +15,13 @@ import type {
   SkillSupportState,
   VendorId,
 } from '@ccc/shared/protocol'
-import { getSessionBindingStats, loadSettings, saveSettings } from '../../kernel/config/index.js'
+import {
+  getSessionBindingStats,
+  loadProjectConfig,
+  loadSettings,
+  saveProjectConfig,
+  saveSettings,
+} from '../../kernel/config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import { getOpencodeStatus } from '../../opencode-status.js'
@@ -98,4 +104,14 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     sessionCapabilities: sessionCapabilities(),
     skillSupport: skillSupport(),
   })
+}
+
+export const loadProjectConfigHandler: Handler<'load_project_config'> = (_ctx, conn, msg) => {
+  const config = loadProjectConfig(msg.projectPath)
+  conn.send({ type: 'project_config', projectPath: msg.projectPath, config })
+}
+
+export const saveProjectConfigHandler: Handler<'save_project_config'> = (_ctx, conn, msg) => {
+  const config = saveProjectConfig(msg.projectPath, msg.config)
+  conn.send({ type: 'project_config', projectPath: msg.projectPath, config })
 }

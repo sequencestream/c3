@@ -166,8 +166,8 @@ export async function runDiscussion(
   }))
   const validIds = participants.map((p) => p.id)
   const byId = new Map(participantCfgs.map((a) => [a.id, a]))
-  const maxPerStage = deps.maxRoundsPerStage ?? getMaxRoundsPerStage()
-  const speechBudget = deps.maxSpeechChars ?? getMaxSpeechChars()
+  const maxPerStage = deps.maxRoundsPerStage ?? getMaxRoundsPerStage(cwd)
+  const speechBudget = deps.maxSpeechChars ?? getMaxSpeechChars(cwd)
   const maxTotal = deps.maxTotalRounds ?? 40
 
   // draft → in_progress.
@@ -465,8 +465,10 @@ export function defaultDiscussionDeps(hooks: {
     },
     organizer: () => resolveAgent(null),
     participants: () => enabledAgents(),
-    maxRoundsPerStage: getMaxRoundsPerStage(),
-    maxSpeechChars: getMaxSpeechChars(),
+    // Deps values are optional overrides — the actual per-project defaults are
+    // resolved inside `runDiscussion` from the discussion's project path.
+    maxRoundsPerStage: undefined,
+    maxSpeechChars: undefined,
     onMessage: hooks.onMessage,
     onStatusChange: hooks.onStatusChange,
     ...(hooks.onDispatchStatus ? { onDispatchStatus: hooks.onDispatchStatus } : {}),

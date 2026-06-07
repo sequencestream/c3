@@ -52,7 +52,13 @@ export function makeRunDevTurn(
   return (input: RunDevTurnInput): Promise<DevTurnResult> =>
     new Promise<DevTurnResult>((resolveTurn) => {
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
-      const rt = ensureRuntime(id, input.projectPath, getDefaultMode(), [], 'normal')
+      const rt = ensureRuntime(
+        id,
+        input.projectPath,
+        getDefaultMode(input.projectPath),
+        [],
+        'normal',
+      )
       let lastText = ''
       // Attaching to an already-running turn: its latest assistant text may have
       // been emitted BEFORE we add our viewer, so seed lastText from the buffer —

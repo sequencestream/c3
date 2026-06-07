@@ -361,6 +361,25 @@ export type SkillSupportState = CapabilityState
 export type SkillApprovalKind = 'trust' | 'gitignore' | 'orphan'
 
 /**
+ * Per-project (workspace) configuration, keyed by resolved project path in
+ * {@link SystemSettings.projectConfigs}. Each project holds its own copy of the
+ * 5 workspace-level knobs — independent of every other project's values.
+ * Absent or partial entries fall back to the normalized defaults.
+ */
+export interface ProjectConfig {
+  /** Permission mode new sessions start in for this project. Optional; `default` when unset. */
+  defaultMode?: PermissionMode
+  /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
+  consensus?: ConsensusConfig
+  /** Slash command (leading `/`) prefixed when launching dev for this project. Optional; empty ⇒ no prefix. */
+  devSkill?: string
+  /** Per-stage round cap for multi-agent discussions in this project. Minimum 8 (clamped up). */
+  maxRoundsPerStage?: number
+  /** Per-turn character guidance for participant speech in this project. Minimum 300 (clamped up). */
+  maxSpeechChars?: number
+}
+
+/**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
  */
@@ -368,10 +387,6 @@ export interface SystemSettings {
   agents: AgentConfig[]
   /** Id of the agent new/unassigned sessions launch with. */
   defaultAgentId: string
-  /** Permission mode new sessions start in. Optional; `default` when unset. */
-  defaultMode?: PermissionMode
-  /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
-  consensus?: ConsensusConfig
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
   /** UI display language for the web console. `en` when unset. Decoupled from
@@ -390,29 +405,43 @@ export interface SystemSettings {
   /** When true, tool-created sessions (completion judge, consensus advisor) appear
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean
-  /** Slash command (leading `/`) prefixed to the intent content when launching
-   * development. Optional; empty/unset ⇒ no skill prefix. */
+  /**
+   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. The server
+   * no longer writes this field; kept for backward-compatible typecheck of the web
+   * UI which has not yet been migrated to the project-level config model.
+   * TODO: remove after SettingsPanel is migrated to project-level config (next task).
+   * Prefer the per-project getters (`loadProjectConfig`) for authoritative values.
+   */
+  defaultMode?: PermissionMode
+  /**
+   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
+   */
+  consensus?: ConsensusConfig
+  /**
+   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
+   */
   devSkill?: string
+  /**
+   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
+   */
+  maxRoundsPerStage?: number
+  /**
+   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
+   */
+  maxSpeechChars?: number
   /**
    * External git repositories configured as skill sources (ADR-0016). c3 clones
    * each into a shared `~/.c3/repo/` cache and (mount layer, 2/3) soft-links its
    * skills into the target vendor's discovery directory. Validated by
    * `getSkillRepos()` (fail-hard: missing `ref`, duplicate `id`, a `pinned` repo
    * without a 40-hex `pinCommit`, or a `devSkill` that collides with a repo id all
-   * raise). Absent/empty ⇒ no external skills. Independent of {@link devSkill}.
+   * raise). Absent/empty ⇒ no external skills.
    */
   skillRepos?: SkillRepoConfig[]
-  /** Per-stage round cap for multi-agent discussions. Minimum 8 (lower values are
-   * clamped up); an unset/invalid value falls back to a sane default (≥ 8). */
-  maxRoundsPerStage?: number
-  /**
-   * Per-turn character limit for participant speech in discussions. This is a
-   * prompt-level guidance — participants are asked to keep replies within this
-   * budget, but over-long replies are accepted verbatim (no hard truncation).
-   * Minimum 300 (lower values are clamped up); an unset/invalid value falls
-   * back to the default (≥ 300).
-   */
-  maxSpeechChars?: number
   /**
    * Ordered list of agent ids defining the degradation/fallback chain.
    * When a session's turn encounters a rate-limit / session-limit / auth /
@@ -435,6 +464,14 @@ export interface SystemSettings {
    * Absent / non-false ⇒ enabled.
    */
   socketAutoResume?: boolean
+  /**
+   * Per-project (workspace) configuration map, keyed by resolved project path.
+   * Each entry holds the project's own {@link ProjectConfig} — the 5 workspace-level knobs
+   * (`defaultMode`, `consensus`, `devSkill`, `maxRoundsPerStage`, `maxSpeechChars`)
+   * that were previously global. A project absent from this map falls back to the
+   * normalized defaults. Absent/empty ⇒ no project has customised settings yet.
+   */
+  projectConfigs?: Record<string, ProjectConfig>
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */
@@ -1210,6 +1247,10 @@ export type ClientToServer =
   | { type: 'get_settings' }
   /** Replace the system configuration; server normalizes and echoes `settings`. */
   | { type: 'save_settings'; settings: SystemSettings }
+  /** Load the project configuration for a workspace (reply: `project_config`). */
+  | { type: 'load_project_config'; projectPath: string }
+  /** Save the project configuration for a workspace. */
+  | { type: 'save_project_config'; projectPath: string; config: ProjectConfig }
   /** List a project's intents (reply: `intents`), optionally filtered by status. */
   | { type: 'list_intents'; projectPath: string; status?: IntentStatus }
   /**
@@ -1464,6 +1505,11 @@ export type ServerToClient =
        */
       skillSupport?: Record<VendorId, SkillSupportState>
     }
+  /**
+   * The normalized project configuration for a workspace (reply to
+   * `load_project_config` or `save_project_config`).
+   */
+  | { type: 'project_config'; projectPath: string; config: ProjectConfig }
   /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
   | { type: 'intents'; projectPath: string; items: Intent[] }
   /**

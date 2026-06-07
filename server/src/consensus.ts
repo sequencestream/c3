@@ -90,7 +90,7 @@ async function summarize(
  * to the plain human prompt.
  */
 export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOutcome | null> {
-  if (!isConsensusEnabled()) return null
+  if (!isConsensusEnabled(p.cwd)) return null
   const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(p.currentAgentId)
   if (voters.length === 0) return null
 
@@ -123,7 +123,7 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
   // Majority toggle (system setting) decides the adjudication rule; `unanimous`
   // still reports literal unanimity so the summary/console can tell a unanimous
   // verdict from a majority-carried one. See `permission-gateway/consensus.md`.
-  const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled())
+  const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled(p.cwd))
   const summary = await summarize(
     p.currentAgentId,
     p.toolName,
@@ -176,7 +176,7 @@ async function decideAndSummarizeAsk(
  * questions — the caller then shows the answer panel without pre-filled opinions.
  */
 export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusOutcome | null> {
-  if (!isConsensusEnabled()) return null
+  if (!isConsensusEnabled(p.cwd)) return null
   const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(p.currentAgentId)
   if (voters.length === 0) return null
   const questions = askQuestions(p.input)
@@ -210,7 +210,7 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
   // majority-resolved question is already `unanimous` and the decider below skips
   // it (it only judges `!unanimous` questions). Priority: literal unanimous →
   // majority → decider rescue; each question is adjudicated at most once.
-  const majority = isConsensusMajorityEnabled()
+  const majority = isConsensusMajorityEnabled(p.cwd)
   const perQuestion = questions.map((q, i) =>
     tallyQuestion(
       q,

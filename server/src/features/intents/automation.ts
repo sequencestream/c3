@@ -369,7 +369,7 @@ class AutomationController {
     let sessionId: string | null = attach || resumable ? req.lastDevSessionId : null
     let continuations = 0
     while (!this.abort.signal.aborted) {
-      const skill = getDevSkill()
+      const skill = getDevSkill(this.projectPath)
       const skillPrefix = skill ? `${skill} ` : ''
       const prompt =
         sessionId === null

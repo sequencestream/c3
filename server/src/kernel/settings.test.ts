@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { SystemSettings } from '@ccc/shared/protocol'
+import type { ProjectConfig, SystemSettings } from '@ccc/shared/protocol'
 import {
   AGENT_ICON_MAX_CHARS,
   consensusVoters,
@@ -25,7 +25,9 @@ import {
   isConsensusEnabled,
   isConsensusMajorityEnabled,
   isValidTimeZone,
+  loadProjectConfig,
   loadSettings,
+  saveProjectConfig,
   saveSettings,
   resetSettingsCacheForTests,
   DEFAULT_ROUNDS_PER_STAGE,
@@ -54,9 +56,12 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+/** Dummy project path for project-level config tests. */
+const TEST_PROJ = '/test/project'
+
 /** Persist just a `devSkill` value (with the required baseline fields). */
 function saveWithDevSkill(devSkill: string | undefined): void {
-  saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, devSkill } as SystemSettings)
+  saveProjectConfig(TEST_PROJ, { devSkill } as ProjectConfig)
 }
 
 describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
@@ -88,120 +93,112 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
 
 describe('consensus.majority normalization (isConsensusMajorityEnabled)', () => {
   const saveConsensus = (consensus: unknown): void => {
-    saveSettings({
-      agents: [],
-      defaultAgentId: SYSTEM_AGENT_ID,
-      consensus,
-    } as unknown as SystemSettings)
+    saveProjectConfig(TEST_PROJ, { consensus } as unknown as ProjectConfig)
   }
 
-  it('defaults to false when consensus is entirely absent (old config)', () => {
-    saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID } as SystemSettings)
-    expect(isConsensusMajorityEnabled()).toBe(false)
-    expect(loadSettings().consensus?.majority).toBe(false)
+  it('defaults to false when consensus is entirely absent', () => {
+    saveProjectConfig(TEST_PROJ, {} as ProjectConfig)
+    expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(false)
+    expect(loadProjectConfig(TEST_PROJ).consensus?.majority).toBe(false)
   })
 
   it('defaults to false when consensus exists but omits majority', () => {
     saveConsensus({ enabled: true })
-    expect(isConsensusMajorityEnabled()).toBe(false)
+    expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(false)
     // The sibling flag round-trips independently.
-    expect(isConsensusEnabled()).toBe(true)
+    expect(isConsensusEnabled(TEST_PROJ)).toBe(true)
   })
 
   it('is true only when explicitly majority: true', () => {
     saveConsensus({ enabled: true, majority: true })
-    expect(isConsensusMajorityEnabled()).toBe(true)
-    expect(loadSettings().consensus?.majority).toBe(true)
+    expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(true)
+    expect(loadProjectConfig(TEST_PROJ).consensus?.majority).toBe(true)
   })
 
   it('treats a non-true value (truthy or not) as false', () => {
     saveConsensus({ enabled: true, majority: 'yes' })
-    expect(isConsensusMajorityEnabled()).toBe(false)
+    expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(false)
     saveConsensus({ enabled: true, majority: 1 })
-    expect(isConsensusMajorityEnabled()).toBe(false)
+    expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(false)
     saveConsensus({ enabled: true, majority: false })
-    expect(isConsensusMajorityEnabled()).toBe(false)
+    expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(false)
   })
 
   it('is independent of enabled (majority can be true while consensus is off)', () => {
     saveConsensus({ enabled: false, majority: true })
-    expect(isConsensusEnabled()).toBe(false)
-    expect(isConsensusMajorityEnabled()).toBe(true)
+    expect(isConsensusEnabled(TEST_PROJ)).toBe(false)
+    expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(true)
   })
 })
 
 describe('getDevSkill normalization', () => {
   it('defaults to empty (no prefix) when unset', () => {
     saveWithDevSkill(undefined)
-    expect(getDevSkill()).toBe('')
+    expect(getDevSkill(TEST_PROJ)).toBe('')
   })
 
   it('defaults to empty for a whitespace-only value', () => {
     saveWithDevSkill('   ')
-    expect(getDevSkill()).toBe('')
+    expect(getDevSkill(TEST_PROJ)).toBe('')
   })
 
   it('trims surrounding whitespace', () => {
     saveWithDevSkill('  /foo  ')
-    expect(getDevSkill()).toBe('/foo')
+    expect(getDevSkill(TEST_PROJ)).toBe('/foo')
   })
 
   it('prepends a missing leading slash', () => {
     saveWithDevSkill('my-skill')
-    expect(getDevSkill()).toBe('/my-skill')
+    expect(getDevSkill(TEST_PROJ)).toBe('/my-skill')
   })
 
   it('keeps an already-slashed command unchanged', () => {
     saveWithDevSkill('/foo')
-    expect(getDevSkill()).toBe('/foo')
+    expect(getDevSkill(TEST_PROJ)).toBe('/foo')
   })
 })
 
 /** Persist just a `maxRoundsPerStage` value (with the required baseline fields). */
 function saveWithMaxRounds(value: unknown): void {
-  saveSettings({
-    agents: [],
-    defaultAgentId: SYSTEM_AGENT_ID,
-    maxRoundsPerStage: value,
-  } as unknown as SystemSettings)
+  saveProjectConfig(TEST_PROJ, { maxRoundsPerStage: value } as unknown as ProjectConfig)
 }
 
 describe('getMaxRoundsPerStage normalization', () => {
   it('falls back to the default when unset', () => {
     saveWithMaxRounds(undefined)
-    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(DEFAULT_ROUNDS_PER_STAGE)
   })
 
   it('clamps a positive value below the floor up to the minimum', () => {
     saveWithMaxRounds(5)
-    expect(getMaxRoundsPerStage()).toBe(MIN_ROUNDS_PER_STAGE)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(MIN_ROUNDS_PER_STAGE)
   })
 
   it('clamps the floor exactly to the minimum', () => {
     saveWithMaxRounds(MIN_ROUNDS_PER_STAGE)
-    expect(getMaxRoundsPerStage()).toBe(MIN_ROUNDS_PER_STAGE)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(MIN_ROUNDS_PER_STAGE)
   })
 
   it('keeps a legal value at or above the floor', () => {
     saveWithMaxRounds(20)
-    expect(getMaxRoundsPerStage()).toBe(20)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(20)
   })
 
   it('floors a fractional value', () => {
     saveWithMaxRounds(12.9)
-    expect(getMaxRoundsPerStage()).toBe(12)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(12)
   })
 
   it('falls back to the default for a non-numeric value', () => {
     saveWithMaxRounds('nope')
-    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(DEFAULT_ROUNDS_PER_STAGE)
   })
 
   it('falls back to the default for zero/negative values', () => {
     saveWithMaxRounds(0)
-    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(DEFAULT_ROUNDS_PER_STAGE)
     saveWithMaxRounds(-3)
-    expect(getMaxRoundsPerStage()).toBe(DEFAULT_ROUNDS_PER_STAGE)
+    expect(getMaxRoundsPerStage(TEST_PROJ)).toBe(DEFAULT_ROUNDS_PER_STAGE)
   })
 })
 
@@ -432,49 +429,45 @@ describe('enabled flag (AC-R10)', () => {
 
 /** Persist just a `maxSpeechChars` value (with the required baseline fields). */
 function saveWithMaxSpeechChars(value: unknown): void {
-  saveSettings({
-    agents: [],
-    defaultAgentId: SYSTEM_AGENT_ID,
-    maxSpeechChars: value,
-  } as unknown as SystemSettings)
+  saveProjectConfig(TEST_PROJ, { maxSpeechChars: value } as unknown as ProjectConfig)
 }
 
 describe('getMaxSpeechChars normalization', () => {
   it('falls back to the default when unset', () => {
     saveWithMaxSpeechChars(undefined)
-    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(DEFAULT_SPEECH_CHARS)
   })
 
   it('clamps a positive value below the floor up to the minimum', () => {
     saveWithMaxSpeechChars(100)
-    expect(getMaxSpeechChars()).toBe(MIN_SPEECH_CHARS)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(MIN_SPEECH_CHARS)
   })
 
   it('clamps the floor exactly to the minimum', () => {
     saveWithMaxSpeechChars(MIN_SPEECH_CHARS)
-    expect(getMaxSpeechChars()).toBe(MIN_SPEECH_CHARS)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(MIN_SPEECH_CHARS)
   })
 
   it('keeps a legal value at or above the floor', () => {
     saveWithMaxSpeechChars(500)
-    expect(getMaxSpeechChars()).toBe(500)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(500)
   })
 
   it('floors a fractional value', () => {
     saveWithMaxSpeechChars(450.7)
-    expect(getMaxSpeechChars()).toBe(450)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(450)
   })
 
   it('falls back to the default for a non-numeric value', () => {
     saveWithMaxSpeechChars('nope')
-    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(DEFAULT_SPEECH_CHARS)
   })
 
   it('falls back to the default for zero/negative values', () => {
     saveWithMaxSpeechChars(0)
-    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(DEFAULT_SPEECH_CHARS)
     saveWithMaxSpeechChars(-3)
-    expect(getMaxSpeechChars()).toBe(DEFAULT_SPEECH_CHARS)
+    expect(getMaxSpeechChars(TEST_PROJ)).toBe(DEFAULT_SPEECH_CHARS)
   })
 })
 

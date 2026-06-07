@@ -16,7 +16,12 @@ import {
   type HandlerRegistry,
 } from '../transport/handler-registry.js'
 import { ping, requestSessionStatus } from './meta/index.js'
-import { getSettings, saveSettingsHandler } from './settings/index.js'
+import {
+  getSettings,
+  loadProjectConfigHandler,
+  saveProjectConfigHandler,
+  saveSettingsHandler,
+} from './settings/index.js'
 import { permissionResponse } from './permissions/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
 import {
@@ -80,6 +85,8 @@ export const handlerMap: HandlerMap = {
   // settings
   get_settings: getSettings,
   save_settings: saveSettingsHandler,
+  load_project_config: loadProjectConfigHandler,
+  save_project_config: saveProjectConfigHandler,
   // permissions
   permission_response: permissionResponse,
   // workspaces

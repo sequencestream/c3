@@ -54,11 +54,11 @@ vi.mock('./kernel/agent-config/index.js', () => ({
   resolveAgent: () => agent('decider'),
 }))
 vi.mock('./kernel/config/index.js', () => ({
-  isConsensusEnabled: () => true,
+  isConsensusEnabled: (_projectPath?: string) => true,
   // Driven by `settings.majority` so a test can exercise the ask path's majority
   // pre-step coexisting with the decider. The per-question decision matrix itself
   // is covered exhaustively in consensus-tally.test.ts.
-  isConsensusMajorityEnabled: () => settings.majority,
+  isConsensusMajorityEnabled: (_projectPath?: string) => settings.majority,
 }))
 
 import { runAskConsensus } from './consensus.js'

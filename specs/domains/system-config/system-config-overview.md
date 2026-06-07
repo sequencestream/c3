@@ -1,28 +1,34 @@
 # Group: system-config
 
 The `system-config` group holds c3's user-managed configuration that is not per-session
-bookkeeping. Today it has a single domain — **agent-config** — which lets the user define the
-agents (Claude Code launch profiles) that sessions start with.
+bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
+**project-config** (per-workspace configuration knobs).
 
 ## Domains
 
-| Domain                                                | Responsibility                                                                                 | API                                   | Status |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------- | ------ |
-| [agent-config](agent-config/agent-config-overview.md) | Manage agent profiles (url/key/model + name), the default agent, and per-session agent binding | WebSocket `/ws` (see shared protocol) | active |
+| Domain                                                | Responsibility                                                                                   | API                                   | Status |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------- | ------ |
+| [agent-config](agent-config/agent-config-overview.md) | Manage agent profiles (url/key/model + name), the default agent, and per-session agent binding   | WebSocket `/ws` (see shared protocol) | active |
+| project-config                                        | Per-workspace config knobs (defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars) | WebSocket `/ws` (see shared protocol) | active |
 
 ## Shared context
 
 - Shares the wire protocol in
   [`shared/api-conventions/websocket-protocol.md`](../../shared/api-conventions/websocket-protocol.md)
-  (`get_settings`, `save_settings`, `settings`).
-- Persists to `~/.c3/` — separate from the session-registry's `state.json`
-  (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
+  (`get_settings`, `save_settings`, `settings`, `load_project_config`, `save_project_config`,
+  `project_config`).
+- Persists to `~/.c3/settings.json` — stored as `SystemSettings.projectConfigs` (a
+  `Record<projectPath, ProjectConfig>`), written atomically alongside the main settings.
+- Separate from the session-registry's `state.json` (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
+- Migration: on first read after upgrade, legacy global `defaultMode`/`consensus`/`devSkill`/
+  `maxRoundsPerStage`/`maxSpeechChars` are captured and seeded into the project config
+  for each workspace's first `loadProjectConfig` call; subsequent reads ignore the legacy
+  fields (the migration is one-shot and idempotent).
 
 ## Dependency direction
 
 ```
 web-console ──(/ws)──► agent-config ──supplies env/model overrides──► agent-session ──► SDK query()
+                              │
+                              └──► project-config ──supplies defaultMode/consensus/devSkill/rounds/speech──► agent-session
 ```
-
-agent-config resolves a session's launch overrides (from its agent, or the default agent) and
-feeds them to each run; it does not drive `query()` itself.

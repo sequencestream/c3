@@ -75,33 +75,38 @@ function onPickAgent(agentId: string): void {
     ></span>
     <span class="session-title-text" :title="activeTitle">{{ activeTitle }}</span>
     <slot name="action" />
-    <div v-if="agentSwitch" class="agent-group">
-      <span
-        v-if="agentSwitch.currentUnavailable"
-        class="agent-unavailable"
-        data-testid="session-agent-unavailable"
-        >{{ t('session.titleBar.agent.unavailable', { vendor: vendorLabel() }) }}</span
-      >
-      <label
-        class="agent-switch"
-        :title="t('session.titleBar.agent.vendorLocked', { vendor: vendorLabel() })"
-      >
+    <div v-if="vendor || agentSwitch || showMode" class="right-controls">
+      <span v-if="vendor" class="vendor-label" data-testid="session-vendor-label">{{
+        vendorLabel()
+      }}</span>
+      <div v-if="agentSwitch" class="agent-group">
+        <span
+          v-if="agentSwitch.currentUnavailable"
+          class="agent-unavailable"
+          data-testid="session-agent-unavailable"
+          >{{ t('session.titleBar.agent.unavailable', { vendor: vendorLabel() }) }}</span
+        >
+        <label
+          class="agent-switch"
+          :title="t('session.titleBar.agent.vendorLocked', { vendor: vendorLabel() })"
+        >
+          <BaseDropdown
+            :model-value="agentSwitch.current.id"
+            :options="agentOptions"
+            :aria-label="t('session.titleBar.agent.ariaLabel')"
+            data-testid="session-agent-switch"
+            @update:model-value="onPickAgent"
+          />
+        </label>
+      </div>
+      <label v-if="showMode" class="mode">
         <BaseDropdown
-          :model-value="agentSwitch.current.id"
-          :options="agentOptions"
-          :aria-label="t('session.titleBar.agent.ariaLabel')"
-          data-testid="session-agent-switch"
-          @update:model-value="onPickAgent"
+          :model-value="mode"
+          :options="modeOptions"
+          :aria-label="t('session.titleBar.mode.ariaLabel')"
+          @update:model-value="emit('set-mode', $event)"
         />
       </label>
     </div>
-    <label v-if="showMode" class="mode">
-      <BaseDropdown
-        :model-value="mode"
-        :options="modeOptions"
-        :aria-label="t('session.titleBar.mode.ariaLabel')"
-        @update:model-value="emit('set-mode', $event)"
-      />
-    </label>
   </div>
 </template>

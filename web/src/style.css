@@ -282,17 +282,31 @@ header h1 {
   border-radius: 50%;
   display: inline-block;
 }
-.session-title-bar .mode {
+/* Right-side controls wrapper: vendor brand text + agent switcher + mode
+   dropdown, all right-aligned and tightly grouped. */
+.session-title-bar .right-controls {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* Vendor brand name (do-not-translate) alongside the right-side controls. */
+.session-title-bar .vendor-label {
+  flex-shrink: 0;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+.session-title-bar .mode {
   flex-shrink: 0;
 }
 
 /* Same-vendor agent switcher cluster (ADR-0015): the unavailable banner + the
-   agent dropdown, anchored to the right. The group's auto margin pushes it (and
-   the trailing mode dropdown) to the right edge; when absent, `.mode` keeps its
-   own auto margin (unchanged layout). */
+   agent dropdown. Now part of .right-controls. */
 .session-title-bar .agent-group {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: var(--sp-2);

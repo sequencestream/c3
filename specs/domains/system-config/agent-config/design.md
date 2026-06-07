@@ -17,7 +17,10 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 ## Persistence (`settings.ts`)
 
 - **`settings.json`** at `~/.c3/settings.json` — `{ agents, defaultAgentId, defaultMode }`.
-- **`state.json`** at `~/.c3/state.json` — `{ version, sessionAgents }` (the binding).
+- **`state.json`** at `~/.c3/state.json` — `{ version: 2, pendingIntents, sessionAgents }`: the
+  two-key binding (ADR-0015). `pendingIntents` (pending id → `{ agentId, createdAt }`) is the mutable
+  intent; `sessionAgents` (real id → `{ agentId, vendor }`) is the frozen fact. A v1 single-map blob
+  migrates on first read (`migrateState`): `pending:` keys → intents, others → claude-frozen facts.
 - Each loaded lazily into a module cache; every mutation persists synchronously.
 - **Atomic write:** write `…json.<pid>.tmp` then `renameSync` over the target.
 - **Fail-soft:** a missing/corrupt file falls back to defaults (system agent only / empty
@@ -80,7 +83,7 @@ launch is never blocked (AC-R10).
 ## Launch resolution (`resolveSessionLaunch`)
 
 ```
-agentId   = sessionAgents[sessionId] ?? null
+agentId   = getSessionAgentId(sessionId)   // pending id → pendingIntents; real id → sessionAgents fact (AC-R6/R16)
 agent     = agents.find(id === agentId) ?? agents.find(id === defaultAgentId) ?? system agent
 overrides = {}
   switch agent.vendor:
@@ -123,6 +126,39 @@ CLAUDE.md/memory, Skills, hooks, and the working-directory context all still wor
 - **REMOVE when:** the third-party providers support the adaptive-thinking message format —
   then drop this env injection. (A request-rewriting proxy that hoists inline `system` messages
   into the top-level `system` field is the other long-term option.)
+
+## Binding mechanics — two-key space + frozen vendor (ADR-0015)
+
+The binding splits into **intent** and **fact** so a pending session's desired agent (mutable) is
+kept apart from a real session's settled agent (vendor-bearing).
+
+- **Storage (`kernel/config/index.ts`), vendor-blind.** `getSessionAgentId` reads both spaces;
+  `getSessionVendor` reads the frozen vendor; `setPendingIntent` sets/clears an intent (stamps
+  `createdAt`); `bindSessionAgent(pendingId, realId, agentId, vendor)` is the first-bind freeze
+  (writes the fact iff absent, always deletes the intent — idempotent);
+  `changeSessionAgentFact(realId, agentId, vendor)` enforces the invariant (same-vendor → write +
+  `true`; cross-vendor → `false`); `cleanupStalePendingIntents(now, maxAgeMs)` is the janitor. Vendor
+  is always a plain argument, so `config` never imports the agent registry (the `config → agent-config`
+  boundary stays acyclic — ADR-0009).
+- **Resolution (`kernel/agent-config/index.ts`).** `freezeSessionAgent(pendingId, realId, agentId)`
+  resolves the agent's vendor and calls `bindSessionAgent`; `setSessionAgent(sessionId, agentId)`
+  routes a pending id → `setPendingIntent`, a real id → `changeSessionAgentFact`, returning `{ ok }`.
+- **Bind timing.** `freezeSessionAgent` fires at the same moment as the runtime `bindPending` on the
+  first real `sessionId`, in both run paths: `run/run-lifecycle.ts` (claude) and `run/run-via-driver.ts`
+  (codex/opencode). It records the agent that actually ran (`agentCfg.agentId` / the resolved launch).
+- **Janitor.** `server.ts` calls `cleanupStalePendingIntents(Date.now(), PENDING_INTENT_TTL_MS)` (7
+  days) at boot and hourly. Clearing an intent never touches `sessionAgents`, so a fact is never
+  orphaned.
+
+```
+first run:  pending:<uuid>  --bindPending(runtime re-key)-->  realId
+                  │                                              │
+            pendingIntents[pending]  --freezeSessionAgent-->  sessionAgents[realId] = { agentId, vendor }   (vendor frozen)
+                  │                                              ▲
+            (intent deleted) ───────────────────────────────────┘
+re-target:  setSessionAgent(realId, newAgentId) → same vendor ? write fact : reject {ok:false}
+janitor:    pendingIntents older than 7 days → reaped (facts untouched)
+```
 
 ## Non-functional considerations
 

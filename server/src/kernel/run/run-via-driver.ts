@@ -20,7 +20,7 @@
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
 import { fromPermissionMode } from '../agent/adapters/claude/permission-map.js'
-import { resolveSessionLaunch } from '../agent-config/index.js'
+import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import {
   bindPending,
@@ -131,7 +131,7 @@ export async function runViaDriver(
   // claude-hardwired path applies these to the SDK; the driver path threads the
   // neutral subset the vendor's driver understands (2026-06-06-007). Codex's policy
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
-  const { model, baseUrl, apiKey, envOverrides } = resolveSessionLaunch(runId)
+  const { agentId, model, baseUrl, apiKey, envOverrides } = resolveSessionLaunch(runId)
 
   try {
     const run = await adapter.driver.start({
@@ -155,6 +155,9 @@ export async function runViaDriver(
     if (sid !== runId && runId.startsWith(PENDING_SESSION_PREFIX)) {
       const prev = runId
       bindPending(prev, sid)
+      // Freeze the session→agent fact onto the agent that ran, pinning its vendor
+      // for the session's life (ADR-0015).
+      freezeSessionAgent(prev, sid, agentId)
       runId = sid
       void cbs.onEvent?.({ kind: 'bound', prevId: prev, realId: sid })
     }

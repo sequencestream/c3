@@ -27,6 +27,7 @@ import {
   resolveSessionLaunch,
   resolveAgent,
   launchForAgent,
+  freezeSessionAgent,
 } from '../agent-config/index.js'
 import { getSocketAutoResume } from '../config/index.js'
 import {
@@ -295,6 +296,9 @@ export async function launchRun(
               // session id is ephemeral — we don't track it for resume.
               if (prev.startsWith(PENDING_SESSION_PREFIX)) {
                 bindPending(prev, sid)
+                // Freeze the session→agent fact onto the agent that actually ran,
+                // pinning its vendor for the session's life (ADR-0015).
+                freezeSessionAgent(prev, sid, agentCfg.agentId)
                 runId = sid
                 if (!hasBound) {
                   hasBound = true

@@ -55,9 +55,23 @@ The whole configuration, persisted at `~/.c3/settings.json`.
 
 ## Session binding (state.json, `~/.c3`)
 
-The per-session agent binding — distinct from the session-registry's state.
+The per-session agent binding — a **two-key space** (ADR-0015, AC-R16/R17), distinct from the
+session-registry's state.
 
-| Field           | Type                      | Description                                              |
-| --------------- | ------------------------- | -------------------------------------------------------- |
-| `version`       | `1`                       | Schema version                                           |
-| `sessionAgents` | map `sessionId → agentId` | Binding; a missing entry ⇒ use the default agent (AC-R4) |
+| Field            | Type                                     | Description                                                                                                           |
+| ---------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `version`        | `2`                                      | Schema version (v1 single-map blobs migrate on first read)                                                            |
+| `pendingIntents` | map `pendingId → { agentId, createdAt }` | **Intent** — a not-yet-run session's desired agent; mutable, no vendor; reaped by the janitor after 7 days (AC-R17)   |
+| `sessionAgents`  | map `realId → { agentId, vendor }`       | **Fact** — the agent a real session ran on + its frozen `vendor`; a missing entry ⇒ use the default agent (AC-R4/R16) |
+
+### Session binding entities
+
+| Entity         | Attribute   | Type       | Description                                                              |
+| -------------- | ----------- | ---------- | ------------------------------------------------------------------------ |
+| Pending intent | `agentId`   | text       | The agent the pending session wants to launch with                       |
+| Pending intent | `createdAt` | number     | ms since epoch the intent was first recorded — drives janitor expiry     |
+| Session fact   | `agentId`   | text       | The agent that actually ran (default fallback applied)                   |
+| Session fact   | `vendor`    | `VendorId` | The **frozen** vendor; same-vendor agent swaps allowed, cross-vendor not |
+
+Relationships: a pending intent transitions to **at most one** session fact at first bind (then it is
+deleted); a fact's `vendor` is immutable for the session's life.

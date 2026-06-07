@@ -21,6 +21,7 @@ import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
 import { checkDbDriver } from './kernel/infra/db.js'
+import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
 import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
 import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js'
 import {
@@ -63,6 +64,10 @@ const STATUS_HEARTBEAT_MS = 15_000
  * deploy) emit no intermediate events but finish much faster than this.
  */
 const RUN_STALE_MS = 5 * 60_000
+
+/** How often the janitor reaps abandoned pending-session intents (ADR-0015). The
+ * 7-day TTL is coarse, so an hourly sweep is plenty. */
+const PENDING_INTENT_SWEEP_MS = 60 * 60_000
 
 export async function startServer(opts: ServerOptions): Promise<void> {
   // Probe the platform's builtin SQLite driver up front (release 4/7). On a newly
@@ -136,6 +141,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     reconcileLiveness(Date.now(), RUN_STALE_MS)
     broadcasts.broadcastStatuses()
   }, STATUS_HEARTBEAT_MS)
+  // Janitor: drop pending-session intents abandoned for >7 days (never ran), at
+  // boot and hourly thereafter. Clearing an intent never orphans a fact (ADR-0015).
+  const sweepPendingIntents = (): void => {
+    const reaped = cleanupStalePendingIntents(Date.now(), PENDING_INTENT_TTL_MS)
+    if (reaped.length > 0) console.log(`[c3] reaped ${reaped.length} stale pending intent(s)`)
+  }
+  sweepPendingIntents()
+  setInterval(sweepPendingIntents, PENDING_INTENT_SWEEP_MS)
 
   // ── Composition root (ADR-0009 R3): construct the KernelContext ONCE,
   //    explicitly. The requirement profile is wired HERE so the kernel

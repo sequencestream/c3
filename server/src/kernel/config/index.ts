@@ -2,7 +2,12 @@
  * System configuration store + reads (server refactor 3/3, ADR-0009 — sunk from
  * the old root `settings.ts`). Persisted under `~/.c3/`:
  *   1. `settings.json` — the agent registry + which agent is the default.
- *   2. `state.json`    — per-session agent assignment (sessionId → agentId).
+ *   2. `state.json`    — the two-key session→agent binding space (ADR-0015):
+ *      a mutable `pendingIntents` map (pending session → desired agent, before a
+ *      run binds it) and the `sessionAgents` *facts* (real SDK id → the agent that
+ *      actually ran + its **frozen vendor**). c3 never stores any session content;
+ *      the vendor is the immutable half of a fact because a session's transcript
+ *      lives only in that vendor's native store.
  *
  * This module owns the persistence mechanics (atomic write, in-memory caches),
  * the whole-settings `normalize`, and the *config-flavoured* reads (timezone,
@@ -25,7 +30,9 @@ import type {
   PermissionMode,
   SystemSettings,
   UiLang,
+  VendorId,
 } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import {
   defaultSettings,
   normalizeDegradationChain,
@@ -83,10 +90,40 @@ export const MIN_SPEECH_CHARS = 300
 /** Default character budget for participant speech when unset/invalid. */
 export const DEFAULT_SPEECH_CHARS = 300
 
+/** TTL for a `pendingIntent` the janitor reaps — a pending session that never ran
+ * for 7 days is presumed abandoned (ADR-0015). */
+export const PENDING_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * A *fact* in the {@link SessionAgentState.sessionAgents} map: the agent a real
+ * session actually ran on plus its **frozen** vendor. The vendor is the immutable
+ * invariant (ADR-0015) — a session's transcript lives only in that vendor's
+ * native store, so re-binding to a different vendor would read nothing back.
+ */
+interface SessionAgentFact {
+  agentId: string
+  /** Frozen at the first bind; same-vendor agent swaps are allowed, cross-vendor isn't. */
+  vendor: VendorId
+}
+
+/**
+ * An *intent* in the {@link SessionAgentState.pendingIntents} map: which agent a
+ * still-pending session wants to launch with. Mutable until a run binds it (then
+ * it is copied to a fact and dropped); the janitor reaps stale ones by `createdAt`.
+ */
+interface PendingIntent {
+  agentId: string
+  /** ms since epoch the intent was first recorded — drives janitor expiry. */
+  createdAt: number
+}
+
 interface SessionAgentState {
-  version: 1
-  /** sessionId → agentId. A missing entry means "use the default agent". */
-  sessionAgents: Record<string, string>
+  version: 2
+  /** pending id → desired agent (intent). Mutable; never produces an orphan fact. */
+  pendingIntents: Record<string, PendingIntent>
+  /** real SDK id → the agent that ran + its frozen vendor (fact). A missing entry
+   * means "use the default agent". */
+  sessionAgents: Record<string, SessionAgentFact>
 }
 
 function c3Dir(): string {
@@ -311,17 +348,62 @@ export function getDefaultMode(): PermissionMode {
 
 let stateCache: SessionAgentState | null = null
 
+/**
+ * Migrate a persisted state blob to the current v2 two-key shape (ADR-0015). The
+ * legacy v1 shape was a single `sessionAgents: Record<sessionId, agentId>` that
+ * conflated pending intents and real-session facts and carried no vendor. We split
+ * it: any `pending:`-prefixed key becomes a {@link PendingIntent} (stamped now);
+ * every other key becomes a {@link SessionAgentFact} with `vendor: 'claude'` — the
+ * only vendor that existed before multi-vendor, so the freeze is historically
+ * correct. A v2 blob is read through unchanged (dropping malformed entries).
+ */
+function migrateState(raw: unknown, now: number): SessionAgentState {
+  const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const pendingIntents: Record<string, PendingIntent> = {}
+  const sessionAgents: Record<string, SessionAgentFact> = {}
+
+  // v2 pendingIntents (kept verbatim when well-formed).
+  if (rec.pendingIntents && typeof rec.pendingIntents === 'object') {
+    for (const [id, v] of Object.entries(rec.pendingIntents as Record<string, unknown>)) {
+      if (!v || typeof v !== 'object') continue
+      const { agentId, createdAt } = v as Record<string, unknown>
+      if (typeof agentId !== 'string' || !agentId) continue
+      pendingIntents[id] = {
+        agentId,
+        createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : now,
+      }
+    }
+  }
+
+  if (rec.sessionAgents && typeof rec.sessionAgents === 'object') {
+    for (const [id, v] of Object.entries(rec.sessionAgents as Record<string, unknown>)) {
+      if (typeof v === 'string') {
+        // v1 entry: split by key shape; legacy facts predate multi-vendor ⇒ claude.
+        if (!v) continue
+        if (id.startsWith(PENDING_SESSION_PREFIX))
+          pendingIntents[id] = { agentId: v, createdAt: now }
+        else sessionAgents[id] = { agentId: v, vendor: 'claude' }
+        continue
+      }
+      // v2 fact.
+      if (!v || typeof v !== 'object') continue
+      const { agentId, vendor } = v as Record<string, unknown>
+      if (typeof agentId !== 'string' || !agentId) continue
+      if (vendor !== 'claude' && vendor !== 'codex' && vendor !== 'opencode') continue
+      sessionAgents[id] = { agentId, vendor }
+    }
+  }
+
+  return { version: 2, pendingIntents, sessionAgents }
+}
+
 function loadState(): SessionAgentState {
   if (stateCache) return stateCache
   try {
-    const raw = JSON.parse(readFileSync(stateFile(), 'utf-8')) as Partial<SessionAgentState>
-    stateCache = {
-      version: 1,
-      sessionAgents:
-        raw.sessionAgents && typeof raw.sessionAgents === 'object' ? raw.sessionAgents : {},
-    }
+    const raw = JSON.parse(readFileSync(stateFile(), 'utf-8'))
+    stateCache = migrateState(raw, Date.now())
   } catch {
-    stateCache = { version: 1, sessionAgents: {} }
+    stateCache = { version: 2, pendingIntents: {}, sessionAgents: {} }
   }
   return stateCache
 }
@@ -334,24 +416,117 @@ function persistState(): void {
   }
 }
 
-/** The agent id assigned to a session, or null (⇒ use the default agent). */
+/**
+ * The agent id bound to a session, or null (⇒ use the default agent). Reads from
+ * both key spaces (ADR-0015): a `pending:` id resolves to its intent; a real id
+ * resolves to its fact's agent. {@link resolveSessionLaunch} relies on this dual
+ * read so a pending session launches with its desired agent before it is bound.
+ */
 export function getSessionAgentId(sessionId: string): string | null {
-  return loadState().sessionAgents[sessionId] ?? null
+  const state = loadState()
+  if (sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+    return state.pendingIntents[sessionId]?.agentId ?? null
+  }
+  return state.sessionAgents[sessionId]?.agentId ?? null
 }
 
-export function setSessionAgentId(sessionId: string, agentId: string | null): void {
+/** The frozen vendor of a real session, or null if it has no fact yet (ADR-0015). */
+export function getSessionVendor(realId: string): VendorId | null {
+  return loadState().sessionAgents[realId]?.vendor ?? null
+}
+
+/**
+ * Set (or, with a null/empty agent, clear) a pending session's intent — the
+ * mutable half of the binding space. No-op-safe to call repeatedly; the
+ * `createdAt` stamp is set on first write and refreshed each time the agent
+ * changes (so a freshly-retargeted intent isn't reaped mid-edit).
+ */
+export function setPendingIntent(pendingId: string, agentId: string | null): void {
   const state = loadState()
-  if (agentId === null || agentId === '') delete state.sessionAgents[sessionId]
-  else state.sessionAgents[sessionId] = agentId
+  if (agentId === null || agentId === '') {
+    if (!(pendingId in state.pendingIntents)) return
+    delete state.pendingIntents[pendingId]
+  } else {
+    state.pendingIntents[pendingId] = { agentId, createdAt: Date.now() }
+  }
   persistState()
 }
 
+/**
+ * First bind (pending → real): copy the intent into a fact and **freeze** its
+ * vendor, then drop the intent (ADR-0015). `agentId`/`vendor` are the agent that
+ * actually ran (resolved by the caller, default-fallback already applied) — facts
+ * record reality, not just explicit intent. Idempotent: a real id that already
+ * has a fact keeps it (the vendor is never re-frozen on a retry/re-bind); the
+ * intent is still cleared so it can't linger as an orphan.
+ */
+export function bindSessionAgent(
+  pendingId: string,
+  realId: string,
+  agentId: string,
+  vendor: VendorId,
+): void {
+  const state = loadState()
+  let dirty = false
+  if (pendingId in state.pendingIntents) {
+    delete state.pendingIntents[pendingId]
+    dirty = true
+  }
+  if (!(realId in state.sessionAgents)) {
+    state.sessionAgents[realId] = { agentId, vendor }
+    dirty = true
+  }
+  if (dirty) persistState()
+}
+
+/**
+ * Change the agent of an already-bound real session. The vendor is immutable
+ * (ADR-0015): a change to a **different** vendor is rejected (returns false,
+ * leaving the fact untouched) because the existing transcript lives in the frozen
+ * vendor's store. A same-vendor change succeeds; a session with no fact yet has no
+ * vendor to violate, so the fact is created. Returns whether the change was applied.
+ */
+export function changeSessionAgentFact(realId: string, agentId: string, vendor: VendorId): boolean {
+  const state = loadState()
+  const existing = state.sessionAgents[realId]
+  if (existing && existing.vendor !== vendor) return false
+  state.sessionAgents[realId] = { agentId, vendor: existing?.vendor ?? vendor }
+  persistState()
+  return true
+}
+
+/** Drop a session from both key spaces (session deleted). */
 export function deleteSessionAgentId(sessionId: string): void {
   const state = loadState()
+  let dirty = false
+  if (sessionId in state.pendingIntents) {
+    delete state.pendingIntents[sessionId]
+    dirty = true
+  }
   if (sessionId in state.sessionAgents) {
     delete state.sessionAgents[sessionId]
-    persistState()
+    dirty = true
   }
+  if (dirty) persistState()
+}
+
+/**
+ * Janitor: reap pending intents older than `maxAgeMs` — sessions that were
+ * created but never ran (a bound session's intent is already gone). Clearing an
+ * intent never touches `sessionAgents`, so this can't orphan a fact. Returns the
+ * reaped pending ids (for the startup log / tests).
+ */
+export function cleanupStalePendingIntents(now: number, maxAgeMs: number): string[] {
+  const state = loadState()
+  const reaped: string[] = []
+  for (const [id, intent] of Object.entries(state.pendingIntents)) {
+    if (now - intent.createdAt > maxAgeMs) {
+      delete state.pendingIntents[id]
+      reaped.push(id)
+    }
+  }
+  if (reaped.length > 0) persistState()
+  return reaped
 }
 
 /** Whether multi-agent consensus voting is enabled in the system settings. */

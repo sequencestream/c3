@@ -31,7 +31,14 @@ export interface LaunchOverrides {
   baseUrl?: string
   apiKey?: string
 }
-import { getSessionAgentId, loadSettings } from '../config/index.js'
+import {
+  bindSessionAgent,
+  changeSessionAgentFact,
+  getSessionAgentId,
+  loadSettings,
+  setPendingIntent,
+} from '../config/index.js'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { systemAgent } from './normalize.js'
 
 export {
@@ -157,6 +164,34 @@ export function resolveSessionLaunch(
   const agentId = sessionId ? getSessionAgentId(sessionId) : null
   const agent = resolveAgent(agentId)
   return { agentId: agent.id, ...launchForAgent(agent) }
+}
+
+/**
+ * First bind (pending → real): freeze the session's fact onto the agent it just
+ * ran with, resolving that agent's vendor here (the storage layer is vendor-blind
+ * — ADR-0015 — so the resolution lives in this layer, which already depends on
+ * `config`). `agentId` is the resolved launch agent (default fallback applied), so
+ * the fact records reality. Idempotent at the storage layer (a re-bind never
+ * re-freezes the vendor). Called from the run lifecycle alongside `bindPending`.
+ */
+export function freezeSessionAgent(pendingId: string, realId: string, agentId: string): void {
+  bindSessionAgent(pendingId, realId, agentId, resolveAgent(agentId).vendor)
+}
+
+/**
+ * Re-target a session's agent (the UI / future binding path). A still-pending
+ * session just updates its mutable intent (always succeeds). A real session's
+ * vendor is frozen (ADR-0015): a same-vendor swap succeeds, a cross-vendor change
+ * is rejected — `{ ok: false }` — because the existing transcript lives only in
+ * the frozen vendor's native store. A null/empty agent clears a pending intent.
+ */
+export function setSessionAgent(sessionId: string, agentId: string | null): { ok: boolean } {
+  if (sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+    setPendingIntent(sessionId, agentId)
+    return { ok: true }
+  }
+  if (agentId === null || agentId === '') return { ok: false }
+  return { ok: changeSessionAgentFact(sessionId, agentId, resolveAgent(agentId).vendor) }
 }
 
 /**

@@ -325,6 +325,75 @@
       "hint": "各エージェントタイプには、そのベンダー CLI が PATH 上で利用可能である必要があります。",
       "present": "PATH にあり",
       "missing": "見つかりません"
+    },
+    "skillRepos": {
+      "title": {
+        "label": "外部スキル"
+      },
+      "hint": "外部GitリポジトリのSKILL.mdをベンダーのスキル検出ディレクトリにマウントします。リポジトリURL、ref、信頼レベルを設定してください。",
+      "empty": "外部スキルリポジトリが設定されていません。",
+      "add": {
+        "label": "+ スキルリポジトリを追加"
+      },
+      "remove": {
+        "tooltip": "このスキルリポジトリを削除"
+      },
+      "col": {
+        "id": {
+          "label": "ID"
+        },
+        "repo": {
+          "label": "GitリポジトリURL"
+        },
+        "ref": {
+          "label": "Ref"
+        },
+        "subpath": {
+          "label": "サブパス"
+        },
+        "vendor": {
+          "label": "ベンダー"
+        },
+        "trust": {
+          "label": "信頼レベル"
+        },
+        "pinCommit": {
+          "label": "固定コミット"
+        }
+      },
+      "id": {
+        "placeholder": "a-unique-id"
+      },
+      "repo": {
+        "placeholder": "https://github.com/owner/repo",
+        "parseHelp": "GitHub URLを貼り付けるとrefとサブパスが自動抽出されます"
+      },
+      "ref": {
+        "placeholder": "main",
+        "required": "Git ref（ブランチ/タグ/コミット）は必須です"
+      },
+      "subpath": {
+        "placeholder": "オプションのサブディレクトリ（例: skills/my-skill）"
+      },
+      "vendor": {
+        "all": "すべて対応",
+        "unsupported": "このベンダーは非対応"
+      },
+      "trust": {
+        "pinned": {
+          "label": "固定 — コミットに固定"
+        },
+        "reviewOnUpdate": {
+          "label": "更新時に確認"
+        },
+        "unreviewed": {
+          "label": "未確認 — 確認なしでマウント"
+        }
+      },
+      "pinCommit": {
+        "placeholder": "40桁の16進数コミットSHA",
+        "required": "信頼レベルが固定の場合は固定コミットが必要です"
+      }
     }
   },
   "intent": {
@@ -978,6 +1047,46 @@
     },
     "research": {
       "toolActivity": "🔍 {tool} で調査中…"
+    }
+  },
+  "skillApproval": {
+    "modal": {
+      "title": {
+        "label": "スキルロード承認"
+      },
+      "trust": {
+        "title": "スキル内容の確認 — {id}",
+        "firstLoad": "このスキルリポジトリはまだ確認されていません。マウント前に内容を確認してください。",
+        "refChange": "このリポジトリのresolved refが前回の確認から変更されました。新しい内容を確認してください。",
+        "detail": "{repo} · {ref}  ·  ベンダー: {vendor}",
+        "approve": {
+          "label": "承認してマウント"
+        },
+        "cancel": {
+          "label": "キャンセル — セッションを起動しない"
+        }
+      },
+      "gitignore": {
+        "title": ".gitignoreの更新が必要",
+        "detail": "c3は外部スキルをマウントする前に、このプロジェクトの.gitignoreに\"_c3_*\"に一致するエントリを追加する必要があります。",
+        "approve": {
+          "label": ".gitignoreエントリを追加"
+        },
+        "cancel": {
+          "label": "キャンセル"
+        }
+      },
+      "orphan": {
+        "title": "孤立スキルリンク — {id}",
+        "detail": "この未確認スキルは以前のセッションでマウントされましたが使用されていません。リンクを保持するか削除するかを確認してください。",
+        "appendLine": "{repo} · {ref}  ·  ベンダー: {vendor}",
+        "keep": {
+          "label": "リンクを保持"
+        },
+        "remove": {
+          "label": "リンクを削除"
+        }
+      }
     }
   }
 }

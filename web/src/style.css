@@ -2277,6 +2277,39 @@ button.deny:hover:not(:disabled) {
   border-color: var(--c-text-muted);
 }
 
+/* External skill repository rows (ADR-0016/0017). Stacked vertically like agent rows,
+ * each row wraps to keep the form compact. */
+.skill-repo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg-card);
+}
+.skill-repo-row .agent-field {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.skill-repo-empty {
+  margin-bottom: var(--sp-2);
+}
+.field-group {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 140px;
+  min-width: 120px;
+  gap: var(--sp-1);
+}
+.field-error {
+  font-size: var(--fs-caption);
+  color: var(--c-error, #d32f2f);
+  line-height: 1.2;
+}
+
 /* Host-CLI diagnostics rows (ADR-0012): vendor dot + binary + present/missing. */
 .diagnostics-list {
   list-style: none;

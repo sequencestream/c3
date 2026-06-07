@@ -16,6 +16,8 @@ import Intents from './pages/intents/Intents.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Schedules from './pages/schedules/Schedules.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
+import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
+import type { ApprovalRequest } from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import {
   discussionMessageToChat,
   discussionMessagesToChat,
@@ -56,6 +58,7 @@ import type {
   SessionInfo,
   SessionRunStatus,
   SessionStatus,
+  SkillSupportState,
   SlashCommandInfo,
   SystemSettings,
   TranscriptItem,
@@ -481,6 +484,16 @@ const bindingStats = ref<SessionBindingStats | null>(null)
 // reply arrives; the list degrades optimistically then.
 const sessionCapabilities = ref<Record<VendorId, SessionCapabilities> | null>(null)
 
+// Per-vendor external-skill mount support (ADR-0016/0017). Rides the `settings`
+// message as an optional companion; absent → defaults to `full` for every vendor
+// (no UI greying). Seeded from the `settings.skillSupport` field.
+const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
+
+// The current pending skill-load approval request, or null when idle. The
+// SkillApprovalModal renders against this; the user's decision is sent back as
+// `skill_load_approval_resolve` and clears it.
+const skillApprovalRequest = ref<ApprovalRequest | null>(null)
+
 // First-class OpenCode server reachability (2026-06-07-003): a snapshot rides every
 // connection's `ready`, and each up/down/retrying transition pushes `opencode_status`.
 // Drives the session list's offline warning; `'none'` (unregistered) is treated as
@@ -786,12 +799,24 @@ function handleMessage(msg: ServerToClient) {
       hostStatus.value = msg.hostStatus
       bindingStats.value = msg.bindingStats
       sessionCapabilities.value = msg.sessionCapabilities
+      skillSupport.value = msg.skillSupport ?? null
       // Server is the single source of truth for UI language. Reconcile exactly
       // once and only when it disagrees with the live locale, to avoid a
       // save→settings→apply→save loop and any flicker.
       if (msg.settings.uiLang && msg.settings.uiLang !== i18n.global.locale.value) {
         applyLocale(msg.settings.uiLang)
         setStoredLocale(msg.settings.uiLang)
+      }
+      break
+    case 'skill_load_approval_request':
+      skillApprovalRequest.value = {
+        requestId: msg.requestId,
+        kind: msg.kind,
+        id: msg.id,
+        vendor: msg.vendor,
+        repo: msg.repo,
+        ref: msg.ref,
+        detail: msg.detail,
       }
       break
     case 'intents':
@@ -1646,6 +1671,31 @@ function submitAsk(m: PermissionMsg, answers: Record<string, string>) {
 function listCommands() {
   client?.send({ type: 'list_commands' })
 }
+
+// ---- Skill-load approval (mount layer 2/3) ----
+
+function approveSkillLoad(requestId: string) {
+  client?.send({ type: 'skill_load_approval_resolve', requestId, decision: 'approve' })
+  skillApprovalRequest.value = null
+}
+
+function cancelSkillLoad(requestId: string) {
+  client?.send({ type: 'skill_load_approval_resolve', requestId, decision: 'cancel' })
+  skillApprovalRequest.value = null
+}
+
+function dismissSkillApproval() {
+  // Closing the modal without a decision — for a pending `trust` gate the backend
+  // stays blocked until the resolve arrives; the user re-opens the modal by
+  // re-launching. For the no-block `orphan` kind, closing is a no-op.
+  if (skillApprovalRequest.value?.kind === 'orphan') {
+    skillApprovalRequest.value = null
+  }
+  // `trust` and `gitignore` gates block the session launch; dismissing the modal
+  // without deciding would leave the backend hanging. We do NOT auto-cancel here
+  // because the user may switch away and come back. The modal stays open until
+  // a decision is made.
+}
 </script>
 
 <template>
@@ -1814,12 +1864,21 @@ function listCommands() {
     :settings="serverSettings"
     :host-status="hostStatus"
     :binding-stats="bindingStats"
+    :skill-support="skillSupport"
     @close="settingsOpen = false"
     @save="saveSettings"
     @set-ui-lang="setLocale"
   />
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
+
+  <SkillApprovalModal
+    :open="skillApprovalRequest !== null"
+    :approval="skillApprovalRequest"
+    @approve="approveSkillLoad"
+    @cancel="cancelSkillLoad"
+    @close="dismissSkillApproval"
+  />
 </template>
 
 <style scoped>

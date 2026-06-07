@@ -9,11 +9,17 @@
  *  - `bindingStats` — the session→agent binding counts (ADR-0015), so the console
  *    can show that a default-agent change is not retroactive.
  */
-import type { VendorHostStatus, SessionCapabilities, VendorId } from '@ccc/shared/protocol'
+import type {
+  VendorHostStatus,
+  SessionCapabilities,
+  SkillSupportState,
+  VendorId,
+} from '@ccc/shared/protocol'
 import { getSessionBindingStats, loadSettings, saveSettings } from '../../kernel/config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import { getOpencodeStatus } from '../../opencode-status.js'
+import { getSkillSupport } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 /** Map the ProcessLauncher probe into the wire shape (drop the absolute path). */
@@ -49,6 +55,29 @@ function sessionCapabilities(): Record<VendorId, SessionCapabilities> {
   return out
 }
 
+/**
+ * Each vendor's external-skill mount support (ADR-0016/0017). Probed and cached by
+ * `detectSkillSupport()` in the mount layer (2/3). Returns a `Record<VendorId, SkillSupportState>`
+ * with every registered vendor; unprobed vendors default to `'full'` (the UI shows no greying).
+ * Absent entirely when the mount layer hasn't probed any vendor (the `settings` companion is
+ * marked optional so older clients ignore it).
+ */
+function skillSupport(): Record<VendorId, SkillSupportState> | undefined {
+  const out = {} as Record<VendorId, SkillSupportState>
+  let anyProbed = false
+  for (const v of Object.keys(VENDOR_CAPABILITIES) as VendorId[]) {
+    const report = getSkillSupport(v)
+    if (report) {
+      anyProbed = true
+      out[v] = report.state
+    } else {
+      // Unprobed vendor: default to 'full' so the UI doesn't grey it prematurely.
+      out[v] = 'full'
+    }
+  }
+  return anyProbed ? out : undefined
+}
+
 export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
   conn.send({
     type: 'settings',
@@ -56,6 +85,7 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),
+    skillSupport: skillSupport(),
   })
 }
 
@@ -66,5 +96,6 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),
+    skillSupport: skillSupport(),
   })
 }

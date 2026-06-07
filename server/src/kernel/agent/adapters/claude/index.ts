@@ -8,11 +8,13 @@ import { claudeCapabilities } from './capabilities.js'
 import { ClaudeDriver } from './driver.js'
 import { ClaudeApprovalBridge } from './approval.js'
 import { ClaudeSessionStore } from './session-store.js'
+import { createClaudeSkillLoader } from './skill.js'
 
 export { claudeCapabilities } from './capabilities.js'
 export { ClaudeDriver } from './driver.js'
 export { ClaudeApprovalBridge } from './approval.js'
 export { ClaudeSessionStore } from './session-store.js'
+export { createClaudeSkillLoader } from './skill.js'
 export { claudePolicy } from './policy.js'
 export { fromPermissionMode, toPermissionMode } from './permission-map.js'
 export { ClaudeStreamTranslator, transcriptToCanonical } from './translate.js'
@@ -25,5 +27,6 @@ export function createClaudeAdapter(): VendorAdapter {
     driver: new ClaudeDriver(),
     approval: new ClaudeApprovalBridge(),
     sessions: new ClaudeSessionStore(),
+    skill: createClaudeSkillLoader(),
   }
 }

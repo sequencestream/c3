@@ -106,6 +106,14 @@ export interface LaunchRunDeps {
    * sandbox/approval policy is the per-tool-approval substitute (008).
    */
   getCodexAdapter?: () => VendorAdapter | null
+  /**
+   * Skill mount step — mount external skill repos into vendor discovery dirs
+   * before the run starts (mount layer 2/3, ADR-0017). Pure function; a `false`
+   * `ok` means a mount failed (the run still starts, skills degrade to the
+   * subset of what mounted). When absent (pre-2/3 or no external skills configured)
+   * the step is silently skipped.
+   */
+  skillMount?: (rt: SessionRuntime) => Promise<SkillMountStep>
 }
 
 /** Connection-injected callback the launcher fires. The shape itself is the
@@ -113,6 +121,14 @@ export interface LaunchRunDeps {
  * it so the seam tests / callers that imported it from here keep working. */
 import type { LaunchCbs } from '../types.js'
 export type { LaunchCbs } from '../types.js'
+import type { SkillMountOutcome } from '../skill-loader/index.js'
+
+/** Outcome of the pre-launch skill mount step, for telemetry / UI status. */
+export interface SkillMountStep {
+  ok: boolean
+  outcome?: SkillMountOutcome
+  error?: string
+}
 
 /**
  * Shared run launcher. Owns only registry/emit concerns: abort wiring, the prompt
@@ -141,6 +157,21 @@ export async function launchRun(
       '[c3] launchRun: a intent runtime requires deps.intentProfile (composition-root wiring missing)',
     )
   }
+
+  // Pre-launch skill mount (mount layer 2/3, ADR-0017): mount external skill repos
+  // into vendor discovery dirs before the run starts. Mount failures degrade
+  // skills silently (worst case: subset unavailable = indistinguishable from no
+  // external skills). If any skills were mounted, the supply-chain write guard
+  // (`skillWriteGuard`) is enabled for this run's permission gateway.
+  let skillMountStep: SkillMountStep | undefined
+  if (deps.skillMount) {
+    try {
+      skillMountStep = await deps.skillMount(rt)
+    } catch (err) {
+      console.warn('[c3] skill mount error (non-fatal):', err)
+    }
+  }
+  const hasMountedSkills = skillMountStep?.ok && (skillMountStep.outcome?.mounted.length ?? 0) > 0
 
   // Vendor fork (2026-06-06-003 / -007): an `opencode` or `codex` session runs
   // through the neutral AgentDriver path, NOT the claude-hardwired loop below (which
@@ -345,6 +376,7 @@ export async function launchRun(
             const agent = resolveAgent(agentCfg.agentId)
             failedAgents.push({ agentId: agent.id, agentName: agent.displayName, error: errMsg })
           },
+          skillWriteGuard: hasMountedSkills,
         })
       } finally {
         cycleAbort.signal.removeEventListener('abort', onCycleAbort)

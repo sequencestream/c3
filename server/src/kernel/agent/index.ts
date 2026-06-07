@@ -127,6 +127,12 @@ export interface RunOptions {
   appendSystemPrompt?: string
   /** Tool names hard-disabled at the SDK level (the comm agent's read-only lock). */
   disallowedTools?: string[]
+  /**
+   * When true (external skills mounted), write-class tools skip the consensus
+   * shortcut and go straight to a human permission_request (mount layer 2/3,
+   * ADR-0017 §E). Default false.
+   */
+  skillWriteGuard?: boolean
   /** In-process MCP servers to expose (e.g. the c3 `save_intents` tool). */
   mcpServers?: Record<string, McpServerConfig>
   /**
@@ -276,6 +282,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     disallowedTools,
     mcpServers,
     gate = 'standard',
+    skillWriteGuard,
     send,
     onStart,
     onSessionId,
@@ -365,6 +372,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         currentAgentId: currentAgentId ?? null,
         cwd,
         recentContext: () => recentContext,
+        skillWriteGuard,
       }),
     },
   })

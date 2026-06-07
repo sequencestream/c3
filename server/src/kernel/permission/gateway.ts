@@ -38,6 +38,14 @@ export interface GatewaySpec {
   cwd: string
   /** Getter for the run's rolling recent-context (mutated by the message loop). */
   recentContext: () => string
+  /**
+   * When true (external skills mounted), write-class tools skip the consensus
+   * shortcut and go straight to a human `permission_request`. This prevents the
+   * SDK's `allowed-tools` frontmatter from auto-allowing a skill's write tools
+   * without c3 oversight (mount layer 2/3, ADR-0017 §E — supply-chain write-ops
+   * guard). Read tools and AskUserQuestion are unaffected.
+   */
+  skillWriteGuard?: boolean
 }
 
 /**
@@ -164,6 +172,22 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
             `(consensus-window race) — tool=${toolName}`,
         )
       }
+      return deny('User denied in c3 UI')
+    }
+
+    // Supply-chain write guard (mount layer 2/3, ADR-0017 §E): when an external
+    // skill is loaded, write-class tools (anything except known read tools and
+    // AskUserQuestion) skip the consensus shortcut and go straight to a human
+    // permission_request. This prevents the SDK's `allowed-tools` frontmatter
+    // from auto-allowing write ops without c3 oversight.
+    if (
+      spec.skillWriteGuard &&
+      !INTENT_READ_TOOLS.has(toolName) &&
+      toolName !== 'AskUserQuestion'
+    ) {
+      send({ type: 'permission_request', requestId, toolName, input })
+      const { decision } = await waitForDecision(requestId, signal)
+      if (decision === 'allow') return allow(input)
       return deny('User denied in c3 UI')
     }
 

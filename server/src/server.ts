@@ -38,11 +38,16 @@ import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js
 import {
   createOpencodeSupervisor,
   createOpencodeAdapter,
+  createOpencodeSkillLoader,
   type OpencodeSupervisor,
 } from './kernel/agent/adapters/opencode/index.js'
-import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
+import { createCodexAdapter, createCodexSkillLoader } from './kernel/agent/adapters/codex/index.js'
+import { createClaudeSkillLoader } from './kernel/agent/adapters/claude/index.js'
 import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
-import type { VendorAdapter } from './kernel/agent/adapters/types.js'
+import type { VendorAdapter, SkillLoader } from './kernel/agent/adapters/types.js'
+import type { VendorId } from '@ccc/shared/protocol'
+import { ensureLinksForLaunch } from './kernel/skill-loader/index.js'
+import { getSkillRepos } from './kernel/config/index.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
 import { setOpencodeEnsure, setOpencodeStatus } from './opencode-status.js'
@@ -295,6 +300,26 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // The neutral Codex adapter, or null when its host CLI is missing (launchRun
     // forks to the driver path for codex sessions; 2026-06-06-007).
     getCodexAdapter: () => codexAdapter,
+    // Pre-launch skill mount (mount layer 2/3, ADR-0017): mount every configured
+    // skill repo into each vendor's discovery dir before the run starts. The call
+    // is non-blocking (a mount failure degrades silently — the worst case is a
+    // subset of external skills unavailable, which is indistinguishable from no
+    // external skills configured).
+    skillMount: async (rt) => {
+      const configs = getSkillRepos()
+      if (!configs.length) return { ok: true }
+      const loaders: Partial<Record<VendorId, SkillLoader>> = {
+        claude: createClaudeSkillLoader(),
+        codex: createCodexSkillLoader(),
+        opencode: createOpencodeSkillLoader(),
+      }
+      const outcome = await ensureLinksForLaunch({
+        projectDir: rt.workspacePath,
+        configs,
+        loaders,
+      })
+      return { ok: true, outcome }
+    },
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).

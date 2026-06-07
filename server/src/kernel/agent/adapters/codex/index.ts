@@ -15,9 +15,11 @@ import { codexCapabilities } from './capabilities.js'
 import { CodexDriver, type CodexFactory } from './driver.js'
 import { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
 import { CodexSessionStore } from './session-store.js'
+import { createCodexSkillLoader } from './skill.js'
 import type { CodexRelay } from './relay-contract.js'
 
 export { codexCapabilities } from './capabilities.js'
+export { createCodexSkillLoader } from './skill.js'
 export { CodexDriver, gateToCodexPolicy, type CodexFactory, type CodexClient } from './driver.js'
 export { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
 export { CodexSessionStore } from './session-store.js'
@@ -42,5 +44,6 @@ export function createCodexAdapter(
     driver: new CodexDriver(createCodex, relay),
     approval: new CodexApprovalBridge(approvalOpts),
     sessions: new CodexSessionStore(),
+    skill: createCodexSkillLoader(),
   }
 }

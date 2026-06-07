@@ -66,6 +66,7 @@ import {
   scheduleRunNow,
   updateScheduleHandler,
 } from './schedules/index.js'
+import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -127,6 +128,10 @@ export const handlerMap: HandlerMap = {
   save_workspace_mcp_config: saveWorkspaceMcpConfig,
   list_pending_write_approvals: listPendingWriteApprovals,
   approve_write_approval: approveWriteApproval,
+  // skill-load gates (mount layer 2/3)
+  skill_load_approval_resolve: (_ctx, _conn, msg) => {
+    resolveSkillApprovalImpl(msg.requestId, msg.decision)
+  },
 }
 
 /** Assemble the startup handler registry from the exhaustive map. */

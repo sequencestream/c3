@@ -213,7 +213,63 @@ options: {
 （一个配置 id 一个目录、直挂 `SKILL.md`），不能用嵌套的 `_c3_session/<id>/`。codex（`~/.codex/skills/<name>/SKILL.md`，
 frontmatter 与 Claude 兼容）同为单层布局；opencode 本机未装，发现机制待补证。
 
-## 6. 最佳实践
+## 6. 外部 skill 加载路径(挂载层)
+
+> 本节对应 [ADR-0016](adr/0016-external-skill-git-mount.md)(前提:扁平布局 + vendor 范围)
+> 与 [ADR-0017](adr/0017-external-skill-mount-mechanism.md)(加载机制)。
+
+c3 支持从外部 git 仓库加载 skill,在 session 启动前按以下流程自动挂载:
+
+```mermaid
+flowchart LR
+  subgraph 配置
+    R[settings.json skillRepos] --> V[validateSkillRepos fail-hard]
+  end
+  subgraph 挂载
+    A[ensureSkillRepo clone/pull] --> B[detectSkillSupport vendor?]
+    B -->|full| C[ensureLink 软链]
+    B -->|none| D[vendor 标灰/不建链]
+    C --> E[skills/_c3_<id>/ → vendor 发现]
+  end
+  subgraph 运行
+    E --> F[session start]
+    F --> G[canUseTool skill 写守卫]
+  end
+  V --> A
+```
+
+### 6.1. clone 与缓存
+
+- 所有 vendor 共用 `~/.c3/repo/<hash>` — hash = SHA256(repo + ref),不按 vendor 区分。
+- `ensureSkillRepo(config)` 在 1/3 实现:clone(首次)或 pull(后续),然后 `resolveSubpath`。
+- `trust='pinned'` 时 clone 后 `git cat-file -t <sha>` 校验,防 force-push 伪造。
+
+### 6.2. 发现目录(项目级)
+
+| vendor   | 发现目录(SKILL.md 直接子级)    |
+| -------- | ------------------------------ |
+| claude   | `<projectDir>/.claude/skills/` |
+| codex    | `<projectDir>/.codex/skills/`  |
+| opencode | `<projectDir>/.agents/skills/` |
+
+「vendor=all」展开为所有 `detectSkillSupport=full` 的 vendor,各建一份软链。
+
+### 6.3. 准入管制
+
+- **detectSkillSupport**:结果缓存在 `state.json`,SDK 版本升级时主动失效重探。
+- **trust 三档**:`pinned`(仅 cat-file 校验)、`review-on-update`(首次+ref 变化审批)、
+  `unreviewed`(每次审批;取消则 session 不启动)。
+- **.gitignore**:首次挂载前请求 Human 确认追加 `_c3_*/` 条目;确认后永久静默。
+- **写操作审批**:挂载了外部 skill 的 session 中,写类工具走 `permission_request` 而非任何自动放行。
+
+### 6.4. 生命周期
+
+- 挂载在 `launchRun` 中、`adapter.driver.start()` **之前**完成。
+- 幂等:已存在且 ref 未变的软链完全 skip(clone + relink 都不做)。
+- 不清理:session 结束不删软链;下次命中缓存复用。
+- 孤儿扫描:c3 启动时对 `trust=unreviewed` 且从未消费的条目做一次性 ack 提醒。
+
+## 7. 最佳实践
 
 ### 权限与工具控制
 

@@ -338,6 +338,29 @@ export interface SkillRepoConfig {
 }
 
 /**
+ * How a target vendor's SKILL-discovery support is reported to the console
+ * (mount layer 2/3). Reuses {@link CapabilityState} (single SoT): `full` ⇒ c3's
+ * soft-linked `_c3_<id>` skills are discovered and the vendor builds links;
+ * `none` ⇒ the vendor's SDK/CLI does not (or cannot be confirmed to) discover
+ * them, so c3 builds NO link and the console greys the vendor (the session still
+ * launches). `temporarily-unavailable` is the host-down overlay. Persisted in
+ * `state.json` and invalidated on an SDK-version change (re-probed).
+ */
+export type SkillSupportState = CapabilityState
+
+/**
+ * Which kind of pre-launch skill-load gate the backend is asking the human to
+ * resolve (mount layer 2/3; the modal UI is rendered by 3/3):
+ * - `trust` — a `review-on-update` first-load / ref-change ack, or an
+ *   `unreviewed` per-mount ack (cancel ⇒ the session does not launch).
+ * - `gitignore` — the one-time confirm to append a `_c3_` + wildcard line to the
+ *   project's `.gitignore` before the first mount; acked once, then silent.
+ * - `orphan` — a boot-time reminder for an `unreviewed`, never-consumed link
+ *   left from a prior session (informational; does not block a launch).
+ */
+export type SkillApprovalKind = 'trust' | 'gitignore' | 'orphan'
+
+/**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
  */
@@ -1329,6 +1352,14 @@ export type ClientToServer =
       approvalId: string
       decision: 'approve' | 'reject'
     }
+  /**
+   * Resolve a pending pre-launch skill-load gate (mount layer 2/3). `approve`
+   * lets the mount proceed and (for `trust`/`gitignore`) persists the ack;
+   * `cancel` aborts the mount — for an `unreviewed` `trust` gate that means the
+   * session does not launch. Correlated to a {@link SkillLoadApprovalRequest} by
+   * `requestId`.
+   */
+  | { type: 'skill_load_approval_resolve'; requestId: string; decision: 'approve' | 'cancel' }
   | { type: 'ping' }
 
 // Server → Client
@@ -1423,6 +1454,15 @@ export type ServerToClient =
       hostStatus: VendorHostStatus[]
       bindingStats: SessionBindingStats
       sessionCapabilities: Record<VendorId, SessionCapabilities>
+      /**
+       * Each vendor's external-skill mount support (ADR-0016/0017, mount layer 2/3).
+       * Probed and cached by `detectSkillSupport()`. A `none` / `temporarily-unavailable`
+       * vendor gets its vendor selector in the skillRepos form greyed out — the session
+       * still launches, but the skill is not linked into that vendor's discovery dir.
+       * Absent when the mount layer hasn't been initialized yet (older configs); the
+       * UI then defaults every vendor to `full` (no greying).
+       */
+      skillSupport?: Record<VendorId, SkillSupportState>
     }
   /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
   | { type: 'intents'; projectPath: string; items: Intent[] }
@@ -1662,4 +1702,24 @@ export type ServerToClient =
     }
   /** Pending write approvals for a workspace (reply to `list_pending_write_approvals`). */
   | { type: 'pending_write_approvals'; workspacePath: string; items: PendingWriteApproval[] }
+  /**
+   * A pre-launch skill-load gate awaiting a human decision (mount layer 2/3; the
+   * modal is rendered by 3/3). The backend emits one before mounting an external
+   * skill when the `trust` tier or first-time `.gitignore` write needs an ack,
+   * then blocks the mount on the matching {@link SkillLoadApprovalRequest}
+   * `skill_load_approval_resolve`. `detail` is a human-readable summary of what is
+   * about to happen (e.g. the ref change, or the `.gitignore` line to append).
+   */
+  | {
+      type: 'skill_load_approval_request'
+      requestId: string
+      kind: SkillApprovalKind
+      /** The {@link SkillRepoConfig.id} being mounted. */
+      id: string
+      /** The vendor whose discovery dir is the mount target. */
+      vendor: VendorId
+      repo: string
+      ref: string
+      detail: string
+    }
   | { type: 'pong' }

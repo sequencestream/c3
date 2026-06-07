@@ -25,6 +25,7 @@ import type {
   CanonicalMessage,
   SessionCapability,
   SessionCapabilities,
+  SkillSupportState,
   VendorId,
 } from '@ccc/shared/protocol'
 
@@ -310,9 +311,53 @@ export interface SessionStore {
 }
 
 /**
- * One vendor's full adapter: its driver, approval bridge, and session store.
- * Assembled per-vendor under `adapters/<vendor>/`; the upper layer selects one
- * by {@link VendorId} and treats it through these neutral faces only.
+ * The cached self-report of one vendor's SKILL-discovery support (mount layer
+ * 2/3). `state` reuses {@link SkillSupportState}; `sdkVersion` is the probed
+ * vendor SDK/CLI version the report was taken against — a mismatch on re-read
+ * invalidates the cache (an SDK upgrade may change discovery behaviour), forcing
+ * a re-probe. `checkedAt` is the Unix-ms instant of the probe.
+ */
+export interface SkillSupportReport {
+  state: SkillSupportState
+  sdkVersion: string
+  checkedAt: number
+}
+
+/**
+ * Per-vendor SKILL mount face (mount layer 2/3, ADR-0016/0017). The three
+ * methods are the contract every vendor implements; whether a mount is actually
+ * built is gated by {@link detectSkillSupport} (a `none` state ⇒ no link, the
+ * console greys the vendor, the session still launches). The flat layout is
+ * fixed by spike A: a skill mounts as a single `_c3_<id>` dir symlinked straight
+ * at its source dir (which holds `SKILL.md`); nested dirs are NOT discovered.
+ */
+export interface SkillLoader {
+  readonly vendor: VendorId
+  /**
+   * The vendor's project-level skill-discovery directory, e.g.
+   * `<projectDir>/.claude/skills`. The mount target for an id is this dir +
+   * `/_c3_<id>`. Pure path math — does not touch the filesystem.
+   */
+  getVendorSkillDir(projectDir: string): string
+  /**
+   * Probe (with cache + SDK-version invalidation) whether this vendor's running
+   * SDK/CLI will discover c3's mounted skills. A `none`/`temporarily-unavailable`
+   * result means the upper layer must NOT build a link for this vendor.
+   */
+  detectSkillSupport(): Promise<SkillSupportReport>
+  /**
+   * Idempotently create the symlink `linkPath → target`. A link that already
+   * exists and points at the same `target` is a no-op (the cache-hit skip lives
+   * in the upper layer, but this stays safe under a redundant call).
+   */
+  ensureLink(target: string, linkPath: string): Promise<void>
+}
+
+/**
+ * One vendor's full adapter: its driver, approval bridge, session store, and
+ * skill mount face. Assembled per-vendor under `adapters/<vendor>/`; the upper
+ * layer selects one by {@link VendorId} and treats it through these neutral
+ * faces only.
  */
 export interface VendorAdapter {
   readonly vendor: VendorId
@@ -320,4 +365,5 @@ export interface VendorAdapter {
   readonly driver: AgentDriver
   readonly approval: ApprovalBridge
   readonly sessions: SessionStore
+  readonly skill: SkillLoader
 }

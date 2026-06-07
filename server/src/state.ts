@@ -14,13 +14,54 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import type { PermissionMode, WorkspaceInfo } from '@ccc/shared/protocol'
+import type { PermissionMode, VendorId, WorkspaceInfo } from '@ccc/shared/protocol'
+import type { SkillSupportReport } from './kernel/agent/adapters/types.js'
+
+/**
+ * One built skill mount (mount layer 2/3). Keyed in {@link PersistedState.skillLinkIndex}
+ * by the idempotency key `${projectDir}:${vendor}:${id}` — a `vendor: 'all'` config
+ * fans out to one record per build-link-capable vendor, which a bare `id` key could
+ * not hold (spec D2). `ref` is the resolved SHA at mount time, compared against
+ * `lsRemote` on a later session to detect a content change (cache invalidation).
+ * `consumedAt` is set the first time a launch actually mounts/uses the link; an
+ * `unreviewed` record still missing it at boot is an orphan (one-time ack reminder).
+ */
+export interface SkillLinkRecord {
+  id: string
+  projectDir: string
+  vendor: VendorId
+  linkPath: string
+  target: string
+  ref: string
+  trust: string
+  createdAt: number
+  consumedAt?: number
+}
+
+/**
+ * A persisted human ack for a skill-load gate (mount layer 2/3). Stored in
+ * {@link PersistedState.skillAcks} under two key conventions (spec §7): the
+ * `.gitignore` ack is keyed by `projectDir` (one append per project); the
+ * `review-on-update` ack is keyed by the idempotency key `${projectDir}:${vendor}:${id}`
+ * and records the `reviewedRef` SHA so the same ref stays silent and only a change
+ * re-prompts.
+ */
+export interface SkillAckRecord {
+  gitignore?: boolean
+  reviewedRef?: string
+}
 
 interface PersistedState {
   version: 1
   workspaces: WorkspaceInfo[]
   sessionModes: Record<string, PermissionMode>
   activeSessionId: string | null
+  /** Cached per-vendor SKILL-discovery support, invalidated on SDK-version change. */
+  skillSupport: Record<string, SkillSupportReport>
+  /** Built skill mounts, keyed by `${projectDir}:${vendor}:${id}` (the idempotency key). */
+  skillLinkIndex: Record<string, SkillLinkRecord>
+  /** Human acks for skill-load gates (`.gitignore` by projectDir; trust by idempotency key). */
+  skillAcks: Record<string, SkillAckRecord>
 }
 
 const DEFAULT_MODE: PermissionMode = 'default'
@@ -36,7 +77,15 @@ function stateFile(): string {
 }
 
 function emptyState(): PersistedState {
-  return { version: 1, workspaces: [], sessionModes: {}, activeSessionId: null }
+  return {
+    version: 1,
+    workspaces: [],
+    sessionModes: {},
+    activeSessionId: null,
+    skillSupport: {},
+    skillLinkIndex: {},
+    skillAcks: {},
+  }
 }
 
 let cache: PersistedState | null = null
@@ -52,6 +101,15 @@ function load(): PersistedState {
       sessionModes:
         parsed.sessionModes && typeof parsed.sessionModes === 'object' ? parsed.sessionModes : {},
       activeSessionId: typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : null,
+      // New skill-mount fields (mount layer 2/3); a pre-existing state.json lacks
+      // them, so default to empty — version stays 1, no migration needed.
+      skillSupport:
+        parsed.skillSupport && typeof parsed.skillSupport === 'object' ? parsed.skillSupport : {},
+      skillLinkIndex:
+        parsed.skillLinkIndex && typeof parsed.skillLinkIndex === 'object'
+          ? parsed.skillLinkIndex
+          : {},
+      skillAcks: parsed.skillAcks && typeof parsed.skillAcks === 'object' ? parsed.skillAcks : {},
     }
   } catch {
     // Missing or corrupt — start clean rather than crash.
@@ -145,6 +203,58 @@ export function getActiveSessionId(): string | null {
 
 export function setActiveSessionId(sessionId: string | null): void {
   load().activeSessionId = sessionId
+  persist()
+}
+
+// ---------------------------------------------------------------------------
+// Skill mount state (mount layer 2/3, ADR-0016/0017)
+// ---------------------------------------------------------------------------
+
+/** The idempotency / mount key for a `(projectDir, vendor, id)` triple. */
+export function skillLinkKey(projectDir: string, vendor: VendorId, id: string): string {
+  return `${resolve(projectDir)}:${vendor}:${id}`
+}
+
+export function getSkillSupport(vendor: VendorId): SkillSupportReport | undefined {
+  return load().skillSupport[vendor]
+}
+
+export function setSkillSupport(vendor: VendorId, report: SkillSupportReport): void {
+  load().skillSupport[vendor] = report
+  persist()
+}
+
+export function getSkillLink(key: string): SkillLinkRecord | undefined {
+  return load().skillLinkIndex[key]
+}
+
+export function setSkillLink(key: string, record: SkillLinkRecord): void {
+  load().skillLinkIndex[key] = record
+  persist()
+}
+
+/** All recorded skill mounts (read-only snapshot), for orphan scans / diagnostics. */
+export function listSkillLinks(): SkillLinkRecord[] {
+  return Object.values(load().skillLinkIndex)
+}
+
+/** Mark a mount as consumed (a launch actually used it) — clears its orphan status. */
+export function markSkillLinkConsumed(key: string, now: number): void {
+  const rec = load().skillLinkIndex[key]
+  if (rec && rec.consumedAt === undefined) {
+    rec.consumedAt = now
+    persist()
+  }
+}
+
+export function getSkillAck(key: string): SkillAckRecord | undefined {
+  return load().skillAcks[key]
+}
+
+/** Merge-write a skill ack (partial fields preserved). */
+export function setSkillAck(key: string, patch: SkillAckRecord): void {
+  const state = load()
+  state.skillAcks[key] = { ...state.skillAcks[key], ...patch }
   persist()
 }
 

@@ -13,9 +13,11 @@ import { opencodeCapabilities } from './capabilities.js'
 import { OpencodeDriver } from './driver.js'
 import { OpencodeApprovalBridge, type OpencodeApprovalOptions } from './approval.js'
 import { OpencodeSessionStore } from './session-store.js'
+import { createOpencodeSkillLoader } from './skill.js'
 import type { OpencodeSupervisor } from './supervisor.js'
 
 export { opencodeCapabilities } from './capabilities.js'
+export { createOpencodeSkillLoader } from './skill.js'
 export { OpencodeDriver } from './driver.js'
 export { OpencodeApprovalBridge } from './approval.js'
 export { OpencodeSessionStore } from './session-store.js'
@@ -48,5 +50,6 @@ export function createOpencodeAdapter(
     driver: new OpencodeDriver(getClient, approval),
     approval,
     sessions: new OpencodeSessionStore(getClient),
+    skill: createOpencodeSkillLoader(),
   }
 }

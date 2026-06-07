@@ -72,6 +72,12 @@ export function assertNeutralAdapterShape(adapter: VendorAdapter): void {
   // Required SessionStore surface.
   expect(typeof adapter.sessions.list).toBe('function')
   expect(typeof adapter.sessions.read).toBe('function')
+
+  // Required SkillLoader surface (mount layer 2/3): three methods, vendor-tagged.
+  expect(adapter.skill.vendor).toBe(adapter.vendor)
+  expect(typeof adapter.skill.getVendorSkillDir).toBe('function')
+  expect(typeof adapter.skill.detectSkillSupport).toBe('function')
+  expect(typeof adapter.skill.ensureLink).toBe('function')
 }
 
 describe('neutral adapter contract', () => {

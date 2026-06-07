@@ -8,9 +8,11 @@
 import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
 import type {
   SessionBindingStats,
+  SkillSupportState,
   SystemSettings,
   UiLang,
   VendorHostStatus,
+  VendorId,
 } from '@ccc/shared/protocol'
 
 defineProps<{
@@ -18,6 +20,7 @@ defineProps<{
   settings: SystemSettings | null
   hostStatus: VendorHostStatus[]
   bindingStats: SessionBindingStats | null
+  skillSupport: Record<VendorId, SkillSupportState> | null
 }>()
 
 defineEmits<{
@@ -33,6 +36,7 @@ defineEmits<{
     :settings="settings"
     :host-status="hostStatus"
     :binding-stats="bindingStats"
+    :skill-support="skillSupport"
     @close="$emit('close')"
     @save="(s: SystemSettings) => $emit('save', s)"
     @set-ui-lang="(l: UiLang) => $emit('set-ui-lang', l)"

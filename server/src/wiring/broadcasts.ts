@@ -18,6 +18,8 @@
 import type { AutomationStatus, DiscussionMessage, ResearchMessage } from '@ccc/shared/protocol'
 import { resolve } from 'node:path'
 import type { Broadcaster } from '../transport/index.js'
+import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
+import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
 import { listStatuses } from '../runs.js'
 import { isStoreAvailable, listIntents } from '../features/intents/store.js'
 import { enrichRunStatus } from '../features/intents/run-status.js'
@@ -37,6 +39,9 @@ import {
 /** The single fan-out reference; threaded in by the composition root. */
 export interface BroadcastsDeps {
   broadcaster: Broadcaster
+  /** Read the `session_metadata` projection for `broadcastSessions` (same source
+   * as the per-connection `sendSessions` in `ws-upgrade.ts`). */
+  sessionAccessor: SessionAccessor
 }
 
 /**
@@ -50,6 +55,16 @@ export interface Broadcasts {
   broadcastOpencodeStatus: () => void
   /** Push a project's refreshed intent list (with runStatus enrichment). */
   broadcastIntents: (projectPath: string) => void
+  /**
+   * Push a workspace's refreshed session list to EVERY connection (the
+   * `session_metadata` projection read). The per-connection `conn.sendSessions`
+   * only reaches the originating socket; a background, connection-less producer
+   * (the automation orchestrator's dev turns) has no socket, so it fans the list
+   * out to all clients instead. Fire-and-forget: the async projection read is not
+   * awaited, errors are logged. The frontend keeps a per-workspace map and renders
+   * the one it's viewing.
+   */
+  broadcastSessions: (workspacePath: string) => void
   /** Push a project's refreshed discussion list (with run/research snapshots). */
   broadcastDiscussions: (projectPath: string) => void
   /** Push a workspace's refreshed schedule list. */
@@ -77,7 +92,7 @@ export interface Broadcasts {
  * comes from the composition root instead of a closure-captured `broadcaster`.
  */
 export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
-  const { broadcaster } = deps
+  const { broadcaster, sessionAccessor } = deps
 
   // Re-broadcast the session-status snapshot. No-op when there are no
   // connections (e.g. a server-startup tick before the first WS opens).
@@ -102,6 +117,19 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const proj = resolve(projectPath)
     const items = enrichRunStatus(listIntents(proj))
     broadcaster.toAll({ type: 'intents', projectPath: proj, items })
+  }
+
+  // Push a workspace's refreshed session list to every connection. Mirrors the
+  // per-connection `conn.sendSessions` (ws-upgrade.ts), but fans out — the
+  // automation orchestrator runs detached with no originating socket, so its
+  // freshly-bound dev session would otherwise never live-appear in any sidebar.
+  // Fire-and-forget: the projection read is async; we don't block the caller and
+  // log (never throw) on failure.
+  const broadcastSessions = (workspacePath: string): void => {
+    const proj = resolve(workspacePath)
+    void listSessionsVia(sessionAccessor, proj)
+      .then((sessions) => broadcaster.toAll({ type: 'sessions', workspacePath: proj, sessions }))
+      .catch((err) => console.error('[c3] broadcastSessions failed:', err))
   }
 
   // Push a project's refreshed discussion list. The frontend keeps a
@@ -186,6 +214,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastStatuses,
     broadcastOpencodeStatus,
     broadcastIntents,
+    broadcastSessions,
     broadcastDiscussions,
     broadcastSchedules,
     broadcastAutomation,

@@ -38,6 +38,17 @@ import {
 /** Deps the dev-turn factory reads. `launchDeps` matches what `launchRun` needs. */
 export interface DevTurnDeps {
   launchDeps: LaunchRunDeps
+  /**
+   * Fan the workspace's session list out to every connection. The automation
+   * orchestrator runs detached (no originating socket), so — unlike manual
+   * `start_development`, which calls `conn.sendSessions` on its own socket — its
+   * freshly-bound dev session has no per-connection refresh path. Without this,
+   * the session is written to the projection but never live-appears in any
+   * sidebar (the user only finds it via the intent's "session" button). Called on
+   * `bound` (live-insert the new session) and `settled` (refresh title/order once
+   * the turn ends).
+   */
+  broadcastSessions: (workspacePath: string) => void
 }
 
 /**
@@ -48,7 +59,7 @@ export interface DevTurnDeps {
 export function makeRunDevTurn(
   deps: DevTurnDeps,
 ): (input: RunDevTurnInput) => Promise<DevTurnResult> {
-  const { launchDeps } = deps
+  const { launchDeps, broadcastSessions } = deps
   return (input: RunDevTurnInput): Promise<DevTurnResult> =>
     new Promise<DevTurnResult>((resolveTurn) => {
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
@@ -162,6 +173,15 @@ export function makeRunDevTurn(
               setSessionMode(e.realId, rt.mode)
               // Surface the bind to the orchestrator immediately (early in_progress flip).
               input.onSessionId?.(e.realId)
+              // Live-insert the new dev session into every sidebar: the projection
+              // real row is already written (freezeSessionAgent fired before this
+              // cbs), so the broadcast lists it. Mirrors manual start_development's
+              // session_started, but fanned out (automation has no socket).
+              broadcastSessions(rt.workspacePath)
+            } else if (e.kind === 'settled') {
+              // Refresh title / last_modified / order once the turn ends — the
+              // automation analogue of manual start_development's conn.sendSessions.
+              broadcastSessions(e.workspacePath)
             }
           },
         })

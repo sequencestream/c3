@@ -7,7 +7,7 @@ import { addToolSession } from '../../sessions.js'
 import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
 import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
 import { isSideEffectTool } from '../run/resume.js'
-import { createCanUseTool, deny, INTENT_DISALLOWED_TOOLS } from '../permission/index.js'
+import { allow, createCanUseTool, deny, INTENT_DISALLOWED_TOOLS } from '../permission/index.js'
 
 // Moved out of this file in server refactor 3/3 (ADR-0009), imported where needed:
 //  - the permission gate (the `canUseTool` policy + tool-name constants +
@@ -266,6 +266,143 @@ export async function askOneShot(opts: {
     /* return whatever text was produced before the error */
   }
   return text.trim()
+}
+
+/** The four SDK task-tool surfaces the {@link runTaskTool} executor can drive. */
+export type TaskToolName = 'TaskCreate' | 'TaskList' | 'TaskUpdate' | 'TaskGet'
+
+/** All four task tools — used to disable the three the executor is NOT driving. */
+const ALL_TASK_TOOLS: readonly TaskToolName[] = ['TaskCreate', 'TaskList', 'TaskUpdate', 'TaskGet']
+
+/**
+ * Every non-task tool the executor hard-disables at the SDK level: the task
+ * executor exists to invoke ONE task tool mechanically, so any side-effecting or
+ * exploratory tool the model might otherwise reach for is cut. The remaining three
+ * task tools are added per-call (all but the one being driven).
+ */
+const TASK_EXEC_DISALLOWED_TOOLS = [
+  ...INTENT_DISALLOWED_TOOLS,
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'Bash',
+  'Edit',
+  'Write',
+  'NotebookEdit',
+  'Agent',
+  'AskUserQuestion',
+]
+
+/** The text + error flag of a task tool's `tool_result`, the executor's raw output. */
+export interface TaskToolOutput {
+  content: string
+  isError: boolean
+}
+
+/**
+ * A natural-language description of the task op for the executor's prompt. It only
+ * identifies the operation + target (subject / id); the exact input is forced via
+ * `allow(input)`, so this needs no field-complete serialization (and avoids the
+ * `JSON.stringify` ban under kernel/, ADR-0009 R2).
+ */
+function describeTaskOp(toolName: TaskToolName, input: Record<string, unknown>): string {
+  switch (toolName) {
+    case 'TaskCreate':
+      return `Create a new task with subject "${String(input.subject ?? '')}".`
+    case 'TaskUpdate':
+      return `Update the task with id ${String(input.taskId ?? '')}.`
+    case 'TaskGet':
+      return `Get the task with id ${String(input.taskId ?? '')}.`
+    case 'TaskList':
+      return 'List all current tasks.'
+  }
+}
+
+/**
+ * Drive a SINGLE SDK task tool to completion and return its `tool_result` text.
+ * This is the mechanism behind the Claude {@link
+ * import('./adapters/claude/index.js').ClaudeTaskStore}: the SDK exposes no
+ * programmatic single-tool entry point — a built-in tool runs only when the model
+ * calls it inside a query — so the executor spins up a minimal one-shot query that
+ * instructs the model to invoke exactly `toolName` with `input` and nothing else,
+ * then captures the matching `tool_result`.
+ *
+ * Every other tool is disabled (`TASK_EXEC_DISALLOWED_TOOLS` + the three sibling
+ * task tools), and `canUseTool` auto-allows only `toolName` with its forced input
+ * — these are mechanical, side-effect-free task-list operations, not user-facing
+ * tool decisions, so they bypass the c3 permission gateway. `resume` binds the run
+ * to an existing SDK session so the task list it reads/writes is that session's.
+ *
+ * Best-effort by nature (the model may not comply, the run may abort): returns the
+ * captured result, or `{ content: '', isError: true }` when none arrived. The
+ * caller's parser degrades on that empty/error output rather than crashing.
+ */
+export async function runTaskTool(opts: {
+  toolName: TaskToolName
+  input: Record<string, unknown>
+  cwd: string
+  signal: AbortSignal
+  model?: string
+  envOverrides?: Record<string, string>
+  /** Resume an existing SDK session so the task list is that session's. */
+  resume?: string
+}): Promise<TaskToolOutput> {
+  const { toolName, input } = opts
+  const claudePath = findClaudeExecutable()
+  const disallowedTools = [
+    ...TASK_EXEC_DISALLOWED_TOOLS,
+    ...ALL_TASK_TOOLS.filter((t) => t !== toolName),
+  ]
+  // The prompt only has to nudge the model to call the right tool on the right
+  // target; the exact, complete input is FORCED via `allow(input)` in canUseTool
+  // below (updatedInput fully replaces whatever args the model passes). So the
+  // prompt needs no JSON serialization (banned under kernel/ by ADR-0009 R2).
+  const q = query({
+    prompt: `${describeTaskOp(toolName, input)} Use the ${toolName} tool exactly once, then stop with no other action or commentary.`,
+    options: {
+      cwd: opts.cwd,
+      settingSources: ['user', 'project'],
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
+      disallowedTools,
+      permissionMode: 'default',
+      ...(opts.resume ? { resume: opts.resume } : {}),
+      ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+      ...(opts.envOverrides ? { env: { ...process.env, ...opts.envOverrides } } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
+      // Mechanical task-list op — auto-allow the one driven tool (forcing its
+      // input), deny anything else that slips past `disallowedTools`.
+      canUseTool: async (name: string) =>
+        name === toolName ? allow(input) : deny(`task executor: only ${toolName} permitted`),
+    },
+  })
+  let captured: TaskToolOutput | null = null
+  try {
+    for await (const m of q) {
+      if (opts.signal.aborted) break
+      if (m.type === 'user') {
+        // The driven tool returns its result as a tool_result block on a
+        // user-role message. Only one tool is allowed, so the first is ours.
+        const content = (m as { message?: { content?: unknown[] } }).message?.content
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            const b = block as { type?: string; content?: unknown; is_error?: boolean }
+            if (b.type === 'tool_result') {
+              captured = { content: stringifyToolResult(b.content), isError: !!b.is_error }
+            }
+          }
+        }
+      } else if (m.type === 'result') {
+        break
+      }
+    }
+  } catch {
+    /* return whatever was captured before the error (best-effort) */
+  }
+  return captured ?? { content: '', isError: true }
 }
 
 export async function runClaude(opts: RunOptions): Promise<void> {

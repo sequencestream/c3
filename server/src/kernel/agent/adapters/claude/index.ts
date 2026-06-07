@@ -18,6 +18,12 @@ export { createClaudeSkillLoader } from './skill.js'
 export { claudePolicy } from './policy.js'
 export { fromPermissionMode, toPermissionMode } from './permission-map.js'
 export { ClaudeStreamTranslator, transcriptToCanonical } from './translate.js'
+export {
+  ClaudeTaskStore,
+  createClaudeTaskExecutor,
+  type ClaudeTaskExecutor,
+  type ClaudeTaskExecutorOptions,
+} from './task-store.js'
 
 /** Build the Claude {@link VendorAdapter}. Each call yields fresh instances. */
 export function createClaudeAdapter(): VendorAdapter {

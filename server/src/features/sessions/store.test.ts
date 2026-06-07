@@ -170,7 +170,9 @@ describe('upsertForBind (F-5)', () => {
     expect(real?.vendorSessionId).toBe('real-1')
     expect(real?.agentId).toBe(agent1)
     expect(real?.title).toBe('New session')
-    expect(real?.lastModified).toBeNull()
+    // Bind stamps last_modified = bind time (now), so a freshly-bound session
+    // sorts to the TOP of the list instead of sinking to the bottom (null).
+    expect(real?.lastModified).toBe(nowMs)
   })
 
   it('a retry-bind of the same realId is a no-op (idempotence)', () => {
@@ -193,10 +195,12 @@ describe('upsertForBind (F-5)', () => {
     expect(real?.agentId).toBe(agent1)
   })
 
-  it('Codex bind writes a real row with last_modified=null (F-7)', () => {
+  it('Codex bind writes a real row with last_modified=bind time (F-7)', () => {
     // F-7: Codex is the canonical "already-ran but not enumerable" case.
     // The bound row appears in the projection; the next lazy validation
-    // rewrites the title.
+    // rewrites the title. last_modified is stamped to the bind time — Codex
+    // is SKIPPED by lazy validation, so a null here would strand the row at
+    // the bottom of the list forever; bind time keeps it sortable from the start.
     upsertForBind({
       pendingId: 'pending:codex-1',
       realId: 'codex-thread-1',
@@ -206,7 +210,7 @@ describe('upsertForBind (F-5)', () => {
     })
     const row = getByC3Id(mintC3SessionId({ vendor: 'codex', vendorSessionId: 'codex-thread-1' }))
     expect(row?.vendor).toBe('codex')
-    expect(row?.lastModified).toBeNull()
+    expect(row?.lastModified).toBe(nowMs)
     expect(row?.state).toBe('born')
     expect(listForWorkspace(wsA).map((r) => r.vendorSessionId)).toEqual(['codex-thread-1'])
   })
@@ -352,15 +356,24 @@ describe('listForWorkspace + cross-workspace isolation', () => {
       title: 'a-2',
       lastModified: 200,
     })
-    // Codex with null lastModified sorts last.
+    // A row whose last_modified is explicitly null (the column is nullable)
+    // still sorts to the very end via `ORDER BY (last_modified IS NULL) …`.
+    // Bind no longer produces null (it stamps bind time), so we force one here.
     upsertForBind({
       pendingId: 'p3',
-      realId: 'a-3-codex',
+      realId: 'a-3',
       workspacePath: wsA,
-      vendor: 'codex',
-      agentId: codexAgent,
+      vendor: 'claude',
+      agentId: agent1,
     })
-    expect(listForWorkspace(wsA).map((r) => r.vendorSessionId)).toEqual(['a-2', 'a-1', 'a-3-codex'])
+    touchOnRunEnd({
+      realId: 'a-3',
+      vendor: 'claude',
+      agentId: agent1,
+      title: 'a-3',
+      lastModified: null,
+    })
+    expect(listForWorkspace(wsA).map((r) => r.vendorSessionId)).toEqual(['a-2', 'a-1', 'a-3'])
   })
 })
 

@@ -307,9 +307,16 @@ export function updatePendingRowAgentId(input: {
  * real row in one transaction (F-5 idempotence — a retry-bind of an
  * already-bound realId is a no-op via `INSERT OR IGNORE` on the real
  * row's `c3_id` PK). The real row's `title` is the placeholder (no
- * native source at bind); `last_modified` is null (no native source at
- * bind). State starts at `born`; the next lazy validation flips to
- * `alive` when the native store has been consulted.
+ * native source at bind); `last_modified` is stamped to the BIND TIME
+ * (`now()`) so a freshly-bound session sorts to the TOP of the list
+ * immediately — a just-created/just-active session is, by definition, the
+ * most recent. A null here would sink the row to the very bottom of the
+ * list (`ORDER BY (last_modified IS NULL) …`), where the user never looks,
+ * AND for Codex it would stay null forever (lazy validation skips Codex),
+ * so a brand-new session would be permanently invisible at the top. The
+ * next lazy validation refines `last_modified` to the native transcript
+ * mtime. State starts at `born`; lazy validation flips it to `alive` when
+ * the native store has been consulted.
  */
 export function upsertForBind(input: {
   pendingId: string
@@ -335,7 +342,7 @@ export function upsertForBind(input: {
       input.realId,
       input.agentId,
       DEFAULT_TITLE,
-      null,
+      t,
       'born',
       t,
       'real',

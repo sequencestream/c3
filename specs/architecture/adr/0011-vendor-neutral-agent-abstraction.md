@@ -8,6 +8,9 @@
 - **Amended:** 2026-06-07 — `taskStore` boolean flag added to `AdapterCapabilities` (7th boolean
   flag — all three current vendors `true`). A 4th neutral interface, `TaskStore`, added to the
   adapter surface (create/list/update/get).
+- **Amended:** 2026-06-07 — Claude `TaskStore` reference implementation landed
+  (`adapters/claude/task-store.ts` + `task-parse.ts`). See the _Claude TaskStore_ paragraph under
+  "Decision".
 
 ## Context
 
@@ -176,6 +179,36 @@ live gateway through `ApprovalBridge`) are later phases.
 > cross-vendor machinery (risk-tag-neutralized voting, heterogeneous teammates, a replay-seed degradation
 > hand-off with UI-marked context discontinuity) is deferred — spec'd, not built, until a real need
 > appears. The principle is **honest UI over faked capability** (PG-R13, AS-R21/R22).
+
+> **Claude TaskStore reference implementation (2026-06-07).** The 4th neutral interface (`TaskStore`)
+> gets its Claude reference in `adapters/claude/task-store.ts` (+ pure parsing in `task-parse.ts`).
+> The Claude Agent SDK has **no programmatic single-tool entry point** — its built-in
+> `TaskCreate`/`TaskList`/`TaskUpdate`/`TaskGet` tools run only when the model calls them inside a
+> query — so `ClaudeTaskStore` is a **shadow** of the SDK task system: every method drives the
+> matching SDK tool through an injected `ClaudeTaskExecutor` and folds the parsed result into an
+> in-memory shadow map (keyed by task id). The production executor (`createClaudeTaskExecutor`)
+> delegates to `runTaskTool` in `kernel/agent/index.ts` — a minimal one-shot `query` that instructs
+> the model to call exactly one task tool while every other tool is `disallowedTools`-locked and
+> `canUseTool` auto-allows only the driven tool, **forcing its exact input via `allow(updatedInput)`**
+> (so the prompt needs no JSON serialization — the `JSON.stringify` ban under `kernel/`, ADR-0009 R2,
+> stands). Keeping the SDK import in `kernel/agent/index.ts` (not `adapters/`) preserves the
+> boundary, exactly as the driver delegates to `runClaude`.
+>
+> The SDK serializes a task `tool_result` as a **string**, not a typed object, and the exact format
+> is not pinned (a structured result may arrive JSON-stringified; `TaskCreate`'s confirmation is a
+> human line like `"Created task 1: …"`). So each parser is **dual-mode** — JSON first, text regex as
+> fallback — and **degrades safely**: an error/garbage output yields `null`/`undefined`/`[]`, never a
+> throw, and the shadow keeps the last good state (a `TaskList` parse-miss is NOT a clear, mirroring
+> the web `task-list.ts` "无法解析快照时保持现状" rule). `TaskUpdate` returns only a confirmation, so the
+> store merges the patch onto its shadow entry to return a full `TaskData`. `onUpdate` is **omitted**:
+> the SDK has no native task-push event (unlike OpenCode's `EventTodoUpdated`), so the optional method
+> is absent and the upper layer degrades to pull-based `list()`/`get()` (probe protocol). The store is
+> **session-scoped** (it binds its executor to a cwd/model/env/resume context), so it is built per
+> session by the upper layer rather than wired onto the stateless no-arg `createClaudeAdapter()` —
+> the same additive-phase parallel as `interrupt`/`forkSession` being vendor-true yet not yet exposed
+> as `AgentRun` methods. Tests (`task-parse.test.ts`, `task-store.test.ts`) are hermetic: the executor
+> is mocked, no `claude` process spawns, and they cover the JSON+text parse matrix and the
+> shadow-merge/degradation rules.
 
 **Probe protocol.** A capability flag reports the **vendor** ability. A caller reaching for an optional
 control checks the flag **and** `typeof run.method === 'function'` (the build-wiring probe), then

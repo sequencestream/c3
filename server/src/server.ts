@@ -116,7 +116,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       vendor,
       agentId,
       title: input.title,
-      lastModified: null,
+      // Stamp the run-end moment as `last_modified`: the session was just active,
+      // so it must sort to the TOP of the list now. Passing null here would NULL
+      // the column on every turn end (and re-arm the 24h lazy-validation clock via
+      // `state_updated_at`), sinking an actively-developed session to the very
+      // bottom — the root cause of "automation session invisible even on refresh".
+      // Lazy validation later refines this to the native transcript mtime.
+      lastModified: Date.now(),
     })
   })
   setOnPendingIntentLookup((pendingId) => {
@@ -263,7 +269,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // ADR-0006) is separate. Wiring builds the frames; the broadcaster only ships.
   const connections = new Set<Deliver>()
   const broadcaster = createBroadcaster(connections)
-  const broadcasts = createBroadcasts({ broadcaster })
+  const broadcasts = createBroadcasts({ broadcaster, sessionAccessor })
   setOnStatusChange(broadcasts.broadcastStatuses)
   // Bind the late thunk now the broadcaster exists, so the supervisor's
   // onStatusChange (registered above) fans out `opencode_status` transitions.
@@ -321,7 +327,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       return { ok: true, outcome }
     },
   }
-  const runDevTurn = makeRunDevTurn({ launchDeps })
+  const runDevTurn = makeRunDevTurn({
+    launchDeps,
+    broadcastSessions: broadcasts.broadcastSessions,
+  })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).
   setAutomationHooks({
     runDevTurn,

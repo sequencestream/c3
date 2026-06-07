@@ -133,18 +133,18 @@ prompt, tool_use, tool_result, blocks) is the vendor's native store (Claude
 JSONL, OpenCode REST, Codex thread items). The projection holds **only** core
 metadata:
 
-| Column              | Purpose                                                                     |
-| ------------------- | --------------------------------------------------------------------------- |
-| `c3_id`             | Opaque c3 session id (the `C3SessionId` from `mintC3SessionId`). PK.        |
-| `workspace_path`    | The workspace this row belongs to; drives the daily read path's SQL filter. |
-| `vendor`            | Owning vendor tag (`claude` / `codex` / `opencode`).                        |
-| `vendor_session_id` | The native vendor id (nullable for pending rows).                           |
-| `agent_id`          | The agent the session runs on (binding fact or pending intent).             |
-| `title`             | Display title; rewritten by lazy validation / run-end.                      |
-| `last_modified`     | UTC ms; null for pending rows and Codex bind-time rows.                     |
-| `state`             | Lifecycle state (`born` / `alive` / `stale` / `orphaned` / `ghost`).        |
-| `state_updated_at`  | UTC ms; drives the STALE window and warmup policy.                          |
-| `kind`              | `'real'` for post-bind rows, `'pending'` for pre-bind rows.                 |
+| Column              | Purpose                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `c3_id`             | Opaque c3 session id (the `C3SessionId` from `mintC3SessionId`). PK.                                                                                                       |
+| `workspace_path`    | The workspace this row belongs to; drives the daily read path's SQL filter.                                                                                                |
+| `vendor`            | Owning vendor tag (`claude` / `codex` / `opencode`).                                                                                                                       |
+| `vendor_session_id` | The native vendor id (nullable for pending rows).                                                                                                                          |
+| `agent_id`          | The agent the session runs on (binding fact or pending intent).                                                                                                            |
+| `title`             | Display title; rewritten by lazy validation / run-end.                                                                                                                     |
+| `last_modified`     | UTC ms; stamped to the bind time on a real row (all vendors, incl. Codex — SR-R13), refined to the native transcript mtime by lazy validation; null only for pending rows. |
+| `state`             | Lifecycle state (`born` / `alive` / `stale` / `orphaned` / `ghost`).                                                                                                       |
+| `state_updated_at`  | UTC ms; drives the STALE window and warmup policy.                                                                                                                         |
+| `kind`              | `'real'` for post-bind rows, `'pending'` for pre-bind rows.                                                                                                                |
 
 **No transcript, prompt, tool_use, tool_result, or block content is ever
 written to this table.** Pinned by the column-whitelist positive assertion

@@ -29,6 +29,9 @@ export type {
   SessionSummary,
   SessionListOptions,
   SessionStore,
+  TaskStatus,
+  TaskData,
+  TaskStore,
   VendorAdapter,
 } from './types.js'
 

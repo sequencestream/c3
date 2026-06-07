@@ -12,7 +12,7 @@ import type { CapabilityState, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
 
-/** The six boolean live-run capability flags — the complete, closed set. */
+/** The seven boolean live-run capability flags — the complete, closed set. */
 const BOOLEAN_CAPABILITY_KEYS = [
   'interrupt',
   'setActionMode',
@@ -20,6 +20,7 @@ const BOOLEAN_CAPABILITY_KEYS = [
   'inProcessMcp',
   'forkSession',
   'perToolApproval',
+  'taskStore',
 ] as const
 
 /** The five structured session-lifecycle operations — the complete, closed set. */
@@ -39,7 +40,7 @@ export function assertNeutralAdapterShape(adapter: VendorAdapter): void {
   expect(typeof adapter.vendor).toBe('string')
   expect(adapter.capabilities).toBeTruthy()
 
-  // The ledger carries EXACTLY the six boolean flags plus the `sessions` sub-ledger.
+  // The ledger carries EXACTLY the seven boolean flags plus the `sessions` sub-ledger.
   expect(Object.keys(adapter.capabilities).sort()).toEqual(
     [...BOOLEAN_CAPABILITY_KEYS, 'sessions'].sort(),
   )
@@ -91,7 +92,7 @@ describe('neutral adapter contract', () => {
 
   it('distinguishes the boolean flags from the structured sessions sub-ledger', () => {
     const { capabilities } = createClaudeAdapter()
-    // Six boolean flags + one `sessions` sub-ledger = seven keys, the closed set.
+    // Seven boolean flags + one `sessions` sub-ledger = eight keys, the closed set.
     expect(Object.keys(capabilities)).toHaveLength(BOOLEAN_CAPABILITY_KEYS.length + 1)
     // perToolApproval is the D2 addition beyond the original five — present & boolean.
     expect('perToolApproval' in capabilities).toBe(true)
@@ -101,12 +102,18 @@ describe('neutral adapter contract', () => {
     }
   })
 
-  it('Codex capability ledger is all-false, faithful to Phase 0 (008 NO-GO)', () => {
+  it('Codex capability ledger is all-false (except taskStore), faithful to Phase 0 (008 NO-GO)', () => {
     const { capabilities } = createCodexAdapter()
-    // Every boolean flag false — Codex is the read-only advisor seat; the
-    // load-bearing one is perToolApproval: false (no in-the-loop approval point).
+    // Every boolean flag false except taskStore — the SDK task tools work
+    // even without per-tool approval (orthogonal to 008). All other flags are
+    // false: Codex is the read-only advisor seat; the load-bearing one is
+    // perToolApproval: false (no in-the-loop approval point).
     for (const key of BOOLEAN_CAPABILITY_KEYS) {
-      expect(capabilities[key]).toBe(false)
+      if (key === 'taskStore') {
+        expect(capabilities[key]).toBe(true)
+      } else {
+        expect(capabilities[key]).toBe(false)
+      }
     }
   })
 

@@ -668,9 +668,9 @@ export interface SessionBindingStats {
 
 /**
  * The wire-facing capability enum (the names of every optional/degradable
- * adapter capability). The kernel's `AdapterCapabilities` boolean ledger is
- * keyed by exactly these names; a type-level assertion there pins the two
- * together so they cannot drift. "Required" capabilities (start/messages/abort/
+ * adapter capability, currently seven: six live-run controls + taskStore).
+ * The kernel's `AdapterCapabilities` boolean ledger is keyed by exactly these
+ * names; a type-level assertion there pins the two together so they cannot drift. "Required" capabilities (start/messages/abort/
  * list/read/onRequest) are the unconditional interface contract and are NOT
  * enumerated here — only the probed, degradable ones are.
  */
@@ -681,6 +681,7 @@ export type AdapterCapability =
   | 'inProcessMcp'
   | 'forkSession'
   | 'perToolApproval'
+  | 'taskStore'
 
 /**
  * A structured capability *state* — the honest grade of a degradable ability,

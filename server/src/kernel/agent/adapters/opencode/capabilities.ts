@@ -4,13 +4,16 @@
  * `permission.updated` event + REST write-back (009 GO), which the
  * {@link import('./approval.js').OpencodeApprovalBridge} drives.
  *
- * The rest are FALSE on purpose. They are kept conservative to the controls this
- * phase actually wires (the safe direction ADR-0011 pins is "a method present ⇒
- * its flag is true"): the driver exposes no `interrupt` (OpenCode only has
- * whole-turn `session.abort`), no live `setActionMode`, no `pushInput`, no
- * in-process MCP, and does not wire `forkSession` (the REST `session.fork` exists
- * but is out of scope here). A later phase can flip a flag the moment it wires the
- * matching `AgentRun` method.
+ * The rest (besides `taskStore`) are FALSE on purpose. They are kept
+ * conservative to the controls this phase actually wires (the safe direction
+ * ADR-0011 pins is "a method present ⇒ its flag is true"): the driver exposes
+ * no `interrupt` (OpenCode only has whole-turn `session.abort`), no live
+ * `setActionMode`, no `pushInput`, no in-process MCP, and does not wire
+ * `forkSession` (the REST `session.fork` exists but is out of scope here).
+ * A later phase can flip a flag the moment it wires the matching `AgentRun`
+ * method. `taskStore: true` is orthogonal — OpenCode's REST server provides
+ * task-tool endpoints (`EventTodoUpdated` / task list CRUD) unaffected by the
+ * out-of-loop approval model.
  *
  * The structured {@link AdapterCapabilities.sessions} sub-ledger (ADR-0011
  * amendment) is where OpenCode exercises `temporarily-unavailable`: `list`/`read`
@@ -30,6 +33,7 @@ export const opencodeCapabilities: AdapterCapabilities = {
   inProcessMcp: false,
   forkSession: false,
   perToolApproval: true,
+  taskStore: true,
   sessions: {
     list: 'full',
     read: 'full',

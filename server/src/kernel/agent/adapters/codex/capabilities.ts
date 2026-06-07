@@ -8,6 +8,11 @@
  * runtime intervention is a whole-turn `AbortSignal`. A tool can therefore only
  * be allowed/denied for the *entire* turn, never per-call.
  *
+ * The sole `true` flag is `taskStore` — the `@openai/codex-sdk` task tools
+ * (TaskCreate / TaskList / TaskUpdate / TaskGet) work identically to Claude's
+ * SDK task surface. This is orthogonal to the 008 per-tool-approval NO-GO: task
+ * tools are declarative data operations, not live-interception points.
+ *
  * The rest are FALSE for the same structural reason (no in-the-loop point exists):
  * no mid-turn `interrupt` (only whole-turn abort), no live `setActionMode`
  * (sandbox/approvalPolicy are launch-time, fixed at `startThread`), no
@@ -40,6 +45,7 @@ export const codexCapabilities: AdapterCapabilities = {
   inProcessMcp: false,
   forkSession: false,
   perToolApproval: false,
+  taskStore: true,
   sessions: {
     list: 'none',
     read: 'none',

@@ -5,6 +5,9 @@
 - **Amended:** 2026-06-07 — `AdapterCapabilities` extended with structured session-lifecycle
   capability states (`list` / `read` / `resume` / `rename` / `delete`, each a `CapabilityState`).
   See the _Amendment_ paragraph under "AdapterCapabilities" above for the matrix and rationale.
+- **Amended:** 2026-06-07 — `taskStore` boolean flag added to `AdapterCapabilities` (7th boolean
+  flag — all three current vendors `true`). A 4th neutral interface, `TaskStore`, added to the
+  adapter surface (create/list/update/get).
 
 ## Context
 
@@ -75,9 +78,11 @@ Adopt option 3. Establish `server/src/kernel/agent/adapters/` with:
   Each adapter translates its native mode(s) into the grid (table below); the grid never round-trips
   back 1:1 (Claude `auto`'s bias and `always-ask`'s lack of a Claude peer are documented losses).
 - **AdapterCapabilities** — required capabilities have **no flag** (they are the interface contract);
-  the ledger holds exactly six **optional/degradable** flags: `interrupt`, `setActionMode`,
-  `streamingPush`, `inProcessMcp`, `forkSession`, and `perToolApproval`. The sixth is added beyond the
-  original five Claude-proprietary controls because 008 proved per-tool approval is **not** universal.
+  the ledger holds exactly seven **optional/degradable** flags: `interrupt`, `setActionMode`,
+  `streamingPush`, `inProcessMcp`, `forkSession`, `perToolApproval`, and `taskStore`. The sixth
+  (perToolApproval) is added beyond the original five Claude-proprietary controls because 008 proved
+  per-tool approval is **not** universal. The seventh (taskStore) is the SDK task-tool surface, true
+  for all three current vendors.
 - **Amendment (this phase) — structured session-lifecycle capability states.** The six flags above
   are honestly boolean (a vendor either has a mid-turn interrupt point or it does not). The
   **session-lifecycle** operations (`list` / `read` / `resume` / `rename` / `delete`) are **not**:
@@ -184,7 +189,7 @@ method **present ⇒ its flag is true** (no false method without capability).
 - **Easier:** a new vendor adds a sibling `adapters/<vendor>/` implementing the three interfaces and
   declaring its capability ledger; the upper layer drives it through the neutral faces with no new
   Claude assumptions. The required-vs-optional line is mechanically checked (`types.test.ts`:
-  capability ledger is exactly the six optional flags; required surface always present).
+  capability ledger is exactly the seven optional flags; required surface always present).
 - **Harder:** the neutral permission grid is coarser than Claude's five modes — `auto`'s bias and an
   `always-ask` gate have no exact Claude peer (documented losses, surfaced in `permission-map.ts`).
   A future UI that wants the lost nuance must re-introduce it as a vendor extra, not the neutral grid.
@@ -208,7 +213,7 @@ method **present ⇒ its flag is true** (no false method without capability).
   (ADR-0009 R1).
 - `pnpm typecheck` + `pnpm lint` MUST be green.
 - `pnpm vitest run` MUST be green: the vendor-agnostic contract (`types.test.ts` pins the required
-  surface + six boolean flags + the `sessions` sub-ledger; `capabilities.test.ts` pins the
+  surface + seven boolean flags + the `sessions` sub-ledger; `capabilities.test.ts` pins the
   authoritative session-capability matrix end-to-end), the Claude conformance
   (`claude/claude.test.ts`) reports every session op `full` for the reference adapter, and the
   web `SessionList.test.ts` exercises the row-action gating by capability _state_ (none ⇒ hidden,

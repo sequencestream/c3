@@ -1,6 +1,6 @@
 /**
  * Claude's probed capability ledger (ADR-0011). Every flag is TRUE — the Claude
- * Agent SDK natively supports all six divergent capabilities the abstraction
+ * Agent SDK natively supports all seven divergent capabilities the abstraction
  * models. This is the *vendor* ability, the thing the upper layer probes before
  * reaching for an optional control; the {@link import('./driver.js').ClaudeDriver}
  * additionally wires the run-level controls it can reach in this additive phase
@@ -22,6 +22,7 @@ export const claudeCapabilities: AdapterCapabilities = {
   inProcessMcp: true,
   forkSession: true,
   perToolApproval: true,
+  taskStore: true,
   sessions: {
     list: 'full',
     read: 'full',

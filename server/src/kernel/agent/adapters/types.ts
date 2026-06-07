@@ -105,12 +105,12 @@ export type PermissionPolicy = (
  * methods every adapter exposes regardless of ability — is `AgentDriver.start`,
  * `AgentRun.messages`/`abort`/`sessionId`, `SessionStore.list`/`read`, and
  * `ApprovalBridge.onRequest`. Method *presence* is the contract; what each method
- * can actually deliver is the ledger's job: the six booleans gate the optional
+ * can actually deliver is the ledger's job: the seven booleans gate the optional
  * live-run controls, and {@link sessions} carries the structured state of the
  * session-lifecycle operations (so `SessionStore.list`/`read` always *exist* but
  * may honestly report `none` — Codex's list/read return empty, advertised as such).
  *
- * The six boolean fields below are **optional, degradable** live-run controls:
+ * The seven boolean fields below are **optional, degradable** live-run controls:
  * the upper layer probes the flag, calls the matching optional method when true,
  * and degrades gracefully when false. A `false` flag means the corresponding
  * optional method on {@link AgentRun} (or behavior) is absent — calling it is a
@@ -143,6 +143,13 @@ export interface AdapterCapabilities {
    * and degrades to launch-time policy (Codex `sandboxMode` + `approvalPolicy`).
    */
   readonly perToolApproval: boolean
+  /**
+   * SDK-level task-tool surface (TaskCreate / TaskList / TaskUpdate / TaskGet).
+   * All three current vendors (Claude, Codex, OpenCode) support the SDK task
+   * tools, so this is `true` for every vendor shipping today. The flag exists
+   * for future vendors that may not offer a native task API.
+   */
+  readonly taskStore: boolean
   /**
    * Structured session-lifecycle capability states (ADR-0011 amendment). The
    * vendor's honest self-report for list/read/resume/rename/delete — each a
@@ -310,6 +317,60 @@ export interface SessionStore {
   delete?(sessionId: string, opts: SessionListOptions): Promise<void>
 }
 
+// ---------------------------------------------------------------------------
+// Task-store interface (ADR-0011 amendment: 4th neutral face)
+// ---------------------------------------------------------------------------
+
+/** Task lifecycle status — the common subset across all three vendor SDKs. */
+export type TaskStatus = 'pending' | 'in_progress' | 'completed'
+
+/** A single task in a vendor's task list (neutral subset). */
+export interface TaskData {
+  /** SDK-assigned task id (string-normalised; vendor may use numbers internally). */
+  readonly id: string
+  /** Task title. */
+  readonly subject: string
+  /** Detailed description, when the vendor provides it. */
+  readonly description?: string
+  /** Lifecycle status. */
+  readonly status: TaskStatus
+  /** The agent name the task is assigned to, when known. */
+  readonly owner?: string
+  /** Ids of tasks this task depends on. */
+  readonly blockedBy?: string[]
+  /** Ids of tasks that depend on this task. */
+  readonly blocks?: string[]
+  /**
+   * Vendor-specific extras the neutral surface does not model
+   * (e.g., OpenCode's priority, Codex's review state).
+   */
+  readonly vendorExtra?: Record<string, unknown>
+}
+
+/**
+ * The task-tool face of a vendor: create/list/update/get tasks via the vendor's
+ * SDK task-tool surface (TaskCreate / TaskList / TaskUpdate / TaskGet).
+ * Present on a {@link VendorAdapter} iff `AdapterCapabilities.taskStore`
+ * is `true` — the probe protocol (ADR-0011) applies: check the flag before
+ * reaching for the interface.
+ */
+export interface TaskStore {
+  /** Create a task in the given list with the given subject. Returns the created task (with vendor-assigned id). */
+  create(list: string, subject: string): Promise<TaskData>
+  /** List all tasks in the store. */
+  list(): Promise<TaskData[]>
+  /** Update one task's fields by id. Returns the updated task. */
+  update(taskId: string, patch: Partial<TaskData>): Promise<TaskData>
+  /** Get a single task by id. Returns `undefined` when not found. */
+  get(taskId: string): Promise<TaskData | undefined>
+  /**
+   * Present iff the vendor supports push-based task updates
+   * (e.g., OpenCode `EventTodoUpdated`). Returns a disposer to
+   * unsubscribe the handler.
+   */
+  onUpdate?(handler: (task: TaskData) => void): Disposer
+}
+
 /**
  * The cached self-report of one vendor's SKILL-discovery support (mount layer
  * 2/3). `state` reuses {@link SkillSupportState}; `sdkVersion` is the probed
@@ -365,5 +426,7 @@ export interface VendorAdapter {
   readonly driver: AgentDriver
   readonly approval: ApprovalBridge
   readonly sessions: SessionStore
+  /** The vendor's task-tool surface. Present iff `capabilities.taskStore`. */
+  readonly tasks?: TaskStore
   readonly skill: SkillLoader
 }

@@ -142,8 +142,8 @@ c3 is a single local process with two halves connected by one WebSocket:
 - **Vendor neutrality lives in `kernel/agent/adapters/` (ADR-0011).** A neutral three-piece interface
   (`AgentDriver` lifecycle + canonical message stream, `ApprovalBridge` intercept/suspend/write-back,
   `SessionStore` history behind one face) plus an `AdapterCapabilities` ledger lets c3 drive Claude,
-  Codex, or OpenCode through one shape. Required capabilities have no flag; six optional/degradable
-  ones (`interrupt`/`setActionMode`/`streamingPush`/`inProcessMcp`/`forkSession`/`perToolApproval`) are
+  Codex, or OpenCode through one shape. Required capabilities have no flag; seven optional/degradable
+  ones (`interrupt`/`setActionMode`/`streamingPush`/`inProcessMcp`/`forkSession`/`perToolApproval`/`taskStore`) are
   probed before use. **Amendment (2026-06-07):** the session-lifecycle operations
   (`list`/`read`/`resume`/`rename`/`delete`) are graded honestly as a structured
   `SessionCapabilities` sub-ledger on `AdapterCapabilities` — each op a

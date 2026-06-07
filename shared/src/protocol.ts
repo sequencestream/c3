@@ -377,6 +377,11 @@ export interface ProjectConfig {
   maxRoundsPerStage?: number
   /** Per-turn character guidance for participant speech in this project. Minimum 300 (clamped up). */
   maxSpeechChars?: number
+  /** External git repositories configured as skill sources (ADR-0016). c3 clones
+   * each into a shared `~/.c3/repo/` cache and soft-links its skills into the
+   * target vendor's discovery directory. Validated by `getSkillRepos()` (fail-hard).
+   * Absent/empty ⇒ no external skills configured for this project. */
+  skillRepos?: SkillRepoConfig[]
 }
 
 /**
@@ -434,12 +439,12 @@ export interface SystemSettings {
    */
   maxSpeechChars?: number
   /**
-   * External git repositories configured as skill sources (ADR-0016). c3 clones
-   * each into a shared `~/.c3/repo/` cache and (mount layer, 2/3) soft-links its
-   * skills into the target vendor's discovery directory. Validated by
-   * `getSkillRepos()` (fail-hard: missing `ref`, duplicate `id`, a `pinned` repo
-   * without a 40-hex `pinCommit`, or a `devSkill` that collides with a repo id all
-   * raise). Absent/empty ⇒ no external skills.
+   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. The server
+   * no longer writes this field; kept for backward-compatible typecheck of the web
+   * UI which has not yet been migrated to the project-level skillRepos config.
+   * TODO: remove after SettingsPanel is migrated to project-level config (next task).
+   * Prefer the per-project getters (`loadProjectConfig`) for authoritative values.
+   * @see ProjectConfig.skillRepos
    */
   skillRepos?: SkillRepoConfig[]
   /**

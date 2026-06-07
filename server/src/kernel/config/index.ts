@@ -267,13 +267,10 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
   // Socket-disconnect auto-resume: enabled unless explicitly disabled (default true).
   const socketAutoResume = raw?.socketAutoResume !== false
-  // External skill repos (ADR-0016): fail-SOFT passthrough only — keep the array
-  // shape so the console can save/round-trip it, but the deep fail-HARD validation
-  // (missing ref, dup id, pinned-without-SHA, devSkill collision) lives in
-  // `getSkillRepos()`, not here. Boot must never crash on a misconfigured repo.
-  const skillRepos = Array.isArray(raw?.skillRepos)
-    ? (raw.skillRepos as SkillRepoConfig[])
-    : undefined
+  // Skill repos are no longer written here (deprecated — moved to per-project
+  // `ProjectConfig.skillRepos`). The captureLegacyProjectSeed one-shot below handles
+  // reading the old global value from disk; the per-project authoritative getter is
+  // `getSkillRepos(projectPath)`, which reads from `loadProjectConfig(projectPath)`.
   // Per-project configurations passthrough (project-level knobs).
   const projectConfigs = raw?.projectConfigs
   return {
@@ -285,7 +282,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     showToolSessions,
     degradationChain,
     socketAutoResume,
-    ...(skillRepos ? { skillRepos } : {}),
+    // skillRepos intentionally omitted — deprecated, migrated to ProjectConfig
     ...(projectConfigs ? { projectConfigs } : {}),
   }
 }
@@ -309,6 +306,7 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
   if (r.devSkill !== undefined) seed.devSkill = r.devSkill as string
   if (r.maxRoundsPerStage !== undefined) seed.maxRoundsPerStage = r.maxRoundsPerStage as number
   if (r.maxSpeechChars !== undefined) seed.maxSpeechChars = r.maxSpeechChars as number
+  if (r.skillRepos !== undefined) seed.skillRepos = r.skillRepos as SkillRepoConfig[]
   if (Object.keys(seed).length > 0) legacyProjectSeed = seed
 }
 
@@ -320,6 +318,8 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
  * - `devSkill` is trimmed, slash-normalized, and defaults to `''`.
  * - `maxRoundsPerStage` is floored and clamped to ≥ `MIN_ROUNDS_PER_STAGE`.
  * - `maxSpeechChars` is floored and clamped to ≥ `MIN_SPEECH_CHARS`.
+ * - `skillRepos` is a fail-soft passthrough (array shape preserved); the deep
+ *   fail-HARD validation lives in `validateSkillRepos()` / `getSkillRepos()`.
  */
 export function normalizeProjectConfig(raw: unknown): ProjectConfig {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
@@ -333,7 +333,17 @@ export function normalizeProjectConfig(raw: unknown): ProjectConfig {
   const devSkill = normalizeDevSkill(rec.devSkill)
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(rec.maxRoundsPerStage)
   const maxSpeechChars = normalizeMaxSpeechChars(rec.maxSpeechChars)
-  return { defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars }
+  const skillRepos = Array.isArray(rec.skillRepos)
+    ? (rec.skillRepos as SkillRepoConfig[])
+    : undefined
+  return {
+    defaultMode,
+    consensus,
+    devSkill,
+    maxRoundsPerStage,
+    maxSpeechChars,
+    ...(skillRepos ? { skillRepos } : {}),
+  }
 }
 
 /**
@@ -836,15 +846,16 @@ export function validateSkillRepos(
 }
 
 /**
- * The validated external skill repos from the current settings (ADR-0016).
- * Fail-hard — throws on any misconfiguration (see {@link validateSkillRepos}).
- * NOTE: devSkill is now per-project, so the global devSkill collision check is
- * dropped here (it was a one-to-one name-space guard that no longer applies at
- * the global level).
+ * The validated external skill repos for a project (ADR-0016).
+ * Reads from the project's {@link ProjectConfig.skillRepos} via
+ * {@link loadProjectConfig}. Fail-hard — throws on any misconfiguration
+ * (see {@link validateSkillRepos}). The devSkill collision check is performed
+ * against the project's own devSkill, since both values now live in the
+ * same project-level config.
  */
-export function getSkillRepos(): SkillRepoConfig[] {
-  const s = loadSettings()
-  return validateSkillRepos(s.skillRepos)
+export function getSkillRepos(projectPath: string): SkillRepoConfig[] {
+  const cfg = loadProjectConfig(projectPath)
+  return validateSkillRepos(cfg.skillRepos, cfg.devSkill)
 }
 
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */

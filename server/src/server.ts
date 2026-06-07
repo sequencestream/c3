@@ -306,7 +306,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // subset of external skills unavailable, which is indistinguishable from no
     // external skills configured).
     skillMount: async (rt) => {
-      const configs = getSkillRepos()
+      const configs = getSkillRepos(rt.workspacePath)
       if (!configs.length) return { ok: true }
       const loaders: Partial<Record<VendorId, SkillLoader>> = {
         claude: createClaudeSkillLoader(),

@@ -19,6 +19,7 @@ import {
   getMaxRoundsPerStage,
   getMaxSpeechChars,
   getServerTimezone,
+  getSkillRepos,
   getSocketAutoResume,
   getTimezone,
   getUiLang,
@@ -468,6 +469,83 @@ describe('getMaxSpeechChars normalization', () => {
     expect(getMaxSpeechChars(TEST_PROJ)).toBe(DEFAULT_SPEECH_CHARS)
     saveWithMaxSpeechChars(-3)
     expect(getMaxSpeechChars(TEST_PROJ)).toBe(DEFAULT_SPEECH_CHARS)
+  })
+})
+
+/**
+ * Persist global-level settings with `skillRepos` on the SystemSettings object,
+ * simulating an old settings.json on disk (one-shot migration).
+ */
+function saveWithLegacySkillRepos(repos: unknown): void {
+  saveSettings({
+    agents: [],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    skillRepos: repos,
+  } as unknown as SystemSettings)
+}
+
+describe('skillRepos migration from SystemSettings to ProjectConfig', () => {
+  const REPO_A = {
+    id: 'my-skills',
+    repo: 'https://github.com/o/r',
+    ref: 'main',
+    trust: 'unreviewed',
+    vendor: 'claude' as const,
+  }
+  const REPO_B = {
+    id: 'custom',
+    repo: 'https://git.example.com/skills.git',
+    ref: 'v1',
+    trust: 'review-on-update',
+    vendor: 'claude' as const,
+  }
+  const REPO_C = {
+    id: 'proj-a',
+    repo: 'https://git.example.com/a.git',
+    ref: 'main',
+    trust: 'unreviewed',
+    vendor: 'claude' as const,
+  }
+  const REPO_D = {
+    id: 'proj-b',
+    repo: 'https://git.example.com/b.git',
+    ref: 'dev',
+    trust: 'pinned' as const,
+    pinCommit: 'a'.repeat(40),
+    vendor: 'claude' as const,
+  }
+
+  it('captures legacy global skillRepos into the project seed (one-shot)', () => {
+    const repos = [REPO_A]
+    // Save the global settings with skillRepos (old-style), triggering
+    // normalize → captureLegacyProjectSeed.
+    saveWithLegacySkillRepos(repos)
+    // The global settings should NOT carry skillRepos (deprecated, stripped on save).
+    expect(loadSettings().skillRepos).toBeUndefined()
+    // Loading a project config for the first time should seed it from the legacy value.
+    const cfg = loadProjectConfig(TEST_PROJ)
+    expect(cfg.skillRepos).toEqual(repos)
+    // getSkillRepos(projectPath) should read from the project config.
+    expect(getSkillRepos(TEST_PROJ)).toEqual(repos)
+  })
+
+  it('does not seed skillRepos when the legacy settings carry none', () => {
+    saveWithLegacySkillRepos(undefined)
+    const cfg = loadProjectConfig('/other/project')
+    expect(cfg.skillRepos).toBeUndefined()
+  })
+
+  it('survives a normal saveProjectConfig round-trip', () => {
+    const saved = saveProjectConfig(TEST_PROJ, { skillRepos: [REPO_B] } as unknown as ProjectConfig)
+    expect(saved.skillRepos).toEqual([REPO_B])
+    expect(getSkillRepos(TEST_PROJ)).toEqual([REPO_B])
+  })
+
+  it('is independent between projects (per-project skillRepos)', () => {
+    saveProjectConfig('/project/a', { skillRepos: [REPO_C] } as unknown as ProjectConfig)
+    saveProjectConfig('/project/b', { skillRepos: [REPO_D] } as unknown as ProjectConfig)
+    expect(getSkillRepos('/project/a')).toEqual([REPO_C])
+    expect(getSkillRepos('/project/b')).toEqual([REPO_D])
   })
 })
 

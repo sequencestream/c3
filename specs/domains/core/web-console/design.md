@@ -48,9 +48,10 @@ the most-recent workspace; unit-tested in `current-workspace.test.ts`), `lib/cha
 `lib/req-list-view.ts` (intent-list pure presentation logic: `statusLabel`/`reqRunStatusLabel`/
 `panelToggleLabel`/`rowVisibility`/`showRunStatus`/`compareByCompletion`, unit-tested in
 `req-list-view.test.ts`; see _Intent runStatus indicator_ below),
-`lib/task-list.ts` (pure task-list inference: `TaskItem`/`TaskListModel` types +
-`emptyTaskModel`/`applyTaskTool`, plus the panel selector `taskPanelView` and `isTaskTool`/
-`TASK_TOOL_NAMES`, unit-tested in `task-list.test.ts`; see _Task-list inference_ below),
+`lib/task-list.ts` (re-exports the task-list model SoT from `@ccc/shared/task-model` —
+`TaskItem`/`TaskListModel` types + `emptyTaskModel`/`applyTaskTool`/`isTaskTool`/`TASK_TOOL_NAMES` —
+and keeps the DOM-free panel selector `taskPanelView`, unit-tested in `task-list.test.ts`; the model
+is now server-derived over the `task_*` wire path, see _Task-list (wire-driven)_ below),
 `lib/tab-view.ts` (`SessionRef` + `consoleEntryTarget(remembered, currentWorkspace, sessions)` —
 pure console-tab entry decision: honor the remembered session, else the workspace's first, else
 empty; unit-tested in `tab-view.test.ts`; see _Per-tab viewed session_ below).
@@ -192,33 +193,34 @@ client derives actionability rather than trusting `decision: null` alone (WC-R16
 - ChatMessages forces a tool batch open only for the actionable permission, not for replayed
   static ones.
 
-## Task-list inference (client-only)
+## Task-list (wire-driven)
 
-A dev session calls the SDK task tools (`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`),
-which arrive as ordinary `tool_use` + `tool_result` pairs. Like `RunActivity`, the console
-**infers** a normalized "current task list" entirely on the client — **no wire/protocol change**.
-The pure logic lives in `lib/task-list.ts` (unit-tested, DOM-free); App.vue drives it by correlating
-each task `tool_use` with its `tool_result` (by `toolUseId`) and folding the pair into the model:
+A dev session calls the SDK task tools (`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`). Since
+2026-06-07-009 the **server** derives the normalized "current task list" and pushes it over an
+**independent `task_*` wire path** — the console no longer re-parses `tool_result.content`. The pure
+reducer is the single SoT in `@ccc/shared/task-model` (`applyTaskTool`/`emptyTaskModel`/`isTaskTool`/
+`TASK_TOOL_NAMES` + types), re-exported by `lib/task-list.ts` which keeps only the DOM-free display
+selector `taskPanelView` (unit-tested in `task-list.test.ts`).
 
-- `applyTaskTool(model, toolName, input, result?) → TaskListModel` is pure (returns a new model,
-  same reference when nothing changed). `emptyTaskModel()` seeds it.
-- **Snapshot vs. increment.** `TaskList` is a **full snapshot** → it replaces the whole list (old
-  list never stacks); an unparseable snapshot keeps the current list rather than clearing it.
-  `TaskGet` is a single-task snapshot → **upsert**. `TaskCreate` reads the new task's `id` from the
-  **result** (its input has no id) and inserts it; if no id is recoverable it is skipped. `TaskUpdate`
-  prefers the result, else applies the `input` (`taskId` + `status`/`subject`/…) incrementally; an
-  update to an unknown id is ignored (tolerates out-of-order arrival — a later snapshot reconciles).
-- **Ordering.** `TaskItem.order` is the original order: snapshot uses array index; an incremental
-  insert takes `max(order)+1`; updates/upserts preserve the existing order.
-- **Tolerance.** The result extractor accepts several serializations (JSON array / `{tasks:[…]}` /
-  `{task:{…}}` / single object), normalizes `id` (number→string), defaults an invalid/missing
-  `status` to `pending`, drops non-object / id-less rows, and never throws on dirty data — the SDK
-  result serialization isn't pinned, so parsing is defensive by design.
-- **Wiring.** App.vue holds the `taskModel` ref + a `toolUseId → {toolName, input}` pending map,
-  reset on `session_selected`. Both history replay (the `msg.history` loop) and the live
-  `tool_use`/`tool_result` cases feed the _same_ `feedTaskUse`/`feedTaskResult` helpers (gated by
-  `isTaskTool`), so replay and the live stream converge on one model. Only task tools enter the
-  model; their ordinary `tool_use`/`tool_result` chat rows are untouched (kept as history).
+- **Server derivation.** A `runs.setTaskObserver` hook on the `emit()` fan-out folds task-tool
+  `tool_use`/`tool_result` (correlated by `toolUseId`) into a per-session `TaskListModel` and emits a
+  `task_list` snapshot on change (Claude has no native task-push event, so the tool stream IS the
+  source). Because the snapshot flows through `emit()` it lands in the session buffer ⇒ reconnect
+  replays it for free. Cold history replay derives from the baseline transcript
+  (`deriveTasksFromHistory`) and is sent right after `session_selected`, before the live buffer tail.
+  The reducer rules (snapshot-vs-increment, ordering, tolerance) live in `@ccc/shared/task-model`:
+  `TaskList` replaces the whole list (unparseable snapshot keeps current), `TaskGet`/`TaskCreate`
+  upsert, `TaskUpdate` prefers result else applies `input` incrementally; `order` = snapshot index /
+  `max(order)+1` for inserts / preserved on update; the extractor tolerates several serializations and
+  never throws.
+- **Client consumption.** App.vue holds the `taskModel` ref, reset on `session_selected`, and fills
+  it from the wire: `task_list` replaces the list wholesale; `task_created`/`task_updated` upsert by
+  `id` (preserving an existing entry's `order`); `task_deleted` removes by id. Ordinary
+  `tool_use`/`tool_result` chat rows are untouched (kept as history); the task panel reads `taskModel`
+  via `taskPanelView`.
+- **Per-task variants.** `task_created`/`task_updated`/`task_deleted` exist for vendors that push
+  single-task updates natively (Codex/OpenCode `onUpdate`, wired later per 2026-06-07-008 §6). The
+  Claude path uses `task_list` snapshots only.
 
 ### Task panel (TaskPanel.vue)
 

@@ -32,7 +32,7 @@ import {
   type DispatchView,
   type DiscussionPhase,
 } from './lib/discussion-view'
-import { applyTaskTool, emptyTaskModel, isTaskTool, type TaskListModel } from './lib/task-list'
+import { emptyTaskModel, type TaskItem, type TaskListModel } from './lib/task-list'
 import {
   consoleEntryTarget,
   consoleTabEntryEffects,
@@ -88,28 +88,25 @@ const MODES: PermissionMode[] = ['default', 'auto', 'plan', 'acceptEdits', 'bypa
 const modeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
 let nextId = 1
 
-// Inferred "current task list" of the viewed session (client-only, like RunActivity;
-// see lib/task-list.ts). Reset on session_selected, then fed by correlating each task
-// tool_use with its tool_result by toolUseId — across both history replay and the live
-// stream, so the two paths converge on the same model. `taskToolPending` holds a task
-// tool_use's (toolName, input) until its tool_result arrives.
+// "Current task list" of the viewed session. Since 2026-06-07-009 the server
+// derives the model (from the task-tool stream + history replay) and pushes it
+// over the independent `task_*` wire path — the client no longer re-parses
+// `tool_result.content`. Reset on session_selected, then filled from those
+// messages (`task_list` = full snapshot; per-task variants = single upsert/delete).
 const taskModel = ref<TaskListModel>(emptyTaskModel())
-let taskToolPending = new Map<string, { toolName: string; input: unknown }>()
 
-function feedTaskUse(toolName: string, toolUseId: string | undefined, input: unknown) {
-  if (!toolUseId || !isTaskTool(toolName)) return
-  taskToolPending.set(toolUseId, { toolName, input })
-}
-
-function feedTaskResult(toolUseId: string | undefined, content: string, isError: boolean) {
-  if (!toolUseId) return
-  const pending = taskToolPending.get(toolUseId)
-  if (!pending) return
-  taskToolPending.delete(toolUseId)
-  taskModel.value = applyTaskTool(taskModel.value, pending.toolName, pending.input, {
-    content,
-    isError,
-  })
+/** Upsert one task into the model, preserving an existing entry's `order`. */
+function upsertTask(task: TaskItem) {
+  const tasks = taskModel.value.tasks
+  const idx = tasks.findIndex((t) => t.id === task.id)
+  if (idx === -1) {
+    const order = tasks.reduce((max, t) => Math.max(max, t.order), -1) + 1
+    taskModel.value = { tasks: [...tasks, { ...task, order }] }
+    return
+  }
+  const next = [...tasks]
+  next[idx] = { ...task, order: next[idx].order }
+  taskModel.value = { tasks: next }
 }
 
 // Sidebar / session state
@@ -770,14 +767,12 @@ function handleMessage(msg: ServerToClient) {
         ...currentAgentIndexBySession.value,
         [msg.sessionId]: 0,
       }
-      // Task panel re-infers from scratch on every (re)select so replay matches live.
+      // Reset the task panel on every (re)select; the server re-sends the derived
+      // `task_list` (cold baseline snapshot, then any live buffer tail) right after
+      // this message, so the panel rebuilds from the wire, not from history parsing.
       taskModel.value = emptyTaskModel()
-      taskToolPending = new Map()
       for (const item of msg.history) {
         add(transcriptToChat(item))
-        if (item.kind === 'tool_use') feedTaskUse(item.toolName, item.toolUseId, item.input)
-        else if (item.kind === 'tool_result')
-          feedTaskResult(item.toolUseId, item.content, item.isError)
       }
       break
     case 'session_started':
@@ -1023,7 +1018,6 @@ function handleMessage(msg: ServerToClient) {
         // tool (no permission_request raised) → render the "pre-approved" color.
         ...(msg.preApproved ? { preApproved: true } : {}),
       })
-      feedTaskUse(msg.toolName, msg.toolUseId, msg.input)
       activity.value = { phase: 'tool', toolName: msg.toolName }
       break
     case 'tool_result':
@@ -1033,10 +1027,22 @@ function handleMessage(msg: ServerToClient) {
         content: msg.content,
         isError: msg.isError,
       })
-      feedTaskResult(msg.toolUseId, msg.content, msg.isError)
       // Tool returned — the model is now deciding the next step (the "stuck
       // after grep" moment the status bar exists to make visible).
       activity.value = { phase: 'thinking' }
+      break
+    // Task-list wire path (2026-06-07-009): server-derived, replaces client-side
+    // tool_result parsing. `task_list` = full snapshot; the per-task variants are
+    // single upsert/delete (native push from vendors that support it).
+    case 'task_list':
+      taskModel.value = { tasks: msg.tasks }
+      break
+    case 'task_created':
+    case 'task_updated':
+      upsertTask(msg.task)
+      break
+    case 'task_deleted':
+      taskModel.value = { tasks: taskModel.value.tasks.filter((t) => t.id !== msg.taskId) }
       break
     case 'permission_request':
       add({
@@ -1356,7 +1362,6 @@ function clearViewedSession() {
   availableCommands.value = []
   activity.value = { phase: 'idle' }
   taskModel.value = emptyTaskModel()
-  taskToolPending = new Map()
 }
 
 function openIntents(path: string) {

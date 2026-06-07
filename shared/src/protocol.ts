@@ -5,6 +5,9 @@
 
 // Type-only import keeps protocol.ts zero-runtime; the runtime SoT lives in ui-codes.ts.
 import type { UiError } from './ui-codes.js'
+// Type-only: the task model item is the shape the `task_*` wire messages carry
+// (the runtime SoT — applyTaskTool et al. — lives in task-model.ts). 2026-06-07-009.
+import type { TaskItem } from './task-model.js'
 
 /**
  * Permission modes the c3 UI can switch between. These are a subset of the
@@ -1635,6 +1638,23 @@ export type ServerToClient =
       preApproved?: boolean
     }
   | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }
+  /**
+   * Task-list wire path (2026-06-07-009). An independent channel for the dev
+   * session's task list (TaskCreate / TaskList / TaskUpdate / TaskGet), so the
+   * client fills its task panel from typed messages instead of re-parsing
+   * `tool_result.content` text. The server derives the model at the `emit()`
+   * fan-out point (Claude: from the task-tool `tool_use`/`tool_result` stream —
+   * the SDK has no native task-push event) and on history replay (from the
+   * baseline transcript); a full {@link task_list} snapshot is the primary form
+   * (idempotent, replay-friendly). The per-task variants exist for vendors that
+   * push single-task updates natively (Codex/OpenCode `onUpdate`, wired later per
+   * 2026-06-07-008 §6) and future incremental use. {@link TaskItem} carries
+   * `order`, so the client consumes it directly into its `taskModel`.
+   */
+  | { type: 'task_list'; tasks: TaskItem[] }
+  | { type: 'task_created'; task: TaskItem }
+  | { type: 'task_updated'; task: TaskItem }
+  | { type: 'task_deleted'; taskId: string }
   | {
       type: 'permission_request'
       requestId: string

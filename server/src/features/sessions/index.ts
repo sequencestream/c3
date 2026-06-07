@@ -36,6 +36,7 @@ import {
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
+import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
@@ -195,6 +196,14 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       vendor: resolveSessionVendor(msg.sessionId),
       agentSwitch: agentSwitchFor(msg.sessionId),
     })
+    // Task-list cold replay (2026-06-07-009): the baseline transcript predates
+    // this process and carries no `task_list` events, so derive the model from
+    // it and send the snapshot BEFORE the live buffer tail (which may hold newer
+    // `task_list` events that must override this cold seed). Skipped when empty.
+    const baselineTasks = deriveTasksFromHistory(rt.baseline)
+    if (baselineTasks.tasks.length > 0) {
+      conn.send({ type: 'task_list', tasks: baselineTasks.tasks })
+    }
     // Replay everything emitted since the baseline (current + past
     // turns), then start receiving live events.
     for (const e of rt.buffer) conn.send(e)

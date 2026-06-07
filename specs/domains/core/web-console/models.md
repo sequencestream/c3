@@ -37,18 +37,22 @@ status.
 | Session row    | `sessionId`, `title`, `lastModified`, `mode`; status badge from `sessionStatus` | `sessions` / `session_status`          |
 | Viewed session | `activeWorkspace`, `activeSession`, `activeTitle`, `mode`                       | `session_selected` / `session_started` |
 
-## Task list (inferred)
+## Task list (server-derived, wire path)
 
-A normalized "current task list" inferred entirely on the client from the dev session's task
-tool calls (`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`), like `RunActivity` — **no wire
-event of its own**. Definitions and reducer live in `lib/task-list.ts`; inference rules (snapshot
-vs. increment, ordering, tolerance) are in [design.md](design.md) _Task-list inference_.
+A normalized "current task list" of the dev session's task tool calls (`TaskCreate` / `TaskList` /
+`TaskUpdate` / `TaskGet`). Since 2026-06-07-009 it travels its **own wire path** (`task_list` +
+`task_created`/`task_updated`/`task_deleted`): the **server** derives the model and the client just
+fills `taskModel` from those typed messages — no longer re-parsing `tool_result.content`. The pure
+reducer is the single SoT in `@ccc/shared/task-model` (re-exported by `lib/task-list.ts`, which keeps
+only the display selector `taskPanelView`). Server derivation + replay rules are in
+`specs/shared/api-conventions/websocket-protocol.md` (`task_*`) and the server task-tracker; client
+consumption is in [design.md](design.md) _Task-list (wire-driven)_.
 
-| Entity          | Attributes                                                                            | Source                                         |
-| --------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `TaskItem`      | `id`, `subject`, `description?`, `status`, `order`, `blockedBy?`, `blocks?`, `owner?` | task `tool_use` + matching `tool_result`       |
-| `TaskListModel` | `tasks: TaskItem[]` (sorted by `order`; only one current list at a time)              | folded via `applyTaskTool`                     |
-| `TaskPanelView` | `visible`, `inProgress`, `pending`, `completed` (recent N), `hiddenCompleted`         | derived via `taskPanelView` (display selector) |
+| Entity          | Attributes                                                                            | Source                                                   |
+| --------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `TaskItem`      | `id`, `subject`, `description?`, `status`, `order`, `blockedBy?`, `blocks?`, `owner?` | carried by `task_*` wire messages (shared `TaskItem`)    |
+| `TaskListModel` | `tasks: TaskItem[]` (sorted by `order`; only one current list at a time)              | server-side fold via `applyTaskTool`, pushed as snapshot |
+| `TaskPanelView` | `visible`, `inProgress`, `pending`, `completed` (recent N), `hiddenCompleted`         | derived via `taskPanelView` (display selector)           |
 
 `status` is `pending \| in_progress \| completed`. `order` is the original ordering (snapshot
 index, or append for incremental inserts). `blockedBy` / `blocks` / `owner` are kept only when the
@@ -60,5 +64,6 @@ _Task panel_).
 
 - Chat view models are ephemeral; reloading the page clears them and re-fetches from the
   server (the registry itself is persisted server-side, ADR 0004).
-- `input` and `content` are rendered verbatim for the human; the console interprets them only for
-  the client-only inferences noted above (`RunActivity`, task list), never as authoritative state.
+- `input` and `content` are rendered verbatim for the human; the console interprets `content` only
+  for the client-only `RunActivity` inference, never as authoritative state. The task list is no
+  longer inferred from `tool_result` text — it arrives server-derived on the `task_*` wire path.

@@ -102,6 +102,23 @@ export function setOnStatusChange(cb: (() => void) | null): void {
   onStatusChange = cb
 }
 
+/**
+ * Optional per-event observer, called for every emitted wire event AFTER it has
+ * been buffered + fanned out. Registered at the composition root (kept out of
+ * runs.ts so the registry never imports task semantics — same shape as
+ * `onStatusChange`/`onRunEnd`). 2026-06-07-009 wires it to the task-list
+ * derivation (`observeTaskWire`): it may itself call `emit()` (e.g. to push a
+ * `task_list`), which is safe — the re-entrant event is buffered/fanned normally
+ * and the observer is a no-op for it.
+ */
+let taskObserver: ((rt: SessionRuntime, event: ServerToClient) => void) | null = null
+/** Register the wire-event observer (composition root only). */
+export function setTaskObserver(
+  cb: ((rt: SessionRuntime, event: ServerToClient) => void) | null,
+): void {
+  taskObserver = cb
+}
+
 export function getRuntime(id: string): SessionRuntime | undefined {
   return runtimes.get(id)
 }
@@ -206,6 +223,10 @@ export function emit(id: string, event: ServerToClient): void {
     rt.status = next
     onStatusChange?.()
   }
+  // Derive side-channel wire events (task list) from this event. Runs last, after
+  // buffering/fan-out/status, so any event it re-emits (e.g. `task_list`) is
+  // ordered right after the event that produced it. Re-entry is a no-op.
+  taskObserver?.(rt, event)
 }
 
 /**

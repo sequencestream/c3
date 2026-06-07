@@ -14,7 +14,14 @@ import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
 import { addWorkspace, listWorkspaces } from './state.js'
 import { sessionExists } from './sessions.js'
-import { isRunning, reconcileLiveness, setOnRunEnd, setOnStatusChange } from './runs.js'
+import {
+  isRunning,
+  reconcileLiveness,
+  setOnRunEnd,
+  setOnStatusChange,
+  setTaskObserver,
+} from './runs.js'
+import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, setOnPendingIntentLookup } from './kernel/config/index.js'
 import { setAutomationHooks } from './features/intents/automation.js'
 import { INTENT_AGENT_PROMPT } from './features/intents/prompt.js'
@@ -271,6 +278,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const broadcaster = createBroadcaster(connections)
   const broadcasts = createBroadcasts({ broadcaster, sessionAccessor })
   setOnStatusChange(broadcasts.broadcastStatuses)
+  // Derive the task-list wire path from the emit stream (2026-06-07-009): the
+  // observer folds task-tool tool_use/tool_result into a per-session model and
+  // emits `task_list` snapshots (buffered ⇒ replayed on reconnect).
+  setTaskObserver(observeTaskWire)
   // Bind the late thunk now the broadcaster exists, so the supervisor's
   // onStatusChange (registered above) fans out `opencode_status` transitions.
   broadcastOpencodeStatus = broadcasts.broadcastOpencodeStatus

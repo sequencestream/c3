@@ -252,14 +252,14 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  setChatSession(proj, chatId)
+  setChatSession(proj, chatId, req.title)
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)
   conn.send({
     type: 'session_selected',
     workspacePath: proj,
     sessionId: chatId,
-    title: 'New Intent',
+    title: req.title,
     mode: 'default',
     history: [],
     status: 'idle',
@@ -298,14 +298,14 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  setChatSession(proj, chatId)
+  setChatSession(proj, chatId, discussion.title)
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)
   conn.send({
     type: 'session_selected',
     workspacePath: proj,
     sessionId: chatId,
-    title: 'New Intent',
+    title: discussion.title,
     mode: 'default',
     history: [],
     status: 'idle',

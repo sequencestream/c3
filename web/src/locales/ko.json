@@ -483,6 +483,16 @@
       "select": {
         "label": "Open session: {title}"
       },
+      "active": {
+        "label": "Active"
+      },
+      "completed": {
+        "label": "Completed"
+      },
+      "loadMore": {
+        "label": "Load more ↓",
+        "tooltip": "Show more completed sessions"
+      },
       "collapse": {
         "tooltip": "Collapse session list"
       },

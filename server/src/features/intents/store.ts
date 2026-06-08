@@ -608,20 +608,32 @@ export function getChatSession(projectPath: string): string | null {
 }
 
 /** Make `sessionId` the project's current comm session (clearing any prior one). */
-export function setChatSession(projectPath: string, sessionId: string): void {
+export function setChatSession(projectPath: string, sessionId: string, title?: string): void {
   const d = requireDb()
   const proj = resolve(projectPath)
   const now = Date.now()
   tx(d, () => {
     d.run('UPDATE intent_chats SET is_current=0 WHERE project_path=? AND is_current=1', proj)
-    d.run(
-      `INSERT INTO intent_chats (session_id, project_path, is_current, updated_at)
-       VALUES (?,?,1,?)
-       ON CONFLICT(session_id) DO UPDATE SET is_current=1, project_path=excluded.project_path, updated_at=excluded.updated_at`,
-      sessionId,
-      proj,
-      now,
-    )
+    if (title !== undefined) {
+      d.run(
+        `INSERT INTO intent_chats (session_id, project_path, is_current, updated_at, title)
+         VALUES (?,?,1,?,?)
+         ON CONFLICT(session_id) DO UPDATE SET is_current=1, project_path=excluded.project_path, updated_at=excluded.updated_at`,
+        sessionId,
+        proj,
+        now,
+        title,
+      )
+    } else {
+      d.run(
+        `INSERT INTO intent_chats (session_id, project_path, is_current, updated_at)
+         VALUES (?,?,1,?)
+         ON CONFLICT(session_id) DO UPDATE SET is_current=1, project_path=excluded.project_path, updated_at=excluded.updated_at`,
+        sessionId,
+        proj,
+        now,
+      )
+    }
   })
 }
 
@@ -670,7 +682,10 @@ export function listChatSessions(projectPath: string): IntentSessionInfo[] {
       session_id: string
       title: string | null
       updated_at: number
-    }>('SELECT session_id, title, updated_at FROM intent_chats WHERE project_path=? ORDER BY updated_at DESC', proj)
+    }>(
+      'SELECT session_id, title, updated_at FROM intent_chats WHERE project_path=? ORDER BY updated_at DESC',
+      proj,
+    )
     .map((r) => ({
       sessionId: r.session_id,
       title: r.title ?? null,

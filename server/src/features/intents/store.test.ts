@@ -381,6 +381,41 @@ describe('communication session mapping / hidden set', () => {
     expect(getChatSession(proj)).toBeNull()
     expect(listChatSessions(proj)).toEqual([])
   })
+
+  // ── Session title (auto-naming on creation) ──
+
+  it('setChatSession with title stores it and listChatSessions returns it', () => {
+    setChatSession(proj, 's1', 'My title')
+    const list = listChatSessions(proj)
+    expect(list).toHaveLength(1)
+    expect(list[0].sessionId).toBe('s1')
+    expect(list[0].title).toBe('My title')
+  })
+
+  it('setChatSession without title stores null title', () => {
+    setChatSession(proj, 's1')
+    const list = listChatSessions(proj)
+    expect(list).toHaveLength(1)
+    expect(list[0].title).toBeNull()
+  })
+
+  it('ON CONFLICT does not overwrite existing title when called without title', () => {
+    setChatSession(proj, 's1', 'Persistent')
+    // Second call without title — ON CONFLICT triggers but must NOT clear the title.
+    setChatSession(proj, 's1')
+    const list = listChatSessions(proj)
+    expect(list).toHaveLength(1)
+    expect(list[0].title).toBe('Persistent')
+  })
+
+  it('rebindChatSession preserves title', () => {
+    setChatSession(proj, 'pending:abc', 'Bound title')
+    rebindChatSession('pending:abc', 'real-xyz')
+    const list = listChatSessions(proj)
+    expect(list).toHaveLength(1)
+    expect(list[0].sessionId).toBe('real-xyz')
+    expect(list[0].title).toBe('Bound title')
+  })
 })
 
 describe('findIntents (read-only intent-agent query)', () => {

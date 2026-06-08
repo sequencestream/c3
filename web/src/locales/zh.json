@@ -483,6 +483,16 @@
       "select": {
         "label": "打开会话: {title}"
       },
+      "active": {
+        "label": "进行中"
+      },
+      "completed": {
+        "label": "已完成"
+      },
+      "loadMore": {
+        "label": "加载更多 ↓",
+        "tooltip": "显示更多已完成的会话"
+      },
       "collapse": {
         "tooltip": "收起会话列表"
       },

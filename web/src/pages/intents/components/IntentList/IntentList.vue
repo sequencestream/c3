@@ -199,15 +199,6 @@ function datePrefix(r: Intent): string {
         >
           <option v-for="f in FILTERS" :key="f.label" :value="f.value ?? ''">{{ f.label }}</option>
         </select>
-        <button
-          type="button"
-          class="req-new-btn"
-          :aria-label="t('intent.list.new.label')"
-          :title="t('intent.list.new.label')"
-          @click="emit('new-intent')"
-        >
-          +
-        </button>
       </div>
     </div>
     <div v-if="autoError" class="auto-status error" :title="autoError">⚠ {{ autoError }}</div>

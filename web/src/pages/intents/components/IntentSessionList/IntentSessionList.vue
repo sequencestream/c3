@@ -5,17 +5,19 @@
  * 展示当前项目的全部 intent comm session(标题 + 时间 + 单一运行态指示)。
  * 点击切换会话(加载历史到右侧聊天列)、「+」新建、行内重命名、删除(二次确认)。
  * 多个会话可同时后台运行,切换不打断其它会话的运行态。
+ * 活跃中的会话(running)全部展示;已完成的会话默认展示最近 10 笔,可点加载更多。
  */
-import { ref, nextTick } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import type { IntentSessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { formatDate } from '../../../../lib/intent-list-view'
 import { TONE_ICON } from '../../../../lib/status-indicator'
 
+const PAGE_SIZE = 10
 const { t, locale } = useTypedI18n()
 
-defineProps<{
+const props = defineProps<{
   /** All intent communication sessions for the current project. */
   sessions: IntentSessionInfo[]
   /** The currently-selected (active) session's id. */
@@ -76,15 +78,47 @@ function deleteSession(session: IntentSessionInfo): void {
 }
 
 // ---- Row helpers ----
-// Display title: fall back to a localized "New Session" when title is null.
 function displayTitle(session: IntentSessionInfo): string {
   return session.title ?? t('intent.sessionList.placeholder.label')
 }
 
-// Date prefix for a session's last-updated time.
 function datePrefix(ms: number): string {
   return formatDate(ms, locale.value, { style: 'short' })
 }
+
+// ---- Active vs paginated-completed split ----
+// Sessions sorted newest-first.
+const sortedSessions = computed<IntentSessionInfo[]>(() =>
+  [...props.sessions].sort((a, b) => b.updatedAt - a.updatedAt),
+)
+
+// Active sessions: currently running (all shown, no pagination).
+const activeSessions = computed<IntentSessionInfo[]>(() =>
+  sortedSessions.value.filter((s) => props.runStates[s.sessionId] === 'running'),
+)
+
+// Completed sessions: everything not running (paginated).
+const completedSessions = computed<IntentSessionInfo[]>(() =>
+  sortedSessions.value.filter((s) => props.runStates[s.sessionId] !== 'running'),
+)
+
+// Pagination for completed sessions.
+const completedPage = ref(1)
+const visibleCompleted = computed<IntentSessionInfo[]>(() =>
+  completedSessions.value.slice(0, completedPage.value * PAGE_SIZE),
+)
+const hasMoreCompleted = computed<boolean>(
+  () => completedSessions.value.length > completedPage.value * PAGE_SIZE,
+)
+function loadMoreCompleted(): void {
+  completedPage.value += 1
+}
+
+// Flattened list rendered in the template: all active + paginated completed.
+const visibleSessions = computed<IntentSessionInfo[]>(() => [
+  ...activeSessions.value,
+  ...visibleCompleted.value,
+])
 </script>
 
 <template>
@@ -119,77 +153,151 @@ function datePrefix(ms: number): string {
     </div>
 
     <div class="int-sess-items">
-      <p v-if="sessions.length === 0" class="int-sess-empty" data-testid="intent-session-empty">
+      <p
+        v-if="visibleSessions.length === 0"
+        class="int-sess-empty"
+        data-testid="intent-session-empty"
+      >
         {{ t('intent.sessionList.empty') }}
       </p>
-      <div
-        v-for="s in sessions"
-        :key="s.sessionId"
-        class="int-sess-item"
-        :class="{ active: s.sessionId === selectedId }"
-        data-testid="intent-session-row"
-      >
-        <!-- Clickable main area: selects the session -->
+
+      <!-- Active sessions (running) — all shown, no pagination -->
+      <template v-if="activeSessions.length > 0">
+        <span class="int-sess-section-label">{{ t('intent.sessionList.active.label') }}</span>
         <div
-          class="int-sess-item-main"
-          role="button"
-          tabindex="0"
-          :aria-label="t('intent.sessionList.select.label', { title: displayTitle(s) })"
-          @click="emit('select', s.sessionId)"
-          @keydown.enter.prevent="emit('select', s.sessionId)"
-          @keydown.space.prevent="emit('select', s.sessionId)"
+          v-for="s in activeSessions"
+          :key="s.sessionId"
+          class="int-sess-item"
+          :class="{ active: s.sessionId === selectedId }"
+          data-testid="intent-session-row"
         >
-          <!-- Run-state indicator: single icon, 'running' spins -->
-          <span
-            class="status-icon int-sess-status-icon"
-            :class="{ spin: runStates[s.sessionId] === 'running' }"
-            aria-hidden="true"
+          <div
+            class="int-sess-item-main"
+            role="button"
+            tabindex="0"
+            :aria-label="t('intent.sessionList.select.label', { title: displayTitle(s) })"
+            @click="emit('select', s.sessionId)"
+            @keydown.enter.prevent="emit('select', s.sessionId)"
+            @keydown.space.prevent="emit('select', s.sessionId)"
           >
-            {{ runStates[s.sessionId] === 'running' ? TONE_ICON.running : TONE_ICON.idle }}
+            <span
+              class="status-icon int-sess-status-icon"
+              :class="{ spin: runStates[s.sessionId] === 'running' }"
+              aria-hidden="true"
+            >
+              {{ runStates[s.sessionId] === 'running' ? TONE_ICON.running : TONE_ICON.idle }}
+            </span>
+            <span v-if="editingId !== s.sessionId" class="int-sess-title" :title="displayTitle(s)">
+              {{ displayTitle(s) }}
+            </span>
+            <input
+              v-else
+              v-model="renameValue"
+              class="int-sess-rename-input"
+              type="text"
+              :placeholder="t('intent.sessionList.rename.placeholder')"
+              @keydown.enter.prevent="commitRename"
+              @keydown.escape.prevent="cancelRename"
+              @blur="commitRename"
+            />
+            <span class="int-sess-date">{{ datePrefix(s.updatedAt) }}</span>
+          </div>
+          <span v-if="!collapsed" class="int-sess-actions">
+            <button
+              v-if="editingId !== s.sessionId"
+              type="button"
+              class="icon-btn"
+              :title="t('intent.sessionList.rename.tooltip')"
+              data-testid="intent-session-rename"
+              @click.stop="startRename(s)"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              class="icon-btn"
+              :title="t('intent.sessionList.delete.tooltip')"
+              data-testid="intent-session-delete"
+              @click.stop="deleteSession(s)"
+            >
+              🗑
+            </button>
           </span>
-
-          <!-- Title (or inline rename input) -->
-          <span v-if="editingId !== s.sessionId" class="int-sess-title" :title="displayTitle(s)">
-            {{ displayTitle(s) }}
-          </span>
-          <input
-            v-else
-            v-model="renameValue"
-            class="int-sess-rename-input"
-            type="text"
-            :placeholder="t('intent.sessionList.rename.placeholder')"
-            @keydown.enter.prevent="commitRename"
-            @keydown.escape.prevent="cancelRename"
-            @blur="commitRename"
-          />
-
-          <!-- Date prefix (collapsed state hides it via class) -->
-          <span class="int-sess-date">{{ datePrefix(s.updatedAt) }}</span>
         </div>
+      </template>
 
-        <!-- Action buttons: rename + delete -->
-        <span v-if="!collapsed" class="int-sess-actions">
-          <button
-            v-if="editingId !== s.sessionId"
-            type="button"
-            class="icon-btn"
-            :title="t('intent.sessionList.rename.tooltip')"
-            data-testid="intent-session-rename"
-            @click.stop="startRename(s)"
+      <!-- Completed sessions (not running) — paginated -->
+      <template v-if="visibleCompleted.length > 0">
+        <span class="int-sess-section-label">{{ t('intent.sessionList.completed.label') }}</span>
+        <div
+          v-for="s in visibleCompleted"
+          :key="s.sessionId"
+          class="int-sess-item"
+          :class="{ active: s.sessionId === selectedId }"
+          data-testid="intent-session-row"
+        >
+          <div
+            class="int-sess-item-main"
+            role="button"
+            tabindex="0"
+            :aria-label="t('intent.sessionList.select.label', { title: displayTitle(s) })"
+            @click="emit('select', s.sessionId)"
+            @keydown.enter.prevent="emit('select', s.sessionId)"
+            @keydown.space.prevent="emit('select', s.sessionId)"
           >
-            ✎
-          </button>
-          <button
-            type="button"
-            class="icon-btn"
-            :title="t('intent.sessionList.delete.tooltip')"
-            data-testid="intent-session-delete"
-            @click.stop="deleteSession(s)"
-          >
-            🗑
-          </button>
-        </span>
-      </div>
+            <span class="status-icon int-sess-status-icon" aria-hidden="true">
+              {{ TONE_ICON.idle }}
+            </span>
+            <span v-if="editingId !== s.sessionId" class="int-sess-title" :title="displayTitle(s)">
+              {{ displayTitle(s) }}
+            </span>
+            <input
+              v-else
+              v-model="renameValue"
+              class="int-sess-rename-input"
+              type="text"
+              :placeholder="t('intent.sessionList.rename.placeholder')"
+              @keydown.enter.prevent="commitRename"
+              @keydown.escape.prevent="cancelRename"
+              @blur="commitRename"
+            />
+            <span class="int-sess-date">{{ datePrefix(s.updatedAt) }}</span>
+          </div>
+          <span v-if="!collapsed" class="int-sess-actions">
+            <button
+              v-if="editingId !== s.sessionId"
+              type="button"
+              class="icon-btn"
+              :title="t('intent.sessionList.rename.tooltip')"
+              data-testid="intent-session-rename"
+              @click.stop="startRename(s)"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              class="icon-btn"
+              :title="t('intent.sessionList.delete.tooltip')"
+              data-testid="intent-session-delete"
+              @click.stop="deleteSession(s)"
+            >
+              🗑
+            </button>
+          </span>
+        </div>
+      </template>
+
+      <!-- Load more button for completed sessions -->
+      <button
+        v-if="hasMoreCompleted"
+        type="button"
+        class="int-sess-more"
+        :title="t('intent.sessionList.loadMore.tooltip')"
+        data-testid="intent-session-more"
+        @click="loadMoreCompleted"
+      >
+        {{ t('intent.sessionList.loadMore.label') }}
+      </button>
     </div>
   </section>
 </template>
@@ -238,7 +346,6 @@ function datePrefix(ms: number): string {
   font-weight: 600;
   white-space: nowrap;
 }
-/* Collapse/expand toggle button */
 .int-sess-collapse-btn {
   flex-shrink: 0;
   background: var(--c-input);
@@ -254,7 +361,6 @@ function datePrefix(ms: number): string {
   background: var(--c-hover);
   color: var(--c-text);
 }
-/* "+" new session button */
 .int-sess-new-btn {
   flex-shrink: 0;
   display: inline-flex;
@@ -288,6 +394,15 @@ function datePrefix(ms: number): string {
   padding: var(--sp-3);
   text-align: center;
 }
+.int-sess-section-label {
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  color: var(--c-text-muted);
+  padding: var(--sp-1) var(--sp-3);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 .int-sess-item {
   display: flex;
   align-items: stretch;
@@ -302,7 +417,6 @@ function datePrefix(ms: number): string {
   background: var(--c-primary-soft);
   border-left-color: var(--c-primary);
 }
-/* Clickable main area: fills the row, drives the select action */
 .int-sess-item-main {
   flex: 1;
   min-width: 0;
@@ -311,7 +425,6 @@ function datePrefix(ms: number): string {
   gap: var(--sp-2);
   cursor: pointer;
 }
-/* Status icon: same tone color and spin as shared status-indicator */
 .int-sess-status-icon {
   flex-shrink: 0;
   font-size: var(--fs-body);
@@ -320,7 +433,6 @@ function datePrefix(ms: number): string {
 .int-sess-status-icon.spin {
   animation: status-pulse 1.4s var(--ease-standard) infinite;
 }
-/* Title with ellipsis */
 .int-sess-title {
   flex: 1;
   min-width: 0;
@@ -329,7 +441,6 @@ function datePrefix(ms: number): string {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Inline rename input */
 .int-sess-rename-input {
   flex: 1;
   min-width: 0;
@@ -342,7 +453,6 @@ function datePrefix(ms: number): string {
   border-radius: var(--radius-sm);
   outline: none;
 }
-/* Date prefix */
 .int-sess-date {
   flex-shrink: 0;
   font-size: var(--fs-badge);
@@ -350,21 +460,18 @@ function datePrefix(ms: number): string {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* Collapsed: hide date (row shows only status icon + truncated title) */
 .int-sess-list.collapsed .int-sess-date {
   display: none;
 }
 .int-sess-list.collapsed .int-sess-item-main {
   gap: var(--sp-1);
 }
-/* Action buttons row (trailing) */
 .int-sess-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: var(--sp-1);
 }
-/* Shared icon-btn styles (mirrored from discussions style.css) */
 .int-sess-actions :deep(.icon-btn) {
   display: inline-flex;
   align-items: center;
@@ -387,6 +494,24 @@ function datePrefix(ms: number): string {
 }
 .int-sess-actions :deep(.icon-btn:hover) {
   color: var(--c-text);
+  background: var(--c-hover);
+}
+.int-sess-more {
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  padding: var(--sp-1) var(--sp-3);
+  font: inherit;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--c-border);
+  cursor: pointer;
+  text-align: center;
+}
+.int-sess-more:hover {
+  color: var(--c-primary);
   background: var(--c-hover);
 }
 </style>

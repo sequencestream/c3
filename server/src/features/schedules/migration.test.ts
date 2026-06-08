@@ -159,6 +159,7 @@ describe('schedule store v5 (event-trigger) migration', () => {
       eventTopic: 'run:settled',
       eventReasonFilter: ['error'],
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
     expect(ev.triggerType).toBe('event')
     expect(getEventSchedules('run:settled').map((s) => s.id)).toContain(ev.id)

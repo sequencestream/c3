@@ -37,6 +37,7 @@ CREATE TABLE schedules (
     mcp_mode        TEXT NOT NULL,                           -- 'read-only' | 'sandboxed' | 'full-access'
     tool_allowlist  TEXT NOT NULL DEFAULT '[]',
     tool_denylist   TEXT NOT NULL DEFAULT '[]',
+    vendor          TEXT NOT NULL DEFAULT 'claude',           -- 'claude' | 'codex' | 'opencode' (v6, 2026-06-08)
     created_at      INTEGER NOT NULL,                        -- Unix ms
     updated_at      INTEGER NOT NULL                         -- Unix ms
 );

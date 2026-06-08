@@ -18,6 +18,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     mcpMode: 'sandboxed',
     toolAllowlist: [],
     toolDenylist: [],
+    vendor: 'claude',
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
     ...over,

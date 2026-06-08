@@ -51,6 +51,7 @@ function makeSchedule() {
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
       mcpMode: 'read-only',
+      vendor: 'claude',
     },
     'Auto Name',
   )

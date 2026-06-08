@@ -37,6 +37,7 @@ function makeLlmSchedule() {
     workspacePath: proj,
     cronExpression: '* * * * *',
     mcpMode: 'read-only',
+    vendor: 'claude',
   })
 }
 

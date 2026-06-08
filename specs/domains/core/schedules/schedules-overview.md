@@ -11,8 +11,10 @@ prompt — that fires either at a configured time (cron) or on a subscribed **ru
 (`run:started` / `run:settled`, 2026-06-08). Each execution produces an **ExecutionLog** for review.
 
 Schedules are **workspace-scoped**: every schedule is bound to one workspace (registrant directory, via
-[session-registry](../session-registry/spec.md)). The scheduling engine runs inside the server process and
-drives execution via the same runtime infrastructure that [agent-session](../agent-session/spec.md) owns.
+[session-registry](../session-registry/spec.md)) and **vendor-scoped**: a schedule declares which vendor
+(`claude` / `codex` / `opencode`) it belongs to, so the dispatcher routes execution to the right agent.
+The scheduling engine runs inside the server process and drives execution via the same runtime
+infrastructure that [agent-session](../agent-session/spec.md) owns.
 
 It does not gate individual tool calls within a schedule's run (that is
 [permission-gateway](../permission-gateway/spec.md)) and does not render the schedule list or log viewer

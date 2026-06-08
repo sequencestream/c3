@@ -21,10 +21,10 @@ The user views schedules and logs in the web-console and manages them through a 
 
 ## Core entities
 
-| Entity       | Description                                                           | Key attributes                                                                                                  |
-| ------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Schedule     | A task: command or LLM prompt, fired by cron or a run lifecycle event | `id`, `workspaceId`, `taskType`, `state`, `triggerType`, `cronExpression` / (`eventTopic`, `eventReasonFilter`) |
-| ExecutionLog | The record of a single execution of a schedule                        | `id`, `scheduleId`, `status`, `startedAt`, `output`                                                             |
+| Entity       | Description                                                           | Key attributes                                                                                                            |
+| ------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Schedule     | A task: command or LLM prompt, fired by cron or a run lifecycle event | `id`, `workspaceId`, `taskType`, `vendor`, `state`, `triggerType`, `cronExpression` / (`eventTopic`, `eventReasonFilter`) |
+| ExecutionLog | The record of a single execution of a schedule                        | `id`, `scheduleId`, `status`, `startedAt`, `output`                                                                       |
 
 See [models.md](models.md) for full attributes.
 

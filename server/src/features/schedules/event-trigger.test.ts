@@ -60,6 +60,7 @@ describe('store — event-trigger schedule CRUD', () => {
       eventTopic: 'run:settled',
       eventReasonFilter: ['error', 'aborted'],
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
     expect(s.triggerType).toBe('event')
     expect(s.cronExpression).toBe('')
@@ -77,6 +78,7 @@ describe('store — event-trigger schedule CRUD', () => {
       cronExpression: '',
       eventTopic: 'run:settled',
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
     createSchedule({
       type: 'command',
@@ -86,6 +88,7 @@ describe('store — event-trigger schedule CRUD', () => {
       cronExpression: '',
       eventTopic: 'run:started',
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
     // A cron schedule must never surface in the event query.
     const cron = createSchedule({
@@ -94,6 +97,7 @@ describe('store — event-trigger schedule CRUD', () => {
       workspacePath: proj,
       cronExpression: '0 8 * * *',
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
 
     const settledList = getEventSchedules('run:settled')
@@ -116,6 +120,7 @@ describe('store — event-trigger schedule CRUD', () => {
       cronExpression: '',
       eventTopic: 'run:settled',
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
     updateSchedule(s.id, { status: 'paused' })
     expect(getEventSchedules('run:settled')).toHaveLength(0)
@@ -128,6 +133,7 @@ describe('store — event-trigger schedule CRUD', () => {
       workspacePath: proj,
       cronExpression: '0 8 * * *',
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
     expect(s.triggerType).toBe('cron')
     expect(s.nextRunAt).not.toBeNull()
@@ -150,6 +156,7 @@ describe('store — event-trigger schedule CRUD', () => {
       eventTopic: 'run:settled',
       eventReasonFilter: ['error'],
       mcpMode: 'sandboxed',
+      vendor: 'claude',
     })
     updateSchedule(s.id, { triggerType: 'cron', cronExpression: '0 9 * * *' })
     const after = getSchedule(s.id)!
@@ -181,6 +188,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       mcpMode: 'sandboxed',
       toolAllowlist: [],
       toolDenylist: [],
+      vendor: 'claude',
       createdAt: 1,
       updatedAt: 1,
       ...over,

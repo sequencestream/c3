@@ -266,6 +266,7 @@ function save(): void {
       config,
       workspacePath: props.workspacePath,
       mcpMode: mcpMode.value,
+      vendor: 'claude',
       triggerType: triggerType.value,
       cronExpression: isEvent ? '' : cronExpression.value,
       eventTopic: isEvent ? eventTopic.value : null,

@@ -136,6 +136,7 @@ describe('createSchedule next_run_at backfill', () => {
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
       mcpMode: 'read-only',
+      vendor: 'claude',
     })
     expect(sch.nextRunAt).not.toBeNull()
     expect(sch.nextRunAt!).toBeGreaterThan(Date.now())
@@ -152,6 +153,7 @@ describe('createSchedule next_run_at backfill', () => {
       workspacePath: proj,
       cronExpression: 'not a cron',
       mcpMode: 'read-only',
+      vendor: 'claude',
     })
     expect(sch.nextRunAt).toBeNull()
   })
@@ -164,6 +166,7 @@ describe('createSchedule next_run_at backfill', () => {
         workspacePath: proj,
         cronExpression: '*/5 * * * *',
         mcpMode: 'read-only',
+        vendor: 'claude',
       },
       'Generated Name',
     )
@@ -180,6 +183,7 @@ describe('createSchedule next_run_at backfill', () => {
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
       mcpMode: 'read-only',
+      vendor: 'claude',
     })
     expect((sch.config as Record<string, unknown>).name).toBe('pnpm build')
   })
@@ -191,6 +195,7 @@ describe('createSchedule next_run_at backfill', () => {
       workspacePath: proj,
       cronExpression: '0 0 1 1 *', // yearly, far away
       mcpMode: 'read-only',
+      vendor: 'claude',
     })
     const before = getSchedule(sch.id)!.nextRunAt!
 
@@ -198,6 +203,52 @@ describe('createSchedule next_run_at backfill', () => {
     const after = getSchedule(sch.id)!.nextRunAt!
     expect(after).toBeLessThan(before)
     expect(after).toBeGreaterThan(Date.now())
+  })
+})
+
+describe('vendor field', () => {
+  it('persists the vendor specified on create', () => {
+    const sch = createSchedule({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspacePath: proj,
+      cronExpression: '*/5 * * * *',
+      mcpMode: 'read-only',
+      vendor: 'codex',
+    })
+    expect(sch.vendor).toBe('codex')
+
+    const fetched = getSchedule(sch.id)
+    expect(fetched!.vendor).toBe('codex')
+  })
+
+  it('accepts all vendor values', () => {
+    for (const v of ['claude', 'codex', 'opencode'] as const) {
+      const sch = createSchedule({
+        type: 'command',
+        config: {},
+        workspacePath: proj,
+        cronExpression: '* * * * *',
+        mcpMode: 'read-only',
+        vendor: v,
+      })
+      expect(getSchedule(sch.id)!.vendor).toBe(v)
+    }
+  })
+
+  it('updates vendor via updateSchedule', () => {
+    const sch = createSchedule({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspacePath: proj,
+      cronExpression: '*/5 * * * *',
+      mcpMode: 'read-only',
+      vendor: 'claude',
+    })
+    expect(sch.vendor).toBe('claude')
+
+    updateSchedule(sch.id, { vendor: 'opencode' })
+    expect(getSchedule(sch.id)!.vendor).toBe('opencode')
   })
 })
 
@@ -210,6 +261,7 @@ describe('updateSchedule — display name management', () => {
         workspacePath: proj,
         cronExpression: '*/5 * * * *',
         mcpMode: 'read-only',
+        vendor: 'claude',
       },
       name,
     )
@@ -294,6 +346,7 @@ describe('listExecutionLogs', () => {
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
       mcpMode: 'read-only',
+      vendor: 'claude',
     })
   }
 

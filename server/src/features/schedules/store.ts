@@ -25,6 +25,7 @@ import type {
   ScheduleTriggerType,
   ScheduleType,
   UpdateScheduleInput,
+  VendorId,
   WorkspaceMcpConfig,
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   mcp_mode            TEXT NOT NULL,
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',
   tool_denylist       TEXT NOT NULL DEFAULT '[]',
+  vendor              TEXT NOT NULL DEFAULT 'claude',
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL
 );
@@ -176,6 +178,11 @@ function runMigrations(d: Db): void {
   if (!columnExists(d, 'schedules', 'event_reason_filter')) {
     d.exec(`ALTER TABLE schedules ADD COLUMN event_reason_filter TEXT`)
   }
+  // v6 (2026-06-08): vendor column. Old schedules default to 'claude' so their
+  // execution behaviour is unchanged — they keep running under the default vendor.
+  if (!columnExists(d, 'schedules', 'vendor')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN vendor TEXT NOT NULL DEFAULT 'claude'`)
+  }
 }
 
 let schemaReady = false
@@ -241,6 +248,7 @@ interface ScheduleRow {
   mcp_mode: string
   tool_allowlist: string
   tool_denylist: string
+  vendor: string
   created_at: number
   updated_at: number
 }
@@ -297,6 +305,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     mcpMode: r.mcp_mode as McpMode,
     toolAllowlist: parseStringList(r.tool_allowlist),
     toolDenylist: parseStringList(r.tool_denylist),
+    vendor: r.vendor as VendorId,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -351,6 +360,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
   const now = Date.now()
   const allowlist = input.toolAllowlist ?? []
   const denylist = input.toolDenylist ?? []
+  const vendor = input.vendor ?? 'claude'
   const config = sanitizeConfig(input.config)
   config.name = (generatedName ?? '').trim() || fallbackName(input.type, input.config)
   // Event-triggered schedules carry no cron and never have a planned next_run_at:
@@ -372,8 +382,8 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
       : null
   d.run(
     `INSERT INTO schedules
-       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mcp_mode, tool_allowlist, tool_denylist, vendor, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
     JSON.stringify(config),
@@ -387,6 +397,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     input.mcpMode,
     JSON.stringify(allowlist),
     JSON.stringify(denylist),
+    vendor,
     now,
     now,
   )
@@ -481,6 +492,10 @@ export function updateSchedule(
   if (patch.mcpMode !== undefined) {
     sets.push('mcp_mode=?')
     params.push(patch.mcpMode)
+  }
+  if (patch.vendor !== undefined) {
+    sets.push('vendor=?')
+    params.push(patch.vendor)
   }
   if (patch.toolAllowlist !== undefined) {
     sets.push('tool_allowlist=?')

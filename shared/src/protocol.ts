@@ -1275,6 +1275,8 @@ export interface Schedule {
   config: unknown
   /** Owning workspace absolute path (resolved). */
   workspacePath: string
+  /** Vendor this schedule belongs to; determines which agent runs it. */
+  vendor: VendorId
   /**
    * How this schedule fires: `'cron'` (time-based) or `'event'` (run lifecycle).
    * Defaults to `'cron'` for legacy rows migrated before this field existed.
@@ -1311,6 +1313,8 @@ export interface CreateScheduleInput {
   type: ScheduleType
   config: unknown
   workspacePath: string
+  /** Vendor this schedule belongs to; determines which agent runs it. */
+  vendor: VendorId
   /** Defaults to `'cron'` when omitted (backward-compatible with legacy clients). */
   triggerType?: ScheduleTriggerType
   /** Required for `'cron'` triggers; empty string for `'event'` triggers. */
@@ -1334,6 +1338,7 @@ export interface UpdateScheduleInput {
    * (and its provenance) untouched. `description` is always stripped.
    */
   config?: unknown
+  vendor?: VendorId
   triggerType?: ScheduleTriggerType
   cronExpression?: string
   eventTopic?: RunLifecycleTopic | null

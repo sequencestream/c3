@@ -823,10 +823,6 @@
         "label": "Prompt",
         "placeholder": "Run a security audit and summarize findings…"
       },
-      "preview": {
-        "label": "Preview",
-        "empty": "Markdown preview appears here."
-      },
       "schedule": {
         "label": "Schedule"
       },

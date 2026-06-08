@@ -817,10 +817,6 @@
         "label": "提示词",
         "placeholder": "运行一次安全审计并总结发现…"
       },
-      "preview": {
-        "label": "预览",
-        "empty": "Markdown 预览会显示在这里。"
-      },
       "schedule": {
         "label": "排期"
       },

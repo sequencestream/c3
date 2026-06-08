@@ -497,16 +497,16 @@ const visibleSessions = computed<IntentSessionInfo[]>(() => [
   background: var(--c-hover);
 }
 .int-sess-more {
-  width: 100%;
-  box-sizing: border-box;
+  align-self: center;
   flex-shrink: 0;
+  margin: var(--sp-1) auto;
   padding: var(--sp-1) var(--sp-3);
   font: inherit;
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
   background: transparent;
-  border: none;
-  border-top: 1px solid var(--c-border);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: center;
 }

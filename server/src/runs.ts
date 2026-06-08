@@ -21,13 +21,14 @@
  * connection so sidebars can badge background sessions.
  */
 import type {
-  PermissionMode,
+  CodexPolicy,
+  ModeToken,
   ServerToClient,
   SessionRunStatus,
   SessionStatus,
   TranscriptItem,
 } from '@ccc/shared/protocol'
-import type { RunHandle } from './claude.js'
+import type { RunHandle } from './kernel/agent/index.js'
 
 export type Viewer = (event: ServerToClient) => void
 
@@ -39,18 +40,30 @@ interface InFlightRun {
 /**
  * What kind of session a runtime drives:
  * - `normal` — an ordinary user session (default).
- * - `requirement` — a read-only requirement-communication session; runs with the
- *   requirement permission gate + disallowed-tools lock and is hidden from the
- *   normal session list.
+ * - `intent` — a read-only intent-communication session; runs with the intent
+ *   permission gate + disallowed-tools lock and is hidden from the normal session
+ *   list.
  */
-export type SessionKind = 'normal' | 'requirement'
+export type SessionKind = 'normal' | 'intent'
 
 export interface SessionRuntime {
   /** Real SDK id, or a `pending:…` id until the first run binds it. */
   sessionId: string
   workspacePath: string
-  mode: PermissionMode
-  /** Normal user session vs. read-only requirement-communication session. */
+  /**
+   * The session's action mode as a vendor-aware {@link ModeToken} (NOT the narrow
+   * Claude `PermissionMode`): claude tokens map 1:1 to `PermissionMode`, while
+   * codex/opencode carry their own tokens. The claude path narrows it back with
+   * `rt.mode as PermissionMode` at launch.
+   */
+  mode: ModeToken
+  /**
+   * Codex sandbox/approval policy for this runtime, when the bound agent is a
+   * codex vendor. Undefined for non-codex sessions. Drives the run's permission
+   * grid on the driver path.
+   */
+  codexPolicy?: CodexPolicy
+  /** Normal user session vs. read-only intent-communication session. */
   kind: SessionKind
   /** On-disk transcript snapshot at runtime creation; replayed before `buffer`. */
   baseline: TranscriptItem[]
@@ -102,6 +115,35 @@ export function setOnStatusChange(cb: (() => void) | null): void {
   onStatusChange = cb
 }
 
+/**
+ * Optional per-event observer, called for every emitted wire event AFTER it has
+ * been buffered + fanned out. Registered at the composition root (kept out of
+ * runs.ts so the registry never imports task semantics — same shape as
+ * `onStatusChange`/`onRunEnd`). 2026-06-07-009 wires it to the task-list
+ * derivation (`observeTaskWire`): it may itself call `emit()` (e.g. to push a
+ * `task_list`), which is safe — the re-entrant event is buffered/fanned normally
+ * and the observer is a no-op for it.
+ */
+let taskObserver: ((rt: SessionRuntime, event: ServerToClient) => void) | null = null
+/** Register the wire-event observer (composition root only). */
+export function setTaskObserver(
+  cb: ((rt: SessionRuntime, event: ServerToClient) => void) | null,
+): void {
+  taskObserver = cb
+}
+
+/**
+ * Optional per-event hook, called for every emitted wire event after the
+ * taskObserver. Same shape as `taskObserver` — kept in runs.ts so the
+ * composition root can wire side effects (e.g. auto-title derivation for
+ * intent sessions) without importing feature logic here.
+ */
+let onEmit: ((rt: SessionRuntime, event: ServerToClient) => void) | null = null
+/** Register the per-emit hook (composition root only). */
+export function setOnEmit(cb: ((rt: SessionRuntime, event: ServerToClient) => void) | null): void {
+  onEmit = cb
+}
+
 export function getRuntime(id: string): SessionRuntime | undefined {
   return runtimes.get(id)
 }
@@ -113,9 +155,10 @@ export function getRuntime(id: string): SessionRuntime | undefined {
 export function ensureRuntime(
   id: string,
   workspacePath: string,
-  mode: PermissionMode,
+  mode: ModeToken,
   baseline: TranscriptItem[],
   kind: SessionKind = 'normal',
+  codexPolicy?: CodexPolicy,
 ): SessionRuntime {
   let rt = runtimes.get(id)
   if (!rt) {
@@ -123,6 +166,7 @@ export function ensureRuntime(
       sessionId: id,
       workspacePath,
       mode,
+      codexPolicy,
       kind,
       baseline,
       buffer: [],
@@ -191,11 +235,28 @@ export function emit(id: string, event: ServerToClient): void {
     // lead turn finished", not "idle". Hold the status at `team` so the sidebar and
     // composer treat it as a live, persistent session awaiting teammates.
     next = 'team'
+  } else if (next === 'idle' && rt.run != null) {
+    // The normal `result` path emits this `turn_end` from *inside* `runClaude`, so
+    // the run's teardown `finally` (which nulls `rt.run`) hasn't run yet. Settling
+    // to idle now would broadcast `idle` while `rt.run` is still set — the client
+    // sees the idle transition, flushes its pending-send queue as a fresh
+    // `user_prompt`, and the server rejects it with "a turn is already running",
+    // silently dropping the queued prompt. Hold the current status instead;
+    // `finalizeRun` re-settles to idle AFTER the `finally` nulls `rt.run`, so the
+    // flushed prompt lands on a session that is genuinely ready to accept it.
+    next = null
   }
   if (next && next !== rt.status) {
     rt.status = next
     onStatusChange?.()
   }
+  // Derive side-channel wire events (task list) from this event. Runs last, after
+  // buffering/fan-out/status, so any event it re-emits (e.g. `task_list`) is
+  // ordered right after the event that produced it. Re-entry is a no-op.
+  taskObserver?.(rt, event)
+  // Per-emit side-effect hook (e.g. auto-title derivation for intent sessions).
+  // Runs after taskObserver so ordering relative to task_list events is stable.
+  onEmit?.(rt, event)
 }
 
 /**
@@ -247,6 +308,52 @@ export function finalizeRun(id: string): void {
   if (!rt) return
   if (!rt.sawTurnEnd) emit(id, { type: 'turn_end', reason: 'complete' })
   setStatus(id, 'idle')
+  // Run-end projection upsert. The title source is the registered hook's native
+  // read (same source as the title bar / janitor — ADR-0013 left/right same-source);
+  // `firstUserTitle(rt.baseline)` is only the FALLBACK passed along for when that
+  // native lookup can't resolve a title. On the FIRST run `rt.baseline` is empty
+  // (this turn's messages live in `rt.buffer`), so the fallback alone would be the
+  // placeholder "New session" — hence the hook re-resolves from the native store.
+  onRunEnd?.({ realId: id, workspacePath: rt.workspacePath, title: firstUserTitle(rt.baseline) })
+}
+
+// ---- Run-end hook (composition-time, for the projection table) ----
+//
+// `finalizeRun` is the single terminal-state backstop (called from BOTH run
+// paths' teardown). The kernel can't import the projection store directly
+// (kernel ↛ features boundary, ADR-0009), so the actual write happens via this
+// registered callback. The composition root wires it to `touchOnRunEnd`.
+
+export interface OnRunEndInput {
+  realId: string
+  /**
+   * The session's workspace — the `cwd` the run-end hook uses to read the real
+   * title from the vendor-aware native store (left/right title same-source: the
+   * title bar / janitor read the same store; `baseline` is empty on the first run).
+   */
+  workspacePath: string
+  /** Fallback title (first user-prompt text) when the native lookup can't resolve one. */
+  title: string
+}
+
+let onRunEnd: ((input: OnRunEndInput) => void) | null = null
+/** Register the run-end hook (composition root only). */
+export function setOnRunEnd(cb: ((input: OnRunEndInput) => void) | null): void {
+  onRunEnd = cb
+}
+
+/**
+ * Best-effort title for a real session: the first user-prompt text from the
+ * runtime's baseline. Returns `'New session'` when no baseline entry exists yet.
+ */
+function firstUserTitle(baseline: TranscriptItem[]): string {
+  for (const item of baseline) {
+    if (item.kind === 'user') {
+      const t = item.text?.trim()
+      if (t) return t
+    }
+  }
+  return 'New session'
 }
 
 export function addViewer(id: string, viewer: Viewer): void {
@@ -332,6 +439,21 @@ export function reconcileLiveness(now: number, staleMs: number): string[] {
     }
     // Branch 2: status running with no recent activity → presumed hung.
     if (rt.status === 'running' && now - rt.lastActivityAt > staleMs) {
+      rt.run.abort.abort()
+      rt.run = null
+      rt.team = false
+      clearPending(id)
+      finalizeRun(id)
+      converged.push(id)
+      continue
+    }
+    // Branch 3: status/run inconsistency — a live run pointer but the status has
+    // settled to `idle` (e.g. a stray `turn_end` flowed through `emit` before the
+    // run's teardown cleared `rt.run`). Broadcasts would then advertise the session
+    // as idle while `user_prompt` still rejects with "a turn is already running",
+    // and the staleness branch above (gated on `running`) never reaps it. Force a
+    // consistent terminal state so the client and server agree.
+    if (rt.status === 'idle') {
       rt.run.abort.abort()
       rt.run = null
       rt.team = false

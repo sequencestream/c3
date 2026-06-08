@@ -817,10 +817,6 @@
         "label": "プロンプト",
         "placeholder": "セキュリティ監査を実行し、検出結果を要約…"
       },
-      "preview": {
-        "label": "プレビュー",
-        "empty": "ここに Markdown プレビューが表示されます。"
-      },
       "schedule": {
         "label": "スケジュール"
       },

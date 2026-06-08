@@ -27,7 +27,6 @@ import type {
   UpdateScheduleInput,
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
-import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import { useTypedI18n } from '@/i18n'
 
 // `d` 别名为 `fmtDateTime`:模板里 `v-for="d in WEEKDAYS"` 已占用 `d`,避免 shadow。
@@ -318,23 +317,16 @@ function save(): void {
           />
         </label>
 
-        <!-- LLM prompt with live markdown preview -->
-        <div v-else class="sf-field">
+        <!-- LLM prompt -->
+        <label v-else class="sf-field">
           <span class="sf-label">{{ t('schedule.form.prompt.label') }}</span>
-          <div class="sf-prompt-grid">
-            <textarea
-              v-model="prompt"
-              class="sf-textarea"
-              rows="6"
-              :placeholder="t('schedule.form.prompt.placeholder')"
-            />
-            <div class="sf-prompt-preview">
-              <span class="sf-preview-tag">{{ t('schedule.form.preview.label') }}</span>
-              <MarkdownText v-if="prompt.trim()" :text="prompt" kind="assistant" />
-              <p v-else class="sf-preview-empty">{{ t('schedule.form.preview.empty') }}</p>
-            </div>
-          </div>
-        </div>
+          <textarea
+            v-model="prompt"
+            class="sf-textarea"
+            rows="6"
+            :placeholder="t('schedule.form.prompt.placeholder')"
+          />
+        </label>
 
         <!-- Trigger type: a cron schedule vs a run lifecycle event -->
         <div class="sf-field">
@@ -694,39 +686,6 @@ function save(): void {
   background: var(--c-primary);
   border-color: var(--c-primary);
   color: #fff;
-}
-
-/* LLM prompt + preview */
-.sf-prompt-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--sp-2);
-}
-@media (max-width: 640px) {
-  .sf-prompt-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.sf-prompt-preview {
-  background: var(--c-card);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-2);
-  overflow-y: auto;
-  max-height: 220px;
-  font-size: var(--fs-body);
-}
-.sf-preview-tag {
-  display: block;
-  font-size: var(--fs-badge);
-  color: var(--c-text-muted);
-  text-transform: uppercase;
-  margin-bottom: var(--sp-1);
-}
-.sf-preview-empty {
-  color: var(--c-text-muted);
-  font-size: var(--fs-caption);
-  margin: 0;
 }
 
 /* Preview bar */

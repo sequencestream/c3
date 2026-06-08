@@ -817,10 +817,6 @@
         "label": "프롬프트",
         "placeholder": "보안 감사를 실행하고 발견된 내용을 요약하세요…"
       },
-      "preview": {
-        "label": "미리보기",
-        "empty": "여기에 Markdown 미리보기가 표시됩니다."
-      },
       "schedule": {
         "label": "일정"
       },

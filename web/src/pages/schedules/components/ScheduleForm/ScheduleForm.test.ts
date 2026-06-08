@@ -113,21 +113,42 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect(isValidCron(input.cronExpression as string)).toBe(true)
   })
 
-  it('update:payload 含 config/cronExpression/mcpMode,不含 name/description', async () => {
+  it('edit:展示预填当前名的 Title 输入框;create 无该字段', () => {
+    // create:无 Title 字段
+    const labelsCreate = mountForm()
+      .findAll('.sf-label')
+      .map((l) => l.text())
+    expect(labelsCreate).not.toContain('Title')
+
+    // edit:Title 输入框预填当前 config.name
     const w = mountForm({ schedule: sched() })
-    // 既有 legacy config.name 不应回流到 payload
+    const labelsEdit = w.findAll('.sf-label').map((l) => l.text())
+    expect(labelsEdit).toContain('Title')
+    const title = w.find('input.sf-input')
+    expect((title.element as HTMLInputElement).value).toBe('legacy name')
+  })
+
+  it('update:payload 携带编辑后的 config.name(标题),保留 cron/mcpMode', async () => {
+    const w = mountForm({ schedule: sched() })
+    await w.find('input.sf-input').setValue('My Title')
     await w.find('.sf-btn.primary').trigger('click')
 
-    const updated = w.emitted('update')
-    expect(updated).toBeTruthy()
-    const [id, input] = updated![0] as [string, Record<string, unknown>]
+    const [id, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
     expect(id).toBe('s1')
     expect(input.mcpMode).toBe('sandboxed')
     expect(isValidCron(input.cronExpression as string)).toBe(true)
-    expect(input.config).toEqual({ command: 'pnpm build' })
-    expect(input.config).not.toHaveProperty('name')
+    expect(input.config).toEqual({ command: 'pnpm build', name: 'My Title' })
     expect(input.config).not.toHaveProperty('description')
     expect(input).not.toHaveProperty('type')
+  })
+
+  it('update:清空标题 → config.name 为空串(服务端据此回退自动命名)', async () => {
+    const w = mountForm({ schedule: sched() })
+    await w.find('input.sf-input').setValue('   ')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect((input.config as Record<string, unknown>).name).toBe('')
   })
 
   it('create(event):切到事件触发 → payload 含 triggerType/eventTopic,cron 为空', async () => {

@@ -43,6 +43,17 @@ function tidy(raw: string): string {
 }
 
 /**
+ * Normalize a user-supplied title: collapse whitespace, trim, clamp to
+ * MAX_NAME_LEN. Unlike {@link tidy}, it keeps quotes — a human title may
+ * legitimately contain them. Used by the update path where the client supplies
+ * `config.name` directly (manual name wins over auto-naming).
+ */
+export function clampName(raw: string): string {
+  const s = raw.replace(/\s+/g, ' ').trim()
+  return s.length > MAX_NAME_LEN ? s.slice(0, MAX_NAME_LEN).trim() : s
+}
+
+/**
  * Deterministic, network-free name. Always returns a non-empty string:
  * - command → truncated command
  * - llm     → first sentence of the prompt

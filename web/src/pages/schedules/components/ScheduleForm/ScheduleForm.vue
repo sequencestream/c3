@@ -9,7 +9,9 @@
  * by the same `computeNextRunAt` the server uses.
  *
  * The schedule's display name is auto-generated server-side from the task
- * content on create — the form does not collect a name or description.
+ * content on create — the create flow does not collect a name. On EDIT the form
+ * exposes a Title input prefilled with the current name: saving a non-empty
+ * value sets a sticky manual title; clearing it reverts to auto-naming.
  *
  * Cron fields are interpreted in the system `timezone` (the `timezone` prop,
  * sourced from the server settings); the preview passes it to `computeNextRunAt`
@@ -96,6 +98,9 @@ const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
 
 // ---- Form draft ----------------------------------------------------------
 const type = ref<ScheduleType>('command')
+// Manual display title — edit-only. Prefilled from the current name; an empty
+// value on save tells the server to revert to auto-naming.
+const title = ref('')
 const mcpMode = ref<McpMode>('sandboxed')
 const command = ref('')
 const prompt = ref('')
@@ -132,6 +137,7 @@ watch(
     if (!open) return
     if (sched) {
       type.value = sched.type
+      title.value = readConfigField(sched.config, 'name')
       mcpMode.value = sched.mcpMode
       cronExpression.value = sched.cronExpression || '*/30 * * * *'
       command.value = readConfigField(sched.config, 'command')
@@ -141,6 +147,7 @@ watch(
       eventReasonFilter.value = sched.eventReasonFilter ? [...sched.eventReasonFilter] : []
     } else {
       type.value = 'command'
+      title.value = ''
       mcpMode.value = 'sandboxed'
       cronExpression.value = '*/30 * * * *'
       command.value = ''
@@ -236,6 +243,9 @@ function save(): void {
       ? [...eventReasonFilter.value]
       : null
   if (isEdit.value && props.schedule) {
+    // Carry the manual title: a non-empty value is stored sticky server-side; an
+    // empty value reverts to auto-naming. Create never sends a name (auto only).
+    config.name = title.value.trim()
     const input: UpdateScheduleInput = {
       config,
       mcpMode: mcpMode.value,
@@ -281,6 +291,17 @@ function save(): void {
       </div>
 
       <div class="sf-body">
+        <!-- Title (edit only): auto-named on create, manually editable here. -->
+        <label v-if="isEdit" class="sf-field">
+          <span class="sf-label">{{ t('schedule.form.title.label') }}</span>
+          <input
+            v-model="title"
+            class="sf-input"
+            :placeholder="t('schedule.form.title.placeholder')"
+          />
+          <span class="sf-hint">{{ t('schedule.form.title.hint') }}</span>
+        </label>
+
         <div class="sf-field">
           <span class="sf-label">{{ t('schedule.form.taskType.label') }}</span>
           <div class="sf-segmented">

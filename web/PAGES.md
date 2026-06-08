@@ -45,7 +45,7 @@ web/src/
 │   │   └── components/
 │   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、enable/disable 开关、下次执行倒计时(30s 刷新)
 │   │       ├── ScheduleDetail/ScheduleDetail.vue    # 右栏执行日志面板:执行历史、起止时间/退出码/输出、llm 任务 session 记录展开
-│   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览
+│   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;编辑态可改标题(清空回退自动命名),创建态自动命名
 │   │
 │   ├── projectconfig/                               # 项目配置页
 │   │   └── ProjectConfig.vue                        # 项目级配置编辑(弹窗):per-vendor 默认模式、讨论轮数上限、演讲字符限制等 workspace 级配置

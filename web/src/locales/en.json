@@ -803,6 +803,11 @@
     "form": {
       "newTitle": "New Schedule",
       "editTitle": "Edit Schedule",
+      "title": {
+        "label": "Title",
+        "placeholder": "Auto-generated from the task",
+        "hint": "Leave empty to revert to an auto-generated title."
+      },
       "taskType": {
         "label": "Task type",
         "locked": "Task type cannot be changed after creation."

@@ -34,15 +34,25 @@ import { fallbackName } from './naming.js'
 
 /**
  * Strip server-owned / dropped keys from a client-supplied config before
- * persisting. `name` is always set by the server (auto-generated); `description`
- * is removed entirely (legacy field). Returns a fresh object.
+ * persisting. `name` and `nameSource` are server-owned (the caller decides the
+ * final name via the `nameOverride` / preserve logic in {@link updateSchedule},
+ * or the generated name in {@link createSchedule}); `description` is removed
+ * entirely (legacy field). Returns a fresh object.
  */
 function sanitizeConfig(config: unknown): Record<string, unknown> {
   if (!config || typeof config !== 'object') return {}
   const out: Record<string, unknown> = { ...(config as Record<string, unknown>) }
   delete out.name
+  delete out.nameSource
   delete out.description
   return out
+}
+
+/** Resolved display name + provenance the update path writes into config. */
+export interface ScheduleNameOverride {
+  name: string
+  /** `'user'` marks a manually-set name as sticky (auto-naming never overrides it). */
+  source: 'user' | 'auto'
 }
 
 const SCHEMA_VERSION = 5
@@ -383,8 +393,20 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
   return getSchedule(id)!
 }
 
-/** Partial update of a schedule. Only provided fields are changed. */
-export function updateSchedule(id: string, patch: UpdateScheduleInput): void {
+/**
+ * Partial update of a schedule. Only provided fields are changed.
+ *
+ * `nameOverride` resolves `config.name` on this update (the handler derives it
+ * from the client-supplied `config.name`: a non-empty title → `source:'user'`
+ * sticky name; a cleared title → a freshly-derived `source:'auto'` name). When
+ * omitted, the existing name AND its `nameSource` are preserved — so a body-only
+ * update never re-derives, and a manually-set name stays sticky.
+ */
+export function updateSchedule(
+  id: string,
+  patch: UpdateScheduleInput,
+  nameOverride?: ScheduleNameOverride,
+): void {
   const d = requireDb()
   const sets: string[] = []
   const params: (string | number | null)[] = []
@@ -394,14 +416,22 @@ export function updateSchedule(id: string, patch: UpdateScheduleInput): void {
     params.push(patch.type)
   }
   if (patch.config !== undefined) {
-    // Preserve the server-owned name; drop the dropped `description` key.
+    // `name`/`nameSource` are server-owned (sanitizeConfig strips any client
+    // copy). Resolve them from nameOverride, else preserve the existing values.
     const existing = getSchedule(id)
-    const prevName =
+    const prev =
       existing && existing.config && typeof existing.config === 'object'
-        ? (existing.config as Record<string, unknown>).name
+        ? (existing.config as Record<string, unknown>)
         : undefined
     const next = sanitizeConfig(patch.config)
-    if (typeof prevName === 'string' && prevName.trim()) next.name = prevName
+    if (nameOverride) {
+      next.name = nameOverride.name
+      // Only the 'user' marker is persisted; absence means auto (the default).
+      if (nameOverride.source === 'user') next.nameSource = 'user'
+    } else {
+      if (typeof prev?.name === 'string' && prev.name.trim()) next.name = prev.name
+      if (prev?.nameSource === 'user') next.nameSource = 'user'
+    }
     sets.push('config=?')
     params.push(JSON.stringify(next))
   }

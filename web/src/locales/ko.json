@@ -797,6 +797,11 @@
     "form": {
       "newTitle": "새 예약 작업",
       "editTitle": "예약 작업 편집",
+      "title": {
+        "label": "제목",
+        "placeholder": "작업에서 자동 생성됨",
+        "hint": "비워 두면 자동 생성된 제목으로 되돌아갑니다."
+      },
       "taskType": {
         "label": "작업 유형",
         "locked": "생성 후에는 작업 유형을 변경할 수 없습니다."

@@ -51,6 +51,7 @@ See [models.md](models.md) for full attributes.
 | SCH-R16 | Each `llm_prompt`-type execution's agent session transcript is viewable on demand from its history row (read-only replay of `assistant_text` / `tool_use` / `tool_result`). `command`-type executions have no agent session and expose no transcript entry. The transcript is loaded from the recorded `sessionId` via `agent-session`; a sessionless or since-deleted session yields an empty replay, never an error.                                                                                                                                                                                                                                                                               |
 | SCH-R17 | A schedule's **trigger** is one of `cron` (time-based; the default, and the only mode for legacy rows migrated before this field existed) or `event` (a kernel run-lifecycle event, 2026-06-08). An `event` trigger declares an `eventTopic` (`run:started` or `run:settled`) and fires its execution when a matching event is published on the kernel event bus (ADR-0018) — reusing the **same** dispatch path, three-tier MCP security, and write-approval queue as a cron run. Event schedules carry no `cronExpression` / `nextRunAt` and are **never** evaluated by the tick loop. Creating/updating an `event` schedule without an `eventTopic` is rejected (`schedule.invalidEventTrigger`). |
 | SCH-R18 | An `event` trigger fires only when **all** hold: the event's run `kind` is `normal` (internal intent comm runs never fire user schedules); the event's `workspacePath` equals the schedule's workspace; and, for `run:settled`, the terminal `reason` (`complete` / `error` / `aborted`) is in the schedule's optional `eventReasonFilter` (empty/null = any reason). Event-storm throttling reuses SCH-R7 serial execution: an event arriving while the schedule already has an in-flight execution is **skipped**, not queued.                                                                                                                                                                     |
+| SCH-R19 | The display `name` is **auto-generated on create** (client name stripped, SCH naming). On **update** the client may supply a manual title via `config.name`: a non-empty value is stored as a **sticky user-set name** (`config.nameSource='user'`) that auto-naming never overrides — it survives later body edits (an update with no `name` key keeps the existing name and its provenance). An empty `name` on update **reverts** to a freshly auto-derived name (clears the user marker). Create never accepts a client name (manual titles are edit-only).                                                                                                                                      |
 
 ## States & transitions
 
@@ -320,6 +321,11 @@ Wire shapes are defined in the [shared protocol](../../../shared/api-conventions
   so it stays consistent with the console; any LLM failure falls back to a deterministic name
   derived from the task content (always non-empty). There is no `description` field; any present in
   legacy rows is ignored.
+- **Rename a schedule (edit):** Given an existing schedule, When the user opens the **edit** dialog,
+  Then a Title input is shown prefilled with the current display name. Saving a non-empty title
+  persists it as a sticky manual name (auto-naming never overrides it again); clearing the title
+  reverts to a freshly auto-derived name (SCH-R19). The **create** dialog has no Title field —
+  new schedules are always auto-named.
 - **Run now:** Given an existing schedule, When the user clicks "Run Now", Then an execution is
   immediately dispatched (bypassing the scheduler tick), a new `running` execution log appears.
 - **Pause and resume:** Given an active schedule, When the user pauses it (via queue), Then it is

@@ -797,6 +797,11 @@
     "form": {
       "newTitle": "新建定时任务",
       "editTitle": "编辑定时任务",
+      "title": {
+        "label": "标题",
+        "placeholder": "根据任务自动生成",
+        "hint": "留空则恢复为自动生成的标题。"
+      },
       "taskType": {
         "label": "任务类型",
         "locked": "任务类型创建后无法更改。"

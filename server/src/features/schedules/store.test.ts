@@ -201,6 +201,68 @@ describe('createSchedule next_run_at backfill', () => {
   })
 })
 
+describe('updateSchedule — display name management', () => {
+  function makeCmd(name?: string) {
+    return createSchedule(
+      {
+        type: 'command',
+        config: { command: 'echo hi' },
+        workspacePath: proj,
+        cronExpression: '*/5 * * * *',
+        mcpMode: 'read-only',
+      },
+      name,
+    )
+  }
+
+  it('create leaves nameSource unset (auto by default)', () => {
+    const cfg = makeCmd('Auto Name').config as Record<string, unknown>
+    expect(cfg.name).toBe('Auto Name')
+    expect(cfg.nameSource).toBeUndefined()
+  })
+
+  it('a user nameOverride is persisted with nameSource=user', () => {
+    const sch = makeCmd('Auto Name')
+    updateSchedule(sch.id, { config: { command: 'echo hi' } }, { name: 'My Title', source: 'user' })
+    const cfg = getSchedule(sch.id)!.config as Record<string, unknown>
+    expect(cfg.name).toBe('My Title')
+    expect(cfg.nameSource).toBe('user')
+  })
+
+  it('a user-set name is sticky across a later body-only update (no re-derivation)', () => {
+    const sch = makeCmd('Auto Name')
+    updateSchedule(sch.id, { config: { command: 'echo hi' } }, { name: 'My Title', source: 'user' })
+    // A subsequent body-only update carries no nameOverride → name + provenance preserved.
+    updateSchedule(sch.id, { config: { command: 'echo changed' } })
+    const cfg = getSchedule(sch.id)!.config as Record<string, unknown>
+    expect(cfg.command).toBe('echo changed')
+    expect(cfg.name).toBe('My Title')
+    expect(cfg.nameSource).toBe('user')
+  })
+
+  it('an auto nameOverride reverts the name and clears the user marker', () => {
+    const sch = makeCmd('Auto Name')
+    updateSchedule(sch.id, { config: { command: 'echo hi' } }, { name: 'My Title', source: 'user' })
+    updateSchedule(
+      sch.id,
+      { config: { command: 'echo hi' } },
+      { name: 'Regenerated', source: 'auto' },
+    )
+    const cfg = getSchedule(sch.id)!.config as Record<string, unknown>
+    expect(cfg.name).toBe('Regenerated')
+    expect(cfg.nameSource).toBeUndefined()
+  })
+
+  it('strips a client-injected name/nameSource when no override is given', () => {
+    const sch = makeCmd('Auto Name')
+    // Client tries to sneak a sticky marker + name in via config — both ignored.
+    updateSchedule(sch.id, { config: { command: 'echo hi', name: 'sneaky', nameSource: 'user' } })
+    const cfg = getSchedule(sch.id)!.config as Record<string, unknown>
+    expect(cfg.name).toBe('Auto Name') // existing preserved, not the client value
+    expect(cfg.nameSource).toBeUndefined()
+  })
+})
+
 describe('workspace_mcp_configs', () => {
   it('returns empty default when not set', () => {
     const config = getWorkspaceMcpConfig(proj)

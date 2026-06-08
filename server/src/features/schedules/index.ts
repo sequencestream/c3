@@ -21,8 +21,22 @@ import {
 import { triggerRunNow } from './scheduler.js'
 import { readExecutionTranscript } from './transcript.js'
 import { resolveApproval } from './queue.js'
-import { generateScheduleName } from './naming.js'
+import { clampName, generateScheduleName } from './naming.js'
+import type { ScheduleNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
+
+/**
+ * Read a client-supplied `config.name`. Returns:
+ * - `undefined` when the key is absent (the update preserves the existing name);
+ * - the string (possibly empty) when present — `''` signals "clear → re-derive".
+ */
+function readConfigName(config: unknown): string | undefined {
+  if (config && typeof config === 'object' && 'name' in config) {
+    const v = (config as Record<string, unknown>).name
+    return typeof v === 'string' ? v : undefined
+  }
+  return undefined
+}
 
 export const createScheduleHandler: Handler<'create_schedule'> = async (ctx, conn, msg) => {
   if (!isScheduleStoreAvailable()) {
@@ -52,7 +66,7 @@ export const listSchedulesHandler: Handler<'list_schedules'> = (_ctx, conn, msg)
   conn.send({ type: 'schedules', workspacePath: proj, items })
 }
 
-export const updateScheduleHandler: Handler<'update_schedule'> = (ctx, conn, msg) => {
+export const updateScheduleHandler: Handler<'update_schedule'> = async (ctx, conn, msg) => {
   if (!isScheduleStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
     return
@@ -70,7 +84,28 @@ export const updateScheduleHandler: Handler<'update_schedule'> = (ctx, conn, msg
     conn.send({ type: 'error', error: { code: 'schedule.invalidEventTrigger' } })
     return
   }
-  updateScheduleStore(msg.scheduleId, msg.input)
+  // Unlike create, update accepts a client-supplied `config.name`: a non-empty
+  // title becomes a sticky user-set name (auto-naming never overrides it); an
+  // empty title (cleared) reverts to a freshly-derived auto name. When the key
+  // is absent (body-only edit, status toggle…) the store preserves the existing
+  // name + provenance.
+  let nameOverride: ScheduleNameOverride | undefined
+  if (msg.input.config !== undefined) {
+    const clientName = readConfigName(msg.input.config)
+    if (clientName !== undefined) {
+      const trimmed = clientName.trim()
+      if (trimmed) {
+        nameOverride = { name: clampName(trimmed), source: 'user' }
+      } else {
+        const regenerated = await generateScheduleName({
+          type: existing.type,
+          config: msg.input.config,
+        })
+        nameOverride = { name: regenerated, source: 'auto' }
+      }
+    }
+  }
+  updateScheduleStore(msg.scheduleId, msg.input, nameOverride)
   ctx.broadcastSchedules(existing.workspacePath)
 }
 

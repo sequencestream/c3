@@ -102,10 +102,13 @@ The web-console uses a three-column layout for the schedules view:
 - **Middle column** — `ExecutionHistoryList`: execution log rows for the currently selected schedule,
   each showing **status** badge, **started** time, **duration**, and **exit code**. Clicking a row
   selects that execution and focuses the right column on its details.
-- **Right column** — `ExecutionDetail`: tabbed detail panel for the selected execution. Two tabs are
+- **Right column** — `ExecutionDetail`: tabbed detail panel for the selected execution. Three tabs are
   available conditionally:
   - **Execution Info** (all types): status, started/finished times, duration, exit code, raw output,
     and error text.
+  - **Session** (only `llm`-type schedules): a read-only replay of the execution's agent session,
+    rendered through the same `ChatMessages` component used by the sessions page — markdown
+    rendering, tool-call batch folding, and message grouping are all shared.
   - **Command Log** (only `command`-type schedules): the shell output in a full-width terminal-like
     view.
 
@@ -121,17 +124,24 @@ execution selection.
 
 ### Session transcript (read path, SCH-R16)
 
-For `llm_prompt`-type schedules, each history row exposes a **View session** toggle that expands an
-inline, read-only replay of that execution's agent session and collapses again on a second click.
-`command`-type schedules never show the entry (no agent session is produced).
+For `llm`-type schedules, the right column's **Session** tab renders a read-only replay of the
+execution's agent session through the `ChatMessages` component — the same component used by the
+sessions page, providing markdown rendering, tool-call batch folding, and message grouping. The view
+is purely historical: no permission responses, no streaming, no continue interaction. `command`-type
+schedules do not show the Session tab (no agent session is produced).
 
-On first expand the client sends `get_execution_transcript { scheduleId, executionId }`; the server
-resolves the execution log's recorded `sessionId`, replays the on-disk transcript via `agent-session`
-(`loadHistory`), and replies with `execution_transcript { executionId, sessionId, items }`. `items`
-is a flattened `TranscriptItem[]` (`assistant` / `user` / `tool_use` / `tool_result` / `notice`),
-identical to the live chat replay. A `command`-type or sessionless execution returns
-`{ sessionId: null, items: [] }`; an unknown `executionId` returns an `error`. The transcript is
-fetched once and cached client-side per `executionId`.
+When the user switches to the Session tab, the client auto-fetches the transcript if not yet cached:
+`get_execution_transcript { scheduleId, executionId }`. The server resolves the execution log's
+recorded `sessionId`, replays the on-disk transcript via `agent-session` (`loadHistory`), and replies
+with `execution_transcript { executionId, sessionId, items }`. `items` is a flattened
+`TranscriptItem[]` (`assistant` / `user` / `tool_use` / `tool_result` / `notice`), identical to the
+live chat replay. A `command`-type or sessionless execution returns `{ sessionId: null, items: [] }`;
+an unknown `executionId` returns an `error`. The transcript is fetched once and cached client-side
+per `executionId`.
+
+The mapping from `TranscriptItem[]` to `ChatMsg[]` is handled by a pure library module
+(`web/src/lib/execution-view.ts`), analogous to `discussion-view.ts` for discussions. See
+`transcriptItemToChat()` and `transcriptToChat()` there; the latter is also unit-tested.
 
 ## Task types
 

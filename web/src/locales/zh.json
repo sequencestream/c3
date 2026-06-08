@@ -801,6 +801,7 @@
     "execution": {
       "tab": {
         "execInfo": "执行信息",
+        "session": "会话记录",
         "commandLog": "Command 日志"
       },
       "empty": "选择一次执行以查看详情。",
@@ -809,6 +810,10 @@
         "exitCode": "退出码",
         "output": "输出",
         "error": "错误"
+      },
+      "session": {
+        "loading": "加载中…",
+        "noRecord": "本次执行没有会话记录。"
       },
       "commandLog": {
         "empty": "没有命令输出。"

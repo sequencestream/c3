@@ -801,6 +801,7 @@
     "execution": {
       "tab": {
         "execInfo": "Execution Info",
+        "session": "Session",
         "commandLog": "Command Log"
       },
       "empty": "Select an execution to view details.",
@@ -809,6 +810,10 @@
         "exitCode": "Exit Code",
         "output": "Output",
         "error": "Error"
+      },
+      "session": {
+        "loading": "Loading session…",
+        "noRecord": "No session record for this execution."
       },
       "commandLog": {
         "empty": "No command output."

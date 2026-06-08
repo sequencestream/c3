@@ -45,7 +45,7 @@ web/src/
 │   │   └── components/
 │   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、enable/disable 开关、下次执行倒计时(30s 刷新)
 │   │       ├── ExecutionHistoryList/ExecutionHistoryList.vue  # 中栏执行历史列表:选中 schedule 的执行记录,点击选中某次执行
-│   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab(含 llm 旧 inline session)+「Command 日志」Tab(command 类型)
+│   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型)
 │   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;编辑态可改标题(清空回退自动命名),创建态自动命名
 │   │
 │   ├── projectconfig/                               # 项目配置页
@@ -70,6 +70,7 @@ web/src/
 │   ├── current-workspace.ts                         # 「当前工作区」解析:优先持久化选择,否则回落到最近访问工作区
 │   ├── datetime-formats.ts                          # 日期/数字格式化预设:为 vue-i18n 与纯展示 lib 提供单一数据源
 │   ├── discussion-view.ts                           # 讨论只读历史纯映射器:DiscussionMessage 正规化为 ChatBody,处理多说话人 icon/name/vendor
+│   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染
 │   ├── format.ts                                    # 简单值格式化:JSON 美化打印、多行折叠为单行
 │   ├── highlight.ts                                 # Shiki 按需代码高亮:白名单语言、语言别名、哨兵色转 CSS class、DOMPurify 过滤
 │   ├── intent-list-view.ts                          # 需求列表纯展示逻辑:状态/运行态标签、面板展开规则、行内字段可见性、日期格式化

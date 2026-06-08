@@ -4,15 +4,18 @@
  *
  * Tabs:
  *  - 「执行信息」(始终): status / 起止时间 / 耗时 / 退出码 / output / error。
- *    llm 类型在本 Tab 内保留旧的 inline session 展开/transcript 渲染(后续 Session Tab 替换)。
+ *  - 「Session 会话记录」(仅 llm 类型): 通过 ChatMessages 组件渲染 transcript,
+ *    复用 sessions 页的 markdown 渲染 / 工具调用批次折叠能力。
  *  - 「Command 日志」(仅 command 类型): command 执行的 shell 输出,终端式全宽渲染。
  *
  * 数据流:execution 由 App.vue 经 Schedules.vue 传入;transcripts 与 load-session
- * 保留旧 inline session 功能,由 ScheduleDetail.vue 迁入。
+ * 的沿用路径不变,只是渲染从旧 inline 方式改为复用 ChatMessages 组件。
  */
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import type { ScheduleExecutionLog, TranscriptItem } from '@ccc/shared/protocol'
 import SessionTitleBar from '../../../../components/SessionTitleBar/SessionTitleBar.vue'
+import ChatMessages from '../../../../components/ChatMessages/ChatMessages.vue'
+import { transcriptToChat } from '@/lib/execution-view'
 import { useTypedI18n } from '@/i18n'
 
 const { t, d } = useTypedI18n()
@@ -23,7 +26,7 @@ const props = withDefaults(
     execution: ScheduleExecutionLog | null
     /** 执行的任务类型: command | llm;null 表示未选中无类型 */
     executionType: 'command' | 'llm' | null
-    /** Agent-session transcripts keyed by executionId(保留旧 inline session 功能) */
+    /** Agent-session transcripts keyed by executionId */
     transcripts?: Record<string, TranscriptItem[]>
   }>(),
   { transcripts: () => ({}) },
@@ -36,10 +39,10 @@ const emit = defineEmits<{
 
 // ---- 当前 Tab ----
 const TAB_EXEC_INFO = 'exec-info'
+const TAB_SESSION = 'session'
 const TAB_COMMAND_LOG = 'command-log'
 const activeTab = ref(TAB_EXEC_INFO)
 
-// command 类型显示两个 Tab, llm 类型只显示「执行信息」。
 const tabs = computed(() => {
   if (props.executionType === 'command') {
     return [
@@ -47,8 +50,11 @@ const tabs = computed(() => {
       { id: TAB_COMMAND_LOG, label: t('schedule.execution.tab.commandLog') },
     ]
   }
-  // llm (或 null) 只显示执行信息 Tab
-  return [{ id: TAB_EXEC_INFO, label: t('schedule.execution.tab.execInfo') }]
+  // llm: 执行信息 + Session 会话记录
+  return [
+    { id: TAB_EXEC_INFO, label: t('schedule.execution.tab.execInfo') },
+    { id: TAB_SESSION, label: t('schedule.execution.tab.session') },
+  ]
 })
 
 // 切换 Tab 时若当前 tab 不在可用列表内则重设
@@ -56,37 +62,41 @@ function switchTab(id: string): void {
   activeTab.value = id
 }
 
-// ---- 旧 inline session 功能(从 ScheduleDetail 迁入,保留至 Session Tab 落地) ----
-const isLlm = computed(() => props.executionType === 'llm')
-const expandedSessions = ref<Set<string>>(new Set())
+// ---- Session 会话 Tab: transcript → ChatMessages ----
+const sessionMessages = computed(() => {
+  if (!props.execution) return []
+  return transcriptToChat(props.transcripts[props.execution.id])
+})
 
-function isExpanded(id: string): boolean {
-  return expandedSessions.value.has(id)
-}
-
-function toggleSession(id: string): void {
-  const next = new Set(expandedSessions.value)
-  if (next.has(id)) {
-    next.delete(id)
-  } else {
-    next.add(id)
-    if (props.transcripts[id] === undefined) emit('load-session', id)
+/** 当切换到 Session Tab 时,若 transcript 尚未加载则触发加载 */
+watch(activeTab, (tab) => {
+  if (tab === TAB_SESSION && props.execution) {
+    if (props.transcripts[props.execution.id] === undefined) {
+      emit('load-session', props.execution.id)
+    }
   }
-  expandedSessions.value = next
-}
+})
 
-function transcriptOf(id: string): TranscriptItem[] | undefined {
-  return props.transcripts[id]
-}
+/** 切换执行时重置到「执行信息」Tab */
+watch(
+  () => props.execution?.id,
+  () => {
+    activeTab.value = TAB_EXEC_INFO
+  },
+)
 
-function fmtToolInput(input: unknown): string {
-  if (input === null || input === undefined) return ''
-  try {
-    return JSON.stringify(input, null, 2)
-  } catch {
-    return String(input)
-  }
-}
+/** 当前执行的 transcript 是否正在加载(尚未返回) */
+const transcriptLoading = computed(() => {
+  if (!props.execution) return false
+  return props.transcripts[props.execution.id] === undefined
+})
+
+/** 当前执行的 transcript 已返回但为空 */
+const transcriptEmpty = computed(() => {
+  if (!props.execution) return false
+  const items = props.transcripts[props.execution.id]
+  return items !== undefined && items.length === 0
+})
 
 // ---- 时间格式化 ----
 // Live clock: refreshed every 30s so running executions' durations stay current.
@@ -197,63 +207,27 @@ function logStatus(log: ScheduleExecutionLog): string {
           <h4 class="exec-info-section-title">{{ t('schedule.execution.info.error') }}</h4>
           <pre class="exec-error-text">{{ execution.error }}</pre>
         </div>
+      </div>
 
-        <!-- Session transcript (仅 llm 类型,保留旧 inline 功能) -->
-        <template v-if="isLlm">
-          <div class="exec-info-section">
-            <button type="button" class="exec-session-toggle" @click="toggleSession(execution.id)">
-              {{
-                isExpanded(execution.id)
-                  ? t('schedule.detail.hideSession.label')
-                  : t('schedule.detail.viewSession.label')
-              }}
-            </button>
-            <div v-if="isExpanded(execution.id)" class="exec-session">
-              <p v-if="transcriptOf(execution.id) === undefined" class="exec-session-empty">
-                {{ t('schedule.detail.loadingSession') }}
-              </p>
-              <p v-else-if="transcriptOf(execution.id)!.length === 0" class="exec-session-empty">
-                {{ t('schedule.detail.noSessionRecord') }}
-              </p>
-              <ul v-else class="exec-msg-list">
-                <li
-                  v-for="(item, i) in transcriptOf(execution.id)"
-                  :key="i"
-                  class="exec-msg"
-                  :class="`exec-msg--${item.kind}`"
-                >
-                  <template v-if="item.kind === 'assistant' || item.kind === 'user'">
-                    <span class="exec-msg-role">{{
-                      item.kind === 'assistant'
-                        ? t('schedule.detail.role.assistant')
-                        : t('schedule.detail.role.user')
-                    }}</span>
-                    <pre class="exec-msg-text">{{ item.text }}</pre>
-                  </template>
-                  <template v-else-if="item.kind === 'tool_use'">
-                    <span class="exec-msg-role">{{
-                      t('schedule.detail.role.tool', { name: item.toolName })
-                    }}</span>
-                    <pre class="exec-msg-text">{{ fmtToolInput(item.input) }}</pre>
-                  </template>
-                  <template v-else-if="item.kind === 'tool_result'">
-                    <span class="exec-msg-role" :class="{ 'is-error': item.isError }">
-                      {{
-                        item.isError
-                          ? t('schedule.detail.role.resultError')
-                          : t('schedule.detail.role.result')
-                      }}
-                    </span>
-                    <pre class="exec-msg-text">{{ item.content }}</pre>
-                  </template>
-                  <template v-else>
-                    <span class="exec-msg-notice">{{ item.text }}</span>
-                  </template>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </template>
+      <!-- Tab: Session 会话记录(仅 llm 类型) -->
+      <div v-if="activeTab === TAB_SESSION" class="exec-detail-body">
+        <!-- 加载中 -->
+        <p v-if="transcriptLoading" class="exec-section-empty">
+          {{ t('schedule.execution.session.loading') }}
+        </p>
+        <!-- 无记录 -->
+        <p v-else-if="transcriptEmpty" class="exec-section-empty">
+          {{ t('schedule.execution.session.noRecord') }}
+        </p>
+        <!-- 有 transcript,通过 ChatMessages 渲染 -->
+        <!-- hasActiveSession=true 防止显示空态提示;actionablePermissionId=null
+             使所有权限提示仅作为历史记录展示(只读,无交互)。 -->
+        <ChatMessages
+          v-else
+          :messages="sessionMessages"
+          :has-active-session="true"
+          :actionable-permission-id="null"
+        />
       </div>
 
       <!-- Tab: Command 日志(仅 command 类型) -->
@@ -397,76 +371,6 @@ function logStatus(log: ScheduleExecutionLog): string {
   color: var(--c-text-muted);
   font-size: var(--fs-caption);
   margin: 0;
-}
-
-/* ---- 旧 inline session(从 ScheduleDetail 迁入) ---- */
-.exec-session-toggle {
-  align-self: flex-start;
-  padding: 2px 6px;
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-  background: transparent;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.exec-session-toggle:hover {
-  background: var(--c-hover);
-  color: var(--c-text);
-}
-.exec-session {
-  margin-top: var(--sp-1);
-  border-top: 1px dashed var(--c-border);
-  padding-top: var(--sp-2);
-}
-.exec-session-empty {
-  color: var(--c-text-muted);
-  font-size: var(--fs-caption);
-  margin: 0;
-}
-.exec-msg-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.exec-msg {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.exec-msg-role {
-  font-size: var(--fs-badge);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--c-text-muted);
-}
-.exec-msg-role.is-error {
-  color: var(--c-error);
-}
-.exec-msg--tool_use .exec-msg-role {
-  color: var(--c-info, #3b82f6);
-}
-.exec-msg-text {
-  font-family: var(--ff-mono, monospace);
-  font-size: var(--fs-caption);
-  background: var(--c-bg, var(--c-panel));
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-1) var(--sp-2);
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow: auto;
-  max-height: 240px;
-}
-.exec-msg-notice {
-  font-size: var(--fs-caption);
-  font-style: italic;
-  color: var(--c-text-muted);
 }
 
 /* ---- 状态 badge ---- */

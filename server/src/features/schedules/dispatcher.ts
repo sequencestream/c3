@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
-import type { McpMode, Schedule } from '@ccc/shared/protocol'
+import type { McpMode, RunKind, Schedule } from '@ccc/shared/protocol'
 import { resolveAgent, launchForAgent } from '../../kernel/agent-config/index.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getWorkspaceMcpConfig } from './store.js'
@@ -30,6 +30,15 @@ import type { FrozenToolSet } from './mcp-freeze.js'
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/**
+ * The dispatcher's RunKind: a scheduled run is launched by the scheduler with NO
+ * socket and does NOT go through the run bus. Tagged `'schedule'` so logs/audit
+ * mark it as scheduler-originated. NOTE: this is the scheduler's *own* run; a
+ * schedule that is merely *triggered* by a user session does not change that
+ * session's `'session'` kind — `'schedule'` identifies the trigger source here.
+ */
+const RUN_KIND: RunKind = 'schedule'
 
 export type UpdateLogFn = (id: string, patch: Record<string, unknown>) => void
 
@@ -379,6 +388,8 @@ async function executeLlmPrompt(
     })
     return
   }
+
+  console.log(`[c3:schedules] (${RUN_KIND}) llm run ${schedule.id} @ ${schedule.workspacePath}`)
 
   const maxWallClockMs =
     typeof config.maxWallClockMs === 'number' && config.maxWallClockMs > 0

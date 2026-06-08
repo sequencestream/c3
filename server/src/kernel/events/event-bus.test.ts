@@ -228,9 +228,13 @@ describe('EventBus — type safety (compile-time)', () => {
     const handler = vi.fn()
 
     bus.subscribe('run:bound', handler)
-    bus.publish('run:bound', { prevId: 'p-1', realId: 'r-2' })
+    bus.publish('run:bound', { prevId: 'p-1', realId: 'r-2', workspacePath: '/tmp/proj' })
 
-    expect(handler).toHaveBeenCalledWith({ prevId: 'p-1', realId: 'r-2' })
+    expect(handler).toHaveBeenCalledWith({
+      prevId: 'p-1',
+      realId: 'r-2',
+      workspacePath: '/tmp/proj',
+    })
   })
 
   it('default EventBus rejects wrong run:bound payload', () => {
@@ -238,7 +242,7 @@ describe('EventBus — type safety (compile-time)', () => {
     // The following would fail typecheck if uncommented:
     // bus.publish('run:bound', { workspacePath: '/x' })
     //   ^^ Type '{ workspacePath: string; }' is not assignable to type
-    //      '{ prevId: string; realId: string; }'
+    //      '{ prevId: string; realId: string; workspacePath: string; }'
     expect(bus).toBeInstanceOf(EventBus)
   })
 })
@@ -246,11 +250,12 @@ describe('EventBus — type safety (compile-time)', () => {
 // ── RunDomainEvent backward compatibility (type contract) ────────────────────
 
 describe('EventBus — RunDomainEvent contract parity', () => {
-  it('run:bound payload matches the old bound event shape', () => {
+  it('run:bound payload carries prev/real ids and workspace (2026-06-08)', () => {
     type BoundPayload = EventBusEvents['run:bound']
-    const e: BoundPayload = { prevId: 'pending-x', realId: 'real-y' }
+    const e: BoundPayload = { prevId: 'pending-x', realId: 'real-y', workspacePath: '/tmp/proj' }
     expect(e.prevId).toBe('pending-x')
     expect(e.realId).toBe('real-y')
+    expect(e.workspacePath).toBe('/tmp/proj')
   })
 
   it('run:settled payload carries session id, terminal reason, and run kind (2026-06-08)', () => {
@@ -259,17 +264,17 @@ describe('EventBus — RunDomainEvent contract parity', () => {
       sessionId: 'sess-1',
       workspacePath: '/tmp/proj',
       reason: 'complete',
-      kind: 'normal',
+      kind: 'session',
     }
     expect(e.workspacePath).toBe('/tmp/proj')
     expect(e.reason).toBe('complete')
-    expect(e.kind).toBe('normal')
+    expect(e.kind).toBe('session')
   })
 
   it('run:started payload carries session id, workspace, and run kind (2026-06-08)', () => {
     type StartedPayload = EventBusEvents['run:started']
-    const e: StartedPayload = { sessionId: 'sess-2', workspacePath: '/tmp/proj', kind: 'normal' }
+    const e: StartedPayload = { sessionId: 'sess-2', workspacePath: '/tmp/proj', kind: 'session' }
     expect(e.sessionId).toBe('sess-2')
-    expect(e.kind).toBe('normal')
+    expect(e.kind).toBe('session')
   })
 })

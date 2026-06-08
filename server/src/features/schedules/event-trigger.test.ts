@@ -216,7 +216,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'complete',
-      kind: 'normal',
+      kind: 'session',
     })
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
@@ -227,12 +227,12 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/other',
       reason: 'complete',
-      kind: 'normal',
+      kind: 'session',
     })
     expect(appendLog).not.toHaveBeenCalled()
   })
 
-  it('never fires for intent (non-normal) runs', () => {
+  it('never fires for intent (non-session) runs', () => {
     install([evSched({ id: 'm3' })])
     dispatchEventSchedules('run:settled', {
       sessionId: 's',
@@ -249,14 +249,14 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'complete',
-      kind: 'normal',
+      kind: 'session',
     })
     expect(appendLog).not.toHaveBeenCalled()
     dispatchEventSchedules('run:settled', {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'error',
-      kind: 'normal',
+      kind: 'session',
     })
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
@@ -266,7 +266,7 @@ describe('scheduler — dispatchEventSchedules', () => {
     dispatchEventSchedules('run:started', {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
-      kind: 'normal',
+      kind: 'session',
     })
     expect(appendLog).not.toHaveBeenCalled()
   })
@@ -279,7 +279,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'complete' as const,
-      kind: 'normal' as const,
+      kind: 'session' as const,
     }
     dispatchEventSchedules('run:settled', payload)
     dispatchEventSchedules('run:settled', payload)

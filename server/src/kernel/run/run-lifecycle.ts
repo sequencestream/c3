@@ -165,7 +165,7 @@ export async function launchRun(
   // Publish the run-started lifecycle event once per launchRun, before the vendor
   // fork so it covers both the claude path below and the driver path (ADR-0018).
   // sessionId is the current runId (possibly a pending id); event-triggered
-  // schedules filter `kind === 'normal'` so intent comm runs never fire them.
+  // schedules filter `kind === 'session'` so intent comm runs never fire them.
   deps.eventBus.publish('run:started', {
     sessionId: runId,
     workspacePath,
@@ -360,13 +360,13 @@ export async function launchRun(
                   // `bound` is fire-and-forget (the SDK callback is sync, so we
                   // can't `await` here without making the whole callback chain
                   // async). Published on the event bus (ADR-0018).
-                  deps.eventBus.publish('run:bound', { prevId: prev, realId: sid })
+                  deps.eventBus.publish('run:bound', { prevId: prev, realId: sid, workspacePath })
                 }
               } else if (!hasBound) {
                 // First binding on a non-pending session (e.g. resume flow).
                 // This path runs once per launchRun.
                 hasBound = true
-                deps.eventBus.publish('run:bound', { prevId: prev, realId: sid })
+                deps.eventBus.publish('run:bound', { prevId: prev, realId: sid, workspacePath })
               }
               // If hasBound is already true (retry), skip everything — the
               // runtime keeps its original Map key.

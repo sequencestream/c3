@@ -28,29 +28,34 @@
  *    corresponding payload type.
  */
 
-import type { RunEndReason, VendorId } from '@ccc/shared/protocol'
+import type { RunEndReason, RunKind, VendorId } from '@ccc/shared/protocol'
 
 /** Default event map for c3 kernel events. Extend this interface to add new topics. */
 export interface EventBusEvents {
-  /** A pending session id bound to the real SDK session id (first bind only). */
-  'run:bound': { prevId: string; realId: string }
+  /**
+   * A pending session id bound to the real SDK session id (first bind only).
+   * Carries `workspacePath` so domain listeners can match the bind to a workspace
+   * without a separate lookup (2026-06-08).
+   */
+  'run:bound': { prevId: string; realId: string; workspacePath: string }
   /**
    * A run started — `launchRun` began a turn (published once per launchRun,
    * before the vendor fork, so it covers both the claude and driver paths).
-   * `kind` distinguishes a normal user run from an internal intent comm run
-   * (2026-06-08): event-triggered schedules only fire on `'normal'`.
+   * `kind` is the run's {@link RunKind} origin so listeners route by source
+   * (2026-06-08): event-triggered schedules only fire on `'session'`.
    */
-  'run:started': { sessionId: string; workspacePath: string; kind: 'normal' | 'intent' }
+  'run:started': { sessionId: string; workspacePath: string; kind: RunKind }
   /**
    * The run is fully over (terminal state backstop reached). Carries the bound
-   * session id, the terminal `reason`, and the run `kind` so event-triggered
-   * schedules can filter by workspace + reason and skip intent runs (2026-06-08).
+   * session id, the terminal `reason`, and the run's {@link RunKind} so
+   * event-triggered schedules can filter by workspace + reason and skip non-session
+   * runs (2026-06-08).
    */
   'run:settled': {
     sessionId: string
     workspacePath: string
     reason: RunEndReason
-    kind: 'normal' | 'intent'
+    kind: RunKind
   }
   /**
    * A single agent attempt in the degradation chain failed (the bus twin of the

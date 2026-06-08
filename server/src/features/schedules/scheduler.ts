@@ -13,7 +13,7 @@
  */
 
 import { resolve } from 'node:path'
-import type { RunEndReason, RunLifecycleTopic, Schedule } from '@ccc/shared/protocol'
+import type { RunEndReason, RunKind, RunLifecycleTopic, Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import { getTimezone } from '../../kernel/config/index.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
@@ -123,7 +123,7 @@ export async function triggerRunNow(scheduleId: string): Promise<void> {
  * and the write-approval queue.
  *
  * Filters, in order:
- *  - `kind`: intent comm runs are internal and never fire user schedules.
+ *  - `kind`: only `session` runs fire user schedules; every other RunKind is internal.
  *  - workspace: the event's workspace must equal the schedule's workspace.
  *  - reason: for `run:settled`, an optional reason allowlist (null/[] = any).
  *  - in-flight: SCH-R7 serial execution doubles as event-storm throttling — a
@@ -135,11 +135,15 @@ export function dispatchEventSchedules(
     sessionId: string
     workspacePath: string
     reason?: RunEndReason
-    kind: 'normal' | 'intent'
+    kind: RunKind
   },
 ): void {
   if (!store) return
-  if (payload.kind !== 'normal') return // intent runs are internal; never fire user schedules
+  // Only `session` runs (user/dev sessions) fire user schedules; every other
+  // RunKind (intent comm, discussion, consensus, internal tool, the scheduler's
+  // own runs) is internal and never triggers a schedule. Semantics unchanged from
+  // the pre-2026-06-08 `kind !== 'normal'` guard — only the literal migrated.
+  if (payload.kind !== 'session') return
 
   let candidates: Schedule[]
   try {

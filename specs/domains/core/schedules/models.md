@@ -108,6 +108,8 @@ type ScheduleTaskType = 'command' | 'llm_prompt'
 type ScheduleTriggerType = 'cron' | 'event'
 type RunLifecycleTopic = 'run:started' | 'run:settled'
 type RunEndReason = 'complete' | 'error' | 'aborted'
+// The `kind` carried on run:started/run:settled is the unified RunKind SoT:
+type RunKind = 'session' | 'intent' | 'discussion' | 'schedule' | 'consensus' | 'tool'
 ```
 
 ### `executionIdentity`

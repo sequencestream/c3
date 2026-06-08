@@ -23,6 +23,7 @@
 import type {
   CodexPolicy,
   ModeToken,
+  RunKind,
   ServerToClient,
   SessionRunStatus,
   SessionStatus,
@@ -36,15 +37,6 @@ interface InFlightRun {
   abort: AbortController
   handle: RunHandle | null
 }
-
-/**
- * What kind of session a runtime drives:
- * - `normal` — an ordinary user session (default).
- * - `intent` — a read-only intent-communication session; runs with the intent
- *   permission gate + disallowed-tools lock and is hidden from the normal session
- *   list.
- */
-export type SessionKind = 'normal' | 'intent'
 
 export interface SessionRuntime {
   /** Real SDK id, or a `pending:…` id until the first run binds it. */
@@ -63,8 +55,14 @@ export interface SessionRuntime {
    * grid on the driver path.
    */
   codexPolicy?: CodexPolicy
-  /** Normal user session vs. read-only intent-communication session. */
-  kind: SessionKind
+  /**
+   * The run's origin in the unified {@link RunKind} taxonomy. A `SessionRuntime`
+   * only ever drives `'session'` (ordinary dev/user session) or `'intent'`
+   * (read-only intent-communication session, hidden from the normal list); the
+   * other RunKind values tag socket-less internal invocations that do NOT create
+   * a runtime. (Was the two-value `SessionKind`; `'normal' → 'session'`.)
+   */
+  kind: RunKind
   /** On-disk transcript snapshot at runtime creation; replayed before `buffer`. */
   baseline: TranscriptItem[]
   /** Every wire event emitted since creation, across all turns. */
@@ -157,7 +155,7 @@ export function ensureRuntime(
   workspacePath: string,
   mode: ModeToken,
   baseline: TranscriptItem[],
-  kind: SessionKind = 'normal',
+  kind: RunKind = 'session',
   codexPolicy?: CodexPolicy,
 ): SessionRuntime {
   let rt = runtimes.get(id)

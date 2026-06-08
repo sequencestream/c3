@@ -22,7 +22,7 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 | Communication system prompt | `server/src/intents/prompt.ts`     | Read-only analyst prompt, injected as `appendSystemPrompt`                                                                     |
 | `c3` MCP tools              | `server/src/intents/save-tool.ts`  | `createSdkMcpServer` exposing `save_intents` (confirmed-save) + read-only `find_intents` / `view_intent` (RM-R19)              |
 | Run variant                 | `server/src/claude.ts`             | `runClaude` gains `appendSystemPrompt`/`disallowedTools`/`mcpServers`/`gate`; `askOneShot` (tool-less one-shot, for the judge) |
-| Runtime kind + launcher     | `server/src/runs.ts`               | `SessionRuntime.kind: 'normal' \| 'intent'`; shared `launchRun`                                                                |
+| Runtime kind + launcher     | `server/src/runs.ts`               | `SessionRuntime.kind: RunKind` (here `'session'` or `'intent'`; was `'normal' \| 'intent'`); shared `launchRun`                |
 | WS branches + orchestration | `server/src/server.ts`             | Eight new branches; communication-session viewer management; `runDevTurn` + `broadcastAutomation`                              |
 | Hidden-set list filter      | `server/src/sessions.ts`           | `listWorkspaceSessions` excludes the project's hidden set                                                                      |
 | Automation orchestrator     | `server/src/intents/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                             |
@@ -139,7 +139,8 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
 
 ## Run variant (`claude.ts` + `runs.ts`)
 
-- `SessionRuntime` gains `kind: 'normal' | 'intent'` (default `'normal'`); `user_prompt`
+- `SessionRuntime` gains `kind: RunKind` (default `'session'`; was the two-value
+  `'normal' | 'intent'`, `'normal' → 'session'` — see glossary / ADR-0018); `user_prompt`
   dispatches on `rt.kind` to the standard or intent variant of `runClaude`.
 - A shared launcher `launchRun(rt, prompt, opts?)` is extracted from `user_prompt`. **Boundary:**
   it only touches module-level `emit`/`broadcastStatuses`/the registry; connection-specific

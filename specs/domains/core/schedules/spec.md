@@ -154,8 +154,12 @@ The run path publishes these **kernel-bus** events (consumed here; they are not 
   where `reason` ∈ `complete | error | aborted` (user stop ⇒ `aborted`; clean finish ⇒ `complete`;
   a throw / chain exhaustion / single-attempt failure ⇒ `error`).
 
-`kind` (`normal | intent`) distinguishes a normal user run from an internal intent comm run; only
-`normal` runs fire event schedules (SCH-R18). A `run:started` always has a matching `run:settled`.
+`kind` is the unified **RunKind** (`session | intent | discussion | schedule | consensus | tool`;
+see glossary + ADR-0018), the single SoT in `shared/src/protocol.ts` that replaced the old two-value
+`normal | intent`. Only `session` runs fire event schedules (SCH-R18; migrated verbatim from the old
+`normal` guard — semantics unchanged). Note `schedule` is a _trigger source_, not a run type: an
+event-triggered schedule reacts to a `session`-kind run; `schedule` only tags the scheduler's own
+socket-less run, which never re-triggers a schedule. A `run:started` always has a matching `run:settled`.
 
 ### Filtering & throttling
 

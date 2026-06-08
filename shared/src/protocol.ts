@@ -1231,6 +1231,29 @@ export type RunLifecycleTopic = 'run:started' | 'run:settled'
 /** Terminal reason a run settled with: clean finish, error, or user abort. */
 export type RunEndReason = 'complete' | 'error' | 'aborted'
 
+/**
+ * Single source-of-truth taxonomy for what kind of run/agent invocation produced
+ * an event or drives a runtime (2026-06-08). One value per distinct origin so
+ * listeners can route by source instead of collapsing everything into a two-value
+ * `'normal' | 'intent'` (the pre-2026-06-08 `SessionKind`):
+ *
+ * - `session`     — a general development session: the user console, an
+ *   intent→development hand-off, and the automation dev-turn. (Was `'normal'`.)
+ * - `intent`      — a read-only intent-communication session (the intent gate +
+ *   disallowed-tools lock).
+ * - `discussion`  — the discussion orchestrator and its research pass.
+ * - `schedule`    — a run **launched by the scheduler with no socket** (e.g. an
+ *   `llm` scheduled task). NOTE: `schedule` identifies the *trigger source*, NOT a
+ *   run type a user session morphs into — a schedule-*triggered* target session run
+ *   is still `session` kind. `schedule` only tags the scheduler's own socket-less run.
+ * - `consensus`   — a consensus vote (each voter is a tool-free one-shot).
+ * - `tool`        — an internal tool call: completion judging (judge) and title
+ *   derivation.
+ *
+ * Migration from the old `SessionKind`: `'normal' → 'session'`, `'intent' → 'intent'`.
+ */
+export type RunKind = 'session' | 'intent' | 'discussion' | 'schedule' | 'consensus' | 'tool'
+
 export interface Schedule {
   id: string
   type: ScheduleType

@@ -175,7 +175,7 @@ export async function runViaDriver(
       // for the session's life (ADR-0015).
       freezeSessionAgent(prev, sid, agentId, workspacePath)
       runId = sid
-      eventBus.publish('run:bound', { prevId: prev, realId: sid })
+      eventBus.publish('run:bound', { prevId: prev, realId: sid, workspacePath })
     }
 
     const emitter = new WireEmitter((m) => emit(runId, m))

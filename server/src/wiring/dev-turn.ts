@@ -68,7 +68,7 @@ export function makeRunDevTurn(
         input.projectPath,
         getDefaultMode(input.projectPath),
         [],
-        'normal',
+        'session',
       )
       let lastText = ''
       // Attaching to an already-running turn: its latest assistant text may have

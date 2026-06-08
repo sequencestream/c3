@@ -116,7 +116,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   })
   const defaultMode = getDefaultMode(abs, resolvedAgent.vendor)
   const codexPolicy = resolvedAgent.vendor === 'codex' ? getCodexDefaultPolicy(abs) : undefined
-  ensureRuntime(pendingId, abs, defaultMode, [], 'normal', codexPolicy)
+  ensureRuntime(pendingId, abs, defaultMode, [], 'session', codexPolicy)
   conn.viewing = pendingId
   addViewer(pendingId, conn.deliver)
   touchWorkspace(abs, Date.now())

@@ -87,8 +87,13 @@ Adopt **option 3**: a synchronous, in-order, error-isolated topic-based event bu
 
 ```ts
 interface EventBusEvents {
-  'run:bound': { prevId: string; realId: string }
-  'run:settled': { workspacePath: string }
+  // Run lifecycle (2026-06-08): every payload carries enough run identity for a
+  // domain listener to match without a side lookup — `run:started`/`run:settled`
+  // carry `sessionId` + `workspacePath`; `run:bound` carries `prevId`/`realId` +
+  // `workspacePath`. `kind` is the unified RunKind (see below).
+  'run:bound': { prevId: string; realId: string; workspacePath: string }
+  'run:started': { sessionId: string; workspacePath: string; kind: RunKind }
+  'run:settled': { sessionId: string; workspacePath: string; reason: RunEndReason; kind: RunKind }
   // Degradation-chain event-化 bypass (2026-06-08, see agent-session AS-R25):
   'agent:error': {
     sessionId: string
@@ -121,12 +126,42 @@ class EventBus<T = EventBusEvents> {
 }
 ```
 
+### RunKind taxonomy (2026-06-08)
+
+The `kind` carried by `run:started`/`run:settled` (and threaded through
+`SessionRuntime.kind`) is the single source-of-truth `RunKind` enum, defined in
+`shared/src/protocol.ts`. It replaces the old two-value `'normal' | 'intent'`
+(`SessionKind`) so listeners can route by run origin instead of collapsing six
+distinct sources into two:
+
+| RunKind      | Origin                                                                             |
+| ------------ | ---------------------------------------------------------------------------------- |
+| `session`    | general dev session (user console, intent→dev hand-off, dev-turn). Was `'normal'`. |
+| `intent`     | read-only intent-communication session.                                            |
+| `discussion` | discussion orchestrator + its research pass.                                       |
+| `schedule`   | a run launched by the scheduler **with no socket** (e.g. an `llm` task).           |
+| `consensus`  | a consensus vote.                                                                  |
+| `tool`       | an internal tool call: completion judging (judge) + title derivation.              |
+
+**`schedule` is a trigger source, not a run type a session morphs into.** An
+event-triggered schedule fires off a `run:started`/`run:settled` whose `kind` is
+`session` (a user/dev run) — the scheduler reacts to that. `schedule` only tags
+the scheduler's _own_ socket-less run. Event-triggered schedules therefore filter
+`kind === 'session'` (migrated verbatim from the old `kind === 'normal'` guard;
+semantics unchanged).
+
+Today only `session`/`intent` flow through the run bus via a `SessionRuntime`;
+the other four tag socket-less internal invocations (judge, title, consensus,
+discussion/research, scheduled `llm`) that do NOT yet go through the bus — they
+carry their RunKind as a typed annotation + log tag at the initiation point. (A
+later ADR may migrate those onto the unified run lifecycle bus.)
+
 ### Retrofit: `RunDomainEvent` → bus topics
 
-| Old `RunDomainEvent.kind` | New bus topic   | Payload              |
-| ------------------------- | --------------- | -------------------- |
-| `bound`                   | `'run:bound'`   | `{ prevId, realId }` |
-| `settled`                 | `'run:settled'` | `{ workspacePath }`  |
+| Old `RunDomainEvent.kind` | New bus topic   | Payload                                               |
+| ------------------------- | --------------- | ----------------------------------------------------- |
+| `bound`                   | `'run:bound'`   | `{ prevId, realId, workspacePath }`                   |
+| `settled`                 | `'run:settled'` | `{ sessionId, workspacePath, reason, kind: RunKind }` |
 
 The old `LaunchCbs.onEvent` callback is removed. All 5 consumers now subscribe via
 `ctx.eventBus.subscribe(...)` or `launchDeps.eventBus.subscribe(...)`.

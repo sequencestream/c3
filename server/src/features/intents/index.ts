@@ -419,7 +419,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     return
   }
   const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'normal')
+  const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'session')
   const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
   const skill = getDevSkill(proj)
   const skillPrefix = skill ? `${skill} ` : ''

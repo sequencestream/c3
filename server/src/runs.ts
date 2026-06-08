@@ -120,6 +120,19 @@ export function setTaskObserver(
   taskObserver = cb
 }
 
+/**
+ * Optional per-event hook, called for every emitted wire event after the
+ * taskObserver. Same shape as `taskObserver` — kept in runs.ts so the
+ * composition root can wire side effects (e.g. auto-title derivation for
+ * intent sessions) without importing feature logic here.
+ */
+let onEmit: ((rt: SessionRuntime, event: ServerToClient) => void) | null = null
+
+/** Register the per-emit hook (composition root only). */
+export function setOnEmit(cb: ((rt: SessionRuntime, event: ServerToClient) => void) | null): void {
+  onEmit = cb
+}
+
 export function getRuntime(id: string): SessionRuntime | undefined {
   return runtimes.get(id)
 }
@@ -228,6 +241,10 @@ export function emit(id: string, event: ServerToClient): void {
   // buffering/fan-out/status, so any event it re-emits (e.g. `task_list`) is
   // ordered right after the event that produced it. Re-entry is a no-op.
   taskObserver?.(rt, event)
+
+  // Per-emit side-effect hook (e.g. auto-title derivation for intent sessions).
+  // Runs after taskObserver so ordering relative to task_list events is stable.
+  onEmit?.(rt, event)
 }
 
 /**

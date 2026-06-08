@@ -19,6 +19,7 @@ import {
   reconcileLiveness,
   setOnRunEnd,
   setOnStatusChange,
+  setOnEmit,
   setTaskObserver,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
@@ -26,6 +27,7 @@ import { getSessionAgentId, getUiLang, setOnPendingIntentLookup } from './kernel
 import { setAutomationHooks } from './features/intents/automation.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
+import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
@@ -310,6 +312,46 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // observer folds task-tool tool_use/tool_result into a per-session model and
   // emits `task_list` snapshots (buffered ⇒ replayed on reconnect).
   setTaskObserver(observeTaskWire)
+  // Auto-derive intent session titles on the first assistant response (2026-06-08-001).
+  // When a blank session (title NULL) receives its first assistant_text event, extract
+  // the first user message from the runtime's baseline/buffer as the session title.
+  // Sessions that already have a title (refineIntent/discussionToIntent) are skipped.
+  const autoTitledSessions = new Set<string>()
+  setOnEmit((rt, event) => {
+    if (rt.kind !== 'intent') return
+    if (event.type !== 'assistant_text') return
+    if (autoTitledSessions.has(rt.sessionId)) return
+    autoTitledSessions.add(rt.sessionId)
+    // DB write is best-effort — the store may be unavailable.
+    try {
+      const proj = rt.workspacePath
+      const sessions = listChatSessions(proj)
+      const session = sessions.find((s) => s.sessionId === rt.sessionId)
+      if (session?.title) return // Don't overwrite existing titles.
+      // Find the first user message from baseline or buffer.
+      let firstUserText = ''
+      for (const item of rt.baseline) {
+        if (item.kind === 'user' && item.text?.trim()) {
+          firstUserText = item.text.trim()
+          break
+        }
+      }
+      if (!firstUserText) {
+        for (const ev of rt.buffer) {
+          if (ev.type === 'user_text' && ev.text?.trim()) {
+            firstUserText = ev.text.trim()
+            break
+          }
+        }
+      }
+      if (!firstUserText) return
+      const summary = firstUserText.substring(0, 64)
+      renameChatSession(rt.sessionId, summary)
+      broadcasts.broadcastIntentSessions(proj)
+    } catch (err) {
+      console.warn('[c3] auto-title derivation failed:', err)
+    }
+  })
   // Bind the late thunk now the broadcaster exists, so the supervisor's
   // onStatusChange (registered above) fans out `opencode_status` transitions.
   broadcastOpencodeStatus = broadcasts.broadcastOpencodeStatus

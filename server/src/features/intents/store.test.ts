@@ -23,6 +23,7 @@ import {
   updateIntent,
   updateStatus,
 } from './store.js'
+import { emit, ensureRuntime, setOnEmit, removeRuntime } from '../../runs.js'
 
 let dir: string
 const proj = '/abs/project-a'
@@ -415,6 +416,191 @@ describe('communication session mapping / hidden set', () => {
     expect(list).toHaveLength(1)
     expect(list[0].sessionId).toBe('real-xyz')
     expect(list[0].title).toBe('Bound title')
+  })
+
+  // ── Auto-title derivation (2026-06-08-001) ──
+
+  it('derives title from first user message on first assistant_text event', () => {
+    setChatSession(proj, 's1')
+    ensureRuntime('s1', proj, 'default', [], 'intent')
+
+    const titled = new Set<string>()
+    setOnEmit((rt, event) => {
+      if (rt.kind !== 'intent') return
+      if (event.type !== 'assistant_text') return
+      if (titled.has(rt.sessionId)) return
+      titled.add(rt.sessionId)
+      const sessions = listChatSessions(proj)
+      const session = sessions.find((s) => s.sessionId === rt.sessionId)
+      if (session?.title) return
+      let firstUserText = ''
+      for (const item of rt.baseline) {
+        if (item.kind === 'user' && item.text?.trim()) {
+          firstUserText = item.text.trim()
+          break
+        }
+      }
+      if (!firstUserText) {
+        for (const ev of rt.buffer) {
+          if (ev.type === 'user_text' && ev.text?.trim()) {
+            firstUserText = ev.text.trim()
+            break
+          }
+        }
+      }
+      if (!firstUserText) return
+      renameChatSession(rt.sessionId, firstUserText.substring(0, 64))
+    })
+
+    // Emit user_text then assistant_text — first user message is in the buffer.
+    emit('s1', { type: 'user_text', text: 'Implement authentication flow' })
+    emit('s1', { type: 'assistant_text', text: 'I will help implement authentication' })
+
+    const updated = listChatSessions(proj).find((s) => s.sessionId === 's1')
+    expect(updated?.title).toBe('Implement authentication flow')
+
+    setOnEmit(null)
+    removeRuntime('s1')
+  })
+
+  it('derives title from baseline when session has history', () => {
+    setChatSession(proj, 's2')
+    ensureRuntime('s2', proj, 'default', [{ kind: 'user', text: 'Fix the login bug' }], 'intent')
+
+    const titled = new Set<string>()
+    setOnEmit((rt, event) => {
+      if (rt.kind !== 'intent') return
+      if (event.type !== 'assistant_text') return
+      if (titled.has(rt.sessionId)) return
+      titled.add(rt.sessionId)
+      const sessions = listChatSessions(proj)
+      const session = sessions.find((s) => s.sessionId === rt.sessionId)
+      if (session?.title) return
+      let firstUserText = ''
+      for (const item of rt.baseline) {
+        if (item.kind === 'user' && item.text?.trim()) {
+          firstUserText = item.text.trim()
+          break
+        }
+      }
+      if (!firstUserText) {
+        for (const ev of rt.buffer) {
+          if (ev.type === 'user_text' && ev.text?.trim()) {
+            firstUserText = ev.text.trim()
+            break
+          }
+        }
+      }
+      if (!firstUserText) return
+      renameChatSession(rt.sessionId, firstUserText.substring(0, 64))
+    })
+
+    emit('s2', { type: 'assistant_text', text: 'Analyzing the bug report...' })
+
+    const updated = listChatSessions(proj).find((s) => s.sessionId === 's2')
+    expect(updated?.title).toBe('Fix the login bug')
+
+    setOnEmit(null)
+    removeRuntime('s2')
+  })
+
+  it('truncates title to 64 characters', () => {
+    setChatSession(proj, 's3')
+    ensureRuntime('s3', proj, 'default', [], 'intent')
+    const longMessage = 'a'.repeat(100)
+    const expected = 'a'.repeat(64)
+
+    const titled = new Set<string>()
+    setOnEmit((rt, event) => {
+      if (rt.kind !== 'intent') return
+      if (event.type !== 'assistant_text') return
+      if (titled.has(rt.sessionId)) return
+      titled.add(rt.sessionId)
+      const sessions = listChatSessions(proj)
+      const session = sessions.find((s) => s.sessionId === rt.sessionId)
+      if (session?.title) return
+      let firstUserText = ''
+      for (const item of rt.baseline) {
+        if (item.kind === 'user' && item.text?.trim()) {
+          firstUserText = item.text.trim()
+          break
+        }
+      }
+      if (!firstUserText) {
+        for (const ev of rt.buffer) {
+          if (ev.type === 'user_text' && ev.text?.trim()) {
+            firstUserText = ev.text.trim()
+            break
+          }
+        }
+      }
+      if (!firstUserText) return
+      renameChatSession(rt.sessionId, firstUserText.substring(0, 64))
+    })
+
+    emit('s3', { type: 'user_text', text: longMessage })
+    emit('s3', { type: 'assistant_text', text: 'OK' })
+
+    const updated = listChatSessions(proj).find((s) => s.sessionId === 's3')
+    expect(updated?.title).toBe(expected)
+    expect(updated?.title?.length).toBe(64)
+
+    setOnEmit(null)
+    removeRuntime('s3')
+  })
+
+  it('does not overwrite an existing title', () => {
+    setChatSession(proj, 's4', 'Existing Title')
+    ensureRuntime('s4', proj, 'default', [], 'intent')
+
+    const titled = new Set<string>()
+    setOnEmit((rt, event) => {
+      if (rt.kind !== 'intent') return
+      if (event.type !== 'assistant_text') return
+      if (titled.has(rt.sessionId)) return
+      titled.add(rt.sessionId)
+      const sessions = listChatSessions(proj)
+      const session = sessions.find((s) => s.sessionId === rt.sessionId)
+      if (session?.title) return // This should short-circuit
+      renameChatSession(rt.sessionId, 'Should Not Overwrite')
+    })
+
+    emit('s4', { type: 'user_text', text: 'Some message' })
+    emit('s4', { type: 'assistant_text', text: 'Reply' })
+
+    const session = listChatSessions(proj).find((s) => s.sessionId === 's4')
+    expect(session?.title).toBe('Existing Title')
+
+    setOnEmit(null)
+    removeRuntime('s4')
+  })
+
+  it('does not fire twice for the same session', () => {
+    setChatSession(proj, 's5')
+    ensureRuntime('s5', proj, 'default', [], 'intent')
+
+    let callCount = 0
+    const titled = new Set<string>()
+    setOnEmit((rt, event) => {
+      if (rt.kind !== 'intent') return
+      if (event.type !== 'assistant_text') return
+      if (titled.has(rt.sessionId)) return
+      titled.add(rt.sessionId)
+      callCount++
+      const sessions = listChatSessions(proj)
+      if (sessions.find((s) => s.sessionId === rt.sessionId)?.title) return
+      renameChatSession(rt.sessionId, 'Auto-titled')
+    })
+
+    emit('s5', { type: 'user_text', text: 'Hello' })
+    emit('s5', { type: 'assistant_text', text: 'First reply' })
+    emit('s5', { type: 'assistant_text', text: 'Second reply text chunk' })
+
+    // After two assistant_text events, renameChatSession was called exactly once.
+    expect(callCount).toBe(1)
+
+    setOnEmit(null)
+    removeRuntime('s5')
   })
 })
 

@@ -28,6 +28,7 @@ import { setAutomationHooks } from './features/intents/automation.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
+import { createPermissionRequestHandler } from './features/user-involve/hooks.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
@@ -412,6 +413,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       })
       return { ok: true, outcome }
     },
+    // Permission-event hook: before each `permission_request` wire frame, create
+    // a WaitUserInvolveEvent in the store and broadcast the updated todo list.
+    onPermissionRequest: createPermissionRequestHandler({ broadcaster }),
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).

@@ -7,7 +7,13 @@ import { addToolSession } from '../../sessions.js'
 import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
 import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
 import { isSideEffectTool } from '../run/resume.js'
-import { allow, createCanUseTool, deny, INTENT_DISALLOWED_TOOLS } from '../permission/index.js'
+import {
+  allow,
+  createCanUseTool,
+  deny,
+  INTENT_DISALLOWED_TOOLS,
+  type PermissionRequestCtx,
+} from '../permission/index.js'
 
 // Moved out of this file in server refactor 3/3 (ADR-0009), imported where needed:
 //  - the permission gate (the `canUseTool` policy + tool-name constants +
@@ -133,6 +139,18 @@ export interface RunOptions {
    * ADR-0017 §E). Default false.
    */
   skillWriteGuard?: boolean
+  /**
+   * The session id (a getter because the id may change on pending→real bind).
+   * Only used when {@link onPermissionRequest} is set on the gateway; absent
+   * ⇒ the gateway builds a no-op getter.
+   */
+  sessionId?: () => string
+  /**
+   * Optional callback invoked before a `permission_request` is sent to the
+   * human. Receives the full {@link PermissionRequestCtx} including sessionId
+   * and workspacePath. Forwarded to {@link createCanUseTool}.
+   */
+  onPermissionRequest?: (ctx: PermissionRequestCtx) => void
   /** In-process MCP servers to expose (e.g. the c3 `save_intents` tool). */
   mcpServers?: Record<string, McpServerConfig>
   /**
@@ -510,6 +528,8 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         cwd,
         recentContext: () => recentContext,
         skillWriteGuard,
+        sessionId: opts.sessionId ?? (() => ''),
+        onPermissionRequest: opts.onPermissionRequest,
       }),
     },
   })

@@ -6,7 +6,7 @@
  * constants. Nothing constructs a verdict outside this layer.
  */
 export { allow, deny, type PermissionDecision } from './decision.js'
-export { createCanUseTool, type GatewaySpec } from './gateway.js'
+export { createCanUseTool, type GatewaySpec, type PermissionRequestCtx } from './gateway.js'
 export {
   waitForDecision,
   resolveDecision,

@@ -25,6 +25,7 @@ import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
+import type { PermissionRequestCtx } from '../permission/index.js'
 import {
   getDegradationChain,
   resolveSessionLaunch,
@@ -123,6 +124,13 @@ export interface LaunchRunDeps {
    * the step is silently skipped.
    */
   skillMount?: (rt: SessionRuntime) => Promise<SkillMountStep>
+  /**
+   * Optional callback invoked before a `permission_request` wire frame is sent
+   * to the human. Receives the full {@link PermissionRequestCtx} including
+   * sessionId and workspacePath. Forwarded through the run lifecycle to the
+   * permission gateway. Wired at the composition root (`server.ts`).
+   */
+  onPermissionRequest?: (ctx: PermissionRequestCtx) => void
 }
 
 import type { SkillMountOutcome } from '../skill-loader/index.js'
@@ -339,6 +347,10 @@ export async function launchRun(
                 },
               }),
           send: (m) => emit(runId, m),
+          // Permission-event hook: the session id is a getter because `runId`
+          // changes on pending→real bind (onSessionId reassigns it).
+          sessionId: () => runId,
+          onPermissionRequest: deps.onPermissionRequest,
           onStart: (h) => {
             if (rt.run) rt.run.handle = h
           },

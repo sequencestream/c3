@@ -8,11 +8,15 @@
  * registry hold state only in memory, unlike settings/state which persist). The
  * standard (consensus) gate's default-deny is pinned by the C4 golden contract.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { createCanUseTool, type GatewaySpec } from './gateway.js'
 import { resolveDecision } from './registry.js'
+
+// Consensus modules are mocked so standard-gate tests can control return values.
+vi.mock('../../consensus.js')
+import { runConsensusVote, runAskConsensus } from '../../consensus.js'
 
 function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
   return {
@@ -22,9 +26,16 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
     currentAgentId: null,
     cwd: '/tmp',
     recentContext: () => '',
+    sessionId: () => '',
     ...overrides,
   }
 }
+
+beforeEach(() => {
+  // Default: no consensus → fall through to permission_request.
+  vi.mocked(runConsensusVote).mockResolvedValue(null as never)
+  vi.mocked(runAskConsensus).mockResolvedValue(null as never)
+})
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -88,5 +99,183 @@ describe('C-SEC — permission verdicts are NOT persisted (no-persist)', () => {
 
     // The verdict path is entirely in-memory: no settings-style fs write happened.
     expect(writeFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('onPermissionRequest callback', () => {
+  // ── Intent gate tests (no consensus dependency) ──
+
+  it('calls callback on intent-gate confirm-save (#1, #8)', async () => {
+    const onPermissionRequest = vi.fn()
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({ gate: 'intent', send: (m) => sent.push(m), onPermissionRequest }),
+    )
+    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never)
+    const req = sent.find((m) => m.type === 'permission_request')
+    expect(req).toBeDefined()
+    if (req?.type === 'permission_request') resolveDecision(req.requestId, 'allow')
+    await p
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    expect(onPermissionRequest).toHaveBeenCalledWith({
+      requestId: expect.any(String),
+      toolName: 'mcp__c3__save_intents',
+      input: { items: [] },
+      sessionId: '',
+      workspacePath: '/tmp',
+    })
+  })
+
+  it('does NOT call callback on intent-gate AskUserQuestion (excluded per spec)', async () => {
+    const onPermissionRequest = vi.fn()
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({ gate: 'intent', send: (m) => sent.push(m), onPermissionRequest }),
+    )
+    const askInput = {
+      questions: [{ question: 'test?', header: 'h', options: [{ label: 'a' }] }],
+    }
+    const p = gate('AskUserQuestion', askInput, {} as never)
+    const req = sent.find((m) => m.type === 'permission_request')
+    expect(req).toBeDefined()
+    if (req?.type === 'permission_request')
+      resolveDecision(req.requestId, 'allow', { 'test?': 'a' })
+    await p
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+  })
+
+  it('does NOT call callback on discussion-research read tool (no permission_request)', async () => {
+    const onPermissionRequest = vi.fn()
+    const gate = createCanUseTool(spec({ gate: 'discussion-research', onPermissionRequest }))
+    await gate('Grep', { pattern: 'x' }, {} as never)
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+  })
+
+  // ── Standard gate: skillWriteGuard (bypasses consensus) ──
+
+  it('calls callback on skillWriteGuard write tool (#4)', async () => {
+    const onPermissionRequest = vi.fn()
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({
+        gate: 'standard',
+        send: (m) => sent.push(m),
+        onPermissionRequest,
+        skillWriteGuard: true,
+      }),
+    )
+    const p = gate('Write', { file_path: '/x' }, {} as never)
+    const req = sent.find((m) => m.type === 'permission_request')
+    expect(req).toBeDefined()
+    if (req?.type === 'permission_request') resolveDecision(req.requestId, 'allow')
+    await p
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+  })
+
+  // ── Standard gate: AskUserQuestion consensus ──
+
+  it('calls callback on AskUserQuestion when consensus is NOT unanimous (#2)', async () => {
+    // runAskConsensus returns a non-fullyUnanimous outcome → permission_request sent.
+    vi.mocked(runAskConsensus).mockResolvedValue({
+      kind: 'ask',
+      fullyUnanimous: false,
+      perQuestion: [
+        {
+          index: 0,
+          question: 'test?',
+          header: 'h',
+          multiSelect: false,
+          answers: [{ agentId: 'a1', agentName: 'A1', optionLabels: ['yes'], reason: 'ok' }],
+          unanimous: true,
+          agreed: 'yes',
+        },
+      ],
+      agreedAnswers: { 'test?': 'yes' },
+      summary: 'one answer',
+    } as never)
+    const onPermissionRequest = vi.fn()
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({ gate: 'standard', send: (m) => sent.push(m), onPermissionRequest }),
+    )
+    const askInput = {
+      questions: [{ question: 'test?', header: 'h', options: [{ label: 'yes' }, { label: 'no' }] }],
+    }
+    // Start the gate call; it suspends at `await runAskConsensus(...)`.
+    const p = gate('AskUserQuestion', askInput, {} as never)
+    // Yield to the microtask queue so the mock's resolved Promise flushes,
+    // letting the gateway continue to `send(permission_request)` and then
+    // suspend on `waitForDecision(...)`.
+    await new Promise<void>((r) => queueMicrotask(r))
+    const req = sent.find((m) => m.type === 'permission_request')
+    if (req?.type === 'permission_request') resolveDecision(req.requestId, 'allow')
+    await p
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT call callback on AskUserQuestion when fullyUnanimous (#3)', async () => {
+    // runAskConsensus returns fullyUnanimous → consensus_auto, NOT permission_request.
+    vi.mocked(runAskConsensus).mockResolvedValue({
+      kind: 'ask',
+      fullyUnanimous: true,
+      perQuestion: [
+        {
+          index: 0,
+          question: 'test?',
+          header: 'h',
+          multiSelect: false,
+          answers: [{ agentId: 'a1', agentName: 'A1', optionLabels: ['yes'], reason: 'ok' }],
+          unanimous: true,
+          agreed: 'yes',
+        },
+      ],
+      agreedAnswers: { 'test?': 'yes' },
+      summary: 'all agree',
+    } as never)
+    const onPermissionRequest = vi.fn()
+    const gate = createCanUseTool(spec({ gate: 'standard', onPermissionRequest }))
+    const askInput = {
+      questions: [{ question: 'test?', header: 'h', options: [{ label: 'yes' }, { label: 'no' }] }],
+    }
+    const result = await gate('AskUserQuestion', askInput, {} as never)
+    expect(result).toMatchObject({ behavior: 'allow' })
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+  })
+
+  // ── Standard gate: write tool consensus ──
+
+  it('calls callback on write tool when consensus returns null (#5)', async () => {
+    // Default mock: runConsensusVote returns null → falls through to permission_request.
+    const onPermissionRequest = vi.fn()
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({ gate: 'standard', send: (m) => sent.push(m), onPermissionRequest }),
+    )
+    // Start the gate call; it suspends at `await runConsensusVote(...)`.
+    const p = gate('Write', { file_path: '/x' }, {} as never)
+    // Yield so the mock's resolved Promise flushes → gateway continues to
+    // send(permission_request) and then suspends on waitForDecision.
+    await new Promise<void>((r) => queueMicrotask(r))
+    const req = sent.find((m) => m.type === 'permission_request')
+    expect(req).toBeDefined()
+    if (req?.type === 'permission_request') resolveDecision(req.requestId, 'allow')
+    await p
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT call callback on write tool when consensus auto-resolves (#6)', async () => {
+    // runConsensusVote returns a decision → consensus_auto, NOT permission_request.
+    vi.mocked(runConsensusVote).mockResolvedValue({
+      kind: 'tool',
+      votes: [{ agentId: 'a1', agentName: 'A1', decision: 'allow', reason: 'ok' }],
+      summary: 'all agree',
+      unanimous: true,
+      decision: 'allow',
+    } as never)
+    const onPermissionRequest = vi.fn()
+    const gate = createCanUseTool(spec({ gate: 'standard', onPermissionRequest }))
+    const result = await gate('Write', { file_path: '/x' }, {} as never)
+    expect(result).toMatchObject({ behavior: 'allow' })
+    expect(onPermissionRequest).not.toHaveBeenCalled()
   })
 })

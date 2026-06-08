@@ -593,6 +593,12 @@
         "vendorLocked": "Создано {vendor} — вендор нельзя изменить",
         "unavailable": "текущий агент недоступен — переключитесь на другого агента {vendor}, чтобы продолжить",
         "changeFailed": "Не удалось сменить агента: вендор сессии фиксирован"
+      },
+      "sandboxMode": {
+        "ariaLabel": "Sandbox mode"
+      },
+      "approvalPolicy": {
+        "ariaLabel": "Approval policy"
       }
     },
     "statusBar": {
@@ -663,8 +669,7 @@
       "empty": "Выберите сессию или создайте новую в рабочей области.",
       "toolsFallback": "инструменты",
       "resultError": "(ошибка)",
-      "preApproved": "предодобрено правилом вендора",
-      "resumeOnly": "{vendor} не поддерживает чтение прошлых сообщений — здесь показываются только новые сообщения, а продолжить можно лишь с места остановки."
+      "preApproved": "предодобрено правилом вендора"
     },
     "new": {
       "title": "Новая сессия",
@@ -712,6 +717,9 @@
         "hours": "через {hours}ч {minutes}м",
         "minutes": "через {minutes}м",
         "lessThanMinute": "< 1м"
+      },
+      "edit": {
+        "tooltip": "Редактировать задачу"
       },
       "toggle": {
         "enabled": {
@@ -1240,6 +1248,19 @@
       "subpath": {
         "placeholder": "Опциональный подкаталог (например, skills/my-skill)"
       }
+    }
+  },
+  "codex": {
+    "sandboxMode": {
+      "label": "Sandbox Mode",
+      "readOnly": "Read-only",
+      "workspaceWrite": "Workspace Write"
+    },
+    "approvalPolicy": {
+      "label": "Approval Policy",
+      "never": "Never",
+      "onFailure": "On Failure",
+      "onRequest": "On Request"
     }
   }
 }

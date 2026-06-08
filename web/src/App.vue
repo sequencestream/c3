@@ -43,6 +43,7 @@ import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-t
 import { advanceOnFailure, agentNameAt } from './lib/agent-prefix'
 import type {
   AutomationStatus,
+  CodexPolicy,
   CreateScheduleInput,
   Discussion,
   ModeToken,
@@ -88,6 +89,8 @@ const status = ref<'connecting' | 'open' | 'closed'>('connecting')
 const sessionStatus = ref<Record<string, SessionStatus>>({})
 // The viewed session's permission mode, a vendor-native ModeToken (2026-06-07-012).
 const mode = ref<ModeToken>('default')
+// Codex dual-policy config (2026-06-08), when the active session is codex.
+const codexPolicy = ref<CodexPolicy | null>(null)
 let nextId = 1
 
 // "Current task list" of the viewed session. Since 2026-06-07-009 the server
@@ -770,6 +773,7 @@ function handleMessage(msg: ServerToClient) {
       // The same-vendor agent switcher data (absent ⇒ no switcher).
       activeAgentSwitch.value = msg.agentSwitch ?? null
       mode.value = msg.mode
+      codexPolicy.value = msg.codexPolicy ?? null
       // Remember this as the console tab's own session ONLY when the selection
       // originated on the console tab. Comm-session selections (open/new/refine
       // intent chat) always arrive while the intent tab is active, so
@@ -845,6 +849,7 @@ function handleMessage(msg: ServerToClient) {
     }
     case 'mode_changed':
       mode.value = msg.mode
+      codexPolicy.value = msg.codexPolicy ?? null
       break
     case 'commands':
       availableCommands.value = msg.commands
@@ -1753,6 +1758,13 @@ function setMode(next: ModeToken) {
   client.send({ type: 'set_mode', mode: next })
 }
 
+function setCodexPolicy(policy: CodexPolicy) {
+  if (!client || !hasActiveSession.value) return
+  // Optimistic; server echoes a `mode_changed` with codexPolicy that confirms it.
+  codexPolicy.value = policy
+  client.send({ type: 'set_mode', mode: policy })
+}
+
 // Re-target the viewed session's agent to another same-vendor one (ADR-0015). The
 // server rewrites the fact and replies `session_agent_changed`; the next turn
 // resumes with it. No optimistic update — we wait for the reply so a (defensive)
@@ -1831,6 +1843,7 @@ function dismissSkillApproval() {
       :has-active-session="hasActiveSession"
       :mode="mode"
       :mode-options="modeOptions"
+      :codex-policy="codexPolicy"
       :messages="messages"
       :actionable-permission-id="actionablePermId"
       :task-model="taskModel"
@@ -1851,6 +1864,7 @@ function dismissSkillApproval() {
       @delete-session="deleteSession"
       @rename-session="renameSession"
       @set-mode="setMode"
+      @set-codex-policy="setCodexPolicy"
       @set-session-agent="onSetSessionAgent"
       @respond="respond"
       @submit-ask="submitAsk"

@@ -593,6 +593,12 @@
         "vendorLocked": "{vendor} により作成 — ベンダーは変更できません",
         "unavailable": "現在のエージェントは利用できません — 続行するには別の {vendor} エージェントに切り替えてください",
         "changeFailed": "エージェントを切り替えできません:セッションのベンダーは固定です"
+      },
+      "sandboxMode": {
+        "ariaLabel": "Sandbox mode"
+      },
+      "approvalPolicy": {
+        "ariaLabel": "Approval policy"
       }
     },
     "statusBar": {
@@ -663,8 +669,7 @@
       "empty": "セッションを選択するか、ワークスペースで新しく作成してください。",
       "toolsFallback": "ツール",
       "resultError": "(エラー)",
-      "preApproved": "ベンダー規則で事前承認",
-      "resumeOnly": "{vendor} は過去メッセージの読み込みに対応していません。ここには新しいメッセージのみ表示され、中断した時点からの再開のみ可能です。"
+      "preApproved": "ベンダー規則で事前承認"
     },
     "new": {
       "title": "新規セッション",
@@ -712,6 +717,9 @@
         "hours": "{hours}時間 {minutes}分後",
         "minutes": "{minutes}分後",
         "lessThanMinute": "< 1分"
+      },
+      "edit": {
+        "tooltip": "スケジュールを編集"
       },
       "toggle": {
         "enabled": {
@@ -1240,6 +1248,19 @@
       "subpath": {
         "placeholder": "オプションのサブディレクトリ（例: skills/my-skill）"
       }
+    }
+  },
+  "codex": {
+    "sandboxMode": {
+      "label": "Sandbox Mode",
+      "readOnly": "Read-only",
+      "workspaceWrite": "Workspace Write"
+    },
+    "approvalPolicy": {
+      "label": "Approval Policy",
+      "never": "Never",
+      "onFailure": "On Failure",
+      "onRequest": "On Request"
     }
   }
 }

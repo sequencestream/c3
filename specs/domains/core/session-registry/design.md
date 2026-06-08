@@ -174,6 +174,7 @@ For every runtime where `rt.run != null`:
 - **Stale branch:** `rt.status === 'running' && now - rt.lastActivityAt > staleMs` → no events
   emitted for too long; the SDK iterator/for-await loop is presumed hung or the Claude process
   exited mid-turn. Converge to `idle`.
+  <<<<<<< Updated upstream
 - **Dangling-pointer branch:** `rt.status === 'idle'` while `rt.run != null` → a status/run
   inconsistency. The primary cause — a normal `turn_end` settling `idle` before teardown cleared
   `rt.run` — is now prevented at the source (§ `turn_end` → `idle` is held until teardown), so this
@@ -181,10 +182,17 @@ For every runtime where `rt.run != null`:
   Broadcasts would otherwise advertise the session as `idle` while `user_prompt` still rejects with
   "a turn is already running"; the stale branch (gated on `running`) never reaps it. Converge so
   client and server agree.
+  =======
+  > > > > > > > Stashed changes
 - **Preserved:** `awaiting_permission` and `team` are **not** converged by staleness alone — a
   user waiting on a prompt is legitimate, and a team lead waiting between turns is legitimate.
 
 Convergence mimics `launchRun`'s teardown `finally`:
+<<<<<<< Updated upstream
+
+=======
+
+> > > > > > > Stashed changes
 
 1. `rt.run.abort.abort()` (safe if already aborted)
 2. `rt.run = null`
@@ -198,6 +206,11 @@ from long-running tools (build, deploy) that emit no intermediate events.
 ### Client-side reconciliation
 
 The client (`web/src/App.vue`) pulls the authoritative snapshot on three triggers:
+<<<<<<< Updated upstream
+
+=======
+
+> > > > > > > Stashed changes
 
 - **Periodic** — `setInterval(15s)` sends `request_session_status`.
 - **Visibility restore** — `visibilitychange → visible` sends `request_session_status`.

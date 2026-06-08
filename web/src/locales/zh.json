@@ -593,6 +593,12 @@
         "vendorLocked": "已由 {vendor} 创建,vendor 不可变更",
         "unavailable": "当前 agent 不可用 — 切换到另一个 {vendor} agent 以继续",
         "changeFailed": "切换 agent 失败:会话 vendor 不可变更"
+      },
+      "sandboxMode": {
+        "ariaLabel": "沙箱模式"
+      },
+      "approvalPolicy": {
+        "ariaLabel": "审批策略"
       }
     },
     "statusBar": {
@@ -663,8 +669,7 @@
       "empty": "选择一个会话,或在工作区中新建一个。",
       "toolsFallback": "工具",
       "resultError": "(错误)",
-      "preApproved": "厂商规则预放行",
-      "resumeOnly": "{vendor} 不支持回读历史消息——此处仅显示新消息,且只能从中断点续接。"
+      "preApproved": "厂商规则预放行"
     },
     "new": {
       "title": "新建会话",
@@ -712,6 +717,9 @@
         "hours": "{hours} 小时 {minutes} 分钟后",
         "minutes": "{minutes} 分钟后",
         "lessThanMinute": "< 1 分钟"
+      },
+      "edit": {
+        "tooltip": "编辑定时任务"
       },
       "toggle": {
         "enabled": {
@@ -1240,6 +1248,19 @@
       "subpath": {
         "placeholder": "可选子目录（如 skills/my-skill）"
       }
+    }
+  },
+  "codex": {
+    "sandboxMode": {
+      "label": "沙箱模式",
+      "readOnly": "只读",
+      "workspaceWrite": "工作区可写"
+    },
+    "approvalPolicy": {
+      "label": "审批策略",
+      "never": "从不询问",
+      "onFailure": "失败时询问",
+      "onRequest": "请求时询问"
     }
   }
 }

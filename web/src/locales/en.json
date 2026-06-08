@@ -593,6 +593,12 @@
         "vendorLocked": "Created by {vendor} — vendor can't be changed",
         "unavailable": "current agent unavailable — switch to another {vendor} agent to continue",
         "changeFailed": "Couldn't switch agent: the session's vendor is fixed"
+      },
+      "sandboxMode": {
+        "ariaLabel": "Sandbox mode"
+      },
+      "approvalPolicy": {
+        "ariaLabel": "Approval policy"
       }
     },
     "statusBar": {
@@ -663,8 +669,7 @@
       "empty": "Select a session, or create a new one in a workspace.",
       "toolsFallback": "tools",
       "resultError": "(error)",
-      "preApproved": "vendor pre-approved",
-      "resumeOnly": "{vendor} doesn't support reading past messages — only new messages appear here, and you can only resume from where it left off."
+      "preApproved": "vendor pre-approved"
     },
     "new": {
       "title": "New Session",
@@ -712,6 +717,9 @@
         "hours": "in {hours}h {minutes}m",
         "minutes": "in {minutes}m",
         "lessThanMinute": "< 1m"
+      },
+      "edit": {
+        "tooltip": "Edit schedule"
       },
       "toggle": {
         "enabled": {
@@ -953,7 +961,6 @@
       "notFound": "Intent not found.",
       "dbUnavailable": "Intents feature unavailable (c3.db).",
       "chatOpenFailed": "Failed to open intent chat.",
-
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
@@ -1241,6 +1248,19 @@
       "subpath": {
         "placeholder": "Optional sub-directory (e.g. skills/my-skill)"
       }
+    }
+  },
+  "codex": {
+    "sandboxMode": {
+      "label": "Sandbox Mode",
+      "readOnly": "Read-only",
+      "workspaceWrite": "Workspace Write"
+    },
+    "approvalPolicy": {
+      "label": "Approval Policy",
+      "never": "Never",
+      "onFailure": "On Failure",
+      "onRequest": "On Request"
     }
   }
 }

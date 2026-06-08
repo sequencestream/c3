@@ -7,6 +7,11 @@
  */
 import { ref, computed, watch } from 'vue'
 import type {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  CodexApprovalPolicy,
+  CodexPolicy,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  CodexSandboxMode,
   ProjectConfig,
   SkillRepoConfig,
   VendorId,
@@ -49,7 +54,7 @@ const emit = defineEmits<{
  */
 function freshDefaultMode(
   vendorModes: Record<VendorId, VendorModeCatalog> | null,
-): Record<VendorId, ModeToken> {
+): Record<VendorId, ModeToken | CodexPolicy> {
   const out: Partial<Record<VendorId, ModeToken>> = {}
   for (const v of VENDOR_ORDER) {
     out[v] = (vendorModes?.[v]?.defaultToken ??
@@ -69,11 +74,11 @@ function vendorSectionLabel(v: VendorId): string {
  * the new `Record<VendorId, ModeToken>` and legacy single-string formats.
  */
 function loadDefaultMode(
-  src: Record<VendorId, ModeToken> | string | undefined,
+  src: Record<VendorId, ModeToken | CodexPolicy> | string | undefined,
   vendorModes: Record<VendorId, VendorModeCatalog> | null,
-): Record<VendorId, ModeToken> {
+): Record<VendorId, ModeToken | CodexPolicy> {
   if (src && typeof src === 'object') {
-    return { ...freshDefaultMode(vendorModes), ...src } as Record<VendorId, ModeToken>
+    return { ...freshDefaultMode(vendorModes), ...src } as Record<VendorId, ModeToken | CodexPolicy>
   }
   return freshDefaultMode(vendorModes)
 }
@@ -86,6 +91,12 @@ const draft = ref<ProjectConfig>({
   maxSpeechChars: DEFAULT_SPEECH_CHARS,
   consensus: { enabled: false, majority: false },
   skillRepos: [],
+})
+
+// Codex dual-policy draft (2026-06-08).
+const draftCodexPolicy = ref<CodexPolicy>({
+  sandboxMode: 'workspace-write',
+  approvalPolicy: 'on-request',
 })
 
 // Re-seed the draft whenever the panel opens or fresh server config arrives.
@@ -103,6 +114,18 @@ watch(
         majority: config?.consensus?.majority ?? false,
       },
       skillRepos: config?.skillRepos ? config.skillRepos.map((r) => ({ ...r })) : [],
+    }
+    // Seed codex policy from config: CodexPolicy object or translate legacy token.
+    const codexVal = config?.defaultMode?.['codex']
+    if (codexVal && typeof codexVal === 'object' && 'sandboxMode' in codexVal) {
+      draftCodexPolicy.value = codexVal as CodexPolicy
+    } else if (codexVal === 'read-only') {
+      draftCodexPolicy.value = { sandboxMode: 'read-only', approvalPolicy: 'on-request' }
+    } else if (codexVal === 'full-access') {
+      draftCodexPolicy.value = { sandboxMode: 'workspace-write', approvalPolicy: 'never' }
+    } else {
+      // auto or fallback
+      draftCodexPolicy.value = { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' }
     }
   },
   { immediate: true },
@@ -156,6 +179,15 @@ function removeSkillRepo(id: string) {
   draft.value.skillRepos = (draft.value.skillRepos ?? []).filter((r) => r.id !== id)
 }
 
+function onSave() {
+  // Inject the Codex dual-policy object into the saved defaultMode (2026-06-08).
+  const defaultMode: Record<string, unknown> = {
+    ...(draft.value.defaultMode as Record<string, unknown>),
+  }
+  defaultMode['codex'] = { ...draftCodexPolicy.value }
+  emit('save', { ...draft.value, defaultMode: defaultMode as ProjectConfig['defaultMode'] })
+}
+
 /** Paste handler: parse GitHub URL to auto-fill ref/subpath. */
 function onRepoPaste(e: ClipboardEvent, id: string) {
   const pasted = e.clipboardData?.getData('text') ?? ''
@@ -186,8 +218,39 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         <p class="project-config-hint">{{ t('projectConfig.defaultMode.hint') }}</p>
         <div v-for="v in VENDOR_ORDER" :key="v" class="project-config-vendor-mode">
           <p class="project-config-vendor-label">{{ vendorSectionLabel(v) }}</p>
+          <!-- Codex dual-policy config (2026-06-08): independent sandbox + approval dropdowns -->
+          <template v-if="v === 'codex'">
+            <div class="codex-dual-policy">
+              <label class="codex-policy-field">
+                {{ t('codex.sandboxMode.label') }}
+                <select
+                  v-model="draftCodexPolicy.sandboxMode"
+                  class="mode-select"
+                  data-testid="default-mode-codex-sandbox"
+                >
+                  <option value="workspace-write">
+                    {{ t('codex.sandboxMode.workspaceWrite') }}
+                  </option>
+                  <option value="read-only">{{ t('codex.sandboxMode.readOnly') }}</option>
+                </select>
+              </label>
+              <label class="codex-policy-field">
+                {{ t('codex.approvalPolicy.label') }}
+                <select
+                  v-model="draftCodexPolicy.approvalPolicy"
+                  class="mode-select"
+                  data-testid="default-mode-codex-approval"
+                >
+                  <option value="on-request">{{ t('codex.approvalPolicy.onRequest') }}</option>
+                  <option value="on-failure">{{ t('codex.approvalPolicy.onFailure') }}</option>
+                  <option value="never">{{ t('codex.approvalPolicy.never') }}</option>
+                </select>
+              </label>
+            </div>
+          </template>
+          <!-- Claude / Opencode: catalog-based single-select -->
           <select
-            v-if="props.vendorModes"
+            v-else-if="props.vendorModes"
             v-model="draftDefaultMode[v]"
             class="mode-select"
             :data-testid="`default-mode-${v}`"
@@ -332,7 +395,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
     </div>
     <div class="project-config-foot">
       <button class="ghost" @click="emit('close')">{{ t('common.action.cancel.label') }}</button>
-      <button data-testid="project-config-save" @click="emit('save', draft)">
+      <button data-testid="project-config-save" @click="onSave">
         {{ t('common.action.save.label') }}
       </button>
     </div>

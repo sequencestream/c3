@@ -7,7 +7,7 @@
  */
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { PermissionMode } from '@ccc/shared/protocol'
+import type { CodexPolicy, ModeToken, PermissionMode } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import {
   addViewer,
@@ -21,13 +21,16 @@ import {
 } from '../../runs.js'
 import {
   getActiveSessionId,
+  deleteSessionCodexPolicy,
+  getSessionCodexPolicy,
   getSessionMode,
   hasWorkspace,
   setActiveSessionId,
   setSessionMode,
+  setSessionCodexPolicy,
   touchWorkspace,
 } from '../../state.js'
-import { getDefaultMode } from '../../kernel/config/index.js'
+import { getCodexDefaultPolicy, getDefaultMode } from '../../kernel/config/index.js'
 import {
   resolveAgent,
   resolveSessionAgentSwitch,
@@ -112,7 +115,8 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     agentId: intentAgentId ?? resolvedAgent.id,
   })
   const defaultMode = getDefaultMode(abs, resolvedAgent.vendor)
-  ensureRuntime(pendingId, abs, defaultMode, [])
+  const codexPolicy = resolvedAgent.vendor === 'codex' ? getCodexDefaultPolicy(abs) : undefined
+  ensureRuntime(pendingId, abs, defaultMode, [], 'normal', codexPolicy)
   conn.viewing = pendingId
   addViewer(pendingId, conn.deliver)
   touchWorkspace(abs, Date.now())
@@ -122,6 +126,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     sessionId: pendingId,
     title: 'New session',
     mode: defaultMode,
+    codexPolicy: codexPolicy,
     history: [],
     status: 'idle',
     vendor: resolveSessionVendor(pendingId),
@@ -167,6 +172,10 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       sessionId: msg.sessionId,
       title,
       mode: rt.mode,
+      codexPolicy:
+        effectiveVendor === 'codex'
+          ? (rt.codexPolicy ?? getSessionCodexPolicy(msg.sessionId))
+          : undefined,
       history: rt.baseline,
       status: rt.status,
       vendor: resolveSessionVendor(msg.sessionId),
@@ -196,6 +205,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
 export const deleteSession: Handler<'delete_session'> = async (ctx, conn, msg) => {
   const abs = resolve(msg.workspacePath)
   try {
+    deleteSessionCodexPolicy(msg.sessionId)
     removeRuntime(msg.sessionId)
     await removeSession(abs, msg.sessionId)
     if (conn.viewing === msg.sessionId) conn.viewing = null
@@ -232,23 +242,33 @@ export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
     return
   }
   if (rt) {
-    // Validate the mode token against the session's vendor catalog (2026-06-07-017).
-    // An unknown token for this vendor is rejected; the client's per-vendor mode
-    // picker should never send one (defensive guard).
+    // Codex dual-policy path (2026-06-08): mode is a CodexPolicy object.
+    if (typeof msg.mode === 'object' && msg.mode !== null && 'sandboxMode' in msg.mode) {
+      const policy = msg.mode as CodexPolicy
+      rt.codexPolicy = policy
+      rt.mode = 'auto' // legacy fallback token
+      if (!rt.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+        setSessionCodexPolicy(rt.sessionId, policy)
+      }
+      conn.send({ type: 'mode_changed', mode: rt.mode, codexPolicy: policy })
+      return
+    }
+
+    // String (ModeToken) path — claude / opencode / legacy codex.
     const vendor = resolveSessionVendor(rt.sessionId)
     const cat = MODE_CATALOGS[vendor]
-    if (cat && !isKnownToken(cat, msg.mode)) {
+    if (cat && !isKnownToken(cat, msg.mode as string)) {
       conn.send({
         type: 'error',
-        error: { code: 'session.invalidMode', params: { vendor, mode: msg.mode } },
+        error: { code: 'session.invalidMode', params: { vendor, mode: msg.mode as string } },
       })
       return
     }
 
-    rt.mode = msg.mode
+    rt.mode = msg.mode as ModeToken
     // Persist for real sessions; pending sessions persist on bind.
     if (!rt.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
-      setSessionMode(rt.sessionId, msg.mode)
+      setSessionMode(rt.sessionId, msg.mode as ModeToken)
     }
     // A live RunHandle exists only on the claude-hardwired path (the driver path
     // sets `handle: null`), so after the vendor-catalog check above the token is
@@ -262,7 +282,7 @@ export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
       }
     }
   }
-  conn.send({ type: 'mode_changed', mode: msg.mode })
+  conn.send({ type: 'mode_changed', mode: typeof msg.mode === 'string' ? msg.mode : 'auto' })
 }
 
 /**

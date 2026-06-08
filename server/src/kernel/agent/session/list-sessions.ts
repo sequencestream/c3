@@ -38,10 +38,12 @@ import { getSessionAgentId, getShowToolSessions } from '../../config/index.js'
 import { getDefaultAgentId } from '../../agent-config/index.js'
 import { getSessionMode } from '../../../state.js'
 import { listWorkspaceSessions } from '../../../sessions.js'
+import { isRunning } from '../../../runs.js'
 // eslint-disable-next-line no-restricted-imports
 import {
   listForWorkspace,
   rebuildOne,
+  updateRealRowTitle,
   validateLazy,
   type NativeListFn,
   type SessionMetadataRow,
@@ -190,6 +192,10 @@ export async function listSessionsVia(
   // Fire-and-forget lazy validation (F-8). The wire reply is not blocked;
   // the validation rewrites stale rows in place.
   void runLazyValidation(workspacePath, accessor)
+  // Fire-and-forget title sync: running sessions whose projection title is
+  // still a default placeholder get their real SDK-derived title written back
+  // to the projection table. The wire reply is not blocked (F-8).
+  void syncRunningTitles(workspacePath, accessor, out)
   return out
 }
 
@@ -198,5 +204,72 @@ async function runLazyValidation(workspacePath: string, accessor: SessionAccesso
     await validateLazy({ workspacePath, nativeList: accessorNativeList(accessor) })
   } catch (err) {
     console.error('[c3] lazy validation failed:', err)
+  }
+}
+
+/** Default placeholder titles that the projection table uses before the SDK
+ * derives a real title (from the first prompt or auto-summary). Sessions with
+ * these titles are candidates for the background title sync. */
+const DEFAULT_PLACEHOLDER_TITLES = new Set(['New session', 'Untitled session'])
+
+/**
+ * Fire-and-forget background sync (F-8). For running sessions whose projection
+ * title is still a default placeholder ("New session" or "Untitled session"),
+ * query the native SDK list via the accessor and, when a real title exists,
+ * write it back to the projection table via `updateRealRowTitle`.
+ *
+ * This bridges the gap between the projection table (updated only at bind time
+ * and on explicit `rename_session`) and the SDK's auto-derived title (which
+ * populates after the first interaction). The next list refresh reads the
+ * updated projection and shows the correct title.
+ *
+ * Constraints:
+ *  - Only running sessions are checked (no runtime → no title to sync).
+ *  - Only default placeholder titles are overwritten (user-renamed sessions
+ *    are untouched).
+ *  - An empty or absent native title is never written back (don't replace a
+ *    placeholder with nothing).
+ *  - Errors are caught and logged, never propagated.
+ *  - The wire reply is not blocked (the caller fires this with `void`).
+ */
+async function syncRunningTitles(
+  workspacePath: string,
+  accessor: SessionAccessor,
+  sessions: SessionInfo[],
+): Promise<void> {
+  try {
+    const summaries = await accessor.list({ cwd: workspacePath })
+    if (!summaries.length) return
+
+    // Build a map keyed by the wire sessionId (vendor-native id when present,
+    // falling back to the c3 digest for unbound sessions).
+    const nativeTitles = new Map<string, string>()
+    for (const s of summaries) {
+      const vsid = s.vendorExtra?.vendorSessionId
+      const key = typeof vsid === 'string' && vsid ? vsid : s.c3SessionId
+      // Only store non-empty titles (empty would overwrite a placeholder with
+      // nothing, which is worse than keeping the placeholder).
+      if (s.title) nativeTitles.set(key, s.title)
+    }
+
+    for (const s of sessions) {
+      // Condition 1: the session must have a live runtime (the SDK's
+      // auto-title only appears after the first interaction, which implies a
+      // running session).
+      if (!isRunning(s.sessionId)) continue
+      // Condition 2: the projection title must still be a default placeholder
+      // (otherwise the user or a previous sync has already set a real title).
+      if (!DEFAULT_PLACEHOLDER_TITLES.has(s.title)) continue
+
+      const nativeTitle = nativeTitles.get(s.sessionId)
+      // Condition 3: the native title must exist, be non-empty, and be a real
+      // title (not another placeholder) — otherwise there's nothing useful to
+      // write back.
+      if (!nativeTitle || DEFAULT_PLACEHOLDER_TITLES.has(nativeTitle)) continue
+
+      updateRealRowTitle(s.sessionId, s.vendor, nativeTitle)
+    }
+  } catch (err) {
+    console.error('[c3] sync running session titles failed:', err)
   }
 }

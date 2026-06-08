@@ -9,7 +9,14 @@
  */
 import { computed } from 'vue'
 import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
-import type { ModeToken, SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
+import type {
+  CodexPolicy,
+  CodexSandboxMode,
+  CodexApprovalPolicy,
+  ModeToken,
+  SessionAgentSwitch,
+  VendorId,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 
@@ -23,6 +30,8 @@ const props = withDefaults(
     showMode?: boolean
     /** The session's resolved agent vendor; absent ⇒ no dot (comm sessions). */
     vendor?: VendorId | null
+    /** Codex dual-policy config (2026-06-08); null for non-codex sessions. */
+    codexPolicy?: CodexPolicy | null
     /**
      * Same-vendor agent switcher data (ADR-0015): the current agent + the other
      * same-vendor available agents. Absent ⇒ no switcher (pending/comm session, or
@@ -35,6 +44,7 @@ const props = withDefaults(
     modeOptions: () => [],
     showMode: true,
     vendor: null,
+    codexPolicy: null,
     agentSwitch: null,
   },
 )
@@ -54,8 +64,22 @@ const agentOptions = computed(() => {
   ]
 })
 
+// Codex sandbox-mode dropdown options (2026-06-08).
+const sandboxModeOptions = computed(() => [
+  { value: 'workspace-write' as CodexSandboxMode, label: t('codex.sandboxMode.workspaceWrite') },
+  { value: 'read-only' as CodexSandboxMode, label: t('codex.sandboxMode.readOnly') },
+])
+
+// Codex approval-policy dropdown options (2026-06-08).
+const approvalPolicyOptions = computed(() => [
+  { value: 'on-request' as CodexApprovalPolicy, label: t('codex.approvalPolicy.onRequest') },
+  { value: 'on-failure' as CodexApprovalPolicy, label: t('codex.approvalPolicy.onFailure') },
+  { value: 'never' as CodexApprovalPolicy, label: t('codex.approvalPolicy.never') },
+])
+
 const emit = defineEmits<{
   'set-mode': [mode: ModeToken]
+  'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
 }>()
 
@@ -99,7 +123,31 @@ function onPickAgent(agentId: string): void {
           />
         </label>
       </div>
-      <label v-if="showMode" class="mode">
+      <!-- Codex dual-policy controls (2026-06-08): sandboxMode + approvalPolicy -->
+      <template v-if="vendor === 'codex'">
+        <label v-if="showMode" class="mode sandbox-mode">
+          <BaseDropdown
+            :model-value="codexPolicy?.sandboxMode ?? 'workspace-write'"
+            :options="sandboxModeOptions"
+            :aria-label="t('session.titleBar.sandboxMode.ariaLabel')"
+            @update:model-value="
+              emit('set-codex-policy', { ...codexPolicy, sandboxMode: $event } as CodexPolicy)
+            "
+          />
+        </label>
+        <label v-if="showMode" class="mode approval-policy">
+          <BaseDropdown
+            :model-value="codexPolicy?.approvalPolicy ?? 'on-request'"
+            :options="approvalPolicyOptions"
+            :aria-label="t('session.titleBar.approvalPolicy.ariaLabel')"
+            @update:model-value="
+              emit('set-codex-policy', { ...codexPolicy, approvalPolicy: $event } as CodexPolicy)
+            "
+          />
+        </label>
+      </template>
+      <!-- Non-codex vendor: single mode dropdown -->
+      <label v-else-if="showMode" class="mode">
         <BaseDropdown
           :model-value="mode"
           :options="modeOptions"

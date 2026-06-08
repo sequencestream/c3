@@ -361,7 +361,16 @@ export interface ProjectConfig {
    * back to that vendor's `defaultToken` at launch. Migrated from the legacy
    * single `ModeToken` (pre-017) on first read.
    */
-  defaultMode?: Record<VendorId, ModeToken>
+  /**
+   * Per-vendor default permission mode map (2026-06-07-017).
+   * For `claude` / `opencode`: value is a {@link ModeToken} validated against
+   * that vendor's {@link VendorModeCatalog} at save time.
+   * For `codex`: value is either a {@link CodexPolicy} (new dual-policy format)
+   * or a {@link ModeToken} (legacy, migrated on read via `gateToCodexPolicy`).
+   * A vendor absent from the map falls back to its vendor `defaultToken` at
+   * launch. Migrated from the legacy single `ModeToken` (pre-017) on first read.
+   */
+  defaultMode?: Record<VendorId, ModeToken | CodexPolicy>
   /** Multi-agent consensus voting on permission prompts. Optional; off by default. */
   consensus?: ConsensusConfig
   /** Slash command (leading `/`) prefixed when launching dev for this project. Optional; empty ⇒ no prefix. */
@@ -661,6 +670,36 @@ export type ToolGate = 'always-ask' | 'on-sensitive' | 'trusted-prefix' | 'never
 export interface NeutralMode {
   actionMode: ActionMode
   toolGate: ToolGate
+}
+
+// ---------------------------------------------------------------------------
+// Codex native permission types (2026-06-08 — dual-policy config)
+// ---------------------------------------------------------------------------
+
+/**
+ * Codex sandbox isolation mode — a 1:1 mapping of `@openai/codex-sdk`'s
+ * `SandboxMode`. Controls what filesystem write access the agent has.
+ */
+export type CodexSandboxMode = 'read-only' | 'workspace-write'
+
+/**
+ * Codex approval policy — a 1:1 mapping of `@openai/codex-sdk`'s
+ * `ApprovalMode`. Controls when the agent asks the human for approval.
+ */
+export type CodexApprovalPolicy = 'never' | 'on-failure' | 'on-request'
+
+/**
+ * Dual-policy config for Codex sessions, replacing the single `ModeToken`
+ * for the `codex` vendor. The two axes are orthogonal: `sandboxMode` gates
+ * file-system write access and `approvalPolicy` controls the approval
+ * frequency. When persisted in `ProjectConfig.defaultMode.codex` or
+ * carried on the wire, the object form (this interface) is the new format;
+ * the legacy string form (`ModeToken` like `'auto'`) is still accepted for
+ * migration and degrades through the catalog + `gateToCodexPolicy`.
+ */
+export interface CodexPolicy {
+  sandboxMode: CodexSandboxMode
+  approvalPolicy: CodexApprovalPolicy
 }
 
 /**
@@ -1338,7 +1377,12 @@ export type ClientToServer =
    * is a vendor-native {@link ModeToken} the server resolves against the session's
    * vendor catalog (2026-06-07-012).
    */
-  | { type: 'set_mode'; mode: ModeToken }
+  /**
+   * Change the active session's permission mode (per-session, persisted). `mode`
+   * is a vendor-native {@link ModeToken} (claude/opencode) or a {@link CodexPolicy}
+   * (codex) the server resolves against the session's vendor catalog.
+   */
+  | { type: 'set_mode'; mode: ModeToken | CodexPolicy }
   /**
    * Re-target a session's agent within its frozen vendor (ADR-0015): rewrites the
    * `sessionAgents` fact so the session's next turn `resume`s with `agentId`. The
@@ -1591,6 +1635,12 @@ export type ServerToClient =
       title: string
       /** Vendor-native {@link ModeToken}; interpret via `vendor`'s catalog (2026-06-07-012). */
       mode: ModeToken
+      /**
+       * Codex dual-policy config (2026-06-08). Present only for codex-vendor sessions
+       * that have a stored or default `CodexPolicy`. When absent, the web falls back
+       * to deriving the dual-policy from `mode` via the catalog + `gateToCodexPolicy`.
+       */
+      codexPolicy?: CodexPolicy
       history: TranscriptItem[]
       status: SessionStatus
       /**
@@ -1625,7 +1675,7 @@ export type ServerToClient =
       ok: boolean
     }
   /** Confirms the active session's mode change. `mode` is the vendor-native {@link ModeToken}. */
-  | { type: 'mode_changed'; mode: ModeToken }
+  | { type: 'mode_changed'; mode: ModeToken; codexPolicy?: CodexPolicy }
   /** Available slash commands/skills for the active session (reply to `list_commands`). */
   | { type: 'commands'; commands: SlashCommandInfo[] }
   /**

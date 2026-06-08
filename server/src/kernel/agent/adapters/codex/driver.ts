@@ -38,6 +38,7 @@ import type {
   DriverStartOptions,
   ToolGate,
 } from '../types.js'
+import type { CodexPolicy } from '@ccc/shared/protocol'
 import { codexCapabilities } from './capabilities.js'
 import { itemToCanonical } from './translate.js'
 import { CODEX_RELAY_PROVIDER, type CodexRelay } from './relay-contract.js'
@@ -98,6 +99,37 @@ export function gateToCodexPolicy(
     case 'always-ask':
       // Codex cannot ask per-tool (008); the safe degrade is a read-only sandbox.
       return { sandboxMode: 'read-only', approvalPolicy: 'on-request' }
+  }
+}
+
+/**
+ * Reverse map — {@link CodexPolicy} back to the neutral {@link ActionMode} ×
+ * {@link ToolGate} grid (2026-06-08). This lets a codex session's stored dual
+ * policy drive the neutral kernel path that `run-via-driver` consumes.
+ * The mapping is the inverse of `gateToCodexPolicy`, with the same lossy
+ * compression: `read-only` always maps to `plan`, and `always-ask` has no
+ * Codex equivalent.
+ */
+export function codexPolicyToGrid(policy: CodexPolicy): {
+  actionMode: ActionMode
+  toolGate: ToolGate
+} {
+  const { sandboxMode, approvalPolicy } = policy
+  // read-only sandbox ⇒ plan mode (no writes regardless of approval).
+  if (sandboxMode === 'read-only') {
+    return {
+      actionMode: 'plan',
+      toolGate: approvalPolicy === 'never' ? 'never-ask' : 'on-sensitive',
+    }
+  }
+  // workspace-write: map approval policy to tool gate.
+  switch (approvalPolicy) {
+    case 'never':
+      return { actionMode: 'build', toolGate: 'never-ask' }
+    case 'on-failure':
+      return { actionMode: 'build', toolGate: 'trusted-prefix' }
+    case 'on-request':
+      return { actionMode: 'build', toolGate: 'on-sensitive' }
   }
 }
 

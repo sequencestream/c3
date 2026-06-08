@@ -47,6 +47,7 @@ defineEmits<{
     :timezone="timezone"
     @select="(id: string) => $emit('select', id)"
     @new-schedule="$emit('open-form', null)"
+    @edit-schedule="(s: Schedule) => $emit('open-form', s)"
     @toggle-enabled="(id: string, enabled: boolean) => $emit('toggle-enabled', id, enabled)"
   />
 

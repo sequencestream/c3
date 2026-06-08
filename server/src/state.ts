@@ -14,7 +14,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import type { ModeToken, VendorId, WorkspaceInfo } from '@ccc/shared/protocol'
+import type { CodexPolicy, ModeToken, VendorId, WorkspaceInfo } from '@ccc/shared/protocol'
 import type { SkillSupportReport } from './kernel/agent/adapters/types.js'
 
 /**
@@ -48,6 +48,8 @@ interface PersistedState {
   version: 1
   workspaces: WorkspaceInfo[]
   sessionModes: Record<string, ModeToken>
+  /** Codex dual-policy config per session (2026-06-08). */
+  sessionCodexPolicies: Record<string, CodexPolicy>
   activeSessionId: string | null
   /** Cached per-vendor SKILL-discovery support, invalidated on SDK-version change. */
   skillSupport: Record<string, SkillSupportReport>
@@ -74,6 +76,7 @@ function emptyState(): PersistedState {
     version: 1,
     workspaces: [],
     sessionModes: {},
+    sessionCodexPolicies: {},
     activeSessionId: null,
     skillSupport: {},
     skillLinkIndex: {},
@@ -93,6 +96,10 @@ function load(): PersistedState {
       workspaces: Array.isArray(parsed.workspaces) ? parsed.workspaces : [],
       sessionModes:
         parsed.sessionModes && typeof parsed.sessionModes === 'object' ? parsed.sessionModes : {},
+      sessionCodexPolicies:
+        parsed.sessionCodexPolicies && typeof parsed.sessionCodexPolicies === 'object'
+          ? parsed.sessionCodexPolicies
+          : {},
       activeSessionId: typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : null,
       // New skill-mount fields (mount layer 2/3); a pre-existing state.json lacks
       // them, so default to empty — version stays 1, no migration needed.
@@ -193,6 +200,22 @@ export function setSessionMode(sessionId: string, mode: ModeToken): void {
 
 export function deleteSessionMode(sessionId: string): void {
   delete load().sessionModes[sessionId]
+  persist()
+}
+
+// ---- Codex dual-policy persistence (2026-06-08) ----
+
+export function getSessionCodexPolicy(sessionId: string): CodexPolicy | undefined {
+  return load().sessionCodexPolicies[sessionId]
+}
+
+export function setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): void {
+  load().sessionCodexPolicies[sessionId] = policy
+  persist()
+}
+
+export function deleteSessionCodexPolicy(sessionId: string): void {
+  delete load().sessionCodexPolicies[sessionId]
   persist()
 }
 

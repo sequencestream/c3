@@ -20,7 +20,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { McpMode, Schedule } from '@ccc/shared/protocol'
-import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
+import { resolveAgent, launchForAgent } from '../../kernel/agent-config/index.js'
+import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getWorkspaceMcpConfig } from './store.js'
 import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import { pendWriteApproval } from './queue.js'
@@ -396,6 +397,11 @@ async function executeLlmPrompt(
 
   const claudePath = findClaudeExecutable()
 
+  // Resolve the default agent and its launch overrides (model, env) so schedule
+  // executions use the user's default agent, not the bare system agent.
+  const launchAgent = resolveAgent(null)
+  const { model, envOverrides } = launchForAgent(launchAgent)
+
   // Resolve workspace-level MCP configuration and freeze the tool list.
   const workspaceMcpConfig = getWorkspaceMcpConfig(schedule.workspacePath)
   const frozenTools = freezeTools(
@@ -428,6 +434,8 @@ async function executeLlmPrompt(
         permissionMode: 'default',
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
         ...(mcpServers ? { mcpServers } : {}),
+        env: buildChildEnv(envOverrides),
+        ...(model ? { model } : {}),
         canUseTool: permissionHandler,
       },
     })

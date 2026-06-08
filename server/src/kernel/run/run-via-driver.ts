@@ -20,6 +20,7 @@
 import { PENDING_SESSION_PREFIX, type RunEndReason } from '@ccc/shared/protocol'
 import type { CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
+import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import {
@@ -135,7 +136,12 @@ export async function runViaDriver(
   // another vendor (e.g. a project defaultMode set under claude, now launching
   // opencode) degrades to the launching vendor's defaultToken grid — one knob,
   // every vendor.
-  const { actionMode, toolGate } = tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
+  // For codex sessions with a stored CodexPolicy (2026-06-08), use the dual-policy
+  // grid directly instead of going through the catalog token.
+  const { actionMode, toolGate } =
+    adapter.vendor === 'codex' && rt.codexPolicy
+      ? codexPolicyToGrid(rt.codexPolicy)
+      : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
 
   // Resolve the session agent's launch overrides (provider connection only). The
   // claude-hardwired path applies these to the SDK; the driver path threads the

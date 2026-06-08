@@ -28,6 +28,7 @@ import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import type {
   AgentConfig,
   ClaudeAgentConfig,
+  CodexPolicy,
   ModeToken,
   ProjectConfig,
   SkillRepoConfig,
@@ -366,24 +367,31 @@ export function normalizeProjectConfig(raw: unknown): ProjectConfig {
  *    missing keys or empty strings fall back to DEFAULT_MODE_MAP[vendor].
  * 3. undefined/null/missing — every vendor gets its DEFAULT_MODE_MAP entry.
  */
-function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken> {
+function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken | CodexPolicy> {
   const VENDORS: VendorId[] = ['claude', 'codex', 'opencode']
 
   // Legacy: single string value → per-vendor distribution.
   if (typeof raw === 'string' && raw.length > 0) {
-    const result: Partial<Record<VendorId, ModeToken>> = {}
+    const result: Partial<Record<VendorId, ModeToken | CodexPolicy>> = {}
     for (const v of VENDORS) result[v] = raw as ModeToken
-    return result as Record<VendorId, ModeToken>
+    return result as Record<VendorId, ModeToken | CodexPolicy>
   }
 
-  // New format: Record<VendorId, ModeToken>, or missing/undefined.
+  // New format: Record<VendorId, ModeToken | CodexPolicy>, or missing/undefined.
   const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
-  const result: Partial<Record<VendorId, ModeToken>> = {}
+  const result: Partial<Record<VendorId, ModeToken | CodexPolicy>> = {}
   for (const v of VENDORS) {
-    const token = obj && typeof obj[v] === 'string' ? (obj[v] as string) : undefined
-    result[v] = token && token.length > 0 ? (token as ModeToken) : DEFAULT_MODE_MAP[v]
+    const val = obj ? obj[v] : undefined
+    if (val && typeof val === 'object' && 'sandboxMode' in (val as Record<string, unknown>)) {
+      // Codex dual-policy object (2026-06-08).
+      result[v] = val as CodexPolicy
+    } else if (typeof val === 'string' && (val as string).length > 0) {
+      result[v] = val as ModeToken
+    } else {
+      result[v] = DEFAULT_MODE_MAP[v]
+    }
   }
-  return result as Record<VendorId, ModeToken>
+  return result as Record<VendorId, ModeToken | CodexPolicy>
 }
 
 /**
@@ -550,10 +558,55 @@ export function saveSettings(next: SystemSettings): SystemSettings {
  * (backward-compat fallback for callers that create sessions before the vendor is known).
  * Falls back to the vendor's `DEFAULT_MODE_MAP` entry on missing/empty values.
  */
+/**
+ * The mode token new sessions start in for a project. Always returns a string
+ * {@link ModeToken} — for codex, this is the legacy token (used as `rt.mode`
+ * fallback); callers that need the dual {@link CodexPolicy} should use
+ * {@link getCodexDefaultPolicy} separately. Falls back to `DEFAULT_MODE_MAP`.
+ */
 export function getDefaultMode(projectPath: string, vendor?: VendorId): ModeToken {
   const map = loadProjectConfig(projectPath).defaultMode ?? DEFAULT_MODE_MAP
   const v = vendor ?? 'claude'
-  return map[v] ?? DEFAULT_MODE_MAP[v]
+  const val = map[v]
+  // If the stored value is a CodexPolicy object, extract the legacy token.
+  if (val && typeof val === 'object' && 'sandboxMode' in (val as object)) {
+    return DEFAULT_MODE_MAP[v]
+  }
+  return (val as ModeToken) ?? DEFAULT_MODE_MAP[v]
+}
+
+/**
+ * Get the Codex dual-policy default for a project (2026-06-08).
+ * Returns the stored {@link CodexPolicy} when the project config has the
+ * new object format; falls back to translating the legacy string token
+ * through the catalog + `gateToCodexPolicy` when stored as a string or
+ * missing. Returns `undefined` for non-codex vendors.
+ */
+export function getCodexDefaultPolicy(projectPath: string): CodexPolicy | undefined {
+  const map = loadProjectConfig(projectPath).defaultMode
+  if (!map) return undefined
+  const val = map['codex']
+  if (val && typeof val === 'object' && 'sandboxMode' in (val as object)) {
+    return val as CodexPolicy
+  }
+  // Legacy string token — translate via catalog + gateToCodexPolicy.
+  // Dynamic import to avoid circular deps with the kernel adapter module.
+  const DEFAULT_CODEX_TOKEN: ModeToken = 'auto'
+  const token = (val as ModeToken) ?? DEFAULT_CODEX_TOKEN
+  // Map: auto → on-sensitive, read-only → read-only, full-access → never
+  // This is the static equivalent of tokenToGrid(codexModeCatalog, token) + gateToCodexPolicy
+  const policyMap: Record<
+    string,
+    {
+      sandboxMode: 'read-only' | 'workspace-write'
+      approvalPolicy: 'never' | 'on-failure' | 'on-request'
+    }
+  > = {
+    'read-only': { sandboxMode: 'read-only', approvalPolicy: 'on-request' },
+    auto: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
+    'full-access': { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+  }
+  return policyMap[token] ?? policyMap['auto']
 }
 
 // ---- Session → agent assignment ----

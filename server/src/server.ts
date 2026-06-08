@@ -12,9 +12,43 @@ import { createNodeWebSocket } from '@hono/node-ws'
 import { INTENT_DISALLOWED_TOOLS } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
-import { addWorkspace, listWorkspaces } from './state.js'
-import { sessionExists } from './sessions.js'
 import {
+  addWorkspace,
+  getActiveSessionId,
+  getSessionMode,
+  hasWorkspace,
+  listWorkspaces,
+  removeWorkspace,
+  setActiveSessionId,
+  setSessionMode,
+  touchWorkspace,
+} from './state.js'
+import {
+  listWorkspaceSessions,
+  loadHistory,
+  removeSession,
+  renameWorkspaceSession,
+  sessionExists,
+  sessionTitle,
+} from './sessions.js'
+import { loadSettings, saveSettings, resolveSessionLaunch, getDefaultMode } from './settings.js'
+import {
+  addViewer,
+  bindPending,
+  ensureRuntime,
+  getRuntime,
+  listStatuses,
+  reconcileLiveness,
+  removeRuntime,
+  removeRuntimesForWorkspace,
+  removeViewer,
+  setOnStatusChange,
+  setStatus,
+  finalizeRun,
+  stopRun,
+  emit,
+  resolvePending,
+  clearPending,
   isRunning,
   reconcileLiveness,
   setOnRunEnd,

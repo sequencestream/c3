@@ -27,6 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [id: string]
   'new-schedule': []
+  'edit-schedule': [schedule: Schedule]
   'toggle-enabled': [id: string, enabled: boolean]
 }>()
 
@@ -198,6 +199,15 @@ function toggleExpand(): void {
             <span class="sched-label">{{ scheduleLabel(s) }}</span>
             <span class="sched-countdown">{{ timeLeft(s.nextRunAt) }}</span>
             <span class="sched-status" :class="s.status">{{ s.status }}</span>
+            <!-- 编辑按钮:打开 ScheduleForm 编辑模式弹框,预填当前值。 -->
+            <button
+              type="button"
+              class="sched-edit-btn"
+              :title="t('schedule.list.edit.tooltip')"
+              @click.stop="emit('edit-schedule', s)"
+            >
+              ✎
+            </button>
             <!-- enable/disable 开关:on=active。切换映射到 update_schedule 的 status。 -->
             <button
               type="button"
@@ -441,6 +451,32 @@ function toggleExpand(): void {
 .sched-status.error {
   background: rgba(239, 68, 68, 0.12);
   color: var(--c-error);
+}
+/* 编辑按钮:小型 icon 按钮,与 toggle 等高,鼠标悬停变色。 */
+.sched-edit-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 18px;
+  padding: 0;
+  font-size: var(--fs-badge);
+  line-height: 1;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.sched-edit-btn:hover {
+  color: var(--c-text);
+  border-color: var(--c-border);
+  background: var(--c-hover);
 }
 /* enable/disable 开关:小型 pill 滑块,on=绿色 active。 */
 .sched-toggle {

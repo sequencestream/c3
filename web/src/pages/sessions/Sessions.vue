@@ -9,7 +9,6 @@
 import { ref } from 'vue'
 import SessionList from './components/SessionList/SessionList.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
-import ResumeOnlyBanner from '../../components/ResumeOnlyBanner/ResumeOnlyBanner.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
 import SessionStatusBar from '../../components/SessionStatusBar/SessionStatusBar.vue'
@@ -19,6 +18,7 @@ import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
+  CodexPolicy,
   ModeToken,
   OpencodeServerStatus,
   SessionAgentSwitch,
@@ -48,6 +48,8 @@ defineProps<{
   // right: chat column
   hasActiveSession: boolean
   mode: ModeToken
+  /** Codex dual-policy config (2026-06-08); null for non-codex sessions. */
+  codexPolicy: CodexPolicy | null
   modeOptions: { value: ModeToken; label: string }[]
   messages: ChatMsg[]
   actionablePermissionId: string | null
@@ -76,6 +78,7 @@ const emit = defineEmits<{
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
   'set-mode': [mode: ModeToken]
+  'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
@@ -123,18 +126,11 @@ defineExpose({
       :vendor="activeVendor"
       :agent-switch="activeAgentSwitch"
       :mode="mode"
+      :codex-policy="codexPolicy"
       :mode-options="modeOptions"
       @set-mode="(m: ModeToken) => emit('set-mode', m)"
+      @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
-    />
-    <!--
-      read='none' vendor（Codex）的 resume-only 横幅：空 baseline 时它就是用户看到的
-      唯一引导。按能力态门控（vendorSessionCaps[vendor].read），零 vendor 身份硬判定。
-    -->
-    <ResumeOnlyBanner
-      v-if="hasActiveSession && activeVendor"
-      :vendor="activeVendor"
-      :read="vendorSessionCaps?.[activeVendor]?.read"
     />
     <ChatMessages
       :messages="messages"

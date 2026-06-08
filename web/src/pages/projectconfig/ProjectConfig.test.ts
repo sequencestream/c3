@@ -5,8 +5,9 @@ import type {
   ProjectConfig as ProjectConfigType,
   SkillRepoConfig,
   VendorId,
-  VendorModeCatalog,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ModeToken,
+  VendorModeCatalog,
 } from '@ccc/shared/protocol'
 
 /** Stub vendorModes so the form can render each vendor's catalog options. */
@@ -101,11 +102,13 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         vendorModes: MOCK_VENDOR_MODES,
       },
     })
+    // 2 codex policy selects (sandbox + approval) + 1 claude + 1 opencode = 4
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(3)
-    // Order: claude, codex, opencode
+    expect(selects).toHaveLength(4)
+    // Claude + OpenCode still have a mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
-    expect(w.findAll('[data-testid="default-mode-codex"]').length).toBe(1)
+    expect(w.findAll('[data-testid="default-mode-codex-sandbox"]').length).toBe(1)
+    expect(w.findAll('[data-testid="default-mode-codex-approval"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-opencode"]').length).toBe(1)
   })
 
@@ -121,9 +124,13 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
     expect((w.find('[data-testid="default-mode-claude"]').element as HTMLSelectElement).value).toBe(
       'plan',
     )
-    expect((w.find('[data-testid="default-mode-codex"]').element as HTMLSelectElement).value).toBe(
-      'auto',
-    )
+    // Codex uses dual-policy selects instead of a single mode select.
+    expect(
+      (w.find('[data-testid="default-mode-codex-sandbox"]').element as HTMLSelectElement).value,
+    ).toBe('workspace-write')
+    expect(
+      (w.find('[data-testid="default-mode-codex-approval"]').element as HTMLSelectElement).value,
+    ).toBe('on-request')
     expect(
       (w.find('[data-testid="default-mode-opencode"]').element as HTMLSelectElement).value,
     ).toBe('build')
@@ -142,9 +149,13 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
     expect((w.find('[data-testid="default-mode-claude"]').element as HTMLSelectElement).value).toBe(
       'default',
     )
-    expect((w.find('[data-testid="default-mode-codex"]').element as HTMLSelectElement).value).toBe(
-      'auto',
-    )
+    // Codex dual-policy defaults: workspace-write, on-request
+    expect(
+      (w.find('[data-testid="default-mode-codex-sandbox"]').element as HTMLSelectElement).value,
+    ).toBe('workspace-write')
+    expect(
+      (w.find('[data-testid="default-mode-codex-approval"]').element as HTMLSelectElement).value,
+    ).toBe('on-request')
     expect(
       (w.find('[data-testid="default-mode-opencode"]').element as HTMLSelectElement).value,
     ).toBe('build')
@@ -166,12 +177,17 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
       .map((o) => o.attributes('value'))
     expect(claudeOpts).toEqual(['default', 'plan'])
 
-    // codex menu: 'read-only', 'auto', 'full-access'
-    const codexOpts = w
-      .find('[data-testid="default-mode-codex"]')
+    // Codex uses dual-policy selects instead of a single mode select.
+    const sandboxOpts = w
+      .find('[data-testid="default-mode-codex-sandbox"]')
       .findAll('option')
       .map((o) => o.attributes('value'))
-    expect(codexOpts).toEqual(['read-only', 'auto', 'full-access'])
+    expect(sandboxOpts).toEqual(['workspace-write', 'read-only'])
+    const approvalOpts = w
+      .find('[data-testid="default-mode-codex-approval"]')
+      .findAll('option')
+      .map((o) => o.attributes('value'))
+    expect(approvalOpts).toEqual(['on-request', 'on-failure', 'never'])
   })
 
   it('renders a vendor section heading for each vendor', () => {
@@ -204,7 +220,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
     const payload = emitted[0][0]
     expect(payload.defaultMode).toEqual({
       claude: 'plan',
-      codex: 'auto',
+      codex: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
       opencode: 'build',
     })
   })
@@ -222,8 +238,11 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
     await w.find('[data-testid="project-config-save"]').trigger('click')
     const emitted = w.emitted('save') as [ProjectConfigType][]
     const payload = emitted[0][0]
-    expect((payload.defaultMode as Record<VendorId, ModeToken>).claude).toBe('default')
-    expect((payload.defaultMode as Record<VendorId, ModeToken>).codex).toBe('auto')
+    expect((payload.defaultMode as Record<VendorId, unknown>).claude).toBe('default')
+    expect((payload.defaultMode as Record<VendorId, unknown>).codex).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'on-request',
+    })
   })
 })
 
@@ -412,7 +431,7 @@ describe('ProjectConfig.vue — save emits full payload', () => {
     const payload = emitted[0][0]
     expect(payload.defaultMode).toEqual({
       claude: 'plan',
-      codex: 'auto',
+      codex: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
       opencode: 'build',
     })
     expect(payload.devSkill).toBe('/my-skill')

@@ -461,6 +461,35 @@
         "tooltip": "手动触发模式"
       }
     },
+    "sessionList": {
+      "title": {
+        "label": "意图会话"
+      },
+      "new": {
+        "tooltip": "新建会话"
+      },
+      "empty": "暂无意图会话",
+      "placeholder": {
+        "label": "新建会话"
+      },
+      "rename": {
+        "tooltip": "重命名",
+        "placeholder": "会话标题"
+      },
+      "delete": {
+        "tooltip": "删除"
+      },
+      "deleteConfirm": "确定删除此意图会话?",
+      "select": {
+        "label": "打开会话: {title}"
+      },
+      "collapse": {
+        "tooltip": "收起会话列表"
+      },
+      "expand": {
+        "tooltip": "展开会话列表"
+      }
+    },
     "meta": {
       "created": {
         "label": "已创建:"
@@ -914,6 +943,9 @@
       "notFound": "意图不存在。",
       "dbUnavailable": "意图功能不可用 (c3.db)。",
       "chatOpenFailed": "打开意图对话失败。",
+      "chatSessionNotFound": "意图对话会话不存在: {sessionId}。",
+      "renameChatSessionFailed": "重命名意图对话会话失败: {detail}。",
+      "deleteChatSessionFailed": "删除意图对话会话失败: {detail}。",
       "cannotStartDev": "当前状态({status})不可启动开发。"
     },
     "discussion": {

@@ -59,14 +59,17 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
   by `(project_path, status)`. `module` is `TEXT NOT NULL DEFAULT ''`; `automate` is
   `INTEGER NOT NULL DEFAULT 0`.
 - `intent_deps` — `(intent_id, depends_on_id)` edges.
-- `intent_chats` — one table doubling as the **per-project current communication session**
-  map and the **hidden set**: `session_id` (PK, may be a `pending:` id), `project_path`,
-  `is_current` (0/1, at most one per project), `updated_at`. The full set of rows for a project is
-  the hidden set; the `is_current=1` row is the current communication session.
+- `intent_chats` — one table doubling as the **per-project communication session
+  collection** and the **hidden set**: `session_id` (PK, may be a `pending:` id), `project_path`,
+  `title` (nullable, client fallback to "New Intent" or first-prompt derivation),
+  `is_current` (0/1, at most one per project — the default-open pointer),
+  `updated_at`. The full set of rows for a project is the hidden set; the `is_current=1` row
+  is the session re-loaded on entering the intent view without a specific `sessionId`.
 
-**Schema version (current: v4).** `SCHEMA_VERSION` is `4`. Each bump adds one idempotent
+**Schema version (current: v7).** `SCHEMA_VERSION` is `7`. Each bump adds one idempotent
 `ensureColumn` after `exec(SCHEMA)`: v2 `module`, v3 `completed_at` (nullable), v4 `automate`
-(`INTEGER NOT NULL DEFAULT 0`). Same key-off-column-presence pattern as below.
+(`INTEGER NOT NULL DEFAULT 0`), v7 `intent_chats.title` (`TEXT`). Same key-off-column-presence pattern
+as below.
 
 **Schema version & migration (v1 → v2).** The fresh-create `SCHEMA`
 already declares `intents.module`. For pre-existing dbs (v1, no `module` column), `db()`
@@ -123,9 +126,14 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   same-priority, dependency-free items keep a deterministic submission-order rank in the
   orchestrator's oldest-first tiebreak (RM-A3), instead of the arbitrary order a single shared
   `now` produced.
-- Communication session (single table): `getChatSession(projectPath)`
-  (`is_current=1`), `setChatSession` (clear the project's `is_current` then upsert the new row as
-  `is_current=1`, also entering the hidden set), `isHiddenSession`/`listHiddenSessions`,
+- Communication session (collection table): `getChatSession(projectPath)`
+  (`is_current=1` — default-open pointer), `setChatSession` (clear the project's `is_current` then
+  upsert the new row as `is_current=1`, also entering the hidden set),
+  `listChatSessions(projectPath)` (all rows, ordered by `updated_at` DESC),
+  `renameChatSession(sessionId, title)` (updates `title` + bumps `updated_at`),
+  `deleteChatSession(projectPath, sessionId)` (physically deletes the row; if the deleted row was
+  `is_current`, promotes the most recent remaining row by `updated_at` to `is_current=1`),
+  `isHiddenSession`/`listHiddenSessions`,
   `rebindChatSession(pendingId, realId)` (rewrite the pending row to the real id on first bind,
   keeping `is_current` and hidden-set membership).
 
@@ -178,11 +186,12 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   communication session's `onSessionId` binds the real id (`bindPending` +
   `store.rebindChatSession`) but **never** writes `activeSessionId` — hidden sessions must not
   pollute the persisted active-session hint.
-- **Open/resume (`open_intent_chat`):** db unavailable → `error`; an existing
-  `getChatSession` → resume it (cold-load history into a `intent`-kind, `default`-mode
-  runtime); none → create a `pending:` intent runtime and `setChatSession` it. Then switch
-  the viewer, reply `session_selected` (history), and reply a `intents` list **immediately**
-  (run-state reconcile runs in the background afterward — see Reconcile). This same
+- **Open/resume (`open_intent_chat`):** db unavailable → `error`. Accepts an optional
+  `sessionId` — when provided, verifies the session exists for this project and opens it (also
+  making it `isCurrent` so a subsequent no-sessionId open returns here); when absent, uses
+  `getChatSession` (`is_current=1`), creating a new `pending:` session if none exists.
+  Then switch the viewer, reply `session_selected` (history), and reply a `intents` list
+  **immediately** (run-state reconcile runs in the background afterward — see Reconcile). This same
   branch is what re-loads the project's current communication session on first entry, WS
   reconnect, and full-page refresh (RM-R4).
 - **New session (`new_intent_chat`):** unknown workspace / db unavailable → `error`; otherwise
@@ -455,7 +464,29 @@ verdict at the cost of another LLM call. A live process (re-derived cheaply via
 `enrichRunStatus`) and a brand-new session id (differs from the record) still get
 (re)judged. The entry is cleared when the intent leaves `in_progress`.
 
-## List & back-link
+## List / Rename / Delete communication sessions
+
+Three new WS handlers round out the session-collection CRUD:
+
+- **`list_intent_sessions`**: reads `listChatSessions(proj)`, derives a `runStates` snapshot
+  (sessions with a live agent run are `'running'`, absent = idle), and replies `intent_sessions`
+  on the same connection.
+- **`rename_intent_session`**: calls `renameChatSession(sessionId, title)`, then broadcasts
+  `intent_sessions` to all connections via `ctx.broadcastIntentSessions(proj)`.
+- **`delete_intent_session`**: calls `removeRuntime(sessionId)` (abort + drop the in-memory
+  runtime), then `deleteChatSession(proj, sessionId)` (db deletion with `is_current` fallback).
+  Clears `conn.viewing` if the deleted session was being watched, then broadcasts both
+  `intent_sessions` and `session_status` to all connections.
+
+All three check store availability first and return `error` on db-unavailable.
+
+## Broadcast (`broadcasts.ts` + `KernelContext`)
+
+`broadcastIntentSessions(projectPath)` follows the same pattern as `broadcastDiscussions`:
+it reads the session list via `listChatSessions`, attaches a `runStates` snapshot derived from
+`isRunning()`, and fans out `{ type: 'intent_sessions', projectPath, items, runStates }` to
+every connection via `broadcaster.toAll`. Wired into `KernelContext` so intent session handlers
+and any background mutation can push the refreshed list.
 
 - `list_intents` / `update_intent_status` read/write the store and reply `intents`.
 - Dev back-link: the frontend sends `select_session` with `lastDevSessionId`; if the session no

@@ -115,6 +115,15 @@ let sawAskTurnEnd = false // the AskUserQuestion turn completed
 let newChatSent = false // we sent new_intent_chat
 let sawNewChat = false // got a fresh session_selected with a different id + empty history
 
+// ---- Intent session list operations (list/switch/delete) ----
+let sessionListRequested = false // we sent list_intent_sessions
+let sawSessionList = false // received intent_sessions with items
+let sessionIds = [] // cached session ids from the list
+let switchRequested = false // we sent open_intent_chat with a specific sessionId
+let sessionSwitched = false // received session_selected for the switched session
+let deleteRequested = false // we sent delete_intent_session
+let sessionDeleted = false // confirmed session removed from the list
+
 let saveTurnReason = '' // turn_end reason of the first (save) turn
 let askTurnReason = '' // turn_end reason of the second (AskUserQuestion) turn
 let saveTurnEnded = false // first (save) turn_end seen
@@ -158,6 +167,29 @@ ws.addEventListener('message', (evt) => {
       break
 
     case 'session_selected':
+      if (switchRequested) {
+        // Response to open_intent_chat with a specific sessionId: verify it's the
+        // targeted session.
+        const expected = sessionIds[1] // the second session in the list
+        sessionSwitched = msg.sessionId === expected
+        console.log(
+          `[e2e] ${sessionSwitched ? '✅' : '⚠️'} session switch → ${msg.sessionId} ` +
+            `(expected ${expected})`,
+        )
+        // After switching, test delete: remove the first (old) session.
+        if (sessionIds.length >= 2) {
+          deleteRequested = true
+          console.log(`[e2e] delete_intent_session ${sessionIds[0]}`)
+          send({
+            type: 'delete_intent_session',
+            projectPath: PROJECT_DIR,
+            sessionId: sessionIds[0],
+          })
+        } else {
+          finish(judge())
+        }
+        break
+      }
       if (newChatSent) {
         // Response to new_intent_chat: must be a DIFFERENT session id with an
         // empty history (the old conversation must not bleed into the new one).
@@ -167,7 +199,8 @@ ws.addEventListener('message', (evt) => {
           `[e2e] ${fresh ? '✅' : '⚠️'} new_intent_chat → session ${msg.sessionId} ` +
             `(prev ${commSessionId}, history=${msg.history?.length ?? 0})`,
         )
-        finish(judge())
+        // Don't finish yet — proceed to session list operations.
+        maybeStartSessionListTest()
         break
       }
       // The comm session for the intent view (read-only, title New Intent).
@@ -228,6 +261,39 @@ ws.addEventListener('message', (evt) => {
         statusUpdated = true
         console.log('[e2e] ✅ status updated → done')
         maybeStartAskTurn() // save flow done → exercise the AskUserQuestion path
+      }
+      break
+    }
+
+    case 'intent_sessions': {
+      // Track the session list for list/switch/delete tests.
+      const count = msg.items.length
+      if (!sessionListRequested) break // ignore unsolicited broadcasts before our request
+
+      if (!sawSessionList) {
+        sawSessionList = true
+        sessionIds = msg.items.map((s) => s.sessionId)
+        console.log(`[e2e] ✅ intent_sessions: ${count} item(s)`)
+        // Proceed to switch test: open a different session (the second one, if available).
+        if (sessionIds.length >= 2) {
+          switchRequested = true
+          console.log(`[e2e] open_intent_chat → session ${sessionIds[1]}`)
+          send({ type: 'open_intent_chat', projectPath: PROJECT_DIR, sessionId: sessionIds[1] })
+        } else {
+          finish(judge())
+        }
+        break
+      }
+
+      // Second intent_sensors arrival: after delete, verify the count decreased.
+      if (deleteRequested) {
+        const expectedCount = sessionIds.length - 1
+        sessionDeleted = count < sessionIds.length
+        console.log(
+          `[e2e] ${sessionDeleted ? '✅' : '⚠️'} delete_intent_session → ` +
+            `count ${count} (expected ~${expectedCount})`,
+        )
+        finish(judge())
       }
       break
     }
@@ -357,6 +423,14 @@ function maybeStartAskTurn() {
   send({ type: 'user_prompt', text: ASK_PROMPT })
 }
 
+// After new chat is confirmed, test the session list operations: list, switch, delete.
+function maybeStartSessionListTest() {
+  if (sessionListRequested || finished) return
+  sessionListRequested = true
+  console.log('[e2e] sending list_intent_sessions')
+  send({ type: 'list_intent_sessions', projectPath: PROJECT_DIR })
+}
+
 // Final flow: open a brand-new comm session via "+". The response is handled in
 // the `session_selected` case, which verifies a fresh id + empty history then judges.
 function maybeStartNewChat() {
@@ -385,6 +459,12 @@ function judge() {
     ask_turn_completed_clean: sawAskTurnEnd && askTurnReason.startsWith('complete'),
     // "+" → new_intent_chat: fresh session id, empty history (old chat not threaded in).
     new_chat_fresh_session: sawNewChat,
+    // Session list: list_intent_sessions returns items.
+    session_list_returned: sawSessionList,
+    // Session switch: open a different session via open_intent_chat with sessionId.
+    session_switched: sessionSwitched,
+    // Session delete: delete_intent_session removes from the list.
+    session_deleted: sessionDeleted,
   }
   console.log('checks:', checks)
   const pass = Object.values(checks).every(Boolean)

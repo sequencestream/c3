@@ -1,4 +1,4 @@
-# c3 — Claude Code Center
+# c3 — Code Creative Center
 
 Local web UI for [Claude Code](https://docs.claude.com/en/docs/claude-code) that
 intercepts every tool-use permission request through the browser, instead of
@@ -288,7 +288,7 @@ allow-rule may auto-approve without prompting).
 ## Project layout
 
 ```
-claude-code-center/
+code-creative-center/
 ├── shared/src/protocol.ts    # WS message types
 ├── server/
 │   ├── src/cli.ts            # commander entry

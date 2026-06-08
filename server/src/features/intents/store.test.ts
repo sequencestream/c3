@@ -10,9 +10,12 @@ import {
   insertIntents,
   isHiddenSession,
   isStoreAvailable,
+  listChatSessions,
   listHiddenSessions,
   listIntents,
   rebindChatSession,
+  renameChatSession,
+  deleteChatSession,
   resetStoreForTests,
   resolveBatchDependencies,
   setChatSession,
@@ -184,7 +187,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(6)
+    expect(version?.user_version).toBe(7)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -331,6 +334,52 @@ describe('communication session mapping / hidden set', () => {
     setChatSession('/abs/project-b', 's2')
     expect(listHiddenSessions(proj)).toEqual(['s1'])
     expect(listHiddenSessions('/abs/project-b')).toEqual(['s2'])
+  })
+
+  // ── Session-collection upgrade (multi-session CRUD) ──
+
+  it('lists all sessions — setChatSession does NOT clear old rows', () => {
+    setChatSession(proj, 's1')
+    setChatSession(proj, 's2')
+    const list = listChatSessions(proj)
+    expect(list).toHaveLength(2)
+    // Both session ids are present (order may be the same timestamp).
+    expect(list.map((s) => s.sessionId)).toEqual(expect.arrayContaining(['s1', 's2']))
+  })
+
+  it('renames a session', () => {
+    setChatSession(proj, 's1')
+    renameChatSession('s1', 'My chat')
+    const list = listChatSessions(proj)
+    expect(list).toHaveLength(1)
+    expect(list[0].sessionId).toBe('s1')
+    expect(list[0].title).toBe('My chat')
+  })
+
+  it('deletes a session physically and clears its runtime entry', () => {
+    setChatSession(proj, 's1')
+    setChatSession(proj, 's2')
+    deleteChatSession(proj, 's1')
+    const list = listChatSessions(proj)
+    expect(list.map((s) => s.sessionId)).toEqual(['s2'])
+    expect(isHiddenSession('s1')).toBe(false)
+  })
+
+  it('falls back is_current to the latest session when the current one is deleted', () => {
+    setChatSession(proj, 's1') // s1 becomes is_current=1
+    setChatSession(proj, 's2') // s2 becomes is_current=1, s1→0
+    // Delete s2 (the current one) → s1 becomes the new default
+    deleteChatSession(proj, 's2')
+    expect(getChatSession(proj)).toBe('s1')
+    // Only s1 remains in the hidden set
+    expect(listHiddenSessions(proj)).toEqual(['s1'])
+  })
+
+  it('deleting the only session leaves no is_current', () => {
+    setChatSession(proj, 's1')
+    deleteChatSession(proj, 's1')
+    expect(getChatSession(proj)).toBeNull()
+    expect(listChatSessions(proj)).toEqual([])
   })
 })
 

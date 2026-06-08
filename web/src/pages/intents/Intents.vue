@@ -2,13 +2,15 @@
 /*
  * Intents.vue — 需求页容器。
  *
- * 纯容器:左侧需求列表 + 右侧聊天列(需求 comm session 即被查看的会话,故复用与
- * 会话页相同的聊天列;标题栏为需求变体,无权限模式下拉)。状态/连接由 App.vue 持有,
- * 经 props 注入,动作经 emit 上抛。composer ref 经 defineExpose 转发。
+ * 三栏布局:左侧需求列表 + 中栏意图会话列表 + 右侧聊天列。
+ * 需求 comm session 即被查看的会话,故复用与会话页相同的聊天列(标题栏为需求变体,
+ * 无权限模式下拉)。状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。
+ * composer ref 经 defineExpose 转发。
  */
 import { ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import IntentList from './components/IntentList/IntentList.vue'
+import IntentSessionList from './components/IntentSessionList/IntentSessionList.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
@@ -18,13 +20,23 @@ import MessageInput from '../../components/MessageInput/MessageInput.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
-import type { AutomationStatus, Intent, IntentStatus, SlashCommandInfo } from '@ccc/shared/protocol'
+import type {
+  AutomationStatus,
+  Intent,
+  IntentSessionInfo,
+  IntentStatus,
+  SlashCommandInfo,
+} from '@ccc/shared/protocol'
 
 defineProps<{
   // left: intent list
   project: string
   intents: Intent[]
   automation: AutomationStatus | null
+  // middle: intent session list
+  intentSessions: IntentSessionInfo[]
+  selectedIntentSessionId: string | null
+  intentSessionRunStates: Record<string, 'running'>
   // right: chat column (shared with sessions page)
   activeTitle: string
   hasActiveSession: boolean
@@ -58,6 +70,10 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'new-intent': []
+  'select-intent-session': [sessionId: string]
+  'new-intent-session': []
+  'rename-intent-session': [sessionId: string, title: string]
+  'delete-intent-session': [sessionId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -92,6 +108,16 @@ defineExpose({
     @start-automation="emit('start-automation')"
     @stop-automation="emit('stop-automation')"
     @new-intent="emit('new-intent')"
+  />
+
+  <IntentSessionList
+    :sessions="intentSessions"
+    :selected-id="selectedIntentSessionId"
+    :run-states="intentSessionRunStates"
+    @select="(id: string) => emit('select-intent-session', id)"
+    @new="emit('new-intent-session')"
+    @rename="(id: string, title: string) => emit('rename-intent-session', id, title)"
+    @delete="(id: string) => emit('delete-intent-session', id)"
   />
 
   <div class="content">

@@ -1,4 +1,4 @@
-# Project — c3 (Claude Code Center)
+# Project — c3 (Code Creative Center)
 
 ## Vision
 

@@ -461,6 +461,35 @@
         "tooltip": "手動トリガーモード"
       }
     },
+    "sessionList": {
+      "title": {
+        "label": "Intent Sessions"
+      },
+      "new": {
+        "tooltip": "New session"
+      },
+      "empty": "No intent sessions yet",
+      "placeholder": {
+        "label": "New Session"
+      },
+      "rename": {
+        "tooltip": "Rename",
+        "placeholder": "Session title"
+      },
+      "delete": {
+        "tooltip": "Delete"
+      },
+      "deleteConfirm": "Delete this intent session?",
+      "select": {
+        "label": "Open session: {title}"
+      },
+      "collapse": {
+        "tooltip": "Collapse session list"
+      },
+      "expand": {
+        "tooltip": "Expand session list"
+      }
+    },
     "meta": {
       "created": {
         "label": "作成:"
@@ -914,7 +943,10 @@
       "notFound": "意図が見つかりません。",
       "dbUnavailable": "意図機能は利用できません(c3.db)。",
       "chatOpenFailed": "意図チャットを開けませんでした。",
-      "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。"
+      "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。",
+      "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
+      "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
+      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."
     },
     "discussion": {
       "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",

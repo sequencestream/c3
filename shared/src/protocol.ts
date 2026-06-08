@@ -1002,6 +1002,20 @@ export interface Intent {
 }
 
 /**
+ * One intent communication session, as listed by `list_intent_sessions`.
+ * Title is nullable — the client falls back to `'New Intent'` or a first-prompt /
+ * timestamp derivation when null. `runStates` on the envelope provides liveness.
+ */
+export interface IntentSessionInfo {
+  /** The SDK session id (may be a `pending:` id before first run binds it). */
+  sessionId: string
+  /** User-assigned title; null means use client fallback. */
+  title: string | null
+  /** Last mutation (open, rename, run) timestamp (epoch ms). */
+  updatedAt: number
+}
+
+/**
  * Lifecycle of the per-project automation orchestrator (a single background loop
  * that develops `automate` intents one by one, by priority + dependencies).
  * - `idle` — not running (never started, or stopped by the user).
@@ -1369,11 +1383,31 @@ export type ClientToServer =
   /** List a project's intents (reply: `intents`), optionally filtered by status. */
   | { type: 'list_intents'; projectPath: string; status?: IntentStatus }
   /**
-   * Enter the intent view for a project: open or resume its (persisted)
-   * communication session and return the intent list. Replies with a
-   * `session_selected` for the comm session plus a `intents` list.
+   * Enter the intent view for a project: open or resume a communication session
+   * and return the intent list. `sessionId` is optional — when provided the
+   * server opens that specific session (switching to it); when absent it opens
+   * the project's current (`is_current`) session (same as before). Replies with
+   * a `session_selected` for the comm session plus an `intents` list.
    */
-  | { type: 'open_intent_chat'; projectPath: string }
+  | { type: 'open_intent_chat'; projectPath: string; sessionId?: string }
+  /**
+   * List a project's intent communication sessions (reply: `intent_sessions`).
+   * Each session carries id, title (nullable), and updatedAt. The response also
+   * carries a `runStates` snapshot of which sessions have a live agent run.
+   */
+  | { type: 'list_intent_sessions'; projectPath: string }
+  /**
+   * Rename an intent communication session (must exist; error otherwise).
+   * The server broadcasts the refreshed `intent_sessions` list on success.
+   */
+  | { type: 'rename_intent_session'; projectPath: string; sessionId: string; title: string }
+  /**
+   * Delete an intent communication session: removes the db row, removes the
+   * runtime (aborts any active run), and broadcasts the refreshed list. If the
+   * deleted session was `is_current`, the most recent remaining session becomes
+   * the new default. Error if the session does not exist.
+   */
+  | { type: 'delete_intent_session'; projectPath: string; sessionId: string }
   /**
    * Start a brand-new communication session for a project: resets the previous
    * `is_current` comm session to 0, creates a fresh one marked current, and
@@ -1644,6 +1678,20 @@ export type ServerToClient =
   | { type: 'project_config'; projectPath: string; config: ProjectConfig }
   /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
   | { type: 'intents'; projectPath: string; items: Intent[] }
+  /**
+   * A project's intent-communication-session list (reply to `list_intent_sessions`
+   * or push after a change). `runStates` is a live snapshot of which listed
+   * sessions have an active agent run (id → `'running'`) — absent entries have
+   * no live run.  It rides every list send (first fetch / reconnect re-fetch /
+   * state-change push), so a refresh or reconnect authoritatively reconciles the
+   * run-state of background sessions (decoupled from persisted `status`).
+   */
+  | {
+      type: 'intent_sessions'
+      projectPath: string
+      items: IntentSessionInfo[]
+      runStates?: Record<string, 'running'>
+    }
   /**
    * The project's automation-orchestrator status. Pushed on entering the
    * intent view and on every state change (start/stop/progress/error), so

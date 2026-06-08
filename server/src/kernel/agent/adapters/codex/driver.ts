@@ -41,6 +41,7 @@ import type {
 import { codexCapabilities } from './capabilities.js'
 import { itemToCanonical } from './translate.js'
 import { CODEX_RELAY_PROVIDER, type CodexRelay } from './relay-contract.js'
+import { resolve } from '../../process/launcher.js'
 
 /** The minimal structural face of a Codex thread the driver consumes (real `Thread` satisfies it). */
 export interface CodexThread {
@@ -59,6 +60,7 @@ export interface CodexClient {
 
 /** Codex constructor options the driver threads through (a neutral subset). */
 export interface CodexFactoryOptions {
+  codexPathOverride?: string
   baseUrl?: string
   apiKey?: string
   env?: Record<string, string>
@@ -214,6 +216,13 @@ export class CodexDriver implements AgentDriver {
         ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
       }
     }
+    // Bypass the SDK's internal npm-based binary resolution (findCodexPath) in
+    // favor of c3's own ProcessLauncher PATH probe. The launcher's resolve()
+    // caches the result, so this is a no-op after the first health check. When
+    // the vendor binary is not on PATH, c3's higher layers handle the absence
+    // before the adapter is ever constructed — by this point in the code it is
+    // always present.
+    codexOptions.codexPathOverride = resolve('codex') ?? undefined
     const codex = this.createCodex(codexOptions)
     // Codex's launch-time policy IS the per-tool-approval substitute (008). It is
     // derived from the session permission mode (defaultMode → neutral grid →

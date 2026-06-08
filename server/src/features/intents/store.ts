@@ -12,10 +12,16 @@
  */
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
-import type { ProposedIntent, Intent, IntentRunStatus, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  IntentSessionInfo,
+  ProposedIntent,
+  Intent,
+  IntentRunStatus,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 6
+const SCHEMA_VERSION = 7
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS intents (
@@ -135,6 +141,8 @@ function db(): Db | null {
     ensureColumn(d, 'intents', 'completed_at', 'INTEGER')
     // v3 → v4: add `automate` (historic rows default to 0 — opt-in to automation).
     ensureColumn(d, 'intents', 'automate', 'INTEGER NOT NULL DEFAULT 0')
+    // v6 → v7: add `title` to intent_chats (nullable — fallback to 'New Intent' or first-prompt derivation on the client).
+    ensureColumn(d, 'intent_chats', 'title', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -645,6 +653,77 @@ export function listHiddenSessions(projectPath: string): string[] {
       session_id: string
     }>('SELECT session_id FROM intent_chats WHERE project_path=?', resolve(projectPath))
     .map((r) => r.session_id)
+}
+
+// ---- Communication session CRUD (session-collection upgrade) ----
+// `intent_chats` now holds multiple rows per project (not just one current).
+// `title` is nullable — null means render "New Intent" or a first-prompt/time
+// derivation on the client. `is_current` is the "default-open" pointer.
+
+/** All comm sessions for a project, newest-first. */
+export function listChatSessions(projectPath: string): IntentSessionInfo[] {
+  const d = db()
+  if (!d) return []
+  const proj = resolve(projectPath)
+  return d
+    .all<{
+      session_id: string
+      title: string | null
+      updated_at: number
+    }>('SELECT session_id, title, updated_at FROM intent_chats WHERE project_path=? ORDER BY updated_at DESC', proj)
+    .map((r) => ({
+      sessionId: r.session_id,
+      title: r.title ?? null,
+      updatedAt: r.updated_at,
+    }))
+}
+
+/** Rename a comm session (also bumps updatedAt). */
+export function renameChatSession(sessionId: string, title: string): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intent_chats SET title=?, updated_at=? WHERE session_id=?',
+    title,
+    Date.now(),
+    sessionId,
+  )
+}
+
+/**
+ * Physically delete a comm session row. If the deleted row was `is_current`,
+ * the most recent remaining row (by updatedAt) for the same project becomes
+ * the new is_current (is_current=1). Otherwise no fallback — callers surface
+ * "no sessions" to the user. Also removes runtime (abort + drop) — callers
+ * must call `removeRuntime` before this to avoid a stale runtime outlasting
+ * the db row.
+ *
+ * @returns The project path of the deleted session (for callers to broadcast).
+ */
+export function deleteChatSession(projectPath: string, sessionId: string): void {
+  const d = requireDb()
+  const proj = resolve(projectPath)
+  tx(d, () => {
+    const row = d.get<{ is_current: number }>(
+      'SELECT is_current FROM intent_chats WHERE session_id=?',
+      sessionId,
+    )
+    if (!row) return
+    d.run('DELETE FROM intent_chats WHERE session_id=?', sessionId)
+    // If the deleted row was is_current, promote the latest remaining.
+    if (row.is_current) {
+      const next = d.get<{ session_id: string }>(
+        'SELECT session_id FROM intent_chats WHERE project_path=? ORDER BY updated_at DESC LIMIT 1',
+        proj,
+      )
+      if (next) {
+        d.run(
+          'UPDATE intent_chats SET is_current=1, updated_at=? WHERE session_id=?',
+          Date.now(),
+          next.session_id,
+        )
+      }
+    }
+  })
 }
 
 // ---- Tool-created session set ----

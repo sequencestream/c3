@@ -12,7 +12,7 @@
 set -euo pipefail
 
 RUN_ID="${1:-}"
-REPO="sequencestream/claude-code-center"
+REPO="sequencestream/code-creative-center"
 
 if [[ -z "$RUN_ID" ]]; then
   echo "用法: $0 <github-run-id>" >&2

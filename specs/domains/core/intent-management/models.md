@@ -62,21 +62,26 @@ batch, RM-R17), since they are resolved to real ids before any row is written.
 
 ## Communication Session
 
-The per-project hidden agent session used to refine intents. A real SDK session (owned by
-agent-session / session-registry); this domain only tracks which session is _current_ and which
-ids form the project's hidden set.
+The per-project hidden agent sessions used to refine intents. Each project holds a
+**collection** of these sessions (multiple rows), all of which are hidden from the
+normal `list_sessions` response. One session per project is marked `isCurrent` as
+the default-open pointer when entering the intent view without an explicit session id.
+Sessions can be listed, renamed, and deleted.
 
-| Attribute     | Type        | Description                                                               |
-| ------------- | ----------- | ------------------------------------------------------------------------- |
-| `sessionId`   | text        | The SDK session id (may be a `pending:` id before its first run binds it) |
-| `projectPath` | text (path) | Resolved absolute workspace path (RM-R10)                                 |
-| `isCurrent`   | boolean     | At most one per project is current (RM-R4)                                |
-| `updatedAt`   | timestamp   | Last bind/use time                                                        |
+| Attribute     | Type         | Description                                                                                        |
+| ------------- | ------------ | -------------------------------------------------------------------------------------------------- |
+| `sessionId`   | text         | The SDK session id (may be a `pending:` id before its first run binds it)                          |
+| `projectPath` | text (path)  | Resolved absolute workspace path (RM-R10)                                                          |
+| `title`       | text \| null | User-assigned title; null ⇒ client fallback to "New Intent" or first-prompt / timestamp derivation |
+| `isCurrent`   | boolean      | Default-open pointer — at most one per project is current (RM-R4)                                  |
+| `updatedAt`   | timestamp    | Last bind / rename / run time                                                                      |
 
 Relationships: every row for a project forms that project's **hidden set** (excluded from
-`list_sessions`, RM-R4); the one `isCurrent` row is the session re-loaded on entering the
-intent view. On its first run the `pending:` id is rebound to the real SDK id while keeping
-`isCurrent` and hidden-set membership.
+`list_sessions`, RM-R4); the `isCurrent` row is the session re-loaded on entering the
+intent view without a specific `sessionId`. On its first run the `pending:` id is rebound
+to the real SDK id while keeping `isCurrent` and hidden-set membership. Sessions may be
+renamed (`renameChatSession`) or physically deleted (`deleteChatSession` — row + runtime
+removal, with `isCurrent` fallback to the most recent remaining session).
 
 ## Automation Status
 
@@ -98,10 +103,11 @@ project; not persisted — a server restart resets it to `idle`). Pushed to ever
 ## Persisted store (c3.db)
 
 The SQLite ledger at `~/.c3/c3.db` (distinct from the registry's `state.json`). Schema version is
-managed via `PRAGMA user_version` (currently `5` — v2 added the `intents.module` column, v3
+managed via `PRAGMA user_version` (currently `7` — v2 added the `intents.module` column, v3
 added the nullable `intents.completed_at` column, v4 added `intents.automate` INTEGER NOT
-NULL DEFAULT 0, v5 added the `tool_sessions` table). Tables: `intents`, `intent_deps`,
-`intent_chats` (current-session map + hidden set in one table), and `tool_sessions`
+NULL DEFAULT 0, v6 renamed legacy requirement- tables to intent-, v7 added the nullable
+`intent_chats.title` column). Tables: `intents`, `intent_deps`, `intent_chats`
+(session collection + hidden set in one table), and `tool_sessions`
 (`session_id` PRIMARY KEY + `created_at`) — the persisted set of tool-created sessions (completion
 judge, consensus advisor) so the session-registry's "show tool sessions" filter survives restarts.
 A session's row is dropped when the session is deleted. See [design.md](design.md) for the

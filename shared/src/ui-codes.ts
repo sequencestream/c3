@@ -47,6 +47,15 @@ export const UI_ERROR_CODES = {
   'intent.notFound': { key: 'error.intent.notFound' },
   'intent.dbUnavailable': { key: 'error.intent.dbUnavailable' },
   'intent.chatOpenFailed': { key: 'error.intent.chatOpenFailed' },
+  'intent.chatSessionNotFound': { key: 'error.intent.chatSessionNotFound', params: ['sessionId'] },
+  'intent.renameChatSessionFailed': {
+    key: 'error.intent.renameChatSessionFailed',
+    params: ['detail'],
+  },
+  'intent.deleteChatSessionFailed': {
+    key: 'error.intent.deleteChatSessionFailed',
+    params: ['detail'],
+  },
   'intent.cannotStartDev': { key: 'error.intent.cannotStartDev', params: ['status'] },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },

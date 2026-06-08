@@ -10,7 +10,14 @@
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { addViewer, ensureRuntime, getRuntime, isRunning, removeViewer } from '../../runs.js'
+import {
+  addViewer,
+  ensureRuntime,
+  getRuntime,
+  isRunning,
+  removeRuntime,
+  removeViewer,
+} from '../../runs.js'
 import { hasWorkspace, setSessionMode, touchWorkspace } from '../../state.js'
 import { getDefaultMode, getDevSkill } from '../../kernel/config/index.js'
 import { loadHistory, loadLastAssistantMessages, sessionExists } from '../../sessions.js'
@@ -18,8 +25,11 @@ import {
   getChatSession,
   getIntent,
   isStoreAvailable,
+  listChatSessions,
   listIntents,
   rebindChatSession,
+  renameChatSession,
+  deleteChatSession,
   setAutomate,
   setChatSession,
   setLastDevSession,
@@ -73,22 +83,42 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
   }
   // Stop viewing whatever this connection had open.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
-  // Resume the project's persisted comm session, or open a new one. This is the
-  // single path hit on first entry, WS reconnect, and a hard refresh — all
-  // "auto-reload the last comm session".
-  const existing = getChatSession(proj)
+
+  // If a specific sessionId was requested, verify it exists for this project.
+  // Otherwise, fall back to is_current (same as before).
   let chatId: string
-  if (existing) {
-    chatId = existing
+  if (msg.sessionId) {
+    const sessions = listChatSessions(proj)
+    if (!sessions.some((s) => s.sessionId === msg.sessionId)) {
+      conn.send({
+        type: 'error',
+        error: { code: 'intent.chatSessionNotFound', params: { sessionId: msg.sessionId } },
+      })
+      return
+    }
+    chatId = msg.sessionId
+    // Make this session the default for future no-sessionId opens.
+    setChatSession(proj, chatId)
     if (!getRuntime(chatId)) {
       const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
       const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
       ensureRuntime(chatId, proj, 'default', baseline, 'intent')
     }
   } else {
-    chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-    ensureRuntime(chatId, proj, 'default', [], 'intent')
-    setChatSession(proj, chatId)
+    // Resume the project's persisted comm session (is_current), or open a new one.
+    const existing = getChatSession(proj)
+    if (existing) {
+      chatId = existing
+      if (!getRuntime(chatId)) {
+        const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
+        const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
+        ensureRuntime(chatId, proj, 'default', baseline, 'intent')
+      }
+    } else {
+      chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+      ensureRuntime(chatId, proj, 'default', [], 'intent')
+      setChatSession(proj, chatId)
+    }
   }
   const rt = getRuntime(chatId)
   if (!rt) {
@@ -292,6 +322,69 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     await ctx.launchRun(rt, firstPrompt)
   } finally {
     _boundSub() // safety-net cleanup if bound never fired
+  }
+}
+
+// ── Intent-communication-session CRUD (session-collection upgrade) ──
+
+export const listIntentSessions: Handler<'list_intent_sessions'> = (_ctx, conn, msg) => {
+  const proj = resolve(msg.projectPath)
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const items = listChatSessions(proj)
+  const runStates: Record<string, 'running'> = {}
+  let found = false
+  for (const it of items) {
+    if (isRunning(it.sessionId)) {
+      runStates[it.sessionId] = 'running'
+      found = true
+    }
+  }
+  conn.send({
+    type: 'intent_sessions',
+    projectPath: proj,
+    items,
+    runStates: found ? runStates : undefined,
+  })
+}
+
+export const renameIntentSession: Handler<'rename_intent_session'> = (ctx, conn, msg) => {
+  const proj = resolve(msg.projectPath)
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  try {
+    renameChatSession(msg.sessionId, msg.title)
+    ctx.broadcastIntentSessions(proj)
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.renameChatSessionFailed', params: { detail: String(err) } },
+    })
+  }
+}
+
+export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn, msg) => {
+  const proj = resolve(msg.projectPath)
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  try {
+    // Remove runtime (abort + drop) BEFORE the db row so no stale runtime lingers.
+    removeRuntime(msg.sessionId)
+    deleteChatSession(msg.projectPath, msg.sessionId)
+    if (conn.viewing === msg.sessionId) conn.viewing = null
+    ctx.broadcastIntentSessions(proj)
+    ctx.broadcastStatuses()
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.deleteChatSessionFailed', params: { detail: String(err) } },
+    })
   }
 }
 

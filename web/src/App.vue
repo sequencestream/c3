@@ -48,6 +48,7 @@ import type {
   ModeToken,
   VendorModeCatalog,
   Intent,
+  IntentSessionInfo,
   ProjectConfig as ProjectConfigType,
   Schedule,
   ScheduleExecutionLog,
@@ -288,6 +289,18 @@ const currentAutomation = computed<AutomationStatus | null>(() =>
   intentsProject.value ? (automation.value[intentsProject.value] ?? null) : null,
 )
 
+// ---- Intent session list (middle column) ----
+// Per-project intent communication session lists (server pushes `intent_sessions`).
+const intentSessions = ref<Record<string, IntentSessionInfo[]>>({})
+const currentIntentSessions = computed<IntentSessionInfo[]>(() =>
+  intentsProject.value ? (intentSessions.value[intentsProject.value] ?? []) : [],
+)
+// Live run-state snapshot for each intent session (id → 'running'); only active
+// runs appear. Carried in every `intent_sessions` push, survives refresh/reconnect.
+const intentSessionRunStates = ref<Record<string, 'running'>>({})
+// The currently-selected intent session id (for highlighting + re-select guard).
+const selectedIntentSessionId = ref<string | null>(null)
+
 // ---- Discussion view (read path) ----
 // Mirrors the intent view: the discussion tab shows a project's discussion
 // list (left) and one opened discussion's read-only history (right). No live
@@ -406,6 +419,7 @@ function maybeRestoreIntents(list: WorkspaceInfo[]) {
     activeTab.value = 'intents'
     intentsProject.value = saved.proj
     client?.send({ type: 'open_intent_chat', projectPath: saved.proj })
+    client?.send({ type: 'list_intent_sessions', projectPath: saved.proj })
   }
 }
 
@@ -616,6 +630,7 @@ onMounted(() => {
       // the project's persisted `is_current` chat); otherwise re-select normally.
       if (activeTab.value === 'intents' && intentsProject.value) {
         client?.send({ type: 'open_intent_chat', projectPath: intentsProject.value })
+        client?.send({ type: 'list_intent_sessions', projectPath: intentsProject.value })
       } else if (activeTab.value === 'discussion' && discussionsProject.value) {
         // Re-fetch the list and re-open the viewed discussion (read path, no
         // live session to re-bind — just re-pull the persisted history).
@@ -793,6 +808,11 @@ function handleMessage(msg: ServerToClient) {
       for (const item of msg.history) {
         add(transcriptToChat(item))
       }
+      // When on the intents tab, keep the middle-column selection in sync with
+      // the viewed session (the `intent_sessions` push may not have arrived yet).
+      if (activeTab.value === 'intents') {
+        selectedIntentSessionId.value = msg.sessionId
+      }
       break
     case 'session_started':
       if (activeSession.value === msg.clientId) activeSession.value = msg.sessionId
@@ -861,6 +881,25 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'intents':
       intents.value = { ...intents.value, [msg.projectPath]: msg.items }
+      break
+    case 'intent_sessions':
+      intentSessions.value = { ...intentSessions.value, [msg.projectPath]: msg.items }
+      // Authoritatively reconcile the live run-state from the snapshot — only
+      // active runs are present. Survives refresh/reconnect.
+      if (msg.runStates) {
+        intentSessionRunStates.value = msg.runStates
+      }
+      // Update the selected session id when the list changes.
+      if (msg.projectPath === intentsProject.value && msg.items.length > 0) {
+        const active = msg.items.find((s) => s.sessionId === activeSession.value)
+        if (active) {
+          selectedIntentSessionId.value = active.sessionId
+        } else if (activeSession.value) {
+          selectedIntentSessionId.value = activeSession.value
+        } else {
+          selectedIntentSessionId.value = msg.items[0].sessionId
+        }
+      }
       break
     case 'automation_status':
       automation.value = { ...automation.value, [msg.status.projectPath]: msg.status }
@@ -1378,6 +1417,8 @@ function openIntents(path: string) {
   persistViewMode()
   // The response carries both the comm `session_selected` and the list.
   client?.send({ type: 'open_intent_chat', projectPath: path })
+  // Populate the middle-column intent session list.
+  client?.send({ type: 'list_intent_sessions', projectPath: path })
 }
 
 // Enter the discussion view for a project: fetch its discussion list and reset
@@ -1575,6 +1616,32 @@ function convertDiscussionToIntent() {
 function newIntentChat() {
   if (!intentsProject.value) return
   client?.send({ type: 'new_intent_chat', projectPath: intentsProject.value })
+}
+
+// "Switch to an intent session": select an existing intent communication session
+// by id. The server replies with `session_selected` loading its history.
+function selectIntentSession(sessionId: string) {
+  if (!intentsProject.value) return
+  selectedIntentSessionId.value = sessionId
+  client?.send({ type: 'open_intent_chat', projectPath: intentsProject.value, sessionId })
+}
+
+// Rename an intent communication session.
+function renameIntentSession(sessionId: string, title: string) {
+  if (!intentsProject.value) return
+  client?.send({
+    type: 'rename_intent_session',
+    projectPath: intentsProject.value,
+    sessionId,
+    title,
+  })
+}
+
+// Delete an intent communication session. The server promotes the next latest
+// session as `is_current` (or none if this was the only one).
+function deleteIntentSession(sessionId: string) {
+  if (!intentsProject.value) return
+  client?.send({ type: 'delete_intent_session', projectPath: intentsProject.value, sessionId })
 }
 
 function setIntentFilter(status: IntentStatus | null) {
@@ -1803,6 +1870,9 @@ function dismissSkillApproval() {
       :project="intentsProject"
       :intents="currentIntents"
       :automation="currentAutomation"
+      :intent-sessions="currentIntentSessions"
+      :selected-intent-session-id="selectedIntentSessionId"
+      :intent-session-run-states="intentSessionRunStates"
       :active-title="activeTitle"
       :has-active-session="hasActiveSession"
       :messages="messages"
@@ -1828,6 +1898,10 @@ function dismissSkillApproval() {
       @start-automation="startAutomation"
       @stop-automation="stopAutomation"
       @new-intent="newIntentChat"
+      @select-intent-session="selectIntentSession"
+      @new-intent-session="newIntentChat"
+      @rename-intent-session="renameIntentSession"
+      @delete-intent-session="deleteIntentSession"
       @respond="respond"
       @submit-ask="submitAsk"
       @refresh="refreshStatus"

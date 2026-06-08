@@ -69,6 +69,18 @@ describe('listWorkspaceSessions hidden filter', () => {
     expect(out.map((s) => s.sessionId).sort()).toEqual(['normal-1', 'normal-2'])
   })
 
+  it('excludes multiple intent sessions (all are hidden, not just is_current)', async () => {
+    // Multiple setChatSession calls produce multiple rows; ALL must be hidden.
+    setChatSession(proj, 'comm-abc')
+    setChatSession(proj, 'comm-xyz')
+    listSessionsMock.mockResolvedValue(sdkSessions)
+
+    const out = await listWorkspaceSessions(proj)
+    expect(out.map((s) => s.sessionId)).toEqual(['normal-2', 'normal-1'])
+    expect(out.some((s) => s.sessionId === 'comm-abc')).toBe(false)
+    expect(out.some((s) => s.sessionId === 'comm-xyz')).toBe(false)
+  })
+
   it('shows everything (no filtering) when the store/db is unavailable', async () => {
     // Degradation: a broken db ⇒ empty hidden set ⇒ the list is not pruned, so a
     // db problem never hides real sessions.

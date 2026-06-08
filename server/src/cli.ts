@@ -10,7 +10,7 @@ const program = new Command()
 
 program
   .name('c3')
-  .description('Claude Code Center - browser UI for Claude Code with per-tool permission prompts')
+  .description('Code Creative Center - browser UI for Claude Code with per-tool permission prompts')
   .version(versionString())
 
 program

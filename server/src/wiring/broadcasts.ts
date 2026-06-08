@@ -20,8 +20,8 @@ import { resolve } from 'node:path'
 import type { Broadcaster } from '../transport/index.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
-import { listStatuses } from '../runs.js'
-import { isStoreAvailable, listIntents } from '../features/intents/store.js'
+import { isRunning, listStatuses } from '../runs.js'
+import { isStoreAvailable, listChatSessions, listIntents } from '../features/intents/store.js'
 import { enrichRunStatus } from '../features/intents/run-status.js'
 import {
   isStoreAvailable as isDiscussionStoreAvailable,
@@ -55,6 +55,13 @@ export interface Broadcasts {
   broadcastOpencodeStatus: () => void
   /** Push a project's refreshed intent list (with runStatus enrichment). */
   broadcastIntents: (projectPath: string) => void
+  /**
+   * Push a project's refreshed intent-communication-session list (with a
+   * runStates snapshot). Used after list/add/rename/delete and on reconnect,
+   * so the frontend authoritatively knows which sessions exist and which have
+   * a live background agent run.
+   */
+  broadcastIntentSessions: (projectPath: string) => void
   /**
    * Push a workspace's refreshed session list to EVERY connection (the
    * `session_metadata` projection read). The per-connection `conn.sendSessions`
@@ -117,6 +124,33 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const proj = resolve(projectPath)
     const items = enrichRunStatus(listIntents(proj))
     broadcaster.toAll({ type: 'intents', projectPath: proj, items })
+  }
+
+  // Snapshot helper: which listed intent sessions have a live agent run.
+  // Absent from the result means idle / no run.
+  const intentSessionRunSnapshot = (
+    items: { sessionId: string }[],
+  ): Record<string, 'running'> | undefined => {
+    const out: Record<string, 'running'> = {}
+    let found = false
+    for (const it of items) {
+      if (isRunning(it.sessionId)) {
+        out[it.sessionId] = 'running'
+        found = true
+      }
+    }
+    return found ? out : undefined
+  }
+
+  // Push a project's refreshed intent-communication-session list (with a
+  // runStates snapshot). No-op when the store is unavailable. The frontend
+  // pops back to the latest is_current when its current session is deleted.
+  const broadcastIntentSessions = (projectPath: string): void => {
+    if (!isStoreAvailable()) return
+    const proj = resolve(projectPath)
+    const items = listChatSessions(proj)
+    const runStates = intentSessionRunSnapshot(items)
+    broadcaster.toAll({ type: 'intent_sessions', projectPath: proj, items, runStates })
   }
 
   // Push a workspace's refreshed session list to every connection. Mirrors the
@@ -214,6 +248,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastStatuses,
     broadcastOpencodeStatus,
     broadcastIntents,
+    broadcastIntentSessions,
     broadcastSessions,
     broadcastDiscussions,
     broadcastSchedules,

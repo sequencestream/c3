@@ -461,6 +461,35 @@
         "tooltip": "수동 트리거 모드"
       }
     },
+    "sessionList": {
+      "title": {
+        "label": "Intent Sessions"
+      },
+      "new": {
+        "tooltip": "New session"
+      },
+      "empty": "No intent sessions yet",
+      "placeholder": {
+        "label": "New Session"
+      },
+      "rename": {
+        "tooltip": "Rename",
+        "placeholder": "Session title"
+      },
+      "delete": {
+        "tooltip": "Delete"
+      },
+      "deleteConfirm": "Delete this intent session?",
+      "select": {
+        "label": "Open session: {title}"
+      },
+      "collapse": {
+        "tooltip": "Collapse session list"
+      },
+      "expand": {
+        "tooltip": "Expand session list"
+      }
+    },
     "meta": {
       "created": {
         "label": "생성됨:"
@@ -914,7 +943,10 @@
       "notFound": "의도를 찾을 수 없습니다.",
       "dbUnavailable": "의도 기능을 사용할 수 없습니다 (c3.db).",
       "chatOpenFailed": "의도 채팅을 열지 못했습니다.",
-      "cannotStartDev": "\"{status}\" 상태에서는 개발을 시작할 수 없습니다."
+      "cannotStartDev": "\"{status}\" 상태에서는 개발을 시작할 수 없습니다.",
+      "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
+      "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
+      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."
     },
     "discussion": {
       "dbUnavailable": "토론 기능을 사용할 수 없습니다 (c3.db).",

@@ -1,7 +1,7 @@
 // publish-binaries — locally sign the downloaded build artifacts and publish them as a
 // GitHub Release on the PUBLIC distribution repo (default: sequencestream/c3).
 //
-// Why this exists: the source repo (sequencestream/claude-code-center) is PRIVATE, but the
+// Why this exists: the source repo (sequencestream/code-creative-center) is PRIVATE, but the
 // signed binaries are meant to be public. CI builds the artifacts there; `download-artifacts.sh`
 // pulls them into `dist/release-artifacts/<version>/<artifact>/…`. This script then, on a
 // trusted local machine that holds the minisign SECRET key:
@@ -169,7 +169,7 @@ function buildNotesFor(version, pubKeyId) {
 function bootstrapReadme(repo, pubKeyText, pubKeyId) {
   return (
     `# c3\n\n` +
-    `Signed binary distribution for **c3 (Claude Code Center)**.\n\n` +
+    `Signed binary distribution for **c3 (Code Creative Center)**.\n\n` +
     `Source lives in a private repo; every release here is a signed build published from a\n` +
     `trusted machine. Downloads are under [Releases](https://github.com/${repo}/releases).\n\n` +
     `## Verify a download\n\n` +

@@ -38,16 +38,16 @@
 以下为产品名 / 协议名 / 技术专名 / 工具标识 —— **任何 locale 均保持英文原文**,
 不音译、不意译。`no-raw-text` 豁免:这些词若以 `t()` value 形式存在,value 各语种相同。
 
-| 原文                    | 类别     | 说明                                             |
-| ----------------------- | -------- | ------------------------------------------------ |
-| Claude Code             | 产品名   | Anthropic 产品名,整体不译                        |
-| Claude                  | 产品名   |                                                  |
-| c3 / Claude Code Center | 产品名   | 本应用名                                         |
-| MCP                     | 协议名   | Model Context Protocol,缩写不译                  |
-| Hook                    | 技术专名 | Claude Code 钩子机制,不译                        |
-| AskUserQuestion         | 工具标识 | 工具名,与代码一致,不译                           |
-| Base URL / API          | 技术专名 | 配置字段名 / 接口缩写,各 locale 保持原文         |
-| 工具名 / 标识符         | 代码标识 | `Write`/`Edit`/`Bash`/`mcp__c3__*` 等,随代码原样 |
+| 原文                      | 类别     | 说明                                             |
+| ------------------------- | -------- | ------------------------------------------------ |
+| Claude Code               | 产品名   | Anthropic 产品名,整体不译                        |
+| Claude                    | 产品名   |                                                  |
+| c3 / Code Creative Center | 产品名   | 本应用名                                         |
+| MCP                       | 协议名   | Model Context Protocol,缩写不译                  |
+| Hook                      | 技术专名 | Claude Code 钩子机制,不译                        |
+| AskUserQuestion           | 工具标识 | 工具名,与代码一致,不译                           |
+| Base URL / API            | 技术专名 | 配置字段名 / 接口缩写,各 locale 保持原文         |
+| 工具名 / 标识符           | 代码标识 | `Write`/`Edit`/`Bash`/`mcp__c3__*` 等,随代码原样 |
 
 ## 3. 校验约定
 

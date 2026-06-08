@@ -85,6 +85,7 @@ export interface KernelContext {
   //    transport/Broadcaster — for now they are closure refs reached via ctx) ──
   readonly broadcastStatuses: () => void
   readonly broadcastIntents: (projectPath: string) => void
+  readonly broadcastIntentSessions: (projectPath: string) => void
   readonly broadcastDiscussions: (projectPath: string) => void
   readonly broadcastSchedules: (workspacePath: string) => void
   readonly broadcastAutomation: (status: AutomationStatus) => void

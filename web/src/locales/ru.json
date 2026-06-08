@@ -461,6 +461,35 @@
         "tooltip": "режим ручного запуска"
       }
     },
+    "sessionList": {
+      "title": {
+        "label": "Intent Sessions"
+      },
+      "new": {
+        "tooltip": "New session"
+      },
+      "empty": "No intent sessions yet",
+      "placeholder": {
+        "label": "New Session"
+      },
+      "rename": {
+        "tooltip": "Rename",
+        "placeholder": "Session title"
+      },
+      "delete": {
+        "tooltip": "Delete"
+      },
+      "deleteConfirm": "Delete this intent session?",
+      "select": {
+        "label": "Open session: {title}"
+      },
+      "collapse": {
+        "tooltip": "Collapse session list"
+      },
+      "expand": {
+        "tooltip": "Expand session list"
+      }
+    },
     "meta": {
       "created": {
         "label": "Создано:"
@@ -914,7 +943,10 @@
       "notFound": "Намерение не найдено.",
       "dbUnavailable": "Функция намерений недоступна (c3.db).",
       "chatOpenFailed": "Не удалось открыть чат намерения.",
-      "cannotStartDev": "Нельзя начать разработку из статуса «{status}»."
+      "cannotStartDev": "Нельзя начать разработку из статуса «{status}».",
+      "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
+      "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
+      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."
     },
     "discussion": {
       "dbUnavailable": "Функция обсуждений недоступна (c3.db).",

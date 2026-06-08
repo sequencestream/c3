@@ -473,7 +473,7 @@ GitHub Releases, never npm).
 
 ## Public-mirror publish (private source → public binaries)
 
-The source repo (`sequencestream/claude-code-center`) is **private**, but the signed binaries
+The source repo (`sequencestream/code-creative-center`) is **private**, but the signed binaries
 ship from a **public** distribution repo (`sequencestream/c3`). CI builds the artifacts in the
 private repo; the binaries are then signed locally and published to the public mirror by an
 operator who holds the minisign secret key:

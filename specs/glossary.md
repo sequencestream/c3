@@ -3,7 +3,7 @@
 Business and technical terms used across c3 specs. Defined once here; domain docs
 reference these rather than redefining them.
 
-- **c3**: Claude Code Center. The application: a local web UI that gates Claude Code's tool use through a browser.
+- **c3**: Code Creative Center. The application: a local web UI that gates Claude Code's tool use through a browser.
 - **Agent run**: A single `query()` invocation driven by one user prompt. Streams assistant text, tool activity, and permission requests until it completes or errors.
 - **ModeToken**: The wire/persistence representation of a session's permission mode (2026-06-07-012). A bare `string` carrying a vendor-native token (e.g. Claude `plan`, Codex `read-only`, OpenCode `build-allow`), disambiguated by the session's `VendorId`. Replaces the Claude-centric `PermissionMode` in `SessionInfo.mode` / `set_mode` / `mode_changed`. `ProjectConfig.defaultMode` is now a per-vendor map (`Record<VendorId, ModeToken>`, 2026-06-07-017), so each vendor has its own default token. Resolved to the neutral `ActionMode × ToolGate` grid via the vendor's {@link VendorModeCatalog} at launch. `PermissionMode` is now just Claude's token set — every `PermissionMode` literal is a valid `ModeToken`.
 - **VendorModeCatalog**: The per-vendor declaration of native mode tokens (2026-06-07-012). Each entry pairs a vendor's `token` (a `ModeToken`) with its i18n `labelCode` and the neutral `ActionMode × ToolGate` grid cell it maps to. Declared in `adapters/<vendor>/modes.ts`; aggregated in `MODE_CATALOGS` (`adapters/index.ts`, `Record<VendorId, VendorModeCatalog>`) — the compile-time exhaustiveness pin. Shipped to the web on `settings.vendorModes` so the console renders the mode picker by `vendor` with zero `if (vendor === …)`.

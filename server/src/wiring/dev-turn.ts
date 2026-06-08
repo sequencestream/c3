@@ -13,10 +13,18 @@
  *   import ws/HTTP semantics, and it does not construct transports.
  * - `launchDeps` is threaded in by the composition root — same pattern as
  *   `kernel/run/run-lifecycle.ts` (the launcher itself).
+ *
+ * NOTE (2026-06-08): the per-launch `run:bound` / `run:settled` subscriptions
+ * that used to live here have been moved to the resident domain subscription
+ * module (`wiring/run-domain-subscriptions.ts`). The internal Viewer is id-
+ * scoped and correct — it stays for the DevTurnResult contract (permission
+ * tracking, assistant_text capture, turn_end detection). The Promise it
+ * resolves is no longer awaited by the automation orchestrator (which now
+ * drives from the bus `run:settled` event), but the Viewer is still needed
+ * for `onAwaitingPermission` callbacks and `isRunning` fallback detection.
  */
 import { randomUUID } from 'node:crypto'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { setSessionMode } from '../state.js'
 import { launchRun, type LaunchRunDeps } from '../kernel/run/run-lifecycle.js'
 import { getDefaultMode } from '../kernel/config/index.js'
 import {
@@ -38,17 +46,6 @@ import {
 /** Deps the dev-turn factory reads. `launchDeps` matches what `launchRun` needs. */
 export interface DevTurnDeps {
   launchDeps: LaunchRunDeps
-  /**
-   * Fan the workspace's session list out to every connection. The automation
-   * orchestrator runs detached (no originating socket), so — unlike manual
-   * `start_development`, which calls `conn.sendSessions` on its own socket — its
-   * freshly-bound dev session has no per-connection refresh path. Without this,
-   * the session is written to the projection but never live-appears in any
-   * sidebar (the user only finds it via the intent's "session" button). Called on
-   * `bound` (live-insert the new session) and `settled` (refresh title/order once
-   * the turn ends).
-   */
-  broadcastSessions: (workspacePath: string) => void
 }
 
 /**
@@ -59,7 +56,7 @@ export interface DevTurnDeps {
 export function makeRunDevTurn(
   deps: DevTurnDeps,
 ): (input: RunDevTurnInput) => Promise<DevTurnResult> {
-  const { launchDeps, broadcastSessions } = deps
+  const { launchDeps } = deps
   return (input: RunDevTurnInput): Promise<DevTurnResult> =>
     new Promise<DevTurnResult>((resolveTurn) => {
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
@@ -167,24 +164,6 @@ export function makeRunDevTurn(
         setStatus(rt.sessionId, 'running')
         rt.run.handle.pushInput(input.prompt)
       } else {
-        const boundSub = launchDeps.eventBus.subscribe('run:bound', (e) => {
-          setSessionMode(e.realId, rt.mode)
-          // Surface the bind to the orchestrator immediately (early in_progress flip).
-          input.onSessionId?.(e.realId)
-          // Live-insert the new dev session into every sidebar: the projection
-          // real row is already written (freezeSessionAgent fired before this
-          // event), so the broadcast lists it. Mirrors manual start_development's
-          // session_started, but fanned out (automation has no socket).
-          broadcastSessions(rt.workspacePath)
-        })
-        const settledSub = launchDeps.eventBus.subscribe('run:settled', (e) => {
-          // Refresh title / last_modified / order once the turn ends — the
-          // automation analogue of manual start_development's conn.sendSessions.
-          broadcastSessions(e.workspacePath)
-          // Clean up both subscriptions (settled always fires in the finally block).
-          boundSub()
-          settledSub()
-        })
         void launchRun(rt, input.prompt, launchDeps)
       }
     })

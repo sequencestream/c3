@@ -18,7 +18,7 @@ import {
   removeRuntime,
   removeViewer,
 } from '../../runs.js'
-import { hasWorkspace, setSessionMode, touchWorkspace } from '../../state.js'
+import { hasWorkspace, touchWorkspace } from '../../state.js'
 import { getDefaultMode, getDevSkill } from '../../kernel/config/index.js'
 import { loadHistory, loadLastAssistantMessages, sessionExists } from '../../sessions.js'
 import {
@@ -27,14 +27,13 @@ import {
   isStoreAvailable,
   listChatSessions,
   listIntents,
-  rebindChatSession,
   renameChatSession,
   deleteChatSession,
   setAutomate,
   setChatSession,
-  setLastDevSession,
   updateStatus,
 } from './store.js'
+import { registerPendingDevLink } from './dev-link.js'
 import { reconcileInProgress } from './reconcile.js'
 import { judgeCompletion } from './judge.js'
 import {
@@ -266,17 +265,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   })
   conn.send({ type: 'intents', projectPath: proj, items: listIntents(proj) })
   const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
-  const _boundSub = ctx.eventBus.subscribe('run:bound', (e) => {
-    rebindChatSession(e.prevId, e.realId)
-    if (conn.viewing === e.prevId) conn.viewing = e.realId
-    conn.send({ type: 'session_started', clientId: e.prevId, sessionId: e.realId })
-    _boundSub() // auto-dispose after first bound
-  })
-  try {
-    await ctx.launchRun(rt, firstPrompt)
-  } finally {
-    _boundSub() // safety-net cleanup if bound never fired
-  }
+  await ctx.launchRun(rt, firstPrompt)
 }
 
 export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, conn, msg) => {
@@ -312,17 +301,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
   })
   conn.send({ type: 'intents', projectPath: proj, items: listIntents(proj) })
   const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents。`
-  const _boundSub = ctx.eventBus.subscribe('run:bound', (e) => {
-    rebindChatSession(e.prevId, e.realId)
-    if (conn.viewing === e.prevId) conn.viewing = e.realId
-    conn.send({ type: 'session_started', clientId: e.prevId, sessionId: e.realId })
-    _boundSub() // auto-dispose after first bound
-  })
-  try {
-    await ctx.launchRun(rt, firstPrompt)
-  } finally {
-    _boundSub() // safety-net cleanup if bound never fired
-  }
+  await ctx.launchRun(rt, firstPrompt)
 }
 
 // ── Intent-communication-session CRUD (session-collection upgrade) ──
@@ -424,26 +403,10 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   const skill = getDevSkill(proj)
   const skillPrefix = skill ? `${skill} ` : ''
   const devPrompt = `${skillPrefix}${req.title}\n\n${req.content}${depNote}`
-  // Background launch: don't await — it runs detached, surviving this
-  // connection. Status flips to in_progress once the SDK id binds.
-  // Subscribe to kernel event bus for lifecycle events (ADR-0018).
-  const disposers: (() => void)[] = []
-  disposers.push(
-    ctx.eventBus.subscribe('run:bound', (e) => {
-      setSessionMode(e.realId, devRt.mode)
-      setLastDevSession(req.id, e.realId)
-      updateStatus(req.id, 'in_progress')
-      ctx.broadcastIntents(proj)
-      conn.send({ type: 'session_started', clientId: e.prevId, sessionId: e.realId })
-    }),
-  )
-  disposers.push(
-    ctx.eventBus.subscribe('run:settled', (e) => {
-      void conn.sendSessions(e.workspacePath)
-      // Clean up both subscriptions (settled always fires in the finally block).
-      disposers.forEach((d) => d())
-    }),
-  )
+  // Register the pending→intent link so the resident `run:bound` subscription
+  // flips the intent to `in_progress` and links the real dev session id
+  // (ADR-0018 resident subs model).
+  registerPendingDevLink(devId, req.id)
   void ctx.launchRun(devRt, devPrompt)
 }
 

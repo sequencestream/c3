@@ -15,6 +15,15 @@
 import { resolve } from 'node:path'
 import type { RunEndReason, RunKind, RunLifecycleTopic, Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt } from '@ccc/shared/cron'
+
+/**
+ * Explicit RunKind whitelist for event-triggered schedules. Only `session`
+ * runs (user/dev sessions) trigger schedules; every other RunKind (intent
+ * comm, discussion, consensus, internal tool, the scheduler's own runs) is
+ * internal and never triggers a schedule. Defined as a const array so it is
+ * both testable and impossible to accidentally widen via a loose comparison.
+ */
+const SCHEDULE_TRIGGER_KINDS: readonly RunKind[] = ['session']
 import { getTimezone } from '../../kernel/config/index.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
 
@@ -139,11 +148,9 @@ export function dispatchEventSchedules(
   },
 ): void {
   if (!store) return
-  // Only `session` runs (user/dev sessions) fire user schedules; every other
-  // RunKind (intent comm, discussion, consensus, internal tool, the scheduler's
-  // own runs) is internal and never triggers a schedule. Semantics unchanged from
-  // the pre-2026-06-08 `kind !== 'normal'` guard — only the literal migrated.
-  if (payload.kind !== 'session') return
+  // Explicit RunKind whitelist: only `session` runs (user/dev) fire user
+  // schedules; every other RunKind is internal and never triggers a schedule.
+  if (!SCHEDULE_TRIGGER_KINDS.includes(payload.kind)) return
 
   let candidates: Schedule[]
   try {

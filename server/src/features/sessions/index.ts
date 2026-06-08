@@ -43,7 +43,6 @@ import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
-import { rebindChatSession } from '../intents/store.js'
 import { ensureOpencodeRunning } from '../../opencode-status.js'
 import { upsertPendingRow } from './store.js'
 import { errMsg } from '../errmsg.js'
@@ -309,6 +308,20 @@ export const stopRunHandler: Handler<'stop_run'> = (_ctx, conn) => {
   if (conn.viewing) stopRun(conn.viewing)
 }
 
+/**
+ * Rebind `conn.viewing` from a pending id to the real SDK id after the
+ * resident `run:bound` subscription broadcasts `session_started`.
+ * Called by the client when it receives `session_started` whose `clientId`
+ * matches its own `activeSession`.
+ */
+export const rebindViewHandler: Handler<'rebind_view'> = (_ctx, conn, msg) => {
+  if (conn.viewing === msg.from) {
+    conn.viewing = msg.to
+    setActiveSessionId(msg.to)
+  }
+  // mismatched from → no-op (another connection's broadcast)
+}
+
 export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
   const rt = conn.viewing ? getRuntime(conn.viewing) : undefined
   if (!rt) {
@@ -328,42 +341,5 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'session.turnRunning' } })
     return
   }
-  const isIntent = rt.kind === 'intent'
-  // Subscribe to kernel event bus for lifecycle events (ADR-0018).
-  const disposers: (() => void)[] = []
-  disposers.push(
-    ctx.eventBus.subscribe('run:bound', (e) => {
-      const { prevId, realId } = e
-      if (isIntent) {
-        // Comm session: re-key its store mapping; never touch the persisted
-        // active/normal-mode state (it's a hidden session).
-        rebindChatSession(prevId, realId)
-        if (conn.viewing === prevId) conn.viewing = realId
-      } else {
-        setSessionMode(realId, rt.mode)
-        if (conn.viewing === prevId) {
-          conn.viewing = realId
-          setActiveSessionId(realId)
-        }
-      }
-      conn.send({ type: 'session_started', clientId: prevId, sessionId: realId })
-    }),
-  )
-  disposers.push(
-    ctx.eventBus.subscribe('run:settled', (e) => {
-      if (!isIntent) {
-        // Intent comm sessions are hidden from the normal list, so there's
-        // nothing to refresh for them.
-        void conn.sendSessions(e.workspacePath)
-      }
-      // Clean up subscriptions (settled always fires in the finally block).
-      disposers.forEach((d) => d())
-    }),
-  )
-  try {
-    await ctx.launchRun(rt, msg.text)
-  } finally {
-    // Safety-net cleanup if the run never reached settled.
-    disposers.forEach((d) => d())
-  }
+  await ctx.launchRun(rt, msg.text)
 }

@@ -1063,7 +1063,14 @@ export interface IntentSessionInfo {
  * - `error` — stopped abnormally (a dev run errored, blocked on a permission, a
  *   completion check failed, or commit/push failed). `error` text says why.
  */
-export type AutomationState = 'idle' | 'running' | 'done' | 'error'
+export type AutomationState =
+  | 'idle'
+  | 'running'
+  | 'awaiting_gate'
+  | 'developing'
+  | 'fixing'
+  | 'done'
+  | 'error'
 
 /** A project's automation orchestrator status, broadcast to every connection. */
 export interface AutomationStatus {
@@ -1446,6 +1453,8 @@ export type ClientToServer =
   | { type: 'rename_session'; workspacePath: string; sessionId: string; title: string }
   /** Stop the in-flight run of the currently-viewed session (if any). */
   | { type: 'stop_run' }
+  /** Rebinding `${conn.viewing}` from a pending id to the real SDK id (ADR-0018 resident subs model). */
+  | { type: 'rebind_view'; from: string; to: string }
   /** List slash commands/skills for the active session's cwd (reply: `commands`). */
   | { type: 'list_commands' }
   /** Fetch the system configuration (reply: `settings`). */

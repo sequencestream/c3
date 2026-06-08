@@ -68,6 +68,7 @@ import {
   makeRunDevTurn,
   mountDevPlaceholder,
   mountStaticAssets,
+  registerRunDomainSubscriptions,
   startSchedulerWiring,
   stopSchedulerWiring,
 } from './wiring/index.js'
@@ -412,10 +413,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       return { ok: true, outcome }
     },
   }
-  const runDevTurn = makeRunDevTurn({
-    launchDeps,
-    broadcastSessions: broadcasts.broadcastSessions,
-  })
+  const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).
   setAutomationHooks({
     runDevTurn,
@@ -444,6 +442,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // R6 boot-time guard: no transport field (sock/viewer/connections) may cross
   // the kernel boundary.
   assertNoTransportFields(ctx)
+
+  // Register application-lifetime domain subscriptions (ADR-0018 resident
+  // subs model): replaces all per-launch `subscribe`/`dispose` patterns in
+  // session/intent/dev-turn handlers with resident, single-responsibility
+  // subscriptions that match by sessionId and are never disposed.
+  registerRunDomainSubscriptions({
+    eventBus,
+    broadcaster,
+    broadcastSessions: broadcasts.broadcastSessions,
+    broadcastIntents: broadcasts.broadcastIntents,
+    broadcastIntentSessions: broadcasts.broadcastIntentSessions,
+  })
 
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).
   const handlerRegistry = registerHandlers()

@@ -33,6 +33,7 @@ import {
   selectSession,
   setMode,
   setSessionAgentHandler,
+  rebindViewHandler,
   stopRunHandler,
   userPrompt,
 } from './sessions/index.js'
@@ -105,6 +106,7 @@ export const handlerMap: HandlerMap = {
   set_mode: setMode,
   set_session_agent: setSessionAgentHandler,
   stop_run: stopRunHandler,
+  rebind_view: rebindViewHandler,
   user_prompt: userPrompt,
   // intents
   list_intents: listIntentsHandler,

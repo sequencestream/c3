@@ -166,7 +166,7 @@ later ADR may migrate those onto the unified run lifecycle bus.)
 The old `LaunchCbs.onEvent` callback is removed. All 5 consumers now subscribe via
 `ctx.eventBus.subscribe(...)` or `launchDeps.eventBus.subscribe(...)`.
 
-### Consumer subscription lifecycle
+### Consumer subscription lifecycle (original pattern, deprecated 2026-06-08)
 
 Each consumer subscribes **before** calling `launchRun`. Because published events are synchronous
 and fire during the `await launchRun(...)` call (inside the SDK callback for `bound`, or in the
@@ -185,6 +185,93 @@ dispose both in the `settled` handler
 auto-dispose inside the `bound` handler
 + safety-net cleanup in a `finally` block around `launchRun`
 ```
+
+**⚠️ 2026-06-08: per-launch subscription is deprecated for run lifecycle.** See
+[Resident domain subscriptions](#resident-domain-subscriptions-2026-06-08) below.
+
+### Resident domain subscriptions (2026-06-08)
+
+The per-launch subscribe/dispose pattern described above has been **replaced** by a set of
+**application-lifetime, single-responsibility resident subscriptions** that are registered once
+at the composition root and **never disposed**. This change addresses a concurrency bug where
+a settled run would dispose its subscription AND every other pending run's subscription
+(because `run:*` is a global broadcast iterated in registration order), causing subsequent
+`run:bound` events to be lost.
+
+The resident subscriptions live in `server/src/wiring/run-domain-subscriptions.ts` and are
+registered via `registerRunDomainSubscriptions()` called from `server.ts` after the EventBus
+and broadcast closures are constructed.
+
+**Design principles:**
+
+| Aspect               | Decision                                                                                           |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| **Registration**     | Once at composition root; never disposed.                                                          |
+| **Matching**         | Each subscription uses the event's `sessionId` / `prevId` to look up domain state (runtime kind,   |
+|                      | intent `lastDevSessionId`, `pendingDevLink`) — NOT a subscription id.                              |
+| **Idempotency**      | No-ops on events that do not match the owning domain's state (e.g. `run:bound` for an unknown      |
+|                      | session, or `run:settled` whose `sessionId` does not match any intent's `lastDevSessionId`).       |
+| **Per-connection**   | `conn.viewing` repointing is driven by the client (echoes `rebind_view` on receiving the broadcast |
+|                      | `session_started` when its `activeSession` matches `clientId`). No per-launch subscription needed. |
+| **Schedule trigger** | The existing `dispatchEventSchedules` subscription in `wiring/scheduler-startup.ts` was always     |
+|                      | resident (the model template). Its RunKind filter changed from `kind !== 'session'` to an explicit |
+|                      | whitelist constant `['session']` for testability.                                                  |
+
+**Two resident subscriptions:**
+
+1. **`run:bound` (intent-session + session/dev domain):**
+   - Obtains the `SessionRuntime` via `getRuntime(realId) ?? getRuntime(prevId)`.
+   - If `kind === 'intent'` and the runtime exists under `realId` (genuine pending→real path, not the
+     resume edge): calls `rebindChatSession(prevId, realId)` and broadcasts intent sessions.
+   - Otherwise (session/dev): persists the action mode, checks `pendingDevLink` for manual
+     `start_development` linkage, and fans out `session_started` via `broadcaster.toAll`.
+
+2. **`run:settled` (intents-automation domain):**
+   - Broadcasts the session list refresh immediately.
+   - For `kind === 'session'`: scans `listIntents(workspacePath)` for a match on
+     `lastDevSessionId === sessionId`. If found, broadcasts the intent list and notifies the
+     project's `AutomationController` via `notifyTurnSettled()` (no-op if automation is idle).
+
+**Automation orchestrator (event-driven FSM, `server/src/features/intents/automation.ts`):**
+
+The `AutomationController` no longer uses an internal `run()` await loop. Instead, it is an
+event-driven state machine that transitions on calls to `onTurnSettled()` from the resident
+subscription. The `develop()` method (sequential loop with continuation cap) and the old
+`awaitProjectRunning()` concurrency gate were removed; their logic was absorbed into:
+
+- `_processTurnResult()` — async: judge → commit → next / continue / fail, triggered by
+  a `run:settled` matching the current developing intent.
+- `_handleFixTurnSettled()` — retry commit after a lint-fix agent turn settles.
+- `_launchDevelopment()` — determines fresh/resume/attach strategy per intent.
+- `_startNext()` — picks the next eligible intent (or defers if the concurrency gate is active).
+- `_findBlockingIntent()` — RM-A12 gate: checks if any non-automate intent's dev session is
+  truly running; if yes, defers the new intent until the blocking session settles (event-driven
+  analogue of the old `awaitProjectRunning`).
+
+The concurrency gate, continuation cap (MAX_CONTINUATIONS=10), lint-heal retry, and commit
+sequencing are preserved — only the driving mechanism changed (event → async chain instead of
+loop → await).
+
+**Five per-launch subscription sites removed:**
+
+| File                         | Removed subscription(s)          | Replacement                                                       |
+| ---------------------------- | -------------------------------- | ----------------------------------------------------------------- |
+| `features/sessions/index.ts` | `run:bound` + `run:settled`      | Resident sub (intent-session/dev domains) + `rebind_view` handler |
+| `features/intents/index.ts`  | `run:bound` (refineIntent)       | Resident `run:bound` (kind=intent branch)                         |
+| `features/intents/index.ts`  | `run:bound` (discussionToIntent) | Same as above                                                     |
+| `features/intents/index.ts`  | `run:bound` + `run:settled`      | `pendingDevLink` + resident `run:bound` + `run:settled`           |
+| `wiring/dev-turn.ts`         | `run:bound` + `run:settled`      | Resident subs + `registerPendingDevLink`                          |
+
+**New protocol message:** `rebind_view {from, to}` (client→server). The client sends it from the
+`session_started` handler when its `activeSession` matches `clientId`. The server handler repoints
+`conn.viewing` from `from` to `to`, preserving the only truly per-connection state.
+
+**`pendingDevLink` (`features/intents/dev-link.ts`):** a minimal in-memory `Map<prevId, intentId>`
+that is the sole piece of registration state required by the resident model. It is registered by
+the manual `start_development` handler and consumed (and deleted) by the resident `run:bound`
+subscription. A safety-net sweep in `run:settled` cleans any entry whose run settled without
+binding. (The automation orchestrator uses the same mechanism for fresh launches, generating
+the pending id externally.)
 
 ### The bus on `KernelContext`
 
@@ -206,14 +293,18 @@ events published from LaunchRunDeps.
   control flow, FSM, or wire frames; every existing contract test stayed green.
 - **Easier:** a feature that needs to react to `'run:bound'` (e.g. to update the sidebar when a
   session binds) subscribes at registration time — no composition-root wiring change.
-- **Harder:** subscriptions are manual; a per-launch handler that forgets to dispose leaks a
-  listener on the bus. The convention is: dispose in the `settled` handler; also dispose in a
-  `finally` block after `launchRun`.
-- **Zero policy change:** the production code, test assertions, and contract-test behavior are
-  byte-for-byte identical with the old `onEvent` path. Only the transport mechanism changed.
+- **Safer:** the resident subscription model eliminates the class of concurrency bugs where a settled
+  run disposes another pending run's subscription (the original motivation). Subscriptions are never
+  disposed, so there is no "wrong connection's cleanup" attack surface. The `pendingDevLink` map is
+  the only intentional registration state; it is consumed on first `run:bound` and swept on settle.
+- **Lighter:** the automation orchestrator's internal viewer (added viewers, removed on `turn_end`)
+  and the bus subscriptions were separate concerns that both reacted to the same lifecycle. With
+  the bus subscriptions removed from `dev-turn.ts`, the viewer only tracks `permission_request` /
+  `assistant_text` for the `onAwaitingPermission` callback — a pure runtime observation role.
 - **Testability:** the bus is a plain class with no I/O — `publish`/`subscribe`/`dispose` are all
   unit-testable without mocks. The 19 dedicated event-bus tests cover error isolation, ordering,
-  type safety (compile-time), and lifecycle.
+  type safety (compile-time), and lifecycle. New resident-subscription tests (2026-06-08) cover
+  concurrent run scenarios, dev-link matching, and schedule RunKind whitelist filtering.
 
 ## Compliance
 

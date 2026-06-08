@@ -819,7 +819,10 @@ function handleMessage(msg: ServerToClient) {
       }
       break
     case 'session_started':
-      if (activeSession.value === msg.clientId) activeSession.value = msg.sessionId
+      if (activeSession.value === msg.clientId) {
+        activeSession.value = msg.sessionId
+        client?.send({ type: 'rebind_view', from: msg.clientId, to: msg.sessionId })
+      }
       break
     case 'session_agent_changed': {
       if (msg.sessionId !== activeSession.value) break

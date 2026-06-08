@@ -24,6 +24,9 @@ import { waitForDecision } from './registry.js'
 import { runAskConsensus, runConsensusVote } from '../../consensus.js'
 import { askQuestions } from '../../consensus-tally.js'
 
+/** Tool names that are user-interaction tools — their `permission_request` carries `isUserInteraction: true`. */
+const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
 /** Context passed to the {@link GatewaySpec.onPermissionRequest} callback. */
 export interface PermissionRequestCtx {
   requestId: string
@@ -115,7 +118,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       // when `input.answers` is pre-filled). Single agent ⇒ no consensus: just
       // prompt the human and inject the answers (or deny on cancel).
       if (decisionClass === 'ask' && askQuestions(input)) {
-        send({ type: 'permission_request', requestId, toolName, input })
+        send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
         const { decision, answers } = await waitForDecision(requestId, signal)
         if (decision === 'allow') {
           return allow(withAnswers(input, answers ?? {}))
@@ -194,8 +197,15 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       })
       send(
         ask
-          ? { type: 'permission_request', requestId, toolName, input, consensus: ask }
-          : { type: 'permission_request', requestId, toolName, input },
+          ? {
+              type: 'permission_request',
+              requestId,
+              toolName,
+              input,
+              consensus: ask,
+              isUserInteraction: true,
+            }
+          : { type: 'permission_request', requestId, toolName, input, isUserInteraction: true },
       )
       const { decision, answers } = await waitForDecision(requestId, signal)
       if (decision === 'allow') {
@@ -271,9 +281,23 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       workspacePath: spec.cwd,
     })
     // Split / no consensus ⇒ ask the human, attaching the opinions (if any).
+    const isUI = USER_INTERACTION_TOOLS.has(toolName)
     const req: ServerToClient = outcome
-      ? { type: 'permission_request', requestId, toolName, input, consensus: outcome }
-      : { type: 'permission_request', requestId, toolName, input }
+      ? {
+          type: 'permission_request',
+          requestId,
+          toolName,
+          input,
+          consensus: outcome,
+          ...(isUI ? { isUserInteraction: true } : {}),
+        }
+      : {
+          type: 'permission_request',
+          requestId,
+          toolName,
+          input,
+          ...(isUI ? { isUserInteraction: true } : {}),
+        }
     send(req)
     const { decision } = await waitForDecision(requestId, signal)
     if (decision === 'allow') {

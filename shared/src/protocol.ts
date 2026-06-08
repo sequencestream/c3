@@ -1965,8 +1965,23 @@ export type ServerToClient =
        * Absent/false on a tool c3 gated (or any claude-path tool).
        */
       preApproved?: boolean
+      /**
+       * True when this tool is a user-interaction tool (e.g. AskUserQuestion,
+       * ExitPlanMode) — a model-initiated prompt that needs the user's attention
+       * before the run can continue. The server sets this at emission time so the
+       * web can identify interaction tools without a client-side name-based
+       * allowlist. Absent/false for tools that execute a side effect or read data
+       * without involving the user in a dialogue.
+       */
+      isUserInteraction?: boolean
     }
-  | { type: 'tool_result'; toolUseId: string; content: string; isError: boolean }
+  | {
+      type: 'tool_result'
+      toolUseId: string
+      content: string
+      isError: boolean
+      isUserInteraction?: boolean
+    }
   /**
    * Task-list wire path (2026-06-07-009). An independent channel for the dev
    * session's task list (TaskCreate / TaskList / TaskUpdate / TaskGet), so the
@@ -1995,6 +2010,13 @@ export type ServerToClient =
        * ({@link AskConsensusOutcome}) the answer panel renders.
        */
       consensus?: AnyConsensusOutcome
+      /**
+       * True when this permission request is for a user-interaction tool
+       * (e.g. AskUserQuestion) — a model-initiated prompt that needs the user's
+       * attention before the run can continue. Absent/false for tools that execute
+       * a side effect or read data without involving the user in a dialogue.
+       */
+      isUserInteraction?: boolean
     }
   /**
    * A permission request the multi-agent consensus resolved on its own (all

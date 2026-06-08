@@ -38,6 +38,14 @@ function errMsg(err: unknown): string {
 }
 
 /**
+ * Tool names that the server marks as user-interaction tools. When the model calls
+ * one of these, the server sets `isUserInteraction: true` on the emitted wire
+ * events (`tool_use`, `tool_result`), so the web can identify interaction tools
+ * without a client-side name-based allowlist.
+ */
+const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
+/**
  * Diffs append-with-upsert canonical frames into claude-shaped incremental wire
  * events. Text blocks emit only their new suffix; a tool_use emits once when first
  * seen and its result once it back-fills (D3). Keyed by block id (anonymous text
@@ -47,6 +55,8 @@ export class WireEmitter {
   private readonly textLen = new Map<string, number>()
   private readonly toolSeen = new Set<string>()
   private readonly resultSeen = new Set<string>()
+  /** Tracks tool_use ids whose tool is a user-interaction tool (AskUserQuestion, ExitPlanMode). */
+  private readonly userInteractionSeen = new Set<string>()
 
   constructor(private readonly send: (m: Parameters<typeof emit>[1]) => void) {}
 
@@ -62,6 +72,8 @@ export class WireEmitter {
       } else if (b.type === 'tool_use') {
         if (!this.toolSeen.has(b.id)) {
           this.toolSeen.add(b.id)
+          const isUserInteraction = USER_INTERACTION_TOOLS.has(b.name)
+          if (isUserInteraction) this.userInteractionSeen.add(b.id)
           // Carry the message-level `preApproved` audit marker onto the tool_use
           // frame (2026-06-06-004): a tool the vendor's own rule engine auto-allowed
           // never raised a `permission_request`, so this is the only signal the web
@@ -73,15 +85,18 @@ export class WireEmitter {
             toolName: b.name,
             input: b.input ?? {},
             ...(msg.preApproved ? { preApproved: true } : {}),
+            ...(isUserInteraction ? { isUserInteraction: true } : {}),
           })
         }
         if (b.result && !this.resultSeen.has(b.id)) {
           this.resultSeen.add(b.id)
+          const ui = this.userInteractionSeen.has(b.id)
           this.send({
             type: 'tool_result',
             toolUseId: b.id,
             content: b.result.content,
             isError: b.result.isError,
+            ...(ui ? { isUserInteraction: true } : {}),
           })
         }
       }
@@ -119,11 +134,13 @@ export async function runViaDriver(
   // prompt becomes a `permission_request` frame, the decision comes back through
   // `waitForDecision` (the exact path a Claude prompt takes). Default-deny on stop.
   const disposeApproval = adapter.approval.onRequest(async (req) => {
+    const isUI = USER_INTERACTION_TOOLS.has(req.toolName)
     emit(runId, {
       type: 'permission_request',
       requestId: req.requestId,
       toolName: req.toolName,
       input: req.input,
+      ...(isUI ? { isUserInteraction: true } : {}),
     })
     const { decision } = await waitForDecision(req.requestId, cycleAbort.signal)
     return decision === 'allow'

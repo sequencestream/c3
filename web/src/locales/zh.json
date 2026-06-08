@@ -34,6 +34,9 @@
       },
       "schedules": {
         "label": "定时任务"
+      },
+      "workcenter": {
+        "label": "工作台"
       }
     },
     "mode": {
@@ -1037,6 +1040,9 @@
       "approvalNotFound": "审批条目不存在或已被处理。",
       "invalidEventTrigger": "事件触发型定时任务需要订阅一个运行事件。"
     },
+    "waitUserInvolve": {
+      "dbUnavailable": "等待用户介入存储不可用 (c3.db)。"
+    },
     "projectConfig": {
       "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"
     }
@@ -1317,5 +1323,41 @@
       "onFailure": "失败时询问",
       "onRequest": "请求时询问"
     }
+  },
+  "workcenter": {
+    "title": "工作台",
+    "filter": {
+      "all": "全部",
+      "todo": "待处理",
+      "done": "已完成",
+      "canceled": "已取消"
+    },
+    "status": {
+      "todo": "待处理",
+      "done": "已完成",
+      "canceled": "已取消"
+    },
+    "source": {
+      "session": "会话",
+      "intent": "需求",
+      "discussion": "讨论",
+      "schedule": "定时任务"
+    },
+    "action": {
+      "jump": "跳转到源"
+    },
+    "ask": {
+      "submit": "提交",
+      "back": "返回",
+      "next": "下一题",
+      "answer": "作答",
+      "question": "第 {current}/{total} 题"
+    },
+    "time": {
+      "justNow": "刚刚",
+      "minutesAgo": "{n}分钟前",
+      "hoursAgo": "{n}小时前"
+    },
+    "empty": "暂无待处理事件"
   }
 }

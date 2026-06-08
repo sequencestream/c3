@@ -15,6 +15,14 @@ import {
   type PermissionRequestCtx,
 } from '../permission/index.js'
 
+/**
+ * Tool names that the server marks as user-interaction tools. When the model calls
+ * one of these, the server sets `isUserInteraction: true` on the emitted wire
+ * events (`tool_use`, `tool_result`, `permission_request`), so the web can identify
+ * interaction tools without maintaining a separate client-side allowlist.
+ */
+const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
 // Moved out of this file in server refactor 3/3 (ADR-0009), imported where needed:
 //  - the permission gate (the `canUseTool` policy + tool-name constants +
 //    `classifyIntentTool` / `withAnswers` / `registerPermissionResolver`) →
@@ -450,6 +458,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   // Open side-effect tool_use ids (no tool_result yet) — the live mirror of
   // computeSideEffectPending, consulted only on a socket disconnect (AS-R19).
   const openSideEffects = new Set<string>()
+  // Tracks tool_use ids whose tool is a user-interaction tool (AskUserQuestion,
+  // ExitPlanMode). Carried to the matching `tool_result` emission so the wire
+  // event consistently carries `isUserInteraction: true` on both frames.
+  const userInteractionTools = new Set<string>()
   // The terminal `turn_end` reconnect telemetry, applied to every complete-path
   // turn_end this run emits (AS-R18). Empty for a normal first attempt.
   const reconnectFields = reconnectAttempt ? { reconnect_attempted: true, retry_count: 1 } : {}
@@ -599,11 +611,14 @@ export async function runClaude(opts: RunOptions): Promise<void> {
               // (below) closes it. If a socket disconnect fires while one is
               // open, auto-resume is refused.
               if (isSideEffectTool(b.name)) openSideEffects.add(b.id)
+              const isUserInteraction = USER_INTERACTION_TOOLS.has(b.name)
+              if (isUserInteraction) userInteractionTools.add(b.id)
               send({
                 type: 'tool_use',
                 toolUseId: b.id,
                 toolName: b.name,
                 input: b.input ?? {},
+                ...(isUserInteraction ? { isUserInteraction: true } : {}),
               })
               sawVisibleOutput = true
             }
@@ -623,11 +638,13 @@ export async function runClaude(opts: RunOptions): Promise<void> {
             if (b.type === 'tool_result' && b.tool_use_id) {
               // The tool returned — close its side-effect gate entry (AS-R19).
               openSideEffects.delete(b.tool_use_id)
+              const isUserInteraction = userInteractionTools.has(b.tool_use_id)
               send({
                 type: 'tool_result',
                 toolUseId: b.tool_use_id,
                 content: stringifyToolResult(b.content),
                 isError: !!b.is_error,
+                ...(isUserInteraction ? { isUserInteraction: true } : {}),
               })
             }
           }

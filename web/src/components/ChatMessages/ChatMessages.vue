@@ -9,6 +9,7 @@ import { ref, computed, nextTick, watch } from 'vue'
 import PermissionPrompt from '../PermissionPrompt/PermissionPrompt.vue'
 import ConsensusBlock from '../ConsensusBlock/ConsensusBlock.vue'
 import MarkdownText from '../MarkdownText/MarkdownText.vue'
+import ExitPlanModeDisplay from '../ExitPlanModeDisplay/ExitPlanModeDisplay.vue'
 import { fmt, oneLine } from '../../lib/format'
 import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../../lib/chat-types'
 import { VENDOR_LABEL } from '../../lib/vendor'
@@ -41,6 +42,7 @@ const emit = defineEmits<{
 const mainEl = ref<HTMLElement | null>(null)
 const expanded = ref<Set<number>>(new Set())
 const expandedBatches = ref<Set<number>>(new Set())
+const expandedStandalone = ref<Set<number>>(new Set())
 
 // Keep the view pinned to the latest message as the buffer grows or a session loads.
 watch(
@@ -53,6 +55,29 @@ watch(
 )
 
 const TOOL_KINDS = new Set(['tool-use', 'tool-result', 'permission', 'consensus'])
+
+/**
+ * True when the message is a user-interaction tool that should render as a
+ * standalone block instead of being grouped into a batch.
+ */
+function isUserInteractionMsg(m: ChatMsg): boolean {
+  return (
+    (m.kind === 'tool-use' && m.isUserInteraction === true) ||
+    (m.kind === 'tool-result' && m.isUserInteraction === true) ||
+    (m.kind === 'permission' && m.isUserInteraction === true)
+  )
+}
+
+/**
+ * A user-interaction tool is considered "resolved" when the user has answered.
+ * Resolved blocks can be toggled (collapsed/expanded) freely; unresolved ones
+ * with a pending permission stay forced open.
+ */
+function isInteractionResolved(m: ChatMsg): boolean {
+  if (m.kind === 'permission') return m.decision !== null
+  // A tool-result completes the interaction; a tool-use is still pending.
+  return m.kind === 'tool-result'
+}
 
 /**
  * Reorder a batch so each tool-result sits directly under its matching tool-use
@@ -83,7 +108,9 @@ function orderRows(msgs: ChatMsg[]): { msg: ChatMsg; indent: boolean }[] {
 
 /**
  * Group the flat message list into render blocks: text messages pass through;
- * runs of tool messages between text become one collapsible batch.
+ * runs of tool messages between text become one collapsible batch. User-interaction
+ * tools (AskUserQuestion, ExitPlanMode) are excluded from batches and rendered as
+ * standalone blocks instead.
  */
 const blocks = computed<Block[]>(() => {
   const out: Block[] = []
@@ -128,7 +155,18 @@ const blocks = computed<Block[]>(() => {
     })
   }
   for (const m of props.messages) {
-    if (TOOL_KINDS.has(m.kind)) {
+    // User-interaction tools (AskUserQuestion, ExitPlanMode) are excluded from
+    // batches — flush any accumulated batch and emit as standalone blocks.
+    if (isUserInteractionMsg(m)) {
+      flush()
+      out.push({
+        type: 'standalone',
+        key: `s${m.id}`,
+        id: m.id,
+        msg: m,
+        isResolved: isInteractionResolved(m),
+      })
+    } else if (TOOL_KINDS.has(m.kind)) {
       batch.push(m)
     } else {
       flush()
@@ -149,6 +187,32 @@ function toggleBatch(id: number): void {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   expandedBatches.value = next
+}
+
+/**
+ * Safe tool name extractor for standalone blocks. Standalone blocks hold
+ * user-interaction tool messages; tool-use and permission carry a toolName,
+ * tool-result does not. Returns the tool name or a contextual fallback.
+ */
+function standaloneToolName(m: ChatMsg): string {
+  if (m.kind === 'tool-use') return m.toolName
+  if (m.kind === 'permission') return m.toolName
+  // tool-result doesn't carry toolName; return a generic fallback.
+  if (m.kind === 'tool-result') return 'tool_result'
+  return ''
+}
+
+function isStandaloneOpen(b: Extract<Block, { type: 'standalone' }>): boolean {
+  // A pending permission forces the standalone block open.
+  if (b.msg.kind === 'permission' && b.msg.requestId === props.actionablePermissionId) return true
+  return expandedStandalone.value.has(b.id)
+}
+
+function toggleStandalone(id: number): void {
+  const next = new Set(expandedStandalone.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedStandalone.value = next
 }
 
 function isExpanded(id: number): boolean {
@@ -196,6 +260,60 @@ function toggle(id: number): void {
           </div>
         </template>
         <MarkdownText :text="b.msg.text" :kind="b.msg.kind" />
+      </div>
+      <!--
+        Standalone block: a single user-interaction tool message (AskUserQuestion /
+        ExitPlanMode) rendered outside any batch. Has its own head+body to support
+        collapse/expand. A pending permission keeps it forced open.
+      -->
+      <div
+        v-else-if="b.type === 'standalone'"
+        class="standalone"
+        :class="{ open: isStandaloneOpen(b) }"
+      >
+        <div class="standalone-head" @click="toggleStandalone(b.id)">
+          <span class="caret">{{ isStandaloneOpen(b) ? '▾' : '▸' }}</span>
+          <span class="standalone-summary">{{ standaloneToolName(b.msg) }}</span>
+        </div>
+        <div v-if="isStandaloneOpen(b)" class="standalone-body">
+          <PermissionPrompt
+            v-if="b.msg.kind === 'permission'"
+            :m="b.msg"
+            :actionable="b.msg.requestId === actionablePermissionId"
+            @respond="(pm, decision) => emit('respond', pm, decision)"
+            @submit-ask="(pm, answers) => emit('submit-ask', pm, answers)"
+          />
+          <ExitPlanModeDisplay
+            v-else-if="b.msg.kind === 'tool-use' && b.msg.toolName === 'ExitPlanMode'"
+            :m="b.msg"
+          />
+          <!-- Fallback: render tool-use/tool-result inline (same as batch body) -->
+          <template v-else>
+            <div
+              class="msg"
+              :class="[b.msg.kind, { error: b.msg.kind === 'tool-result' && b.msg.isError }]"
+            >
+              <template v-if="b.msg.kind === 'tool-use'">
+                <div class="label tool-label">
+                  {{ TOOL_USE_LABEL }} · {{ b.msg.toolName }}
+                  <span v-if="b.msg.preApproved" class="approval-tag pre-approved">{{
+                    t('session.chat.preApproved')
+                  }}</span>
+                </div>
+                <pre class="tool-body">{{ fmt(b.msg.input) }}</pre>
+              </template>
+              <template v-else-if="b.msg.kind === 'tool-result'">
+                <div class="label tool-label">
+                  {{ TOOL_RESULT_LABEL }}
+                  <template v-if="b.msg.isError">{{
+                    ' ' + t('session.chat.resultError')
+                  }}</template>
+                </div>
+                <pre class="tool-body">{{ b.msg.content }}</pre>
+              </template>
+            </div>
+          </template>
+        </div>
       </div>
       <div v-else class="batch" :class="{ open: isBatchOpen(b) }">
         <div class="batch-head" @click="toggleBatch(b.id)">

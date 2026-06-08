@@ -36,8 +36,17 @@ export type ChatBody =
       toolName: string
       input: unknown
       preApproved?: boolean
+      /** True when this tool is a user-interaction tool (e.g. AskUserQuestion, ExitPlanMode). */
+      isUserInteraction?: boolean
     }
-  | { kind: 'tool-result'; toolUseId?: string; content: string; isError: boolean }
+  | {
+      kind: 'tool-result'
+      toolUseId?: string
+      content: string
+      isError: boolean
+      /** True when the paired tool-use was a user-interaction tool. */
+      isUserInteraction?: boolean
+    }
   | {
       kind: 'permission'
       requestId: string
@@ -46,6 +55,8 @@ export type ChatBody =
       decision: 'allow' | 'deny' | null
       /** Agents' opinions when consensus ran but was split. */
       consensus?: AnyConsensusOutcome
+      /** True when this tool is a user-interaction tool (e.g. AskUserQuestion, ExitPlanMode). */
+      isUserInteraction?: boolean
     }
   | {
       kind: 'consensus'
@@ -78,10 +89,14 @@ export type RunActivity =
 export type TextMsg = Extract<ChatMsg, { kind: 'user' | 'assistant' | 'system' }>
 
 /**
- * A rendered chat block: either a free-standing text message, or a *batch* of
- * consecutive tool messages (tool-use / tool-result / permission) bounded by
- * text output. A batch is collapsed by default and shows a `Name.count` summary
- * plus a one-line preview of the first tool-use's input (collapsed header only).
+ * A rendered chat block: a free-standing text message; a *batch* of consecutive
+ * tool messages (tool-use / tool-result / permission/consensus) grouped between
+ * text output; or a *standalone* block for a single user-interaction tool message
+ * that renders outside any batch (e.g. AskUserQuestion / ExitPlanMode).
+ * A batch is collapsed by default and shows a `Name.count` summary plus a
+ * one-line preview of the first tool-use's input (collapsed header only).
+ * A standalone block starts expanded and can be collapsed after the interaction
+ * is resolved.
  */
 export type Block =
   | { type: 'text'; key: string; msg: TextMsg }
@@ -96,4 +111,13 @@ export type Block =
       /** One-line `oneLine(fmt(input))` of the batch's first tool-use; '' when the batch has none. */
       preview: string
       hasPending: boolean
+    }
+  | {
+      type: 'standalone'
+      key: string
+      id: number
+      /** The single user-interaction tool message rendered outside any batch. */
+      msg: ChatMsg
+      /** True when the interaction has been resolved (user answered / tool-result arrived). */
+      isResolved: boolean
     }

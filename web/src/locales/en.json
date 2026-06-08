@@ -34,6 +34,9 @@
       },
       "schedules": {
         "label": "Schedules"
+      },
+      "workcenter": {
+        "label": "Workcenter"
       }
     },
     "mode": {
@@ -1037,6 +1040,9 @@
       "approvalNotFound": "Approval entry not found or already handled.",
       "invalidEventTrigger": "An event-triggered schedule needs a run event to subscribe to."
     },
+    "waitUserInvolve": {
+      "dbUnavailable": "Wait-User-Involve store unavailable (c3.db)."
+    },
     "projectConfig": {
       "invalidDefaultMode": "Invalid default mode \"{mode}\" for vendor \"{vendor}\"."
     }
@@ -1317,5 +1323,41 @@
       "onFailure": "On Failure",
       "onRequest": "On Request"
     }
+  },
+  "workcenter": {
+    "title": "Workcenter",
+    "filter": {
+      "all": "All",
+      "todo": "Todo",
+      "done": "Done",
+      "canceled": "Canceled"
+    },
+    "status": {
+      "todo": "Todo",
+      "done": "Done",
+      "canceled": "Canceled"
+    },
+    "source": {
+      "session": "Session",
+      "intent": "Intent",
+      "discussion": "Discussion",
+      "schedule": "Schedule"
+    },
+    "action": {
+      "jump": "Go to source"
+    },
+    "ask": {
+      "submit": "Submit",
+      "back": "Back",
+      "next": "Next",
+      "answer": "Answer",
+      "question": "Question {current}/{total}"
+    },
+    "time": {
+      "justNow": "just now",
+      "minutesAgo": "{n}m ago",
+      "hoursAgo": "{n}h ago"
+    },
+    "empty": "No pending events"
   }
 }

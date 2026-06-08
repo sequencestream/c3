@@ -34,6 +34,9 @@
       },
       "schedules": {
         "label": "Расписания"
+      },
+      "workcenter": {
+        "label": "Верстак"
       }
     },
     "mode": {
@@ -1037,6 +1040,9 @@
       "approvalNotFound": "Запись на одобрение не найдена или уже обработана.",
       "invalidEventTrigger": "Для расписания по событию нужно выбрать событие запуска."
     },
+    "waitUserInvolve": {
+      "dbUnavailable": "Хранилище Wait-User-Involve недоступно (c3.db)."
+    },
     "projectConfig": {
       "invalidDefaultMode": "Недопустимый режим \"{mode}\" для поставщика \"{vendor}\"."
     }
@@ -1317,5 +1323,41 @@
       "onFailure": "On Failure",
       "onRequest": "On Request"
     }
+  },
+  "workcenter": {
+    "title": "Workcenter",
+    "filter": {
+      "all": "All",
+      "todo": "Todo",
+      "done": "Done",
+      "canceled": "Canceled"
+    },
+    "status": {
+      "todo": "Todo",
+      "done": "Done",
+      "canceled": "Canceled"
+    },
+    "source": {
+      "session": "Session",
+      "intent": "Intent",
+      "discussion": "Discussion",
+      "schedule": "Schedule"
+    },
+    "action": {
+      "jump": "Go to source"
+    },
+    "ask": {
+      "submit": "Submit",
+      "back": "Back",
+      "next": "Next",
+      "answer": "Answer",
+      "question": "Question {current}/{total}"
+    },
+    "time": {
+      "justNow": "just now",
+      "minutesAgo": "{n}m ago",
+      "hoursAgo": "{n}h ago"
+    },
+    "empty": "No pending events"
   }
 }

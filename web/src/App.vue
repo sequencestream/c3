@@ -15,6 +15,7 @@ import Sessions from './pages/sessions/Sessions.vue'
 import Intents from './pages/intents/Intents.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Schedules from './pages/schedules/Schedules.vue'
+import WorkCenter from './pages/workcenter/WorkCenter.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
 import ProjectConfigPage from './pages/projectconfig/ProjectConfig.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
@@ -72,6 +73,7 @@ import type {
   UiLang,
   VendorHostStatus,
   VendorId,
+  WaitUserInvolveEvent,
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
@@ -110,6 +112,12 @@ const currentWorkspace = ref<string | null>(null)
 const activeWorkspace = ref<string | null>(null)
 const activeSession = ref<string | null>(null)
 const activeTitle = ref<string>('')
+
+// WorkCenter: pending user-involve events for badge + event list.
+const workcenterEvents = ref<WaitUserInvolveEvent[]>([])
+const pendingEvents = computed(
+  () => workcenterEvents.value.filter((e) => e.status === 'todo').length,
+)
 
 // The 「会话」(console) tab remembers its OWN last-viewed session, independent of
 // the 「需求」tab's comm session — so switching tabs never crosses chat content.
@@ -270,12 +278,13 @@ const availableCommands = ref<SlashCommandInfo[]>([])
 // one more entry here + one branch in the body. The intent tab's comm
 // session IS the viewed session, so it shares the chat column; only the left
 // intent list is extra.
-type TabKey = 'console' | 'intents' | 'discussion' | 'schedules'
-const HEADER_TABS = computed<{ key: TabKey; label: string }[]>(() => [
+type TabKey = 'console' | 'intents' | 'discussion' | 'schedules' | 'workcenter'
+const HEADER_TABS = computed<{ key: TabKey; label: string; badgeCount?: number }[]>(() => [
   { key: 'console', label: t('nav.tab.console.label') },
   { key: 'intents', label: t('nav.tab.intents.label') },
   { key: 'discussion', label: t('nav.tab.discussion.label') },
   { key: 'schedules', label: t('nav.tab.schedules.label') },
+  { key: 'workcenter', label: t('nav.tab.workcenter.label'), badgeCount: pendingEvents.value },
 ])
 const activeTab = ref<TabKey>('console')
 const intentsProject = ref<string | null>(null)
@@ -658,6 +667,10 @@ onMounted(() => {
         // the timezone-aware next-run preview).
         client?.send({ type: 'list_schedules', workspacePath: schedulesProject.value })
         client?.send({ type: 'get_settings' })
+      } else if (activeTab.value === 'workcenter') {
+        // Re-fetch the pending event list (read path, no live session).
+        if (currentWorkspace.value)
+          client?.send({ type: 'list_wait_user_events', projectPath: currentWorkspace.value })
       } else if (activeWorkspace.value && activeSession.value) {
         client?.send({
           type: 'select_session',
@@ -1110,6 +1123,8 @@ function handleMessage(msg: ServerToClient) {
         // Audit hint from the driver path: vendor rule engine auto-allowed this
         // tool (no permission_request raised) → render the "pre-approved" color.
         ...(msg.preApproved ? { preApproved: true } : {}),
+        // User-interaction tool flag (AskUserQuestion / ExitPlanMode)
+        ...(msg.isUserInteraction ? { isUserInteraction: true } : {}),
       })
       activity.value = { phase: 'tool', toolName: msg.toolName }
       break
@@ -1119,6 +1134,8 @@ function handleMessage(msg: ServerToClient) {
         toolUseId: msg.toolUseId,
         content: msg.content,
         isError: msg.isError,
+        // Carry the user-interaction flag from the matched tool-use
+        ...(msg.isUserInteraction ? { isUserInteraction: true } : {}),
       })
       // Tool returned — the model is now deciding the next step (the "stuck
       // after grep" moment the status bar exists to make visible).
@@ -1142,6 +1159,8 @@ function handleMessage(msg: ServerToClient) {
         input: msg.input,
         decision: null,
         consensus: msg.consensus,
+        // User-interaction tool flag (AskUserQuestion / ExitPlanMode)
+        ...(msg.isUserInteraction ? { isUserInteraction: true } : {}),
       })
       activity.value = { phase: 'awaiting' }
       break
@@ -1225,6 +1244,9 @@ function handleMessage(msg: ServerToClient) {
     case 'error':
       // Machine-readable code translated locally via the web i18n catalog (spec 003).
       add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
+      break
+    case 'wait_user_events':
+      workcenterEvents.value = msg.items
       break
   }
 }
@@ -1376,6 +1398,12 @@ function onSelectTab(key: string) {
   }
   if (key === 'schedules') {
     if (currentWorkspace.value) openSchedules(currentWorkspace.value)
+    return
+  }
+  if (key === 'workcenter') {
+    activeTab.value = 'workcenter'
+    if (currentWorkspace.value)
+      client?.send({ type: 'list_wait_user_events', projectPath: currentWorkspace.value })
     return
   }
   switchToConsoleTab()
@@ -1847,6 +1875,53 @@ function submitAsk(m: PermissionMsg, answers: Record<string, string>) {
   m.decision = 'allow'
 }
 
+// WorkCenter event actions (WaitUserInvolveEvent → permission_response, no m.decision gating).
+function respondWorkcenter(event: WaitUserInvolveEvent, decision: 'allow' | 'deny') {
+  if (!client || !event.requestId) return
+  client.send({ type: 'permission_response', requestId: event.requestId, decision })
+  // Mark it done locally so the badge drops immediately.
+  event.status = 'done'
+}
+function submitAskWorkcenter(event: WaitUserInvolveEvent, answers: Record<string, string>) {
+  if (!client || !event.requestId) return
+  client.send({
+    type: 'permission_response',
+    requestId: event.requestId,
+    decision: 'allow',
+    answers,
+  })
+  event.status = 'done'
+}
+
+// Jump from a WorkCenter event to its source tab + item.
+
+function jumpToSource(event: WaitUserInvolveEvent) {
+  const path = event.projectPath || currentWorkspace.value
+  if (!path || !client) return
+  switch (event.source) {
+    case 'session':
+      enterConsole()
+      if (event.sourceId)
+        client.send({ type: 'select_session', workspacePath: path, sessionId: event.sourceId })
+      break
+    case 'intent':
+      activeTab.value = 'intents'
+      intentsProject.value = path
+      persistViewMode()
+      client.send({ type: 'open_intent_chat', projectPath: path })
+      client.send({ type: 'list_intent_sessions', projectPath: path })
+      break
+    case 'discussion':
+      openDiscussions(path)
+      if (event.sourceId) openDiscussion(event.sourceId)
+      break
+    case 'schedule':
+      openSchedules(path)
+      if (event.sourceId) onSelectSchedule(event.sourceId)
+      break
+  }
+}
+
 function listCommands() {
   client?.send({ type: 'list_commands' })
 }
@@ -2038,6 +2113,15 @@ function dismissSkillApproval() {
       @create="createSchedule"
       @update="updateSchedule"
       @load-tool-manifest="onLoadScheduleToolManifest"
+    />
+
+    <WorkCenter
+      v-else-if="activeTab === 'workcenter'"
+      :events="workcenterEvents"
+      :current-workspace="currentWorkspace"
+      @respond="respondWorkcenter"
+      @submit-ask="submitAskWorkcenter"
+      @jump-to-source="jumpToSource"
     />
   </div>
 

@@ -4,6 +4,18 @@
 
 `c3` (Code Creative Center) is a local web UI for code agents, like claude, codex, opencode, ...
 
+## Tech Stack
+
+- **Monorepo**: pnpm workspaces | **Language**: TypeScript (strict) | **Server**: Hono (HTTP+WebSocket) on Node.js/Bun | **Web**: Vue 3 + Vite 6 + vue-i18n | **Validation**: Zod | **Build**: esbuild (server), bun build --compile (binary) | **Test**: Vitest
+
+## Architecture (key decisions)
+
+- **Spec-first, Constitution-governed**: specs/ is source of truth; Constitution (specs/constitution.md) overrides all code — core stack choices are locked, security rules (deny by default, localhost-only) are non-negotiable; any deviation requires an ADR
+- **Single process, WebSocket transport**: browser ↔ server via one WebSocket at /ws (ADR-0002); no database or persistent store allowed; runs are stateful and survive socket close (decoupled via process-wide Map, ADR-0006)
+- **Vendor-neutral agent abstraction**: three-piece interface (AgentDriver/ApprovalBridge/SessionStore) abstracts Claude, Codex, OpenCode behind a neutral facade; adapters live in server/src/kernel/agent/adapters/ (ADR-0011)
+- **Unidirectional boundaries**: kernel/ (pure domain) → transport/ (plumbing) → features/ (user actions); kernel must not import transport or features (ADR-0009); typed event bus for cross-layer messaging (ADR-0018)
+- **Canonical envelope on wire**: vendor-spanning CanonicalMessage as wire protocol; id-based block upsert (not append-only); opaque c3SessionId never leaks vendor-native IDs (ADR-0013)
+
 ## Commands
 
 ```bash
@@ -12,7 +24,7 @@ pnpm dev                                        # server :3000 + Vite :5173 — 
 pnpm build                                      # web THEN server (order matters)
 pnpm start [--project /abs/path] [--port 3000] # start is default cmd; --project defaults to cwd, --port to 3000
 pnpm typecheck                                  # vue-tsc --noEmit across packages
-pnpm lint                                        # eslint . (add --fix via pnpm lint:fix), exec before commit
+pnpm lint                                        # eslint . (add --fix via pnpm lint:fix), exec pnpm lint:fix before commit
 pnpm format                                      # prettier --write . (--check via format:check)
 pnpm pkg                                         # build + single binaries in dist/
 ```

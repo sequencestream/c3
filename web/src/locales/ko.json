@@ -34,6 +34,9 @@
       },
       "schedules": {
         "label": "예약 작업"
+      },
+      "workcenter": {
+        "label": "워크센터"
       }
     },
     "mode": {
@@ -1037,6 +1040,9 @@
       "approvalNotFound": "승인 항목을 찾을 수 없거나 이미 처리되었습니다.",
       "invalidEventTrigger": "이벤트 트리거 일정에는 구독할 실행 이벤트가 필요합니다."
     },
+    "waitUserInvolve": {
+      "dbUnavailable": "Wait-User-Involve 저장소를 사용할 수 없습니다 (c3.db)."
+    },
     "projectConfig": {
       "invalidDefaultMode": "벤더 \"{vendor}\" 의 기본 모드 \"{mode}\" 가 유효하지 않습니다."
     }
@@ -1317,5 +1323,41 @@
       "onFailure": "On Failure",
       "onRequest": "On Request"
     }
+  },
+  "workcenter": {
+    "title": "Workcenter",
+    "filter": {
+      "all": "All",
+      "todo": "Todo",
+      "done": "Done",
+      "canceled": "Canceled"
+    },
+    "status": {
+      "todo": "Todo",
+      "done": "Done",
+      "canceled": "Canceled"
+    },
+    "source": {
+      "session": "Session",
+      "intent": "Intent",
+      "discussion": "Discussion",
+      "schedule": "Schedule"
+    },
+    "action": {
+      "jump": "Go to source"
+    },
+    "ask": {
+      "submit": "Submit",
+      "back": "Back",
+      "next": "Next",
+      "answer": "Answer",
+      "question": "Question {current}/{total}"
+    },
+    "time": {
+      "justNow": "just now",
+      "minutesAgo": "{n}m ago",
+      "hoursAgo": "{n}h ago"
+    },
+    "empty": "No pending events"
   }
 }

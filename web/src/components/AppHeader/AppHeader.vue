@@ -14,7 +14,7 @@ defineProps<{
   currentWorkspace: string | null
   status: 'connecting' | 'open' | 'closed'
   /** Top-bar tabs (data-driven so a future tab is one more entry). */
-  tabs: { key: string; label: string }[]
+  tabs: { key: string; label: string; badgeCount?: number }[]
   /** Currently selected tab key. */
   activeTab: string
   /** Tabs require a current workspace; disabled until one is selected. */
@@ -53,11 +53,12 @@ const emit = defineEmits<{
         v-for="tab in tabs"
         :key="tab.key"
         class="header-tab"
-        :class="{ active: tab.key === activeTab }"
+        :class="{ active: tab.key === activeTab, 'has-badge': (tab.badgeCount ?? 0) > 0 }"
         :disabled="tabsEnabled === false"
         @click="emit('select-tab', tab.key)"
       >
         {{ tab.label }}
+        <span v-if="tab.badgeCount" class="tab-badge">{{ tab.badgeCount }}</span>
       </button>
     </nav>
     <div class="header-right">

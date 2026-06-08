@@ -98,6 +98,22 @@ header h1 {
   opacity: 0.5;
   cursor: default;
 }
+/* Badge on tab button — shows pending event count for workcenter. */
+.header-tab .tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  background: var(--c-danger, #e53e3e);
+  border-radius: 9px;
+}
 
 /* ============ 标准下拉框（Dropdown 组件） ============ */
 /*
@@ -1456,6 +1472,69 @@ main {
 }
 /* tool_result 紧贴其 tool_use 之下，缩进表示从属关系 */
 .batch-body .msg.indented {
+  margin-left: 10px;
+}
+
+/* ============ 用户交互工具独立块（AskUserQuestion / ExitPlanMode） ============ */
+.standalone {
+  align-self: flex-start;
+  max-width: 88%;
+  width: 100%;
+}
+
+/* 折叠头：单行工具名摘要 */
+.standalone-head {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-card);
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  color: var(--c-text-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.standalone-head:hover {
+  color: var(--c-text);
+}
+.standalone-head .caret {
+  display: inline-block;
+  width: 1em;
+  font-size: 10px;
+  color: var(--c-primary);
+}
+.standalone-summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 展开态：内部兼容 PermissionPrompt 与 ExitPlanModeDisplay */
+.standalone.open > .standalone-head {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-bottom: -1px;
+}
+.standalone-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-top: 1px solid var(--c-border);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: var(--c-bg);
+}
+.standalone-body .msg {
+  max-width: 100%;
+  animation: none;
+}
+/* User-interaction tools in the standalone body get the same label indent as batch */
+.standalone-body .msg.indented {
   margin-left: 10px;
 }
 

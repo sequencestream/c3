@@ -17,6 +17,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { CreateScheduleInput, ScheduleType } from '@ccc/shared/protocol'
 import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
+import { getUiLangName } from '../../kernel/config/index.js'
 
 /** Max characters for a generated/fallback name. */
 const MAX_NAME_LEN = 60
@@ -109,7 +110,10 @@ function buildNamingPrompt(type: ScheduleType, config: unknown): string {
       : `LLM prompt:\n${readStringField(config, 'prompt')}`
   return [
     'Generate a concise, human-readable title for the scheduled task below.',
-    'Rules: at most 6 words, plain English, no surrounding quotes, no trailing punctuation.',
+    // Title language follows the Display language (`uiLang`) so a non-English user
+    // sees a console-consistent title; "at most 6 words" stays as a loose length
+    // hint (CJK has no "word" notion, but the model adapts).
+    `Rules: at most 6 words, in ${getUiLangName()}, no surrounding quotes, no trailing punctuation.`,
     'Reply with the title only — nothing else.',
     '',
     body,

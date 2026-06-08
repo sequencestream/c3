@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { fallbackName, generateScheduleName } from './naming.js'
+import { getUiLangName } from '../../kernel/config/index.js'
 
 describe('fallbackName', () => {
   it('truncates the command for command schedules', () => {
@@ -67,6 +68,20 @@ describe('generateScheduleName', () => {
       { invokeLlm: async () => '   ' },
     )
     expect(name).toBe('Summarize logs.')
+  })
+
+  it('builds a naming prompt that instructs the model to use the Display language', async () => {
+    let captured = ''
+    await generateScheduleName(
+      { type: 'command', config: { command: 'pnpm build' } },
+      {
+        invokeLlm: async (prompt) => {
+          captured = prompt
+          return 'Nightly Build'
+        },
+      },
+    )
+    expect(captured).toContain(getUiLangName())
   })
 
   it('falls back to a default name when there is no content and the LLM fails', async () => {

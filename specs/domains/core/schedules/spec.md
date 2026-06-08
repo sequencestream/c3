@@ -316,8 +316,10 @@ Wire shapes are defined in the [shared protocol](../../../shared/api-conventions
   frequency / interval / time / days — and execution identity) and confirms the queue, Then a
   schedule is created in `active` state and evaluated by the scheduler. The display `name` is
   generated server-side from the task content (command / prompt) on create — the form collects
-  neither a name nor a description. There is no `description` field; any present in legacy rows is
-  ignored.
+  neither a name nor a description. The generated title follows the **Display language** (`uiLang`)
+  so it stays consistent with the console; any LLM failure falls back to a deterministic name
+  derived from the task content (always non-empty). There is no `description` field; any present in
+  legacy rows is ignored.
 - **Run now:** Given an existing schedule, When the user clicks "Run Now", Then an execution is
   immediately dispatched (bypassing the scheduler tick), a new `running` execution log appears.
 - **Pause and resume:** Given an active schedule, When the user pauses it (via queue), Then it is

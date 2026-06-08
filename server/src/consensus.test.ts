@@ -59,6 +59,9 @@ vi.mock('./kernel/config/index.js', () => ({
   // pre-step coexisting with the decider. The per-question decision matrix itself
   // is covered exhaustively in consensus-tally.test.ts.
   isConsensusMajorityEnabled: (_projectPath?: string) => settings.majority,
+  // Summary language name injected into the decider prompt; fixed here since the
+  // prompt's language wiring is asserted in consensus-tally.test.ts.
+  getUiLangName: () => 'English',
 }))
 
 import { runAskConsensus } from './consensus.js'

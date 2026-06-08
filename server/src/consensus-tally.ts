@@ -357,10 +357,14 @@ export function tallyQuestion(
  * so it can recognize an effective consensus the literal tally missed (a mis-parsed
  * reply, or differently-worded answers that mean the same option). It is asked to
  * adjudicate ONLY the split questions and must answer with exact option labels.
+ * `langName` (the Display-language name, injected by the caller) sets the language
+ * of the human-facing summary sentence; it defaults to `English` so this pure
+ * function needs no settings access (the caller passes `getUiLangName()`).
  */
 export function deciderAskPrompt(
   perQuestion: QuestionConsensus[],
   questions: AskQuestion[],
+  langName = 'English',
 ): string {
   const split = perQuestion.filter((q) => !q.unanimous)
   const lines: string[] = [
@@ -400,9 +404,9 @@ export function deciderAskPrompt(
     lines.push('')
   }
   lines.push(
-    'Also write ONE short Chinese sentence summarizing the collective answers for a human who must confirm.',
+    `Also write ONE short ${langName} sentence summarizing the collective answers for a human who must confirm.`,
     'Reply with ONLY a single-line JSON object, no other text:',
-    '{"summary":"<chinese sentence>","questions":[{"index":0,"consensus":true,"choice":"<exact label>"|["<label>"]|"custom","custom":"<text or null>"}]}',
+    '{"summary":"<summary sentence>","questions":[{"index":0,"consensus":true,"choice":"<exact label>"|["<label>"]|"custom","custom":"<text or null>"}]}',
   )
   return lines.join('\n')
 }

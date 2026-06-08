@@ -48,10 +48,10 @@ the voters' answers. See [AskUserQuestion — per-question answering](#askuserqu
 
 ## Roles
 
-| Role    | Who                                                                            | Job                                                            |
-| ------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| Voters  | Every configured **same-vendor** agent **except** the session's own (resolved) | Judge the tool call from recent context; return `allow`/`deny` |
-| Decider | The session's own agent                                                        | Summarize the voters' opinions in one sentence (Chinese)       |
+| Role    | Who                                                                            | Job                                                               |
+| ------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Voters  | Every configured **same-vendor** agent **except** the session's own (resolved) | Judge the tool call from recent context; return `allow`/`deny`    |
+| Decider | The session's own agent                                                        | Summarize the voters' opinions in one sentence (Display language) |
 
 If there are no voters (only the session's own agent, **or** every other agent is a
 different vendor), consensus is skipped and the human is prompted as usual.
@@ -120,7 +120,7 @@ capped at ~4000 chars (`claude.ts`).
 | `runConsensusVote(params): ConsensusOutcome\|null` | `null` ⇒ disabled or no voters (caller does the plain human prompt). Otherwise a full outcome.                                                                                                                                                |
 | `parseVote(text)`                                  | Strict-JSON first, then a keyword scan; `null` when ambiguous/empty ⇒ the caller records an **abstain**.                                                                                                                                      |
 | `tally(votes, majority?)`                          | `unanimous` = literal all-agree (no abstain), independent of `majority`. `decision`: unanimous-only when `majority` is false; a strict majority of cast votes (abstain excluded) when true — tie / no clear majority / no cast vote ⇒ `null`. |
-| `summarize(...)`                                   | Decider agent produces one Chinese sentence; `fallbackSummary` (deterministic tally) on error/abort.                                                                                                                                          |
+| `summarize(...)`                                   | Decider agent produces one sentence in the Display language (`getUiLangName()`); `fallbackSummary` (deterministic tally) on error/abort.                                                                                                      |
 
 ## Invariants
 
@@ -185,10 +185,10 @@ _voting_ within that branch, however, only happens when consensus is **enabled**
 `runAskConsensus` returns `null` when disabled (or with no voters / no questions),
 so there is no auto-answer and the human fills the panel unaided.
 
-| Role    | Job (ask path)                                                                                          |
-| ------- | ------------------------------------------------------------------------------------------------------- |
-| Voters  | Answer **every** question — pick option label(s) or write a custom reply, with reason                   |
-| Decider | Summarize the per-question answers (Chinese) **and** adjudicate split questions for effective consensus |
+| Role    | Job (ask path)                                                                                                   |
+| ------- | ---------------------------------------------------------------------------------------------------------------- |
+| Voters  | Answer **every** question — pick option label(s) or write a custom reply, with reason                            |
+| Decider | Summarize the per-question answers (Display language) **and** adjudicate split questions for effective consensus |
 
 - Each voter gets `askVoterPrompt(questions, context)` and returns structured
   per-question choices; `parseAskVote` resolves each choice to an option label via
@@ -277,7 +277,7 @@ tool input and echoes it as the tool result. So both paths resolve via
 | `matchOption(choice, options)`                       | Resolves a free-form choice to a canonical option label (exact → stripped-exact → prefix → substring); `null` if none fit. Stripped-exact restores a de-biased echo to the original label.                                          |
 | `parseAskVote(text, qs, …)`                          | One `AgentAnswer` per question; choice resolved via `matchOption`, unmatched / missing entry ⇒ `abstain`.                                                                                                                           |
 | `tallyQuestion(q, i, answers, majority?)`            | `unanimous`/`agreed` on a literal all-answer agreement. With `majority` on, a still-split question resolves to its strict-plurality answer (abstain excluded; tie / no leader / no cast vote ⇒ split), flagged `decidedByMajority`. |
-| `deciderAskPrompt(perQuestion, qs)`                  | Builds the combined judge+summary prompt; lists option labels only for the split questions.                                                                                                                                         |
+| `deciderAskPrompt(perQuestion, qs, langName?)`       | Builds the combined judge+summary prompt; lists option labels only for the split questions. `langName` (Display-language name, default `English`) sets the summary sentence's language — caller passes `getUiLangName()`.           |
 | `parseDeciderAsk(text, qs)`                          | `{ summary, overrides }`; an override is emitted only for `consensus:true` rulings whose answer re-validates to a label/custom — else dropped (stays split).                                                                        |
 
 ## Wire protocol

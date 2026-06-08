@@ -25,7 +25,11 @@ import type {
   QuestionConsensus,
 } from '@ccc/shared/protocol'
 import { resolveAgent, vendorScopedVoters } from './kernel/agent-config/index.js'
-import { isConsensusEnabled, isConsensusMajorityEnabled } from './kernel/config/index.js'
+import {
+  getUiLangName,
+  isConsensusEnabled,
+  isConsensusMajorityEnabled,
+} from './kernel/config/index.js'
 import { askAgentOnce } from './agent-once.js'
 import {
   askQuestions,
@@ -75,7 +79,7 @@ async function summarize(
       `Several advisor agents voted on whether to allow the tool "${toolName}". Their votes:`,
       ...votes.map((v) => `- ${v.agentName}: ${v.decision} — ${v.reason || '(no reason)'}`),
       '',
-      'Write ONE short sentence in Chinese summarizing their collective opinion for a human who must make the final call. Output only that sentence, no preamble.',
+      `Write ONE short sentence in ${getUiLangName()} summarizing their collective opinion for a human who must make the final call. Output only that sentence, no preamble.`,
     ].join('\n')
     const text = await askAgentOnce(decider, prompt, cwd, signal)
     return oneLine(text) || fallback
@@ -160,7 +164,7 @@ async function decideAndSummarizeAsk(
     // Shuffle the option list shown to the decider (de-bias the fixed order);
     // parse against the ORIGINAL questions — matchOption resolves by label, so
     // tally/injection stay on canonical labels.
-    const prompt = deciderAskPrompt(perQuestion, shuffleOptions(questions))
+    const prompt = deciderAskPrompt(perQuestion, shuffleOptions(questions), getUiLangName())
     const text = await askAgentOnce(decider, prompt, cwd, signal)
     const { summary, overrides } = parseDeciderAsk(text, questions)
     return { summary: summary || fallback, overrides }

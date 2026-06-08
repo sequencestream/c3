@@ -595,6 +595,22 @@ describe('deciderAskPrompt', () => {
     expect(prompt).toContain('[0] options:')
     expect(prompt).not.toContain('[1] options:')
   })
+
+  it('defaults the summary language to English', () => {
+    const agreed = tallyQuestion(Q[0], 0, [
+      { agentId: 'x', agentName: 'x', optionLabels: ['商户端核销'], reason: '' },
+    ])
+    const prompt = deciderAskPrompt([agreed], Q)
+    expect(prompt).toContain('ONE short English sentence')
+  })
+
+  it('injects the given Display-language name into the summary instruction', () => {
+    const agreed = tallyQuestion(Q[0], 0, [
+      { agentId: 'x', agentName: 'x', optionLabels: ['商户端核销'], reason: '' },
+    ])
+    const prompt = deciderAskPrompt([agreed], Q, 'Chinese (简体中文)')
+    expect(prompt).toContain('ONE short Chinese (简体中文) sentence')
+  })
 })
 
 describe('fallbackAskSummary', () => {

@@ -396,7 +396,9 @@
       "new": {
         "label": "New intent: start a new chat session"
       },
-      "empty": "No intents yet. Chat with the assistant on the right and save them."
+      "empty": "No intents yet. Chat with the assistant on the right and save them.",
+      "loadMore": "Load more ↓",
+      "allLoaded": "All loaded"
     },
     "filter": {
       "all": {

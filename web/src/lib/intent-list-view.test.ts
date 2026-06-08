@@ -9,7 +9,9 @@ import {
   reqRunStatusLabel,
   rowVisibility,
   showRunStatus,
+  sliceTerminated,
   statusLabel,
+  TERMINAL_PAGE_SIZE,
 } from './intent-list-view'
 
 describe('statusLabel', () => {
@@ -140,6 +142,62 @@ describe('compareByCompletion', () => {
     // a 的 updatedAt 200 > b 的 100
     expect(cmp(a, b)).toBeLessThan(0)
     expect([b, a].sort(cmp)).toEqual([a, b])
+  })
+})
+
+describe('sliceTerminated', () => {
+  // 用数字数组代表终止态项,只验证切片与 hasMore 逻辑(与元素类型无关)。
+  const range = (n: number) => Array.from({ length: n }, (_, i) => i)
+
+  it('每页常量为 10', () => {
+    expect(TERMINAL_PAGE_SIZE).toBe(10)
+  })
+
+  it('总数不足一页:全显且无更多', () => {
+    const { visible, hasMore } = sliceTerminated(range(3), 10)
+    expect(visible).toEqual([0, 1, 2])
+    expect(hasMore).toBe(false)
+  })
+
+  it('总数恰好等于可见数:全显且无更多(边界)', () => {
+    const { visible, hasMore } = sliceTerminated(range(10), 10)
+    expect(visible).toHaveLength(10)
+    expect(hasMore).toBe(false)
+  })
+
+  it('总数超过一页:只取前 10 且有更多', () => {
+    const { visible, hasMore } = sliceTerminated(range(25), 10)
+    expect(visible).toEqual(range(10))
+    expect(hasMore).toBe(true)
+  })
+
+  it('追加一页后仍有剩余:取前 20 且有更多', () => {
+    const { visible, hasMore } = sliceTerminated(range(25), 20)
+    expect(visible).toHaveLength(20)
+    expect(hasMore).toBe(true)
+  })
+
+  it('可见数超过总数:全显且无更多', () => {
+    const { visible, hasMore } = sliceTerminated(range(12), 30)
+    expect(visible).toHaveLength(12)
+    expect(hasMore).toBe(false)
+  })
+
+  it('空列表:空片段且无更多', () => {
+    const { visible, hasMore } = sliceTerminated([], 10)
+    expect(visible).toEqual([])
+    expect(hasMore).toBe(false)
+  })
+
+  it('可见数为 0 或负:返回空片段,非空源仍标记有更多', () => {
+    expect(sliceTerminated(range(5), 0)).toEqual({ visible: [], hasMore: true })
+    expect(sliceTerminated(range(5), -3)).toEqual({ visible: [], hasMore: true })
+  })
+
+  it('不修改源数组', () => {
+    const src = range(15)
+    sliceTerminated(src, 10)
+    expect(src).toHaveLength(15)
   })
 })
 

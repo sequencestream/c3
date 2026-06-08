@@ -18,7 +18,9 @@ import {
   reqRunStatusLabel,
   rowVisibility,
   showRunStatus,
+  sliceTerminated,
   statusLabel,
+  TERMINAL_PAGE_SIZE,
 } from '../../../../lib/intent-list-view'
 
 const { t, locale } = useTypedI18n()
@@ -82,24 +84,45 @@ const FILTERS = computed<{ value: IntentStatus | null; label: string }[]>(() => 
 ])
 const filter = ref<IntentStatus | null>(null)
 
+// 「全部」视图下终止态项的可见条数:初始一页,「加载更多」每次 +一页。
+// 切换筛选时重置,避免上一视图的分页进度串到新视图(AC5)。
+const visibleTerminated = ref(TERMINAL_PAGE_SIZE)
+
 function setFilter(value: IntentStatus | null) {
   filter.value = value
+  visibleTerminated.value = TERMINAL_PAGE_SIZE
   emit('filter', value)
 }
 
-// 「全部」视图:活跃项(draft/todo/in_progress)保持服务端原序置顶,
-// 终止态项(done/cancelled)置底,按完成/取消时间倒序+优先级排序。
-// 「已完成」筛选视图:整列在客户端按同样规则重排。
-// 其它单状态筛选:由服务端返回该状态数据,原样展示不再排序。
+function loadMoreTerminated() {
+  visibleTerminated.value += TERMINAL_PAGE_SIZE
+}
+
+// 「全部」视图下排序后的终止态项(done/cancelled),按完成/取消时间倒序+优先级。
+const terminatedIntents = computed<Intent[]>(() =>
+  props.intents
+    .filter((r) => r.status === 'done' || r.status === 'cancelled')
+    .sort((a, b) => compareByCompletion(a, b, locale.value)),
+)
+
+// 「全部」视图:活跃项(draft/todo/in_progress)保持服务端原序置顶且全显,
+// 终止态项置底并按 visibleTerminated 分批切片(AC1/AC2)。
+// 「已完成」筛选视图:整列在客户端按同样规则重排,不分页。
+// 其它单状态筛选:由服务端返回该状态数据,原样展示不再排序、不分页(AC5)。
 const displayIntents = computed<Intent[]>(() => {
   if (filter.value === 'done')
     return [...props.intents].sort((a, b) => compareByCompletion(a, b, locale.value))
   if (filter.value !== null) return props.intents
   const pending = props.intents.filter((r) => r.status !== 'done' && r.status !== 'cancelled')
-  const terminated = props.intents
-    .filter((r) => r.status === 'done' || r.status === 'cancelled')
-    .sort((a, b) => compareByCompletion(a, b, locale.value))
-  return [...pending, ...terminated]
+  const { visible } = sliceTerminated(terminatedIntents.value, visibleTerminated.value)
+  return [...pending, ...visible]
+})
+
+// 终止态分页页脚:仅「全部」视图且存在终止态项时渲染。
+// hasMore → 「加载更多 ↓」按钮;否则 → 「已加载完」文案(AC3/AC4)。
+const terminalPaging = computed<{ hasMore: boolean } | null>(() => {
+  if (filter.value !== null || terminatedIntents.value.length === 0) return null
+  return { hasMore: sliceTerminated(terminatedIntents.value, visibleTerminated.value).hasMore }
 })
 
 // Title lookup so a dependency id can show its intent's title in a hint.
@@ -299,6 +322,17 @@ function datePrefix(r: Intent): string {
             })
           }}
         </div>
+      </div>
+      <div v-if="terminalPaging" class="req-terminal-paging">
+        <button
+          v-if="terminalPaging.hasMore"
+          type="button"
+          class="req-load-more"
+          @click="loadMoreTerminated"
+        >
+          {{ t('intent.list.loadMore') }}
+        </button>
+        <span v-else class="req-all-loaded">{{ t('intent.list.allLoaded') }}</span>
       </div>
     </div>
   </section>

@@ -2545,6 +2545,28 @@ button.deny:hover:not(:disabled) {
   font-size: var(--fs-caption);
   padding: var(--sp-3);
 }
+.req-terminal-paging {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-2) 0;
+}
+.req-load-more {
+  background: none;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+}
+.req-load-more:hover {
+  background: var(--c-card);
+  color: var(--c-text);
+}
+.req-all-loaded {
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+}
 .req-item {
   background: var(--c-card);
   border: 1px solid var(--c-border);

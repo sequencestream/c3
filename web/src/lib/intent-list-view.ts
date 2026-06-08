@@ -96,6 +96,28 @@ export function compareByCompletion(
   return a.priority.localeCompare(b.priority, locale)
 }
 
+/**
+ * 「全部」视图下终止态项(done/cancelled)分批加载的每页条数。
+ * 活跃项(draft/todo/in_progress)不分页、始终全显;此常量只约束终止态切片。
+ */
+export const TERMINAL_PAGE_SIZE = 10
+
+/** 终止态切片结果:当前可见片段与是否还有未加载项。 */
+export interface TerminatedSlice<T> {
+  visible: T[]
+  hasMore: boolean
+}
+
+/**
+ * 取终止态列表的前 `visibleCount` 条用于渲染,并判断是否还有更多。
+ * 纯函数:`visibleCount` 超过长度时 `slice` 自然截断,`hasMore` 随之为 `false`;
+ * `visibleCount <= 0` 时返回空片段。供「加载更多 ↓」/「已加载完」UI 决策。
+ */
+export function sliceTerminated<T>(terminated: T[], visibleCount: number): TerminatedSlice<T> {
+  const count = Math.max(0, visibleCount)
+  return { visible: terminated.slice(0, count), hasMore: count < terminated.length }
+}
+
 /** 时刻格式化选项。`short` → MM/DD,`full` → YYYY-MM-DD HH:mm(默认)。 */
 export interface FormatDateOpts {
   style?: 'short' | 'full'

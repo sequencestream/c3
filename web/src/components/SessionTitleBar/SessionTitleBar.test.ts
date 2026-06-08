@@ -2,18 +2,18 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SessionTitleBar from './SessionTitleBar.vue'
 import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
-import type { PermissionMode } from '@ccc/shared/protocol'
+import type { ModeToken } from '@ccc/shared/protocol'
 
-const MODE_OPTIONS = [
-  { value: 'default' as PermissionMode, label: 'default' },
-  { value: 'plan' as PermissionMode, label: 'plan' },
+const MODE_OPTIONS: { value: ModeToken; label: string }[] = [
+  { value: 'default', label: '默认' },
+  { value: 'plan', label: '计划' },
 ]
 
 function mountBar(props: Partial<Record<string, unknown>> = {}) {
   return mount(SessionTitleBar, {
     props: {
       activeTitle: 'Alpha',
-      mode: 'default' as PermissionMode,
+      mode: 'default' as ModeToken,
       modeOptions: MODE_OPTIONS,
       ...props,
     },
@@ -50,6 +50,23 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
   it('无 vendor 时不渲染色点', () => {
     const w = mountBar({ vendor: null })
     expect(w.find('[data-testid="session-vendor-dot"]').exists()).toBe(false)
+  })
+
+  it('per-vendor modeOptions 渲染为下拉项', async () => {
+    const codexOptions: { value: ModeToken; label: string }[] = [
+      { value: 'read-only', label: '只读' },
+      { value: 'auto', label: '自动' },
+      { value: 'full-access', label: '完全访问' },
+    ]
+    const w = mountBar({ modeOptions: codexOptions })
+    await w.find('.dd-trigger').trigger('click')
+    const labels = w.findAll('.dd-item .dd-label').map((n) => n.text())
+    expect(labels).toEqual(['只读', '自动', '完全访问'])
+  })
+
+  it('showMode=false 不渲染模式下拉', () => {
+    const w = mountBar({ showMode: false })
+    expect(w.find('.mode').exists()).toBe(false)
   })
 })
 

@@ -868,7 +868,8 @@
       "renameFailed": "Failed to rename session: {detail}",
       "resumeNoAgent": "No {vendor} agent configured — add one to resume by ID.",
       "notSelected": "Select or create a session first.",
-      "turnRunning": "A turn is already running in this session."
+      "turnRunning": "A turn is already running in this session.",
+      "invalidMode": "Invalid permission mode \"{mode}\" for vendor \"{vendor}\"."
     },
     "intent": {
       "notFound": "Intent not found.",

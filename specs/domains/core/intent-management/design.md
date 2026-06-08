@@ -86,10 +86,23 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   hidden filtering breaks.
 - Intents: `listIntents(projectPath, status?)` (with `dependsOn` aggregation),
   `insertIntents(projectPath, items)` (transactional batch, uuid, status `todo`; persists
-  `module` as `it.module ?? ''`, `automate` defaults to `0`), `updateStatus`, `setLastDevSession`,
-  `setAutomate(id, automate)`, `updateIntent`, `getIntent`. The internal `Row`/`hydrate`
-  carry `module` + `automate` (mapped to boolean) so every read path returns them;
-  `updateIntent` does not yet patch `module` (out of scope, no schema blocker).
+  `module` as `it.module ?? ''`, `automate` defaults to `0`), `upsertIntents(projectPath, items)`
+  (the `save_intents` write path — insert or in-place update per item `id`, RM-R20; see below),
+  `updateStatus`, `setLastDevSession`, `setAutomate(id, automate)`, `updateIntent`, `getIntent`. The
+  internal `Row`/`hydrate` carry `module` + `automate` (mapped to boolean) so every read path returns
+  them; `updateIntent` does not patch `module` (`upsertIntents` writes `module` directly instead).
+- **Upsert write path (RM-R20).** `upsertIntents(projectPath, items)` backs `save_intents` (replacing
+  the old direct `insertIntents` call). It resolves each item to a stable id up front — the supplied
+  `id` for an update, a fresh uuid for an insert — so `dependsOnIndexes` (RM-R17) resolves against the
+  full batch regardless of whether a referenced sibling is new or being updated. **All validation runs
+  before the transaction opens** (atomic reject, nothing half-written): each update `id` is fetched and
+  guarded `project_path === resolve(projectPath)` (unknown / cross-project ⇒ throw), and its current
+  status is checked — `in_progress`/`done` throw as immutable, `cancelled` is flagged for reactivation.
+  Inside the single `tx`, an update writes `title`/`content`/`priority`, writes `module` only when supplied
+  (else keeps the prior), sets status to `todo` for a reactivated `cancelled` (else unchanged) with
+  `completed_at` cleared, and rewrites `intent_deps` only when `dependsOn`/`dependsOnIndexes` was supplied;
+  an insert behaves exactly as `insertIntents` (status `todo`, `created_at = now + index`). The
+  `save_intents` handler turns any throw into an `isError` result so the agent learns nothing was written.
 - **Read-only agent query (RM-R19):** `findIntents(projectPath, { keyword?, module?, status? })`
   backs the agent's `find_intents` tool — filters compose with `AND`, all optional: `keyword`
   is a `LIKE` substring over `title` OR `content` (a tiny `escapeLike` escapes `% _ \` and the query
@@ -181,8 +194,12 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   resumes **this** session, not the abandoned one. Triggered by the "+" in the title bar (RM-R4).
 - **Refine (`refine_intent`):** switch away from the old communication view, start a new
   `pending:` intent runtime (`default` mode), `setChatSession` to it, reply `session_selected`
-  (empty), then `launchRun` injects a first `user_prompt` ("开始完善需求 …, 定稿后调用
-  save_intents") equivalent to a user message (RM-R7).
+  (empty), then `launchRun` injects a first `user_prompt` equivalent to a user message (RM-R7). The
+  seed prompt carries the **original intent id and its current status** and instructs the agent to
+  call `save_intents` with `id="<原id>"` so定稿 updates the original entry in place (upsert, RM-R20)
+  — not a duplicate — and to tell the user it cannot be modified if the intent is already
+  `in_progress`/`done`. ("开始完善已存在意图 <id>(当前状态:…) …, 定稿后调用 save_intents 并回填
+  id 以原地更新原意图")
 - **From discussion (`discussion_to_intent`):** the same refine machinery, but the seed is a
   completed discussion's `conclusion` rather than an existing intent. The server loads the
   discussion (`getDiscussion`), rejects unless `completed` with a non-empty `conclusion`, resolves
@@ -213,6 +230,13 @@ leaving it blank when unsure, and to pass `module` per item to `save_intents`. T
 **a** (infer from title/content); a future extension may key off the project's actual module
 structure for more precise classification (RM-R14).
 
+The prompt also carries a **refine-upsert rule (RM-R20):** when refining an intent that already
+exists (the seed prompt hands the agent its id), the agent **must** set that item's `id` on
+`save_intents` so the original entry is updated in place — never omit it and create a duplicate; a
+`cancelled` original is reactivated to `todo`, while an `in_progress`/`done` original is immutable
+(the agent tells the user it cannot be modified rather than attempting a save). A batch may mix
+updates (with id) and brand-new items (without id).
+
 The prompt also carries a **decomposition rule (a single goal is never split)**: when one goal
 touches **code, its tests, and/or its companion docs** (spec / README / comments), the analyst
 folds the test- and doc-sync work into the **same** intent's content + acceptance points
@@ -232,16 +256,19 @@ server is built solely on the `kind === 'intent'` / `gate: 'intent'` launch path
 (ADR 0007). The `tool()`
 call uses four positional args (name, required description, a **raw zod shape** — not
 `z.object(...)` — and an async handler returning a `CallToolResult`). Each intent element
-includes an optional `module: z.string().optional()` (described as the inferred module name, may
-be left blank); the handler passes it straight through to `insertIntents` (RM-R14). It also
-carries `dependsOn` (ids of already-existing intents) and `dependsOnIndexes:
-z.array(z.number().int()).optional()` (0-based indexes into the same batch, described as the
-intra-batch dependency to fill when items have先后关系); both flow through to `insertIntents`,
-which resolves the indexes (RM-R17). The tool's top-level description tells the agent to use
-`dependsOnIndexes` for intra-batch order so the orchestrator sequences correctly. The handler runs **only
-after** the human confirmation (the gateway already allowed); it writes via
-`store.insertIntents` and broadcasts a `intents` refresh, returning a text result (or
-`isError` text on db-unavailable / failure so the agent learns it did not save). `projectPath` is
+includes an optional `id: z.string().optional()` (described as the existing-intent id to update
+in place — upsert, RM-R20; omit to insert) and an optional `module: z.string().optional()`
+(described as the inferred module name, may be left blank); both flow through to `upsertIntents`
+(RM-R14/RM-R20). It also carries `dependsOn` (ids of already-existing intents) and
+`dependsOnIndexes: z.array(z.number().int()).optional()` (0-based indexes into the same batch,
+described as the intra-batch dependency to fill when items have先后关系); both flow through to
+`upsertIntents`, which resolves the indexes against the full batch (RM-R17). The tool's top-level
+description tells the agent to use `id` for refine-in-place and `dependsOnIndexes` for intra-batch
+order so the orchestrator sequences correctly. The handler runs **only after** the human confirmation
+(the gateway already allowed); it writes via `store.upsertIntents` (insert or in-place update per
+item id) and broadcasts a `intents` refresh, returning a text result that notes the insert/update
+split (or `isError` text on db-unavailable / failure — incl. an immutable-status or unknown / cross-project
+update id rejecting the whole batch — so the agent learns it did not save). `projectPath` is
 closed over from the runtime's resolved `workspacePath` and re-bound each run, so the tool never
 crosses projects.
 

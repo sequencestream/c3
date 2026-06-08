@@ -868,7 +868,8 @@
       "renameFailed": "重命名会话失败:{detail}",
       "resumeNoAgent": "未配置 {vendor} agent — 请先添加一个再按 ID 恢复。",
       "notSelected": "请先选择或创建一个会话。",
-      "turnRunning": "该会话已有一轮正在运行。"
+      "turnRunning": "该会话已有一轮正在运行。",
+      "invalidMode": "vendor \"{vendor}\" 的权限模式 \"{mode}\" 不合法"
     },
     "intent": {
       "notFound": "意图不存在。",

@@ -23,6 +23,7 @@ import { canFormTeam } from '../agent/adapters/capabilities.js'
 import { runViaDriver } from './run-via-driver.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
+import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 import {
   getDegradationChain,
   resolveSessionLaunch,
@@ -78,6 +79,12 @@ export interface LaunchRunDeps {
   broadcastStatuses: () => void
   broadcastIntents: (projectPath: string) => void
   /**
+   * The kernel event bus (ADR-0018). `launchRun` publishes `'run:bound'` and
+   * `'run:settled'` on this bus instead of calling a per-call `onEvent` callback.
+   * Consumers subscribe to the bus via `KernelContext.eventBus`.
+   */
+  readonly eventBus: EventBus<EventBusEvents>
+  /**
    * Intent comm-agent launch profile (read-only gate + disallowed-tools lock
    * + comm system prompt + `save_intents` MCP tool), injected at the
    * composition root so the kernel launcher never imports `features/` (ADR-0009
@@ -117,11 +124,6 @@ export interface LaunchRunDeps {
   skillMount?: (rt: SessionRuntime) => Promise<SkillMountStep>
 }
 
-/** Connection-injected callback the launcher fires. The shape itself is the
- * sealed-union `RunDomainEvent` (see `kernel/types.ts`); this module re-exports
- * it so the seam tests / callers that imported it from here keep working. */
-import type { LaunchCbs } from '../types.js'
-export type { LaunchCbs } from '../types.js'
 import type { SkillMountOutcome } from '../skill-loader/index.js'
 
 /** Outcome of the pre-launch skill mount step, for telemetry / UI status. */
@@ -133,10 +135,11 @@ export interface SkillMountStep {
 
 /**
  * Shared run launcher. Owns only registry/emit concerns: abort wiring, the prompt
- * echo, status flips, the SDK run, and pending→real id binding. Everything
- * connection-specific (session_started, `viewing`, `activeSessionId`, session-list
- * refresh) is injected via the callbacks, so background launches
- * (`start_development`) and seeded launches (`refine_intent`) can reuse it.
+ * echo, status flips, the SDK run, and pending→real id binding. Connection-specific
+ * effects (session_started, `viewing`, `activeSessionId`, session-list refresh) are
+ * published on the kernel event bus (ADR-0018) — subscribe to `'run:bound'` and
+ * `'run:settled'` via `deps.eventBus` — so background launches (`start_development`)
+ * and seeded launches (`refine_intent`) can reuse it.
  * Intent runtimes get the read-only gate, the disallowed-tools lock, the comm
  * system prompt, the `save_intents` MCP tool (via `deps.intentProfile`),
  * and a forced `default` permission mode (so `canUseTool` always fires).
@@ -145,7 +148,6 @@ export async function launchRun(
   rt: SessionRuntime,
   prompt: string,
   deps: LaunchRunDeps,
-  cbs: LaunchCbs = {},
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -182,7 +184,7 @@ export async function launchRun(
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
     if (vendor === 'opencode' || vendor === 'codex') {
       const adapter = vendor === 'opencode' ? deps.getOpencodeAdapter?.() : deps.getCodexAdapter?.()
-      if (adapter) return runViaDriver(rt, prompt, adapter, cbs)
+      if (adapter) return runViaDriver(rt, prompt, adapter, deps.eventBus)
       const unavailable =
         vendor === 'opencode'
           ? 'OpenCode is unavailable (host CLI missing, or start c3 with --opencode-url).'
@@ -338,14 +340,14 @@ export async function launchRun(
                   hasBound = true
                   // `bound` is fire-and-forget (the SDK callback is sync, so we
                   // can't `await` here without making the whole callback chain
-                  // async). The old `onSessionId` was also fire-and-forget.
-                  void cbs.onEvent?.({ kind: 'bound', prevId: prev, realId: sid })
+                  // async). Published on the event bus (ADR-0018).
+                  deps.eventBus.publish('run:bound', { prevId: prev, realId: sid })
                 }
               } else if (!hasBound) {
                 // First binding on a non-pending session (e.g. resume flow).
                 // This path runs once per launchRun.
                 hasBound = true
-                void cbs.onEvent?.({ kind: 'bound', prevId: prev, realId: sid })
+                deps.eventBus.publish('run:bound', { prevId: prev, realId: sid })
               }
               // If hasBound is already true (retry), skip everything — the
               // runtime keeps its original Map key.
@@ -495,6 +497,6 @@ export async function launchRun(
     // Authoritative terminal-state backstop. The run is fully over; guarantee a
     // terminal `turn_end` is broadcast and the session settles to `idle`.
     finalizeRun(runId)
-    await cbs.onEvent?.({ kind: 'settled', workspacePath })
+    deps.eventBus.publish('run:settled', { workspacePath })
   }
 }

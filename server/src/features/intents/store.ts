@@ -398,6 +398,119 @@ export function insertIntents(projectPath: string, items: ProposedIntent[]): Int
   return hydrate(d, rows)
 }
 
+/**
+ * Upsert a batch of proposed intents in ONE transaction (RM-R18).
+ *
+ * Each item is an INSERT (no `id`) or an UPDATE (carries `id`). All validation runs
+ * BEFORE any write so the whole batch is atomic — any failure rejects it with nothing
+ * persisted:
+ *  - an UPDATE `id` must resolve to an intent in THIS project (else throw);
+ *  - an UPDATE target in `in_progress` or `done` is immutable → throw (caller surfaces
+ *    a "正在开发 / 已完成,不可修改" message);
+ *  - `dependsOnIndexes` out-of-range / self / cyclic → throw (resolveBatchDependencies).
+ *
+ * Status rules on UPDATE: `draft`/`todo` keep their status; `cancelled` is reactivated
+ * to `todo` (completed_at stays null per the updateStatus rule). New rows insert as
+ * `todo`. Un-supplied optional fields are preserved: `module` keeps its prior value when
+ * omitted, and deps are only rewritten when `dependsOn`/`dependsOnIndexes` is supplied.
+ * `dependsOnIndexes` resolves against the FULL batch, so a new item can depend (by index)
+ * on an updated sibling and vice-versa.
+ */
+export function upsertIntents(projectPath: string, items: ProposedIntent[]): Intent[] {
+  const d = requireDb()
+  const proj = resolve(projectPath)
+  const now = Date.now()
+  // Resolve every item to a stable id up front: the existing id for updates, a fresh
+  // uuid for inserts. dependsOnIndexes then resolves against THIS id array regardless of
+  // whether the referenced sibling is brand-new or being updated.
+  const ids: string[] = items.map((it) => it.id ?? randomUUID())
+  // Pre-validate UPDATE targets (existence + project binding + status lock) BEFORE
+  // resolving deps, so an immutable / foreign / unknown id rejects the batch atomically.
+  const priors = items.map((it) => {
+    if (it.id === undefined) return null
+    const row = d.get<Row>('SELECT * FROM intents WHERE id=?', it.id)
+    if (!row || row.project_path !== proj) {
+      throw new Error(`无法更新意图 ${it.id}:它在本项目中不存在`)
+    }
+    if (row.status === 'in_progress' || row.status === 'done') {
+      const why = row.status === 'in_progress' ? '正在开发' : '已完成'
+      throw new Error(`意图 ${it.id}(${row.title})${why},不可修改`)
+    }
+    return row
+  })
+  // Validate + resolve intra-batch deps (out-of-range / self / cyclic throws here).
+  const deps = resolveBatchDependencies(items, ids)
+  tx(d, () => {
+    items.forEach((it, i) => {
+      const prior = priors[i]
+      // Whether this item supplied its dependency set; only then do we rewrite deps.
+      const depsSupplied = it.dependsOn !== undefined || it.dependsOnIndexes !== undefined
+      if (prior) {
+        // UPDATE: cancelled → todo (reactivate); else keep status. Neither outcome is
+        // `done`, so completed_at is always cleared to null.
+        const status: IntentStatus =
+          prior.status === 'cancelled' ? 'todo' : (prior.status as IntentStatus)
+        const module = it.module !== undefined ? it.module : prior.module
+        d.run(
+          `UPDATE intents
+             SET title=?, content=?, priority=?, module=?, status=?, updated_at=?, completed_at=?
+           WHERE id=?`,
+          it.title,
+          it.content,
+          it.priority,
+          module,
+          status,
+          now,
+          null,
+          ids[i],
+        )
+        if (depsSupplied) {
+          d.run('DELETE FROM intent_deps WHERE intent_id=?', ids[i])
+          for (const dep of deps[i]) {
+            d.run(
+              'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)',
+              ids[i],
+              dep,
+            )
+          }
+        }
+      } else {
+        // INSERT: stagger created_at by batch index for a stable submission-order rank.
+        const createdAt = now + i
+        d.run(
+          `INSERT INTO intents
+             (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          ids[i],
+          proj,
+          it.title,
+          it.content,
+          it.priority,
+          'todo',
+          it.module ?? '',
+          null,
+          createdAt,
+          createdAt,
+          null,
+        )
+        for (const dep of deps[i]) {
+          d.run(
+            'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)',
+            ids[i],
+            dep,
+          )
+        }
+      }
+    })
+  })
+  // Re-read so callers get fully-hydrated rows (incl. dependsOn), in batch order.
+  const placeholders = ids.map(() => '?').join(',')
+  const rows = d.all<Row>(`SELECT * FROM intents WHERE id IN (${placeholders})`, ...ids)
+  const order = new Map(ids.map((id, i) => [id, i]))
+  rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  return hydrate(d, rows)
+}
+
 export function updateStatus(id: string, status: IntentStatus): void {
   const d = requireDb()
   const now = Date.now()

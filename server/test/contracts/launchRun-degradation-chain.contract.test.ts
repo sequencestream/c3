@@ -70,6 +70,7 @@ vi.mock('../../src/kernel/config/index.js', async () => {
 })
 
 import { launchRun } from '../../src/kernel/run/run-lifecycle.js'
+import { EventBus } from '../../src/kernel/events/event-bus.js'
 import { ensureRuntime, getRuntime, addViewer, removeRuntime, type Viewer } from '../../src/runs.js'
 
 // A degradable error (rate limit) — runClaude routes it to onDegradableError.
@@ -80,7 +81,11 @@ beforeEach(() => {
   sdk.calls = []
 })
 
-const noopDeps = { broadcastStatuses: () => {}, broadcastIntents: () => {} }
+const noopDeps = {
+  broadcastStatuses: () => {},
+  broadcastIntents: () => {},
+  eventBus: new EventBus(),
+}
 
 describe('C1 — launchRun degradation chain (end to end)', () => {
   it('walks agent-a → agent-b, emits agent_failed between, then all_agents_failed + turn_end error', async () => {

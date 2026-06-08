@@ -868,7 +868,8 @@
       "renameFailed": "セッション名の変更に失敗しました: {detail}",
       "resumeNoAgent": "{vendor} エージェントが未設定です — ID で再開するには追加してください。",
       "notSelected": "先にセッションを選択または作成してください。",
-      "turnRunning": "このセッションではすでにターンが実行中です。"
+      "turnRunning": "このセッションではすでにターンが実行中です。",
+      "invalidMode": "ベンダー \"{vendor}\" の権限モード \"{mode}\" は無効です"
     },
     "intent": {
       "notFound": "意図が見つかりません。",

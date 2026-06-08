@@ -71,6 +71,7 @@ vi.mock('../../src/kernel/config/index.js', async () => {
 // Force the intent store to report "unavailable" — the failed-DB world.
 import * as reqStore from '../../src/features/intents/store.js'
 import { launchRun } from '../../src/kernel/run/run-lifecycle.js'
+import { EventBus } from '../../src/kernel/events/event-bus.js'
 import { ensureRuntime, getRuntime, addViewer, removeRuntime, type Viewer } from '../../src/runs.js'
 
 beforeEach(() => {
@@ -78,7 +79,11 @@ beforeEach(() => {
   sdk.calls = []
 })
 
-const noopDeps = { broadcastStatuses: () => {}, broadcastIntents: () => {} }
+const noopDeps = {
+  broadcastStatuses: () => {},
+  broadcastIntents: () => {},
+  eventBus: new EventBus(),
+}
 
 describe('C3 — a plain session starts when the store is unavailable', () => {
   it('launches and completes a normal turn without consulting the store or erroring', async () => {

@@ -40,3 +40,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0015](0015-session-agent-binding-vendor-ownership.md)          | Two-key session→agent binding + frozen vendor ownership                                                                              | accepted   |
 | [0016](0016-external-skill-git-mount.md)                        | 外部 skill 经 git 仓库挂载(扁平目录布局 + claude/codex vendor 范围)                                                                  | proposed   |
 | [0017](0017-external-skill-mount-mechanism.md)                  | 外部 skill 加载机制:软链挂载 + 信任审批 + 写操作管控                                                                                 | proposed   |
+| [0018](0018-event-bus-kernel-layer.md)                          | In-process event bus in the kernel layer (typed publish/subscribe, error isolation)                                                  | accepted   |

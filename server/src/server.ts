@@ -26,6 +26,7 @@ import { getSessionAgentId, setOnPendingIntentLookup } from './kernel/config/ind
 import { setAutomationHooks } from './features/intents/automation.js'
 import { INTENT_AGENT_PROMPT } from './features/intents/prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
+import { EventBus } from './kernel/events/event-bus.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
@@ -302,7 +303,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // ── Composition root (ADR-0009 R3): construct the KernelContext ONCE,
   //    explicitly. The intent profile is wired HERE so the kernel
   //    launcher stays features-free (ADR-0009 R1).
+  const eventBus = new EventBus()
   const launchDeps: LaunchRunDeps = {
+    eventBus,
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,
     intentProfile: (workspacePath) => ({
@@ -353,8 +356,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const discussionRuns = createDiscussionRuns({ broadcasts })
 
   const ctx: KernelContext = {
+    eventBus,
     launchDeps,
-    launchRun: (rt, prompt, cbs) => launchRun(rt, prompt, launchDeps, cbs),
+    launchRun: (rt, prompt) => launchRun(rt, prompt, launchDeps),
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,
     broadcastDiscussions: broadcasts.broadcastDiscussions,

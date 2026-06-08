@@ -1041,6 +1041,16 @@ export interface AutomationStatus {
  * status `todo` once the user allows.
  */
 export interface ProposedIntent {
+  /**
+   * Optional id of an EXISTING intent to update in place (upsert). When set, the
+   * save resolves the id within the same project and patches title/content/priority/
+   * module/dependsOn instead of inserting a new row — the path the `refine_intent`
+   * flow uses so a refined intent updates its original entry rather than duplicating
+   * it. The target must be modifiable: `draft`/`todo` keep their status, `cancelled`
+   * is reactivated to `todo`, and `in_progress`/`done` are immutable (the whole batch
+   * is rejected). Omit to insert a brand-new intent (status `todo`).
+   */
+  id?: string
   title: string
   content: string
   priority: IntentPriority

@@ -30,7 +30,7 @@ import {
   setStatus,
   type SessionRuntime,
 } from '../../runs.js'
-import type { LaunchCbs } from '../types.js'
+import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -98,7 +98,7 @@ export async function runViaDriver(
   rt: SessionRuntime,
   prompt: string,
   adapter: VendorAdapter,
-  cbs: LaunchCbs = {},
+  eventBus: EventBus<EventBusEvents>,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -164,7 +164,7 @@ export async function runViaDriver(
       // for the session's life (ADR-0015).
       freezeSessionAgent(prev, sid, agentId, workspacePath)
       runId = sid
-      void cbs.onEvent?.({ kind: 'bound', prevId: prev, realId: sid })
+      eventBus.publish('run:bound', { prevId: prev, realId: sid })
     }
 
     const emitter = new WireEmitter((m) => emit(runId, m))
@@ -188,6 +188,6 @@ export async function runViaDriver(
     rt.team = false
     clearPending(runId)
     finalizeRun(runId)
-    await cbs.onEvent?.({ kind: 'settled', workspacePath })
+    eventBus.publish('run:settled', { workspacePath })
   }
 }

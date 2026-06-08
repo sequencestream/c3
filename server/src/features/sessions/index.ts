@@ -37,6 +37,7 @@ import {
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
+import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
@@ -180,7 +181,10 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       : ensureRuntime(
           msg.sessionId,
           abs,
-          getSessionMode(msg.sessionId),
+          getSessionMode(
+            msg.sessionId,
+            getDefaultMode(abs, effectiveVendor ?? resolveSessionVendor(msg.sessionId)),
+          ),
           resumeByIdVendor ? [] : await loadHistory(abs, msg.sessionId),
         )
     conn.viewing = msg.sessionId
@@ -257,15 +261,28 @@ export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
     return
   }
   if (rt) {
+    // Validate the mode token against the session's vendor catalog (2026-06-07-017).
+    // An unknown token for this vendor is rejected; the client's per-vendor mode
+    // picker should never send one (defensive guard).
+    const vendor = resolveSessionVendor(rt.sessionId)
+    const cat = MODE_CATALOGS[vendor]
+    if (cat && !isKnownToken(cat, msg.mode)) {
+      conn.send({
+        type: 'error',
+        error: { code: 'session.invalidMode', params: { vendor, mode: msg.mode } },
+      })
+      return
+    }
+
     rt.mode = msg.mode
     // Persist for real sessions; pending sessions persist on bind.
     if (!rt.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
       setSessionMode(rt.sessionId, msg.mode)
     }
     // A live RunHandle exists only on the claude-hardwired path (the driver path
-    // sets `handle: null`), so the session's ModeToken is a Claude `PermissionMode`
-    // here; other vendors have no live set-mode and pick up the new token on their
-    // next resume (2026-06-07-012).
+    // sets `handle: null`), so after the vendor-catalog check above the token is
+    // confirmed to be a valid Claude `PermissionMode` here; other vendors have no
+    // live set-mode and pick up the new token on their next resume (2026-06-07-012).
     if (rt.run?.handle) {
       try {
         await rt.run.handle.setPermissionMode(msg.mode as PermissionMode)
@@ -321,28 +338,41 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
     return
   }
   const isIntent = rt.kind === 'intent'
-  await ctx.launchRun(rt, msg.text, {
-    onEvent: (e) => {
-      if (e.kind === 'bound') {
-        const { prevId, realId } = e
-        if (isIntent) {
-          // Comm session: re-key its store mapping; never touch the persisted
-          // active/normal-mode state (it's a hidden session).
-          rebindChatSession(prevId, realId)
-          if (conn.viewing === prevId) conn.viewing = realId
-        } else {
-          setSessionMode(realId, rt.mode)
-          if (conn.viewing === prevId) {
-            conn.viewing = realId
-            setActiveSessionId(realId)
-          }
+  // Subscribe to kernel event bus for lifecycle events (ADR-0018).
+  const disposers: (() => void)[] = []
+  disposers.push(
+    ctx.eventBus.subscribe('run:bound', (e) => {
+      const { prevId, realId } = e
+      if (isIntent) {
+        // Comm session: re-key its store mapping; never touch the persisted
+        // active/normal-mode state (it's a hidden session).
+        rebindChatSession(prevId, realId)
+        if (conn.viewing === prevId) conn.viewing = realId
+      } else {
+        setSessionMode(realId, rt.mode)
+        if (conn.viewing === prevId) {
+          conn.viewing = realId
+          setActiveSessionId(realId)
         }
-        conn.send({ type: 'session_started', clientId: prevId, sessionId: realId })
-      } else if (e.kind === 'settled' && !isIntent) {
+      }
+      conn.send({ type: 'session_started', clientId: prevId, sessionId: realId })
+    }),
+  )
+  disposers.push(
+    ctx.eventBus.subscribe('run:settled', (e) => {
+      if (!isIntent) {
         // Intent comm sessions are hidden from the normal list, so there's
         // nothing to refresh for them.
         void conn.sendSessions(e.workspacePath)
       }
-    },
-  })
+      // Clean up subscriptions (settled always fires in the finally block).
+      disposers.forEach((d) => d())
+    }),
+  )
+  try {
+    await ctx.launchRun(rt, msg.text)
+  } finally {
+    // Safety-net cleanup if the run never reached settled.
+    disposers.forEach((d) => d())
+  }
 }

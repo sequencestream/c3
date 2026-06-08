@@ -110,6 +110,7 @@ See [models.md](models.md).
 
 | RM-R19 | **The communication agent has two read-only ledger query tools.** Besides `save_intents`, the `c3` in-process MCP server exposes `find_intents` (search THIS project's intents by `keyword` — fuzzy `LIKE` over title/content, wildcards escaped — and/or `module`/`status`; returns a slim list of `id`/`title`/`module`/`priority`/`status`/`dependsOn`) and `view_intent` (one intent's full detail by `id`; an unknown or other-project id returns a friendly not-found, not an error). Both are **read-only** and **project-bound in the tool closure** (the agent can never read another project's ledger — `view_intent` reuses `getIntent(id)` then guards `projectPath`). The intent gate **auto-allows** both (no confirmation), unlike `save_intents` which still prompts; both inherit `alwaysLoad` so the agent need not ToolSearch them back. The prompt directs the agent to **search the ledger before** breaking down new items or setting `dependsOn`, to reuse related items, avoid duplicates, and reference the correct existing id. (ADR 0007.) |
 | RM-R18 | **Intent reconcile on entry (`open_intent_chat`).** Every time a client enters the intent view, the server reconciles that project's `in_progress` intents -- checking each `lastDevSessionId` against the process table and, when the process is dead (server restart, crash, normal exit), loading the session's last 3 assistant messages and running the completion judge. **Liveness check:** a still-running dev session yields derived `runStatus = 'running'` (tracking). **Judge `done`:** auto-completes: calls `commitAndPush` (`feat: <title>`) and `updateStatus(done)` -- works for BOTH manually-launched and automation-started intents. This is the explicit, documented exception to RM-R9's no-auto-complete rule for process death. **Judge `in_progress` / `stuck`:** leaves the intent `in_progress` and sets `runStatus = 'dangling'`. **No `lastDevSessionId`:** also `dangling`. The reconcile result is reflected in the `intents` message payload (each `Intent` carries `runStatus: IntentRunStatus`). A `broadcastIntents` push follows when any intent was auto-completed, so other connections see the update. |
+| RM-R20 | **`save_intents` is an upsert — a `ProposedIntent` with an `id` updates that existing intent in place instead of inserting.** The whole batch is processed in **one transaction** with all validation **before any write** (atomic reject — nothing half-written, mirroring RM-R17): (a) the `id` must resolve to an intent in **this project** (a non-existent or cross-project id rejects the whole batch with `isError`); (b) the target must be **modifiable by status** — `draft`/`todo` keep their status, `cancelled` is **reactivated to `todo`** (`completed_at` stays null), and `in_progress`/`done` are **immutable** (the batch is rejected with a clear「正在开发 / 已完成,不可修改」message); (c) on update, `title`/`content`/`priority` are written, `module` is updated only when supplied (else the prior value is kept), and the dependency set is replaced only when `dependsOn` or `dependsOnIndexes` is supplied (omitting both keeps the existing deps). Items **without** an `id` insert as `todo` per RM-R6. A single batch may **mix** updates and inserts; `dependsOnIndexes` (RM-R17) resolves against the full batch, so a sibling referenced by index may itself be an update target. **Refine串通 (RM-R7):** `refine_intent` seeds the communication session with the original intent's id and the prompt instructs the agent to fill that `id` on save so the refined intent updates its original entry rather than creating a duplicate (and to tell the user it cannot be modified if the original is already `in_progress`/`done`). The deprecated `save_requirements` alias shares the same schema/handler and inherits the upsert behaviour. |
 
 ### Automation orchestrator
 
@@ -142,9 +143,12 @@ stateDiagram-v2
     in_progress --> done: mark done / automation verified+committed
     todo --> cancelled: cancel
     in_progress --> cancelled: cancel
+    cancelled --> todo: save_intents update (reactivate, RM-R20)
 ```
 
-- **Save → `todo`.** Confirmed `save_intents` produces `todo` items (RM-R6).
+- **Save → `todo`.** Confirmed `save_intents` produces `todo` items (RM-R6); an upsert update keeps a
+  `draft`/`todo` item's status, **reactivates** a `cancelled` item to `todo`, and is rejected for an
+  `in_progress`/`done` (immutable) item (RM-R20).
 - **Launch → `in_progress`.** Sets `lastDevSessionId`; also re-allowed for an `in_progress`
   item whose development session was deleted (RM-R8). The automation orchestrator likewise sets
   `in_progress` when it picks a intent up (RM-A3).
@@ -181,15 +185,20 @@ stateDiagram-v2
   correctly (RM-R19). It proposes discrete, verifiable, right-sized items for confirmation. When one goal spans code, its
   tests, and its companion docs, all are folded into one item rather than split into a separate
   「更新测试」/「文档更新」intent (RM-R15). It does not appear in the normal session list (RM-R4).
-- **US-4 Confirm & persist.** The agent calls `save_intents`; c3 pops a confirmation listing
-  each proposed item (title/priority/dependency, incl. any intra-batch "依赖本批" reference). Allow →
-  written to `c3.db` as `todo` for the current project, with intra-batch `dependsOnIndexes` resolved
-  to sibling ids (RM-R17); Deny → not written, agent told it was rejected (RM-R5/RM-R6). An invalid
-  intra-batch reference (out-of-range / self / cycle) rejects the whole batch with an error result,
-  even after Allow (RM-R17).
-- **US-5 Refine an item.** A `todo` item has a Refine button; clicking restarts the
-  communication session seeded with that item's id/content (RM-R7); further dialog can update/add
-  items via US-4.
+- **US-4 Confirm & persist (insert or update).** The agent calls `save_intents`; c3 pops a confirmation
+  listing each proposed item (title/priority/dependency, incl. any intra-batch "依赖本批" reference). Each
+  item **without** an `id` inserts; an item **with** an `id` **updates** that existing intent in place
+  (upsert, RM-R20). Allow → written to `c3.db` (inserts land as `todo` for the current project, updates
+  patch the original), with intra-batch `dependsOnIndexes` resolved to sibling ids (RM-R17); Deny → not
+  written, agent told it was rejected (RM-R5/RM-R6). The whole batch is atomic: an invalid intra-batch
+  reference (out-of-range / self / cycle, RM-R17), an unknown / cross-project update id, or an update
+  targeting an `in_progress`/`done` (immutable) intent rejects the **entire** batch with an error result,
+  even after Allow (RM-R17/RM-R20). An update of a `cancelled` intent reactivates it to `todo` (RM-R20).
+- **US-5 Refine an item.** A `todo` (or `draft`/`cancelled`) item has a Refine button; clicking restarts
+  the communication session seeded with that item's id/content (RM-R7); on定稿 the agent re-saves with the
+  original `id` so the entry is updated **in place** rather than duplicated (upsert, RM-R20) — a `cancelled`
+  item is thereby reactivated to `todo`. If the item is already `in_progress`/`done` it is immutable and the
+  agent tells the user it cannot be modified. Further dialog can also add brand-new items (no id) via US-4.
 - **US-6 Launch development.** A `todo` item has a Launch-development button; clicking creates a
   background session running the configurable development skill (`devSkill` in system settings;
   empty by default ⇒ no prefix) with the intent content, moves it to

@@ -66,6 +66,7 @@ vi.mock('../../src/kernel/config/index.js', async () => {
 })
 
 import { launchRun } from '../../src/kernel/run/run-lifecycle.js'
+import { EventBus } from '../../src/kernel/events/event-bus.js'
 import { ensureRuntime, getRuntime, addViewer, removeRuntime, type Viewer } from '../../src/runs.js'
 
 const SOCKET_ERR = 'socket connection was closed unexpectedly'
@@ -84,7 +85,11 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const noopDeps = { broadcastStatuses: () => {}, broadcastIntents: () => {} }
+const noopDeps = {
+  broadcastStatuses: () => {},
+  broadcastIntents: () => {},
+  eventBus: new EventBus(),
+}
 
 describe('C2 — socket auto-resume is a single retry (AS-R18)', () => {
   it('resumes the same session exactly once, then terminates on a second disconnect', async () => {

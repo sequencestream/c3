@@ -42,7 +42,7 @@ await build({
     'bun:sqlite',
   ],
   alias: {
-    '@ccc/shared': resolve(import.meta.dirname, '../shared/src/index.ts'),
+    '@ccc/shared': resolve(import.meta.dirname, '../shared/src'),
     '@ccc/shared/protocol': resolve(import.meta.dirname, '../shared/src/protocol.ts'),
     '@ccc/shared/discussion-types': resolve(
       import.meta.dirname,

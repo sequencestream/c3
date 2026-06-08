@@ -152,9 +152,14 @@ dependsOn: string[], lastDevSessionId: string | null, automate: boolean, created
   A project-scoped ledger item; `projectPath` is the resolved workspace path; `dependsOn` are
   intra-project intent ids; `module` (模块名称) is the agent-inferred owning module, `''` when
   unidentified; `automate` (default `false`) gates the automation orchestrator (RM-A1).
-- **`ProposedIntent`** — `{ title, content, priority, module?: string, dependsOn?: string[] }`.
-  One item in a `save_intents` call and in the confirmation render; persisted as a
-  `Intent` (status `todo`) only on a confirmed save (`module` defaults to `''` when omitted).
+- **`ProposedIntent`** — `{ id?: string, title, content, priority, module?: string, dependsOn?: string[], dependsOnIndexes?: number[] }`.
+  One item in a `save_intents` call and in the confirmation render. **Upsert (RM-R20):** without
+  `id` it inserts a new `Intent` (status `todo`) on a confirmed save (`module` defaults to `''` when
+  omitted); with `id` it **updates** that existing same-project intent in place — `title`/`content`/
+  `priority` are written, `module`/deps are kept when omitted, a `draft`/`todo` keeps its status, a
+  `cancelled` is reactivated to `todo`, and an `in_progress`/`done` target is immutable (the whole
+  batch is rejected). The batch is atomic: an unknown / cross-project / immutable-status update id, or
+  an invalid `dependsOnIndexes` (RM-R17), rejects the entire batch with an `isError` result.
 - **`AutomationState`** — `'idle' | 'running' | 'done' | 'error'`.
 - **`AutomationStatus`** — `{ projectPath, state: AutomationState, currentIntentId: string | null,
 currentSessionId: string | null, awaitingPermission: boolean, error: string | null, completedIds: string[], startedAt: number | null }`.

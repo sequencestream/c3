@@ -167,24 +167,25 @@ export function makeRunDevTurn(
         setStatus(rt.sessionId, 'running')
         rt.run.handle.pushInput(input.prompt)
       } else {
-        void launchRun(rt, input.prompt, launchDeps, {
-          onEvent: (e) => {
-            if (e.kind === 'bound') {
-              setSessionMode(e.realId, rt.mode)
-              // Surface the bind to the orchestrator immediately (early in_progress flip).
-              input.onSessionId?.(e.realId)
-              // Live-insert the new dev session into every sidebar: the projection
-              // real row is already written (freezeSessionAgent fired before this
-              // cbs), so the broadcast lists it. Mirrors manual start_development's
-              // session_started, but fanned out (automation has no socket).
-              broadcastSessions(rt.workspacePath)
-            } else if (e.kind === 'settled') {
-              // Refresh title / last_modified / order once the turn ends — the
-              // automation analogue of manual start_development's conn.sendSessions.
-              broadcastSessions(e.workspacePath)
-            }
-          },
+        const boundSub = launchDeps.eventBus.subscribe('run:bound', (e) => {
+          setSessionMode(e.realId, rt.mode)
+          // Surface the bind to the orchestrator immediately (early in_progress flip).
+          input.onSessionId?.(e.realId)
+          // Live-insert the new dev session into every sidebar: the projection
+          // real row is already written (freezeSessionAgent fired before this
+          // event), so the broadcast lists it. Mirrors manual start_development's
+          // session_started, but fanned out (automation has no socket).
+          broadcastSessions(rt.workspacePath)
         })
+        const settledSub = launchDeps.eventBus.subscribe('run:settled', (e) => {
+          // Refresh title / last_modified / order once the turn ends — the
+          // automation analogue of manual start_development's conn.sendSessions.
+          broadcastSessions(e.workspacePath)
+          // Clean up both subscriptions (settled always fires in the finally block).
+          boundSub()
+          settledSub()
+        })
+        void launchRun(rt, input.prompt, launchDeps)
       }
     })
 }

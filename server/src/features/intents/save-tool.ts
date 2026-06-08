@@ -33,7 +33,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { IntentStatus } from '@ccc/shared/protocol'
-import { findIntents, getIntent, insertIntents, isStoreAvailable } from './store.js'
+import { findIntents, getIntent, isStoreAvailable, upsertIntents } from './store.js'
 
 const INTENT_STATUSES = [
   'draft',
@@ -64,6 +64,16 @@ export function createIntentMcpServer(
   const saveSchema = {
     intents: z.array(
       z.object({
+        id: z
+          .string()
+          .optional()
+          .describe(
+            '可选:要更新的“已存在意图”的 id(upsert)。' +
+              '带 id 则原地更新该意图的 title/content/priority/module/dependsOn,而非新建;' +
+              'refine 已有意图时必须回填原 id 以更新原条目,避免重复。' +
+              '目标须可改:draft/todo 保持状态、cancelled 自动重新激活为 todo;' +
+              'in_progress/done 不可修改,会导致整批保存失败。留空则新建一条意图。',
+          ),
         title: z.string(),
         content: z.string(),
         priority: z.enum(['P0', 'P1', 'P2', 'P3']),
@@ -83,7 +93,7 @@ export function createIntentMcpServer(
       }),
     ),
   }
-  const saveHandler = async (args: { intents: Parameters<typeof insertIntents>[1] }) => {
+  const saveHandler = async (args: { intents: Parameters<typeof upsertIntents>[1] }) => {
     // Getting here means the gate already allowed (user confirmed).
     if (!isStoreAvailable()) {
       return {
@@ -92,13 +102,22 @@ export function createIntentMcpServer(
       }
     }
     try {
-      const saved = insertIntents(projectPath, args.intents)
+      // Upsert: items carrying an `id` update that intent in place; the rest insert.
+      // The whole batch is atomic — a status-locked / foreign / unknown id (or an
+      // invalid intra-batch dep) throws and nothing is written.
+      const updated = args.intents.filter((it) => it.id !== undefined).length
+      const created = args.intents.length - updated
+      const saved = upsertIntents(projectPath, args.intents)
       onSaved(projectPath)
+      const summary =
+        updated > 0
+          ? `已保存 ${saved.length} 条意图(新建 ${created}、更新 ${updated})`
+          : `已保存 ${saved.length} 条意图`
       return {
         content: [
           {
             type: 'text' as const,
-            text: `已保存 ${saved.length} 条意图:${saved.map((r) => r.title).join('、')}`,
+            text: `${summary}:${saved.map((r) => r.title).join('、')}`,
           },
         ],
       }
@@ -178,7 +197,10 @@ export function createIntentMcpServer(
   }
 
   const saveDesc =
-    '提交一批拟新增的意图条目;落库前由用户在 c3 UI 确认。' +
+    '提交一批意图条目(新建或更新);落库前由用户在 c3 UI 确认。' +
+    '每条不带 id 则新建;带 id 则原地更新该已存在意图(upsert)——' +
+    'refine 已有意图时务必回填原 id 以更新原条目,避免新建重复项;' +
+    'in_progress/done 的意图不可修改(整批失败),cancelled 更新后会重新激活为 todo。' +
     '当本批意图之间存在先后/依赖关系时,用每条的 dependsOnIndexes 字段(同批数组下标)' +
     '声明它依赖本批的哪些兄弟意图,落库时会解析为真实 id,使自动化编排按依赖顺序启动。'
   const findDesc =

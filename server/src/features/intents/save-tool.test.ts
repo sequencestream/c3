@@ -17,7 +17,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { Intent } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { createIntentMcpServer } from './save-tool.js'
-import { insertIntents, listIntents, resetStoreForTests } from './store.js'
+import { getIntent, insertIntents, listIntents, resetStoreForTests, updateStatus } from './store.js'
 
 interface CallToolResult {
   content: { type: string; text: string }[]
@@ -152,6 +152,93 @@ describe('save_intents tool handler', () => {
     expect(res.content[0].text).toContain('保存失败')
     expect(onSaved).not.toHaveBeenCalled()
     expect(listIntents(proj)).toEqual([])
+  })
+
+  it('upserts: a batch item with an id updates the original in place, no new row', async () => {
+    // AC-1/5: refine's定稿 carries the original id → the entry is updated, not duplicated.
+    const onSaved = vi.fn()
+    const [r] = insertIntents(proj, [{ title: 'old', content: 'before', priority: 'P2' }])
+    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const res = await handler(
+      { intents: [{ id: r.id, title: 'new', content: 'after', priority: 'P0' }] },
+      {},
+    )
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0].text).toContain('更新 1')
+    expect(onSaved).toHaveBeenCalledTimes(1)
+    expect(listIntents(proj)).toHaveLength(1) // updated in place, no duplicate
+    expect(getIntent(r.id)!.title).toBe('new')
+  })
+
+  it('upserts a cancelled intent and reactivates it to todo', async () => {
+    // AC-2: cancelled + id → updated and status flips back to todo.
+    const [r] = insertIntents(proj, [{ title: 'c', content: 'x', priority: 'P0' }])
+    updateStatus(r.id, 'cancelled')
+    const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
+    const res = await handler(
+      { intents: [{ id: r.id, title: 'c2', content: 'y', priority: 'P0' }] },
+      {},
+    )
+    expect(res.isError).toBeFalsy()
+    const got = getIntent(r.id)!
+    expect(got.status).toBe('todo')
+    expect(got.title).toBe('c2')
+  })
+
+  it('returns isError without persisting when a target is in_progress (locked)', async () => {
+    // AC-3: an immutable target rejects the whole batch; the agent learns it cannot save.
+    const onSaved = vi.fn()
+    const [r] = insertIntents(proj, [{ title: 'locked', content: 'orig', priority: 'P0' }])
+    updateStatus(r.id, 'in_progress')
+    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const res = await handler(
+      {
+        intents: [
+          { id: r.id, title: 'hacked', content: 'no', priority: 'P3' },
+          { title: 'sibling', content: '', priority: 'P0' },
+        ],
+      },
+      {},
+    )
+    expect(res.isError).toBe(true)
+    expect(res.content[0].text).toContain('保存失败')
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(getIntent(r.id)!.title).toBe('locked')
+    expect(listIntents(proj)).toHaveLength(1) // sibling not inserted (atomic)
+  })
+
+  it('returns isError without persisting for an unknown / cross-project id', async () => {
+    // AC-4: a foreign or non-existent id rejects the whole batch.
+    const onSaved = vi.fn()
+    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const res = await handler(
+      { intents: [{ id: 'ghost', title: 'x', content: '', priority: 'P0' }] },
+      {},
+    )
+    expect(res.isError).toBe(true)
+    expect(res.content[0].text).toContain('保存失败')
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(listIntents(proj)).toEqual([])
+  })
+
+  it('handles a mixed update+insert batch in one transaction', async () => {
+    // AC-6: one item updates (id) while another inserts (no id), atomically.
+    const [r] = insertIntents(proj, [{ title: 'base', content: '', priority: 'P0' }])
+    const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
+    const res = await handler(
+      {
+        intents: [
+          { id: r.id, title: 'base2', content: '', priority: 'P0' },
+          { title: 'fresh', content: '', priority: 'P1', dependsOnIndexes: [0] },
+        ],
+      },
+      {},
+    )
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0].text).toContain('新建 1、更新 1')
+    expect(listIntents(proj)).toHaveLength(2)
+    const fresh = listIntents(proj).find((x) => x.title === 'fresh')!
+    expect(fresh.dependsOn).toEqual([r.id])
   })
 
   it('binds to the closure project path, not a wire-supplied one (no cross-project save)', async () => {

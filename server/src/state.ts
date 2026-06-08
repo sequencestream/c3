@@ -176,8 +176,14 @@ export function touchWorkspace(path: string, now: number): void {
   }
 }
 
-export function getSessionMode(sessionId: string): ModeToken {
-  return load().sessionModes[sessionId] ?? DEFAULT_MODE
+/**
+ * The stored permission mode for a session, or `fallback` when none was ever
+ * persisted (2026-06-07-017). Without an explicit fallback, returns the built-in
+ * `'default'` — callers that know the session's vendor should pass the per-vendor
+ * project default (see `getDefaultMode` in config/index.ts).
+ */
+export function getSessionMode(sessionId: string, fallback?: ModeToken): ModeToken {
+  return load().sessionModes[sessionId] ?? fallback ?? DEFAULT_MODE
 }
 
 export function setSessionMode(sessionId: string, mode: ModeToken): void {

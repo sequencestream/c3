@@ -31,17 +31,19 @@ Dependencies; may reference one development Session (a normal session, owned by 
 
 ## Proposed Intent
 
-A single item inside a `save_intents` call; also what the confirmation dialog renders. Not
-yet persisted — it becomes a Intent (status `todo`) only on confirmed save (RM-R5/RM-R6).
+A single item inside a `save_intents` call; also what the confirmation dialog renders. Without
+`id` it is not yet persisted — it becomes a Intent (status `todo`) only on confirmed save
+(RM-R5/RM-R6). With `id` it is an **update** of that existing intent (upsert, RM-R20).
 
-| Attribute          | Type                        | Description                                                                                                                                       |
-| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`            | text                        | Proposed title                                                                                                                                    |
-| `content`          | text                        | Proposed description                                                                                                                              |
-| `priority`         | enum `P0`\|`P1`\|`P2`\|`P3` | Proposed 需求级别                                                                                                                                 |
-| `module`           | text (optional)             | Inferred module name; omitted → persisted as `''` (RM-R14)                                                                                        |
-| `dependsOn`        | `id[]` (optional)           | Proposed dependencies on **already-existing** intra-project intents (by id)                                                                       |
-| `dependsOnIndexes` | `number[]` (optional)       | Proposed dependencies on **sibling** items in the same batch, by 0-based array index; resolved to the sibling's minted id at insert time (RM-R17) |
+| Attribute          | Type                        | Description                                                                                                                                                                                                      |
+| ------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | `id` (optional)             | When set, update this **existing** same-project intent in place instead of inserting (upsert, RM-R20); the `refine_intent` flow fills it so a refined intent updates its original. Omit to insert a new intent.  |
+| `title`            | text                        | Proposed title                                                                                                                                                                                                   |
+| `content`          | text                        | Proposed description                                                                                                                                                                                             |
+| `priority`         | enum `P0`\|`P1`\|`P2`\|`P3` | Proposed 需求级别                                                                                                                                                                                                |
+| `module`           | text (optional)             | Inferred module name; omitted → on insert persisted as `''` (RM-R14); on update keeps the prior value (RM-R20)                                                                                                   |
+| `dependsOn`        | `id[]` (optional)           | Proposed dependencies on **already-existing** intra-project intents (by id); on update, supplying it (or `dependsOnIndexes`) replaces the dep set, omitting both keeps it (RM-R20)                               |
+| `dependsOnIndexes` | `number[]` (optional)       | Proposed dependencies on **sibling** items in the same batch, by 0-based array index; resolved to the sibling's id at save time (RM-R17). A sibling referenced by index may itself be an update target (RM-R20). |
 
 ## Intent Dependency
 

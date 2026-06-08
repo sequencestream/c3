@@ -868,7 +868,8 @@
       "renameFailed": "세션 이름을 변경하지 못했습니다: {detail}",
       "resumeNoAgent": "{vendor} 에이전트가 구성되지 않았습니다 — ID로 재개하려면 추가하세요.",
       "notSelected": "먼저 세션을 선택하거나 만드세요.",
-      "turnRunning": "이 세션에서 이미 턴이 실행 중입니다."
+      "turnRunning": "이 세션에서 이미 턴이 실행 중입니다.",
+      "invalidMode": "벤더 \"{vendor}\"의 권한 모드 \"{mode}\"가 유효하지 않습니다"
     },
     "intent": {
       "notFound": "의도를 찾을 수 없습니다.",

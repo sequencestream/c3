@@ -1,0 +1,106 @@
+/**
+ * Generic in-process event bus (ADR-0018).
+ *
+ * A typed publish/subscribe infrastructure for kernel-layer events. Producers
+ * `publish(topic, payload)`, consumers `subscribe(topic, handler)`. The bus is
+ * self-contained — it does NOT import from `features/` or `transport/`
+ * (ADR-0009 R1) — and is the canonical kernel event backplane.
+ *
+ * ── Semantics ───────────────────────────────────────────────────────────────
+ *  - **Dispatch:** synchronous, in subscriber-registration order. `publish()`
+ *    returns `void` — it does NOT await async handlers.
+ *  - **Error isolation:** every handler is wrapped in try/catch. A thrown
+ *    handler is silently caught and logged; it does NOT cancel subsequent
+ *    handlers or propagate to the publisher.
+ *  - **Async handlers:** if a handler returns a Promise, the bus does NOT await
+ *    it — the promise is discarded (unhandled rejections are caught and
+ *    logged). Use async handlers only for fire-and-forget side effects.
+ *  - **Cleanup:** `subscribe()` returns a dispose function. Call it to
+ *    unsubscribe. A handler that is no longer needed MUST be disposed to
+ *    prevent memory leaks (especially within per-launchRun subscriptions).
+ *
+ * ── Type safety ─────────────────────────────────────────────────────────────
+ *  - The event map (`EventBusEvents`) defines all valid topics and their
+ *    payload types at compile time.
+ *  - `publish(topic, payload)` is statically checked: an unknown topic or a
+ *    mismatched payload is a TYPE error.
+ *  - `subscribe(topic, handler)` narrows the handler parameter type to the
+ *    corresponding payload type.
+ */
+
+/** Default event map for c3 kernel events. Extend this interface to add new topics. */
+export interface EventBusEvents {
+  /** A pending session id bound to the real SDK session id (first bind only). */
+  'run:bound': { prevId: string; realId: string }
+  /** The run is fully over (terminal state backstop reached). */
+  'run:settled': { workspacePath: string }
+}
+
+/** A handler function for a given event topic. May return a Promise (fire-and-forget). */
+type Listener<T> = (payload: T) => void | Promise<void>
+
+/**
+ * Lightweight, type-safe, synchronous in-process event bus.
+ *
+ * @typeParam T - Event map type, mapping topic string to payload type.
+ *   Defaults to {@link EventBusEvents}.
+ */
+export class EventBus<T = EventBusEvents> {
+  /** Internal listener storage: topic → set of handlers. */
+  private readonly _listeners = new Map<keyof T, Set<Listener<unknown>>>()
+
+  /**
+   * Publish an event. All registered handlers are called synchronously in
+   * subscription order. Error isolation applies: one handler's throw never
+   * stops subsequent handlers or propagates to the caller.
+   */
+  publish<K extends keyof T>(topic: K, payload: T[K]): void {
+    const handlers = this._listeners.get(topic)
+    if (!handlers) return
+
+    for (const handler of handlers) {
+      try {
+        const result = handler(payload as unknown) as unknown
+        // Duck-type check for thenable (avoids TS2358 on void | Promise<void>).
+        if (result != null && typeof (result as { then?: unknown }).then === 'function') {
+          ;(result as Promise<void>).catch((err: unknown) => {
+            console.error(`[EventBus] async handler rejection for "${String(topic)}":`, err)
+          })
+        }
+      } catch (err) {
+        console.error(`[EventBus] handler error for "${String(topic)}":`, err)
+      }
+    }
+  }
+
+  /**
+   * Subscribe to a topic. Returns a dispose function; call it to unsubscribe.
+   * The handler receives the topic's typed payload.
+   *
+   * **IMPORTANT:** call the dispose function when the subscription is no longer
+   * needed. Per-launchRun subscriptions should be disposed after `settled`
+   * fires, or on cleanup, to prevent memory leaks.
+   */
+  subscribe<K extends keyof T>(topic: K, handler: Listener<T[K]>): () => void {
+    if (!this._listeners.has(topic)) {
+      this._listeners.set(topic, new Set())
+    }
+    const handlers = this._listeners.get(topic)!
+    const wrapped = handler as Listener<unknown>
+    handlers.add(wrapped)
+
+    return (): void => {
+      handlers.delete(wrapped)
+      if (handlers.size === 0) {
+        this._listeners.delete(topic)
+      }
+    }
+  }
+
+  /**
+   * Remove all listeners. Useful for cleanup in tests or between sessions.
+   */
+  clear(): void {
+    this._listeners.clear()
+  }
+}

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * Sessions.vue — 会话(console)页容器。
+ * Works.vue — 工作(console)页容器。
  *
  * 纯容器:左侧会话列表 + 右侧聊天列(标题栏 + 消息 + 任务面板 + 状态栏 + 待发队列 +
  * 输入框)。所有状态/连接由 App.vue 持有,经 props 注入;用户动作经 emit 上抛。

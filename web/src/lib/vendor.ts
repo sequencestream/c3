@@ -21,6 +21,6 @@ export const VENDOR_LABEL: Record<VendorId, string> = {
  */
 export const VENDOR_COLOR: Record<VendorId, string> = {
   claude: '#d97757',
-  codex: '#10a37f',
+  codex: '#a855f7',
   opencode: '#6366f1',
 }

@@ -44,7 +44,7 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
     const w = mountBar({ vendor: 'codex' })
     const dot = w.find('[data-testid="session-vendor-dot"]')
     expect(dot.exists()).toBe(true)
-    expect(dot.attributes('style')).toContain('#10a37f') // codex brand colour
+    expect(dot.attributes('style')).toContain('#a855f7') // codex brand colour
   })
 
   it('无 vendor 时不渲染色点', () => {

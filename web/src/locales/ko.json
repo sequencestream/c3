@@ -29,7 +29,7 @@
     },
     "tab": {
       "console": {
-        "label": "세션"
+        "label": "작업"
       },
       "intents": {
         "label": "의도"

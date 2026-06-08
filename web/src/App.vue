@@ -11,7 +11,7 @@ import {
   type PendingItem,
 } from './lib/pending-queue'
 import AppHeader from './components/AppHeader/AppHeader.vue'
-import Sessions from './pages/sessions/Sessions.vue'
+import Works from './pages/works/Works.vue'
 import Intents from './pages/intents/Intents.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Schedules from './pages/schedules/Schedules.vue'
@@ -77,7 +77,7 @@ import type {
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import NewSessionModal from './pages/sessions/components/NewSessionModal/NewSessionModal.vue'
+import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
 import { applyLocale, setStoredLocale, i18n, useTypedI18n, type Locale } from './i18n'
 import { translateUiError } from './i18n/errors'
 import { useModeLabel, CLAUDE_MODE_FALLBACK } from './composables/useModeLabel'
@@ -2002,7 +2002,7 @@ function dismissSkillApproval() {
 
   <div class="body">
     <template v-if="viewMode === 'workspace'">
-      <Sessions
+      <Works
         v-if="activeTab === 'console'"
         ref="composer"
         :current-workspace="currentWorkspace"

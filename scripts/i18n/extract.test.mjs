@@ -42,9 +42,7 @@ describe('slugify', () => {
 
 describe('deriveNamespace', () => {
   it('maps known paths to frozen namespaces (no guess)', () => {
-    expect(
-      deriveNamespace('web/src/pages/sessions/components/SessionList/SessionList.vue'),
-    ).toEqual({
+    expect(deriveNamespace('web/src/pages/works/components/SessionList/SessionList.vue')).toEqual({
       namespace: 'session',
       nsGuess: false,
     })

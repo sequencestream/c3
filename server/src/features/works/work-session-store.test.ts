@@ -1,5 +1,5 @@
 /**
- * Tests for the `session_metadata` projection store (F-2..F-12, the column
+ * Tests for the `work_session_metadata` projection store (F-2..F-12, the column
  * whitelist, fail-soft, and the lifecycle state machine). Mirrors the
  * pattern of `features/discussions/store.test.ts`: temp-dir c3.db per test
  * via `C3_DB_PATH`, `resetDbForTests` + `resetStoreForTests` in setup/teardown.
@@ -40,7 +40,7 @@ import {
   upsertPendingRow,
   validateLazy,
   type NativeListFn,
-} from './store.js'
+} from './work-session-store.js'
 
 let dir: string
 let nowMs = 1_000_000

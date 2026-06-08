@@ -1,5 +1,5 @@
 /**
- * `session_metadata` projection store over the shared {@link Db} (c3.db).
+ * `work_session_metadata` projection store over the shared {@link Db} (c3.db).
  *
  * Owns the core-metadata projection table that becomes the daily read path for
  * `list_sessions`. Five columns of core metadata only — no transcript / prompt /
@@ -34,10 +34,10 @@ import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
  * column-whitelist test in `store.test.ts`; an unknown value in the column
  * falls back to `'born'` on read so a future state addition is non-fatal.
  */
-export type SessionMetadataState = 'born' | 'alive' | 'stale' | 'orphaned' | 'ghost'
+export type WorkSessionState = 'born' | 'alive' | 'stale' | 'orphaned' | 'ghost'
 
 /** A row variant. `'real'` = post-bind; `'pending'` = pre-bind (intent). */
-export type SessionMetadataKind = 'real' | 'pending'
+export type WorkSessionKind = 'real' | 'pending'
 
 /**
  * The column whitelist (spec § Schema). Mirrored by
@@ -62,7 +62,7 @@ const DEFAULT_TITLE = 'New session'
 
 /** Schema v1: create the table + two indexes. Migrations key off `table_info`. */
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS session_metadata (
+CREATE TABLE IF NOT EXISTS work_session_metadata (
   c3_id              TEXT PRIMARY KEY,
   workspace_path     TEXT NOT NULL,
   vendor             TEXT NOT NULL,
@@ -74,10 +74,10 @@ CREATE TABLE IF NOT EXISTS session_metadata (
   state_updated_at   INTEGER NOT NULL,
   kind               TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_sm_workspace_vendor
-  ON session_metadata(workspace_path, vendor, vendor_session_id);
-CREATE INDEX IF NOT EXISTS idx_sm_state_age
-  ON session_metadata(state, state_updated_at);
+CREATE INDEX IF NOT EXISTS idx_wsm_workspace_vendor
+  ON work_session_metadata(workspace_path, vendor, vendor_session_id);
+CREATE INDEX IF NOT EXISTS idx_wsm_state_age
+  ON work_session_metadata(state, state_updated_at);
 `
 
 /** How long a row may sit without being re-validated before it goes `stale`. */
@@ -91,13 +91,7 @@ export const STALE_MS = 24 * 60 * 60 * 1000
  */
 export const JANITOR_INTERVAL_MS = STALE_MS / 2
 
-const VALID_STATES: readonly SessionMetadataState[] = [
-  'born',
-  'alive',
-  'stale',
-  'orphaned',
-  'ghost',
-]
+const VALID_STATES: readonly WorkSessionState[] = ['born', 'alive', 'stale', 'orphaned', 'ghost']
 
 let schemaReady = false
 let nowFn: () => number = () => Date.now()
@@ -123,13 +117,27 @@ function ensureColumn(d: Db, table: string, col: string, decl: string): void {
  *  `schemaReady` flag is a per-process optimization — `CREATE TABLE IF
  *  NOT EXISTS` is idempotent and cheap, so the schema runs once per
  *  process. A test that swaps the underlying db (via `resetDbForTests`)
- *  must call {@link resetStoreForTests} to re-run the schema. */
+ *  must call {@link resetStoreForTests} to re-run the schema.
+ *
+ *  Migration: if the old `session_metadata` table exists but the new
+ *  `work_session_metadata` does not, it is renamed in place (idempotent,
+ *  zero DROP TABLE, roll-back-by-forward-fix). */
 function db(): Db | null {
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
     d.exec(SCHEMA)
-    ensureColumn(d, 'session_metadata', 'workspace_path', 'TEXT NOT NULL DEFAULT ""')
+    // Migrate old table name (idempotent: no-op if already migrated or never existed).
+    const oldTable = d.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='session_metadata'",
+    )
+    const newTable = d.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='work_session_metadata'",
+    )
+    if (oldTable.length > 0 && newTable.length === 0) {
+      d.exec('ALTER TABLE session_metadata RENAME TO work_session_metadata')
+    }
+    ensureColumn(d, 'work_session_metadata', 'workspace_path', 'TEXT NOT NULL DEFAULT ""')
     // We deliberately do NOT write `PRAGMA user_version` — the three domain
     // stores would clobber each other (see discussions/store.ts:25-30).
     schemaReady = true
@@ -139,7 +147,7 @@ function db(): Db | null {
 
 function requireDb(): Db {
   const d = db()
-  if (!d) throw new Error('session_metadata store unavailable (c3.db unavailable)')
+  if (!d) throw new Error('work_session_metadata store unavailable (c3.db unavailable)')
   return d
 }
 
@@ -156,14 +164,14 @@ export function resetStoreForTests(): void {
 
 /**
  * The full positive column-whitelist assertion (F-12). The runtime test opens
- * the db, ensures the schema, and reads `PRAGMA table_info(session_metadata)`;
+ * the db, ensures the schema, and reads `PRAGMA table_info(work_session_metadata)`;
  * the returned set MUST equal {@link COLUMNS} (in any order). Any extra or
  * missing column is a contract violation. This is the source of truth for the
  * "no content columns" claim — adding a `content` column would fail the test.
  */
 export function assertColumnWhitelist(): { name: string }[] {
   const d = requireDb()
-  return d.all<{ name: string }>('PRAGMA table_info(session_metadata)')
+  return d.all<{ name: string }>('PRAGMA table_info(work_session_metadata)')
 }
 
 /** The whitelist itself, exported for the test's `expect(...).toEqual(...)`. */
@@ -173,8 +181,8 @@ export function columnWhitelist(): readonly string[] {
 
 // ---- Row shape (in-memory) ----
 
-/** One row from `session_metadata`, typed for the in-memory shape. */
-export interface SessionMetadataRow {
+/** One row from `work_session_metadata`, typed for the in-memory shape. */
+export interface WorkSessionRow {
   c3Id: C3SessionId
   workspacePath: string
   vendor: VendorId
@@ -182,9 +190,9 @@ export interface SessionMetadataRow {
   agentId: string
   title: string
   lastModified: number | null
-  state: SessionMetadataState
+  state: WorkSessionState
   stateUpdatedAt: number
-  kind: SessionMetadataKind
+  kind: WorkSessionKind
 }
 
 interface RawRow {
@@ -200,15 +208,15 @@ interface RawRow {
   kind: string
 }
 
-function narrowState(s: string): SessionMetadataState {
-  return VALID_STATES.includes(s as SessionMetadataState) ? (s as SessionMetadataState) : 'born'
+function narrowState(s: string): WorkSessionState {
+  return VALID_STATES.includes(s as WorkSessionState) ? (s as WorkSessionState) : 'born'
 }
 
-function narrowKind(k: string): SessionMetadataKind {
+function narrowKind(k: string): WorkSessionKind {
   return k === 'pending' ? 'pending' : 'real'
 }
 
-function toRow(r: RawRow): SessionMetadataRow {
+function toRow(r: RawRow): WorkSessionRow {
   return {
     c3Id: r.c3_id as C3SessionId,
     workspacePath: r.workspace_path,
@@ -261,7 +269,7 @@ export function upsertPendingRow(input: {
   if (!d) return
   const t = now()
   d.run(
-    `INSERT OR REPLACE INTO session_metadata
+    `INSERT OR REPLACE INTO work_session_metadata
        (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
         last_modified, state, state_updated_at, kind)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -291,7 +299,7 @@ export function updatePendingRowAgentId(input: {
   const d = db()
   if (!d) return
   d.run(
-    `UPDATE session_metadata
+    `UPDATE work_session_metadata
        SET vendor=?, agent_id=?, state='born', state_updated_at=?
      WHERE c3_id=? AND kind='pending'`,
     input.vendor,
@@ -330,9 +338,9 @@ export function upsertForBind(input: {
   const c3Id = mintC3SessionId({ vendor: input.vendor, vendorSessionId: input.realId })
   const t = now()
   tx(d, () => {
-    d.run('DELETE FROM session_metadata WHERE c3_id=? AND kind=?', input.pendingId, 'pending')
+    d.run('DELETE FROM work_session_metadata WHERE c3_id=? AND kind=?', input.pendingId, 'pending')
     d.run(
-      `INSERT OR IGNORE INTO session_metadata
+      `INSERT OR IGNORE INTO work_session_metadata
          (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -363,7 +371,7 @@ export function updateRealRowAgentId(realId: string, vendor: VendorId, agentId: 
   if (!d) return
   const c3Id = mintC3SessionId({ vendor, vendorSessionId: realId })
   d.run(
-    `UPDATE session_metadata
+    `UPDATE work_session_metadata
        SET agent_id=?, state='alive', state_updated_at=?
      WHERE c3_id=? AND kind='real'`,
     agentId,
@@ -381,7 +389,7 @@ export function updateRealRowTitle(realId: string, vendor: VendorId, title: stri
   if (!d) return
   const c3Id = mintC3SessionId({ vendor, vendorSessionId: realId })
   d.run(
-    `UPDATE session_metadata
+    `UPDATE work_session_metadata
        SET title=?, state='alive', state_updated_at=?
      WHERE c3_id=? AND kind='real'`,
     title,
@@ -408,7 +416,7 @@ export function touchOnRunEnd(input: {
   if (!d) return
   const c3Id = mintC3SessionId({ vendor: input.vendor, vendorSessionId: input.realId })
   d.run(
-    `UPDATE session_metadata
+    `UPDATE work_session_metadata
        SET title=?, last_modified=?, agent_id=?, state='alive', state_updated_at=?
      WHERE c3_id=? AND kind='real'`,
     input.title,
@@ -430,23 +438,23 @@ export function deleteByVendorId(vendor: VendorId, vendorSessionId: string): voi
   const d = db()
   if (!d) return
   const c3Id = mintC3SessionId({ vendor, vendorSessionId })
-  d.run('DELETE FROM session_metadata WHERE c3_id=? OR c3_id=?', c3Id, vendorSessionId)
+  d.run('DELETE FROM work_session_metadata WHERE c3_id=? OR c3_id=?', c3Id, vendorSessionId)
 }
 
 /** Delete by the raw pending id (used by `deleteSession` for a pending never run). */
 export function deleteByPendingId(pendingId: string): void {
   const d = db()
   if (!d) return
-  d.run('DELETE FROM session_metadata WHERE c3_id=? AND kind=?', pendingId, 'pending')
+  d.run('DELETE FROM work_session_metadata WHERE c3_id=? AND kind=?', pendingId, 'pending')
 }
 
 // ---- Read API ----
 
 /** Look up one row by its c3 id, or null if absent. */
-export function getByC3Id(c3Id: string): SessionMetadataRow | null {
+export function getByC3Id(c3Id: string): WorkSessionRow | null {
   const d = db()
   if (!d) return null
-  const row = d.get<RawRow>('SELECT * FROM session_metadata WHERE c3_id=?', c3Id)
+  const row = d.get<RawRow>('SELECT * FROM work_session_metadata WHERE c3_id=?', c3Id)
   return row ? toRow(row) : null
 }
 
@@ -458,7 +466,7 @@ export function getPendingIntent(pendingId: string): { agentId: string } | null 
   const d = db()
   if (!d) return null
   const row = d.get<{ agent_id: string }>(
-    "SELECT agent_id FROM session_metadata WHERE c3_id=? AND kind='pending'",
+    "SELECT agent_id FROM work_session_metadata WHERE c3_id=? AND kind='pending'",
     pendingId,
   )
   return row ? { agentId: row.agent_id } : null
@@ -469,10 +477,12 @@ export function getPendingIntent(pendingId: string): { agentId: string } | null 
  * `workspace_path` at the SQL level (this returns everything for callers
  * that want the whole c3 — e.g. the rebuild path / debugging).
  */
-export function listAll(): SessionMetadataRow[] {
+export function listAll(): WorkSessionRow[] {
   const d = db()
   if (!d) return []
-  return d.all<RawRow>('SELECT * FROM session_metadata ORDER BY state_updated_at DESC').map(toRow)
+  return d
+    .all<RawRow>('SELECT * FROM work_session_metadata ORDER BY state_updated_at DESC')
+    .map(toRow)
 }
 
 /**
@@ -483,12 +493,12 @@ export function listAll(): SessionMetadataRow[] {
  * wire filter (isHiddenSession + isToolSessionRecorded) is applied
  * downstream in `listSessionsVia`; this returns the raw list.
  */
-export function listForWorkspace(workspacePath: string): SessionMetadataRow[] {
+export function listForWorkspace(workspacePath: string): WorkSessionRow[] {
   const d = db()
   if (!d) return []
   return d
     .all<RawRow>(
-      `SELECT * FROM session_metadata
+      `SELECT * FROM work_session_metadata
          WHERE workspace_path=? AND kind='real'
          ORDER BY (last_modified IS NULL), last_modified DESC, state_updated_at DESC`,
       workspacePath,
@@ -543,7 +553,7 @@ export async function validateLazy(input: {
   if (!d) return { checked: 0, rewritten: 0, ghosted: 0, skipped: 0 }
   const t = now()
   const rows = d.all<RawRow>(
-    `SELECT * FROM session_metadata
+    `SELECT * FROM work_session_metadata
        WHERE workspace_path=? AND kind='real'
          AND (state_updated_at IS NULL OR ? - state_updated_at >= ?)`,
     input.workspacePath,
@@ -579,7 +589,7 @@ export async function validateLazy(input: {
     if (native === null) {
       for (const r of vendorRows) {
         d.run(
-          'UPDATE session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
+          'UPDATE work_session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
           'ghost',
           t,
           r.c3_id,
@@ -593,14 +603,14 @@ export async function validateLazy(input: {
       const hit = byNative.get(r.vendor_session_id ?? '')
       if (!hit) {
         d.run(
-          'UPDATE session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
+          'UPDATE work_session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
           'orphaned',
           t,
           r.c3_id,
         )
       } else if (hit.title !== r.title || hit.lastModified !== r.last_modified) {
         d.run(
-          `UPDATE session_metadata
+          `UPDATE work_session_metadata
              SET title=?, last_modified=?, state='alive', state_updated_at=?
            WHERE c3_id=?`,
           hit.title,
@@ -611,7 +621,7 @@ export async function validateLazy(input: {
         rewritten++
       } else {
         d.run(
-          'UPDATE session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
+          'UPDATE work_session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
           'alive',
           t,
           r.c3_id,
@@ -661,7 +671,7 @@ export async function janitor(input: {
   let observed = 0
   // Group live rows by (workspace, vendor) for one native call per pair.
   const buckets = new Map<string, { workspacePath: string; vendor: VendorId; rowIds: string[] }>()
-  const allRows = d.all<RawRow>('SELECT * FROM session_metadata WHERE kind=?', 'real')
+  const allRows = d.all<RawRow>('SELECT * FROM work_session_metadata WHERE kind=?', 'real')
   for (const r of allRows) {
     if (r.state === 'ghost' || r.state === 'orphaned') {
       // Still eligible for `alive` refresh on a successful native match.
@@ -670,7 +680,7 @@ export async function janitor(input: {
     if (r.state === 'alive' || r.state === 'born') {
       if (age >= STALE_MS) {
         d.run(
-          'UPDATE session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
+          'UPDATE work_session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
           'stale',
           t,
           r.c3_id,
@@ -706,7 +716,7 @@ export async function janitor(input: {
     if (native === null) {
       for (const id of b.rowIds) {
         d.run(
-          'UPDATE session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
+          'UPDATE work_session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
           'ghost',
           t,
           id,
@@ -717,13 +727,13 @@ export async function janitor(input: {
     }
     const byNative = new Map(native.sessions.map((s) => [s.vendorSessionId, s]))
     for (const id of b.rowIds) {
-      const r = d.get<RawRow>('SELECT * FROM session_metadata WHERE c3_id=?', id)
+      const r = d.get<RawRow>('SELECT * FROM work_session_metadata WHERE c3_id=?', id)
       if (!r) continue
       const hit = byNative.get(r.vendor_session_id ?? '')
       if (hit) {
         // Successful match ⇒ flip back to `alive` (or stay if already alive).
         d.run(
-          `UPDATE session_metadata
+          `UPDATE work_session_metadata
              SET state='alive', title=?, last_modified=?, state_updated_at=?
            WHERE c3_id=?`,
           hit.title,
@@ -735,7 +745,7 @@ export async function janitor(input: {
       } else if (r.state === 'stale' && t - r.state_updated_at >= JANITOR_INTERVAL_MS) {
         // Warmup complete: `stale` for two consecutive sweeps ⇒ `orphaned`.
         d.run(
-          'UPDATE session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
+          'UPDATE work_session_metadata SET state=?, state_updated_at=? WHERE c3_id=?',
           'orphaned',
           t,
           id,
@@ -744,7 +754,7 @@ export async function janitor(input: {
       } else if (r.state === 'stale') {
         // First observation of `stale`; keep the state, just record the
         // sweep time so the next pass can transition to `orphaned`.
-        d.run('UPDATE session_metadata SET state_updated_at=? WHERE c3_id=?', t, id)
+        d.run('UPDATE work_session_metadata SET state_updated_at=? WHERE c3_id=?', t, id)
         observed++
       } else {
         // `orphaned` / `ghost` row that didn't re-match this pass: hold state.
@@ -793,7 +803,7 @@ export async function rebuildOne(input: {
     if (!agentId) continue
     const c3Id = mintC3SessionId({ vendor: input.vendor, vendorSessionId: s.vendorSessionId })
     d.run(
-      `INSERT OR REPLACE INTO session_metadata
+      `INSERT OR REPLACE INTO work_session_metadata
          (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,

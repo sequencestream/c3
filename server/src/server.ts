@@ -42,7 +42,7 @@ import {
   updatePendingRowAgentId,
   updateRealRowAgentId,
   upsertForBind,
-} from './features/sessions/store.js'
+} from './features/works/work-session-store.js'
 import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
 import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
 import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js'
@@ -101,7 +101,7 @@ const RUN_STALE_MS = 5 * 60_000
 const PENDING_INTENT_SWEEP_MS = 60 * 60_000
 
 export async function startServer(opts: ServerOptions): Promise<void> {
-  // ---- Wire the `session_metadata` projection hooks (kernel ↛ features) ----
+  // ---- Wire the `work_session_metadata` projection hooks (kernel ↛ features) ----
   // The kernel layer doesn't import the projection store directly (ADR-0009);
   // these composition-time callbacks mirror the kernel's bind / agent-swap /
   // run-end writes into the projection. The store is fail-soft, so a missing
@@ -169,7 +169,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     return intent?.agentId ?? null
   })
 
-  // ---- session_metadata projection janitor (F-9) ----
+  // ---- work_session_metadata projection janitor (F-9) ----
   // Runs every JANITOR_INTERVAL_MS (= STALE_MS/2 = 12h). The sweep is
   // `void`+async so a slow native `list` never blocks the heartbeat
   // timer or the event loop. The store is fail-soft (a missing db
@@ -205,7 +205,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         workspaces,
       })
     } catch (err) {
-      console.error('[c3] session_metadata janitor failed:', err)
+      console.error('[c3] work_session_metadata janitor failed:', err)
     }
   }, JANITOR_INTERVAL_MS)
 

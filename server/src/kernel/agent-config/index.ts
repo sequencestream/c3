@@ -202,7 +202,7 @@ export function resolveSessionVendor(sessionId: string | null): VendorId {
  * re-freezes the vendor). Called from the run lifecycle alongside `bindPending`.
  *
  * Fires the {@link onBind} composition-time hook so the feature layer can
- * mirror the bind into the `session_metadata` projection (F-5). The kernel
+ * mirror the bind into the `work_session_metadata` projection (F-5). The kernel
  * itself does not import the store (kernel ↛ features boundary, ADR-0009);
  * the composition root wires `onBind` to `upsertForBind` in the store.
  */
@@ -272,7 +272,7 @@ export function setSessionAgent(sessionId: string, agentId: string | null): { ok
 // ---- Composition-time hooks (kernel ↛ features boundary) ----
 //
 // The kernel layer doesn't import from `features/`, so write-throughs into
-// the `session_metadata` projection table go through these registered
+// the `work_session_metadata` projection table go through these registered
 // callbacks. The composition root (`server.ts` / a wiring module) wires each
 // hook to its corresponding store function. The hooks default to `null` (no
 // wiring) so the kernel layer still works in tests / scripts that don't

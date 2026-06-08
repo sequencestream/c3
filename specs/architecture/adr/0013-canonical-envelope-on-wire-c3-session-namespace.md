@@ -119,15 +119,15 @@ in memory only, so there is no migration debt).
 
 ---
 
-## Amendment: `session_metadata` projection table (2026-06-07)
+## Amendment: `work_session_metadata` projection table (2026-06-07; renamed from `session_metadata` 2026-06-08)
 
 The cross-vendor `list_sessions` path was rewired from a per-request fan-out
-to the accessor union (above) to a direct read of a `session_metadata`
+to the accessor union (above) to a direct read of a `work_session_metadata`
 projection table in `c3.db`. This amendment records the contract.
 
 ### Projection table contract
 
-The `session_metadata` table is a **rebuildable cache**, not a second copy of
+The `work_session_metadata` table is a **rebuildable cache**, not a second copy of
 session content. The only source of truth for session _content_ (transcript,
 prompt, tool_use, tool_result, blocks) is the vendor's native store (Claude
 JSONL, OpenCode REST, Codex thread items). The projection holds **only** core
@@ -148,7 +148,7 @@ metadata:
 
 **No transcript, prompt, tool_use, tool_result, or block content is ever
 written to this table.** Pinned by the column-whitelist positive assertion
-test in `features/sessions/store.test.ts`.
+test in `features/works/work-session-store.test.ts`.
 
 ### Lifecycle states
 
@@ -192,7 +192,7 @@ and, after a warmup (2 passes), `stale → orphaned`.
 ### `user_version` rule
 
 The projection store does NOT write `PRAGMA user_version` — the three domain
-stores (`intents`, `discussions`, `session_metadata`) would clobber each
+stores (`intents`, `discussions`, `work_session_metadata`) would clobber each
 other (see `discussions/store.ts:25-30`). All domain stores should follow this
 posture going forward; migrations key off `PRAGMA table_info` +
 `ensureColumn`, never off `user_version`.
@@ -208,7 +208,7 @@ the wire.
 
 ### References
 
-- `server/src/features/sessions/store.ts` — the projection store.
+- `server/src/features/works/work-session-store.ts` — the projection store.
 - `server/src/kernel/agent/session/list-sessions.ts` — the read path.
 - `changes/2026/06/07/2026-06-07-001-session-metadata-projection/spec.md` — the
   functional spec for this amendment.

@@ -88,7 +88,7 @@ export interface SessionInfo {
   vendor: VendorId
   /**
    * Lifecycle state of the projection row that backs this wire entry
-   * (ADR-0013 amendment — `session_metadata` projection). Drives the
+   * (ADR-0013 amendment — `work_session_metadata` projection). Drives the
    * sidebar's freshness UX: `born`/`alive` are normal list items;
    * `stale` shows a "Unvalidated" tag; `orphaned` grays the row out
    * (the native store has cleared the session); `ghost` shows a

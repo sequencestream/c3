@@ -1,6 +1,6 @@
 /**
  * The cross-vendor `list_sessions` path (ADR-0013). Replaces the claude-only
- * `listWorkspaceSessions` on the wire by reading the `session_metadata`
+ * `listWorkspaceSessions` on the wire by reading the `work_session_metadata`
  * projection table in c3.db (F-1, F-10). The accessor union stays the
  * rebuild / lazy-validation source; the daily read path is one SQL query.
  *
@@ -28,7 +28,7 @@
 import type { SessionInfo, VendorId } from '@ccc/shared/protocol'
 import type { SessionAccessor } from './accessor.js'
 // ADR-0009 R1 exception: the daily `list_sessions` read path needs the
-// projection store (features/sessions) and the hidden-set filter
+// projection store (features/works) and the hidden-set filter
 // (features/intents). The boundary is justified because the read
 // path IS the composition point for the projection — it lives in the
 // kernel only because the WS handler routes through it.
@@ -46,8 +46,8 @@ import {
   updateRealRowTitle,
   validateLazy,
   type NativeListFn,
-  type SessionMetadataRow,
-} from '../../../features/sessions/store.js'
+  type WorkSessionRow,
+} from '../../../features/works/work-session-store.js'
 
 /** Rollback escape hatch — default ON. Set `C3_LIST_FROM_PROJECTION=0` to roll back. */
 const USE_PROJECTION = process.env.C3_LIST_FROM_PROJECTION !== '0'
@@ -81,12 +81,12 @@ function lastModifiedOf(extra: Record<string, unknown>): number {
 }
 
 /**
- * Map a `SessionMetadataRow` to a wire `SessionInfo`. Looks up `mode` from
+ * Map a `WorkSessionRow` to a wire `SessionInfo`. Looks up `mode` from
  * `state.ts` (per-session persisted mode), applies the additive `state`
  * field, defaults `lastModified` to 0 for Codex rows whose bind-time
  * `last_modified` is null (the next lazy validation will populate it).
  */
-function rowToSessionInfo(row: SessionMetadataRow): SessionInfo {
+function rowToSessionInfo(row: WorkSessionRow): SessionInfo {
   const sessionId = row.vendorSessionId ?? row.c3Id
   return {
     sessionId,
@@ -133,7 +133,7 @@ function accessorNativeList(accessor: SessionAccessor): NativeListFn {
 }
 
 /**
- * The session list for a workspace. Reads the `session_metadata` projection
+ * The session list for a workspace. Reads the `work_session_metadata` projection
  * (default), falling back to the legacy claude-only `listWorkspaceSessions`
  * when `C3_LIST_FROM_PROJECTION=0`. Triggers a one-shot rebuild when the
  * projection is empty (F-10) and a fire-and-forget lazy validation at

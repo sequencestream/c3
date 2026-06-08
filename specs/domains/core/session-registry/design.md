@@ -34,7 +34,7 @@ Implements the [spec](spec.md). Lives in `server/src/state.ts` (persistence),
 
 **Cross-vendor listing swap (ADR-0013, projection table amendment).** The wire
 `list_sessions` path (`conn.sendSessions`, `wiring/ws-upgrade.ts`) reads the
-`session_metadata` projection table in c3.db (`kernel/agent/session/list-sessions.ts`
+`work_session_metadata` projection table in c3.db (`kernel/agent/session/list-sessions.ts`
 → `listSessionsVia`) instead of calling `listWorkspaceSessions` directly. The
 projection is a rebuildable cache — the accessor union is the rebuild / lazy-
 validation source, not the daily read source. `listSessionsVia` reads per

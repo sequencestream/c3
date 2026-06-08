@@ -43,7 +43,7 @@ import {
 /** The single fan-out reference; threaded in by the composition root. */
 export interface BroadcastsDeps {
   broadcaster: Broadcaster
-  /** Read the `session_metadata` projection for `broadcastSessions` (same source
+  /** Read the `work_session_metadata` projection for `broadcastSessions` (same source
    * as the per-connection `sendSessions` in `ws-upgrade.ts`). */
   sessionAccessor: SessionAccessor
 }
@@ -68,7 +68,7 @@ export interface Broadcasts {
   broadcastIntentSessions: (projectPath: string) => void
   /**
    * Push a workspace's refreshed session list to EVERY connection (the
-   * `session_metadata` projection read). The per-connection `conn.sendSessions`
+   * `work_session_metadata` projection read). The per-connection `conn.sendSessions`
    * only reaches the originating socket; a background, connection-less producer
    * (the automation orchestrator's dev turns) has no socket, so it fans the list
    * out to all clients instead. Fire-and-forget: the async projection read is not

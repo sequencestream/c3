@@ -70,7 +70,7 @@ import {
   cancelBySourceId,
   isStoreAvailable as isWaitUserEventsStoreAvailable,
 } from '../features/user-involve/store.js'
-import { agentSwitchFor } from '../features/sessions/index.js'
+import { agentSwitchFor } from '../features/works/index.js'
 
 /** Broader domain subscription dependencies, injected by the composition root. */
 export interface DomainSubDeps {

@@ -14,7 +14,7 @@
 import type { Broadcaster } from '../../transport/index.js'
 import type { PermissionRequestCtx } from '../../kernel/permission/gateway.js'
 import { createEvent, listEvents } from './store.js'
-import { getByC3Id } from '../sessions/store.js'
+import { getByC3Id } from '../works/work-session-store.js'
 
 /**
  * Build the `onPermissionRequest` handler that the composition root wires into
@@ -28,7 +28,7 @@ export function createPermissionRequestHandler(deps: {
   broadcaster: Broadcaster
 }): (ctx: PermissionRequestCtx) => void {
   return (ctx: PermissionRequestCtx): void => {
-    // Look up the session title from the session_metadata projection so the
+    // Look up the session title from the work_session_metadata projection so the
     // event carries a human-readable label. Gracefully degrades: a missing row
     // (pre-bind, or the rare case of a deleted-then-recreated session) results
     // in a null title — the frontend can then fall back to the id or a default.

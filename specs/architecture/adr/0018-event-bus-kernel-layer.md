@@ -20,7 +20,7 @@ could not do so through a neutral channel — each had to inject its own callbac
 call site via `onEvent`, tightly coupling the launcher to the scope of its consumer.
 
 The run-lifecycle events (`bound`/`settled`) had exactly **5** consumers across `features/intents`,
-`features/sessions`, and `wiring/dev-turn`, each passing a closure with per-connection state
+`features/works`, and `wiring/dev-turn`, each passing a closure with per-connection state
 (`conn`, `rt`, `devRt`, etc.) through the same callback. Adding a new lifecycle event meant either
 extending the sealed union and updating every consumer's exhaustive switch, or adding yet another
 dedicated callback.
@@ -277,13 +277,13 @@ loop → await).
 
 **Five per-launch subscription sites removed:**
 
-| File                         | Removed subscription(s)          | Replacement                                                       |
-| ---------------------------- | -------------------------------- | ----------------------------------------------------------------- |
-| `features/sessions/index.ts` | `run:bound` + `run:settled`      | Resident sub (intent-session/dev domains) + `rebind_view` handler |
-| `features/intents/index.ts`  | `run:bound` (refineIntent)       | Resident `run:bound` (kind=intent branch)                         |
-| `features/intents/index.ts`  | `run:bound` (discussionToIntent) | Same as above                                                     |
-| `features/intents/index.ts`  | `run:bound` + `run:settled`      | `pendingDevLink` + resident `run:bound` + `run:settled`           |
-| `wiring/dev-turn.ts`         | `run:bound` + `run:settled`      | Resident subs + `registerPendingDevLink`                          |
+| File                        | Removed subscription(s)          | Replacement                                                       |
+| --------------------------- | -------------------------------- | ----------------------------------------------------------------- |
+| `features/works/index.ts`   | `run:bound` + `run:settled`      | Resident sub (intent-session/dev domains) + `rebind_view` handler |
+| `features/intents/index.ts` | `run:bound` (refineIntent)       | Resident `run:bound` (kind=intent branch)                         |
+| `features/intents/index.ts` | `run:bound` (discussionToIntent) | Same as above                                                     |
+| `features/intents/index.ts` | `run:bound` + `run:settled`      | `pendingDevLink` + resident `run:bound` + `run:settled`           |
+| `wiring/dev-turn.ts`        | `run:bound` + `run:settled`      | Resident subs + `registerPendingDevLink`                          |
 
 **New protocol message:** `rebind_view {from, to}` (client→server). The client sends it from the
 `session_started` handler when its `activeSession` matches `clientId`. The server handler repoints

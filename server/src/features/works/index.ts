@@ -1,5 +1,5 @@
 /**
- * `sessions` feature handlers — slice 1/3 (ADR-0009).
+ * `works` feature handlers — slice 1/3 (ADR-0009).
  *
  * The core session lifecycle: list/create/select/delete/rename, mode, stop, and
  * the user prompt launch. `(ctx, conn, msg)` signature; per-connection `viewing`
@@ -44,7 +44,7 @@ import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { ensureOpencodeRunning } from '../../opencode-status.js'
-import { upsertPendingRow } from './store.js'
+import { upsertPendingRow } from './work-session-store.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -95,7 +95,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   // Switching views never stops a run — just stop watching the old one.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  // The pending intent (ADR-0015) now lives in the `session_metadata`
+  // The pending intent (ADR-0015) now lives in the `work_session_metadata`
   // projection table as a `pending` row (F-11). The first run launches
   // with this agent and freezes its vendor on bind. The row is written
   // BEFORE `session_selected` is sent so a `list_sessions` immediately

@@ -36,7 +36,7 @@ import {
   rebindViewHandler,
   stopRunHandler,
   userPrompt,
-} from './sessions/index.js'
+} from './works/index.js'
 import {
   deleteIntentSession,
   discussionToIntent,

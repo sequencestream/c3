@@ -23,6 +23,7 @@ import { canFormTeam } from '../agent/adapters/capabilities.js'
 import { runViaDriver } from './run-via-driver.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
+import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 import {
   getDegradationChain,
@@ -398,6 +399,22 @@ export async function launchRun(
             degraded = true
             const agent = resolveAgent(agentCfg.agentId)
             failedAgents.push({ agentId: agent.id, agentName: agent.displayName, error: errMsg })
+            // Event-化 bypass (ADR-0018): publish the per-agent failure on the bus
+            // so actions beyond the degradation switch can subscribe. This does NOT
+            // alter the wire `agent_failed` frame (still emitted only on a fresh
+            // fallback advance) nor the control flow. degradable is always true
+            // here (the only eventized failure path is the degradable one).
+            deps.eventBus.publish(
+              'agent:error',
+              agentErrorEvent({
+                sessionId: runId,
+                workspacePath,
+                agentId: agent.id,
+                agentName: agent.displayName,
+                error: errMsg,
+                degradable: true,
+              }),
+            )
           },
           skillWriteGuard: hasMountedSkills,
         })
@@ -464,6 +481,25 @@ export async function launchRun(
       // action.type === 'fallback': clear the failed attempt's pending prompt and
       // advance to the next agent. The next iteration's top emits its agent_failed.
       clearPending(runId)
+      // Event-化 bypass (ADR-0018): publish the switch on the bus before advancing.
+      // `from` is the agent that just failed (last in failedAgents); `to` is the
+      // next chain agent. The wire `agent_failed` (emitted at the next iteration's
+      // top) and the control flow are unchanged — this is a pure旁路.
+      {
+        const from = failedAgents[failedAgents.length - 1]
+        const to = resolveAgent(agentsToTry[action.nextIndex].agentId)
+        if (from) {
+          deps.eventBus.publish(
+            'agent:fallback',
+            agentFallbackEvent({
+              sessionId: runId,
+              workspacePath,
+              from: { agentId: from.agentId, agentName: from.agentName },
+              to: { agentId: to.id, agentName: to.displayName },
+            }),
+          )
+        }
+      }
       attemptIndex = action.nextIndex
       reconnecting = false
       justAdvanced = true
@@ -506,6 +542,18 @@ export async function launchRun(
         reason: 'error',
         error: `All agents failed: ${failedAgents[failedAgents.length - 1].error}`,
       })
+      // Event-化 bypass (ADR-0018): publish chain exhaustion on the bus, mirroring
+      // the wire `all_agents_failed` frame just emitted (which is untouched). Lets
+      // subscribers react to a fully-failed run (e.g. trigger a schedule, audit).
+      deps.eventBus.publish(
+        'agent:all_failed',
+        agentAllFailedEvent({
+          sessionId: runId,
+          workspacePath,
+          agents: failedAgents,
+          ...(crossVendorSkipped.length > 0 ? { crossVendorSkipped } : {}),
+        }),
+      )
     } else if (!success && !cycleAbort.signal.aborted && !hasDegradation) {
       // Single-attempt (no degradation) failure: the runClaude internal
       // catch already emitted turn_end { error }. This branch covers

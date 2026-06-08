@@ -89,6 +89,29 @@ Adopt **option 3**: a synchronous, in-order, error-isolated topic-based event bu
 interface EventBusEvents {
   'run:bound': { prevId: string; realId: string }
   'run:settled': { workspacePath: string }
+  // Degradation-chain event-化 bypass (2026-06-08, see agent-session AS-R25):
+  'agent:error': {
+    sessionId: string
+    workspacePath: string
+    agentId: string
+    agentName: string
+    error: string
+    degradable: boolean
+  }
+  'agent:fallback': {
+    sessionId: string
+    workspacePath: string
+    fromAgentId: string
+    fromAgentName: string
+    toAgentId: string
+    toAgentName: string
+  }
+  'agent:all_failed': {
+    sessionId: string
+    workspacePath: string
+    agents: ReadonlyArray<{ agentId: string; agentName: string; error: string }>
+    crossVendorSkipped?: ReadonlyArray<{ agentId: string; agentName: string; vendor: VendorId }>
+  }
 }
 
 class EventBus<T = EventBusEvents> {
@@ -142,7 +165,10 @@ events published from LaunchRunDeps.
 
 - **Easier:** adding a new lifecycle event (e.g. `'run:agent-failed'`, `'run:team-upgraded'`) is one
   line in `EventBusEvents` + one `publish()` call in the launcher. Existing subscribers are
-  untouched.
+  untouched. **Realized (2026-06-08):** the degradation-chain event-化 (`agent:error` /
+  `agent:fallback` / `agent:all_failed`, agent-session AS-R25) followed exactly this path — three
+  topic lines + three thin `publish()` bypass calls in `launchRun`, zero change to the chain's
+  control flow, FSM, or wire frames; every existing contract test stayed green.
 - **Easier:** a feature that needs to react to `'run:bound'` (e.g. to update the sidebar when a
   session binds) subscribes at registration time — no composition-root wiring change.
 - **Harder:** subscriptions are manual; a per-launch handler that forgets to dispose leaks a

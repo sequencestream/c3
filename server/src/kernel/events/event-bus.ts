@@ -28,7 +28,7 @@
  *    corresponding payload type.
  */
 
-import type { RunEndReason } from '@ccc/shared/protocol'
+import type { RunEndReason, VendorId } from '@ccc/shared/protocol'
 
 /** Default event map for c3 kernel events. Extend this interface to add new topics. */
 export interface EventBusEvents {
@@ -51,6 +51,50 @@ export interface EventBusEvents {
     workspacePath: string
     reason: RunEndReason
     kind: 'normal' | 'intent'
+  }
+  /**
+   * A single agent attempt in the degradation chain failed (the bus twin of the
+   * `onDegradableError` collection point, 2026-06-08). An **event-化 bypass** of
+   * the existing degradation control flow: it does NOT replace the wire
+   * `agent_failed` frame (which still fires only on a fresh fallback advance) —
+   * it lets actions beyond "switch to the next agent" (trigger a schedule, notify
+   * the discussion engine, audit) hang off agent failure via subscription.
+   * `degradable` is currently always `true` (only the degradable-error path is
+   * eventized; a non-degradable infra throw keeps the existing catch path and is
+   * not eventized — the field is reserved for that future extension).
+   */
+  'agent:error': {
+    sessionId: string
+    workspacePath: string
+    agentId: string
+    agentName: string
+    error: string
+    degradable: boolean
+  }
+  /**
+   * The launcher advanced from one failed agent to the next in the degradation
+   * chain (the bus twin of the FSM `fallback` step, 2026-06-08). Bypass-only: the
+   * actual switch (and its wire `agent_failed` announcement) is unchanged.
+   */
+  'agent:fallback': {
+    sessionId: string
+    workspacePath: string
+    fromAgentId: string
+    fromAgentName: string
+    toAgentId: string
+    toAgentName: string
+  }
+  /**
+   * The degradation chain is exhausted — every agent failed (the bus twin of the
+   * wire `all_agents_failed` frame, 2026-06-08). Carries the full failure list
+   * and any cross-vendor candidates that were skipped (AS-R22). Bypass-only: the
+   * wire `all_agents_failed` + terminal `turn_end` are emitted exactly as before.
+   */
+  'agent:all_failed': {
+    sessionId: string
+    workspacePath: string
+    agents: ReadonlyArray<{ agentId: string; agentName: string; error: string }>
+    crossVendorSkipped?: ReadonlyArray<{ agentId: string; agentName: string; vendor: VendorId }>
   }
 }
 

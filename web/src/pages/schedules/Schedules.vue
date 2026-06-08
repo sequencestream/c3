@@ -8,14 +8,17 @@
  */
 import ScheduleList from './components/ScheduleList/ScheduleList.vue'
 import ExecutionHistoryList from './components/ExecutionHistoryList/ExecutionHistoryList.vue'
+import ScheduleDetail from './components/ScheduleDetail/ScheduleDetail.vue'
 import ExecutionDetail from './components/ExecutionDetail/ExecutionDetail.vue'
 import ScheduleForm from './components/ScheduleForm/ScheduleForm.vue'
 import type {
   CreateScheduleInput,
   Schedule,
   ScheduleExecutionLog,
+  ToolManifestEntry,
   TranscriptItem,
   UpdateScheduleInput,
+  VendorHostStatus,
 } from '@ccc/shared/protocol'
 
 defineProps<{
@@ -33,6 +36,12 @@ defineProps<{
   executionId: string | null
   /** 当前选中的执行对象 */
   execution: ScheduleExecutionLog | null
+  /** Tool manifest for schedule form (cached per vendor). */
+  toolManifest: Record<string, ToolManifestEntry[] | null>
+  toolManifestLoading: boolean
+  toolManifestError: string | null
+  /** Per-vendor host-CLI presence (for greying absent vendors). */
+  hostStatus: VendorHostStatus[]
 }>()
 
 defineEmits<{
@@ -44,6 +53,7 @@ defineEmits<{
   'close-form': []
   create: [input: CreateScheduleInput]
   update: [id: string, input: UpdateScheduleInput]
+  'load-tool-manifest': [vendor: string]
 }>()
 </script>
 
@@ -65,7 +75,13 @@ defineEmits<{
     @select-execution="(id: string) => $emit('select-execution', id)"
   />
 
+  <ScheduleDetail
+    v-if="schedule && !execution"
+    :schedule="schedule"
+    :tool-manifest="toolManifest"
+  />
   <ExecutionDetail
+    v-else
     :execution="execution"
     :execution-type="schedule?.type ?? null"
     :transcripts="transcripts"
@@ -77,8 +93,13 @@ defineEmits<{
     :schedule="formTarget"
     :workspace-path="workspacePath"
     :timezone="timezone"
+    :tool-manifest="toolManifest"
+    :tool-manifest-loading="toolManifestLoading"
+    :tool-manifest-error="toolManifestError"
+    :host-status="hostStatus"
     @close="$emit('close-form')"
     @create="(input: CreateScheduleInput) => $emit('create', input)"
     @update="(id: string, input: UpdateScheduleInput) => $emit('update', id, input)"
+    @load-tool-manifest="(vendor: string) => $emit('load-tool-manifest', vendor)"
   />
 </template>

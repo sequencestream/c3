@@ -2,7 +2,7 @@
 
 ## What this is
 
-`c3` (Code Creative Center) is a local web UI for Claude Code: tool-use permission prompts are answered in a browser instead of the terminal.
+`c3` (Code Creative Center) is a local web UI for code agents, like claude, codex, opencode, ...
 
 ## Commands
 
@@ -12,7 +12,7 @@ pnpm dev                                        # server :3000 + Vite :5173 — 
 pnpm build                                      # web THEN server (order matters)
 pnpm start [--project /abs/path] [--port 3000] # start is default cmd; --project defaults to cwd, --port to 3000
 pnpm typecheck                                  # vue-tsc --noEmit across packages
-pnpm lint                                        # eslint . (add --fix via pnpm lint:fix)
+pnpm lint                                        # eslint . (add --fix via pnpm lint:fix), exec before commit
 pnpm format                                      # prettier --write . (--check via format:check)
 pnpm pkg                                         # build + single binaries in dist/
 ```

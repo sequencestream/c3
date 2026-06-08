@@ -14,6 +14,7 @@ import type { Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
+import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 
 const { t, d } = useTypedI18n()
 
@@ -92,6 +93,13 @@ function configText(s: Schedule): string {
   } catch {
     return String(c)
   }
+}
+
+/** 工具摘要:空列表 = All tools,否则显示计数。 */
+function toolSummary(s: Schedule): string {
+  const count = s.toolAllowlist.length
+  if (count === 0) return t('schedule.list.toolSummaryAll')
+  return t('schedule.list.toolSummary', { count })
 }
 
 // 未来预览要展示几次执行(验收要求 3-5 次)。
@@ -252,6 +260,17 @@ function toggleExpand(): void {
           <div class="sched-meta-row">
             <span class="sched-meta-label">{{ t('schedule.meta.mode.label') }}</span>
             <span class="sched-meta-val">{{ s.mcpMode }}</span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">{{ t('schedule.meta.vendor.label') }}</span>
+            <span class="sched-meta-val sched-meta-val--vendor">
+              <span class="vendor-dot" :style="{ backgroundColor: VENDOR_COLOR[s.vendor] }" />
+              {{ VENDOR_LABEL[s.vendor] }}
+            </span>
+          </div>
+          <div class="sched-meta-row">
+            <span class="sched-meta-label">{{ t('schedule.meta.tools.label') }}</span>
+            <span class="sched-meta-val">{{ toolSummary(s) }}</span>
           </div>
           <div class="sched-meta-row">
             <span class="sched-meta-label">{{ t('schedule.meta.created.label') }}</span>
@@ -545,6 +564,11 @@ function toggleExpand(): void {
   background: var(--c-card);
   padding: 1px 4px;
   border-radius: var(--radius-sm);
+}
+.sched-meta-val--vendor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .sched-meta-config {
   font-family: var(--ff-mono, monospace);

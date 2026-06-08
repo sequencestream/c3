@@ -19,16 +19,20 @@
  */
 import { ref, computed, watch } from 'vue'
 import type {
-  Schedule,
-  ScheduleType,
-  ScheduleTriggerType,
-  RunLifecycleTopic,
-  RunEndReason,
   McpMode,
   CreateScheduleInput,
+  RunEndReason,
+  RunLifecycleTopic,
+  Schedule,
+  ScheduleTriggerType,
+  ScheduleType,
+  ToolManifestEntry,
   UpdateScheduleInput,
+  VendorHostStatus,
+  VendorId,
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
+import { VENDOR_LABEL } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
 
 // `d` 别名为 `fmtDateTime`:模板里 `v-for="d in WEEKDAYS"` 已占用 `d`,避免 shadow。
@@ -42,12 +46,19 @@ const props = defineProps<{
   workspacePath: string
   /** System IANA time zone the cron next-run preview is computed in. */
   timezone: string
+  /** Tool manifest per vendor (cached by App.vue). */
+  toolManifest: Record<string, ToolManifestEntry[] | null>
+  toolManifestLoading: boolean
+  toolManifestError: string | null
+  /** Per-vendor host-CLI presence for greying absent vendors. */
+  hostStatus: VendorHostStatus[]
 }>()
 
 const emit = defineEmits<{
   close: []
   create: [input: CreateScheduleInput]
   update: [id: string, input: UpdateScheduleInput]
+  'load-tool-manifest': [vendor: string]
 }>()
 
 const isEdit = computed(() => props.schedule !== null)
@@ -96,6 +107,24 @@ const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
   { value: 'aborted', label: t('schedule.form.event.reason.aborted.label') },
 ])
 
+// ---- Vendor ----------------------------------------------------------------
+const VENDOR_ORDER: VendorId[] = ['claude', 'codex', 'opencode']
+
+const presentByVendor = computed(() => {
+  const m = new Map<VendorId, boolean>()
+  for (const h of props.hostStatus) m.set(h.vendor, h.present)
+  return m
+})
+
+function vendorPresent(v: VendorId): boolean {
+  return presentByVendor.value.get(v) !== false
+}
+
+const vendor = ref<VendorId>('claude')
+// Tracks whether the user has manually changed vendor (to avoid re-triggering the
+// manifest load during the initial re-seed from schedule props).
+const vendorInitialised = ref(false)
+
 // ---- Form draft ----------------------------------------------------------
 const type = ref<ScheduleType>('command')
 // Manual display title — edit-only. Prefilled from the current name; an empty
@@ -108,6 +137,8 @@ const cronExpression = ref('*/30 * * * *')
 const triggerType = ref<ScheduleTriggerType>('cron')
 const eventTopic = ref<RunLifecycleTopic>('run:settled')
 const eventReasonFilter = ref<RunEndReason[]>([])
+
+const toolAllowlist = ref<string[]>([])
 
 // The reason filter only applies to run:settled (run:started has no outcome).
 const showReasonFilter = computed(
@@ -145,6 +176,11 @@ watch(
       triggerType.value = sched.triggerType
       eventTopic.value = sched.eventTopic ?? 'run:settled'
       eventReasonFilter.value = sched.eventReasonFilter ? [...sched.eventReasonFilter] : []
+      // Vendor: restore from schedule, then trigger manifest load.
+      vendor.value = sched.vendor
+      vendorInitialised.value = true
+      // Restore tool allowlist from the schedule; empty means "all tools" (unrestricted).
+      toolAllowlist.value = sched.toolAllowlist ? [...sched.toolAllowlist] : []
     } else {
       type.value = 'command'
       title.value = ''
@@ -155,10 +191,21 @@ watch(
       triggerType.value = 'cron'
       eventTopic.value = 'run:settled'
       eventReasonFilter.value = []
+      vendor.value = 'claude'
+      vendorInitialised.value = true
+      toolAllowlist.value = []
     }
   },
   { immediate: true },
 )
+
+// Trigger tool manifest fetch on vendor change (only after initial seed).
+watch(vendor, (v) => {
+  if (vendorInitialised.value) {
+    toolAllowlist.value = []
+    emit('load-tool-manifest', v)
+  }
+})
 
 // ---- Advanced mode -------------------------------------------------------
 function renderDow(days: number[]): string {
@@ -225,6 +272,47 @@ function toggleReason(r: RunEndReason): void {
   else eventReasonFilter.value.push(r)
 }
 
+// ---- Tool manifest helpers -------------------------------------------------
+const currentTools = computed<ToolManifestEntry[]>(() => props.toolManifest[vendor.value] ?? [])
+
+const readTools = computed<ToolManifestEntry[]>(() => currentTools.value.filter((t) => !t.isWrite))
+
+const writeTools = computed<ToolManifestEntry[]>(() => currentTools.value.filter((t) => t.isWrite))
+
+function toggleTool(name: string): void {
+  const i = toolAllowlist.value.indexOf(name)
+  if (i >= 0) toolAllowlist.value.splice(i, 1)
+  else toolAllowlist.value.push(name)
+}
+
+function toolChecked(name: string): boolean {
+  return toolAllowlist.value.includes(name)
+}
+
+function selectAll(): void {
+  toolAllowlist.value = currentTools.value.map((t) => t.name)
+}
+
+function clearAll(): void {
+  toolAllowlist.value = []
+}
+
+// Derive default selections when a fresh manifest arrives and there's no saved
+// allowlist yet. Read tools checked by default, write tools unchecked.
+watch(
+  () => props.toolManifest[vendor.value],
+  (manifest) => {
+    if (!manifest) return
+    // Only seed defaults when toolAllowlist is empty (either user cleared it, or
+    // this is a fresh vendor with no saved selection). For edit, allowlist was
+    // already seeded from schedule.toolAllowlist in the form-reset watch, so skip.
+    if (toolAllowlist.value.length === 0) {
+      toolAllowlist.value = manifest.filter((t) => !t.isWrite).map((t) => t.name)
+    }
+  },
+  { immediate: true },
+)
+
 function buildConfig(): Record<string, unknown> {
   // Name is auto-generated server-side; the form supplies only the task body.
   const base: Record<string, unknown> = {}
@@ -250,6 +338,8 @@ function save(): void {
       config,
       mcpMode: mcpMode.value,
       triggerType: triggerType.value,
+      vendor: vendor.value,
+      toolAllowlist: [...toolAllowlist.value],
     }
     // The store clears the other trigger's fields on a triggerType switch, so we
     // only send the fields matching the chosen type (avoids a double column set).
@@ -266,11 +356,12 @@ function save(): void {
       config,
       workspacePath: props.workspacePath,
       mcpMode: mcpMode.value,
-      vendor: 'claude',
+      vendor: vendor.value,
       triggerType: triggerType.value,
       cronExpression: isEvent ? '' : cronExpression.value,
       eventTopic: isEvent ? eventTopic.value : null,
       eventReasonFilter: reasonFilter,
+      toolAllowlist: [...toolAllowlist.value],
     })
   }
   emit('close')
@@ -326,6 +417,16 @@ function save(): void {
             </button>
           </div>
           <span v-if="isEdit" class="sf-hint">{{ t('schedule.form.taskType.locked') }}</span>
+        </div>
+
+        <!-- Vendor selector -->
+        <div class="sf-field">
+          <span class="sf-label">{{ t('schedule.form.vendor.label') }}</span>
+          <select v-model="vendor" class="sf-input sf-select">
+            <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
+              {{ VENDOR_LABEL[v] }}
+            </option>
+          </select>
         </div>
 
         <!-- Command body -->
@@ -510,6 +611,66 @@ function save(): void {
             </button>
           </div>
           <span class="sf-hint">{{ MCP_MODES.find((m) => m.value === mcpMode)?.hint }}</span>
+        </div>
+
+        <!-- Tool checklist -->
+        <div class="sf-field">
+          <span class="sf-label">{{ t('schedule.form.tools.label') }}</span>
+
+          <!-- Loading -->
+          <span v-if="props.toolManifestLoading" class="sf-hint">{{
+            t('schedule.form.tools.loading')
+          }}</span>
+
+          <!-- Error -->
+          <span v-else-if="props.toolManifestError" class="sf-warn">{{
+            props.toolManifestError
+          }}</span>
+
+          <!-- Manifest loaded -->
+          <template v-else-if="currentTools.length">
+            <div class="sf-tools-actions">
+              <button type="button" class="sf-tools-btn" @click="selectAll">
+                {{ t('schedule.form.tools.selectAll.label') }}
+              </button>
+              <button type="button" class="sf-tools-btn" @click="clearAll">
+                {{ t('schedule.form.tools.clearAll.label') }}
+              </button>
+            </div>
+
+            <!-- Read-only tools -->
+            <div class="sf-tools-group">
+              <span class="sf-tools-subtitle">{{ t('schedule.form.tools.readOnly.label') }}</span>
+              <div class="sf-tools-grid">
+                <label v-for="_t in readTools" :key="_t.name" class="sf-tool-item">
+                  <input
+                    type="checkbox"
+                    :checked="toolChecked(_t.name)"
+                    @change="toggleTool(_t.name)"
+                  />
+                  <span class="sf-tool-name">{{ _t.name }}</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Write tools -->
+            <div class="sf-tools-group">
+              <span class="sf-tools-subtitle">{{ t('schedule.form.tools.write.label') }}</span>
+              <div class="sf-tools-grid">
+                <label v-for="_t in writeTools" :key="_t.name" class="sf-tool-item">
+                  <input
+                    type="checkbox"
+                    :checked="toolChecked(_t.name)"
+                    @change="toggleTool(_t.name)"
+                  />
+                  <span class="sf-tool-name">{{ _t.name }}</span>
+                </label>
+              </div>
+            </div>
+          </template>
+
+          <!-- Empty (no tools returned) -->
+          <span v-else class="sf-hint">{{ t('schedule.form.tools.empty') }}</span>
         </div>
       </div>
 
@@ -736,6 +897,63 @@ function save(): void {
   font-size: var(--fs-caption);
   color: var(--c-text);
   margin: var(--sp-2) 0 0;
+}
+
+/* Tool checklist */
+.sf-select {
+  max-width: 280px;
+}
+.sf-tools-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.sf-tools-btn {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.sf-tools-btn:hover {
+  color: var(--c-text);
+  background: var(--c-hover);
+}
+.sf-tools-group {
+  margin-bottom: var(--sp-2);
+}
+.sf-tools-subtitle {
+  display: block;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  margin-bottom: var(--sp-1);
+}
+.sf-tools-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.sf-tool-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+.sf-tool-item:hover {
+  background: var(--c-hover);
+}
+.sf-tool-item input[type='checkbox'] {
+  margin: 0;
+}
+.sf-tool-name {
+  font-family: var(--ff-mono, monospace);
+  font-size: var(--fs-caption);
+  color: var(--c-text);
 }
 
 .sf-foot {

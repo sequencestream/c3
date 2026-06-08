@@ -707,6 +707,8 @@
         "tooltip": "Collapse panel"
       },
       "noUpcoming": "No upcoming runs.",
+      "toolSummary": "{count} tools allowed",
+      "toolSummaryAll": "All tools unrestricted",
       "type": {
         "command": "Cmd",
         "llm": "LLM"
@@ -754,6 +756,12 @@
       },
       "mode": {
         "label": "Mode"
+      },
+      "vendor": {
+        "label": "Vendor"
+      },
+      "tools": {
+        "label": "Tools"
       },
       "created": {
         "label": "Created"
@@ -949,6 +957,27 @@
           "label": "Full access",
           "hint": "No restrictions — use with care."
         }
+      },
+      "vendor": {
+        "label": "Vendor"
+      },
+      "tools": {
+        "label": "Allowed tools",
+        "readOnly": {
+          "label": "Read-only"
+        },
+        "write": {
+          "label": "Write"
+        },
+        "selectAll": {
+          "label": "Select all"
+        },
+        "clearAll": {
+          "label": "Clear all"
+        },
+        "loading": "Loading tools…",
+        "empty": "No tools available",
+        "error": "Failed to load tools"
       },
       "weekday": {
         "sun": "Sun",

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Schedule } from '@ccc/shared/protocol'
+import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import ScheduleList from './ScheduleList.vue'
 
 function sched(over: Partial<Schedule> = {}): Schedule {
@@ -115,6 +116,38 @@ describe('ScheduleList.vue — 左栏列表交互', () => {
       await utc.find('.sched-item-main').trigger('click')
       expect(utc.html()).toContain('22:13')
       expect(utc.html()).not.toContain('06:13')
+    })
+  })
+
+  describe('vendor 与工具摘要', () => {
+    it('展开后显示 vendor 色点 + 品牌名', async () => {
+      const w = mountList([sched({ id: 'a', vendor: 'opencode' })])
+      await w.find('.sched-item-main').trigger('click')
+
+      // vendor dot 存在且颜色正确
+      const dot = w.find('.sched-detail-inline .vendor-dot')
+      expect(dot.exists()).toBe(true)
+      expect(dot.attributes('style')).toContain(VENDOR_COLOR.opencode)
+
+      // 品牌名出现
+      expect(w.text()).toContain(VENDOR_LABEL.opencode)
+    })
+
+    it('空 toolAllowlist 显示 "All tools unrestricted"', async () => {
+      const w = mountList([sched({ id: 'a', toolAllowlist: [] })])
+      await w.find('.sched-item-main').trigger('click')
+      // 摘要是纯文本,通过全文检索确认文案出现
+      const html = w.text()
+      expect(html).toContain('All tools unrestricted')
+    })
+
+    it('非空 toolAllowlist 显示工具数量', async () => {
+      const w = mountList([
+        sched({ id: 'a', toolAllowlist: ['read-file', 'write-file', 'search-code'] }),
+      ])
+      await w.find('.sched-item-main').trigger('click')
+      const html = w.text()
+      expect(html).toContain('3 tools allowed')
     })
   })
 })

@@ -707,6 +707,8 @@
         "tooltip": "收起面板"
       },
       "noUpcoming": "没有即将到来的运行。",
+      "toolSummary": "允许 {count} 个工具",
+      "toolSummaryAll": "所有工具无限制",
       "type": {
         "command": "命令",
         "llm": "LLM"
@@ -745,6 +747,12 @@
       },
       "mode": {
         "label": "模式"
+      },
+      "vendor": {
+        "label": "品牌"
+      },
+      "tools": {
+        "label": "工具"
       },
       "created": {
         "label": "已创建"
@@ -909,6 +917,27 @@
           "label": "完全访问",
           "hint": "无任何限制——请谨慎使用。"
         }
+      },
+      "vendor": {
+        "label": "品牌"
+      },
+      "tools": {
+        "label": "允许的工具",
+        "readOnly": {
+          "label": "只读"
+        },
+        "write": {
+          "label": "写入"
+        },
+        "selectAll": {
+          "label": "全选"
+        },
+        "clearAll": {
+          "label": "全清"
+        },
+        "loading": "正在加载工具列表…",
+        "empty": "没有可用工具",
+        "error": "加载工具列表失败"
       },
       "weekday": {
         "sun": "周日",

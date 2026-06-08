@@ -707,6 +707,8 @@
         "tooltip": "패널 접기"
       },
       "noUpcoming": "예정된 실행이 없습니다.",
+      "toolSummary": "도구 {count}개 허용됨",
+      "toolSummaryAll": "모든 도구 무제한",
       "type": {
         "command": "Cmd",
         "llm": "LLM"
@@ -745,6 +747,12 @@
       },
       "mode": {
         "label": "모드"
+      },
+      "vendor": {
+        "label": "공급업체"
+      },
+      "tools": {
+        "label": "도구"
       },
       "created": {
         "label": "생성됨"
@@ -909,6 +917,27 @@
           "label": "전체 액세스",
           "hint": "제한 없음 — 주의해서 사용하세요."
         }
+      },
+      "vendor": {
+        "label": "벤더"
+      },
+      "tools": {
+        "label": "허용된 도구",
+        "readOnly": {
+          "label": "읽기 전용"
+        },
+        "write": {
+          "label": "쓰기"
+        },
+        "selectAll": {
+          "label": "전체 선택"
+        },
+        "clearAll": {
+          "label": "전체 해제"
+        },
+        "loading": "도구 목록을 불러오는 중…",
+        "empty": "사용 가능한 도구가 없습니다",
+        "error": "도구 목록을 불러오지 못했습니다"
       },
       "weekday": {
         "sun": "일",

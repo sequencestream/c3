@@ -126,11 +126,16 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
   }
   conn.viewing = chatId
   touchWorkspace(proj, Date.now())
+  // Resolve the session title from the store; fall back to 'New Intent' for
+  // brand-new sessions whose title is still null.
+  const dbSessions = listChatSessions(proj)
+  const dbSession = dbSessions.find((s) => s.sessionId === chatId)
+  const realTitle = dbSession?.title ?? 'New Intent'
   conn.send({
     type: 'session_selected',
     workspacePath: proj,
     sessionId: chatId,
-    title: 'New Intent',
+    title: realTitle,
     mode: 'default',
     history: rt.baseline,
     status: rt.status,

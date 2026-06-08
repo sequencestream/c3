@@ -53,6 +53,7 @@ import type {
   ProjectConfig as ProjectConfigType,
   Schedule,
   ScheduleExecutionLog,
+  ToolManifestEntry,
   UpdateScheduleInput,
   OpencodeServerStatus,
   IntentStatus,
@@ -371,6 +372,11 @@ const selectedExecution = computed<ScheduleExecutionLog | null>(() => {
   if (!selectedExecutionId.value) return null
   return selectedScheduleLogs.value.find((l) => l.id === selectedExecutionId.value) ?? null
 })
+
+// Schedule-form tool manifest: cached per vendor, cleared on form close.
+const scheduleToolManifest = ref<Record<string, ToolManifestEntry[] | null>>({})
+const scheduleToolManifestLoading = ref(false)
+const scheduleToolManifestError = ref<string | null>(null)
 
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.intentsProject'
@@ -909,6 +915,13 @@ function handleMessage(msg: ServerToClient) {
         const active = msg.items.find((s) => s.sessionId === activeSession.value)
         if (active) {
           selectedIntentSessionId.value = active.sessionId
+          // Sync the right-panel title with the DB title. Auto-title derivation
+          // or manual rename broadcasts `intent_sessions` AFTER the initial
+          // `session_selected` set `activeTitle` to the fallback "New Intent";
+          // this keeps the right-panel header in sync without a re-select.
+          if (active.title) {
+            activeTitle.value = active.title
+          }
         } else if (activeSession.value) {
           selectedIntentSessionId.value = activeSession.value
         } else {
@@ -961,6 +974,11 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'schedule_detail':
       scheduleLogs.value = { ...scheduleLogs.value, [msg.schedule.id]: msg.logs }
+      break
+    case 'schedule_tool_manifest':
+      scheduleToolManifest.value = { ...scheduleToolManifest.value, [msg.vendor]: msg.tools }
+      scheduleToolManifestLoading.value = false
+      scheduleToolManifestError.value = null
       break
     case 'execution_transcript':
       executionTranscripts.value = {
@@ -1540,12 +1558,38 @@ function openScheduleForm(target: Schedule | null) {
   scheduleFormOpen.value = true
 }
 
+// Clear cached tool manifest when the form closes so a fresh open refetches.
+watch(scheduleFormOpen, (open) => {
+  if (!open) {
+    scheduleToolManifest.value = {}
+    scheduleToolManifestLoading.value = false
+    scheduleToolManifestError.value = null
+  }
+})
+
 function createSchedule(input: CreateScheduleInput) {
   client?.send({ type: 'create_schedule', workspacePath: input.workspacePath, input })
 }
 
 function updateSchedule(id: string, input: UpdateScheduleInput) {
   client?.send({ type: 'update_schedule', scheduleId: id, input })
+}
+
+function onLoadScheduleToolManifest(vendor: string) {
+  if (!schedulesProject.value || !vendor) return
+  // Return cached result immediately if we already have it.
+  if (scheduleToolManifest.value[vendor]) {
+    scheduleToolManifestLoading.value = false
+    scheduleToolManifestError.value = null
+    return
+  }
+  scheduleToolManifestLoading.value = true
+  scheduleToolManifestError.value = null
+  client?.send({
+    type: 'get_schedule_tool_manifest',
+    vendor: vendor as VendorId,
+    workspacePath: schedulesProject.value,
+  })
 }
 
 // "Start" in the discussion title bar (draft only): kick off the organizer
@@ -1981,6 +2025,10 @@ function dismissSkillApproval() {
       :timezone="scheduleTimezone"
       :execution-id="selectedExecutionId"
       :execution="selectedExecution"
+      :tool-manifest="scheduleToolManifest"
+      :tool-manifest-loading="scheduleToolManifestLoading"
+      :tool-manifest-error="scheduleToolManifestError"
+      :host-status="hostStatus"
       @select="onSelectSchedule"
       @open-form="openScheduleForm"
       @toggle-enabled="onToggleScheduleEnabled"
@@ -1989,6 +2037,7 @@ function dismissSkillApproval() {
       @close-form="scheduleFormOpen = false"
       @create="createSchedule"
       @update="updateSchedule"
+      @load-tool-manifest="onLoadScheduleToolManifest"
     />
   </div>
 

@@ -1,8 +1,24 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { Schedule } from '@ccc/shared/protocol'
+import type { Schedule, ToolManifestEntry, VendorHostStatus } from '@ccc/shared/protocol'
 import { isValidCron } from '@ccc/shared/cron'
 import ScheduleForm from './ScheduleForm.vue'
+
+const HOST_PRESENT: VendorHostStatus[] = [
+  { vendor: 'claude', present: true, binary: 'claude', installHint: '' },
+  { vendor: 'codex', present: true, binary: 'codex', installHint: '' },
+  { vendor: 'opencode', present: false, binary: 'opencode', installHint: 'install it' },
+]
+
+const READ_TOOLS: ToolManifestEntry[] = [
+  { name: 'Read', isWrite: false },
+  { name: 'Grep', isWrite: false },
+]
+const WRITE_TOOLS: ToolManifestEntry[] = [
+  { name: 'Write', isWrite: true },
+  { name: 'Edit', isWrite: true },
+]
+const ALL_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS]
 
 function mountForm(
   props: Partial<{
@@ -10,6 +26,10 @@ function mountForm(
     schedule: Schedule | null
     workspacePath: string
     timezone: string
+    toolManifest: Record<string, ToolManifestEntry[] | null>
+    toolManifestLoading: boolean
+    toolManifestError: string | null
+    hostStatus: VendorHostStatus[]
   }> = {},
 ) {
   return mount(ScheduleForm, {
@@ -18,6 +38,10 @@ function mountForm(
       schedule: null,
       workspacePath: '/home/proj',
       timezone: 'UTC',
+      toolManifest: {},
+      toolManifestLoading: false,
+      toolManifestError: null,
+      hostStatus: HOST_PRESENT,
       ...props,
     },
   })
@@ -192,5 +216,155 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     const preview = w.find('.sf-nextrun strong')
     expect(preview.exists()).toBe(true)
     expect(preview.text()).toContain('11:00')
+  })
+
+  // ---- Vendors -------------------------------------------------------------
+
+  it('渲染 vendor 下拉选择器,三个品牌均可见', () => {
+    const w = mountForm()
+    const select = w.find('select.sf-input')
+    expect(select.exists()).toBe(true)
+    const opts = select.findAll('option')
+    expect(opts).toHaveLength(3)
+    expect(opts[0].text()).toBe('Claude')
+    expect(opts[1].text()).toBe('Codex')
+    expect(opts[2].text()).toBe('OpenCode')
+  })
+
+  it('host 缺失的 vendor 选项 disabled, host 存在的不 disabled', () => {
+    const w = mountForm()
+    const opts = w.findAll('select.sf-input option')
+    // claude present → enabled
+    expect(opts[0].attributes('disabled')).toBeUndefined()
+    // codex present → enabled
+    expect(opts[1].attributes('disabled')).toBeUndefined()
+    // opencode missing → disabled
+    expect(opts[2].attributes('disabled')).toBeDefined()
+  })
+
+  it('create payload 默认 vendor=claude,含 toolAllowlist', async () => {
+    const w = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    await w.find('textarea').setValue('pnpm build')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.vendor).toBe('claude')
+  })
+
+  // ---- Tool manifest -------------------------------------------------------
+
+  it('无工具清单时显示空态文案', () => {
+    const w = mountForm({
+      toolManifest: { claude: null },
+    })
+    expect(w.text()).toContain('No tools available')
+  })
+
+  it('工具加载中显示 loading 态', () => {
+    const w = mountForm({
+      toolManifestLoading: true,
+    })
+    expect(w.text()).toContain('Loading tools')
+  })
+
+  it('读工具默认勾上,写工具默认不勾', () => {
+    const w = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    const checks = w.findAll('.sf-tool-item input[type="checkbox"]')
+    // READ_TOOLS: 2 items (Read, Grep) — default checked
+    expect((checks[0].element as HTMLInputElement).checked).toBe(true)
+    expect((checks[1].element as HTMLInputElement).checked).toBe(true)
+    // WRITE_TOOLS: 2 items (Write, Edit) — default unchecked
+    expect((checks[2].element as HTMLInputElement).checked).toBe(false)
+    expect((checks[3].element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('工具按读写分区展示,两组各正确数量', () => {
+    const w = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    const groupLabels = w.findAll('.sf-tools-subtitle')
+    expect(groupLabels).toHaveLength(2)
+    expect(groupLabels[0].text()).toBe('Read-only')
+    expect(groupLabels[1].text()).toBe('Write')
+
+    const items = w.findAll('.sf-tool-item')
+    expect(items).toHaveLength(4)
+  })
+
+  it('全选/全清按钮工作正确', async () => {
+    const w = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    // 默认:读勾写不勾 → 选中 2 个
+    expect(w.findAll('.sf-tool-item input:checked')).toHaveLength(2)
+
+    // 全选 → 4 个
+    await w.find('.sf-tools-btn').trigger('click') // "Select all"
+    expect(w.findAll('.sf-tool-item input:checked')).toHaveLength(4)
+
+    // 全清 → 0 个
+    await w.findAll('.sf-tools-btn')[1].trigger('click') // "Clear all"
+    expect(w.findAll('.sf-tool-item input:checked')).toHaveLength(0)
+  })
+
+  it('手动切换工具的勾选状态', async () => {
+    const w = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    const checks = w.findAll('.sf-tool-item input[type="checkbox"]')
+    // 默认第 1 个(Read)勾上,点击取消
+    expect((checks[0].element as HTMLInputElement).checked).toBe(true)
+    await checks[0].trigger('change')
+    expect((checks[0].element as HTMLInputElement).checked).toBe(false)
+    // 第 3 个(Write)默认没勾,点击勾上
+    expect((checks[2].element as HTMLInputElement).checked).toBe(false)
+    await checks[2].trigger('change')
+    expect((checks[2].element as HTMLInputElement).checked).toBe(true)
+  })
+
+  // ---- Save payload with toolAllowlist -------------------------------------
+
+  it('create payload 携带 toolAllowlist', async () => {
+    const w = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    await w.find('textarea').setValue('pnpm build')
+    // 默认只勾读了;勾上 Write
+    const checks = w.findAll('.sf-tool-item input[type="checkbox"]')
+    await checks[2].trigger('change') // toggle Write on
+
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.toolAllowlist).toEqual(['Read', 'Grep', 'Write'])
+  })
+
+  it('update payload 携带 toolAllowlist', async () => {
+    const w = mountForm({
+      schedule: sched(),
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input).toHaveProperty('toolAllowlist')
+  })
+
+  it('编辑回读:从 schedule.toolAllowlist 还原勾选', async () => {
+    const w = mountForm({
+      schedule: sched({ toolAllowlist: ['Write', 'Edit'] }),
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    const checks = w.findAll('.sf-tool-item input[type="checkbox"]')
+    // Read/Grep 未在 toolAllowlist 中 → 不勾
+    expect((checks[0].element as HTMLInputElement).checked).toBe(false)
+    expect((checks[1].element as HTMLInputElement).checked).toBe(false)
+    // Write/Edit 在 toolAllowlist 中 → 勾上
+    expect((checks[2].element as HTMLInputElement).checked).toBe(true)
+    expect((checks[3].element as HTMLInputElement).checked).toBe(true)
   })
 })

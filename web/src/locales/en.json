@@ -686,6 +686,12 @@
         }
       }
     },
+    "trigger": {
+      "event": {
+        "started": "On run started",
+        "settled": "On run finished"
+      }
+    },
     "meta": {
       "id": {
         "label": "ID"
@@ -698,6 +704,9 @@
       },
       "cron": {
         "label": "Cron"
+      },
+      "trigger": {
+        "label": "Trigger"
       },
       "mode": {
         "label": "Mode"
@@ -776,6 +785,40 @@
       },
       "schedule": {
         "label": "Schedule"
+      },
+      "trigger": {
+        "label": "Trigger",
+        "cron": {
+          "label": "On a schedule"
+        },
+        "event": {
+          "label": "On a run event"
+        }
+      },
+      "event": {
+        "topic": {
+          "label": "Run event",
+          "started": {
+            "label": "Run started"
+          },
+          "settled": {
+            "label": "Run finished"
+          }
+        },
+        "reason": {
+          "label": "Only on outcome",
+          "complete": {
+            "label": "Completed"
+          },
+          "error": {
+            "label": "Error"
+          },
+          "aborted": {
+            "label": "Stopped"
+          },
+          "hint": "Leave empty to fire on any outcome."
+        },
+        "hint": "Fires when a run in this workspace reaches the selected event."
       },
       "frequency": {
         "label": "Frequency"
@@ -890,7 +933,8 @@
       "dbUnavailable": "Schedules feature unavailable (c3.db).",
       "notFound": "Schedule not found.",
       "executionNotFound": "Execution record not found.",
-      "approvalNotFound": "Approval entry not found or already handled."
+      "approvalNotFound": "Approval entry not found or already handled.",
+      "invalidEventTrigger": "An event-triggered schedule needs a run event to subscribe to."
     },
     "projectConfig": {
       "invalidDefaultMode": "Invalid default mode \"{mode}\" for vendor \"{vendor}\"."

@@ -29,8 +29,11 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     type: 'command',
     config: { command: 'pnpm build', name: 'legacy name' },
     workspacePath: '/home/proj',
+    triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,
+    eventTopic: null,
+    eventReasonFilter: null,
     status: 'active',
     mcpMode: 'sandboxed',
     toolAllowlist: [],
@@ -125,6 +128,36 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect(input.config).not.toHaveProperty('name')
     expect(input.config).not.toHaveProperty('description')
     expect(input).not.toHaveProperty('type')
+  })
+
+  it('create(event):切到事件触发 → payload 含 triggerType/eventTopic,cron 为空', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    // 第 2 个 segmented 是 trigger 类型(第 1 个是任务类型);[1] = event。
+    const segmenteds = w.findAll('.sf-segmented')
+    await segmenteds[1].findAll('.sf-seg')[1].trigger('click')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.triggerType).toBe('event')
+    expect(input.cronExpression).toBe('')
+    expect(input.eventTopic).toBe('run:settled') // 默认订阅运行结束
+    expect(input.eventReasonFilter).toBeNull() // 未选 reason → 任意结果
+  })
+
+  it('create(event/settled):勾选 reason → payload 含 eventReasonFilter', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    const segmenteds = w.findAll('.sf-segmented')
+    await segmenteds[1].findAll('.sf-seg')[1].trigger('click') // event
+    // run:settled 时显示 reason 过滤;cron builder 已隐藏,.sf-day 仅 reason 按钮。
+    const reasons = w.findAll('.sf-day')
+    expect(reasons).toHaveLength(3)
+    await reasons[1].trigger('click') // 'error'
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.eventReasonFilter).toEqual(['error'])
   })
 
   // next-run 预览按配置时区(props.timezone)计算并格式化:配 Asia/Shanghai 时

@@ -17,9 +17,12 @@ import type {
   CreateScheduleInput,
   McpMode,
   PendingWriteApproval,
+  RunEndReason,
+  RunLifecycleTopic,
   Schedule,
   ScheduleExecutionLog,
   ScheduleStatus,
+  ScheduleTriggerType,
   ScheduleType,
   UpdateScheduleInput,
   WorkspaceMcpConfig,
@@ -42,22 +45,25 @@ function sanitizeConfig(config: unknown): Record<string, unknown> {
   return out
 }
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schedules (
-  id              TEXT PRIMARY KEY,
-  type            TEXT NOT NULL,
-  config          TEXT NOT NULL DEFAULT '{}',
-  workspace_path  TEXT NOT NULL,
-  cron_expression TEXT NOT NULL,
-  next_run_at     INTEGER,
-  status          TEXT NOT NULL,
-  mcp_mode        TEXT NOT NULL,
-  tool_allowlist  TEXT NOT NULL DEFAULT '[]',
-  tool_denylist   TEXT NOT NULL DEFAULT '[]',
-  created_at      INTEGER NOT NULL,
-  updated_at      INTEGER NOT NULL
+  id                  TEXT PRIMARY KEY,
+  type                TEXT NOT NULL,
+  config              TEXT NOT NULL DEFAULT '{}',
+  workspace_path      TEXT NOT NULL,
+  trigger_type        TEXT NOT NULL DEFAULT 'cron',
+  cron_expression     TEXT NOT NULL,
+  next_run_at         INTEGER,
+  event_topic         TEXT,
+  event_reason_filter TEXT,
+  status              TEXT NOT NULL,
+  mcp_mode            TEXT NOT NULL,
+  tool_allowlist      TEXT NOT NULL DEFAULT '[]',
+  tool_denylist       TEXT NOT NULL DEFAULT '[]',
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sch_workspace ON schedules(workspace_path);
 
@@ -148,6 +154,18 @@ function runMigrations(d: Db): void {
   if (!columnExists(d, 'schedule_execution_logs', 'session_id')) {
     d.exec(`ALTER TABLE schedule_execution_logs ADD COLUMN session_id TEXT`)
   }
+  // v5 (2026-06-08): event-triggered schedules. trigger_type defaults old rows to
+  // 'cron' so their cron behaviour is unchanged; event_topic / event_reason_filter
+  // stay NULL for cron rows. Each ALTER is gated on table_info so re-runs no-op.
+  if (!columnExists(d, 'schedules', 'trigger_type')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'cron'`)
+  }
+  if (!columnExists(d, 'schedules', 'event_topic')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN event_topic TEXT`)
+  }
+  if (!columnExists(d, 'schedules', 'event_reason_filter')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN event_reason_filter TEXT`)
+  }
 }
 
 let schemaReady = false
@@ -204,8 +222,11 @@ interface ScheduleRow {
   type: string
   config: string
   workspace_path: string
+  trigger_type: string | null
   cron_expression: string
   next_run_at: number | null
+  event_topic: string | null
+  event_reason_filter: string | null
   status: string
   mcp_mode: string
   tool_allowlist: string
@@ -237,6 +258,14 @@ function parseStringList(raw: string | null): string[] {
   }
 }
 
+/** Parse the event_reason_filter column to a reason list; null/blank/[] → null (= any reason). */
+function parseReasonFilter(raw: string | null): RunEndReason[] | null {
+  const list = parseStringList(raw).filter(
+    (x): x is RunEndReason => x === 'complete' || x === 'error' || x === 'aborted',
+  )
+  return list.length ? list : null
+}
+
 function toSchedule(r: ScheduleRow): Schedule {
   let config: unknown = {}
   try {
@@ -249,8 +278,11 @@ function toSchedule(r: ScheduleRow): Schedule {
     type: r.type as ScheduleType,
     config,
     workspacePath: r.workspace_path,
+    triggerType: (r.trigger_type as ScheduleTriggerType | null) ?? 'cron',
     cronExpression: r.cron_expression,
     nextRunAt: r.next_run_at,
+    eventTopic: (r.event_topic as RunLifecycleTopic | null) ?? null,
+    eventReasonFilter: parseReasonFilter(r.event_reason_filter),
     status: r.status as ScheduleStatus,
     mcpMode: r.mcp_mode as McpMode,
     toolAllowlist: parseStringList(r.tool_allowlist),
@@ -311,23 +343,36 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
   const denylist = input.toolDenylist ?? []
   const config = sanitizeConfig(input.config)
   config.name = (generatedName ?? '').trim() || fallbackName(input.type, input.config)
-  // Backfill the first trigger time so a `active` schedule is eligible for
-  // dispatch immediately. getDueSchedules() filters out `next_run_at IS NULL`,
-  // so without this the first run would never fire. Invalid crons stay null
-  // (never due) rather than throwing and rejecting the create.
-  const nextRunAt = isValidCron(input.cronExpression)
-    ? computeNextRunAt(input.cronExpression, now, getTimezone())
-    : null
+  // Event-triggered schedules carry no cron and never have a planned next_run_at:
+  // they fire from the run lifecycle bus, not the tick loop. Cron schedules keep
+  // the existing backfill (getDueSchedules filters `next_run_at IS NULL`, so the
+  // first run would never fire without it). Invalid crons stay null (never due)
+  // rather than throwing and rejecting the create.
+  const triggerType: ScheduleTriggerType = input.triggerType ?? 'cron'
+  const isEvent = triggerType === 'event'
+  const cronExpression = isEvent ? '' : input.cronExpression
+  const nextRunAt =
+    !isEvent && isValidCron(cronExpression)
+      ? computeNextRunAt(cronExpression, now, getTimezone())
+      : null
+  const eventTopic = isEvent ? (input.eventTopic ?? null) : null
+  const eventReasonFilter =
+    isEvent && input.eventReasonFilter && input.eventReasonFilter.length
+      ? JSON.stringify(input.eventReasonFilter)
+      : null
   d.run(
     `INSERT INTO schedules
-       (id, type, config, workspace_path, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
     JSON.stringify(config),
     resolve(input.workspacePath),
-    input.cronExpression,
+    triggerType,
+    cronExpression,
     nextRunAt,
+    eventTopic,
+    eventReasonFilter,
     'active',
     input.mcpMode,
     JSON.stringify(allowlist),
@@ -360,6 +405,25 @@ export function updateSchedule(id: string, patch: UpdateScheduleInput): void {
     sets.push('config=?')
     params.push(JSON.stringify(next))
   }
+  // Trigger-type switch: clear the fields that don't belong to the new type so a
+  // schedule never carries stale cron AND event state. Switching to 'event' drops
+  // cron + next_run_at; switching to 'cron' drops the event subscription fields.
+  // The form only sends the fields matching the chosen type, so no column is set twice.
+  if (patch.triggerType !== undefined) {
+    sets.push('trigger_type=?')
+    params.push(patch.triggerType)
+    if (patch.triggerType === 'event') {
+      sets.push('cron_expression=?')
+      params.push('')
+      sets.push('next_run_at=?')
+      params.push(null)
+    } else {
+      sets.push('event_topic=?')
+      params.push(null)
+      sets.push('event_reason_filter=?')
+      params.push(null)
+    }
+  }
   if (patch.cronExpression !== undefined) {
     sets.push('cron_expression=?')
     params.push(patch.cronExpression)
@@ -369,6 +433,18 @@ export function updateSchedule(id: string, patch: UpdateScheduleInput): void {
     params.push(
       isValidCron(patch.cronExpression)
         ? computeNextRunAt(patch.cronExpression, Date.now(), getTimezone())
+        : null,
+    )
+  }
+  if (patch.eventTopic !== undefined) {
+    sets.push('event_topic=?')
+    params.push(patch.eventTopic)
+  }
+  if (patch.eventReasonFilter !== undefined) {
+    sets.push('event_reason_filter=?')
+    params.push(
+      patch.eventReasonFilter && patch.eventReasonFilter.length
+        ? JSON.stringify(patch.eventReasonFilter)
         : null,
     )
   }
@@ -429,6 +505,22 @@ export function getDueSchedules(now: number): Schedule[] {
       'SELECT * FROM schedules WHERE status = ? AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC',
       'active',
       now,
+    )
+    .map(toSchedule)
+}
+
+/**
+ * All active event-triggered schedules subscribed to a given run lifecycle topic.
+ * Used by the scheduler's event dispatch path (2026-06-08); cron schedules are
+ * excluded by the `trigger_type='event'` filter.
+ */
+export function getEventSchedules(topic: RunLifecycleTopic): Schedule[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<ScheduleRow>(
+      "SELECT * FROM schedules WHERE status='active' AND trigger_type='event' AND event_topic=?",
+      topic,
     )
     .map(toSchedule)
 }

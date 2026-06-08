@@ -19,6 +19,9 @@ import { ref, computed, watch } from 'vue'
 import type {
   Schedule,
   ScheduleType,
+  ScheduleTriggerType,
+  RunLifecycleTopic,
+  RunEndReason,
   McpMode,
   CreateScheduleInput,
   UpdateScheduleInput,
@@ -76,12 +79,36 @@ const WEEKDAYS = computed<{ num: number; label: string }[]>(() => [
   { num: 6, label: t('schedule.form.weekday.sat') },
 ])
 
+const TRIGGER_TYPES = computed<{ value: ScheduleTriggerType; label: string }[]>(() => [
+  { value: 'cron', label: t('schedule.form.trigger.cron.label') },
+  { value: 'event', label: t('schedule.form.trigger.event.label') },
+])
+
+const EVENT_TOPICS = computed<{ value: RunLifecycleTopic; label: string }[]>(() => [
+  { value: 'run:started', label: t('schedule.form.event.topic.started.label') },
+  { value: 'run:settled', label: t('schedule.form.event.topic.settled.label') },
+])
+
+const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
+  { value: 'complete', label: t('schedule.form.event.reason.complete.label') },
+  { value: 'error', label: t('schedule.form.event.reason.error.label') },
+  { value: 'aborted', label: t('schedule.form.event.reason.aborted.label') },
+])
+
 // ---- Form draft ----------------------------------------------------------
 const type = ref<ScheduleType>('command')
 const mcpMode = ref<McpMode>('sandboxed')
 const command = ref('')
 const prompt = ref('')
 const cronExpression = ref('*/30 * * * *')
+const triggerType = ref<ScheduleTriggerType>('cron')
+const eventTopic = ref<RunLifecycleTopic>('run:settled')
+const eventReasonFilter = ref<RunEndReason[]>([])
+
+// The reason filter only applies to run:settled (run:started has no outcome).
+const showReasonFilter = computed(
+  () => triggerType.value === 'event' && eventTopic.value === 'run:settled',
+)
 
 // Advanced segmented builder.
 type Frequency = 'minutely' | 'hourly' | 'daily' | 'weekly'
@@ -107,15 +134,21 @@ watch(
     if (sched) {
       type.value = sched.type
       mcpMode.value = sched.mcpMode
-      cronExpression.value = sched.cronExpression
+      cronExpression.value = sched.cronExpression || '*/30 * * * *'
       command.value = readConfigField(sched.config, 'command')
       prompt.value = readConfigField(sched.config, 'prompt')
+      triggerType.value = sched.triggerType
+      eventTopic.value = sched.eventTopic ?? 'run:settled'
+      eventReasonFilter.value = sched.eventReasonFilter ? [...sched.eventReasonFilter] : []
     } else {
       type.value = 'command'
       mcpMode.value = 'sandboxed'
       cronExpression.value = '*/30 * * * *'
       command.value = ''
       prompt.value = ''
+      triggerType.value = 'cron'
+      eventTopic.value = 'run:settled'
+      eventReasonFilter.value = []
     }
   },
   { immediate: true },
@@ -174,7 +207,17 @@ const nextRunPreview = computed(() => {
 const taskFilled = computed(() =>
   type.value === 'command' ? command.value.trim().length > 0 : prompt.value.trim().length > 0,
 )
-const canSave = computed(() => taskFilled.value && cronValid.value)
+// Cron triggers need a valid expression; event triggers need a topic to subscribe to.
+const triggerValid = computed(() =>
+  triggerType.value === 'cron' ? cronValid.value : !!eventTopic.value,
+)
+const canSave = computed(() => taskFilled.value && triggerValid.value)
+
+function toggleReason(r: RunEndReason): void {
+  const i = eventReasonFilter.value.indexOf(r)
+  if (i >= 0) eventReasonFilter.value.splice(i, 1)
+  else eventReasonFilter.value.push(r)
+}
 
 function buildConfig(): Record<string, unknown> {
   // Name is auto-generated server-side; the form supplies only the task body.
@@ -187,19 +230,37 @@ function buildConfig(): Record<string, unknown> {
 function save(): void {
   if (!canSave.value) return
   const config = buildConfig()
+  const isEvent = triggerType.value === 'event'
+  // Reason filter only carries for run:settled; an empty list means "any outcome".
+  const reasonFilter: RunEndReason[] | null =
+    isEvent && eventTopic.value === 'run:settled' && eventReasonFilter.value.length
+      ? [...eventReasonFilter.value]
+      : null
   if (isEdit.value && props.schedule) {
-    emit('update', props.schedule.id, {
+    const input: UpdateScheduleInput = {
       config,
-      cronExpression: cronExpression.value,
       mcpMode: mcpMode.value,
-    })
+      triggerType: triggerType.value,
+    }
+    // The store clears the other trigger's fields on a triggerType switch, so we
+    // only send the fields matching the chosen type (avoids a double column set).
+    if (isEvent) {
+      input.eventTopic = eventTopic.value
+      input.eventReasonFilter = reasonFilter
+    } else {
+      input.cronExpression = cronExpression.value
+    }
+    emit('update', props.schedule.id, input)
   } else {
     emit('create', {
       type: type.value,
       config,
       workspacePath: props.workspacePath,
-      cronExpression: cronExpression.value,
       mcpMode: mcpMode.value,
+      triggerType: triggerType.value,
+      cronExpression: isEvent ? '' : cronExpression.value,
+      eventTopic: isEvent ? eventTopic.value : null,
+      eventReasonFilter: reasonFilter,
     })
   }
   emit('close')
@@ -275,8 +336,25 @@ function save(): void {
           </div>
         </div>
 
-        <!-- Schedule (cron) builder -->
+        <!-- Trigger type: a cron schedule vs a run lifecycle event -->
         <div class="sf-field">
+          <span class="sf-label">{{ t('schedule.form.trigger.label') }}</span>
+          <div class="sf-segmented">
+            <button
+              v-for="tt in TRIGGER_TYPES"
+              :key="tt.value"
+              type="button"
+              class="sf-seg"
+              :class="{ active: triggerType === tt.value }"
+              @click="triggerType = tt.value"
+            >
+              {{ tt.label }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Schedule (cron) builder -->
+        <div v-if="triggerType === 'cron'" class="sf-field">
           <span class="sf-label">{{ t('schedule.form.schedule.label') }}</span>
 
           <!-- Advanced segmented builder -->
@@ -363,6 +441,43 @@ function save(): void {
             {{ t('schedule.form.nextRun.label') }} <strong>{{ nextRunPreview }}</strong>
             <span class="sf-hint"> {{ t('schedule.form.nextRun.utcHint') }}</span>
           </p>
+        </div>
+
+        <!-- Event trigger config -->
+        <div v-if="triggerType === 'event'" class="sf-field">
+          <span class="sf-label">{{ t('schedule.form.event.topic.label') }}</span>
+          <div class="sf-segmented">
+            <button
+              v-for="ev in EVENT_TOPICS"
+              :key="ev.value"
+              type="button"
+              class="sf-seg"
+              :class="{ active: eventTopic === ev.value }"
+              @click="eventTopic = ev.value"
+            >
+              {{ ev.label }}
+            </button>
+          </div>
+          <span class="sf-hint">{{ t('schedule.form.event.hint') }}</span>
+
+          <template v-if="showReasonFilter">
+            <span class="sf-label sf-event-reason-label">{{
+              t('schedule.form.event.reason.label')
+            }}</span>
+            <div class="sf-days">
+              <button
+                v-for="r in EVENT_REASONS"
+                :key="r.value"
+                type="button"
+                class="sf-day"
+                :class="{ active: eventReasonFilter.includes(r.value) }"
+                @click="toggleReason(r.value)"
+              >
+                {{ r.label }}
+              </button>
+            </div>
+            <span class="sf-hint">{{ t('schedule.form.event.reason.hint') }}</span>
+          </template>
         </div>
 
         <!-- Execution identity -->
@@ -527,6 +642,11 @@ function save(): void {
 }
 
 .sf-tabpane {
+  margin-top: var(--sp-2);
+}
+
+/* Event reason filter sub-label spacing within the event field. */
+.sf-event-reason-label {
   margin-top: var(--sp-2);
 }
 

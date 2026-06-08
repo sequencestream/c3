@@ -161,6 +161,16 @@ export async function launchRun(
     )
   }
 
+  // Publish the run-started lifecycle event once per launchRun, before the vendor
+  // fork so it covers both the claude path below and the driver path (ADR-0018).
+  // sessionId is the current runId (possibly a pending id); event-triggered
+  // schedules filter `kind === 'normal'` so intent comm runs never fire them.
+  deps.eventBus.publish('run:started', {
+    sessionId: runId,
+    workspacePath,
+    kind: rt.kind,
+  })
+
   // Pre-launch skill mount (mount layer 2/3, ADR-0017): mount external skill repos
   // into vendor discovery dirs before the run starts. Mount failures degrade
   // skills silently (worst case: subset unavailable = indistinguishable from no
@@ -192,6 +202,14 @@ export async function launchRun(
       emit(runId, { type: 'user_text', text: prompt })
       emit(runId, { type: 'turn_end', reason: 'error', error: unavailable })
       finalizeRun(runId)
+      // Keep the started→settled invariant: a vendor-unavailable early return
+      // still settled (as an error), so a started event always has a settled twin.
+      deps.eventBus.publish('run:settled', {
+        sessionId: runId,
+        workspacePath,
+        reason: 'error',
+        kind: rt.kind,
+      })
       return
     }
   }
@@ -497,6 +515,14 @@ export async function launchRun(
     // Authoritative terminal-state backstop. The run is fully over; guarantee a
     // terminal `turn_end` is broadcast and the session settles to `idle`.
     finalizeRun(runId)
-    deps.eventBus.publish('run:settled', { workspacePath })
+    // Classify the terminal reason for event-triggered schedules: user stop wins,
+    // then a clean success, else an error (a throw, chain exhaustion, or single-
+    // attempt failure all land here as 'error').
+    const reason: import('@ccc/shared/protocol').RunEndReason = cycleAbort.signal.aborted
+      ? 'aborted'
+      : success
+        ? 'complete'
+        : 'error'
+    deps.eventBus.publish('run:settled', { sessionId: runId, workspacePath, reason, kind: rt.kind })
   }
 }

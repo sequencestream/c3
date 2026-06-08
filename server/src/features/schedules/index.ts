@@ -29,6 +29,12 @@ export const createScheduleHandler: Handler<'create_schedule'> = async (ctx, con
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
     return
   }
+  // An event-triggered schedule with no topic is a dead task (it can never match
+  // a lifecycle event), so reject it up front rather than persisting a no-op.
+  if ((msg.input.triggerType ?? 'cron') === 'event' && !msg.input.eventTopic) {
+    conn.send({ type: 'error', error: { code: 'schedule.invalidEventTrigger' } })
+    return
+  }
   // Name is auto-generated server-side from the task content; any
   // client-supplied name in config is ignored (stripped by the store).
   const generatedName = await generateScheduleName(msg.input)
@@ -54,6 +60,14 @@ export const updateScheduleHandler: Handler<'update_schedule'> = (ctx, conn, msg
   const existing = getSchedule(msg.scheduleId)
   if (!existing) {
     conn.send({ type: 'error', error: { code: 'schedule.notFound' } })
+    return
+  }
+  // Reject an update that would leave an event-triggered schedule without a topic
+  // (either switching to 'event' without a topic, or clearing an existing one).
+  const nextTrigger = msg.input.triggerType ?? existing.triggerType
+  const nextTopic = msg.input.eventTopic !== undefined ? msg.input.eventTopic : existing.eventTopic
+  if (nextTrigger === 'event' && !nextTopic) {
+    conn.send({ type: 'error', error: { code: 'schedule.invalidEventTrigger' } })
     return
   }
   updateScheduleStore(msg.scheduleId, msg.input)

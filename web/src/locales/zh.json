@@ -713,6 +713,9 @@
       },
       "upcoming": {
         "label": "即将到来的运行"
+      },
+      "trigger": {
+        "label": "触发方式"
       }
     },
     "detail": {
@@ -845,6 +848,46 @@
         "thu": "周四",
         "fri": "周五",
         "sat": "周六"
+      },
+      "trigger": {
+        "label": "触发方式",
+        "cron": {
+          "label": "按时间表"
+        },
+        "event": {
+          "label": "按运行事件"
+        }
+      },
+      "event": {
+        "topic": {
+          "label": "运行事件",
+          "started": {
+            "label": "运行开始"
+          },
+          "settled": {
+            "label": "运行结束"
+          }
+        },
+        "reason": {
+          "label": "仅在以下结果时",
+          "complete": {
+            "label": "已完成"
+          },
+          "error": {
+            "label": "出错"
+          },
+          "aborted": {
+            "label": "已中止"
+          },
+          "hint": "留空则任意结果都触发。"
+        },
+        "hint": "当本工作区中的运行到达所选事件时触发。"
+      }
+    },
+    "trigger": {
+      "event": {
+        "started": "运行开始时",
+        "settled": "运行结束时"
       }
     }
   },
@@ -890,7 +933,8 @@
       "dbUnavailable": "定时任务功能不可用 (c3.db)。",
       "notFound": "定时任务不存在。",
       "executionNotFound": "执行记录不存在。",
-      "approvalNotFound": "审批条目不存在或已被处理。"
+      "approvalNotFound": "审批条目不存在或已被处理。",
+      "invalidEventTrigger": "事件触发型定时任务需要订阅一个运行事件。"
     },
     "projectConfig": {
       "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"

@@ -44,7 +44,14 @@ const detailTitle = computed(() => {
     cfg && typeof cfg === 'object' && typeof (cfg as Record<string, unknown>).name === 'string'
       ? ((cfg as Record<string, unknown>).name as string).trim()
       : ''
-  return t('schedule.detail.title', { name: name || s.cronExpression })
+  // Event-triggered schedules carry no cron, so fall back to their event summary.
+  const fallback =
+    s.triggerType === 'event'
+      ? s.eventTopic === 'run:started'
+        ? t('schedule.trigger.event.started')
+        : t('schedule.trigger.event.settled')
+      : s.cronExpression
+  return t('schedule.detail.title', { name: name || fallback })
 })
 
 // executionIds whose session view is currently expanded.

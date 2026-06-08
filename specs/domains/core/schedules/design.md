@@ -28,8 +28,11 @@ CREATE TABLE schedules (
     type            TEXT NOT NULL,                           -- 'command' | 'llm'
     config          TEXT NOT NULL DEFAULT '{}',              -- JSON string
     workspace_path  TEXT NOT NULL,                           -- resolved absolute path
-    cron_expression TEXT NOT NULL,
-    next_run_at     INTEGER,                                -- Unix ms timestamp; null if not scheduled
+    trigger_type        TEXT NOT NULL DEFAULT 'cron',         -- 'cron' | 'event' (v5, 2026-06-08)
+    cron_expression     TEXT NOT NULL,                        -- '' for event triggers
+    next_run_at         INTEGER,                              -- Unix ms; null for event triggers
+    event_topic         TEXT,                                 -- 'run:started' | 'run:settled' | null
+    event_reason_filter TEXT,                                 -- JSON RunEndReason[] | null
     status          TEXT NOT NULL,                           -- 'active' | 'paused' | 'error'
     mcp_mode        TEXT NOT NULL,                           -- 'read-only' | 'sandboxed' | 'full-access'
     tool_allowlist  TEXT NOT NULL DEFAULT '[]',
@@ -60,6 +63,12 @@ Design notes:
   schedules' actual trigger moments shift from UTC to the server-local (or configured) zone — e.g.
   `0 11 * * *` moves from 11:00 UTC to 11:00 local. This is intentional (it aligns cron with what the
   user sees) and requires no migration: `next_run_at` is recomputed on the next create/update/run.
+- **Trigger type (v5, 2026-06-08):** `trigger_type` selects `cron` (timing via `cron_expression` /
+  `next_run_at`) or `event` (a kernel run-lifecycle event). Event rows keep `cron_expression=''`,
+  `next_run_at=NULL`, and set `event_topic` (+ optional `event_reason_filter`, a JSON `RunEndReason[]`).
+  `getDueSchedules` only returns cron rows (event rows have null `next_run_at`). The v5 migration adds
+  the three columns idempotently via `PRAGMA table_info` (the shared global `user_version` is untrusted,
+  same as the v2–v4 migrations), defaulting legacy rows to `cron` (SCH-R17).
 - `type` maps to the spec's `task_type` but uses `'llm'` instead of `'llm_prompt'` for brevity.
 - `config` is a JSON blob validated at the application layer. There is no check constraint —
   validation is type-dependent and happens at create/update time.
@@ -103,6 +112,7 @@ database (`~/.c3/c3.db`). Key functions used by the scheduler and dispatcher:
 | Function                         | Purpose                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------ |
 | `getDueSchedules(now)`           | Query `WHERE status='active' AND next_run_at <= ? AND next_run_at IS NOT NULL` |
+| `getEventSchedules(topic)`       | Active `event` schedules subscribed to a run lifecycle `topic` (2026-06-08)    |
 | `updateNextRunAt(id, nextRunAt)` | Update `next_run_at` after execution                                           |
 | `pauseAllForWorkspace(path)`     | Set all schedules under a workspace to `paused`                                |
 | `appendExecutionLog(input)`      | Create an execution log entry with `status='running'`                          |
@@ -125,6 +135,8 @@ class ScheduleScheduler {
 
   /** Manual trigger: dispatch immediately (bypasses tick). */
   async triggerRunNow(scheduleId: string): Promise<void>
+  /** Event trigger: dispatch event-subscribed schedules on a bus event (2026-06-08). */
+  dispatchEventSchedules(topic: RunLifecycleTopic, payload: RunLifecyclePayload): void
   /** Cancel an in-flight execution. */
   cancelInFlight(scheduleId: string): void
   /** Cancel all in-flight executions for a workspace. */
@@ -159,6 +171,23 @@ When the server restarts, some schedules' `next_run_at` may be in the past:
 - Validates: schedule must exist, be `active`, and not already in-flight.
 - Creates execution log and dispatches immediately (outside the tick loop).
 - The execution result is broadcast via `broadcastSchedules` to refresh the UI.
+
+### Event-triggered dispatch (2026-06-08)
+
+`dispatchEventSchedules(topic, payload)` is wired to the kernel event bus in the composition root
+(`startSchedulerWiring` subscribes `run:started` / `run:settled`). On each event:
+
+1. `payload.kind !== 'normal'` → return (intent comm runs never fire user schedules, SCH-R18).
+2. `getEventSchedules(topic)` → active `event` schedules for this topic.
+3. Keep those whose workspace matches (`resolve()`d both sides) and, for `run:settled`, whose
+   `eventReasonFilter` admits `payload.reason` (null/`[]` = any).
+4. Skip any schedule already in `inFlight` (SCH-R7 serial execution = event-storm throttle).
+5. Survivors run through the **same** `dispatchAndTrack` → `execute` path as cron runs (so the
+   three-tier MCP security + write-approval queue apply unchanged). `dispatchAndTrack`'s post-run
+   re-arm skips `next_run_at` recompute for `event` schedules (they have no cron).
+
+The publish points live in the run path (`run-lifecycle.ts` / `run-via-driver.ts`); see spec.md
+§ Triggers → Run lifecycle events.
 
 ## Execution dispatcher (`dispatcher.ts`)
 
@@ -246,11 +275,17 @@ export function onWorkspaceRemoved(workspacePath: string, scheduler: ScheduleSch
 
 ### Init
 
-After the store is ready (post-db init), start the scheduler:
+After the store is ready (post-db init), start the scheduler and subscribe to the kernel event bus
+for event-triggered schedules (2026-06-08):
 
 ```typescript
 const scheduler = new ScheduleScheduler()
-if (isScheduleStoreAvailable()) scheduler.start()
+if (isScheduleStoreAvailable()) {
+  scheduler.start()
+  // Process-lifetime subscriptions (no dispose): the scheduler lives for the whole server run.
+  eventBus.subscribe('run:started', (e) => scheduler.dispatchEventSchedules('run:started', e))
+  eventBus.subscribe('run:settled', (e) => scheduler.dispatchEventSchedules('run:settled', e))
+}
 ```
 
 ### remove_workspace handler

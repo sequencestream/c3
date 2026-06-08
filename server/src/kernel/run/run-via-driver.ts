@@ -17,7 +17,7 @@
  *    diffs successive frames into `assistant_text` deltas + one-shot `tool_use` /
  *    `tool_result`, so the existing web console renders an OpenCode turn unchanged.
  */
-import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, type RunEndReason } from '@ccc/shared/protocol'
 import type { CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
@@ -109,6 +109,11 @@ export async function runViaDriver(
   rt.run = { abort: cycleAbort, handle: null }
   setStatus(runId, 'running')
 
+  // Terminal reason for the run:settled lifecycle event (ADR-0018). Starts at
+  // 'complete'; the catch flips it to 'error'; a user stop (aborted) wins in the
+  // finally block. Drives event-triggered schedules' reason filter (2026-06-08).
+  let settledReason: RunEndReason = 'complete'
+
   // Wire the driver's approval bridge to c3's browser approval registry: a tool
   // prompt becomes a `permission_request` frame, the decision comes back through
   // `waitForDecision` (the exact path a Claude prompt takes). Default-deny on stop.
@@ -174,6 +179,7 @@ export async function runViaDriver(
     }
     if (!cycleAbort.signal.aborted) emit(runId, { type: 'turn_end', reason: 'complete' })
   } catch (err) {
+    settledReason = 'error'
     if (!cycleAbort.signal.aborted) {
       emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
     }
@@ -188,6 +194,7 @@ export async function runViaDriver(
     rt.team = false
     clearPending(runId)
     finalizeRun(runId)
-    eventBus.publish('run:settled', { workspacePath })
+    const reason: RunEndReason = cycleAbort.signal.aborted ? 'aborted' : settledReason
+    eventBus.publish('run:settled', { sessionId: runId, workspacePath, reason, kind: rt.kind })
   }
 }

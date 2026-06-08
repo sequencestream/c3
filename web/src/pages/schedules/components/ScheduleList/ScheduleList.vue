@@ -63,7 +63,17 @@ function scheduleLabel(s: Schedule): string {
     cfg && typeof cfg === 'object' && typeof (cfg as Record<string, unknown>).name === 'string'
       ? ((cfg as Record<string, unknown>).name as string).trim()
       : ''
-  return `${tag} · ${name || s.cronExpression}`
+  return `${tag} · ${name || triggerSummary(s)}`
+}
+
+// 触发摘要:cron 任务显示 cron 表达式;event 任务显示订阅的生命周期事件。
+function triggerSummary(s: Schedule): string {
+  if (s.triggerType === 'event') {
+    return s.eventTopic === 'run:started'
+      ? t('schedule.trigger.event.started')
+      : t('schedule.trigger.event.settled')
+  }
+  return s.cronExpression
 }
 
 // 按系统配置时区(props.timezone)格式化,使展示口径与 cron 计算一致:
@@ -220,9 +230,13 @@ function toggleExpand(): void {
             <span class="sched-meta-val">{{ s.status }}</span>
           </div>
           <div class="sched-meta-row">
-            <span class="sched-meta-label">{{ t('schedule.meta.cron.label') }}</span>
+            <span class="sched-meta-label">{{
+              s.triggerType === 'event'
+                ? t('schedule.meta.trigger.label')
+                : t('schedule.meta.cron.label')
+            }}</span>
             <span class="sched-meta-val"
-              ><code>{{ s.cronExpression }}</code></span
+              ><code>{{ triggerSummary(s) }}</code></span
             >
           </div>
           <div class="sched-meta-row">
@@ -242,8 +256,9 @@ function toggleExpand(): void {
             <pre class="sched-meta-config">{{ configText(s) }}</pre>
           </div>
 
-          <!-- Upcoming runs: next few execution times computed from the cron expr. -->
-          <div class="sched-meta-row sched-meta-row--col">
+          <!-- Upcoming runs: next few execution times computed from the cron expr.
+               Event-triggered schedules have no cron, so this is cron-only. -->
+          <div v-if="s.triggerType !== 'event'" class="sched-meta-row sched-meta-row--col">
             <span class="sched-meta-label">{{ t('schedule.meta.upcoming.label') }}</span>
             <ol v-if="upcomingRuns(s).length" class="sched-upcoming">
               <li v-for="(ts, i) in upcomingRuns(s)" :key="ts" class="sched-upcoming-item">

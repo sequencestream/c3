@@ -12,7 +12,8 @@
  *   scheduler.stop()
  */
 
-import type { Schedule } from '@ccc/shared/protocol'
+import { resolve } from 'node:path'
+import type { RunEndReason, RunLifecycleTopic, Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import { getTimezone } from '../../kernel/config/index.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
@@ -25,6 +26,7 @@ export { computeNextRunAt }
 
 export type ExecutionStore = {
   getDueSchedules: (now: number) => Schedule[]
+  getEventSchedules: (topic: RunLifecycleTopic) => Schedule[]
   getSchedule: (id: string) => Schedule | null
   updateNextRunAt: (id: string, nextRunAt: number | null) => void
   updateSchedule: (id: string, patch: { status?: string }) => void
@@ -112,6 +114,62 @@ export async function triggerRunNow(scheduleId: string): Promise<void> {
   dispatchAndTrack(schedule)
 }
 
+/**
+ * Dispatch event-triggered schedules in response to a run lifecycle event
+ * (2026-06-08). Wired to the kernel event bus in the composition root: a
+ * `run:started` / `run:settled` event arrives, and every active event-trigger
+ * schedule that matches is executed via the SAME path as a cron run
+ * (`dispatchAndTrack` → `execute`), reusing the three-tier MCP security model
+ * and the write-approval queue.
+ *
+ * Filters, in order:
+ *  - `kind`: intent comm runs are internal and never fire user schedules.
+ *  - workspace: the event's workspace must equal the schedule's workspace.
+ *  - reason: for `run:settled`, an optional reason allowlist (null/[] = any).
+ *  - in-flight: SCH-R7 serial execution doubles as event-storm throttling — a
+ *    schedule already running skips the new event rather than stacking.
+ */
+export function dispatchEventSchedules(
+  topic: RunLifecycleTopic,
+  payload: {
+    sessionId: string
+    workspacePath: string
+    reason?: RunEndReason
+    kind: 'normal' | 'intent'
+  },
+): void {
+  if (!store) return
+  if (payload.kind !== 'normal') return // intent runs are internal; never fire user schedules
+
+  let candidates: Schedule[]
+  try {
+    candidates = store.getEventSchedules(topic)
+  } catch (err) {
+    console.error('[scheduler] getEventSchedules failed for %s:', topic, err)
+    return
+  }
+
+  const eventWorkspace = resolve(payload.workspacePath)
+  for (const schedule of candidates) {
+    if (schedule.status !== 'active') continue
+    // Workspace filter: both sides are resolved to compare canonical paths.
+    if (resolve(schedule.workspacePath) !== eventWorkspace) continue
+    // Reason filter (run:settled only — run:started carries no reason).
+    const filter = schedule.eventReasonFilter
+    if (filter && filter.length && payload.reason && !filter.includes(payload.reason)) continue
+    // SCH-R7 / event-storm throttle: one in-flight execution per schedule.
+    if (inFlight.has(schedule.id)) {
+      console.warn(
+        '[scheduler] event %s: schedule %s already in flight, skipping',
+        topic,
+        schedule.id,
+      )
+      continue
+    }
+    dispatchAndTrack(schedule)
+  }
+}
+
 /** Cancel a single in-flight execution (aborts the underlying promise chain). */
 export function cancelInFlight(scheduleId: string): void {
   inFlight.delete(scheduleId)
@@ -145,6 +203,7 @@ async function tick(): Promise<void> {
     const rows = store.getDueSchedules(now)
     for (const s of rows) {
       if (s.status !== 'active') continue
+      if (s.triggerType === 'event') continue // event schedules never fire from the tick loop
       if (inFlight.has(s.id)) continue // SCH-R7: serial execution
       due.push(s)
     }
@@ -215,7 +274,9 @@ function dispatchAndTrack(schedule: Schedule): void {
       // After execution, update next_run_at
       try {
         const updated = store.getSchedule(schedule.id)
-        if (updated && updated.status === 'active') {
+        // Event-triggered schedules have no cron: they re-arm by waiting for the
+        // next lifecycle event, so next_run_at stays null (never recompute it).
+        if (updated && updated.status === 'active' && updated.triggerType !== 'event') {
           const next = computeNextRunAt(updated.cronExpression, Date.now(), getTimezone())
           store.updateNextRunAt(schedule.id, next)
           console.log(

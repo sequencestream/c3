@@ -253,9 +253,23 @@ describe('EventBus — RunDomainEvent contract parity', () => {
     expect(e.realId).toBe('real-y')
   })
 
-  it('run:settled payload matches the old settled event shape', () => {
+  it('run:settled payload carries session id, terminal reason, and run kind (2026-06-08)', () => {
     type SettledPayload = EventBusEvents['run:settled']
-    const e: SettledPayload = { workspacePath: '/tmp/proj' }
+    const e: SettledPayload = {
+      sessionId: 'sess-1',
+      workspacePath: '/tmp/proj',
+      reason: 'complete',
+      kind: 'normal',
+    }
     expect(e.workspacePath).toBe('/tmp/proj')
+    expect(e.reason).toBe('complete')
+    expect(e.kind).toBe('normal')
+  })
+
+  it('run:started payload carries session id, workspace, and run kind (2026-06-08)', () => {
+    type StartedPayload = EventBusEvents['run:started']
+    const e: StartedPayload = { sessionId: 'sess-2', workspacePath: '/tmp/proj', kind: 'normal' }
+    expect(e.sessionId).toBe('sess-2')
+    expect(e.kind).toBe('normal')
   })
 })

@@ -1,14 +1,14 @@
 # Domain: schedules
 
-| Field          | Value                                                                                                        |
-| -------------- | ------------------------------------------------------------------------------------------------------------ |
-| Responsibility | Manage time-based execution of commands and LLM prompts across workspaces; record and inspect execution logs |
-| API            | WebSocket `/ws` (see shared protocol)                                                                        |
-| Status         | planned — first spec iteration                                                                               |
+| Field          | Value                                                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Responsibility | Manage cron- and event-triggered execution of commands and LLM prompts across workspaces; record and inspect execution logs |
+| API            | WebSocket `/ws` (see shared protocol); subscribes to kernel run-lifecycle events (ADR-0018)                                 |
+| Status         | planned — first spec iteration                                                                                              |
 
-The schedules domain adds **time-based execution** to c3. A **Schedule** is a task — a shell command or an LLM
-prompt — that fires at a configured time (one-shot) and optionally repeats (recurring, v1-excluded). Each
-execution produces an **ExecutionLog** for review.
+The schedules domain adds **task execution** to c3. A **Schedule** is a task — a shell command or an LLM
+prompt — that fires either at a configured time (cron) or on a subscribed **run lifecycle event**
+(`run:started` / `run:settled`, 2026-06-08). Each execution produces an **ExecutionLog** for review.
 
 Schedules are **workspace-scoped**: every schedule is bound to one workspace (registrant directory, via
 [session-registry](../session-registry/spec.md)). The scheduling engine runs inside the server process and

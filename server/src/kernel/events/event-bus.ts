@@ -28,12 +28,30 @@
  *    corresponding payload type.
  */
 
+import type { RunEndReason } from '@ccc/shared/protocol'
+
 /** Default event map for c3 kernel events. Extend this interface to add new topics. */
 export interface EventBusEvents {
   /** A pending session id bound to the real SDK session id (first bind only). */
   'run:bound': { prevId: string; realId: string }
-  /** The run is fully over (terminal state backstop reached). */
-  'run:settled': { workspacePath: string }
+  /**
+   * A run started — `launchRun` began a turn (published once per launchRun,
+   * before the vendor fork, so it covers both the claude and driver paths).
+   * `kind` distinguishes a normal user run from an internal intent comm run
+   * (2026-06-08): event-triggered schedules only fire on `'normal'`.
+   */
+  'run:started': { sessionId: string; workspacePath: string; kind: 'normal' | 'intent' }
+  /**
+   * The run is fully over (terminal state backstop reached). Carries the bound
+   * session id, the terminal `reason`, and the run `kind` so event-triggered
+   * schedules can filter by workspace + reason and skip intent runs (2026-06-08).
+   */
+  'run:settled': {
+    sessionId: string
+    workspacePath: string
+    reason: RunEndReason
+    kind: 'normal' | 'intent'
+  }
 }
 
 /** A handler function for a given event topic. May return a Promise (fire-and-forget). */

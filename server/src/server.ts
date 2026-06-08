@@ -397,7 +397,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   injectWebSocket(server)
 
   // Start the schedule scheduler after the server is ready.
-  startSchedulerWiring({ broadcaster, broadcasts })
+  startSchedulerWiring({ broadcaster, broadcasts, eventBus })
 
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {

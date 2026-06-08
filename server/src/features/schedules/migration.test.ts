@@ -3,7 +3,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
-import { appendExecutionLog, listExecutionLogs, resetStoreForTests } from './store.js'
+import {
+  appendExecutionLog,
+  createSchedule,
+  getEventSchedules,
+  getSchedule,
+  listExecutionLogs,
+  resetStoreForTests,
+} from './store.js'
 
 let dir: string
 
@@ -71,5 +78,89 @@ describe('schedule store schema migration', () => {
     expect(cols.some((c) => c.name === 'session_id')).toBe(true)
     const [loaded] = listExecutionLogs('s1')
     expect(loaded.sessionId).toBe('sess-abc')
+  })
+})
+
+/**
+ * v5 (2026-06-08): event-trigger columns. An old `schedules` table predating
+ * trigger_type / event_topic / event_reason_filter must be backfilled so legacy
+ * cron rows keep working (trigger_type defaults to 'cron') and event schedules
+ * can be created afterwards — even though user_version is already past 5.
+ */
+function seedOldSchedulesTable(d: Db): void {
+  d.exec(`
+    CREATE TABLE schedules (
+      id              TEXT PRIMARY KEY,
+      type            TEXT NOT NULL,
+      config          TEXT NOT NULL DEFAULT '{}',
+      workspace_path  TEXT NOT NULL,
+      cron_expression TEXT NOT NULL,
+      next_run_at     INTEGER,
+      status          TEXT NOT NULL,
+      mcp_mode        TEXT NOT NULL,
+      tool_allowlist  TEXT NOT NULL DEFAULT '[]',
+      tool_denylist   TEXT NOT NULL DEFAULT '[]',
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
+    );
+  `)
+  d.run(
+    `INSERT INTO schedules
+       (id, type, config, workspace_path, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    'legacy-cron',
+    'command',
+    JSON.stringify({ command: 'echo hi', name: 'Legacy' }),
+    '/abs/ws',
+    '0 8 * * *',
+    null,
+    'active',
+    'sandboxed',
+    '[]',
+    '[]',
+    1,
+    1,
+  )
+  d.exec('PRAGMA user_version=5;')
+}
+
+describe('schedule store v5 (event-trigger) migration', () => {
+  it('backfills trigger columns and keeps legacy cron rows working', () => {
+    const raw = getDb()
+    expect(raw).not.toBeNull()
+    seedOldSchedulesTable(raw!)
+    resetStoreForTests()
+
+    // Reading the legacy row triggers the migration on this connection.
+    const legacy = getSchedule('legacy-cron')
+    expect(legacy).not.toBeNull()
+    // A row written before the column existed defaults to a cron trigger.
+    expect(legacy!.triggerType).toBe('cron')
+    expect(legacy!.eventTopic).toBeNull()
+    expect(legacy!.eventReasonFilter).toBeNull()
+    expect(legacy!.cronExpression).toBe('0 8 * * *')
+
+    const cols = raw!.all<{ name: string }>('PRAGMA table_info(schedules)')
+    const names = cols.map((c) => c.name)
+    expect(names).toContain('trigger_type')
+    expect(names).toContain('event_topic')
+    expect(names).toContain('event_reason_filter')
+
+    // The legacy cron row is NOT picked up by the event-schedule query.
+    expect(getEventSchedules('run:settled')).toHaveLength(0)
+
+    // And a fresh event schedule can be created on the migrated table.
+    const ev = createSchedule({
+      type: 'command',
+      config: { command: 'echo done' },
+      workspacePath: '/abs/ws',
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'run:settled',
+      eventReasonFilter: ['error'],
+      mcpMode: 'sandboxed',
+    })
+    expect(ev.triggerType).toBe('event')
+    expect(getEventSchedules('run:settled').map((s) => s.id)).toContain(ev.id)
   })
 })

@@ -1169,6 +1169,15 @@ export type McpMode = 'read-only' | 'sandboxed' | 'full-access'
 
 export type ScheduleStatus = 'active' | 'paused' | 'error'
 
+/** How a schedule fires: time-based cron, or a run lifecycle event (2026-06-08). */
+export type ScheduleTriggerType = 'cron' | 'event'
+
+/** Run lifecycle topics an event-triggered schedule may subscribe to (2026-06-08). */
+export type RunLifecycleTopic = 'run:started' | 'run:settled'
+
+/** Terminal reason a run settled with: clean finish, error, or user abort. */
+export type RunEndReason = 'complete' | 'error' | 'aborted'
+
 export interface Schedule {
   id: string
   type: ScheduleType
@@ -1181,9 +1190,22 @@ export interface Schedule {
   config: unknown
   /** Owning workspace absolute path (resolved). */
   workspacePath: string
+  /**
+   * How this schedule fires: `'cron'` (time-based) or `'event'` (run lifecycle).
+   * Defaults to `'cron'` for legacy rows migrated before this field existed.
+   */
+  triggerType: ScheduleTriggerType
+  /** Cron expression for `'cron'` triggers; empty string for `'event'` triggers. */
   cronExpression: string
-  /** Unix ms timestamp of the next planned run; null when not scheduled. */
+  /** Unix ms timestamp of the next planned run; null when not scheduled (always null for `'event'`). */
   nextRunAt: number | null
+  /** For `'event'` triggers: the run lifecycle topic subscribed to; null for cron. */
+  eventTopic: RunLifecycleTopic | null
+  /**
+   * For `'run:settled'` event triggers: only fire when the run ended with one of
+   * these reasons. `null` or `[]` means any reason. Ignored for `'run:started'`.
+   */
+  eventReasonFilter: RunEndReason[] | null
   status: ScheduleStatus
   mcpMode: McpMode
   toolAllowlist: string[]
@@ -1203,7 +1225,14 @@ export interface CreateScheduleInput {
   type: ScheduleType
   config: unknown
   workspacePath: string
+  /** Defaults to `'cron'` when omitted (backward-compatible with legacy clients). */
+  triggerType?: ScheduleTriggerType
+  /** Required for `'cron'` triggers; empty string for `'event'` triggers. */
   cronExpression: string
+  /** Required for `'event'` triggers: the run lifecycle topic to subscribe to. */
+  eventTopic?: RunLifecycleTopic | null
+  /** Optional reason filter for `'run:settled'` event triggers; null/[] = any. */
+  eventReasonFilter?: RunEndReason[] | null
   mcpMode: McpMode
   toolAllowlist?: string[]
   toolDenylist?: string[]
@@ -1213,7 +1242,10 @@ export interface CreateScheduleInput {
 export interface UpdateScheduleInput {
   type?: ScheduleType
   config?: unknown
+  triggerType?: ScheduleTriggerType
   cronExpression?: string
+  eventTopic?: RunLifecycleTopic | null
+  eventReasonFilter?: RunEndReason[] | null
   mcpMode?: McpMode
   toolAllowlist?: string[]
   toolDenylist?: string[]

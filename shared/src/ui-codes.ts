@@ -62,6 +62,7 @@ export const UI_ERROR_CODES = {
   'schedule.notFound': { key: 'error.schedule.notFound' },
   'schedule.executionNotFound': { key: 'error.schedule.executionNotFound' },
   'schedule.approvalNotFound': { key: 'error.schedule.approvalNotFound' },
+  'schedule.invalidEventTrigger': { key: 'error.schedule.invalidEventTrigger' },
   // permission mode
   'session.invalidMode': {
     key: 'error.session.invalidMode',

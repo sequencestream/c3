@@ -15,9 +15,11 @@
  */
 import type { PendingWriteApproval } from '@ccc/shared/protocol'
 import type { Broadcaster } from '../transport/index.js'
+import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
   appendExecutionLog,
   getDueSchedules,
+  getEventSchedules,
   getSchedule,
   isStoreAvailable as isScheduleStoreAvailable,
   updateNextRunAt,
@@ -25,6 +27,7 @@ import {
   updateExecutionLog,
 } from '../features/schedules/store.js'
 import {
+  dispatchEventSchedules,
   setExecutionStore,
   startScheduler,
   stopScheduler,
@@ -40,12 +43,14 @@ import type { Broadcasts } from './broadcasts.js'
 export function startSchedulerWiring(deps: {
   broadcaster: Broadcaster
   broadcasts: Pick<Broadcasts, 'broadcastSchedules'>
+  eventBus: EventBus<EventBusEvents>
 }): void {
   if (!isScheduleStoreAvailable()) return
-  const { broadcaster, broadcasts } = deps
+  const { broadcaster, broadcasts, eventBus } = deps
 
   setExecutionStore({
     getDueSchedules,
+    getEventSchedules,
     getSchedule,
     updateNextRunAt,
     updateSchedule: (id: string, patch: { status?: string }) => {
@@ -89,6 +94,12 @@ export function startSchedulerWiring(deps: {
     }
   })
   startExpiryScanner()
+
+  // Bridge run lifecycle events → event-triggered schedules (ADR-0018, 2026-06-08).
+  // These are process-lifetime subscriptions (no dispose): the scheduler lives for
+  // the whole server run, so the handlers are intentionally never torn down.
+  eventBus.subscribe('run:started', (e) => dispatchEventSchedules('run:started', e))
+  eventBus.subscribe('run:settled', (e) => dispatchEventSchedules('run:settled', e))
 
   startScheduler()
 }

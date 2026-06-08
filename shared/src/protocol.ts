@@ -1395,6 +1395,49 @@ export interface ToolManifestEntry {
   isWrite: boolean
 }
 
+// ---- Wait User Involve Events ----
+
+/** Source category of a {@link WaitUserInvolveEvent}. */
+export type WaitUserInvolveSource = 'session' | 'intent' | 'discussion' | 'schedule'
+
+/** Lifecycle status of a wait-user-involve event. */
+export type WaitUserInvolveStatus = 'todo' | 'done' | 'canceled'
+
+/**
+ * An event requiring human attention — the server-side record of a tool call
+ * the gateway gated behind a human decision (permission_response) before it
+ * could proceed. Created at gate time, resolved when the human decides. The
+ * web sidebar's "待处理" badge counts 'todo' entries per project.
+ */
+export interface WaitUserInvolveEvent {
+  id: string
+  /** Owning project absolute path (resolved). */
+  projectPath: string
+  /** Which kind of run produced this event. */
+  source: WaitUserInvolveSource
+  /** The run's owning entity id (session / intent / discussion / schedule id). */
+  sourceId: string | null
+  /** Human-friendly label summarising the gated action. */
+  title: string | null
+  /** The `permission_request.requestId` this event tracks. */
+  requestId: string | null
+  /** Which tool was gated. */
+  toolName: string | null
+  /** The tool call input at the time it was gated (JSON). */
+  toolInput: unknown
+  /** Current lifecycle status — 'todo' while awaiting human decision. */
+  status: WaitUserInvolveStatus
+  createdAt: number
+  updatedAt: number
+}
+
+/** Fields the client may supply when listing events. */
+export interface ListWaitUserEventsInput {
+  projectPath: string
+  /** Optional status filter; absent = all. */
+  status?: WaitUserInvolveStatus
+}
+
 /** Workspace-level MCP server connections and denylist configuration. */
 export interface WorkspaceMcpConfig {
   /** MCP server connection definitions, keyed by server name. */
@@ -1653,6 +1696,12 @@ export type ClientToServer =
    * `requestId`.
    */
   | { type: 'skill_load_approval_resolve'; requestId: string; decision: 'approve' | 'cancel' }
+  /**
+   * Request the project's wait-user-involve events — the server replies with
+   * {@link wait_user_events}. An optional `status` filter narrows to one
+   * lifecycle state (default: all).
+   */
+  | { type: 'list_wait_user_events'; projectPath: string; status?: WaitUserInvolveStatus }
   | { type: 'ping' }
 
 // Server → Client
@@ -2056,6 +2105,12 @@ export type ServerToClient =
   | { type: 'pending_write_approvals'; workspacePath: string; items: PendingWriteApproval[] }
   /** A vendor's tool manifest (reply to `get_schedule_tool_manifest`). */
   | { type: 'schedule_tool_manifest'; vendor: VendorId; tools: ToolManifestEntry[] }
+  /**
+   * A project's wait-user-involve event list (reply to `list_wait_user_events`).
+   * Pushed as a full snapshot every time — the client replaces its local state
+   * rather than merging.
+   */
+  | { type: 'wait_user_events'; items: WaitUserInvolveEvent[] }
   /**
    * A pre-launch skill-load gate awaiting a human decision (mount layer 2/3; the
    * modal is rendered by 3/3). The backend emits one before the first external-skill

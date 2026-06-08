@@ -76,6 +76,7 @@ import {
   scheduleRunNow,
   updateScheduleHandler,
 } from './schedules/index.js'
+import { listWaitUserEvents } from './user-involve/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 
 /**
@@ -145,6 +146,8 @@ export const handlerMap: HandlerMap = {
   list_pending_write_approvals: listPendingWriteApprovals,
   approve_write_approval: approveWriteApproval,
   get_schedule_tool_manifest: getScheduleToolManifest,
+  // wait user involve
+  list_wait_user_events: listWaitUserEvents,
   // skill-load gates (mount layer 2/3)
   skill_load_approval_resolve: (_ctx, _conn, msg) => {
     resolveSkillApprovalImpl(msg.requestId, msg.decision)

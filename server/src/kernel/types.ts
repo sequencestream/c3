@@ -94,6 +94,8 @@ export interface KernelContext {
     discussionId: string,
     state: 'running' | 'paused' | 'ended',
   ) => void
+  /** Push a project's refreshed wait-user-involve event list (todo status). */
+  readonly broadcastWaitUserEvents: (projectPath: string) => void
 
   // ── background run starters (still live in the server.ts closure) ──
   readonly startDiscussionRun: (discussion: Discussion) => void

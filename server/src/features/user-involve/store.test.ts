@@ -16,6 +16,7 @@ import {
   cancelBySourceId,
   createEvent,
   getEvent,
+  getEventByRequestId,
   isStoreAvailable,
   listEvents,
   resetStoreForTests,
@@ -130,6 +131,25 @@ describe('events CRUD', () => {
     const got = getEvent(ev.id)
     expect(got?.status).toBe('done')
     expect(got!.updatedAt).toBeGreaterThanOrEqual(ev.updatedAt)
+  })
+
+  it('getEventByRequestId finds an event by requestId and returns null for unknown ids', () => {
+    const ev = createEvent({
+      projectPath: proj,
+      source: 'session',
+      sourceId: 'sess-1',
+      requestId: 'req-abc',
+      toolName: 'Write',
+      toolInput: { file: '/tmp/a.txt', content: 'data' },
+    })
+    const found = getEventByRequestId('req-abc')
+    expect(found?.id).toBe(ev.id)
+    expect(found?.requestId).toBe('req-abc')
+    expect(found?.toolName).toBe('Write')
+    expect(found?.toolInput).toEqual({ file: '/tmp/a.txt', content: 'data' })
+
+    // Unknown requestId returns null.
+    expect(getEventByRequestId('no-such-id')).toBeNull()
   })
 
   it('cancelBySourceId cancels all todo events for a source and skips others', () => {

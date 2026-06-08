@@ -35,6 +35,10 @@ import {
   isStoreAvailable as isScheduleStoreAvailable,
   listSchedules,
 } from '../features/schedules/store.js'
+import {
+  isStoreAvailable as isWaitUserEventsStoreAvailable,
+  listEvents as listWaitUserEvents,
+} from '../features/user-involve/store.js'
 
 /** The single fan-out reference; threaded in by the composition root. */
 export interface BroadcastsDeps {
@@ -91,6 +95,8 @@ export interface Broadcasts {
   broadcastResearchMessage: (discussionId: string, item: ResearchStreamItem) => void
   /** Broadcast a discussion's research-run liveness (runtime-only). */
   broadcastResearchRunStatus: (discussionId: string, state: 'running' | 'ended') => void
+  /** Push a project's refreshed wait-user-involve event list (todo status). */
+  broadcastWaitUserEvents: (projectPath: string) => void
 }
 
 /**
@@ -244,6 +250,17 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcaster.toAll({ type: 'automation_status', status })
   }
 
+  // Push a project's refreshed wait-user-involve event list. Only 'todo'
+  // events are broadcast — the frontend's pending-items badge count uses them.
+  // 'done' / 'canceled' events are still queryable via list_wait_user_events
+  // with an explicit status filter, but are never pushed proactively.
+  const broadcastWaitUserEvents = (projectPath: string): void => {
+    if (!isWaitUserEventsStoreAvailable()) return
+    const proj = resolve(projectPath)
+    const items = listWaitUserEvents(proj, 'todo')
+    broadcaster.toAll({ type: 'wait_user_events', items })
+  }
+
   return {
     broadcastStatuses,
     broadcastOpencodeStatus,
@@ -258,5 +275,6 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastDiscussionRunStatus,
     broadcastResearchMessage,
     broadcastResearchRunStatus,
+    broadcastWaitUserEvents,
   }
 }

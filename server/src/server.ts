@@ -440,6 +440,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastAutomation: broadcasts.broadcastAutomation,
     broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
     broadcastDiscussionRunStatus: broadcasts.broadcastDiscussionRunStatus,
+    broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
     startDiscussionRun: discussionRuns.startDiscussionRun,
     startResearchRun: discussionRuns.startResearchRun,
   }
@@ -459,6 +460,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastIntentSessions: broadcasts.broadcastIntentSessions,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastSchedules: broadcasts.broadcastSchedules,
+    broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
   })
 
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).

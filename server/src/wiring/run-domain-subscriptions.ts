@@ -66,6 +66,10 @@ import {
 } from '../features/intents/store.js'
 import { takePendingDevLink } from '../features/intents/dev-link.js'
 import { notifyTurnSettled } from '../features/intents/automation.js'
+import {
+  cancelBySourceId,
+  isStoreAvailable as isWaitUserEventsStoreAvailable,
+} from '../features/user-involve/store.js'
 
 /** Broader domain subscription dependencies, injected by the composition root. */
 export interface DomainSubDeps {
@@ -81,6 +85,8 @@ export interface DomainSubDeps {
   broadcastDiscussions: (projectPath: string) => void
   /** Fan the schedule list for a workspace to every connection (2026-06-08-010). */
   broadcastSchedules: (workspacePath: string) => void
+  /** Fan the wait-user-involve event (todo) list for a project to every connection. */
+  broadcastWaitUserEvents: (projectPath: string) => void
 }
 
 /**
@@ -99,6 +105,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastIntentSessions,
     broadcastDiscussions,
     broadcastSchedules,
+    broadcastWaitUserEvents,
   } = deps
 
   // ── run:bound ────────────────────────────────────────────────────────
@@ -191,5 +198,21 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   eventBus.subscribe('run:settled', ({ workspacePath, kind }) => {
     if (kind !== 'schedule') return
     broadcastSchedules(workspacePath)
+  })
+
+  // ── run:settled (kind=session) — wait-user-involve event cancel ──
+  // When a session run settles for ANY reason (complete / error / aborted),
+  // cancel all still-todo wait-user-involve events for that session.
+  // This is a safety net: if the user closes the tab or the process crashes
+  // before resolving a pending permission request, the event won't be stuck
+  // in 'todo' forever. Events are keyed by session's sourceId, so only
+  // session-scoped events are affected (other sources like intent/discussion
+  // have different sourceIds and are left untouched).
+  // Broadcast the refreshed todo list after cancellation.
+  eventBus.subscribe('run:settled', ({ sessionId, workspacePath, kind }) => {
+    if (kind !== 'session') return
+    if (!isWaitUserEventsStoreAvailable()) return
+    cancelBySourceId(sessionId)
+    broadcastWaitUserEvents(workspacePath)
   })
 }

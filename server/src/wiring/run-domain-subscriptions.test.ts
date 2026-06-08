@@ -31,6 +31,10 @@ vi.mock('../features/intents/store.js', () => ({
 }))
 vi.mock('../features/intents/dev-link.js', () => ({ takePendingDevLink: vi.fn(() => null) }))
 vi.mock('../features/intents/automation.js', () => ({ notifyTurnSettled: vi.fn() }))
+vi.mock('../features/user-involve/store.js', () => ({
+  cancelBySourceId: vi.fn(),
+  isStoreAvailable: vi.fn(() => true),
+}))
 
 // Dynamic import so all vi.mocks are in place first.
 const { registerRunDomainSubscriptions } = await import('./run-domain-subscriptions.js')
@@ -42,6 +46,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
   const mockBroadcastSessions = vi.fn()
   const mockBroadcastIntents = vi.fn()
   const mockBroadcastIntentSessions = vi.fn()
+  const mockBroadcastWaitUserEvents = vi.fn()
 
   function install(): void {
     const deps: DomainSubDeps = {
@@ -54,6 +59,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       broadcastIntentSessions: mockBroadcastIntentSessions,
       broadcastDiscussions: mockBroadcastDiscussions,
       broadcastSchedules: mockBroadcastSchedules,
+      broadcastWaitUserEvents: mockBroadcastWaitUserEvents,
     }
     registerRunDomainSubscriptions(deps)
   }
@@ -192,5 +198,85 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     eb.publish('run:started', { sessionId: 'y', workspacePath: '/ws-a', kind: 'schedule' })
     expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
     expect(mockBroadcastSchedules).not.toHaveBeenCalled()
+  })
+
+  // ── Wait-user-involve event cancel on run:settled (kind=session) ────
+
+  it('run:settled kind=session cancels events and broadcasts via broadcastWaitUserEvents', async () => {
+    install()
+    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    eb.publish('run:settled', {
+      sessionId: 'sess-x',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'session',
+    })
+    expect(cancelBySourceId).toHaveBeenCalledWith('sess-x')
+    expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
+  })
+
+  it('run:settled kind=session (error reason) cancels events and broadcasts', async () => {
+    install()
+    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    eb.publish('run:settled', {
+      sessionId: 'sess-y',
+      workspacePath: '/proj',
+      reason: 'error',
+      kind: 'session',
+    })
+    expect(cancelBySourceId).toHaveBeenCalledWith('sess-y')
+    expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
+  })
+
+  it('run:settled kind=session (aborted reason) cancels events and broadcasts', async () => {
+    install()
+    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    eb.publish('run:settled', {
+      sessionId: 'sess-z',
+      workspacePath: '/proj',
+      reason: 'aborted',
+      kind: 'session',
+    })
+    expect(cancelBySourceId).toHaveBeenCalledWith('sess-z')
+    expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
+  })
+
+  it('run:settled kind=discussion does NOT cancel events or broadcastWaitUserEvents', async () => {
+    install()
+    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    eb.publish('run:settled', {
+      sessionId: 'disc-x',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'discussion',
+    })
+    expect(cancelBySourceId).not.toHaveBeenCalled()
+    expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
+  })
+
+  it('run:settled kind=schedule does NOT cancel events or broadcastWaitUserEvents', async () => {
+    install()
+    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    eb.publish('run:settled', {
+      sessionId: 'sch-x',
+      workspacePath: '/ws',
+      reason: 'complete',
+      kind: 'schedule',
+    })
+    expect(cancelBySourceId).not.toHaveBeenCalled()
+    expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
+  })
+
+  it('run:settled kind=session skips when events store is unavailable', async () => {
+    const store = await import('../features/user-involve/store.js')
+    vi.mocked(store.isStoreAvailable).mockReturnValueOnce(false)
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-x',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'session',
+    })
+    expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
   })
 })

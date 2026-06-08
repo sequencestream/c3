@@ -213,6 +213,20 @@ export function listEvents(
   return rows.map(toEvent)
 }
 
+/**
+ * Look up one event by `request_id`. Useful for the permission-response handler
+ * when only the `requestId` is known. Returns null when no event matches.
+ */
+export function getEventByRequestId(requestId: string): WaitUserInvolveEvent | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<EventRow>(
+    'SELECT * FROM wait_user_involve_events WHERE request_id=?',
+    requestId,
+  )
+  return row ? toEvent(row) : null
+}
+
 /** Update a single event's status (and `updated_at`). */
 export function updateStatus(id: string, status: WaitUserInvolveStatus): void {
   const d = requireDb()

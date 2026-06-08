@@ -22,6 +22,10 @@
     }
   },
   "nav": {
+    "viewMode": {
+      "workspace": "작업 공간",
+      "workcenter": "워크센터"
+    },
     "tab": {
       "console": {
         "label": "세션"
@@ -438,6 +442,8 @@
       "awaiting": "⏸ 승인 대기 중",
       "awaitingFor": "⏸ \"{title}\" 승인 대기 중",
       "workingOn": "\"{title}\" 작업 중",
+      "fixing": "\"{title}\" 린트 수정 중",
+      "awaitingGate": "수동 세션 완료 대기 중",
       "preparing": "준비 중…",
       "completedCount": "✅ {count}개 항목 완료",
       "nothingToAutomate": "✅ 자동화할 의도가 없습니다"
@@ -1326,6 +1332,7 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "toolInput": "도구 입력",
     "filter": {
       "all": "All",
       "todo": "Todo",

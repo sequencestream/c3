@@ -22,6 +22,10 @@
     }
   },
   "nav": {
+    "viewMode": {
+      "workspace": "Рабочее пространство",
+      "workcenter": "Верстак"
+    },
     "tab": {
       "console": {
         "label": "Сессии"
@@ -438,6 +442,8 @@
       "awaiting": "⏸ Ожидание авторизации",
       "awaitingFor": "⏸ Ожидание авторизации для «{title}»",
       "workingOn": "Работа над «{title}»",
+      "fixing": "Исправление линтинга для «{title}»",
+      "awaitingGate": "Ожидание завершения ручного сеанса",
       "preparing": "Подготовка…",
       "completedCount": "✅ Завершено {count} элемент | ✅ Завершено {count} элемента | ✅ Завершено {count} элементов",
       "nothingToAutomate": "✅ Нет намерений для автоматизации"
@@ -1326,6 +1332,7 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "toolInput": "Ввод инструмента",
     "filter": {
       "all": "All",
       "todo": "Todo",

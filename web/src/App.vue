@@ -113,11 +113,8 @@ const activeWorkspace = ref<string | null>(null)
 const activeSession = ref<string | null>(null)
 const activeTitle = ref<string>('')
 
-// WorkCenter: pending user-involve events for badge + event list.
+// WorkCenter: pending user-involve events for event list.
 const workcenterEvents = ref<WaitUserInvolveEvent[]>([])
-const pendingEvents = computed(
-  () => workcenterEvents.value.filter((e) => e.status === 'todo').length,
-)
 
 // The 「会话」(console) tab remembers its OWN last-viewed session, independent of
 // the 「需求」tab's comm session — so switching tabs never crosses chat content.
@@ -272,19 +269,45 @@ const currentAgentName = computed(() =>
 // first `/`). Cleared on session switch so the next `/` refetches for the new cwd.
 const availableCommands = ref<SlashCommandInfo[]>([])
 
+// ---- View mode (workspace / workcenter) ----
+// viewMode 切换 Workspace/Workcenter 两种操作模式。
+// workspace 模式:左侧 WS switcher,中间标签页(Sessions/Intents/Discussions/Schedules)。
+// workcenter 模式:事件列表+详情两栏布局。
+// 首次切到 workcenter 时自动请求 list_wait_user_events,切回 workspace 时恢复之前标签页。
+const viewMode = ref<'workspace' | 'workcenter'>('workspace')
+// 切到 workcenter 前记住的标签页,切回 workspace 时恢复。
+const savedTab = ref<TabKey>('console')
+let viewModeFirstWorkcenter = true
+
+function setViewMode(mode: 'workspace' | 'workcenter') {
+  if (mode === viewMode.value) return
+  if (mode === 'workcenter') {
+    // 记住当前标签页
+    savedTab.value = activeTab.value
+    viewMode.value = 'workcenter'
+    if (viewModeFirstWorkcenter) {
+      viewModeFirstWorkcenter = false
+      if (currentWorkspace.value)
+        client?.send({ type: 'list_wait_user_events', projectPath: currentWorkspace.value })
+    }
+  } else {
+    viewMode.value = 'workspace'
+    // 恢复之前标签页
+    activeTab.value = savedTab.value
+    persistViewMode()
+  }
+}
+
 // ---- Top-bar tabs ----
 // `activeTab` is the explicit top-bar tab selection that drives which page the
-// content area shows. The list is data so a future tab (e.g. 「讨论」) is just
-// one more entry here + one branch in the body. The intent tab's comm
-// session IS the viewed session, so it shares the chat column; only the left
-// intent list is extra.
-type TabKey = 'console' | 'intents' | 'discussion' | 'schedules' | 'workcenter'
+// content area shows (only in workspace mode). The list is data so a future tab
+// is just one more entry here + one branch in the body.
+type TabKey = 'console' | 'intents' | 'discussion' | 'schedules'
 const HEADER_TABS = computed<{ key: TabKey; label: string; badgeCount?: number }[]>(() => [
   { key: 'console', label: t('nav.tab.console.label') },
   { key: 'intents', label: t('nav.tab.intents.label') },
   { key: 'discussion', label: t('nav.tab.discussion.label') },
   { key: 'schedules', label: t('nav.tab.schedules.label') },
-  { key: 'workcenter', label: t('nav.tab.workcenter.label'), badgeCount: pendingEvents.value },
 ])
 const activeTab = ref<TabKey>('console')
 const intentsProject = ref<string | null>(null)
@@ -667,7 +690,7 @@ onMounted(() => {
         // the timezone-aware next-run preview).
         client?.send({ type: 'list_schedules', workspacePath: schedulesProject.value })
         client?.send({ type: 'get_settings' })
-      } else if (activeTab.value === 'workcenter') {
+      } else if (viewMode.value === 'workcenter') {
         // Re-fetch the pending event list (read path, no live session).
         if (currentWorkspace.value)
           client?.send({ type: 'list_wait_user_events', projectPath: currentWorkspace.value })
@@ -1400,12 +1423,6 @@ function onSelectTab(key: string) {
     if (currentWorkspace.value) openSchedules(currentWorkspace.value)
     return
   }
-  if (key === 'workcenter') {
-    activeTab.value = 'workcenter'
-    if (currentWorkspace.value)
-      client?.send({ type: 'list_wait_user_events', projectPath: currentWorkspace.value })
-    return
-  }
   switchToConsoleTab()
 }
 
@@ -1954,7 +1971,9 @@ function dismissSkillApproval() {
     :tabs="HEADER_TABS"
     :active-tab="activeTab"
     :tabs-enabled="currentWorkspace !== null"
+    :view-mode="viewMode"
     @select-tab="onSelectTab"
+    @update:view-mode="setViewMode"
     @open-settings="openSettings"
     @open-project-config="openProjectConfig"
     @add-workspace="addWorkspace"
@@ -1963,160 +1982,162 @@ function dismissSkillApproval() {
   />
 
   <div class="body">
-    <Sessions
-      v-if="activeTab === 'console'"
-      ref="composer"
-      :current-workspace="currentWorkspace"
-      :sessions="currentSessions"
-      :session-status="sessionStatus"
-      :active-workspace="activeWorkspace"
-      :active-session="activeSession"
-      :active-title="activeTitle"
-      :active-vendor="activeVendor"
-      :active-agent-switch="activeAgentSwitch"
-      :vendor-session-caps="sessionCapabilities ?? undefined"
-      :opencode-status="opencodeStatus"
-      :has-active-session="hasActiveSession"
-      :mode="mode"
-      :mode-options="modeOptions"
-      :codex-policy="codexPolicy"
-      :messages="messages"
-      :actionable-permission-id="actionablePermId"
-      :task-model="taskModel"
-      :has-task-store="taskStoreAvailable"
-      :running="running"
-      :team-active="activeIsTeam"
-      :connection="status"
-      :activity="activity"
-      :current-agent-name="currentAgentName"
-      :reconnecting="reconnecting"
-      :side-effect-pending="sideEffectPending"
-      :queue="currentQueue"
-      :available-commands="availableCommands"
-      :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-      @create-session="openNewSession"
-      @refresh-sessions="() => refreshSessions(currentWorkspace)"
-      @select-session="selectSession"
-      @delete-session="deleteSession"
-      @rename-session="renameSession"
-      @set-mode="setMode"
-      @set-codex-policy="setCodexPolicy"
-      @set-session-agent="onSetSessionAgent"
-      @respond="respond"
-      @submit-ask="submitAsk"
-      @refresh="refreshStatus"
-      @edit-queued="onEditQueued"
-      @delete-queued="onDeleteQueued"
-      @submit="onSubmit"
-      @enqueue="onEnqueue"
-      @stop="stopRun"
-      @continue="onContinue"
-      @list-commands="listCommands"
-    />
+    <template v-if="viewMode === 'workspace'">
+      <Sessions
+        v-if="activeTab === 'console'"
+        ref="composer"
+        :current-workspace="currentWorkspace"
+        :sessions="currentSessions"
+        :session-status="sessionStatus"
+        :active-workspace="activeWorkspace"
+        :active-session="activeSession"
+        :active-title="activeTitle"
+        :active-vendor="activeVendor"
+        :active-agent-switch="activeAgentSwitch"
+        :vendor-session-caps="sessionCapabilities ?? undefined"
+        :opencode-status="opencodeStatus"
+        :has-active-session="hasActiveSession"
+        :mode="mode"
+        :mode-options="modeOptions"
+        :codex-policy="codexPolicy"
+        :messages="messages"
+        :actionable-permission-id="actionablePermId"
+        :task-model="taskModel"
+        :has-task-store="taskStoreAvailable"
+        :running="running"
+        :team-active="activeIsTeam"
+        :connection="status"
+        :activity="activity"
+        :current-agent-name="currentAgentName"
+        :reconnecting="reconnecting"
+        :side-effect-pending="sideEffectPending"
+        :queue="currentQueue"
+        :available-commands="availableCommands"
+        :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
+        @create-session="openNewSession"
+        @refresh-sessions="() => refreshSessions(currentWorkspace)"
+        @select-session="selectSession"
+        @delete-session="deleteSession"
+        @rename-session="renameSession"
+        @set-mode="setMode"
+        @set-codex-policy="setCodexPolicy"
+        @set-session-agent="onSetSessionAgent"
+        @respond="respond"
+        @submit-ask="submitAsk"
+        @refresh="refreshStatus"
+        @edit-queued="onEditQueued"
+        @delete-queued="onDeleteQueued"
+        @submit="onSubmit"
+        @enqueue="onEnqueue"
+        @stop="stopRun"
+        @continue="onContinue"
+        @list-commands="listCommands"
+      />
 
-    <Intents
-      v-else-if="activeTab === 'intents' && intentsProject"
-      ref="composer"
-      :project="intentsProject"
-      :intents="currentIntents"
-      :automation="currentAutomation"
-      :intent-sessions="currentIntentSessions"
-      :selected-intent-session-id="selectedIntentSessionId"
-      :intent-session-run-states="intentSessionRunStates"
-      :active-title="activeTitle"
-      :has-active-session="hasActiveSession"
-      :messages="messages"
-      :actionable-permission-id="actionablePermId"
-      :task-model="taskModel"
-      :has-task-store="taskStoreAvailable"
-      :running="running"
-      :team-active="activeIsTeam"
-      :connection="status"
-      :activity="activity"
-      :current-agent-name="currentAgentName"
-      :reconnecting="reconnecting"
-      :side-effect-pending="sideEffectPending"
-      :queue="currentQueue"
-      :available-commands="availableCommands"
-      :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-      @filter="setIntentFilter"
-      @refine="refineIntent"
-      @start-dev="startDevelopment"
-      @open-dev="openDevSession"
-      @set-status="setIntentStatus"
-      @set-automate="setIntentAutomate"
-      @start-automation="startAutomation"
-      @stop-automation="stopAutomation"
-      @new-intent="newIntentChat"
-      @select-intent-session="selectIntentSession"
-      @new-intent-session="newIntentChat"
-      @rename-intent-session="renameIntentSession"
-      @delete-intent-session="deleteIntentSession"
-      @respond="respond"
-      @submit-ask="submitAsk"
-      @refresh="refreshStatus"
-      @edit-queued="onEditQueued"
-      @delete-queued="onDeleteQueued"
-      @submit="onSubmit"
-      @enqueue="onEnqueue"
-      @stop="stopRun"
-      @continue="onContinue"
-      @list-commands="listCommands"
-    />
+      <Intents
+        v-else-if="activeTab === 'intents' && intentsProject"
+        ref="composer"
+        :project="intentsProject"
+        :intents="currentIntents"
+        :automation="currentAutomation"
+        :intent-sessions="currentIntentSessions"
+        :selected-intent-session-id="selectedIntentSessionId"
+        :intent-session-run-states="intentSessionRunStates"
+        :active-title="activeTitle"
+        :has-active-session="hasActiveSession"
+        :messages="messages"
+        :actionable-permission-id="actionablePermId"
+        :task-model="taskModel"
+        :has-task-store="taskStoreAvailable"
+        :running="running"
+        :team-active="activeIsTeam"
+        :connection="status"
+        :activity="activity"
+        :current-agent-name="currentAgentName"
+        :reconnecting="reconnecting"
+        :side-effect-pending="sideEffectPending"
+        :queue="currentQueue"
+        :available-commands="availableCommands"
+        :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
+        @filter="setIntentFilter"
+        @refine="refineIntent"
+        @start-dev="startDevelopment"
+        @open-dev="openDevSession"
+        @set-status="setIntentStatus"
+        @set-automate="setIntentAutomate"
+        @start-automation="startAutomation"
+        @stop-automation="stopAutomation"
+        @new-intent="newIntentChat"
+        @select-intent-session="selectIntentSession"
+        @new-intent-session="newIntentChat"
+        @rename-intent-session="renameIntentSession"
+        @delete-intent-session="deleteIntentSession"
+        @respond="respond"
+        @submit-ask="submitAsk"
+        @refresh="refreshStatus"
+        @edit-queued="onEditQueued"
+        @delete-queued="onDeleteQueued"
+        @submit="onSubmit"
+        @enqueue="onEnqueue"
+        @stop="stopRun"
+        @continue="onContinue"
+        @list-commands="listCommands"
+      />
 
-    <Discussions
-      v-else-if="activeTab === 'discussion' && discussionsProject"
-      :discussions="currentDiscussions"
-      :active-id="activeDiscussionId"
-      :run-state="discussionRunState"
-      :active-discussion="activeDiscussion"
-      :active-run-state="activeDiscussionRunState"
-      :messages="discussionMessages"
-      :research-messages="researchMessages"
-      :phase="activeDiscussionPhase"
-      :show-start="showStart"
-      :dispatch="activeDiscussionDispatch"
-      :input="discussionInput"
-      @open="openDiscussion"
-      @create="createDiscussion"
-      @start="startDiscussion"
-      @pause="pauseDiscussion"
-      @resume="resumeDiscussion"
-      @convert="convertDiscussionToIntent"
-      @update:input="discussionInput = $event"
-      @submit-input="submitDiscussionInput"
-    />
+      <Discussions
+        v-else-if="activeTab === 'discussion' && discussionsProject"
+        :discussions="currentDiscussions"
+        :active-id="activeDiscussionId"
+        :run-state="discussionRunState"
+        :active-discussion="activeDiscussion"
+        :active-run-state="activeDiscussionRunState"
+        :messages="discussionMessages"
+        :research-messages="researchMessages"
+        :phase="activeDiscussionPhase"
+        :show-start="showStart"
+        :dispatch="activeDiscussionDispatch"
+        :input="discussionInput"
+        @open="openDiscussion"
+        @create="createDiscussion"
+        @start="startDiscussion"
+        @pause="pauseDiscussion"
+        @resume="resumeDiscussion"
+        @convert="convertDiscussionToIntent"
+        @update:input="discussionInput = $event"
+        @submit-input="submitDiscussionInput"
+      />
 
-    <Schedules
-      v-else-if="activeTab === 'schedules' && schedulesProject"
-      :schedules="currentSchedules"
-      :active-id="selectedScheduleId"
-      :schedule="selectedSchedule"
-      :logs="selectedScheduleLogs"
-      :transcripts="executionTranscripts"
-      :form-open="scheduleFormOpen"
-      :form-target="scheduleFormTarget"
-      :workspace-path="schedulesProject ?? ''"
-      :timezone="scheduleTimezone"
-      :execution-id="selectedExecutionId"
-      :execution="selectedExecution"
-      :tool-manifest="scheduleToolManifest"
-      :tool-manifest-loading="scheduleToolManifestLoading"
-      :tool-manifest-error="scheduleToolManifestError"
-      :host-status="hostStatus"
-      @select="onSelectSchedule"
-      @open-form="openScheduleForm"
-      @toggle-enabled="onToggleScheduleEnabled"
-      @load-session="onLoadExecutionSession"
-      @select-execution="onSelectExecution"
-      @close-form="scheduleFormOpen = false"
-      @create="createSchedule"
-      @update="updateSchedule"
-      @load-tool-manifest="onLoadScheduleToolManifest"
-    />
+      <Schedules
+        v-else-if="activeTab === 'schedules' && schedulesProject"
+        :schedules="currentSchedules"
+        :active-id="selectedScheduleId"
+        :schedule="selectedSchedule"
+        :logs="selectedScheduleLogs"
+        :transcripts="executionTranscripts"
+        :form-open="scheduleFormOpen"
+        :form-target="scheduleFormTarget"
+        :workspace-path="schedulesProject ?? ''"
+        :timezone="scheduleTimezone"
+        :execution-id="selectedExecutionId"
+        :execution="selectedExecution"
+        :tool-manifest="scheduleToolManifest"
+        :tool-manifest-loading="scheduleToolManifestLoading"
+        :tool-manifest-error="scheduleToolManifestError"
+        :host-status="hostStatus"
+        @select="onSelectSchedule"
+        @open-form="openScheduleForm"
+        @toggle-enabled="onToggleScheduleEnabled"
+        @load-session="onLoadExecutionSession"
+        @select-execution="onSelectExecution"
+        @close-form="scheduleFormOpen = false"
+        @create="createSchedule"
+        @update="updateSchedule"
+        @load-tool-manifest="onLoadScheduleToolManifest"
+      />
+    </template>
 
     <WorkCenter
-      v-else-if="activeTab === 'workcenter'"
+      v-else
       :events="workcenterEvents"
       :current-workspace="currentWorkspace"
       @respond="respondWorkcenter"

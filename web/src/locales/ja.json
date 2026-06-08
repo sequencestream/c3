@@ -22,6 +22,10 @@
     }
   },
   "nav": {
+    "viewMode": {
+      "workspace": "ワークスペース",
+      "workcenter": "ワークセンター"
+    },
     "tab": {
       "console": {
         "label": "セッション"
@@ -438,6 +442,8 @@
       "awaiting": "⏸ 承認待ち",
       "awaitingFor": "⏸ \"{title}\" の承認待ち",
       "workingOn": "\"{title}\" を処理中",
+      "fixing": "\"{title}\" のリントを修正中",
+      "awaitingGate": "手動セッションの完了を待機中",
       "preparing": "準備中…",
       "completedCount": "✅ {count} 件を完了しました",
       "nothingToAutomate": "✅ 自動化する意図はありません"
@@ -1326,6 +1332,7 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "toolInput": "ツール入力",
     "filter": {
       "all": "All",
       "todo": "Todo",

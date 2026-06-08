@@ -15,6 +15,7 @@ const baseProps = {
   tabs: TABS,
   activeTab: 'console',
   tabsEnabled: true,
+  viewMode: 'workspace' as const,
 }
 
 describe('AppHeader.vue — top-bar tabs', () => {

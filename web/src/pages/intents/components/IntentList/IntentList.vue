@@ -44,7 +44,10 @@ const emit = defineEmits<{
 }>()
 
 // Automation orchestrator UI state derived from the pushed status.
-const autoRunning = computed(() => props.automation?.state === 'running')
+const AUTO_RUNNING_STATES = new Set(['running', 'developing', 'fixing', 'awaiting_gate'])
+const autoRunning = computed(
+  () => props.automation && AUTO_RUNNING_STATES.has(props.automation.state),
+)
 const autoError = computed(() =>
   props.automation?.state === 'error'
     ? (props.automation.error ?? t('intent.automation.error.fallback'))
@@ -54,13 +57,20 @@ const autoError = computed(() =>
 const autoNote = computed<string>(() => {
   const a = props.automation
   if (!a) return ''
+
+  const cur = a.currentIntentId
+  const title = cur ? (titleById.value[cur] ?? cur) : ''
+
   if (a.state === 'running') {
-    const cur = a.currentIntentId
-    const title = cur ? (titleById.value[cur] ?? cur) : ''
     if (a.awaitingPermission)
       return title ? t('intent.automation.awaitingFor', { title }) : t('intent.automation.awaiting')
     return title ? t('intent.automation.workingOn', { title }) : t('intent.automation.preparing')
   }
+  if (a.state === 'developing')
+    return title ? t('intent.automation.workingOn', { title }) : t('intent.automation.preparing')
+  if (a.state === 'fixing')
+    return title ? t('intent.automation.fixing', { title }) : t('intent.automation.preparing')
+  if (a.state === 'awaiting_gate') return t('intent.automation.awaitingGate')
   if (a.state === 'done')
     return a.completedIds.length
       ? t('intent.automation.completedCount', a.completedIds.length)

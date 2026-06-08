@@ -22,6 +22,10 @@
     }
   },
   "nav": {
+    "viewMode": {
+      "workspace": "Workspace",
+      "workcenter": "Workcenter"
+    },
     "tab": {
       "console": {
         "label": "Sessions"
@@ -438,6 +442,8 @@
       "awaiting": "⏸ Awaiting authorization",
       "awaitingFor": "⏸ Awaiting authorization for \"{title}\"",
       "workingOn": "Working on \"{title}\"",
+      "fixing": "Fixing lint for \"{title}\"",
+      "awaitingGate": "Waiting for manual session to complete",
       "preparing": "Preparing…",
       "completedCount": "✅ Completed one item | ✅ Completed {count} items",
       "nothingToAutomate": "✅ No intents to automate"
@@ -1326,6 +1332,7 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "toolInput": "Tool Input",
     "filter": {
       "all": "All",
       "todo": "Todo",

@@ -22,6 +22,10 @@
     }
   },
   "nav": {
+    "viewMode": {
+      "workspace": "工作区",
+      "workcenter": "工作台"
+    },
     "tab": {
       "console": {
         "label": "会话"
@@ -438,6 +442,8 @@
       "awaiting": "⏸ 等待授权",
       "awaitingFor": "⏸ 等待对 \"{title}\" 的授权",
       "workingOn": "正在处理 \"{title}\"",
+      "fixing": "正在修复 \"{title}\" 的代码规范",
+      "awaitingGate": "等待手动会话完成",
       "preparing": "准备中…",
       "completedCount": "✅ 已完成 {count} 项",
       "nothingToAutomate": "✅ 没有可自动化的意图"
@@ -1326,6 +1332,7 @@
   },
   "workcenter": {
     "title": "工作台",
+    "toolInput": "工具输入",
     "filter": {
       "all": "全部",
       "todo": "待处理",

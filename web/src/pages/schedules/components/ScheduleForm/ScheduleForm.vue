@@ -195,6 +195,10 @@ watch(
       vendorInitialised.value = true
       toolAllowlist.value = []
     }
+    // Initial vendor's tool manifest must always be loaded — the vendor watcher
+    // won't fire if the seed value matches the default ('claude'), leaving the
+    // tool panel permanently blank.
+    emit('load-tool-manifest', vendor.value)
   },
   { immediate: true },
 )

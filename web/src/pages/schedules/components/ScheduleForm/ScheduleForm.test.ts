@@ -253,6 +253,29 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect(input.vendor).toBe('claude')
   })
 
+  // ---- load-tool-manifest event --------------------------------------------
+
+  it('create:打开表单立即 emit load-tool-manifest(claude)', () => {
+    const w = mountForm()
+    const events = w.emitted('load-tool-manifest')
+    expect(events).toBeTruthy()
+    expect(events![0]).toEqual(['claude'])
+  })
+
+  it('edit:打开表单立即 emit load-tool-manifest(当前 vendor)', () => {
+    const w = mountForm({ schedule: sched({ vendor: 'codex' }) })
+    const events = w.emitted('load-tool-manifest')
+    expect(events).toBeTruthy()
+    expect(events![0]).toEqual(['codex'])
+  })
+
+  it('edit(claude):默认 vendor 时也能正确 emit', () => {
+    const w = mountForm({ schedule: sched({ vendor: 'claude' }) })
+    const events = w.emitted('load-tool-manifest')
+    expect(events).toBeTruthy()
+    expect(events![0]).toEqual(['claude'])
+  })
+
   // ---- Tool manifest -------------------------------------------------------
 
   it('无工具清单时显示空态文案', () => {

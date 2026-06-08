@@ -25,7 +25,9 @@ import type {
   Intent,
   IntentSessionInfo,
   IntentStatus,
+  SessionAgentSwitch,
   SlashCommandInfo,
+  VendorId,
 } from '@ccc/shared/protocol'
 
 defineProps<{
@@ -39,6 +41,10 @@ defineProps<{
   intentSessionRunStates: Record<string, 'running'>
   // right: chat column (shared with sessions page)
   activeTitle: string
+  /** The session's resolved agent vendor; present after agent binding. */
+  vendor?: VendorId | null
+  /** Same-vendor agent switcher data; present after agent binding. */
+  agentSwitch?: SessionAgentSwitch | null
   hasActiveSession: boolean
   messages: ChatMsg[]
   actionablePermissionId: string | null
@@ -74,6 +80,7 @@ const emit = defineEmits<{
   'new-intent-session': []
   'rename-intent-session': [sessionId: string, title: string]
   'delete-intent-session': [sessionId: string]
+  'set-session-agent': [agentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -123,7 +130,10 @@ defineExpose({
   <div class="content">
     <SessionTitleBar
       :active-title="activeTitle || t('intent.chat.title.label')"
+      :vendor="vendor ?? null"
+      :agent-switch="agentSwitch ?? null"
       :show-mode="false"
+      @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
     />
     <ChatMessages
       :messages="messages"

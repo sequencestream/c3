@@ -9,7 +9,11 @@
  */
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import {
+  PENDING_SESSION_PREFIX,
+  type SessionAgentSwitch,
+  type VendorId,
+} from '@ccc/shared/protocol'
 import {
   addViewer,
   ensureRuntime,
@@ -20,6 +24,13 @@ import {
 } from '../../runs.js'
 import { hasWorkspace, touchWorkspace } from '../../state.js'
 import { getDefaultMode, getDevSkill } from '../../kernel/config/index.js'
+import {
+  getDefaultAgentId,
+  resolveSessionAgentSwitch,
+  resolveSessionVendor,
+  setSessionAgent,
+} from '../../kernel/agent-config/index.js'
+import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { loadHistory, loadLastAssistantMessages, sessionExists } from '../../sessions.js'
 import {
   getChatSession,
@@ -53,6 +64,33 @@ import {
 import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush } from '../../git.js'
 import type { Handler } from '../../transport/handler-registry.js'
+
+// ---- Local helpers (agent binding for intent comm sessions) ----
+
+/** Vendors whose host CLI resolved on PATH (ADR-0012) — inline, not from sessions/ (ADR-0009). */
+function presentVendorSet(): Set<VendorId> {
+  return new Set(
+    probeAll()
+      .filter((p) => p.path !== null)
+      .map((p) => p.vendor),
+  )
+}
+
+/** The title-bar agent-switcher payload for a session, or undefined when absent. */
+function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
+  return resolveSessionAgentSwitch(sessionId, presentVendorSet()) ?? undefined
+}
+
+/**
+ * Bind the default agent to a newly-created intent comm session (pending id).
+ * Must be called after `ensureRuntime` so `resolveSessionLaunch`/agent switcher
+ * find the pending intent in later lookups.
+ */
+function bindDefaultAgent(sessionId: string): void {
+  setSessionAgent(sessionId, getDefaultAgentId())
+}
+
+// ---- Handlers ----
 
 export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => {
   const proj = resolve(msg.projectPath)
@@ -102,6 +140,7 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
       const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
       const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
       ensureRuntime(chatId, proj, 'default', baseline, 'intent')
+      bindDefaultAgent(chatId)
     }
   } else {
     // Resume the project's persisted comm session (is_current), or open a new one.
@@ -112,10 +151,12 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
         const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
         const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
         ensureRuntime(chatId, proj, 'default', baseline, 'intent')
+        bindDefaultAgent(chatId)
       }
     } else {
       chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
       ensureRuntime(chatId, proj, 'default', [], 'intent')
+      bindDefaultAgent(chatId)
       setChatSession(proj, chatId)
     }
   }
@@ -139,6 +180,8 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
     mode: 'default',
     history: rt.baseline,
     status: rt.status,
+    vendor: resolveSessionVendor(chatId),
+    agentSwitch: agentSwitchFor(chatId),
   })
   for (const e of rt.buffer) conn.send(e)
   addViewer(chatId, conn.deliver)
@@ -220,6 +263,7 @@ export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  bindDefaultAgent(chatId)
   setChatSession(proj, chatId)
   conn.viewing = chatId
   touchWorkspace(proj, Date.now())
@@ -232,6 +276,8 @@ export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
     mode: 'default',
     history: [],
     status: rt.status,
+    vendor: resolveSessionVendor(chatId),
+    agentSwitch: agentSwitchFor(chatId),
   })
   conn.send({
     type: 'intents',
@@ -256,6 +302,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  bindDefaultAgent(chatId)
   setChatSession(proj, chatId, req.title)
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)
@@ -267,6 +314,8 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     mode: 'default',
     history: [],
     status: 'idle',
+    vendor: resolveSessionVendor(chatId),
+    agentSwitch: agentSwitchFor(chatId),
   })
   conn.send({ type: 'intents', projectPath: proj, items: listIntents(proj) })
   const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
@@ -292,6 +341,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  bindDefaultAgent(chatId)
   setChatSession(proj, chatId, discussion.title)
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)
@@ -303,6 +353,8 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     mode: 'default',
     history: [],
     status: 'idle',
+    vendor: resolveSessionVendor(chatId),
+    agentSwitch: agentSwitchFor(chatId),
   })
   conn.send({ type: 'intents', projectPath: proj, items: listIntents(proj) })
   const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents。`

@@ -34,8 +34,10 @@ const props = withDefaults(
     codexPolicy?: CodexPolicy | null
     /**
      * Same-vendor agent switcher data (ADR-0015): the current agent + the other
-     * same-vendor available agents. Absent ⇒ no switcher (pending/comm session, or
-     * a real session with an available agent and no same-vendor alternative).
+     * same-vendor available agents. Always present for real sessions (even with no
+     * same-vendor alternative) so the status bar can display the correct agent name.
+     * The agent group renders only when there are actually candidates to switch to
+     * or the current agent is unavailable.
      */
     agentSwitch?: SessionAgentSwitch | null
   }>(),
@@ -103,7 +105,10 @@ function onPickAgent(agentId: string): void {
       <span v-if="vendor" class="vendor-label" data-testid="session-vendor-label">{{
         vendorLabel()
       }}</span>
-      <div v-if="agentSwitch" class="agent-group">
+      <div
+        v-if="agentSwitch && (agentSwitch.candidates.length > 0 || agentSwitch.currentUnavailable)"
+        class="agent-group"
+      >
         <span
           v-if="agentSwitch.currentUnavailable"
           class="agent-unavailable"

@@ -195,15 +195,21 @@ export async function launchRun(
   }
   const hasMountedSkills = skillMountStep?.ok && (skillMountStep.outcome?.mounted.length ?? 0) > 0
 
+  // Resolve the intent profile once, before the vendor fork, so both the
+  // claude path and the driver path can use it.
+  const resolvedIntentProfile =
+    isIntent && deps.intentProfile ? deps.intentProfile(workspacePath) : undefined
+
   // Vendor fork (2026-06-06-003 / -007): an `opencode` or `codex` session runs
   // through the neutral AgentDriver path, NOT the claude-hardwired loop below (which
-  // stays unchanged). intent runtimes are always the claude comm agent, so they
-  // never fork. `system`/`claude` vendors fall through to the claude path.
-  if (!isIntent) {
+  // stays unchanged). Intent runtimes previously only ran on the claude path; now
+  // they fork to the driver when their bound agent's vendor is codex/opencode (2026-06-08).
+  // `system`/`claude` vendors fall through to the claude path.
+  {
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
     if (vendor === 'opencode' || vendor === 'codex') {
       const adapter = vendor === 'opencode' ? deps.getOpencodeAdapter?.() : deps.getCodexAdapter?.()
-      if (adapter) return runViaDriver(rt, prompt, adapter, deps.eventBus)
+      if (adapter) return runViaDriver(rt, prompt, adapter, deps.eventBus, resolvedIntentProfile)
       const unavailable =
         vendor === 'opencode'
           ? 'OpenCode is unavailable (host CLI missing, or start c3 with --opencode-url).'

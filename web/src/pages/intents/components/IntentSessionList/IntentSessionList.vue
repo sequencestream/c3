@@ -427,7 +427,7 @@ const visibleSessions = computed<IntentSessionInfo[]>(() => [
 }
 .int-sess-status-icon {
   flex-shrink: 0;
-  font-size: var(--fs-body);
+  font-size: var(--fs-badge);
   line-height: 1;
 }
 .int-sess-status-icon.spin {

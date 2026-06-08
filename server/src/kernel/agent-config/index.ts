@@ -380,13 +380,14 @@ export function sameVendorEnabledAgents(
 }
 
 /**
- * Resolve the title-bar agent-switcher payload for a session (ADR-0015 / AS-R22):
+ * Resolve the agent-switcher payload for a session (ADR-0015 / AS-R22):
  * the other same-vendor, host-binary-present, enabled agents it may switch to,
- * plus whether the current agent's host CLI is missing. Returns null when there is
- * no switcher to show — a pending/comm session (`sessionId` null or a pending id),
- * or a real session with no same-vendor alternative *and* an available current
- * agent. `presentVendors` is the set of vendors whose host CLI resolved on PATH
- * (the caller probes via `probeAll`, keeping this layer free of the launcher).
+ * plus whether the current agent's host CLI is missing. Always includes the
+ * session's current agent (even with no candidates) so the status bar can
+ * display the correct name. Returns null only for pending/null sessions
+ * (those without a real sessionId). `presentVendors` is the set of vendors
+ * whose host CLI resolved on PATH (the caller probes via `probeAll`, keeping
+ * this layer free of the launcher).
  */
 export function resolveSessionAgentSwitch(
   sessionId: string | null,
@@ -399,8 +400,6 @@ export function resolveSessionAgentSwitch(
     .filter((a) => presentVendors.has(a.vendor))
     .map((a) => ({ id: a.id, displayName: a.displayName }))
   const currentUnavailable = !presentVendors.has(vendor)
-  // Nothing actionable to surface: an available current agent with no peers.
-  if (candidates.length === 0 && !currentUnavailable) return null
   return {
     current: { id: current.id, displayName: current.displayName },
     candidates,

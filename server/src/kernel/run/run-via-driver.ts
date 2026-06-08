@@ -20,6 +20,7 @@
 import { PENDING_SESSION_PREFIX, type RunEndReason } from '@ccc/shared/protocol'
 import type { CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
@@ -32,6 +33,18 @@ import {
   type SessionRuntime,
 } from '../../runs.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
+
+/**
+ * The intent comm-agent launch profile (read-only gate + disallowed-tools lock
+ * + comm system prompt + `save_intents` MCP tool), resolved once before the
+ * vendor fork in `launchRun`. Only present for `rt.kind === 'intent'` runtimes.
+ */
+export interface IntentProfile {
+  appendSystemPrompt: string
+  disallowedTools: string[]
+  mcpServers: Record<string, McpServerConfig>
+  gate: 'intent'
+}
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -109,15 +122,27 @@ export class WireEmitter {
  * concerns `launchRun` does for claude (abort wiring, prompt echo, status flips,
  * pending→real bind, terminal turn_end) but via the neutral interface. Used for
  * `opencode` and `codex` (2026-06-06-007); any future driver-routed vendor reuses it.
+ *
+ * When `intentProfile` is present (intent comm session), its `appendSystemPrompt`
+ * is prepended to the prompt, and `actionMode`/`toolGate` are overridden to reflect
+ * the read-only gate (safe for non-Claude vendors that don't natively support the
+ * full intent gate).
  */
 export async function runViaDriver(
   rt: SessionRuntime,
   prompt: string,
   adapter: VendorAdapter,
   eventBus: EventBus<EventBusEvents>,
+  intentProfile?: IntentProfile,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
+
+  // Prepend the intent system prompt to the driver prompt so the model
+  // receives the comm-agent instructions (read-only gate, intent task).
+  const effectivePrompt = intentProfile
+    ? `${intentProfile.appendSystemPrompt}\n\n${prompt}`
+    : prompt
 
   emit(runId, { type: 'user_text', text: prompt })
 
@@ -155,10 +180,19 @@ export async function runViaDriver(
   // every vendor.
   // For codex sessions with a stored CodexPolicy (2026-06-08), use the dual-policy
   // grid directly instead of going through the catalog token.
-  const { actionMode, toolGate } =
-    adapter.vendor === 'codex' && rt.codexPolicy
+  // For intent sessions, the read-only gate overrides the session mode:
+  // force 'plan' action (read-only) and 'always-ask' tool gate (every tool
+  // prompts). This is the safest combo for the intent comm analyst on a
+  // non-Claude driver. When no intentProfile, use the normal mode resolution.
+  const mode: {
+    actionMode: import('@ccc/shared/protocol').ActionMode
+    toolGate: import('@ccc/shared/protocol').ToolGate
+  } = intentProfile
+    ? { actionMode: 'plan', toolGate: 'always-ask' }
+    : adapter.vendor === 'codex' && rt.codexPolicy
       ? codexPolicyToGrid(rt.codexPolicy)
       : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
+  const { actionMode, toolGate } = mode
 
   // Resolve the session agent's launch overrides (provider connection only). The
   // claude-hardwired path applies these to the SDK; the driver path threads the
@@ -168,7 +202,7 @@ export async function runViaDriver(
 
   try {
     const run = await adapter.driver.start({
-      prompt,
+      prompt: effectivePrompt,
       cwd: workspacePath,
       signal: cycleAbort.signal,
       actionMode,

@@ -581,8 +581,9 @@ const taskStoreAvailable = computed(() => {
   return caps[vendor]?.taskStore ?? true
 })
 // The active session's same-vendor agent-switcher data (from `session_selected`),
-// for the title-bar switcher. Null when there's no switcher (pending/comm session,
-// or a real session with an available agent and no same-vendor alternative).
+// for the title-bar switcher. Always populated for real sessions so the status bar
+// can display the correct agent name (the title-bar group itself hides when there
+// are no candidates and the agent is available). Null for pending/comm sessions.
 const activeAgentSwitch = ref<SessionAgentSwitch | null>(null)
 
 // The mode-picker options for the viewed session: the active vendor's catalog when
@@ -2077,6 +2078,8 @@ function dismissSkillApproval() {
         :queue="currentQueue"
         :available-commands="availableCommands"
         :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
+        :active-vendor="activeVendor"
+        :active-agent-switch="activeAgentSwitch"
         @filter="setIntentFilter"
         @refine="refineIntent"
         @start-dev="startDevelopment"
@@ -2090,6 +2093,7 @@ function dismissSkillApproval() {
         @new-intent-session="newIntentChat"
         @rename-intent-session="renameIntentSession"
         @delete-intent-session="deleteIntentSession"
+        @set-session-agent="onSetSessionAgent"
         @respond="respond"
         @submit-ask="submitAsk"
         @refresh="refreshStatus"

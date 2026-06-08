@@ -1753,17 +1753,18 @@ export type ServerToClient =
       status: SessionStatus
       /**
        * The session's resolved agent vendor (ADR-0015) — a real session's frozen
-       * vendor, or a pending session's intent/default vendor — used to paint the
-       * vendor colour dot beside the title. Absent for comm/intent sessions
-       * (no agent dot there).
+       * vendor, a pending session's intent/default vendor, or an intent comm
+       * session's bound agent vendor — used to paint the vendor colour dot
+       * beside the title.
        */
       vendor?: VendorId
       /**
        * Data for the title-bar same-vendor agent switcher (ADR-0015 / AS-R22): the
        * other **same-vendor, host-binary-present, enabled** agents this session may
        * switch to (cross-vendor never appears — vendor is frozen), plus whether the
-       * current agent's host CLI is missing. Present only for a real, non-comm
-       * session that actually has switch candidates; absent otherwise (no switcher).
+       * current agent's host CLI is missing. Present for any session with a bound
+       * agent that has switch candidates; absent for sessions without a resolved
+       * fact (e.g. brand-new pending with no intent yet).
        */
       agentSwitch?: SessionAgentSwitch
     }

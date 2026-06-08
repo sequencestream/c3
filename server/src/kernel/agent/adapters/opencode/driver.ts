@@ -121,8 +121,19 @@ export class OpencodeDriver implements AgentDriver {
     if (!sid) {
       const created = await client.session.create({ query: { directory: opts.cwd } })
       sid = created.data?.id
+      if (!sid) {
+        // The SDK returns `{ error, request, response }` (no `data`) on non-2xx;
+        // extract the server's message for a useful diagnostic (2026-06-08-009).
+        const err = (created as { error?: unknown }).error
+        const detail =
+          err && typeof err === 'object'
+            ? ((err as { data?: { message?: string } }).data?.message ??
+              (err as { name?: string }).name ??
+              String(err))
+            : String(err ?? 'unknown error')
+        throw new Error(`opencode: failed to create session — ${detail}`)
+      }
     }
-    if (!sid) throw new Error('opencode: failed to create session')
     const sessionId = sid
 
     // The preApproved audit: a rule-engine auto-allow (a `permission.replied` for

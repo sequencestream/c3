@@ -19,7 +19,9 @@ import {
 } from './config/index.js'
 import {
   freezeSessionAgent,
+  getDefaultAgentId,
   resolveSessionAgentSwitch,
+  resolveSessionVendor,
   sameVendorEnabledAgents,
   setSessionAgent,
 } from './agent-config/index.js'
@@ -175,6 +177,81 @@ describe('changeSessionAgentFact / setSessionAgent (same-vendor swap vs cross-ve
   })
 })
 
+describe('intent session agent binding (pending→agent + freezeVendor)', () => {
+  beforeEach(seedAgents)
+
+  it('bindDefaultAgent: setSessionAgent with defaultAgentId writes pending intent and resolves vendor', () => {
+    const pending = 'pending:intent-chat-1'
+    const defaultId = getDefaultAgentId()
+    expect(defaultId).toBe(SYSTEM_AGENT_ID)
+
+    // Simulate what bindDefaultAgent does: setSessionAgent with the default.
+    setSessionAgent(pending, defaultId)
+    expect(getSessionAgentId(pending)).toBe(defaultId)
+    // A pending session's vendor is resolved from the agent (not frozen yet).
+    expect(resolveSessionVendor(pending)).toBe('claude')
+  })
+
+  it('bindDefaultAgent: codex as defaultAgentId writes codex vendor', () => {
+    // Change default agent to 'cx' (codex).
+    saveSettings({
+      agents: [
+        {
+          id: SYSTEM_AGENT_ID,
+          vendor: 'claude',
+          configMode: 'system',
+          displayName: 'System',
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+        {
+          id: 'cx',
+          vendor: 'codex',
+          configMode: 'system',
+          displayName: 'CX',
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+      ],
+      defaultAgentId: 'cx',
+    } as unknown as SystemSettings)
+    resetSettingsCacheForTests()
+
+    const pending = 'pending:intent-chat-2'
+    setSessionAgent(pending, getDefaultAgentId())
+    expect(getSessionAgentId(pending)).toBe('cx')
+    expect(resolveSessionVendor(pending)).toBe('codex')
+  })
+
+  it('four entry points style: each ensureRuntime followed by setSessionAgent creates a resolvable pending', () => {
+    // Simulate the pattern used by newIntentChat / openIntentChat / refineIntent / discussionToIntent.
+    const ids = ['pending:new', 'pending:open', 'pending:refine', 'pending:discuss']
+    for (const id of ids) {
+      setSessionAgent(id, getDefaultAgentId())
+    }
+    for (const id of ids) {
+      expect(getSessionAgentId(id)).toBe(SYSTEM_AGENT_ID)
+      expect(resolveSessionVendor(id)).toBe('claude')
+    }
+  })
+
+  it('bindDefaultAgent idempotent: re-binding same pending id with same agent is harmless', () => {
+    const pending = 'pending:idempotent'
+    setSessionAgent(pending, SYSTEM_AGENT_ID)
+    const firstAgent = getSessionAgentId(pending)
+    // Re-bind with the same agent — should still succeed.
+    setSessionAgent(pending, SYSTEM_AGENT_ID)
+    expect(getSessionAgentId(pending)).toBe(firstAgent)
+  })
+
+  it('resolveSessionVendor for pending intent session prefers the intent over default', () => {
+    // Default is claude, but the pending intent explicitly binds to codex.
+    const pending = 'pending:explicit-cx'
+    setSessionAgent(pending, 'cx')
+    expect(resolveSessionVendor(pending)).toBe('codex')
+    // Default agent is still claude, but the intent overrides.
+    expect(getDefaultAgentId()).toBe(SYSTEM_AGENT_ID)
+  })
+})
+
 describe('sameVendorEnabledAgents (shared same-vendor candidate rule)', () => {
   beforeEach(seedAgents)
 
@@ -196,9 +273,14 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
   beforeEach(seedAgents)
   const allPresent = new Set<VendorId>(['claude', 'opencode', 'codex'])
 
-  it('returns null for pending and null sessions (no switcher)', () => {
-    expect(resolveSessionAgentSwitch('pending:x', allPresent)).toBeNull()
+  it('returns null only for null sessionId', () => {
     expect(resolveSessionAgentSwitch(null, allPresent)).toBeNull()
+  })
+
+  it('returns current agent for pending sessions (needed for status bar)', () => {
+    const sw = resolveSessionAgentSwitch('pending:x', allPresent)
+    expect(sw).not.toBeNull()
+    expect(sw?.current).toEqual({ id: SYSTEM_AGENT_ID, displayName: 'System' })
   })
 
   it('lists same-vendor available peers, marking the current agent', () => {
@@ -221,9 +303,13 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
     expect(sw?.candidates).toEqual([])
   })
 
-  it('returns null when the current agent is available and has no same-vendor peer', () => {
+  it('includes current agent when available and has no same-vendor peer', () => {
     bindSessionAgent('pending:w3', 'real-3', 'oc', 'opencode')
-    expect(resolveSessionAgentSwitch('real-3', allPresent)).toBeNull()
+    const sw = resolveSessionAgentSwitch('real-3', allPresent)
+    expect(sw).not.toBeNull()
+    expect(sw?.current).toEqual({ id: 'oc', displayName: 'OC' })
+    expect(sw?.candidates).toEqual([])
+    expect(sw?.currentUnavailable).toBe(false)
   })
 })
 

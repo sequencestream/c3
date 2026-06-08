@@ -89,7 +89,7 @@ const seedDiscussion = (): Discussion => ({
   completedAt: null,
 })
 
-const isOrganizerPrompt = (p: string): boolean => p.includes('组织者(organizer)')
+const isOrganizerPrompt = (p: string): boolean => p.includes('"Organizer"')
 
 interface Harness {
   deps: DiscussionDeps
@@ -250,7 +250,7 @@ describe('runDiscussion', () => {
     await runDiscussion('d1', new AbortController().signal, h.deps)
 
     expect(get().status).toBe('completed')
-    expect(get().conclusion).toContain('轮数上限')
+    expect(get().conclusion).toContain('Max rounds')
     expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(2)
   })
 
@@ -461,7 +461,7 @@ describe('runDiscussion', () => {
       maxRoundsPerStage: 2,
     })
     h.deps.ask = async (_a, prompt) => {
-      if (!prompt.includes('组织者(organizer)')) return 'view'
+      if (!prompt.includes('"Organizer"')) return 'view'
       if (!setOnce) {
         setOnce = true
         return '{"action":"set_agenda","subtopics":["A","B"],"note":""}'

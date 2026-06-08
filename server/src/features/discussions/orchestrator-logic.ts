@@ -14,7 +14,8 @@
  * first, keyword fallback, always a safe default); {@link resolveStep} folds in
  * the stage and the per-stage round cap to yield the concrete step the loop runs.
  *
- * Agent-facing prompts are Chinese (codebase convention); the JSON contract keeps
+ * Agent-facing prompts are English (the skeleton stays out of i18n — see
+ * specs/style/i18n-spec.md §7); the JSON contract keeps
  * parsing deterministic.
  */
 
@@ -314,10 +315,10 @@ export function resolveStep(input: {
 
 /** Render the transcript so far as `name: content` lines for a prompt. */
 export function renderTranscript(messages: readonly DiscussionMessage[]): string {
-  if (messages.length === 0) return '(暂无发言)'
+  if (messages.length === 0) return '(no messages yet)'
   return messages
     .map((m) => {
-      const who = m.speakerName || (m.speakerKind === 'organizer' ? '组织者' : m.speakerKind)
+      const who = m.speakerName || (m.speakerKind === 'organizer' ? 'Organizer' : m.speakerKind)
       return `${who}: ${m.content}`
     })
     .join('\n')
@@ -325,11 +326,11 @@ export function renderTranscript(messages: readonly DiscussionMessage[]): string
 
 function header(discussion: Discussion, def: DiscussionTypeDef | undefined): string {
   return [
-    `讨论类型: ${def ? `${def.label} — ${def.description}` : discussion.type}`,
-    `目标: ${discussion.goal || '(未填写)'}`,
+    `Discussion type: ${def ? `${def.label} — ${def.description}` : discussion.type}`,
+    `Goal: ${discussion.goal || '(not provided)'}`,
     // Prefer the research agent's output as background; fall back to the user's
     // original context when research produced nothing.
-    `背景: ${discussion.researchResult || discussion.context || '(无)'}`,
+    `Background: ${discussion.researchResult || discussion.context || '(none)'}`,
   ].join('\n')
 }
 
@@ -340,14 +341,16 @@ function header(discussion: Discussion, def: DiscussionTypeDef | undefined): str
  */
 function renderAgenda(agenda: AgendaState): string {
   if (agenda.items.length === 0) {
-    return '当前议程: (尚未设定 —— 请先用 set_agenda 把目标拆成有序子议题)'
+    return 'Current agenda: (not set yet — use set_agenda to decompose the goal into ordered subtopics)'
   }
   const lines = agenda.items.map((t, i) => {
-    const mark = i < agenda.index ? '✓ 已完成' : i === agenda.index ? '▶ 当前' : '· 待讨论'
+    const mark = i < agenda.index ? '✓ done' : i === agenda.index ? '▶ current' : '· pending'
     return `${i + 1}. [${mark}] ${t}`
   })
   const done = agenda.index >= agenda.items.length
-  return ['当前议程:', ...lines, done ? '(所有子议题已完成)' : ''].filter(Boolean).join('\n')
+  return ['Current agenda:', ...lines, done ? '(all subtopics completed)' : '']
+    .filter(Boolean)
+    .join('\n')
 }
 
 /**
@@ -363,36 +366,41 @@ export function buildOrganizerPrompt(input: {
   messages: readonly DiscussionMessage[]
   participants: readonly DiscussionParticipant[]
   agenda?: AgendaState
+  /** The display-language name (e.g. "Chinese (简体中文)") — appended as "Respond in <langName>". */
+  langName?: string
 }): string {
-  const { discussion, def, stage, messages, participants } = input
+  const { discussion, def, stage, messages, participants, langName = 'English' } = input
   const agenda = input.agenda ?? EMPTY_AGENDA
-  const roster = participants.map((p) => `- id=${p.id} 名称=${p.name}`).join('\n')
+  const roster = participants.map((p) => `- id=${p.id} name=${p.name}`).join('\n')
   const lines = [
-    '你是这场讨论的「组织者(organizer)」,统一编排各参与者的发言并推动讨论得出结论。',
+    'You are the "Organizer" of this discussion. Coordinate the participants\' contributions',
+    'and drive the discussion toward a conclusion.',
     '',
     header(discussion, def),
     '',
-    `当前阶段: ${stage.label} —— ${stage.prompt}`,
+    `Current stage: ${stage.label} — ${stage.prompt}`,
   ]
   if (stage.id === 'discuss') {
     lines.push('', renderAgenda(agenda))
   }
   lines.push(
     '',
-    '参与者名单:',
+    'Participant roster:',
     roster,
     '',
-    '已有发言:',
+    'Transcript so far:',
     renderTranscript(messages),
     '',
-    '根据当前阶段决定下一步,只输出一个 JSON 对象,不要任何额外文字:',
-    '{"action":"set_agenda|focus_subtopic|broadcast|speak|advance|conclude","speaker":"<参与者 id,action=speak 时必填>","speakers":["<action=broadcast 时的参与者 id 列表;填 \\"all\\" 或省略表示全部>"],"subtopics":["<action=set_agenda 时的有序子议题列表>"],"index":<action=focus_subtopic 时可选,目标子议题下标(从 0 起)>,"note":"<组织者要记录的话/要广播的子问题,可空>","conclusion":"<action=conclude 时的完整最终结论>"}',
-    '- set_agenda: 仅在 discuss 阶段、议程尚未设定时使用;把目标拆成有序子议题填入 subtopics,引擎据此逐题推进。',
-    '- focus_subtopic: 当前子议题已讨论充分,切到下一子议题(也可用 index 指定);所有子议题完成后会自动进入下一阶段。',
-    '- broadcast: 仅在 discuss 阶段使用,且是本阶段的首选方式——围绕当前子议题向多名(或全部)参与者抛出同一子问题,他们会并行各答一段;speakers 填 id 列表或 "all"/省略表示全部,note 写要广播的子问题。',
-    '- speak: 指定单独一位参与者发言(填其 id),用于追问或补充,围绕当前子议题;note 可写你对该参与者的引导。',
-    '- advance: 本阶段已充分,推进到下一阶段;note 写本阶段的小结(例如 summarize 阶段填归纳要点)。',
-    '- conclude: 讨论已可收尾,conclusion 写完整、可执行的最终结论。',
+    'Decide the next step based on the current stage. Output only a single JSON object, no extra text:',
+    '{"action":"set_agenda|focus_subtopic|broadcast|speak|advance|conclude","speaker":"<participant id (required for action=speak)>","speakers":["<participant id list (action=broadcast); \\"all\\" or omit for everyone>"],"subtopics":["<ordered subtopic list (action=set_agenda)>"],"index":<optional subtopic index 0-based (action=focus_subtopic)>,"note":"<organizer note / sub-question to broadcast, may be empty>","conclusion":"<full final conclusion (action=conclude)>"}',
+    '- set_agenda: use only in the discuss stage when no agenda is set yet; decompose the goal into ordered subtopics; the engine advances through them one by one.',
+    '- focus_subtopic: the current subtopic has been sufficiently discussed, move to the next (optionally via index); when all subtopics are done the engine auto-advances to the next stage.',
+    '- broadcast: use only in the discuss stage, and the preferred method there — ask several (or all) participants the same sub-question around the current subtopic; they answer in parallel. Set speakers to an id list or "all"/omit for everyone, note is the sub-question.',
+    '- speak: nominate a single participant (by id) to speak — for follow-up or elaboration, around the current subtopic; note may contain guidance for that participant.',
+    '- advance: this stage is complete, move to the next; note carries a summary of this stage (e.g. key points for summarize).',
+    '- conclude: wrap up the discussion; conclusion must be a complete, actionable final conclusion.',
+    '',
+    `Respond in ${langName}.`,
   )
   return lines.join('\n')
 }
@@ -417,29 +425,44 @@ export function buildParticipantPrompt(input: {
    * Over-long replies are accepted verbatim (no hard truncation).
    */
   maxSpeechChars?: number
+  /** The display-language name (e.g. "Chinese (简体中文)") — appended as "Respond in <langName>". */
+  langName?: string
 }): string {
-  const { discussion, def, stage, messages, speaker, organizerNote, subtopic, maxSpeechChars } =
-    input
+  const {
+    discussion,
+    def,
+    stage,
+    messages,
+    speaker,
+    organizerNote,
+    subtopic,
+    maxSpeechChars,
+    langName,
+  } = input
   const budget =
     typeof maxSpeechChars === 'number' && maxSpeechChars > 0 ? maxSpeechChars : MAX_SPEECH_CHARS
+  const lang = langName ?? 'English'
   const lines = [
-    `你是这场讨论的参与者「${speaker.name}」。`,
+    `You are a participant in this discussion: "${speaker.name}".`,
     '',
     header(discussion, def),
     '',
-    `当前阶段: ${stage.label} —— ${stage.prompt}`,
+    `Current stage: ${stage.label} — ${stage.prompt}`,
   ]
   if (subtopic && subtopic.trim()) {
-    lines.push('', `当前子议题: ${subtopic.trim()} —— 请聚焦此子议题发言。`)
+    lines.push('', `Current subtopic: ${subtopic.trim()} — focus on this subtopic in your reply.`)
   }
-  lines.push('', '已有发言:', renderTranscript(messages))
+  lines.push('', 'Transcript so far:', renderTranscript(messages))
   if (organizerNote && organizerNote.trim()) {
-    lines.push('', `组织者给你的引导: ${organizerNote.trim()}`)
+    lines.push('', `Organizer's guidance to you: ${organizerNote.trim()}`)
   }
   lines.push(
     '',
-    `请围绕当前阶段给出你的观点,用中文,不要复述他人已说的内容,只输出你的发言正文(不要加你的名字前缀)。` +
-      `严格控制篇幅:用「一个段落」表达,约 ${budget} 字以内,直击要点。`,
+    `Give your perspective on the current stage. Do not repeat what others have said. ` +
+      `Output only your reply text (no name prefix). Keep it concise: a single paragraph, ` +
+      `about ${budget} characters, straight to the point.`,
+    '',
+    `Respond in ${lang}.`,
   )
   return lines.join('\n')
 }

@@ -36,7 +36,12 @@ import {
 } from '@ccc/shared/discussion-types'
 import { askAgentOnce } from '../../agent-once.js'
 import { enabledAgents, resolveAgent } from '../../kernel/agent-config/index.js'
-import { getMaxRoundsPerStage, getMaxSpeechChars } from '../../kernel/config/index.js'
+import {
+  getMaxRoundsPerStage,
+  getMaxSpeechChars,
+  getUiLang,
+  getUiLangName,
+} from '../../kernel/config/index.js'
 import {
   appendMessage as storeAppendMessage,
   getDiscussion as storeGetDiscussion,
@@ -56,6 +61,43 @@ import {
 
 /** The display name used for the organizer's own (role) messages. */
 export const ORGANIZER_NAME = '组织者'
+
+// ---- Code-generated transcript fallback strings (5-locale) ----
+const L10N: Record<string, Record<string, string>> = {
+  conclusionFallback: {
+    en: '(Discussion concluded without a clear conclusion)',
+    zh: '(讨论结束,未形成明确结论)',
+    ja: '(議論は終了しましたが、明確な結論には至りませんでした)',
+    ko: '(토론이 종료되었으나 명확한 결론에 도달하지 못했습니다)',
+    ru: '(Обсуждение завершено без четкого вывода)',
+  },
+  maxRoundsReached: {
+    en: '(Max rounds reached, no final conclusion formed)',
+    zh: '(已达讨论轮数上限,未形成最终结论)',
+    ja: '(最大ラウンド数に達しましたが、最終的な結論には至りませんでした)',
+    ko: '(최대 토론 횟수에 도달하여 최종 결론을 도출하지 못했습니다)',
+    ru: '(Достигнут лимит раундов, окончательный вывод не сформирован)',
+  },
+  agendaSet: {
+    en: 'Agenda set:',
+    zh: '议程已设定:',
+    ja: '議題設定完了:',
+    ko: '의제 설정 완료:',
+    ru: 'Повестка установлена:',
+  },
+  enteringSubtopic: {
+    en: 'Entering subtopic:',
+    zh: '进入子议题:',
+    ja: 'サブトピックに入る:',
+    ko: '하위 주제로 이동:',
+    ru: 'Переход к подтеме:',
+  },
+}
+
+const uiL10n = (key: string): string => {
+  const lang = getUiLang()
+  return L10N[key]?.[lang] ?? L10N[key]?.en ?? ''
+}
 
 /** Minimal identity of a dispatched participant, carried by {@link DispatchStatus}. */
 export interface DispatchAgent {
@@ -188,7 +230,7 @@ export async function runDiscussion(
   }
 
   const concludeWith = (conclusion: string): void => {
-    const text = conclusion.trim() || '(讨论结束,未形成明确结论)'
+    const text = conclusion.trim() || uiL10n('conclusionFallback')
     appendOrganizer(text)
     store.setConclusion(id, text)
     store.updateDiscussionStatus(id, 'completed')
@@ -226,6 +268,7 @@ export async function runDiscussion(
           messages: store.listMessages(id),
           participants,
           agenda: { items: agenda, index: agendaIndex },
+          langName: getUiLangName(),
         }),
         cwd,
         signal,
@@ -261,7 +304,7 @@ export async function runDiscussion(
       deps.onStatusChange(id)
       const announce =
         step.organizerNote.trim() ||
-        `议程已设定:${agenda.map((t, i) => `${i + 1}. ${t}`).join(' ')}`
+        `${uiL10n('agendaSet')}${agenda.map((t, i) => `${i + 1}. ${t}`).join(' ')}`
       appendOrganizer(announce)
       roundsInStage = 0
       total++
@@ -276,7 +319,7 @@ export async function runDiscussion(
       deps.onStatusChange(id)
       const announce =
         step.organizerNote.trim() ||
-        (agenda[agendaIndex] ? `进入子议题:${agenda[agendaIndex]}` : '')
+        (agenda[agendaIndex] ? `${uiL10n('enteringSubtopic')}${agenda[agendaIndex]}` : '')
       if (announce) appendOrganizer(announce)
       roundsInStage = 0
       total++
@@ -320,6 +363,7 @@ export async function runDiscussion(
         .filter(
           (b): b is { cfg: AgentConfig; speaker: DiscussionParticipant } => !!b.cfg && !!b.speaker,
         )
+      const langName = getUiLangName()
       const prompts = batch.map((b) =>
         buildParticipantPrompt({
           discussion: discussionNow,
@@ -330,6 +374,7 @@ export async function runDiscussion(
           organizerNote: step.organizerNote,
           subtopic: agenda[agendaIndex],
           maxSpeechChars: speechBudget,
+          langName,
         }),
       )
       // Surface the whole batch as in-flight before awaiting; broadcast may have
@@ -395,6 +440,7 @@ export async function runDiscussion(
             organizerNote: step.organizerNote,
             subtopic: agenda[agendaIndex],
             maxSpeechChars: speechBudget,
+            langName: getUiLangName(),
           }),
           cwd,
           signal,
@@ -433,7 +479,7 @@ export async function runDiscussion(
   if (!signal.aborted) {
     const cur = store.getDiscussion(id)
     if (cur && cur.status !== 'completed') {
-      concludeWith(lastSummary || '(已达讨论轮数上限,未形成最终结论)')
+      concludeWith(lastSummary || uiL10n('maxRoundsReached'))
     }
   }
 }

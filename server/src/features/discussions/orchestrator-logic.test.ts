@@ -40,8 +40,8 @@ const msg = (seq: number, name: string, content: string): DiscussionMessage => (
   id: `m${seq}`,
   discussionId: 'd1',
   seq,
-  speakerKind: name === '组织者' ? 'organizer' : 'agent',
-  speakerAgentId: name === '组织者' ? null : 'gpt',
+  speakerKind: name === 'Organizer' ? 'organizer' : 'agent',
+  speakerAgentId: name === 'Organizer' ? null : 'gpt',
   speakerName: name,
   content,
   createdAt: seq,
@@ -323,12 +323,12 @@ describe('resolveStep', () => {
 
 describe('renderTranscript', () => {
   it('shows a placeholder when empty', () => {
-    expect(renderTranscript([])).toBe('(暂无发言)')
+    expect(renderTranscript([])).toBe('(no messages yet)')
   })
 
   it('renders name: content lines', () => {
-    expect(renderTranscript([msg(1, 'GPT', 'hi'), msg(2, '组织者', 'ok')])).toBe(
-      'GPT: hi\n组织者: ok',
+    expect(renderTranscript([msg(1, 'GPT', 'hi'), msg(2, 'Organizer', 'ok')])).toBe(
+      'GPT: hi\nOrganizer: ok',
     )
   })
 })
@@ -350,11 +350,13 @@ describe('prompt builders', () => {
     })
     expect(p).toContain('Choose a caching layer')
     expect(p).toContain(stage.prompt)
-    expect(p).toContain('id=gpt 名称=GPT')
+    expect(p).toContain('id=gpt name=GPT')
     expect(p).toContain('GPT: hi')
     expect(p).toContain('set_agenda|focus_subtopic|broadcast|speak|advance|conclude')
     // The broadcast action is documented as the preferred discuss mechanism.
     expect(p).toContain('broadcast:')
+    // Default langName is English.
+    expect(p).toContain('Respond in English')
   })
 
   it('header background prefers researchResult over the user context, falling back to context', () => {
@@ -388,7 +390,7 @@ describe('prompt builders', () => {
       participants: [{ id: 'gpt', name: 'GPT' }],
       agenda: { items: ['延迟', '成本'], index: 1 },
     })
-    expect(p).toContain('当前议程')
+    expect(p).toContain('Current agenda:')
     expect(p).toContain('延迟')
     expect(p).toContain('成本')
     expect(p).toContain('set_agenda')
@@ -404,7 +406,7 @@ describe('prompt builders', () => {
       speaker: { id: 'gpt', name: 'GPT' },
       subtopic: '延迟',
     })
-    expect(p).toContain('当前子议题')
+    expect(p).toContain('Current subtopic:')
     expect(p).toContain('延迟')
   })
 
@@ -417,7 +419,7 @@ describe('prompt builders', () => {
       speaker: { id: 'gpt', name: 'GPT' },
       organizerNote: 'focus on cost',
     })
-    expect(p).toContain('「GPT」')
+    expect(p).toContain('"GPT"')
     expect(p).toContain(stage.prompt)
     expect(p).toContain('focus on cost')
   })
@@ -430,8 +432,9 @@ describe('prompt builders', () => {
       messages: [],
       speaker: { id: 'gpt', name: 'GPT' },
     })
-    expect(p).toContain('一个段落')
+    expect(p).toContain('a single paragraph')
     expect(p).toContain(String(MAX_SPEECH_CHARS))
+    expect(p).toContain('Respond in English')
   })
 
   it('participant prompt reflects the configured maxSpeechChars value', () => {
@@ -445,5 +448,17 @@ describe('prompt builders', () => {
     })
     expect(p).toContain('500')
     expect(p).not.toContain(String(MAX_SPEECH_CHARS))
+  })
+
+  it('participant prompt with langName includes Respond in instruction', () => {
+    const p = buildParticipantPrompt({
+      discussion,
+      def,
+      stage,
+      messages: [],
+      speaker: { id: 'gpt', name: 'GPT' },
+      langName: 'Chinese (简体中文)',
+    })
+    expect(p).toContain('Respond in Chinese (简体中文)')
   })
 })

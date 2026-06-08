@@ -10,6 +10,7 @@ import type { Discussion, ResearchMessage } from '@ccc/shared/protocol'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude } from '../../kernel/agent/index.js'
 import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
+import { getUiLangName } from '../../kernel/config/index.js'
 
 /** System-prompt append that frames the unattended, read-only research run. */
 export const DISCUSSION_RESEARCH_PROMPT = `You are the discussion's "context researcher". Your sole task: research and gather the background facts for an upcoming discussion.
@@ -27,11 +28,13 @@ export const DISCUSSION_RESEARCH_PROMPT = `You are the discussion's "context res
 export function buildResearchPrompt(
   input: { goal: string; context: string; projectPath: string },
   def: DiscussionTypeDef | undefined,
+  langName?: string,
 ): string {
   const typeLine = def
     ? `Discussion type: ${def.label} — ${def.description}`
     : 'Discussion type: (unspecified)'
   const ctx = input.context.trim()
+  const lang = langName ?? 'English'
   return [
     typeLine,
     `Discussion goal: ${input.goal.trim() || '(not provided)'}`,
@@ -39,6 +42,8 @@ export function buildResearchPrompt(
     ctx ? `User-provided initial context:\n${ctx}` : 'The user provided no initial context.',
     '',
     'Read the relevant project material and research background from the web, then produce the research findings (output the findings only).',
+    '',
+    `Respond in ${lang}.`,
   ].join('\n')
 }
 
@@ -96,6 +101,7 @@ export async function researchDiscussionContext(
   const prompt = buildResearchPrompt(
     { goal: discussion.goal, context: discussion.context, projectPath: discussion.projectPath },
     def,
+    getUiLangName(),
   )
   const abort = new AbortController()
   let captured = ''

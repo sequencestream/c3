@@ -39,9 +39,15 @@ describe('buildResearchPrompt', () => {
     expect(p).toContain('The user provided no initial context')
   })
 
-  it('always ends by asking for the research findings only', () => {
+  it('always ends by asking for the research findings and appends Respond in instruction', () => {
     const p = buildResearchPrompt(base, getDiscussionType('brainstorm'))
-    expect(p.trimEnd().endsWith('(output the findings only).')).toBe(true)
+    expect(p).toContain('(output the findings only)')
+    expect(p.trimEnd().endsWith('Respond in English.')).toBe(true)
+  })
+
+  it('buildResearchPrompt with langName includes the correct Respond in instruction', () => {
+    const p = buildResearchPrompt(base, getDiscussionType('brainstorm'), 'Chinese (简体中文)')
+    expect(p).toContain('Respond in Chinese (简体中文)')
   })
 })
 

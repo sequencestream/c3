@@ -108,12 +108,12 @@ describe('SettingsPanel.vue — UI display language', () => {
     expect((select.element as HTMLSelectElement).value).toBe('en')
   })
 
-  it('only offers en + zh in the current phase (ja/ko/ru reserved)', () => {
+  it('offers en + zh + ja + ko + ru (all human-reviewed)', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const values = w
       .findAll('[data-testid="settings-ui-lang"] option')
       .map((o) => (o.element as HTMLOptionElement).value)
-    expect(values).toEqual(['en', 'zh'])
+    expect(values).toEqual(['en', 'ja', 'ko', 'ru', 'zh'])
   })
 
   it('emits set-ui-lang immediately on select change (no Save needed)', async () => {

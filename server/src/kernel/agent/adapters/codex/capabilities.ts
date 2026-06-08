@@ -27,14 +27,14 @@
  * monitor + whole-turn abort. See `changes/.../008-codex-approval-probe/conclusion.md`.
  *
  * The structured {@link AdapterCapabilities.sessions} sub-ledger (ADR-0011
- * amendment) makes Codex the canonical `none` exemplar: the `@openai/codex-sdk`
- * exposes **no listing or reading API at all**, so `list` and `read` are honest
- * `none` (the {@link import('./session-store.js').CodexSessionStore} returns empty
- * rather than fabricate a transcript shape Phase 0 never observed). `resume` is
- * `full` even though `read` is `none` — `resumeThread(id)` continues a known
- * thread end-to-end; only the *back-read/enumeration* is absent. `rename`/`delete`
+ * amendment): `list` was upgraded from `'none'` to `'full'` in 2026-06-08 when
+ * the {@link import('./session-store.js').CodexSessionStore} gained on-disk JSONL
+ * scanning — the filesystem under `~/.codex/sessions/` is enumerable even though
+ * the SDK has no listing API. `read` remains `'none'` (the SDK has no reading API
+ * and the on-disk format translation is future work). `resume` is `full` — the
+ * SDK's `resumeThread(id)` continues a known thread end-to-end. `rename`/`delete`
  * are `none` (the SDK supports neither). This is the matrix that proves a boolean
- * could not have expressed `read=none ∧ resume=full`.
+ * could not have expressed `list=full ∧ read=none ∧ resume=full`.
  */
 import type { AdapterCapabilities } from '../types.js'
 
@@ -47,7 +47,7 @@ export const codexCapabilities: AdapterCapabilities = {
   perToolApproval: false,
   taskStore: true,
   sessions: {
-    list: 'none',
+    list: 'full',
     read: 'none',
     resume: 'full',
     rename: 'none',

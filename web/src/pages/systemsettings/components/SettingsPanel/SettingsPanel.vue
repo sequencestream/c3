@@ -252,6 +252,19 @@ function removeAgent(id: string) {
   }
 }
 
+/** Deep-copy an agent, append "-copy" to its displayName, and insert the copy
+ *  right after the original in the draft list so the two appear side by side. */
+function copyAgent(a: AgentConfig) {
+  const cloned = structuredClone(toRaw(a))
+  const idx = draft.value.agents.indexOf(a)
+  // Locally-unique id so the radio can target it before save; the server
+  // keeps it as-is (only id-less agents get a fresh uuid on normalize).
+  cloned.id = `copy-${Date.now()}-${idx}`
+  cloned.displayName = a.displayName ? `${a.displayName}-copy` : ''
+  // Insert the copy right after the original.
+  draft.value.agents.splice(idx + 1, 0, cloned)
+}
+
 // Live-switch the UI language on select change (App applies + persists + pushes
 // to server); the draft is also updated so a later Save carries the same value.
 function onUiLangChange(e: Event) {
@@ -352,6 +365,13 @@ function onUiLangChange(e: Event) {
               :placeholder="t('settings.agents.model.placeholder')"
             />
             <span class="col-actions">
+              <button
+                class="icon-btn"
+                :title="t('settings.agents.copy.tooltip')"
+                @click="copyAgent(a)"
+              >
+                📋
+              </button>
               <button
                 class="icon-btn"
                 :title="t('settings.agents.remove.tooltip')"

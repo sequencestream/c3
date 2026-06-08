@@ -52,7 +52,7 @@ const EXPECTED: Record<VendorId, SessionCapabilities> = {
     rename: 'temporarily-unavailable',
     delete: 'temporarily-unavailable',
   },
-  codex: { list: 'none', read: 'none', resume: 'full', rename: 'none', delete: 'none' },
+  codex: { list: 'full', read: 'none', resume: 'full', rename: 'none', delete: 'none' },
 }
 
 describe('structured session-capability ledger', () => {

@@ -70,6 +70,7 @@ import {
   cancelBySourceId,
   isStoreAvailable as isWaitUserEventsStoreAvailable,
 } from '../features/user-involve/store.js'
+import { agentSwitchFor } from '../features/sessions/index.js'
 
 /** Broader domain subscription dependencies, injected by the composition root. */
 export interface DomainSubDeps {
@@ -147,7 +148,12 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     // Fan out session_started so every connection can self-repair its
     // active-session pointer (ADR-0018 resident-model, 2026-06-08).
     // The client echoes `rebind_view` to repoint `conn.viewing`.
-    broadcaster.toAll({ type: 'session_started', clientId: prevId, sessionId: realId })
+    broadcaster.toAll({
+      type: 'session_started',
+      clientId: prevId,
+      sessionId: realId,
+      agentSwitch: agentSwitchFor(realId),
+    })
   })
 
   // ── run:settled ──────────────────────────────────────────────────────

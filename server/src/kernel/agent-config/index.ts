@@ -392,7 +392,7 @@ export function resolveSessionAgentSwitch(
   sessionId: string | null,
   presentVendors: Set<VendorId>,
 ): SessionAgentSwitch | null {
-  if (!sessionId || sessionId.startsWith(PENDING_SESSION_PREFIX)) return null
+  if (!sessionId) return null
   const current = resolveAgent(getSessionAgentId(sessionId))
   const vendor = current.vendor
   const candidates = sameVendorEnabledAgents(vendor, current.id)

@@ -41,7 +41,7 @@ import {
   type SessionRef,
 } from './lib/tab-view'
 import type { ChatBody, ChatMsg, PermissionMsg, RunActivity } from './lib/chat-types'
-import { advanceOnFailure, agentNameAt } from './lib/agent-prefix'
+import { advanceOnFailure, agentNameAt, resolveAgentIndex } from './lib/agent-prefix'
 import type {
   AutomationStatus,
   CodexPolicy,
@@ -848,11 +848,12 @@ function handleMessage(msg: ServerToClient) {
       // stale danger flag so a re-entered/resumed session doesn't show a leftover
       // 「continue」 control (the flag re-arms only on a fresh `turn_end`).
       clearSideEffectPending(msg.sessionId)
-      // Reset the agent prefix to the default agent on every (re)select; the
-      // degradation index isn't persisted across switches (see currentAgentName).
+      // Resolve the agent prefix from the session's bound agent (via agentSwitch)
+      // rather than always showing the default. Falls back to 0 when the session
+      // has no specific bound agent (comm/intent sessions, pending sessions).
       currentAgentIndexBySession.value = {
         ...currentAgentIndexBySession.value,
-        [msg.sessionId]: 0,
+        [msg.sessionId]: resolveAgentIndex(serverSettings.value, msg.agentSwitch?.current.id),
       }
       // Reset the task panel on every (re)select; the server re-sends the derived
       // `task_list` (cold baseline snapshot, then any live buffer tail) right after
@@ -869,7 +870,19 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'session_started':
       if (activeSession.value === msg.clientId) {
+        activeAgentSwitch.value = msg.agentSwitch ?? null
         activeSession.value = msg.sessionId
+        // Carry the agent degradation index from the pending clientId to the real
+        // sessionId, so the status bar continues showing the correct agent after
+        // the bind. Also re-resolve from agentSwitch if available (the pending
+        // session may not have had one yet).
+        const prevIdx = currentAgentIndexBySession.value[msg.clientId] ?? 0
+        const resolved = resolveAgentIndex(serverSettings.value, msg.agentSwitch?.current.id)
+        currentAgentIndexBySession.value = {
+          ...currentAgentIndexBySession.value,
+          [msg.sessionId]: Math.max(prevIdx, resolved),
+        }
+        delete currentAgentIndexBySession.value[msg.clientId]
         client?.send({ type: 'rebind_view', from: msg.clientId, to: msg.sessionId })
       }
       break
@@ -885,6 +898,7 @@ function handleMessage(msg: ServerToClient) {
       // Re-target succeeded: rebuild the switcher locally so the dropdown shows the
       // new current (the old current rejoins the candidates). The next turn resumes
       // with it. A freshly-chosen candidate was host-present ⇒ no longer unavailable.
+      // Also update the agent degradation index so the status bar shows the new agent.
       const s = activeAgentSwitch.value
       if (s) {
         const all = [s.current, ...s.candidates]
@@ -894,6 +908,10 @@ function handleMessage(msg: ServerToClient) {
             current: picked,
             candidates: all.filter((c) => c.id !== msg.agentId),
             currentUnavailable: false,
+          }
+          currentAgentIndexBySession.value = {
+            ...currentAgentIndexBySession.value,
+            [msg.sessionId]: resolveAgentIndex(serverSettings.value, msg.agentId),
           }
         }
       }

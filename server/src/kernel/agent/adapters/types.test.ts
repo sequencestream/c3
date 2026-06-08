@@ -129,10 +129,11 @@ describe('neutral adapter contract', () => {
     }
   })
 
-  it('Codex reports list/read = none, yet resume = full (a boolean could not say this)', () => {
+  it('Codex reports list = full (on-disk JSONL scan), read = none, resume = full', () => {
     const { capabilities } = createCodexAdapter()
-    // The SDK has no listing/reading API — honest `none`, not a faked empty.
-    expect(capabilities.sessions.list).toBe('none')
+    // Codex now enumerates via on-disk JSONL file scan (2026-06-08) list=full.
+    // The SDK has no listing/reading API, but ~/.codex/sessions/ is enumerable.
+    expect(capabilities.sessions.list).toBe('full')
     expect(capabilities.sessions.read).toBe('none')
     // …but a known thread still resumes end-to-end (`resumeThread`). The exact
     // pair structured states exist to express; a single boolean would erase it.

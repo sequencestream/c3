@@ -5,8 +5,8 @@
  * `[默认/绑定 agent, ...degradationChain 去重去自身]`(server.ts 的 agentsToTry),
  * 失败时 `agent_failed(agentId=X)` 表示 X 这一项失败、下一项接管。这里复刻同一
  * 有序表,只保留下标(链位),展示名由 settings 现读现解 —— 改名/换默认 agent 后
- * 前缀经 computed 自动刷新。per-session 绑定 agent 不在客户端追踪,首项一律按
- * defaultAgentId 解析(与状态栏「切换回默认」语义一致)。
+ * 前缀经 computed 自动刷新。per-session 绑定 agent 通过 resolveAgentIndex
+ * 查找在降级链中的位置,让状态栏显示 session 实际绑定的 agent 名。
  */
 import type { SystemSettings } from '@ccc/shared/protocol'
 
@@ -36,6 +36,23 @@ export function agentNameAt(settings: SystemSettings | null, index: number): str
   const clamped = Math.min(Math.max(index, 0), order.length - 1)
   const id = order[clamped]
   return settings?.agents.find((a) => a.id === id)?.displayName ?? ''
+}
+
+/**
+ * 根据 agent id 在 agentAttemptOrder 中的位置返回下标。
+ * 用于 session_selected 时查找 session 实际绑定 agent 的链位,
+ * 替代直接写死 0(默认 agent)。
+ * 在 order 中找不到 agentId 时返回 0(默认 agent),避免空显示。
+ */
+export function resolveAgentIndex(
+  settings: SystemSettings | null,
+  agentId: string | undefined,
+): number {
+  if (!agentId) return 0
+  const order = agentAttemptOrder(settings)
+  if (order.length === 0) return 0
+  const pos = order.indexOf(agentId)
+  return pos >= 0 ? pos : 0
 }
 
 /**

@@ -58,7 +58,7 @@ function presentVendorSet(): Set<VendorId> {
 }
 
 /** The title-bar agent-switcher payload for a console session, or undefined (no switcher). */
-function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
+export function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
   return resolveSessionAgentSwitch(sessionId, presentVendorSet()) ?? undefined
 }
 

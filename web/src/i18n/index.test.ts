@@ -45,15 +45,15 @@ describe('deriveEnabledLocales — __humanReviewed__ 派生', () => {
 })
 
 describe('ENABLED_LOCALES — 当前 shipped locale JSON 派生结果', () => {
-  it('下拉只暴露 en/zh(ja/ko/ru 未带 __humanReviewed__)', () => {
-    expect([...ENABLED_LOCALES].sort()).toEqual(['en', 'zh'])
+  it('下拉暴露 en/zh/ja/ko/ru (ja/ko/ru 均已 human-reviewed)', () => {
+    expect([...ENABLED_LOCALES].sort()).toEqual(['en', 'ja', 'ko', 'ru', 'zh'])
   })
 
   it('isLocaleEnabled 与 ENABLED_LOCALES 一致', () => {
     expect(isLocaleEnabled('en')).toBe(true)
     expect(isLocaleEnabled('zh')).toBe(true)
-    expect(isLocaleEnabled('ja')).toBe(false)
-    expect(isLocaleEnabled('ko')).toBe(false)
-    expect(isLocaleEnabled('ru')).toBe(false)
+    expect(isLocaleEnabled('ja')).toBe(true)
+    expect(isLocaleEnabled('ko')).toBe(true)
+    expect(isLocaleEnabled('ru')).toBe(true)
   })
 })

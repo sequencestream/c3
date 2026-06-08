@@ -251,7 +251,10 @@
           "label": "Custom"
         }
       },
-      "defaultNote": "Changing the default agent is not retroactive: it affects {pending} pending session(s); {bound} bound session(s) keep their original vendor."
+      "defaultNote": "Changing the default agent is not retroactive: it affects {pending} pending session(s); {bound} bound session(s) keep their original vendor.",
+      "copy": {
+        "tooltip": "Copy agent"
+      }
     },
     "defaultMode": {
       "title": {

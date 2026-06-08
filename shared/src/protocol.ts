@@ -1768,7 +1768,12 @@ export type ServerToClient =
       agentSwitch?: SessionAgentSwitch
     }
   /** Binds a pending session's `clientId` to its real SDK `sessionId`. */
-  | { type: 'session_started'; clientId: string; sessionId: string }
+  | {
+      type: 'session_started'
+      clientId: string
+      sessionId: string
+      agentSwitch?: SessionAgentSwitch
+    }
   /**
    * Result of a `set_session_agent` re-target (ADR-0015): `ok` is false when the
    * change was rejected (cross-vendor — vendor is immutable), true on a same-vendor

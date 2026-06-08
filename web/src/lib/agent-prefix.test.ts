@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
-import { advanceOnFailure, agentAttemptOrder, agentNameAt } from './agent-prefix'
+import { advanceOnFailure, agentAttemptOrder, agentNameAt, resolveAgentIndex } from './agent-prefix'
 
 function agent(id: string, name: string, over: Partial<AgentConfig> = {}): AgentConfig {
   // Base is a claude arm; `...over` is a Partial over the discriminated union, so
@@ -63,6 +63,30 @@ describe('agentNameAt', () => {
   it('空 order → 空串(不渲染前缀)', () => {
     expect(agentNameAt(null, 0)).toBe('')
     expect(agentNameAt(settings({ agents: [], defaultAgentId: 'a' }), 0)).toBe('')
+  })
+})
+
+describe('resolveAgentIndex', () => {
+  const s = settings({ degradationChain: ['a', 'b', 'c'] })
+
+  it('已知 agent 返回其在 order 中的位置', () => {
+    expect(resolveAgentIndex(s, 'a')).toBe(0)
+    expect(resolveAgentIndex(s, 'b')).toBe(1)
+    expect(resolveAgentIndex(s, 'c')).toBe(2)
+  })
+
+  it('未找到 agentId 时返回 0(默认 agent)', () => {
+    expect(resolveAgentIndex(s, 'ghost')).toBe(0)
+  })
+
+  it('undefined/空 agentId 返回 0', () => {
+    expect(resolveAgentIndex(s, undefined)).toBe(0)
+    expect(resolveAgentIndex(s, '')).toBe(0)
+  })
+
+  it('空 settings → 0', () => {
+    expect(resolveAgentIndex(null, 'a')).toBe(0)
+    expect(resolveAgentIndex(settings({ agents: [], defaultAgentId: 'a' }), 'a')).toBe(0)
   })
 })
 

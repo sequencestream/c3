@@ -1,4 +1,5 @@
 {
+  "__humanReviewed__": true,
   "common": {
     "action": {
       "allow": {
@@ -251,7 +252,10 @@
           "label": "사용자 지정"
         }
       },
-      "defaultNote": "기본 에이전트 변경은 소급 적용되지 않습니다: 대기 중인 세션 {pending}개에 영향을 줍니다. 바인딩된 세션 {bound}개는 원래 공급자를 유지합니다."
+      "defaultNote": "기본 에이전트 변경은 소급 적용되지 않습니다: 대기 중인 세션 {pending}개에 영향을 줍니다. 바인딩된 세션 {bound}개는 원래 공급자를 유지합니다.",
+      "copy": {
+        "tooltip": "에이전트 복사"
+      }
     },
     "defaultMode": {
       "title": {

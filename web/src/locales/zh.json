@@ -251,7 +251,10 @@
           "label": "自定义"
         }
       },
-      "defaultNote": "更改默认 agent 不会回溯:仅影响 {pending} 个待运行会话;已绑定的 {bound} 个会话维持原 vendor。"
+      "defaultNote": "更改默认 agent 不会回溯:仅影响 {pending} 个待运行会话;已绑定的 {bound} 个会话维持原 vendor。",
+      "copy": {
+        "tooltip": "复制智能体"
+      }
     },
     "defaultMode": {
       "title": {

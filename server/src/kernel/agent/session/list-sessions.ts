@@ -107,7 +107,9 @@ function rowToSessionInfo(row: SessionMetadataRow): SessionInfo {
  */
 function accessorNativeList(accessor: SessionAccessor): NativeListFn {
   return async (vendor, workspacePath) => {
-    if (vendor === 'codex') return null
+    // Codex was previously skipped here (no listing API); the 2026-06-08
+    // `CodexSessionStore.list()` implementation reads `~/.codex/sessions/`
+    // JSONL files directly, so enumeration now works.
     try {
       const summaries = await accessor.list({ cwd: workspacePath })
       return {

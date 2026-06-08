@@ -9,6 +9,7 @@
  * the neutral {@link VendorAdapter} faces only.
  */
 import type { VendorAdapter } from '../types.js'
+import type { ToolManifestEntry } from '../types.js'
 import { opencodeCapabilities } from './capabilities.js'
 import { OpencodeDriver } from './driver.js'
 import { OpencodeApprovalBridge, type OpencodeApprovalOptions } from './approval.js'
@@ -34,6 +35,27 @@ export {
   type ServerSpawner,
 } from './supervisor.js'
 
+// ---------------------------------------------------------------------------
+// Built-in SDK tool classification (OpenCode SDK tool surface — currently shares
+// the same classification as Claude SDK; may diverge in the future.)
+// ---------------------------------------------------------------------------
+
+const SDK_READ_TOOLS = new Set([
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'TaskCreate',
+  'TaskList',
+  'TaskUpdate',
+  'TaskGet',
+])
+
+const SDK_WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'Agent', 'Bash'])
+
 /**
  * Build the OpenCode {@link VendorAdapter} over a started {@link OpencodeSupervisor}.
  * Each call yields fresh adapter instances; they pull the live client lazily from
@@ -52,5 +74,11 @@ export function createOpencodeAdapter(
     approval,
     sessions: new OpencodeSessionStore(getClient),
     skill: createOpencodeSkillLoader(),
+    listTools(_workspacePath, _mcpServers) {
+      const entries: ToolManifestEntry[] = []
+      for (const t of SDK_READ_TOOLS) entries.push({ name: t, isWrite: false })
+      for (const t of SDK_WRITE_TOOLS) entries.push({ name: t, isWrite: true })
+      return entries
+    },
   }
 }

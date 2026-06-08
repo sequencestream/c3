@@ -233,7 +233,12 @@ export async function executeLlmPrompt(
 ```
 
 1. Parse `config.prompt` (LLM prompt text) from the schedule's JSON config.
-2. Launch a lightweight agent session via SDK `query()`:
+2. Resolve agent by vendor: `resolveFirstAgentOfVendor(schedule.vendor)` instead of
+   the old `resolveAgent(null)`. This routes execution to the first enabled agent of
+   the schedule's declared vendor. Non-Claude vendors (codex, opencode) log a warning
+   and fall back to the SDK `query()` path — dedicated adapter driver paths are a
+   future entry.
+3. Launch a lightweight agent session via SDK `query()`:
    - `cwd` = `schedule.workspacePath` (inherits workspace's CLAUDE.md, env vars, settings).
    - `permissionMode` = `'default'` (so `canUseTool` fires for permission control).
    - Tools available based on `schedule.mcpMode`:
@@ -241,12 +246,12 @@ export async function executeLlmPrompt(
      - `sandboxed`: only Read/Grep/Glob/LS/WebFetch/WebSearch → allowed; write tools → denied.
      - `read-only`: all tools denied.
    - Wall-clock timeout (`config.maxWallClockMs`, default 60s) via `AbortSignal`.
-3. Accumulate `assistant_text` blocks into `output`.
-4. If `config.outputSchema` is present (JSON Schema), validate the output:
+4. Accumulate `assistant_text` blocks into `output`.
+5. If `config.outputSchema` is present (JSON Schema), validate the output:
    - If validation passes → `success`.
    - If validation fails → `failed` with `error: 'schema_validation_failed: <detail>'`.
-5. No auto-retry (LLM execution may have side effects). Retry requires manual re-run.
-6. The agent session is ephemeral — no WebSocket viewer, not listed in session sidebar.
+6. No auto-retry (LLM execution may have side effects). Retry requires manual re-run.
+7. The agent session is ephemeral — no WebSocket viewer, not listed in session sidebar.
    Session id is NOT persisted (no need for traceability in v1).
 
 ## Write queue (`queue.ts`)

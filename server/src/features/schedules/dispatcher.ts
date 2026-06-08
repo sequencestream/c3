@@ -20,7 +20,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { McpMode, RunKind, Schedule } from '@ccc/shared/protocol'
-import { resolveAgent, launchForAgent } from '../../kernel/agent-config/index.js'
+import { resolveFirstAgentOfVendor, launchForAgent } from '../../kernel/agent-config/index.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getWorkspaceMcpConfig } from './store.js'
 import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
@@ -408,9 +408,19 @@ async function executeLlmPrompt(
 
   const claudePath = findClaudeExecutable()
 
-  // Resolve the default agent and its launch overrides (model, env) so schedule
-  // executions use the user's default agent, not the bare system agent.
-  const launchAgent = resolveAgent(null)
+  // Resolve the agent matching the schedule's vendor, then its launch overrides
+  // (model, env). This routes execution to the correct vendor adapter.
+  // Non-Claude vendors currently fall back to the same SDK query() path with a
+  // warning — only the Claude adapter has a full query() path today.
+  const scheduleVendor = schedule.vendor
+  if (scheduleVendor !== 'claude') {
+    console.warn(
+      '[dispatcher] non-Claude vendor %s for schedule %s — falling back to SDK query()',
+      scheduleVendor,
+      schedule.id,
+    )
+  }
+  const launchAgent = resolveFirstAgentOfVendor(scheduleVendor)
   const { model, envOverrides } = launchForAgent(launchAgent)
 
   // Resolve workspace-level MCP configuration and freeze the tool list.

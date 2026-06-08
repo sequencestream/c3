@@ -295,22 +295,52 @@ The following capabilities are explicitly **out of scope** for the v1 schedules 
 | Execution retry policy         | Configurable retry on failure (count, backoff) adds state and queue complexity.                                         |
 | Parallel executions            | Multiple concurrent runs of the same schedule (SCH-R7 parallelism relaxation).                                          |
 
+## Vendor tool manifest
+
+Each vendor adapter exposes a `listTools(workspacePath, mcpServers?)` method that returns the vendor's
+**static tool manifest** — a list of `{name, isWrite}` entries. The result is a pre-judged classification
+(not a runtime MCP server probe), following the same convention as the schedule executor's `freezeTools()`.
+
+- **Claude**: returns SDK built-in tools (`Read`, `Grep`, `Glob`, `LS`, `WebFetch`, `WebSearch`,
+  `TaskCreate`, `TaskList`, `TaskUpdate`, `TaskGet`, `Write`, `Edit`, `NotebookEdit`, `Agent`, `Bash`)
+  plus workspace MCP server namespace prefixes (`mcp__<server>__`). MCP namespaces are classified as
+  write (conservative).
+- **Codex / OpenCode**: returns SDK built-in tools only (same list as Claude). No MCP namespace prefixes.
+
+The tool manifest is fetched by the web via `get_schedule_tool_manifest { vendor, workspacePath }` and
+returned as `schedule_tool_manifest { vendor, tools }`. The frontend uses this to render the tool
+selection UI in the schedule form.
+
+## Vendor routing (execution)
+
+When an `llm_prompt` schedule fires, the dispatcher resolves the agent for the schedule's vendor:
+
+```
+resolveFirstAgentOfVendor(schedule.vendor) → first enabled agent of that vendor
+                                           → fallback to default agent
+```
+
+Only the Claude adapter has a full SDK `query()` execution path. Codex and OpenCode vendors currently
+log a warning and fall back to the same SDK `query()` path — their dedicated execution paths are a
+future entry.
+
 ## Domain events (wire)
 
 Consumed by the schedules domain:
 
-| Event                       | Payload           | Description                                            |
-| --------------------------- | ----------------- | ------------------------------------------------------ |
-| `schedule_create`           | ScheduleFields    | Propose a new schedule (→ pending change)              |
-| `schedule_update`           | `{ id, fields }`  | Propose edits to an existing schedule                  |
-| `schedule_pause`            | `{ id }`          | Propose pause (SCH-R5)                                 |
-| `schedule_resume`           | `{ id }`          | Propose resume (SCH-R5)                                |
-| `schedule_archive`          | `{ id }`          | Archive immediately (SCH-R14)                          |
-| `schedule_delete`           | `{ id }`          | Delete immediately (cascade logs)                      |
-| `schedule_confirm_queue`    | `—`               | Atomically confirm all pending changes                 |
-| `schedule_discard_queue`    | `—`               | Discard all pending changes                            |
-| `schedule_run_now`          | `{ id }`          | Manual trigger: execute outside normal schedule timing |
-| `schedule_cancel_execution` | `{ executionId }` | Cancel an in-flight execution                          |
+| Event                        | Payload                     | Description                                            |
+| ---------------------------- | --------------------------- | ------------------------------------------------------ |
+| `schedule_create`            | ScheduleFields              | Propose a new schedule (→ pending change)              |
+| `schedule_update`            | `{ id, fields }`            | Propose edits to an existing schedule                  |
+| `schedule_pause`             | `{ id }`                    | Propose pause (SCH-R5)                                 |
+| `schedule_resume`            | `{ id }`                    | Propose resume (SCH-R5)                                |
+| `schedule_archive`           | `{ id }`                    | Archive immediately (SCH-R14)                          |
+| `schedule_delete`            | `{ id }`                    | Delete immediately (cascade logs)                      |
+| `schedule_confirm_queue`     | `—`                         | Atomically confirm all pending changes                 |
+| `schedule_discard_queue`     | `—`                         | Discard all pending changes                            |
+| `schedule_run_now`           | `{ id }`                    | Manual trigger: execute outside normal schedule timing |
+| `schedule_cancel_execution`  | `{ executionId }`           | Cancel an in-flight execution                          |
+| `get_schedule_tool_manifest` | `{ vendor, workspacePath }` | Fetch a vendor's static tool manifest                  |
 
 In addition to the wire events above, the domain subscribes — in the composition root — to **kernel
 event-bus** lifecycle events (`run:started` / `run:settled`, ADR-0018) to drive event-triggered
@@ -331,6 +361,7 @@ Emitted by the schedules domain:
 | `schedule_queue_discarded`  | `—`                  | Pending changes discarded                 |
 | `schedule_execution_log`    | ExecutionLog         | New or updated execution log entry        |
 | `schedule_execution_stream` | ExecutionStreamEvent | Live streaming event during execution     |
+| `schedule_tool_manifest`    | `{ vendor, tools }`  | Reply to `get_schedule_tool_manifest`     |
 
 Wire shapes are defined in the [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 

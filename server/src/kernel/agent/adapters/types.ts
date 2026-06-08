@@ -28,6 +28,7 @@ import type {
   SessionCapability,
   SessionCapabilities,
   SkillSupportState,
+  ToolManifestEntry,
   VendorId,
 } from '@ccc/shared/protocol'
 
@@ -57,6 +58,7 @@ export type {
   ModeToken,
   VendorModeDescriptor,
   VendorModeCatalog,
+  ToolManifestEntry,
 } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
@@ -425,4 +427,25 @@ export interface VendorAdapter {
   /** The vendor's task-tool surface. Present iff `capabilities.taskStore`. */
   readonly tasks?: TaskStore
   readonly skill: SkillLoader
+  /**
+   * List the tools this vendor's SDK provides, classified as read or write.
+   *
+   * For the Claude adapter this includes both built-in SDK tools and workspace
+   * MCP server namespace prefixes (`mcp__<server>__`). For Codex/OpenCode it
+   * returns only the built-in SDK tool set. The result is a **static** pre-judged
+   * list (not a runtime MCP server probe) — the same classification convention
+   * used by the schedule executor's `freezeTools()`.
+   *
+   * @param workspacePath - The workspace directory (used to resolve MCP config
+   *   for adapters that support it — Claude uses this to derive MCP namespace
+   *   prefixes).
+   * @param mcpServers - Pre-resolved MCP server definitions keyed by server name.
+   *   The caller (schedules feature handler) loads this from the workspace config
+   *   store and passes it here so the adapter does not need to import from
+   *   `features/`. Ignored by adapters that don't support MCP (Codex, OpenCode).
+   */
+  listTools(
+    workspacePath: string,
+    mcpServers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>,
+  ): ToolManifestEntry[]
 }

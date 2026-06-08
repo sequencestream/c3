@@ -1387,6 +1387,14 @@ export interface PendingWriteApproval {
   resolvedAt: number | null
 }
 
+/** One entry in a vendor's tool manifest: tool name + read/write classification. */
+export interface ToolManifestEntry {
+  /** Tool name as the SDK knows it (e.g. 'Read', 'mcp__c3__find_intents'). */
+  name: string
+  /** Whether this tool is classified as a write operation. */
+  isWrite: boolean
+}
+
 /** Workspace-level MCP server connections and denylist configuration. */
 export interface WorkspaceMcpConfig {
   /** MCP server connection definitions, keyed by server name. */
@@ -1632,6 +1640,11 @@ export type ClientToServer =
       approvalId: string
       decision: 'approve' | 'reject'
     }
+  /**
+   * Request a vendor's tool manifest for schedule form tool selection.
+   * Server replies with `schedule_tool_manifest`.
+   */
+  | { type: 'get_schedule_tool_manifest'; vendor: VendorId; workspacePath: string }
   /**
    * Resolve a pending pre-launch skill-load gate (mount layer 2/3). `approve`
    * lets the mount proceed and persists the `.gitignore` ack; `cancel` skips
@@ -2041,6 +2054,8 @@ export type ServerToClient =
     }
   /** Pending write approvals for a workspace (reply to `list_pending_write_approvals`). */
   | { type: 'pending_write_approvals'; workspacePath: string; items: PendingWriteApproval[] }
+  /** A vendor's tool manifest (reply to `get_schedule_tool_manifest`). */
+  | { type: 'schedule_tool_manifest'; vendor: VendorId; tools: ToolManifestEntry[] }
   /**
    * A pre-launch skill-load gate awaiting a human decision (mount layer 2/3; the
    * modal is rendered by 3/3). The backend emits one before the first external-skill

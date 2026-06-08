@@ -24,6 +24,11 @@ import { resolveApproval } from './queue.js'
 import { clampName, generateScheduleName } from './naming.js'
 import type { ScheduleNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
+import type { ToolManifestEntry, VendorId } from '@ccc/shared/protocol'
+// Static tool listing (no I/O needed) — the only adapter path that can create
+// lightweight instances without a supervisor or registry probe.
+import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
+import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 
 /**
  * Read a client-supplied `config.name`. Returns:
@@ -218,4 +223,43 @@ export const approveWriteApproval: Handler<'approve_write_approval'> = (_ctx, co
     conn.send({ type: 'error', error: { code: 'schedule.approvalNotFound' } })
   }
   // Broadcast resolved event is already handled inside resolveApproval.
+}
+
+/**
+ * Return a vendor's tool manifest: SDK built-in tools + (for Claude) workspace
+ * MCP namespace prefixes. Used by the schedule form to let the user select which
+ * tools a schedule's execution may use.
+ *
+ * The tools are a **static** pre-judged list — not a runtime MCP server probe —
+ * following the same classification convention as `freezeTools()` in the
+ * dispatcher. This is intentionally lightweight: the handlers create temporary
+ * adapter instances for listing because the method requires no I/O.
+ */
+export const getScheduleToolManifest: Handler<'get_schedule_tool_manifest'> = (_ctx, conn, msg) => {
+  if (!isScheduleStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
+    return
+  }
+  const mcpConfig = storeGetWorkspaceMcpConfig(msg.workspacePath)
+  const hasMcp = Object.keys(mcpConfig.mcpServers).length > 0
+  const mcpServers = hasMcp ? mcpConfig.mcpServers : undefined
+
+  let tools: ToolManifestEntry[]
+  switch (msg.vendor) {
+    case 'claude':
+      tools = createClaudeAdapter().listTools(msg.workspacePath, mcpServers)
+      break
+    // OpenCode shares the same built-in SDK tool set as Codex for static listing;
+    // both currently return the same SDK tool list (no MCP namespace). When OpenCode
+    // gains its own distinct tool surface, branch it here.
+    case 'opencode':
+    case 'codex':
+      tools = createCodexAdapter().listTools(msg.workspacePath)
+      break
+    default:
+      // Unknown vendor — fallback to a minimal SDK set
+      tools = createClaudeAdapter().listTools(msg.workspacePath)
+  }
+
+  conn.send({ type: 'schedule_tool_manifest', vendor: msg.vendor, tools })
 }

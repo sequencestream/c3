@@ -12,7 +12,11 @@ prompt — that fires either at a configured time (cron) or on a subscribed **ru
 
 Schedules are **workspace-scoped**: every schedule is bound to one workspace (registrant directory, via
 [session-registry](../session-registry/spec.md)) and **vendor-scoped**: a schedule declares which vendor
-(`claude` / `codex` / `opencode`) it belongs to, so the dispatcher routes execution to the right agent.
+(`claude` / `codex` / `opencode`) it belongs to, so the dispatcher routes execution to the right agent
+via `resolveFirstAgentOfVendor()`. The vendor's tool manifest — the SDK built-in tools plus (for Claude)
+workspace MCP namespace prefixes — is listed at schedule creation time via `get_schedule_tool_manifest`
+so the user can select which tools the schedule may use.
+
 The scheduling engine runs inside the server process and drives execution via the same runtime
 infrastructure that [agent-session](../agent-session/spec.md) owns.
 

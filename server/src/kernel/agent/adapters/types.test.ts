@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { CapabilityState, VendorAdapter } from './types.js'
+import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
 
@@ -79,6 +80,17 @@ export function assertNeutralAdapterShape(adapter: VendorAdapter): void {
   expect(typeof adapter.skill.getVendorSkillDir).toBe('function')
   expect(typeof adapter.skill.detectSkillSupport).toBe('function')
   expect(typeof adapter.skill.ensureLink).toBe('function')
+
+  // Required listTools surface — every adapter exposes a static tool lister.
+  expect(typeof adapter.listTools).toBe('function')
+  // Returns a non-empty array without throwing, even without MCP config.
+  const tools = adapter.listTools('/tmp')
+  expect(Array.isArray(tools)).toBe(true)
+  expect(tools.length).toBeGreaterThan(0)
+  for (const t of tools) {
+    expect(typeof t.name).toBe('string')
+    expect(typeof t.isWrite).toBe('boolean')
+  }
 }
 
 describe('neutral adapter contract', () => {
@@ -127,5 +139,78 @@ describe('neutral adapter contract', () => {
     expect(capabilities.sessions.resume).toBe('full')
     expect(capabilities.sessions.rename).toBe('none')
     expect(capabilities.sessions.delete).toBe('none')
+  })
+
+  // -----------------------------------------------------------------------
+  // listTools
+  // -----------------------------------------------------------------------
+
+  it('Claude listTools returns SDK read/write tools correctly classified', () => {
+    const adapter = createClaudeAdapter()
+    const tools = adapter.listTools('/tmp')
+
+    // Every SDK read tool is classified isWrite=false
+    for (const t of ['Read', 'Grep', 'Glob', 'LS', 'WebFetch', 'WebSearch']) {
+      const entry = tools.find((e) => e.name === t)
+      expect(entry, `missing read tool: ${t}`).toBeTruthy()
+      expect(entry!.isWrite).toBe(false)
+    }
+
+    // Every SDK write tool is classified isWrite=true
+    for (const t of ['Write', 'Edit', 'Bash', 'Agent']) {
+      const entry = tools.find((e) => e.name === t)
+      expect(entry, `missing write tool: ${t}`).toBeTruthy()
+      expect(entry!.isWrite).toBe(true)
+    }
+  })
+
+  it('Claude listTools includes MCP namespace prefixes when mcpServers provided', () => {
+    const adapter = createClaudeAdapter()
+    const mcpServers = {
+      c3: { command: 'node', args: ['server.mjs'] },
+      pg: { command: 'npx', args: ['@mcp/pg'] },
+    }
+    const tools = adapter.listTools('/tmp', mcpServers)
+
+    // MCP namespace prefixes present
+    expect(tools.find((e) => e.name === 'mcp__c3__')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'mcp__pg__')).toBeTruthy()
+
+    // MCP namespaces are classified as write (conservative)
+    const c3Ns = tools.find((e) => e.name === 'mcp__c3__')!
+    expect(c3Ns.isWrite).toBe(true)
+
+    // SDK tools still present
+    expect(tools.find((e) => e.name === 'Read')).toBeTruthy()
+  })
+
+  it('Claude listTools works without MCP servers (no crash)', () => {
+    const adapter = createClaudeAdapter()
+    const tools = adapter.listTools('/tmp')
+    // No MCP entries when no servers configured
+    expect(tools.filter((e) => e.name.startsWith('mcp__'))).toHaveLength(0)
+  })
+
+  it('Codex listTools returns SDK tools without MCP namespace prefixes', () => {
+    const adapter = createCodexAdapter()
+    const mcpServers = { c3: { command: 'node', args: ['server.mjs'] } }
+    const tools = adapter.listTools('/tmp', mcpServers)
+
+    // SDK tools present
+    expect(tools.find((e) => e.name === 'Read')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'Write')).toBeTruthy()
+
+    // No MCP namespace prefixes even when mcpServers passed
+    expect(tools.filter((e) => e.name.startsWith('mcp__'))).toHaveLength(0)
+  })
+
+  it('Codex listTools correctly classifies read vs write', () => {
+    const adapter = createCodexAdapter()
+    const tools = adapter.listTools('/tmp')
+
+    expect(tools.find((e) => e.name === 'Read')!.isWrite).toBe(false)
+    expect(tools.find((e) => e.name === 'Write')!.isWrite).toBe(true)
+    expect(tools.find((e) => e.name === 'Bash')!.isWrite).toBe(true)
+    expect(tools.find((e) => e.name === 'Grep')!.isWrite).toBe(false)
   })
 })

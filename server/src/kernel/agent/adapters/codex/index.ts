@@ -11,6 +11,7 @@
  * no-arg factory in `adapters/registry.ts`.
  */
 import type { VendorAdapter } from '../types.js'
+import type { ToolManifestEntry } from '../types.js'
 import { codexCapabilities } from './capabilities.js'
 import { CodexDriver, type CodexFactory } from './driver.js'
 import { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
@@ -26,6 +27,27 @@ export { CodexSessionStore } from './session-store.js'
 export { CodexTaskStore } from './task-store.js'
 export { itemToBlock, itemToCanonical } from './translate.js'
 export { CODEX_RELAY_PROVIDER, type CodexRelay, type RelayUpstream } from './relay-contract.js'
+
+// ---------------------------------------------------------------------------
+// Built-in SDK tool classification (Codex SDK tool surface — currently shares
+// the same classification as Claude SDK; may diverge in the future.)
+// ---------------------------------------------------------------------------
+
+const SDK_READ_TOOLS = new Set([
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'TaskCreate',
+  'TaskList',
+  'TaskUpdate',
+  'TaskGet',
+])
+
+const SDK_WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'Agent', 'Bash'])
 
 /**
  * Build the Codex {@link VendorAdapter}. Each call yields fresh instances. The
@@ -46,5 +68,11 @@ export function createCodexAdapter(
     approval: new CodexApprovalBridge(approvalOpts),
     sessions: new CodexSessionStore(),
     skill: createCodexSkillLoader(),
+    listTools(_workspacePath, _mcpServers) {
+      const entries: ToolManifestEntry[] = []
+      for (const t of SDK_READ_TOOLS) entries.push({ name: t, isWrite: false })
+      for (const t of SDK_WRITE_TOOLS) entries.push({ name: t, isWrite: true })
+      return entries
+    },
   }
 }

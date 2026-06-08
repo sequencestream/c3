@@ -29,6 +29,7 @@ import {
 import {
   dispatchEventSchedules,
   setExecutionStore,
+  setEventBus,
   startScheduler,
   stopScheduler,
 } from '../features/schedules/scheduler.js'
@@ -47,6 +48,9 @@ export function startSchedulerWiring(deps: {
 }): void {
   if (!isScheduleStoreAvailable()) return
   const { broadcaster, broadcasts, eventBus } = deps
+
+  // Wire the kernel event bus for scheduling run lifecycle events (2026-06-08-010).
+  setEventBus(eventBus)
 
   setExecutionStore({
     getDueSchedules,

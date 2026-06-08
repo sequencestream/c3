@@ -10,15 +10,20 @@
  * These starters glue the engine to the broadcast + run-control layers, and
  * they belong in `wiring/` (server-only assembly, not kernel, not feature).
  *
+ * Each starter now publishes run lifecycle events (`run:started` / `run:bound` /
+ * `run:settled`) with `kind='discussion'` on the kernel event bus (ADR-0018
+ * amendment, 2026-06-08-010). The resident discussion subscription in
+ * `run-domain-subscriptions.ts` reacts to those events to broadcast the
+ * refreshed discussion list — the explicit `broadcastDiscussions` calls in
+ * the `.finally()` cleanup are replaced by this subscription.
+ *
  * IMPORTANT (kernel boundary, ADR-0009 R1/R2/R6):
  * - This module lives in `wiring/`. It imports features (engine + store +
  *   run-controls) and the broadcast bag. It does NOT import ws/HTTP semantics
  *   and does NOT touch the kernel registry directly.
- * - Behavior is unchanged from the in-server.ts version (zero drift): the
- *   pause gate still resolves at once unless paused, and abort still wakes
- *   paused waiters via `signal.addEventListener('abort', wake, { once: true })`.
  */
-import type { Discussion } from '@ccc/shared/protocol'
+import type { Discussion, RunEndReason } from '@ccc/shared/protocol'
+import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
   canAutoStartDiscussion,
   researchDiscussionContext,
@@ -46,6 +51,8 @@ export interface DiscussionRunsDeps {
     | 'broadcastResearchMessage'
     | 'broadcastResearchRunStatus'
   >
+  /** Kernel event bus for publishing run lifecycle events (2026-06-08-010). */
+  eventBus: EventBus<EventBusEvents>
 }
 
 function errMsg(err: unknown): string {
@@ -81,6 +88,7 @@ export interface DiscussionRuns {
  * bag instead of closure-captured locals.
  */
 export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
+  const { eventBus } = deps
   const {
     broadcastDiscussions,
     broadcastDiscussionMessage,
@@ -94,11 +102,30 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
   // `start_discussion` and `continue_discussion`). The caller has already gated
   // re-entry and set the discussion's status; here we register the run
   // control, wire the broadcast + pause hooks, and clean up on finish.
+  //
+  // Publishes `run:started`/`run:bound`/`run:settled` with kind='discussion'
+  // on the kernel event bus so the resident subscription in
+  // `run-domain-subscriptions.ts` broadcasts the refreshed discussion list
+  // (the subscription replaces the explicit `.finally()` broadcast).
   const startDiscussionRun = (discussion: Discussion): void => {
     const abort = new AbortController()
     const ctrl: DiscussionRunControl = { abort, paused: false, resumeWaiters: [] }
     setDiscussionRun(discussion.id, ctrl)
     broadcastDiscussionRunStatus(discussion.id, 'running')
+
+    // Publish discussion run lifecycle events (2026-06-08-010).
+    eventBus.publish('run:started', {
+      sessionId: discussion.id,
+      workspacePath: discussion.projectPath,
+      kind: 'discussion',
+    })
+    eventBus.publish('run:bound', {
+      prevId: discussion.id,
+      realId: discussion.id,
+      workspacePath: discussion.projectPath,
+    })
+
+    let settledReason: RunEndReason = 'complete'
     const deps = defaultDiscussionDeps({
       onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
       // Status/conclusion changes ride the refreshed list broadcast.
@@ -111,12 +138,19 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // session (既有 session 约定).
     void runDiscussion(discussion.id, abort.signal, deps)
       .catch((err) => {
+        settledReason = 'error'
         console.warn(`[c3] discussion orchestration error: ${errMsg(err)}`)
       })
       .finally(() => {
+        if (abort.signal.aborted) settledReason = 'aborted'
+        eventBus.publish('run:settled', {
+          sessionId: discussion.id,
+          workspacePath: discussion.projectPath,
+          reason: settledReason,
+          kind: 'discussion',
+        })
         deleteDiscussionRun(discussion.id)
         broadcastDiscussionRunStatus(discussion.id, 'ended')
-        broadcastDiscussions(discussion.projectPath)
       })
   }
 
@@ -124,19 +158,43 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
   // observable run (mirrors `startDiscussionRun`): register liveness, broadcast
   // `running`, stream each turn, and on settle persist the result, broadcast
   // `ended`, then auto-start the orchestration on success. Fire-and-forget —
-  // research never blocks creation. The `ended`-before-auto-start order means
-  // the right pane switches research → discussion in one batch; a failed
-  // research broadcasts `ended` without auto-start, surfacing the manual Start
-  // fallback.
+  // research never blocks creation.
+  //
+  // Publishes `run:started`/`run:bound`/`run:settled` with kind='discussion'
+  // on the kernel event bus. The `ended`-before-auto-start order means the
+  // right pane switches research → discussion in one batch; a failed research
+  // broadcasts `ended` without auto-start, surfacing the manual Start fallback.
   const startResearchRun = (discussion: Discussion): void => {
     const abort = new AbortController()
     setResearchRun(discussion.id, abort)
     broadcastResearchRunStatus(discussion.id, 'running')
-    broadcastDiscussions(discussion.projectPath)
+
+    // Publish research run lifecycle events (2026-06-08-010).
+    eventBus.publish('run:started', {
+      sessionId: discussion.id,
+      workspacePath: discussion.projectPath,
+      kind: 'discussion',
+    })
+    eventBus.publish('run:bound', {
+      prevId: discussion.id,
+      realId: discussion.id,
+      workspacePath: discussion.projectPath,
+    })
+
     void researchDiscussionContext(discussion, {
       onMessage: (item) => broadcastResearchMessage(discussion.id, item),
     })
       .then(({ ok, researchResult }) => {
+        // Publish settled before state cleanup — the subscription fires
+        // synchronously and broadcasts the (still-running) discussion list.
+        const reason: RunEndReason = abort.signal.aborted ? 'aborted' : ok ? 'complete' : 'error'
+        eventBus.publish('run:settled', {
+          sessionId: discussion.id,
+          workspacePath: discussion.projectPath,
+          reason,
+          kind: 'discussion',
+        })
+
         // Store the research output in its own field; the user's original `context`
         // is never overwritten. Empty output leaves it as ''.
         if (researchResult) {
@@ -144,7 +202,6 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         }
         deleteResearchRun(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
-        broadcastDiscussions(discussion.projectPath)
         // Research failed → leave it a draft for a manual Start. On success,
         // re-validate on the freshest record (it may have been manually Started
         // or cancelled mid-research) before auto-starting the orchestration.
@@ -156,11 +213,15 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       })
       .catch((err) => {
         // Defensive: research itself swallows its run error (returns ok=false),
-        // so this only fires on a wiring fault. Still converge liveness so the
-        // phase doesn't hang.
+        // so this only fires on a wiring fault. Ensure settled fires for liveness.
+        eventBus.publish('run:settled', {
+          sessionId: discussion.id,
+          workspacePath: discussion.projectPath,
+          reason: 'error',
+          kind: 'discussion',
+        })
         deleteResearchRun(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
-        broadcastDiscussions(discussion.projectPath)
         console.warn(`[c3] discussion research wiring error: ${errMsg(err)}`)
       })
   }

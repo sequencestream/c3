@@ -422,7 +422,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     sessionExists,
     isRunning,
   })
-  const discussionRuns = createDiscussionRuns({ broadcasts })
+  const discussionRuns = createDiscussionRuns({ broadcasts, eventBus })
 
   const ctx: KernelContext = {
     eventBus,
@@ -453,6 +453,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastSessions: broadcasts.broadcastSessions,
     broadcastIntents: broadcasts.broadcastIntents,
     broadcastIntentSessions: broadcasts.broadcastIntentSessions,
+    broadcastDiscussions: broadcasts.broadcastDiscussions,
+    broadcastSchedules: broadcasts.broadcastSchedules,
   })
 
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).

@@ -30,6 +30,18 @@
  *  if the project's automation controller is active, forward the event so the
  *  state machine drives the next action (judge → commit → next intent).
  *
+ * ── Discussion domain (`run:settled`, kind=『discussion』) ───────────
+ *  Broadcast the refreshed discussion list on settle. The discussion run
+ *  starters (`discussion-runs.ts`) publish `run:started`/`run:bound`/
+ *  `run:settled` with kind='discussion'; this subscription handles the
+ *  domain broadcast so each starter's `.finally()` does not need to.
+ *
+ * ── Schedule domain (`run:settled`, kind=『schedule』) ──────────────
+ *  Broadcast the refreshed schedule list on settle. The schedule engine
+ *  (`scheduler.ts`) publishes `run:started`/`run:bound`/`run:settled` with
+ *  kind='schedule'; this subscription replaces the old `store.broadcast`
+ *  call for the schedule list refresh.
+ *
  * ── Schedule trigger (unchanged) ─────────────────────────────────────
  *  The existing `dispatchEventSchedules` subscription in
  *  `scheduler-startup.ts` is already resident; only its RunKind filter in
@@ -65,6 +77,10 @@ export interface DomainSubDeps {
   broadcastIntents: (projectPath: string) => void
   /** Fan the intent-session list for a project to every connection. */
   broadcastIntentSessions: (projectPath: string) => void
+  /** Fan the discussion list for a project to every connection (2026-06-08-010). */
+  broadcastDiscussions: (projectPath: string) => void
+  /** Fan the schedule list for a workspace to every connection (2026-06-08-010). */
+  broadcastSchedules: (workspacePath: string) => void
 }
 
 /**
@@ -75,8 +91,15 @@ export interface DomainSubDeps {
  * and registers on the bus — it is NOT a factory.
  */
 export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
-  const { eventBus, broadcaster, broadcastSessions, broadcastIntents, broadcastIntentSessions } =
-    deps
+  const {
+    eventBus,
+    broadcaster,
+    broadcastSessions,
+    broadcastIntents,
+    broadcastIntentSessions,
+    broadcastDiscussions,
+    broadcastSchedules,
+  } = deps
 
   // ── run:bound ────────────────────────────────────────────────────────
   // Matched via `getRuntime`. Two branches: intent comm-sessions (pending
@@ -146,5 +169,27 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
 
     // Forward to the automation controller (no-op if automation is idle).
     notifyTurnSettled(workspacePath, sessionId, reason, matched.id)
+  })
+
+  // ── run:settled (kind=discussion) — discussion domain ──────────────
+  // Broadcast the refreshed discussion list when a discussion run (research
+  // or orchestrator) settles. The discussion run starters in
+  // `discussion-runs.ts` publish `run:started`/`run:bound` on start and
+  // `run:settled` on finish/abort/error; this subscription reacts to the
+  // latter to refresh the domain list.
+  eventBus.subscribe('run:settled', ({ workspacePath, kind }) => {
+    if (kind !== 'discussion') return
+    broadcastDiscussions(workspacePath)
+  })
+
+  // ── run:settled (kind=schedule) — schedule domain ──────────────────
+  // Broadcast the refreshed schedule list when a scheduled execution
+  // settles. The schedule engine in `scheduler.ts` publishes
+  // `run:started`/`run:bound`/`run:settled` with kind='schedule' around
+  // each `execute()` call; this subscription replaces the old
+  // `store.broadcast` call in `dispatchAndTrack`'s `.finally()`.
+  eventBus.subscribe('run:settled', ({ workspacePath, kind }) => {
+    if (kind !== 'schedule') return
+    broadcastSchedules(workspacePath)
   })
 }

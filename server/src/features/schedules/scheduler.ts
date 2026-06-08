@@ -6,6 +6,12 @@
  * and workspace-scoped cancellation. Each schedule executes serially — at most
  * one in-flight execution per schedule at a time (SCH-R7).
  *
+ * Each execution now publishes run lifecycle events (`run:started` / `run:bound` /
+ * `run:settled`) with `kind='schedule'` on the kernel event bus (ADR-0018
+ * amendment, 2026-06-08-010). The resident schedule subscription in
+ * `run-domain-subscriptions.ts` reacts to `run:settled` to broadcast the
+ * refreshed schedule list.
+ *
  * Import the singleton:
  *   import { scheduler } from './scheduler.js'
  *   scheduler.start()
@@ -15,6 +21,7 @@
 import { resolve } from 'node:path'
 import type { RunEndReason, RunKind, RunLifecycleTopic, Schedule } from '@ccc/shared/protocol'
 import { computeNextRunAt } from '@ccc/shared/cron'
+import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
 
 /**
  * Explicit RunKind whitelist for event-triggered schedules. Only `session`
@@ -67,10 +74,20 @@ const _MAX_OUTPUT_CHARS = 1_000_000 // ~1 MB
 let store: ExecutionStore
 let timer: ReturnType<typeof setInterval> | null = null
 const inFlight = new Map<string, Promise<void>>()
+/**
+ * Kernel event bus for publishing run lifecycle events (2026-06-08-010).
+ * Set by `scheduler-startup.ts` via `setEventBus()`.
+ */
+let eventBus: EventBus<EventBusEvents> | null = null
 
 /** Set the store reference (called by server.ts after init). */
 export function setExecutionStore(s: ExecutionStore): void {
   store = s
+}
+
+/** Set the event bus reference for publishing lifecycle events (2026-06-08-010). */
+export function setEventBus(eb: EventBus<EventBusEvents>): void {
+  eventBus = eb
 }
 
 /** Start the tick loop. No-op if no store is configured or already running. */
@@ -278,7 +295,27 @@ function dispatchAndTrack(schedule: Schedule): void {
     }
   }
 
-  const exec = execute(schedule, logId, updateLog)
+  // Publish schedule run lifecycle events (2026-06-08-010).
+  eventBus?.publish('run:started', {
+    sessionId: logId,
+    workspacePath: schedule.workspacePath,
+    kind: 'schedule',
+  })
+  eventBus?.publish('run:bound', {
+    prevId: logId,
+    realId: logId,
+    workspacePath: schedule.workspacePath,
+  })
+
+  // Track execution outcome via the updateLog wrapper so we can set the
+  // correct settled reason (complete vs error).
+  let success = true
+  const trackingUpdateLog: UpdateLogFn = (id, patch) => {
+    if (patch.status === 'failed' || patch.status === 'cancelled') success = false
+    updateLog(id, patch)
+  }
+
+  const exec = execute(schedule, logId, trackingUpdateLog)
     .finally(() => {
       inFlight.delete(schedule.id)
       const workspacePath = schedule.workspacePath
@@ -296,13 +333,21 @@ function dispatchAndTrack(schedule: Schedule): void {
             new Date(next).toISOString(),
           )
         }
-        // Broadcast the updated schedule list if a broadcast function is configured
-        if (store.broadcast) {
-          store.broadcast(workspacePath)
-        }
+        // Schedule list broadcast is now handled by the resident subscription
+        // on `run:settled` (kind=schedule) in run-domain-subscriptions.ts.
       } catch (err) {
         console.error('[scheduler] failed to update next_run_at for %s:', schedule.id, err)
       }
+
+      // Publish settled lifecycle event — the subscription broadcasts the
+      // refreshed schedule list synchronously when this fires.
+      const reason: RunEndReason = success ? 'complete' : 'error'
+      eventBus?.publish('run:settled', {
+        sessionId: logId,
+        workspacePath,
+        reason,
+        kind: 'schedule',
+      })
     })
     .catch((err) => {
       console.error('[scheduler] execution failed for %s:', schedule.id, err)

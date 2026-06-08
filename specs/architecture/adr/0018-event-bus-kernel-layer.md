@@ -150,11 +150,21 @@ the scheduler's _own_ socket-less run. Event-triggered schedules therefore filte
 `kind === 'session'` (migrated verbatim from the old `kind === 'normal'` guard;
 semantics unchanged).
 
-Today only `session`/`intent` flow through the run bus via a `SessionRuntime`;
-the other four tag socket-less internal invocations (judge, title, consensus,
-discussion/research, scheduled `llm`) that do NOT yet go through the bus — they
-carry their RunKind as a typed annotation + log tag at the initiation point. (A
-later ADR may migrate those onto the unified run lifecycle bus.)
+Today `session`, `intent`, `discussion`, and `schedule` flow through the run bus.
+
+- `session`/`intent` via a `SessionRuntime` (the `launchRun` path; `intent` was the
+  first non-`session` kind, 2026-06-08).
+- `discussion` via the discussion run starters in `wiring/discussion-runs.ts`, which
+  publish `run:started`/`run:bound`/`run:settled` with `kind='discussion'` around
+  the research and orchestrator calls without creating a `SessionRuntime`
+  (2026-06-08-010).
+- `schedule` via the scheduler's `dispatchAndTrack` in `features/schedules/scheduler.ts`,
+  which publishes `run:started`/`run:bound`/`run:settled` with `kind='schedule'`
+  around each `execute()` call (2026-06-08-010).
+
+The remaining two (`consensus`, `tool`) still tag socket-less internal invocations
+with their RunKind as a typed annotation + log tag but do NOT yet go through the
+bus.
 
 ### Retrofit: `RunDomainEvent` → bus topics
 
@@ -217,7 +227,7 @@ and broadcast closures are constructed.
 |                      | resident (the model template). Its RunKind filter changed from `kind !== 'session'` to an explicit |
 |                      | whitelist constant `['session']` for testability.                                                  |
 
-**Two resident subscriptions:**
+**Four resident subscriptions (2026-06-08-010 adds discussion + schedule):**
 
 1. **`run:bound` (intent-session + session/dev domain):**
    - Obtains the `SessionRuntime` via `getRuntime(realId) ?? getRuntime(prevId)`.
@@ -231,6 +241,19 @@ and broadcast closures are constructed.
    - For `kind === 'session'`: scans `listIntents(workspacePath)` for a match on
      `lastDevSessionId === sessionId`. If found, broadcasts the intent list and notifies the
      project's `AutomationController` via `notifyTurnSettled()` (no-op if automation is idle).
+
+3. **`run:settled` (discussion domain)** — added 2026-06-08-010:
+   - Filter: `kind === 'discussion'`.
+   - Broadcasts `broadcastDiscussions(workspacePath)` to refresh the discussion list.
+   - Discussion starters in `wiring/discussion-runs.ts` publish `run:started`/`run:bound`/
+     `run:settled` with `kind='discussion'`; this subscription replaces their old
+     `.finally()` broadcast.
+
+4. **`run:settled` (schedule domain)** — added 2026-06-08-010:
+   - Filter: `kind === 'schedule'`.
+   - Broadcasts `broadcastSchedules(workspacePath)` to refresh the schedule list.
+   - Scheduler engine in `features/schedules/scheduler.ts` publishes `run:started`/`run:bound`/
+     `run:settled` with `kind='schedule'`; this subscription replaces the old `store.broadcast`.
 
 **Automation orchestrator (event-driven FSM, `server/src/features/intents/automation.ts`):**
 
@@ -283,6 +306,12 @@ The EventBus instance is constructed once at startup (`server.ts`, composition r
 Both reference the **same** bus instance, so subscribers registered from KernelContext receive
 events published from LaunchRunDeps.
 
+**2026-06-08-010 extension:** discussion and schedule runs also publish to this bus.
+`wiring/discussion-runs.ts` calls `eventBus.publish(...)` around each research/orchestrator
+run; `features/schedules/scheduler.ts` calls it around each `execute()` call. Both reference
+the same bus instance (injected via their respective deps at the composition root in
+`server.ts`), so all subscribers receive discussion + schedule lifecycle events too.
+
 ## Consequences
 
 - **Easier:** adding a new lifecycle event (e.g. `'run:agent-failed'`, `'run:team-upgraded'`) is one
@@ -305,12 +334,14 @@ events published from LaunchRunDeps.
   unit-testable without mocks. The 19 dedicated event-bus tests cover error isolation, ordering,
   type safety (compile-time), and lifecycle. New resident-subscription tests (2026-06-08) cover
   concurrent run scenarios, dev-link matching, and schedule RunKind whitelist filtering.
+  **2026-06-08-010:** 10 new tests in `run-domain-subscriptions.test.ts` cover discussion + schedule
+  subscription dispatch, cross-kind isolation, and `run:started` guard.
 
 ## Compliance
 
 - `pnpm typecheck` is green.
 - `pnpm lint` is green.
-- `pnpm vitest run` is green (130 files, 1588 tests).
+- `pnpm vitest run` is green (1680 tests, 2026-06-08-010).
 - EventBus unit tests (19 tests in `server/src/kernel/events/event-bus.test.ts`) cover:
   - publish/subscribe/unsubscribe (7 tests)
   - error isolation (4 tests)

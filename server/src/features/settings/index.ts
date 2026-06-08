@@ -152,6 +152,8 @@ export const saveProjectConfigHandler: Handler<'save_project_config'> = (_ctx, c
   if (defaultModes && typeof defaultModes === 'object') {
     for (const [vendorId, token] of Object.entries(defaultModes)) {
       const vendor = vendorId as VendorId
+      // CodexPolicy objects — skip token-based catalog check (2026-06-08).
+      if (typeof token === 'object' && token !== null && 'sandboxMode' in token) continue
       const cat = MODE_CATALOGS[vendor]
       if (cat && (typeof token !== 'string' || !cat.modes.some((m) => m.token === token))) {
         conn.send({

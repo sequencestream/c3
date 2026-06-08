@@ -12,6 +12,7 @@ import type { CapabilityState, VendorAdapter } from './types.js'
 import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
+import { listOpencodeTools } from './opencode/index.js'
 
 /** The seven boolean live-run capability flags — the complete, closed set. */
 const BOOLEAN_CAPABILITY_KEYS = [
@@ -192,26 +193,89 @@ describe('neutral adapter contract', () => {
     expect(tools.filter((e) => e.name.startsWith('mcp__'))).toHaveLength(0)
   })
 
-  it('Codex listTools returns SDK tools without MCP namespace prefixes', () => {
+  it('Codex listTools returns codex tools without MCP namespace prefixes', () => {
     const adapter = createCodexAdapter()
     const mcpServers = { c3: { command: 'node', args: ['server.mjs'] } }
     const tools = adapter.listTools('/tmp', mcpServers)
 
-    // SDK tools present
-    expect(tools.find((e) => e.name === 'Read')).toBeTruthy()
-    expect(tools.find((e) => e.name === 'Write')).toBeTruthy()
+    // Codex SDK tools present — these are the real tool names from translate.ts
+    expect(tools.find((e) => e.name === 'web_search')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'shell')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'apply_patch')).toBeTruthy()
 
-    // No MCP namespace prefixes even when mcpServers passed
-    expect(tools.filter((e) => e.name.startsWith('mcp__'))).toHaveLength(0)
+    // Claude-specific tools must NOT appear
+    expect(tools.find((e) => e.name === 'Read')).toBeFalsy()
+    expect(tools.find((e) => e.name === 'Write')).toBeFalsy()
+    expect(tools.find((e) => e.name === 'Bash')).toBeFalsy()
+
+    // MCP namespace prefixes present when mcpServers passed
+    expect(tools.find((e) => e.name === 'mcp__c3__')).toBeTruthy()
   })
 
   it('Codex listTools correctly classifies read vs write', () => {
     const adapter = createCodexAdapter()
     const tools = adapter.listTools('/tmp')
 
-    expect(tools.find((e) => e.name === 'Read')!.isWrite).toBe(false)
-    expect(tools.find((e) => e.name === 'Write')!.isWrite).toBe(true)
-    expect(tools.find((e) => e.name === 'Bash')!.isWrite).toBe(true)
-    expect(tools.find((e) => e.name === 'Grep')!.isWrite).toBe(false)
+    // Codex read tools
+    expect(tools.find((e) => e.name === 'web_search')!.isWrite).toBe(false)
+    expect(tools.find((e) => e.name === 'TaskCreate')!.isWrite).toBe(false)
+    expect(tools.find((e) => e.name === 'TaskList')!.isWrite).toBe(false)
+    expect(tools.find((e) => e.name === 'TaskUpdate')!.isWrite).toBe(false)
+    expect(tools.find((e) => e.name === 'TaskGet')!.isWrite).toBe(false)
+
+    // Codex write tools
+    expect(tools.find((e) => e.name === 'shell')!.isWrite).toBe(true)
+    expect(tools.find((e) => e.name === 'apply_patch')!.isWrite).toBe(true)
+  })
+
+  // -----------------------------------------------------------------------
+  // OpenCode listTools
+  // -----------------------------------------------------------------------
+
+  it('OpenCode listTools returns lowercase OpenCode SDK tools', () => {
+    const tools = listOpencodeTools('/tmp')
+
+    // OpenCode lowercase read tools present
+    expect(tools.find((e) => e.name === 'read')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'grep')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'glob')).toBeTruthy()
+
+    // OpenCode lowercase write tools present
+    expect(tools.find((e) => e.name === 'write')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'edit')).toBeTruthy()
+    expect(tools.find((e) => e.name === 'bash')).toBeTruthy()
+
+    // Claude-style capitalized tools must NOT appear
+    expect(tools.find((e) => e.name === 'Read')).toBeFalsy()
+    expect(tools.find((e) => e.name === 'Write')).toBeFalsy()
+    expect(tools.find((e) => e.name === 'Bash')).toBeFalsy()
+
+    // Task tools present
+    expect(tools.find((e) => e.name === 'TaskCreate')).toBeTruthy()
+  })
+
+  it('OpenCode listTools correctly classifies read vs write', () => {
+    const tools = listOpencodeTools('/tmp')
+
+    // OpenCode read tools
+    expect(tools.find((e) => e.name === 'read')!.isWrite).toBe(false)
+    expect(tools.find((e) => e.name === 'grep')!.isWrite).toBe(false)
+    expect(tools.find((e) => e.name === 'web_search')!.isWrite).toBe(false)
+
+    // OpenCode write tools
+    expect(tools.find((e) => e.name === 'write')!.isWrite).toBe(true)
+    expect(tools.find((e) => e.name === 'edit')!.isWrite).toBe(true)
+    expect(tools.find((e) => e.name === 'bash')!.isWrite).toBe(true)
+  })
+
+  it('OpenCode listTools has no MCP namespace prefixes (OpenCode manages MCP server-side)', () => {
+    const tools = listOpencodeTools('/tmp')
+    expect(tools.filter((e) => e.name.startsWith('mcp__'))).toHaveLength(0)
+  })
+
+  it('OpenCode listTools works without crashing', () => {
+    const tools = listOpencodeTools('/tmp')
+    expect(Array.isArray(tools)).toBe(true)
+    expect(tools.length).toBeGreaterThan(0)
   })
 })

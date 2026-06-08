@@ -36,25 +36,45 @@ export {
 } from './supervisor.js'
 
 // ---------------------------------------------------------------------------
-// Built-in SDK tool classification (OpenCode SDK tool surface — currently shares
-// the same classification as Claude SDK; may diverge in the future.)
+// OpenCode SDK known tool surface — tools are server-configured and dynamic
+// (the OpenCode provider+model defines which tools are available at runtime).
+// This static list covers the common subset; the full set depends on the
+// server's active provider configuration.
+//
+// OpenCode uses lowercase tool names (the c3 adapter's partToBlock passes
+// through the server's `part.tool` value as-is).
 // ---------------------------------------------------------------------------
 
 const SDK_READ_TOOLS = new Set([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'NotebookRead',
-  'WebFetch',
-  'WebSearch',
+  'read',
+  'grep',
+  'glob',
+  'ls',
+  'web_search',
+  'web_fetch',
+  'notebook_read',
   'TaskCreate',
   'TaskList',
   'TaskUpdate',
   'TaskGet',
 ])
 
-const SDK_WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'Agent', 'Bash'])
+const SDK_WRITE_TOOLS = new Set(['write', 'edit', 'bash', 'notebook_edit', 'agent'])
+
+/**
+ * Static tool manifest for OpenCode. Usable without an adapter instance
+ * (no {@link OpencodeSupervisor} required), so callers like the schedules
+ * feature handler can list tools without starting a server.
+ */
+export function listOpencodeTools(
+  _workspacePath: string,
+  _mcpServers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>,
+): ToolManifestEntry[] {
+  const entries: ToolManifestEntry[] = []
+  for (const t of SDK_READ_TOOLS) entries.push({ name: t, isWrite: false })
+  for (const t of SDK_WRITE_TOOLS) entries.push({ name: t, isWrite: true })
+  return entries
+}
 
 /**
  * Build the OpenCode {@link VendorAdapter} over a started {@link OpencodeSupervisor}.
@@ -74,11 +94,6 @@ export function createOpencodeAdapter(
     approval,
     sessions: new OpencodeSessionStore(getClient),
     skill: createOpencodeSkillLoader(),
-    listTools(_workspacePath, _mcpServers) {
-      const entries: ToolManifestEntry[] = []
-      for (const t of SDK_READ_TOOLS) entries.push({ name: t, isWrite: false })
-      for (const t of SDK_WRITE_TOOLS) entries.push({ name: t, isWrite: true })
-      return entries
-    },
+    listTools: listOpencodeTools,
   }
 }

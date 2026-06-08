@@ -29,25 +29,19 @@ export { itemToBlock, itemToCanonical } from './translate.js'
 export { CODEX_RELAY_PROVIDER, type CodexRelay, type RelayUpstream } from './relay-contract.js'
 
 // ---------------------------------------------------------------------------
-// Built-in SDK tool classification (Codex SDK tool surface — currently shares
-// the same classification as Claude SDK; may diverge in the future.)
+// Codex SDK native tool surface — these are the tool names Codex's SDK
+// actually emits in its thread event items (translate.ts):
+//   shell                  ← command_execution items
+//   apply_patch            ← file_change items
+//   web_search             ← web_search items
+//   mcp__<server>/<tool>   ← mcp_tool_call items
+// The task-tool names (TaskCreate/List/Update/Get) are c3-level abstractions
+// backed by {@link CodexTaskStore} but surfaced as SDK tool names.
 // ---------------------------------------------------------------------------
 
-const SDK_READ_TOOLS = new Set([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'NotebookRead',
-  'WebFetch',
-  'WebSearch',
-  'TaskCreate',
-  'TaskList',
-  'TaskUpdate',
-  'TaskGet',
-])
+const SDK_READ_TOOLS = new Set(['web_search', 'TaskCreate', 'TaskList', 'TaskUpdate', 'TaskGet'])
 
-const SDK_WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'Agent', 'Bash'])
+const SDK_WRITE_TOOLS = new Set(['shell', 'apply_patch'])
 
 /**
  * Build the Codex {@link VendorAdapter}. Each call yields fresh instances. The
@@ -68,10 +62,17 @@ export function createCodexAdapter(
     approval: new CodexApprovalBridge(approvalOpts),
     sessions: new CodexSessionStore(),
     skill: createCodexSkillLoader(),
-    listTools(_workspacePath, _mcpServers) {
+    listTools(_workspacePath, mcpServers) {
       const entries: ToolManifestEntry[] = []
       for (const t of SDK_READ_TOOLS) entries.push({ name: t, isWrite: false })
       for (const t of SDK_WRITE_TOOLS) entries.push({ name: t, isWrite: true })
+      // Codex SDK supports mcp_tool_call items in thread events, so expose
+      // MCP namespace prefixes when workspace MCP servers are configured.
+      if (mcpServers) {
+        for (const serverName of Object.keys(mcpServers)) {
+          entries.push({ name: `mcp__${serverName}__`, isWrite: true })
+        }
+      }
       return entries
     },
   }

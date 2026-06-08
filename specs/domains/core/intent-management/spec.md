@@ -182,8 +182,14 @@ stateDiagram-v2
   through the standard answer panel and injected back as the agent's tool result (RM-R2). It may
   also query the project's existing ledger read-only via `find_intents` / `view_intent`
   (auto-allowed, no prompt) to discover related items, avoid duplicates, and set `dependsOn`
-  correctly (RM-R19). It proposes discrete, verifiable, right-sized items for confirmation. When one goal spans code, its
-  tests, and its companion docs, all are folded into one item rather than split into a separate
+  correctly (RM-R19). It proposes discrete, verifiable, right-sized items for confirmation, each item's
+  free-text content covering five dimensions — **Why** (motivation / what happens if not done — the basis
+  for priority and cancel/reorder), **What** (target behavior + scope), **Trade-offs / Non-goals** (explicit
+  non-goals and accepted costs; "none obvious" only after real consideration), **When** (external timing /
+  deadline / trigger only — intent-to-intent ordering stays structural in `dependsOn`, never in the text),
+  and **Acceptance** (verifiable checklist). The analyst actively elicits the routinely-skipped Why and
+  Trade-offs before drafting and self-checks that Acceptance delivers the Why (RM-R19). When one goal spans
+  code, its tests, and its companion docs, all are folded into one item rather than split into a separate
   「更新测试」/「文档更新」intent (RM-R15). It does not appear in the normal session list (RM-R4).
 - **US-4 Confirm & persist (insert or update).** The agent calls `save_intents`; c3 pops a confirmation
   listing each proposed item (title/priority/dependency, incl. any intra-batch "依赖本批" reference). Each

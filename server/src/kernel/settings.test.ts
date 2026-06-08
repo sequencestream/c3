@@ -37,6 +37,7 @@ import {
   DEFAULT_SPEECH_CHARS,
   MIN_SPEECH_CHARS,
 } from './config/index.js'
+import { readJsonFile, writeAtomic } from './config/store.js'
 
 // Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
 // these tests never touch the developer's real settings.json.
@@ -64,6 +65,81 @@ const TEST_PROJ = '/test/project'
 function saveWithDevSkill(devSkill: string | undefined): void {
   saveProjectConfig(TEST_PROJ, { devSkill } as ProjectConfig)
 }
+
+/** The on-disk settings.json path under the throwaway $HOME for this test run. */
+function settingsPath(): string {
+  return join(dir, '.c3', 'settings.json')
+}
+
+describe('unique write path — anti-clobber + cross-process merge (2026-06-08-003)', () => {
+  /** A minimal legacy-flat agent so degradationChain has a real id to reference. */
+  const A1 = { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '' }
+
+  it('in-process: two sequential saveProjectConfig (different projects) both persist', () => {
+    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
+    saveProjectConfig('/proj/b', { devSkill: '/b' } as ProjectConfig)
+    expect(getDevSkill('/proj/a')).toBe('/a')
+    expect(getDevSkill('/proj/b')).toBe('/b')
+  })
+
+  it('cross-process: saveProjectConfig re-reads disk and keeps a project another process just added', () => {
+    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
+    // Simulate ANOTHER c3 instance writing /proj/b straight to disk. We deliberately
+    // do NOT reset the in-memory cache — proving our write reads disk, not the cache.
+    const disk = readJsonFile<SystemSettings>(settingsPath())!
+    writeAtomic(settingsPath(), {
+      ...disk,
+      projectConfigs: {
+        ...disk.projectConfigs,
+        '/proj/b': { devSkill: '/b' },
+      },
+    })
+    // Now this process saves /proj/c — it must merge over fresh disk, not stale cache.
+    saveProjectConfig('/proj/c', { devSkill: '/c' } as ProjectConfig)
+    expect(getDevSkill('/proj/a')).toBe('/a')
+    expect(getDevSkill('/proj/b')).toBe('/b') // the foreign write survived
+    expect(getDevSkill('/proj/c')).toBe('/c')
+  })
+
+  it('anti-clobber: saveSettings WITHOUT projectConfigs preserves existing project configs', () => {
+    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
+    // The old bug: a save_settings carrying no projectConfigs wiped them from disk.
+    saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID } as SystemSettings)
+    expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
+    expect(getDevSkill('/proj/a')).toBe('/a')
+  })
+
+  it('anti-clobber: saveSettings WITH explicit projectConfigs updates by value and merges siblings', () => {
+    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      projectConfigs: { '/proj/b': { devSkill: '/b' } },
+    } as unknown as SystemSettings)
+    expect(getDevSkill('/proj/a')).toBe('/a') // sibling preserved
+    expect(getDevSkill('/proj/b')).toBe('/b') // explicit entry applied
+  })
+
+  it('anti-clobber: degradationChain / socketAutoResume preserved when omitted, updated when present', () => {
+    saveSettings({
+      agents: [A1],
+      defaultAgentId: 'a1',
+      degradationChain: ['a1'],
+      socketAutoResume: false,
+    } as unknown as SystemSettings)
+    // A later save that omits both must keep the disk values.
+    saveSettings({ agents: [A1], defaultAgentId: 'a1' } as unknown as SystemSettings)
+    expect(loadSettings().degradationChain).toEqual(['a1'])
+    expect(getSocketAutoResume()).toBe(false)
+    // An explicit value updates.
+    saveSettings({
+      agents: [A1],
+      defaultAgentId: 'a1',
+      socketAutoResume: true,
+    } as unknown as SystemSettings)
+    expect(getSocketAutoResume()).toBe(true)
+  })
+})
 
 describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
   const save = (socketAutoResume: boolean | undefined): void => {

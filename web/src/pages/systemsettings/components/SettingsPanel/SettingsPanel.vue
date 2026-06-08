@@ -121,7 +121,15 @@ watch(
   () => [props.open, props.settings] as const,
   ([open, settings]) => {
     if (!open || !settings) return
+    // Start from a deep copy of EVERY server field so the pass-through fields this
+    // panel does not edit — `projectConfigs` / `degradationChain` / `socketAutoResume`
+    // — survive a Save instead of being silently dropped (2026-06-08-003: the
+    // "project config vanishes after restart" bug; second-line defense behind the
+    // server-side merge). JSON round-trip is used here on purpose: it tolerates Vue
+    // reactive proxies, whereas `structuredClone` throws `DataCloneError` on them.
+    const full = JSON.parse(JSON.stringify(settings)) as SystemSettings
     draft.value = {
+      ...full,
       // Deep-copy each agent incl. its vendor `config` so draft edits don't
       // mutate the rendered server state. `structuredClone` preserves the
       // discriminated-union type (a manual `{ ...a, config: { ...a.config } }`

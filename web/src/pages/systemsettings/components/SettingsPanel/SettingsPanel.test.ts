@@ -205,4 +205,46 @@ describe('SettingsPanel.vue — time zone', () => {
   })
 })
 
+describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003)', () => {
+  // The panel does not edit these fields, but it MUST carry them into the Save
+  // payload — dropping them is the "project config vanishes after restart" bug.
+  const withPassthrough: SystemSettings = {
+    ...baseSettings,
+    degradationChain: ['a1', SYSTEM_AGENT_ID],
+    socketAutoResume: false,
+    projectConfigs: {
+      '/proj/a': { devSkill: '/ship', maxRoundsPerStage: 14, maxSpeechChars: 400 },
+      '/proj/b': { consensus: { enabled: true, majority: true } },
+    },
+  }
+
+  it('Save emits the original projectConfigs / degradationChain / socketAutoResume', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withPassthrough } })
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    const saved = emitted[0][0]
+    expect(saved.projectConfigs).toEqual(withPassthrough.projectConfigs)
+    expect(saved.degradationChain).toEqual(['a1', SYSTEM_AGENT_ID])
+    expect(saved.socketAutoResume).toBe(false)
+  })
+
+  it('keeps pass-through fields even when an edited field also changes', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withPassthrough } })
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.timezone).toBe('America/New_York')
+    expect(saved.projectConfigs).toEqual(withPassthrough.projectConfigs)
+  })
+
+  it('deep-copies pass-through fields (emitted is a distinct object, not aliased)', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withPassthrough } })
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = (w.emitted('save') as [SystemSettings][])[0][0]
+    // Same content, but a fresh copy — edits to the draft never mutate server state.
+    expect(emitted.projectConfigs).not.toBe(withPassthrough.projectConfigs)
+    expect(emitted.projectConfigs).toEqual(withPassthrough.projectConfigs)
+  })
+})
+
 // Skill-repo tests moved to ProjectConfig.test.ts (ADR-0016/0017 migration)

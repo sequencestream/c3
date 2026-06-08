@@ -20,10 +20,11 @@
  * Both files are written atomically; on any read/parse error we fall back to a
  * clean default (system agent only) so c3 still boots.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import type {
   AgentConfig,
   ClaudeAgentConfig,
@@ -142,13 +143,6 @@ function settingsFile(): string {
 
 function stateFile(): string {
   return join(c3Dir(), 'state.json')
-}
-
-function writeAtomic(file: string, data: unknown): void {
-  mkdirSync(dirname(file), { recursive: true })
-  const tmp = `${file}.${process.pid}.tmp`
-  writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8')
-  renameSync(tmp, file)
 }
 
 // ---- Settings (agent registry) ----
@@ -408,14 +402,26 @@ export function loadProjectConfig(projectPath: string): ProjectConfig {
 }
 
 /**
- * Save a project's configuration. Returns the normalized result. The config
- * is persisted inside `SystemSettings.projectConfigs` and written atomically.
+ * Save a project's configuration. Returns the normalized result. Goes through the
+ * single locked write path (2026-06-08-003): hold the cross-process lock, re-read
+ * the *disk* (NOT the possibly-stale `settingsCache`), set only this project's key
+ * (sibling projects — including ones another c3 instance just added — survive),
+ * normalize, atomic-write, refresh the cache. Does NOT call {@link saveSettings}:
+ * the directory lock is non-reentrant, so a nested acquire would self-deadlock.
  */
 export function saveProjectConfig(projectPath: string, cfg: ProjectConfig): ProjectConfig {
   const normalized = normalizeProjectConfig(cfg)
-  const settings = loadSettings()
-  const configs = { ...(settings.projectConfigs ?? {}), [projectPath]: normalized }
-  saveSettings({ ...settings, projectConfigs: configs })
+  withFileLock(settingsFile(), () => {
+    const disk = readSettingsFromDisk()
+    const configs = { ...(disk?.projectConfigs ?? {}), [projectPath]: normalized }
+    const mergedSettings = normalize({ ...(disk ?? {}), projectConfigs: configs })
+    try {
+      writeAtomic(settingsFile(), mergedSettings)
+      settingsCache = mergedSettings
+    } catch (err) {
+      console.error('[c3] failed to persist project config:', err)
+    }
+  })
   return normalized
 }
 
@@ -463,16 +469,64 @@ export function loadSettings(): SystemSettings {
   return settingsCache
 }
 
-/** Validate + persist new settings; returns the normalized result. */
-export function saveSettings(next: SystemSettings): SystemSettings {
-  const normalized = normalize(next)
-  try {
-    writeAtomic(settingsFile(), normalized)
-    settingsCache = normalized
-  } catch (err) {
-    console.error('[c3] failed to persist settings:', err)
+/**
+ * Read the on-disk settings raw (cache-bypassing). This is the authoritative source
+ * inside a write lock — the in-memory {@link settingsCache} may be stale relative to
+ * another c3 instance that wrote since this process last loaded.
+ */
+function readSettingsFromDisk(): Partial<SystemSettings> | undefined {
+  return readJsonFile<Partial<SystemSettings>>(settingsFile())
+}
+
+/**
+ * Merge an incoming settings object over the authoritative disk snapshot, preserving
+ * the fields a partial writer (the system-settings panel) does not own/carry — the
+ * anti-clobber rule that stops `save_settings` from wiping project config:
+ *  - `projectConfigs` — per-project map; `undefined` in `next` ⇒ keep disk wholesale;
+ *    present ⇒ shallow-merged per key so another process's newly-added project
+ *    survives while `next`'s explicit entries win.
+ *  - `degradationChain` / `socketAutoResume` — `undefined` ⇒ keep disk; present ⇒ use `next`.
+ */
+function mergeSettingsOverDisk(
+  disk: Partial<SystemSettings> | undefined,
+  next: SystemSettings,
+): SystemSettings {
+  const d = disk ?? {}
+  const projectConfigs =
+    next.projectConfigs !== undefined
+      ? { ...(d.projectConfigs ?? {}), ...next.projectConfigs }
+      : d.projectConfigs
+  const degradationChain =
+    next.degradationChain !== undefined ? next.degradationChain : d.degradationChain
+  const socketAutoResume =
+    next.socketAutoResume !== undefined ? next.socketAutoResume : d.socketAutoResume
+  return {
+    ...next,
+    ...(projectConfigs !== undefined ? { projectConfigs } : {}),
+    ...(degradationChain !== undefined ? { degradationChain } : {}),
+    ...(socketAutoResume !== undefined ? { socketAutoResume } : {}),
   }
-  return settingsCache ?? normalized
+}
+
+/**
+ * Validate + persist new settings; returns the normalized result. Goes through the
+ * single locked write path (2026-06-08-003): hold the cross-process lock, re-read
+ * the *disk* (authoritative — not the possibly-stale cache), merge over it preserving
+ * uncarried fields (see {@link mergeSettingsOverDisk}), normalize, atomic-write,
+ * refresh the cache.
+ */
+export function saveSettings(next: SystemSettings): SystemSettings {
+  return withFileLock(settingsFile(), () => {
+    const merged = mergeSettingsOverDisk(readSettingsFromDisk(), next)
+    const normalized = normalize(merged)
+    try {
+      writeAtomic(settingsFile(), normalized)
+      settingsCache = normalized
+    } catch (err) {
+      console.error('[c3] failed to persist settings:', err)
+    }
+    return settingsCache ?? normalized
+  })
 }
 
 /**

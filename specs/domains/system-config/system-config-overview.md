@@ -18,7 +18,10 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
   (`get_settings`, `save_settings`, `settings`, `load_project_config`, `save_project_config`,
   `project_config`).
 - Persists to `~/.c3/settings.json` — stored as `SystemSettings.projectConfigs` (a
-  `Record<projectPath, ProjectConfig>`), written atomically alongside the main settings.
+  `Record<projectPath, ProjectConfig>`). **All writes go through the single, concurrency-safe
+  write path** (`kernel/config/store.ts`): in-process serialization + a cross-process file
+  lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes
+  per-project config. See [persistence.md](persistence.md) (唯一写入路径 + 双层锁，2026-06-08-003).
 - Separate from the session-registry's `state.json` (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
 - **Migration (2026-06-07-017):** `defaultMode` is now a `Record<VendorId, ModeToken>` instead of a
   single `ModeToken`. The old single-string format is detected by `normalizeProjectConfig` and

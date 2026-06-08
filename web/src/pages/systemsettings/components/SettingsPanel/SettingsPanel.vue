@@ -31,10 +31,10 @@ const VOICE_LANGS = computed<{ value: string; label: string }[]>(() => [
   { value: 'zh-HK', label: t('settings.voiceLang.zhHK.label') },
 ])
 
-// UI 显示语言。本阶段的下放开关在 `web/src/i18n/index.ts` 的 `ENABLED_LOCALES`
-// 集合(模型不自动写;ja/ko 走完人校 + `__humanReviewed__: true` 才进集合)。
-// 此处全表声明,渲染时再按 `isLocaleEnabled` 过滤,避免模型/人类各自维护一份
-// 注释掉的 ja/ko,容易漂移。
+// UI 显示语言。下放开关 = `web/src/i18n/index.ts` 的 `ENABLED_LOCALES`,由各 locale
+// 的 `__humanReviewed__` 派生(en/zh 无条件基线;其余语种须人在 JSON 翻 `__humanReviewed__:
+// true` 后才进集合,模型不写此字段)。此处全表声明,渲染时再按 `isLocaleEnabled` 过滤,
+// 避免模型/人类各自维护一份注释掉的 ja/ko,容易漂移。
 //
 // 标签是「语言原生名」——BCP-47 惯例,语言名 = 语言本身的标识符。把 "日本語"
 // 翻成 "Japanese" 等于把下拉项变成翻译,违背语言切换的语义。豁免于

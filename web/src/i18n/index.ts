@@ -109,16 +109,55 @@ function isSupported(v: unknown): v is Locale {
 }
 
 /**
- * Locales exposed in the UI language dropdown. Derived from SUPPORTED_LOCALES +
- * the `__humanReviewed__` field of each locale's source file. en / zh are
- * always exposed (M1 ship default); other locales only after a human flips
- * `__humanReviewed__` to `true` in the locale's JSON.
- *
- * The model NEVER writes `__humanReviewed__`. Humans edit the JSON directly.
- * This keeps the gate honest: a translation can be drafted and CI-validated
- * (presence, placeholder integrity, coverage) without leaking into the UI.
+ * Always-on baseline: the reviewed M1 default languages. These are exposed
+ * unconditionally rather than `__humanReviewed__`-gated — they are the proofread
+ * defaults, and flag-gating them would risk locking out the base language on a
+ * missing flag. (Accepted minor asymmetry vs. all other locales.)
  */
-export const ENABLED_LOCALES: ReadonlySet<Locale> = new Set<Locale>(['en', 'zh'])
+const BASELINE_LOCALES: readonly Locale[] = ['en', 'zh']
+
+/**
+ * Raw imported locale objects, keyed by locale. Read BEFORE `stripLocaleMeta`,
+ * so the top-level `__humanReviewed__` metadata is still present here (it is the
+ * derivation input). `stripLocaleMeta` removes it only from what vue-i18n sees.
+ */
+const RAW_LOCALES: Record<Locale, unknown> = { en, zh, ja, ko, ru }
+
+/** True iff a raw locale object carries top-level `__humanReviewed__ === true`.
+ *  Typed `unknown` because `MessageSchema` (= `typeof en`) does not model the
+ *  meta key, so the flag is read defensively off an untyped object. */
+function isHumanReviewed(raw: unknown): boolean {
+  return (
+    typeof raw === 'object' &&
+    raw !== null &&
+    (raw as Record<string, unknown>).__humanReviewed__ === true
+  )
+}
+
+/**
+ * Derive the set of locales exposed in the UI language dropdown from each
+ * locale's `__humanReviewed__` flag. A locale is enabled iff it is in
+ * {@link BASELINE_LOCALES} (en / zh) OR its raw object has `__humanReviewed__
+ * === true`.
+ *
+ * The model NEVER writes `__humanReviewed__`; a human flips it in the locale
+ * JSON after proofreading. This keeps the gate honest: a translation can be
+ * drafted and CI-validated (presence, placeholder integrity, coverage) without
+ * leaking into the UI until a reviewer signs off.
+ *
+ * Exported (with an injectable `rawLocales`) so the derivation is unit-testable
+ * against synthetic locale objects independent of the shipped JSON.
+ */
+export function deriveEnabledLocales(
+  rawLocales: Record<Locale, unknown> = RAW_LOCALES,
+): ReadonlySet<Locale> {
+  return new Set<Locale>(
+    SUPPORTED_LOCALES.filter((l) => BASELINE_LOCALES.includes(l) || isHumanReviewed(rawLocales[l])),
+  )
+}
+
+/** Locales exposed in the UI language dropdown (see {@link deriveEnabledLocales}). */
+export const ENABLED_LOCALES: ReadonlySet<Locale> = deriveEnabledLocales()
 
 /** True if `locale` should appear in the UI language dropdown. */
 export function isLocaleEnabled(locale: Locale): boolean {
@@ -176,8 +215,8 @@ export const i18n = createI18n<[MessageSchema], Locale, false>({
   // en/zh(M1)+ ja/ko(M2)+ ru(M3)均为真译文,330 key 全量覆盖。
   //
   // 注意:「真译文已加载」与「是否出现在 UI 下拉」是两件事 —— 后者由
-  // `ENABLED_LOCALES`(读 `__humanReviewed__`)控制,人校通过前不进下拉。
-  // 故 ja/ko/ru 译文虽已加载,仍未进 `ENABLED_LOCALES`,下拉暂只放 en/zh。
+  // `ENABLED_LOCALES`(由各 locale 的 `__humanReviewed__` 派生)控制,人校通过前不进下拉。
+  // ja/ko/ru 译文虽已加载,但其 JSON 未带 `__humanReviewed__`,故未进 `ENABLED_LOCALES`,下拉暂只放 en/zh。
   //
   // `stripLocaleMeta` 删掉 `__*__` 顶层元数据,避免 vue-i18n 把它当 key 看待。
   // (vue-i18n 实际只遍历 string 值,boolean 不会崩;但删掉更干净,也让

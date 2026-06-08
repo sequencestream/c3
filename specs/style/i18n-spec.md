@@ -245,6 +245,8 @@ freeze 由脚本落地,`en.json` 的 SHA-256 记入 `web/src/locales/.freeze-man
 
 **人校信号 = `__humanReviewed__` 字段**:locale JSON 顶部加 `"__humanReviewed__": true`(双下划线包裹的顶层元数据键;`flatten()` 跳过它,不算 key,不进 vue-i18n)。约定:**模型只读不写此字段**,由人在母语校对通过后手工编辑翻转;翻转后该语种才进 `ENABLED_LOCALES`。
 
+> **`ENABLED_LOCALES` 派生(已接线)**:`ENABLED_LOCALES` 由 `deriveEnabledLocales()` 在**构建期**从各 locale 的**原始导入对象**(`stripLocaleMeta` 之前,故 `__humanReviewed__` 仍在)派生 —— en/zh 为**无条件基线**(已审的 M1 默认,不做 flag 门控,避免缺标志锁死基准语),其余 `SUPPORTED_LOCALES` 当且仅当原始对象顶层 `__humanReviewed__ === true` 才进集合。除 en/zh 基线外无硬编码语言名;`stripLocaleMeta` 仍负责把 `__*__` 从 vue-i18n 所见消息里删掉。派生逻辑由 `web/src/i18n/index.test.ts` 单测覆盖(flag true→启用、缺失/false→不启用、en/zh 恒启用)。
+
 > 当前状态(2026-06-04):ja/ko 机翻 + 占位符校验已过、译文已接线,`pnpm i18n:check` 四语 0 错;CJK 渲染经 headless 截图验证零 tofu、长 hint 无溢出。**但 ja/ko 尚未经母语校对**,故未进 `ENABLED_LOCALES`,下拉仍只放 en/zh。等人校翻 `__humanReviewed__` 后再下放。
 
 ### 6.6 M3 末批语种(ru)上线 + 西里尔排版验证

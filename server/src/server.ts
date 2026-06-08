@@ -22,9 +22,9 @@ import {
   setTaskObserver,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
-import { getSessionAgentId, setOnPendingIntentLookup } from './kernel/config/index.js'
+import { getSessionAgentId, getUiLang, setOnPendingIntentLookup } from './kernel/config/index.js'
 import { setAutomationHooks } from './features/intents/automation.js'
-import { INTENT_AGENT_PROMPT } from './features/intents/prompt.js'
+import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
@@ -336,7 +336,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,
     intentProfile: (workspacePath) => ({
-      appendSystemPrompt: INTENT_AGENT_PROMPT,
+      // Read the live Display language (uiLang) at run start so the analyst replies
+      // in the user's console language, not a hard-coded one (2026-06-08-005).
+      appendSystemPrompt: buildIntentAgentPrompt(getUiLang()),
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       mcpServers: createIntentMcpServer(workspacePath, broadcasts.broadcastIntents),
       gate: 'intent' as const,

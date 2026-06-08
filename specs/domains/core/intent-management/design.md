@@ -210,8 +210,11 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
 
 ## Communication system prompt (`prompt.ts`)
 
-Injected as `appendSystemPrompt` on the `claude_code` preset. **The prompt text is in English**
-(the agent still converses with the user in Chinese). In brief: you are a intent analyst; read
+Injected as `appendSystemPrompt` on the `claude_code` preset, built per run by
+`buildIntentAgentPrompt(uiLang)`. **The prompt skeleton is in English**; only the closing
+"reply in this language" instruction follows the **Display language (`uiLang`)** —
+`getUiLang()` is read at run start so the analyst converses in the user's console language
+(via `UI_LANG_NAMES`), instead of a hard-coded one. In brief: you are a intent analyst; read
 project material only, never edit/write/run change commands/spawn sub-agents/run slash commands;
 you may query THIS project's existing ledger read-only via `find_intents` / `view_intent`,
 and should do so **before** splitting new items or setting `dependsOn` (reuse related items, avoid

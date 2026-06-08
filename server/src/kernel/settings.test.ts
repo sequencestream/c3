@@ -23,6 +23,8 @@ import {
   getSocketAutoResume,
   getTimezone,
   getUiLang,
+  getUiLangName,
+  UI_LANG_NAMES,
   isConsensusEnabled,
   isConsensusMajorityEnabled,
   isValidTimeZone,
@@ -652,6 +654,33 @@ describe('getUiLang normalization', () => {
     } as SystemSettings)
     expect(getUiLang()).toBe('zh')
     expect(loadSettings().voiceLang).toBe('en-US')
+  })
+})
+
+describe('getUiLangName', () => {
+  it('returns the name (with native endonym) of the current uiLang', () => {
+    saveWithUiLang('zh')
+    expect(getUiLangName()).toBe('Chinese (简体中文)')
+  })
+
+  it('covers all five known languages', () => {
+    const expected: Record<string, string> = {
+      en: 'English',
+      zh: 'Chinese (简体中文)',
+      ja: 'Japanese (日本語)',
+      ko: 'Korean (한국어)',
+      ru: 'Russian (Русский)',
+    }
+    for (const [lang, name] of Object.entries(expected)) {
+      saveWithUiLang(lang)
+      expect(getUiLangName()).toBe(name)
+      expect(UI_LANG_NAMES[lang as keyof typeof UI_LANG_NAMES]).toBe(name)
+    }
+  })
+
+  it('falls back to the en name when uiLang is unset', () => {
+    saveWithUiLang(undefined)
+    expect(getUiLangName()).toBe('English')
   })
 })
 

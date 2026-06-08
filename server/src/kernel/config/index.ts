@@ -63,6 +63,21 @@ const UI_LANGS: readonly UiLang[] = ['en', 'zh', 'ja', 'ko', 'ru']
 export const DEFAULT_UI_LANG: UiLang = 'en'
 
 /**
+ * Human-readable language names per {@link UiLang}, each carrying its native
+ * endonym in parentheses (e.g. `Chinese (简体中文)`). Used to instruct agents to
+ * reply in the user's chosen display language. The English skeleton of a prompt
+ * stays English and out of i18n (see `specs/style/i18n-spec.md`); only this name
+ * is interpolated so the agent's *output* follows the setting.
+ */
+export const UI_LANG_NAMES: Record<UiLang, string> = {
+  en: 'English',
+  zh: 'Chinese (简体中文)',
+  ja: 'Japanese (日本語)',
+  ko: 'Korean (한국어)',
+  ru: 'Russian (Русский)',
+}
+
+/**
  * The server's own IANA time zone — the default when `timezone` is unset/invalid.
  * Computed at call time so it tracks the host (and so tests can stub it via the
  * environment). Falls back to `'UTC'` on the (unexpected) chance the runtime
@@ -797,6 +812,17 @@ export function getShowToolSessions(): boolean {
 /** The UI display language (normalized; always a known {@link UiLang}, `en` by default). */
 export function getUiLang(): UiLang {
   return loadSettings().uiLang ?? DEFAULT_UI_LANG
+}
+
+/**
+ * The human-readable name (with native endonym) of the current UI display
+ * language — e.g. `Chinese (简体中文)` when `uiLang` is `zh`. Drives the
+ * "reply in this language" instruction appended to agent prompts so their output
+ * follows the Display language setting. Falls back to the {@link DEFAULT_UI_LANG}
+ * name when unset/invalid (via {@link getUiLang}).
+ */
+export function getUiLangName(): string {
+  return UI_LANG_NAMES[getUiLang()]
 }
 
 /**

@@ -71,26 +71,6 @@ export function enabledAgents(settings: SystemSettings = loadSettings()): AgentC
   return settings.agents.filter((a) => a.enabled !== false)
 }
 
-/**
- * An agent that runs on `vendor`, for resume-by-id of an unenumerable vendor
- * (Codex): the user pastes a native session id with no fact yet, so the select
- * handler binds it to a vendor-matching agent before the first turn. Prefers the
- * configured default agent when it already matches, then the first *enabled*
- * agent of that vendor, then any agent of it. Returns null when no agent of the
- * vendor is configured — the caller then refuses the resume honestly rather than
- * binding it under the wrong vendor.
- */
-export function firstAgentForVendor(vendor: VendorId): AgentConfig | null {
-  const settings = loadSettings()
-  const def = settings.agents.find((a) => a.id === settings.defaultAgentId)
-  if (def?.vendor === vendor) return def
-  return (
-    enabledAgents(settings).find((a) => a.vendor === vendor) ??
-    settings.agents.find((a) => a.vendor === vendor) ??
-    null
-  )
-}
-
 /** The agent for an id, or the default agent if the id is null/unknown. */
 export function resolveAgent(agentId: string | null): AgentConfig {
   const settings = loadSettings()

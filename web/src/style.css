@@ -897,35 +897,6 @@ header h1 {
   cursor: help;
 }
 
-/* ---- Codex resume-by-id (honest unenumerable-vendor fallback) ---- */
-.codex-resume {
-  margin-top: var(--sp-1);
-  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-6);
-  border-top: 1px solid var(--c-border);
-}
-.codex-resume-note {
-  margin: 0 0 var(--sp-1);
-  color: var(--c-text-disabled);
-  font-size: var(--fs-badge);
-  line-height: 1.4;
-}
-.codex-resume-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-}
-.codex-resume-input {
-  flex: 1;
-  min-width: 0;
-  height: 24px;
-  padding: 0 var(--sp-2);
-  background: var(--c-bg);
-  color: var(--c-text);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-caption);
-}
-
 @keyframes status-pulse {
   0%,
   100% {

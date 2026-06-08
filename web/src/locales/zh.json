@@ -532,11 +532,6 @@
         "retry": "重试"
       },
       "titleSource": "标题由 {vendor} 提供",
-      "codexResume": {
-        "note": "Codex 会话无法枚举 — 粘贴会话 ID 以恢复。",
-        "placeholder": "Codex 会话 ID",
-        "button": "恢复"
-      },
       "opencodeOffline": "{vendor} 服务未就绪 — 正在重试…"
     },
     "row": {
@@ -911,7 +906,6 @@
       "openFailed": "打开会话失败:{detail}",
       "deleteFailed": "删除会话失败:{detail}",
       "renameFailed": "重命名会话失败:{detail}",
-      "resumeNoAgent": "未配置 {vendor} agent — 请先添加一个再按 ID 恢复。",
       "notSelected": "请先选择或创建一个会话。",
       "turnRunning": "该会话已有一轮正在运行。",
       "invalidMode": "vendor \"{vendor}\" 的权限模式 \"{mode}\" 不合法"

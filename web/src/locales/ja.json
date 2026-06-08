@@ -532,11 +532,6 @@
         "retry": "再試行"
       },
       "titleSource": "タイトルは {vendor} 提供",
-      "codexResume": {
-        "note": "Codex セッションは一覧表示できません — セッション ID を貼り付けて再開してください。",
-        "placeholder": "Codex セッション ID",
-        "button": "再開"
-      },
       "opencodeOffline": "{vendor} サーバーが準備できていません — 再接続中…"
     },
     "row": {
@@ -911,7 +906,6 @@
       "openFailed": "セッションを開けませんでした: {detail}",
       "deleteFailed": "セッションの削除に失敗しました: {detail}",
       "renameFailed": "セッション名の変更に失敗しました: {detail}",
-      "resumeNoAgent": "{vendor} エージェントが未設定です — ID で再開するには追加してください。",
       "notSelected": "先にセッションを選択または作成してください。",
       "turnRunning": "このセッションではすでにターンが実行中です。",
       "invalidMode": "ベンダー \"{vendor}\" の権限モード \"{mode}\" は無効です"

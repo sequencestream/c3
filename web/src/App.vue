@@ -1290,16 +1290,6 @@ function selectSession(path: string, sessionId: string) {
   client?.send({ type: 'select_session', workspacePath: path, sessionId })
 }
 
-// Resume an unenumerable session (Codex) by a pasted native id: same as
-// selectSession, but carries the `vendor` hint so the server skips the
-// Claude-only cold-load and binds the id to a vendor-matching agent.
-function resumeSessionById(path: string, sessionId: string, vendor: VendorId) {
-  enterConsole()
-  consoleSession.value = { workspacePath: path, sessionId }
-  if (sessionId === activeSession.value) return
-  client?.send({ type: 'select_session', workspacePath: path, sessionId, vendor })
-}
-
 // ---- Tab / intent actions ----
 // Top-bar tab click: console switches back to the chat page; intents opens
 // the current workspace's intent page (no-op without a workspace).
@@ -1791,7 +1781,6 @@ function dismissSkillApproval() {
       @create-session="openNewSession"
       @refresh-sessions="() => refreshSessions(currentWorkspace)"
       @select-session="selectSession"
-      @resume-session="resumeSessionById"
       @delete-session="deleteSession"
       @rename-session="renameSession"
       @set-mode="setMode"

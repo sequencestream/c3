@@ -73,7 +73,6 @@ const emit = defineEmits<{
   'create-session': [path: string]
   'refresh-sessions': []
   'select-session': [path: string, sessionId: string]
-  'resume-session': [path: string, sessionId: string, vendor: VendorId]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
   'set-mode': [mode: ModeToken]
@@ -110,10 +109,6 @@ defineExpose({
     @create-session="(path: string) => emit('create-session', path)"
     @refresh-sessions="emit('refresh-sessions')"
     @select-session="(path: string, sessionId: string) => emit('select-session', path, sessionId)"
-    @resume-session="
-      (path: string, sessionId: string, vendor: VendorId) =>
-        emit('resume-session', path, sessionId, vendor)
-    "
     @delete-session="(path: string, sessionId: string) => emit('delete-session', path, sessionId)"
     @rename-session="
       (path: string, sessionId: string, title: string) =>

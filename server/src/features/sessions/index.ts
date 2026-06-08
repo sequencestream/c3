@@ -27,16 +27,14 @@ import {
   setSessionMode,
   touchWorkspace,
 } from '../../state.js'
-import { getDefaultMode, getSessionAgentId } from '../../kernel/config/index.js'
+import { getDefaultMode } from '../../kernel/config/index.js'
 import {
-  firstAgentForVendor,
   resolveAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
-import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
@@ -145,33 +143,9 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     // + self-heals, and the console shows the offline/retry warning — so selection is
     // NEVER fatal on a cold server. Gate by the session's resolved vendor, not identity
     // checks scattered downstream.
-    const effectiveVendor = msg.vendor ?? resolveSessionVendor(msg.sessionId)
+    const effectiveVendor = resolveSessionVendor(msg.sessionId)
     if (effectiveVendor === 'opencode') await ensureOpencodeRunning()
-    // Resume-by-id of a session whose vendor cannot cold-load history (Codex:
-    // `read: 'none'`). The `vendor` hint arrives only from the resume-by-id
-    // placeholder — the projection/native store has never seen this id, so the
-    // Claude-only `sessionTitle`/`loadHistory` below would throw → `openFailed`.
-    // Skip them, seed an empty baseline, and bind the id to a vendor-matching
-    // agent (when it has no fact yet) so the next turn resolves the right vendor
-    // and `resume`s natively. Gate by capability *state*, never vendor identity.
-    const resumeByIdVendor =
-      !existing && msg.vendor && VENDOR_CAPABILITIES[msg.vendor].sessions.read === 'none'
-        ? msg.vendor
-        : null
-    if (resumeByIdVendor && !getSessionAgentId(msg.sessionId)) {
-      const agent = firstAgentForVendor(resumeByIdVendor)
-      if (!agent) {
-        conn.send({
-          type: 'error',
-          error: { code: 'session.resumeNoAgent', params: { vendor: resumeByIdVendor } },
-        })
-        return
-      }
-      setSessionAgent(msg.sessionId, agent.id)
-    }
-    // The pasted id is the only honest title we have for a not-yet-run resume;
-    // the projection overwrites it with the native title on the first run end.
-    const title = resumeByIdVendor ? msg.sessionId : await sessionTitle(abs, msg.sessionId)
+    const title = await sessionTitle(abs, msg.sessionId)
     // Cold session ⇒ read disk once and seed a runtime; warm session ⇒
     // reuse its in-memory runtime (baseline + live buffer). After this
     // point there is no `await`, so the replay below is atomic w.r.t.
@@ -181,11 +155,8 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       : ensureRuntime(
           msg.sessionId,
           abs,
-          getSessionMode(
-            msg.sessionId,
-            getDefaultMode(abs, effectiveVendor ?? resolveSessionVendor(msg.sessionId)),
-          ),
-          resumeByIdVendor ? [] : await loadHistory(abs, msg.sessionId),
+          getSessionMode(msg.sessionId, getDefaultMode(abs, effectiveVendor)),
+          await loadHistory(abs, msg.sessionId),
         )
     conn.viewing = msg.sessionId
     touchWorkspace(abs, Date.now())

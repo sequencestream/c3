@@ -173,14 +173,14 @@ to the legacy `listWorkspaceSessions` (claude-only) path.
 
 ### Write triggers
 
-| Trigger                              | Effect                                                                     |
-| ------------------------------------ | -------------------------------------------------------------------------- |
-| `createSession` (UI)                 | Insert a pending row (the new home for the ADR-0015 intent).               |
-| `freezeSessionAgent` (bind)          | Drop pending row, insert real row (single entry point for both run paths). |
-| `setSessionAgent` (same-vendor swap) | Update real row's `agent_id`.                                              |
-| `renameWorkspaceSession`             | Update real row's `title`.                                                 |
-| `finalizeRun` (run end)              | Update real row's `title` / `last_modified` / `agent_id`.                  |
-| `removeSession` (delete)             | Delete the row.                                                            |
+| Trigger                              | Effect                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createSession` (UI)                 | Insert a pending row (the new home for the ADR-0015 intent).                                                                                                                                                                                                                                                            |
+| `freezeSessionAgent` (bind)          | Drop pending row, insert real row (single entry point for both run paths).                                                                                                                                                                                                                                              |
+| `setSessionAgent` (same-vendor swap) | Update real row's `agent_id`.                                                                                                                                                                                                                                                                                           |
+| `renameWorkspaceSession`             | Update real row's `title`.                                                                                                                                                                                                                                                                                              |
+| `finalizeRun` (run end)              | Update real row's `title` (resolved from the native store — the SAME source as the title bar / janitor, not `baseline` which is empty on the first run; first user prompt is the fallback) / `last_modified` / `agent_id`, then re-broadcast the list (the async native read lands after `run:settled → sendSessions`). |
+| `removeSession` (delete)             | Delete the row.                                                                                                                                                                                                                                                                                                         |
 
 ### Freshness & janitor
 

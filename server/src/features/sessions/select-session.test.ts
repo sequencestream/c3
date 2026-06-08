@@ -1,13 +1,13 @@
 /**
- * `select_session` resume-by-id for an unenumerable vendor (Codex, 2026-06-07-002).
+ * `select_session` handler branch contract.
  *
- * The projection/native store has never seen a pasted Codex id, and Codex reports
- * `read: 'none'` — so the Claude-only cold-load (`sessionTitle`/`loadHistory`)
- * would throw → `openFailed`. The handler instead skips that path, seeds an empty
- * baseline, and binds the id to a vendor-matching agent so the next turn resumes
- * natively. The real fact-binding (`setSessionAgent`) is covered by
- * `session-agent-binding.test.ts`; here we mock the IO-heavy collaborators and
- * assert the handler's branch contract.
+ * Two paths matter here and are easy to regress when nearby code changes:
+ *  - a normal Claude select cold-loads history (`sessionTitle`/`loadHistory`) and
+ *    does NOT touch the opencode lazy-start gate;
+ *  - an opencode select lazily (re)starts the supervised server within its grace
+ *    window before opening, and a down server is NEVER fatal (the session still
+ *    opens — honest degrade, 2026-06-07-003).
+ * The IO-heavy collaborators are mocked; we assert the handler's branch contract.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -37,10 +37,8 @@ vi.mock('../../sessions.js', () => ({
 }))
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMode: vi.fn((_path?: string, _vendor?: string) => 'default'),
-  getSessionAgentId: vi.fn(() => null),
 }))
 vi.mock('../../kernel/agent-config/index.js', () => ({
-  firstAgentForVendor: vi.fn(),
   resolveAgent: vi.fn(() => ({ id: 'sys', vendor: 'claude' })),
   resolveSessionAgentSwitch: vi.fn(() => null),
   resolveSessionVendor: vi.fn(() => 'claude'),
@@ -51,12 +49,7 @@ vi.mock('../../opencode-status.js', () => ({ ensureOpencodeRunning: vi.fn(async 
 
 import { selectSession } from './index.js'
 import { loadHistory, sessionTitle } from '../../sessions.js'
-import { ensureRuntime } from '../../runs.js'
-import {
-  firstAgentForVendor,
-  resolveSessionVendor,
-  setSessionAgent,
-} from '../../kernel/agent-config/index.js'
+import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { ensureOpencodeRunning } from '../../opencode-status.js'
 
 afterEach(() => vi.clearAllMocks())
@@ -72,47 +65,8 @@ function fakeConn() {
   }
 }
 
-describe('select_session resume-by-id (Codex, unenumerable)', () => {
-  it('vendor=codex + unknown id → skips Claude cold-load, empty baseline, binds a codex agent', async () => {
-    vi.mocked(firstAgentForVendor).mockReturnValue({ id: 'codex-a', vendor: 'codex' } as never)
-    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
-    const conn = fakeConn()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await selectSession({} as any, conn as any, {
-      type: 'select_session',
-      workspacePath: '/abs/proj',
-      sessionId: 'codex-thread-1',
-      vendor: 'codex',
-    })
-    // The Claude-only path is never touched (it would throw for a Codex id).
-    expect(loadHistory).not.toHaveBeenCalled()
-    expect(sessionTitle).not.toHaveBeenCalled()
-    // The id is bound to the resolved codex agent so the next turn resumes natively.
-    expect(setSessionAgent).toHaveBeenCalledWith('codex-thread-1', 'codex-a')
-    // Empty baseline seeded; reply carries the codex vendor.
-    expect(ensureRuntime).toHaveBeenCalledWith('codex-thread-1', '/abs/proj', 'default', [])
-    const sel = conn.sent.find((m) => m.type === 'session_selected')
-    expect(sel?.vendor).toBe('codex')
-    expect(sel?.history).toEqual([])
-  })
-
-  it('vendor=codex but no codex agent configured → honest resumeNoAgent error, no runtime', async () => {
-    vi.mocked(firstAgentForVendor).mockReturnValue(null)
-    const conn = fakeConn()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await selectSession({} as any, conn as any, {
-      type: 'select_session',
-      workspacePath: '/abs/proj',
-      sessionId: 'codex-thread-2',
-      vendor: 'codex',
-    })
-    const err = conn.sent.find((m) => m.type === 'error')
-    expect((err?.error as { code: string }).code).toBe('session.resumeNoAgent')
-    expect(setSessionAgent).not.toHaveBeenCalled()
-    expect(ensureRuntime).not.toHaveBeenCalled()
-  })
-
-  it('no vendor hint (normal Claude select) → cold-loads history as before', async () => {
+describe('select_session', () => {
+  it('normal Claude select → cold-loads history, no opencode lazy-start', async () => {
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
@@ -122,9 +76,10 @@ describe('select_session resume-by-id (Codex, unenumerable)', () => {
     })
     expect(loadHistory).toHaveBeenCalledWith('/abs/proj', 'claude-1')
     expect(sessionTitle).toHaveBeenCalled()
-    expect(firstAgentForVendor).not.toHaveBeenCalled()
     // Claude is not server-backed ⇒ no opencode lazy-start.
     expect(ensureOpencodeRunning).not.toHaveBeenCalled()
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.vendor).toBe('claude')
   })
 
   it('opencode select → lazily ensures the server (grace), opens the session, never fatal', async () => {

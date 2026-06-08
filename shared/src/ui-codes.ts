@@ -41,7 +41,6 @@ export const UI_ERROR_CODES = {
   'session.openFailed': { key: 'error.session.openFailed', params: ['detail'] },
   'session.deleteFailed': { key: 'error.session.deleteFailed', params: ['detail'] },
   'session.renameFailed': { key: 'error.session.renameFailed', params: ['detail'] },
-  'session.resumeNoAgent': { key: 'error.session.resumeNoAgent', params: ['vendor'] },
   'session.notSelected': { key: 'error.session.notSelected' },
   'session.turnRunning': { key: 'error.session.turnRunning' },
   // intent

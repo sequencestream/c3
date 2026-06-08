@@ -119,19 +119,46 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   setOnRunEnd((input) => {
     const vendor = resolveSessionVendor(input.realId)
     const agentId = getSessionAgentId(input.realId) ?? ''
-    touchOnRunEnd({
-      realId: input.realId,
-      vendor,
-      agentId,
-      title: input.title,
-      // Stamp the run-end moment as `last_modified`: the session was just active,
-      // so it must sort to the TOP of the list now. Passing null here would NULL
-      // the column on every turn end (and re-arm the 24h lazy-validation clock via
-      // `state_updated_at`), sinking an actively-developed session to the very
-      // bottom — the root cause of "automation session invisible even on refresh".
-      // Lazy validation later refines this to the native transcript mtime.
-      lastModified: Date.now(),
-    })
+    // Left/right title same-source (ADR-0013): resolve the real title from the
+    // SAME vendor-aware native store the title bar (`select_session`) and the
+    // janitor read — NOT `firstUserTitle(baseline)`. On the FIRST run `baseline`
+    // is empty (this turn's messages live in `rt.buffer`), so that fallback
+    // degrades to the placeholder "New session" and the sidebar shows it forever
+    // (even across refresh, since lazy validation only re-checks rows older than
+    // 24h). `sessionAccessor` / `broadcasts` are forward-referenced (built below);
+    // this closure only runs at run-end, long after the composition root finishes
+    // — the same pattern as the janitor's native list above.
+    void (async () => {
+      let title = input.title
+      try {
+        const summaries = await sessionAccessor.list({ cwd: input.workspacePath })
+        const hit = summaries.find((s) => {
+          if (s.vendor !== vendor) return false
+          const vsid = s.vendorExtra?.vendorSessionId
+          return typeof vsid === 'string' && vsid === input.realId
+        })
+        if (hit?.title) title = hit.title
+      } catch (err) {
+        console.error('[c3] onRunEnd native title lookup failed:', err)
+      }
+      touchOnRunEnd({
+        realId: input.realId,
+        vendor,
+        agentId,
+        title,
+        // Stamp the run-end moment as `last_modified`: the session was just active,
+        // so it must sort to the TOP of the list now. Passing null here would NULL
+        // the column on every turn end (and re-arm the 24h lazy-validation clock via
+        // `state_updated_at`), sinking an actively-developed session to the very
+        // bottom — the root cause of "automation session invisible even on refresh".
+        // Lazy validation later refines this to the native transcript mtime.
+        lastModified: Date.now(),
+      })
+      // The native read is async, so `run:settled → sendSessions` already fired
+      // with the pre-backfill row. Re-broadcast the list now that the real title
+      // is written so every client converges (typically tens of ms later).
+      broadcasts.broadcastSessions(input.workspacePath)
+    })()
   })
   setOnPendingIntentLookup((pendingId) => {
     const intent = getPendingIntent(pendingId)

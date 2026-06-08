@@ -1350,16 +1350,8 @@ export type ClientToServer =
   | { type: 'create_session'; workspacePath: string; agentId?: string }
   /** Delete a session from disk. */
   | { type: 'delete_session'; workspacePath: string; sessionId: string }
-  /**
-   * Make a session active; server replies with `session_selected` (history + mode).
-   * Optional `vendor` is a caller-supplied hint for resume-by-id of a session the
-   * projection has never seen — used when a vendor cannot be enumerated (Codex):
-   * the user pastes a native session id, and the hint lets the server skip the
-   * Claude-only cold-load path, seed an empty baseline, and bind the id to a
-   * vendor-matching agent so the next turn resumes natively. Absent ⇒ the server
-   * resolves the vendor from its own facts (the normal, already-known path).
-   */
-  | { type: 'select_session'; workspacePath: string; sessionId: string; vendor?: VendorId }
+  /** Make a session active; server replies with `session_selected` (history + mode). */
+  | { type: 'select_session'; workspacePath: string; sessionId: string }
   /** Rename a session's title. */
   | { type: 'rename_session'; workspacePath: string; sessionId: string; title: string }
   /** Stop the in-flight run of the currently-viewed session (if any). */

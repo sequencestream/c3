@@ -257,30 +257,6 @@ describe('SessionList.vue — 当前工作区会话列表', () => {
     })
   })
 
-  describe('Codex resume-by-id 占位(不可枚举的诚实兜底)', () => {
-    it('有工作区 → 始终渲染占位与输入框', () => {
-      const w = mountList({ sessions: [] })
-      expect(w.find('[data-testid="codex-resume"]').exists()).toBe(true)
-      expect(w.find('[data-testid="codex-resume-input"]').exists()).toBe(true)
-    })
-
-    it('空输入 → 提交按钮禁用且不 emit;粘贴 id → emit resume-session(path, id, codex)', async () => {
-      const w = mountList({ sessions: [] })
-      const submit = () => w.find('[data-testid="codex-resume-submit"]')
-      expect((submit().element as HTMLButtonElement).disabled).toBe(true)
-
-      await w.find('[data-testid="codex-resume-input"]').setValue('  thread-123  ')
-      expect((submit().element as HTMLButtonElement).disabled).toBe(false)
-      await submit().trigger('click')
-      expect(w.emitted('resume-session')).toEqual([[WS, 'thread-123', 'codex']])
-    })
-
-    it('无工作区 → 不渲染占位', () => {
-      const w = mountList({ currentWorkspace: null })
-      expect(w.find('[data-testid="codex-resume"]').exists()).toBe(false)
-    })
-  })
-
   describe('OpenCode 离线预警(first-class 状态信号)', () => {
     it('reachability=temporarily-unavailable → 渲染离线预警', () => {
       const w = mountList({

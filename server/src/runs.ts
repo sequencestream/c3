@@ -279,11 +279,14 @@ export function finalizeRun(id: string): void {
   if (!rt) return
   if (!rt.sawTurnEnd) emit(id, { type: 'turn_end', reason: 'complete' })
   setStatus(id, 'idle')
-  // Run-end projection upsert: the first user-prompt text is the new
-  // `title` (matches the legacy `titleOf` fallback). `lastModified` is
-  // left to the next lazy validation; the SDK mtime isn't surfaced here
-  // without a synchronous native read.
-  onRunEnd?.({ realId: id, title: firstUserTitle(rt.baseline) })
+  // Run-end projection upsert. The title source is the registered hook's
+  // native read (same source as the title bar / janitor — ADR-0013 left/right
+  // same-source); `firstUserTitle(rt.baseline)` is only the FALLBACK passed
+  // along for when that native lookup can't resolve a title. On the FIRST run
+  // `rt.baseline` is empty (this turn's messages live in `rt.buffer`), so the
+  // fallback alone would be the placeholder "New session" — hence the hook
+  // re-resolves from the native store and re-broadcasts the list.
+  onRunEnd?.({ realId: id, workspacePath: rt.workspacePath, title: firstUserTitle(rt.baseline) })
 }
 
 export function addViewer(id: string, viewer: Viewer): void {
@@ -304,7 +307,13 @@ export function removeViewer(id: string, viewer: Viewer): void {
 
 export interface OnRunEndInput {
   realId: string
-  /** First user-prompt text, when available — the projection's title source. */
+  /**
+   * The session's workspace — the `cwd` the run-end hook uses to read the real
+   * title from the vendor-aware native store (left/right title same-source: the
+   * title bar / janitor read the same store; `baseline` is empty on the first run).
+   */
+  workspacePath: string
+  /** Fallback title (first user-prompt text) when the native lookup can't resolve one. */
   title: string
 }
 

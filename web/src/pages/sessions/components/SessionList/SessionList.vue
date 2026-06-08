@@ -56,8 +56,6 @@ const emit = defineEmits<{
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
-  /** Resume an unenumerable session (Codex) by a pasted native id; `vendor` is the hint. */
-  'resume-session': [path: string, sessionId: string, vendor: VendorId]
 }>()
 
 // Stable vendor order for both the dots and the filter chips.
@@ -145,18 +143,6 @@ function visibleSessions(): SessionInfo[] {
 
 function hasMoreSessions(): boolean {
   return filteredSessions().length > sessionLimit.value
-}
-
-// ---- Codex resume-by-id (honest fallback for an unenumerable vendor) ----
-// Codex sessions cannot be listed (no SDK listing API), so the user pastes a
-// native session id to resume one the projection has never seen.
-const codexResumeId = ref('')
-
-function submitCodexResume(): void {
-  const id = codexResumeId.value.trim()
-  if (!id || !props.currentWorkspace) return
-  emit('resume-session', props.currentWorkspace, id, 'codex')
-  codexResumeId.value = ''
 }
 
 function showMoreSessions() {
@@ -371,31 +357,6 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         >
           {{ t('session.list.more.label') }}
         </button>
-        <!-- Honest fallback for Codex: its sessions can't be enumerated, so the
-             user pastes a native id to resume one the list can't show. -->
-        <div class="codex-resume" data-testid="codex-resume">
-          <p class="codex-resume-note">{{ t('session.list.codexResume.note') }}</p>
-          <div class="codex-resume-row">
-            <input
-              v-model="codexResumeId"
-              type="text"
-              class="codex-resume-input"
-              :placeholder="t('session.list.codexResume.placeholder')"
-              data-testid="codex-resume-input"
-              @keydown.enter="submitCodexResume"
-            />
-            <button
-              type="button"
-              class="icon-btn"
-              :title="t('session.list.codexResume.button')"
-              :disabled="!codexResumeId.trim()"
-              data-testid="codex-resume-submit"
-              @click="submitCodexResume"
-            >
-              ↻
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   </aside>

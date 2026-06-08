@@ -94,20 +94,30 @@ chain from `pending` to a terminal state.
 
 ### History display (read path)
 
-Selecting a schedule in the web-console left list focuses the right pane on that schedule's
-execution history. The schedule's **configuration summary** (type, cron, next/upcoming runs, MCP
-mode, tool allow/deny lists, config JSON, timestamps) is shown in the left list's inline accordion,
-not the right pane; the right pane is dedicated to logs. The client sends
-`get_schedule_detail { scheduleId }`; the server replies with
+The web-console uses a three-column layout for the schedules view:
+
+- **Left column** — `ScheduleList`: schedule accordion list with inline configuration summary (type,
+  cron, next/upcoming runs, MCP mode, tool allow/deny lists, config JSON, timestamps). Selecting a
+  schedule here focuses the middle column on that schedule's execution history.
+- **Middle column** — `ExecutionHistoryList`: execution log rows for the currently selected schedule,
+  each showing **status** badge, **started** time, **duration**, and **exit code**. Clicking a row
+  selects that execution and focuses the right column on its details.
+- **Right column** — `ExecutionDetail`: tabbed detail panel for the selected execution. Two tabs are
+  available conditionally:
+  - **Execution Info** (all types): status, started/finished times, duration, exit code, raw output,
+    and error text.
+  - **Command Log** (only `command`-type schedules): the shell output in a full-width terminal-like
+    view.
+
+The client sends `get_schedule_detail { scheduleId }`; the server replies with
 `schedule_detail { schedule, logs }`, where `logs` are the schedule's execution logs ordered
 **most-recently-started first** (`started_at DESC`, fetched by `listExecutionLogs(scheduleId)`).
 
-The right pane renders one row per execution showing its **status** badge, **started / finished**
-times, **duration**, **exit code**, **output**, and **error**. A schedule with no logs shows an
-empty state. The history re-fetches for the currently selected schedule whenever a `schedules`
-broadcast arrives (e.g. after an execution completes), so finished runs appear without a manual
-refresh. Switching selection in the left list swaps the right pane to the newly selected schedule's
-history.
+A schedule with no logs shows an empty state in the middle column; selecting a schedule without any
+execution selected shows an empty state in the right column. The history re-fetches for the currently
+selected schedule whenever a `schedules` broadcast arrives (e.g. after an execution completes), so
+finished runs appear without a manual refresh. Switching the selected schedule clears the second-level
+execution selection.
 
 ### Session transcript (read path, SCH-R16)
 

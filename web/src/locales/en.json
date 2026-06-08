@@ -800,6 +800,26 @@
       "noHistory": "No execution history yet.",
       "empty": "Select a schedule to view details."
     },
+    "history": {
+      "title": "Execution History",
+      "empty": "Select a schedule to view its history."
+    },
+    "execution": {
+      "tab": {
+        "execInfo": "Execution Info",
+        "commandLog": "Command Log"
+      },
+      "empty": "Select an execution to view details.",
+      "info": {
+        "duration": "Duration",
+        "exitCode": "Exit Code",
+        "output": "Output",
+        "error": "Error"
+      },
+      "commandLog": {
+        "empty": "No command output."
+      }
+    },
     "form": {
       "newTitle": "New Schedule",
       "editTitle": "Edit Schedule",

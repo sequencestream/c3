@@ -794,6 +794,26 @@
       "noHistory": "还没有执行历史。",
       "empty": "选择一个定时任务以查看详情。"
     },
+    "history": {
+      "title": "执行历史",
+      "empty": "选择一个定时任务以查看其历史。"
+    },
+    "execution": {
+      "tab": {
+        "execInfo": "执行信息",
+        "commandLog": "Command 日志"
+      },
+      "empty": "选择一次执行以查看详情。",
+      "info": {
+        "duration": "耗时",
+        "exitCode": "退出码",
+        "output": "输出",
+        "error": "错误"
+      },
+      "commandLog": {
+        "empty": "没有命令输出。"
+      }
+    },
     "form": {
       "newTitle": "新建定时任务",
       "editTitle": "编辑定时任务",

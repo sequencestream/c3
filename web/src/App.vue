@@ -364,6 +364,13 @@ const selectedScheduleLogs = computed<ScheduleExecutionLog[]>(() =>
 // One execution's agent-session transcript, fetched on demand when the user
 // expands "View session" on an llm-type history item. Keyed by executionId.
 const executionTranscripts = ref<Record<string, TranscriptItem[]>>({})
+// Second-level selection: which execution log within the selected schedule is
+// active. Cleared when the schedule changes (user picks a different schedule).
+const selectedExecutionId = ref<string | null>(null)
+const selectedExecution = computed<ScheduleExecutionLog | null>(() => {
+  if (!selectedExecutionId.value) return null
+  return selectedScheduleLogs.value.find((l) => l.id === selectedExecutionId.value) ?? null
+})
 
 const VIEW_MODE_KEY = 'c3.viewMode'
 const REQ_PROJECT_KEY = 'c3.intentsProject'
@@ -1493,6 +1500,7 @@ function openSchedules(path: string) {
 // fetch its execution logs (reply arrives as `schedule_detail`).
 function onSelectSchedule(id: string) {
   selectedScheduleId.value = id
+  selectedExecutionId.value = null
   client?.send({ type: 'get_schedule_detail', scheduleId: id })
 }
 
@@ -1506,6 +1514,12 @@ function onLoadExecutionSession(executionId: string) {
     scheduleId: selectedScheduleId.value,
     executionId,
   })
+}
+
+// Second-level selection: pick one execution from the selected schedule's log
+// list to view in the right-panel tabbed detail. Clears when schedule changes.
+function onSelectExecution(id: string) {
+  selectedExecutionId.value = id
 }
 
 // 列表行的 enable/disable 开关:映射到 update_schedule 的 status(无独立 pause/resume
@@ -1965,10 +1979,13 @@ function dismissSkillApproval() {
       :form-target="scheduleFormTarget"
       :workspace-path="schedulesProject ?? ''"
       :timezone="scheduleTimezone"
+      :execution-id="selectedExecutionId"
+      :execution="selectedExecution"
       @select="onSelectSchedule"
       @open-form="openScheduleForm"
       @toggle-enabled="onToggleScheduleEnabled"
       @load-session="onLoadExecutionSession"
+      @select-execution="onSelectExecution"
       @close-form="scheduleFormOpen = false"
       @create="createSchedule"
       @update="updateSchedule"

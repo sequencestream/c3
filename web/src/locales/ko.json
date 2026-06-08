@@ -794,6 +794,26 @@
       "noHistory": "아직 실행 기록이 없습니다.",
       "empty": "세부 정보를 보려면 예약 작업을 선택하세요."
     },
+    "history": {
+      "title": "Execution History",
+      "empty": "Select a schedule to view its history."
+    },
+    "execution": {
+      "tab": {
+        "execInfo": "Execution Info",
+        "commandLog": "Command Log"
+      },
+      "empty": "Select an execution to view details.",
+      "info": {
+        "duration": "Duration",
+        "exitCode": "Exit Code",
+        "output": "Output",
+        "error": "Error"
+      },
+      "commandLog": {
+        "empty": "No command output."
+      }
+    },
     "form": {
       "newTitle": "새 예약 작업",
       "editTitle": "예약 작업 편집",

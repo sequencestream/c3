@@ -2,11 +2,13 @@
 /*
  * Schedules.vue — 定时任务页容器。
  *
- * 纯容器:左侧列表 + 右侧详情 + 创建/编辑表单弹窗装配。所有数据(列表/详情/
- * 日志/transcript)与弹窗开关状态由 App.vue 持有,经 props 注入;用户动作经 emit 上抛。
+ * 三栏布局:左栏 ScheduleList + 中栏执行历史列表 + 右栏 Tab 化执行详情 +
+ * 创建/编辑表单弹窗。所有数据(列表/日志/transcript)与弹窗开关状态由 App.vue
+ * 持有,经 props 注入;用户动作经 emit 上抛。
  */
 import ScheduleList from './components/ScheduleList/ScheduleList.vue'
-import ScheduleDetail from './components/ScheduleDetail/ScheduleDetail.vue'
+import ExecutionHistoryList from './components/ExecutionHistoryList/ExecutionHistoryList.vue'
+import ExecutionDetail from './components/ExecutionDetail/ExecutionDetail.vue'
 import ScheduleForm from './components/ScheduleForm/ScheduleForm.vue'
 import type {
   CreateScheduleInput,
@@ -27,6 +29,10 @@ defineProps<{
   workspacePath: string
   /** System IANA time zone the cron next-run preview is computed in. */
   timezone: string
+  /** 当前选中的执行 ID(第二级选中态) */
+  executionId: string | null
+  /** 当前选中的执行对象 */
+  execution: ScheduleExecutionLog | null
 }>()
 
 defineEmits<{
@@ -34,6 +40,7 @@ defineEmits<{
   'open-form': [target: Schedule | null]
   'toggle-enabled': [id: string, enabled: boolean]
   'load-session': [executionId: string]
+  'select-execution': [id: string]
   'close-form': []
   create: [input: CreateScheduleInput]
   update: [id: string, input: UpdateScheduleInput]
@@ -51,16 +58,19 @@ defineEmits<{
     @toggle-enabled="(id: string, enabled: boolean) => $emit('toggle-enabled', id, enabled)"
   />
 
-  <div class="content">
-    <!-- Schedules tab: the right pane shows the selected schedule's execution
-         logs. (Create/Edit entry points live in the left list.) -->
-    <ScheduleDetail
-      :schedule="schedule"
-      :logs="logs"
-      :transcripts="transcripts"
-      @load-session="(executionId: string) => $emit('load-session', executionId)"
-    />
-  </div>
+  <ExecutionHistoryList
+    :schedule="schedule"
+    :logs="logs"
+    :active-execution-id="executionId"
+    @select-execution="(id: string) => $emit('select-execution', id)"
+  />
+
+  <ExecutionDetail
+    :execution="execution"
+    :execution-type="schedule?.type ?? null"
+    :transcripts="transcripts"
+    @load-session="(executionId: string) => $emit('load-session', executionId)"
+  />
 
   <ScheduleForm
     :open="formOpen"

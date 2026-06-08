@@ -794,6 +794,26 @@
       "noHistory": "まだ実行履歴がありません。",
       "empty": "詳細を表示するにはスケジュールを選択してください。"
     },
+    "history": {
+      "title": "Execution History",
+      "empty": "Select a schedule to view its history."
+    },
+    "execution": {
+      "tab": {
+        "execInfo": "Execution Info",
+        "commandLog": "Command Log"
+      },
+      "empty": "Select an execution to view details.",
+      "info": {
+        "duration": "Duration",
+        "exitCode": "Exit Code",
+        "output": "Output",
+        "error": "Error"
+      },
+      "commandLog": {
+        "empty": "No command output."
+      }
+    },
     "form": {
       "newTitle": "新しいスケジュール",
       "editTitle": "スケジュールを編集",

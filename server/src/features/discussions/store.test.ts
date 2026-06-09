@@ -17,11 +17,16 @@ import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import {
   appendMessage,
   createDiscussion,
+  deleteAgentSession,
+  deleteAllByDiscussion,
+  getAgentSession,
   getDiscussion,
   isStoreAvailable,
+  listAgentSessions,
   listDiscussions,
   listMessages,
   resetStoreForTests,
+  setAgentSession,
   setAgenda,
   setConclusion,
   setDiscussionResearchResult,
@@ -45,7 +50,7 @@ afterEach(() => {
 })
 
 describe('schema', () => {
-  it('creates both tables and their indexes on first access', () => {
+  it('creates the tables and their indexes on first access', () => {
     expect(isStoreAvailable()).toBe(true)
     // First store call triggers schema-ensure.
     expect(listDiscussions(proj)).toEqual([])
@@ -55,13 +60,14 @@ describe('schema', () => {
       .map((r) => r.name)
     expect(tables).toContain('discussions')
     expect(tables).toContain('discussion_messages')
+    expect(tables).toContain('discussion_agent_sessions')
     const indexes = raw
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='index'")
       .map((r) => r.name)
     expect(indexes).toContain('idx_disc_project_status')
     expect(indexes).toContain('idx_disc_msg_discussion')
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(1)
+    expect(version?.user_version).toBe(2)
   })
 })
 
@@ -215,6 +221,82 @@ describe('discussion messages', () => {
   })
 })
 
+describe('agent sessions', () => {
+  it('creates an agent session and reads it back', () => {
+    setAgentSession('disc-1', 'ag-1', 'sess-abc', 'claude', 0)
+    const got = getAgentSession('disc-1', 'ag-1')
+    expect(got).not.toBeNull()
+    expect(got!.discussionId).toBe('disc-1')
+    expect(got!.agentId).toBe('ag-1')
+    expect(got!.sessionId).toBe('sess-abc')
+    expect(got!.vendor).toBe('claude')
+    expect(got!.lastSeq).toBe(0)
+    expect(typeof got!.createdAt).toBe('number')
+    expect(got!.createdAt).toBeGreaterThan(0)
+  })
+
+  it('preserves created_at on update and updates session_id/vendor/last_seq', () => {
+    setAgentSession('disc-1', 'ag-1', 'sess-old', 'codex', 5)
+    const first = getAgentSession('disc-1', 'ag-1')!
+    const createdAt = first.createdAt
+
+    setAgentSession('disc-1', 'ag-1', 'sess-new', 'claude', 10)
+    const second = getAgentSession('disc-1', 'ag-1')
+    expect(second!.sessionId).toBe('sess-new')
+    expect(second!.vendor).toBe('claude')
+    expect(second!.lastSeq).toBe(10)
+    // created_at must remain unchanged from the first insert
+    expect(second!.createdAt).toBe(createdAt)
+  })
+
+  it('defaults vendor to "" and lastSeq to 0', () => {
+    setAgentSession('disc-1', 'ag-1', 'sess-1')
+    const got = getAgentSession('disc-1', 'ag-1')
+    expect(got!.vendor).toBe('')
+    expect(got!.lastSeq).toBe(0)
+  })
+
+  it('deletes a single agent session', () => {
+    setAgentSession('disc-1', 'ag-1', 'sess-1', 'claude')
+    expect(getAgentSession('disc-1', 'ag-1')).not.toBeNull()
+    deleteAgentSession('disc-1', 'ag-1')
+    expect(getAgentSession('disc-1', 'ag-1')).toBeNull()
+  })
+
+  it('lists all sessions for a discussion', () => {
+    setAgentSession('disc-1', 'ag-1', 'sess-a', 'claude')
+    setAgentSession('disc-1', 'ag-2', 'sess-b', 'codex', 3)
+    setAgentSession('disc-2', 'ag-1', 'sess-c', 'opencode') // different discussion
+
+    const list = listAgentSessions('disc-1')
+    expect(list).toHaveLength(2)
+    expect(list.map((s) => s.agentId).sort()).toEqual(['ag-1', 'ag-2'])
+    expect(list.every((s) => s.discussionId === 'disc-1')).toBe(true)
+  })
+
+  it('deleteAllByDiscussion removes all sessions for a discussion', () => {
+    setAgentSession('disc-1', 'ag-1', 'sess-a')
+    setAgentSession('disc-1', 'ag-2', 'sess-b')
+    setAgentSession('disc-2', 'ag-1', 'sess-c') // untouched
+
+    deleteAllByDiscussion('disc-1')
+    expect(listAgentSessions('disc-1')).toEqual([])
+    // other discussion is unaffected
+    expect(listAgentSessions('disc-2')).toHaveLength(1)
+  })
+
+  it('persists across a cache reset (real file)', () => {
+    setAgentSession('disc-persist', 'ag-1', 'sess-p', 'claude', 7)
+    resetDbForTests()
+    resetStoreForTests()
+    const got = getAgentSession('disc-persist', 'ag-1')
+    expect(got).not.toBeNull()
+    expect(got!.sessionId).toBe('sess-p')
+    expect(got!.vendor).toBe('claude')
+    expect(got!.lastSeq).toBe(7)
+  })
+})
+
 describe('migration', () => {
   it('creates the discussion tables on an old db that lacks them', () => {
     // Mimic a pre-existing c3.db that only has unrelated tables (no discussion ones).
@@ -229,6 +311,7 @@ describe('migration', () => {
       .map((r) => r.name)
     expect(tables).toContain('discussions')
     expect(tables).toContain('discussion_messages')
+    expect(tables).toContain('discussion_agent_sessions')
   })
 
   it('backfills missing columns on an old discussions table, keeps rows, is idempotent', () => {
@@ -300,8 +383,13 @@ describe('degradation', () => {
     expect(listDiscussions(proj)).toEqual([])
     expect(getDiscussion('x')).toBeNull()
     expect(listMessages('x')).toEqual([])
+    expect(getAgentSession('x', 'y')).toBeNull()
+    expect(listAgentSessions('x')).toEqual([])
     expect(() => createDiscussion({ projectPath: proj, title: 'A', type: 't' })).toThrow(
       /讨论库不可用/,
     )
+    expect(() => setAgentSession('x', 'y', 's')).toThrow(/讨论库不可用/)
+    expect(() => deleteAgentSession('x', 'y')).toThrow(/讨论库不可用/)
+    expect(() => deleteAllByDiscussion('x')).toThrow(/讨论库不可用/)
   })
 })

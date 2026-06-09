@@ -27,7 +27,7 @@ import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
  * value is informational only: migrations key off `PRAGMA table_info` /
  * `CREATE TABLE IF NOT EXISTS`, never off the version number.
  */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS discussions (
@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS discussion_messages (
   created_at        INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_disc_msg_discussion ON discussion_messages(discussion_id, seq);
+
+CREATE TABLE IF NOT EXISTS discussion_agent_sessions (
+  discussion_id TEXT NOT NULL,
+  agent_id      TEXT NOT NULL,
+  session_id    TEXT NOT NULL,
+  vendor        TEXT NOT NULL DEFAULT '',
+  last_seq      INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  PRIMARY KEY (discussion_id, agent_id)
+);
 `
 
 let schemaReady = false
@@ -384,4 +394,113 @@ export function listMessages(discussionId: string): DiscussionMessage[] {
     discussionId,
   )
   return rows.map(toMessage)
+}
+
+// ---- Agent sessions (persistent discussion → agent → vendor session mapping) ----
+
+export interface AgentSessionRow {
+  discussionId: string
+  agentId: string
+  sessionId: string
+  vendor: string
+  lastSeq: number
+  createdAt: number
+}
+
+interface AgentSessionRaw {
+  discussion_id: string
+  agent_id: string
+  session_id: string
+  vendor: string
+  last_seq: number
+  created_at: number
+}
+
+function toAgentSession(r: AgentSessionRaw): AgentSessionRow {
+  return {
+    discussionId: r.discussion_id,
+    agentId: r.agent_id,
+    sessionId: r.session_id,
+    vendor: r.vendor,
+    lastSeq: r.last_seq,
+    createdAt: r.created_at,
+  }
+}
+
+/**
+ * Look up the stored session for a given agent in a discussion.
+ * Returns `null` when the db is unavailable or no mapping exists.
+ */
+export function getAgentSession(
+  discussionId: string,
+  agentId: string,
+): AgentSessionRow | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<AgentSessionRaw>(
+    'SELECT * FROM discussion_agent_sessions WHERE discussion_id=? AND agent_id=?',
+    discussionId,
+    agentId,
+  )
+  return row ? toAgentSession(row) : null
+}
+
+/**
+ * Create or update the session mapping for an agent in a discussion.
+ * Preserves `created_at` on subsequent updates (only sets it on first insert).
+ */
+export function setAgentSession(
+  discussionId: string,
+  agentId: string,
+  sessionId: string,
+  vendor?: string,
+  lastSeq?: number,
+): void {
+  const d = requireDb()
+  const now = Date.now()
+  d.run(
+    `INSERT INTO discussion_agent_sessions
+       (discussion_id, agent_id, session_id, vendor, last_seq, created_at)
+     VALUES (?,?,?,?,?,?)
+     ON CONFLICT(discussion_id, agent_id) DO UPDATE SET
+       session_id=excluded.session_id,
+       vendor=excluded.vendor,
+       last_seq=excluded.last_seq`,
+    discussionId,
+    agentId,
+    sessionId,
+    vendor ?? '',
+    lastSeq ?? 0,
+    now,
+  )
+}
+
+/** Remove the session mapping for a single agent in a discussion. */
+export function deleteAgentSession(discussionId: string, agentId: string): void {
+  const d = requireDb()
+  d.run(
+    'DELETE FROM discussion_agent_sessions WHERE discussion_id=? AND agent_id=?',
+    discussionId,
+    agentId,
+  )
+}
+
+/** List all agent session mappings within a discussion (empty array when unavailable). */
+export function listAgentSessions(discussionId: string): AgentSessionRow[] {
+  const d = db()
+  if (!d) return []
+  const rows = d.all<AgentSessionRaw>(
+    'SELECT * FROM discussion_agent_sessions WHERE discussion_id=?',
+    discussionId,
+  )
+  return rows.map(toAgentSession)
+}
+
+/** Remove all agent session mappings for a discussion (used when deleting a discussion). */
+export function deleteAllByDiscussion(discussionId: string): void {
+  const d = requireDb()
+  d.run(
+    'DELETE FROM discussion_agent_sessions WHERE discussion_id=?',
+    discussionId,
+  )
 }

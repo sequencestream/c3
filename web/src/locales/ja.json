@@ -908,28 +908,35 @@
         "label": "次回の実行:",
         "utcHint": "(設定したタイムゾーンで表示、例: Asia/Shanghai)"
       },
-      "execIdentity": {
-        "label": "実行アイデンティティ"
+      "permissionMode": {
+        "label": "権限モード",
+        "claude": {
+          "default": "デフォルト",
+          "auto": "自動",
+          "plan": "計画",
+          "acceptEdits": "編集を許可",
+          "bypassPermissions": "権限をバイパス"
+        },
+        "codex": {
+          "sandboxModeLabel": "サンドボックスモード",
+          "sandboxReadWrite": "読み書き",
+          "sandboxReadOnly": "読み取り専用",
+          "approvalLabel": "承認ポリシー",
+          "approvalOnRequest": "リクエスト時",
+          "approvalOnFailure": "失敗時",
+          "approvalNever": "なし"
+        },
+        "opencode": {
+          "plan": "計画",
+          "build": "ビルド",
+          "buildAllow": "ビルド（許可）"
+        }
       },
       "saveChanges": {
         "label": "変更を保存"
       },
       "create": {
         "label": "スケジュールを作成"
-      },
-      "mcpMode": {
-        "readOnly": {
-          "label": "読み取り専用",
-          "hint": "読み取りのみのツール。書き込みはブロックされます。"
-        },
-        "sandboxed": {
-          "label": "サンドボックス",
-          "hint": "書き込みは許可されますが、承認のためにキューに入ります。"
-        },
-        "fullAccess": {
-          "label": "フルアクセス",
-          "hint": "制限なし — 慎重に使用してください。"
-        }
       },
       "vendor": {
         "label": "ベンダー"

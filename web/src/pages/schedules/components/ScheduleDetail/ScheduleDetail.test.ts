@@ -53,9 +53,9 @@ describe('ScheduleDetail.vue — 右栏 schedule 详情', () => {
     expect(w.text()).toContain(VENDOR_LABEL.codex)
   })
 
-  it('显示 mode i18n 标签(非原始协议值)', () => {
+  it('显示 mode 原始值（不再走 i18n；remove-exec Identity 后旧 mcpMode key 已移除）', () => {
     const w = mountDetail(sched({ mode: 'read-only' }))
-    expect(w.text()).toContain('Read-only')
+    expect(w.text()).toContain('read-only')
   })
 
   it('空 toolAllowlist 显示 "All tools unrestricted"', () => {

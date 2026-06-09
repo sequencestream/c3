@@ -908,28 +908,35 @@
         "label": "다음 실행:",
         "utcHint": "(설정된 시간대로 표시, 예: Asia/Shanghai)"
       },
-      "execIdentity": {
-        "label": "실행 ID"
+      "permissionMode": {
+        "label": "권한 모드",
+        "claude": {
+          "default": "기본값",
+          "auto": "자동",
+          "plan": "계획",
+          "acceptEdits": "편집 허용",
+          "bypassPermissions": "권한 우회"
+        },
+        "codex": {
+          "sandboxModeLabel": "샌드박스 모드",
+          "sandboxReadWrite": "읽기/쓰기",
+          "sandboxReadOnly": "읽기 전용",
+          "approvalLabel": "승인 정책",
+          "approvalOnRequest": "요청 시",
+          "approvalOnFailure": "실패 시",
+          "approvalNever": "없음"
+        },
+        "opencode": {
+          "plan": "계획",
+          "build": "빌드",
+          "buildAllow": "빌드 (허용)"
+        }
       },
       "saveChanges": {
         "label": "변경 사항 저장"
       },
       "create": {
         "label": "예약 작업 만들기"
-      },
-      "mcpMode": {
-        "readOnly": {
-          "label": "읽기 전용",
-          "hint": "읽기만 하는 도구. 쓰기는 차단됩니다."
-        },
-        "sandboxed": {
-          "label": "샌드박스",
-          "hint": "쓰기는 허용되지만 승인 대기열에 추가됩니다."
-        },
-        "fullAccess": {
-          "label": "전체 액세스",
-          "hint": "제한 없음 — 주의해서 사용하세요."
-        }
       },
       "vendor": {
         "label": "벤더"

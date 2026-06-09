@@ -19,7 +19,11 @@
  */
 import { ref, computed, watch } from 'vue'
 import type {
+  CodexApprovalPolicy,
+  CodexPolicy,
+  CodexSandboxMode,
   CreateScheduleInput,
+  ModeToken,
   RunEndReason,
   RunLifecycleTopic,
   Schedule,
@@ -61,24 +65,6 @@ const emit = defineEmits<{
 }>()
 
 const isEdit = computed(() => props.schedule !== null)
-
-const MODE_OPTIONS = computed<{ value: string; label: string; hint: string }[]>(() => [
-  {
-    value: 'read-only',
-    label: t('schedule.form.mcpMode.readOnly.label'),
-    hint: t('schedule.form.mcpMode.readOnly.hint'),
-  },
-  {
-    value: 'sandboxed',
-    label: t('schedule.form.mcpMode.sandboxed.label'),
-    hint: t('schedule.form.mcpMode.sandboxed.hint'),
-  },
-  {
-    value: 'full-access',
-    label: t('schedule.form.mcpMode.fullAccess.label'),
-    hint: t('schedule.form.mcpMode.fullAccess.hint'),
-  },
-])
 
 const WEEKDAYS = computed<{ num: number; label: string }[]>(() => [
   { num: 0, label: t('schedule.form.weekday.sun') },
@@ -129,7 +115,11 @@ const type = ref<ScheduleType>('command')
 // Manual display title — edit-only. Prefilled from the current name; an empty
 // value on save tells the server to revert to auto-naming.
 const title = ref('')
-const modeValue = ref<string>('sandboxed')
+// Vendor-specific permission mode refs; serialized on save.
+const claudeMode = ref<string>('default')
+const codexSandboxMode = ref<CodexSandboxMode>('workspace-write')
+const codexApprovalPolicy = ref<CodexApprovalPolicy>('on-request')
+const opencodeMode = ref<string>('plan')
 const command = ref('')
 const prompt = ref('')
 const cronExpression = ref('*/30 * * * *')
@@ -168,7 +158,39 @@ watch(
     if (sched) {
       type.value = sched.type
       title.value = readConfigField(sched.config, 'name')
-      modeValue.value = typeof sched.mode === 'string' ? sched.mode : 'sandboxed'
+      // Restore permission mode per vendor (handle legacy McpMode strings too).
+      if (sched.vendor === 'codex') {
+        if (typeof sched.mode === 'object' && sched.mode !== null) {
+          codexSandboxMode.value = sched.mode.sandboxMode
+          codexApprovalPolicy.value = sched.mode.approvalPolicy
+        } else {
+          const legacy = sched.mode as string
+          codexSandboxMode.value = legacy === 'read-only' ? 'read-only' : 'workspace-write'
+          codexApprovalPolicy.value =
+            legacy === 'read-only' || legacy === 'full-access' ? 'never' : 'on-request'
+        }
+      } else if (sched.vendor === 'opencode') {
+        const m = typeof sched.mode === 'string' ? sched.mode : 'plan'
+        opencodeMode.value =
+          m === 'read-only'
+            ? 'plan'
+            : m === 'sandboxed'
+              ? 'build'
+              : m === 'full-access'
+                ? 'buildAllow'
+                : m
+      } else {
+        // claude
+        const m = typeof sched.mode === 'string' ? sched.mode : 'default'
+        claudeMode.value =
+          m === 'read-only'
+            ? 'plan'
+            : m === 'sandboxed'
+              ? 'auto'
+              : m === 'full-access'
+                ? 'bypassPermissions'
+                : m
+      }
       cronExpression.value = sched.cronExpression || '*/30 * * * *'
       command.value = readConfigField(sched.config, 'command')
       prompt.value = readConfigField(sched.config, 'prompt')
@@ -183,7 +205,10 @@ watch(
     } else {
       type.value = 'command'
       title.value = ''
-      modeValue.value = 'sandboxed'
+      claudeMode.value = 'default'
+      codexSandboxMode.value = 'workspace-write'
+      codexApprovalPolicy.value = 'on-request'
+      opencodeMode.value = 'plan'
       cronExpression.value = '*/30 * * * *'
       command.value = ''
       prompt.value = ''
@@ -324,6 +349,18 @@ function buildConfig(): Record<string, unknown> {
   return base
 }
 
+function serializeMode(): ModeToken | CodexPolicy {
+  if (vendor.value === 'codex') {
+    return {
+      sandboxMode: codexSandboxMode.value,
+      approvalPolicy: codexApprovalPolicy.value,
+    }
+  } else if (vendor.value === 'opencode') {
+    return opencodeMode.value
+  }
+  return claudeMode.value
+}
+
 function save(): void {
   if (!canSave.value) return
   const config = buildConfig()
@@ -339,7 +376,7 @@ function save(): void {
     config.name = title.value.trim()
     const input: UpdateScheduleInput = {
       config,
-      mode: modeValue.value,
+      mode: serializeMode(),
       triggerType: triggerType.value,
       vendor: vendor.value,
       toolAllowlist: [...toolAllowlist.value],
@@ -358,7 +395,7 @@ function save(): void {
       type: type.value,
       config,
       workspacePath: props.workspacePath,
-      mode: modeValue.value,
+      mode: serializeMode(),
       vendor: vendor.value,
       triggerType: triggerType.value,
       cronExpression: isEvent ? '' : cronExpression.value,
@@ -420,16 +457,6 @@ function save(): void {
             </button>
           </div>
           <span v-if="isEdit" class="sf-hint">{{ t('schedule.form.taskType.locked') }}</span>
-        </div>
-
-        <!-- Vendor selector -->
-        <div class="sf-field">
-          <span class="sf-label">{{ t('schedule.form.vendor.label') }}</span>
-          <select v-model="vendor" class="sf-input sf-select">
-            <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
-              {{ VENDOR_LABEL[v] }}
-            </option>
-          </select>
         </div>
 
         <!-- Command body -->
@@ -598,22 +625,95 @@ function save(): void {
           </template>
         </div>
 
-        <!-- Execution identity -->
+        <!-- Vendor selector -->
         <div class="sf-field">
-          <span class="sf-label">{{ t('schedule.form.execIdentity.label') }}</span>
-          <div class="sf-segmented">
-            <button
-              v-for="m in MODE_OPTIONS"
-              :key="m.value"
-              type="button"
-              class="sf-seg"
-              :class="{ active: modeValue === m.value }"
-              @click="modeValue = m.value"
-            >
-              {{ m.label }}
-            </button>
-          </div>
-          <span class="sf-hint">{{ MODE_OPTIONS.find((m) => m.value === modeValue)?.hint }}</span>
+          <span class="sf-label">{{ t('schedule.form.vendor.label') }}</span>
+          <select v-model="vendor" class="sf-input sf-select">
+            <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
+              {{ VENDOR_LABEL[v] }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Permission mode: controls differ by vendor -->
+        <div class="sf-field">
+          <span class="sf-label">{{ t('schedule.form.permissionMode.label') }}</span>
+
+          <!-- Claude: dropdown -->
+          <select v-if="vendor === 'claude'" v-model="claudeMode" class="sf-input sf-select">
+            <option value="default">{{ t('schedule.form.permissionMode.claude.default') }}</option>
+            <option value="auto">{{ t('schedule.form.permissionMode.claude.auto') }}</option>
+            <option value="plan">{{ t('schedule.form.permissionMode.claude.plan') }}</option>
+            <option value="acceptEdits">
+              {{ t('schedule.form.permissionMode.claude.acceptEdits') }}
+            </option>
+            <option value="bypassPermissions">
+              {{ t('schedule.form.permissionMode.claude.bypassPermissions') }}
+            </option>
+          </select>
+
+          <!-- Codex: two segmented controls -->
+          <template v-else-if="vendor === 'codex'">
+            <span class="sf-label sf-permission-sub">{{
+              t('schedule.form.permissionMode.codex.sandboxModeLabel')
+            }}</span>
+            <div class="sf-segmented">
+              <button
+                type="button"
+                class="sf-seg"
+                :class="{ active: codexSandboxMode === 'workspace-write' }"
+                @click="codexSandboxMode = 'workspace-write'"
+              >
+                {{ t('schedule.form.permissionMode.codex.sandboxReadWrite') }}
+              </button>
+              <button
+                type="button"
+                class="sf-seg"
+                :class="{ active: codexSandboxMode === 'read-only' }"
+                @click="codexSandboxMode = 'read-only'"
+              >
+                {{ t('schedule.form.permissionMode.codex.sandboxReadOnly') }}
+              </button>
+            </div>
+            <span class="sf-label sf-permission-sub">{{
+              t('schedule.form.permissionMode.codex.approvalLabel')
+            }}</span>
+            <div class="sf-segmented">
+              <button
+                type="button"
+                class="sf-seg"
+                :class="{ active: codexApprovalPolicy === 'on-request' }"
+                @click="codexApprovalPolicy = 'on-request'"
+              >
+                {{ t('schedule.form.permissionMode.codex.approvalOnRequest') }}
+              </button>
+              <button
+                type="button"
+                class="sf-seg"
+                :class="{ active: codexApprovalPolicy === 'on-failure' }"
+                @click="codexApprovalPolicy = 'on-failure'"
+              >
+                {{ t('schedule.form.permissionMode.codex.approvalOnFailure') }}
+              </button>
+              <button
+                type="button"
+                class="sf-seg"
+                :class="{ active: codexApprovalPolicy === 'never' }"
+                @click="codexApprovalPolicy = 'never'"
+              >
+                {{ t('schedule.form.permissionMode.codex.approvalNever') }}
+              </button>
+            </div>
+          </template>
+
+          <!-- OpenCode: dropdown -->
+          <select v-else v-model="opencodeMode" class="sf-input sf-select">
+            <option value="plan">{{ t('schedule.form.permissionMode.opencode.plan') }}</option>
+            <option value="build">{{ t('schedule.form.permissionMode.opencode.build') }}</option>
+            <option value="buildAllow">
+              {{ t('schedule.form.permissionMode.opencode.buildAllow') }}
+            </option>
+          </select>
         </div>
 
         <!-- Tool checklist -->
@@ -823,8 +923,9 @@ function save(): void {
   margin-top: var(--sp-2);
 }
 
-/* Event reason filter sub-label spacing within the event field. */
-.sf-event-reason-label {
+/* Event reason filter and permission mode sub-label spacing. */
+.sf-event-reason-label,
+.sf-permission-sub {
   margin-top: var(--sp-2);
 }
 

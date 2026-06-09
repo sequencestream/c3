@@ -64,17 +64,15 @@ const unclassifiedTools = computed(() => {
   return props.schedule!.toolAllowlist.filter((name) => !map.has(name))
 })
 
-/** mode → i18n 可读标签。 */
+/** mode → 显示标签。不再走 i18n（mode token 本身已是英文可读值）。 */
 function modeLabel(mode: unknown): string {
   // CodexPolicy object
   if (mode && typeof mode === 'object') {
     const p = mode as { sandboxMode?: string; approvalPolicy?: string }
     return `${p.sandboxMode ?? '?'} / ${p.approvalPolicy ?? '?'}`
   }
+  // Legacy McpMode values that may still exist in the database.
   const s = String(mode)
-  if (s === 'read-only') return t('schedule.form.mcpMode.readOnly.label')
-  if (s === 'sandboxed') return t('schedule.form.mcpMode.sandboxed.label')
-  if (s === 'full-access') return t('schedule.form.mcpMode.fullAccess.label')
   return s
 }
 

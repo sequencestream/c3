@@ -104,7 +104,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     const input = created![0][0] as Record<string, unknown>
     expect(input.type).toBe('command')
     expect(input.workspacePath).toBe('/home/proj')
-    expect(input.mode).toBe('sandboxed')
+    expect(input.mode).toBe('default')
     expect(isValidCron(input.cronExpression as string)).toBe(true)
     expect(input.config).toEqual({ command: 'pnpm build' })
     expect(input.config).not.toHaveProperty('name')
@@ -160,7 +160,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
 
     const [id, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
     expect(id).toBe('s1')
-    expect(input.mode).toBe('sandboxed')
+    expect(input.mode).toBe('auto')
     expect(isValidCron(input.cronExpression as string)).toBe(true)
     expect(input.config).toEqual({ command: 'pnpm build', name: 'My Title' })
     expect(input.config).not.toHaveProperty('description')
@@ -222,7 +222,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
 
   it('渲染 vendor 下拉选择器,三个品牌均可见', () => {
     const w = mountForm()
-    const select = w.find('select.sf-input')
+    const select = w.find('select.sf-select')
     expect(select.exists()).toBe(true)
     const opts = select.findAll('option')
     expect(opts).toHaveLength(3)
@@ -233,7 +233,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
 
   it('host 缺失的 vendor 选项 disabled, host 存在的不 disabled', () => {
     const w = mountForm()
-    const opts = w.findAll('select.sf-input option')
+    const opts = w.findAll('select.sf-select option')
     // claude present → enabled
     expect(opts[0].attributes('disabled')).toBeUndefined()
     // codex present → enabled
@@ -389,5 +389,66 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     // Write/Edit 在 toolAllowlist 中 → 勾上
     expect((checks[2].element as HTMLInputElement).checked).toBe(true)
     expect((checks[3].element as HTMLInputElement).checked).toBe(true)
+  })
+
+  // ---- Permission mode per vendor -----------------------------------------
+
+  it('create(codex):payload 携带 CodexPolicy 对象', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('pnpm build')
+    // 切换到 codex vendor
+    const vendorSelect = w.find('select.sf-select')
+    await vendorSelect.setValue('codex')
+
+    // Codex 的 segmented mode: 默认 sandbox=workspace-write, approval=on-request
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.mode).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'on-request',
+    })
+  })
+
+  it('edit(opencode):payload 携带 ModeToken', async () => {
+    const w = mountForm({
+      schedule: sched({ vendor: 'opencode', mode: 'build' }),
+      hostStatus: [
+        { vendor: 'claude', present: true, binary: 'claude', installHint: '' },
+        { vendor: 'codex', present: true, binary: 'codex', installHint: '' },
+        { vendor: 'opencode', present: true, binary: 'opencode', installHint: '' },
+      ],
+    })
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input.mode).toBe('build')
+  })
+
+  it('权限模式控件随 vendor 切换联动', async () => {
+    const w = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+    })
+    const vendorSelect = w.find('select.sf-select')
+
+    // 默认 claude → Claude dropdown 可见 (vendor select + claude mode select)
+    const claudeSelects = w.findAll('select.sf-select')
+    expect(claudeSelects).toHaveLength(2)
+
+    // 切到 codex → 两个 segmented 组可见
+    await vendorSelect.setValue('codex')
+    const codexSegs = w.findAll('.sf-segmented')
+    // task type + trigger + codex sandbox + codex approval = 4
+    expect(codexSegs).toHaveLength(4)
+
+    // 切到 opencode → dropdown 可见
+    const w2 = mountForm({
+      toolManifest: { claude: ALL_TOOLS },
+      hostStatus: HOST_PRESENT.map((h) => (h.vendor === 'opencode' ? { ...h, present: true } : h)),
+    })
+    const vSelect2 = w2.find('select.sf-select')
+    await vSelect2.setValue('opencode')
+    const opencodeSelects = w2.findAll('select.sf-select')
+    expect(opencodeSelects).toHaveLength(2)
   })
 })

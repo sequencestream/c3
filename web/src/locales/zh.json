@@ -907,28 +907,35 @@
         "label": "下次运行:",
         "utcHint": "(按配置时区显示,如 Asia/Shanghai)"
       },
-      "execIdentity": {
-        "label": "执行身份"
+      "permissionMode": {
+        "label": "权限模式",
+        "claude": {
+          "default": "默认",
+          "auto": "自动",
+          "plan": "规划",
+          "acceptEdits": "接受编辑",
+          "bypassPermissions": "绕过权限"
+        },
+        "codex": {
+          "sandboxModeLabel": "沙箱模式",
+          "sandboxReadWrite": "读写",
+          "sandboxReadOnly": "只读",
+          "approvalLabel": "审批策略",
+          "approvalOnRequest": "请求时审批",
+          "approvalOnFailure": "失败时审批",
+          "approvalNever": "从不审批"
+        },
+        "opencode": {
+          "plan": "规划",
+          "build": "构建",
+          "buildAllow": "构建（允许）"
+        }
       },
       "saveChanges": {
         "label": "保存更改"
       },
       "create": {
         "label": "新建定时任务"
-      },
-      "mcpMode": {
-        "readOnly": {
-          "label": "只读",
-          "hint": "仅允许读取的工具;写操作被阻止。"
-        },
-        "sandboxed": {
-          "label": "沙箱",
-          "hint": "允许写操作,但需排队等待审批。"
-        },
-        "fullAccess": {
-          "label": "完全访问",
-          "hint": "无任何限制——请谨慎使用。"
-        }
       },
       "vendor": {
         "label": "品牌"

@@ -138,14 +138,43 @@ export class CodexSessionStore implements SessionStore {
     }
   }
 
-  /** Scan JSONL lines for the first user `input_text` to use as the title. */
+  /**
+   * Scan JSONL lines for the first user-authored text to use as the title.
+   * Handles TWO Codex on-disk formats (2026-06-09):
+   *
+   * 1. `event_msg` with `payload.type === 'user_message'` — the Codex SDK's
+   *    NATIVE format for a human user's prompt (written when c3 dispatches
+   *    a work-session prompt via `runStreamed`). The text lives in
+   *    `payload.message`. This is the ONLY source of the user's actual input
+   *    for interactive Codex sessions; without it, every session would show
+   *    "New session" forever.
+   *
+   * 2. `response_item` with `payload.role === 'user'` and
+   *    `content[].type === 'input_text'` — the Claude SDK's JSONL format
+   *    (carried over when c3 prescribes system-generated context blocks
+   *    like environment overrides). This is checked AFTER format 1 so that
+   *    system preamble text is not mistaken for the user's prompt.
+   */
   private extractTitle(lines: string[], _fullContent: string): string {
     const limit = Math.min(lines.length, 2000)
     for (let i = 1; i < limit; i++) {
       const line = lines[i].trim()
       if (!line) continue
       const obj = tryParseJson(line)
-      if (!obj || obj.type !== 'response_item') continue
+      if (!obj) continue
+
+      // Format 1: Codex-native user_message event (actual user prompt)
+      if (obj.type === 'event_msg') {
+        const pl = obj.payload as Record<string, unknown> | undefined
+        if (pl?.type === 'user_message' && typeof pl.message === 'string') {
+          const text = (pl.message as string).trim()
+          if (text) return text.slice(0, 120)
+        }
+        continue // other event_msg types are not titles (agent_message, token_count, etc.)
+      }
+
+      // Format 2: Claude-style response_item with role=user (system-generated context)
+      if (obj.type !== 'response_item') continue
       const pl = obj.payload as Record<string, unknown> | undefined
       if (!pl || pl.role !== 'user') continue
       const content = pl.content as unknown[]

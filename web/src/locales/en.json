@@ -947,28 +947,35 @@
         "label": "Next run:",
         "utcHint": "(shown in the configured time zone, e.g. Asia/Shanghai)"
       },
-      "execIdentity": {
-        "label": "Execution identity"
+      "permissionMode": {
+        "label": "Permission mode",
+        "claude": {
+          "default": "Default",
+          "auto": "Auto",
+          "plan": "Plan",
+          "acceptEdits": "Accept edits",
+          "bypassPermissions": "Bypass permissions"
+        },
+        "codex": {
+          "sandboxModeLabel": "Sandbox mode",
+          "sandboxReadWrite": "Read-write",
+          "sandboxReadOnly": "Read-only",
+          "approvalLabel": "Approval policy",
+          "approvalOnRequest": "On request",
+          "approvalOnFailure": "On failure",
+          "approvalNever": "Never"
+        },
+        "opencode": {
+          "plan": "Plan",
+          "build": "Build",
+          "buildAllow": "Build (allow)"
+        }
       },
       "saveChanges": {
         "label": "Save changes"
       },
       "create": {
         "label": "Create schedule"
-      },
-      "mcpMode": {
-        "readOnly": {
-          "label": "Read-only",
-          "hint": "Tools that only read; writes are blocked."
-        },
-        "sandboxed": {
-          "label": "Sandboxed",
-          "hint": "Writes allowed, but queued for approval."
-        },
-        "fullAccess": {
-          "label": "Full access",
-          "hint": "No restrictions — use with care."
-        }
       },
       "vendor": {
         "label": "Vendor"

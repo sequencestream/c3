@@ -908,28 +908,35 @@
         "label": "Следующий запуск:",
         "utcHint": "(показано в настроенном часовом поясе, напр. Asia/Shanghai)"
       },
-      "execIdentity": {
-        "label": "Идентичность выполнения"
+      "permissionMode": {
+        "label": "Режим разрешений",
+        "claude": {
+          "default": "По умолчанию",
+          "auto": "Авто",
+          "plan": "План",
+          "acceptEdits": "Разрешить правки",
+          "bypassPermissions": "Обходить разрешения"
+        },
+        "codex": {
+          "sandboxModeLabel": "Режим песочницы",
+          "sandboxReadWrite": "Чтение/запись",
+          "sandboxReadOnly": "Только чтение",
+          "approvalLabel": "Политика утверждения",
+          "approvalOnRequest": "По запросу",
+          "approvalOnFailure": "При сбое",
+          "approvalNever": "Никогда"
+        },
+        "opencode": {
+          "plan": "План",
+          "build": "Сборка",
+          "buildAllow": "Сборка (разрешено)"
+        }
       },
       "saveChanges": {
         "label": "Сохранить изменения"
       },
       "create": {
         "label": "Создать расписание"
-      },
-      "mcpMode": {
-        "readOnly": {
-          "label": "Только чтение",
-          "hint": "Инструменты только для чтения; запись блокируется."
-        },
-        "sandboxed": {
-          "label": "В песочнице",
-          "hint": "Запись разрешена, но ставится в очередь на одобрение."
-        },
-        "fullAccess": {
-          "label": "Полный доступ",
-          "hint": "Без ограничений — используйте с осторожностью."
-        }
       },
       "vendor": {
         "label": "Вендор"

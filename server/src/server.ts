@@ -141,7 +141,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           const vsid = s.vendorExtra?.vendorSessionId
           return typeof vsid === 'string' && vsid === input.realId
         })
-        if (hit?.title) title = hit.title
+        // Only accept a real native title (not a default placeholder like
+        // "New session") — the fallback from `firstUserTitle(baseline)` may
+        // have a more meaningful value, especially for Codex sessions whose
+        // JSONL file now correctly reports the user prompt.
+        if (hit?.title && hit.title !== 'New session' && hit.title !== 'Untitled session') {
+          title = hit.title
+        }
       } catch (err) {
         console.error('[c3] onRunEnd native title lookup failed:', err)
       }

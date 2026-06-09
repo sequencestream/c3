@@ -2193,6 +2193,7 @@ function dismissSkillApproval() {
     :project-config="currentProjectConfig"
     :current-workspace="currentWorkspace"
     :vendor-modes="vendorModes"
+    :system-sandboxes="serverSettings?.sandboxes ?? []"
     @close="projectConfigOpen = false"
     @save="saveProjectConfig"
   />

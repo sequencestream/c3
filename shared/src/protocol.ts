@@ -347,11 +347,83 @@ export type SkillSupportState = CapabilityState
  */
 export type SkillApprovalKind = 'gitignore'
 
+// ─── Sandbox Config Types ───────────────────────────────────────────────────
+// Wire representation of the kernel's SystemSandboxDef / ProjectSandboxConfig.
+// The kernel maintains its own copies in server/src/kernel/sandbox/types.ts
+// (with runtime types like SandboxHandle); these protocol-level interfaces are
+// the persistence shape, kept in sync by the normalize layer.
+
+/** Supported container runtime backends for sandbox execution. */
+export type SandboxType = 'docker' | 'gvisor' | 'kata' | 'firecracker'
+
+/**
+ * System-level sandbox definition — a "template" the administrator defines
+ * in System Settings. Each has a unique {@link name} that a project-level
+ * {@link ProjectSandboxConfig.sandbox} references.
+ */
+export interface SystemSandboxDef {
+  /** Unique name for this sandbox definition (e.g. "default", "nodejs"). */
+  name: string
+  /** Container runtime type. */
+  type: SandboxType
+  /** Container image (e.g. "node:20-alpine", "python:3.12-slim"). */
+  image: string
+  /** Seccomp profile name (loaded from the seccomp directory). */
+  seccomp?: string
+  /** Memory limit in Docker format: "256m", "2g", etc. */
+  memoryLimit?: string
+  /** CPU limit in fractional cores (e.g. 2 = 2 CPUs, 0.5 = half a core). */
+  cpuLimit?: number
+  /** Human-readable description shown in the UI. */
+  description?: string
+  /** Environment variables injected into the container. */
+  envVars?: Record<string, string>
+  /** When true, the container has no network access. */
+  networkDisabled?: boolean
+  /** When true, the container root filesystem is read-only. */
+  readonlyRootfs?: boolean
+  /** Working directory inside the container. */
+  workingDir?: string
+  /** Entrypoint override (replaces CMD). */
+  entrypoint?: string[]
+  /** Additional Docker-specific options (passed verbatim to dockerode). */
+  dockerOptions?: Record<string, unknown>
+}
+
+/**
+ * Project-level sandbox configuration — what a project user can configure
+ * after an administrator has defined a {@link SystemSandboxDef}.
+ *
+ * The project **selects** a system def by name and may enable/disable
+ * sandboxing. Image/type/seccomp are NOT overridable at the project level
+ * (they are security-sensitive and only the admin sets them).
+ */
+export interface ProjectSandboxConfig {
+  /** Name of the system sandbox def to use. Required when enabled. */
+  sandbox?: string
+  /** Master switch — sandboxing is off by default. */
+  enabled?: boolean
+  /**
+   * Override the system def's networkDisabled setting.
+   * When true, the container has no network, regardless of the system def.
+   * When false or unset, defers to the system def's value.
+   */
+  networkDisabled?: boolean
+  /** Override memory limit (Docker format). */
+  memoryLimitOverride?: string
+  /** Override CPU limit (fractional cores). */
+  cpuLimitOverride?: number
+  /** Override base image (use with caution — changes the runtime environment). */
+  imageOverride?: string
+  /** Additional env vars merged on top of the system def's envVars. */
+  envVarsOverride?: Record<string, string>
+}
+
 /**
  * Per-project (workspace) configuration, keyed by resolved project path in
  * {@link SystemSettings.projectConfigs}. Each project holds its own copy of the
- * 5 workspace-level knobs — independent of every other project's values.
- * Absent or partial entries fall back to the normalized defaults.
+ * 6 workspace-level knobs (including sandbox) — independent of every other
+ * project's values. Absent or partial entries fall back to the normalized defaults.
  */
 export interface ProjectConfig {
   /**
@@ -384,6 +456,10 @@ export interface ProjectConfig {
    * build-link-capable vendor's discovery directory. Validated by `getSkillRepos()`
    * (fail-hard). Absent/empty ⇒ no external skills configured for this project. */
   skillRepos?: SkillRepoConfig[]
+  /** Project-level sandbox configuration. References a system sandbox def
+   * by name. Absent or undefined ⇒ sandboxing is not configured (equivalent
+   * to disabled). The system's sandboxes list is in {@link SystemSettings.sandboxes}. */
+  sandbox?: ProjectSandboxConfig
 }
 
 /**
@@ -471,6 +547,13 @@ export interface SystemSettings {
    * Absent / non-false ⇒ enabled.
    */
   socketAutoResume?: boolean
+  /**
+   * System-level sandbox definitions. Each definition is a "template" that
+   * project-level configs reference by name. Admin-only CRUD via the System
+   * Settings panel. Absent or empty ⇒ no sandbox definitions exist; the
+   * Project Config panel hides its sandbox section accordingly.
+   */
+  sandboxes?: SystemSandboxDef[]
   /**
    * Per-project (workspace) configuration map, keyed by resolved project path.
    * Each entry holds the project's own {@link ProjectConfig} — the 5 workspace-level knobs

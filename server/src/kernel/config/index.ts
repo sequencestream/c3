@@ -31,7 +31,9 @@ import type {
   CodexPolicy,
   ModeToken,
   ProjectConfig,
+  ProjectSandboxConfig,
   SkillRepoConfig,
+  SystemSandboxDef,
   SystemSettings,
   UiLang,
   VendorId,
@@ -285,6 +287,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // `getSkillRepos(projectPath)`, which reads from `loadProjectConfig(projectPath)`.
   // Per-project configurations passthrough (project-level knobs).
   const projectConfigs = raw?.projectConfigs
+  // System sandbox definitions passthrough. Validated by SandboxRegistry at startup.
+  const sandboxes = raw?.sandboxes
   return {
     agents,
     defaultAgentId,
@@ -295,6 +299,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     degradationChain,
     socketAutoResume,
     // skillRepos intentionally omitted — deprecated, migrated to ProjectConfig
+    ...(sandboxes !== undefined ? { sandboxes } : {}),
     ...(projectConfigs ? { projectConfigs } : {}),
   }
 }
@@ -348,6 +353,7 @@ export function normalizeProjectConfig(raw: unknown): ProjectConfig {
   const skillRepos = Array.isArray(rec.skillRepos)
     ? (rec.skillRepos as SkillRepoConfig[])
     : undefined
+  const sandbox = normalizeSandboxConfig(rec.sandbox)
   return {
     defaultMode,
     consensus,
@@ -355,7 +361,42 @@ export function normalizeProjectConfig(raw: unknown): ProjectConfig {
     maxRoundsPerStage,
     maxSpeechChars,
     ...(skillRepos ? { skillRepos } : {}),
+    ...(sandbox !== undefined ? { sandbox } : {}),
   }
+}
+
+/**
+ * Normalize a raw project sandbox config value. Returns `undefined` when the
+ * value is absent/null/non-object, preserving the "not configured" signal so
+ * the UI knows to hide sandbox options. When present, trims string fields and
+ * delegates numeric/boolean passthrough. Absent/empty after trimming ⇒ undefined.
+ */
+function normalizeSandboxConfig(raw: unknown): ProjectSandboxConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const rec = raw as Record<string, unknown>
+  const sb: ProjectSandboxConfig = {}
+  if (typeof rec.sandbox === 'string' && rec.sandbox.trim()) sb.sandbox = rec.sandbox.trim()
+  if (rec.enabled === true) sb.enabled = true
+  if (rec.networkDisabled === true) sb.networkDisabled = true
+  if (typeof rec.memoryLimitOverride === 'string' && rec.memoryLimitOverride.trim())
+    sb.memoryLimitOverride = rec.memoryLimitOverride.trim()
+  if (
+    typeof rec.cpuLimitOverride === 'number' &&
+    Number.isFinite(rec.cpuLimitOverride) &&
+    rec.cpuLimitOverride > 0
+  )
+    sb.cpuLimitOverride = rec.cpuLimitOverride
+  if (typeof rec.imageOverride === 'string' && rec.imageOverride.trim())
+    sb.imageOverride = rec.imageOverride.trim()
+  if (
+    rec.envVarsOverride &&
+    typeof rec.envVarsOverride === 'object' &&
+    !Array.isArray(rec.envVarsOverride)
+  )
+    sb.envVarsOverride = rec.envVarsOverride as Record<string, string>
+  // Return undefined when nothing meaningful was set (keeps old configs clean).
+  if (Object.keys(sb).length === 0) return undefined
+  return sb
 }
 
 /**
@@ -1013,6 +1054,23 @@ export function getMaxRoundsPerStage(projectPath: string): number {
  */
 export function getMaxSpeechChars(projectPath: string): number {
   return normalizeMaxSpeechChars(loadProjectConfig(projectPath).maxSpeechChars)
+}
+
+/**
+ * Get the system-level sandbox definitions. Returns the raw array from
+ * settings (passthrough — shape is validated by SandboxRegistry at startup).
+ * Absent/empty ⇒ no sandbox definitions exist.
+ */
+export function getSystemSandboxes(): SystemSandboxDef[] {
+  return loadSettings().sandboxes ?? []
+}
+
+/**
+ * Get the project-level sandbox config (normalized). Returns `undefined`
+ * when the project has no sandbox config (equivalent to disabled).
+ */
+export function getProjectSandbox(projectPath: string): ProjectSandboxConfig | undefined {
+  return normalizeSandboxConfig(loadProjectConfig(projectPath).sandbox)
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

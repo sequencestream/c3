@@ -13,7 +13,9 @@ import type {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   CodexSandboxMode,
   ProjectConfig,
+  ProjectSandboxConfig,
   SkillRepoConfig,
+  SystemSandboxDef,
   VendorId,
   VendorModeCatalog,
   ModeToken,
@@ -40,6 +42,8 @@ const props = defineProps<{
   projectConfig: ProjectConfig | null
   currentWorkspace: string | null
   vendorModes: Record<VendorId, VendorModeCatalog> | null
+  /** System sandbox definitions — drives the sandbox name dropdown. */
+  systemSandboxes: SystemSandboxDef[]
 }>()
 
 const emit = defineEmits<{
@@ -115,6 +119,13 @@ watch(
       },
       skillRepos: config?.skillRepos ? config.skillRepos.map((r) => ({ ...r })) : [],
     }
+    // Re-seed the sandbox draft from server config (sandboxDraft computed
+    // wraps draft.value.sandbox, which starts undefined — the watch sets it).
+    if (config?.sandbox) {
+      draft.value.sandbox = { ...config.sandbox }
+    } else {
+      delete draft.value.sandbox
+    }
     // Seed codex policy from config: CodexPolicy object or translate legacy token.
     const codexVal = config?.defaultMode?.['codex']
     if (codexVal && typeof codexVal === 'object' && 'sandboxMode' in codexVal) {
@@ -135,6 +146,18 @@ watch(
 const draftDefaultMode = computed(
   () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto', opencode: 'build' },
 )
+
+/**
+ * Always-non-null sandbox ref for the template (ProjectConfig.sandbox is optional).
+ * Exported as `sandboxDraft` so v-model bindings don't trigger "possibly undefined"
+ * even when sandbox hasn't been explicitly set.
+ */
+const sandboxDraft = computed<ProjectSandboxConfig>({
+  get: () => draft.value.sandbox ?? {},
+  set: (val) => {
+    draft.value.sandbox = val
+  },
+})
 
 // ---- External skill repos (ADR-0016/0017) ----
 
@@ -185,7 +208,14 @@ function onSave() {
     ...(draft.value.defaultMode as Record<string, unknown>),
   }
   defaultMode['codex'] = { ...draftCodexPolicy.value }
-  emit('save', { ...draft.value, defaultMode: defaultMode as ProjectConfig['defaultMode'] })
+  // Only emit sandbox when enabled (or has meaningful fields); the server
+  // normalizeSandboxConfig also strips empty objects on persist.
+  const sandbox = sandboxDraft.value.enabled ? sandboxDraft.value : undefined
+  emit('save', {
+    ...draft.value,
+    defaultMode: defaultMode as ProjectConfig['defaultMode'],
+    sandbox,
+  })
 }
 
 /** Paste handler: parse GitHub URL to auto-fill ref/subpath. */
@@ -391,6 +421,89 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         <button class="agent-add" data-testid="project-config-add-skill-repo" @click="addSkillRepo">
           {{ t('projectConfig.skillRepos.add.label') }}
         </button>
+      </section>
+
+      <!-- Sandbox section: only visible when system sandbox definitions exist -->
+      <section
+        v-if="props.systemSandboxes.length > 0"
+        class="project-config-section"
+        data-testid="project-config-sandbox"
+      >
+        <p class="project-config-section-title">{{ t('projectConfig.sandbox.title.label') }}</p>
+        <p class="project-config-hint">{{ t('projectConfig.sandbox.hint') }}</p>
+
+        <label class="project-config-toggle">
+          <input
+            v-model="sandboxDraft.enabled"
+            type="checkbox"
+            :true-value="true"
+            :false-value="undefined"
+            data-testid="project-config-sandbox-enabled"
+          />
+          {{ t('projectConfig.sandbox.enable.label') }}
+        </label>
+
+        <template v-if="sandboxDraft.enabled">
+          <div class="project-config-vendor-mode">
+            <p class="project-config-vendor-label">{{ t('projectConfig.sandbox.name.label') }}</p>
+            <select
+              v-model="sandboxDraft.sandbox"
+              class="mode-select"
+              data-testid="project-config-sandbox-name"
+            >
+              <option value="" disabled>
+                {{ t('projectConfig.sandbox.name.placeholder') }}
+              </option>
+              <option v-for="sb in props.systemSandboxes" :key="sb.name" :value="sb.name">
+                {{ sb.name }}
+              </option>
+            </select>
+          </div>
+
+          <label class="project-config-toggle">
+            <input v-model="sandboxDraft.networkDisabled" type="checkbox" />
+            {{ t('projectConfig.sandbox.networkDisabled.label') }}
+          </label>
+
+          <div class="project-config-vendor-mode">
+            <p class="project-config-vendor-label">
+              {{ t('projectConfig.sandbox.memoryLimitOverride.label') }}
+            </p>
+            <input
+              v-model="sandboxDraft.memoryLimitOverride"
+              class="project-config-field"
+              :placeholder="t('projectConfig.sandbox.memoryLimitOverride.placeholder')"
+              data-testid="project-config-sandbox-memory"
+            />
+          </div>
+
+          <div class="project-config-vendor-mode">
+            <p class="project-config-vendor-label">
+              {{ t('projectConfig.sandbox.cpuLimitOverride.label') }}
+            </p>
+            <input
+              v-model.number="sandboxDraft.cpuLimitOverride"
+              class="project-config-field project-config-number"
+              type="number"
+              min="0"
+              step="0.5"
+              :placeholder="t('projectConfig.sandbox.cpuLimitOverride.placeholder')"
+              data-testid="project-config-sandbox-cpu"
+            />
+          </div>
+
+          <div class="project-config-vendor-mode">
+            <p class="project-config-vendor-label">
+              {{ t('projectConfig.sandbox.imageOverride.label') }}
+            </p>
+            <input
+              v-model="sandboxDraft.imageOverride"
+              class="project-config-field"
+              :placeholder="t('projectConfig.sandbox.imageOverride.placeholder')"
+              data-testid="project-config-sandbox-image"
+            />
+          </div>
+        </template>
       </section>
     </div>
     <div class="project-config-foot">

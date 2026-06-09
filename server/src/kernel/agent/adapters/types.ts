@@ -212,6 +212,12 @@ export interface DriverStartOptions {
   baseUrl?: string
   /** Raw provider api key override, paired with {@link baseUrl} (driver-path vendors). */
   apiKey?: string
+  /**
+   * Path to a sandbox-wrapper script. When set, the driver MUST use this path
+   * as the vendor binary executable instead of the default host binary resolution.
+   * The wrapper transparently runs the vendor CLI inside a sandbox container.
+   */
+  sandboxWrapperPath?: string
 }
 
 /**
@@ -268,8 +274,7 @@ export type ApprovalDecision =
 /** Undo a subscription. */
 export type Disposer = () => void
 
-/**
- * Intercept → suspend → write back. The neutral approval channel. For vendors
+/** Intercept → suspend → write back. The neutral approval channel. For vendors
  * with `perToolApproval`, the adapter calls the registered handler when a tool
  * needs a decision and writes the result back (Claude: resolve the blocking
  * callback; OpenCode: REST POST). For vendors without it (Codex), `onRequest`
@@ -279,6 +284,43 @@ export type Disposer = () => void
 export interface ApprovalBridge {
   /** Register the decision handler. Returns a disposer. Required. */
   onRequest(handler: ApprovalHandler): Disposer
+
+  /**
+   * Optional pre-approval checkpoint for sandboxed runs.
+   *
+   * Before a tool is auto-approved (pre-approved by vendor policy), this
+   * method is called with the sandbox context. It can snapshot the workspace
+   * files (via {@link import('../../sandbox/SandboxDriver.js').SandboxDriver.copyFrom})
+   * and inspect for modified files. Returns a checkpoint result that the
+   * caller uses to decide whether pre-approval is safe.
+   *
+   * When absent (sandbox not enabled, or the bridge doesn't support it),
+   * pre-approval proceeds without a checkpoint.
+   */
+  preApproveCheckpoint?(
+    sandbox: import('../../sandbox/types.js').SandboxHandle,
+    driver: import('../../sandbox/SandboxDriver.js').SandboxDriver,
+  ): Promise<CheckpointResult>
+}
+
+/**
+ * Result of a pre-approval checkpoint inspection.
+ */
+export interface CheckpointResult {
+  /**
+   * Whether the checkpoint deems pre-approval safe.
+   * When false, the caller should escalate to user approval.
+   */
+  readonly safe: boolean
+  /**
+   * Human-readable explanation of the checkpoint result.
+   */
+  readonly reason: string
+  /**
+   * List of files that were modified (relative paths inside the workspace),
+   * when available. Empty when no modifications detected.
+   */
+  readonly modifiedFiles?: readonly string[]
 }
 
 /** A session in the store's listing (neutral subset). */

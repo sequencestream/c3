@@ -102,6 +102,22 @@ export interface SessionRuntime {
    * `idle`. Updated in `emit()`.
    */
   lastActivityAt: number
+  /**
+   * Sandbox handle for container-based isolation. Set when the run is launched
+   * inside a sandbox container; cleared when `finalizeRun` or `removeRuntime`
+   * stops the container. The sandbox outlives socket disconnects (ADR-0006).
+   */
+  sandboxHandle?: import('./kernel/sandbox/types.js').SandboxHandle
+  /**
+   * Temp directory for sandbox wrapper scripts and env files.
+   * Created atomically with `sandboxHandle`; cleaned up by `sandboxStop`.
+   */
+  sandboxTmpDir?: string
+  /**
+   * Cleanup function for the sandbox container. Called by `finalizeRun` and
+   * `removeRuntime`. Registered atomically with `sandboxHandle`.
+   */
+  sandboxStop?: () => Promise<void>
   viewers: Set<Viewer>
 }
 
@@ -304,6 +320,15 @@ export function setStatus(id: string, status: SessionStatus): void {
 export function finalizeRun(id: string): void {
   const rt = runtimes.get(id)
   if (!rt) return
+  // Stop the sandbox container if one is running. Fire-and-forget: the run is
+  // already over, we don't block on container cleanup (best-effort). Errors are
+  // swallowed (container cleanup is best-effort).
+  if (rt.sandboxStop) {
+    const stop = rt.sandboxStop
+    rt.sandboxStop = undefined
+    rt.sandboxHandle = undefined
+    stop().catch((err) => console.warn('[c3] sandbox stop error:', err))
+  }
   if (!rt.sawTurnEnd) emit(id, { type: 'turn_end', reason: 'complete' })
   setStatus(id, 'idle')
   // Run-end projection upsert. The title source is the registered hook's native
@@ -311,7 +336,7 @@ export function finalizeRun(id: string): void {
   // `firstUserTitle(rt.baseline)` is only the FALLBACK passed along for when that
   // native lookup can't resolve a title. On the FIRST run `rt.baseline` is empty
   // (this turn's messages live in `rt.buffer`), so the fallback alone would be the
-  // placeholder "New session" — hence the hook re-resolves from the native store.
+  // placeholder "New session" — hence the hook re-reolves from the native store.
   onRunEnd?.({ realId: id, workspacePath: rt.workspacePath, title: firstUserTitle(rt.baseline) })
 }
 
@@ -388,6 +413,14 @@ export function stopRun(id: string): void {
 export function removeRuntime(id: string): void {
   const rt = runtimes.get(id)
   if (!rt) return
+  // Stop the sandbox container before dropping the runtime (same fire-and-forget
+  // pattern as finalizeRun).
+  if (rt.sandboxStop) {
+    const stop = rt.sandboxStop
+    rt.sandboxStop = undefined
+    rt.sandboxHandle = undefined
+    stop().catch((err) => console.warn('[c3] sandbox stop error:', err))
+  }
   rt.run?.abort.abort()
   runtimes.delete(id)
 }

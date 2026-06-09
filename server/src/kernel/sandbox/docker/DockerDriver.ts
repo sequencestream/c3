@@ -18,6 +18,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
 import { Readable, PassThrough } from 'node:stream'
 import Docker from 'dockerode'
 import type {
@@ -243,6 +245,32 @@ export class DockerDriver implements SandboxDriver {
     const container = this.#docker.getContainer(handle.containerId)
     const result = await container.commit({ repo: tag })
     return result?.Id ?? tag
+  }
+
+  // ─── Copy From ───────────────────────────────────────────────────────────
+
+  async copyFrom(handle: SandboxHandle, containerPath: string, hostPath: string): Promise<void> {
+    const container = this.#docker.getContainer(handle.containerId)
+
+    const stream = await container.getArchive({ path: containerPath })
+    // Ensure the host directory exists
+    mkdirSync(hostPath, { recursive: true })
+
+    return new Promise<void>((resolve, reject) => {
+      const tar = spawn('tar', ['xf', '-', '-C', hostPath], { stdio: ['pipe', 'ignore', 'pipe'] })
+      let stderr = ''
+      tar.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
+      stream.pipe(tar.stdin)
+
+      tar.on('exit', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(`tar extract failed (exit ${code}): ${stderr}`))
+      })
+      tar.on('error', (err) => reject(new Error(`tar spawn error: ${err.message}`)))
+      stream.on('error', (err) => reject(new Error(`docker cp stream error: ${err.message}`)))
+    })
   }
 
   // ─── Health Check ─────────────────────────────────────────────────────────

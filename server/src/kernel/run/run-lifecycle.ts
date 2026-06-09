@@ -34,6 +34,7 @@ import {
   freezeSessionAgent,
 } from '../agent-config/index.js'
 import { getSocketAutoResume } from '../config/index.js'
+import { launchSandbox } from '../sandbox/SandboxLauncher.js'
 import {
   bindPending,
   clearPending,
@@ -131,6 +132,14 @@ export interface LaunchRunDeps {
    * permission gateway. Wired at the composition root (`server.ts`).
    */
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
+  /**
+   * Sandbox driver and registry for container-based run isolation.
+   * When both are present, `launchRun` attempts to start a sandbox container
+   * before the run (based on the project's sandbox config). When absent or
+   * the project's sandbox is disabled, runs proceed on the host unchanged.
+   */
+  sandboxDriver?: import('../sandbox/SandboxDriver.js').SandboxDriver
+  sandboxRegistry?: import('../sandbox/SandboxRegistry.js').SandboxRegistry
 }
 
 import type { SkillMountOutcome } from '../skill-loader/index.js'
@@ -199,6 +208,27 @@ export async function launchRun(
   // claude path and the driver path can use it.
   const resolvedIntentProfile =
     isIntent && deps.intentProfile ? deps.intentProfile(workspacePath) : undefined
+
+  // Sandbox launch: when the project has sandboxing enabled and the
+  // composition root wired a driver + registry, start a container before
+  // the run. The container outlives socket disconnects (ADR-0006); it is
+  // stopped by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`.
+  if (deps.sandboxDriver && deps.sandboxRegistry && !isIntent) {
+    try {
+      const sandbox = await launchSandbox(deps.sandboxDriver, deps.sandboxRegistry, workspacePath)
+      if (sandbox) {
+        rt.sandboxHandle = sandbox.handle
+        rt.sandboxTmpDir = sandbox.tmpDir
+        rt.sandboxStop = sandbox.stop
+      }
+    } catch (err) {
+      // Sandbox launch failure is non-fatal for the run: degrade gracefully
+      // by logging the error and proceeding without sandbox. This covers the
+      // case where Docker is unavailable, the config is misconfigured, or the
+      // container start fails transiently.
+      console.warn('[c3] sandbox launch failed (run proceeds without sandbox):', err)
+    }
+  }
 
   // Vendor fork (2026-06-06-003 / -007): an `opencode` or `codex` session runs
   // through the neutral AgentDriver path, NOT the claude-hardwired loop below (which
@@ -340,6 +370,8 @@ export async function launchRun(
           envOverrides: agentCfg.envOverrides,
           model: agentCfg.model,
           currentAgentId: agentCfg.agentId,
+          // Forward sandbox handle so the SDK spawns the vendor CLI inside the container
+          ...(rt.sandboxHandle ? { sandboxHandle: rt.sandboxHandle, sandboxTmpDir: rt.sandboxTmpDir } : {}),
           ...(isIntent
             ? // The intent read-only profile (gate + disallowed-tools lock +
               // comm prompt + save_intents tool) is injected at the

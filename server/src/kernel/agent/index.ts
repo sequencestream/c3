@@ -7,6 +7,7 @@ import { addToolSession } from '../../sessions.js'
 import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
 import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
 import { isSideEffectTool } from '../run/resume.js'
+import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
 import {
   allow,
   createCanUseTool,
@@ -169,6 +170,16 @@ export interface RunOptions {
    * `disallowedTools`).
    */
   gate?: 'standard' | 'intent' | 'discussion-research'
+  /**
+   * Sandbox container handle. When present, the vendor CLI binary is wrapped
+   * to run inside the sandbox container via `docker exec`.
+   */
+  sandboxHandle?: import('../sandbox/types.js').SandboxHandle
+  /**
+   * Temp directory created by the sandbox launcher, used for wrapper scripts
+   * and env files. Set alongside `sandboxHandle`.
+   */
+  sandboxTmpDir?: string
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
@@ -490,11 +501,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   const input = new InputStream()
   input.push(prompt)
 
-  const claudePath = findClaudeExecutable()
+  // When sandbox is active, wrap the vendor binary to run inside the container
+  const claudePath = opts.sandboxHandle
+    ? createSandboxWrapper(opts.sandboxHandle, opts.sandboxTmpDir!, 'claude', buildChildEnv(envOverrides))
+    : findClaudeExecutable()
+  // Override cwd to the container's workspace path when sandboxed
+  const sandboxCwd = opts.sandboxHandle ? '/workspace' : cwd
   const q = query({
     prompt: input,
     options: {
-      cwd,
+      cwd: sandboxCwd,
       ...(resume ? { resume } : {}),
       // Inherit user (~/.claude) and project (.claude) settings — hooks, allow
       // rules, Skills, CLAUDE.md (ADR 0005). Tools not pre-decided by inherited

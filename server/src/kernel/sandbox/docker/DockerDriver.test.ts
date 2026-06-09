@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Readable } from 'node:stream'
+import { Readable, PassThrough, Writable } from 'node:stream'
 import { DockerDriver, type DockerDriverOptions } from './DockerDriver.js'
 import type { ResolvedSandboxConfig, SandboxHandle } from '../types.js'
 
@@ -55,6 +55,7 @@ interface MockContainer {
   commit: ReturnType<typeof vi.fn>
   inspect: ReturnType<typeof vi.fn>
   wait: ReturnType<typeof vi.fn>
+  getArchive: ReturnType<typeof vi.fn>
 }
 
 interface MockExec {
@@ -87,6 +88,7 @@ function createMocks(): {
     commit: vi.fn().mockResolvedValue({ Id: 'sha256:snapshot123' }),
     inspect: vi.fn(),
     wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
+    getArchive: vi.fn(),
   }
 
   const docker: MockDocker = {
@@ -315,6 +317,32 @@ describe('DockerDriver', () => {
       mocks.container.commit.mockRejectedValue(new Error('commit failed'))
 
       await expect(driver.snapshot(TEST_HANDLE, 'snap')).rejects.toThrow('commit failed')
+    })
+  })
+
+  // ─── Copy From ─────────────────────────────────────────────────────────
+
+  describe('copyFrom()', () => {
+    it('calls getArchive with the container path', async () => {
+      const stream = new PassThrough()
+      mocks.container.getArchive.mockResolvedValue(stream)
+      // Minimal valid empty tar: 1024 zero bytes (end-of-archive marker)
+      stream.end(Buffer.alloc(1024, 0))
+      // Wait for the promise to resolve (tar on empty input exits 0)
+      await expect(
+        driver.copyFrom(TEST_HANDLE, '/workspace', '/tmp/test-sandbox-copy'),
+      ).resolves.toBeUndefined()
+
+      expect(mocks.docker.getContainer).toHaveBeenCalledWith('abc123def456')
+      expect(mocks.container.getArchive).toHaveBeenCalledWith({ path: '/workspace' })
+    })
+
+    it('throws on getArchive failure', async () => {
+      mocks.container.getArchive.mockRejectedValue(new Error('container not found'))
+
+      await expect(driver.copyFrom(TEST_HANDLE, '/workspace', '/tmp/test-sandbox-copy')).rejects.toThrow(
+        'container not found',
+      )
     })
   })
 

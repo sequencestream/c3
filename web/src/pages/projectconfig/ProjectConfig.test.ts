@@ -100,6 +100,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         projectConfig: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     // 2 codex policy selects (sandbox + approval) + 1 claude + 1 opencode = 4
@@ -119,6 +120,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     expect((w.find('[data-testid="default-mode-claude"]').element as HTMLSelectElement).value).toBe(
@@ -143,6 +145,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         projectConfig: {},
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     // catalog defaultTokens: claude='default', codex='auto', opencode='build'
@@ -168,6 +171,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         projectConfig: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     // claude menu: 'default', 'plan'
@@ -197,6 +201,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         projectConfig: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     // Section labels come from i18n; just confirm the CSS class exists.
@@ -212,6 +217,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     await w.find('[data-testid="project-config-save"]').trigger('click')
@@ -232,6 +238,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     await w.find('[data-testid="default-mode-claude"]').setValue('default')
@@ -254,6 +261,7 @@ describe('ProjectConfig.vue — dev skill', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-field')
@@ -269,6 +277,7 @@ describe('ProjectConfig.vue — dev skill', () => {
         projectConfig: {},
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-field')
@@ -285,6 +294,7 @@ describe('ProjectConfig.vue — discussion rounds per stage', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-number')
@@ -299,6 +309,7 @@ describe('ProjectConfig.vue — discussion rounds per stage', () => {
         projectConfig: cfg({ maxRoundsPerStage: undefined }),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-number')
@@ -312,6 +323,7 @@ describe('ProjectConfig.vue — discussion rounds per stage', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-number')
@@ -331,6 +343,7 @@ describe('ProjectConfig.vue — discussion speech character limit', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-number')
@@ -345,6 +358,7 @@ describe('ProjectConfig.vue — discussion speech character limit', () => {
         projectConfig: cfg({ maxSpeechChars: undefined }),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-number')
@@ -358,6 +372,7 @@ describe('ProjectConfig.vue — discussion speech character limit', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('.project-config-number')
@@ -377,6 +392,7 @@ describe('ProjectConfig.vue — consensus majority toggle', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const box = w.find('[data-testid="project-config-consensus-majority"]')
@@ -391,6 +407,7 @@ describe('ProjectConfig.vue — consensus majority toggle', () => {
         projectConfig: { consensus: { enabled: true } },
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     expect(
@@ -406,6 +423,7 @@ describe('ProjectConfig.vue — consensus majority toggle', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     await w.find('[data-testid="project-config-consensus-majority"]').setValue(false)
@@ -423,6 +441,7 @@ describe('ProjectConfig.vue — save emits full payload', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     await w.find('[data-testid="project-config-save"]').trigger('click')
@@ -467,6 +486,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         projectConfig: configWithSkillRepos,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const rows = w.findAll('[data-testid="skill-repo-row"]')
@@ -480,6 +500,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     expect(w.text()).toContain('No external skill repositories configured.')
@@ -492,6 +513,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         projectConfig: cfg(),
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     await w.find('[data-testid="project-config-add-skill-repo"]').trigger('click')
@@ -506,6 +528,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         projectConfig: configWithSkillRepos,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const removes = w.findAll('[data-testid="skill-repo-remove"]')
@@ -530,6 +553,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         },
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const errors = w.findAll('[data-testid="skill-repo-ref-error"]')
@@ -544,6 +568,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         projectConfig: configWithSkillRepos,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     expect(w.find('[data-testid="skill-repo-vendor"]').exists()).toBe(false)
@@ -558,6 +583,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
         projectConfig: configWithSkillRepos,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
       },
     })
     const inputs = w.findAll('[data-testid="skill-repo-ref"]')

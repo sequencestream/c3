@@ -9,6 +9,8 @@ import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
   SessionBindingStats,
+  SystemSandboxDef,
+  SandboxType,
   SystemSettings,
   UiLang,
   VendorHostStatus,
@@ -272,6 +274,31 @@ function onUiLangChange(e: Event) {
   draft.value.uiLang = lang
   emit('set-ui-lang', lang)
 }
+
+// Sandbox type options (labels are IDs defined in protocol.ts).
+const SANDOX_TYPES: SandboxType[] = ['docker', 'gvisor', 'kata', 'firecracker']
+
+/** Ensure draft.sandboxes is an array (lazy-init). */
+function ensureSandboxes(): SystemSandboxDef[] {
+  if (!draft.value.sandboxes) draft.value.sandboxes = []
+  return draft.value.sandboxes
+}
+
+function addSandbox() {
+  const list = ensureSandboxes()
+  list.push({
+    name: '',
+    type: 'docker',
+    image: '',
+    memoryLimit: '512m',
+    cpuLimit: 1,
+  })
+}
+
+function removeSandbox(index: number) {
+  const list = draft.value.sandboxes
+  if (list) draft.value.sandboxes = list.filter((_, i) => i !== index)
+}
 </script>
 
 <template>
@@ -418,6 +445,77 @@ function onUiLangChange(e: Event) {
             </span>
           </li>
         </ul>
+      </section>
+
+      <!-- Sandbox definitions CRUD -->
+      <section class="settings-section" data-testid="settings-sandboxes">
+        <p class="settings-section-title">{{ t('settings.sandboxes.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.sandboxes.hint') }}</p>
+        <div v-if="!draft.sandboxes || draft.sandboxes.length === 0" class="settings-hint">
+          {{ t('settings.sandboxes.empty') }}
+        </div>
+        <div
+          v-for="(sb, idx) in draft.sandboxes ?? []"
+          :key="idx"
+          class="sandbox-row"
+          data-testid="sandbox-row"
+        >
+          <input
+            v-model="sb.name"
+            class="agent-field"
+            :placeholder="t('settings.sandboxes.name.placeholder')"
+            data-testid="sandbox-name"
+          />
+          <select v-model="sb.type" class="mode-select" data-testid="sandbox-type">
+            <option v-for="st in SANDOX_TYPES" :key="st" :value="st">{{ st }}</option>
+          </select>
+          <input
+            v-model="sb.image"
+            class="agent-field"
+            :placeholder="t('settings.sandboxes.image.placeholder')"
+            data-testid="sandbox-image"
+          />
+          <input
+            v-model="sb.seccomp"
+            class="agent-field"
+            :placeholder="t('settings.sandboxes.seccomp.placeholder')"
+            data-testid="sandbox-seccomp"
+          />
+          <input
+            v-model="sb.memoryLimit"
+            class="agent-field sandbox-small"
+            :placeholder="t('settings.sandboxes.memoryLimit.placeholder')"
+            data-testid="sandbox-memory"
+          />
+          <input
+            v-model.number="sb.cpuLimit"
+            class="agent-field sandbox-small"
+            type="number"
+            min="0"
+            step="0.5"
+            :placeholder="t('settings.sandboxes.cpuLimit.placeholder')"
+            data-testid="sandbox-cpu"
+          />
+          <label class="sandbox-toggle">
+            <input v-model="sb.networkDisabled" type="checkbox" />
+            {{ t('settings.sandboxes.networkDisabled.label') }}
+          </label>
+          <label class="sandbox-toggle">
+            <input v-model="sb.readonlyRootfs" type="checkbox" />
+            {{ t('settings.sandboxes.readonlyRootfs.label') }}
+          </label>
+          <button
+            class="icon-btn"
+            :title="t('settings.sandboxes.remove.tooltip')"
+            data-testid="sandbox-remove"
+            @click="removeSandbox(idx)"
+          >
+            🗑
+          </button>
+        </div>
+        <button class="agent-add" data-testid="settings-add-sandbox" @click="addSandbox">
+          {{ t('settings.sandboxes.add.label') }}
+        </button>
       </section>
 
       <section class="settings-section">

@@ -84,6 +84,18 @@ export interface SandboxDriver {
   snapshot(handle: SandboxHandle, tag: string): Promise<string>
 
   /**
+   * Copy files/directories FROM a running container TO the host.
+   *
+   * Uses `docker cp` under the hood (dockerode's getArchive). The tar
+   * stream from the container is extracted at the host path.
+   *
+   * @param handle        Handle of the running sandbox.
+   * @param containerPath Path inside the container (e.g. "/workspace").
+   * @param hostPath      Destination directory on the host.
+   */
+  copyFrom(handle: SandboxHandle, containerPath: string, hostPath: string): Promise<void>
+
+  /**
    * Check the health and status of a running sandbox.
    *
    * @param handle Handle of the sandbox to check.

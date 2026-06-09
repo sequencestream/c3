@@ -348,6 +348,48 @@
       "present": "on PATH",
       "missing": "not found"
     },
+    "sandboxes": {
+      "title": {
+        "label": "Sandboxes"
+      },
+      "hint": "Define sandbox templates that projects can reference for containerised execution. Each sandbox has a unique name, a container runtime type, an image, and optional resource limits / seccomp profile.",
+      "empty": "No sandbox definitions yet.",
+      "add": {
+        "label": "+ Add sandbox"
+      },
+      "remove": {
+        "tooltip": "Remove this sandbox definition"
+      },
+      "name": {
+        "placeholder": "e.g. default, nodejs, python"
+      },
+      "type": {
+        "label": "Type",
+        "placeholder": "Container runtime type"
+      },
+      "image": {
+        "label": "Image",
+        "placeholder": "e.g. node:20-alpine"
+      },
+      "seccomp": {
+        "label": "Seccomp profile",
+        "placeholder": "e.g. default, (empty = no seccomp)"
+      },
+      "memoryLimit": {
+        "label": "Memory limit",
+        "placeholder": "e.g. 512m, 2g"
+      },
+      "cpuLimit": {
+        "label": "CPU limit (cores)",
+        "placeholder": "e.g. 1, 2, 0.5"
+      },
+      "networkDisabled": {
+        "label": "Disable network"
+      },
+      "readonlyRootfs": {
+        "label": "Read-only root filesystem"
+      }
+    },
     "skillRepos": {
       "title": {
         "label": "External skills"
@@ -1324,6 +1366,35 @@
       },
       "subpath": {
         "placeholder": "Optional sub-directory (e.g. skills/my-skill)"
+      }
+    },
+    "sandbox": {
+      "title": {
+        "label": "Sandbox"
+      },
+      "hint": "Enable container sandboxing for this project. Choose a sandbox definition from the system settings. The sandbox runs every tool execution in an isolated container with the configured resource limits.",
+      "enable": {
+        "label": "Enable sandbox"
+      },
+      "name": {
+        "label": "Sandbox definition",
+        "placeholder": "Select a sandbox",
+        "empty": "No sandbox definitions available. Add one in System Settings first."
+      },
+      "memoryLimitOverride": {
+        "label": "Memory limit override",
+        "placeholder": "e.g. 1g, 1024m"
+      },
+      "cpuLimitOverride": {
+        "label": "CPU limit override",
+        "placeholder": "e.g. 2, 4"
+      },
+      "networkDisabled": {
+        "label": "Disable network"
+      },
+      "imageOverride": {
+        "label": "Image override",
+        "placeholder": "e.g. node:22-alpine"
       }
     }
   },

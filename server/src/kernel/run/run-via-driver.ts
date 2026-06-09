@@ -24,6 +24,8 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
+import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
+import { buildChildEnv } from '../infra/child-env.js'
 import {
   bindPending,
   clearPending,
@@ -200,10 +202,20 @@ export async function runViaDriver(
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
   const { agentId, model, baseUrl, apiKey, envOverrides } = resolveSessionLaunch(runId)
 
+  // Sandbox wrapper: when the session has a running sandbox container, create
+  // a wrapper script that runs the vendor CLI inside the container. The adapter
+  // uses this path instead of the default host binary resolution.
+  const vendorBinaryName = adapter.vendor === 'codex' ? 'codex' : 'opencode'
+  const sandboxWrapperPath = rt.sandboxHandle
+    ? createSandboxWrapper(rt.sandboxHandle, rt.sandboxTmpDir ?? '', vendorBinaryName, buildChildEnv(envOverrides))
+    : undefined
+  // Override cwd to container workspace when sandboxed
+  const driverCwd = rt.sandboxHandle ? '/workspace' : workspacePath
+
   try {
     const run = await adapter.driver.start({
       prompt: effectivePrompt,
-      cwd: workspacePath,
+      cwd: driverCwd,
       signal: cycleAbort.signal,
       actionMode,
       toolGate,
@@ -211,6 +223,7 @@ export async function runViaDriver(
       ...(baseUrl ? { baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(envOverrides ? { envOverrides } : {}),
+      ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
       // A pending session starts fresh; a real id resumes that native session.
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
     })

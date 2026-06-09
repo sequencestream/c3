@@ -2421,6 +2421,42 @@ button.deny:hover:not(:disabled) {
   border-color: var(--c-primary);
 }
 
+/* Sandbox definition row (System Settings). Mixed layout: inputs, selects,
+ * toggles, and a delete button in one row. Uses wrap so small screens stack. */
+.sandbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+
+.sandbox-row .agent-field {
+  min-width: 80px;
+  flex: 1 0 120px;
+}
+
+.sandbox-row .sandbox-small {
+  max-width: 100px;
+  flex: 0 0 100px;
+}
+
+.sandbox-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-code);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sandbox-toggle input[type='checkbox'] {
+  margin: 0;
+}
+
 .dev-skill-input {
   width: 320px;
 }

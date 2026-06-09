@@ -135,7 +135,7 @@ describe('createSchedule next_run_at backfill', () => {
       config: { command: 'echo hi' },
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'claude',
     })
     expect(sch.nextRunAt).not.toBeNull()
@@ -152,7 +152,7 @@ describe('createSchedule next_run_at backfill', () => {
       config: {},
       workspacePath: proj,
       cronExpression: 'not a cron',
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'claude',
     })
     expect(sch.nextRunAt).toBeNull()
@@ -165,7 +165,7 @@ describe('createSchedule next_run_at backfill', () => {
         config: { command: 'echo hi', name: 'client name', description: 'should be dropped' },
         workspacePath: proj,
         cronExpression: '*/5 * * * *',
-        mcpMode: 'read-only',
+        mode: 'read-only',
         vendor: 'claude',
       },
       'Generated Name',
@@ -182,7 +182,7 @@ describe('createSchedule next_run_at backfill', () => {
       config: { command: 'pnpm build' },
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'claude',
     })
     expect((sch.config as Record<string, unknown>).name).toBe('pnpm build')
@@ -194,7 +194,7 @@ describe('createSchedule next_run_at backfill', () => {
       config: {},
       workspacePath: proj,
       cronExpression: '0 0 1 1 *', // yearly, far away
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'claude',
     })
     const before = getSchedule(sch.id)!.nextRunAt!
@@ -213,7 +213,7 @@ describe('vendor field', () => {
       config: { command: 'echo hi' },
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'codex',
     })
     expect(sch.vendor).toBe('codex')
@@ -229,7 +229,7 @@ describe('vendor field', () => {
         config: {},
         workspacePath: proj,
         cronExpression: '* * * * *',
-        mcpMode: 'read-only',
+        mode: 'read-only',
         vendor: v,
       })
       expect(getSchedule(sch.id)!.vendor).toBe(v)
@@ -242,7 +242,7 @@ describe('vendor field', () => {
       config: { command: 'echo hi' },
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'claude',
     })
     expect(sch.vendor).toBe('claude')
@@ -260,7 +260,7 @@ describe('updateSchedule — display name management', () => {
         config: { command: 'echo hi' },
         workspacePath: proj,
         cronExpression: '*/5 * * * *',
-        mcpMode: 'read-only',
+        mode: 'read-only',
         vendor: 'claude',
       },
       name,
@@ -345,7 +345,7 @@ describe('listExecutionLogs', () => {
       config: { command: 'echo hi' },
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'claude',
     })
   }

@@ -16,7 +16,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     eventTopic: null,
     eventReasonFilter: null,
     status: 'active',
-    mcpMode: 'sandboxed',
+    mode: 'sandboxed',
     toolAllowlist: [],
     toolDenylist: [],
     vendor: 'claude',

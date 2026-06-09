@@ -259,7 +259,9 @@ function toggleExpand(): void {
           </div>
           <div class="sched-meta-row">
             <span class="sched-meta-label">{{ t('schedule.meta.mode.label') }}</span>
-            <span class="sched-meta-val">{{ s.mcpMode }}</span>
+            <span class="sched-meta-val">{{
+              typeof s.mode === 'object' ? s.mode.sandboxMode : s.mode
+            }}</span>
           </div>
           <div class="sched-meta-row">
             <span class="sched-meta-label">{{ t('schedule.meta.vendor.label') }}</span>

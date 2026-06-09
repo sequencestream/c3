@@ -59,7 +59,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     eventTopic: null,
     eventReasonFilter: null,
     status: 'active',
-    mcpMode: 'sandboxed',
+    mode: 'sandboxed',
     toolAllowlist: [],
     toolDenylist: [],
     vendor: 'claude',
@@ -104,7 +104,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     const input = created![0][0] as Record<string, unknown>
     expect(input.type).toBe('command')
     expect(input.workspacePath).toBe('/home/proj')
-    expect(input.mcpMode).toBe('sandboxed')
+    expect(input.mode).toBe('sandboxed')
     expect(isValidCron(input.cronExpression as string)).toBe(true)
     expect(input.config).toEqual({ command: 'pnpm build' })
     expect(input.config).not.toHaveProperty('name')
@@ -153,14 +153,14 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect((title.element as HTMLInputElement).value).toBe('legacy name')
   })
 
-  it('update:payload 携带编辑后的 config.name(标题),保留 cron/mcpMode', async () => {
+  it('update:payload 携带编辑后的 config.name(标题),保留 cron/mode', async () => {
     const w = mountForm({ schedule: sched() })
     await w.find('input.sf-input').setValue('My Title')
     await w.find('.sf-btn.primary').trigger('click')
 
     const [id, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
     expect(id).toBe('s1')
-    expect(input.mcpMode).toBe('sandboxed')
+    expect(input.mode).toBe('sandboxed')
     expect(isValidCron(input.cronExpression as string)).toBe(true)
     expect(input.config).toEqual({ command: 'pnpm build', name: 'My Title' })
     expect(input.config).not.toHaveProperty('description')

@@ -14,8 +14,9 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import type {
+  CodexPolicy,
   CreateScheduleInput,
-  McpMode,
+  ModeToken,
   PendingWriteApproval,
   RunEndReason,
   RunLifecycleTopic,
@@ -70,7 +71,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   event_topic         TEXT,
   event_reason_filter TEXT,
   status              TEXT NOT NULL,
-  mcp_mode            TEXT NOT NULL,
+  mode                TEXT NOT NULL DEFAULT '',
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',
   tool_denylist       TEXT NOT NULL DEFAULT '[]',
   vendor              TEXT NOT NULL DEFAULT 'claude',
@@ -183,6 +184,17 @@ function runMigrations(d: Db): void {
   if (!columnExists(d, 'schedules', 'vendor')) {
     d.exec(`ALTER TABLE schedules ADD COLUMN vendor TEXT NOT NULL DEFAULT 'claude'`)
   }
+  // v7 (2026-06-09): replace mcp_mode with mode. Add the new column, backfill
+  // from the old one for legacy rows, then drop the old column so new INSERTs
+  // that write to `mode` don't hit the NOT NULL constraint on `mcp_mode`.
+  // DROP COLUMN requires SQLite ≥ 3.35.0 (2021); Node.js ≥ 18 ships it.
+  if (!columnExists(d, 'schedules', 'mode')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN mode TEXT NOT NULL DEFAULT ''`)
+    d.exec(`UPDATE schedules SET mode = mcp_mode`)
+  }
+  if (columnExists(d, 'schedules', 'mcp_mode')) {
+    d.exec(`ALTER TABLE schedules DROP COLUMN mcp_mode`)
+  }
 }
 
 let schemaReady = false
@@ -245,7 +257,7 @@ interface ScheduleRow {
   event_topic: string | null
   event_reason_filter: string | null
   status: string
-  mcp_mode: string
+  mode: string
   tool_allowlist: string
   tool_denylist: string
   vendor: string
@@ -263,6 +275,29 @@ interface ExecutionLogRow {
   error: string | null
   status: string | null
   session_id: string | null
+}
+
+/**
+ * Parse the `mode` column: try JSON-object first (CodexPolicy), fall back to
+ * plain string (ModeToken for claude/opencode, or legacy McpMode for migrated rows).
+ */
+function parseMode(raw: string | null): ModeToken | CodexPolicy {
+  if (!raw) return 'sandboxed' // default for empty/missing
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && 'sandboxMode' in parsed) {
+      return parsed as CodexPolicy
+    }
+  } catch {
+    /* not JSON → treat as plain string */
+  }
+  return raw
+}
+
+/** Serialize mode for DB storage: CodexPolicy → JSON, string → as-is. */
+function serializeMode(mode: ModeToken | CodexPolicy): string {
+  if (typeof mode === 'object') return JSON.stringify(mode)
+  return mode
 }
 
 /** Parse a JSON-array column to a string list; tolerate null/blank/corrupt → `[]`. */
@@ -302,7 +337,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     eventTopic: (r.event_topic as RunLifecycleTopic | null) ?? null,
     eventReasonFilter: parseReasonFilter(r.event_reason_filter),
     status: r.status as ScheduleStatus,
-    mcpMode: r.mcp_mode as McpMode,
+    mode: parseMode(r.mode),
     toolAllowlist: parseStringList(r.tool_allowlist),
     toolDenylist: parseStringList(r.tool_denylist),
     vendor: r.vendor as VendorId,
@@ -382,7 +417,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
       : null
   d.run(
     `INSERT INTO schedules
-       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mcp_mode, tool_allowlist, tool_denylist, vendor, created_at, updated_at)
+       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mode, tool_allowlist, tool_denylist, vendor, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
@@ -394,7 +429,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     eventTopic,
     eventReasonFilter,
     'active',
-    input.mcpMode,
+    serializeMode(input.mode),
     JSON.stringify(allowlist),
     JSON.stringify(denylist),
     vendor,
@@ -489,9 +524,9 @@ export function updateSchedule(
         : null,
     )
   }
-  if (patch.mcpMode !== undefined) {
-    sets.push('mcp_mode=?')
-    params.push(patch.mcpMode)
+  if (patch.mode !== undefined) {
+    sets.push('mode=?')
+    params.push(serializeMode(patch.mode))
   }
   if (patch.vendor !== undefined) {
     sets.push('vendor=?')

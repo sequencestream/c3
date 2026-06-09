@@ -64,12 +64,18 @@ const unclassifiedTools = computed(() => {
   return props.schedule!.toolAllowlist.filter((name) => !map.has(name))
 })
 
-/** mcpMode → i18n 可读标签。 */
-function mcpModeLabel(mode: string): string {
-  if (mode === 'read-only') return t('schedule.form.mcpMode.readOnly.label')
-  if (mode === 'sandboxed') return t('schedule.form.mcpMode.sandboxed.label')
-  if (mode === 'full-access') return t('schedule.form.mcpMode.fullAccess.label')
-  return mode
+/** mode → i18n 可读标签。 */
+function modeLabel(mode: unknown): string {
+  // CodexPolicy object
+  if (mode && typeof mode === 'object') {
+    const p = mode as { sandboxMode?: string; approvalPolicy?: string }
+    return `${p.sandboxMode ?? '?'} / ${p.approvalPolicy ?? '?'}`
+  }
+  const s = String(mode)
+  if (s === 'read-only') return t('schedule.form.mcpMode.readOnly.label')
+  if (s === 'sandboxed') return t('schedule.form.mcpMode.sandboxed.label')
+  if (s === 'full-access') return t('schedule.form.mcpMode.fullAccess.label')
+  return s
 }
 
 function vendorDotBg(vendor: string): string {
@@ -97,10 +103,10 @@ function vendorLabel(vendor: string): string {
         </span>
       </div>
 
-      <!-- mcpMode -->
+      <!-- mode -->
       <div class="sd-row">
         <span class="sd-label">{{ t('schedule.meta.mode.label') }}</span>
-        <span class="sd-value">{{ mcpModeLabel(schedule.mcpMode) }}</span>
+        <span class="sd-value">{{ modeLabel(schedule.mode) }}</span>
       </div>
 
       <!-- Tool Allowlist -->

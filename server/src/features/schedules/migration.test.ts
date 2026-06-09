@@ -158,7 +158,7 @@ describe('schedule store v5 (event-trigger) migration', () => {
       cronExpression: '',
       eventTopic: 'run:settled',
       eventReasonFilter: ['error'],
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
     expect(ev.triggerType).toBe('event')

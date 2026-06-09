@@ -19,7 +19,6 @@
  */
 import { ref, computed, watch } from 'vue'
 import type {
-  McpMode,
   CreateScheduleInput,
   RunEndReason,
   RunLifecycleTopic,
@@ -63,7 +62,7 @@ const emit = defineEmits<{
 
 const isEdit = computed(() => props.schedule !== null)
 
-const MCP_MODES = computed<{ value: McpMode; label: string; hint: string }[]>(() => [
+const MODE_OPTIONS = computed<{ value: string; label: string; hint: string }[]>(() => [
   {
     value: 'read-only',
     label: t('schedule.form.mcpMode.readOnly.label'),
@@ -130,7 +129,7 @@ const type = ref<ScheduleType>('command')
 // Manual display title — edit-only. Prefilled from the current name; an empty
 // value on save tells the server to revert to auto-naming.
 const title = ref('')
-const mcpMode = ref<McpMode>('sandboxed')
+const modeValue = ref<string>('sandboxed')
 const command = ref('')
 const prompt = ref('')
 const cronExpression = ref('*/30 * * * *')
@@ -169,7 +168,7 @@ watch(
     if (sched) {
       type.value = sched.type
       title.value = readConfigField(sched.config, 'name')
-      mcpMode.value = sched.mcpMode
+      modeValue.value = typeof sched.mode === 'string' ? sched.mode : 'sandboxed'
       cronExpression.value = sched.cronExpression || '*/30 * * * *'
       command.value = readConfigField(sched.config, 'command')
       prompt.value = readConfigField(sched.config, 'prompt')
@@ -184,7 +183,7 @@ watch(
     } else {
       type.value = 'command'
       title.value = ''
-      mcpMode.value = 'sandboxed'
+      modeValue.value = 'sandboxed'
       cronExpression.value = '*/30 * * * *'
       command.value = ''
       prompt.value = ''
@@ -340,7 +339,7 @@ function save(): void {
     config.name = title.value.trim()
     const input: UpdateScheduleInput = {
       config,
-      mcpMode: mcpMode.value,
+      mode: modeValue.value,
       triggerType: triggerType.value,
       vendor: vendor.value,
       toolAllowlist: [...toolAllowlist.value],
@@ -359,7 +358,7 @@ function save(): void {
       type: type.value,
       config,
       workspacePath: props.workspacePath,
-      mcpMode: mcpMode.value,
+      mode: modeValue.value,
       vendor: vendor.value,
       triggerType: triggerType.value,
       cronExpression: isEvent ? '' : cronExpression.value,
@@ -604,17 +603,17 @@ function save(): void {
           <span class="sf-label">{{ t('schedule.form.execIdentity.label') }}</span>
           <div class="sf-segmented">
             <button
-              v-for="m in MCP_MODES"
+              v-for="m in MODE_OPTIONS"
               :key="m.value"
               type="button"
               class="sf-seg"
-              :class="{ active: mcpMode === m.value }"
-              @click="mcpMode = m.value"
+              :class="{ active: modeValue === m.value }"
+              @click="modeValue = m.value"
             >
               {{ m.label }}
             </button>
           </div>
-          <span class="sf-hint">{{ MCP_MODES.find((m) => m.value === mcpMode)?.hint }}</span>
+          <span class="sf-hint">{{ MODE_OPTIONS.find((m) => m.value === modeValue)?.hint }}</span>
         </div>
 
         <!-- Tool checklist -->

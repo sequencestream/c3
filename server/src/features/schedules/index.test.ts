@@ -50,7 +50,7 @@ function makeSchedule() {
       config: { command: 'echo hi' },
       workspacePath: proj,
       cronExpression: '*/5 * * * *',
-      mcpMode: 'read-only',
+      mode: 'read-only',
       vendor: 'claude',
     },
     'Auto Name',

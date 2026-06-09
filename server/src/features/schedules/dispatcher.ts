@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
-import type { McpMode, RunKind, Schedule } from '@ccc/shared/protocol'
+import type { CodexPolicy, ModeToken, RunKind, Schedule, VendorId } from '@ccc/shared/protocol'
 import { resolveFirstAgentOfVendor, launchForAgent } from '../../kernel/agent-config/index.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getWorkspaceMcpConfig } from './store.js'
@@ -269,15 +269,23 @@ async function executeCommand(
 /**
  * Create a context-aware permission handler for LLM prompt schedule execution.
  *
- * Uses the frozen tool set for allowlist/denylist enforcement. For sandboxed
- * and full-access modes, write tool calls go through the approval queue
- * (sandboxed → full queue with timeout; full-access → Owner quick confirm).
+ * Uses the frozen tool set for allowlist/denylist enforcement. Permission mode
+ * is determined by vendor + mode (replacing the old three-way McpMode):
+ * - Claude / OpenCode: `'plan'` token denies all writes; all other tokens allow
+ *   writes through the approval queue.
+ * - Codex: `CodexPolicy.sandboxMode === 'read-only'` denies all writes;
+ *   `'workspace-write'` allows writes through the approval queue.
+ *
+ * Legacy McpMode values ('read-only', 'sandboxed', 'full-access') stored in the
+ * `mode` column by the v7 migration are also handled: 'read-only' maps to the
+ * read-only path; 'sandboxed'/'full-access' go through the approval queue.
  */
 function createPermissionHandler(
   scheduleId: string,
   workspacePath: string,
   frozenTools: FrozenToolSet,
-  mcpMode: McpMode,
+  vendor: VendorId,
+  mode: ModeToken | CodexPolicy,
 ): CanUseTool {
   return async (toolName, input) => {
     // Step 1: Check if tool is in the frozen tool set
@@ -285,50 +293,45 @@ function createPermissionHandler(
       return { behavior: 'deny', message: `tool "${toolName}" is not in the frozen allowlist` }
     }
 
-    // Step 2: Apply mcpMode rules
-    switch (mcpMode) {
-      case 'read-only':
-        return { behavior: 'deny', message: 'schedule execution identity: read-only' }
+    // Step 2: Determine if this mode is read-only based on vendor + mode.
+    // Legacy McpMode values from the v7 migration are also recognised.
+    const readOnly = isReadOnlyMode(vendor, mode)
 
-      case 'full-access': {
-        if (!isWriteTool(toolName, frozenTools)) {
-          return { behavior: 'allow' }
-        }
-        const approved = await pendWriteApproval({
-          scheduleId,
-          workspacePath,
-          toolName,
-          toolInput: input,
-          diffPreview: generateDiffPreview(toolName, input),
-          ttlMs: 5 * 60 * 1000,
-        })
-        if (approved) {
-          return { behavior: 'allow' }
-        }
-        return { behavior: 'deny', message: 'full-access write not approved' }
-      }
-
-      case 'sandboxed': {
-        if (!isWriteTool(toolName, frozenTools)) {
-          return { behavior: 'allow' }
-        }
-        const approved = await pendWriteApproval({
-          scheduleId,
-          workspacePath,
-          toolName,
-          toolInput: input,
-          diffPreview: generateDiffPreview(toolName, input),
-        })
-        if (approved) {
-          return { behavior: 'allow' }
-        }
-        return { behavior: 'deny', message: 'sandboxed write not approved' }
-      }
-
-      default:
-        return { behavior: 'deny', message: `unknown mcpMode: ${mcpMode}` }
+    if (readOnly) {
+      return { behavior: 'deny', message: 'schedule execution identity: read-only' }
     }
+
+    // Step 3: Non-read-only modes: allow reads, writes through approval queue.
+    if (!isWriteTool(toolName, frozenTools)) {
+      return { behavior: 'allow' }
+    }
+
+    const approved = await pendWriteApproval({
+      scheduleId,
+      workspacePath,
+      toolName,
+      toolInput: input,
+      diffPreview: generateDiffPreview(toolName, input),
+    })
+    if (approved) {
+      return { behavior: 'allow' }
+    }
+    return { behavior: 'deny', message: 'write not approved' }
   }
+}
+
+/** Determine whether a vendor's permission mode denies all writes (read-only). */
+function isReadOnlyMode(vendor: VendorId, mode: ModeToken | CodexPolicy): boolean {
+  // Legacy McpMode values from v7 migration
+  if (mode === 'read-only') return true
+  if (mode === 'sandboxed' || mode === 'full-access') return false
+
+  if (vendor === 'codex') {
+    const policy = mode as CodexPolicy
+    return policy.sandboxMode === 'read-only'
+  }
+  // claude / opencode
+  return (mode as ModeToken) === 'plan'
 }
 
 /**
@@ -429,13 +432,13 @@ async function executeLlmPrompt(
     schedule.toolAllowlist ?? [],
     schedule.toolDenylist ?? [],
     workspaceMcpConfig,
-    schedule.mcpMode,
   )
   const permissionHandler = createPermissionHandler(
     schedule.id,
     schedule.workspacePath,
     frozenTools,
-    schedule.mcpMode,
+    schedule.vendor,
+    schedule.mode,
   )
 
   // Build mcpServers from workspace config (if any)

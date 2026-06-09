@@ -59,7 +59,7 @@ describe('store — event-trigger schedule CRUD', () => {
       cronExpression: '',
       eventTopic: 'run:settled',
       eventReasonFilter: ['error', 'aborted'],
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
     expect(s.triggerType).toBe('event')
@@ -77,7 +77,7 @@ describe('store — event-trigger schedule CRUD', () => {
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:settled',
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
     createSchedule({
@@ -87,7 +87,7 @@ describe('store — event-trigger schedule CRUD', () => {
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:started',
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
     // A cron schedule must never surface in the event query.
@@ -96,7 +96,7 @@ describe('store — event-trigger schedule CRUD', () => {
       config: { command: 'c' },
       workspacePath: proj,
       cronExpression: '0 8 * * *',
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
 
@@ -119,7 +119,7 @@ describe('store — event-trigger schedule CRUD', () => {
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:settled',
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
     updateSchedule(s.id, { status: 'paused' })
@@ -132,7 +132,7 @@ describe('store — event-trigger schedule CRUD', () => {
       config: { command: 'a' },
       workspacePath: proj,
       cronExpression: '0 8 * * *',
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
     expect(s.triggerType).toBe('cron')
@@ -155,7 +155,7 @@ describe('store — event-trigger schedule CRUD', () => {
       cronExpression: '',
       eventTopic: 'run:settled',
       eventReasonFilter: ['error'],
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       vendor: 'claude',
     })
     updateSchedule(s.id, { triggerType: 'cron', cronExpression: '0 9 * * *' })
@@ -185,7 +185,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       eventTopic: 'run:settled',
       eventReasonFilter: null,
       status: 'active',
-      mcpMode: 'sandboxed',
+      mode: 'sandboxed',
       toolAllowlist: [],
       toolDenylist: [],
       vendor: 'claude',

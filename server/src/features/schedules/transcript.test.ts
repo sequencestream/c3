@@ -36,7 +36,7 @@ function makeLlmSchedule() {
     config: { prompt: 'hi' },
     workspacePath: proj,
     cronExpression: '* * * * *',
-    mcpMode: 'read-only',
+    mode: 'read-only',
     vendor: 'claude',
   })
 }

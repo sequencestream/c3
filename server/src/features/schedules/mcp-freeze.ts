@@ -5,13 +5,14 @@
  *   1. Workspace-level denylist             (subtraction, global)
  *   2. Schedule-level toolDenylist           (subtraction, schedule-scoped)
  *   3. Schedule-level toolAllowlist          (intersection, empty = no restriction)
- *   4. mcpMode                               (read-only/sandboxed/full-access classification)
  *
  * The result is a frozen snapshot of effective tools + read/write classification
  * that the execution's `canUseTool` callback uses to allow/deny/queue.
+ * NOTE: the read-only/write policy is now applied in the dispatcher's
+ * `createPermissionHandler` based on vendor + mode, not here.
  */
 
-import type { McpMode, WorkspaceMcpConfig } from '@ccc/shared/protocol'
+import type { WorkspaceMcpConfig } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Read/write classification
@@ -125,17 +126,15 @@ function classifyTool(toolName: string): 'read' | 'write' {
 /**
  * Compute the final effective tool list for a schedule execution.
  *
- * @param scheduleAllowlist - Schedule-level toolAllowlist (empty = no restriction beyond denylist + mcpMode)
+ * @param scheduleAllowlist - Schedule-level toolAllowlist (empty = no restriction beyond denylist)
  * @param scheduleDenylist  - Schedule-level toolDenylist
  * @param workspaceConfig   - Workspace-level MCP config (mcpServers + denylist)
- * @param mcpMode           - Execution identity mode
  * @returns Frozen tool set
  */
 export function freezeTools(
   scheduleAllowlist: string[],
   scheduleDenylist: string[],
   workspaceConfig: WorkspaceMcpConfig,
-  _mcpMode: McpMode,
 ): FrozenToolSet {
   // Collect all known tool names:
   // - SDK built-ins (the universal set)

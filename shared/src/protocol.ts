@@ -1294,7 +1294,7 @@ export interface Schedule {
    */
   eventReasonFilter: RunEndReason[] | null
   status: ScheduleStatus
-  mcpMode: McpMode
+  mode: ModeToken | CodexPolicy
   toolAllowlist: string[]
   toolDenylist: string[]
   createdAt: number
@@ -1323,7 +1323,7 @@ export interface CreateScheduleInput {
   eventTopic?: RunLifecycleTopic | null
   /** Optional reason filter for `'run:settled'` event triggers; null/[] = any. */
   eventReasonFilter?: RunEndReason[] | null
-  mcpMode: McpMode
+  mode: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
 }
@@ -1343,7 +1343,7 @@ export interface UpdateScheduleInput {
   cronExpression?: string
   eventTopic?: RunLifecycleTopic | null
   eventReasonFilter?: RunEndReason[] | null
-  mcpMode?: McpMode
+  mode?: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
   status?: ScheduleStatus

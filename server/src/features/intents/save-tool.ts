@@ -14,13 +14,6 @@
  * Tools are named on the `c3` server, so the fully-qualified names are
  * `mcp__c3__save_intents` / `mcp__c3__find_intents` /
  * `mcp__c3__view_intent` (see the `*_TOOL` constants in `claude.ts`).
- *
- * Deprecated alias soft-landing (requirements→intents rename, PR-2): the old
- * `save_requirements` / `find_requirements` / `view_requirement` names are ALSO
- * registered (same schema + handler) so a cached/old caller that hardcoded a
- * pre-rename name still works for ONE minor version. The system prompt advertises
- * only the new names; the deprecated tools survive purely as a fallback and are
- * **hard-deleted next minor**.
  */
 // C-SEC exception (annotated): this DEFINES an in-process MCP tool (the
 // `save_intents` server) handed to the kernel run loop — it does not run an
@@ -43,9 +36,6 @@ const INTENT_STATUSES = [
   'cancelled',
 ] as const satisfies readonly IntentStatus[]
 
-/** Prefix a deprecated alias tool's description so the model prefers the new name. */
-const DEPRECATED = (newName: string, desc: string) => `【已弃用,请改用 ${newName}】${desc}`
-
 /**
  * Build the `c3` MCP server carrying `save_intents`, bound to one project.
  *
@@ -58,8 +48,7 @@ export function createIntentMcpServer(
   projectPath: string,
   onSaved: (projectPath: string) => void,
 ): Record<string, McpServerConfig> {
-  // ---- Shared schemas + handlers (registered under both the canonical and the
-  // deprecated wire names so a pre-rename caller lands on the same logic). ----
+  // ---- Shared schemas + handlers (registered under the canonical names). ----
 
   const saveSchema = {
     intents: z.array(
@@ -225,10 +214,6 @@ export function createIntentMcpServer(
       tool('save_intents', saveDesc, saveSchema, saveHandler),
       tool('find_intents', findDesc, findSchema, findHandler),
       tool('view_intent', viewDesc, viewSchema, viewHandler),
-      // Deprecated wire-name aliases (PR-2 soft-landing; hard-delete next minor).
-      tool('save_requirements', DEPRECATED('save_intents', saveDesc), saveSchema, saveHandler),
-      tool('find_requirements', DEPRECATED('find_intents', findDesc), findSchema, findHandler),
-      tool('view_requirement', DEPRECATED('view_intent', viewDesc), viewSchema, viewHandler),
     ],
   })
   return { c3: server }

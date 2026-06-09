@@ -12,13 +12,10 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyIntentTool,
   FIND_INTENTS_TOOL,
-  FIND_INTENTS_TOOL_DEPRECATED,
   INTENT_DISALLOWED_TOOLS,
   INTENT_QUERY_TOOLS,
   SAVE_INTENTS_TOOL,
-  SAVE_INTENTS_TOOL_DEPRECATED,
   VIEW_INTENT_TOOL,
-  VIEW_INTENT_TOOL_DEPRECATED,
   withAnswers,
 } from './kernel/permission/index.js'
 
@@ -86,14 +83,7 @@ describe('intent gate — disallowed-tools lock', () => {
     // The gate auto-allows these by exact name; the MCP server registers them on `c3`.
     expect(FIND_INTENTS_TOOL).toBe('mcp__c3__find_intents')
     expect(VIEW_INTENT_TOOL).toBe('mcp__c3__view_intent')
-    // The query set carries the canonical names plus the deprecated wire-name
-    // aliases (PR-2 soft-landing), so a pre-rename caller is gated identically.
-    expect([...INTENT_QUERY_TOOLS]).toEqual([
-      FIND_INTENTS_TOOL,
-      VIEW_INTENT_TOOL,
-      FIND_INTENTS_TOOL_DEPRECATED,
-      VIEW_INTENT_TOOL_DEPRECATED,
-    ])
+    expect([...INTENT_QUERY_TOOLS]).toEqual([FIND_INTENTS_TOOL, VIEW_INTENT_TOOL])
   })
 
   it('does not hard-disable the read-only query tools (they auto-allow, not blocked)', () => {
@@ -151,29 +141,6 @@ describe('intent gate — classifyIntentTool (deny-by-default routing)', () => {
     ]) {
       expect(classifyIntentTool(t)).toBe('deny')
     }
-  })
-})
-
-describe('intent gate — deprecated wire-name aliases (requirements→intents soft-landing)', () => {
-  // PR-2 renamed the MCP tools save_requirements/find_requirements/view_requirement
-  // → save_intents/find_intents/view_intent. The old fully-qualified names are kept
-  // callable for ONE minor version and MUST be gated identically, so a cached/old
-  // caller that hardcoded a pre-rename name lands on the same verdict. This is the
-  // deterministic "兜住" proof (hard-delete these aliases — and this block — next minor).
-
-  it('pins the deprecated fully-qualified wire names', () => {
-    expect(SAVE_INTENTS_TOOL_DEPRECATED).toBe('mcp__c3__save_requirements')
-    expect(FIND_INTENTS_TOOL_DEPRECATED).toBe('mcp__c3__find_requirements')
-    expect(VIEW_INTENT_TOOL_DEPRECATED).toBe('mcp__c3__view_requirement')
-  })
-
-  it('gates the deprecated save name as a human confirmation (same as the new name)', () => {
-    expect(classifyIntentTool(SAVE_INTENTS_TOOL_DEPRECATED)).toBe('confirm-save')
-  })
-
-  it('auto-allows the deprecated read-only query names (same as the new names)', () => {
-    expect(classifyIntentTool(FIND_INTENTS_TOOL_DEPRECATED)).toBe('allow')
-    expect(classifyIntentTool(VIEW_INTENT_TOOL_DEPRECATED)).toBe('allow')
   })
 })
 

@@ -16,30 +16,12 @@ export const FIND_INTENTS_TOOL = 'mcp__c3__find_intents'
 export const VIEW_INTENT_TOOL = 'mcp__c3__view_intent'
 
 /**
- * Deprecated wire-name aliases (requirements→intents rename, PR-2). The old
- * `mcp__c3__{save_requirements,find_requirements,view_requirement}` names are
- * kept callable for ONE minor version so a cached/old caller that hardcoded a
- * pre-rename tool name still lands on the same handler + gate verdict. The
- * prompt advertises only the new names; these survive purely as a soft-landing.
- * **Hard-delete next minor.**
- */
-export const SAVE_INTENTS_TOOL_DEPRECATED = 'mcp__c3__save_requirements'
-export const FIND_INTENTS_TOOL_DEPRECATED = 'mcp__c3__find_requirements'
-export const VIEW_INTENT_TOOL_DEPRECATED = 'mcp__c3__view_requirement'
-
-/**
  * The read-only c3 MCP query tools the intent agent may call without a
  * prompt. They only read the project's own ledger (project-bound in the tool
  * closure), so the gate treats them like the read-class built-ins — unlike
- * `save_intents`, which still raises a human confirmation. Includes the
- * deprecated old wire names so a pre-rename call is gated identically.
+ * `save_intents`, which still raises a human confirmation.
  */
-export const INTENT_QUERY_TOOLS = new Set([
-  FIND_INTENTS_TOOL,
-  VIEW_INTENT_TOOL,
-  FIND_INTENTS_TOOL_DEPRECATED,
-  VIEW_INTENT_TOOL_DEPRECATED,
-])
+export const INTENT_QUERY_TOOLS = new Set([FIND_INTENTS_TOOL, VIEW_INTENT_TOOL])
 
 /**
  * Tools hard-disabled (SDK level) for the intent-communication agent — the
@@ -93,8 +75,7 @@ export const INTENT_READ_TOOLS = new Set([
 export type IntentToolDecision = 'allow' | 'confirm-save' | 'ask' | 'deny'
 export function classifyIntentTool(toolName: string): IntentToolDecision {
   if (INTENT_READ_TOOLS.has(toolName) || INTENT_QUERY_TOOLS.has(toolName)) return 'allow'
-  if (toolName === SAVE_INTENTS_TOOL || toolName === SAVE_INTENTS_TOOL_DEPRECATED)
-    return 'confirm-save'
+  if (toolName === SAVE_INTENTS_TOOL) return 'confirm-save'
   if (toolName === 'AskUserQuestion') return 'ask'
   return 'deny'
 }

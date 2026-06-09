@@ -36,6 +36,7 @@ import {
   type DiscussionStageKind,
 } from '@ccc/shared/discussion-types'
 import { askAgentOnce } from '../../agent-once.js'
+import type { AgentSessionManager } from './agent-session-manager.js'
 import { enabledAgents, resolveAgent } from '../../kernel/agent-config/index.js'
 import {
   getMaxRoundsPerStage,
@@ -53,7 +54,9 @@ import {
 } from './store.js'
 import {
   buildOrganizerPrompt,
+  buildOrganizerDeltaPrompt,
   buildParticipantPrompt,
+  buildParticipantDeltaPrompt,
   parseOrganizerDecision,
   parseParticipantSpeech,
   resolveStep,
@@ -148,8 +151,13 @@ export interface DiscussionStore {
 
 /** Injected dependencies for {@link runDiscussion}. */
 export interface DiscussionDeps {
-  /** One-shot, tool-disabled agent turn (the consensus `askAgentOnce` primitive). */
-  ask: (agent: AgentConfig, prompt: string, cwd: string, signal: AbortSignal) => Promise<string>
+  /**
+   * Agent turn — delegates to either the resume-aware {@link AgentSessionManager}
+   * or the stateless {@link askAgentOnce} depending on wiring.
+   * `discussionId` is the first parameter so the callee can route to the correct
+   * session store.
+   */
+  ask: (discussionId: string, agent: AgentConfig, prompt: string, cwd: string, signal: AbortSignal) => Promise<string>
   store: DiscussionStore
   /** The agent that organizes (drives the workflow). */
   organizer: () => AgentConfig
@@ -182,6 +190,20 @@ export interface DiscussionDeps {
    * paused" holds at round boundaries. Absent = the loop never pauses.
    */
   gate?: (signal: AbortSignal) => Promise<void>
+  /**
+   * Return the last-known seq for an agent in this discussion, or `null` when
+   * no session has been created yet (first call / resume unavailable). When
+   * non-null the engine builds a *delta* prompt (header + stage + new messages
+   * only) instead of the full transcript, leveraging session resume to save
+   * tokens. Absent = always build the full prompt (backward compat).
+   */
+  getLastSeq?: (discussionId: string, agentId: string) => number | null
+  /**
+   * Called when the discussion concludes to clean up all agent session mappings.
+   * Delegates to {@link AgentSessionManager.closeAll}. Absent = no cleanup
+   * (backward compat / test deps that don't use sessions).
+   */
+  closeSessions?: (discussionId: string) => void
 }
 
 /**
@@ -245,6 +267,8 @@ export async function runDiscussion(
     store.setConclusion(id, text)
     store.updateDiscussionStatus(id, 'completed')
     deps.onStatusChange(id)
+    // Clean up all agent session mappings — the discussion is done.
+    deps.closeSessions?.(id)
   }
 
   let stage: DiscussionStageKind = nextDiscussionStage(initial.type)?.id ?? 'discuss'
@@ -267,22 +291,32 @@ export async function runDiscussion(
     const current = store.getDiscussion(id) ?? initial
 
     // 1) Organizer decides the next step for this stage.
+    //    Choose delta prompt (resume-aware) or full prompt based on getLastSeq.
     let decisionText = ''
     try {
-      decisionText = await ask(
-        organizerCfg,
-        buildOrganizerPrompt({
-          discussion: current,
-          def,
-          stage: stageDef,
-          messages: store.listMessages(id),
-          participants,
-          agenda: { items: agenda, index: agendaIndex },
-          langName: getUiLangName(),
-        }),
-        cwd,
-        signal,
-      )
+      const allMessages = store.listMessages(id)
+      const lastSeq = deps.getLastSeq?.(id, organizerCfg.id) ?? null
+      const prompt =
+        lastSeq !== null
+          ? buildOrganizerDeltaPrompt({
+              discussion: current,
+              def,
+              stage: stageDef,
+              newMessages: allMessages.filter((m) => m.seq > lastSeq),
+              participants,
+              agenda: { items: agenda, index: agendaIndex },
+              langName: getUiLangName(),
+            })
+          : buildOrganizerPrompt({
+              discussion: current,
+              def,
+              stage: stageDef,
+              messages: allMessages,
+              participants,
+              agenda: { items: agenda, index: agendaIndex },
+              langName: getUiLangName(),
+            })
+      decisionText = await ask(id, organizerCfg, prompt, cwd, signal)
     } catch {
       /* keep '' on failure — parseOrganizerDecision defaults to a safe advance */
     }
@@ -374,8 +408,25 @@ export async function runDiscussion(
           (b): b is { cfg: AgentConfig; speaker: DiscussionParticipant } => !!b.cfg && !!b.speaker,
         )
       const langName = getUiLangName()
-      const prompts = batch.map((b) =>
-        buildParticipantPrompt({
+      // For each participant, determine whether to use a delta prompt (resume)
+      // or the full prompt (first call / resume unavailable). The snapshot is
+      // the same for all participants in this batch.
+      const prompts = batch.map((b) => {
+        const lastSeq = deps.getLastSeq?.(id, b.cfg.id) ?? null
+        if (lastSeq !== null) {
+          return buildParticipantDeltaPrompt({
+            discussion: discussionNow,
+            def,
+            stage: stageDef,
+            newMessages: snapshot.filter((m) => m.seq > lastSeq),
+            speaker: b.speaker,
+            organizerNote: step.organizerNote,
+            subtopic: agenda[agendaIndex],
+            maxSpeechChars: speechBudget,
+            langName,
+          })
+        }
+        return buildParticipantPrompt({
           discussion: discussionNow,
           def,
           stage: stageDef,
@@ -385,15 +436,15 @@ export async function runDiscussion(
           subtopic: agenda[agendaIndex],
           maxSpeechChars: speechBudget,
           langName,
-        }),
-      )
+        })
+      })
       // Surface the whole batch as in-flight before awaiting; broadcast may have
       // several agents replying at once.
       deps.onDispatchStatus?.({ phase: 'pending', agents: batch.map((b) => b.speaker) })
       // Settle (not all-or-nothing): a thrown turn is exposed as `failed` rather than
       // silently swallowed into an empty speech, while the rest of the batch proceeds.
       const results = await Promise.allSettled(
-        batch.map((b, i) => ask(b.cfg, prompts[i], cwd, signal)),
+        batch.map((b, i) => ask(id, b.cfg, prompts[i], cwd, signal)),
       )
       if (signal.aborted) break
       // Sequential, in-order append: under the single synchronous connection each
@@ -439,22 +490,33 @@ export async function runDiscussion(
       let speechText = ''
       let failed = false
       try {
-        speechText = await ask(
-          speakerCfg,
-          buildParticipantPrompt({
-            discussion: store.getDiscussion(id) ?? initial,
-            def,
-            stage: stageDef,
-            messages: store.listMessages(id),
-            speaker,
-            organizerNote: step.organizerNote,
-            subtopic: agenda[agendaIndex],
-            maxSpeechChars: speechBudget,
-            langName: getUiLangName(),
-          }),
-          cwd,
-          signal,
-        )
+        const allMessages = store.listMessages(id)
+        const lastSeq = deps.getLastSeq?.(id, speakerCfg.id) ?? null
+        const prompt =
+          lastSeq !== null
+            ? buildParticipantDeltaPrompt({
+                discussion: store.getDiscussion(id) ?? initial,
+                def,
+                stage: stageDef,
+                newMessages: allMessages.filter((m) => m.seq > lastSeq),
+                speaker,
+                organizerNote: step.organizerNote,
+                subtopic: agenda[agendaIndex],
+                maxSpeechChars: speechBudget,
+                langName: getUiLangName(),
+              })
+            : buildParticipantPrompt({
+                discussion: store.getDiscussion(id) ?? initial,
+                def,
+                stage: stageDef,
+                messages: allMessages,
+                speaker,
+                organizerNote: step.organizerNote,
+                subtopic: agenda[agendaIndex],
+                maxSpeechChars: speechBudget,
+                langName: getUiLangName(),
+              })
+        speechText = await ask(id, speakerCfg, prompt, cwd, signal)
       } catch (err) {
         // Expose the failure (not silently swallowed into an empty speech); the
         // speech is skipped and the round still proceeds.
@@ -508,9 +570,19 @@ export function defaultDiscussionDeps(hooks: {
   onDispatchStatus?: (s: DispatchStatus) => void
   /** Optional pause gate (the server wires it to its per-run pause control). */
   gate?: (signal: AbortSignal) => Promise<void>
+  /**
+   * Resume-aware session manager, or absent for stateless operation.
+   * When present, `ask` delegates to {@link AgentSessionManager.ask}, and
+   * `getLastSeq` / `closeSessions` are wired from the manager; when absent,
+   * the stateless {@link askAgentOnce} is used (backward compat).
+   */
+  sessionManager?: AgentSessionManager
 }): DiscussionDeps {
+  const session = hooks.sessionManager
   return {
-    ask: askAgentOnce,
+    ask: session
+      ? (id, agent, prompt, cwd, signal) => session.ask(id, agent, prompt, cwd, signal)
+      : (id, agent, prompt, cwd, signal) => askAgentOnce(agent, prompt, cwd, signal),
     store: {
       getDiscussion: storeGetDiscussion,
       listMessages: storeListMessages,
@@ -529,5 +601,11 @@ export function defaultDiscussionDeps(hooks: {
     onStatusChange: hooks.onStatusChange,
     ...(hooks.onDispatchStatus ? { onDispatchStatus: hooks.onDispatchStatus } : {}),
     ...(hooks.gate ? { gate: hooks.gate } : {}),
+    ...(session
+      ? {
+          getLastSeq: (id, agentId) => session.getLastSeq(id, agentId),
+          closeSessions: (id) => session.closeAll(id),
+        }
+      : {}),
   }
 }

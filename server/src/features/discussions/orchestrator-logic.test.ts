@@ -9,7 +9,9 @@ import { getDiscussionType } from '@ccc/shared/discussion-types'
 import type { Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import {
   buildOrganizerPrompt,
+  buildOrganizerDeltaPrompt,
   buildParticipantPrompt,
+  buildParticipantDeltaPrompt,
   MAX_SPEECH_CHARS,
   parseOrganizerDecision,
   parseParticipantSpeech,
@@ -460,5 +462,117 @@ describe('prompt builders', () => {
       langName: 'Chinese (简体中文)',
     })
     expect(p).toContain('Respond in Chinese (简体中文)')
+  })
+})
+
+describe('delta prompt builders', () => {
+  const def = getDiscussionType('decision')
+  const stage = def!.workflow[0]
+
+  it('buildOrganizerDeltaPrompt includes resume context and new messages only', () => {
+    const p = buildOrganizerDeltaPrompt({
+      discussion,
+      def,
+      stage,
+      newMessages: [msg(3, 'GPT', 'new view')],
+      participants: [{ id: 'gpt', name: 'GPT' }],
+    })
+    // Contains the resume context
+    expect(p).toContain('Continue coordinating the discussion')
+    // Contains the header info
+    expect(p).toContain('Choose a caching layer')
+    // Contains the new messages section heading
+    expect(p).toContain('New messages since your last decision')
+    // Contains the new message content
+    expect(p).toContain('new view')
+    // Does NOT contain the old messages that weren't passed
+    expect(p).not.toContain('GPT: hi')
+    // Contains the JSON contract (key actions)
+    expect(p).toContain('set_agenda')
+    expect(p).toContain('broadcast')
+    expect(p).toContain('conclude')
+  })
+
+  it('buildOrganizerDeltaPrompt handles empty newMessages gracefully', () => {
+    const p = buildOrganizerDeltaPrompt({
+      discussion,
+      def,
+      stage,
+      newMessages: [],
+      participants: [{ id: 'gpt', name: 'GPT' }],
+    })
+    expect(p).toContain('no new messages')
+    expect(p).toContain('Based on these new messages, decide the next step')
+  })
+
+  it('buildOrganizerDeltaPrompt in discuss shows the agenda', () => {
+    const p = buildOrganizerDeltaPrompt({
+      discussion,
+      def,
+      stage,
+      newMessages: [],
+      participants: [{ id: 'gpt', name: 'GPT' }],
+      agenda: { items: ['成本', '延迟'], index: 0 },
+    })
+    expect(p).toContain('Current agenda:')
+    expect(p).toContain('成本')
+    expect(p).toContain('延迟')
+  })
+
+  it('buildOrganizerDeltaPrompt responds in the specified language', () => {
+    const p = buildOrganizerDeltaPrompt({
+      discussion,
+      def,
+      stage,
+      newMessages: [],
+      participants: [{ id: 'gpt', name: 'GPT' }],
+      langName: 'Chinese (简体中文)',
+    })
+    expect(p).toContain('Respond in Chinese (简体中文)')
+  })
+
+  it('buildParticipantDeltaPrompt includes resume context and new messages only', () => {
+    const p = buildParticipantDeltaPrompt({
+      discussion,
+      def,
+      stage,
+      newMessages: [msg(3, 'GPT', 'new view')],
+      speaker: { id: 'gpt', name: 'GPT' },
+    })
+    // Contains the resume context
+    expect(p).toContain('"GPT"')
+    expect(p).toContain('New messages since your last turn')
+    // Contains the new message, not a full transcript heading
+    expect(p).toContain('new view')
+    expect(p).not.toContain('GPT: hi') // from the earlier msg(1) in test data
+    // Contains the one-paragraph length constraint
+    expect(p).toContain('single paragraph')
+  })
+
+  it('buildParticipantDeltaPrompt handles empty newMessages gracefully', () => {
+    const p = buildParticipantDeltaPrompt({
+      discussion,
+      def,
+      stage,
+      newMessages: [],
+      speaker: { id: 'gpt', name: 'GPT' },
+    })
+    expect(p).toContain('no new messages')
+    expect(p).toContain('continue based on your existing context')
+  })
+
+  it('buildParticipantDeltaPrompt includes subtopic and organizer guidance', () => {
+    const p = buildParticipantDeltaPrompt({
+      discussion,
+      def,
+      stage,
+      newMessages: [],
+      speaker: { id: 'gpt', name: 'GPT' },
+      organizerNote: 'focus on latency',
+      subtopic: 'Latency',
+    })
+    expect(p).toContain('Current subtopic:')
+    expect(p).toContain('Latency')
+    expect(p).toContain('focus on latency')
   })
 })

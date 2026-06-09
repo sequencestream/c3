@@ -466,3 +466,127 @@ export function buildParticipantPrompt(input: {
   )
   return lines.join('\n')
 }
+
+/**
+ * Build a delta organizer prompt for resume-aware turns: same header, stage,
+ * agenda, and roster as the full prompt, but only the *new* messages since the
+ * organizer's last decision. The resume session has the full transcript in its
+ * context window, so repeating everything would waste tokens and defeat prompt
+ * caching.
+ *
+ * Used when `getLastSeq` returns a non-null value (a prior session exists and
+ * can be resumed). Falls back to the full {@link buildOrganizerPrompt} when
+ * resume is unavailable (null `lastSeq`).
+ */
+export function buildOrganizerDeltaPrompt(input: {
+  discussion: Discussion
+  def: DiscussionTypeDef | undefined
+  stage: DiscussionWorkflowStage
+  /** Only messages appended since the organizer's last turn. */
+  newMessages: readonly DiscussionMessage[]
+  participants: readonly DiscussionParticipant[]
+  agenda?: AgendaState
+  langName?: string
+}): string {
+  const { discussion, def, stage, newMessages, participants, langName = 'English' } = input
+  const agenda = input.agenda ?? EMPTY_AGENDA
+  const roster = participants.map((p) => `- id=${p.id} name=${p.name}`).join('\n')
+  const lines = [
+    'You are the "Organizer" of this discussion. Continue coordinating the discussion.',
+    '',
+    header(discussion, def),
+    '',
+    `Current stage: ${stage.label} — ${stage.prompt}`,
+  ]
+  if (stage.id === 'discuss') {
+    lines.push('', renderAgenda(agenda))
+  }
+  lines.push(
+    '',
+    'Participant roster:',
+    roster,
+    '',
+    'New messages since your last decision:',
+    newMessages.length === 0
+      ? '(no new messages — continue based on your existing context)'
+      : renderTranscript(newMessages),
+    '',
+    'Based on these new messages, decide the next step. ' +
+      'Output only a single JSON object, no extra text:',
+    '{"action":"set_agenda|focus_subtopic|broadcast|speak|advance|conclude","speaker":"<participant id (required for action=speak)>","speakers":["<participant id list (action=broadcast); \\"all\\" or omit for everyone>"],"subtopics":["<ordered subtopic list (action=set_agenda)>"],"index":<optional subtopic index 0-based (action=focus_subtopic)>,"note":"<organizer note / sub-question to broadcast, may be empty>","conclusion":"<full final conclusion (action=conclude)>"}',
+    '- set_agenda: decompose the goal into ordered subtopics.',
+    '- focus_subtopic: move to the next subtopic.',
+    '- broadcast: ask several (or all) participants the same sub-question; they answer in parallel.',
+    '- speak: nominate a single participant to speak.',
+    '- advance: this stage is complete, move to the next.',
+    '- conclude: wrap up the discussion with a complete, actionable final conclusion.',
+    '',
+    `Respond in ${langName}.`,
+  )
+  return lines.join('\n')
+}
+
+/**
+ * Build a delta participant prompt for resume-aware turns: same header, stage,
+ * and guidance as the full prompt, but only the *new* messages since the
+ * participant's last turn. The resume session already has the transcript
+ * history in its context window.
+ *
+ * Used when `getLastSeq` returns a non-null value. Falls back to the full
+ * {@link buildParticipantPrompt} when resume is unavailable.
+ */
+export function buildParticipantDeltaPrompt(input: {
+  discussion: Discussion
+  def: DiscussionTypeDef | undefined
+  stage: DiscussionWorkflowStage
+  /** Only messages appended since this participant's last turn. */
+  newMessages: readonly DiscussionMessage[]
+  speaker: DiscussionParticipant
+  organizerNote?: string
+  subtopic?: string
+  maxSpeechChars?: number
+  langName?: string
+}): string {
+  const {
+    discussion,
+    def,
+    stage,
+    newMessages,
+    speaker,
+    organizerNote,
+    subtopic,
+    maxSpeechChars,
+    langName,
+  } = input
+  const budget =
+    typeof maxSpeechChars === 'number' && maxSpeechChars > 0 ? maxSpeechChars : MAX_SPEECH_CHARS
+  const lang = langName ?? 'English'
+  const lines = [
+    `You are a participant in this discussion: "${speaker.name}".`,
+    '',
+    header(discussion, def),
+    '',
+    `Current stage: ${stage.label} — ${stage.prompt}`,
+  ]
+  if (subtopic && subtopic.trim()) {
+    lines.push('', `Current subtopic: ${subtopic.trim()} — focus on this subtopic in your reply.`)
+  }
+  lines.push('', 'New messages since your last turn:')
+  if (newMessages.length === 0) {
+    lines.push('(no new messages — continue based on your existing context)')
+  } else {
+    lines.push(renderTranscript(newMessages))
+  }
+  if (organizerNote && organizerNote.trim()) {
+    lines.push('', `Organizer's guidance to you: ${organizerNote.trim()}`)
+  }
+  lines.push(
+    '',
+    `Give your perspective on the current stage. Do not repeat what others have said. ` +
+      `Output only your reply text (no name prefix). Keep it concise: a single paragraph, ` +
+      `about ${budget} characters, straight to the point.`,
+    '',
+    `Respond in ${lang}.`,
+  )
+  return lines.join('\n')
+}

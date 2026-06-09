@@ -22,13 +22,15 @@
  *   run-controls) and the broadcast bag. It does NOT import ws/HTTP semantics
  *   and does NOT touch the kernel registry directly.
  */
-import type { Discussion, RunEndReason } from '@ccc/shared/protocol'
+import type { Discussion, RunEndReason, VendorId } from '@ccc/shared/protocol'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
+import type { VendorAdapter } from '../kernel/agent/adapters/types.js'
 import {
   canAutoStartDiscussion,
   researchDiscussionContext,
 } from '../features/discussions/research.js'
 import { defaultDiscussionDeps, runDiscussion } from '../features/discussions/orchestrator.js'
+import { AgentSessionManager } from '../features/discussions/agent-session-manager.js'
 import {
   deleteDiscussionRun,
   deleteResearchRun,
@@ -37,7 +39,14 @@ import {
   setResearchRun,
   type DiscussionRunControl,
 } from '../features/discussions/run-controls.js'
-import { getDiscussion, setDiscussionResearchResult } from '../features/discussions/store.js'
+import {
+  getAgentSession as storeGetAgentSession,
+  setAgentSession as storeSetAgentSession,
+  deleteAgentSession as storeDeleteAgentSession,
+  deleteAllByDiscussion as storeDeleteAllByDiscussion,
+  getDiscussion,
+  setDiscussionResearchResult,
+} from '../features/discussions/store.js'
 import type { Broadcasts } from './broadcasts.js'
 
 /** Deps the discussion-runs factory reads (the broadcast bag it threads in). */
@@ -53,6 +62,12 @@ export interface DiscussionRunsDeps {
   >
   /** Kernel event bus for publishing run lifecycle events (2026-06-08-010). */
   eventBus: EventBus<EventBusEvents>
+  /**
+   * Resolve a vendor id to its registered adapter. Used by the
+   * {@link AgentSessionManager} to drive resume-aware agent sessions.
+   * Throws when no adapter is registered for the given vendor.
+   */
+  getAdapter: (vendor: VendorId) => VendorAdapter
 }
 
 function errMsg(err: unknown): string {
@@ -125,8 +140,18 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       workspacePath: discussion.projectPath,
     })
 
+    const sessionManager = new AgentSessionManager({
+      getAdapter: deps.getAdapter,
+      store: {
+        getAgentSession: storeGetAgentSession,
+        setAgentSession: storeSetAgentSession,
+        deleteAgentSession: storeDeleteAgentSession,
+        deleteAllByDiscussion: storeDeleteAllByDiscussion,
+      },
+    })
     let settledReason: RunEndReason = 'complete'
-    const deps = defaultDiscussionDeps({
+    const discussionDeps = defaultDiscussionDeps({
+      sessionManager,
       onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
       // Status/conclusion changes ride the refreshed list broadcast.
       onStatusChange: () => broadcastDiscussions(discussion.projectPath),
@@ -136,7 +161,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // Background orchestration: runs the agents and streams messages until it
     // concludes. It does not own a user session, so finishing never ends a
     // session (既有 session 约定).
-    void runDiscussion(discussion.id, abort.signal, deps)
+    void runDiscussion(discussion.id, abort.signal, discussionDeps)
       .catch((err) => {
         settledReason = 'error'
         console.warn(`[c3] discussion orchestration error: ${errMsg(err)}`)

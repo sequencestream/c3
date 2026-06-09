@@ -53,7 +53,7 @@ import {
   type OpencodeSupervisor,
 } from './kernel/agent/adapters/opencode/index.js'
 import { createCodexAdapter, createCodexSkillLoader } from './kernel/agent/adapters/codex/index.js'
-import { createClaudeSkillLoader } from './kernel/agent/adapters/claude/index.js'
+import { createClaudeAdapter, createClaudeSkillLoader } from './kernel/agent/adapters/claude/index.js'
 import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
 import type { VendorAdapter, SkillLoader } from './kernel/agent/adapters/types.js'
 import type { VendorId } from '@ccc/shared/protocol'
@@ -432,7 +432,23 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     sessionExists,
     isRunning,
   })
-  const discussionRuns = createDiscussionRuns({ broadcasts, eventBus })
+  // Build the adapter lookup for AgentSessionManager (used by discussion runs).
+  // claude is always present; codex and opencode join only when their host CLI
+  // was detected at boot (null-entries are skipped — missing vendors throw at
+  // runtime, which is a fatal developer error, not a silent degradation).
+  const discussionAdapters = new Map<VendorId, VendorAdapter>()
+  discussionAdapters.set('claude', createClaudeAdapter())
+  if (codexAdapter) discussionAdapters.set('codex', codexAdapter)
+  if (opencodeAdapter) discussionAdapters.set('opencode', opencodeAdapter)
+  const discussionRuns = createDiscussionRuns({
+    broadcasts,
+    eventBus,
+    getAdapter: (vendor) => {
+      const a = discussionAdapters.get(vendor)
+      if (!a) throw new Error(`[c3] no adapter registered for vendor "${vendor}"`)
+      return a
+    },
+  })
 
   const ctx: KernelContext = {
     eventBus,

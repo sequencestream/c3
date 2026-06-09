@@ -121,6 +121,16 @@ export class AgentSessionManager {
     return this.createSession(discussionId, agent, prompt, cwd, signal)
   }
 
+  /**
+   * Return the last-known seq for an agent in a discussion, or `null` when no
+   * session has been created yet (first call / resume unavailable). Used by the
+   * orchestrator to decide whether to build a full prompt or a delta prompt.
+   */
+  getLastSeq(discussionId: string, agentId: string): number | null {
+    const row = this.deps.store.getAgentSession(discussionId, agentId)
+    return row ? row.lastSeq : null
+  }
+
   /** Remove the session mapping for a single agent in a discussion. */
   closeSession(discussionId: string, agentId: string): void {
     this.deps.store.deleteAgentSession(discussionId, agentId)

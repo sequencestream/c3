@@ -114,7 +114,7 @@ function harness(opts: {
   const dispatched: DispatchStatus[] = []
   const queue = [...opts.organizerScript]
   const deps: DiscussionDeps = {
-    ask: async (_a, prompt) => {
+    ask: async (_id, _a, prompt) => {
       if (isOrganizerPrompt(prompt)) {
         opts.onOrganizerCall?.()
         return queue.shift() ?? '{"action":"conclude","conclusion":"(fallback)"}'
@@ -203,7 +203,7 @@ describe('runDiscussion', () => {
       participantReply: 'view',
       maxRoundsPerStage: 2,
     })
-    h.deps.ask = async (_a, prompt) =>
+    h.deps.ask = async (_id, _a, prompt) =>
       isOrganizerPrompt(prompt) ? '{"action":"speak","speaker":"gpt","note":""}' : 'view'
 
     await runDiscussion('d1', new AbortController().signal, h.deps)
@@ -244,7 +244,7 @@ describe('runDiscussion', () => {
       // empty script → harness returns speak? no: default is conclude. Override below.
     })
     // Replace the ask with a never-concluding organizer for this case.
-    h.deps.ask = async (_a, prompt) =>
+    h.deps.ask = async (_id, _a, prompt) =>
       isOrganizerPrompt(prompt) ? '{"action":"speak","speaker":"gpt","note":""}' : 'view'
 
     await runDiscussion('d1', new AbortController().signal, h.deps)
@@ -393,7 +393,7 @@ describe('runDiscussion', () => {
       '{"action":"advance","note":""}', // confirm → conclude
       '{"action":"conclude","conclusion":"Use Redis."}',
     ]
-    h.deps.ask = async (a, prompt) => {
+    h.deps.ask = async (_id, a, prompt) => {
       if (isOrganizerPrompt(prompt))
         return queue.shift() ?? '{"action":"conclude","conclusion":"x"}'
       // System's reply is gated open until GPT (launched second) has already returned.
@@ -460,7 +460,7 @@ describe('runDiscussion', () => {
       participantReply: 'view',
       maxRoundsPerStage: 2,
     })
-    h.deps.ask = async (_a, prompt) => {
+    h.deps.ask = async (_id, _a, prompt) => {
       if (!prompt.includes('"Organizer"')) return 'view'
       if (!setOnce) {
         setOnce = true
@@ -494,14 +494,14 @@ describe('runDiscussion', () => {
     // When GPT is actually asked, the pending status must already have been emitted —
     // proving the in-flight signal precedes the (later-appended) reply.
     const baseAsk = h.deps.ask
-    h.deps.ask = async (a, prompt, cwd, signal) => {
+    h.deps.ask = async (_id, a, prompt, cwd, signal) => {
       if (!isOrganizerPrompt(prompt)) {
         expect(h.dispatched).toContainEqual({
           phase: 'pending',
           agents: [{ id: 'gpt', name: 'GPT' }],
         })
       }
-      return baseAsk(a, prompt, cwd, signal)
+      return baseAsk(_id, a, prompt, cwd, signal)
     }
 
     await runDiscussion('d1', new AbortController().signal, h.deps)
@@ -532,7 +532,7 @@ describe('runDiscussion', () => {
       '{"action":"speak","speaker":"gpt","note":""}',
       '{"action":"conclude","conclusion":"Done."}',
     ]
-    h.deps.ask = async (_a, prompt) => {
+    h.deps.ask = async (_id, _a, prompt) => {
       if (isOrganizerPrompt(prompt))
         return queue.shift() ?? '{"action":"conclude","conclusion":"x"}'
       throw new Error('boom')
@@ -568,7 +568,7 @@ describe('runDiscussion', () => {
       organizer: agent('system', 'System'),
       organizerScript: [],
     })
-    h.deps.ask = async (_a, prompt) =>
+    h.deps.ask = async (_id, _a, prompt) =>
       isOrganizerPrompt(prompt)
         ? (queue.shift() ?? '{"action":"conclude","conclusion":"x"}')
         : 'a view'
@@ -587,6 +587,84 @@ describe('runDiscussion', () => {
     ])
   })
 
+  it('uses delta prompts when resume is available (getLastSeq returns a seq) and calls closeSessions on conclusion', async () => {
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const capturedPrompts: Array<{ agentId: string; isDelta: boolean }> = []
+    let closeSessionsCalled = false
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        '{"action":"speak","speaker":"gpt","note":""}',
+        '{"action":"conclude","conclusion":"Use Redis."}',
+      ],
+      participantReply: 'GPT 倾向 Redis',
+    })
+    h.deps.getLastSeq = (_id, agentId) => {
+      // Simulate resume: organizer is on seq 1, gpt is on seq 1
+      if (agentId === 'system') return 1
+      if (agentId === 'gpt') return 1
+      return null
+    }
+    h.deps.closeSessions = (_id) => {
+      closeSessionsCalled = true
+    }
+    // Capture whether delta or full prompt was used for the organizer.
+    const baseAsk = h.deps.ask
+    h.deps.ask = async (_id, a, prompt, _cwd, _signal) => {
+      const isDelta = prompt.includes('New messages since your last decision')
+      capturedPrompts.push({ agentId: a.id, isDelta })
+      return baseAsk(_id, a, prompt, _cwd, _signal)
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    // Discussion concluded successfully
+    expect(get().status).toBe('completed')
+    expect(get().conclusion).toBe('Use Redis.')
+    // Organizer used a delta prompt (not the full transcript)
+    const organizerCalls = capturedPrompts.filter((p) => p.agentId === 'system')
+    expect(organizerCalls.length).toBeGreaterThan(0)
+    for (const call of organizerCalls) {
+      expect(call.isDelta).toBe(true)
+    }
+    // closeSessions was called at conclusion
+    expect(closeSessionsCalled).toBe(true)
+  })
+
+  it('falls back to full prompts when getLastSeq is undefined (backward compat)', async () => {
+    const { store, get } = makeStore(seedDiscussion())
+    const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
+    const capturedPrompts: Array<{ agentId: string; isDelta: boolean }> = []
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        '{"action":"conclude","conclusion":"Done."}',
+      ],
+    })
+    // Intentionally NOT setting getLastSeq — should use full prompts
+    const baseAsk = h.deps.ask
+    h.deps.ask = async (_id, a, prompt, _cwd, _signal) => {
+      capturedPrompts.push({
+        agentId: a.id,
+        isDelta: prompt.includes('New messages since your last decision'),
+      })
+      return baseAsk(_id, a, prompt, _cwd, _signal)
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    // All prompts should be full (not delta) when getLastSeq is missing
+    for (const call of capturedPrompts) {
+      expect(call.isDelta).toBe(false)
+    }
+  })
+
   it('exposes one failed agent in a broadcast while the rest proceed', async () => {
     const { store, messages, get } = makeStore(seedDiscussion())
     const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
@@ -603,7 +681,7 @@ describe('runDiscussion', () => {
       organizer: agent('system', 'System'),
       organizerScript: [],
     })
-    h.deps.ask = async (a, prompt) => {
+    h.deps.ask = async (_id, a, prompt) => {
       if (isOrganizerPrompt(prompt))
         return queue.shift() ?? '{"action":"conclude","conclusion":"x"}'
       if (a.id === 'system') throw new Error('system down')

@@ -57,6 +57,23 @@ const READ_MCP_PREFIXES = [
   'resolve_',
 ]
 
+/**
+ * In-process c3 MCP tools available for all schedule executions.
+ *
+ * These are defined in `features/intents/save-tool.ts` under the `c3` MCP
+ * server name. They live outside the workspace MCP config (they're in-process,
+ * not user-configured), so they're explicitly registered both here in
+ * `freezeTools()` and in the schedule form's tool manifest handler.
+ *
+ * Fully-qualified SDK names: `mcp__c3__find_intents`, `mcp__c3__view_intent`,
+ * `mcp__c3__save_intents`.
+ */
+export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
+  { name: 'mcp__c3__find_intents', isWrite: false },
+  { name: 'mcp__c3__view_intent', isWrite: false },
+  { name: 'mcp__c3__save_intents', isWrite: true },
+]
+
 // ---------------------------------------------------------------------------
 // Exported types
 // ---------------------------------------------------------------------------
@@ -129,7 +146,10 @@ export function freezeTools(
   for (const t of SDK_READ_TOOLS) knownTools.add(t)
   for (const t of SDK_WRITE_TOOLS) knownTools.add(t)
 
-  // Add MCP server tools
+  // Add in-process c3 MCP tools (always available, not in workspace config)
+  for (const t of C3_MCP_TOOLS) knownTools.add(t.name)
+
+  // Add MCP server tools (from workspace config)
   for (const [serverName, _serverConfig] of Object.entries(workspaceConfig.mcpServers)) {
     // We don't know what tools the MCP server provides at freeze time
     // (that would require connecting and introspecting, which is expensive).

@@ -127,3 +127,50 @@ describe('isWriteTool — MCP naming convention', () => {
     expect(isWriteTool('UnknownTool')).toBe(true) // conservative
   })
 })
+
+describe('freezeTools — c3 in-process MCP tools', () => {
+  it('includes c3 MCP tools in the frozen set without workspace MCP config', () => {
+    const frozen = freezeTools([], [], emptyConfig, 'sandboxed')
+    expect(frozen.readToolNames.has('mcp__c3__find_intents')).toBe(true)
+    expect(frozen.readToolNames.has('mcp__c3__view_intent')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__save_intents')).toBe(true)
+  })
+
+  it('classifies find_intents and view_intent as read-only', () => {
+    const frozen = freezeTools([], [], emptyConfig, 'sandboxed')
+    expect(isWriteTool('mcp__c3__find_intents', frozen)).toBe(false)
+    expect(isWriteTool('mcp__c3__view_intent', frozen)).toBe(false)
+  })
+
+  it('classifies save_intents as write', () => {
+    const frozen = freezeTools([], [], emptyConfig, 'sandboxed')
+    expect(isWriteTool('mcp__c3__save_intents', frozen)).toBe(true)
+  })
+
+  it('matches via matchesFrozenTool without workspace config', () => {
+    const frozen = freezeTools([], [], emptyConfig, 'sandboxed')
+    expect(matchesFrozenTool('mcp__c3__find_intents', frozen)).toBe(true)
+    expect(matchesFrozenTool('mcp__c3__view_intent', frozen)).toBe(true)
+    expect(matchesFrozenTool('mcp__c3__save_intents', frozen)).toBe(true)
+  })
+
+  it('survives allowlist filtering when selected', () => {
+    const frozen = freezeTools(
+      ['mcp__c3__find_intents', 'mcp__c3__save_intents'],
+      [],
+      emptyConfig,
+      'sandboxed',
+    )
+    expect(matchesFrozenTool('mcp__c3__find_intents', frozen)).toBe(true)
+    expect(matchesFrozenTool('mcp__c3__save_intents', frozen)).toBe(true)
+    // Not in allowlist → filtered out
+    expect(matchesFrozenTool('Read', frozen)).toBe(false)
+    expect(matchesFrozenTool('mcp__c3__view_intent', frozen)).toBe(false)
+  })
+
+  it('can be removed via denylist', () => {
+    const frozen = freezeTools([], ['mcp__c3__find_intents'], emptyConfig, 'sandboxed')
+    expect(matchesFrozenTool('mcp__c3__find_intents', frozen)).toBe(false)
+    expect(matchesFrozenTool('mcp__c3__save_intents', frozen)).toBe(true) // not denied
+  })
+})

@@ -25,6 +25,7 @@ import { clampName, generateScheduleName } from './naming.js'
 import type { ScheduleNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import type { ToolManifestEntry, VendorId } from '@ccc/shared/protocol'
+import { C3_MCP_TOOLS } from './mcp-freeze.js'
 // Static tool listing (no I/O needed) — the only adapter path that can create
 // lightweight instances without a supervisor or registry probe.
 import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
@@ -263,6 +264,12 @@ export const getScheduleToolManifest: Handler<'get_schedule_tool_manifest'> = (_
       // Unknown vendor — fallback to a minimal SDK set
       tools = createClaudeAdapter().listTools(msg.workspacePath)
   }
+
+  // Always append in-process c3 MCP tools so the user can select them
+  // regardless of vendor or workspace MCP config. These live outside the
+  // workspace MCP config (defined in features/intents/save-tool.ts), so
+  // the vendor adapter's listTools() never includes them.
+  tools.push(...C3_MCP_TOOLS)
 
   conn.send({ type: 'schedule_tool_manifest', vendor: msg.vendor, tools })
 }

@@ -105,8 +105,8 @@ const draftCodexPolicy = ref<CodexPolicy>({
 
 // Re-seed the draft whenever the panel opens or fresh server config arrives.
 watch(
-  () => [props.open, props.projectConfig, props.vendorModes] as const,
-  ([open, config, vm]) => {
+  () => [props.open, props.projectConfig, props.vendorModes, props.systemSandboxes] as const,
+  ([open, config, vm, sandboxes]) => {
     if (!open) return
     draft.value = {
       defaultMode: loadDefaultMode(config?.defaultMode, vm),
@@ -121,10 +121,16 @@ watch(
     }
     // Re-seed the sandbox draft from server config (sandboxDraft computed
     // wraps draft.value.sandbox, which starts undefined — the watch sets it).
-    if (config?.sandbox) {
+    // Validate that the referenced sandbox name still exists in the current
+    // system definitions — if it was deleted or renamed, treat as unconfigured.
+    if (config?.sandbox && config.sandbox.sandbox && sandboxes.some(sb => sb.name === config.sandbox!.sandbox)) {
       draft.value.sandbox = { ...config.sandbox }
     } else {
-      delete draft.value.sandbox
+      // Keep a reactive empty object so the sandboxDraft computed's v-model
+      // bindings (e.g. `sandboxDraft.enabled`) propagate through Vue reactivity
+      // instead of being lost on the non-reactive `?? {}` fallback (which breaks
+      // the "enable" checkbox and hides the sandbox name dropdown).
+      draft.value.sandbox = {}
     }
     // Seed codex policy from config: CodexPolicy object or translate legacy token.
     const codexVal = config?.defaultMode?.['codex']

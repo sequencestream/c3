@@ -107,8 +107,10 @@ export async function launchSandbox(
 ): Promise<SandboxLaunchResult | null> {
   const projectCfg: ProjectSandboxConfig | undefined = getProjectSandbox(projectPath)
 
-  // Not configured or explicitly disabled → skip sandbox
+  // Not configured, explicitly disabled, or the referenced system def no longer
+  // exists (e.g. deleted/renamed after the project config was saved) → skip sandbox
   if (!projectCfg?.enabled || !projectCfg.sandbox) return null
+  if (!registry.has(projectCfg.sandbox)) return null
 
   // Resolve the system def + project overrides into a full config
   const resolvedConfig = registry.resolve(projectCfg.sandbox, projectCfg)

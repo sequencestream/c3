@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Readable, PassThrough, Writable } from 'node:stream'
+import { Readable, PassThrough } from 'node:stream'
 import { DockerDriver, type DockerDriverOptions } from './DockerDriver.js'
 import type { ResolvedSandboxConfig, SandboxHandle } from '../types.js'
 
@@ -189,6 +189,79 @@ describe('DockerDriver', () => {
       mocks.docker.createContainer.mockRejectedValue(new Error('connection refused'))
 
       await expect(driver.start(TEST_CONFIG)).rejects.toThrow('connection refused')
+    })
+
+    // ── Resource Limits ─────────────────────────────────────────────────
+
+    it('resourceLimits.memory takes precedence over flat memoryLimit', async () => {
+      await driver.start({
+        ...TEST_CONFIG,
+        memoryLimit: '256m',
+        resourceLimits: { memory: '1g' },
+      })
+
+      const createCall = mocks.docker.createContainer.mock.calls[0][0]
+      // 1g = 1073741824 bytes
+      expect(createCall.HostConfig.Memory).toBe(1073741824)
+    })
+
+    it('resourceLimits.cpu takes precedence over flat cpuLimit', async () => {
+      await driver.start({
+        ...TEST_CONFIG,
+        cpuLimit: 1,
+        resourceLimits: { cpu: 2 },
+      })
+
+      const createCall = mocks.docker.createContainer.mock.calls[0][0]
+      // 2 CPUs = CpuQuota 200000 at CpuPeriod 100000
+      expect(createCall.HostConfig.CpuQuota).toBe(200000)
+    })
+
+    it('resourceLimits.stopTimeoutMs maps to HostConfig.StopTimeout (seconds)', async () => {
+      await driver.start({
+        ...TEST_CONFIG,
+        resourceLimits: { stopTimeoutMs: 15000 },
+      })
+
+      const createCall = mocks.docker.createContainer.mock.calls[0][0]
+      expect(createCall.HostConfig.StopTimeout).toBe(15)
+    })
+
+    it('does not set StopTimeout when stopTimeoutMs is not configured', async () => {
+      await driver.start(TEST_CONFIG)
+
+      const createCall = mocks.docker.createContainer.mock.calls[0][0]
+      expect(createCall.HostConfig.StopTimeout).toBeUndefined()
+    })
+
+    it('rounds partial seconds from stopTimeoutMs', async () => {
+      await driver.start({
+        ...TEST_CONFIG,
+        resourceLimits: { stopTimeoutMs: 10500 },
+      })
+
+      const createCall = mocks.docker.createContainer.mock.calls[0][0]
+      expect(createCall.HostConfig.StopTimeout).toBe(11) // Math.round(10.5) = 11
+    })
+
+    // ── Network Allowlist ───────────────────────────────────────────────
+
+    it('throws when networkAllowlist is configured (Phase 2 placeholder)', async () => {
+      await expect(
+        driver.start({ ...TEST_CONFIG, networkAllowlist: ['api.example.com'] }),
+      ).rejects.toThrow('Network allowlist is not yet supported')
+    })
+
+    it('ignores empty networkAllowlist array', async () => {
+      await expect(
+        driver.start({ ...TEST_CONFIG, networkAllowlist: [] }),
+      ).resolves.toBeDefined()
+    })
+
+    it('ignores undefined networkAllowlist', async () => {
+      await expect(
+        driver.start({ ...TEST_CONFIG, networkAllowlist: undefined }),
+      ).resolves.toBeDefined()
     })
   })
 

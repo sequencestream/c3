@@ -107,12 +107,30 @@ export class DockerDriver implements SandboxDriver {
   // ─── Start ───────────────────────────────────────────────────────────────
 
   async start(config: ResolvedSandboxConfig, options?: StartOptions): Promise<SandboxHandle> {
+    // ── Resolve resource limits (structured over flat) ──────────────────
+    const memory = config.resourceLimits?.memory ?? config.memoryLimit
+    const cpu = config.resourceLimits?.cpu ?? config.cpuLimit
+
     const hostConfig: Record<string, unknown> = {
-      Memory: parseMemoryToBytes(config.memoryLimit),
+      Memory: parseMemoryToBytes(memory),
       CpuPeriod: 100000,
-      CpuQuota: cpuLimitToQuota(config.cpuLimit),
+      CpuQuota: cpuLimitToQuota(cpu),
       ReadonlyRootfs: config.readonlyRootfs,
       NetworkMode: config.networkDisabled ? 'none' : undefined,
+    }
+
+    // Stop timeout (ms → seconds for Docker API)
+    if (config.resourceLimits?.stopTimeoutMs != null) {
+      hostConfig.StopTimeout = Math.round(config.resourceLimits.stopTimeoutMs / 1000)
+    }
+
+    // ── Network allowlist — Phase 2 ──────────────────────────────────────
+    if (config.networkAllowlist && config.networkAllowlist.length > 0) {
+      throw new Error(
+        'Network allowlist is not yet supported. ' +
+          'Remove the networkAllowlist configuration or set it to an empty array. ' +
+          'Phase 2 (planned) will introduce egress filtering via network MITM proxy.',
+      )
     }
 
     // Seccomp

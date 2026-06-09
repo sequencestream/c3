@@ -127,7 +127,7 @@ describe('SandboxRegistry', () => {
       const resolved = reg.resolve('python')
       expect(resolved.memoryLimit).toBe('1g')
       expect(resolved.cpuLimit).toBe(2)
-      expect(resolved.networkDisabled).toBe(false)
+      expect(resolved.networkDisabled).toBe(true)
       expect(resolved.readonlyRootfs).toBe(false)
       expect(resolved.envVars).toEqual({})
     })

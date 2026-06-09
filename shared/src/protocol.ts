@@ -357,6 +357,30 @@ export type SkillApprovalKind = 'gitignore'
 export type SandboxType = 'docker' | 'gvisor' | 'kata' | 'firecracker'
 
 /**
+ * Structured resource limits for sandboxed containers.
+ *
+ * Each field corresponds to a Docker runtime flag. Fields are optional so
+ * the admin can set only the limits they care about; unset fields let Docker
+ * use its own defaults.
+ *
+ * Phase 1 (MVP) — basic memory/cpu/timeout.
+ * Phase 2 (planned) — pidsLimit, ulimits, diskQuota, oomScoreAdj.
+ */
+export interface ResourceLimits {
+  /** Memory limit in Docker format: "256m", "2g", etc. Maps to --memory. */
+  memory?: string
+  /** CPU limit in fractional cores (e.g. 2 = 2 CPUs, 0.5 = half a core). Maps to --cpus. */
+  cpu?: number
+  /**
+   * Container stop timeout in milliseconds.
+   * Maps to --stop-timeout (converted to seconds for the Docker API).
+   * Docker will wait this long for the container to stop gracefully before
+   * sending SIGKILL. Defaults to Docker's own default (10 s) when unset.
+   */
+  stopTimeoutMs?: number
+}
+
+/**
  * System-level sandbox definition — a "template" the administrator defines
  * in System Settings. Each has a unique {@link name} that a project-level
  * {@link ProjectSandboxConfig.sandbox} references.
@@ -374,12 +398,25 @@ export interface SystemSandboxDef {
   memoryLimit?: string
   /** CPU limit in fractional cores (e.g. 2 = 2 CPUs, 0.5 = half a core). */
   cpuLimit?: number
+  /**
+   * Structured resource limits.
+   * When set, takes precedence over the flat memoryLimit / cpuLimit fields.
+   * Allows also setting stopTimeoutMs (not expressible via the flat fields).
+   */
+  resourceLimits?: ResourceLimits
   /** Human-readable description shown in the UI. */
   description?: string
   /** Environment variables injected into the container. */
   envVars?: Record<string, string>
   /** When true, the container has no network access. */
   networkDisabled?: boolean
+  /**
+   * Network egress allowlist — CIDR or hostname patterns allowed through.
+   * When non-empty, overrides networkDisabled (enables limited network).
+   *
+   * Phase 2 (planned) — MVP throws unsupported if configured.
+   */
+  networkAllowlist?: string[]
   /** When true, the container root filesystem is read-only. */
   readonlyRootfs?: boolean
   /** Working directory inside the container. */

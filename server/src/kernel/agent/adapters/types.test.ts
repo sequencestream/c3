@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { CapabilityState, VendorAdapter } from './types.js'
-import type { ToolManifestEntry } from '@ccc/shared/protocol'
+// import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
 import { listOpencodeTools } from './opencode/index.js'

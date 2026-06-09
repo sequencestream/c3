@@ -6,8 +6,8 @@
  * From repo root: `rtk proxy npx vitest run adapters/skill-loader-base.test.ts`
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { join, relative } from 'node:path'
-import { mkdtemp, symlink, readlink, mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { mkdtemp, readlink, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createSkillLoader, type SkillSupportProbe } from './skill-loader-base.js'
 import { resetStateCacheForTests } from '../../../state.js'

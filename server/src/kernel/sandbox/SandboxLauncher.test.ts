@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { existsSync, rmSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+// import { randomUUID } from 'node:crypto'
 
 // Mock the config module before importing SandboxLauncher
 vi.mock('../../kernel/config/index.js', () => ({
@@ -24,8 +24,7 @@ vi.mock('../../kernel/config/index.js', () => ({
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { SandboxRegistry } from './SandboxRegistry.js'
 import { launchSandbox, createSandboxWrapper, checkDockerAvailable } from './SandboxLauncher.js'
-import type { SandboxHandle, ResolvedSandboxConfig } from './types.js'
-import type { ProjectSandboxConfig } from '@ccc/shared/protocol'
+import type { SandboxHandle } from './types.js'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

@@ -93,8 +93,8 @@ describe('events CRUD', () => {
   })
 
   it('lists events for a project, ordered by created_at descending', () => {
-    const a = createEvent({ projectPath: proj, source: 'session' })
-    const b = createEvent({ projectPath: proj, source: 'intent' })
+    createEvent({ projectPath: proj, source: 'session' })
+    createEvent({ projectPath: proj, source: 'intent' })
     const list = listEvents(proj)
     // b was created after a, so b should come first (DESC order)
     const titles = list.map((x) => x.id)

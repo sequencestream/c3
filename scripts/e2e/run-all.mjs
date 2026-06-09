@@ -71,6 +71,7 @@ const TESTS = [
   { name: 'intent (save flow)', file: 'e2e-intent-test.mjs' },
   { name: 'consensus (voting)', file: 'e2e-consensus-test.mjs' },
   { name: 'ask-consensus (per-question)', file: 'e2e-ask-consensus-test.mjs' },
+  { name: 'sandbox (backward compat)', file: 'e2e-sandbox-test.mjs' },
 ]
 
 function log(s) {

@@ -9,7 +9,6 @@ import {
   insertIntents,
   resetStoreForTests,
   setAutomate,
-  setLastDevSession,
   updateStatus,
 } from './store.js'
 
@@ -33,9 +32,9 @@ vi.mock('../../runs.js', () => ({
 }))
 
 // ── SUT (imported after mocks) ──────────────────────────────────────────────
-const { startAutomation, stopAutomation, getAutomationStatus, notifyTurnSettled } =
+const { startAutomation, getAutomationStatus, notifyTurnSettled } =
   await import('./automation.js')
-import type { AutomationHooks, DevTurnResult } from './automation.js'
+import type { AutomationHooks } from './automation.js'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 let dir: string

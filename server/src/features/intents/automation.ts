@@ -550,7 +550,7 @@ class AutomationController {
    * Handle a lint-fix agent turn's settled event: retry commit, then either
    * mark done or fail.
    */
-  private async _handleFixTurnSettled(intentId: string, sessionId: string): Promise<void> {
+  private async _handleFixTurnSettled(intentId: string, _sessionId: string): Promise<void> {
     this.setAwaiting(false)
     this._phase = 'normal'
     const fixReq = getIntent(intentId)

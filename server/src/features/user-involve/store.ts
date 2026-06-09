@@ -85,7 +85,7 @@ export function resetStoreForTests(): void {
   schemaReady = false
 }
 
-function tx<T>(d: Db, fn: () => T): T {
+function _tx<T>(d: Db, fn: () => T): T {
   d.exec('BEGIN')
   try {
     const out = fn()

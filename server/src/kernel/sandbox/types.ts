@@ -31,6 +31,30 @@ export type SandboxStatus = 'running' | 'stopped' | 'error'
 // ─── Configuration Types ─────────────────────────────────────────────────────
 
 /**
+ * Structured resource limits for sandboxed containers.
+ *
+ * Each field corresponds to a Docker runtime flag. Fields are optional so
+ * the admin can set only the limits they care about; unset fields let Docker
+ * use its own defaults.
+ *
+ * Phase 1 (MVP) — basic memory/cpu/timeout.
+ * Phase 2 (planned) — pidsLimit, ulimits, diskQuota, oomScoreAdj.
+ */
+export interface ResourceLimits {
+  /** Memory limit in Docker format: "256m", "2g", etc. Maps to --memory. */
+  readonly memory?: string
+  /** CPU limit in fractional cores (e.g. 2 = 2 CPUs, 0.5 = half a core). Maps to --cpus. */
+  readonly cpu?: number
+  /**
+   * Container stop timeout in milliseconds.
+   * Maps to --stop-timeout (converted to seconds for the Docker API).
+   * Docker will wait this long for the container to stop gracefully before
+   * sending SIGKILL. Defaults to Docker's own default (10 s) when unset.
+   */
+  readonly stopTimeoutMs?: number
+}
+
+/**
  * System-level sandbox definition — the "template" registered at startup
  * from the system config sandbox profiles section.
  *
@@ -50,10 +74,23 @@ export interface SystemSandboxDef {
   readonly memoryLimit?: string
   /** CPU limit in fractional cores (e.g. 2 = 2 CPUs, 0.5 = half a core). */
   readonly cpuLimit?: number
+  /**
+   * Structured resource limits.
+   * When set, takes precedence over the flat memoryLimit / cpuLimit fields.
+   * Allows also setting stopTimeoutMs (not expressible via the flat fields).
+   */
+  readonly resourceLimits?: ResourceLimits
   /** Environment variables injected into the container. */
   readonly envVars?: Readonly<Record<string, string>>
-  /** When true, the container has no network access. */
+  /** When true, the container has no network access. Default: true (see merge defaults). */
   readonly networkDisabled?: boolean
+  /**
+   * Network egress allowlist — CIDR or hostname patterns allowed through.
+   * When non-empty, overrides networkDisabled (enables limited network).
+   *
+   * Phase 2 (planned) — MVP throws unsupported if configured.
+   */
+  readonly networkAllowlist?: readonly string[]
   /** When true, the container root filesystem is read-only. */
   readonly readonlyRootfs?: boolean
   /** Working directory inside the container. */
@@ -67,10 +104,17 @@ export interface SystemSandboxDef {
 /**
  * Project-level sandbox config overrides — the subset of config a c3 project
  * can override without defining a full sandbox profile.
+ *
+ * IMPORTANT: Keep in sync with shared/src/protocol.ts ProjectSandboxConfig.
+ * The Zod schema and _AssertEqual pin in SandboxConfig.ts enforce this.
  */
 export interface ProjectSandboxConfig {
+  /** Master switch — sandboxing is off by default (absent or false ⇔ disabled). */
+  readonly enabled?: boolean
   /** Name of the system sandbox def to use (required to activate sandboxing). */
   readonly sandbox?: string
+  /** Override the system def's networkDisabled setting. */
+  readonly networkDisabled?: boolean
   /** Override the base image. */
   readonly imageOverride?: string
   /** Override memory limit. */
@@ -94,7 +138,22 @@ export interface ResolvedSandboxConfig {
   readonly seccomp?: string
   readonly memoryLimit: string
   readonly cpuLimit: number
+  /**
+   * Structured resource limits.
+   * When present, resourceLimits.memory and resourceLimits.cpu take precedence
+   * over the flat memoryLimit / cpuLimit fields.
+   */
+  readonly resourceLimits?: ResourceLimits
   readonly networkDisabled: boolean
+  /**
+   * Network egress allowlist — e.g. ["api.example.com:443"].
+   * When non-empty, the allowlist gates egress instead of the blanket
+   * networkDisabled flag (planned Phase 2).
+   *
+   * MVP: setting this to a non-empty array causes DockerDriver.start()
+   * to throw with "not yet supported".
+   */
+  readonly networkAllowlist?: readonly string[]
   readonly readonlyRootfs: boolean
   readonly envVars: Readonly<Record<string, string>>
   readonly workingDir?: string

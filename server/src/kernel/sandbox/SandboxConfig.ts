@@ -15,9 +15,21 @@
  */
 
 import { z } from 'zod'
-import type { SystemSandboxDef, ProjectSandboxConfig, ResolvedSandboxConfig } from './types.js'
+import type { SystemSandboxDef, ProjectSandboxConfig, ResolvedSandboxConfig, ResourceLimits } from './types.js'
 
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
+
+/**
+ * Zod schema for structured resource limits.
+ */
+export const resourceLimitsSchema = z.object({
+  memory: z
+    .string()
+    .regex(/^\d+(b|k|m|g|t)?$/i, 'Invalid memory limit format')
+    .optional(),
+  cpu: z.number().positive().optional(),
+  stopTimeoutMs: z.number().positive().int().optional(),
+})
 
 /**
  * Zod schema for a system-level sandbox definition.
@@ -32,8 +44,10 @@ export const systemSandboxDefSchema = z.object({
     .regex(/^\d+(b|k|m|g|t)?$/i, 'Invalid memory limit format')
     .optional(),
   cpuLimit: z.number().positive().optional(),
+  resourceLimits: resourceLimitsSchema.optional(),
   envVars: z.record(z.string(), z.string()).optional(),
   networkDisabled: z.boolean().optional(),
+  networkAllowlist: z.array(z.string()).optional(),
   readonlyRootfs: z.boolean().optional(),
   workingDir: z.string().optional(),
   entrypoint: z.array(z.string()).optional(),
@@ -42,9 +56,14 @@ export const systemSandboxDefSchema = z.object({
 
 /**
  * Zod schema for project-level sandbox config overrides.
+ *
+ * IMPORTANT: Keep in sync with shared/src/protocol.ts ProjectSandboxConfig.
+ * The _AssertEqual pin below enforces this at compile time.
  */
 export const projectSandboxConfigSchema = z.object({
+  enabled: z.boolean().optional(),
   sandbox: z.string().optional(),
+  networkDisabled: z.boolean().optional(),
   imageOverride: z.string().optional(),
   memoryLimitOverride: z
     .string()
@@ -62,7 +81,7 @@ export const projectSandboxConfigSchema = z.object({
 const DEFAULTS = {
   memoryLimit: '512m',
   cpuLimit: 1,
-  networkDisabled: false,
+  networkDisabled: true,
   readonlyRootfs: false,
   envVars: {},
 } as const satisfies Partial<ResolvedSandboxConfig>
@@ -90,7 +109,9 @@ export function mergeSandboxConfig(
     seccomp: systemDef.seccomp,
     memoryLimit: projectCfg?.memoryLimitOverride ?? systemDef.memoryLimit ?? DEFAULTS.memoryLimit,
     cpuLimit: projectCfg?.cpuLimitOverride ?? systemDef.cpuLimit ?? DEFAULTS.cpuLimit,
+    resourceLimits: systemDef.resourceLimits,
     networkDisabled: systemDef.networkDisabled ?? DEFAULTS.networkDisabled,
+    networkAllowlist: systemDef.networkAllowlist,
     readonlyRootfs: systemDef.readonlyRootfs ?? DEFAULTS.readonlyRootfs,
     envVars: {
       ...DEFAULTS.envVars,
@@ -110,6 +131,12 @@ export function mergeSandboxConfig(
  * Utility: asserts T extends U (both directions) for exact type match.
  */
 type _AssertEqual<T, U> = T extends U ? (U extends T ? true : never) : never
+
+/**
+ * Pin resourceLimitsSchema to ResourceLimits.
+ * If this line fails, the Zod schema and the interface have drifted.
+ */
+type _PinResourceLimitsSchema = _AssertEqual<z.infer<typeof resourceLimitsSchema>, ResourceLimits>
 
 /**
  * Pin systemSandboxDefSchema to SystemSandboxDef.

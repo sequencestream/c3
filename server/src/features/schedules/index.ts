@@ -24,7 +24,7 @@ import { resolveApproval } from './queue.js'
 import { clampName, generateScheduleName } from './naming.js'
 import type { ScheduleNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
-import type { ToolManifestEntry, VendorId } from '@ccc/shared/protocol'
+import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
 // Static tool listing (no I/O needed) — the only adapter path that can create
 // lightweight instances without a supervisor or registry probe.

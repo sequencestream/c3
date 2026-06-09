@@ -113,7 +113,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   // Matched via `getRuntime`. Two branches: intent comm-sessions (pending
   // →real re-key + hidden-set update) vs normal/dev sessions (mode persist
   // + optional manual-start_development linkage).
-  eventBus.subscribe('run:bound', ({ prevId, realId, workspacePath }) => {
+  eventBus.subscribe('run:bound', ({ prevId, realId }) => {
     // `realId` is current for the pending→real path; `prevId` as fallback
     // for the resume edge (where bindPending does NOT re-key).
     const rt = getRuntime(realId) ?? getRuntime(prevId)

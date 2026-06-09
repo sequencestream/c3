@@ -3,8 +3,11 @@ packages:
   - web
   - shared
 allowBuilds:
+  cpu-features: true
   esbuild: true
   javascript-obfuscator: true
+  protobufjs: true
+  ssh2: true
 minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.158'
   - '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.158'

@@ -107,4 +107,21 @@ describe('transport (requestSkillApproval / resolveSkillApproval)', () => {
   it('rejects unknown requestId gracefully', () => {
     expect(resolveSkillApproval('unknown', 'approve')).toBe(false)
   })
+
+  // Regression: an unwired egress (no `setSkillApprovalSend` in the composition
+  // root) must NOT return a never-settling promise — that would hang the
+  // pre-launch `skillMount` await in `launchRun` and silently block every run.
+  it('resolves to false (skip) when no egress is wired', async () => {
+    setSkillApprovalSend(null)
+    const result = await requestSkillApproval({
+      kind: 'gitignore',
+      id: 's1',
+      vendor: 'claude',
+      repo: 'https://x',
+      ref: 'main',
+      detail: 'test',
+    })
+    expect(result).toBe(false)
+    expect(pendingSkillApprovalCount()).toBe(0)
+  })
 })

@@ -61,6 +61,7 @@ import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/inde
 import type { VendorAdapter, SkillLoader } from './kernel/agent/adapters/types.js'
 import type { VendorId } from '@ccc/shared/protocol'
 import { ensureLinksForLaunch } from './kernel/skill-loader/index.js'
+import { setSkillApprovalSend } from './kernel/skill-loader/approval.js'
 import { getSkillRepos } from './kernel/config/index.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
@@ -319,6 +320,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const broadcaster = createBroadcaster(connections)
   const broadcasts = createBroadcasts({ broadcaster, sessionAccessor })
   setOnStatusChange(broadcasts.broadcastStatuses)
+  // Wire the skill-load approval egress (mount layer 2/3, ADR-0017). Without this
+  // the `send` sink stays null: `requestSkillApproval` delivers no modal AND its
+  // promise never resolves, so the pre-launch `skillMount` step in `launchRun`
+  // hangs forever and the run never starts (the session stays pending and vanishes
+  // on refresh). The `skill_load_approval_resolve` ingress is already registered in
+  // features/register.ts — this is the missing reverse leg.
+  setSkillApprovalSend((msg) => broadcaster.toAll(msg))
   // Derive the task-list wire path from the emit stream (2026-06-07-009): the
   // observer folds task-tool tool_use/tool_result into a per-session model and
   // emits `task_list` snapshots (buffered ⇒ replayed on reconnect).

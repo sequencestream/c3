@@ -36,8 +36,8 @@ type Resolver = (approved: boolean) => void
 const pending = new Map<string, Resolver>()
 let send: ((msg: ServerToClient) => void) | null = null
 
-/** Wire the broadcast sink (called once by the server on init). */
-export function setSkillApprovalSend(fn: (msg: ServerToClient) => void): void {
+/** Wire the broadcast sink (called once by the server on init); `null` unwires it. */
+export function setSkillApprovalSend(fn: ((msg: ServerToClient) => void) | null): void {
   send = fn
 }
 
@@ -52,7 +52,12 @@ export function requestSkillApproval(
 ): Promise<boolean> {
   const requestId = randomUUID()
   if (signal?.aborted) return Promise.resolve(false)
-  send?.({
+  // No egress wired ⇒ no client can ever answer. Resolve as cancel instead of
+  // returning a promise that never settles: a never-settling ask would hang the
+  // pre-launch `skillMount` await in `launchRun`, blocking the run from ever
+  // starting. Degrade to "skip this mount" (the module's silent-failure contract).
+  if (!send) return Promise.resolve(false)
+  send({
     type: 'skill_load_approval_request',
     requestId,
     kind: ask.kind,

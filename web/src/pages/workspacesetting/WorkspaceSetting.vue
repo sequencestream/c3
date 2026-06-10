@@ -191,6 +191,18 @@ function missingRef(r: SkillRepoConfig): boolean {
   return !r.ref.trim()
 }
 
+/** Last non-empty path segment of a subpath (the skill's folder name). */
+function folderName(subpath: string | undefined): string {
+  return (subpath ?? '').split('/').filter(Boolean).pop() ?? ''
+}
+
+/** Default the skill name (`id`) to the subpath's folder name while it is still blank. */
+function onSubpathInput(r: SkillRepoConfig): void {
+  if (r.id.trim()) return
+  const seg = folderName(r.subpath)
+  if (seg) r.id = seg
+}
+
 let skillIdCounter = 0
 function makeSkillId(): string {
   return `sr-${Date.now()}-${++skillIdCounter}`
@@ -239,7 +251,10 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   if (idx < 0) return
   const updated = { ...list[idx], repo: pasted }
   if (parsed.ref) updated.ref = parsed.ref
-  if (parsed.subpath) updated.subpath = parsed.subpath
+  if (parsed.subpath) {
+    updated.subpath = parsed.subpath
+    if (!updated.id.trim()) updated.id = folderName(parsed.subpath)
+  }
   draft.value.skillRepos = [...list.slice(0, idx), updated, ...list.slice(idx + 1)]
 }
 </script>
@@ -398,7 +413,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         >
           <input
             v-model="r.id"
-            class="agent-field"
+            class="agent-field skill-repo-name"
             :placeholder="t('projectConfig.skillRepos.id.placeholder')"
             data-testid="skill-repo-id"
           />
@@ -426,6 +441,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             class="agent-field"
             :placeholder="t('projectConfig.skillRepos.subpath.placeholder')"
             data-testid="skill-repo-subpath"
+            @input="onSubpathInput(r)"
           />
           <button
             class="icon-btn"

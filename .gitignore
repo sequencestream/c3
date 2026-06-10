@@ -12,3 +12,5 @@ scripts/i18n/code-key.map.json
 
 .playwright/
 .playwright-cli/
+.claude/skills/_c3_*/
+.codex/skills/_c3_*/

@@ -351,6 +351,55 @@ export function getSchedule(id: string): Schedule | null {
 }
 
 /**
+ * Count a workspace's schedules — `total` rows and the `active` subset — optionally
+ * restricted to rows whose `updated_at` falls in `[startTime, endTime]` (ms epoch;
+ * either bound may be omitted). Returns zeros when the db is unavailable.
+ */
+export function countSchedulesInRange(
+  workspacePath: string,
+  startTime?: number,
+  endTime?: number,
+): { total: number; active: number } {
+  const d = db()
+  if (!d) return { total: 0, active: 0 }
+  const where: string[] = ['workspace_path=?']
+  const params: (string | number)[] = [resolve(workspacePath)]
+  if (startTime != null) {
+    where.push('updated_at >= ?')
+    params.push(startTime)
+  }
+  if (endTime != null) {
+    where.push('updated_at <= ?')
+    params.push(endTime)
+  }
+  const row = d.get<{ total: number; active: number }>(
+    `SELECT COUNT(*) AS total,
+            SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active
+       FROM schedules WHERE ${where.join(' AND ')}`,
+    ...params,
+  )
+  return { total: row?.total ?? 0, active: row?.active ?? 0 }
+}
+
+/**
+ * Number of a workspace's schedules that currently have a live (`status='running'`)
+ * execution log. A live-"now" notion — independent of any time range. Zero when
+ * the db is unavailable.
+ */
+export function countRunningSchedules(workspacePath: string): number {
+  const d = db()
+  if (!d) return 0
+  const row = d.get<{ count: number }>(
+    `SELECT COUNT(DISTINCT s.id) AS count
+       FROM schedules s
+       JOIN schedule_execution_logs l ON l.schedule_id = s.id
+      WHERE s.workspace_path=? AND l.status='running'`,
+    resolve(workspacePath),
+  )
+  return row?.count ?? 0
+}
+
+/**
  * Insert a schedule with status `active` and return the hydrated row.
  *
  * `generatedName` is the server-derived display name written to `config.name`;

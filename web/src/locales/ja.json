@@ -575,8 +575,34 @@
       "completed": {
         "label": "完了:"
       },
+      "updated": {
+        "label": "更新日:"
+      },
+      "branch": {
+        "label": "ブランチ:"
+      },
+      "commit": {
+        "label": "コミット:"
+      },
+      "pr": {
+        "label": "PR:"
+      },
       "dependsOn": {
         "label": "依存:"
+      }
+    },
+    "prStatus": {
+      "reviewing": {
+        "label": "レビュー中"
+      },
+      "rejected": {
+        "label": "却下"
+      },
+      "failed": {
+        "label": "失敗"
+      },
+      "merged": {
+        "label": "マージ済"
       }
     },
     "deps": {

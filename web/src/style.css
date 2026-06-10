@@ -2753,6 +2753,33 @@ button.deny:hover:not(:disabled) {
   background: var(--c-muted-soft, #edf2f7);
   color: var(--c-muted-text, #718096);
 }
+/* PR status badge – inline with dep-type badge patterns. */
+.req-pr-status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  line-height: 1.6;
+  vertical-align: middle;
+}
+.req-pr-status--reviewing {
+  background: var(--c-info-soft, #e8f4fd);
+  color: var(--c-info-text, #2b6cb0);
+}
+.req-pr-status--rejected {
+  background: var(--c-danger-soft, #fde8e8);
+  color: var(--c-danger-text, #c53030);
+}
+.req-pr-status--failed {
+  background: var(--c-danger-soft, #fde8e8);
+  color: var(--c-danger-text, #c53030);
+}
+.req-pr-status--merged {
+  background: var(--c-success-soft, #e6f7e6);
+  color: var(--c-success, #22c55e);
+}
 .req-dep-edit-btn {
   font-size: 11px;
   padding: 0 6px;

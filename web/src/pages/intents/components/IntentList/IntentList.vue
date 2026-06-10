@@ -6,7 +6,13 @@
  * 动作(完善/启动开发/开发详情/标记状态)经事件上抛,由 App 统一发往服务端。
  */
 import { computed, ref } from 'vue'
-import type { AutomationStatus, DepType, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  AutomationStatus,
+  DepType,
+  Intent,
+  IntentPrStatus,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
@@ -58,6 +64,18 @@ const DEP_TYPE_OPTIONS: { value: DepType; label: string }[] = [
 
 function depTypeLabel(dt: DepType): string {
   return DEP_TYPE_OPTIONS.find((o) => o.value === dt)?.label ?? dt
+}
+
+// PR status label lookup.
+const PR_STATUS_OPTIONS: { value: IntentPrStatus; label: string }[] = [
+  { value: 'reviewing', label: t('intent.prStatus.reviewing.label') },
+  { value: 'rejected', label: t('intent.prStatus.rejected.label') },
+  { value: 'failed', label: t('intent.prStatus.failed.label') },
+  { value: 'merged', label: t('intent.prStatus.merged.label') },
+]
+
+function prStatusLabel(ps: IntentPrStatus): string {
+  return PR_STATUS_OPTIONS.find((o) => o.value === ps)?.label ?? ps
 }
 
 // ── Dep edit modal state ───────────────────────────────────────────────────
@@ -382,6 +400,19 @@ function datePrefix(r: Intent): string {
             >
               {{ t('intent.deps.depType.edit.label') }}
             </button>
+          </span>
+          <span class="req-meta-item"
+            >{{ t('intent.meta.updated.label') }} {{ formatDate(r.updatedAt, locale) }}</span
+          >
+          <span v-if="r.branchName" class="req-meta-item">
+            {{ t('intent.meta.branch.label') }} {{ r.branchName
+            }}<span v-if="r.latestCommitHash"> · {{ r.latestCommitHash.slice(0, 7) }}</span>
+          </span>
+          <span v-if="r.prId" class="req-meta-item">
+            {{ t('intent.meta.pr.label') }} #{{ r.prId }}
+            <span v-if="r.prStatus" class="req-pr-status" :class="'req-pr-status--' + r.prStatus">{{
+              prStatusLabel(r.prStatus)
+            }}</span>
           </span>
         </div>
         <div

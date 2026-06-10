@@ -10,11 +10,6 @@ import {
   updateSchedule,
   getSchedule,
   getDueSchedules,
-  createWriteApproval,
-  getWriteApproval,
-  listPendingWriteApprovals,
-  listExpiredPendingApprovals,
-  resolveWriteApproval,
   getWorkspaceMcpConfig,
   saveWorkspaceMcpConfig,
   appendExecutionLog,
@@ -37,95 +32,6 @@ afterEach(() => {
   resetDbForTests()
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
-})
-
-describe('write_approvals CRUD', () => {
-  it('creates a pending approval and reads it back', () => {
-    expect(isStoreAvailable()).toBe(true)
-    const created = createWriteApproval({
-      scheduleId: 'sch-1',
-      workspacePath: proj,
-      toolName: 'Write',
-      toolInput: { filePath: '/a.txt', content: 'hi' },
-      diffPreview: 'File: /a.txt',
-      expiresAt: Date.now() + 60_000,
-    })
-    expect(created.status).toBe('pending')
-    expect(created.toolName).toBe('Write')
-
-    const fetched = getWriteApproval(created.id)
-    expect(fetched).not.toBeNull()
-    expect(fetched!.scheduleId).toBe('sch-1')
-    expect(fetched!.toolInput).toEqual({ filePath: '/a.txt', content: 'hi' })
-  })
-
-  it('lists pending approvals for a workspace (resolved excluded)', () => {
-    const a = createWriteApproval({
-      scheduleId: 'sch-1',
-      workspacePath: proj,
-      toolName: 'Write',
-      toolInput: {},
-      diffPreview: '',
-      expiresAt: Date.now() + 60_000,
-    })
-    createWriteApproval({
-      scheduleId: 'sch-2',
-      workspacePath: proj,
-      toolName: 'Edit',
-      toolInput: {},
-      diffPreview: '',
-      expiresAt: Date.now() + 60_000,
-    })
-
-    expect(listPendingWriteApprovals(proj)).toHaveLength(2)
-
-    resolveWriteApproval(a.id, 'approved', 'owner')
-    const pending = listPendingWriteApprovals(proj)
-    expect(pending).toHaveLength(1)
-    expect(pending[0].toolName).toBe('Edit')
-  })
-
-  it('resolveWriteApproval is idempotent — second resolve returns false', () => {
-    const a = createWriteApproval({
-      scheduleId: 'sch-1',
-      workspacePath: proj,
-      toolName: 'Write',
-      toolInput: {},
-      diffPreview: '',
-      expiresAt: Date.now() + 60_000,
-    })
-    expect(resolveWriteApproval(a.id, 'approved', 'owner')).toBe(true)
-    expect(resolveWriteApproval(a.id, 'rejected', 'owner')).toBe(false)
-
-    const fetched = getWriteApproval(a.id)
-    expect(fetched!.status).toBe('approved')
-    expect(fetched!.resolvedBy).toBe('owner')
-  })
-
-  it('listExpiredPendingApprovals returns only past-due pending entries', () => {
-    // Already-expired pending entry
-    createWriteApproval({
-      scheduleId: 'sch-1',
-      workspacePath: proj,
-      toolName: 'Write',
-      toolInput: {},
-      diffPreview: '',
-      expiresAt: Date.now() - 1_000,
-    })
-    // Future entry — not expired
-    createWriteApproval({
-      scheduleId: 'sch-2',
-      workspacePath: proj,
-      toolName: 'Edit',
-      toolInput: {},
-      diffPreview: '',
-      expiresAt: Date.now() + 60_000,
-    })
-
-    const expired = listExpiredPendingApprovals()
-    expect(expired).toHaveLength(1)
-    expect(expired[0].scheduleId).toBe('sch-1')
-  })
 })
 
 describe('createSchedule next_run_at backfill', () => {

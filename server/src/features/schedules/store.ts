@@ -17,7 +17,6 @@ import type {
   CodexPolicy,
   CreateScheduleInput,
   ModeToken,
-  PendingWriteApproval,
   RunEndReason,
   RunLifecycleTopic,
   Schedule,
@@ -93,22 +92,6 @@ CREATE TABLE IF NOT EXISTS schedule_execution_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_sch_exec_schedule ON schedule_execution_logs(schedule_id);
 
-CREATE TABLE IF NOT EXISTS write_approvals (
-  id             TEXT PRIMARY KEY,
-  schedule_id    TEXT NOT NULL,
-  workspace_path TEXT NOT NULL,
-  tool_name      TEXT NOT NULL,
-  tool_input     TEXT NOT NULL DEFAULT '{}',
-  diff_preview   TEXT NOT NULL DEFAULT '',
-  created_at     INTEGER NOT NULL,
-  expires_at     INTEGER NOT NULL,
-  status         TEXT NOT NULL DEFAULT 'pending',
-  resolved_by    TEXT,
-  resolved_at    INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_wa_workspace ON write_approvals(workspace_path);
-CREATE INDEX IF NOT EXISTS idx_wa_status ON write_approvals(status);
-
 CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
   workspace_path TEXT PRIMARY KEY,
   config_json    TEXT NOT NULL DEFAULT '{}',
@@ -138,24 +121,9 @@ function runMigrations(d: Db): void {
   if (!columnExists(d, 'schedule_execution_logs', 'status')) {
     d.exec(`ALTER TABLE schedule_execution_logs ADD COLUMN status TEXT NOT NULL DEFAULT 'running'`)
   }
-  // add write_approvals and workspace_mcp_configs for db files opened before the
-  // base SCHEMA carried these tables (IF NOT EXISTS makes this a no-op otherwise).
+  // add workspace_mcp_configs for db files opened before the base SCHEMA carried
+  // this table (IF NOT EXISTS makes this a no-op otherwise).
   d.exec(`
-    CREATE TABLE IF NOT EXISTS write_approvals (
-      id             TEXT PRIMARY KEY,
-      schedule_id    TEXT NOT NULL,
-      workspace_path TEXT NOT NULL,
-      tool_name      TEXT NOT NULL,
-      tool_input     TEXT NOT NULL DEFAULT '{}',
-      diff_preview   TEXT NOT NULL DEFAULT '',
-      created_at     INTEGER NOT NULL,
-      expires_at     INTEGER NOT NULL,
-      status         TEXT NOT NULL DEFAULT 'pending',
-      resolved_by    TEXT,
-      resolved_at    INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_wa_workspace ON write_approvals(workspace_path);
-    CREATE INDEX IF NOT EXISTS idx_wa_status ON write_approvals(status);
     CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
       workspace_path TEXT PRIMARY KEY,
       config_json    TEXT NOT NULL DEFAULT '{}',
@@ -725,143 +693,6 @@ export function listExecutionLogs(scheduleId: string): ScheduleExecutionLog[] {
       scheduleId,
     )
     .map(toExecutionLog)
-}
-
-// ---- Write approvals ----
-
-interface WriteApprovalRow {
-  id: string
-  schedule_id: string
-  workspace_path: string
-  tool_name: string
-  tool_input: string
-  diff_preview: string
-  created_at: number
-  expires_at: number
-  status: string
-  resolved_by: string | null
-  resolved_at: number | null
-}
-
-function toWriteApproval(r: WriteApprovalRow): PendingWriteApproval {
-  let toolInput: unknown = {}
-  try {
-    toolInput = JSON.parse(r.tool_input)
-  } catch {
-    /* ignore corrupt input */
-  }
-  return {
-    id: r.id,
-    scheduleId: r.schedule_id,
-    workspacePath: r.workspace_path,
-    toolName: r.tool_name,
-    toolInput,
-    diffPreview: r.diff_preview,
-    createdAt: r.created_at,
-    expiresAt: r.expires_at,
-    status: r.status,
-    resolvedBy: r.resolved_by,
-    resolvedAt: r.resolved_at,
-  }
-}
-
-/** Create a new pending write approval entry. */
-export function createWriteApproval(input: {
-  scheduleId: string
-  workspacePath: string
-  toolName: string
-  toolInput: unknown
-  diffPreview: string
-  expiresAt: number
-}): PendingWriteApproval {
-  const d = requireDb()
-  const id = randomUUID()
-  const now = Date.now()
-  d.run(
-    `INSERT INTO write_approvals
-       (id, schedule_id, workspace_path, tool_name, tool_input, diff_preview, created_at, expires_at, status)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-    id,
-    input.scheduleId,
-    resolve(input.workspacePath),
-    input.toolName,
-    JSON.stringify(input.toolInput ?? {}),
-    input.diffPreview,
-    now,
-    input.expiresAt,
-    'pending',
-  )
-  return {
-    id,
-    scheduleId: input.scheduleId,
-    workspacePath: input.workspacePath,
-    toolName: input.toolName,
-    toolInput: input.toolInput,
-    diffPreview: input.diffPreview,
-    createdAt: now,
-    expiresAt: input.expiresAt,
-    status: 'pending',
-    resolvedBy: null,
-    resolvedAt: null,
-  }
-}
-
-/** Get a single write approval by id. */
-export function getWriteApproval(id: string): PendingWriteApproval | null {
-  const d = db()
-  if (!d) return null
-  const row = d.get<WriteApprovalRow>('SELECT * FROM write_approvals WHERE id=?', id)
-  return row ? toWriteApproval(row) : null
-}
-
-/** List pending (unresolved) write approvals for a workspace. */
-export function listPendingWriteApprovals(workspacePath: string): PendingWriteApproval[] {
-  const d = db()
-  if (!d) return []
-  const abs = resolve(workspacePath)
-  return d
-    .all<WriteApprovalRow>(
-      'SELECT * FROM write_approvals WHERE workspace_path=? AND status=? ORDER BY created_at ASC',
-      abs,
-      'pending',
-    )
-    .map(toWriteApproval)
-}
-
-/** List expired (past expires_at) pending approvals — used by the expiry scanner. */
-export function listExpiredPendingApprovals(): PendingWriteApproval[] {
-  const d = db()
-  if (!d) return []
-  return d
-    .all<WriteApprovalRow>(
-      'SELECT * FROM write_approvals WHERE status=? AND expires_at <= ?',
-      'pending',
-      Date.now(),
-    )
-    .map(toWriteApproval)
-}
-
-/**
- * Resolve a pending write approval (approve or reject).
- * Returns true if the approval was actually updated, false if already resolved.
- */
-export function resolveWriteApproval(
-  id: string,
-  status: 'approved' | 'rejected' | 'expired',
-  resolvedBy?: string,
-): boolean {
-  const d = requireDb()
-  const row = d.get<WriteApprovalRow>('SELECT status FROM write_approvals WHERE id=?', id)
-  if (!row || row.status !== 'pending') return false
-  const now = Date.now()
-  d.run(
-    'UPDATE write_approvals SET status=?, resolved_by=?, resolved_at=? WHERE id=?',
-    status,
-    resolvedBy ?? null,
-    now,
-    id,
-  )
-  return true
 }
 
 // ---- Workspace MCP configs ----

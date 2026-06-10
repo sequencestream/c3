@@ -13,14 +13,12 @@ import {
   getScheduleDetail,
   getWorkspaceMcpConfig as storeGetWorkspaceMcpConfig,
   isStoreAvailable as isScheduleStoreAvailable,
-  listPendingWriteApprovals as storeListPendingApprovals,
   listSchedules,
   saveWorkspaceMcpConfig as storeSaveWorkspaceMcpConfig,
   updateSchedule as updateScheduleStore,
 } from './store.js'
 import { triggerRunNow } from './scheduler.js'
 import { readExecutionTranscript } from './transcript.js'
-import { resolveApproval } from './queue.js'
 import { clampName, generateScheduleName } from './naming.js'
 import type { ScheduleNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -200,31 +198,6 @@ export const saveWorkspaceMcpConfig: Handler<'save_workspace_mcp_config'> = (_ct
     workspacePath: msg.workspacePath,
     config: storeGetWorkspaceMcpConfig(msg.workspacePath),
   })
-}
-
-export const listPendingWriteApprovals: Handler<'list_pending_write_approvals'> = (
-  _ctx,
-  conn,
-  msg,
-) => {
-  if (!isScheduleStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
-    return
-  }
-  const items = storeListPendingApprovals(msg.workspacePath)
-  conn.send({ type: 'pending_write_approvals', workspacePath: msg.workspacePath, items })
-}
-
-export const approveWriteApproval: Handler<'approve_write_approval'> = (_ctx, conn, msg) => {
-  if (!isScheduleStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
-    return
-  }
-  const ok = resolveApproval(msg.approvalId, msg.decision, 'owner')
-  if (!ok) {
-    conn.send({ type: 'error', error: { code: 'schedule.approvalNotFound' } })
-  }
-  // Broadcast resolved event is already handled inside resolveApproval.
 }
 
 /**

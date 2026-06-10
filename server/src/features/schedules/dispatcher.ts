@@ -12,8 +12,8 @@
 import { spawn } from 'node:child_process'
 // C-SEC exception (annotated): the schedule dispatcher runs UNATTENDED scheduled
 // agents with its OWN three-tier MCP security model (read-only / sandboxed /
-// full-access + the write-approval queue), a deliberately separate path from the
-// interactive `kernel/permission` gateway. It therefore drives `query` + its own
+// full-access), a deliberately separate path from the interactive
+// `kernel/permission` gateway. It therefore drives `query` + its own
 // `canUseTool` directly — the only feature allowed to, and only for this purpose.
 // eslint-disable-next-line no-restricted-imports
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -24,7 +24,6 @@ import { resolveFirstAgentOfVendor, launchForAgent } from '../../kernel/agent-co
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getWorkspaceMcpConfig } from './store.js'
 import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
-import { pendWriteApproval } from './queue.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 
 // ---------------------------------------------------------------------------
@@ -52,35 +51,6 @@ interface LlmConfig {
   prompt: string
   maxWallClockMs?: number // ms, default 60_000
   outputSchema?: Record<string, unknown> // JSON Schema
-}
-
-/** Diff preview generation helper for write approval display. */
-function generateDiffPreview(toolName: string, input: unknown): string {
-  const inp = input as Record<string, unknown>
-  if (toolName === 'Write' || toolName === 'Edit') {
-    const path = inp?.filePath ?? inp?.file_path ?? 'unknown'
-    const content =
-      typeof inp?.content === 'string'
-        ? inp.content.substring(0, 200)
-        : typeof inp?.content === 'object'
-          ? JSON.stringify(inp.content).substring(0, 200)
-          : ''
-    return `File: ${path}\nContent (first 200 chars): ${content}`
-  }
-  if (toolName === 'Bash') {
-    const cmd = typeof inp?.command === 'string' ? inp.command.substring(0, 200) : 'unknown'
-    return `Command: ${cmd}`
-  }
-  if (toolName === 'NotebookEdit') {
-    return `Notebook: ${inp?.notebookPath ?? inp?.notebook_path ?? 'unknown'}`
-  }
-  if (toolName === 'Agent') {
-    return `Sub-agent prompt: ${typeof inp?.prompt === 'string' ? inp.prompt.substring(0, 200) : ''}`
-  }
-  if (toolName.startsWith('mcp__')) {
-    return `MCP tool: ${toolName}\nInput: ${JSON.stringify(input).substring(0, 300)}`
-  }
-  return `Tool: ${toolName}\nInput: ${JSON.stringify(input).substring(0, 200)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -272,13 +242,14 @@ async function executeCommand(
  * Uses the frozen tool set for allowlist/denylist enforcement. Permission mode
  * is determined by vendor + mode (replacing the old three-way McpMode):
  * - Claude / OpenCode: `'plan'` token denies all writes; all other tokens allow
- *   writes through the approval queue.
+ *   reads but deny writes (schedules run unattended — write permissions must be
+ *   pre-configured via toolAllowlist / toolDenylist).
  * - Codex: `CodexPolicy.sandboxMode === 'read-only'` denies all writes;
- *   `'workspace-write'` allows writes through the approval queue.
+ *   `'workspace-write'` allows reads but denies writes.
  *
  * Legacy McpMode values ('read-only', 'sandboxed', 'full-access') stored in the
  * `mode` column by the v7 migration are also handled: 'read-only' maps to the
- * read-only path; 'sandboxed'/'full-access' go through the approval queue.
+ * read-only path; 'sandboxed'/'full-access' go through the same deny-write path.
  */
 function createPermissionHandler(
   scheduleId: string,
@@ -301,26 +272,22 @@ function createPermissionHandler(
       return { behavior: 'deny', message: 'schedule execution identity: read-only' }
     }
 
-    // Step 3: Non-read-only modes: allow reads, writes through approval queue.
+    // Step 3: Non-read-only modes: allow reads, deny writes.
+    // Schedules run unattended — write permissions must be pre-configured
+    // via toolAllowlist / toolDenylist. If a write tool is reached despite
+    // the mode not restricting it, fail immediately rather than blocking
+    // for human approval (which the frontend does not consume anyway).
     if (!isWriteTool(toolName, frozenTools)) {
       return { behavior: 'allow' }
     }
-
-    const approved = await pendWriteApproval({
-      scheduleId,
-      workspacePath,
-      toolName,
-      toolInput: input,
-      diffPreview: generateDiffPreview(toolName, input),
-    })
-    if (approved) {
-      return { behavior: 'allow' }
+    return {
+      behavior: 'deny',
+      message: 'schedule execution: write tool requires pre-approved permission',
     }
-    return { behavior: 'deny', message: 'write not approved' }
   }
 }
 
-/** Determine whether a vendor's permission mode denies all writes (read-only). */
+/** Determine whether a vendor's permission mode denies all writes (read-only only). */
 function isReadOnlyMode(vendor: VendorId, mode: ModeToken | CodexPolicy): boolean {
   // Legacy McpMode values from v7 migration
   if (mode === 'read-only') return true

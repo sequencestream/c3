@@ -63,14 +63,12 @@ import {
   startDiscussion,
 } from './discussions/index.js'
 import {
-  approveWriteApproval,
   createScheduleHandler,
   deleteScheduleHandler,
   getExecutionTranscript,
   getScheduleDetailHandler,
   getScheduleToolManifest,
   getWorkspaceMcpConfig,
-  listPendingWriteApprovals,
   listSchedulesHandler,
   saveWorkspaceMcpConfig,
   scheduleRunNow,
@@ -143,8 +141,6 @@ export const handlerMap: HandlerMap = {
   schedule_run_now: scheduleRunNow,
   get_workspace_mcp_config: getWorkspaceMcpConfig,
   save_workspace_mcp_config: saveWorkspaceMcpConfig,
-  list_pending_write_approvals: listPendingWriteApprovals,
-  approve_write_approval: approveWriteApproval,
   get_schedule_tool_manifest: getScheduleToolManifest,
   // wait user involve
   list_wait_user_events: listWaitUserEvents,

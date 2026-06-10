@@ -2,7 +2,7 @@
 
 所有表存储在单文件 SQLite 数据库 `~/.c3/c3.db` 中，通过 `node:sqlite` / `bun:sqlite` 内置驱动访问。Schema 在各 Store 模块中惰性创建 (`CREATE TABLE IF NOT EXISTS`)，迁移通过 `PRAGMA table_info` 列存在性检查做幂等演进。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 12 张表，5 个模块。
 
 ## 基础设施
 
@@ -23,10 +23,9 @@
 | 7 | discussions | `discussion_agent_sessions` | [discussions/discussion_agent_sessions.sql](discussions/discussion_agent_sessions.sql) | `server/src/features/discussions/store.ts` | 讨论内 agent→vendor 会话映射 |
 | 8 | schedules | `schedules` | [schedules/schedules.sql](schedules/schedules.sql) | `server/src/features/schedules/store.ts` | 定时任务 (cron + event) |
 | 9 | schedules | `schedule_execution_logs` | [schedules/schedule_execution_logs.sql](schedules/schedule_execution_logs.sql) | `server/src/features/schedules/store.ts` | 定时任务执行历史 |
-| 10 | schedules | `write_approvals` | [schedules/write_approvals.sql](schedules/write_approvals.sql) | `server/src/features/schedules/store.ts` | 写操作审批 (human-in-the-loop) |
-| 11 | schedules | `workspace_mcp_configs` | [schedules/workspace_mcp_configs.sql](schedules/workspace_mcp_configs.sql) | `server/src/features/schedules/store.ts` | 每 workspace 的 MCP 配置 |
-| 12 | user-involve | `wait_user_involve_events` | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql) | `server/src/features/user-involve/store.ts` | 等待用户介入事件 |
-| 13 | works | `work_session_metadata` | [works/work_session_metadata.sql](works/work_session_metadata.sql) | `server/src/features/works/work-session-store.ts` | 会话列表元数据投影 |
+| 10 | schedules | `workspace_mcp_configs` | [schedules/workspace_mcp_configs.sql](schedules/workspace_mcp_configs.sql) | `server/src/features/schedules/store.ts` | 每 workspace 的 MCP 配置 |
+| 11 | user-involve | `wait_user_involve_events` | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql) | `server/src/features/user-involve/store.ts` | 等待用户介入事件 |
+| 12 | works | `work_session_metadata` | [works/work_session_metadata.sql](works/work_session_metadata.sql) | `server/src/features/works/work-session-store.ts` | 会话列表元数据投影 |
 
 ## 模块说明
 
@@ -44,7 +43,7 @@ Schema 版本: 2。
 
 ### schedules
 
-定时任务调度域。`schedules` 支持 cron 和 event 两种触发类型；`schedule_execution_logs` 记录每次执行的结果和 agent session id；`write_approvals` 实现 scheduled task 运行时的写操作 human-in-the-loop 审批；`workspace_mcp_configs` 存储 per-workspace 的 MCP 服务器配置。
+定时任务调度域。`schedules` 支持 cron 和 event 两种触发类型；`schedule_execution_logs` 记录每次执行的结果和 agent session id；`workspace_mcp_configs` 存储 per-workspace 的 MCP 服务器配置。写操作权限通过 toolAllowlist/toolDenylist 预配置，不再使用运行时 human-in-the-loop 审批。
 
 Schema 版本: 5。迁移历史: status 列、write_approvals/workspace_mcp_configs 表、session_id 列、trigger 列 (v5)、vendor 列 (v6)、mcp_mode→mode 改名 (v7)。
 

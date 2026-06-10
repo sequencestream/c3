@@ -118,6 +118,14 @@ export interface SessionRuntime {
    * `removeRuntime`. Registered atomically with `sandboxHandle`.
    */
   sandboxStop?: () => Promise<void>
+  /**
+   * Override the agent SDK's working directory without changing `workspacePath`
+   * (which controls project config lookups and intent broadcasts). When set,
+   * the agent's CWD becomes this path instead of `workspacePath`. Used by the
+   * intent worktree isolation feature so the agent works inside the detached
+   * worktree while c3 still broadcasts via the original project path.
+   */
+  effectiveCwd?: string
   viewers: Set<Viewer>
 }
 

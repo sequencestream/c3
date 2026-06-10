@@ -33,12 +33,13 @@
 import { randomUUID } from 'node:crypto'
 import type { AutomationStatus, Intent, RunEndReason, ServerToClient } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { getIntent, listIntents, setLastDevSession, updateStatus } from './store.js'
+import { getIntent, listIntents, setBranchName, setLastDevSession, updateStatus } from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
 import { judgeCompletion } from './judge.js'
 import { commitAndPush, gitDiffStat, gitRecentLog } from '../../git.js'
 import { getDevSkill, getDefaultMode } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
+import { createWorktree, getWorktreePath, worktreeExists } from './worktree.js'
 
 // ---------------------------------------------------------------------------
 // Public types (unchanged)
@@ -321,8 +322,20 @@ class AutomationController {
   /**
    * Launch a development turn for the given intent (fresh, resume, or attach).
    * Determines the right session strategy internally and fires off `runDevTurn`.
+   * Fire-and-forget (async internally; errors caught and surfaced via fail()).
    */
   private _launchDevelopment(req: Intent): void {
+    // Kick off async work and handle errors inline (no caller awaits this).
+    void this._launchDevAsync(req).catch((err) => {
+      console.error(`[c3:automation] intent ${req.id} 启动失败:`, err)
+      this.fail(
+        `「${req.title}」启动开发失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
+  }
+
+  /** Async body of {@link _launchDevelopment} — split so errors can be caught. */
+  private async _launchDevAsync(req: Intent): Promise<void> {
     this._phase = 'normal'
     this._continuationCount = 0
 
@@ -347,17 +360,16 @@ class AutomationController {
     }
 
     // Resumable (existing dev session on disk) or fresh (todo or dangling).
-    // For fresh: use a pending id + pendingDevLink so the resident run:bound
-    // sub flips the intent to in_progress early.
     const skill = getDevSkill(this.projectPath)
     const skillPrefix = skill ? `${skill} ` : ''
     const dependencyNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
 
     // Resumable: session exists on disk (continued context).
     if (req.status === 'in_progress' && req.lastDevSessionId) {
-      // Session exists on disk — resume it (the hook checks disk async, but
-      // we optimistically pass the existing id; if the session is gone,
-      // runDevTurn will fail gracefully).
+      // Ensure the runtime exists with the worktree path as effectiveCwd so
+      // the agent's CWD points to the isolated worktree across process restarts.
+      this._ensureWorktreeRuntime(req)
+
       this.status.currentIntentId = req.id
       this.status.currentSessionId = req.lastDevSessionId
       this.status.state = 'developing'
@@ -374,17 +386,36 @@ class AutomationController {
       return
     }
 
-    // Fresh launch: create a pending session so run:bound → dev-link fires.
+    // Fresh launch: compute worktree info synchronously first (fully
+    // deterministic from projectPath + intentId) so the dev turn launch
+    // stays synchronous — preserving the existing microtask timing contract
+    // that tests and the event-driven FSM rely on.
     const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-    // Ensure runtime exists before registering the dev-link so the resident
-    // run:bound sub can find it via getRuntime(realId).
-    ensureRuntime(pendingId, this.projectPath, getDefaultMode(this.projectPath), [], 'session')
-    registerPendingDevLink(pendingId, req.id)
+    const { worktreePath, branchName } = createWorktree(
+      this.projectPath,
+      req.id,
+      req.title,
+    )
+    // Persist branch name immediately so the UI can show it.
+    setBranchName(req.id, branchName)
 
     this.status.currentIntentId = req.id
     this.status.currentSessionId = pendingId
     this.status.state = 'developing'
     this.emit()
+
+    // Use the ORIGINAL project path for ensureRuntime so broadcasts use the
+    // correct workspace scope; effectiveCwd overrides the agent's CWD to
+    // the worktree.
+    const rt = ensureRuntime(
+      pendingId,
+      this.projectPath,
+      getDefaultMode(this.projectPath),
+      [],
+      'session',
+    )
+    rt.effectiveCwd = worktreePath
+    registerPendingDevLink(pendingId, req.id)
 
     const prompt = `${skillPrefix}${req.title}\n\n${req.content}${dependencyNote}`
     void this.hooks.runDevTurn({
@@ -395,6 +426,30 @@ class AutomationController {
       signal: this.abort.signal,
       onAwaitingPermission: (a) => this.setAwaiting(a),
     })
+  }
+
+  /**
+   * Ensure the runtime for a resume scenario has the worktree path set as
+   * effectiveCwd. The runtime may already exist (in-memory) or need fresh
+   * creation (after server restart); in either case, ensure its effectiveCwd
+   * points to the isolated worktree.
+   */
+  private _ensureWorktreeRuntime(req: Intent): void {
+    // The worktree path is fully deterministic from (projectPath, intentId)
+    // — no extra storage needed.
+    const worktreePath = getWorktreePath(this.projectPath, req.id)
+    if (worktreeExists(worktreePath)) {
+      // If the runtime already exists (same sessionId), ensureRuntime is a
+      // no-op and preserves existing fields; only set effectiveCwd if missing.
+      const rt = ensureRuntime(
+        req.lastDevSessionId!,
+        this.projectPath,
+        getDefaultMode(this.projectPath),
+        [],
+        'session',
+      )
+      if (!rt.effectiveCwd) rt.effectiveCwd = worktreePath
+    }
   }
 
   /**

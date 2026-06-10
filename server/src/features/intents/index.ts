@@ -66,7 +66,8 @@ import {
   stopAutomation,
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
-import { commitAndPush, getCurrentBranch } from '../../git.js'
+import { commitAndPush } from '../../git.js'
+import { createWorktree } from './worktree.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -458,8 +459,33 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     })
     return
   }
+  // ── Worktree isolation ─────────────────────────────────────────────────
+  // Create (or reuse) a git worktree at $TMPDIR/c3-worktrees/<project>/intent-<ID>
+  // so the dev agent works on an isolated branch instead of the main checkout.
+  // Idempotent: if the worktree already exists (dangling / resume), returns
+  // existing info without modifying git state.
+  let worktreePath: string
+  try {
+    const wt = createWorktree(proj, req.id, req.title)
+    worktreePath = wt.worktreePath
+    setBranchName(req.id, wt.branchName)
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'intent.worktreeCreateFailed',
+        params: { message: err instanceof Error ? err.message : String(err) },
+      },
+    })
+    return
+  }
+
   const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  // Use the ORIGINAL project path for ensureRuntime so broadcasts (run:bound /
+  // run:settled events) use the correct workspace scope. The agent SDK's CWD
+  // is overridden via devRt.effectiveCwd to point to the worktree.
   const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'session')
+  devRt.effectiveCwd = worktreePath
   const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
   const skill = getDevSkill(proj)
   const skillPrefix = skill ? `${skill} ` : ''
@@ -469,12 +495,6 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // (ADR-0018 resident subs model).
   registerPendingDevLink(devId, req.id)
   void ctx.launchRun(devRt, devPrompt)
-
-  // Fire-and-forget: capture the current git branch and write it back so the
-  // intent's `branchName` is immediately available (e.g. for the UI detail pane).
-  getCurrentBranch(proj).then((branch) => {
-    if (branch) setBranchName(req.id, branch)
-  })
 }
 
 export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, msg) => {

@@ -350,7 +350,7 @@ export async function launchRun(
       try {
         await runClaude({
           prompt,
-          cwd: workspacePath,
+          cwd: rt.effectiveCwd ?? workspacePath,
           signal: attemptAbort.signal,
           // Intent chats are pinned to `default` so the gateway always runs.
           // This is the claude-hardwired path (vendor === 'claude'), so the

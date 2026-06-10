@@ -27,8 +27,18 @@ vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMode: () => 'default' as const,
 }))
 vi.mock('../../runs.js', () => ({
-  ensureRuntime: vi.fn(),
+  ensureRuntime: vi.fn(() => ({
+    sessionId: 'mock-session',
+    workspacePath: '/abs/auto-proj',
+    effectiveCwd: undefined,
+  })),
   getRuntime: vi.fn(() => undefined),
+}))
+vi.mock('./worktree.js', () => ({
+  createWorktree: vi.fn(() => ({ worktreePath: '/tmp/c3-worktrees/auto-proj/intent-test', branchName: 'intent/test-branch' })),
+  getWorktreePath: vi.fn(() => '/tmp/c3-worktrees/auto-proj/intent-test'),
+  worktreeExists: vi.fn(() => true),
+  generateBranchName: vi.fn((_id: string, title: string) => `intent/test-${title}`),
 }))
 
 // ── SUT (imported after mocks) ──────────────────────────────────────────────

@@ -209,8 +209,8 @@ export async function runViaDriver(
   const sandboxWrapperPath = rt.sandboxHandle
     ? createSandboxWrapper(rt.sandboxHandle, rt.sandboxTmpDir ?? '', vendorBinaryName, buildChildEnv(envOverrides))
     : undefined
-  // Override cwd to container workspace when sandboxed
-  const driverCwd = rt.sandboxHandle ? '/workspace' : workspacePath
+  // Override cwd: sandbox container, effectiveCwd (worktree isolation), or original workspacePath.
+  const driverCwd = rt.sandboxHandle ? '/workspace' : (rt.effectiveCwd ?? workspacePath)
 
   try {
     const run = await adapter.driver.start({

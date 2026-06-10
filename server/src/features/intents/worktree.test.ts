@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -121,11 +121,10 @@ describe('createWorktree', () => {
   /** Clean up a worktree created during the test. */
   function removeWorktree(): void {
     try {
-      execFileSync(
-        'git',
-        ['worktree', 'remove', '--force', wtPath()],
-        { cwd: repoDir, stdio: 'ignore' },
-      )
+      execFileSync('git', ['worktree', 'remove', '--force', wtPath()], {
+        cwd: repoDir,
+        stdio: 'ignore',
+      })
     } catch {
       // may not exist
     }

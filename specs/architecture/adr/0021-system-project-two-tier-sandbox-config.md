@@ -29,19 +29,19 @@
 
 系统配置和项目配置都包含完整的沙箱规格，不做分层。项目可以定义自己的完整沙箱配置，也可以留空。
 
-*Pro:* 模型简单——每个项目独立配置。
-*Con:* 重复定义——多个项目使用相同沙箱配置时需要复制粘贴。
-*Con:* 管理负担——安全策略变更需要逐个更新所有项目的配置。
-*Con:* 没有"管理员模板"的概念——不符合职责分离原则。
+_Pro:_ 模型简单——每个项目独立配置。
+_Con:_ 重复定义——多个项目使用相同沙箱配置时需要复制粘贴。
+_Con:_ 管理负担——安全策略变更需要逐个更新所有项目的配置。
+_Con:_ 没有"管理员模板"的概念——不符合职责分离原则。
 
 ### 2. 三层配置（系统/项目/运行）
 
 在系统级和项目级之间增加一个组织级（org-level）配置层。
 
-*Pro:* 大团队场景下更灵活。
-*Con:* c3 目前没有组织/租户概念——这是超前设计。
-*Con:* 增加了配置合并的复杂度（三层优先级规则）。
-*Con:* 未来可以扩展而不破坏现有双层模型。
+_Pro:_ 大团队场景下更灵活。
+_Con:_ c3 目前没有组织/租户概念——这是超前设计。
+_Con:_ 增加了配置合并的复杂度（三层优先级规则）。
+_Con:_ 未来可以扩展而不破坏现有双层模型。
 
 ### 3. 双层配置 (selected)
 
@@ -63,19 +63,19 @@ Project config (.c3/config.json):
   }
 ```
 
-*Pro:* 模板复用——多个项目共享相同系统定义。
-*Pro:* 职责分离——管理员管理系统定义，项目用户选择并覆盖。
-*Pro:* 最小侵入——项目只需指定 `sandbox: "default"` 即可启用沙箱，所有非覆盖字段继承系统默认值。
-*Pro:* 向后兼容——"无沙箱配置"等价于 `enabled: false`，旧配置不受影响。
+_Pro:_ 模板复用——多个项目共享相同系统定义。
+_Pro:_ 职责分离——管理员管理系统定义，项目用户选择并覆盖。
+_Pro:_ 最小侵入——项目只需指定 `sandbox: "default"` 即可启用沙箱，所有非覆盖字段继承系统默认值。
+_Pro:_ 向后兼容——"无沙箱配置"等价于 `enabled: false`，旧配置不受影响。
 
 ### 4. 纯引用（无覆盖）
 
 项目只能引用完整系统定义，不能覆盖任何字段。
 
-*Pro:* 模型最简单——项目只需指定一个 name。
-*Con:* 过于严格——项目开发者无法调整镜像版本或资源限制。
-*Con:* 每个不同的项目需求都要求管理员创建一个新的系统定义——管理开销大。
-*Con:* 与 c3 现有的"项目可覆盖系统设置"的授权模型不一致。
+_Pro:_ 模型最简单——项目只需指定一个 name。
+_Con:_ 过于严格——项目开发者无法调整镜像版本或资源限制。
+_Con:_ 每个不同的项目需求都要求管理员创建一个新的系统定义——管理开销大。
+_Con:_ 与 c3 现有的"项目可覆盖系统设置"的授权模型不一致。
 
 ## Decision
 
@@ -86,30 +86,30 @@ Project config (.c3/config.json):
 ```typescript
 // 系统级沙箱定义（管理员管理）
 interface SystemSandboxDef {
-  name: string                  // 唯一名称
+  name: string // 唯一名称
   type: 'docker' | 'gvisor' | 'kata' | 'firecracker'
-  image: string                 // 容器镜像
-  seccomp?: string              // seccomp 配置名称
-  memoryLimit?: string          // 内存限制（如 "512m"）
-  cpuLimit?: number             // CPU 限制（如 1）
-  resourceLimits?: ResourceLimits  // 结构化资源限制（优先级高于扁平字段）
-  networkDisabled?: boolean     // 禁用网络（默认 true）
-  networkAllowlist?: string[]   // 网络允许列表（Phase 2）
-  readonlyRootfs?: boolean      // 只读根文件系统（默认 false）
-  envVars?: Record<string, string>  // 环境变量
-  workingDir?: string           // 工作目录
-  entrypoint?: string[]         // 入口点覆盖
-  dockerOptions?: Record<string, unknown>  // Docker 特定选项
+  image: string // 容器镜像
+  seccomp?: string // seccomp 配置名称
+  memoryLimit?: string // 内存限制（如 "512m"）
+  cpuLimit?: number // CPU 限制（如 1）
+  resourceLimits?: ResourceLimits // 结构化资源限制（优先级高于扁平字段）
+  networkDisabled?: boolean // 禁用网络（默认 true）
+  networkAllowlist?: string[] // 网络允许列表（Phase 2）
+  readonlyRootfs?: boolean // 只读根文件系统（默认 false）
+  envVars?: Record<string, string> // 环境变量
+  workingDir?: string // 工作目录
+  entrypoint?: string[] // 入口点覆盖
+  dockerOptions?: Record<string, unknown> // Docker 特定选项
 }
 
 // 项目级沙箱配置（项目开发者管理）
 interface ProjectSandboxConfig {
-  enabled: boolean              // 主开关
-  sandbox?: string              // 引用的系统定义名称
-  imageOverride?: string        // 覆盖镜像
-  memoryLimitOverride?: string  // 覆盖内存限制
-  cpuLimitOverride?: number     // 覆盖 CPU 限制
-  envVarsOverride?: Record<string, string>  // 附加环境变量
+  enabled: boolean // 主开关
+  sandbox?: string // 引用的系统定义名称
+  imageOverride?: string // 覆盖镜像
+  memoryLimitOverride?: string // 覆盖内存限制
+  cpuLimitOverride?: number // 覆盖 CPU 限制
+  envVarsOverride?: Record<string, string> // 附加环境变量
 }
 ```
 
@@ -127,13 +127,13 @@ interface ProjectSandboxConfig {
 ```typescript
 export function getProjectSandbox(projectPath: string): ProjectSandboxConfig | undefined {
   const raw = loadProjectConfig(projectPath).sandbox
-  return normalizeSandboxConfig(raw)  // undefined → 等价于 disabled
+  return normalizeSandboxConfig(raw) // undefined → 等价于 disabled
 }
 
 // 在 launchRun 中使用：
 const projectCfg = getProjectSandbox(workspacePath)
-if (!projectCfg?.enabled || !projectCfg.sandbox) return null  // 不使用沙箱
-const resolved = registry.resolve(projectCfg.sandbox, projectCfg)  // 合并
+if (!projectCfg?.enabled || !projectCfg.sandbox) return null // 不使用沙箱
+const resolved = registry.resolve(projectCfg.sandbox, projectCfg) // 合并
 ```
 
 ## Consequences

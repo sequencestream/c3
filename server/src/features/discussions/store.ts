@@ -431,10 +431,7 @@ function toAgentSession(r: AgentSessionRaw): AgentSessionRow {
  * Look up the stored session for a given agent in a discussion.
  * Returns `null` when the db is unavailable or no mapping exists.
  */
-export function getAgentSession(
-  discussionId: string,
-  agentId: string,
-): AgentSessionRow | null {
+export function getAgentSession(discussionId: string, agentId: string): AgentSessionRow | null {
   const d = db()
   if (!d) return null
   const row = d.get<AgentSessionRaw>(
@@ -499,8 +496,5 @@ export function listAgentSessions(discussionId: string): AgentSessionRow[] {
 /** Remove all agent session mappings for a discussion (used when deleting a discussion). */
 export function deleteAllByDiscussion(discussionId: string): void {
   const d = requireDb()
-  d.run(
-    'DELETE FROM discussion_agent_sessions WHERE discussion_id=?',
-    discussionId,
-  )
+  d.run('DELETE FROM discussion_agent_sessions WHERE discussion_id=?', discussionId)
 }

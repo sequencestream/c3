@@ -340,12 +340,7 @@ export async function createGhPr(
   headBranch?: string,
   baseBranch = 'main',
 ): Promise<CreatePrResult> {
-  const args = [
-    'pr', 'create',
-    '--title', title,
-    '--body', body,
-    '--base', baseBranch,
-  ]
+  const args = ['pr', 'create', '--title', title, '--body', body, '--base', baseBranch]
   if (headBranch) args.push('--head', headBranch)
 
   const { code, stdout, stderr } = await git(cwd, args)

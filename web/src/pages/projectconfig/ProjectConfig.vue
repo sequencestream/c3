@@ -123,7 +123,11 @@ watch(
     // wraps draft.value.sandbox, which starts undefined — the watch sets it).
     // Validate that the referenced sandbox name still exists in the current
     // system definitions — if it was deleted or renamed, treat as unconfigured.
-    if (config?.sandbox && config.sandbox.sandbox && sandboxes.some(sb => sb.name === config.sandbox!.sandbox)) {
+    if (
+      config?.sandbox &&
+      config.sandbox.sandbox &&
+      sandboxes.some((sb) => sb.name === config.sandbox!.sandbox)
+    ) {
       draft.value.sandbox = { ...config.sandbox }
     } else {
       // Keep a reactive empty object so the sandboxDraft computed's v-model

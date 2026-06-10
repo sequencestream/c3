@@ -21,16 +21,16 @@
 The top-level keys in `~/.c3/settings.json`. Mapped to `SystemSettings` in
 [`shared/src/protocol.ts`](shared/src/protocol.ts).
 
-| Key                  | Type                              | Default      | Description                                   |
-| -------------------- | --------------------------------- | ------------ | --------------------------------------------- |
-| `agents`             | `AgentConfig[]`                   | —            | Agent profiles (url/key/model/name)           |
-| `defaultAgentId`     | `string`                          | —            | Agent id for new/unassigned sessions          |
-| `uiLang`             | `UiLang`                          | `"en"`       | UI display language (en/zh/ja/ko/ru)          |
-| `timezone`           | `string`                          | Server local | IANA time zone for schedule cron evaluation   |
-| `showToolSessions`   | `boolean`                         | `false`      | Show tool-created sessions in sidebar         |
-| `sandboxes`          | `SystemSandboxDef[]`              | `[]`         | System-level sandbox definitions (see below)  |
-| `projectConfigs`     | `Record<string, ProjectConfig>`   | `{}`         | Per-project (workspace) configuration         |
-| `socketAutoResume`   | `boolean`                         | `false`      | Auto-resume sessions on socket reconnect      |
+| Key                | Type                            | Default      | Description                                  |
+| ------------------ | ------------------------------- | ------------ | -------------------------------------------- |
+| `agents`           | `AgentConfig[]`                 | —            | Agent profiles (url/key/model/name)          |
+| `defaultAgentId`   | `string`                        | —            | Agent id for new/unassigned sessions         |
+| `uiLang`           | `UiLang`                        | `"en"`       | UI display language (en/zh/ja/ko/ru)         |
+| `timezone`         | `string`                        | Server local | IANA time zone for schedule cron evaluation  |
+| `showToolSessions` | `boolean`                       | `false`      | Show tool-created sessions in sidebar        |
+| `sandboxes`        | `SystemSandboxDef[]`            | `[]`         | System-level sandbox definitions (see below) |
+| `projectConfigs`   | `Record<string, ProjectConfig>` | `{}`         | Per-project (workspace) configuration        |
+| `socketAutoResume` | `boolean`                       | `false`      | Auto-resume sessions on socket reconnect     |
 
 ---
 
@@ -40,15 +40,15 @@ Each project workspace has its own config entry in `systemSettings.projectConfig
 keyed by the resolved absolute project path. All settings are optional; absent
 fields use their defaults.
 
-| Key                | Type                      | Default | Description                                        |
-| ------------------ | ------------------------- | ------- | -------------------------------------------------- |
-| `defaultMode`      | `Record<VendorId, ...>`   | Vendor  | Per-vendor permission mode                          |
-| `sandbox`          | `ProjectSandboxConfig`    | —       | Per-project sandbox configuration (see below)       |
-| `consensus`        | `ConsensusConfig`         | `null`  | Multi-agent consensus settings                     |
-| `devSkill`         | `string`                  | `""`    | Slash command prefix for dev sessions               |
-| `maxRoundsPerStage`| `number`                  | `8`     | Per-stage round cap (minimum 8, clamped)            |
-| `maxSpeechChars`   | `number`                  | `300`   | Per-turn character guidance (minimum 300, clamped)  |
-| `skillRepos`       | `SkillRepoConfig[]`       | `[]`    | External git repos mounted as skills                |
+| Key                 | Type                    | Default | Description                                        |
+| ------------------- | ----------------------- | ------- | -------------------------------------------------- |
+| `defaultMode`       | `Record<VendorId, ...>` | Vendor  | Per-vendor permission mode                         |
+| `sandbox`           | `ProjectSandboxConfig`  | —       | Per-project sandbox configuration (see below)      |
+| `consensus`         | `ConsensusConfig`       | `null`  | Multi-agent consensus settings                     |
+| `devSkill`          | `string`                | `""`    | Slash command prefix for dev sessions              |
+| `maxRoundsPerStage` | `number`                | `8`     | Per-stage round cap (minimum 8, clamped)           |
+| `maxSpeechChars`    | `number`                | `300`   | Per-turn character guidance (minimum 300, clamped) |
+| `skillRepos`        | `SkillRepoConfig[]`     | `[]`    | External git repos mounted as skills               |
 
 ---
 
@@ -69,17 +69,17 @@ isolation — behaviour is identical to today.
       "type": "docker",
       "image": "node:20-alpine",
       "memoryLimit": "512m",
-      "cpuLimit": 1
-    }
+      "cpuLimit": 1,
+    },
   ],
   "projectConfigs": {
     "/path/to/my-project": {
       "sandbox": {
         "enabled": true,
-        "sandbox": "default"
-      }
-    }
-  }
+        "sandbox": "default",
+      },
+    },
+  },
 }
 ```
 
@@ -89,23 +89,23 @@ Defined at system level (`SystemSettings.sandboxes`). Each entry is a
 "template" that projects reference by name. Admin-only CRUD via the System
 Settings panel.
 
-| Field               | Type                        | Required | Default     | Description                                                |
-| ------------------- | --------------------------- | -------- | ----------- | ---------------------------------------------------------- |
-| `name`              | `string`                    | ✅       | —           | Unique identifier for this definition                      |
-| `type`              | `'docker'`                  | ✅       | —           | Runtime backend (Phase 1: Docker only)                     |
-| `image`             | `string`                    | ✅       | —           | Container image (e.g. `"node:20-alpine"`)                  |
-| `seccomp`           | `string`                    | —        | `undefined` | Seccomp profile name (Phase 1: unconfined)                 |
-| `memoryLimit`       | `string`                    | —        | `"512m"`    | Memory limit (Docker format: `"256m"`, `"2g"`, etc.)       |
-| `cpuLimit`          | `number`                    | —        | `1`         | CPU cores (fractional: `0.5` = half a core)                |
-| `resourceLimits`    | `ResourceLimits`            | —        | `undefined` | Structured resource limits (overrides flat fields)         |
-| `description`       | `string`                    | —        | `undefined` | Human-readable description shown in UI                     |
-| `networkDisabled`   | `boolean`                   | —        | `true`      | Disable network access (`--network none`)                  |
-| `networkAllowlist`  | `string[]`                  | —        | `undefined` | Egress allowlist — **Phase 2, MVP throws if non-empty**    |
-| `readonlyRootfs`    | `boolean`                   | —        | `false`     | Read-only container root filesystem                        |
-| `envVars`           | `Record<string, string>`    | —        | `{}`        | Environment variables injected into the container          |
-| `workingDir`        | `string`                    | —        | `undefined` | Working directory inside the container                     |
-| `entrypoint`        | `string[]`                  | —        | `[]`        | Override container entrypoint (default: `sleep infinity`)  |
-| `dockerOptions`     | `Record<string, unknown>`   | —        | `undefined` | Additional Docker options (passed verbatim to dockerode)   |
+| Field              | Type                      | Required | Default     | Description                                               |
+| ------------------ | ------------------------- | -------- | ----------- | --------------------------------------------------------- |
+| `name`             | `string`                  | ✅       | —           | Unique identifier for this definition                     |
+| `type`             | `'docker'`                | ✅       | —           | Runtime backend (Phase 1: Docker only)                    |
+| `image`            | `string`                  | ✅       | —           | Container image (e.g. `"node:20-alpine"`)                 |
+| `seccomp`          | `string`                  | —        | `undefined` | Seccomp profile name (Phase 1: unconfined)                |
+| `memoryLimit`      | `string`                  | —        | `"512m"`    | Memory limit (Docker format: `"256m"`, `"2g"`, etc.)      |
+| `cpuLimit`         | `number`                  | —        | `1`         | CPU cores (fractional: `0.5` = half a core)               |
+| `resourceLimits`   | `ResourceLimits`          | —        | `undefined` | Structured resource limits (overrides flat fields)        |
+| `description`      | `string`                  | —        | `undefined` | Human-readable description shown in UI                    |
+| `networkDisabled`  | `boolean`                 | —        | `true`      | Disable network access (`--network none`)                 |
+| `networkAllowlist` | `string[]`                | —        | `undefined` | Egress allowlist — **Phase 2, MVP throws if non-empty**   |
+| `readonlyRootfs`   | `boolean`                 | —        | `false`     | Read-only container root filesystem                       |
+| `envVars`          | `Record<string, string>`  | —        | `{}`        | Environment variables injected into the container         |
+| `workingDir`       | `string`                  | —        | `undefined` | Working directory inside the container                    |
+| `entrypoint`       | `string[]`                | —        | `[]`        | Override container entrypoint (default: `sleep infinity`) |
+| `dockerOptions`    | `Record<string, unknown>` | —        | `undefined` | Additional Docker options (passed verbatim to dockerode)  |
 
 ### Structured Resource Limits (`resourceLimits`)
 
@@ -114,11 +114,11 @@ Set via the `resourceLimits` sub-object. When `resourceLimits.memory` or
 `memoryLimit`/`cpuLimit` fields. The `stopTimeoutMs` is only expressible
 via this sub-object.
 
-| Field           | Type     | Description                                                  |
-| --------------- | -------- | ------------------------------------------------------------ |
-| `memory`        | `string` | Memory limit (overrides `memoryLimit` when set)              |
-| `cpu`           | `number` | CPU limit (overrides `cpuLimit` when set)                    |
-| `stopTimeoutMs` | `number` | Container stop timeout in ms (converted to seconds for Docker)|
+| Field           | Type     | Description                                                    |
+| --------------- | -------- | -------------------------------------------------------------- |
+| `memory`        | `string` | Memory limit (overrides `memoryLimit` when set)                |
+| `cpu`           | `number` | CPU limit (overrides `cpuLimit` when set)                      |
+| `stopTimeoutMs` | `number` | Container stop timeout in ms (converted to seconds for Docker) |
 
 ### Project-Level: `sandbox`
 
@@ -126,15 +126,15 @@ Configured per-project via `ProjectConfig.sandbox`. The project **selects** a
 system definition by name and may enable/disable sandboxing. Only non-security
 fields are overridable.
 
-| Field                | Type      | Required | Description                                                    |
-| -------------------- | --------- | -------- | -------------------------------------------------------------- |
-| `enabled`            | `boolean` | —        | Master switch. `false` or unset → no sandbox.                  |
-| `sandbox`            | `string`  | —        | Name of the system sandbox definition to use.                  |
-| `networkDisabled`    | `boolean` | —        | Override system def's network setting.                         |
-| `imageOverride`      | `string`  | —        | Override the base image (overrides system `image`).            |
-| `memoryLimitOverride`| `string`  | —        | Override system `memoryLimit`.                                 |
-| `cpuLimitOverride`   | `number`  | —        | Override system `cpuLimit`.                                    |
-| `envVarsOverride`    | `Record`  | —        | Additional env vars (merged with system `envVars`; wins conflicts).|
+| Field                 | Type      | Required | Description                                                         |
+| --------------------- | --------- | -------- | ------------------------------------------------------------------- |
+| `enabled`             | `boolean` | —        | Master switch. `false` or unset → no sandbox.                       |
+| `sandbox`             | `string`  | —        | Name of the system sandbox definition to use.                       |
+| `networkDisabled`     | `boolean` | —        | Override system def's network setting.                              |
+| `imageOverride`       | `string`  | —        | Override the base image (overrides system `image`).                 |
+| `memoryLimitOverride` | `string`  | —        | Override system `memoryLimit`.                                      |
+| `cpuLimitOverride`    | `number`  | —        | Override system `cpuLimit`.                                         |
+| `envVarsOverride`     | `Record`  | —        | Additional env vars (merged with system `envVars`; wins conflicts). |
 
 ### Merge Precedence
 
@@ -170,15 +170,15 @@ session starts
 
 ### Security Constraints
 
-| Constraint             | Detail                                                       |
-| ---------------------- | ------------------------------------------------------------ |
-| Network default        | Containers start with `--network none`; no egress.           |
-| Image/type/seccomp     | Not overridable at project level — set only by admin.        |
-| Network allowlist      | Phase 2 feature. Non-empty array in MVP throws at start.     |
-| Seccomp profile        | Phase 1: `unconfined`. Hardening follows in Phase 2.         |
-| Host file access       | Only the project directory is bind-mounted at `/workspace`.  |
-| Resource limits        | Default memory ceiling: 512 MB. Default CPU: 1 core.         |
-| Graceful degradation   | Sandbox launch failure → `console.warn` → host execution.    |
+| Constraint           | Detail                                                      |
+| -------------------- | ----------------------------------------------------------- |
+| Network default      | Containers start with `--network none`; no egress.          |
+| Image/type/seccomp   | Not overridable at project level — set only by admin.       |
+| Network allowlist    | Phase 2 feature. Non-empty array in MVP throws at start.    |
+| Seccomp profile      | Phase 1: `unconfined`. Hardening follows in Phase 2.        |
+| Host file access     | Only the project directory is bind-mounted at `/workspace`. |
+| Resource limits      | Default memory ceiling: 512 MB. Default CPU: 1 core.        |
+| Graceful degradation | Sandbox launch failure → `console.warn` → host execution.   |
 
 ### Sandbox Wrapper
 
@@ -247,6 +247,7 @@ All sandbox configuration is validated at persistence time via Zod schemas in
 `SystemSandboxDef` and `ProjectSandboxConfig` interfaces.
 
 Server-side normalization in `server/src/kernel/config/index.ts`:
+
 - `normalizeSandboxConfig()` trims string fields and strips empty strings
 - Unknown system definition names are caught at `registry.resolve()` time
 

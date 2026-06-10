@@ -253,9 +253,7 @@ describe('DockerDriver', () => {
     })
 
     it('ignores empty networkAllowlist array', async () => {
-      await expect(
-        driver.start({ ...TEST_CONFIG, networkAllowlist: [] }),
-      ).resolves.toBeDefined()
+      await expect(driver.start({ ...TEST_CONFIG, networkAllowlist: [] })).resolves.toBeDefined()
     })
 
     it('ignores undefined networkAllowlist', async () => {
@@ -413,9 +411,9 @@ describe('DockerDriver', () => {
     it('throws on getArchive failure', async () => {
       mocks.container.getArchive.mockRejectedValue(new Error('container not found'))
 
-      await expect(driver.copyFrom(TEST_HANDLE, '/workspace', '/tmp/test-sandbox-copy')).rejects.toThrow(
-        'container not found',
-      )
+      await expect(
+        driver.copyFrom(TEST_HANDLE, '/workspace', '/tmp/test-sandbox-copy'),
+      ).rejects.toThrow('container not found')
     })
   })
 

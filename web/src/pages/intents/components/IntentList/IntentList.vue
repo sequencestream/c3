@@ -369,7 +369,9 @@ function datePrefix(r: Intent): string {
               :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
             >
               <span v-if="di > 0">, </span>{{ dep.title }}
-              <span class="req-dep-type-badge" :class="'dep-type--' + dep.depType">{{ depTypeLabel(dep.depType) }}</span>
+              <span class="req-dep-type-badge" :class="'dep-type--' + dep.depType">{{
+                depTypeLabel(dep.depType)
+              }}</span>
               <span v-if="!dep.done"> ⚠</span>
             </span>
             <button
@@ -377,7 +379,9 @@ function datePrefix(r: Intent): string {
               class="req-btn req-dep-edit-btn"
               :title="t('intent.deps.depType.edit.tooltip')"
               @click.stop="openDepEdit(r)"
-            >{{ t('intent.deps.depType.edit.label') }}</button>
+            >
+              {{ t('intent.deps.depType.edit.label') }}
+            </button>
           </span>
         </div>
         <div
@@ -419,10 +423,7 @@ function datePrefix(r: Intent): string {
           </div>
           <div v-for="(dep, i) in editingDeps" :key="dep.dependsOnId" class="dep-edit-row">
             <span class="dep-edit-dep-title">{{ depTitle(dep.dependsOnId) }}</span>
-            <select
-              v-model="editingDeps[i].depType"
-              class="dep-edit-select"
-            >
+            <select v-model="editingDeps[i].depType" class="dep-edit-select">
               <option v-for="opt in DEP_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
               </option>

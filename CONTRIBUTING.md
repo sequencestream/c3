@@ -6,12 +6,12 @@ The `main` branch is protected. Before merging a pull request, the following Git
 status checks must all pass (set via **Settings → Branches → Add branch protection
 rule**):
 
-| Required check | What it runs |
-|---|---|
-| `lint` | `pnpm lint` + `pnpm i18n:check` |
-| `typecheck` | `pnpm typecheck` |
-| `build` | `pnpm build` |
-| `e2e` | `pnpm e2e` (build + server boot + WebSocket e2e suite) |
+| Required check | What it runs                                           |
+| -------------- | ------------------------------------------------------ |
+| `lint`         | `pnpm lint` + `pnpm i18n:check`                        |
+| `typecheck`    | `pnpm typecheck`                                       |
+| `build`        | `pnpm build`                                           |
+| `e2e`          | `pnpm e2e` (build + server boot + WebSocket e2e suite) |
 
 ### How to enable
 

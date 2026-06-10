@@ -160,6 +160,11 @@ export function formatDependsOn(r: Intent, reqList: Intent[]): DepInfo[] {
   const types = r.dependsOnTypes ?? {}
   return r.dependsOn.map((id) => {
     const dep = byId.get(id)
-    return { id, title: dep?.title ?? id, done: dep?.status === 'done', depType: types[id] ?? 'blocks' }
+    return {
+      id,
+      title: dep?.title ?? id,
+      done: dep?.status === 'done',
+      depType: types[id] ?? 'blocks',
+    }
   })
 }

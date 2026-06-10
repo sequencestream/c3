@@ -65,6 +65,10 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.prCreateFailed',
     params: ['detail'],
   },
+  'intent.worktreeCreateFailed': {
+    key: 'error.intent.worktreeCreateFailed',
+    params: ['message'],
+  },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

@@ -371,7 +371,9 @@ export async function launchRun(
           model: agentCfg.model,
           currentAgentId: agentCfg.agentId,
           // Forward sandbox handle so the SDK spawns the vendor CLI inside the container
-          ...(rt.sandboxHandle ? { sandboxHandle: rt.sandboxHandle, sandboxTmpDir: rt.sandboxTmpDir } : {}),
+          ...(rt.sandboxHandle
+            ? { sandboxHandle: rt.sandboxHandle, sandboxTmpDir: rt.sandboxTmpDir }
+            : {}),
           ...(isIntent
             ? // The intent read-only profile (gate + disallowed-tools lock +
               // comm prompt + save_intents tool) is injected at the

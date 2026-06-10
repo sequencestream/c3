@@ -277,7 +277,12 @@ describe('formatDependsOn', () => {
   it('依赖 ID 在列表中不存在时回退用 ID 本身作为标题', () => {
     const r = makeReq({ id: 'main', dependsOn: ['missing-id'] })
     const result = formatDependsOn(r, [r])
-    expect(result[0]).toEqual({ id: 'missing-id', title: 'missing-id', done: false, depType: 'blocks' })
+    expect(result[0]).toEqual({
+      id: 'missing-id',
+      title: 'missing-id',
+      done: false,
+      depType: 'blocks',
+    })
   })
 
   it('包含未完成依赖时 done 字段为 false', () => {
@@ -311,7 +316,11 @@ describe('formatDependsOn', () => {
   it('dependsOnTypes 包含 dep 时使用对应 depType', () => {
     const dep = makeReq({ id: 'dep', title: '依赖项' })
     const dep2 = makeReq({ id: 'dep2', title: '依赖项2' })
-    const r = makeReq({ id: 'main', dependsOn: ['dep', 'dep2'], dependsOnTypes: { dep: 'informs', dep2: 'soft_after' } })
+    const r = makeReq({
+      id: 'main',
+      dependsOn: ['dep', 'dep2'],
+      dependsOnTypes: { dep: 'informs', dep2: 'soft_after' },
+    })
     const result = formatDependsOn(r, [dep, dep2, r])
     expect(result[0].depType).toBe('informs')
     expect(result[1].depType).toBe('soft_after')

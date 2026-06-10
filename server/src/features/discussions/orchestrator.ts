@@ -157,7 +157,13 @@ export interface DiscussionDeps {
    * `discussionId` is the first parameter so the callee can route to the correct
    * session store.
    */
-  ask: (discussionId: string, agent: AgentConfig, prompt: string, cwd: string, signal: AbortSignal) => Promise<string>
+  ask: (
+    discussionId: string,
+    agent: AgentConfig,
+    prompt: string,
+    cwd: string,
+    signal: AbortSignal,
+  ) => Promise<string>
   store: DiscussionStore
   /** The agent that organizes (drives the workflow). */
   organizer: () => AgentConfig

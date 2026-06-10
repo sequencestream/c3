@@ -512,6 +512,13 @@
       },
       "markDone": {
         "label": "완료 표시"
+      },
+      "createPr": {
+        "label": "PR 생성"
+      },
+      "pr": {
+        "label": "PR #{id}",
+        "tooltip": "PR 번호 복사"
       }
     },
     "automate": {
@@ -1101,7 +1108,9 @@
       "illegalStatusTransition": "상태를 \"{from}\"에서 \"{to}\"(으)로 변경할 수 없습니다.",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
-      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."
+      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
+      "prCreateFailed": "PR 생성에 실패했습니다: {detail}。",
+      "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。"
     },
     "discussion": {
       "dbUnavailable": "토론 기능을 사용할 수 없습니다 (c3.db).",

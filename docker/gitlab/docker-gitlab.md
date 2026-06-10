@@ -41,6 +41,7 @@ docker run -d \
 首次启动会拉取镜像并初始化数据库，耗时 **3-10 分钟**。等待 `docker logs -f gitlab` 出现 `gitlab Reconfigured!` 或访问 `http://localhost:8929` 返回登录页即为就绪。
 
 初次登录：
+
 - 用户名: `root`
 - 密码: `docker exec -it gitlab grep 'Password:' /etc/gitlab/initial_root_password`
 
@@ -93,9 +94,9 @@ docker exec -it gitlab gitlab-backup restore BACKUP=<timestamp>
 
 ## 端口说明
 
-| 主机端口 | 容器用途 | 说明               |
-| -------- | -------- | ------------------ |
-| 8929     | HTTP     | Web 访问 + API     |
+| 主机端口 | 容器用途 | 说明                |
+| -------- | -------- | ------------------- |
+| 8929     | HTTP     | Web 访问 + API      |
 | 2424     | SSH      | `git clone git@...` |
 
 访问地址: `http://localhost:8929`

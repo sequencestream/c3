@@ -58,7 +58,7 @@ Checkpoint consensus reuses the same one-shot advisor infrastructure (`askAgentO
 same `vendorScopedVoters` rule (same-vendor agents only), and same fail-safe invariant
 (a tie → stop). It differs from the tool-permission and ask-question consensus in that it
 is owned by the automation orchestrator (`features/intents/checkpoint-consensus.ts`), not
-the permission gateway, and that it decides *automation flow* (`continue` vs `wait`) rather
+the permission gateway, and that it decides _automation flow_ (`continue` vs `wait`) rather
 than answering a tool-use or AskUserQuestion. The outcome is broadcast via
 `AutomationStatus.checkpointConsensus` so the UI/events can render the process.
 

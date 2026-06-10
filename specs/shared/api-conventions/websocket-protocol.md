@@ -382,6 +382,7 @@
 一个会话成为此连接当前查看的会话；携带其模式、重放的磁盘历史记录，以及选中时运行时的权威活跃 `status`。客户端从 `status` 初始化其按会话状态映射，使编辑器立即锁定（无需等待下一次 `session_status` 广播——这是后台运行中会话出现陈旧 "ready" 窗口的来源）。对于后台/进行中的会话，活跃缓冲区尾部在此消息之后作为正常流事件跟随。
 
 **字段：**
+
 - `workspacePath: string`
 - `sessionId: string`
 - `title: string`
@@ -569,6 +570,7 @@ discussion 的只读研究 run 的活跃状态：研究 agent 工作时为 `runn
 一个 prompt→结果回合结束。`complete` = run 正常结束；`error` = 失败。这**绝不**意味着会话结束——会话保持活跃等待下一个 prompt。会话仅在用户清除时才真正结束。对于 `team` 会话，每次 lead 回合触发一次；lead 进程保持运行。
 
 Socket 断连自动 resume 遥测（AS-R18，全部可选/正常回合不出现）：
+
 - `reconnect_attempted`：此回合经历了 socket 断连后的单次自动 `resume`
 - `retry_count`：消耗了多少次 resume 尝试（0 或 1，有界）
 - `original_error`：触发 resume 路径的 socket 断连消息

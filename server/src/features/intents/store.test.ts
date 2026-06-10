@@ -519,7 +519,7 @@ describe('intent_deps dep_type', () => {
   })
 
   it('dep_type on existing deps has correct default after migration', () => {
-    const [a, b] = insertIntents(proj, [
+    const [, b] = insertIntents(proj, [
       { title: 'A', content: '', priority: 'P0' },
       { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
     ])
@@ -534,10 +534,7 @@ describe('intent_deps dep_type', () => {
   it('cycle detection still works regardless of dep_type', () => {
     expect(() =>
       resolveBatchDependencies(
-        [
-          { dependsOnIndexes: [1] },
-          { dependsOnIndexes: [0] },
-        ],
+        [{ dependsOnIndexes: [1] }, { dependsOnIndexes: [0] }],
         ['id-0', 'id-1'],
       ),
     ).toThrow(/成环/)
@@ -913,7 +910,13 @@ describe('canTransition (status guard, 7-state graph)', () => {
   // ── same-state (no-op) ──
   it('allows same-state transitions (no-op)', () => {
     const all: import('@ccc/shared/protocol').IntentStatus[] = [
-      'draft', 'todo', 'in_progress', 'done', 'cancelled', 'blocked', 'failed',
+      'draft',
+      'todo',
+      'in_progress',
+      'done',
+      'cancelled',
+      'blocked',
+      'failed',
     ]
     for (const s of all) expect(canTransition(s, s)).toBe(true)
   })
@@ -951,14 +954,22 @@ describe('canTransition (status guard, 7-state graph)', () => {
   // ── illegal outgoing from terminal ──
   it('done transitions nowhere', () => {
     const nonTerminal: import('@ccc/shared/protocol').IntentStatus[] = [
-      'draft', 'todo', 'in_progress', 'blocked', 'failed',
+      'draft',
+      'todo',
+      'in_progress',
+      'blocked',
+      'failed',
     ]
     for (const s of nonTerminal) expect(canTransition('done', s)).toBe(false)
   })
 
   it('cancelled transitions nowhere', () => {
     const nonTerminal: import('@ccc/shared/protocol').IntentStatus[] = [
-      'draft', 'todo', 'in_progress', 'blocked', 'failed',
+      'draft',
+      'todo',
+      'in_progress',
+      'blocked',
+      'failed',
     ]
     for (const s of nonTerminal) expect(canTransition('cancelled', s)).toBe(false)
   })

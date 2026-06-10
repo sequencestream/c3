@@ -11,7 +11,7 @@
  * Usage:
  *   node scripts/e2e/e2e-sandbox-test.mjs [ws-url] [prompt]
  */
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
@@ -43,7 +43,6 @@ let sandboxDefsAvailable = false
 const events = []
 
 // Per-prompt flags (reset per phase)
-let sawSession = false
 let sawPermissionRequest = false
 let sawConsensusAuto = false
 let sawToolUse = false
@@ -62,14 +61,19 @@ const timeout = setTimeout(() => {
 
 function finish(code) {
   clearTimeout(timeout)
-  try { ws.close() } catch { /* ignore */ }
+  try {
+    ws.close()
+  } catch {
+    /* ignore */
+  }
   process.exit(code)
 }
 
-function send(data) { ws.send(JSON.stringify(data)) }
+function send(data) {
+  ws.send(JSON.stringify(data))
+}
 
 function resetFlags() {
-  sawSession = false
   sawPermissionRequest = false
   sawConsensusAuto = false
   sawToolUse = false
@@ -100,7 +104,11 @@ function judge(label) {
 
 function onMessage(evt) {
   let msg
-  try { msg = JSON.parse(typeof evt.data === 'string' ? evt.data : String(evt.data)) } catch { return }
+  try {
+    msg = JSON.parse(typeof evt.data === 'string' ? evt.data : String(evt.data))
+  } catch {
+    return
+  }
   events.push(msg.type)
 
   // ── Phase 0: init ─────────────────────────────────────────────────
@@ -158,7 +166,6 @@ function onMessage(evt) {
 
   // ── Session events (Phase 2/3) ───────────────────────────────────
   if (msg.type === 'session_selected') {
-    sawSession = true
     if (promptSent) return // session may re-bind after resume
     promptSent = true
     send({ type: 'set_mode', mode: 'default' })
@@ -291,5 +298,13 @@ console.log(`[e2e-sandbox] connecting ${URL}`)
 ws = new WebSocket(URL)
 ws.addEventListener('open', () => console.log('[e2e-sandbox] connected'))
 ws.addEventListener('message', onMessage)
-ws.addEventListener('error', (err) => { console.error('[e2e-sandbox] ws error:', err.message ?? err); finish(3) })
-ws.addEventListener('close', () => { if (!sawTurnEnd) { console.error('[e2e-sandbox] ws closed early'); finish(4) } })
+ws.addEventListener('error', (err) => {
+  console.error('[e2e-sandbox] ws error:', err.message ?? err)
+  finish(3)
+})
+ws.addEventListener('close', () => {
+  if (!sawTurnEnd) {
+    console.error('[e2e-sandbox] ws closed early')
+    finish(4)
+  }
+})

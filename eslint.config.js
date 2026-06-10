@@ -8,7 +8,13 @@ import globals from 'globals'
 export default tseslint.config(
   {
     // Mirrors .gitignore — never lint build output or vendored code.
-    ignores: ['**/dist/**', '**/node_modules/**', 'changes/**', 'web/dist/**', '.claude/worktrees/**'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      'changes/**',
+      'web/dist/**',
+      '.claude/worktrees/**',
+    ],
   },
 
   js.configs.recommended,

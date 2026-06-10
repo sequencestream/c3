@@ -207,7 +207,12 @@ export async function runViaDriver(
   // uses this path instead of the default host binary resolution.
   const vendorBinaryName = adapter.vendor === 'codex' ? 'codex' : 'opencode'
   const sandboxWrapperPath = rt.sandboxHandle
-    ? createSandboxWrapper(rt.sandboxHandle, rt.sandboxTmpDir ?? '', vendorBinaryName, buildChildEnv(envOverrides))
+    ? createSandboxWrapper(
+        rt.sandboxHandle,
+        rt.sandboxTmpDir ?? '',
+        vendorBinaryName,
+        buildChildEnv(envOverrides),
+      )
     : undefined
   // Override cwd: sandbox container, effectiveCwd (worktree isolation), or original workspacePath.
   const driverCwd = rt.sandboxHandle ? '/workspace' : (rt.effectiveCwd ?? workspacePath)

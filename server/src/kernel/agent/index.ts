@@ -503,7 +503,12 @@ export async function runClaude(opts: RunOptions): Promise<void> {
 
   // When sandbox is active, wrap the vendor binary to run inside the container
   const claudePath = opts.sandboxHandle
-    ? createSandboxWrapper(opts.sandboxHandle, opts.sandboxTmpDir!, 'claude', buildChildEnv(envOverrides))
+    ? createSandboxWrapper(
+        opts.sandboxHandle,
+        opts.sandboxTmpDir!,
+        'claude',
+        buildChildEnv(envOverrides),
+      )
     : findClaudeExecutable()
   // Override cwd to the container's workspace path when sandboxed
   const sandboxCwd = opts.sandboxHandle ? '/workspace' : cwd

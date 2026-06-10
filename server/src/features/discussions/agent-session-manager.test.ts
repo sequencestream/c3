@@ -3,7 +3,7 @@
  * degradation), close, error handling, and text collection.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 import type {
   AgentDriver,
@@ -20,9 +20,7 @@ import { AgentSessionManager, type AgentSessionStore } from './agent-session-man
 // ---------------------------------------------------------------------------
 
 /** A canonical message factory. */
-const msg = (
-  over: Partial<CanonicalMessage> & { blocks: CanonicalBlock[] },
-): CanonicalMessage => ({
+const msg = (over: Partial<CanonicalMessage> & { blocks: CanonicalBlock[] }): CanonicalMessage => ({
   vendor: 'claude',
   sessionId: 's-test',
   role: 'assistant',
@@ -87,9 +85,10 @@ class FakeDriver implements AgentDriver {
     resume: string | undefined
   }> = []
 
-  private readonly resolveRun: (
-    opts: { prompt: string; cwd: string; resume?: string },
-  ) => { run: AgentRun; sessionId: string }
+  private readonly resolveRun: (opts: { prompt: string; cwd: string; resume?: string }) => {
+    run: AgentRun
+    sessionId: string
+  }
 
   constructor(
     vendor: VendorId,
@@ -200,10 +199,8 @@ describe('AgentSessionManager', () => {
   describe('first call (no prior session)', () => {
     it('creates a new vendor session and persists the mapping', async () => {
       const { store, rows } = createFakeStore()
-      const driver = new FakeDriver('claude', ({ prompt }) => ({
-        run: new FakeRun('session-new', [
-          msg({ blocks: [textBlock('Hello from agent')] }),
-        ]),
+      const driver = new FakeDriver('claude', () => ({
+        run: new FakeRun('session-new', [msg({ blocks: [textBlock('Hello from agent')] })]),
         sessionId: 'session-new',
       }))
       const adapter: VendorAdapter = {
@@ -217,11 +214,17 @@ describe('AgentSessionManager', () => {
       }
 
       const mgr = new AgentSessionManager({
-        getAdapter: (v) => (v === 'claude' ? adapter : undefined as unknown as VendorAdapter),
+        getAdapter: (v) => (v === 'claude' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
       })
 
-      const result = await mgr.ask('disc-1', claudeAgent, 'First turn prompt', '/cwd', new AbortController().signal)
+      const result = await mgr.ask(
+        'disc-1',
+        claudeAgent,
+        'First turn prompt',
+        '/cwd',
+        new AbortController().signal,
+      )
 
       expect(result).toBe('Hello from agent')
       // Driver received the call without resume
@@ -257,9 +260,7 @@ describe('AgentSessionManager', () => {
         // The driver receives resume=session-existing
         expect(resume).toBe('session-existing')
         return {
-          run: new FakeRun('session-existing', [
-            msg({ blocks: [textBlock('Resumed reply')] }),
-          ]),
+          run: new FakeRun('session-existing', [msg({ blocks: [textBlock('Resumed reply')] })]),
           sessionId: 'session-existing',
         }
       })
@@ -274,11 +275,17 @@ describe('AgentSessionManager', () => {
       }
 
       const mgr = new AgentSessionManager({
-        getAdapter: (v) => (v === 'claude' ? adapter : undefined as unknown as VendorAdapter),
+        getAdapter: (v) => (v === 'claude' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
       })
 
-      const result = await mgr.ask('disc-1', claudeAgent, 'Second turn', '/cwd', new AbortController().signal)
+      const result = await mgr.ask(
+        'disc-1',
+        claudeAgent,
+        'Second turn',
+        '/cwd',
+        new AbortController().signal,
+      )
 
       expect(result).toBe('Resumed reply')
       expect(driver.startCalls).toHaveLength(1)
@@ -316,9 +323,7 @@ describe('AgentSessionManager', () => {
         }
         // Second call (fallback) succeeds
         return {
-          run: new FakeRun('session-fresh', [
-            msg({ blocks: [textBlock('Fallback reply')] }),
-          ]),
+          run: new FakeRun('session-fresh', [msg({ blocks: [textBlock('Fallback reply')] })]),
           sessionId: 'session-fresh',
         }
       })
@@ -333,11 +338,17 @@ describe('AgentSessionManager', () => {
       }
 
       const mgr = new AgentSessionManager({
-        getAdapter: (v) => (v === 'claude' ? adapter : undefined as unknown as VendorAdapter),
+        getAdapter: (v) => (v === 'claude' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
       })
 
-      const result = await mgr.ask('disc-1', claudeAgent, 'Turn prompt', '/cwd', new AbortController().signal)
+      const result = await mgr.ask(
+        'disc-1',
+        claudeAgent,
+        'Turn prompt',
+        '/cwd',
+        new AbortController().signal,
+      )
 
       expect(result).toBe('Fallback reply')
       // Driver called twice: resume (throws) → create-new
@@ -475,11 +486,17 @@ describe('AgentSessionManager', () => {
       }
 
       const mgr = new AgentSessionManager({
-        getAdapter: (v) => (v === 'claude' ? adapter : undefined as unknown as VendorAdapter),
+        getAdapter: (v) => (v === 'claude' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
       })
 
-      const result = await mgr.ask('disc-1', claudeAgent, 'prompt', '/cwd', new AbortController().signal)
+      const result = await mgr.ask(
+        'disc-1',
+        claudeAgent,
+        'prompt',
+        '/cwd',
+        new AbortController().signal,
+      )
       expect(result).toBe('Part one. Part two.')
     })
   })
@@ -519,11 +536,17 @@ describe('AgentSessionManager', () => {
       }
 
       const mgr = new AgentSessionManager({
-        getAdapter: (v) => (v === 'codex' ? adapter : undefined as unknown as VendorAdapter),
+        getAdapter: (v) => (v === 'codex' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
       })
 
-      const result = await mgr.ask('disc-1', codexAgent, 'Codex prompt', '/cwd', new AbortController().signal)
+      const result = await mgr.ask(
+        'disc-1',
+        codexAgent,
+        'Codex prompt',
+        '/cwd',
+        new AbortController().signal,
+      )
       expect(result).toBe('Codex reply')
 
       // lastSeq incremented

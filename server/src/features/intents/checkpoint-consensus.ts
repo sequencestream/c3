@@ -46,7 +46,6 @@
  */
 
 import type {
-  AgentConfig,
   CheckpointConsensusOutcome,
   CheckpointConsensusVote,
   Intent,
@@ -115,9 +114,9 @@ function voterPrompt(
     'Decide whether the automation should **CONTINUE** past this checkpoint (treating it as a routine step the agent can resolve on its own) or **WAIT** for a human to intervene.',
     '',
     'Consider:',
-    '- Does the agent\'s message show genuine progress toward the intent?',
+    "- Does the agent's message show genuine progress toward the intent?",
     '- Is the checkpoint a routine dev-skill step (e.g. "approve design?", "proceed to implementation?") that the agent can handle on its own?',
-    '- Is there concrete code change evidence backing the agent\'s report?',
+    "- Is there concrete code change evidence backing the agent's report?",
     '- Does the situation truly need human judgment (unclear requirements, error state, missing context)?',
     '',
     'Reply with ONLY a single-line JSON object, no other text:',
@@ -150,8 +149,10 @@ function parseCheckpointVote(
   const low = text.toLowerCase()
   const cont = /\bcontinue\b/.test(low)
   const wait = /\bwait\b/.test(low)
-  if (cont && !wait) return { decision: 'continue', reason: text.replace(/\s+/g, ' ').trim().slice(0, 200) }
-  if (wait && !cont) return { decision: 'wait', reason: text.replace(/\s+/g, ' ').trim().slice(0, 200) }
+  if (cont && !wait)
+    return { decision: 'continue', reason: text.replace(/\s+/g, ' ').trim().slice(0, 200) }
+  if (wait && !cont)
+    return { decision: 'wait', reason: text.replace(/\s+/g, ' ').trim().slice(0, 200) }
   return null
 }
 
@@ -186,10 +187,13 @@ function fallbackSummary(
   unanimous: boolean,
   decision: 'continue' | 'wait' | null,
 ): string {
-  const counts = votes.reduce<Record<string, number>>((acc, v) => {
-    acc[v.decision] = (acc[v.decision] ?? 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const counts = votes.reduce<Record<string, number>>(
+    (acc, v) => {
+      acc[v.decision] = (acc[v.decision] ?? 0) + 1
+      return acc
+    },
+    {} as Record<string, number>,
+  )
   const parts = Object.entries(counts).map(([d, n]) => `${n} ${d}`)
   if (decision === 'continue') {
     if (unanimous) return `所有 agent 一致同意继续（${parts.join(', ')}）`
@@ -308,7 +312,10 @@ export async function runCheckpointConsensus(
   console.log(
     `[c3:checkpoint-consensus] (auto) result: ${decision ?? 'no_decision'} (unanimous=${unanimous}): ${summary}`,
   )
-  if (vendorScope) console.log(`[c3:checkpoint-consensus] 共识限 ${vendorScope} 内 · ${crossVendorExcluded} 个跨 vendor 顾问未参与`)
+  if (vendorScope)
+    console.log(
+      `[c3:checkpoint-consensus] 共识限 ${vendorScope} 内 · ${crossVendorExcluded} 个跨 vendor 顾问未参与`,
+    )
 
   return {
     votes,

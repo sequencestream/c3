@@ -1108,7 +1108,8 @@
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "cannotStartDev": "Cannot start development from status \"{status}\".",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
-      "prCreateFailed": "PR creation failed: {detail}."
+      "prCreateFailed": "PR creation failed: {detail}.",
+      "worktreeCreateFailed": "Worktree creation failed: {message}."
     },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",

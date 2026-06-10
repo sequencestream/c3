@@ -27,11 +27,7 @@
  */
 
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
-import type {
-  AgentDriver,
-  AgentRun,
-  VendorAdapter,
-} from '../../kernel/agent/adapters/types.js'
+import type { AgentDriver, AgentRun, VendorAdapter } from '../../kernel/agent/adapters/types.js'
 import { launchForAgent } from '../../kernel/agent-config/index.js'
 import type { AgentSessionRow } from './store.js'
 
@@ -226,9 +222,7 @@ export class AgentSessionManager {
   private resolveDriver(vendor: VendorId): AgentDriver {
     const adapter = this.deps.getAdapter(vendor)
     if (!adapter) {
-      throw new Error(
-        `agent-session-manager: no adapter registered for vendor "${vendor}"`,
-      )
+      throw new Error(`agent-session-manager: no adapter registered for vendor "${vendor}"`)
     }
     return adapter.driver
   }

@@ -512,6 +512,13 @@
       },
       "markDone": {
         "label": "Отметить готовым"
+      },
+      "createPr": {
+        "label": "Создать PR"
+      },
+      "pr": {
+        "label": "PR #{id}",
+        "tooltip": "Копировать номер PR"
       }
     },
     "automate": {
@@ -1101,7 +1108,9 @@
       "illegalStatusTransition": "Нельзя изменить статус с «{from}» на «{to}».",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
-      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."
+      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
+      "prCreateFailed": "Не удалось создать PR: {detail}.",
+      "worktreeCreateFailed": "Не удалось создать рабочее дерево: {message}."
     },
     "discussion": {
       "dbUnavailable": "Функция обсуждений недоступна (c3.db).",

@@ -649,12 +649,7 @@ export function setLastDevSession(id: string, sessionId: string): void {
 /** Set the git branch name for an intent (called after dev session launch). */
 export function setBranchName(id: string, branchName: string): void {
   const d = requireDb()
-  d.run(
-    'UPDATE intents SET branch_name=?, updated_at=? WHERE id=?',
-    branchName,
-    Date.now(),
-    id,
-  )
+  d.run('UPDATE intents SET branch_name=?, updated_at=? WHERE id=?', branchName, Date.now(), id)
 }
 
 /** Set the latest known commit hash for an intent's dev branch. */
@@ -742,10 +737,11 @@ export function listDependencies(intentId: string): DependencyInfo[] {
   const d = db()
   if (!d) return []
   return d
-    .all<{ depends_on_id: string; dep_type: string; created_at: number }>(
-      'SELECT depends_on_id, dep_type, created_at FROM intent_deps WHERE intent_id=? ORDER BY created_at ASC',
-      intentId,
-    )
+    .all<{
+      depends_on_id: string
+      dep_type: string
+      created_at: number
+    }>('SELECT depends_on_id, dep_type, created_at FROM intent_deps WHERE intent_id=? ORDER BY created_at ASC', intentId)
     .map((r) => ({
       dependsOnId: r.depends_on_id,
       depType: r.dep_type as DepType,

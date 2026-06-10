@@ -163,9 +163,7 @@ export function createWorktree(
   if (worktreeExists(worktreePath)) {
     const branchName = readBranch(worktreePath)
     if (!branchName) {
-      throw new Error(
-        `worktree ${worktreePath} 存在但 HEAD 处于分离状态或不可读`,
-      )
+      throw new Error(`worktree ${worktreePath} 存在但 HEAD 处于分离状态或不可读`)
     }
     return { worktreePath, branchName }
   }
@@ -181,13 +179,7 @@ export function createWorktree(
   }
 
   // Try `git worktree add -b` to create the branch from HEAD.
-  const res = execGit(projectPath, [
-    'worktree',
-    'add',
-    '-b',
-    branchName,
-    worktreePath,
-  ])
+  const res = execGit(projectPath, ['worktree', 'add', '-b', branchName, worktreePath])
 
   if (res.code === 0) {
     return { worktreePath, branchName }
@@ -196,12 +188,7 @@ export function createWorktree(
   // Branch already exists? Try with the existing branch instead.
   const stderr = res.stderr.toLowerCase()
   if (stderr.includes('already exists')) {
-    const retry = execGit(projectPath, [
-      'worktree',
-      'add',
-      worktreePath,
-      branchName,
-    ])
+    const retry = execGit(projectPath, ['worktree', 'add', worktreePath, branchName])
     if (retry.code === 0) {
       return { worktreePath, branchName }
     }
@@ -210,7 +197,5 @@ export function createWorktree(
     )
   }
 
-  throw new Error(
-    `git worktree add 失败: ${res.stderr || res.stdout}`,
-  )
+  throw new Error(`git worktree add 失败: ${res.stderr || res.stdout}`)
 }

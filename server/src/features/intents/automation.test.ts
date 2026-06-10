@@ -4,13 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AutomationStatus, CheckpointConsensusOutcome } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import {
-  getIntent,
-  insertIntents,
-  resetStoreForTests,
-  setAutomate,
-  updateStatus,
-} from './store.js'
+import { getIntent, insertIntents, resetStoreForTests, setAutomate, updateStatus } from './store.js'
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 const judgeMock = vi.fn()
@@ -39,15 +33,17 @@ vi.mock('../../runs.js', () => ({
   getRuntime: vi.fn(() => undefined),
 }))
 vi.mock('./worktree.js', () => ({
-  createWorktree: vi.fn(() => ({ worktreePath: '/tmp/c3-worktrees/auto-proj/intent-test', branchName: 'intent/test-branch' })),
+  createWorktree: vi.fn(() => ({
+    worktreePath: '/tmp/c3-worktrees/auto-proj/intent-test',
+    branchName: 'intent/test-branch',
+  })),
   getWorktreePath: vi.fn(() => '/tmp/c3-worktrees/auto-proj/intent-test'),
   worktreeExists: vi.fn(() => true),
   generateBranchName: vi.fn((_id: string, title: string) => `intent/test-${title}`),
 }))
 
 // ── SUT (imported after mocks) ──────────────────────────────────────────────
-const { startAutomation, getAutomationStatus, notifyTurnSettled } =
-  await import('./automation.js')
+const { startAutomation, getAutomationStatus, notifyTurnSettled } = await import('./automation.js')
 import type { AutomationHooks } from './automation.js'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -336,9 +332,7 @@ describe('automation orchestrator', () => {
 
   // ── Checkpoint consensus ──────────────────────────────────────────────
 
-  function makeConsensusResult(
-    decision: 'continue' | 'wait' | null,
-  ): CheckpointConsensusOutcome {
+  function makeConsensusResult(decision: 'continue' | 'wait' | null): CheckpointConsensusOutcome {
     return {
       votes: [
         { agentId: 'a1', agentName: 'Agent 1', decision: 'continue', reason: 'relevant' },

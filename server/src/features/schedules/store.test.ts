@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
-  isStoreAvailable,
   resetStoreForTests,
   createSchedule,
   updateSchedule,

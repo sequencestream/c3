@@ -588,7 +588,7 @@ describe('runDiscussion', () => {
   })
 
   it('uses delta prompts when resume is available (getLastSeq returns a seq) and calls closeSessions on conclusion', async () => {
-    const { store, messages, get } = makeStore(seedDiscussion())
+    const { store, get } = makeStore(seedDiscussion())
     const participants = [agent('system', 'System'), agent('gpt', 'GPT')]
     const capturedPrompts: Array<{ agentId: string; isDelta: boolean }> = []
     let closeSessionsCalled = false
@@ -642,9 +642,7 @@ describe('runDiscussion', () => {
       store,
       participants,
       organizer: agent('system', 'System'),
-      organizerScript: [
-        '{"action":"conclude","conclusion":"Done."}',
-      ],
+      organizerScript: ['{"action":"conclude","conclusion":"Done."}'],
     })
     // Intentionally NOT setting getLastSeq — should use full prompts
     const baseAsk = h.deps.ask

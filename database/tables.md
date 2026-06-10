@@ -6,27 +6,27 @@
 
 ## 基础设施
 
-| 文件 | 说明 |
-|---|---|
+| 文件                            | 说明                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------- |
 | `server/src/kernel/infra/db.ts` | SQLite 访问层，封装 `getDb()` / `isDbAvailable()` / `resetDbForTests()` |
 
 ## 表一览
 
-| # | 模块 | 表名 | SQL 文件 | Store 文件 | 用途 |
-|---|------|------|----------|------------|------|
-| 1 | intents | `intents` | [intents/intents.sql](intents/intents.sql) | `server/src/features/intents/store.ts` | 意图(需求/任务)台账 |
-| 2 | intents | `intent_deps` | [intents/intent_deps.sql](intents/intent_deps.sql) | `server/src/features/intents/store.ts` | 意图依赖关系 (多对多) |
-| 3 | intents | `intent_chats` | [intents/intent_chats.sql](intents/intent_chats.sql) | `server/src/features/intents/store.ts` | 沟通会话映射 + 隐藏会话集 |
-| 4 | intents | `tool_sessions` | [intents/tool_sessions.sql](intents/tool_sessions.sql) | `server/src/features/intents/store.ts` | 工具创建的会话 ID 集合 |
-| 5 | discussions | `discussions` | [discussions/discussions.sql](discussions/discussions.sql) | `server/src/features/discussions/store.ts` | 讨论线程元数据 |
-| 6 | discussions | `discussion_messages` | [discussions/discussion_messages.sql](discussions/discussion_messages.sql) | `server/src/features/discussions/store.ts` | 讨论消息 |
-| 7 | discussions | `discussion_agent_sessions` | [discussions/discussion_agent_sessions.sql](discussions/discussion_agent_sessions.sql) | `server/src/features/discussions/store.ts` | 讨论内 agent→vendor 会话映射 |
-| 8 | schedules | `schedules` | [schedules/schedules.sql](schedules/schedules.sql) | `server/src/features/schedules/store.ts` | 定时任务 (cron + event) |
-| 9 | schedules | `schedule_execution_logs` | [schedules/schedule_execution_logs.sql](schedules/schedule_execution_logs.sql) | `server/src/features/schedules/store.ts` | 定时任务执行历史 |
-| 10 | schedules | `workspace_mcp_configs` | [schedules/workspace_mcp_configs.sql](schedules/workspace_mcp_configs.sql) | `server/src/features/schedules/store.ts` | 每 workspace 的 MCP 配置 |
-| 11 | user-involve | `wait_user_involve_events` | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql) | `server/src/features/user-involve/store.ts` | 等待用户介入事件 |
-| 12 | works | `work_session_metadata` | [works/work_session_metadata.sql](works/work_session_metadata.sql) | `server/src/features/works/work-session-store.ts` | 会话列表元数据投影 |
-| 13 | intents | `intent_sessions` | [intents/intent_sessions.sql](intents/intent_sessions.sql) | `server/src/features/intents/store.ts` | intent dev session 执行记录 (审计追踪) |
+| #   | 模块         | 表名                        | SQL 文件                                                                               | Store 文件                                        | 用途                                   |
+| --- | ------------ | --------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------- | -------------------------------------- |
+| 1   | intents      | `intents`                   | [intents/intents.sql](intents/intents.sql)                                             | `server/src/features/intents/store.ts`            | 意图(需求/任务)台账                    |
+| 2   | intents      | `intent_deps`               | [intents/intent_deps.sql](intents/intent_deps.sql)                                     | `server/src/features/intents/store.ts`            | 意图依赖关系 (多对多)                  |
+| 3   | intents      | `intent_chats`              | [intents/intent_chats.sql](intents/intent_chats.sql)                                   | `server/src/features/intents/store.ts`            | 沟通会话映射 + 隐藏会话集              |
+| 4   | intents      | `tool_sessions`             | [intents/tool_sessions.sql](intents/tool_sessions.sql)                                 | `server/src/features/intents/store.ts`            | 工具创建的会话 ID 集合                 |
+| 5   | discussions  | `discussions`               | [discussions/discussions.sql](discussions/discussions.sql)                             | `server/src/features/discussions/store.ts`        | 讨论线程元数据                         |
+| 6   | discussions  | `discussion_messages`       | [discussions/discussion_messages.sql](discussions/discussion_messages.sql)             | `server/src/features/discussions/store.ts`        | 讨论消息                               |
+| 7   | discussions  | `discussion_agent_sessions` | [discussions/discussion_agent_sessions.sql](discussions/discussion_agent_sessions.sql) | `server/src/features/discussions/store.ts`        | 讨论内 agent→vendor 会话映射           |
+| 8   | schedules    | `schedules`                 | [schedules/schedules.sql](schedules/schedules.sql)                                     | `server/src/features/schedules/store.ts`          | 定时任务 (cron + event)                |
+| 9   | schedules    | `schedule_execution_logs`   | [schedules/schedule_execution_logs.sql](schedules/schedule_execution_logs.sql)         | `server/src/features/schedules/store.ts`          | 定时任务执行历史                       |
+| 10  | schedules    | `workspace_mcp_configs`     | [schedules/workspace_mcp_configs.sql](schedules/workspace_mcp_configs.sql)             | `server/src/features/schedules/store.ts`          | 每 workspace 的 MCP 配置               |
+| 11  | user-involve | `wait_user_involve_events`  | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql) | `server/src/features/user-involve/store.ts`       | 等待用户介入事件                       |
+| 12  | works        | `work_session_metadata`     | [works/work_session_metadata.sql](works/work_session_metadata.sql)                     | `server/src/features/works/work-session-store.ts` | 会话列表元数据投影                     |
+| 13  | intents      | `intent_sessions`           | [intents/intent_sessions.sql](intents/intent_sessions.sql)                             | `server/src/features/intents/store.ts`            | intent dev session 执行记录 (审计追踪) |
 
 ## 模块说明
 

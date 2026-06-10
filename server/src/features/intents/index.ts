@@ -653,7 +653,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
 
   try {
     const pr = await createGhPr(proj, title, body, headBranch)
-    if (pr.ok) {
+    if (pr.ok && pr.prId) {
       setPrInfo(msg.intentId, pr.prId, 'reviewing')
       ctx.broadcastIntents(req.projectPath)
       conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })

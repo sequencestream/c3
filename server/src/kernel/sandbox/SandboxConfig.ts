@@ -15,7 +15,12 @@
  */
 
 import { z } from 'zod'
-import type { SystemSandboxDef, ProjectSandboxConfig, ResolvedSandboxConfig, ResourceLimits } from './types.js'
+import type {
+  SystemSandboxDef,
+  ProjectSandboxConfig,
+  ResolvedSandboxConfig,
+  ResourceLimits,
+} from './types.js'
 
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
 

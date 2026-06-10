@@ -33,7 +33,14 @@
 import { randomUUID } from 'node:crypto'
 import type { AutomationStatus, Intent, RunEndReason, ServerToClient } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { getIntent, listIntents, setBranchName, setLastDevSession, setPrInfo, updateStatus } from './store.js'
+import {
+  getIntent,
+  listIntents,
+  setBranchName,
+  setLastDevSession,
+  setPrInfo,
+  updateStatus,
+} from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
@@ -332,9 +339,7 @@ class AutomationController {
     // Kick off async work and handle errors inline (no caller awaits this).
     void this._launchDevAsync(req).catch((err) => {
       console.error(`[c3:automation] intent ${req.id} 启动失败:`, err)
-      this.fail(
-        `「${req.title}」启动开发失败: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      this.fail(`「${req.title}」启动开发失败: ${err instanceof Error ? err.message : String(err)}`)
     })
   }
 
@@ -396,11 +401,7 @@ class AutomationController {
     // stays synchronous — preserving the existing microtask timing contract
     // that tests and the event-driven FSM rely on.
     const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-    const { worktreePath, branchName } = createWorktree(
-      this.projectPath,
-      req.id,
-      req.title,
-    )
+    const { worktreePath, branchName } = createWorktree(this.projectPath, req.id, req.title)
     // Persist branch name immediately so the UI can show it.
     setBranchName(req.id, branchName)
 
@@ -612,7 +613,9 @@ class AutomationController {
         if (commitResult === 'committed') {
           // ── Commit succeeded → create PR (best-effort) ──
           const prResult = await this._createPrForIntent(req).catch((err) => {
-            console.warn(`[c3:automation]「${req.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`)
+            console.warn(
+              `[c3:automation]「${req.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`,
+            )
             return null
           })
           if (prResult?.ok) {
@@ -710,7 +713,9 @@ class AutomationController {
       if (res.ok) {
         // Commit succeeded after auto-fix. Create PR (best-effort).
         const prResult = await this._createPrForIntent(fixReq).catch((err) => {
-          console.warn(`[c3:automation]「${fixReq.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`)
+          console.warn(
+            `[c3:automation]「${fixReq.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`,
+          )
           return null
         })
         if (prResult?.ok) {
@@ -757,11 +762,7 @@ class AutomationController {
    */
   private async _createPrForIntent(
     req: Intent,
-  ): Promise<
-    | { ok: true; prId: string; prUrl: string }
-    | { ok: false; error: string }
-    | null
-  > {
+  ): Promise<{ ok: true; prId: string; prUrl: string } | { ok: false; error: string } | null> {
     const headBranch = req.branchName ?? undefined
     const bodyParts: string[] = [req.content]
     if (req.dependsOn.length > 0) {
@@ -774,7 +775,11 @@ class AutomationController {
     }
     const body = bodyParts.join('\n')
     const title = `feat: ${req.title}`
-    return await createGhPr(this.projectPath, title, body, headBranch)
+    const prResult = await createGhPr(this.projectPath, title, body, headBranch)
+    if (prResult.ok && prResult.prId) {
+      return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '' }
+    }
+    return { ok: false as const, error: prResult.error ?? 'Unknown error' }
   }
 
   /**

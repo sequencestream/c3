@@ -15,6 +15,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventBus } from '../kernel/events/event-bus.js'
 import type { DomainSubDeps } from './run-domain-subscriptions.js'
+import type { SessionRuntime } from '../runs.js'
+import type { Intent, IntentDevSession } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Mock the feature modules that registerRunDomainSubscriptions depends on
@@ -302,13 +304,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       mode: 'edit',
       buffer: [],
       viewers: new Set(),
-    } as any)
+    } as unknown as SessionRuntime)
     vi.mocked(takePendingDevLink).mockReturnValueOnce('intent-1')
     vi.mocked(resolveSessionVendor).mockReturnValue('codex')
 
     install()
 
-    eb.publish('run:bound', { prevId: 'prev-1', realId: 'real-1' })
+    eb.publish('run:bound', { prevId: 'prev-1', realId: 'real-1', workspacePath: '/proj' })
 
     expect(insertIntentSession).toHaveBeenCalledWith('intent-1', 'real-1', 'codex')
   })
@@ -316,7 +318,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
   it('run:bound with NO pending dev link does NOT insert intent_sessions', async () => {
     const { insertIntentSession } = await import('../features/intents/store.js')
     install()
-    eb.publish('run:bound', { prevId: 'prev-x', realId: 'real-x' })
+    eb.publish('run:bound', { prevId: 'prev-x', realId: 'real-x', workspacePath: '/proj' })
     expect(insertIntentSession).not.toHaveBeenCalled()
   })
 
@@ -327,13 +329,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-1', lastDevSessionId: 'sess-m1', title: 'Test', projectPath: '/proj' } as any,
+      { id: 'intent-1', lastDevSessionId: 'sess-m1', title: 'Test', projectPath: '/proj' } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
       id: 42,
       intentId: 'intent-1',
       sessionId: 'sess-m1',
-    } as any)
+    } as unknown as IntentDevSession)
 
     install()
     eb.publish('run:settled', {
@@ -350,7 +352,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
     const call = vi.mocked(updateIntentSession).mock.calls[0]!
     const id = call[0]
-    const patch = call[1] as any
+    const patch = call[1] as Partial<{ exitCode: string; summary: string; endAt: number }>
     expect(id).toBe(42)
     expect(patch.exitCode).toBe('success')
     expect(patch.endAt).toBeGreaterThan(0)
@@ -364,13 +366,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-2', lastDevSessionId: 'sess-e1', title: 'Error Intent' } as any,
+      { id: 'intent-2', lastDevSessionId: 'sess-e1', title: 'Error Intent' } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
       id: 99,
       intentId: 'intent-2',
       sessionId: 'sess-e1',
-    } as any)
+    } as unknown as IntentDevSession)
 
     install()
     eb.publish('run:settled', {
@@ -384,7 +386,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       expect(updateIntentSession).toHaveBeenCalled()
     })
 
-    const patch = vi.mocked(updateIntentSession).mock.calls[0]![1] as any
+    const patch = vi.mocked(updateIntentSession).mock.calls[0]![1] as Partial<{ exitCode: string }>
     expect(patch.exitCode).toBe('failure')
   })
 
@@ -393,13 +395,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-3', lastDevSessionId: 'sess-a1', title: 'Aborted Intent' } as any,
+      { id: 'intent-3', lastDevSessionId: 'sess-a1', title: 'Aborted Intent' } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
       id: 77,
       intentId: 'intent-3',
       sessionId: 'sess-a1',
-    } as any)
+    } as unknown as IntentDevSession)
 
     install()
     eb.publish('run:settled', {
@@ -413,7 +415,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       expect(updateIntentSession).toHaveBeenCalled()
     })
 
-    const patch = vi.mocked(updateIntentSession).mock.calls[0]![1] as any
+    const patch = vi.mocked(updateIntentSession).mock.calls[0]![1] as Partial<{ exitCode: string }>
     expect(patch.exitCode).toBe('cancelled')
   })
 
@@ -422,7 +424,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-4', lastDevSessionId: 'sess-n1', title: 'No Record Intent' } as any,
+      { id: 'intent-4', lastDevSessionId: 'sess-n1', title: 'No Record Intent' } as Intent,
     ])
     // getIntentSessionBySessionId returns null (default mock)
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce(null)
@@ -444,7 +446,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     const { listIntents, updateIntentSession } = await import('../features/intents/store.js')
     // listIntents returns an array with no matching lastDevSessionId
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-other', lastDevSessionId: 'other-sess' } as any,
+      { id: 'intent-other', lastDevSessionId: 'other-sess' } as Intent,
     ])
 
     install()

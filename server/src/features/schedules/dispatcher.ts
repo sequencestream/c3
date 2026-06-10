@@ -258,7 +258,7 @@ function createPermissionHandler(
   vendor: VendorId,
   mode: ModeToken | CodexPolicy,
 ): CanUseTool {
-  return async (toolName, input) => {
+  return async (toolName, _input) => {
     // Step 1: Check if tool is in the frozen tool set
     if (!matchesFrozenTool(toolName, frozenTools)) {
       return { behavior: 'deny', message: `tool "${toolName}" is not in the frozen allowlist` }

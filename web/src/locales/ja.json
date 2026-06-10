@@ -512,6 +512,13 @@
       },
       "markDone": {
         "label": "完了にする"
+      },
+      "createPr": {
+        "label": "PR作成"
+      },
+      "pr": {
+        "label": "PR #{id}",
+        "tooltip": "PR番号をコピー"
       }
     },
     "automate": {
@@ -1101,7 +1108,9 @@
       "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
-      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."
+      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
+      "prCreateFailed": "PRの作成に失敗しました: {detail}。",
+      "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。"
     },
     "discussion": {
       "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",

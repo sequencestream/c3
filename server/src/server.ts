@@ -53,7 +53,10 @@ import {
   type OpencodeSupervisor,
 } from './kernel/agent/adapters/opencode/index.js'
 import { createCodexAdapter, createCodexSkillLoader } from './kernel/agent/adapters/codex/index.js'
-import { createClaudeAdapter, createClaudeSkillLoader } from './kernel/agent/adapters/claude/index.js'
+import {
+  createClaudeAdapter,
+  createClaudeSkillLoader,
+} from './kernel/agent/adapters/claude/index.js'
 import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
 import type { VendorAdapter, SkillLoader } from './kernel/agent/adapters/types.js'
 import type { VendorId } from '@ccc/shared/protocol'

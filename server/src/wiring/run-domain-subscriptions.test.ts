@@ -24,8 +24,11 @@ vi.mock('../runs.js', () => ({ getRuntime: vi.fn(() => undefined) }))
 vi.mock('../state.js', () => ({ setSessionMode: vi.fn() }))
 vi.mock('../features/intents/store.js', () => ({
   getIntent: vi.fn(),
+  getIntentSessionBySessionId: vi.fn(() => null),
+  insertIntentSession: vi.fn(),
   rebindChatSession: vi.fn(),
   setLastDevSession: vi.fn(),
+  updateIntentSession: vi.fn(),
   updateStatus: vi.fn(),
   listIntents: vi.fn(() => []),
 }))
@@ -35,6 +38,11 @@ vi.mock('../features/user-involve/store.js', () => ({
   cancelBySourceId: vi.fn(),
   isStoreAvailable: vi.fn(() => true),
 }))
+vi.mock('../kernel/agent-config/index.js', () => ({
+  resolveSessionVendor: vi.fn(() => 'claude'),
+  resolveSessionAgentSwitch: vi.fn(() => ({ agent: { vendor: 'claude' } })),
+}))
+vi.mock('../git.js', () => ({ gitDiffStat: vi.fn(async () => 'file.ts | 10 +++') }))
 
 // Dynamic import so all vi.mocks are in place first.
 const { registerRunDomainSubscriptions } = await import('./run-domain-subscriptions.js')
@@ -278,5 +286,206 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       kind: 'session',
     })
     expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
+  })
+
+  // ── Intent-sessions: insert at run:bound ──────────────────────────────
+
+  it('run:bound with pending dev link inserts intent_sessions record', async () => {
+    const { getRuntime } = await import('../runs.js')
+    const { takePendingDevLink } = await import('../features/intents/dev-link.js')
+    const { insertIntentSession } = await import('../features/intents/store.js')
+    const { resolveSessionVendor } = await import('../kernel/agent-config/index.js')
+
+    vi.mocked(getRuntime).mockReturnValueOnce({
+      workspacePath: '/proj',
+      kind: 'session',
+      mode: 'edit',
+      buffer: [],
+      viewers: new Set(),
+    } as any)
+    vi.mocked(takePendingDevLink).mockReturnValueOnce('intent-1')
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+
+    install()
+
+    eb.publish('run:bound', { prevId: 'prev-1', realId: 'real-1' })
+
+    expect(insertIntentSession).toHaveBeenCalledWith('intent-1', 'real-1', 'codex')
+  })
+
+  it('run:bound with NO pending dev link does NOT insert intent_sessions', async () => {
+    const { insertIntentSession } = await import('../features/intents/store.js')
+    install()
+    eb.publish('run:bound', { prevId: 'prev-x', realId: 'real-x' })
+    expect(insertIntentSession).not.toHaveBeenCalled()
+  })
+
+  // ── Intent-sessions: write conclusion at run:settled ───────────────────
+
+  it('run:settled kind=session matched to intent writes conclusion with git diff', async () => {
+    const { listIntents, getIntentSessionBySessionId, updateIntentSession } =
+      await import('../features/intents/store.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-1', lastDevSessionId: 'sess-m1', title: 'Test', projectPath: '/proj' } as any,
+    ])
+    vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
+      id: 42,
+      intentId: 'intent-1',
+      sessionId: 'sess-m1',
+    } as any)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-m1',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'session',
+    })
+
+    // Wait for the fire-and-forget async to complete.
+    await vi.waitFor(() => {
+      expect(updateIntentSession).toHaveBeenCalled()
+    })
+
+    const call = vi.mocked(updateIntentSession).mock.calls[0]!
+    const id = call[0]
+    const patch = call[1] as any
+    expect(id).toBe(42)
+    expect(patch.exitCode).toBe('success')
+    expect(patch.endAt).toBeGreaterThan(0)
+    expect(patch.summary).toContain('exitCode')
+    expect(patch.summary).toContain('success')
+    expect(patch.summary).toContain('file.ts | 10 +++')
+  })
+
+  it('run:settled matched intent with error reason writes failure exit_code', async () => {
+    const { listIntents, getIntentSessionBySessionId, updateIntentSession } =
+      await import('../features/intents/store.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-2', lastDevSessionId: 'sess-e1', title: 'Error Intent' } as any,
+    ])
+    vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
+      id: 99,
+      intentId: 'intent-2',
+      sessionId: 'sess-e1',
+    } as any)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-e1',
+      workspacePath: '/proj',
+      reason: 'error',
+      kind: 'session',
+    })
+
+    await vi.waitFor(() => {
+      expect(updateIntentSession).toHaveBeenCalled()
+    })
+
+    const patch = vi.mocked(updateIntentSession).mock.calls[0]![1] as any
+    expect(patch.exitCode).toBe('failure')
+  })
+
+  it('run:settled matched intent with aborted reason writes cancelled exit_code', async () => {
+    const { listIntents, getIntentSessionBySessionId, updateIntentSession } =
+      await import('../features/intents/store.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-3', lastDevSessionId: 'sess-a1', title: 'Aborted Intent' } as any,
+    ])
+    vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
+      id: 77,
+      intentId: 'intent-3',
+      sessionId: 'sess-a1',
+    } as any)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-a1',
+      workspacePath: '/proj',
+      reason: 'aborted',
+      kind: 'session',
+    })
+
+    await vi.waitFor(() => {
+      expect(updateIntentSession).toHaveBeenCalled()
+    })
+
+    const patch = vi.mocked(updateIntentSession).mock.calls[0]![1] as any
+    expect(patch.exitCode).toBe('cancelled')
+  })
+
+  it('run:settled matched intent with NO intent session record — no error, no update', async () => {
+    const { listIntents, getIntentSessionBySessionId, updateIntentSession } =
+      await import('../features/intents/store.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-4', lastDevSessionId: 'sess-n1', title: 'No Record Intent' } as any,
+    ])
+    // getIntentSessionBySessionId returns null (default mock)
+    vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce(null)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-n1',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'session',
+    })
+
+    // Small delay to let the async settle.
+    await Promise.resolve()
+    expect(updateIntentSession).not.toHaveBeenCalled()
+  })
+
+  it('run:settled kind=session NOT matched to intent — no intent session write', async () => {
+    const { listIntents, updateIntentSession } = await import('../features/intents/store.js')
+    // listIntents returns an array with no matching lastDevSessionId
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-other', lastDevSessionId: 'other-sess' } as any,
+    ])
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'unmatched-sess',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'session',
+    })
+
+    await Promise.resolve()
+    expect(updateIntentSession).not.toHaveBeenCalled()
+  })
+
+  it('run:settled kind=discussion does NOT trigger intent session write', async () => {
+    const { updateIntentSession } = await import('../features/intents/store.js')
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'disc-x',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'discussion',
+    })
+
+    await Promise.resolve()
+    expect(updateIntentSession).not.toHaveBeenCalled()
+  })
+
+  it('run:settled kind=schedule does NOT trigger intent session write', async () => {
+    const { updateIntentSession } = await import('../features/intents/store.js')
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sch-x',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'schedule',
+    })
+
+    await Promise.resolve()
+    expect(updateIntentSession).not.toHaveBeenCalled()
   })
 })

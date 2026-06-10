@@ -986,6 +986,66 @@ export function insertIntentSession(
 }
 
 /**
+ * Update an intent dev session record post-hoc (end timestamp, exit code, summary).
+ * Only updates non-`undefined` fields; no-op when no fields are supplied.
+ * Skips when the db is unavailable (degradation — caller may log but must not throw).
+ */
+export function updateIntentSession(
+  id: number,
+  patch: {
+    exitCode?: IntentDevSessionExitCode
+    summary?: string
+    startAt?: number
+    endAt?: number
+  },
+): void {
+  const d = db()
+  if (!d) return
+  const sets: string[] = []
+  const params: (string | number | null)[] = []
+  if (patch.exitCode !== undefined) {
+    sets.push('exit_code=?')
+    params.push(patch.exitCode)
+  }
+  if (patch.summary !== undefined) {
+    sets.push('summary=?')
+    params.push(patch.summary)
+  }
+  if (patch.startAt !== undefined) {
+    sets.push('start_at=?')
+    params.push(patch.startAt)
+  }
+  if (patch.endAt !== undefined) {
+    sets.push('end_at=?')
+    params.push(patch.endAt)
+  }
+  if (sets.length > 0) {
+    params.push(id)
+    d.run(`UPDATE intent_sessions SET ${sets.join(', ')} WHERE id=?`, ...params)
+  }
+}
+
+/**
+ * Find the most recent intent session record for a given (sessionId, intentId)
+ * pair. Returns `null` when the db is unavailable or no match is found.
+ * Useful for `run:settled` handlers that need to update a record inserted at
+ * `run:bound` time but whose auto-increment id was not captured.
+ */
+export function getIntentSessionBySessionId(
+  sessionId: string,
+  intentId: string,
+): IntentDevSession | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<IntentSessionRow>(
+    'SELECT * FROM intent_sessions WHERE session_id=? AND intent_id=? ORDER BY created_at DESC, id DESC LIMIT 1',
+    sessionId,
+    intentId,
+  )
+  return row ? toIntentDevSession(row) : null
+}
+
+/**
  * List dev session records for an intent, newest first.
  * Returns `[]` when the db is unavailable.
  */

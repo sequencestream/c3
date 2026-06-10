@@ -55,12 +55,16 @@
  */
 import type { Broadcaster } from '../transport/broadcaster.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
+import type { IntentDevSessionExitCode } from '@ccc/shared/protocol'
 import { getRuntime } from '../runs.js'
 import { setSessionMode } from '../state.js'
 import {
   getIntent,
+  getIntentSessionBySessionId,
+  insertIntentSession,
   rebindChatSession,
   setLastDevSession,
+  updateIntentSession,
   updateStatus,
   listIntents,
 } from '../features/intents/store.js'
@@ -71,6 +75,8 @@ import {
   isStoreAvailable as isWaitUserEventsStoreAvailable,
 } from '../features/user-involve/store.js'
 import { agentSwitchFor } from '../features/works/index.js'
+import { resolveSessionVendor } from '../kernel/agent-config/index.js'
+import { gitDiffStat } from '../git.js'
 
 /** Broader domain subscription dependencies, injected by the composition root. */
 export interface DomainSubDeps {
@@ -134,6 +140,9 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       const intentId = takePendingDevLink(prevId)
       if (intentId) {
         setLastDevSession(intentId, realId)
+        // Record the dev session start in intent_sessions (fire-and-forget
+        // on the DB write — the insert is synchronous but cheap).
+        insertIntentSession(intentId, realId, resolveSessionVendor(realId))
         // Intent row may not yet reflect db updates (only in the store).
         // Calling getIntent to check is safe but ultimately `updateStatus`
         // is the idempotent operation: setting to the same value just
@@ -176,6 +185,11 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // Not an intent-linked session — nothing more to do.
       return
     }
+
+    // Fire-and-forget: write the session conclusion to intent_sessions.
+    // Must NOT block the run:settled handler (no await).
+    // Errors are caught internally; a failed write is logged but harmless.
+    void writeIntentSessionConclusion(sessionId, matched.id, reason, workspacePath)
 
     // Refresh the intent list for clients tracking this project.
     broadcastIntents(workspacePath)
@@ -221,4 +235,86 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     cancelBySourceId(sessionId)
     broadcastWaitUserEvents(workspacePath)
   })
+}
+
+// ---------------------------------------------------------------------------
+// Fire-and-forget: write the session conclusion to intent_sessions.
+// Called from the run:settled subscription when a session is matched to an
+// intent's lastDevSessionId. Must never throw; errors are caught internally
+// and logged. Does NOT block run:settled (caller passes `void` on return).
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a {@link RunEndReason} from the run lifecycle to the
+ * {@link IntentDevSessionExitCode} stored in intent_sessions.
+ */
+function toExitCode(reason: string): IntentDevSessionExitCode {
+  switch (reason) {
+    case 'complete':
+      return 'success'
+    case 'error':
+      return 'failure'
+    case 'aborted':
+      return 'cancelled'
+    default:
+      return 'failure'
+  }
+}
+
+/**
+ * Produce the summary string in JSON-frontmatter + Markdown format.
+ * The JSON frontmatter contains structured fields (exitCode, timestamp);
+ * the Markdown body contains the files_changed (git diff stat).
+ */
+function buildSessionSummary(exitCode: string, gitDiff: string): string {
+  const now = Date.now()
+  const frontmatter = JSON.stringify({ exitCode, timestamp: now })
+  const body = gitDiff ? `\n${gitDiff}` : ''
+  return `---\n${frontmatter}\n---${body}`
+}
+
+/**
+ * Fire-and-forget intent_sessions write. Finds the intent session record
+ * for the (sessionId, intentId) pair and updates it with:
+ *  - exit_code (mapped from the run:settled reason)
+ *  - end_at (current timestamp)
+ *  - summary containing the git diff snapshot
+ *
+ * All errors are caught internally. The caller must NOT await this function
+ * — it must be fire-and-forget to avoid blocking the run:settled handler.
+ */
+async function writeIntentSessionConclusion(
+  sessionId: string,
+  intentId: string,
+  reason: string,
+  workspacePath: string,
+): Promise<void> {
+  try {
+    // 1. Find the session record inserted at run:bound time.
+    const record = getIntentSessionBySessionId(sessionId, intentId)
+    if (!record) {
+      // No record found — either the insert at run:bound was skipped
+      // (degradation) or this session wasn't tracked. Nothing to update.
+      return
+    }
+
+    // 2. Map exit code.
+    const exitCode = toExitCode(reason)
+
+    // 3. Read git diff stat asynchronously.
+    const filesChanged = await gitDiffStat(workspacePath).catch(() => '')
+
+    // 4. Build summary.
+    const summary = buildSessionSummary(exitCode, filesChanged)
+
+    // 5. Write the conclusion.
+    updateIntentSession(record.id, {
+      exitCode,
+      endAt: Date.now(),
+      summary,
+    })
+  } catch (err) {
+    // Fire-and-forget: never let an error propagate to the subscription handler.
+    console.error('[c3:intent-session] failed to write session conclusion:', err)
+  }
 }

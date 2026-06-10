@@ -9,6 +9,7 @@ import {
   getChatSession,
   getIntent,
   getIntentSession,
+  getIntentSessionBySessionId,
   insertDependency,
   insertIntentSession,
   insertIntents,
@@ -30,6 +31,7 @@ import {
   setLatestCommitHash,
   setPrInfo,
   updateIntent,
+  updateIntentSession,
   updateStatus,
   upsertIntents,
 } from './store.js'
@@ -1064,5 +1066,80 @@ describe('intent_sessions CRUD (dev session execution records)', () => {
     const id = insertIntentSession('intent-5', 'sess-004', 'codex', 'agent-x')
     const got = getIntentSession(id)
     expect(got!.agentId).toBe('agent-x')
+  })
+
+  // ── updateIntentSession ───────────────────────────────────────────────
+
+  it('updateIntentSession sets exit_code, end_at, and summary', () => {
+    const id = insertIntentSession('intent-u1', 'sess-u1', 'claude')
+    updateIntentSession(id, {
+      exitCode: 'success',
+      endAt: 2000,
+      summary: '---\n{"exitCode":"success","timestamp":2000}\n---\nfile.ts | 10 +++',
+    })
+    const got = getIntentSession(id)
+    expect(got!.exitCode).toBe('success')
+    expect(got!.endAt).toBe(2000)
+    expect(got!.summary).toContain('file.ts | 10 +++')
+    expect(got!.summary).toContain('exitCode')
+  })
+
+  it('updateIntentSession sets start_at', () => {
+    const id = insertIntentSession('intent-u2', 'sess-u2', 'claude')
+    updateIntentSession(id, { startAt: 1000 })
+    const got = getIntentSession(id)
+    expect(got!.startAt).toBe(1000)
+  })
+
+  it('updateIntentSession partial update does not clear other fields', () => {
+    const id = insertIntentSession('intent-u3', 'sess-u3', 'opencode', 'agent-z')
+    updateIntentSession(id, { exitCode: 'failure' })
+    const got = getIntentSession(id)
+    expect(got!.exitCode).toBe('failure')
+    // Other fields should remain unchanged
+    expect(got!.agentId).toBe('agent-z')
+    expect(got!.vendor).toBe('opencode')
+    expect(got!.endAt).toBeNull()
+    expect(got!.summary).toBeNull()
+  })
+
+  it('updateIntentSession no-op when patch is empty', () => {
+    const id = insertIntentSession('intent-u4', 'sess-u4', 'claude')
+    updateIntentSession(id, {})
+    const got = getIntentSession(id)
+    expect(got).not.toBeNull()
+    expect(got!.exitCode).toBeNull()
+  })
+
+  // ── getIntentSessionBySessionId ───────────────────────────────────────
+
+  it('getIntentSessionBySessionId finds record by sessionId + intentId', () => {
+    const id = insertIntentSession('intent-g1', 'sess-g1', 'claude', 'agent-a')
+    const got = getIntentSessionBySessionId('sess-g1', 'intent-g1')
+    expect(got).not.toBeNull()
+    expect(got!.id).toBe(id)
+    expect(got!.sessionId).toBe('sess-g1')
+    expect(got!.intentId).toBe('intent-g1')
+  })
+
+  it('getIntentSessionBySessionId returns latest record when multiple exist', () => {
+    insertIntentSession('intent-multi', 'sess-multi', 'claude')
+    insertIntentSession('intent-multi', 'sess-multi', 'codex')
+    const got = getIntentSessionBySessionId('sess-multi', 'intent-multi')
+    expect(got).not.toBeNull()
+    // Should return the latest (second insert)
+    expect(got!.vendor).toBe('codex')
+  })
+
+  it('getIntentSessionBySessionId returns null for non-matching sessionId', () => {
+    insertIntentSession('intent-g2', 'sess-g2', 'claude')
+    const got = getIntentSessionBySessionId('wrong-sess', 'intent-g2')
+    expect(got).toBeNull()
+  })
+
+  it('getIntentSessionBySessionId returns null for non-matching intentId', () => {
+    insertIntentSession('intent-g3', 'sess-g3', 'claude')
+    const got = getIntentSessionBySessionId('sess-g3', 'wrong-intent')
+    expect(got).toBeNull()
   })
 })

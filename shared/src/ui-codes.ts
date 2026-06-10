@@ -90,9 +90,9 @@ export const UI_ERROR_CODES = {
     key: 'error.session.invalidMode',
     params: ['vendor', 'mode'],
   },
-  // project config
-  'projectConfig.invalidDefaultMode': {
-    key: 'error.projectConfig.invalidDefaultMode',
+  // workspace setting
+  'workspaceSetting.invalidDefaultMode': {
+    key: 'error.workspaceSetting.invalidDefaultMode',
     params: ['vendor', 'mode'],
   },
 } as const satisfies Record<string, UiErrorDef>

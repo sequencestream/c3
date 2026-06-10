@@ -54,7 +54,7 @@ matching wire arm. `parseAgentConfig(raw)` routes by tag and returns the typed a
   `SYSTEM_AGENT_ID`.
 - Legacy global `defaultMode` (deprecated in SystemSettings) is still accepted for backward
   compatibility during the migration window. The authoritative source is the per-project
-  `ProjectConfig.defaultMode`, read via `loadProjectConfig`; the same validation (one of the five
+  `WorkspaceSetting.defaultMode`, read via `loadWorkspaceSetting`; the same validation (one of the five
   `PermissionMode` values) and fallback (`default`) apply per-project. Consumed by
   `getDefaultMode(projectPath)`, which seeds a new session's runtime mode in `create_session` (SR-R6).
 - `enabled` is persisted as an explicit boolean using `a.enabled !== false` (absent/`true` ⇒

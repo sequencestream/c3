@@ -126,7 +126,7 @@ interface ProjectSandboxConfig {
 
 ```typescript
 export function getProjectSandbox(projectPath: string): ProjectSandboxConfig | undefined {
-  const raw = loadProjectConfig(projectPath).sandbox
+  const raw = loadWorkspaceSetting(projectPath).sandbox
   return normalizeSandboxConfig(raw) // undefined → 等价于 disabled
 }
 

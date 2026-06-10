@@ -1130,7 +1130,7 @@
     "waitUserInvolve": {
       "dbUnavailable": "等待用户介入存储不可用 (c3.db)。"
     },
-    "projectConfig": {
+    "workspaceSetting": {
       "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"
     }
   },
@@ -1292,7 +1292,7 @@
       }
     }
   },
-  "projectConfig": {
+  "workspaceSetting": {
     "title": {
       "label": "工作区设置"
     },
@@ -1334,6 +1334,27 @@
         "label": "讨论发言字符限制"
       },
       "hint": "参与者在提示词引导中看到的每轮字符预算。参与者会被要求将回复控制在此限制内,但超长回复仍会被原样接受（不做硬截断）。最低 {min}（低于此值会被保存时自动提升）。"
+    },
+    "gitCommitMode": {
+      "title": {
+        "label": "Git 提交模式"
+      },
+      "hint": "本工作区「开始开发」如何处理分支:在当前分支原地开发,或将开发 agent 隔离到 git worktree。",
+      "option": {
+        "currentBranch": {
+          "label": "当前分支(原地开发)"
+        },
+        "worktree": {
+          "label": "Worktree 隔离"
+        }
+      }
+    },
+    "defaultMainBranch": {
+      "title": {
+        "label": "默认主分支"
+      },
+      "hint": "Worktree 模式下新建 worktree 所基于的分支。打开本页时自动探测(origin/HEAD,再回退当前 HEAD)。",
+      "placeholder": "main"
     },
     "consensus": {
       "title": {

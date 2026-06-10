@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { ProjectConfig, SystemSettings } from '@ccc/shared/protocol'
+import type { WorkspaceSetting, SystemSettings } from '@ccc/shared/protocol'
 import {
   AGENT_ICON_MAX_CHARS,
   consensusVoters,
@@ -15,7 +15,9 @@ import {
   vendorScopedVoters,
 } from './agent-config/index.js'
 import {
+  getDefaultMainBranch,
   getDevSkill,
+  getGitCommitMode,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
   getServerTimezone,
@@ -28,9 +30,9 @@ import {
   isConsensusEnabled,
   isConsensusMajorityEnabled,
   isValidTimeZone,
-  loadProjectConfig,
+  loadWorkspaceSetting,
   loadSettings,
-  saveProjectConfig,
+  saveWorkspaceSetting,
   saveSettings,
   resetSettingsCacheForTests,
   DEFAULT_ROUNDS_PER_STAGE,
@@ -65,7 +67,7 @@ const TEST_PROJ = '/test/project'
 
 /** Persist just a `devSkill` value (with the required baseline fields). */
 function saveWithDevSkill(devSkill: string | undefined): void {
-  saveProjectConfig(TEST_PROJ, { devSkill } as ProjectConfig)
+  saveWorkspaceSetting(TEST_PROJ, { devSkill } as WorkspaceSetting)
 }
 
 /** The on-disk settings.json path under the throwaway $HOME for this test run. */
@@ -77,15 +79,15 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
   /** A minimal legacy-flat agent so degradationChain has a real id to reference. */
   const A1 = { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: '' }
 
-  it('in-process: two sequential saveProjectConfig (different projects) both persist', () => {
-    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
-    saveProjectConfig('/proj/b', { devSkill: '/b' } as ProjectConfig)
+  it('in-process: two sequential saveWorkspaceSetting (different projects) both persist', () => {
+    saveWorkspaceSetting('/proj/a', { devSkill: '/a' } as WorkspaceSetting)
+    saveWorkspaceSetting('/proj/b', { devSkill: '/b' } as WorkspaceSetting)
     expect(getDevSkill('/proj/a')).toBe('/a')
     expect(getDevSkill('/proj/b')).toBe('/b')
   })
 
-  it('cross-process: saveProjectConfig re-reads disk and keeps a project another process just added', () => {
-    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
+  it('cross-process: saveWorkspaceSetting re-reads disk and keeps a project another process just added', () => {
+    saveWorkspaceSetting('/proj/a', { devSkill: '/a' } as WorkspaceSetting)
     // Simulate ANOTHER c3 instance writing /proj/b straight to disk. We deliberately
     // do NOT reset the in-memory cache — proving our write reads disk, not the cache.
     const disk = readJsonFile<SystemSettings>(settingsPath())!
@@ -97,14 +99,14 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       },
     })
     // Now this process saves /proj/c — it must merge over fresh disk, not stale cache.
-    saveProjectConfig('/proj/c', { devSkill: '/c' } as ProjectConfig)
+    saveWorkspaceSetting('/proj/c', { devSkill: '/c' } as WorkspaceSetting)
     expect(getDevSkill('/proj/a')).toBe('/a')
     expect(getDevSkill('/proj/b')).toBe('/b') // the foreign write survived
     expect(getDevSkill('/proj/c')).toBe('/c')
   })
 
   it('anti-clobber: saveSettings WITHOUT projectConfigs preserves existing project configs', () => {
-    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
+    saveWorkspaceSetting('/proj/a', { devSkill: '/a' } as WorkspaceSetting)
     // The old bug: a save_settings carrying no projectConfigs wiped them from disk.
     saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID } as SystemSettings)
     expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
@@ -112,7 +114,7 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
   })
 
   it('anti-clobber: saveSettings WITH explicit projectConfigs updates by value and merges siblings', () => {
-    saveProjectConfig('/proj/a', { devSkill: '/a' } as ProjectConfig)
+    saveWorkspaceSetting('/proj/a', { devSkill: '/a' } as WorkspaceSetting)
     saveSettings({
       agents: [],
       defaultAgentId: SYSTEM_AGENT_ID,
@@ -172,13 +174,13 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
 
 describe('consensus.majority normalization (isConsensusMajorityEnabled)', () => {
   const saveConsensus = (consensus: unknown): void => {
-    saveProjectConfig(TEST_PROJ, { consensus } as unknown as ProjectConfig)
+    saveWorkspaceSetting(TEST_PROJ, { consensus } as unknown as WorkspaceSetting)
   }
 
   it('defaults to false when consensus is entirely absent', () => {
-    saveProjectConfig(TEST_PROJ, {} as ProjectConfig)
+    saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
     expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(false)
-    expect(loadProjectConfig(TEST_PROJ).consensus?.majority).toBe(false)
+    expect(loadWorkspaceSetting(TEST_PROJ).consensus?.majority).toBe(false)
   })
 
   it('defaults to false when consensus exists but omits majority', () => {
@@ -191,7 +193,7 @@ describe('consensus.majority normalization (isConsensusMajorityEnabled)', () => 
   it('is true only when explicitly majority: true', () => {
     saveConsensus({ enabled: true, majority: true })
     expect(isConsensusMajorityEnabled(TEST_PROJ)).toBe(true)
-    expect(loadProjectConfig(TEST_PROJ).consensus?.majority).toBe(true)
+    expect(loadWorkspaceSetting(TEST_PROJ).consensus?.majority).toBe(true)
   })
 
   it('treats a non-true value (truthy or not) as false', () => {
@@ -239,7 +241,7 @@ describe('getDevSkill normalization', () => {
 
 /** Persist just a `maxRoundsPerStage` value (with the required baseline fields). */
 function saveWithMaxRounds(value: unknown): void {
-  saveProjectConfig(TEST_PROJ, { maxRoundsPerStage: value } as unknown as ProjectConfig)
+  saveWorkspaceSetting(TEST_PROJ, { maxRoundsPerStage: value } as unknown as WorkspaceSetting)
 }
 
 describe('getMaxRoundsPerStage normalization', () => {
@@ -508,7 +510,7 @@ describe('enabled flag (AC-R10)', () => {
 
 /** Persist just a `maxSpeechChars` value (with the required baseline fields). */
 function saveWithMaxSpeechChars(value: unknown): void {
-  saveProjectConfig(TEST_PROJ, { maxSpeechChars: value } as unknown as ProjectConfig)
+  saveWorkspaceSetting(TEST_PROJ, { maxSpeechChars: value } as unknown as WorkspaceSetting)
 }
 
 describe('getMaxSpeechChars normalization', () => {
@@ -562,7 +564,7 @@ function saveWithLegacySkillRepos(repos: unknown): void {
   } as unknown as SystemSettings)
 }
 
-describe('skillRepos migration from SystemSettings to ProjectConfig', () => {
+describe('skillRepos migration from SystemSettings to WorkspaceSetting', () => {
   const REPO_A = {
     id: 'my-skills',
     repo: 'https://github.com/o/r',
@@ -592,7 +594,7 @@ describe('skillRepos migration from SystemSettings to ProjectConfig', () => {
     // The global settings should NOT carry skillRepos (deprecated, stripped on save).
     expect(loadSettings().skillRepos).toBeUndefined()
     // Loading a project config for the first time should seed it from the legacy value.
-    const cfg = loadProjectConfig(TEST_PROJ)
+    const cfg = loadWorkspaceSetting(TEST_PROJ)
     expect(cfg.skillRepos).toEqual(repos)
     // getSkillRepos(projectPath) should read from the project config.
     expect(getSkillRepos(TEST_PROJ)).toEqual(repos)
@@ -600,19 +602,21 @@ describe('skillRepos migration from SystemSettings to ProjectConfig', () => {
 
   it('does not seed skillRepos when the legacy settings carry none', () => {
     saveWithLegacySkillRepos(undefined)
-    const cfg = loadProjectConfig('/other/project')
+    const cfg = loadWorkspaceSetting('/other/project')
     expect(cfg.skillRepos).toBeUndefined()
   })
 
-  it('survives a normal saveProjectConfig round-trip', () => {
-    const saved = saveProjectConfig(TEST_PROJ, { skillRepos: [REPO_B] } as unknown as ProjectConfig)
+  it('survives a normal saveWorkspaceSetting round-trip', () => {
+    const saved = saveWorkspaceSetting(TEST_PROJ, {
+      skillRepos: [REPO_B],
+    } as unknown as WorkspaceSetting)
     expect(saved.skillRepos).toEqual([REPO_B])
     expect(getSkillRepos(TEST_PROJ)).toEqual([REPO_B])
   })
 
   it('is independent between projects (per-project skillRepos)', () => {
-    saveProjectConfig('/project/a', { skillRepos: [REPO_C] } as unknown as ProjectConfig)
-    saveProjectConfig('/project/b', { skillRepos: [REPO_D] } as unknown as ProjectConfig)
+    saveWorkspaceSetting('/project/a', { skillRepos: [REPO_C] } as unknown as WorkspaceSetting)
+    saveWorkspaceSetting('/project/b', { skillRepos: [REPO_D] } as unknown as WorkspaceSetting)
     expect(getSkillRepos('/project/a')).toEqual([REPO_C])
     expect(getSkillRepos('/project/b')).toEqual([REPO_D])
   })
@@ -903,5 +907,42 @@ describe('Claude launch non-regression (AC-R4/R5)', () => {
       },
       model: 'm1',
     })
+  })
+})
+
+describe('gitCommitMode + defaultMainBranch (2026-06-10)', () => {
+  it('defaults to current-branch when absent (backward compatible)', () => {
+    saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
+    expect(getGitCommitMode(TEST_PROJ)).toBe('current-branch')
+    expect(getDefaultMainBranch(TEST_PROJ)).toBeUndefined()
+  })
+
+  it('normalize emits gitCommitMode even on an empty config', () => {
+    saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
+    expect(loadWorkspaceSetting(TEST_PROJ).gitCommitMode).toBe('current-branch')
+  })
+
+  it('persists and reads back worktree mode + a default main branch', () => {
+    saveWorkspaceSetting(TEST_PROJ, {
+      gitCommitMode: 'worktree',
+      defaultMainBranch: 'develop',
+    } as WorkspaceSetting)
+    expect(getGitCommitMode(TEST_PROJ)).toBe('worktree')
+    expect(getDefaultMainBranch(TEST_PROJ)).toBe('develop')
+  })
+
+  it('falls back to current-branch for an unknown mode value', () => {
+    saveWorkspaceSetting(TEST_PROJ, {
+      gitCommitMode: 'bogus',
+    } as unknown as WorkspaceSetting)
+    expect(getGitCommitMode(TEST_PROJ)).toBe('current-branch')
+  })
+
+  it('trims a blank default main branch to undefined', () => {
+    saveWorkspaceSetting(TEST_PROJ, {
+      gitCommitMode: 'worktree',
+      defaultMainBranch: '   ',
+    } as WorkspaceSetting)
+    expect(getDefaultMainBranch(TEST_PROJ)).toBeUndefined()
   })
 })

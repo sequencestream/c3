@@ -1130,7 +1130,7 @@
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve store unavailable (c3.db)."
     },
-    "projectConfig": {
+    "workspaceSetting": {
       "invalidDefaultMode": "Invalid default mode \"{mode}\" for vendor \"{vendor}\"."
     }
   },
@@ -1292,7 +1292,7 @@
       }
     }
   },
-  "projectConfig": {
+  "workspaceSetting": {
     "title": {
       "label": "Workspace setting"
     },
@@ -1334,6 +1334,27 @@
         "label": "Discussion speech character limit"
       },
       "hint": "The per-turn character budget participants see in their prompt guidance. Participants are asked to keep replies within this limit, but over-long replies are accepted verbatim (no hard truncation). Minimum {min} (lower values are clamped up on save)."
+    },
+    "gitCommitMode": {
+      "title": {
+        "label": "Git commit mode"
+      },
+      "hint": "How Start development handles branches for this workspace: develop in place on the current branch, or isolate the dev agent in a git worktree.",
+      "option": {
+        "currentBranch": {
+          "label": "Current branch (develop in place)"
+        },
+        "worktree": {
+          "label": "Worktree isolation"
+        }
+      }
+    },
+    "defaultMainBranch": {
+      "title": {
+        "label": "Default main branch"
+      },
+      "hint": "The base branch new worktrees branch from in worktree mode. Auto-detected (origin/HEAD, then current HEAD) when this page opens.",
+      "placeholder": "main"
     },
     "consensus": {
       "title": {

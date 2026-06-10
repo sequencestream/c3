@@ -52,7 +52,7 @@ import type {
   VendorModeCatalog,
   Intent,
   IntentSessionInfo,
-  ProjectConfig as ProjectConfigType,
+  WorkspaceSetting as WorkspaceSettingType,
   Schedule,
   ScheduleExecutionLog,
   ToolManifestEntry,
@@ -555,7 +555,10 @@ const skillApprovalRequest = ref<ApprovalRequest | null>(null)
 
 // ---- Workspace setting ----
 const workspaceSettingOpen = ref(false)
-const currentWorkspaceSetting = ref<ProjectConfigType | null>(null)
+const currentWorkspaceSetting = ref<WorkspaceSettingType | null>(null)
+// Server-probed default branch riding the `workspace_setting` load reply; the
+// settings form uses it to pre-fill `defaultMainBranch`. Cleared with the setting.
+const detectedMainBranch = ref<string | null>(null)
 
 // First-class OpenCode server reachability (2026-06-07-003): a snapshot rides every
 // connection's `ready`, and each up/down/retrying transition pushes `opencode_status`.
@@ -614,12 +617,12 @@ function openSettings() {
 function openWorkspaceSetting() {
   workspaceSettingOpen.value = true
   const path = currentWorkspace.value
-  if (path) client?.send({ type: 'load_project_config', projectPath: path })
+  if (path) client?.send({ type: 'load_workspace_setting', projectPath: path })
 }
 
-function saveWorkspaceSetting(config: ProjectConfigType) {
+function saveWorkspaceSetting(config: WorkspaceSettingType) {
   const path = currentWorkspace.value
-  if (path) client?.send({ type: 'save_project_config', projectPath: path, config })
+  if (path) client?.send({ type: 'save_workspace_setting', projectPath: path, config })
   workspaceSettingOpen.value = false
 }
 
@@ -778,6 +781,7 @@ function handleMessage(msg: ServerToClient) {
       // Close workspace setting on reconnect — workspace may have changed.
       workspaceSettingOpen.value = false
       currentWorkspaceSetting.value = null
+      detectedMainBranch.value = null
       applyStatuses(msg.statuses)
       // Restore the persisted current workspace (or fall back to most-recent),
       // then load its sessions for the sidebar.
@@ -926,8 +930,9 @@ function handleMessage(msg: ServerToClient) {
     case 'commands':
       availableCommands.value = msg.commands
       break
-    case 'project_config':
+    case 'workspace_setting':
       currentWorkspaceSetting.value = msg.config
+      detectedMainBranch.value = msg.detectedMainBranch ?? null
       break
     case 'settings':
       serverSettings.value = msg.settings
@@ -1375,6 +1380,7 @@ function selectWorkspace(path: string) {
   persistCurrentWorkspace()
   workspaceSettingOpen.value = false
   currentWorkspaceSetting.value = null
+  detectedMainBranch.value = null
   if (fx.refreshSessions) refreshSessions(path)
   if (fx.enterConsole) switchToConsoleTab()
 }
@@ -2206,7 +2212,8 @@ function dismissSkillApproval() {
 
   <WorkspaceSettingPage
     :open="workspaceSettingOpen"
-    :project-config="currentWorkspaceSetting"
+    :workspace-setting="currentWorkspaceSetting"
+    :detected-main-branch="detectedMainBranch"
     :current-workspace="currentWorkspace"
     :vendor-modes="vendorModes"
     :system-sandboxes="serverSettings?.sandboxes ?? []"

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   createWorktree,
+  detectDefaultBranch,
   generateBranchName,
   getWorktreePath,
   projectDirName,
@@ -191,5 +192,76 @@ describe('createWorktree', () => {
     const second = createWorktree(repoDir, INTENT_ID, 'Different title')
 
     expect(second.branchName).toBe(first.branchName)
+  })
+
+  it('roots the new branch at the given base branch (2026-06-10)', () => {
+    // Create a `base-branch` ahead of HEAD with a distinct commit, then return
+    // to the original branch so HEAD and base-branch differ.
+    const headBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: repoDir,
+      encoding: 'utf-8',
+    }).trim()
+    execFileSync('git', ['checkout', '-b', 'base-branch'], { cwd: repoDir, stdio: 'ignore' })
+    writeFileSync(join(repoDir, 'BASE_ONLY.md'), 'base')
+    execFileSync('git', ['add', '-A'], { cwd: repoDir, stdio: 'ignore' })
+    execFileSync('git', ['commit', '-m', 'base commit'], { cwd: repoDir, stdio: 'ignore' })
+    const baseSha = execFileSync('git', ['rev-parse', 'base-branch'], {
+      cwd: repoDir,
+      encoding: 'utf-8',
+    }).trim()
+    execFileSync('git', ['checkout', headBranch], { cwd: repoDir, stdio: 'ignore' })
+
+    const result = createWorktree(repoDir, INTENT_ID, 'Test feature', 'base-branch')
+    const wtSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: result.worktreePath,
+      encoding: 'utf-8',
+    }).trim()
+    // The worktree HEAD must match the base branch tip, not the original HEAD.
+    expect(wtSha).toBe(baseSha)
+
+    try {
+      execFileSync('git', ['branch', '-D', 'base-branch'], { cwd: repoDir, stdio: 'ignore' })
+    } catch {
+      // ignore
+    }
+  })
+})
+
+describe('detectDefaultBranch', () => {
+  let repoDir: string
+
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), 'c3-detect-'))
+    createGitRepo(repoDir)
+  })
+
+  afterEach(() => {
+    rmSync(repoDir, { recursive: true, force: true })
+  })
+
+  it('prefers origin/HEAD when present', () => {
+    // Point origin/HEAD at a symbolic remote branch (no real remote needed).
+    execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk'], {
+      cwd: repoDir,
+      stdio: 'ignore',
+    })
+    expect(detectDefaultBranch(repoDir)).toBe('trunk')
+  })
+
+  it('falls back to the current HEAD branch when no origin/HEAD', () => {
+    const head = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: repoDir,
+      encoding: 'utf-8',
+    }).trim()
+    expect(detectDefaultBranch(repoDir)).toBe(head)
+  })
+
+  it('returns undefined for a non-git path', () => {
+    const badDir = mkdtempSync(join(tmpdir(), 'c3-detect-nongit-'))
+    try {
+      expect(detectDefaultBranch(badDir)).toBeUndefined()
+    } finally {
+      rmSync(badDir, { recursive: true, force: true })
+    }
   })
 })

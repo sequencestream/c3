@@ -1131,7 +1131,7 @@
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve 저장소를 사용할 수 없습니다 (c3.db)."
     },
-    "projectConfig": {
+    "workspaceSetting": {
       "invalidDefaultMode": "벤더 \"{vendor}\" 의 기본 모드 \"{mode}\" 가 유효하지 않습니다."
     }
   },
@@ -1293,7 +1293,7 @@
       }
     }
   },
-  "projectConfig": {
+  "workspaceSetting": {
     "title": {
       "label": "워크스페이스 설정"
     },
@@ -1335,6 +1335,27 @@
         "label": "토론 발언 문자 제한"
       },
       "hint": "참가자가 프롬프트 안내에서 확인하는 턴당 문자 예산입니다. 참가자는 이 제한 내에서 답변을 유지하도록 요청받지만, 너무 긴 답변도 있는 그대로 수락됩니다 (강제 절단 없음). 최소 {min} (더 낮은 값은 저장 시 자동으로 올림됩니다)."
+    },
+    "gitCommitMode": {
+      "title": {
+        "label": "Git 커밋 모드"
+      },
+      "hint": "이 워크스페이스에서 '개발 시작'이 브랜치를 처리하는 방식: 현재 브랜치에서 제자리 개발하거나 개발 에이전트를 git worktree로 격리합니다.",
+      "option": {
+        "currentBranch": {
+          "label": "현재 브랜치(제자리 개발)"
+        },
+        "worktree": {
+          "label": "Worktree 격리"
+        }
+      }
+    },
+    "defaultMainBranch": {
+      "title": {
+        "label": "기본 메인 브랜치"
+      },
+      "hint": "Worktree 모드에서 새 worktree의 기준이 되는 브랜치. 이 페이지를 열 때 자동으로 감지됩니다(origin/HEAD, 그다음 현재 HEAD).",
+      "placeholder": "main"
     },
     "consensus": {
       "title": {

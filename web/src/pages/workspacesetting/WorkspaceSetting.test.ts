@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WorkspaceSetting from './WorkspaceSetting.vue'
 import type {
-  ProjectConfig as ProjectConfigType,
+  WorkspaceSetting as WorkspaceSettingType,
   SkillRepoConfig,
   VendorId,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -81,7 +81,7 @@ const MOCK_VENDOR_MODES: Record<VendorId, VendorModeCatalog> = {
 }
 
 /** Convenience: per-vendor config with the given claude token. */
-function cfg(overrides?: Partial<ProjectConfigType>): ProjectConfigType {
+function cfg(overrides?: Partial<WorkspaceSettingType>): WorkspaceSettingType {
   return {
     defaultMode: { claude: 'plan', codex: 'auto', opencode: 'build' },
     devSkill: '/my-skill',
@@ -97,15 +97,17 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: null,
+        workspaceSetting: null,
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
-    // 2 codex policy selects (sandbox + approval) + 1 claude + 1 opencode = 4
+    // 2 codex policy selects (sandbox + approval) + 1 claude + 1 opencode
+    // + 1 git-commit-mode select = 5
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(4)
+    expect(selects).toHaveLength(5)
     // Claude + OpenCode still have a mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-codex-sandbox"]').length).toBe(1)
@@ -117,7 +119,8 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -142,7 +145,8 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: {},
+        workspaceSetting: {},
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -168,7 +172,8 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: null,
+        workspaceSetting: null,
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -198,15 +203,17 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: null,
+        workspaceSetting: null,
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
-    // 3 vendor row-labels + devSkill + rounds + speechChars = 6
+    // 3 vendor row-labels + devSkill + rounds + speechChars
+    // + gitCommitMode + defaultMainBranch = 8
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(6)
+    expect(labels).toHaveLength(8)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -214,14 +221,15 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
     await w.find('[data-testid="project-config-save"]').trigger('click')
-    const emitted = w.emitted('save') as [ProjectConfigType][]
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
     expect(emitted).toBeTruthy()
     const payload = emitted[0][0]
     expect(payload.defaultMode).toEqual({
@@ -235,7 +243,8 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -243,7 +252,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     })
     await w.find('[data-testid="default-mode-claude"]').setValue('default')
     await w.find('[data-testid="project-config-save"]').trigger('click')
-    const emitted = w.emitted('save') as [ProjectConfigType][]
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
     const payload = emitted[0][0]
     expect((payload.defaultMode as Record<VendorId, unknown>).claude).toBe('default')
     expect((payload.defaultMode as Record<VendorId, unknown>).codex).toEqual({
@@ -258,7 +267,8 @@ describe('WorkspaceSetting.vue — dev skill', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -274,7 +284,8 @@ describe('WorkspaceSetting.vue — dev skill', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: {},
+        workspaceSetting: {},
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -291,7 +302,8 @@ describe('WorkspaceSetting.vue — discussion rounds per stage', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -306,7 +318,8 @@ describe('WorkspaceSetting.vue — discussion rounds per stage', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg({ maxRoundsPerStage: undefined }),
+        workspaceSetting: cfg({ maxRoundsPerStage: undefined }),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -320,7 +333,8 @@ describe('WorkspaceSetting.vue — discussion rounds per stage', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -329,7 +343,7 @@ describe('WorkspaceSetting.vue — discussion rounds per stage', () => {
     const inputs = w.findAll('.project-config-number')
     await inputs[0].setValue(20)
     await w.find('[data-testid="project-config-save"]').trigger('click')
-    const emitted = w.emitted('save') as [ProjectConfigType][]
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].maxRoundsPerStage).toBe(20)
   })
@@ -340,7 +354,8 @@ describe('WorkspaceSetting.vue — discussion speech character limit', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -355,7 +370,8 @@ describe('WorkspaceSetting.vue — discussion speech character limit', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg({ maxSpeechChars: undefined }),
+        workspaceSetting: cfg({ maxSpeechChars: undefined }),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -369,7 +385,8 @@ describe('WorkspaceSetting.vue — discussion speech character limit', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -378,7 +395,7 @@ describe('WorkspaceSetting.vue — discussion speech character limit', () => {
     const inputs = w.findAll('.project-config-number')
     await inputs[1].setValue(600)
     await w.find('[data-testid="project-config-save"]').trigger('click')
-    const emitted = w.emitted('save') as [ProjectConfigType][]
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].maxSpeechChars).toBe(600)
   })
@@ -389,7 +406,8 @@ describe('WorkspaceSetting.vue — consensus majority toggle', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -404,7 +422,8 @@ describe('WorkspaceSetting.vue — consensus majority toggle', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: { consensus: { enabled: true } },
+        workspaceSetting: { consensus: { enabled: true } },
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -420,7 +439,8 @@ describe('WorkspaceSetting.vue — consensus majority toggle', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -428,7 +448,7 @@ describe('WorkspaceSetting.vue — consensus majority toggle', () => {
     })
     await w.find('[data-testid="project-config-consensus-majority"]').setValue(false)
     await w.find('[data-testid="project-config-save"]').trigger('click')
-    const emitted = w.emitted('save') as [ProjectConfigType][]
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
     expect(emitted[0][0].consensus?.majority).toBe(false)
   })
 })
@@ -438,14 +458,15 @@ describe('WorkspaceSetting.vue — save emits full payload', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
     await w.find('[data-testid="project-config-save"]').trigger('click')
-    const emitted = w.emitted('save') as [ProjectConfigType][]
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
     expect(emitted).toBeTruthy()
     const payload = emitted[0][0]
     expect(payload.defaultMode).toEqual({
@@ -462,7 +483,7 @@ describe('WorkspaceSetting.vue — save emits full payload', () => {
 })
 
 describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => {
-  const configWithSkillRepos: ProjectConfigType = {
+  const configWithSkillRepos: WorkspaceSettingType = {
     ...cfg(),
     skillRepos: [
       {
@@ -483,7 +504,8 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: configWithSkillRepos,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -497,7 +519,8 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -510,7 +533,8 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: cfg(),
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -525,7 +549,8 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: configWithSkillRepos,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -541,7 +566,7 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: {
+        workspaceSetting: {
           ...cfg(),
           skillRepos: [
             {
@@ -551,6 +576,7 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
             } as SkillRepoConfig,
           ],
         },
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -565,7 +591,8 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: configWithSkillRepos,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -580,7 +607,8 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        projectConfig: configWithSkillRepos,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
@@ -589,7 +617,99 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const inputs = w.findAll('[data-testid="skill-repo-ref"]')
     await inputs[0].setValue('develop')
     await w.find('[data-testid="project-config-save"]').trigger('click')
-    const emitted = w.emitted('save') as [ProjectConfigType][]
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
     expect(emitted[0][0].skillRepos?.[0]?.ref).toBe('develop')
+  })
+})
+
+describe('WorkspaceSetting.vue — git commit mode + default main branch', () => {
+  it('defaults to current-branch with an empty branch when config is null', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: null,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    expect((w.find('[data-testid="git-commit-mode"]').element as HTMLSelectElement).value).toBe(
+      'current-branch',
+    )
+    expect((w.find('[data-testid="default-main-branch"]').element as HTMLInputElement).value).toBe(
+      '',
+    )
+  })
+
+  it('pre-fills the branch from detectedMainBranch when config has none', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg(),
+        detectedMainBranch: 'main',
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    expect((w.find('[data-testid="default-main-branch"]').element as HTMLInputElement).value).toBe(
+      'main',
+    )
+  })
+
+  it('a saved branch value wins over the detected one', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg({ gitCommitMode: 'worktree', defaultMainBranch: 'develop' }),
+        detectedMainBranch: 'main',
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    expect((w.find('[data-testid="git-commit-mode"]').element as HTMLSelectElement).value).toBe(
+      'worktree',
+    )
+    expect((w.find('[data-testid="default-main-branch"]').element as HTMLInputElement).value).toBe(
+      'develop',
+    )
+  })
+
+  it('emits the edited git commit mode + branch on save', async () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    await w.find('[data-testid="git-commit-mode"]').setValue('worktree')
+    await w.find('[data-testid="default-main-branch"]').setValue('release')
+    await w.find('[data-testid="project-config-save"]').trigger('click')
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
+    const payload = emitted[0][0]
+    expect(payload.gitCommitMode).toBe('worktree')
+    expect(payload.defaultMainBranch).toBe('release')
+  })
+
+  it('emits an undefined branch when the input is blank', async () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg({ gitCommitMode: 'worktree', defaultMainBranch: '   ' }),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    await w.find('[data-testid="project-config-save"]').trigger('click')
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
+    expect(emitted[0][0].defaultMainBranch).toBeUndefined()
   })
 })

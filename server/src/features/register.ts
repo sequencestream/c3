@@ -18,9 +18,9 @@ import {
 import { ping, requestSessionStatus } from './meta/index.js'
 import {
   getSettings,
-  loadProjectConfigHandler,
-  saveProjectConfigHandler,
+  loadWorkspaceSettingHandler,
   saveSettingsHandler,
+  saveWorkspaceSettingHandler,
 } from './settings/index.js'
 import { permissionResponse } from './permissions/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
@@ -93,8 +93,8 @@ export const handlerMap: HandlerMap = {
   // settings
   get_settings: getSettings,
   save_settings: saveSettingsHandler,
-  load_project_config: loadProjectConfigHandler,
-  save_project_config: saveProjectConfigHandler,
+  load_workspace_setting: loadWorkspaceSettingHandler,
+  save_workspace_setting: saveWorkspaceSettingHandler,
   // permissions
   permission_response: permissionResponse,
   // workspaces

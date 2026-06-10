@@ -29,8 +29,9 @@ import type {
   AgentConfig,
   ClaudeAgentConfig,
   CodexPolicy,
+  GitCommitMode,
   ModeToken,
-  ProjectConfig,
+  WorkspaceSetting,
   ProjectSandboxConfig,
   SkillRepoConfig,
   SystemSandboxDef,
@@ -49,7 +50,7 @@ import { parseAgentConfig } from '../agent-config/schema.js'
 
 /**
  * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
- * its key is absent from the per-project {@link ProjectConfig.defaultMode} map.
+ * its key is absent from the per-project {@link WorkspaceSetting.defaultMode} map.
  * These MUST match each vendor's `defaultToken` in its {@link VendorModeCatalog}
  * (claude=default, codex=auto, opencode=build).
  */
@@ -229,7 +230,7 @@ function inferConfigMode(raw: unknown): 'system' | 'custom' {
 
 /** Migration cache: legacy global values captured once from an old settings.json,
  * used as seed for projects that have no config yet. Cleared after first use. */
-let legacyProjectSeed: Partial<ProjectConfig> | null = null
+let legacyProjectSeed: Partial<WorkspaceSetting> | null = null
 
 /**
  * Force the settings into a valid shape: a `system` agent always present (with
@@ -282,9 +283,9 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // Socket-disconnect auto-resume: enabled unless explicitly disabled (default true).
   const socketAutoResume = raw?.socketAutoResume !== false
   // Skill repos are no longer written here (deprecated — moved to per-project
-  // `ProjectConfig.skillRepos`). The captureLegacyProjectSeed one-shot below handles
+  // `WorkspaceSetting.skillRepos`). The captureLegacyProjectSeed one-shot below handles
   // reading the old global value from disk; the per-project authoritative getter is
-  // `getSkillRepos(projectPath)`, which reads from `loadProjectConfig(projectPath)`.
+  // `getSkillRepos(projectPath)`, which reads from `loadWorkspaceSetting(projectPath)`.
   // Per-project configurations passthrough (project-level knobs).
   const projectConfigs = raw?.projectConfigs
   // System sandbox definitions passthrough. Validated by SandboxRegistry at startup.
@@ -298,7 +299,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     showToolSessions,
     degradationChain,
     socketAutoResume,
-    // skillRepos intentionally omitted — deprecated, migrated to ProjectConfig
+    // skillRepos intentionally omitted — deprecated, migrated to WorkspaceSetting
     ...(sandboxes !== undefined ? { sandboxes } : {}),
     ...(projectConfigs ? { projectConfigs } : {}),
   }
@@ -307,7 +308,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
 /**
  * Capture legacy top-level global defaults from the raw settings object
  * (one-shot migration). Called from `normalize()` when settings are loaded;
- * the captured values are used by `loadProjectConfig` as seed for a project's
+ * the captured values are used by `loadWorkspaceSetting` as seed for a project's
  * first-ever config. After seeding once, `legacyProjectSeed` is cleared and
  * this becomes a no-op.
  */
@@ -317,10 +318,10 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
   // These fields were removed from SystemSettings but may still exist on disk —
   // access them via the raw record for the one-shot migration.
   const r = raw as unknown as Record<string, unknown>
-  const seed: Partial<ProjectConfig> = {}
+  const seed: Partial<WorkspaceSetting> = {}
   if (r.defaultMode !== undefined)
-    seed.defaultMode = r.defaultMode as unknown as ProjectConfig['defaultMode']
-  if (r.consensus !== undefined) seed.consensus = r.consensus as ProjectConfig['consensus']
+    seed.defaultMode = r.defaultMode as unknown as WorkspaceSetting['defaultMode']
+  if (r.consensus !== undefined) seed.consensus = r.consensus as WorkspaceSetting['consensus']
   if (r.devSkill !== undefined) seed.devSkill = r.devSkill as string
   if (r.maxRoundsPerStage !== undefined) seed.maxRoundsPerStage = r.maxRoundsPerStage as number
   if (r.maxSpeechChars !== undefined) seed.maxSpeechChars = r.maxSpeechChars as number
@@ -329,7 +330,7 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
 }
 
 /**
- * Normalize a partial or raw ProjectConfig into its canonical shape.
+ * Normalize a partial or raw WorkspaceSetting into its canonical shape.
  * - `defaultMode` accepts both old (single string) and new (`Record<VendorId, ModeToken>`)
  *   formats — the old format is converted by distributing the value to each vendor
  *   where valid, falling back to that vendor's defaultToken otherwise.
@@ -339,8 +340,10 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
  * - `maxSpeechChars` is floored and clamped to ≥ `MIN_SPEECH_CHARS`.
  * - `skillRepos` is a fail-soft passthrough (array shape preserved); the deep
  *   fail-HARD validation lives in `validateSkillRepos()` / `getSkillRepos()`.
+ * - `gitCommitMode` falls back to `current-branch` for any absent/unknown value.
+ * - `defaultMainBranch` is trimmed; empty ⇒ omitted.
  */
-export function normalizeProjectConfig(raw: unknown): ProjectConfig {
+export function normalizeWorkspaceSetting(raw: unknown): WorkspaceSetting {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const defaultMode = normalizeDefaultMode(rec.defaultMode)
   const consensus = {
@@ -354,15 +357,35 @@ export function normalizeProjectConfig(raw: unknown): ProjectConfig {
     ? (rec.skillRepos as SkillRepoConfig[])
     : undefined
   const sandbox = normalizeSandboxConfig(rec.sandbox)
+  const gitCommitMode = normalizeGitCommitMode(rec.gitCommitMode)
+  const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   return {
     defaultMode,
     consensus,
     devSkill,
     maxRoundsPerStage,
     maxSpeechChars,
+    gitCommitMode,
+    ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
   }
+}
+
+/**
+ * Normalize the git commit mode — any value other than the explicit `worktree`
+ * (including absent / unknown) falls back to `current-branch`. This keeps
+ * pre-2026-06-10 configs (no field) on the backward-compatible in-place path.
+ */
+function normalizeGitCommitMode(raw: unknown): GitCommitMode {
+  return raw === 'worktree' ? 'worktree' : 'current-branch'
+}
+
+/** Normalize the default main branch — trims; absent / blank ⇒ `undefined`. */
+function normalizeDefaultMainBranch(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }
 
 /**
@@ -445,16 +468,16 @@ function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken | CodexP
  * written back so it persists, and `legacyProjectSeed` is cleared so subsequent
  * reads fall through to defaults or existing configs.
  */
-export function loadProjectConfig(projectPath: string): ProjectConfig {
+export function loadWorkspaceSetting(projectPath: string): WorkspaceSetting {
   const settings = loadSettings()
   const existing = settings.projectConfigs?.[projectPath]
-  if (existing) return normalizeProjectConfig(existing)
+  if (existing) return normalizeWorkspaceSetting(existing)
 
   // Migration window: seed from legacy global values (one-shot).
   const seed = legacyProjectSeed
   if (seed) {
     legacyProjectSeed = null // clear — one shot only
-    const merged = normalizeProjectConfig(seed)
+    const merged = normalizeWorkspaceSetting(seed)
     // Persist the seeded config so the next read finds it.
     const configs = { ...(settings.projectConfigs ?? {}), [projectPath]: merged }
     saveSettings({ ...settings, projectConfigs: configs })
@@ -462,7 +485,7 @@ export function loadProjectConfig(projectPath: string): ProjectConfig {
   }
 
   // No existing config and no migration seed — return normalized defaults.
-  return normalizeProjectConfig(undefined)
+  return normalizeWorkspaceSetting(undefined)
 }
 
 /**
@@ -473,8 +496,8 @@ export function loadProjectConfig(projectPath: string): ProjectConfig {
  * normalize, atomic-write, refresh the cache. Does NOT call {@link saveSettings}:
  * the directory lock is non-reentrant, so a nested acquire would self-deadlock.
  */
-export function saveProjectConfig(projectPath: string, cfg: ProjectConfig): ProjectConfig {
-  const normalized = normalizeProjectConfig(cfg)
+export function saveWorkspaceSetting(projectPath: string, cfg: WorkspaceSetting): WorkspaceSetting {
+  const normalized = normalizeWorkspaceSetting(cfg)
   withFileLock(settingsFile(), () => {
     const disk = readSettingsFromDisk()
     const configs = { ...(disk?.projectConfigs ?? {}), [projectPath]: normalized }
@@ -606,7 +629,7 @@ export function saveSettings(next: SystemSettings): SystemSettings {
  * {@link getCodexDefaultPolicy} separately. Falls back to `DEFAULT_MODE_MAP`.
  */
 export function getDefaultMode(projectPath: string, vendor?: VendorId): ModeToken {
-  const map = loadProjectConfig(projectPath).defaultMode ?? DEFAULT_MODE_MAP
+  const map = loadWorkspaceSetting(projectPath).defaultMode ?? DEFAULT_MODE_MAP
   const v = vendor ?? 'claude'
   const val = map[v]
   // If the stored value is a CodexPolicy object, extract the legacy token.
@@ -624,7 +647,7 @@ export function getDefaultMode(projectPath: string, vendor?: VendorId): ModeToke
  * missing. Returns `undefined` for non-codex vendors.
  */
 export function getCodexDefaultPolicy(projectPath: string): CodexPolicy | undefined {
-  const map = loadProjectConfig(projectPath).defaultMode
+  const map = loadWorkspaceSetting(projectPath).defaultMode
   if (!map) return undefined
   const val = map['codex']
   if (val && typeof val === 'object' && 'sandboxMode' in (val as object)) {
@@ -878,7 +901,7 @@ export function getSessionBindingStats(): { bound: number; pending: number } {
 
 /** Whether multi-agent consensus voting is enabled for a project. */
 export function isConsensusEnabled(projectPath: string): boolean {
-  return loadProjectConfig(projectPath).consensus?.enabled === true
+  return loadWorkspaceSetting(projectPath).consensus?.enabled === true
 }
 
 /**
@@ -887,7 +910,7 @@ export function isConsensusEnabled(projectPath: string): boolean {
  * {@link isConsensusEnabled} — meaningful only when consensus is also enabled.
  */
 export function isConsensusMajorityEnabled(projectPath: string): boolean {
-  return loadProjectConfig(projectPath).consensus?.majority === true
+  return loadWorkspaceSetting(projectPath).consensus?.majority === true
 }
 
 /**
@@ -931,7 +954,23 @@ export function getTimezone(): string {
 
 /** The slash command prefixed to a intent when launching development; empty ⇒ no prefix. */
 export function getDevSkill(projectPath: string): string {
-  return normalizeDevSkill(loadProjectConfig(projectPath).devSkill)
+  return normalizeDevSkill(loadWorkspaceSetting(projectPath).devSkill)
+}
+
+/**
+ * The workspace's git commit mode for `start_development`. Absent/unknown ⇒
+ * `current-branch` (the backward-compatible in-place path).
+ */
+export function getGitCommitMode(projectPath: string): GitCommitMode {
+  return normalizeGitCommitMode(loadWorkspaceSetting(projectPath).gitCommitMode)
+}
+
+/**
+ * The workspace's configured default main branch (base for `worktree` mode), or
+ * `undefined` when unset — callers then branch from current HEAD.
+ */
+export function getDefaultMainBranch(projectPath: string): string | undefined {
+  return normalizeDefaultMainBranch(loadWorkspaceSetting(projectPath).defaultMainBranch)
 }
 
 // ---- External skill repos (ADR-0016) ----
@@ -1031,20 +1070,20 @@ export function validateSkillRepos(
 
 /**
  * The validated external skill repos for a project (ADR-0016).
- * Reads from the project's {@link ProjectConfig.skillRepos} via
- * {@link loadProjectConfig}. Fail-hard — throws on any misconfiguration
+ * Reads from the project's {@link WorkspaceSetting.skillRepos} via
+ * {@link loadWorkspaceSetting}. Fail-hard — throws on any misconfiguration
  * (see {@link validateSkillRepos}). The devSkill collision check is performed
  * against the project's own devSkill, since both values now live in the
  * same project-level config.
  */
 export function getSkillRepos(projectPath: string): SkillRepoConfig[] {
-  const cfg = loadProjectConfig(projectPath)
+  const cfg = loadWorkspaceSetting(projectPath)
   return validateSkillRepos(cfg.skillRepos, cfg.devSkill)
 }
 
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */
 export function getMaxRoundsPerStage(projectPath: string): number {
-  return normalizeMaxRoundsPerStage(loadProjectConfig(projectPath).maxRoundsPerStage)
+  return normalizeMaxRoundsPerStage(loadWorkspaceSetting(projectPath).maxRoundsPerStage)
 }
 
 /**
@@ -1053,7 +1092,7 @@ export function getMaxRoundsPerStage(projectPath: string): number {
  * replies are accepted verbatim.
  */
 export function getMaxSpeechChars(projectPath: string): number {
-  return normalizeMaxSpeechChars(loadProjectConfig(projectPath).maxSpeechChars)
+  return normalizeMaxSpeechChars(loadWorkspaceSetting(projectPath).maxSpeechChars)
 }
 
 /**
@@ -1070,7 +1109,7 @@ export function getSystemSandboxes(): SystemSandboxDef[] {
  * when the project has no sandbox config (equivalent to disabled).
  */
 export function getProjectSandbox(projectPath: string): ProjectSandboxConfig | undefined {
-  return normalizeSandboxConfig(loadProjectConfig(projectPath).sandbox)
+  return normalizeSandboxConfig(loadWorkspaceSetting(projectPath).sandbox)
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

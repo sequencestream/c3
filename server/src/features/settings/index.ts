@@ -20,11 +20,12 @@ import type {
 import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
 import {
   getSessionBindingStats,
-  loadProjectConfig,
   loadSettings,
-  saveProjectConfig,
+  loadWorkspaceSetting,
   saveSettings,
+  saveWorkspaceSetting,
 } from '../../kernel/config/index.js'
+import { detectDefaultBranch } from '../intents/worktree.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import { getOpencodeStatus } from '../../opencode-status.js'
@@ -141,12 +142,15 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
   })
 }
 
-export const loadProjectConfigHandler: Handler<'load_project_config'> = (_ctx, conn, msg) => {
-  const config = loadProjectConfig(msg.projectPath)
-  conn.send({ type: 'project_config', projectPath: msg.projectPath, config })
+export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_ctx, conn, msg) => {
+  const config = loadWorkspaceSetting(msg.projectPath)
+  // Probe the repo's default branch so the form can pre-fill `defaultMainBranch`
+  // (origin/HEAD → current HEAD; undefined when unresolvable).
+  const detectedMainBranch = detectDefaultBranch(msg.projectPath)
+  conn.send({ type: 'workspace_setting', projectPath: msg.projectPath, config, detectedMainBranch })
 }
 
-export const saveProjectConfigHandler: Handler<'save_project_config'> = (_ctx, conn, msg) => {
+export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_ctx, conn, msg) => {
   // Validate per-vendor defaultModes against their catalogs (2026-06-07-017).
   const defaultModes = msg.config.defaultMode
   if (defaultModes && typeof defaultModes === 'object') {
@@ -159,7 +163,7 @@ export const saveProjectConfigHandler: Handler<'save_project_config'> = (_ctx, c
         conn.send({
           type: 'error',
           error: {
-            code: 'projectConfig.invalidDefaultMode',
+            code: 'workspaceSetting.invalidDefaultMode',
             params: { vendor: vendorId, mode: String(token) },
           },
         })
@@ -168,6 +172,6 @@ export const saveProjectConfigHandler: Handler<'save_project_config'> = (_ctx, c
     }
   }
 
-  const config = saveProjectConfig(msg.projectPath, msg.config)
-  conn.send({ type: 'project_config', projectPath: msg.projectPath, config })
+  const config = saveWorkspaceSetting(msg.projectPath, msg.config)
+  conn.send({ type: 'workspace_setting', projectPath: msg.projectPath, config })
 }

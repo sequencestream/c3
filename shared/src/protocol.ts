@@ -457,12 +457,23 @@ export interface ProjectSandboxConfig {
 }
 
 /**
+ * Git commit strategy for `start_development` in a workspace (2026-06-10).
+ * - `current-branch`: the dev agent runs directly in the project checkout on its
+ *   current branch — no worktree is created.
+ * - `worktree`: the dev agent runs in an isolated git worktree branched from the
+ *   workspace's {@link WorkspaceSetting.defaultMainBranch} (existing isolation path).
+ */
+export const GIT_COMMIT_MODES = ['current-branch', 'worktree'] as const
+export type GitCommitMode = (typeof GIT_COMMIT_MODES)[number]
+
+/**
  * Per-project (workspace) configuration, keyed by resolved project path in
  * {@link SystemSettings.projectConfigs}. Each project holds its own copy of the
- * 6 workspace-level knobs (including sandbox) — independent of every other
- * project's values. Absent or partial entries fall back to the normalized defaults.
+ * workspace-level knobs (including sandbox and git commit strategy) — independent
+ * of every other project's values. Absent or partial entries fall back to the
+ * normalized defaults.
  */
-export interface ProjectConfig {
+export interface WorkspaceSetting {
   /**
    * Per-vendor default permission mode map (2026-06-07-017).
    * Each vendor gets its own {@link ModeToken}, validated against that vendor's
@@ -497,6 +508,18 @@ export interface ProjectConfig {
    * by name. Absent or undefined ⇒ sandboxing is not configured (equivalent
    * to disabled). The system's sandboxes list is in {@link SystemSettings.sandboxes}. */
   sandbox?: ProjectSandboxConfig
+  /**
+   * Git commit strategy for `start_development` (2026-06-10). See
+   * {@link GitCommitMode}. Absent ⇒ `current-branch` (backward compatible with
+   * pre-2026-06-10 configs, normalized on read).
+   */
+  gitCommitMode?: GitCommitMode
+  /**
+   * Base / merge-target branch used when {@link gitCommitMode} is `worktree` —
+   * new worktrees branch from it. Optional; absent ⇒ branch from current HEAD.
+   * The settings form auto-detects it (origin/HEAD → current HEAD) on open.
+   */
+  defaultMainBranch?: string
 }
 
 /**
@@ -526,40 +549,40 @@ export interface SystemSettings {
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean
   /**
-   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. The server
+   * @deprecated 2026-06-07 — moved to per-project {@link WorkspaceSetting}. The server
    * no longer writes this field; kept for backward-compatible typecheck of the web
    * UI which has not yet been migrated to the project-level config model.
    * TODO: remove after SettingsPanel is migrated to project-level config (next task).
-   * Prefer the per-project getters (`loadProjectConfig`) for authoritative values.
+   * Prefer the per-project getters (`loadWorkspaceSetting`) for authoritative values.
    */
   defaultMode?: ModeToken
   /**
-   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * @deprecated 2026-06-07 — moved to per-project {@link WorkspaceSetting}. See
    * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
    */
   consensus?: ConsensusConfig
   /**
-   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * @deprecated 2026-06-07 — moved to per-project {@link WorkspaceSetting}. See
    * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
    */
   devSkill?: string
   /**
-   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * @deprecated 2026-06-07 — moved to per-project {@link WorkspaceSetting}. See
    * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
    */
   maxRoundsPerStage?: number
   /**
-   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. See
+   * @deprecated 2026-06-07 — moved to per-project {@link WorkspaceSetting}. See
    * {@link SystemSettings.defaultMode} deprecation note for the migration plan.
    */
   maxSpeechChars?: number
   /**
-   * @deprecated 2026-06-07 — moved to per-project {@link ProjectConfig}. The server
+   * @deprecated 2026-06-07 — moved to per-project {@link WorkspaceSetting}. The server
    * no longer writes this field; kept for backward-compatible typecheck of the web
    * UI which has not yet been migrated to the project-level skillRepos config.
    * TODO: remove after SettingsPanel is migrated to project-level config (next task).
-   * Prefer the per-project getters (`loadProjectConfig`) for authoritative values.
-   * @see ProjectConfig.skillRepos
+   * Prefer the per-project getters (`loadWorkspaceSetting`) for authoritative values.
+   * @see WorkspaceSetting.skillRepos
    */
   skillRepos?: SkillRepoConfig[]
   /**
@@ -593,12 +616,15 @@ export interface SystemSettings {
   sandboxes?: SystemSandboxDef[]
   /**
    * Per-project (workspace) configuration map, keyed by resolved project path.
-   * Each entry holds the project's own {@link ProjectConfig} — the 5 workspace-level knobs
-   * (`defaultMode`, `consensus`, `devSkill`, `maxRoundsPerStage`, `maxSpeechChars`)
-   * that were previously global. A project absent from this map falls back to the
-   * normalized defaults. Absent/empty ⇒ no project has customised settings yet.
+   * Each entry holds the project's own {@link WorkspaceSetting} — the workspace-level
+   * knobs (`defaultMode`, `consensus`, `devSkill`, `maxRoundsPerStage`,
+   * `maxSpeechChars`, `gitCommitMode`, `defaultMainBranch`, sandbox) that were
+   * previously global. A project absent from this map falls back to the normalized
+   * defaults. Absent/empty ⇒ no project has customised settings yet.
+   * NOTE: the on-disk key stays `projectConfigs` for backward compatibility even
+   * after the type was renamed `ProjectConfig → WorkspaceSetting` (2026-06-10).
    */
-  projectConfigs?: Record<string, ProjectConfig>
+  projectConfigs?: Record<string, WorkspaceSetting>
 }
 
 /** One agent's vote on a pending permission request during consensus voting. */
@@ -870,7 +896,7 @@ export type CodexApprovalPolicy = 'never' | 'on-failure' | 'on-request'
  * Dual-policy config for Codex sessions, replacing the single `ModeToken`
  * for the `codex` vendor. The two axes are orthogonal: `sandboxMode` gates
  * file-system write access and `approvalPolicy` controls the approval
- * frequency. When persisted in `ProjectConfig.defaultMode.codex` or
+ * frequency. When persisted in `WorkspaceSetting.defaultMode.codex` or
  * carried on the wire, the object form (this interface) is the new format;
  * the legacy string form (`ModeToken` like `'auto'`) is still accepted for
  * migration and degrades through the catalog + `gateToCodexPolicy`.
@@ -1794,10 +1820,10 @@ export type ClientToServer =
   | { type: 'get_settings' }
   /** Replace the system configuration; server normalizes and echoes `settings`. */
   | { type: 'save_settings'; settings: SystemSettings }
-  /** Load the project configuration for a workspace (reply: `project_config`). */
-  | { type: 'load_project_config'; projectPath: string }
-  /** Save the project configuration for a workspace. */
-  | { type: 'save_project_config'; projectPath: string; config: ProjectConfig }
+  /** Load a workspace's setting (reply: `workspace_setting`). */
+  | { type: 'load_workspace_setting'; projectPath: string }
+  /** Save a workspace's setting. */
+  | { type: 'save_workspace_setting'; projectPath: string; config: WorkspaceSetting }
   /** List a project's intents (reply: `intents`), optionally filtered by status. */
   | { type: 'list_intents'; projectPath: string; status?: IntentStatus }
   /**
@@ -2144,10 +2170,17 @@ export type ServerToClient =
       vendorModes?: Record<VendorId, VendorModeCatalog>
     }
   /**
-   * The normalized project configuration for a workspace (reply to
-   * `load_project_config` or `save_project_config`).
+   * The normalized workspace setting (reply to `load_workspace_setting` or
+   * `save_workspace_setting`). `detectedMainBranch` is the server-probed default
+   * branch (origin/HEAD → current HEAD; undefined when unresolvable) the form
+   * uses to pre-fill `defaultMainBranch` — present on the `load` reply only.
    */
-  | { type: 'project_config'; projectPath: string; config: ProjectConfig }
+  | {
+      type: 'workspace_setting'
+      projectPath: string
+      config: WorkspaceSetting
+      detectedMainBranch?: string
+    }
   /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
   | { type: 'intents'; projectPath: string; items: Intent[] }
   /**

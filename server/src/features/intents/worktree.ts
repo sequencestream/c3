@@ -124,6 +124,31 @@ export function readBranch(worktreePath: string): string | null {
   return branch === 'HEAD' ? null : branch
 }
 
+/**
+ * Detect a repository's default branch for pre-filling the workspace setting.
+ *
+ * Resolution order:
+ *  1. `origin/HEAD` — the remote's advertised default (`git symbolic-ref … →
+ *     origin/main`, stripped to `main`).
+ *  2. The current local HEAD branch (via {@link readBranch}).
+ *
+ * Returns `undefined` when neither resolves (detached HEAD with no remote, or a
+ * non-git path) — callers then leave `defaultMainBranch` unset. Synchronous.
+ */
+export function detectDefaultBranch(projectPath: string): string | undefined {
+  const sym = execGit(projectPath, [
+    'symbolic-ref',
+    '--quiet',
+    '--short',
+    'refs/remotes/origin/HEAD',
+  ])
+  if (sym.code === 0) {
+    const short = sym.stdout.trim().replace(/^origin\//, '')
+    if (short) return short
+  }
+  return readBranch(projectPath) ?? undefined
+}
+
 // ---------------------------------------------------------------------------
 // Result type
 // ---------------------------------------------------------------------------
@@ -145,9 +170,11 @@ export interface CreateWorktreeResult {
  * - **Idempotent**: if the worktree already exists, returns its info without
  *   running any git command (safe to call repeatedly for resume).
  * - Creates parent directories on demand.
- * - Creates the branch from HEAD via `git worktree add -b`; if the branch
- *   already exists (e.g. orphaned from a partially cleaned-up worktree),
- *   falls back to `git worktree add <path> <branch>`.
+ * - Creates the branch via `git worktree add -b`. When `baseBranch` is given the
+ *   new branch is rooted there (`… add -b <branch> <path> <base>`); otherwise it
+ *   roots at the project's current HEAD. If the branch already exists (e.g.
+ *   orphaned from a partially cleaned-up worktree), falls back to
+ *   `git worktree add <path> <branch>`.
  *
  * Throws on git failure with a descriptive message so callers can catch and
  * communicate the error to the user (or stop the automation).
@@ -156,6 +183,7 @@ export function createWorktree(
   projectPath: string,
   intentId: string,
   title: string,
+  baseBranch?: string,
 ): CreateWorktreeResult {
   const worktreePath = getWorktreePath(projectPath, intentId)
 
@@ -178,8 +206,12 @@ export function createWorktree(
     throw new Error(`无法创建工作区临时目录: ${parent}`)
   }
 
-  // Try `git worktree add -b` to create the branch from HEAD.
-  const res = execGit(projectPath, ['worktree', 'add', '-b', branchName, worktreePath])
+  // Try `git worktree add -b` to create the branch. Root it at `baseBranch`
+  // when provided (the workspace's default main branch), else at current HEAD.
+  const addArgs = ['worktree', 'add', '-b', branchName, worktreePath]
+  const base = baseBranch?.trim()
+  if (base) addArgs.push(base)
+  const res = execGit(projectPath, addArgs)
 
   if (res.code === 0) {
     return { worktreePath, branchName }

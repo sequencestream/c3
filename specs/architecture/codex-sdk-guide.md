@@ -335,7 +335,7 @@ export const MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
 
 ### 默认模式持久化
 
-`ProjectConfig.defaultMode` 的类型是 `Record<VendorId, ModeToken | CodexPolicy>`。
+`WorkspaceSetting.defaultMode` 的类型是 `Record<VendorId, ModeToken | CodexPolicy>`。
 对于 Codex vendor，既可以存旧版字符串 token（`'auto'`），也可以存新版对象格式：
 
 ```ts

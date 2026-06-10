@@ -51,7 +51,7 @@ const emit = defineEmits<{
       />
       <button
         class="icon-btn project-config-btn"
-        :title="t('projectConfig.entry.tooltip')"
+        :title="t('workspaceSetting.entry.tooltip')"
         :disabled="!currentWorkspace"
         @click="emit('open-workspace-setting')"
       >

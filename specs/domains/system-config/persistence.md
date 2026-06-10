@@ -8,11 +8,11 @@
 `settings.json` 的所有写入必须经过 `server/src/kernel/config/store.ts` 暴露的锁包装
 （`withFileLock`），不得再各自直接 `writeAtomic` 写 `settings.json`。当前三个写入点：
 
-| 写入点                           | 行为                                                                  |
-| -------------------------------- | --------------------------------------------------------------------- |
-| `saveSettings(next)`             | 系统配置整体保存（agent/语言/时区等）                                 |
-| `saveProjectConfig(path, cfg)`   | 单个项目配置写入                                                      |
-| `loadProjectConfig` 迁移回写分支 | 旧全局默认值一次性 seed 到 per-project（经 `saveSettings`，非嵌套锁） |
+| 写入点                              | 行为                                                                  |
+| ----------------------------------- | --------------------------------------------------------------------- |
+| `saveSettings(next)`                | 系统配置整体保存（agent/语言/时区等）                                 |
+| `saveWorkspaceSetting(path, cfg)`   | 单个工作区设置写入                                                    |
+| `loadWorkspaceSetting` 迁移回写分支 | 旧全局默认值一次性 seed 到 per-project（经 `saveSettings`，非嵌套锁） |
 
 > `state.json`（ADR-0015 的 session→agent 绑定）是独立文件、单进程语义，**不**纳入此锁，
 > 仅共用 store 的 `writeAtomic`。
@@ -36,7 +36,7 @@
 写入时对**未携带**的字段保留磁盘已有值：
 
 - `projectConfigs`：`saveSettings` 中 `undefined ⇒ 保留磁盘整张表`；显式传入 ⇒ 逐项浅合并
-  `{...disk, ...next}`（别进程新增的项目存活，`next` 的显式项覆盖）。`saveProjectConfig`
+  `{...disk, ...next}`（别进程新增的项目存活，`next` 的显式项覆盖）。`saveWorkspaceSetting`
   只写入目标 `path` 单键，兄弟项目（含别进程刚加的）原样保留。
 - `degradationChain` / `socketAutoResume`：`undefined ⇒ 保留磁盘；显式 ⇒ 用传入值`。
 

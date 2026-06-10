@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * WorkspaceSetting.vue — 工作区配置页：编辑 5 项 workspace 级配置。
+ * WorkspaceSetting.vue — 工作区配置页：编辑 workspace 级配置。
  *
  * 编辑用本地草稿，打开时从 App 注入的服务端配置深拷贝而来，保存时整体上抛。
  * 沿用 SettingsPanel 的草稿编辑模式。
@@ -12,7 +12,7 @@ import type {
   CodexPolicy,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   CodexSandboxMode,
-  ProjectConfig,
+  WorkspaceSetting,
   ProjectSandboxConfig,
   SkillRepoConfig,
   SystemSandboxDef,
@@ -20,6 +20,7 @@ import type {
   VendorModeCatalog,
   ModeToken,
 } from '@ccc/shared/protocol'
+import { GIT_COMMIT_MODES } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 
@@ -39,7 +40,9 @@ const DEFAULT_SPEECH_CHARS = 300
 
 const props = defineProps<{
   open: boolean
-  projectConfig: ProjectConfig | null
+  workspaceSetting: WorkspaceSetting | null
+  /** Server-probed default branch, used to pre-fill `defaultMainBranch`. */
+  detectedMainBranch: string | null
   currentWorkspace: string | null
   vendorModes: Record<VendorId, VendorModeCatalog> | null
   /** System sandbox definitions — drives the sandbox name dropdown. */
@@ -48,7 +51,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  save: [config: ProjectConfig]
+  save: [config: WorkspaceSetting]
 }>()
 
 /**
@@ -70,7 +73,7 @@ function freshDefaultMode(
 /**
 /** Section heading for a vendor using the configured i18n label. */
 function vendorSectionLabel(v: VendorId): string {
-  return t(`projectConfig.defaultMode.section.${v}.label` as const)
+  return t(`workspaceSetting.defaultMode.section.${v}.label` as const)
 }
 
 /**
@@ -87,14 +90,16 @@ function loadDefaultMode(
   return freshDefaultMode(vendorModes)
 }
 
-// A local, editable copy of the project config; committed on Save.
-const draft = ref<ProjectConfig>({
+// A local, editable copy of the workspace setting; committed on Save.
+const draft = ref<WorkspaceSetting>({
   defaultMode: freshDefaultMode(null),
   devSkill: '',
   maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
   maxSpeechChars: DEFAULT_SPEECH_CHARS,
   consensus: { enabled: false, majority: false },
   skillRepos: [],
+  gitCommitMode: 'current-branch',
+  defaultMainBranch: '',
 })
 
 // Codex dual-policy draft (2026-06-08).
@@ -105,8 +110,15 @@ const draftCodexPolicy = ref<CodexPolicy>({
 
 // Re-seed the draft whenever the panel opens or fresh server config arrives.
 watch(
-  () => [props.open, props.projectConfig, props.vendorModes, props.systemSandboxes] as const,
-  ([open, config, vm, sandboxes]) => {
+  () =>
+    [
+      props.open,
+      props.workspaceSetting,
+      props.detectedMainBranch,
+      props.vendorModes,
+      props.systemSandboxes,
+    ] as const,
+  ([open, config, detected, vm, sandboxes]) => {
     if (!open) return
     draft.value = {
       defaultMode: loadDefaultMode(config?.defaultMode, vm),
@@ -118,6 +130,9 @@ watch(
         majority: config?.consensus?.majority ?? false,
       },
       skillRepos: config?.skillRepos ? config.skillRepos.map((r) => ({ ...r })) : [],
+      gitCommitMode: config?.gitCommitMode ?? 'current-branch',
+      // Pre-fill from the saved value, else the server-probed default branch.
+      defaultMainBranch: config?.defaultMainBranch ?? detected ?? '',
     }
     // Re-seed the sandbox draft from server config (sandboxDraft computed
     // wraps draft.value.sandbox, which starts undefined — the watch sets it).
@@ -152,13 +167,13 @@ watch(
   { immediate: true },
 )
 
-// Always-non-null defaultMode ref for the template (ProjectConfig.defaultMode is optional).
+// Always-non-null defaultMode ref for the template (WorkspaceSetting.defaultMode is optional).
 const draftDefaultMode = computed(
   () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto', opencode: 'build' },
 )
 
 /**
- * Always-non-null sandbox ref for the template (ProjectConfig.sandbox is optional).
+ * Always-non-null sandbox ref for the template (WorkspaceSetting.sandbox is optional).
  * Exported as `sandboxDraft` so v-model bindings don't trigger "possibly undefined"
  * even when sandbox hasn't been explicitly set.
  */
@@ -233,10 +248,13 @@ function onSave() {
   // Only emit sandbox when enabled (or has meaningful fields); the server
   // normalizeSandboxConfig also strips empty objects on persist.
   const sandbox = sandboxDraft.value.enabled ? sandboxDraft.value : undefined
+  // Trim the branch; empty ⇒ omit (server normalizes blank → undefined anyway).
+  const defaultMainBranch = draft.value.defaultMainBranch?.trim() || undefined
   emit('save', {
     ...draft.value,
-    defaultMode: defaultMode as ProjectConfig['defaultMode'],
+    defaultMode: defaultMode as WorkspaceSetting['defaultMode'],
     sandbox,
+    defaultMainBranch,
   })
 }
 
@@ -262,15 +280,17 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 <template>
   <div v-if="open" class="project-config-page">
     <div class="project-config-head">
-      <h2>{{ t('projectConfig.title.label') }}</h2>
+      <h2>{{ t('workspaceSetting.title.label') }}</h2>
       <button class="icon-btn" :title="t('common.action.close.tooltip')" @click="emit('close')">
         ✕
       </button>
     </div>
     <div class="project-config-body">
       <section class="project-config-section">
-        <p class="project-config-section-title">{{ t('projectConfig.defaultMode.title.label') }}</p>
-        <p class="project-config-hint">{{ t('projectConfig.defaultMode.hint') }}</p>
+        <p class="project-config-section-title">
+          {{ t('workspaceSetting.defaultMode.title.label') }}
+        </p>
+        <p class="project-config-hint">{{ t('workspaceSetting.defaultMode.hint') }}</p>
         <div v-for="v in VENDOR_ORDER" :key="v" class="project-config-row">
           <span class="project-config-row-label">{{ vendorSectionLabel(v) }}</span>
           <template v-if="v === 'codex'">
@@ -316,20 +336,22 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
       <section class="project-config-section">
         <div class="project-config-row">
           <span class="project-config-row-label">{{
-            t('projectConfig.devSkill.title.label')
+            t('workspaceSetting.devSkill.title.label')
           }}</span>
           <input
             v-model="draft.devSkill"
             class="project-config-field"
-            :placeholder="t('projectConfig.devSkill.placeholder')"
+            :placeholder="t('workspaceSetting.devSkill.placeholder')"
           />
         </div>
-        <p class="project-config-hint">{{ t('projectConfig.devSkill.hint') }}</p>
+        <p class="project-config-hint">{{ t('workspaceSetting.devSkill.hint') }}</p>
       </section>
 
       <section class="project-config-section">
         <div class="project-config-row">
-          <span class="project-config-row-label">{{ t('projectConfig.rounds.title.label') }}</span>
+          <span class="project-config-row-label">{{
+            t('workspaceSetting.rounds.title.label')
+          }}</span>
           <input
             v-model.number="draft.maxRoundsPerStage"
             class="project-config-field project-config-number"
@@ -339,14 +361,14 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
           />
         </div>
         <p class="project-config-hint">
-          {{ t('projectConfig.rounds.hint', { min: MIN_ROUNDS_PER_STAGE }) }}
+          {{ t('workspaceSetting.rounds.hint', { min: MIN_ROUNDS_PER_STAGE }) }}
         </p>
       </section>
 
       <section class="project-config-section">
         <div class="project-config-row">
           <span class="project-config-row-label">{{
-            t('projectConfig.speechChars.title.label')
+            t('workspaceSetting.speechChars.title.label')
           }}</span>
           <input
             v-model.number="draft.maxSpeechChars"
@@ -357,32 +379,67 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
           />
         </div>
         <p class="project-config-hint">
-          {{ t('projectConfig.speechChars.hint', { min: MIN_SPEECH_CHARS }) }}
+          {{ t('workspaceSetting.speechChars.hint', { min: MIN_SPEECH_CHARS }) }}
         </p>
       </section>
 
       <section class="project-config-section">
-        <p class="project-config-section-title">{{ t('projectConfig.consensus.title.label') }}</p>
-        <i18n-t keypath="projectConfig.consensus.hint1.text" tag="p" class="project-config-hint">
+        <p class="project-config-section-title">
+          {{ t('workspaceSetting.gitCommitMode.title.label') }}
+        </p>
+        <p class="project-config-hint">{{ t('workspaceSetting.gitCommitMode.hint') }}</p>
+        <div class="project-config-row">
+          <span class="project-config-row-label">{{
+            t('workspaceSetting.gitCommitMode.title.label')
+          }}</span>
+          <select v-model="draft.gitCommitMode" class="mode-select" data-testid="git-commit-mode">
+            <option v-for="m in GIT_COMMIT_MODES" :key="m" :value="m">
+              {{
+                m === 'worktree'
+                  ? t('workspaceSetting.gitCommitMode.option.worktree.label')
+                  : t('workspaceSetting.gitCommitMode.option.currentBranch.label')
+              }}
+            </option>
+          </select>
+        </div>
+        <div class="project-config-row">
+          <span class="project-config-row-label">{{
+            t('workspaceSetting.defaultMainBranch.title.label')
+          }}</span>
+          <input
+            v-model="draft.defaultMainBranch"
+            class="project-config-field"
+            :placeholder="t('workspaceSetting.defaultMainBranch.placeholder')"
+            data-testid="default-main-branch"
+          />
+        </div>
+        <p class="project-config-hint">{{ t('workspaceSetting.defaultMainBranch.hint') }}</p>
+      </section>
+
+      <section class="project-config-section">
+        <p class="project-config-section-title">
+          {{ t('workspaceSetting.consensus.title.label') }}
+        </p>
+        <i18n-t keypath="workspaceSetting.consensus.hint1.text" tag="p" class="project-config-hint">
           <template #other
-            ><em>{{ t('projectConfig.consensus.hint1.other') }}</em></template
+            ><em>{{ t('workspaceSetting.consensus.hint1.other') }}</em></template
           >
         </i18n-t>
-        <i18n-t keypath="projectConfig.consensus.hint2.text" tag="p" class="project-config-hint">
+        <i18n-t keypath="workspaceSetting.consensus.hint2.text" tag="p" class="project-config-hint">
           <template #ask
-            ><strong>{{ t('projectConfig.consensus.hint2.ask') }}</strong></template
+            ><strong>{{ t('workspaceSetting.consensus.hint2.ask') }}</strong></template
           >
           <template #you
-            ><em>{{ t('projectConfig.consensus.hint2.you') }}</em></template
+            ><em>{{ t('workspaceSetting.consensus.hint2.you') }}</em></template
           >
           <template #on
-            ><em>{{ t('projectConfig.consensus.hint2.on') }}</em></template
+            ><em>{{ t('workspaceSetting.consensus.hint2.on') }}</em></template
           >
         </i18n-t>
         <div v-if="draft.consensus" class="project-config-row">
           <label class="project-config-toggle">
             <input v-model="draft.consensus.enabled" type="checkbox" />
-            {{ t('projectConfig.consensus.toggle.label') }}
+            {{ t('workspaceSetting.consensus.toggle.label') }}
           </label>
           <label class="project-config-toggle">
             <input
@@ -390,20 +447,22 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
               type="checkbox"
               data-testid="project-config-consensus-majority"
             />
-            {{ t('projectConfig.consensus.majority.label') }}
+            {{ t('workspaceSetting.consensus.majority.label') }}
           </label>
         </div>
       </section>
 
       <section class="project-config-section">
-        <p class="project-config-section-title">{{ t('projectConfig.skillRepos.title.label') }}</p>
-        <p class="project-config-hint">{{ t('projectConfig.skillRepos.hint') }}</p>
+        <p class="project-config-section-title">
+          {{ t('workspaceSetting.skillRepos.title.label') }}
+        </p>
+        <p class="project-config-hint">{{ t('workspaceSetting.skillRepos.hint') }}</p>
         <!-- Skills mount silently into every supported vendor at the configured ref's head. -->
         <div
           v-if="!draft.skillRepos || draft.skillRepos.length === 0"
           class="project-config-hint skill-repos-empty"
         >
-          {{ t('projectConfig.skillRepos.empty') }}
+          {{ t('workspaceSetting.skillRepos.empty') }}
         </div>
         <div
           v-for="r in draft.skillRepos ?? []"
@@ -414,14 +473,14 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
           <input
             v-model="r.id"
             class="agent-field skill-repo-name"
-            :placeholder="t('projectConfig.skillRepos.id.placeholder')"
+            :placeholder="t('workspaceSetting.skillRepos.id.placeholder')"
             data-testid="skill-repo-id"
           />
           <input
             v-model="r.repo"
             class="agent-field"
-            :placeholder="t('projectConfig.skillRepos.repo.placeholder')"
-            :title="t('projectConfig.skillRepos.repo.parseHelp')"
+            :placeholder="t('workspaceSetting.skillRepos.repo.placeholder')"
+            :title="t('workspaceSetting.skillRepos.repo.parseHelp')"
             data-testid="skill-repo-repo"
             @paste="onRepoPaste($event, r.id)"
           />
@@ -429,23 +488,23 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             <input
               v-model="r.ref"
               class="agent-field"
-              :placeholder="t('projectConfig.skillRepos.ref.placeholder')"
+              :placeholder="t('workspaceSetting.skillRepos.ref.placeholder')"
               data-testid="skill-repo-ref"
             />
             <span v-if="missingRef(r)" class="field-error" data-testid="skill-repo-ref-error">{{
-              t('projectConfig.skillRepos.ref.required')
+              t('workspaceSetting.skillRepos.ref.required')
             }}</span>
           </div>
           <input
             v-model="r.subpath"
             class="agent-field"
-            :placeholder="t('projectConfig.skillRepos.subpath.placeholder')"
+            :placeholder="t('workspaceSetting.skillRepos.subpath.placeholder')"
             data-testid="skill-repo-subpath"
             @input="onSubpathInput(r)"
           />
           <button
             class="icon-btn"
-            :title="t('projectConfig.skillRepos.remove.tooltip')"
+            :title="t('workspaceSetting.skillRepos.remove.tooltip')"
             data-testid="skill-repo-remove"
             @click="removeSkillRepo(r.id)"
           >
@@ -453,7 +512,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
           </button>
         </div>
         <button class="agent-add" data-testid="project-config-add-skill-repo" @click="addSkillRepo">
-          {{ t('projectConfig.skillRepos.add.label') }}
+          {{ t('workspaceSetting.skillRepos.add.label') }}
         </button>
       </section>
 
@@ -463,8 +522,8 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         class="project-config-section"
         data-testid="project-config-sandbox"
       >
-        <p class="project-config-section-title">{{ t('projectConfig.sandbox.title.label') }}</p>
-        <p class="project-config-hint">{{ t('projectConfig.sandbox.hint') }}</p>
+        <p class="project-config-section-title">{{ t('workspaceSetting.sandbox.title.label') }}</p>
+        <p class="project-config-hint">{{ t('workspaceSetting.sandbox.hint') }}</p>
 
         <label class="project-config-toggle">
           <input
@@ -474,13 +533,13 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             :false-value="undefined"
             data-testid="project-config-sandbox-enabled"
           />
-          {{ t('projectConfig.sandbox.enable.label') }}
+          {{ t('workspaceSetting.sandbox.enable.label') }}
         </label>
 
         <template v-if="sandboxDraft.enabled">
           <div class="project-config-row">
             <span class="project-config-row-label">{{
-              t('projectConfig.sandbox.name.label')
+              t('workspaceSetting.sandbox.name.label')
             }}</span>
             <select
               v-model="sandboxDraft.sandbox"
@@ -488,7 +547,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
               data-testid="project-config-sandbox-name"
             >
               <option value="" disabled>
-                {{ t('projectConfig.sandbox.name.placeholder') }}
+                {{ t('workspaceSetting.sandbox.name.placeholder') }}
               </option>
               <option v-for="sb in props.systemSandboxes" :key="sb.name" :value="sb.name">
                 {{ sb.name }}
@@ -498,26 +557,26 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 
           <div class="project-config-row">
             <span class="project-config-row-label">{{
-              t('projectConfig.sandbox.networkDisabled.label')
+              t('workspaceSetting.sandbox.networkDisabled.label')
             }}</span>
             <input v-model="sandboxDraft.networkDisabled" type="checkbox" />
           </div>
 
           <div class="project-config-row">
             <span class="project-config-row-label">{{
-              t('projectConfig.sandbox.memoryLimitOverride.label')
+              t('workspaceSetting.sandbox.memoryLimitOverride.label')
             }}</span>
             <input
               v-model="sandboxDraft.memoryLimitOverride"
               class="project-config-field"
-              :placeholder="t('projectConfig.sandbox.memoryLimitOverride.placeholder')"
+              :placeholder="t('workspaceSetting.sandbox.memoryLimitOverride.placeholder')"
               data-testid="project-config-sandbox-memory"
             />
           </div>
 
           <div class="project-config-row">
             <span class="project-config-row-label">{{
-              t('projectConfig.sandbox.cpuLimitOverride.label')
+              t('workspaceSetting.sandbox.cpuLimitOverride.label')
             }}</span>
             <input
               v-model.number="sandboxDraft.cpuLimitOverride"
@@ -525,19 +584,19 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
               type="number"
               min="0"
               step="0.5"
-              :placeholder="t('projectConfig.sandbox.cpuLimitOverride.placeholder')"
+              :placeholder="t('workspaceSetting.sandbox.cpuLimitOverride.placeholder')"
               data-testid="project-config-sandbox-cpu"
             />
           </div>
 
           <div class="project-config-row">
             <span class="project-config-row-label">{{
-              t('projectConfig.sandbox.imageOverride.label')
+              t('workspaceSetting.sandbox.imageOverride.label')
             }}</span>
             <input
               v-model="sandboxDraft.imageOverride"
               class="project-config-field"
-              :placeholder="t('projectConfig.sandbox.imageOverride.placeholder')"
+              :placeholder="t('workspaceSetting.sandbox.imageOverride.placeholder')"
               data-testid="project-config-sandbox-image"
             />
           </div>

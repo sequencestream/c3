@@ -23,7 +23,12 @@ import {
   removeViewer,
 } from '../../runs.js'
 import { hasWorkspace, touchWorkspace } from '../../state.js'
-import { getDefaultMode, getDevSkill } from '../../kernel/config/index.js'
+import {
+  getDefaultMainBranch,
+  getDefaultMode,
+  getDevSkill,
+  getGitCommitMode,
+} from '../../kernel/config/index.js'
 import {
   getDefaultAgentId,
   resolveSessionAgentSwitch,
@@ -68,7 +73,7 @@ import {
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush, createGhPr } from '../../git.js'
-import { createWorktree } from './worktree.js'
+import { createWorktree, readBranch } from './worktree.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -460,33 +465,44 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     })
     return
   }
-  // ── Worktree isolation ─────────────────────────────────────────────────
-  // Create (or reuse) a git worktree at $TMPDIR/c3-worktrees/<project>/intent-<ID>
-  // so the dev agent works on an isolated branch instead of the main checkout.
-  // Idempotent: if the worktree already exists (dangling / resume), returns
-  // existing info without modifying git state.
-  let worktreePath: string
-  try {
-    const wt = createWorktree(proj, req.id, req.title)
-    worktreePath = wt.worktreePath
-    setBranchName(req.id, wt.branchName)
-  } catch (err) {
-    conn.send({
-      type: 'error',
-      error: {
-        code: 'intent.worktreeCreateFailed',
-        params: { message: err instanceof Error ? err.message : String(err) },
-      },
-    })
-    return
+  // ── Git commit strategy (2026-06-10) ───────────────────────────────────
+  // The workspace's `gitCommitMode` decides where the dev agent runs:
+  //  - `worktree`: create (or reuse) an isolated git worktree at
+  //    $TMPDIR/c3-worktrees/<project>/intent-<ID>, branched from the workspace's
+  //    default main branch. Idempotent on dangling / resume.
+  //  - `current-branch` (default): no worktree — develop in place on the project
+  //    checkout's current branch.
+  let effectiveCwd: string
+  if (getGitCommitMode(proj) === 'worktree') {
+    try {
+      const wt = createWorktree(proj, req.id, req.title, getDefaultMainBranch(proj))
+      effectiveCwd = wt.worktreePath
+      setBranchName(req.id, wt.branchName)
+    } catch (err) {
+      conn.send({
+        type: 'error',
+        error: {
+          code: 'intent.worktreeCreateFailed',
+          params: { message: err instanceof Error ? err.message : String(err) },
+        },
+      })
+      return
+    }
+  } else {
+    // current-branch: develop directly in the project checkout. Record the
+    // current branch so the intent's branch_name reflects where dev happens.
+    effectiveCwd = proj
+    const branch = readBranch(proj)
+    if (branch) setBranchName(req.id, branch)
   }
 
   const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   // Use the ORIGINAL project path for ensureRuntime so broadcasts (run:bound /
   // run:settled events) use the correct workspace scope. The agent SDK's CWD
-  // is overridden via devRt.effectiveCwd to point to the worktree.
+  // is overridden via devRt.effectiveCwd (the worktree, or the project checkout
+  // itself in current-branch mode).
   const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'session')
-  devRt.effectiveCwd = worktreePath
+  devRt.effectiveCwd = effectiveCwd
   const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
   const skill = getDevSkill(proj)
   const skillPrefix = skill ? `${skill} ` : ''

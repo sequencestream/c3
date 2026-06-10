@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * ProjectConfig.vue — 项目配置页：编辑 5 项 workspace 级配置。
+ * WorkspaceSetting.vue — 工作区配置页：编辑 5 项 workspace 级配置。
  *
  * 编辑用本地草稿，打开时从 App 注入的服务端配置深拷贝而来，保存时整体上抛。
  * 沿用 SettingsPanel 的草稿编辑模式。
@@ -256,39 +256,35 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
       <section class="project-config-section">
         <p class="project-config-section-title">{{ t('projectConfig.defaultMode.title.label') }}</p>
         <p class="project-config-hint">{{ t('projectConfig.defaultMode.hint') }}</p>
-        <div v-for="v in VENDOR_ORDER" :key="v" class="project-config-vendor-mode">
-          <p class="project-config-vendor-label">{{ vendorSectionLabel(v) }}</p>
-          <!-- Codex dual-policy config (2026-06-08): independent sandbox + approval dropdowns -->
+        <div v-for="v in VENDOR_ORDER" :key="v" class="project-config-row">
+          <span class="project-config-row-label">{{ vendorSectionLabel(v) }}</span>
           <template v-if="v === 'codex'">
-            <div class="codex-dual-policy">
-              <label class="codex-policy-field">
-                {{ t('codex.sandboxMode.label') }}
-                <select
-                  v-model="draftCodexPolicy.sandboxMode"
-                  class="mode-select"
-                  data-testid="default-mode-codex-sandbox"
-                >
-                  <option value="workspace-write">
-                    {{ t('codex.sandboxMode.workspaceWrite') }}
-                  </option>
-                  <option value="read-only">{{ t('codex.sandboxMode.readOnly') }}</option>
-                </select>
-              </label>
-              <label class="codex-policy-field">
-                {{ t('codex.approvalPolicy.label') }}
-                <select
-                  v-model="draftCodexPolicy.approvalPolicy"
-                  class="mode-select"
-                  data-testid="default-mode-codex-approval"
-                >
-                  <option value="on-request">{{ t('codex.approvalPolicy.onRequest') }}</option>
-                  <option value="on-failure">{{ t('codex.approvalPolicy.onFailure') }}</option>
-                  <option value="never">{{ t('codex.approvalPolicy.never') }}</option>
-                </select>
-              </label>
-            </div>
+            <label class="inline-field">
+              <span class="inline-field-label">{{ t('codex.sandboxMode.label') }}</span>
+              <select
+                v-model="draftCodexPolicy.sandboxMode"
+                class="mode-select"
+                data-testid="default-mode-codex-sandbox"
+              >
+                <option value="workspace-write">
+                  {{ t('codex.sandboxMode.workspaceWrite') }}
+                </option>
+                <option value="read-only">{{ t('codex.sandboxMode.readOnly') }}</option>
+              </select>
+            </label>
+            <label class="inline-field">
+              <span class="inline-field-label">{{ t('codex.approvalPolicy.label') }}</span>
+              <select
+                v-model="draftCodexPolicy.approvalPolicy"
+                class="mode-select"
+                data-testid="default-mode-codex-approval"
+              >
+                <option value="on-request">{{ t('codex.approvalPolicy.onRequest') }}</option>
+                <option value="on-failure">{{ t('codex.approvalPolicy.onFailure') }}</option>
+                <option value="never">{{ t('codex.approvalPolicy.never') }}</option>
+              </select>
+            </label>
           </template>
-          <!-- Claude / Opencode: catalog-based single-select -->
           <select
             v-else-if="props.vendorModes"
             v-model="draftDefaultMode[v]"
@@ -303,41 +299,51 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
       </section>
 
       <section class="project-config-section">
-        <p class="project-config-section-title">{{ t('projectConfig.devSkill.title.label') }}</p>
+        <div class="project-config-row">
+          <span class="project-config-row-label">{{
+            t('projectConfig.devSkill.title.label')
+          }}</span>
+          <input
+            v-model="draft.devSkill"
+            class="project-config-field"
+            :placeholder="t('projectConfig.devSkill.placeholder')"
+          />
+        </div>
         <p class="project-config-hint">{{ t('projectConfig.devSkill.hint') }}</p>
-        <input
-          v-model="draft.devSkill"
-          class="project-config-field"
-          :placeholder="t('projectConfig.devSkill.placeholder')"
-        />
       </section>
 
       <section class="project-config-section">
-        <p class="project-config-section-title">{{ t('projectConfig.rounds.title.label') }}</p>
+        <div class="project-config-row">
+          <span class="project-config-row-label">{{ t('projectConfig.rounds.title.label') }}</span>
+          <input
+            v-model.number="draft.maxRoundsPerStage"
+            class="project-config-field project-config-number"
+            type="number"
+            :min="MIN_ROUNDS_PER_STAGE"
+            step="1"
+          />
+        </div>
         <p class="project-config-hint">
           {{ t('projectConfig.rounds.hint', { min: MIN_ROUNDS_PER_STAGE }) }}
         </p>
-        <input
-          v-model.number="draft.maxRoundsPerStage"
-          class="project-config-field project-config-number"
-          type="number"
-          :min="MIN_ROUNDS_PER_STAGE"
-          step="1"
-        />
       </section>
 
       <section class="project-config-section">
-        <p class="project-config-section-title">{{ t('projectConfig.speechChars.title.label') }}</p>
+        <div class="project-config-row">
+          <span class="project-config-row-label">{{
+            t('projectConfig.speechChars.title.label')
+          }}</span>
+          <input
+            v-model.number="draft.maxSpeechChars"
+            class="project-config-field project-config-number"
+            type="number"
+            :min="MIN_SPEECH_CHARS"
+            step="1"
+          />
+        </div>
         <p class="project-config-hint">
           {{ t('projectConfig.speechChars.hint', { min: MIN_SPEECH_CHARS }) }}
         </p>
-        <input
-          v-model.number="draft.maxSpeechChars"
-          class="project-config-field project-config-number"
-          type="number"
-          :min="MIN_SPEECH_CHARS"
-          step="1"
-        />
       </section>
 
       <section class="project-config-section">
@@ -358,18 +364,20 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             ><em>{{ t('projectConfig.consensus.hint2.on') }}</em></template
           >
         </i18n-t>
-        <label v-if="draft.consensus" class="project-config-toggle">
-          <input v-model="draft.consensus.enabled" type="checkbox" />
-          {{ t('projectConfig.consensus.toggle.label') }}
-        </label>
-        <label v-if="draft.consensus" class="project-config-toggle">
-          <input
-            v-model="draft.consensus.majority"
-            type="checkbox"
-            data-testid="project-config-consensus-majority"
-          />
-          {{ t('projectConfig.consensus.majority.label') }}
-        </label>
+        <div v-if="draft.consensus" class="project-config-row">
+          <label class="project-config-toggle">
+            <input v-model="draft.consensus.enabled" type="checkbox" />
+            {{ t('projectConfig.consensus.toggle.label') }}
+          </label>
+          <label class="project-config-toggle">
+            <input
+              v-model="draft.consensus.majority"
+              type="checkbox"
+              data-testid="project-config-consensus-majority"
+            />
+            {{ t('projectConfig.consensus.majority.label') }}
+          </label>
+        </div>
       </section>
 
       <section class="project-config-section">
@@ -454,8 +462,10 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         </label>
 
         <template v-if="sandboxDraft.enabled">
-          <div class="project-config-vendor-mode">
-            <p class="project-config-vendor-label">{{ t('projectConfig.sandbox.name.label') }}</p>
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('projectConfig.sandbox.name.label')
+            }}</span>
             <select
               v-model="sandboxDraft.sandbox"
               class="mode-select"
@@ -470,15 +480,17 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             </select>
           </div>
 
-          <label class="project-config-toggle">
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('projectConfig.sandbox.networkDisabled.label')
+            }}</span>
             <input v-model="sandboxDraft.networkDisabled" type="checkbox" />
-            {{ t('projectConfig.sandbox.networkDisabled.label') }}
-          </label>
+          </div>
 
-          <div class="project-config-vendor-mode">
-            <p class="project-config-vendor-label">
-              {{ t('projectConfig.sandbox.memoryLimitOverride.label') }}
-            </p>
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('projectConfig.sandbox.memoryLimitOverride.label')
+            }}</span>
             <input
               v-model="sandboxDraft.memoryLimitOverride"
               class="project-config-field"
@@ -487,10 +499,10 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             />
           </div>
 
-          <div class="project-config-vendor-mode">
-            <p class="project-config-vendor-label">
-              {{ t('projectConfig.sandbox.cpuLimitOverride.label') }}
-            </p>
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('projectConfig.sandbox.cpuLimitOverride.label')
+            }}</span>
             <input
               v-model.number="sandboxDraft.cpuLimitOverride"
               class="project-config-field project-config-number"
@@ -502,10 +514,10 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             />
           </div>
 
-          <div class="project-config-vendor-mode">
-            <p class="project-config-vendor-label">
-              {{ t('projectConfig.sandbox.imageOverride.label') }}
-            </p>
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('projectConfig.sandbox.imageOverride.label')
+            }}</span>
             <input
               v-model="sandboxDraft.imageOverride"
               class="project-config-field"
@@ -594,15 +606,37 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   max-width: 120px;
 }
 
-.project-config-vendor-mode {
-  margin-bottom: 12px;
+/* --- Compact row layout (label + control on same line) --- */
+.project-config-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.project-config-row > .project-config-toggle {
+  margin-top: 0;
 }
 
-.project-config-vendor-label {
-  margin: 0 0 4px;
+.project-config-row-label {
+  flex-shrink: 0;
+  min-width: 100px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary, #a6adc8);
+}
+
+/* Inline field: label + control group used inside a row (e.g. Codex dual policy) */
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.inline-field-label {
+  font-size: 12px;
+  color: var(--text-secondary, #a6adc8);
+  white-space: nowrap;
 }
 
 .project-config-toggle {

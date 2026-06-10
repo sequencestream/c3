@@ -205,9 +205,9 @@ and the run proceeds on the host exactly as before.
 
 ### Scenario 2: system.sandboxes is empty / absent
 
-**Result: Project Settings hides sandbox UI.** When `sandboxes` is `[]` or
+**Result: Workspace setting hides sandbox UI.** When `sandboxes` is `[]` or
 absent, there are no system definitions to reference. The UI checks this array
-and hides the sandbox configuration section in the Project Config panel.
+and hides the sandbox configuration section in the Workspace Setting panel.
 
 ### Scenario 3: sandbox.enabled === false
 

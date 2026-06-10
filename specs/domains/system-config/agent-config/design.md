@@ -6,13 +6,13 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 
 ## Module split
 
-| Concern                         | File                                   | Notes                                                                                                                                                                              |
-| ------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                                                                                    |
-| Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12)                                                              |
-| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                                                                                   |
-| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                                                                                          |
-| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, save. Per-project controls (defaultMode, devSkill, rounds, speechChars, consensus) moved to `ProjectConfig.vue` |
+| Concern                         | File                                   | Notes                                                                                                                                                                                 |
+| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                                                                                       |
+| Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12)                                                                 |
+| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                                                                                      |
+| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                                                                                             |
+| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, save. Per-project controls (defaultMode, devSkill, rounds, speechChars, consensus) moved to `WorkspaceSetting.vue` |
 
 ## Persistence (`settings.ts`)
 

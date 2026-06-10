@@ -30,7 +30,7 @@ defineProps<{
 const emit = defineEmits<{
   'select-tab': [key: string]
   'open-settings': []
-  'open-project-config': []
+  'open-workspace-setting': []
   'add-workspace': [path: string]
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
@@ -53,7 +53,7 @@ const emit = defineEmits<{
         class="icon-btn project-config-btn"
         :title="t('projectConfig.entry.tooltip')"
         :disabled="!currentWorkspace"
-        @click="emit('open-project-config')"
+        @click="emit('open-workspace-setting')"
       >
         ⚙
       </button>

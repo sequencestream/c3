@@ -741,7 +741,10 @@ export function listDependencies(intentId: string): DependencyInfo[] {
       depends_on_id: string
       dep_type: string
       created_at: number
-    }>('SELECT depends_on_id, dep_type, created_at FROM intent_deps WHERE intent_id=? ORDER BY created_at ASC', intentId)
+    }>(
+      'SELECT depends_on_id, dep_type, created_at FROM intent_deps WHERE intent_id=? ORDER BY created_at ASC',
+      intentId,
+    )
     .map((r) => ({
       dependsOnId: r.depends_on_id,
       depType: r.dep_type as DepType,

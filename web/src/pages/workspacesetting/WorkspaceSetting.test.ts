@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import ProjectConfig from './ProjectConfig.vue'
+import WorkspaceSetting from './WorkspaceSetting.vue'
 import type {
   ProjectConfig as ProjectConfigType,
   SkillRepoConfig,
@@ -92,9 +92,9 @@ function cfg(overrides?: Partial<ProjectConfigType>): ProjectConfigType {
   }
 }
 
-describe('ProjectConfig.vue — per-vendor default mode', () => {
+describe('WorkspaceSetting.vue — per-vendor default mode', () => {
   it('renders a mode select for each vendor in correct order', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: null,
@@ -114,7 +114,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
   })
 
   it('seeds each vendor select from per-vendor project config', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -139,7 +139,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
   })
 
   it('defaults each vendor to the catalog defaultToken when config omits defaultMode', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: {},
@@ -165,7 +165,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
   })
 
   it('renders vendor-specific mode options (not the full cross-vendor set)', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: null,
@@ -194,8 +194,8 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
     expect(approvalOpts).toEqual(['on-request', 'on-failure', 'never'])
   })
 
-  it('renders a vendor section heading for each vendor', () => {
-    const w = mount(ProjectConfig, {
+  it('renders a row label for each config item', () => {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: null,
@@ -204,14 +204,14 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
         systemSandboxes: [],
       },
     })
-    // Section labels come from i18n; just confirm the CSS class exists.
-    const labels = w.findAll('.project-config-vendor-label')
-    expect(labels).toHaveLength(3)
+    // 3 vendor row-labels + devSkill + rounds + speechChars = 6
+    const labels = w.findAll('.project-config-row-label')
+    expect(labels).toHaveLength(6)
     expect(labels[0].text()).toBeTruthy()
   })
 
   it('emits the entire per-vendor map on save', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -232,7 +232,7 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
   })
 
   it('emits the edited per-vendor value on save after changing one vendor', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -253,9 +253,9 @@ describe('ProjectConfig.vue — per-vendor default mode', () => {
   })
 })
 
-describe('ProjectConfig.vue — dev skill', () => {
+describe('WorkspaceSetting.vue — dev skill', () => {
   it('seeds the dev skill input from project config', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -271,7 +271,7 @@ describe('ProjectConfig.vue — dev skill', () => {
   })
 
   it('defaults dev skill to empty string when config omits it', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: {},
@@ -286,9 +286,9 @@ describe('ProjectConfig.vue — dev skill', () => {
   })
 })
 
-describe('ProjectConfig.vue — discussion rounds per stage', () => {
+describe('WorkspaceSetting.vue — discussion rounds per stage', () => {
   it('seeds the rounds input from project config', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -303,7 +303,7 @@ describe('ProjectConfig.vue — discussion rounds per stage', () => {
   })
 
   it('defaults the rounds input when config omits the field', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg({ maxRoundsPerStage: undefined }),
@@ -317,7 +317,7 @@ describe('ProjectConfig.vue — discussion rounds per stage', () => {
   })
 
   it('emits the edited rounds value on save', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -335,9 +335,9 @@ describe('ProjectConfig.vue — discussion rounds per stage', () => {
   })
 })
 
-describe('ProjectConfig.vue — discussion speech character limit', () => {
+describe('WorkspaceSetting.vue — discussion speech character limit', () => {
   it('seeds the speech-chars input from project config', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -352,7 +352,7 @@ describe('ProjectConfig.vue — discussion speech character limit', () => {
   })
 
   it('defaults the speech-chars input when config omits the field', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg({ maxSpeechChars: undefined }),
@@ -366,7 +366,7 @@ describe('ProjectConfig.vue — discussion speech character limit', () => {
   })
 
   it('emits the edited speech-chars value on save', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -384,9 +384,9 @@ describe('ProjectConfig.vue — discussion speech character limit', () => {
   })
 })
 
-describe('ProjectConfig.vue — consensus majority toggle', () => {
+describe('WorkspaceSetting.vue — consensus majority toggle', () => {
   it('seeds the majority checkbox from project config', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -401,7 +401,7 @@ describe('ProjectConfig.vue — consensus majority toggle', () => {
   })
 
   it('defaults the majority checkbox to false when config omits it', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: { consensus: { enabled: true } },
@@ -417,7 +417,7 @@ describe('ProjectConfig.vue — consensus majority toggle', () => {
   })
 
   it('emits the toggled majority value on save', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -433,9 +433,9 @@ describe('ProjectConfig.vue — consensus majority toggle', () => {
   })
 })
 
-describe('ProjectConfig.vue — save emits full payload', () => {
+describe('WorkspaceSetting.vue — save emits full payload', () => {
   it('emits the entire draft on save', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -461,7 +461,7 @@ describe('ProjectConfig.vue — save emits full payload', () => {
   })
 })
 
-describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
+describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => {
   const configWithSkillRepos: ProjectConfigType = {
     ...cfg(),
     skillRepos: [
@@ -480,7 +480,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
   }
 
   it('renders a row per skill repo when projectConfig carries skillRepos', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: configWithSkillRepos,
@@ -494,7 +494,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
   })
 
   it('shows an empty hint when skillRepos is empty', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -507,7 +507,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
   })
 
   it('adds a new row on + Add skill repo', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: cfg(),
@@ -522,7 +522,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
   })
 
   it('removes a row on click', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: configWithSkillRepos,
@@ -538,7 +538,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
   })
 
   it('shows ref required error when ref is empty', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: {
@@ -562,7 +562,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
   })
 
   it('renders only id/repo/ref/subpath fields (no vendor/trust/pin controls)', () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: configWithSkillRepos,
@@ -577,7 +577,7 @@ describe('ProjectConfig.vue — external skill repos (ADR-0016/0017)', () => {
   })
 
   it('carries the edited skillRepos into the Save payload', async () => {
-    const w = mount(ProjectConfig, {
+    const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         projectConfig: configWithSkillRepos,

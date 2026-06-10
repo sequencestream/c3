@@ -247,4 +247,4 @@ describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003
   })
 })
 
-// Skill-repo tests moved to ProjectConfig.test.ts (ADR-0016/0017 migration)
+// Skill-repo tests moved to WorkspaceSetting.test.ts (ADR-0016/0017 migration)

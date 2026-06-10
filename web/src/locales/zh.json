@@ -1294,10 +1294,10 @@
   },
   "projectConfig": {
     "title": {
-      "label": "项目设置"
+      "label": "工作区设置"
     },
     "entry": {
-      "tooltip": "项目设置"
+      "tooltip": "工作区设置"
     },
     "defaultMode": {
       "title": {

@@ -12,10 +12,10 @@ HOST_HTTP="8929"
 HOST_SSH="2424"
 HOSTNAME="gitlab.local"
 
-# 卷目录（宿主机路径）
-VOL_CONFIG="${HOME}/gitlab-compose/volumes/config"
-VOL_LOGS="${HOME}/gitlab-compose/volumes/logs"
-VOL_DATA="${HOME}/gitlab-compose/volumes/data"
+# Docker named volumes（macOS bind mount 不支持 Linux SGID 位，导致 reconfigure 失败）
+VOL_CONFIG="gitlab-config"
+VOL_LOGS="gitlab-logs"
+VOL_DATA="gitlab-data"
 
 # ---- helpers ----
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -28,8 +28,13 @@ if ! command -v docker &>/dev/null; then
   exit 1
 fi
 
-# ---- ensure volume dirs ----
-mkdir -p "$VOL_CONFIG" "$VOL_LOGS" "$VOL_DATA"
+# ---- ensure docker volumes exist ----
+for vol in "$VOL_CONFIG" "$VOL_LOGS" "$VOL_DATA"; do
+  if ! docker volume inspect "$vol" &>/dev/null; then
+    echo ">>> 创建 Docker volume: $vol"
+    docker volume create "$vol"
+  fi
+done
 
 # ---- pull image if missing ----
 if ! docker image inspect "$IMAGE" &>/dev/null; then
@@ -76,6 +81,12 @@ docker run -d \
   -v "${VOL_DATA}:/var/opt/gitlab" \
   -e GITLAB_OMNIBUS_CONFIG="external_url 'http://${HOSTNAME}:${HOST_HTTP}'; gitlab_rails['gitlab_shell_ssh_port']=${HOST_SSH};" \
   "$IMAGE"
+
+# ---- post-start: ensure SGID on repos dir (mitigate race with reconfigure) ----
+# macOS virtiofs 不支持 SGID，但 Docker volume (ext4) 支持；容器内 reconfigure 前 chmod 即可
+echo ">>> 等待 GitLab 初始化..."
+sleep 5
+docker exec "$CONTAINER_NAME" chmod 2770 /var/opt/gitlab/git-data/repositories 2>/dev/null || true
 
 echo ""
 green "GitLab 容器已创建并启动。"

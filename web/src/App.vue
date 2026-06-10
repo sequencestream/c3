@@ -17,7 +17,7 @@ import Discussions from './pages/discussions/Discussions.vue'
 import Schedules from './pages/schedules/Schedules.vue'
 import WorkCenter from './pages/workcenter/WorkCenter.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
-import ProjectConfigPage from './pages/projectconfig/ProjectConfig.vue'
+import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import type { ApprovalRequest } from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import {
@@ -553,9 +553,9 @@ const vendorModes = ref<Record<VendorId, VendorModeCatalog> | null>(null)
 // `skill_load_approval_resolve` and clears it.
 const skillApprovalRequest = ref<ApprovalRequest | null>(null)
 
-// ---- Project config ----
-const projectConfigOpen = ref(false)
-const currentProjectConfig = ref<ProjectConfigType | null>(null)
+// ---- Workspace setting ----
+const workspaceSettingOpen = ref(false)
+const currentWorkspaceSetting = ref<ProjectConfigType | null>(null)
 
 // First-class OpenCode server reachability (2026-06-07-003): a snapshot rides every
 // connection's `ready`, and each up/down/retrying transition pushes `opencode_status`.
@@ -611,16 +611,16 @@ function openSettings() {
   client?.send({ type: 'get_settings' })
 }
 
-function openProjectConfig() {
-  projectConfigOpen.value = true
+function openWorkspaceSetting() {
+  workspaceSettingOpen.value = true
   const path = currentWorkspace.value
   if (path) client?.send({ type: 'load_project_config', projectPath: path })
 }
 
-function saveProjectConfig(config: ProjectConfigType) {
+function saveWorkspaceSetting(config: ProjectConfigType) {
   const path = currentWorkspace.value
   if (path) client?.send({ type: 'save_project_config', projectPath: path, config })
-  projectConfigOpen.value = false
+  workspaceSettingOpen.value = false
 }
 
 function saveSettings(settings: SystemSettings) {
@@ -775,9 +775,9 @@ function handleMessage(msg: ServerToClient) {
   switch (msg.type) {
     case 'ready':
       workspaces.value = msg.workspaces
-      // Close project config on reconnect — workspace may have changed.
-      projectConfigOpen.value = false
-      currentProjectConfig.value = null
+      // Close workspace setting on reconnect — workspace may have changed.
+      workspaceSettingOpen.value = false
+      currentWorkspaceSetting.value = null
       applyStatuses(msg.statuses)
       // Restore the persisted current workspace (or fall back to most-recent),
       // then load its sessions for the sidebar.
@@ -927,7 +927,7 @@ function handleMessage(msg: ServerToClient) {
       availableCommands.value = msg.commands
       break
     case 'project_config':
-      currentProjectConfig.value = msg.config
+      currentWorkspaceSetting.value = msg.config
       break
     case 'settings':
       serverSettings.value = msg.settings
@@ -1373,8 +1373,8 @@ function selectWorkspace(path: string) {
   if (fx.noop) return
   currentWorkspace.value = path
   persistCurrentWorkspace()
-  projectConfigOpen.value = false
-  currentProjectConfig.value = null
+  workspaceSettingOpen.value = false
+  currentWorkspaceSetting.value = null
   if (fx.refreshSessions) refreshSessions(path)
   if (fx.enterConsole) switchToConsoleTab()
 }
@@ -2008,7 +2008,7 @@ function dismissSkillApproval() {
     @select-tab="onSelectTab"
     @update:view-mode="setViewMode"
     @open-settings="openSettings"
-    @open-project-config="openProjectConfig"
+    @open-workspace-setting="openWorkspaceSetting"
     @add-workspace="addWorkspace"
     @select-workspace="selectWorkspace"
     @remove-workspace="removeWorkspace"
@@ -2204,14 +2204,14 @@ function dismissSkillApproval() {
     @set-ui-lang="setLocale"
   />
 
-  <ProjectConfigPage
-    :open="projectConfigOpen"
-    :project-config="currentProjectConfig"
+  <WorkspaceSettingPage
+    :open="workspaceSettingOpen"
+    :project-config="currentWorkspaceSetting"
     :current-workspace="currentWorkspace"
     :vendor-modes="vendorModes"
     :system-sandboxes="serverSettings?.sandboxes ?? []"
-    @close="projectConfigOpen = false"
-    @save="saveProjectConfig"
+    @close="workspaceSettingOpen = false"
+    @save="saveWorkspaceSetting"
   />
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>

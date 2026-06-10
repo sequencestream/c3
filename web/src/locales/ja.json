@@ -1295,10 +1295,10 @@
   },
   "projectConfig": {
     "title": {
-      "label": "プロジェクト設定"
+      "label": "ワークスペース設定"
     },
     "entry": {
-      "tooltip": "プロジェクト設定"
+      "tooltip": "ワークスペース設定"
     },
     "defaultMode": {
       "title": {

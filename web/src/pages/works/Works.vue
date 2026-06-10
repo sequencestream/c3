@@ -38,9 +38,9 @@ defineProps<{
   activeSession: string | null
   activeTitle: string
   /** The active session's resolved agent vendor, for the title vendor dot. */
-  activeVendor?: VendorId | null
+  vendor?: VendorId | null
   /** Same-vendor agent switcher data for the active session (ADR-0015); null ⇒ no switcher. */
-  activeAgentSwitch?: SessionAgentSwitch | null
+  agentSwitch?: SessionAgentSwitch | null
   /** Per-vendor session-lifecycle capability ledger (ADR-0011), gating row actions. */
   vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
   /** Live OpenCode server reachability (2026-06-07-003), drives the list offline warning. */
@@ -123,8 +123,8 @@ defineExpose({
     <SessionTitleBar
       v-if="hasActiveSession"
       :active-title="activeTitle"
-      :vendor="activeVendor"
-      :agent-switch="activeAgentSwitch"
+      :vendor="vendor"
+      :agent-switch="agentSwitch"
       :mode="mode"
       :codex-policy="codexPolicy"
       :mode-options="modeOptions"

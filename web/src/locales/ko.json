@@ -1295,10 +1295,10 @@
   },
   "projectConfig": {
     "title": {
-      "label": "프로젝트 설정"
+      "label": "워크스페이스 설정"
     },
     "entry": {
-      "tooltip": "프로젝트 설정"
+      "tooltip": "워크스페이스 설정"
     },
     "defaultMode": {
       "title": {

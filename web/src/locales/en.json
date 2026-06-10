@@ -614,7 +614,7 @@
     },
     "list": {
       "title": {
-        "label": "Sessions"
+        "label": "Work Sessions"
       },
       "refresh": {
         "tooltip": "Refresh sessions"
@@ -1294,10 +1294,10 @@
   },
   "projectConfig": {
     "title": {
-      "label": "Project Settings"
+      "label": "Workspace setting"
     },
     "entry": {
-      "tooltip": "Project settings"
+      "tooltip": "Workspace setting"
     },
     "defaultMode": {
       "title": {

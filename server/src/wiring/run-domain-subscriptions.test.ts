@@ -329,7 +329,12 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-1', lastDevSessionId: 'sess-m1', title: 'Test', projectPath: '/proj' } as Intent,
+      {
+        id: 'intent-1',
+        lastDevSessionId: 'sess-m1',
+        title: 'Test',
+        projectPath: '/proj',
+      } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
       id: 42,

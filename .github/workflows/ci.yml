@@ -1,3 +1,12 @@
+# CI — mandatory gates for every pull request.
+#
+# Four independent jobs so each is a distinct GitHub status check:
+#   lint / typecheck / build / e2e
+#
+# Set branch protection to require all four before merge (see CONTRIBUTING.md).
+#
+# `pnpm e2e` does its own `pnpm build` internally, so the `build` job and the
+# `e2e` job each build independently — no artifact passing, no coupling.
 name: CI
 
 on:
@@ -6,31 +15,83 @@ on:
   pull_request:
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 11
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # i18n quality gate + standard gates. Any non-zero exit fails the build.
-      - name: Typecheck
-        run: pnpm typecheck
+      - run: pnpm install --frozen-lockfile
 
       - name: Lint
         run: pnpm lint
 
       - name: i18n check
         run: pnpm i18n:check
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `pnpm e2e` runs pnpm build internally, then boots the server and runs
+      # all WebSocket-based e2e tests. No --no-build needed.
+      - name: Build + E2E
+        run: pnpm e2e

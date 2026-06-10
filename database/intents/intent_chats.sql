@@ -1,7 +1,7 @@
 -- intent_chats — 沟通会话映射表 (同时作为隐藏会话集 + 每个 project 的当前会话指针)
 -- 所属模块: intents
 -- 对应 Store: server/src/features/intents/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS intent_chats (
   session_id    TEXT PRIMARY KEY,    -- 会话 ID (c3SessionId 或 pendingId)

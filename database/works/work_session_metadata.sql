@@ -1,7 +1,7 @@
 -- work_session_metadata — 会话列表读路径的核心元数据投影表
 -- 所属模块: works
 -- 对应 Store: server/src/features/works/work-session-store.ts
--- 存储引擎: SQLite (c3.db)
+
 --
 -- 说明: 不存储 transcript / prompt / tool_use / tool_result 内容。
 -- native 存储才是 SoT；本表是可重建的缓存。

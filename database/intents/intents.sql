@@ -1,7 +1,7 @@
 -- intents — 意图 (需求/任务) 台账
 -- 所属模块: intents
 -- 对应 Store: server/src/features/intents/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS intents (
   id                  TEXT PRIMARY KEY,              -- 意图唯一标识 (UUID v4)

@@ -1,7 +1,7 @@
 -- wait_user_involve_events — 等待用户介入事件 (工具调用需要人工决策时创建)
 -- 所属模块: user-involve
 -- 对应 Store: server/src/features/user-involve/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,             -- 事件唯一标识 (UUID v4)

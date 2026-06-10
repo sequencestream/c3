@@ -1,7 +1,7 @@
 -- schedules — 定时任务 (cron + event-triggered)
 -- 所属模块: schedules
 -- 对应 Store: server/src/features/schedules/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS schedules (
   id                  TEXT PRIMARY KEY,                     -- 任务唯一标识 (UUID v4)

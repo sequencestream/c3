@@ -1,7 +1,7 @@
 -- discussion_agent_sessions — 讨论内 agent 到 vendor 会话的持久化映射 (支持 resume)
 -- 所属模块: discussions
 -- 对应 Store: server/src/features/discussions/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS discussion_agent_sessions (
   discussion_id TEXT NOT NULL,                  -- 讨论 ID (外键 → discussions.id)

@@ -1,7 +1,7 @@
 -- schedule_execution_logs — 定时任务执行历史
 -- 所属模块: schedules
 -- 对应 Store: server/src/features/schedules/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS schedule_execution_logs (
   id            TEXT PRIMARY KEY,                   -- 日志唯一标识 (UUID v4)

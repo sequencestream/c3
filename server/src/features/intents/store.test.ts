@@ -8,10 +8,12 @@ import {
   findIntents,
   getChatSession,
   getIntent,
+  insertDependency,
   insertIntents,
   isHiddenSession,
   isStoreAvailable,
   listChatSessions,
+  listDependencies,
   listHiddenSessions,
   listIntents,
   rebindChatSession,
@@ -26,6 +28,7 @@ import {
   setPrInfo,
   updateIntent,
   updateStatus,
+  upsertIntents,
 } from './store.js'
 import { emit, ensureRuntime, setOnEmit, removeRuntime } from '../../runs.js'
 
@@ -192,7 +195,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(8)
+    expect(version?.user_version).toBe(9)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -200,7 +203,7 @@ describe('intents CRUD', () => {
     expect(getIntent('old-1')?.module).toBe('')
   })
 
-  it('migrates to v8: adds git tracking columns (branch_name, commit hash, pr_id, pr_status), is idempotent', () => {
+  it('migrates to v9: adds dep_type + created_at to intent_deps, adds git tracking columns (branch_name, commit hash, pr_id, pr_status), is idempotent', () => {
     // Build a v7 schema (no git columns) with one historic row.
     const raw = getDb()!
     raw.exec(`
@@ -217,6 +220,11 @@ describe('intents CRUD', () => {
         created_at      INTEGER NOT NULL,
         updated_at      INTEGER NOT NULL,
         completed_at    INTEGER
+      );
+      CREATE TABLE intent_deps (
+        intent_id       TEXT NOT NULL,
+        depends_on_id   TEXT NOT NULL,
+        PRIMARY KEY (intent_id, depends_on_id)
       );
       PRAGMA user_version=7;
     `)
@@ -252,8 +260,12 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'latest_commit_hash')).toBe(true)
     expect(cols.some((c) => c.name === 'pr_id')).toBe(true)
     expect(cols.some((c) => c.name === 'pr_status')).toBe(true)
+    // intent_deps columns migrated from v8→v9.
+    const depsCols = raw.all<{ name: string }>('PRAGMA table_info(intent_deps)')
+    expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
+    expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(8)
+    expect(version?.user_version).toBe(9)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -400,6 +412,130 @@ describe('insertIntents — intra-batch dependencies', () => {
       ]),
     ).toThrow(/成环/)
     expect(listIntents(proj)).toEqual([])
+  })
+})
+
+describe('intent_deps dep_type', () => {
+  it('insertIntents inserts deps with dep_type blocks by default', () => {
+    const [a, b] = insertIntents(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+    ])
+    const deps = listDependencies(b.id)
+    expect(deps).toHaveLength(1)
+    expect(deps[0].dependsOnId).toBe(a.id)
+    expect(deps[0].depType).toBe('blocks')
+    expect(deps[0].createdAt).toBeGreaterThan(0)
+  })
+
+  it('upsertIntents inserts deps with dep_type blocks', () => {
+    const [a] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [b] = insertIntents(proj, [{ title: 'B', content: '', priority: 'P0' }])
+    // Update B to depend on A (via updateIntent).
+    updateIntent(b.id, { dependsOn: [a.id] })
+    const deps = listDependencies(b.id)
+    expect(deps).toHaveLength(1)
+    expect(deps[0].dependsOnId).toBe(a.id)
+    expect(deps[0].depType).toBe('blocks')
+  })
+
+  it('upsertIntents in upsert path inserts deps with dep_type blocks', () => {
+    const [a, b] = upsertIntents(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+    ])
+    const bDeps = listDependencies(b.id)
+    expect(bDeps).toHaveLength(1)
+    expect(bDeps[0].dependsOnId).toBe(a.id)
+    expect(bDeps[0].depType).toBe('blocks')
+    expect(bDeps[0].createdAt).toBeGreaterThan(0)
+  })
+
+  it('listDependencies returns empty for intent with no deps', () => {
+    const [a] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    expect(listDependencies(a.id)).toEqual([])
+  })
+
+  it('listDependencies returns multiple deps sorted by created_at', () => {
+    const [a] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [b] = insertIntents(proj, [{ title: 'B', content: '', priority: 'P0' }])
+    const [c] = insertIntents(proj, [{ title: 'C', content: '', priority: 'P0' }])
+    // Manually add deps via insertDependency.
+    insertDependency(c.id, a.id)
+    insertDependency(c.id, b.id)
+    const deps = listDependencies(c.id)
+    expect(deps).toHaveLength(2)
+    expect(deps[0].depType).toBe('blocks')
+    expect(deps[1].depType).toBe('blocks')
+  })
+
+  it('insertDependency defaults dep_type to blocks', () => {
+    const [a, b] = insertIntents(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0' },
+    ])
+    insertDependency(b.id, a.id)
+    const deps = listDependencies(b.id)
+    expect(deps).toHaveLength(1)
+    expect(deps[0].depType).toBe('blocks')
+  })
+
+  it('insertDependency accepts dep_type informs', () => {
+    const [a, b] = insertIntents(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0' },
+    ])
+    insertDependency(b.id, a.id, 'informs')
+    const deps = listDependencies(b.id)
+    expect(deps).toHaveLength(1)
+    expect(deps[0].depType).toBe('informs')
+  })
+
+  it('insertDependency accepts dep_type soft_after', () => {
+    const [a, b] = insertIntents(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0' },
+    ])
+    insertDependency(b.id, a.id, 'soft_after')
+    const deps = listDependencies(b.id)
+    expect(deps).toHaveLength(1)
+    expect(deps[0].depType).toBe('soft_after')
+  })
+
+  it('insertDependency is idempotent (INSERT OR IGNORE)', () => {
+    const [a, b] = insertIntents(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0' },
+    ])
+    insertDependency(b.id, a.id, 'blocks')
+    insertDependency(b.id, a.id, 'blocks') // second insert is ignored
+    const deps = listDependencies(b.id)
+    expect(deps).toHaveLength(1)
+  })
+
+  it('dep_type on existing deps has correct default after migration', () => {
+    const [a, b] = insertIntents(proj, [
+      { title: 'A', content: '', priority: 'P0' },
+      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+    ])
+    // Re-initialize store to simulate "re-migration" (idempotency check).
+    resetStoreForTests()
+    const deps = listDependencies(b.id)
+    expect(deps).toHaveLength(1)
+    expect(deps[0].depType).toBe('blocks')
+    expect(deps[0].createdAt).toBeGreaterThan(0)
+  })
+
+  it('cycle detection still works regardless of dep_type', () => {
+    expect(() =>
+      resolveBatchDependencies(
+        [
+          { dependsOnIndexes: [1] },
+          { dependsOnIndexes: [0] },
+        ],
+        ['id-0', 'id-1'],
+      ),
+    ).toThrow(/成环/)
   })
 })
 

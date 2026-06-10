@@ -13,6 +13,8 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import type {
+  DependencyInfo,
+  DepType,
   IntentSessionInfo,
   ProposedIntent,
   Intent,
@@ -22,7 +24,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 8
+const SCHEMA_VERSION = 9
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS intents (
@@ -48,6 +50,8 @@ CREATE INDEX IF NOT EXISTS idx_intent_project_status ON intents(project_path, st
 CREATE TABLE IF NOT EXISTS intent_deps (
   intent_id       TEXT NOT NULL,
   depends_on_id   TEXT NOT NULL,
+  dep_type        TEXT NOT NULL DEFAULT 'blocks' CHECK(dep_type IN ('blocks','informs','soft_after')),
+  created_at      INTEGER NOT NULL,
   PRIMARY KEY (intent_id, depends_on_id)
 );
 
@@ -153,6 +157,9 @@ function db(): Db | null {
     ensureColumn(d, 'intents', 'pr_status', 'TEXT')
     // v6 → v7: add `title` to intent_chats (nullable — fallback to 'New Intent' or first-prompt derivation on the client).
     ensureColumn(d, 'intent_chats', 'title', 'TEXT')
+    // v8 → v9: add dep_type + created_at to intent_deps (historic rows get defaults 'blocks' / 0).
+    ensureColumn(d, 'intent_deps', 'dep_type', "TEXT NOT NULL DEFAULT 'blocks'")
+    ensureColumn(d, 'intent_deps', 'created_at', 'INTEGER NOT NULL DEFAULT 0')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -412,9 +419,11 @@ export function insertIntents(projectPath: string, items: ProposedIntent[]): Int
       )
       for (const dep of deps[i]) {
         d.run(
-          'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)',
+          'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)',
           ids[i],
           dep,
+          'blocks',
+          createdAt,
         )
       }
     })
@@ -498,9 +507,11 @@ export function upsertIntents(projectPath: string, items: ProposedIntent[]): Int
           d.run('DELETE FROM intent_deps WHERE intent_id=?', ids[i])
           for (const dep of deps[i]) {
             d.run(
-              'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)',
+              'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)',
               ids[i],
               dep,
+              'blocks',
+              now,
             )
           }
         }
@@ -529,9 +540,11 @@ export function upsertIntents(projectPath: string, items: ProposedIntent[]): Int
         )
         for (const dep of deps[i]) {
           d.run(
-            'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)',
+            'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)',
             ids[i],
             dep,
+            'blocks',
+            createdAt,
           )
         }
       }
@@ -678,11 +691,46 @@ export function updateIntent(
     }
     if (patch.dependsOn !== undefined) {
       d.run('DELETE FROM intent_deps WHERE intent_id=?', id)
+      const now = Date.now()
       for (const dep of patch.dependsOn) {
-        d.run('INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id) VALUES (?,?)', id, dep)
+        d.run('INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)', id, dep, 'blocks', now)
       }
     }
   })
+}
+
+// ---- Intent dependency management ----
+
+/** Return all dependencies for an intent, with type metadata. */
+export function listDependencies(intentId: string): DependencyInfo[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<{ depends_on_id: string; dep_type: string; created_at: number }>(
+      'SELECT depends_on_id, dep_type, created_at FROM intent_deps WHERE intent_id=? ORDER BY created_at ASC',
+      intentId,
+    )
+    .map((r) => ({
+      dependsOnId: r.depends_on_id,
+      depType: r.dep_type as DepType,
+      createdAt: r.created_at,
+    }))
+}
+
+/** Insert a single dependency edge. dep_type defaults to 'blocks'. */
+export function insertDependency(
+  intentId: string,
+  dependsOnId: string,
+  depType: DepType = 'blocks',
+): void {
+  const d = requireDb()
+  d.run(
+    'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)',
+    intentId,
+    dependsOnId,
+    depType,
+    Date.now(),
+  )
 }
 
 // ---- Communication session mapping / hidden set ----

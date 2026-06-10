@@ -1,7 +1,7 @@
 -- discussions — 讨论线程元数据
 -- 所属模块: discussions
 -- 对应 Store: server/src/features/discussions/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS discussions (
   id              TEXT PRIMARY KEY,                  -- 讨论唯一标识 (UUID v4)

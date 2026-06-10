@@ -1148,6 +1148,26 @@ export type IntentRunStatus = 'running' | 'dangling' | 'idle'
  */
 export type IntentPrStatus = 'reviewing' | 'rejected' | 'failed' | 'merged'
 
+/**
+ * Dependency type for an intent_deps edge.
+ * - `blocks` — hard dependency: the dependent intent cannot proceed until this dep is done.
+ * - `informs` — knowledge dependency: information from the dep informs the dependent, but
+ *   does not block it. The dep's content / code provides context or reference.
+ * - `soft_after` — soft ordering: the dependent should run after the dep (avoid conflict),
+ *   but can proceed without it if needed.
+ */
+export type DepType = 'blocks' | 'informs' | 'soft_after'
+
+/** One dependency edge in intent_deps, with type metadata. */
+export interface DependencyInfo {
+  /** The id of the depended-on intent. */
+  dependsOnId: string
+  /** The type of this dependency relationship. */
+  depType: DepType
+  /** When this dependency was created (epoch ms). */
+  createdAt: number
+}
+
 /** One persisted intent, scoped to a project (workspace path). */
 export interface Intent {
   /** Stable uuid. */

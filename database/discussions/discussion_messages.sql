@@ -1,7 +1,7 @@
 -- discussion_messages — 讨论中的消息
 -- 所属模块: discussions
 -- 对应 Store: server/src/features/discussions/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS discussion_messages (
   id                TEXT PRIMARY KEY,    -- 消息唯一标识 (UUID v4)

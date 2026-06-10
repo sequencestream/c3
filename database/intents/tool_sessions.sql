@@ -1,7 +1,7 @@
 -- tool_sessions — 工具创建的会话 ID 集合 (持久化，跨重启存活)
 -- 所属模块: intents
 -- 对应 Store: server/src/features/intents/store.ts
--- 存储引擎: SQLite (c3.db)
+
 
 CREATE TABLE IF NOT EXISTS tool_sessions (
   session_id    TEXT PRIMARY KEY,    -- 工具创建的会话 ID

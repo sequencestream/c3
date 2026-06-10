@@ -8,13 +8,16 @@ import {
   findIntents,
   getChatSession,
   getIntent,
+  getIntentSession,
   insertDependency,
+  insertIntentSession,
   insertIntents,
   isHiddenSession,
   isStoreAvailable,
   listChatSessions,
   listDependencies,
   listHiddenSessions,
+  listIntentSessions,
   listIntents,
   rebindChatSession,
   renameChatSession,
@@ -195,7 +198,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(9)
+    expect(version?.user_version).toBe(10)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -203,7 +206,7 @@ describe('intents CRUD', () => {
     expect(getIntent('old-1')?.module).toBe('')
   })
 
-  it('migrates to v9: adds dep_type + created_at to intent_deps, adds git tracking columns (branch_name, commit hash, pr_id, pr_status), is idempotent', () => {
+  it('migrates to v10: adds dep_type + created_at to intent_deps, adds git tracking columns (branch_name, commit hash, pr_id, pr_status), is idempotent', () => {
     // Build a v7 schema (no git columns) with one historic row.
     const raw = getDb()!
     raw.exec(`
@@ -265,7 +268,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(9)
+    expect(version?.user_version).toBe(10)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -987,5 +990,79 @@ describe('canTransition (status guard, 7-state graph)', () => {
     expect(canTransition('failed', 'done')).toBe(false)
     expect(canTransition('failed', 'draft')).toBe(false)
     expect(canTransition('failed', 'blocked')).toBe(false)
+  })
+})
+
+describe('intent_sessions CRUD (dev session execution records)', () => {
+  it('inserts a record and returns auto-increment id', () => {
+    const id1 = insertIntentSession('intent-1', 'sess-001', 'claude', 'agent-a')
+    expect(id1).toBeGreaterThan(0)
+    const id2 = insertIntentSession('intent-1', 'sess-002', 'codex', 'agent-b')
+    expect(id2).toBeGreaterThan(id1) // auto-increment
+  })
+
+  it('inserts optional fields as null when omitted', () => {
+    const id = insertIntentSession('intent-2', 'sess-003', 'claude')
+    const got = getIntentSession(id)
+    expect(got).not.toBeNull()
+    expect(got!.agentId).toBeNull()
+    expect(got!.summary).toBeNull()
+    expect(got!.startAt).toBeNull()
+    expect(got!.endAt).toBeNull()
+    expect(got!.exitCode).toBeNull()
+    expect(got!.vendor).toBe('claude')
+    expect(got!.intentId).toBe('intent-2')
+    expect(got!.sessionId).toBe('sess-003')
+    expect(got!.createdAt).toBeGreaterThan(0)
+  })
+
+  it('listIntentSessions returns records for an intent, newest first', () => {
+    insertIntentSession('intent-3', 'sess-a', 'claude')
+    // slight delay to ensure ordering
+    insertIntentSession('intent-3', 'sess-b', 'opencode')
+    insertIntentSession('intent-3', 'sess-c', 'codex')
+
+    const list = listIntentSessions('intent-3')
+    expect(list).toHaveLength(3)
+    // newest first by created_at
+    expect(list[0].sessionId).toBe('sess-c')
+    expect(list[1].sessionId).toBe('sess-b')
+    expect(list[2].sessionId).toBe('sess-a')
+    // each record has the right vendor
+    expect(list[0].vendor).toBe('codex')
+    expect(list[1].vendor).toBe('opencode')
+    expect(list[2].vendor).toBe('claude')
+  })
+
+  it('listIntentSessions scopes by intent (no cross-contamination)', () => {
+    insertIntentSession('intent-A', 'sess-a1', 'claude')
+    insertIntentSession('intent-B', 'sess-b1', 'codex')
+
+    const aList = listIntentSessions('intent-A')
+    expect(aList).toHaveLength(1)
+    expect(aList[0].sessionId).toBe('sess-a1')
+
+    expect(listIntentSessions('intent-B')).toHaveLength(1)
+    expect(listIntentSessions('intent-Z')).toEqual([]) // non-existent intent
+  })
+
+  it('getIntentSession returns null for non-existent id', () => {
+    expect(getIntentSession(99999)).toBeNull()
+  })
+
+  it('persists across a cache reset (real db file)', () => {
+    const id = insertIntentSession('intent-4', 'sess-persist', 'claude')
+    resetDbForTests()
+    resetStoreForTests()
+    const got = getIntentSession(id)
+    expect(got).not.toBeNull()
+    expect(got!.sessionId).toBe('sess-persist')
+    expect(got!.intentId).toBe('intent-4')
+  })
+
+  it('inserts with agentId when provided', () => {
+    const id = insertIntentSession('intent-5', 'sess-004', 'codex', 'agent-x')
+    const got = getIntentSession(id)
+    expect(got!.agentId).toBe('agent-x')
   })
 })

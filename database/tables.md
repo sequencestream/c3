@@ -2,7 +2,7 @@
 
 所有表存储在单文件 SQLite 数据库 `~/.c3/c3.db` 中，通过 `node:sqlite` / `bun:sqlite` 内置驱动访问。Schema 在各 Store 模块中惰性创建 (`CREATE TABLE IF NOT EXISTS`)，迁移通过 `PRAGMA table_info` 列存在性检查做幂等演进。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 12 张表，5 个模块。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 13 张表，5 个模块。
 
 ## 基础设施
 
@@ -26,14 +26,15 @@
 | 10 | schedules | `workspace_mcp_configs` | [schedules/workspace_mcp_configs.sql](schedules/workspace_mcp_configs.sql) | `server/src/features/schedules/store.ts` | 每 workspace 的 MCP 配置 |
 | 11 | user-involve | `wait_user_involve_events` | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql) | `server/src/features/user-involve/store.ts` | 等待用户介入事件 |
 | 12 | works | `work_session_metadata` | [works/work_session_metadata.sql](works/work_session_metadata.sql) | `server/src/features/works/work-session-store.ts` | 会话列表元数据投影 |
+| 13 | intents | `intent_sessions` | [intents/intent_sessions.sql](intents/intent_sessions.sql) | `server/src/features/intents/store.ts` | intent dev session 执行记录 (审计追踪) |
 
 ## 模块说明
 
 ### intents
 
-意图管理的核心域。`intents` 是主表，记录每个需求/任务的生命周期；`intent_deps` 表达意图间的先后依赖；`intent_chats` 同时充当 per-project 沟通会话映射和隐藏会话过滤器；`tool_sessions` 持久化工具自动创建的会话 ID 集合。
+意图管理的核心域。`intents` 是主表，记录每个需求/任务的生命周期；`intent_deps` 表达意图间的先后依赖；`intent_chats` 同时充当 per-project 沟通会话映射和隐藏会话过滤器；`tool_sessions` 持久化工具自动创建的会话 ID 集合；`intent_sessions` 记录每次 intent dev session 的执行审计历史。
 
-Schema 版本: 9。v5→v6 完成了 `requirements*` → `intents*` 的就地表重命名迁移。v7→v8 新增 git 追踪字段: `branch_name`, `latest_commit_hash`, `pr_id`, `pr_status`。v8→v9 扩展 `intent_deps` 新增 `dep_type` (blocks/informs/soft_after) + `created_at`。
+Schema 版本: 10。v5→v6 完成了 `requirements*` → `intents*` 的就地表重命名迁移。v7→v8 新增 git 追踪字段: `branch_name`, `latest_commit_hash`, `pr_id`, `pr_status`。v8→v9 扩展 `intent_deps` 新增 `dep_type` (blocks/informs/soft_after) + `created_at`。v9→v10 新增 `intent_sessions` 表 (dev session 审计追踪)。
 
 ### discussions
 

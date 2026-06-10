@@ -1225,6 +1225,44 @@ export interface IntentSessionInfo {
 }
 
 /**
+ * Exit code for an intent dev session execution.
+ * - `success` — the dev session completed normally.
+ * - `failure` — the dev session errored / CI failed.
+ * - `cancelled` — the dev session was aborted by the user.
+ */
+export type IntentDevSessionExitCode = 'success' | 'failure' | 'cancelled'
+
+/**
+ * One intent dev session execution record (审计追踪).
+ * Each time an intent launches a dev session, a new row is appended (never overwritten).
+ * The primary key is an auto-increment integer; use `listIntentSessions(intentId)`
+ * (ordered by recency) for the per-intent history, and `getIntentSession(id)` for
+ * a single record detail.
+ */
+export interface IntentDevSession {
+  /** Auto-increment primary key. */
+  id: number
+  /** Owning intent id (UUID). */
+  intentId: string
+  /** The dev session's c3SessionId. */
+  sessionId: string
+  /** Which vendor executed the session. */
+  vendor: VendorId
+  /** JSON frontmatter + Markdown summary (nullable until the session completes). */
+  summary: string | null
+  /** Session start timestamp (epoch ms); null until started. */
+  startAt: number | null
+  /** Session end timestamp (epoch ms); null until finished. */
+  endAt: number | null
+  /** Exit code; null while the session is in-flight. */
+  exitCode: IntentDevSessionExitCode | null
+  /** The agent id that executed this session; null when unknown. */
+  agentId: string | null
+  /** Record creation timestamp (epoch ms). */
+  createdAt: number
+}
+
+/**
  * Lifecycle of the per-project automation orchestrator (a single background loop
  * that develops `automate` intents one by one, by priority + dependencies).
  * - `idle` — not running (never started, or stopped by the user).

@@ -15,6 +15,8 @@ import { resolve } from 'node:path'
 import type {
   DependencyInfo,
   DepType,
+  IntentDevSession,
+  IntentDevSessionExitCode,
   IntentSessionInfo,
   ProposedIntent,
   Intent,
@@ -24,7 +26,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 9
+const SCHEMA_VERSION = 10
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS intents (
@@ -67,6 +69,20 @@ CREATE TABLE IF NOT EXISTS tool_sessions (
   session_id    TEXT PRIMARY KEY,
   created_at    INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS intent_sessions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  intent_id     TEXT NOT NULL,
+  session_id    TEXT NOT NULL,
+  vendor        TEXT NOT NULL,
+  summary       TEXT,
+  start_at      INTEGER,
+  end_at        INTEGER,
+  exit_code     TEXT CHECK(exit_code IN ('success','failure','cancelled')),
+  agent_id      TEXT,
+  created_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_intent_session_intent ON intent_sessions(intent_id);
 `
 
 let schemaReady = false
@@ -912,4 +928,85 @@ export function deleteToolSessionRecord(sessionId: string): void {
   const d = db()
   if (!d) return
   d.run('DELETE FROM tool_sessions WHERE session_id=?', sessionId)
+}
+
+// ---- Intent dev session execution records (审计追踪) ----
+
+interface IntentSessionRow {
+  id: number
+  intent_id: string
+  session_id: string
+  vendor: string
+  summary: string | null
+  start_at: number | null
+  end_at: number | null
+  exit_code: string | null
+  agent_id: string | null
+  created_at: number
+}
+
+function toIntentDevSession(r: IntentSessionRow): IntentDevSession {
+  return {
+    id: r.id,
+    intentId: r.intent_id,
+    sessionId: r.session_id,
+    vendor: r.vendor as IntentDevSession['vendor'],
+    summary: r.summary,
+    startAt: r.start_at,
+    endAt: r.end_at,
+    exitCode: r.exit_code as IntentDevSessionExitCode | null,
+    agentId: r.agent_id,
+    createdAt: r.created_at,
+  }
+}
+
+/**
+ * Insert a new intent dev session record.
+ * Returns the auto-generated id.
+ */
+export function insertIntentSession(
+  intentId: string,
+  sessionId: string,
+  vendor: string,
+  agentId?: string,
+): number {
+  const d = requireDb()
+  const now = Date.now()
+  d.run(
+    `INSERT INTO intent_sessions (intent_id, session_id, vendor, agent_id, created_at)
+     VALUES (?,?,?,?,?)`,
+    intentId,
+    sessionId,
+    vendor,
+    agentId ?? null,
+    now,
+  )
+  const row = d.get<{ id: number }>('SELECT last_insert_rowid() AS id')
+  return Number(row!.id)
+}
+
+/**
+ * List dev session records for an intent, newest first.
+ * Returns `[]` when the db is unavailable.
+ */
+export function listIntentSessions(intentId: string): IntentDevSession[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<IntentSessionRow>(
+      'SELECT * FROM intent_sessions WHERE intent_id=? ORDER BY created_at DESC, id DESC',
+      intentId,
+    )
+    .map(toIntentDevSession)
+}
+
+/**
+ * Get a single intent dev session record by its primary key.
+ * Returns `null` when the db is unavailable or the record is not found.
+ */
+export function getIntentSession(id: number): IntentDevSession | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<IntentSessionRow>('SELECT * FROM intent_sessions WHERE id=?', id)
+  return row ? toIntentDevSession(row) : null
 }

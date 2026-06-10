@@ -511,6 +511,13 @@
       },
       "markDone": {
         "label": "Mark done"
+      },
+      "createPr": {
+        "label": "Create PR"
+      },
+      "pr": {
+        "label": "PR #{id}",
+        "tooltip": "Copy PR number"
       }
     },
     "automate": {
@@ -1087,7 +1094,8 @@
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "cannotStartDev": "Cannot start development from status \"{status}\".",
-      "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\"."
+      "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
+      "prCreateFailed": "PR creation failed: {detail}."
     },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",

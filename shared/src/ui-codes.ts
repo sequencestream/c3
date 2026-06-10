@@ -61,6 +61,10 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.illegalStatusTransition',
     params: ['from', 'to'],
   },
+  'intent.prCreateFailed': {
+    key: 'error.intent.prCreateFailed',
+    params: ['detail'],
+  },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

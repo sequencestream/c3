@@ -309,3 +309,62 @@ export async function commitAndPush(projectPath: string, message: string): Promi
 function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim().slice(0, 300)
 }
+
+// ---------------------------------------------------------------------------
+// PR creation with gh CLI
+// ---------------------------------------------------------------------------
+
+export interface CreatePrResult {
+  ok: boolean
+  prId?: string
+  prUrl?: string
+  error?: string
+}
+
+/**
+ * Create a GitHub Pull Request via the `gh` CLI.
+ *
+ * Runs `gh pr create --title <title> --body <body>` in `cwd` (the project root).
+ * On success, parses the output URL (e.g.
+ * `https://github.com/owner/repo/pull/123`) and extracts the PR number.
+ * Returns `{ ok, prId, prUrl }` on success, or `{ ok: false, error }` on failure
+ * (gh not installed, auth failure, no upstream, etc.).
+ *
+ * `headBranch` is optional — when omitted `gh` uses the current branch.
+ * `baseBranch` defaults to `main`.
+ */
+export async function createGhPr(
+  cwd: string,
+  title: string,
+  body: string,
+  headBranch?: string,
+  baseBranch = 'main',
+): Promise<CreatePrResult> {
+  const args = [
+    'pr', 'create',
+    '--title', title,
+    '--body', body,
+    '--base', baseBranch,
+  ]
+  if (headBranch) args.push('--head', headBranch)
+
+  const { code, stdout, stderr } = await git(cwd, args)
+  if (code !== 0) {
+    return { ok: false, error: oneLine(stderr || stdout) || 'gh pr create 失败' }
+  }
+
+  // `gh pr create` prints the PR URL to stdout, e.g.
+  //   https://github.com/owner/repo/pull/123
+  const url = stdout.trim()
+  const match = url.match(/\/pull\/(\d+)$/)
+  if (match) {
+    return { ok: true, prId: match[1], prUrl: url }
+  }
+
+  // Fallback: try to parse from stderr (older gh versions) or use the raw URL.
+  if (url) {
+    return { ok: true, prId: url, prUrl: url }
+  }
+
+  return { ok: false, error: 'gh pr create 输出未包含 PR URL' }
+}

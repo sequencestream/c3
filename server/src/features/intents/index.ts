@@ -66,7 +66,7 @@ import {
   stopAutomation,
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
-import { commitAndPush } from '../../git.js'
+import { commitAndPush, createGhPr } from '../../git.js'
 import { createWorktree } from './worktree.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -587,4 +587,74 @@ export const startAutomationHandler: Handler<'start_automation'> = (ctx, conn, m
 export const stopAutomationHandler: Handler<'stop_automation'> = (ctx, conn, msg) => {
   const proj = resolve(msg.projectPath)
   ctx.broadcastAutomation(stopAutomation(proj))
+}
+
+export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
+  const proj = resolve(msg.projectPath)
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  // Only allow PR creation for done intents (completed but no PR yet).
+  if (req.status !== 'done') {
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'intent.prCreateFailed',
+        params: { detail: `intent 状态为 ${req.status},需要 done` },
+      },
+    })
+    return
+  }
+  if (req.prId) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'intent.prCreateFailed',
+        params: { detail: `intent 已有 PR #${req.prId}` },
+      },
+    })
+    return
+  }
+
+  // Reuse the same PR creation logic as the orchestrator.
+  const headBranch = req.branchName ?? undefined
+  const bodyParts: string[] = [req.content]
+  if (req.dependsOn.length > 0) {
+    bodyParts.push('', '## 依赖需求')
+    for (const depId of req.dependsOn) {
+      const dep = getIntent(depId)
+      const status = dep?.status ?? 'unknown'
+      bodyParts.push(`- ${dep?.title ?? depId} (${status})`)
+    }
+  }
+  const body = bodyParts.join('\n')
+  const title = `feat: ${req.title}`
+
+  try {
+    const pr = await createGhPr(proj, title, body, headBranch)
+    if (pr.ok) {
+      setPrInfo(msg.intentId, pr.prId, 'reviewing')
+      ctx.broadcastIntents(req.projectPath)
+      conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })
+    } else {
+      conn.send({
+        type: 'error',
+        error: { code: 'intent.prCreateFailed', params: { detail: pr.error ?? '未知错误' } },
+      })
+    }
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'intent.prCreateFailed',
+        params: { detail: err instanceof Error ? err.message : String(err) },
+      },
+    })
+  }
 }

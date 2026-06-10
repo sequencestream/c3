@@ -1792,6 +1792,15 @@ function refineIntent(intentId: string) {
   })
 }
 
+function createPr(intentId: string) {
+  if (!intentsProject.value) return
+  client?.send({
+    type: 'create_pr',
+    projectPath: intentsProject.value,
+    intentId,
+  })
+}
+
 function startDevelopment(intentId: string, hasUnfinishedDeps: boolean) {
   if (!intentsProject.value) return
   if (hasUnfinishedDeps && !window.confirm(t('intent.startDev.confirmUnfinishedDeps'))) return
@@ -2086,6 +2095,7 @@ function dismissSkillApproval() {
         @open-dev="openDevSession"
         @set-status="setIntentStatus"
         @set-automate="setIntentAutomate"
+        @create-pr="createPr"
         @start-automation="startAutomation"
         @stop-automation="stopAutomation"
         @new-intent="newIntentChat"

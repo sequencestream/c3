@@ -41,7 +41,12 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'new-intent': []
+  'create-pr': [intentId: string]
 }>()
+
+function copyPrId(prId: string): void {
+  void navigator.clipboard.writeText(prId)
+}
 
 // Automation orchestrator UI state derived from the pushed status.
 const AUTO_RUNNING_STATES = new Set(['running', 'developing', 'fixing', 'awaiting_gate'])
@@ -274,6 +279,21 @@ function datePrefix(r: Intent): string {
               @click="emit('set-status', r.id, 'cancelled')"
             >
               {{ t('common.action.cancel.label') }}
+            </button>
+            <button
+              v-if="r.status === 'done' && !r.prId"
+              class="req-btn primary"
+              @click="emit('create-pr', r.id)"
+            >
+              {{ t('intent.action.createPr.label') }}
+            </button>
+            <button
+              v-if="r.prId"
+              class="req-btn pr-link"
+              :title="t('intent.action.pr.tooltip')"
+              @click="copyPrId(r.prId as string)"
+            >
+              {{ t('intent.action.pr.label', { id: r.prId }) }}
             </button>
             <button
               type="button"

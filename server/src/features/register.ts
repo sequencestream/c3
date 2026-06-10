@@ -51,6 +51,7 @@ import {
   startAutomationHandler,
   startDevelopment,
   stopAutomationHandler,
+  createPrHandler,
   updateIntentStatus,
 } from './intents/index.js'
 import {
@@ -124,6 +125,7 @@ export const handlerMap: HandlerMap = {
   set_intent_git_info: setIntentGitInfo,
   start_automation: startAutomationHandler,
   stop_automation: stopAutomationHandler,
+  create_pr: createPrHandler,
   // discussions
   list_discussions: listDiscussionsHandler,
   create_discussion: createDiscussionHandler,

@@ -76,6 +76,7 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'new-intent': []
+  'create-pr': [intentId: string]
   'select-intent-session': [sessionId: string]
   'new-intent-session': []
   'rename-intent-session': [sessionId: string, title: string]
@@ -115,6 +116,7 @@ defineExpose({
     @start-automation="emit('start-automation')"
     @stop-automation="emit('stop-automation')"
     @new-intent="emit('new-intent')"
+    @create-pr="(id: string) => emit('create-pr', id)"
   />
 
   <IntentSessionList

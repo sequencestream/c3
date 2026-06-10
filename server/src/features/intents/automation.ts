@@ -33,10 +33,10 @@
 import { randomUUID } from 'node:crypto'
 import type { AutomationStatus, Intent, RunEndReason, ServerToClient } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { getIntent, listIntents, setBranchName, setLastDevSession, updateStatus } from './store.js'
+import { getIntent, listIntents, setBranchName, setLastDevSession, setPrInfo, updateStatus } from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
 import { judgeCompletion } from './judge.js'
-import { commitAndPush, gitDiffStat, gitRecentLog } from '../../git.js'
+import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { getDevSkill, getDefaultMode } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { createWorktree, getWorktreePath, worktreeExists } from './worktree.js'
@@ -559,10 +559,22 @@ class AutomationController {
           return
         }
         if (commitResult === 'committed') {
+          // ── Commit succeeded → create PR (best-effort) ──
+          const prResult = await this._createPrForIntent(req).catch((err) => {
+            console.warn(`[c3:automation]「${req.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`)
+            return null
+          })
+          if (prResult?.ok) {
+            setPrInfo(req.id, prResult.prId, 'reviewing')
+            console.log(`[c3:automation]「${req.title}」PR #${prResult.prId} 已创建`)
+          } else if (prResult) {
+            console.warn(`[c3:automation]「${req.title}」PR 创建失败: ${prResult.error}`)
+          }
+
           updateStatus(req.id, 'done')
           this.status.completedIds.push(req.id)
           this.hooks.broadcastIntents(this.projectPath)
-          console.log(`[c3:automation]「${req.title}」已完成 → done (已提交)`)
+          console.log(`[c3:automation]「${req.title}」已完成 → done`)
           this._processing = false
           this._startNext()
           return
@@ -622,7 +634,18 @@ class AutomationController {
       }
 
       if (res.ok) {
-        // Commit succeeded after auto-fix.
+        // Commit succeeded after auto-fix. Create PR (best-effort).
+        const prResult = await this._createPrForIntent(fixReq).catch((err) => {
+          console.warn(`[c3:automation]「${fixReq.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`)
+          return null
+        })
+        if (prResult?.ok) {
+          setPrInfo(fixReq.id, prResult.prId, 'reviewing')
+          console.log(`[c3:automation]「${fixReq.title}」PR #${prResult.prId} 已创建`)
+        } else if (prResult) {
+          console.warn(`[c3:automation]「${fixReq.title}」PR 创建失败: ${prResult.error}`)
+        }
+
         updateStatus(fixReq.id, 'done')
         this.status.completedIds.push(fixReq.id)
         this.hooks.broadcastIntents(this.projectPath)
@@ -643,6 +666,41 @@ class AutomationController {
         `「${fixReq.title}」lint 修复异常:${err instanceof Error ? err.message : String(err)}`,
       )
     }
+  }
+
+  /**
+   * Create a GitHub Pull Request for a completed intent.
+   *
+   * Constructs the PR title and body from the intent's title, content, and
+   * dependency list, then calls `gh pr create` via the `createGhPr` git helper.
+   * The head branch is the intent's worktree branch (`req.branchName`, or the
+   * current branch as fallback). Returns the PR id and URL on success, or an
+   * error description on failure (gh not installed, auth failure, etc.).
+   *
+   * Called after `commitAndPush` succeeds in the automation orchestrator.
+   * Failures are logged but do NOT block the intent from being marked `done` —
+   * the code is already pushed; the user can create the PR manually.
+   */
+  private async _createPrForIntent(
+    req: Intent,
+  ): Promise<
+    | { ok: true; prId: string; prUrl: string }
+    | { ok: false; error: string }
+    | null
+  > {
+    const headBranch = req.branchName ?? undefined
+    const bodyParts: string[] = [req.content]
+    if (req.dependsOn.length > 0) {
+      bodyParts.push('', '## 依赖需求')
+      for (const depId of req.dependsOn) {
+        const dep = getIntent(depId)
+        const status = dep?.status ?? 'unknown'
+        bodyParts.push(`- ${dep?.title ?? depId} (${status})`)
+      }
+    }
+    const body = bodyParts.join('\n')
+    const title = `feat: ${req.title}`
+    return await createGhPr(this.projectPath, title, body, headBranch)
   }
 
   /**

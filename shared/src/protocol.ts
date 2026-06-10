@@ -1783,6 +1783,14 @@ export type ClientToServer =
   | { type: 'start_automation'; projectPath: string }
   /** Stop the project's automation orchestrator (aborts the current dev run). */
   | { type: 'stop_automation'; projectPath: string }
+  /**
+   * Create a GitHub Pull Request for a `done` intent that has no PR yet.
+   * The server runs `gh pr create`, sets `prId` and `prStatus='reviewing'`
+   * on success, or replies with `intent.prCreateFailed` on failure.
+   * Rejected if the intent is not `done`, already has a `prId`,
+   * or `gh` CLI is unavailable.
+   */
+  | { type: 'create_pr'; projectPath: string; intentId: string }
   /** List a project's discussions (reply: `discussions`), optionally filtered by status. */
   | { type: 'list_discussions'; projectPath: string; status?: DiscussionStatus }
   /**
@@ -2055,6 +2063,11 @@ export type ServerToClient =
    * the intent list's automation button reflects the live run.
    */
   | { type: 'automation_status'; status: AutomationStatus }
+  /**
+   * Reply to a `create_pr` request. Carries the PR id and URL on success.
+   * On failure the server sends a generic `error` with code `intent.prCreateFailed`.
+   */
+  | { type: 'create_pr_response'; prId: string; prUrl?: string }
   /**
    * A project's discussion list (reply to `list_discussions`/`open_discussion` entry, or a push
    * after a change). `runStates` is a live snapshot of which listed discussions have an active

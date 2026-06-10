@@ -511,6 +511,13 @@
       },
       "markDone": {
         "label": "标记完成"
+      },
+      "createPr": {
+        "label": "创建 PR"
+      },
+      "pr": {
+        "label": "PR #{id}",
+        "tooltip": "复制 PR 编号"
       }
     },
     "automate": {
@@ -1087,7 +1094,8 @@
       "renameChatSessionFailed": "重命名意图对话会话失败: {detail}。",
       "deleteChatSessionFailed": "删除意图对话会话失败: {detail}。",
       "cannotStartDev": "当前状态({status})不可启动开发。",
-      "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。"
+      "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
+      "prCreateFailed": "PR 创建失败: {detail}。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",

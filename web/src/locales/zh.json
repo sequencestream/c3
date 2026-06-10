@@ -574,8 +574,34 @@
       "completed": {
         "label": "已完成:"
       },
+      "updated": {
+        "label": "已更新:"
+      },
+      "branch": {
+        "label": "分支:"
+      },
+      "commit": {
+        "label": "提交:"
+      },
+      "pr": {
+        "label": "PR:"
+      },
       "dependsOn": {
         "label": "依赖:"
+      }
+    },
+    "prStatus": {
+      "reviewing": {
+        "label": "审核中"
+      },
+      "rejected": {
+        "label": "已拒绝"
+      },
+      "failed": {
+        "label": "失败"
+      },
+      "merged": {
+        "label": "已合并"
       }
     },
     "deps": {

@@ -575,8 +575,34 @@
       "completed": {
         "label": "완료:"
       },
+      "updated": {
+        "label": "업데이트:"
+      },
+      "branch": {
+        "label": "브랜치:"
+      },
+      "commit": {
+        "label": "커밋:"
+      },
+      "pr": {
+        "label": "PR:"
+      },
       "dependsOn": {
         "label": "의존:"
+      }
+    },
+    "prStatus": {
+      "reviewing": {
+        "label": "검토 중"
+      },
+      "rejected": {
+        "label": "거부됨"
+      },
+      "failed": {
+        "label": "실패"
+      },
+      "merged": {
+        "label": "병합됨"
       }
     },
     "deps": {

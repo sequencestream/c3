@@ -574,8 +574,34 @@
       "completed": {
         "label": "Completed:"
       },
+      "updated": {
+        "label": "Updated:"
+      },
+      "branch": {
+        "label": "Branch:"
+      },
+      "commit": {
+        "label": "Commit:"
+      },
+      "pr": {
+        "label": "PR:"
+      },
       "dependsOn": {
         "label": "Depends on:"
+      }
+    },
+    "prStatus": {
+      "reviewing": {
+        "label": "Reviewing"
+      },
+      "rejected": {
+        "label": "Rejected"
+      },
+      "failed": {
+        "label": "Failed"
+      },
+      "merged": {
+        "label": "Merged"
       }
     },
     "deps": {

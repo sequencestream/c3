@@ -575,8 +575,34 @@
       "completed": {
         "label": "Завершено:"
       },
+      "updated": {
+        "label": "Обновлено:"
+      },
+      "branch": {
+        "label": "Ветка:"
+      },
+      "commit": {
+        "label": "Коммит:"
+      },
+      "pr": {
+        "label": "PR:"
+      },
       "dependsOn": {
         "label": "Зависит от:"
+      }
+    },
+    "prStatus": {
+      "reviewing": {
+        "label": "На ревью"
+      },
+      "rejected": {
+        "label": "Отклонён"
+      },
+      "failed": {
+        "label": "Ошибка"
+      },
+      "merged": {
+        "label": "Слит"
       }
     },
     "deps": {

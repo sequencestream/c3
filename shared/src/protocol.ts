@@ -1137,6 +1137,17 @@ export type IntentStatus =
  */
 export type IntentRunStatus = 'running' | 'dangling' | 'idle'
 
+/**
+ * PR (Pull Request) lifecycle status for an intent.
+ * - `reviewing` — PR created, awaiting review.
+ * - `rejected` — review rejected (changes requested).
+ * - `failed` — CI / merge check failed.
+ * - `merged` — PR merged into target branch.
+ * - `null` — no PR has been created yet (or PR status is unknown).
+ * Independent of the intent's own `status` — a PR has its own lifecycle.
+ */
+export type IntentPrStatus = 'reviewing' | 'rejected' | 'failed' | 'merged'
+
 /** One persisted intent, scoped to a project (workspace path). */
 export interface Intent {
   /** Stable uuid. */
@@ -1169,6 +1180,14 @@ export interface Intent {
    * to render a "tracking" badge or a "dangling" warning next to an in_progress item.
    */
   runStatus: IntentRunStatus
+  /** Git branch name the dev session operates on; `null` when unknown. */
+  branchName: string | null
+  /** Latest known commit hash on the dev branch; `null` when unknown. */
+  latestCommitHash: string | null
+  /** PR / Merge Request id (e.g. GitHub PR number); `null` when no PR yet. */
+  prId: string | null
+  /** PR lifecycle status; `null` when no PR yet or status is unknown. */
+  prStatus: IntentPrStatus | null
 }
 
 /**
@@ -1690,6 +1709,18 @@ export type ClientToServer =
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
   | { type: 'set_intent_automate'; intentId: string; automate: boolean }
+  /**
+   * Set git-related info on an intent (branch name, commit hash, PR id, PR status).
+   * All fields are optional — only provided fields are updated.
+   */
+  | {
+      type: 'set_intent_git_info'
+      intentId: string
+      branchName?: string
+      latestCommitHash?: string
+      prId?: string
+      prStatus?: IntentPrStatus
+    }
   /** Start the project's automation orchestrator (develops `automate` intents). */
   | { type: 'start_automation'; projectPath: string }
   /** Stop the project's automation orchestrator (aborts the current dev run). */

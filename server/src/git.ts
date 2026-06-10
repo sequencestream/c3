@@ -66,6 +66,18 @@ function isGitRepo(dir: string): boolean {
 }
 
 /**
+ * Return the current git branch name for a repo directory, or `null` when the
+ * directory isn't a git repo, git is unavailable, or HEAD is detached.
+ */
+export async function getCurrentBranch(projectPath: string): Promise<string | null> {
+  const res = await git(projectPath, ['-C', projectPath, 'rev-parse', '--abbrev-ref', 'HEAD'])
+  if (res.code !== 0 || !res.stdout.trim()) return null
+  const branch = res.stdout.trim()
+  // HEAD detached → `rev-parse --abbrev-ref HEAD` returns "HEAD"
+  return branch === 'HEAD' ? null : branch
+}
+
+/**
  * Working-tree change summary for one repo: `git diff HEAD --stat` for tracked
  * edits PLUS the list of untracked new files (`git ls-files --others`), which a
  * bare `diff HEAD` omits — a dev agent creating new-but-uncommitted files is real

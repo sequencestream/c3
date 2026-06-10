@@ -47,6 +47,7 @@ import {
   refineIntent,
   renameIntentSession,
   setIntentAutomate,
+  setIntentGitInfo,
   startAutomationHandler,
   startDevelopment,
   stopAutomationHandler,
@@ -120,6 +121,7 @@ export const handlerMap: HandlerMap = {
   start_development: startDevelopment,
   update_intent_status: updateIntentStatus,
   set_intent_automate: setIntentAutomate,
+  set_intent_git_info: setIntentGitInfo,
   start_automation: startAutomationHandler,
   stop_automation: stopAutomationHandler,
   // discussions

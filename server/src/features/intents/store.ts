@@ -16,12 +16,13 @@ import type {
   IntentSessionInfo,
   ProposedIntent,
   Intent,
+  IntentPrStatus,
   IntentRunStatus,
   IntentStatus,
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS intents (
@@ -34,6 +35,10 @@ CREATE TABLE IF NOT EXISTS intents (
   module          TEXT NOT NULL DEFAULT '',
   last_dev_session_id TEXT,
   automate        INTEGER NOT NULL DEFAULT 0,
+  branch_name     TEXT,
+  latest_commit_hash TEXT,
+  pr_id           TEXT,
+  pr_status       TEXT,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL,
   completed_at    INTEGER
@@ -141,6 +146,11 @@ function db(): Db | null {
     ensureColumn(d, 'intents', 'completed_at', 'INTEGER')
     // v3 → v4: add `automate` (historic rows default to 0 — opt-in to automation).
     ensureColumn(d, 'intents', 'automate', 'INTEGER NOT NULL DEFAULT 0')
+    // v7 → v8: add git tracking fields (nullable — historic rows stay null).
+    ensureColumn(d, 'intents', 'branch_name', 'TEXT')
+    ensureColumn(d, 'intents', 'latest_commit_hash', 'TEXT')
+    ensureColumn(d, 'intents', 'pr_id', 'TEXT')
+    ensureColumn(d, 'intents', 'pr_status', 'TEXT')
     // v6 → v7: add `title` to intent_chats (nullable — fallback to 'New Intent' or first-prompt derivation on the client).
     ensureColumn(d, 'intent_chats', 'title', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
@@ -191,6 +201,10 @@ interface Row {
   module: string
   last_dev_session_id: string | null
   automate: number
+  branch_name: string | null
+  latest_commit_hash: string | null
+  pr_id: string | null
+  pr_status: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
@@ -218,6 +232,10 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     dependsOn: byId.get(r.id) ?? [],
     lastDevSessionId: r.last_dev_session_id,
     automate: r.automate === 1,
+    branchName: r.branch_name,
+    latestCommitHash: r.latest_commit_hash,
+    prId: r.pr_id,
+    prStatus: (r.pr_status ?? null) as IntentPrStatus | null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
@@ -374,8 +392,8 @@ export function insertIntents(projectPath: string, items: ProposedIntent[]): Int
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+           (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
         it.title,
@@ -386,6 +404,10 @@ export function insertIntents(projectPath: string, items: ProposedIntent[]): Int
         null,
         createdAt,
         createdAt,
+        null,
+        null,
+        null,
+        null,
         null,
       )
       for (const dep of deps[i]) {
@@ -487,8 +509,8 @@ export function upsertIntents(projectPath: string, items: ProposedIntent[]): Int
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
@@ -499,6 +521,10 @@ export function upsertIntents(projectPath: string, items: ProposedIntent[]): Int
           null,
           createdAt,
           createdAt,
+          null,
+          null,
+          null,
+          null,
           null,
         )
         for (const dep of deps[i]) {
@@ -577,6 +603,40 @@ export function setLastDevSession(id: string, sessionId: string): void {
   d.run(
     'UPDATE intents SET last_dev_session_id=?, updated_at=? WHERE id=?',
     sessionId,
+    Date.now(),
+    id,
+  )
+}
+
+/** Set the git branch name for an intent (called after dev session launch). */
+export function setBranchName(id: string, branchName: string): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intents SET branch_name=?, updated_at=? WHERE id=?',
+    branchName,
+    Date.now(),
+    id,
+  )
+}
+
+/** Set the latest known commit hash for an intent's dev branch. */
+export function setLatestCommitHash(id: string, commitHash: string): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intents SET latest_commit_hash=?, updated_at=? WHERE id=?',
+    commitHash,
+    Date.now(),
+    id,
+  )
+}
+
+/** Set PR id and PR status for an intent (called after PR creation). Both or neither. */
+export function setPrInfo(id: string, prId: string, prStatus: IntentPrStatus): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intents SET pr_id=?, pr_status=?, updated_at=? WHERE id=?',
+    prId,
+    prStatus,
     Date.now(),
     id,
   )

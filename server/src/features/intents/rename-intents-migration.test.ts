@@ -124,7 +124,13 @@ function expectTerminalSchema(raw: Db): void {
   const idx = indexes(raw)
   expect(idx.has('idx_intent_project_status')).toBe(true)
   expect(idx.has('idx_req_project_status')).toBe(false)
-  expect(userVersion(raw)).toBe(7)
+  // v8: git tracking columns are present.
+  const ic = cols(raw, 'intents')
+  expect(ic.has('branch_name')).toBe(true)
+  expect(ic.has('latest_commit_hash')).toBe(true)
+  expect(ic.has('pr_id')).toBe(true)
+  expect(ic.has('pr_status')).toBe(true)
+  expect(userVersion(raw)).toBe(8)
 }
 
 describe('v5 → v6 rename: fresh db starts at the intents terminal state', () => {

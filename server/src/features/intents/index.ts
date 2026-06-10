@@ -42,7 +42,10 @@ import {
   renameChatSession,
   deleteChatSession,
   setAutomate,
+  setBranchName,
   setChatSession,
+  setLatestCommitHash,
+  setPrInfo,
   updateStatus,
 } from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
@@ -63,7 +66,7 @@ import {
   stopAutomation,
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
-import { commitAndPush } from '../../git.js'
+import { commitAndPush, getCurrentBranch } from '../../git.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -466,6 +469,12 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // (ADR-0018 resident subs model).
   registerPendingDevLink(devId, req.id)
   void ctx.launchRun(devRt, devPrompt)
+
+  // Fire-and-forget: capture the current git branch and write it back so the
+  // intent's `branchName` is immediately available (e.g. for the UI detail pane).
+  getCurrentBranch(proj).then((branch) => {
+    if (branch) setBranchName(req.id, branch)
+  })
 }
 
 export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, msg) => {
@@ -518,6 +527,24 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
     return
   }
   setAutomate(msg.intentId, msg.automate)
+  ctx.broadcastIntents(req.projectPath)
+}
+
+export const setIntentGitInfo: Handler<'set_intent_git_info'> = (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (msg.branchName !== undefined) setBranchName(msg.intentId, msg.branchName)
+  if (msg.latestCommitHash !== undefined) setLatestCommitHash(msg.intentId, msg.latestCommitHash)
+  if (msg.prId !== undefined && msg.prStatus !== undefined) {
+    setPrInfo(msg.intentId, msg.prId, msg.prStatus)
+  }
   ctx.broadcastIntents(req.projectPath)
 }
 

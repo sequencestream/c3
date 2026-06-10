@@ -19,8 +19,11 @@ import {
   deleteChatSession,
   resetStoreForTests,
   resolveBatchDependencies,
+  setBranchName,
   setChatSession,
   setLastDevSession,
+  setLatestCommitHash,
+  setPrInfo,
   updateIntent,
   updateStatus,
 } from './store.js'
@@ -189,12 +192,102 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(7)
+    expect(version?.user_version).toBe(8)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
     expect(() => listIntents(proj)).not.toThrow()
     expect(getIntent('old-1')?.module).toBe('')
+  })
+
+  it('migrates to v8: adds git tracking columns (branch_name, commit hash, pr_id, pr_status), is idempotent', () => {
+    // Build a v7 schema (no git columns) with one historic row.
+    const raw = getDb()!
+    raw.exec(`
+      CREATE TABLE intents (
+        id              TEXT PRIMARY KEY,
+        project_path    TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        content         TEXT NOT NULL,
+        priority        TEXT NOT NULL,
+        status          TEXT NOT NULL,
+        module          TEXT NOT NULL DEFAULT '',
+        last_dev_session_id TEXT,
+        automate        INTEGER NOT NULL DEFAULT 0,
+        created_at      INTEGER NOT NULL,
+        updated_at      INTEGER NOT NULL,
+        completed_at    INTEGER
+      );
+      PRAGMA user_version=7;
+    `)
+    raw.run(
+      `INSERT INTO intents
+         (id, project_path, title, content, priority, status, module, last_dev_session_id, automate, created_at, updated_at, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      'old-v7',
+      proj,
+      'Pre-git',
+      'body',
+      'P0',
+      'todo',
+      '',
+      null,
+      0,
+      1,
+      1,
+      null,
+    )
+
+    // First access triggers the v7→v8 migration.
+    resetStoreForTests()
+    const got = getIntent('old-v7')
+    expect(got?.title).toBe('Pre-git') // historic row survives
+    expect(got?.branchName).toBeNull() // backfilled null
+    expect(got?.latestCommitHash).toBeNull()
+    expect(got?.prId).toBeNull()
+    expect(got?.prStatus).toBeNull()
+
+    const cols = raw.all<{ name: string }>('PRAGMA table_info(intents)')
+    expect(cols.some((c) => c.name === 'branch_name')).toBe(true)
+    expect(cols.some((c) => c.name === 'latest_commit_hash')).toBe(true)
+    expect(cols.some((c) => c.name === 'pr_id')).toBe(true)
+    expect(cols.some((c) => c.name === 'pr_status')).toBe(true)
+    const version = raw.get<{ user_version: number }>('PRAGMA user_version')
+    expect(version?.user_version).toBe(8)
+
+    // Idempotent: re-run must not throw.
+    resetStoreForTests()
+    expect(() => listIntents(proj)).not.toThrow()
+    expect(getIntent('old-v7')?.branchName).toBeNull()
+  })
+
+  it('round-trips git fields: setBranchName, setLatestCommitHash, setPrInfo + read-back', () => {
+    const [r] = insertIntents(proj, [{ title: 'GitFieldTest', content: '', priority: 'P1' }])
+    // New insertions default all git fields to null.
+    expect(r.branchName).toBeNull()
+    expect(r.latestCommitHash).toBeNull()
+    expect(r.prId).toBeNull()
+    expect(r.prStatus).toBeNull()
+
+    // Set branch name.
+    setBranchName(r.id, 'feat/my-feature')
+    let got = getIntent(r.id)
+    expect(got?.branchName).toBe('feat/my-feature')
+    expect(got?.prId).toBeNull() // other fields still null
+
+    // Set commit hash.
+    setLatestCommitHash(r.id, 'a1b2c3d')
+    got = getIntent(r.id)
+    expect(got?.latestCommitHash).toBe('a1b2c3d')
+    expect(got?.branchName).toBe('feat/my-feature') // earlier field preserved
+
+    // Set PR info.
+    setPrInfo(r.id, '42', 'reviewing')
+    got = getIntent(r.id)
+    expect(got?.prId).toBe('42')
+    expect(got?.prStatus).toBe('reviewing')
+    expect(got?.branchName).toBe('feat/my-feature') // earlier fields preserved
+    expect(got?.latestCommitHash).toBe('a1b2c3d')
   })
 })
 

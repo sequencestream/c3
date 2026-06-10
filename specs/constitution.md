@@ -53,6 +53,14 @@ runtime besides the Claude Agent SDK.
   handles Claude credentials.
 - **C-SEC-5** — The server binds to localhost only. Exposing it to a network requires an
   ADR and an explicit auth design.
+  _Annotation (2026-06-11, ADR-0023):_ that ADR + auth design now exists as an extensible
+  authentication abstraction (`AuthConfig`, provider union with `basic` first), and
+  authentication is formally the **mandatory precondition** for any non-loopback bind. This
+  clause is **not yet relaxed**: ADR-0023 establishes only the boundary and contracts (no
+  runtime middleware/login/hashing). Until a later task implements enforcement — "enabled
+  auth ⇒ may bind non-loopback" — the server stays localhost-only and the default remains
+  no auth. See [ADR-0023](architecture/adr/0023-auth-abstraction-network-exposure.md) and
+  the [auth domain](domains/core/auth/auth-overview.md).
 
 ## Coding principles
 

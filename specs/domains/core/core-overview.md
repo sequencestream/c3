@@ -17,6 +17,7 @@ project-scoped discussion store (persistence foundation).
 | [intent-management](intent-management/intent-management-overview.md)    | Project-scoped intent ledger (SQLite); read-only intent-communication agent; `save_intents` confirmation; launch the configurable development skill                          | WebSocket `/ws` (see shared protocol) | active  |
 | [discussion](discussion/discussion-overview.md)                         | Project-scoped discussion store (SQLite): discussions + ordered messages, with status lifecycle and conclusion. Persistence foundation; agent/orchestration/UI not yet built | Internal (no public API yet)          | partial |
 | [schedules](schedules/schedules-overview.md)                            | Time-based execution of commands and LLM prompts across workspaces; execution log recording and review                                                                       | WebSocket `/ws` (see shared protocol) | planned |
+| [auth](auth/auth-overview.md)                                           | Authentication abstraction: extensible provider union (`basic` first), session-token model, login/logout/401 messages — the precondition for network exposure (C-SEC-5)      | WebSocket `/ws` (see shared protocol) | contract-only |
 
 ## Shared context
 

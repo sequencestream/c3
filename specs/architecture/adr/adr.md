@@ -44,3 +44,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0020](0020-sandbox-driver-independent-kernel-module.md)        | SandboxDriver 作为独立 kernel 模块                                                                                                   | accepted   |
 | [0021](0021-system-project-two-tier-sandbox-config.md)          | 系统定义 + 项目选择双层配置                                                                                                          | accepted   |
 | [0022](0022-canonical-not-extended.md)                          | CanonicalMessage 不扩展（沙箱/Checkpoint 通过事件总线）                                                                              | accepted   |
+| [0023](0023-auth-abstraction-network-exposure.md)               | 认证抽象边界：网络暴露的强制前提（basic 为首个 provider）                                                                            | proposed   |

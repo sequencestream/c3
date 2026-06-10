@@ -522,6 +522,133 @@ export interface WorkspaceSetting {
   defaultMainBranch?: string
 }
 
+// ===========================================================================
+// Authentication (ADR-0023) — contract-only, zero runtime.
+//
+// An extensible auth abstraction so the single-admin `basic` provider this phase
+// does not weld one auth method into every layer. The session-token model and
+// the login/logout/unauthenticated messages are PROVIDER-NEUTRAL (reused by any
+// provider); a future OAuth/SSO provider only appends a `kind` arm to
+// {@link AuthProvider}. Runtime (middleware, login page, password hashing, token
+// signing/verification) is NOT in this phase. The matching zod schema +
+// type-pin lives server-side in `kernel/config/auth-schema.ts` (ADR-0009).
+// ===========================================================================
+
+/**
+ * Auth provider kinds — the extension point. Only `basic` is implemented this
+ * phase; `oauth`/`sso`/multi-user are reserved (add a `kind` here + an arm to
+ * {@link AuthProvider} + a server zod arm; nothing else changes — same shape as
+ * the ADR-0011 vendor extension point).
+ */
+export const AUTH_PROVIDER_KINDS = ['basic'] as const
+export type AuthProviderKind = (typeof AUTH_PROVIDER_KINDS)[number]
+
+/**
+ * The single-admin `basic` provider: a username + a password **hash** (a PHC
+ * string such as `$argon2id$...`, encoding its own algorithm/params/salt).
+ * The plaintext password is NEVER stored here — only the hash. Multi-user is a
+ * deferred capability (this provider models exactly one admin account).
+ */
+export interface BasicAuthProvider {
+  kind: 'basic'
+  /** The single admin account's login name. */
+  username: string
+  /** PHC-format password hash. Never plaintext. */
+  passwordHash: string
+}
+
+/**
+ * The active auth provider — a `kind`-discriminated union (single arm this
+ * phase). Narrow on `kind` before reading provider-specific fields.
+ */
+export type AuthProvider = BasicAuthProvider
+
+/**
+ * Session-token policy — provider-neutral. The signing secret itself is NEVER
+ * persisted in settings; `signingKeyRef` is a *reference* (an env var name or a
+ * keystore id) the runtime resolves the real key from (deferred to a later task).
+ */
+export interface AuthSessionPolicy {
+  /** Session token lifetime in seconds. */
+  ttlSeconds: number
+  /** Reference (env var name / keystore id) to the signing key — not the key itself. */
+  signingKeyRef: string
+}
+
+/**
+ * Network-exposure / bind-address intent. A non-loopback `bindAddress` signals
+ * intent to expose c3 to a network, which (per ADR-0023) requires `enabled`
+ * auth — the runtime enforcement of that rule is deferred to a later task.
+ */
+export interface AuthExposureConfig {
+  /**
+   * Intended server bind address. Absent ⇒ `127.0.0.1` (the C-SEC-5 default).
+   * A non-loopback value (e.g. `0.0.0.0`) expresses network-exposure intent.
+   */
+  bindAddress?: string
+}
+
+/**
+ * Authentication configuration (ADR-0023), hung on {@link SystemSettings.auth}.
+ * `enabled: false` (or an absent block) ⇒ no auth, the C-SEC-5 localhost-only
+ * default. This is the extensible boundary: only `provider` differs across auth
+ * methods; everything else (session policy, exposure, the wire messages) is
+ * provider-neutral.
+ */
+export interface AuthConfig {
+  /** Master switch. `false` / absent block ⇒ no auth (C-SEC-5 default). */
+  enabled: boolean
+  /** The active auth provider (only `basic` this phase). */
+  provider: AuthProvider
+  /** Session-token policy (TTL + signing-key reference). */
+  session: AuthSessionPolicy
+  /** Network-exposure / bind-address intent. Absent ⇒ loopback only. */
+  exposure?: AuthExposureConfig
+}
+
+/**
+ * The issued session-token model — provider-neutral. An opaque, signed token
+ * the runtime mints on successful login and verifies on each request (signing/
+ * verification is deferred to a later task). All instants are absolute Unix ms.
+ */
+export interface AuthSessionToken {
+  /** Opaque token id (jti). */
+  tokenId: string
+  /** Subject — the authenticated principal (the admin username under `basic`). */
+  subject: string
+  /** Issued-at instant (Unix ms). */
+  issuedAt: number
+  /** Expiry instant (Unix ms) = `issuedAt + ttlSeconds * 1000`. */
+  expiresAt: number
+}
+
+/**
+ * Login request payload — provider-neutral. Shared by the future HTTP
+ * `POST /auth/login` endpoint and the WS `login` message. The plaintext
+ * `password` exists ONLY in transit: it is verified against the stored hash and
+ * never persisted.
+ */
+export interface AuthLoginRequest {
+  username: string
+  password: string
+}
+
+/**
+ * Login failure codes — the structured reasons a login is rejected. Distinct
+ * from a successful result so the UI can localize each case.
+ */
+export const AUTH_FAILURE_CODES = ['invalid_credentials', 'auth_disabled', 'rate_limited'] as const
+export type AuthFailureCode = (typeof AUTH_FAILURE_CODES)[number]
+
+/**
+ * Login result — `ok` discriminates. On success carries the issued session
+ * token (the opaque string the client presents on later requests) plus its
+ * absolute expiry; on failure carries a structured {@link AuthFailureCode}.
+ */
+export type AuthLoginResult =
+  | { ok: true; token: string; expiresAt: number }
+  | { ok: false; code: AuthFailureCode }
+
 /**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
@@ -614,6 +741,18 @@ export interface SystemSettings {
    * Project Config panel hides its sandbox section accordingly.
    */
   sandboxes?: SystemSandboxDef[]
+  /**
+   * Authentication configuration (ADR-0023). Absent ⇒ no auth (the C-SEC-5
+   * localhost-only default): the server stays bound to loopback and never
+   * challenges a connection. When present and `enabled`, it carries the active
+   * {@link AuthProvider} (only `basic` this phase), the session-token policy,
+   * and the network-exposure intent. `normalize()` drops a malformed `auth` to
+   * `undefined` (fail-soft), so an invalid block is equivalent to disabled.
+   * NOTE (ADR-0023): this is contract-only — no runtime middleware/login/hashing
+   * exists yet; the server does NOT actually relax its bind until a later task
+   * implements enforcement.
+   */
+  auth?: AuthConfig
   /**
    * Per-project (workspace) configuration map, keyed by resolved project path.
    * Each entry holds the project's own {@link WorkspaceSetting} — the workspace-level
@@ -1820,6 +1959,15 @@ export type ClientToServer =
   | { type: 'get_settings' }
   /** Replace the system configuration; server normalizes and echoes `settings`. */
   | { type: 'save_settings'; settings: SystemSettings }
+  /**
+   * Authenticate this connection (ADR-0023). Carries an {@link AuthLoginRequest}
+   * (plaintext password in transit only). Server replies with `login_result`.
+   * Provider-neutral: the same message logs in under any future provider.
+   * Contract-only this phase — no server-side verification exists yet.
+   */
+  | { type: 'login'; request: AuthLoginRequest }
+  /** Invalidate this connection's session token (ADR-0023). No reply required. */
+  | { type: 'logout' }
   /** Load a workspace's setting (reply: `workspace_setting`). */
   | { type: 'load_workspace_setting'; projectPath: string }
   /** Save a workspace's setting. */
@@ -2181,6 +2329,19 @@ export type ServerToClient =
       config: WorkspaceSetting
       detectedMainBranch?: string
     }
+  /**
+   * Result of a `login` attempt (ADR-0023). Carries an {@link AuthLoginResult}:
+   * on success the issued session token + its absolute expiry, on failure a
+   * structured {@link AuthFailureCode}.
+   */
+  | { type: 'login_result'; result: AuthLoginResult }
+  /**
+   * The connection is not authenticated (ADR-0023) — the WS analogue of HTTP
+   * 401. Emitted when an action requires auth but the connection presents no
+   * valid session token. `reason` distinguishes a missing / expired / otherwise
+   * invalid token so the client can decide whether to re-prompt for login.
+   */
+  | { type: 'unauthenticated'; reason: 'missing' | 'expired' | 'invalid' }
   /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
   | { type: 'intents'; projectPath: string; items: Intent[] }
   /**

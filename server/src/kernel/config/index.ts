@@ -47,6 +47,7 @@ import {
   systemAgent,
 } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
+import { normalizeAuth } from './auth-schema.js'
 
 /**
  * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
@@ -290,6 +291,10 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const projectConfigs = raw?.projectConfigs
   // System sandbox definitions passthrough. Validated by SandboxRegistry at startup.
   const sandboxes = raw?.sandboxes
+  // Auth config (ADR-0023): validate via the zod schema; a malformed or absent
+  // block normalizes to undefined ⇒ "no auth" (the C-SEC-5 localhost-only
+  // default). Contract-only — no runtime enforcement exists yet.
+  const auth = normalizeAuth(raw?.auth) ?? undefined
   return {
     agents,
     defaultAgentId,
@@ -301,6 +306,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     socketAutoResume,
     // skillRepos intentionally omitted — deprecated, migrated to WorkspaceSetting
     ...(sandboxes !== undefined ? { sandboxes } : {}),
+    ...(auth !== undefined ? { auth } : {}),
     ...(projectConfigs ? { projectConfigs } : {}),
   }
 }

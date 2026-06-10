@@ -25,6 +25,9 @@ describe('protocol wire format', () => {
     { type: 'stop_run' },
     { type: 'request_session_status' },
     { type: 'ping' },
+    // Auth wire messages (ADR-0023). `password` is plaintext in transit only.
+    { type: 'login', request: { username: 'admin', password: 'pw' } },
+    { type: 'logout' },
   ]
 
   const serverMessages: ServerToClient[] = [
@@ -120,6 +123,11 @@ describe('protocol wire format', () => {
         },
       },
     },
+    // Auth replies (ADR-0023): a successful login carries the issued token +
+    // expiry; a failure carries a structured code; `unauthenticated` is the 401.
+    { type: 'login_result', result: { ok: true, token: 'tok', expiresAt: 1000 } },
+    { type: 'login_result', result: { ok: false, code: 'invalid_credentials' } },
+    { type: 'unauthenticated', reason: 'expired' },
     // Consensus scoped to one vendor, noting the cross-vendor advisors it excluded.
     {
       type: 'consensus_auto',

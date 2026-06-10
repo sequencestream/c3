@@ -729,6 +729,64 @@ export interface AskConsensusOutcome {
 export type AnyConsensusOutcome = ConsensusOutcome | AskConsensusOutcome
 
 /**
+ * One voter's verdict in a checkpoint consensus round. The voter decides whether
+ * the automation orchestrator should continue past a developer checkpoint or wait
+ * for human intervention.
+ */
+export interface CheckpointConsensusVote {
+  /** Voting agent's id. */
+  agentId: string
+  /** Voting agent's display name. */
+  agentName: string
+  /**
+   * Verdict. `continue` ⇒ auto-pass the checkpoint; `wait` ⇒ stop for human;
+   * `abstain` ⇒ the agent errored or returned no parseable answer.
+   */
+  decision: 'continue' | 'wait' | 'abstain'
+  /** One-line rationale from the agent. */
+  reason: string
+}
+
+/**
+ * The aggregated result of a checkpoint consensus round in the automation
+ * orchestrator. When the orchestrator detects a checkpoint signal (unanswered
+ * AskUserQuestion or a `stuck` judge verdict), and the majority toggle is on,
+ * it spawns a vote among peer agents to decide whether to skip the checkpoint
+ * and continue the automation loop.
+ *
+ * The outcome is broadcast via `AutomationStatus.checkpointConsensus` so the
+ * UI/events can render who voted what and the final decision.
+ */
+export interface CheckpointConsensusOutcome {
+  /** Each voter's verdict + reason. */
+  votes: CheckpointConsensusVote[]
+  /**
+   * The decision the orchestrator should follow:
+   * - `'continue'` ⇒ the majority (or, in unanimous mode, all voters) agreed to
+   *   pass the checkpoint; the orchestrator should treat this as `in_progress`.
+   * - `'wait'` ⇒ the majority (or all) agreed to wait; the orchestrator stops
+   *   and exposes the checkpoint to the human.
+   * - `null` ⇒ a tie or no clear majority; the orchestrator also stops (the
+   *   fail-safe default).
+   */
+  decision: 'continue' | 'wait' | null
+  /**
+   * True ⇒ every voter returned the same verdict (no abstain). Reports literal
+   * unanimity regardless of the majority toggle.
+   */
+  unanimous: boolean
+  /** Decider-agent (or code-fallback) one-line summary of the opinions. */
+  summary: string
+  /** The type which triggered the checkpoint consensus. */
+  trigger: 'pending_question' | 'judge_stuck'
+  /**
+   * The judge's reason when the trigger was `judge_stuck`; the pending-question
+   * detection reason when the trigger was `pending_question`.
+   */
+  triggerReason: string
+}
+
+/**
  * One available slash command / skill for the input-box autocomplete menu.
  * Mirrors the SDK `SlashCommand` shape but is declared here to keep the wire
  * protocol independent of SDK types (the boundary rule). Covers both built-in
@@ -1303,6 +1361,13 @@ export interface AutomationStatus {
   completedIds: string[]
   /** When the orchestrator was started, ms since epoch; null when never started. */
   startedAt: number | null
+  /**
+   * The result of the latest checkpoint consensus round, if any. Set when the
+   * orchestrator ran a vote over whether to continue past a checkpoint, and
+   * cleared when the next dev turn is launched. The UI/events use this to render
+   * the consensus process and result.
+   */
+  checkpointConsensus?: CheckpointConsensusOutcome | null
 }
 
 /**

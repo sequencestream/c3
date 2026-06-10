@@ -36,6 +36,7 @@ import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { getIntent, listIntents, setBranchName, setLastDevSession, setPrInfo, updateStatus } from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
 import { judgeCompletion } from './judge.js'
+import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { getDevSkill, getDefaultMode } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
@@ -120,6 +121,7 @@ function idleStatus(projectPath: string): AutomationStatus {
     error: null,
     completedIds: [],
     startedAt: null,
+    checkpointConsensus: null,
   }
 }
 
@@ -221,6 +223,7 @@ class AutomationController {
     this.status.state = 'idle'
     this.status.currentIntentId = null
     this.status.currentSessionId = null
+    this.status.checkpointConsensus = null
     this._processing = false
     this.emit()
   }
@@ -295,6 +298,7 @@ class AutomationController {
       this.status.state = 'done'
       this.status.currentIntentId = null
       this.status.currentSessionId = null
+      this.status.checkpointConsensus = null
       this._processing = false
       this.emit()
       return
@@ -338,6 +342,7 @@ class AutomationController {
   private async _launchDevAsync(req: Intent): Promise<void> {
     this._phase = 'normal'
     this._continuationCount = 0
+    this.status.checkpointConsensus = null
 
     const attach = !!req.lastDevSessionId && this.hooks.isRunning(req.lastDevSessionId!)
     if (attach && req.lastDevSessionId) {
@@ -457,6 +462,7 @@ class AutomationController {
    * `in_progress`). Fire-and-forget; the next settled event drives the FSM.
    */
   private _launchContinue(req: Intent, sessionId: string): void {
+    this.status.checkpointConsensus = null
     this.status.state = 'developing'
     this.emit()
 
@@ -468,6 +474,27 @@ class AutomationController {
       signal: this.abort.signal,
       onAwaitingPermission: (a) => this.setAwaiting(a),
     })
+  }
+
+  /**
+   * Continue from a checkpoint consensus override. Treats the checkpoint as
+   * a passable step (same as `in_progress` continuation) — increments the
+   * continuation counter, checks the cap, then launches the continuation.
+   * The checkpointConsensus status is cleared before launch so the next
+   * turn starts clean.
+   */
+  private _continueFromCheckpoint(req: Intent, sessionId: string): void {
+    this.status.checkpointConsensus = null
+    this._continuationCount += 1
+    if (this._continuationCount > MAX_CONTINUATIONS) {
+      this._processing = false
+      this.fail(
+        `「${req.title}」超过最大续跑次数(${MAX_CONTINUATIONS}),最后状态:checkpoint-continue`,
+      )
+      return
+    }
+    this._processing = false
+    this._launchContinue(req, sessionId)
   }
 
   // ── Turn-settle processing (async) ────────────────────────────────────
@@ -514,28 +541,52 @@ class AutomationController {
       // Extract last assistant message from the runtime buffer.
       const rt = getRuntime(sessionId)
       let lastMessage = ''
+      let pendingQuestion = false
       if (rt) {
         const texts: string[] = []
         for (const e of rt.buffer) {
           if (e.type === 'assistant_text') texts.push(e.text)
         }
         lastMessage = texts.join('\n')
-
-        // Defence: pending question — a real decision must not be continued over.
-        if (hasPendingQuestion(rt.buffer)) {
-          this._processing = false
-          this.fail(`「${req.title}」需要人工决策(未作答的提问)`)
-          return
-        }
+        pendingQuestion = hasPendingQuestion(rt.buffer)
       }
 
-      // Judge true completion (LLM call).
+      // Compute git evidence early so both the pending-question checkpoint
+      // consensus and the completion judge have diff/recent-log context.
       const [diffStat, recentLog] = await Promise.all([
         gitDiffStat(this.projectPath),
         gitRecentLog(this.projectPath),
       ])
       if (this.abort.signal.aborted) {
         this._processing = false
+        return
+      }
+
+      // Defence: pending question — a real decision must not be continued over.
+      // Unless the checkpoint consensus majority decides otherwise.
+      if (pendingQuestion) {
+        const ckConsensus = await runCheckpointConsensus({
+          projectPath: this.projectPath,
+          intent: req,
+          lastMessage,
+          trigger: 'pending_question',
+          triggerReason: '存在未作答的 AskUserQuestion',
+          diffStat,
+          signal: this.abort.signal,
+        })
+        if (ckConsensus?.decision === 'continue') {
+          // Checkpoint consensus cleared — treat as in_progress and auto-continue.
+          this.status.checkpointConsensus = ckConsensus
+          this.emit()
+          console.log(
+            `[c3:automation]「${req.title}」检查点共识裁决继续(pendingQuestion): ${ckConsensus.summary}`,
+          )
+          this._continueFromCheckpoint(req, sessionId)
+          return
+        }
+        // Consensus says wait or no decision — follow existing stop path.
+        this._processing = false
+        this.fail(`「${req.title}」需要人工决策(未作答的提问)`)
         return
       }
 
@@ -604,9 +655,32 @@ class AutomationController {
         return
       }
 
-      // Stuck
-      this._processing = false
-      this.fail(`「${req.title}」未真实完成:${verdict.reason}`)
+      // Stuck — try checkpoint consensus before stopping.
+      if (verdict.verdict === 'stuck') {
+        const ckConsensus = await runCheckpointConsensus({
+          projectPath: this.projectPath,
+          intent: req,
+          lastMessage,
+          trigger: 'judge_stuck',
+          triggerReason: verdict.reason,
+          diffStat,
+          signal: this.abort.signal,
+        })
+        if (ckConsensus?.decision === 'continue') {
+          // Consensus overrode the stuck verdict — treat as in_progress.
+          this.status.checkpointConsensus = ckConsensus
+          this.emit()
+          console.log(
+            `[c3:automation]「${req.title}」检查点共识裁决继续(stuck): ${ckConsensus.summary}`,
+          )
+          this._continueFromCheckpoint(req, sessionId)
+          return
+        }
+        // Consensus says wait or no decision — follow existing stop path.
+        this._processing = false
+        this.fail(`「${req.title}」未真实完成:${verdict.reason}`)
+        return
+      }
     } catch (err) {
       this._processing = false
       this.fail(`intent ${intentId} 处理异常:${err instanceof Error ? err.message : String(err)}`)

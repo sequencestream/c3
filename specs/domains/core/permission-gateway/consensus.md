@@ -46,6 +46,27 @@ The same toggle governs the **AskUserQuestion** path, but per-question rather th
 as one allow/deny verdict — each question is auto-answered on a clear plurality of
 the voters' answers. See [AskUserQuestion — per-question answering](#askuserquestion--per-question-answering).
 
+### Beyond tool permissions: checkpoint consensus
+
+The majority toggle also enables the **automation orchestrator**'s checkpoint consensus
+override (RM-A14, `intent-management/spec.md`). When the loop detects either a `stuck`
+judge verdict or an unanswered AskUserQuestion (`pendingQuestion` guard), and the majority
+toggle is ON, the orchestrator spawns a vote among peer agents — who decide whether the
+development process should `continue` past the checkpoint or `wait` for human intervention.
+
+Checkpoint consensus reuses the same one-shot advisor infrastructure (`askAgentOnce`),
+same `vendorScopedVoters` rule (same-vendor agents only), and same fail-safe invariant
+(a tie → stop). It differs from the tool-permission and ask-question consensus in that it
+is owned by the automation orchestrator (`features/intents/checkpoint-consensus.ts`), not
+the permission gateway, and that it decides *automation flow* (`continue` vs `wait`) rather
+than answering a tool-use or AskUserQuestion. The outcome is broadcast via
+`AutomationStatus.checkpointConsensus` so the UI/events can render the process.
+
+**Merged gate.** When the majority toggle is OFF, checkpoint consensus is never triggered —
+the orchestrator follows the existing stop path for both `stuck` and `pendingQuestion`. When
+it IS on, the same agents vote on both tool-permission and checkpoint questions; no separate
+agent pool or configuration field exists.
+
 ## Roles
 
 | Role    | Who                                                                            | Job                                                               |

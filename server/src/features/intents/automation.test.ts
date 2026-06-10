@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { AutomationStatus } from '@ccc/shared/protocol'
+import type { AutomationStatus, CheckpointConsensusOutcome } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   getIntent,
@@ -14,8 +14,12 @@ import {
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 const judgeMock = vi.fn()
+const ckConsensusMock = vi.fn()
 const commitMock = vi.fn()
 vi.mock('./judge.js', () => ({ judgeCompletion: (...a: unknown[]) => judgeMock(...a) }))
+vi.mock('./checkpoint-consensus.js', () => ({
+  runCheckpointConsensus: (...a: unknown[]) => ckConsensusMock(...a),
+}))
 vi.mock('../../git.js', () => ({
   gitDiffStat: async () => 'M file.ts | 1 +',
   gitRecentLog: async () => 'abc123 feat: prior work',
@@ -328,5 +332,82 @@ describe('automation orchestrator', () => {
     const final = getAutomationStatus(proj)
     expect(final.state).toBe('error')
     expect(final.error).toContain('lint')
+  })
+
+  // ── Checkpoint consensus ──────────────────────────────────────────────
+
+  function makeConsensusResult(
+    decision: 'continue' | 'wait' | null,
+  ): CheckpointConsensusOutcome {
+    return {
+      votes: [
+        { agentId: 'a1', agentName: 'Agent 1', decision: 'continue', reason: 'relevant' },
+        { agentId: 'a2', agentName: 'Agent 2', decision: decision ?? 'wait', reason: 'ok' },
+      ],
+      decision,
+      unanimous: decision !== null,
+      summary: decision === 'continue' ? '继续推进' : '等待人工',
+      trigger: 'judge_stuck',
+      triggerReason: '检查点',
+    }
+  }
+
+  it('stops stuck when checkpoint consensus says wait (majority disabled implicitly)', async () => {
+    const [r] = insertIntents(proj, [{ title: 'stuck-wait', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'stuck', reason: '反复失败' })
+    ckConsensusMock.mockResolvedValue(makeConsensusResult('wait'))
+    start(trackingTurn([]))
+    await settleCur('s-0')
+    const final = getAutomationStatus(proj)
+    expect(final.state).toBe('error')
+    expect(final.error).toContain('反复失败')
+    expect(commitMock).not.toHaveBeenCalled()
+  })
+
+  it('overrides stuck verdict when checkpoint consensus says continue', async () => {
+    const [r] = insertIntents(proj, [{ title: 'stuck-go', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    judgeMock
+      .mockResolvedValueOnce({ verdict: 'stuck', reason: '检查点: 方案设计完成' })
+      .mockResolvedValueOnce({ verdict: 'done', reason: 'ok' })
+    ckConsensusMock.mockResolvedValue(makeConsensusResult('continue'))
+    const prompts: string[] = []
+    start(trackingTurn(prompts))
+    await settleCur('s-0')
+    // After consensus → continue → continuation → second settle → done
+    await settleCur('s-1')
+    const final = getAutomationStatus(proj)
+    expect(final.state).toBe('done')
+    expect(prompts).toContain('continue')
+  })
+
+  it('stops stuck when checkpoint consensus returns null (no decision)', async () => {
+    const [r] = insertIntents(proj, [{ title: 'stuck-null', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'stuck', reason: '未真实完成' })
+    ckConsensusMock.mockResolvedValue(null)
+    start(trackingTurn([]))
+    await settleCur('s-0')
+    const final = getAutomationStatus(proj)
+    expect(final.state).toBe('error')
+    expect(final.error).toContain('未真实完成')
+  })
+
+  it('broadcasts checkpoint consensus via status', async () => {
+    const [r] = insertIntents(proj, [{ title: 'broadcast-ck', content: 'c', priority: 'P0' }])
+    setAutomate(r.id, true)
+    judgeMock.mockResolvedValue({ verdict: 'stuck', reason: '检查点' })
+    const outcome = makeConsensusResult('continue')
+    ckConsensusMock.mockResolvedValue(outcome)
+    const emitted: AutomationStatus[] = []
+    const h = hooks(trackingTurn([]))
+    h.emitStatus = (s) => emitted.push(s)
+    startAutomation(proj, h, 1000)
+    await settleCur('s-0')
+    // The status should carry checkpointConsensus when consensus decision is continue
+    const ck = emitted.find((s) => s.checkpointConsensus?.decision === 'continue')
+    expect(ck).toBeDefined()
+    expect(ck!.checkpointConsensus!.summary).toBe('继续推进')
   })
 })

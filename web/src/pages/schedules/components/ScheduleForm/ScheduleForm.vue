@@ -460,7 +460,7 @@ function save(): void {
         </div>
 
         <!-- Command body -->
-        <label v-if="type === 'command'" class="sf-field">
+        <label v-if="type === 'command'" class="sf-field sf-field--stacked">
           <span class="sf-label">{{ t('schedule.form.command.label') }}</span>
           <textarea
             v-model="command"
@@ -471,7 +471,7 @@ function save(): void {
         </label>
 
         <!-- LLM prompt -->
-        <label v-else class="sf-field">
+        <label v-else class="sf-field sf-field--stacked">
           <span class="sf-label">{{ t('schedule.form.prompt.label') }}</span>
           <textarea
             v-model="prompt"
@@ -499,7 +499,7 @@ function save(): void {
         </div>
 
         <!-- Schedule (cron) builder -->
-        <div v-if="triggerType === 'cron'" class="sf-field">
+        <div v-if="triggerType === 'cron'" class="sf-field sf-field--stacked">
           <span class="sf-label">{{ t('schedule.form.schedule.label') }}</span>
 
           <!-- Advanced segmented builder -->
@@ -589,7 +589,7 @@ function save(): void {
         </div>
 
         <!-- Event trigger config -->
-        <div v-if="triggerType === 'event'" class="sf-field">
+        <div v-if="triggerType === 'event'" class="sf-field sf-field--stacked">
           <span class="sf-label">{{ t('schedule.form.event.topic.label') }}</span>
           <div class="sf-segmented">
             <button
@@ -636,7 +636,7 @@ function save(): void {
         </div>
 
         <!-- Permission mode: controls differ by vendor -->
-        <div class="sf-field">
+        <div class="sf-field" :class="{ 'sf-field--stacked': vendor === 'codex' }">
           <span class="sf-label">{{ t('schedule.form.permissionMode.label') }}</span>
 
           <!-- Claude: dropdown -->
@@ -717,7 +717,7 @@ function save(): void {
         </div>
 
         <!-- Tool checklist -->
-        <div class="sf-field">
+        <div class="sf-field sf-field--stacked">
           <span class="sf-label">{{ t('schedule.form.tools.label') }}</span>
 
           <!-- Loading -->
@@ -732,18 +732,19 @@ function save(): void {
 
           <!-- Manifest loaded -->
           <template v-else-if="currentTools.length">
-            <div class="sf-tools-actions">
-              <button type="button" class="sf-tools-btn" @click="selectAll">
-                {{ t('schedule.form.tools.selectAll.label') }}
-              </button>
-              <button type="button" class="sf-tools-btn" @click="clearAll">
-                {{ t('schedule.form.tools.clearAll.label') }}
-              </button>
-            </div>
-
             <!-- Read-only tools -->
             <div class="sf-tools-group">
-              <span class="sf-tools-subtitle">{{ t('schedule.form.tools.readOnly.label') }}</span>
+              <div class="sf-tools-header">
+                <span class="sf-tools-subtitle">{{ t('schedule.form.tools.readOnly.label') }}</span>
+                <div class="sf-tools-actions">
+                  <button type="button" class="sf-tools-btn" @click="selectAll">
+                    {{ t('schedule.form.tools.selectAll.label') }}
+                  </button>
+                  <button type="button" class="sf-tools-btn" @click="clearAll">
+                    {{ t('schedule.form.tools.clearAll.label') }}
+                  </button>
+                </div>
+              </div>
               <div class="sf-tools-grid">
                 <label v-for="_t in readTools" :key="_t.name" class="sf-tool-item">
                   <input
@@ -845,8 +846,14 @@ function save(): void {
 }
 .sf-field {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--sp-2);
+}
+.sf-field--stacked {
+  flex-direction: column;
+  align-items: stretch;
 }
 .sf-label {
   font-size: var(--fs-caption);
@@ -877,6 +884,16 @@ function save(): void {
 .sf-mono {
   font-family: var(--ff-mono, monospace);
   font-size: var(--fs-caption);
+}
+/* Inline fields: override .sf-input width:100% so control sits beside label */
+.sf-field:not(.sf-field--stacked) > input.sf-input,
+.sf-field:not(.sf-field--stacked) > select.sf-input {
+  width: auto;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.sf-field:not(.sf-field--stacked) > select.sf-input {
+  flex: 0 0 auto;
 }
 .sf-hint {
   font-size: var(--fs-caption);
@@ -922,11 +939,14 @@ function save(): void {
 .sf-tabpane {
   margin-top: var(--sp-2);
 }
+.sf-field--stacked .sf-tabpane {
+  margin-top: 0;
+}
 
 /* Event reason filter and permission mode sub-label spacing. */
-.sf-event-reason-label,
-.sf-permission-sub {
-  margin-top: var(--sp-2);
+.sf-field--stacked .sf-event-reason-label,
+.sf-field--stacked .sf-permission-sub {
+  margin-top: 0;
 }
 
 /* Advanced */
@@ -983,6 +1003,9 @@ function save(): void {
   flex-wrap: wrap;
   margin-top: var(--sp-3);
 }
+.sf-field--stacked .sf-preview-bar {
+  margin-top: 0;
+}
 .sf-cron {
   font-family: var(--ff-mono, monospace);
   font-size: var(--fs-caption);
@@ -1007,10 +1030,16 @@ function save(): void {
 .sf-select {
   max-width: 280px;
 }
+.sf-tools-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
 .sf-tools-actions {
   display: flex;
   gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
+  margin-left: auto;
 }
 .sf-tools-btn {
   background: var(--c-card);
@@ -1026,17 +1055,17 @@ function save(): void {
   background: var(--c-hover);
 }
 .sf-tools-group {
-  margin-bottom: var(--sp-2);
-}
-.sf-tools-subtitle {
-  display: block;
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-  margin-bottom: var(--sp-1);
-}
-.sf-tools-grid {
   display: flex;
   flex-direction: column;
+  gap: var(--sp-1);
+}
+.sf-tools-subtitle {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.sf-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--sp-1);
 }
 .sf-tool-item {

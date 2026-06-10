@@ -2358,10 +2358,10 @@ button.deny:hover:not(:disabled) {
   flex: 1 1 140px;
   min-width: 120px;
 }
-/* Name (mount id) is a short token — give it a fixed, narrow width. */
+/* Name (mount id) — slightly wider for longer skill identifiers. */
 .skill-repo-row .skill-repo-name {
-  flex: 0 0 110px;
-  width: 110px;
+  flex: 0 0 220px;
+  width: 220px;
   min-width: 0;
 }
 .skill-repo-empty {
@@ -2370,8 +2370,8 @@ button.deny:hover:not(:disabled) {
 .field-group {
   display: flex;
   flex-direction: column;
-  flex: 1 1 140px;
-  min-width: 120px;
+  flex: 1 1 70px;
+  min-width: 60px;
   gap: var(--sp-1);
 }
 /* The branch input lives in a column flex-group (for the error line below it);

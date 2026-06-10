@@ -1112,8 +1112,19 @@ export type IntentPriority = 'P0' | 'P1' | 'P2' | 'P3'
  * - `todo` — finalized, not started (the state save-to-db produces).
  * - `in_progress` — development launched (dev session running).
  * - `done` / `cancelled` — terminal, set by the user (never auto-set).
+ * - `blocked` — interrupted by a dependency rollback, rebase conflict, etc.
+ *   May re-enter `todo` once unblocked.
+ * - `failed` — CI / build / test failure hit while `in_progress`.
+ *   May re-enter `todo` for a retry.
  */
-export type IntentStatus = 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
+export type IntentStatus =
+  | 'draft'
+  | 'todo'
+  | 'in_progress'
+  | 'done'
+  | 'cancelled'
+  | 'blocked'
+  | 'failed'
 
 /**
  * Derived run-state of an in_progress intent, computed by reconciling the

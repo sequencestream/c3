@@ -471,6 +471,12 @@
       },
       "draft": {
         "label": "초안"
+      },
+      "blocked": {
+        "label": "차단됨"
+      },
+      "failed": {
+        "label": "실패"
       }
     },
     "automation": {
@@ -1079,6 +1085,7 @@
       "dbUnavailable": "의도 기능을 사용할 수 없습니다 (c3.db).",
       "chatOpenFailed": "의도 채팅을 열지 못했습니다.",
       "cannotStartDev": "\"{status}\" 상태에서는 개발을 시작할 수 없습니다.",
+      "illegalStatusTransition": "상태를 \"{from}\"에서 \"{to}\"(으)로 변경할 수 없습니다.",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."

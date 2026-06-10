@@ -15,12 +15,14 @@ import {
 } from './intent-list-view'
 
 describe('statusLabel', () => {
-  it('五种状态各映射到对应英文标签', () => {
+  it('七种状态各映射到对应英文标签', () => {
     expect(statusLabel('draft')).toBe('Draft')
     expect(statusLabel('todo')).toBe('To do')
     expect(statusLabel('in_progress')).toBe('In progress')
     expect(statusLabel('done')).toBe('Done')
     expect(statusLabel('cancelled')).toBe('Cancelled')
+    expect(statusLabel('blocked')).toBe('Blocked')
+    expect(statusLabel('failed')).toBe('Failed')
   })
 })
 

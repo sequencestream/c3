@@ -33,6 +33,7 @@ import {
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { loadHistory, loadLastAssistantMessages, sessionExists } from '../../sessions.js'
 import {
+  canTransition,
   getChatSession,
   getIntent,
   isStoreAvailable,
@@ -477,6 +478,18 @@ export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, m
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
+  // Guard: reject illegal status transitions.
+  if (!canTransition(req.status, msg.status)) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'intent.illegalStatusTransition',
+        params: { from: req.status, to: msg.status },
+      },
+    })
+    return
+  }
+  const prevStatus = req.status
   updateStatus(msg.intentId, msg.status)
   // If the intent leaves in_progress, clear its cache entry so a future
   // restart doesn't show a stale dangling/running label.
@@ -484,6 +497,13 @@ export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, m
     clearRunStatus(msg.intentId)
     clearJudgedSession(msg.intentId)
   }
+  // Publish domain event for cross-feature subscribers (ADR-0018).
+  ctx.eventBus.publish('intent:status_changed', {
+    intentId: msg.intentId,
+    projectPath: req.projectPath,
+    fromStatus: prevStatus,
+    toStatus: msg.status,
+  })
   ctx.broadcastIntents(req.projectPath)
 }
 

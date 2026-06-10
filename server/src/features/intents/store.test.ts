@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import {
+  canTransition,
   findIntents,
   getChatSession,
   getIntent,
@@ -671,5 +672,91 @@ describe('findIntents (read-only intent-agent query)', () => {
     ])
     // '%' must match literally, not as a wildcard (else it would match both)
     expect(findIntents(proj, { keyword: '100%' }).map((r) => r.title)).toEqual(['100% done'])
+  })
+})
+
+describe('canTransition (status guard, 7-state graph)', () => {
+  // ── same-state (no-op) ──
+  it('allows same-state transitions (no-op)', () => {
+    const all: import('@ccc/shared/protocol').IntentStatus[] = [
+      'draft', 'todo', 'in_progress', 'done', 'cancelled', 'blocked', 'failed',
+    ]
+    for (const s of all) expect(canTransition(s, s)).toBe(true)
+  })
+
+  // ── forward transitions ──
+  it('draft → todo, cancelled, blocked', () => {
+    expect(canTransition('draft', 'todo')).toBe(true)
+    expect(canTransition('draft', 'cancelled')).toBe(true)
+    expect(canTransition('draft', 'blocked')).toBe(true)
+  })
+
+  it('todo → in_progress, cancelled, blocked', () => {
+    expect(canTransition('todo', 'in_progress')).toBe(true)
+    expect(canTransition('todo', 'cancelled')).toBe(true)
+    expect(canTransition('todo', 'blocked')).toBe(true)
+  })
+
+  it('in_progress → done, cancelled, blocked, failed', () => {
+    expect(canTransition('in_progress', 'done')).toBe(true)
+    expect(canTransition('in_progress', 'cancelled')).toBe(true)
+    expect(canTransition('in_progress', 'blocked')).toBe(true)
+    expect(canTransition('in_progress', 'failed')).toBe(true)
+  })
+
+  it('blocked → todo, cancelled', () => {
+    expect(canTransition('blocked', 'todo')).toBe(true)
+    expect(canTransition('blocked', 'cancelled')).toBe(true)
+  })
+
+  it('failed → todo, cancelled', () => {
+    expect(canTransition('failed', 'todo')).toBe(true)
+    expect(canTransition('failed', 'cancelled')).toBe(true)
+  })
+
+  // ── illegal outgoing from terminal ──
+  it('done transitions nowhere', () => {
+    const nonTerminal: import('@ccc/shared/protocol').IntentStatus[] = [
+      'draft', 'todo', 'in_progress', 'blocked', 'failed',
+    ]
+    for (const s of nonTerminal) expect(canTransition('done', s)).toBe(false)
+  })
+
+  it('cancelled transitions nowhere', () => {
+    const nonTerminal: import('@ccc/shared/protocol').IntentStatus[] = [
+      'draft', 'todo', 'in_progress', 'blocked', 'failed',
+    ]
+    for (const s of nonTerminal) expect(canTransition('cancelled', s)).toBe(false)
+  })
+
+  // ── illegal skip transitions ──
+  it('draft cannot skip to in_progress, done, failed', () => {
+    expect(canTransition('draft', 'in_progress')).toBe(false)
+    expect(canTransition('draft', 'done')).toBe(false)
+    expect(canTransition('draft', 'failed')).toBe(false)
+  })
+
+  it('todo cannot skip to done, failed', () => {
+    expect(canTransition('todo', 'done')).toBe(false)
+    expect(canTransition('todo', 'failed')).toBe(false)
+  })
+
+  it('in_progress cannot go back to draft, todo', () => {
+    expect(canTransition('in_progress', 'draft')).toBe(false)
+    expect(canTransition('in_progress', 'todo')).toBe(false)
+  })
+
+  it('blocked cannot go to in_progress, done, draft, failed', () => {
+    expect(canTransition('blocked', 'in_progress')).toBe(false)
+    expect(canTransition('blocked', 'done')).toBe(false)
+    expect(canTransition('blocked', 'draft')).toBe(false)
+    expect(canTransition('blocked', 'failed')).toBe(false)
+  })
+
+  it('failed cannot go to in_progress, done, draft, blocked', () => {
+    expect(canTransition('failed', 'in_progress')).toBe(false)
+    expect(canTransition('failed', 'done')).toBe(false)
+    expect(canTransition('failed', 'draft')).toBe(false)
+    expect(canTransition('failed', 'blocked')).toBe(false)
   })
 })

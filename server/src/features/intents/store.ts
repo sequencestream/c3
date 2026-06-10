@@ -519,6 +519,39 @@ export function upsertIntents(projectPath: string, items: ProposedIntent[]): Int
   return hydrate(d, rows)
 }
 
+/**
+ * Guard: is the `from → to` status transition legal?
+ *
+ * Transition graph (7-state):
+ * ```
+ * draft ──→ todo ──→ in_progress ──→ failed ──→ todo
+ *   │         │            │            │
+ *   │         │            └──→ blocked ──→ todo
+ *   │         │                 │
+ *   │         └──→ cancelled    └──→ cancelled
+ *   │
+ *   └──→ blocked
+ *   └──→ cancelled
+ *
+ *              in_progress ──→ done
+ * ```
+ * Terminal states (`done`, `cancelled`) have no outgoing edges.
+ * Same-state transitions are always allowed (no-op).
+ */
+export function canTransition(from: IntentStatus, to: IntentStatus): boolean {
+  if (from === to) return true
+  const ALLOWED: Record<IntentStatus, readonly IntentStatus[]> = {
+    draft: ['todo', 'cancelled', 'blocked'],
+    todo: ['in_progress', 'cancelled', 'blocked'],
+    in_progress: ['done', 'cancelled', 'blocked', 'failed'],
+    done: [],
+    cancelled: [],
+    blocked: ['todo', 'cancelled'],
+    failed: ['todo', 'cancelled'],
+  }
+  return (ALLOWED[from] as readonly IntentStatus[]).includes(to)
+}
+
 export function updateStatus(id: string, status: IntentStatus): void {
   const d = requireDb()
   const now = Date.now()

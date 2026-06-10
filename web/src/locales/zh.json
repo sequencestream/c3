@@ -470,6 +470,12 @@
       },
       "draft": {
         "label": "草稿"
+      },
+      "blocked": {
+        "label": "已阻塞"
+      },
+      "failed": {
+        "label": "失败"
       }
     },
     "automation": {
@@ -1080,7 +1086,8 @@
       "chatSessionNotFound": "意图对话会话不存在: {sessionId}。",
       "renameChatSessionFailed": "重命名意图对话会话失败: {detail}。",
       "deleteChatSessionFailed": "删除意图对话会话失败: {detail}。",
-      "cannotStartDev": "当前状态({status})不可启动开发。"
+      "cannotStartDev": "当前状态({status})不可启动开发。",
+      "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",

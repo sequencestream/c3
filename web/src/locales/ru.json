@@ -471,6 +471,12 @@
       },
       "draft": {
         "label": "Черновик"
+      },
+      "blocked": {
+        "label": "Заблокировано"
+      },
+      "failed": {
+        "label": "Ошибка"
       }
     },
     "automation": {
@@ -1079,6 +1085,7 @@
       "dbUnavailable": "Функция намерений недоступна (c3.db).",
       "chatOpenFailed": "Не удалось открыть чат намерения.",
       "cannotStartDev": "Нельзя начать разработку из статуса «{status}».",
+      "illegalStatusTransition": "Нельзя изменить статус с «{from}» на «{to}».",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."

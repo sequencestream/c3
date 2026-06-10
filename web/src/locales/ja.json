@@ -471,6 +471,12 @@
       },
       "draft": {
         "label": "下書き"
+      },
+      "blocked": {
+        "label": "ブロック済み"
+      },
+      "failed": {
+        "label": "失敗"
       }
     },
     "automation": {
@@ -1079,6 +1085,7 @@
       "dbUnavailable": "意図機能は利用できません(c3.db)。",
       "chatOpenFailed": "意図チャットを開けませんでした。",
       "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。",
+      "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}."

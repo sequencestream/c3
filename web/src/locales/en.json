@@ -470,6 +470,12 @@
       },
       "draft": {
         "label": "Draft"
+      },
+      "blocked": {
+        "label": "Blocked"
+      },
+      "failed": {
+        "label": "Failed"
       }
     },
     "automation": {
@@ -1080,7 +1086,8 @@
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
-      "cannotStartDev": "Cannot start development from status \"{status}\"."
+      "cannotStartDev": "Cannot start development from status \"{status}\".",
+      "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\"."
     },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",

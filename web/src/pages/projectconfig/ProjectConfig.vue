@@ -553,7 +553,13 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 }
 
 .project-config-section {
-  margin-bottom: 28px;
+  padding: var(--sp-4) var(--sp-6);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+}
+.project-config-section + .project-config-section {
+  margin-top: var(--sp-6);
 }
 
 .project-config-section-title {

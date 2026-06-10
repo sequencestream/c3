@@ -16,6 +16,8 @@ export const STATUS_LABELS: Record<IntentStatus, string> = {
   in_progress: 'In progress',
   done: 'Done',
   cancelled: 'Cancelled',
+  blocked: 'Blocked',
+  failed: 'Failed',
 }
 
 export function statusLabel(s: IntentStatus): string {

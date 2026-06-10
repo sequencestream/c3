@@ -91,6 +91,8 @@ const FILTERS = computed<{ value: IntentStatus | null; label: string }[]>(() => 
   { value: 'done', label: t('intent.filter.done.label') },
   { value: 'cancelled', label: t('intent.filter.cancelled.label') },
   { value: 'draft', label: t('intent.filter.draft.label') },
+  { value: 'blocked', label: t('intent.filter.blocked.label') },
+  { value: 'failed', label: t('intent.filter.failed.label') },
 ])
 const filter = ref<IntentStatus | null>(null)
 

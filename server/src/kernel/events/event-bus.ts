@@ -28,7 +28,7 @@
  *    corresponding payload type.
  */
 
-import type { RunEndReason, RunKind, VendorId } from '@ccc/shared/protocol'
+import type { IntentStatus, RunEndReason, RunKind, VendorId } from '@ccc/shared/protocol'
 
 /** Default event map for c3 kernel events. Extend this interface to add new topics. */
 export interface EventBusEvents {
@@ -100,6 +100,18 @@ export interface EventBusEvents {
     workspacePath: string
     agents: ReadonlyArray<{ agentId: string; agentName: string; error: string }>
     crossVendorSkipped?: ReadonlyArray<{ agentId: string; agentName: string; vendor: VendorId }>
+  }
+  /**
+   * An intent's status changed. Published by the `update_intent_status` handler
+   * when `canTransition` passes. Carries the old and new status plus the owning
+   * project path so subscribers (e.g. automation orchestrator, audit logger) can
+   * react without a separate lookup.
+   */
+  'intent:status_changed': {
+    intentId: string
+    projectPath: string
+    fromStatus: IntentStatus
+    toStatus: IntentStatus
   }
 }
 

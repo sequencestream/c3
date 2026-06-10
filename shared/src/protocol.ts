@@ -1182,6 +1182,8 @@ export interface Intent {
   status: IntentStatus
   /** Ids of other intents (same project) this one depends on. */
   dependsOn: string[]
+  /** Dep types keyed by depended-on intent id. Absent entries default to 'blocks'. */
+  dependsOnTypes?: Record<string, DepType>
   /** The last dev session launched for this intent, for the detail back-link. */
   lastDevSessionId: string | null
   /**
@@ -1767,6 +1769,16 @@ export type ClientToServer =
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
   | { type: 'set_intent_automate'; intentId: string; automate: boolean }
+  /**
+   * Update an intent's dependency list with per-edge dep_type.
+   * Replaces the entire dependency set — all prior edges are removed.
+   * Each edge specifies the depended-on intent id and the dependency type.
+   */
+  | {
+      type: 'update_intent_deps'
+      intentId: string
+      deps: { dependsOnId: string; depType: DepType }[]
+    }
   /**
    * Set git-related info on an intent (branch name, commit hash, PR id, PR status).
    * All fields are optional — only provided fields are updated.

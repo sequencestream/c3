@@ -582,6 +582,19 @@
       "unfinishedList": "⚠ 未完成的依赖:{list}",
       "unfinished": {
         "tooltip": "存在未完成的依赖"
+      },
+      "depType": {
+        "edit": {
+          "title": "编辑依赖类型",
+          "label": "编辑",
+          "tooltip": "编辑依赖类型",
+          "noDeps": "没有可编辑的依赖。"
+        },
+        "types": {
+          "blocks": "阻塞",
+          "informs": "通知",
+          "softAfter": "弱顺序"
+        }
       }
     }
   },

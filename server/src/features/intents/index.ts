@@ -46,6 +46,7 @@ import {
   setChatSession,
   setLatestCommitHash,
   setPrInfo,
+  updateIntentDeps,
   updateStatus,
 } from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
@@ -565,6 +566,20 @@ export const setIntentGitInfo: Handler<'set_intent_git_info'> = (ctx, conn, msg)
   if (msg.prId !== undefined && msg.prStatus !== undefined) {
     setPrInfo(msg.intentId, msg.prId, msg.prStatus)
   }
+  ctx.broadcastIntents(req.projectPath)
+}
+
+export const updateIntentDepsHandler: Handler<'update_intent_deps'> = (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  updateIntentDeps(msg.intentId, msg.deps)
   ctx.broadcastIntents(req.projectPath)
 }
 

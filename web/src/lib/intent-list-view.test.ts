@@ -270,14 +270,14 @@ describe('formatDependsOn', () => {
     const r = makeReq({ id: 'main', dependsOn: ['dep-a', 'dep-b'] })
     const result = formatDependsOn(r, [depA, depB, r])
     expect(result).toHaveLength(2)
-    expect(result[0]).toEqual({ id: 'dep-a', title: '需求 A', done: true })
-    expect(result[1]).toEqual({ id: 'dep-b', title: '需求 B', done: false })
+    expect(result[0]).toEqual({ id: 'dep-a', title: '需求 A', done: true, depType: 'blocks' })
+    expect(result[1]).toEqual({ id: 'dep-b', title: '需求 B', done: false, depType: 'blocks' })
   })
 
   it('依赖 ID 在列表中不存在时回退用 ID 本身作为标题', () => {
     const r = makeReq({ id: 'main', dependsOn: ['missing-id'] })
     const result = formatDependsOn(r, [r])
-    expect(result[0]).toEqual({ id: 'missing-id', title: 'missing-id', done: false })
+    expect(result[0]).toEqual({ id: 'missing-id', title: 'missing-id', done: false, depType: 'blocks' })
   })
 
   it('包含未完成依赖时 done 字段为 false', () => {
@@ -292,5 +292,28 @@ describe('formatDependsOn', () => {
     const r = makeReq({ id: 'main', dependsOn: ['dep'] })
     const result = formatDependsOn(r, [dep, r])
     expect(result[0].done).toBe(true)
+  })
+
+  it('dependsOnTypes 缺失时默认 depType 为 blocks', () => {
+    const dep = makeReq({ id: 'dep', title: '依赖项' })
+    const r = makeReq({ id: 'main', dependsOn: ['dep'] })
+    const result = formatDependsOn(r, [dep, r])
+    expect(result[0].depType).toBe('blocks')
+  })
+
+  it('dependsOnTypes 为空对象时默认 depType 为 blocks', () => {
+    const dep = makeReq({ id: 'dep', title: '依赖项' })
+    const r = makeReq({ id: 'main', dependsOn: ['dep'], dependsOnTypes: {} })
+    const result = formatDependsOn(r, [dep, r])
+    expect(result[0].depType).toBe('blocks')
+  })
+
+  it('dependsOnTypes 包含 dep 时使用对应 depType', () => {
+    const dep = makeReq({ id: 'dep', title: '依赖项' })
+    const dep2 = makeReq({ id: 'dep2', title: '依赖项2' })
+    const r = makeReq({ id: 'main', dependsOn: ['dep', 'dep2'], dependsOnTypes: { dep: 'informs', dep2: 'soft_after' } })
+    const result = formatDependsOn(r, [dep, dep2, r])
+    expect(result[0].depType).toBe('informs')
+    expect(result[1].depType).toBe('soft_after')
   })
 })

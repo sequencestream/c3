@@ -576,6 +576,19 @@
       "unfinishedList": "⚠ 未完了の依存:{list}",
       "unfinished": {
         "tooltip": "未完了の依存があります"
+      },
+      "depType": {
+        "edit": {
+          "title": "依存タイプを編集",
+          "label": "編集",
+          "tooltip": "依存タイプを編集",
+          "noDeps": "編集可能な依存がありません。"
+        },
+        "types": {
+          "blocks": "ブロック",
+          "informs": "通知",
+          "softAfter": "ソフト順序"
+        }
       }
     }
   },

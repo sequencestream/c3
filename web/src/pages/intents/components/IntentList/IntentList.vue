@@ -6,7 +6,7 @@
  * 动作(完善/启动开发/开发详情/标记状态)经事件上抛,由 App 统一发往服务端。
  */
 import { computed, ref } from 'vue'
-import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type { AutomationStatus, DepType, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
@@ -42,10 +42,50 @@ const emit = defineEmits<{
   'stop-automation': []
   'new-intent': []
   'create-pr': [intentId: string]
+  'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
 }>()
 
 function copyPrId(prId: string): void {
   void navigator.clipboard.writeText(prId)
+}
+
+// Dep type labels for display.
+const DEP_TYPE_OPTIONS: { value: DepType; label: string }[] = [
+  { value: 'blocks', label: t('intent.deps.depType.types.blocks') },
+  { value: 'informs', label: t('intent.deps.depType.types.informs') },
+  { value: 'soft_after', label: t('intent.deps.depType.types.softAfter') },
+]
+
+function depTypeLabel(dt: DepType): string {
+  return DEP_TYPE_OPTIONS.find((o) => o.value === dt)?.label ?? dt
+}
+
+// ── Dep edit modal state ───────────────────────────────────────────────────
+const editingIntentId = ref<string | null>(null)
+const editingDeps = ref<{ dependsOnId: string; depType: DepType }[]>([])
+
+function depTitle(dependsOnId: string): string {
+  return titleById.value[dependsOnId] ?? dependsOnId
+}
+
+function openDepEdit(r: Intent): void {
+  editingIntentId.value = r.id
+  const types = r.dependsOnTypes ?? {}
+  editingDeps.value = r.dependsOn.map((id) => ({
+    dependsOnId: id,
+    depType: types[id] ?? 'blocks',
+  }))
+}
+
+function closeDepEdit(): void {
+  editingIntentId.value = null
+  editingDeps.value = []
+}
+
+function saveDepEdit(): void {
+  if (!editingIntentId.value) return
+  emit('update-deps', editingIntentId.value, editingDeps.value)
+  closeDepEdit()
 }
 
 // Automation orchestrator UI state derived from the pushed status.
@@ -328,8 +368,16 @@ function datePrefix(r: Intent): string {
               :key="dep.id"
               :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
             >
-              <span v-if="di > 0">, </span>{{ dep.title }}<span v-if="!dep.done"> ⚠</span>
+              <span v-if="di > 0">, </span>{{ dep.title }}
+              <span class="req-dep-type-badge" :class="'dep-type--' + dep.depType">{{ depTypeLabel(dep.depType) }}</span>
+              <span v-if="!dep.done"> ⚠</span>
             </span>
+            <button
+              type="button"
+              class="req-btn req-dep-edit-btn"
+              :title="t('intent.deps.depType.edit.tooltip')"
+              @click.stop="openDepEdit(r)"
+            >{{ t('intent.deps.depType.edit.label') }}</button>
           </span>
         </div>
         <div
@@ -356,6 +404,39 @@ function datePrefix(r: Intent): string {
           {{ t('intent.list.loadMore') }}
         </button>
         <span v-else class="req-all-loaded">{{ t('intent.list.allLoaded') }}</span>
+      </div>
+    </div>
+    <!-- Dep edit modal -->
+    <div v-if="editingIntentId" class="dep-edit-overlay" @click.self="closeDepEdit">
+      <div class="dep-edit-modal">
+        <div class="dep-edit-header">
+          <span class="dep-edit-title">{{ t('intent.deps.depType.edit.title') }}</span>
+          <button type="button" class="dep-edit-close" @click="closeDepEdit">✕</button>
+        </div>
+        <div class="dep-edit-body">
+          <div v-if="editingDeps.length === 0" class="dep-edit-empty">
+            {{ t('intent.deps.depType.edit.noDeps') }}
+          </div>
+          <div v-for="(dep, i) in editingDeps" :key="dep.dependsOnId" class="dep-edit-row">
+            <span class="dep-edit-dep-title">{{ depTitle(dep.dependsOnId) }}</span>
+            <select
+              v-model="editingDeps[i].depType"
+              class="dep-edit-select"
+            >
+              <option v-for="opt in DEP_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <div class="dep-edit-footer">
+          <button type="button" class="dep-edit-cancel" @click="closeDepEdit">
+            {{ t('common.action.cancel.label') }}
+          </button>
+          <button type="button" class="dep-edit-save" @click="saveDepEdit">
+            {{ t('common.action.save.label') }}
+          </button>
+        </div>
       </div>
     </div>
   </section>

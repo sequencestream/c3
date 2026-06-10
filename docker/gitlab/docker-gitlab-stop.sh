@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMPOSE_DIR="$HOME/gitlab-compose"
-COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
+# --------------------------------------------------
+# docker-gitlab-stop.sh — 停止 GitLab 容器
+# --------------------------------------------------
+
+CONTAINER_NAME="gitlab"
 
 # ---- helpers ----
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -16,33 +19,31 @@ if ! command -v docker &>/dev/null; then
   exit 1
 fi
 
-if [[ ! -f "$COMPOSE_FILE" ]]; then
-  red "错误: 未找到 $COMPOSE_FILE"
-  exit 1
-fi
-
-cd "$COMPOSE_DIR"
-
-# ---- check if running ----
-RUNNING=$(docker compose ps --status running -q 2>/dev/null || true)
-if [[ -z "$RUNNING" ]]; then
-  yellow "GitLab 未在运行（没有 running 容器）。"
+# ---- container exists? ----
+if ! docker ps -a --format '{{.Names}}' | grep -qxF "$CONTAINER_NAME"; then
+  yellow "容器 $CONTAINER_NAME 不存在，无需停止。"
   exit 0
 fi
 
-# ---- stop ----
-echo "停止 GitLab ..."
+STATE=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")
 
-if [[ "${1:-}" == "--down" ]]; then
-  # 停止并删除容器（保留 volumes 数据）
-  docker compose down
-  green "GitLab 容器已停止并删除（数据卷保留）。"
-else
-  # 仅停止容器（保留容器 + 数据）
-  docker compose stop
-  green "GitLab 已停止。"
-  dim ""
-  dim "重新启动:     $0 的同级 docker-gitlab-start.sh"
-  dim "停止并删容器: $0 --down"
-  dim "删除全部数据: docker compose -f $COMPOSE_FILE down -v  (不可逆!)"
-fi
+# ---- handle each state ----
+case "$STATE" in
+  running)
+    echo ">>> 正在停止 $CONTAINER_NAME ..."
+    docker stop "$CONTAINER_NAME"
+    green "GitLab 已停止。"
+    ;;
+  paused)
+    echo ">>> 容器处于 paused 状态，先恢复再停止..."
+    docker unpause "$CONTAINER_NAME"
+    docker stop "$CONTAINER_NAME"
+    green "GitLab 已停止。"
+    ;;
+  exited|created)
+    yellow "容器状态为 $STATE，无需停止。"
+    ;;
+  *)
+    yellow "容器状态为 $STATE，跳过。"
+    ;;
+esac

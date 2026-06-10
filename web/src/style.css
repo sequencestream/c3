@@ -2717,6 +2717,143 @@ button.deny:hover:not(:disabled) {
 .req-dep-pending {
   color: var(--c-warning);
 }
+.req-dep-type-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  line-height: 1.6;
+  vertical-align: middle;
+}
+.req-dep-type-badge.dep-type--blocks {
+  background: var(--c-danger-soft, #fde8e8);
+  color: var(--c-danger-text, #c53030);
+}
+.req-dep-type-badge.dep-type--informs {
+  background: var(--c-info-soft, #e8f4fd);
+  color: var(--c-info-text, #2b6cb0);
+}
+.req-dep-type-badge.dep-type--soft_after {
+  background: var(--c-muted-soft, #edf2f7);
+  color: var(--c-muted-text, #718096);
+}
+.req-dep-edit-btn {
+  font-size: 11px;
+  padding: 0 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+/* Dep edit modal */
+.dep-edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.dep-edit-modal {
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  min-width: 360px;
+  max-width: 480px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+.dep-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--c-border);
+}
+.dep-edit-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.dep-edit-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--c-text-muted);
+  padding: 0 4px;
+}
+.dep-edit-close:hover {
+  color: var(--c-text);
+}
+.dep-edit-body {
+  padding: var(--sp-3) var(--sp-4);
+  overflow-y: auto;
+  flex: 1;
+}
+.dep-edit-empty {
+  color: var(--c-text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: var(--sp-4) 0;
+}
+.dep-edit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) 0;
+  gap: var(--sp-3);
+}
+.dep-edit-row + .dep-edit-row {
+  border-top: 1px solid var(--c-border-soft);
+}
+.dep-edit-dep-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.dep-edit-select {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dep-edit-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--c-border);
+}
+.dep-edit-cancel,
+.dep-edit-save {
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--c-border);
+}
+.dep-edit-cancel {
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+.dep-edit-save {
+  background: var(--c-primary);
+  color: #fff;
+  border-color: var(--c-primary);
+}
+.dep-edit-save:hover {
+  opacity: 0.9;
+}
 .req-item-head {
   flex: 1 1 200px;
   min-width: 0;

@@ -582,6 +582,19 @@
       "unfinishedList": "⚠ Unfinished dependencies:{list}",
       "unfinished": {
         "tooltip": "Has unfinished dependencies"
+      },
+      "depType": {
+        "edit": {
+          "title": "Edit dependency types",
+          "label": "Edit",
+          "tooltip": "Edit dependency type",
+          "noDeps": "No dependencies to edit."
+        },
+        "types": {
+          "blocks": "Blocks",
+          "informs": "Informs",
+          "softAfter": "Soft after"
+        }
       }
     }
   },

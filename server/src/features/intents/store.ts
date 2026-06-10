@@ -233,17 +233,25 @@ interface Row {
   completed_at: number | null
 }
 
-/** Attach `dependsOn` to a set of rows in one deps query, preserving row order. */
+/** Attach `dependsOn` and `dependsOnTypes` to a set of rows in one deps query, preserving row order. */
 function hydrate(d: Db, rows: Row[]): Intent[] {
   if (rows.length === 0) return []
   const byId = new Map<string, string[]>()
-  for (const r of rows) byId.set(r.id, [])
+  const typesById = new Map<string, Record<string, DepType>>()
+  for (const r of rows) {
+    byId.set(r.id, [])
+    typesById.set(r.id, {})
+  }
   const placeholders = rows.map(() => '?').join(',')
-  const deps = d.all<{ intent_id: string; depends_on_id: string }>(
-    `SELECT intent_id, depends_on_id FROM intent_deps WHERE intent_id IN (${placeholders})`,
+  const deps = d.all<{ intent_id: string; depends_on_id: string; dep_type: string }>(
+    `SELECT intent_id, depends_on_id, dep_type FROM intent_deps WHERE intent_id IN (${placeholders})`,
     ...rows.map((r) => r.id),
   )
-  for (const dep of deps) byId.get(dep.intent_id)?.push(dep.depends_on_id)
+  for (const dep of deps) {
+    byId.get(dep.intent_id)?.push(dep.depends_on_id)
+    const types = typesById.get(dep.intent_id)
+    if (types) types[dep.depends_on_id] = dep.dep_type as DepType
+  }
   return rows.map((r) => ({
     id: r.id,
     projectPath: r.project_path,
@@ -253,6 +261,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     module: r.module,
     status: r.status as IntentStatus,
     dependsOn: byId.get(r.id) ?? [],
+    dependsOnTypes: typesById.get(r.id) ?? {},
     lastDevSessionId: r.last_dev_session_id,
     automate: r.automate === 1,
     branchName: r.branch_name,
@@ -674,7 +683,10 @@ export function setPrInfo(id: string, prId: string, prStatus: IntentPrStatus): v
 /** Patch editable fields; `dependsOn`, when present, replaces the dependency set. */
 export function updateIntent(
   id: string,
-  patch: Partial<Pick<Intent, 'title' | 'content' | 'priority' | 'status' | 'dependsOn'>>,
+  patch: Partial<Pick<Intent, 'title' | 'content' | 'priority' | 'status' | 'dependsOn'>> & {
+    /** Dep types keyed by depended-on intent id. Only meaningful together with `dependsOn`; absent entries default to `'blocks'`. */
+    depTypes?: Record<string, DepType>
+  },
 ): void {
   const d = requireDb()
   tx(d, () => {
@@ -708,8 +720,16 @@ export function updateIntent(
     if (patch.dependsOn !== undefined) {
       d.run('DELETE FROM intent_deps WHERE intent_id=?', id)
       const now = Date.now()
+      const types = patch.depTypes ?? {}
       for (const dep of patch.dependsOn) {
-        d.run('INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)', id, dep, 'blocks', now)
+        const depType = types[dep] ?? 'blocks'
+        d.run(
+          'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)',
+          id,
+          dep,
+          depType,
+          now,
+        )
       }
     }
   })
@@ -747,6 +767,31 @@ export function insertDependency(
     depType,
     Date.now(),
   )
+}
+
+/**
+ * Replace all dependencies for an intent with dep_type per edge.
+ * Previous edges are deleted first. Each edge specifies its dep_type,
+ * so callers can mix blocks / informs / soft_after in one call.
+ */
+export function updateIntentDeps(
+  intentId: string,
+  deps: { dependsOnId: string; depType: DepType }[],
+): void {
+  const d = requireDb()
+  tx(d, () => {
+    d.run('DELETE FROM intent_deps WHERE intent_id=?', intentId)
+    const now = Date.now()
+    for (const dep of deps) {
+      d.run(
+        'INSERT OR IGNORE INTO intent_deps (intent_id, depends_on_id, dep_type, created_at) VALUES (?,?,?,?)',
+        intentId,
+        dep.dependsOnId,
+        dep.depType,
+        now,
+      )
+    }
+  })
 }
 
 // ---- Communication session mapping / hidden set ----

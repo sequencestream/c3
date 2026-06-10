@@ -46,6 +46,7 @@ import type {
   AutomationStatus,
   CodexPolicy,
   CreateScheduleInput,
+  DepType,
   Discussion,
   ModeToken,
   VendorModeCatalog,
@@ -1826,6 +1827,10 @@ function setIntentAutomate(intentId: string, automateOn: boolean) {
   client?.send({ type: 'set_intent_automate', intentId, automate: automateOn })
 }
 
+function updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]) {
+  client?.send({ type: 'update_intent_deps', intentId, deps })
+}
+
 function startAutomation() {
   if (!intentsProject.value) return
   client?.send({ type: 'start_automation', projectPath: intentsProject.value })
@@ -2095,6 +2100,7 @@ function dismissSkillApproval() {
         @open-dev="openDevSession"
         @set-status="setIntentStatus"
         @set-automate="setIntentAutomate"
+        @update-deps="updateIntentDeps"
         @create-pr="createPr"
         @start-automation="startAutomation"
         @stop-automation="stopAutomation"

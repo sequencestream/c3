@@ -576,6 +576,19 @@
       "unfinishedList": "⚠ 완료되지 않은 의존성:{list}",
       "unfinished": {
         "tooltip": "완료되지 않은 의존성이 있음"
+      },
+      "depType": {
+        "edit": {
+          "title": "의존성 유형 편집",
+          "label": "편집",
+          "tooltip": "의존성 유형 편집",
+          "noDeps": "편집할 의존성이 없습니다."
+        },
+        "types": {
+          "blocks": "차단",
+          "informs": "알림",
+          "softAfter": "소프트 순서"
+        }
       }
     }
   },

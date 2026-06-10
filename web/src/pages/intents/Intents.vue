@@ -29,6 +29,7 @@ import type {
   SlashCommandInfo,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { DepType } from '@ccc/shared/protocol'
 
 defineProps<{
   // left: intent list
@@ -77,6 +78,7 @@ const emit = defineEmits<{
   'stop-automation': []
   'new-intent': []
   'create-pr': [intentId: string]
+  'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-intent-session': [sessionId: string]
   'new-intent-session': []
   'rename-intent-session': [sessionId: string, title: string]
@@ -117,6 +119,7 @@ defineExpose({
     @stop-automation="emit('stop-automation')"
     @new-intent="emit('new-intent')"
     @create-pr="(id: string) => emit('create-pr', id)"
+    @update-deps="(id, deps) => emit('update-deps', id, deps)"
   />
 
   <IntentSessionList

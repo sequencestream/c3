@@ -6,7 +6,7 @@
  * 便于在 Node 环境下单测(项目的 web 测试不含 DOM)。
  */
 
-import type { Intent, IntentRunStatus, IntentStatus } from '@ccc/shared/protocol'
+import type { DepType, Intent, IntentRunStatus, IntentStatus } from '@ccc/shared/protocol'
 import { DATE_FORMATS, type DateStyleName } from './datetime-formats'
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
@@ -144,19 +144,22 @@ export interface DepInfo {
   id: string
   title: string
   done: boolean
+  /** The dependency type; falls back to 'blocks' when absent. */
+  depType: DepType
 }
 
 /**
- * 将需求的依赖 ID 列表解析为带标题与完成状态的 DepInfo 数组。
- * 利用 `reqList` 查询依赖的标题与状态。
+ * 将需求的依赖 ID 列表解析为带标题、完成状态与 dep_type 的 DepInfo 数组。
+ * 利用 `reqList` 查询依赖的标题与状态，`r.dependsOnTypes` 查询依赖类型。
  *
  * @returns 依赖数组；无依赖时返回空数组。
  */
 export function formatDependsOn(r: Intent, reqList: Intent[]): DepInfo[] {
   if (!r.dependsOn.length) return []
   const byId = new Map(reqList.map((x) => [x.id, x]))
+  const types = r.dependsOnTypes ?? {}
   return r.dependsOn.map((id) => {
     const dep = byId.get(id)
-    return { id, title: dep?.title ?? id, done: dep?.status === 'done' }
+    return { id, title: dep?.title ?? id, done: dep?.status === 'done', depType: types[id] ?? 'blocks' }
   })
 }

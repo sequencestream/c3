@@ -1109,7 +1109,8 @@
       "cannotStartDev": "当前状态({status})不可启动开发。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",
-      "worktreeCreateFailed": "工作目录创建失败: {message}。"
+      "worktreeCreateFailed": "工作目录创建失败: {message}。",
+      "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",

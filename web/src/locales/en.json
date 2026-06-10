@@ -1109,7 +1109,8 @@
       "cannotStartDev": "Cannot start development from status \"{status}\".",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
-      "worktreeCreateFailed": "Worktree creation failed: {message}."
+      "worktreeCreateFailed": "Worktree creation failed: {message}.",
+      "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet."
     },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",

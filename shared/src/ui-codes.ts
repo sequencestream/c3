@@ -69,6 +69,10 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.worktreeCreateFailed',
     params: ['message'],
   },
+  'intent.dependencyNotMerged': {
+    key: 'error.intent.dependencyNotMerged',
+    params: ['title', 'id'],
+  },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

@@ -1110,7 +1110,8 @@
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "prCreateFailed": "PR 생성에 실패했습니다: {detail}。",
-      "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。"
+      "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。",
+      "dependencyNotMerged": "종속성 \"{title}\"({id})이(가) 아직 메인 브랜치에 병합되지 않았습니다."
     },
     "discussion": {
       "dbUnavailable": "토론 기능을 사용할 수 없습니다 (c3.db).",

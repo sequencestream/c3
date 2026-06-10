@@ -1110,7 +1110,8 @@
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "prCreateFailed": "Не удалось создать PR: {detail}.",
-      "worktreeCreateFailed": "Не удалось создать рабочее дерево: {message}."
+      "worktreeCreateFailed": "Не удалось создать рабочее дерево: {message}.",
+      "dependencyNotMerged": "Зависимость \"{title}\"({id}) ещё не слита в основную ветку."
     },
     "discussion": {
       "dbUnavailable": "Функция обсуждений недоступна (c3.db).",

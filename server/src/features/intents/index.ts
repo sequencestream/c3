@@ -465,6 +465,33 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     })
     return
   }
+  // ── Dependency validation (2026-06-10) ─────────────────────────────────
+  // In worktree mode, depended-on intents must have their code merged to the
+  // main branch (prStatus === 'merged') before a downstream intent can safely
+  // branch off. In current-branch mode, this check is skipped (status-only
+  // validation is done by the domain layer / pickNext for automation).
+  if (req.dependsOn.length > 0 && getGitCommitMode(proj) === 'worktree') {
+    const all = listIntents(proj)
+    const byId = new Map(all.map((r) => [r.id, r]))
+    const unmerged = req.dependsOn
+      .map((id) => byId.get(id))
+      .filter((dep): dep is NonNullable<typeof dep> => {
+        if (!dep) return false // non-existent dep treated as satisfied
+        if (dep.status !== 'done') return true
+        if (dep.prStatus !== 'merged') return true
+        return false
+      })
+    if (unmerged.length > 0) {
+      conn.send({
+        type: 'error',
+        error: {
+          code: 'intent.dependencyNotMerged',
+          params: { title: unmerged[0].title, id: unmerged[0].id },
+        },
+      })
+      return
+    }
+  }
   // ── Git commit strategy (2026-06-10) ───────────────────────────────────
   // The workspace's `gitCommitMode` decides where the dev agent runs:
   //  - `worktree`: create (or reuse) an isolated git worktree at

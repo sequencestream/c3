@@ -1110,7 +1110,8 @@
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
-      "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。"
+      "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
+      "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。"
     },
     "discussion": {
       "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",

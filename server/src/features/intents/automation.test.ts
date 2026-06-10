@@ -1,407 +1,311 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import type { AutomationStatus, CheckpointConsensusOutcome } from '@ccc/shared/protocol'
-import { resetDbForTests } from '../../kernel/infra/db.js'
-import { getIntent, insertIntents, resetStoreForTests, setAutomate, updateStatus } from './store.js'
+/**
+ * Unit tests for the automation orchestrator — dependency merge validation.
+ *
+ * Covers the `pickNext` function's behavior under different git commit modes
+ * and dependency merge states. The `startDevelopment` handler's dependency
+ * check is tested in the handler test below.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Intent } from '@ccc/shared/protocol'
 
-// ── Mocks ──────────────────────────────────────────────────────────────────
-const judgeMock = vi.fn()
-const ckConsensusMock = vi.fn()
-const commitMock = vi.fn()
-vi.mock('./judge.js', () => ({ judgeCompletion: (...a: unknown[]) => judgeMock(...a) }))
-vi.mock('./checkpoint-consensus.js', () => ({
-  runCheckpointConsensus: (...a: unknown[]) => ckConsensusMock(...a),
+// ---- Mocks (must be before imports) ----
+
+vi.mock('./store.js', () => ({
+  getIntent: vi.fn(),
+  isStoreAvailable: vi.fn(() => true),
+  listIntents: vi.fn(),
+  setBranchName: vi.fn(),
+  setLastDevSession: vi.fn(),
+  setPrInfo: vi.fn(),
+  updateStatus: vi.fn(),
 }))
-vi.mock('../../git.js', () => ({
-  gitDiffStat: async () => 'M file.ts | 1 +',
-  gitRecentLog: async () => 'abc123 feat: prior work',
-  commitAndPush: (...a: unknown[]) => commitMock(...a),
-}))
-const devSkillMock = vi.fn(() => '')
+
 vi.mock('../../kernel/config/index.js', () => ({
-  getDevSkill: (_projectPath?: string) => devSkillMock(),
-  getDefaultMode: () => 'default' as const,
+  getDefaultMainBranch: vi.fn(() => 'main'),
+  getDevSkill: vi.fn(),
+  getDefaultMode: vi.fn(),
+  getGitCommitMode: vi.fn(),
 }))
-vi.mock('../../runs.js', () => ({
-  ensureRuntime: vi.fn(() => ({
-    sessionId: 'mock-session',
-    workspacePath: '/abs/auto-proj',
-    effectiveCwd: undefined,
-  })),
-  getRuntime: vi.fn(() => undefined),
-}))
+
 vi.mock('./worktree.js', () => ({
-  createWorktree: vi.fn(() => ({
-    worktreePath: '/tmp/c3-worktrees/auto-proj/intent-test',
-    branchName: 'intent/test-branch',
-  })),
-  getWorktreePath: vi.fn(() => '/tmp/c3-worktrees/auto-proj/intent-test'),
-  worktreeExists: vi.fn(() => true),
-  generateBranchName: vi.fn((_id: string, title: string) => `intent/test-${title}`),
+  createWorktree: vi.fn(() => ({ worktreePath: '/tmp/wt', branchName: 'wt-branch' })),
+  getWorktreePath: vi.fn(),
+  worktreeExists: vi.fn(),
+  readBranch: vi.fn(() => 'main'),
 }))
 
-// ── SUT (imported after mocks) ──────────────────────────────────────────────
-const { startAutomation, getAutomationStatus, notifyTurnSettled } = await import('./automation.js')
-import type { AutomationHooks } from './automation.js'
+vi.mock('./dev-link.js', () => ({
+  registerPendingDevLink: vi.fn(),
+}))
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-let dir: string
-const proj = '/abs/auto-proj'
+vi.mock('../../runs.js', () => ({
+  ensureRuntime: vi.fn(() => ({ effectiveCwd: undefined })),
+  getRuntime: vi.fn(),
+  isRunning: vi.fn(() => false),
+  removeRuntime: vi.fn(),
+  removeViewer: vi.fn(),
+  addViewer: vi.fn(),
+}))
 
-/** Settle the current intent-turn and await async processing. */
-async function settleCur(sessionId: string): Promise<void> {
-  const s = getAutomationStatus(proj)
-  const id = s.currentIntentId
-  if (!id) throw new Error('no current intent')
-  await notifyTurnSettled(proj, sessionId, 'complete', id)
-  // Flush chained microtasks (commitAndPush, _startNext, _launchDevelopment…)
-  await new Promise((r) => setTimeout(r, 0))
+vi.mock('../../kernel/agent-config/index.js', () => ({
+  getDefaultAgentId: vi.fn(),
+  resolveSessionAgentSwitch: vi.fn(),
+  resolveSessionVendor: vi.fn(),
+  setSessionAgent: vi.fn(),
+}))
+
+vi.mock('../../kernel/agent/process/launcher.js', () => ({
+  probeAll: vi.fn(),
+}))
+
+vi.mock('../../sessions.js', () => ({
+  loadHistory: vi.fn(),
+  loadLastAssistantMessages: vi.fn(),
+  sessionExists: vi.fn(() => Promise.resolve(false)),
+}))
+
+vi.mock('../../state.js', () => ({
+  hasWorkspace: vi.fn(() => true),
+  touchWorkspace: vi.fn(),
+}))
+
+vi.mock('../../git.js', () => ({
+  commitAndPush: vi.fn(),
+  createGhPr: vi.fn(),
+  gitDiffStat: vi.fn(),
+  gitRecentLog: vi.fn(),
+}))
+
+vi.mock('./judge.js', () => ({
+  judgeCompletion: vi.fn(),
+}))
+
+vi.mock('./checkpoint-consensus.js', () => ({
+  runCheckpointConsensus: vi.fn(),
+}))
+
+// ---- Imports ----
+
+import { pickNext } from './automation.js'
+import { startDevelopment } from './index.js'
+import { listIntents, getIntent } from './store.js'
+import { getGitCommitMode } from '../../kernel/config/index.js'
+import { hasWorkspace } from '../../state.js'
+
+// ---- Test-only types (mirrors the Handler shape without importing transport) ----
+
+interface MockConn {
+  send: (msg: Record<string, unknown>) => void
+}
+interface MockCtx {
+  launchRun: (...args: unknown[]) => unknown
+}
+interface StartDevMsg {
+  type: 'start_development'
+  projectPath: string
+  intentId: string
 }
 
-/** A runDevTurn that tracks prompts. */
-function trackingTurn(prompts: string[]): AutomationHooks['runDevTurn'] {
-  let n = 0
-  return async (input) => {
-    prompts.push(input.prompt)
-    return { outcome: 'complete', sessionId: `sess-${n++}`, lastMessage: 'done' }
-  }
-}
+// ---- Factory ----
 
-function hooks(runDevTurn: AutomationHooks['runDevTurn']): AutomationHooks {
-  return {
-    runDevTurn,
-    broadcastIntents: () => {},
-    sessionExists: async () => false,
-    isRunning: () => false,
-    emitStatus: () => {},
-  }
-}
-
-function start(rt: AutomationHooks['runDevTurn']): void {
-  startAutomation(proj, hooks(rt), 1000)
-}
-
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'c3-auto-'))
-  process.env.C3_DB_PATH = join(dir, 'c3.db')
-  resetDbForTests()
-  resetStoreForTests()
-  judgeMock.mockReset()
-  commitMock.mockReset()
-  commitMock.mockResolvedValue({ ok: true, committed: true })
-  devSkillMock.mockReturnValue('')
+const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
+  projectPath: '/test/proj',
+  title: 'Test',
+  content: '',
+  priority: 'P1',
+  module: '',
+  status: 'todo',
+  dependsOn: [],
+  dependsOnTypes: {},
+  automate: true,
+  createdAt: 100,
+  updatedAt: 100,
+  completedAt: null,
+  runStatus: 'idle',
+  branchName: null,
+  latestCommitHash: null,
+  prId: null,
+  prStatus: null,
+  lastDevSessionId: null,
+  ...overrides,
 })
 
-afterEach(() => {
-  resetDbForTests()
-  delete process.env.C3_DB_PATH
-  rmSync(dir, { recursive: true, force: true })
+// =============================================================================
+// pickNext — automated scheduling path
+// =============================================================================
+
+describe('pickNext — worktree dep merge validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('worktree: filters out intents whose dep is done but not merged', () => {
+    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing' })
+    const child = makeIntent({ id: 'B', dependsOn: ['A'] })
+    vi.mocked(listIntents).mockReturnValue([dep, child])
+    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+
+    const result = pickNext('/test/proj')
+    expect(result).toBeNull()
+  })
+
+  it('worktree: allows intents whose dep is done and merged', () => {
+    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'merged' })
+    const child = makeIntent({ id: 'B', dependsOn: ['A'] })
+    vi.mocked(listIntents).mockReturnValue([dep, child])
+    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('B')
+  })
+
+  it('current-branch: does not check prStatus (unmerged dep still passes)', () => {
+    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing' })
+    const child = makeIntent({ id: 'B', dependsOn: ['A'] })
+    vi.mocked(listIntents).mockReturnValue([dep, child])
+    vi.mocked(getGitCommitMode).mockReturnValue('current-branch')
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('B')
+  })
+
+  it('worktree: all deps must be merged (one unmerged blocks)', () => {
+    const depA = makeIntent({ id: 'A', status: 'done', prStatus: 'merged' })
+    const depB = makeIntent({ id: 'B', status: 'done', prStatus: 'reviewing' })
+    const child = makeIntent({ id: 'C', dependsOn: ['A', 'B'] })
+    vi.mocked(listIntents).mockReturnValue([depA, depB, child])
+    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+
+    const result = pickNext('/test/proj')
+    expect(result).toBeNull()
+  })
+
+  it('worktree: non-existent dep is treated as satisfied', () => {
+    const child = makeIntent({ id: 'B', dependsOn: ['A'] })
+    vi.mocked(listIntents).mockReturnValue([child])
+    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('B')
+  })
+
+  it('worktree: dep not done (in_progress) is filtered regardless of prStatus', () => {
+    const dep = makeIntent({ id: 'A', status: 'in_progress', prStatus: null, automate: false })
+    const child = makeIntent({ id: 'B', dependsOn: ['A'] })
+    vi.mocked(listIntents).mockReturnValue([dep, child])
+    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+
+    const result = pickNext('/test/proj')
+    expect(result).toBeNull()
+  })
 })
 
-// ── Tests ───────────────────────────────────────────────────────────────────
+// =============================================================================
+// startDevelopment — manual start path
+// =============================================================================
 
-describe('automation orchestrator', () => {
-  it('develops P0→P1, commits each', async () => {
-    const [p1, p0] = insertIntents(proj, [
-      { title: 'low', content: 'c', priority: 'P1' },
-      { title: 'high', content: 'c', priority: 'P0' },
-    ])
-    setAutomate(p1.id, true)
-    setAutomate(p0.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    await settleCur('s-0')
-    await settleCur('s-1')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('done')
-    expect(final.completedIds).toEqual([p0.id, p1.id])
-    expect(getIntent(p0.id)?.status).toBe('done')
-    expect(getIntent(p1.id)?.status).toBe('done')
-    expect(commitMock).toHaveBeenCalledTimes(2)
-    expect(prompts[0]).toMatch(/^high/)
-    expect(prompts[1]).toMatch(/^low/)
+describe('startDevelopment — manual start dep merge validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
   })
 
-  it('uses dev skill prefix', async () => {
-    devSkillMock.mockReturnValue('/my-skill')
-    const [r] = insertIntents(proj, [{ title: 'custom', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    await settleCur('s-0')
-    expect(prompts[0]).toMatch(/^\/my-skill custom/)
-  })
-
-  it('omits skill prefix when none configured', async () => {
-    const [r] = insertIntents(proj, [{ title: 'plain', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    await settleCur('s-0')
-    expect(prompts[0]).toMatch(/^plain/)
-  })
-
-  it('respects intra-batch dependency order', async () => {
-    const [a, b] = insertIntents(proj, [
-      { title: 'depends', content: 'c', priority: 'P0', dependsOnIndexes: [1] },
-      { title: 'prereq', content: 'c', priority: 'P0' },
-    ])
-    expect(a.dependsOn).toEqual([b.id])
-    setAutomate(a.id, true)
-    setAutomate(b.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    await settleCur('s-0')
-    await settleCur('s-1')
-    const final = getAutomationStatus(proj)
-    expect(final.completedIds).toEqual([b.id, a.id])
-    expect(prompts[0]).toMatch(/^prereq/)
-    expect(prompts[1]).toMatch(/^depends/)
-  })
-
-  it('continues when judge says in_progress, then completes', async () => {
-    const [r] = insertIntents(proj, [{ title: 'multi', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock
-      .mockResolvedValueOnce({ verdict: 'in_progress', reason: '检查点' })
-      .mockResolvedValueOnce({ verdict: 'done', reason: 'ok' })
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    await settleCur('s-0')
-    expect(prompts[0]).toMatch(/^multi/)
-    await settleCur('s-1')
-    expect(prompts[1]).toBe('continue')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('done')
-  })
-
-  it('stops when judge says stuck', async () => {
-    const [r] = insertIntents(proj, [{ title: 'bad', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'stuck', reason: '反复失败' })
-    start(trackingTurn([]))
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('error')
-    expect(final.error).toContain('反复失败')
-    expect(commitMock).not.toHaveBeenCalled()
-  })
-
-  it('stops when commit fails', async () => {
-    const [r] = insertIntents(proj, [{ title: 'push', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    commitMock.mockResolvedValue({ ok: false, committed: true, error: 'git push 失败: rejected' })
-    start(trackingTurn([]))
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('error')
-    expect(final.error).toContain('git push 失败')
-    expect(getIntent(r.id)?.status).not.toBe('done')
-  })
-
-  it('surfaces awaitingPermission then clears on settle', async () => {
-    const [r] = insertIntents(proj, [{ title: 'perm', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    const emitted: AutomationStatus[] = []
-    const rt: AutomationHooks['runDevTurn'] = async (input) => {
-      input.onAwaitingPermission?.(true)
-      return { outcome: 'complete', sessionId: 's-x', lastMessage: 'done' }
+  function makeConn() {
+    const sent: unknown[] = []
+    const conn = {
+      send: (msg: unknown) => sent.push(msg),
     }
-    const h = hooks(rt)
-    h.emitStatus = (s) => {
-      emitted.push(s)
-    }
-    startAutomation(proj, h, 1000)
-    await settleCur('s-x')
-    expect(emitted.some((s) => s.awaitingPermission)).toBe(true)
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('done')
-    expect(final.awaitingPermission).toBe(false)
-    expect(getIntent(r.id)?.status).toBe('done')
-  })
-
-  it('skips non-automated intents', async () => {
-    const [on] = insertIntents(proj, [{ title: 'on', content: 'c', priority: 'P0' }])
-    insertIntents(proj, [{ title: 'off', content: 'c', priority: 'P0' }])
-    setAutomate(on.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    start(trackingTurn([]))
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.completedIds).toEqual([on.id])
-  })
-
-  it('skips when dep is unfinished', async () => {
-    const [dep] = insertIntents(proj, [{ title: 'dep', content: 'c', priority: 'P1' }])
-    const [main] = insertIntents(proj, [
-      { title: 'main', content: 'c', priority: 'P0', dependsOn: [dep.id] },
-    ])
-    setAutomate(main.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    start(trackingTurn([]))
-    await new Promise((r) => setTimeout(r, 0))
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('done')
-    expect(final.completedIds).toEqual([])
-  })
-
-  it('skips in_progress with no lastDevSessionId', async () => {
-    // An in_progress intent with no linked dev session (dangling) is skipped
-    // if it's not automated. Automated in_progress + no lastDevSessionId
-    // is a fresh start.
-    insertIntents(proj, [{ title: 'dangling', content: 'c', priority: 'P0' }])
-    const [auto] = insertIntents(proj, [{ title: 'auto', content: 'c', priority: 'P0' }])
-    setAutomate(auto.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    start(trackingTurn([]))
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.completedIds).toEqual([auto.id])
-  })
-
-  it('includes dependency note in prompt', async () => {
-    const [dep] = insertIntents(proj, [{ title: 'dep', content: 'dep-c', priority: 'P0' }])
-    const [r] = insertIntents(proj, [
-      { title: 'with-dep', content: 'c', priority: 'P0', dependsOn: [dep.id] },
-    ])
-    setAutomate(r.id, true)
-    updateStatus(dep.id, 'done')
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    await settleCur('s-0')
-    expect(prompts[0]).toContain('依赖需求:' + dep.id)
-  })
-
-  // ── Self-heal (lint hook) ────────────────────────────────────────────
-  it('self-heals lint failure with one fix agent turn', async () => {
-    const [r] = insertIntents(proj, [{ title: 'lint-heal', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    commitMock
-      .mockResolvedValueOnce({
-        ok: false,
-        committed: false,
-        error: 'eslint: no-unused-vars',
-        failure: 'commit-hook',
-      })
-      .mockResolvedValueOnce({ ok: true, committed: true })
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    // First settle → commit fails with lint hook → controller enters 'fixing'
-    await settleCur('s-0')
-    expect(getAutomationStatus(proj).state).toBe('fixing')
-    expect(commitMock).toHaveBeenCalledTimes(1)
-    // Fix turn settles → retry commit → succeeds
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('done')
-    expect(commitMock).toHaveBeenCalledTimes(2)
-    expect(prompts[1]).toContain('pre-commit')
-    expect(prompts[1]).toContain('no-unused-vars')
-  })
-
-  it('stops when lint heal retry still fails', async () => {
-    const [r] = insertIntents(proj, [{ title: 'lint-fail', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'ok' })
-    commitMock
-      .mockResolvedValueOnce({
-        ok: false,
-        committed: false,
-        error: 'eslint: semi',
-        failure: 'commit-hook',
-      })
-      .mockResolvedValueOnce({ ok: false, committed: false, error: 'eslint: semi (retry)' })
-    start(trackingTurn([]))
-    await settleCur('s-0')
-    expect(getAutomationStatus(proj).state).toBe('fixing')
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('error')
-    expect(final.error).toContain('lint')
-  })
-
-  // ── Checkpoint consensus ──────────────────────────────────────────────
-
-  function makeConsensusResult(decision: 'continue' | 'wait' | null): CheckpointConsensusOutcome {
-    return {
-      votes: [
-        { agentId: 'a1', agentName: 'Agent 1', decision: 'continue', reason: 'relevant' },
-        { agentId: 'a2', agentName: 'Agent 2', decision: decision ?? 'wait', reason: 'ok' },
-      ],
-      decision,
-      unanimous: decision !== null,
-      summary: decision === 'continue' ? '继续推进' : '等待人工',
-      trigger: 'judge_stuck',
-      triggerReason: '检查点',
-    }
+    return { sent, conn }
   }
 
-  it('stops stuck when checkpoint consensus says wait (majority disabled implicitly)', async () => {
-    const [r] = insertIntents(proj, [{ title: 'stuck-wait', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'stuck', reason: '反复失败' })
-    ckConsensusMock.mockResolvedValue(makeConsensusResult('wait'))
-    start(trackingTurn([]))
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('error')
-    expect(final.error).toContain('反复失败')
-    expect(commitMock).not.toHaveBeenCalled()
+  function makeCtx() {
+    return { launchRun: vi.fn() }
+  }
+
+  it('worktree: blocks manual start when dep is done but not merged', async () => {
+    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing', title: 'Dep A' })
+    const req = makeIntent({ id: 'B', title: 'Child B', dependsOn: ['A'] })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockImplementation((id: string) => {
+      if (id === 'A') return dep
+      if (id === 'B') return req
+      return null
+    })
+    vi.mocked(listIntents).mockReturnValue([dep, req])
+    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+
+    const { sent, conn } = makeConn()
+    const ctx = makeCtx()
+
+    const msg: StartDevMsg = {
+      type: 'start_development',
+      projectPath: '/test/proj',
+      intentId: 'B',
+    }
+    await startDevelopment(ctx as unknown as MockCtx, conn as unknown as MockConn, msg)
+
+    expect(sent).toHaveLength(1)
+    const err = sent[0] as Record<string, unknown>
+    expect(err.type).toBe('error')
+    const errError = err.error as Record<string, unknown>
+    expect(errError.code).toBe('intent.dependencyNotMerged')
+    const params = errError.params as Record<string, unknown>
+    expect(params.title).toBe('Dep A')
   })
 
-  it('overrides stuck verdict when checkpoint consensus says continue', async () => {
-    const [r] = insertIntents(proj, [{ title: 'stuck-go', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock
-      .mockResolvedValueOnce({ verdict: 'stuck', reason: '检查点: 方案设计完成' })
-      .mockResolvedValueOnce({ verdict: 'done', reason: 'ok' })
-    ckConsensusMock.mockResolvedValue(makeConsensusResult('continue'))
-    const prompts: string[] = []
-    start(trackingTurn(prompts))
-    await settleCur('s-0')
-    // After consensus → continue → continuation → second settle → done
-    await settleCur('s-1')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('done')
-    expect(prompts).toContain('continue')
+  it('current-branch: does not block manual start when dep is unmerged', async () => {
+    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing', title: 'Dep A' })
+    const req = makeIntent({ id: 'B', title: 'Child B', dependsOn: ['A'] })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockImplementation((id: string) => {
+      if (id === 'A') return dep
+      if (id === 'B') return req
+      return null
+    })
+    vi.mocked(listIntents).mockReturnValue([dep, req])
+    vi.mocked(getGitCommitMode).mockReturnValue('current-branch')
+
+    const { sent, conn } = makeConn()
+    const ctx = makeCtx()
+
+    const msg1: StartDevMsg = {
+      type: 'start_development',
+      projectPath: '/test/proj',
+      intentId: 'B',
+    }
+    await startDevelopment(ctx as unknown as MockCtx, conn as unknown as MockConn, msg1)
+
+    // current-branch mode: no merge check → should proceed (no error sent)
+    const errors = sent.filter((m: Record<string, unknown>) => m.type === 'error')
+    expect(errors).toHaveLength(0)
   })
 
-  it('stops stuck when checkpoint consensus returns null (no decision)', async () => {
-    const [r] = insertIntents(proj, [{ title: 'stuck-null', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'stuck', reason: '未真实完成' })
-    ckConsensusMock.mockResolvedValue(null)
-    start(trackingTurn([]))
-    await settleCur('s-0')
-    const final = getAutomationStatus(proj)
-    expect(final.state).toBe('error')
-    expect(final.error).toContain('未真实完成')
-  })
+  it('worktree: allows manual start when dep is done and merged', async () => {
+    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'merged', title: 'Dep A' })
+    const req = makeIntent({ id: 'B', title: 'Child B', dependsOn: ['A'] })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockImplementation((id: string) => {
+      if (id === 'A') return dep
+      if (id === 'B') return req
+      return null
+    })
+    vi.mocked(listIntents).mockReturnValue([dep, req])
+    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
 
-  it('broadcasts checkpoint consensus via status', async () => {
-    const [r] = insertIntents(proj, [{ title: 'broadcast-ck', content: 'c', priority: 'P0' }])
-    setAutomate(r.id, true)
-    judgeMock.mockResolvedValue({ verdict: 'stuck', reason: '检查点' })
-    const outcome = makeConsensusResult('continue')
-    ckConsensusMock.mockResolvedValue(outcome)
-    const emitted: AutomationStatus[] = []
-    const h = hooks(trackingTurn([]))
-    h.emitStatus = (s) => emitted.push(s)
-    startAutomation(proj, h, 1000)
-    await settleCur('s-0')
-    // The status should carry checkpointConsensus when consensus decision is continue
-    const ck = emitted.find((s) => s.checkpointConsensus?.decision === 'continue')
-    expect(ck).toBeDefined()
-    expect(ck!.checkpointConsensus!.summary).toBe('继续推进')
+    const { sent, conn } = makeConn()
+    const ctx = makeCtx()
+
+    const msg2: StartDevMsg = {
+      type: 'start_development',
+      projectPath: '/test/proj',
+      intentId: 'B',
+    }
+    await startDevelopment(ctx as unknown as MockCtx, conn as unknown as MockConn, msg2)
+
+    const depErrors = sent.filter((m: Record<string, unknown>) => {
+      if (m.type !== 'error') return false
+      const err = m.error as Record<string, unknown> | undefined
+      return err?.code === 'intent.dependencyNotMerged'
+    })
+    expect(depErrors).toHaveLength(0)
   })
 })

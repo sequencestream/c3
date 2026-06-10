@@ -45,7 +45,7 @@ import { registerPendingDevLink } from './dev-link.js'
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
-import { getDevSkill, getDefaultMode } from '../../kernel/config/index.js'
+import { getDevSkill, getDefaultMode, getGitCommitMode } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { createWorktree, getWorktreePath, worktreeExists } from './worktree.js'
 
@@ -132,16 +132,22 @@ function idleStatus(projectPath: string): AutomationStatus {
   }
 }
 
-function pickNext(projectPath: string): Intent | null {
+/** @internal exported for testing only */
+export function pickNext(projectPath: string): Intent | null {
   const all = listIntents(projectPath)
   const byId = new Map(all.map((r) => [r.id, r]))
+  const gitCommitMode = getGitCommitMode(projectPath)
   const eligible = all.filter(
     (r) =>
       r.automate &&
       (r.status === 'todo' || r.status === 'in_progress') &&
       r.dependsOn.every((id) => {
         const dep = byId.get(id)
-        return !dep || dep.status === 'done'
+        if (!dep) return true
+        if (dep.status !== 'done') return false
+        // Worktree mode: dependency code must be merged to main branch
+        if (gitCommitMode === 'worktree' && dep.prStatus !== 'merged') return false
+        return true
       }),
   )
   const rank = { P0: 0, P1: 1, P2: 2, P3: 3 } as const

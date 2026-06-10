@@ -1709,6 +1709,27 @@ export interface WorkspaceMcpConfig {
   denylist: string[]
 }
 
+/**
+ * One workspace's WorkCenter rollup — aggregate counts across the four work
+ * surfaces, scoped to an optional time range (see {@link get_timerange_stats}).
+ * `running` fields reflect live runtime/execution state (time-range independent);
+ * all other counts honour the request's `startTime`/`endTime`.
+ */
+export interface TimeRangeProjectStats {
+  /** Absolute workspace path (the project key). */
+  projectPath: string
+  /** Display name — the workspace directory's basename. */
+  projectName: string
+  /** Work sessions: `total` real projection rows in range; `running` live non-idle runtimes. */
+  workSessions: { running: number; total: number }
+  /** Intent counts by status, in range. */
+  intents: { in_progress: number; todo: number; done: number }
+  /** Discussion counts by status, in range. */
+  discussions: { in_progress: number; completed: number }
+  /** Schedules: `total`/`active` rows in range; `running` schedules with a live execution log. */
+  schedules: { running: number; active: number; total: number }
+}
+
 // Client → Server
 export type ClientToServer =
   | { type: 'user_prompt'; text: string }
@@ -1980,6 +2001,15 @@ export type ClientToServer =
    * lifecycle state (default: all).
    */
   | { type: 'list_wait_user_events'; projectPath: string; status?: WaitUserInvolveStatus }
+  /**
+   * WorkCenter cross-project rollup: aggregate per-project counts (work sessions /
+   * intents / discussions / schedules) across **all** registered workspaces in one
+   * round-trip. Replies with {@link timerange_stats}. `startTime`/`endTime`
+   * (ms since epoch) are optional; absent ⇒ no time filter (count everything).
+   * The range filters intents/discussions/schedules by `updated_at` and sessions
+   * by `last_modified`; the `running` counts are a live "now" notion and ignore it.
+   */
+  | { type: 'get_timerange_stats'; startTime?: number; endTime?: number }
   | { type: 'ping' }
 
 // Server → Client
@@ -2431,4 +2461,6 @@ export type ServerToClient =
       ref: string
       detail: string
     }
+  /** WorkCenter cross-project rollup (reply to `get_timerange_stats`). One entry per workspace. */
+  | { type: 'timerange_stats'; stats: TimeRangeProjectStats[] }
   | { type: 'pong' }

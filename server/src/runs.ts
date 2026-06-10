@@ -443,6 +443,20 @@ export function listStatuses(): SessionRunStatus[] {
 }
 
 /**
+ * Count the live (non-`idle`) runtimes whose `workspacePath` matches — the
+ * WorkCenter "running sessions" tally for one project. A live-"now" notion: any
+ * runtime mid-turn / awaiting permission / holding a team lead counts; idle ones
+ * do not. Pure in-memory registry read (no db).
+ */
+export function runningCountForWorkspace(workspacePath: string): number {
+  let n = 0
+  for (const rt of runtimes.values()) {
+    if (rt.workspacePath === workspacePath && rt.status !== 'idle') n++
+  }
+  return n
+}
+
+/**
  * Session-layer liveness reconciliation: identify stale/hung runs and converge
  * them to `idle`. Called periodically by the server's status heartbeat.
  *

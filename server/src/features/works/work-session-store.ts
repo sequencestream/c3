@@ -506,6 +506,37 @@ export function listForWorkspace(workspacePath: string): WorkSessionRow[] {
     .map(toRow)
 }
 
+/**
+ * Count a workspace's real (post-bind) session projection rows, optionally
+ * restricted to rows whose `last_modified` falls in `[startTime, endTime]`
+ * (ms epoch; either bound may be omitted). When a bound is given, rows with a
+ * null `last_modified` are excluded (they have no transcript time to compare);
+ * with no bounds, every real row counts. Returns 0 when the db is unavailable.
+ */
+export function countRealInRange(
+  workspacePath: string,
+  startTime?: number,
+  endTime?: number,
+): number {
+  const d = db()
+  if (!d) return 0
+  const where: string[] = ['workspace_path=?', "kind='real'"]
+  const params: (string | number)[] = [workspacePath]
+  if (startTime != null) {
+    where.push('last_modified IS NOT NULL AND last_modified >= ?')
+    params.push(startTime)
+  }
+  if (endTime != null) {
+    where.push('last_modified IS NOT NULL AND last_modified <= ?')
+    params.push(endTime)
+  }
+  const row = d.get<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM work_session_metadata WHERE ${where.join(' AND ')}`,
+    ...params,
+  )
+  return row?.count ?? 0
+}
+
 // ---- Lazy validation (F-8) ----
 
 /**

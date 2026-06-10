@@ -295,6 +295,38 @@ export function listIntents(projectPath: string, status?: IntentStatus): Intent[
   return hydrate(d, rows)
 }
 
+/**
+ * Status → count for a project's intents, optionally restricted to rows whose
+ * `updated_at` falls in `[startTime, endTime]` (ms epoch; either bound may be
+ * omitted). Statuses with no matching rows are absent from the map. Returns an
+ * empty map when the db is unavailable (graceful degradation, never throws).
+ */
+export function countByStatusInRange(
+  projectPath: string,
+  startTime?: number,
+  endTime?: number,
+): Record<string, number> {
+  const d = db()
+  if (!d) return {}
+  const where: string[] = ['project_path=?']
+  const params: (string | number)[] = [resolve(projectPath)]
+  if (startTime != null) {
+    where.push('updated_at >= ?')
+    params.push(startTime)
+  }
+  if (endTime != null) {
+    where.push('updated_at <= ?')
+    params.push(endTime)
+  }
+  const rows = d.all<{ status: string; count: number }>(
+    `SELECT status, COUNT(*) AS count FROM intents WHERE ${where.join(' AND ')} GROUP BY status`,
+    ...params,
+  )
+  const out: Record<string, number> = {}
+  for (const r of rows) out[r.status] = r.count
+  return out
+}
+
 export function getIntent(id: string): Intent | null {
   const d = db()
   if (!d) return null

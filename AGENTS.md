@@ -33,6 +33,7 @@ pnpm pkg                                         # build + single binaries in di
 - web: Vue 3 frontend
 - web/PAGES.md: 前端页面与组件的树状索引(每个页面/组件/composable/lib 一行功能说明),改动 web 结构时同步更新
 - shared: protocol definitions, common code
+- shared/src/protocol.ts: WebSocket 协议唯一定义源，包含所有 ClientToServer/ServerToClient 消息类型、数据模型、vendor 中立抽象，两端 import 同一个文件保证编译期类型一致
 - scripts/e2e/e2e-guide.md: E2E tests, make sure e2e pass if relative paths are changed.
 - specs/: specs is the source of truth, keep synchronized with code, without ask. Read spec first then code for logics.
 - specs/overview.md: overview of the system
@@ -42,3 +43,4 @@ pnpm pkg                                         # build + single binaries in di
 - specs/adr/adr.md: architecture decision records
 - specs/domains/: domain specs
 - specs/non-functional/: non-functional specs
+- database/tables.md: 数据库表结构索引，DDL 在 database/<module>/<table>.sql

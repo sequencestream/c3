@@ -37,9 +37,11 @@ web/src/
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
-│   │   ├── Intents.vue                              # 需求容器页:左侧需求列表 + 右侧聊天列(复用会话聊天组件)
-│   │   └── components/
-│   │       └── IntentList/IntentList.vue            # 左栏需求列表:按状态过滤、行内操作(完善/启动开发/标记状态)、自动化编排启停、新建需求
+│   │   ├── Intents.vue                              # 需求容器页:桌面三栏(需求+session+聊天),移动端 MobileStack 三级 drill-down(意图列表→sessions→聊天)
+│   │   ├── components/
+│   │   │   ├── IntentList/IntentList.vue            # 左栏需求列表:按状态过滤、行内操作(完善/启动开发/标记状态)、自动化编排启停、新建需求;点击行 emit select-intent(mobile drill-down 导航)
+│   │   │   └── IntentSessionList/
+│   │   │       └── IntentSessionList.vue            # 中栏意图通信会话列表:行内重命名/删除、展开/收起、活跃会话常驻
 │   │
 │   ├── discussions/                                 # 讨论页
 │   │   ├── Discussions.vue                          # 讨论容器页:左侧讨论列表 + 右侧只读历史(标题栏+议程进度+消息+composer)

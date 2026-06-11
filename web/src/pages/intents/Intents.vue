@@ -2,13 +2,15 @@
 /*
  * Intents.vue — 需求页容器。
  *
- * 三栏布局:左侧需求列表 + 中栏意图会话列表 + 右侧聊天列。
+ * 桌面三栏布局:左侧需求列表 + 中栏意图会话列表 + 右侧聊天列。
+ * 移动端退化为三级 drill-down 栈:意图列表→sessions→聊天逐级滑入/返回。
  * 需求 comm session 即被查看的会话,故复用与会话页相同的聊天列(标题栏为需求变体,
  * 无权限模式下拉)。状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。
  * composer ref 经 defineExpose 转发。
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
+import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentList from './components/IntentList/IntentList.vue'
 import IntentSessionList from './components/IntentSessionList/IntentSessionList.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
@@ -31,7 +33,7 @@ import type {
 } from '@ccc/shared/protocol'
 import type { DepType } from '@ccc/shared/protocol'
 
-defineProps<{
+const props = defineProps<{
   // left: intent list
   project: string
   intents: Intent[]
@@ -69,6 +71,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
+  // intent list events
   filter: [status: IntentStatus | null]
   refine: [intentId: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
@@ -80,11 +83,13 @@ const emit = defineEmits<{
   'new-intent': []
   'create-pr': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
+  // intent session events
   'select-intent-session': [sessionId: string]
   'new-intent-session': []
   'rename-intent-session': [sessionId: string, title: string]
   'delete-intent-session': [sessionId: string]
   'set-session-agent': [agentId: string]
+  // chat events
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -95,10 +100,41 @@ const emit = defineEmits<{
   stop: []
   continue: []
   'list-commands': []
+  // mobile drill-down
+  'mobile-back': [targetKey: string]
 }>()
 
 const { t } = useTypedI18n()
 
+// ---- Mobile drill-down state ----
+const mobilePanes = [
+  { key: 'intents', title: t('intent.list.title.label') },
+  { key: 'sessions', title: t('intent.sessionList.title.label') },
+  { key: 'chat', title: t('intent.chat.title.label') },
+] as const
+
+type MobilePaneKey = (typeof mobilePanes)[number]['key']
+
+const mobileActiveKey = ref<MobilePaneKey>('intents')
+const mobileActiveToken = computed(
+  () => props.selectedIntentSessionId ?? props.project ?? 'intents',
+)
+
+function handleSelectIntent(_intentId: string): void {
+  mobileActiveKey.value = 'sessions'
+}
+
+function handleSelectIntentSession(sessionId: string): void {
+  mobileActiveKey.value = 'chat'
+  emit('select-intent-session', sessionId)
+}
+
+function handleMobileBack(targetKey: string): void {
+  mobileActiveKey.value = targetKey as MobilePaneKey
+  emit('mobile-back', targetKey)
+}
+
+// ---- Composer ref for prefill forwarding ----
 const composer = ref<InstanceType<typeof MessageInput> | null>(null)
 defineExpose({
   prefill: (text: string) => composer.value?.prefill(text),
@@ -106,78 +142,93 @@ defineExpose({
 </script>
 
 <template>
-  <IntentList
-    :project="project"
-    :intents="intents"
-    :automation="automation"
-    :intent-action-error-seq="intentActionErrorSeq"
-    @filter="(status: IntentStatus | null) => emit('filter', status)"
-    @refine="(id: string) => emit('refine', id)"
-    @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
-    @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
-    @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
-    @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
-    @start-automation="emit('start-automation')"
-    @stop-automation="emit('stop-automation')"
-    @new-intent="emit('new-intent')"
-    @create-pr="(id: string) => emit('create-pr', id)"
-    @update-deps="(id, deps) => emit('update-deps', id, deps)"
-  />
+  <MobileStack
+    :panes="mobilePanes"
+    :active-key="mobileActiveKey"
+    :active-token="mobileActiveToken"
+    back-label="Intents"
+    @back="handleMobileBack"
+  >
+    <template #intents>
+      <IntentList
+        :project="project"
+        :intents="intents"
+        :automation="automation"
+        :intent-action-error-seq="intentActionErrorSeq"
+        @filter="(status: IntentStatus | null) => emit('filter', status)"
+        @refine="(id: string) => emit('refine', id)"
+        @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
+        @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
+        @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
+        @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
+        @start-automation="emit('start-automation')"
+        @stop-automation="emit('stop-automation')"
+        @new-intent="emit('new-intent')"
+        @create-pr="(id: string) => emit('create-pr', id)"
+        @update-deps="(id, deps) => emit('update-deps', id, deps)"
+        @select-intent="handleSelectIntent"
+      />
+    </template>
 
-  <IntentSessionList
-    :sessions="intentSessions"
-    :selected-id="selectedIntentSessionId"
-    :run-states="intentSessionRunStates"
-    @select="(id: string) => emit('select-intent-session', id)"
-    @new="emit('new-intent-session')"
-    @rename="(id: string, title: string) => emit('rename-intent-session', id, title)"
-    @delete="(id: string) => emit('delete-intent-session', id)"
-  />
+    <template #sessions>
+      <IntentSessionList
+        :sessions="intentSessions"
+        :selected-id="selectedIntentSessionId"
+        :run-states="intentSessionRunStates"
+        @select="handleSelectIntentSession"
+        @new="emit('new-intent-session')"
+        @rename="(id: string, title: string) => emit('rename-intent-session', id, title)"
+        @delete="(id: string) => emit('delete-intent-session', id)"
+      />
+    </template>
 
-  <div class="content">
-    <SessionTitleBar
-      :active-title="activeTitle || t('intent.chat.title.label')"
-      :vendor="vendor ?? null"
-      :agent-switch="agentSwitch ?? null"
-      :show-mode="false"
-      @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
-    />
-    <ChatMessages
-      :messages="messages"
-      :has-active-session="hasActiveSession"
-      :actionable-permission-id="actionablePermissionId"
-      @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
-      @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
-    />
-    <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
-    <SessionStatusBar
-      :has-active-session="hasActiveSession"
-      :running="running"
-      :team-active="teamActive"
-      :connection="connection"
-      :activity="activity"
-      :current-agent-name="currentAgentName"
-      :reconnecting="reconnecting"
-      :side-effect-pending="sideEffectPending"
-      @refresh="emit('refresh')"
-      @stop="emit('stop')"
-      @continue="emit('continue')"
-    />
-    <PendingQueue
-      :items="queue"
-      @edit="(item: PendingItem) => emit('edit-queued', item)"
-      @delete="(id: number) => emit('delete-queued', id)"
-    />
-    <MessageInput
-      ref="composer"
-      :running="running"
-      :team-active="teamActive"
-      :has-active-session="hasActiveSession"
-      :available-commands="availableCommands"
-      :voice-lang="voiceLang"
-      @submit="(text: string) => emit('submit', text)"
-      @enqueue="(text: string) => emit('enqueue', text)"
-      @list-commands="emit('list-commands')"
-    />
-  </div>
+    <template #chat>
+      <div class="content">
+        <SessionTitleBar
+          :active-title="activeTitle || t('intent.chat.title.label')"
+          :vendor="vendor ?? null"
+          :agent-switch="agentSwitch ?? null"
+          :show-mode="false"
+          @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
+        />
+        <ChatMessages
+          :messages="messages"
+          :has-active-session="hasActiveSession"
+          :actionable-permission-id="actionablePermissionId"
+          @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+          @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
+        />
+        <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
+        <SessionStatusBar
+          :has-active-session="hasActiveSession"
+          :running="running"
+          :team-active="teamActive"
+          :connection="connection"
+          :activity="activity"
+          :current-agent-name="currentAgentName"
+          :reconnecting="reconnecting"
+          :side-effect-pending="sideEffectPending"
+          @refresh="emit('refresh')"
+          @stop="emit('stop')"
+          @continue="emit('continue')"
+        />
+        <PendingQueue
+          :items="queue"
+          @edit="(item: PendingItem) => emit('edit-queued', item)"
+          @delete="(id: number) => emit('delete-queued', id)"
+        />
+        <MessageInput
+          ref="composer"
+          :running="running"
+          :team-active="teamActive"
+          :has-active-session="hasActiveSession"
+          :available-commands="availableCommands"
+          :voice-lang="voiceLang"
+          @submit="(text: string) => emit('submit', text)"
+          @enqueue="(text: string) => emit('enqueue', text)"
+          @list-commands="emit('list-commands')"
+        />
+      </div>
+    </template>
+  </MobileStack>
 </template>

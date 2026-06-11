@@ -50,6 +50,7 @@ const emit = defineEmits<{
   'new-intent': []
   'create-pr': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
+  'select-intent': [intentId: string]
 }>()
 
 function copyPrId(prId: string): void {
@@ -264,6 +265,11 @@ function toggleDetail(id: string): void {
   expandedId.value = expandedId.value === id ? null : id
 }
 
+function handleRowClick(id: string): void {
+  toggleDetail(id)
+  emit('select-intent', id)
+}
+
 // 面板折叠态:持久化 UI 状态。收缩态收窄面板并隐藏模块名/操作区;跨页面切换后保持原状。
 const collapsed = usePersistentToggle('c3.intentListCollapsed')
 const toggleLabel = computed(() => panelToggleLabel(collapsed.value))
@@ -326,15 +332,16 @@ function datePrefix(r: Intent): string {
           role="button"
           tabindex="0"
           :aria-expanded="r.id === expandedId"
-          @click="toggleDetail(r.id)"
-          @keydown.enter.prevent="toggleDetail(r.id)"
-          @keydown.space.prevent="toggleDetail(r.id)"
+          @click="handleRowClick(r.id)"
+          @keydown.enter.prevent="handleRowClick(r.id)"
+          @keydown.space.prevent="handleRowClick(r.id)"
         >
           <div class="req-item-head">
             <span
               class="req-chevron"
               :class="{ 'req-chevron--open': r.id === expandedId }"
               aria-hidden="true"
+              @click.stop="toggleDetail(r.id)"
               >▸</span
             >
             <span class="req-priority" :class="r.priority">{{ r.priority }}</span>

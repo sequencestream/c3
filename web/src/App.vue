@@ -925,6 +925,7 @@ function handleMessage(msg: ServerToClient) {
       // `task_list` (cold baseline snapshot, then any live buffer tail) right after
       // this message, so the panel rebuilds from the wire, not from history parsing.
       taskModel.value = emptyTaskModel()
+      selectedIntentSessionId.value = null
       for (const item of msg.history) {
         add(transcriptToChat(item))
       }
@@ -1574,6 +1575,7 @@ function clearViewedSession() {
   availableCommands.value = []
   activity.value = { phase: 'idle' }
   taskModel.value = emptyTaskModel()
+  selectedIntentSessionId.value = null
 }
 
 function openIntents(path: string) {
@@ -2208,6 +2210,7 @@ function dismissSkillApproval() {
           @stop="stopRun"
           @continue="onContinue"
           @list-commands="listCommands"
+          @mobile-back="clearViewedSession"
         />
 
         <Discussions

@@ -44,10 +44,10 @@ web/src/
 │   │   │       └── IntentSessionList.vue            # 中栏意图通信会话列表:行内重命名/删除、展开/收起、活跃会话常驻
 │   │
 │   ├── discussions/                                 # 讨论页
-│   │   ├── Discussions.vue                          # 讨论容器页:左侧讨论列表 + 右侧只读历史(标题栏+议程进度+消息+composer)
+│   │   ├── Discussions.vue                          # 讨论容器页:桌面两栏(讨论列表 + 只读历史),移动端 MobileStack 两级 drill-down(列表→只读历史);点击讨论 drill 进历史,返回回列表
 │   │   └── components/
-│   │       ├── DiscussionList/DiscussionList.vue    # 左栏讨论列表:列表、创建表单(类型/目标/上下文)、打开讨论
-│   │       └── AgendaProgress/AgendaProgress.vue    # 讨论议程进度:展示议程、当前进展、完成度百分比
+│   │       ├── DiscussionList/DiscussionList.vue    # 左栏讨论列表:列表、创建表单(类型/目标/上下文)、打开讨论;移动端填满 pane 宽度
+│   │       └── AgendaProgress/AgendaProgress.vue    # 讨论议程进度:展示议程、当前进展、完成度百分比;窄屏收紧横向 padding
 │   │
 │   ├── schedules/                                   # 定时任务页
 │   │   ├── Schedules.vue                            # 定时任务容器页:桌面三栏(左栏列表 + 中栏执行历史 + 右栏 Tab 详情)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为三级 drill-down(任务列表→执行历史→Tab 执行详情逐级滑入/返回)

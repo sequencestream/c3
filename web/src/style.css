@@ -1209,6 +1209,13 @@ header h1 {
   border-bottom: 1px solid var(--c-border);
   background: var(--c-panel);
 }
+/* 窄屏(MobileStack 历史 pane):收紧横向 padding,议程行不被挤压溢出 */
+@media (max-width: 767px) {
+  .agenda-panel {
+    padding: var(--sp-2) var(--sp-3);
+    max-height: 24vh;
+  }
+}
 .agenda-head {
   display: flex;
   align-items: baseline;

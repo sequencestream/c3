@@ -1618,6 +1618,17 @@ function openDiscussion(discussionId: string) {
   client?.send({ type: 'open_discussion', discussionId })
 }
 
+// Mobile drill-down back from the read-only history pane to the discussion list:
+// clearing the open discussion flips MobileStack's stack top back to the list pane.
+function onDiscussionMobileBack(targetKey: string) {
+  if (targetKey === 'discussions') {
+    activeDiscussionId.value = null
+    activeDiscussion.value = null
+    discussionInput.value = ''
+    persistViewMode()
+  }
+}
+
 // "+" form submit in the discussion list: create a discussion. The server
 // persists a draft and immediately replies with `discussion_detail` (so the right
 // pane opens the new discussion without a click), pushes the refreshed list, then
@@ -2234,6 +2245,7 @@ function dismissSkillApproval() {
           @convert="convertDiscussionToIntent"
           @update:input="discussionInput = $event"
           @submit-input="submitDiscussionInput"
+          @mobile-back="onDiscussionMobileBack"
         />
 
         <Schedules

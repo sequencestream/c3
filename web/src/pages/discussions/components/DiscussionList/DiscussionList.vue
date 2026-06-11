@@ -347,6 +347,15 @@ function togglePanel(): void {
     min-width: 280px;
   }
 }
+/* 移动端:列表是 MobileStack 栈顶 pane,填满视口宽度(覆盖固定/收缩宽度) */
+@media (max-width: 767px) {
+  .disc-list,
+  .disc-list.collapsed {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+  }
+}
 .disc-list-head {
   height: 36px;
   flex-shrink: 0;

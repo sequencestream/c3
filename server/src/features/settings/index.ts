@@ -11,6 +11,7 @@
  */
 import type {
   AdapterCapability,
+  SystemSettings,
   VendorHostStatus,
   SessionCapabilities,
   SkillSupportState,
@@ -116,6 +117,23 @@ function vendorModes(): Record<VendorId, VendorModeCatalog> {
   return MODE_CATALOGS
 }
 
+/**
+ * The `basic` admin password hash is owned SOLELY by `set_admin_password`
+ * (ADR-0023 runtime slice): a generic settings save must never overwrite — or
+ * worse, wipe — it, even if the client round-trips a stale/empty hash. Force the
+ * persisted hash back to the on-disk value so the password survives any
+ * `save_settings` (enabled/username/exposure toggles flow through unchanged).
+ */
+function preserveAdminPasswordHash(next: SystemSettings): SystemSettings {
+  if (next.auth?.provider.kind !== 'basic') return next
+  const diskHash =
+    loadSettings().auth?.provider.kind === 'basic' ? loadSettings().auth!.provider.passwordHash : ''
+  return {
+    ...next,
+    auth: { ...next.auth, provider: { ...next.auth.provider, passwordHash: diskHash } },
+  }
+}
+
 export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
   conn.send({
     type: 'settings',
@@ -132,7 +150,7 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
 export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) => {
   conn.send({
     type: 'settings',
-    settings: saveSettings(msg.settings),
+    settings: saveSettings(preserveAdminPasswordHash(msg.settings)),
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),

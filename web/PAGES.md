@@ -62,7 +62,7 @@ web/src/
 │   └── systemsettings/                              # 系统设置页
 │       ├── SystemSettings.vue                       # 系统设置容器(弹窗):封装 SettingsPanel
 │       └── components/SettingsPanel/
-│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):agent 列表/默认 agent、共识投票开关、host 诊断、UI 语言切换、voice 语言、emoji picker
+│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):agent 列表/默认 agent、共识投票开关、host 诊断、UI 语言切换、voice 语言、emoji picker、认证(ADR-0023:basic 启用/改密/网络暴露;provider 下拉 basic 可选其余置灰;改密走 set-password emit→服务端哈希,未配管理员时启用/暴露开关置灰)
 │           ├── EmojiPicker.vue                      # emoji 选择器:零依赖,支持搜索、分类导航、自定义输入(最长 16 字符)
 │           └── emoji-data.ts                        # emoji 数据集:分类 emoji 列表与搜索关键词
 │

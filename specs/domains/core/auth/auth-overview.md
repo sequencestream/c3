@@ -3,11 +3,13 @@
 Authentication for c3. Establishes **who** a connection is before it may drive agents — the
 mandatory precondition for exposing the server beyond localhost (constitution C-SEC-5, ADR-0023).
 
-> **Status: contract-only (2026-06-11).** This domain currently defines the *boundary and
-> contracts* only — types, persisted config shape, and wire messages. **No runtime exists yet**:
-> no middleware, no login handler, no password hashing, no token signing/verification, and the
-> server's actual bind address is unchanged (still localhost-only). The runtime is split across
-> later tasks (see _Roadmap_). Read this as the stable edge those tasks fill in.
+> **Status: partial runtime (2026-06-11).** The boundary + contracts (types, persisted config
+> shape, wire messages) are joined by a **minimal `basic`-provider runtime** powering the System
+> Settings auth panel: real password hashing (scrypt PHC), real `login` credential verification,
+> and a `set_admin_password` change-password flow. **Still deferred:** token signing/verification,
+> request-level auth middleware + the "enabled auth ⇒ may bind non-loopback" enforcement (so the
+> server's bind address is **unchanged** — still localhost-only), full session-lifecycle UI, and
+> settings-file hardening. See _Roadmap_ for what each remaining task fills in.
 
 ## Why
 
@@ -28,12 +30,16 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
   (**BasicAuthProvider** `{ username, passwordHash }`) this phase. The single extension point for
   OAuth/SSO/multi-user.
 - **AuthSessionPolicy** — `{ ttlSeconds, signingKeyRef }`. Provider-neutral session-token policy.
-  `signingKeyRef` is a *reference* (env var name / keystore id), never the key itself.
+  `signingKeyRef` is a _reference_ (env var name / keystore id), never the key itself.
 - **AuthExposureConfig** — `{ bindAddress? }`. Network-exposure / bind intent.
 - **AuthSessionToken** — `{ tokenId, subject, issuedAt, expiresAt }`. Provider-neutral issued token.
-- **Wire messages** — `login` / `logout` (client→server), `login_result` / `unauthenticated`
-  (server→client). `AuthLoginRequest` and `AuthLoginResult` are reused by both the future HTTP
-  `POST /auth/login` endpoint and the WS channel. `unauthenticated` is the WS analogue of HTTP 401.
+- **Wire messages** — `login` / `logout` / `set_admin_password` (client→server), `login_result` /
+  `admin_password_result` / `unauthenticated` (server→client). `AuthLoginRequest` and
+  `AuthLoginResult` are reused by both the future HTTP `POST /auth/login` endpoint and the WS
+  channel. `set_admin_password { username, password, currentPassword? }` sets/changes the single
+  admin's credentials (the plaintext is hashed server-side); `admin_password_result` carries
+  `AdminPasswordResult` (`ok` | `{ code: 'not_authenticated' | 'invalid' }`). `unauthenticated` is
+  the WS analogue of HTTP 401.
 
 ## Business rules
 
@@ -56,20 +62,38 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
   adds only an `AuthProvider` arm + a server zod arm; the session model and wire messages are untouched.
 - **AUTH-R6 (auth ⇒ exposure precondition)** — a non-loopback `exposure.bindAddress` (e.g. `0.0.0.0`)
   expresses intent to expose c3 to a network, which requires `enabled` auth. **Runtime enforcement of
-  this rule is deferred** (Roadmap step 2); this phase only records the intent in the contract.
+  this rule is deferred** (Roadmap step 2); the panel only gates the toggle in the UI (an admin must
+  be configured before exposure can be enabled) — the server's bind address is still unchanged.
+- **AUTH-R7 (password owned by `set_admin_password`)** — the `basic` `passwordHash` is mutated ONLY
+  by `set_admin_password`: it hashes the plaintext server-side (scrypt PHC) and persists the hash.
+  A generic `save_settings` NEVER writes the hash — the server forces it back to the on-disk value
+  (`preserveAdminPasswordHash`), so a stale/empty client draft cannot overwrite or wipe it.
+- **AUTH-R8 (change-password gate)** — changing an existing admin's password requires proving the
+  current password (`currentPassword` verified against the stored hash) ⇒ `not_authenticated` on
+  mismatch. The first (bootstrap) set is exempt — the localhost-only default trusts the local
+  operator before any credential exists. Validation is deliberately light (non-empty username +
+  min length) per the ADR non-goal; failures return `invalid`.
 
 ## Roadmap (deferred to later tasks)
 
-1. **This task** — abstraction boundary + contracts (done).
-2. Runtime: password hashing, token signing/verification, auth middleware, and the
+1. **Done** — abstraction boundary + contracts.
+2. **Partial** — password hashing ✅ + `basic` login verification ✅ + `set_admin_password` ✅ done;
+   **still deferred:** token signing/verification, request-level auth middleware, and the
    "enabled auth ⇒ may bind non-loopback" enforcement (the actual C-SEC-5 relaxation).
-3. Login page + session lifecycle UI in the web console.
+3. **Partial** — System Settings auth config panel ✅ (enable/username/change-password/exposure
+   toggle); login page already shipped (件①); **still deferred:** full session-lifecycle UI.
 4. Harden the settings file: tighten permissions (it now carries a password hash) + log redaction.
 
 ## Shared context
 
-- Wire protocol: `shared/src/protocol.ts` (`login`, `logout`, `login_result`, `unauthenticated`;
-  `AuthConfig`, `AuthProvider`, `AuthSessionToken`, `AuthLoginRequest`, `AuthLoginResult`).
+- Wire protocol: `shared/src/protocol.ts` (`login`, `logout`, `set_admin_password`, `login_result`,
+  `admin_password_result`, `unauthenticated`; `AuthConfig`, `AuthProvider`, `AuthSessionToken`,
+  `AuthLoginRequest`, `AuthLoginResult`, `AdminPasswordResult`).
+- Runtime handlers: `server/src/features/auth/index.ts` (`login`, `logout`, `setAdminPassword`) +
+  `server/src/features/auth/password.ts` (scrypt PHC `hashPassword` / `verifyPassword`). The
+  password-preservation guard on save lives in `server/src/features/settings/index.ts`.
+- Config panel: `web/src/pages/systemsettings/components/SettingsPanel/SettingsPanel.vue` (auth
+  section); `web/src/App.vue` routes `set_admin_password` + `admin_password_result`.
 - Persists inside `~/.c3/settings.json` as `SystemSettings.auth`, through the same single
   concurrency-safe write path as the rest of system-config (`kernel/config/store.ts`).
 - Validation + type-pin: `server/src/kernel/config/auth-schema.ts` (`normalizeAuth`, `authConfigSchema`).

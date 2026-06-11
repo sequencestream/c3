@@ -24,6 +24,7 @@ defineEmits<{
   close: []
   save: [settings: SystemSettings]
   'set-ui-lang': [lang: UiLang]
+  'set-password': [payload: { username: string; password: string; currentPassword?: string }]
 }>()
 </script>
 
@@ -36,5 +37,6 @@ defineEmits<{
     @close="$emit('close')"
     @save="(s: SystemSettings) => $emit('save', s)"
     @set-ui-lang="(l: UiLang) => $emit('set-ui-lang', l)"
+    @set-password="(p) => $emit('set-password', p)"
   />
 </template>

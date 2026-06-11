@@ -2005,6 +2005,29 @@ button.deny:hover:not(:disabled) {
   color: var(--c-text-muted);
 }
 
+/* ---- Auth settings section (ADR-0023) ---- */
+.auth-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+  font-size: var(--fs-code);
+}
+.auth-label {
+  flex: 0 0 9rem;
+  color: var(--c-text-muted);
+}
+.auth-field .agent-field,
+.auth-field .mode-select {
+  flex: 1 1 auto;
+}
+.auth-password {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+
 /* ---- AskUserQuestion answer panel ---- */
 .ask-summary {
   margin-top: var(--sp-2);

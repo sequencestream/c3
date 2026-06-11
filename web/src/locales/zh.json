@@ -430,6 +430,55 @@
       "subpath": {
         "placeholder": "可选子目录（如 skills/my-skill）"
       }
+    },
+    "auth": {
+      "title": {
+        "label": "认证"
+      },
+      "hint": "要求登录后才能使用此控制台。请先设置管理员账号，再开启认证。",
+      "provider": {
+        "label": "认证方式",
+        "basic": "用户名与密码",
+        "oauth": "OAuth（即将支持）",
+        "sso": "SSO（即将支持）"
+      },
+      "enable": {
+        "label": "要求登录",
+        "needAdmin": "开启前请先在下方设置管理员账号。"
+      },
+      "username": {
+        "label": "管理员用户名",
+        "placeholder": "admin"
+      },
+      "password": {
+        "hint": "密码在服务端哈希存储，明文不会被保存或显示。",
+        "current": {
+          "label": "当前密码",
+          "placeholder": "当前密码"
+        },
+        "new": {
+          "label": "新密码",
+          "placeholder": "至少 4 个字符"
+        },
+        "set": {
+          "label": "设置密码"
+        },
+        "change": {
+          "label": "修改密码"
+        },
+        "result": {
+          "ok": "管理员密码已更新。"
+        },
+        "error": {
+          "not_authenticated": "当前密码不正确。",
+          "invalid": "请输入用户名和至少 4 个字符的密码。"
+        }
+      },
+      "exposure": {
+        "label": "允许网络暴露",
+        "hint": "绑定到 localhost 以外（0.0.0.0），以便其他机器访问此控制台。",
+        "needAdmin": "请先设置管理员账号，才能允许网络暴露。"
+      }
     }
   },
   "intent": {

@@ -8,6 +8,7 @@ import { computed, ref, toRaw, watch } from 'vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
+  AuthConfig,
   SessionBindingStats,
   SystemSandboxDef,
   SandboxType,
@@ -88,6 +89,9 @@ const emit = defineEmits<{
   save: [settings: SystemSettings]
   // Live, no-reload UI-language switch (fires on select change, before Save).
   'set-ui-lang': [lang: UiLang]
+  // Set/change the admin password (ADR-0023). The plaintext is sent to the
+  // server which hashes it; the panel never computes or persists a hash.
+  'set-password': [payload: { username: string; password: string; currentPassword?: string }]
 }>()
 
 // A local, editable copy of the server settings; committed on Save.
@@ -298,6 +302,74 @@ function addSandbox() {
 function removeSandbox(index: number) {
   const list = draft.value.sandboxes
   if (list) draft.value.sandboxes = list.filter((_, i) => i !== index)
+}
+
+// ---- Authentication (ADR-0023) ------------------------------------------
+// Only `basic` ships a provider form this phase; oauth/sso are greyed-out
+// placeholders that mirror the protocol extension point (AUTH_PROVIDER_KINDS).
+const AUTH_PROVIDERS: { value: string; disabled: boolean }[] = [
+  { value: 'basic', disabled: false },
+  { value: 'oauth', disabled: true },
+  { value: 'sso', disabled: true },
+]
+// Signing key is a reference (an env name), never the key itself (ADR-0023).
+const DEFAULT_AUTH_SESSION = { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' }
+
+// Write-only password inputs. The hash is NEVER echoed here; these hold the
+// plaintext only until `submitPassword` ships it to the server, then clear.
+const newPassword = ref('')
+const currentPassword = ref('')
+
+const authEnabled = computed(() => draft.value.auth?.enabled ?? false)
+const authUsername = computed(() =>
+  draft.value.auth?.provider.kind === 'basic' ? draft.value.auth.provider.username : '',
+)
+// The browser holds the opaque PHC hash (its own admin's machine — same trust as
+// the session token); it is used ONLY as a "password is set" signal, shown in no
+// input, and ignored by the server on save (set_admin_password owns it).
+const hasStoredPassword = computed(
+  () => !!(draft.value.auth?.provider.kind === 'basic' && draft.value.auth.provider.passwordHash),
+)
+// "Admin configured" gates enabling auth + network exposure (acceptance #5).
+const adminConfigured = computed(() => !!authUsername.value && hasStoredPassword.value)
+const exposureOn = computed(() => {
+  const addr = draft.value.auth?.exposure?.bindAddress
+  return !!addr && addr !== '127.0.0.1' && addr !== 'localhost'
+})
+
+/** Lazily materialize an editable (disabled) auth block on first interaction. */
+function ensureAuth(): AuthConfig {
+  if (!draft.value.auth) {
+    draft.value.auth = {
+      enabled: false,
+      provider: { kind: 'basic', username: '', passwordHash: '' },
+      session: { ...DEFAULT_AUTH_SESSION },
+    }
+  }
+  return draft.value.auth
+}
+function setAuthEnabled(v: boolean) {
+  ensureAuth().enabled = v
+}
+function setAuthUsername(v: string) {
+  const a = ensureAuth()
+  if (a.provider.kind === 'basic') a.provider.username = v
+}
+function setExposure(v: boolean) {
+  ensureAuth().exposure = { bindAddress: v ? '0.0.0.0' : '127.0.0.1' }
+}
+
+/** Ship the new credentials to the server (it hashes + persists). Bootstrap (no
+ *  admin yet) omits the current-password proof; a change requires it. */
+function submitPassword() {
+  if (newPassword.value.length < 4) return
+  emit('set-password', {
+    username: authUsername.value,
+    password: newPassword.value,
+    currentPassword: adminConfigured.value ? currentPassword.value : undefined,
+  })
+  newPassword.value = ''
+  currentPassword.value = ''
 }
 </script>
 
@@ -516,6 +588,108 @@ function removeSandbox(index: number) {
         <button class="agent-add" data-testid="settings-add-sandbox" @click="addSandbox">
           {{ t('settings.sandboxes.add.label') }}
         </button>
+      </section>
+
+      <!-- Authentication (ADR-0023) -->
+      <section class="settings-section" data-testid="settings-auth">
+        <p class="settings-section-title">{{ t('settings.auth.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.auth.hint') }}</p>
+
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.auth.provider.label') }}</span>
+          <select class="mode-select" data-testid="settings-auth-provider" :value="'basic'">
+            <option
+              v-for="p in AUTH_PROVIDERS"
+              :key="p.value"
+              :value="p.value"
+              :disabled="p.disabled"
+            >
+              {{ t(`settings.auth.provider.${p.value}` as 'settings.auth.provider.basic') }}
+            </option>
+          </select>
+        </label>
+
+        <label class="consensus-toggle">
+          <input
+            type="checkbox"
+            :checked="authEnabled"
+            :disabled="!adminConfigured"
+            data-testid="settings-auth-enable"
+            @change="setAuthEnabled(($event.target as HTMLInputElement).checked)"
+          />
+          {{ t('settings.auth.enable.label') }}
+        </label>
+        <p v-if="!adminConfigured" class="settings-hint">
+          {{ t('settings.auth.enable.needAdmin') }}
+        </p>
+
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
+          <input
+            class="agent-field"
+            :value="authUsername"
+            autocomplete="username"
+            :placeholder="t('settings.auth.username.placeholder')"
+            data-testid="settings-auth-username"
+            @input="setAuthUsername(($event.target as HTMLInputElement).value)"
+          />
+        </label>
+
+        <div class="auth-password" data-testid="settings-auth-password">
+          <p class="settings-hint">{{ t('settings.auth.password.hint') }}</p>
+          <label v-if="adminConfigured" class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>
+            <input
+              v-model="currentPassword"
+              class="agent-field"
+              type="password"
+              autocomplete="current-password"
+              :placeholder="t('settings.auth.password.current.placeholder')"
+              data-testid="settings-auth-current-password"
+            />
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
+            <input
+              v-model="newPassword"
+              class="agent-field"
+              type="password"
+              autocomplete="new-password"
+              :placeholder="t('settings.auth.password.new.placeholder')"
+              data-testid="settings-auth-new-password"
+            />
+          </label>
+          <button
+            class="agent-add"
+            :disabled="newPassword.length < 4"
+            data-testid="settings-auth-set-password"
+            @click="submitPassword"
+          >
+            {{
+              adminConfigured
+                ? t('settings.auth.password.change.label')
+                : t('settings.auth.password.set.label')
+            }}
+          </button>
+        </div>
+
+        <label class="consensus-toggle">
+          <input
+            type="checkbox"
+            :checked="exposureOn"
+            :disabled="!adminConfigured"
+            data-testid="settings-auth-exposure"
+            @change="setExposure(($event.target as HTMLInputElement).checked)"
+          />
+          {{ t('settings.auth.exposure.label') }}
+        </label>
+        <p class="settings-hint">
+          {{
+            adminConfigured
+              ? t('settings.auth.exposure.hint')
+              : t('settings.auth.exposure.needAdmin')
+          }}
+        </p>
       </section>
 
       <section class="settings-section">

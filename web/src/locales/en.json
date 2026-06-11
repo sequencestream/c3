@@ -430,6 +430,55 @@
       "subpath": {
         "placeholder": "Optional sub-directory (e.g. skills/my-skill)"
       }
+    },
+    "auth": {
+      "title": {
+        "label": "Authentication"
+      },
+      "hint": "Require a sign-in to use this console. Set an admin account first, then turn authentication on.",
+      "provider": {
+        "label": "Provider",
+        "basic": "Username & password",
+        "oauth": "OAuth (coming soon)",
+        "sso": "SSO (coming soon)"
+      },
+      "enable": {
+        "label": "Require sign-in",
+        "needAdmin": "Set an admin account below before turning this on."
+      },
+      "username": {
+        "label": "Admin username",
+        "placeholder": "admin"
+      },
+      "password": {
+        "hint": "The password is hashed on the server; the plaintext is never stored or shown.",
+        "current": {
+          "label": "Current password",
+          "placeholder": "Current password"
+        },
+        "new": {
+          "label": "New password",
+          "placeholder": "At least 4 characters"
+        },
+        "set": {
+          "label": "Set password"
+        },
+        "change": {
+          "label": "Change password"
+        },
+        "result": {
+          "ok": "Admin password updated."
+        },
+        "error": {
+          "not_authenticated": "Current password is incorrect.",
+          "invalid": "Enter a username and a password of at least 4 characters."
+        }
+      },
+      "exposure": {
+        "label": "Allow network exposure",
+        "hint": "Bind beyond localhost (0.0.0.0) so other machines can reach this console.",
+        "needAdmin": "Set an admin account to allow network exposure."
+      }
     }
   },
   "intent": {

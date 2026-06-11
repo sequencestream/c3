@@ -16,6 +16,27 @@
 3. 登录页 + 会话生命周期 UI。
 4. 设置持久化文件的权限收紧与日志脱敏。
 
+### 落地进度（2026-06-11，runtime 切片）
+
+第 2、3 件的**前半**已落地（changes/2026/06/11/...-003-basic-auth-settings-panel）——为 System Settings
+的 basic 认证配置面板提供端到端可用的最小运行时：
+
+- **口令哈希**：`server/src/features/auth/password.ts`，基于 `node:crypto.scrypt` 的零依赖 PHC 串
+  `$scrypt$…`（兼容 `bun build --compile`）；明文永不落盘，校验为常数时间。
+- **login 真实校验**：`login` 按持久化 `basic` provider 校验用户名/口令，成功签发**不透明随机** token +
+  TTL 派生 expiry（token **签名/验签**仍延后）。
+- **改密消息**：新增 `set_admin_password{username,password,currentPassword?}`（协议）+ handler。明文仅
+  传输期存在、服务端哈希后写入 `auth.provider`。敏感操作门闩 = 「证明当前口令」：已配管理员须带
+  `currentPassword`，首次（localhost bootstrap）免验。
+- **save_settings 不碰口令**：`passwordHash` 由 `set_admin_password` 独占；`save_settings` 持久化时强制
+  保留磁盘上的哈希（`preserveAdminPasswordHash`），杜绝陈旧/空哈希回写覆盖。
+- **配置面板**：`SettingsPanel.vue` 认证区——provider 下拉（basic 可选、oauth/sso 置灰）、启用开关、
+  用户名、改密子表单（write-only，不回显哈希）、网络暴露开关；**未配管理员**时启用/暴露开关置灰。
+
+**仍延后**（第 2、3、4 件未尽部分）：token 签名/验签；WS 握手与请求级**认证中间件强制**（含
+「enabled 认证 ⇒ 才允许非回环绑定」的运行时强制——故 server 仍 localhost-only，本切片**不**改变实际绑定）；
+会话生命周期完整 UI；设置文件权限收紧与日志脱敏。`AuthSessionToken`/`signingKeyRef` 仍为待用契约。
+
 设计这层抽象时面临的核心张力：**只需要 basic 登录，却不能只为 basic 建模。** 若把「用户名 + 口令」直接铺在 `SystemSettings` 顶层、把登录消息写死成 `{username, password}`，则将来加 OAuth/SSO/多用户时，配置层、协议层、校验层、UI 层都要返工——而这恰是 C-SEC-5 注解所要求的「显式认证设计」应当避免的。
 
 约束：
@@ -111,7 +132,10 @@ export interface AuthSessionToken {
 }
 
 // 登录/登出/未认证消息——provider 无关,HTTP 端点与 WS 共用同一契约。
-export interface AuthLoginRequest { username: string; password: string } // 明文仅在传输期,校验后即弃
+export interface AuthLoginRequest {
+  username: string
+  password: string
+} // 明文仅在传输期,校验后即弃
 export const AUTH_FAILURE_CODES = ['invalid_credentials', 'auth_disabled', 'rate_limited'] as const
 export type AuthFailureCode = (typeof AUTH_FAILURE_CODES)[number]
 export type AuthLoginResult =
@@ -165,7 +189,7 @@ export type AuthLoginResult =
 ## References
 
 - [constitution C-SEC-5](../../constitution.md) — 本 ADR 注解的条款
-- [auth domain spec](../../domains/core/auth/auth-overview.md) — 业务规则 AUTH-R*
+- [auth domain spec](../../domains/core/auth/auth-overview.md) — 业务规则 AUTH-R\*
 - [protocol.ts](../../../shared/src/protocol.ts) — `AuthConfig` / `AuthProvider` / 会话令牌 / 认证消息类型
 - [auth-schema.ts](../../../server/src/kernel/config/auth-schema.ts) — zod schema + 类型钉死
 - [ADR-0009](0009-unidirectional-boundaries.md) — 类型在 shared、运行时在 server 的分层

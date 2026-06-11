@@ -247,4 +247,93 @@ describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003
   })
 })
 
+describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
+  // Settings with a fully-configured basic admin (username + a non-empty hash).
+  const withAdmin: SystemSettings = {
+    ...baseSettings,
+    auth: {
+      enabled: false,
+      provider: { kind: 'basic', username: 'admin', passwordHash: '$scrypt$ln=15,r=8,p=1$s$h' },
+      session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
+    },
+  }
+
+  it('renders the auth section with basic selectable and oauth/sso greyed out', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const opts = w.findAll('[data-testid="settings-auth-provider"] option')
+    expect(opts.map((o) => (o.element as HTMLOptionElement).value)).toEqual([
+      'basic',
+      'oauth',
+      'sso',
+    ])
+    expect((opts[0].element as HTMLOptionElement).disabled).toBe(false)
+    expect((opts[1].element as HTMLOptionElement).disabled).toBe(true)
+    expect((opts[2].element as HTMLOptionElement).disabled).toBe(true)
+  })
+
+  it('disables the enable + exposure toggles until an admin is configured', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const enable = w.find('[data-testid="settings-auth-enable"]').element as HTMLInputElement
+    const exposure = w.find('[data-testid="settings-auth-exposure"]').element as HTMLInputElement
+    expect(enable.disabled).toBe(true)
+    expect(exposure.disabled).toBe(true)
+  })
+
+  it('enables the toggles once an admin (username + stored hash) exists', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    const enable = w.find('[data-testid="settings-auth-enable"]').element as HTMLInputElement
+    const exposure = w.find('[data-testid="settings-auth-exposure"]').element as HTMLInputElement
+    expect(enable.disabled).toBe(false)
+    expect(exposure.disabled).toBe(false)
+  })
+
+  it('never pre-fills the password input from the stored hash (write-only)', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    const newPw = w.find('[data-testid="settings-auth-new-password"]').element as HTMLInputElement
+    expect(newPw.value).toBe('')
+    expect(newPw.type).toBe('password')
+  })
+
+  it('bootstrap: emits set-password without a current password and clears the field', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-auth-username"]').setValue('root')
+    const newPw = w.find('[data-testid="settings-auth-new-password"]')
+    await newPw.setValue('s3cret!')
+    await w.find('[data-testid="settings-auth-set-password"]').trigger('click')
+    const emitted = w.emitted('set-password') as [
+      { username: string; password: string; currentPassword?: string },
+    ][]
+    expect(emitted[0][0]).toEqual({
+      username: 'root',
+      password: 's3cret!',
+      currentPassword: undefined,
+    })
+    // Plaintext is wiped from the input after submit.
+    expect((newPw.element as HTMLInputElement).value).toBe('')
+  })
+
+  it('change: includes the current password once an admin exists', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-current-password"]').setValue('oldpass')
+    await w.find('[data-testid="settings-auth-new-password"]').setValue('newpass1')
+    await w.find('[data-testid="settings-auth-set-password"]').trigger('click')
+    const emitted = w.emitted('set-password') as [
+      { username: string; password: string; currentPassword?: string },
+    ][]
+    expect(emitted[0][0]).toEqual({
+      username: 'admin',
+      password: 'newpass1',
+      currentPassword: 'oldpass',
+    })
+  })
+
+  it('carries an edited exposure bindAddress through on save', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-exposure"]').setValue(true)
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.auth?.exposure?.bindAddress).toBe('0.0.0.0')
+  })
+})
+
 // Skill-repo tests moved to WorkspaceSetting.test.ts (ADR-0016/0017 migration)

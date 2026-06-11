@@ -431,6 +431,55 @@
       "readonlyRootfs": {
         "label": "Read-only root filesystem"
       }
+    },
+    "auth": {
+      "title": {
+        "label": "인증"
+      },
+      "hint": "이 콘솔을 사용하려면 로그인을 요구합니다. 먼저 관리자 계정을 설정한 후 인증을 켜세요.",
+      "provider": {
+        "label": "제공자",
+        "basic": "사용자 이름 및 비밀번호",
+        "oauth": "OAuth(준비 중)",
+        "sso": "SSO(준비 중)"
+      },
+      "enable": {
+        "label": "로그인 요구",
+        "needAdmin": "켜기 전에 아래에서 관리자 계정을 설정하세요."
+      },
+      "username": {
+        "label": "관리자 사용자 이름",
+        "placeholder": "admin"
+      },
+      "password": {
+        "hint": "비밀번호는 서버에서 해시 처리됩니다. 평문은 저장되거나 표시되지 않습니다.",
+        "current": {
+          "label": "현재 비밀번호",
+          "placeholder": "현재 비밀번호"
+        },
+        "new": {
+          "label": "새 비밀번호",
+          "placeholder": "4자 이상"
+        },
+        "set": {
+          "label": "비밀번호 설정"
+        },
+        "change": {
+          "label": "비밀번호 변경"
+        },
+        "result": {
+          "ok": "관리자 비밀번호가 업데이트되었습니다."
+        },
+        "error": {
+          "not_authenticated": "현재 비밀번호가 올바르지 않습니다.",
+          "invalid": "사용자 이름과 4자 이상의 비밀번호를 입력하세요."
+        }
+      },
+      "exposure": {
+        "label": "네트워크 노출 허용",
+        "hint": "localhost 외부(0.0.0.0)에 바인딩하여 다른 컴퓨터에서 이 콘솔에 접근할 수 있도록 합니다.",
+        "needAdmin": "네트워크 노출을 허용하려면 관리자 계정을 설정하세요."
+      }
     }
   },
   "intent": {

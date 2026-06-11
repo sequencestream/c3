@@ -77,7 +77,7 @@ import {
   scheduleRunNow,
   updateScheduleHandler,
 } from './schedules/index.js'
-import { login, logout } from './auth/index.js'
+import { login, logout, setAdminPassword } from './auth/index.js'
 import { listWaitUserEvents } from './user-involve/index.js'
 import { getTimeRangeStatsHandler } from './workcenter/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
@@ -150,9 +150,10 @@ export const handlerMap: HandlerMap = {
   get_workspace_mcp_config: getWorkspaceMcpConfig,
   save_workspace_mcp_config: saveWorkspaceMcpConfig,
   get_schedule_tool_manifest: getScheduleToolManifest,
-  // auth (contract-only, ADR-0023)
+  // auth (ADR-0023 runtime slice: basic login + admin password)
   login,
   logout,
+  set_admin_password: setAdminPassword,
   // wait user involve
   list_wait_user_events: listWaitUserEvents,
   // workcenter

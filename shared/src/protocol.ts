@@ -651,6 +651,22 @@ export type AuthLoginResult =
   | { ok: false; code: AuthFailureCode }
 
 /**
+ * Admin-password change failure codes (ADR-0023, runtime slice). `not_authenticated`
+ * ⇒ an admin already exists and the supplied `currentPassword` did not verify (the
+ * sensitive-operation gate); `invalid` ⇒ the new username/password failed a basic
+ * non-empty/length check. A bootstrap change (no admin configured yet) skips the gate.
+ */
+export const ADMIN_PASSWORD_FAILURE_CODES = ['not_authenticated', 'invalid'] as const
+export type AdminPasswordFailureCode = (typeof ADMIN_PASSWORD_FAILURE_CODES)[number]
+
+/**
+ * Result of a `set_admin_password` attempt (ADR-0023). `ok` discriminates: on
+ * success the server has hashed the new password server-side and persisted it
+ * (the plaintext never lands on disk); on failure a structured code the UI localizes.
+ */
+export type AdminPasswordResult = { ok: true } | { ok: false; code: AdminPasswordFailureCode }
+
+/**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
  */
@@ -1969,6 +1985,15 @@ export type ClientToServer =
   | { type: 'login'; request: AuthLoginRequest }
   /** Invalidate this connection's session token (ADR-0023). No reply required. */
   | { type: 'logout' }
+  /**
+   * Set (or change) the single admin's `basic` credentials (ADR-0023). The
+   * plaintext `password` exists ONLY in transit — the server hashes it and
+   * persists the hash; plaintext never lands on disk. `currentPassword` is the
+   * sensitive-operation gate: required (and verified against the stored hash)
+   * when an admin already exists, omitted on the first (bootstrap) set. Server
+   * replies `admin_password_result`, then echoes a fresh `settings` on success.
+   */
+  | { type: 'set_admin_password'; username: string; password: string; currentPassword?: string }
   /** Load a workspace's setting (reply: `workspace_setting`). */
   | { type: 'load_workspace_setting'; projectPath: string }
   /** Save a workspace's setting. */
@@ -2336,6 +2361,12 @@ export type ServerToClient =
    * structured {@link AuthFailureCode}.
    */
   | { type: 'login_result'; result: AuthLoginResult }
+  /**
+   * Result of a `set_admin_password` attempt (ADR-0023). On success the new
+   * credentials are already hashed + persisted (a fresh `settings` frame
+   * follows); on failure carries a structured {@link AdminPasswordFailureCode}.
+   */
+  | { type: 'admin_password_result'; result: AdminPasswordResult }
   /**
    * The connection is not authenticated (ADR-0023) — the WS analogue of HTTP
    * 401. Emitted when an action requires auth but the connection presents no

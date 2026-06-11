@@ -431,6 +431,55 @@
       "readonlyRootfs": {
         "label": "Read-only root filesystem"
       }
+    },
+    "auth": {
+      "title": {
+        "label": "認証"
+      },
+      "hint": "このコンソールの利用にサインインを必須にします。先に管理者アカウントを設定してから認証を有効にしてください。",
+      "provider": {
+        "label": "プロバイダ",
+        "basic": "ユーザー名とパスワード",
+        "oauth": "OAuth（近日対応）",
+        "sso": "SSO（近日対応）"
+      },
+      "enable": {
+        "label": "サインインを必須にする",
+        "needAdmin": "有効にする前に、下で管理者アカウントを設定してください。"
+      },
+      "username": {
+        "label": "管理者ユーザー名",
+        "placeholder": "admin"
+      },
+      "password": {
+        "hint": "パスワードはサーバー側でハッシュ化されます。平文は保存も表示もされません。",
+        "current": {
+          "label": "現在のパスワード",
+          "placeholder": "現在のパスワード"
+        },
+        "new": {
+          "label": "新しいパスワード",
+          "placeholder": "4文字以上"
+        },
+        "set": {
+          "label": "パスワードを設定"
+        },
+        "change": {
+          "label": "パスワードを変更"
+        },
+        "result": {
+          "ok": "管理者パスワードを更新しました。"
+        },
+        "error": {
+          "not_authenticated": "現在のパスワードが正しくありません。",
+          "invalid": "ユーザー名と4文字以上のパスワードを入力してください。"
+        }
+      },
+      "exposure": {
+        "label": "ネットワーク公開を許可",
+        "hint": "localhost 以外（0.0.0.0）にバインドし、他のマシンからアクセスできるようにします。",
+        "needAdmin": "ネットワーク公開を許可するには管理者アカウントを設定してください。"
+      }
     }
   },
   "intent": {

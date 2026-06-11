@@ -639,6 +639,16 @@ function saveSettings(settings: SystemSettings) {
   settingsOpen.value = false
 }
 
+/** Set/change the admin password (ADR-0023). Plaintext is sent once and hashed
+ *  server-side; the panel stays open so the result toast lands in context. */
+function setAdminPassword(payload: {
+  username: string
+  password: string
+  currentPassword?: string
+}) {
+  client?.send({ type: 'set_admin_password', ...payload })
+}
+
 // ---- UI language (runtime switch; decoupled from voiceLang) ----
 
 // A transient, auto-dismissing global toast. Minimal by design (single message,
@@ -792,6 +802,22 @@ function handleMessage(msg: ServerToClient) {
   switch (msg.type) {
     case 'login_result':
       auth.handleLoginResult(msg.result)
+      break
+    case 'admin_password_result':
+      if (msg.result.ok) {
+        showToast(t('settings.auth.password.result.ok'))
+        // Refresh settings so the panel sees the new "password set" signal
+        // (unlocking the enable + exposure toggles) and a current draft hash.
+        client?.send({ type: 'get_settings' })
+      } else {
+        showToast(
+          t(
+            msg.result.code === 'not_authenticated'
+              ? 'settings.auth.password.error.not_authenticated'
+              : 'settings.auth.password.error.invalid',
+          ),
+        )
+      }
       break
     case 'unauthenticated': {
       // The WS analogue of HTTP 401 — drop the local session, show the login
@@ -2245,6 +2271,7 @@ function dismissSkillApproval() {
       @close="settingsOpen = false"
       @save="saveSettings"
       @set-ui-lang="setLocale"
+      @set-password="setAdminPassword"
     />
 
     <WorkspaceSettingPage

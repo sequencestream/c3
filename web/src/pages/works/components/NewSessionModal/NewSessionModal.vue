@@ -340,4 +340,39 @@ function onCreate(): void {
   border-radius: 50%;
   display: inline-block;
 }
+
+@media (max-width: 640px) {
+  .ns-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    background: var(--c-panel);
+  }
+
+  .ns-modal {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .ns-head {
+    flex-shrink: 0;
+    padding: calc(var(--sp-3) + env(safe-area-inset-top)) var(--sp-4) var(--sp-3);
+  }
+
+  .ns-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--sp-4);
+  }
+
+  .ns-foot {
+    flex-shrink: 0;
+    padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  }
+}
 </style>

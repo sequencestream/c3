@@ -148,4 +148,35 @@ function onCancel() {
   gap: var(--sp-2);
   margin-top: var(--sp-3);
 }
+
+@media (max-width: 640px) {
+  .sa-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    background: var(--c-bg);
+  }
+
+  .sa-modal {
+    width: 100vw;
+    max-width: none;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: calc(var(--sp-4) + env(safe-area-inset-top)) var(--sp-4)
+      calc(var(--sp-4) + env(safe-area-inset-bottom));
+  }
+
+  .sa-head {
+    flex-shrink: 0;
+  }
+
+  .sa-foot {
+    margin-top: auto;
+    padding-top: var(--sp-4);
+  }
+}
 </style>

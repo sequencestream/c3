@@ -1120,4 +1120,91 @@ function save(): void {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+@media (max-width: 640px) {
+  .sf-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+    background: var(--c-panel);
+  }
+
+  .sf-modal {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .sf-head {
+    flex-shrink: 0;
+    padding: calc(var(--sp-3) + env(safe-area-inset-top)) var(--sp-4) var(--sp-3);
+  }
+
+  .sf-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--sp-4);
+  }
+
+  .sf-field,
+  .sf-adv-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sf-field:not(.sf-field--stacked) > input.sf-input,
+  .sf-field:not(.sf-field--stacked) > select.sf-input,
+  .sf-field:not(.sf-field--stacked) > select.sf-select {
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .sf-adv-label {
+    width: auto;
+  }
+
+  .sf-adv-control,
+  .sf-select {
+    max-width: none;
+  }
+
+  .sf-adv-time {
+    width: 100%;
+  }
+
+  .sf-colon {
+    display: none;
+  }
+
+  .sf-tools-header,
+  .sf-tools-actions {
+    align-items: stretch;
+  }
+
+  .sf-tools-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .sf-tools-btn {
+    flex: 1;
+  }
+
+  .sf-tools-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sf-foot {
+    flex-shrink: 0;
+    padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  }
+
+  .sf-btn {
+    flex: 1;
+  }
+}
 </style>

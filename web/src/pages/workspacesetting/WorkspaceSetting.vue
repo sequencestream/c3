@@ -734,4 +734,65 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   padding: 12px 24px;
   border-top: 1px solid var(--border, #313244);
 }
+
+@media (max-width: 640px) {
+  .project-config-page {
+    height: 100dvh;
+  }
+
+  .project-config-head {
+    flex-shrink: 0;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  }
+
+  .project-config-body {
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .project-config-section {
+    padding: 16px;
+    border-radius: var(--radius-md);
+  }
+
+  .project-config-section + .project-config-section {
+    margin-top: 16px;
+  }
+
+  .project-config-row,
+  .inline-field,
+  .skill-repo-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .project-config-row-label,
+  .inline-field-label {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .project-config-field,
+  .project-config-number,
+  .mode-select,
+  .skill-repo-row .agent-field,
+  .skill-repo-row .skill-repo-name {
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .project-config-toggle {
+    align-items: flex-start;
+  }
+
+  .project-config-foot {
+    flex-shrink: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .project-config-foot button {
+    flex: 1;
+  }
+}
 </style>

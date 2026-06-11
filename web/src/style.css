@@ -2542,6 +2542,92 @@ button.deny:hover:not(:disabled) {
   color: var(--c-text);
 }
 
+@media (max-width: 640px) {
+  .settings-page {
+    height: 100dvh;
+  }
+
+  .settings-head {
+    padding: calc(var(--sp-3) + env(safe-area-inset-top)) var(--sp-4) var(--sp-3);
+  }
+
+  .settings-head h2 {
+    font-size: var(--fs-title);
+  }
+
+  .settings-body {
+    min-height: 0;
+    padding: var(--sp-4);
+  }
+
+  .settings-section {
+    padding: var(--sp-4);
+  }
+
+  .settings-section + .settings-section {
+    margin-top: var(--sp-4);
+  }
+
+  .agent-row,
+  .sandbox-row,
+  .skill-repo-row,
+  .auth-field {
+    flex-direction: column;
+    align-items: stretch;
+    overflow-x: visible;
+  }
+
+  .agent-row > .agent-field,
+  .agent-row > .col-on,
+  .agent-row > .col-default,
+  .agent-row > .icon-cell,
+  .agent-row > .col-actions,
+  .agent-name,
+  .agent-vendor,
+  .agent-configmode,
+  .agent-url,
+  .agent-key,
+  .agent-model,
+  .sandbox-row .agent-field,
+  .sandbox-row .sandbox-small,
+  .skill-repo-row .agent-field,
+  .skill-repo-row .skill-repo-name,
+  .auth-field .agent-field,
+  .auth-field .mode-select {
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .agent-row > .col-on,
+  .agent-row > .col-default,
+  .agent-row > .icon-cell,
+  .agent-row > .col-actions {
+    align-self: flex-start;
+  }
+
+  .auth-label {
+    flex: 1 1 auto;
+  }
+
+  .diagnostics-row {
+    flex-wrap: wrap;
+  }
+
+  .diagnostics-status {
+    margin-left: 0;
+  }
+
+  .settings-foot {
+    padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  }
+
+  .settings-foot button {
+    flex: 1;
+    padding: 0 var(--sp-3);
+  }
+}
+
 /* ============ 需求视图（需求列表 + 落库确认卡片） ============ */
 .req-list {
   width: 960px;

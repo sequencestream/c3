@@ -20,7 +20,7 @@ web/src/
 │   ├── PermissionPrompt/PermissionPrompt.vue       # 单条权限提示块:AskUserQuestion 逐题作答面板或其他工具 allow/deny 提示,展示 agent 共识意见
 │   ├── SessionStatusBar/SessionStatusBar.vue       # 输入框上方状态条:展示会话运行态(思考/工具执行/等待授权/出错/就绪),支持刷新、停止、继续
 │   ├── SessionTitleBar/SessionTitleBar.vue         # 聊天列顶部标题行:会话标题、权限模式下拉、vendor 标签与 agent 切换器
-│   ├── SkillApprovalModal/SkillApprovalModal.vue   # 外部 skill 加载审批模态:确认向 .gitignore 追加 _c3_* 的一次性确认
+│   ├── SkillApprovalModal/SkillApprovalModal.vue   # 外部 skill 加载审批模态:确认向 .gitignore 追加 _c3_* 的一次性确认;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   ├── TaskPanel/TaskPanel.vue                      # 实时任务面板:只读展示当前 session 任务列表,in_progress 置顶/pending 居中/completed 垫底
 │   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:显示当前工作区,支持新增/选择/移除,内含 popover
 │
@@ -34,7 +34,7 @@ web/src/
 │   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
 │   │       ├── SessionList/SessionList.vue          # 左栏会话列表:当前工作区会话、新增、删除/改名、分页、offline 警告
-│   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板
+│   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
 │   │   ├── Intents.vue                              # 需求容器页:左侧需求列表 + 右侧聊天列(复用会话聊天组件)
@@ -53,18 +53,18 @@ web/src/
 │   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、enable/disable 开关、下次执行倒计时(30s 刷新)
 │   │       ├── ExecutionHistoryList/ExecutionHistoryList.vue  # 中栏执行历史列表:选中 schedule 的执行记录,点击选中某次执行
 │   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型)
-│   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮)
+│   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);移动端全屏 sheet 且紧凑表单单列堆叠
 │   │
 │   ├── login/                                       # 登录页
 │   │   └── Login.vue                                # 全屏登录门(ADR-0023):账号+密码表单,提交走 WS login 消息,pending/错误码经 useAuth 回流
 │   │
 │   ├── workspacesetting/                         # 工作区配置页
-│   │   └── WorkspaceSetting.vue                  # 工作区级配置编辑(弹窗):per-vendor 默认模式、讨论轮数上限、演讲字符限制、git 分支模式(current-branch/worktree)+默认主分支(打开时服务端探测预填)等 workspace 级配置
+│   │   └── WorkspaceSetting.vue                  # 工作区级配置编辑(弹窗):per-vendor 默认模式、讨论轮数上限、演讲字符限制、git 分支模式(current-branch/worktree)+默认主分支(打开时服务端探测预填)等 workspace 级配置;移动端全屏 sheet 安全区适配且紧凑表单单列堆叠
 │   │
 │   └── systemsettings/                              # 系统设置页
 │       ├── SystemSettings.vue                       # 系统设置容器(弹窗):封装 SettingsPanel
 │       └── components/SettingsPanel/
-│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):agent 列表/默认 agent、共识投票开关、host 诊断、UI 语言切换、voice 语言、emoji picker、认证(ADR-0023:basic 启用/改密/网络暴露;provider 下拉 basic 可选其余置灰;改密走 set-password emit→服务端哈希,未配管理员时启用/暴露开关置灰)
+│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):agent 列表/默认 agent、共识投票开关、host 诊断、UI 语言切换、voice 语言、emoji picker、认证(ADR-0023:basic 启用/改密/网络暴露;provider 下拉 basic 可选其余置灰;改密走 set-password emit→服务端哈希,未配管理员时启用/暴露开关置灰);移动端全屏 sheet 安全区适配且紧凑表单单列堆叠
 │           ├── EmojiPicker.vue                      # emoji 选择器:零依赖,支持搜索、分类导航、自定义输入(最长 16 字符)
 │           └── emoji-data.ts                        # emoji 数据集:分类 emoji 列表与搜索关键词
 │

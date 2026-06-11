@@ -520,4 +520,86 @@ watch(
   display: flex;
   gap: var(--sp-1);
 }
+
+@media (max-width: 767px) {
+  .wc-detail {
+    height: auto;
+    min-height: 320px;
+    overflow: visible;
+  }
+
+  .wc-detail-empty {
+    min-height: 240px;
+  }
+
+  .wc-detail-title-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .wc-detail-title {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .wc-detail-actions {
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+  }
+
+  .wc-btn {
+    min-height: 44px;
+    padding: 0 var(--sp-3);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+  }
+
+  .wc-detail-actions .wc-btn {
+    flex: 1 1 112px;
+  }
+
+  .wc-btn-jump {
+    font-size: 12px;
+  }
+
+  .wc-ask-panel {
+    padding: var(--sp-3);
+  }
+
+  .wc-ask-question {
+    margin-bottom: var(--sp-2);
+    overflow-wrap: anywhere;
+  }
+
+  .wc-ask-options {
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-3);
+  }
+
+  .wc-ask-option {
+    min-height: 44px;
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  .wc-ask-option-label {
+    font-size: 14px;
+  }
+
+  .wc-ask-nav {
+    align-items: stretch;
+  }
+
+  .wc-ask-nav > span,
+  .wc-ask-nav-right,
+  .wc-ask-nav .wc-btn {
+    flex: 1;
+  }
+
+  .wc-ask-nav-right {
+    justify-content: flex-end;
+  }
+}
 </style>

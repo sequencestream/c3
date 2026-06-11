@@ -184,4 +184,26 @@ function statusClass(status: string): string {
   color: var(--c-text-muted);
   font-size: 13px;
 }
+
+@media (max-width: 767px) {
+  .wc-event-list-scroll {
+    flex: 0 0 auto;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .wc-event-row {
+    min-height: 48px;
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  .wc-source-icon {
+    min-width: 24px;
+    text-align: center;
+  }
+
+  .wc-event-time {
+    font-size: 12px;
+  }
+}
 </style>

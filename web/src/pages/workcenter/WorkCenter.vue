@@ -150,4 +150,43 @@ function onSelect(event: WaitUserInvolveEvent) {
   min-width: 0;
   min-height: 0;
 }
+
+@media (max-width: 767px) {
+  .workcenter-page {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .wc-sidebar {
+    width: 100%;
+    flex-shrink: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--c-border);
+    overflow: visible;
+  }
+
+  .wc-sidebar-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--c-panel);
+  }
+
+  .wc-filter-bar {
+    overflow-x: auto;
+    padding: var(--sp-2) var(--sp-3);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .wc-filter-btn {
+    min-height: 44px;
+    padding: 0 var(--sp-3);
+    flex: 0 0 auto;
+  }
+
+  .wc-content {
+    flex: 0 0 auto;
+    min-height: 320px;
+  }
+}
 </style>

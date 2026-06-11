@@ -26,9 +26,10 @@ web/src/
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
 │   ├── workcenter/                                  # 工作台页
-│   │   ├── WorkCenter.vue                           # 工作台容器页:状态筛选器 + EventList 子组件,集中查看/操作所有待处理事件
+│   │   ├── WorkCenter.vue                           # 工作台容器页:桌面筛选/列表 + 详情两栏,移动端单列流式,集中查看/操作所有待处理事件
 │   │   └── components/
-│   │       └── EventList.vue                        # 事件列表:按项目分组、状态徽标、标题、来源图标、时间、行内 Allow/Deny、AskUserQuestion 作答面板、跳转到源
+│   │       ├── EventList.vue                        # 事件列表:状态徽标、标题、来源图标、时间与选中态,移动端行高触控优化
+│   │       └── EventDetail.vue                      # 事件详情:完整信息、Allow/Deny、AskUserQuestion 作答面板与跳转到源,移动端触控按钮优化
 │   ├── works/                                    # 工作页
 │   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/

@@ -1180,6 +1180,7 @@
       "dbUnavailable": "의도 기능을 사용할 수 없습니다 (c3.db).",
       "chatOpenFailed": "의도 채팅을 열지 못했습니다.",
       "cannotStartDev": "\"{status}\" 상태에서는 개발을 시작할 수 없습니다.",
+      "devStartInFlight": "이 의도의 개발 시작이 이미 진행 중입니다.",
       "illegalStatusTransition": "상태를 \"{from}\"에서 \"{to}\"(으)로 변경할 수 없습니다.",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",

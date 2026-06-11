@@ -12,15 +12,22 @@ body {
   font-family: var(--font-ui);
   font-size: var(--fs-body);
   line-height: var(--lh-normal);
-  height: 100vh;
+  width: 100%;
+  height: var(--app-height);
+  min-height: var(--app-height);
   overflow: hidden;
+  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
 
 #app {
-  height: 100vh;
+  width: 100%;
+  height: var(--app-height);
+  min-height: 0;
+  padding: var(--safe-area-top) var(--safe-area-right) var(--safe-area-bottom) var(--safe-area-left);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ============ 顶部标题栏（规范 3.1） ============ */
@@ -85,9 +92,15 @@ header h1 {
     color var(--dur-fast) var(--ease-standard),
     background-color var(--dur-fast) var(--ease-standard);
 }
-.header-tab:hover:not(:disabled) {
+.header-tab:active:not(:disabled) {
   color: var(--c-text);
   background: var(--c-card);
+}
+@media (hover: hover) and (pointer: fine) {
+  .header-tab:hover:not(:disabled) {
+    color: var(--c-text);
+    background: var(--c-card);
+  }
 }
 .header-tab.active {
   color: var(--c-text);
@@ -144,9 +157,15 @@ header h1 {
     border-color var(--dur-fast) var(--ease-standard),
     background-color var(--dur-fast) var(--ease-standard);
 }
-.dd-trigger:hover {
+.dd-trigger:active {
   border-color: var(--c-text-muted);
   background: var(--c-card);
+}
+@media (hover: hover) and (pointer: fine) {
+  .dd-trigger:hover {
+    border-color: var(--c-text-muted);
+    background: var(--c-card);
+  }
 }
 .dd-open .dd-trigger {
   border-color: var(--c-primary);
@@ -1855,8 +1874,10 @@ button {
     transform var(--dur-fast) var(--ease-standard),
     opacity var(--dur-fast) var(--ease-standard);
 }
-button:hover:not(:disabled) {
-  filter: brightness(1.1);
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
 }
 button:active:not(:disabled) {
   transform: scale(0.98);

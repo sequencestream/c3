@@ -17,6 +17,26 @@
  * KernelContext dependency, pure in-memory state that does NOT survive restart).
  */
 const pendingDevLink = new Map<string, string>()
+const launchingIntentIds = new Set<string>()
+
+/**
+ * Synchronously claim a manual start_development launch for an intent.
+ * Returns false when another launch for the same intent is already between the
+ * handler entry and its first successful run:bound (or startup failure).
+ */
+export function tryClaimDevLaunch(intentId: string): boolean {
+  if (launchingIntentIds.has(intentId)) return false
+  launchingIntentIds.add(intentId)
+  return true
+}
+
+/**
+ * Release a manual start_development claim. Idempotent so every failure edge can
+ * call it without coordinating with the run:bound success path.
+ */
+export function releaseDevLaunch(intentId: string): void {
+  launchingIntentIds.delete(intentId)
+}
 
 /**
  * Register an intent-to-be-started's pending dev session id, so the resident
@@ -45,8 +65,10 @@ export function takePendingDevLink(pendingId: string): string | undefined {
  * Remove a pending-link entry without consuming it (e.g. when the dev run
  * errors out before binding). Idempotent.
  */
-export function clearPendingDevLink(pendingId: string): void {
+export function clearPendingDevLink(pendingId: string): string | undefined {
+  const intentId = pendingDevLink.get(pendingId)
   pendingDevLink.delete(pendingId)
+  return intentId
 }
 
 /**
@@ -54,4 +76,5 @@ export function clearPendingDevLink(pendingId: string): void {
  */
 export function resetForTests(): void {
   pendingDevLink.clear()
+  launchingIntentIds.clear()
 }

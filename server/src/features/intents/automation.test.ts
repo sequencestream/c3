@@ -35,10 +35,6 @@ vi.mock('./worktree.js', () => ({
   readBranch: vi.fn(() => 'main'),
 }))
 
-vi.mock('./dev-link.js', () => ({
-  registerPendingDevLink: vi.fn(),
-}))
-
 vi.mock('../../runs.js', () => ({
   ensureRuntime: vi.fn(() => ({ effectiveCwd: undefined })),
   getRuntime: vi.fn(),
@@ -97,6 +93,7 @@ import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.
 import { judgeCompletion } from './judge.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
+import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-link.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
 
@@ -137,6 +134,12 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
 describe('pickNext — worktree dep merge validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDevLinksForTests()
+    vi.mocked(createWorktree).mockImplementation(() => ({
+      worktreePath: '/tmp/wt',
+      branchName: 'wt-branch',
+    }))
+    vi.mocked(readBranch).mockReturnValue('main')
   })
 
   it('worktree: filters out intents whose dep is done but not merged', () => {
@@ -207,6 +210,7 @@ describe('pickNext — worktree dep merge validation', () => {
 describe('startDevelopment — manual start dep merge validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDevLinksForTests()
   })
 
   function makeConn() {
@@ -218,7 +222,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
   }
 
   function makeCtx() {
-    return { launchRun: vi.fn() }
+    return { launchRun: vi.fn(() => Promise.resolve()) }
   }
 
   it('worktree: blocks manual start when dep is done but not merged', async () => {
@@ -320,6 +324,144 @@ describe('startDevelopment — manual start dep merge validation', () => {
     })
     expect(depErrors).toHaveLength(0)
   })
+
+  it('concurrent manual start claims one launch and rejects the second as in-flight', async () => {
+    const req = makeIntent({ id: 'B', title: 'Child B' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('main')
+
+    const first = makeConn()
+    const second = makeConn()
+    const ctx = makeCtx()
+    const msg: StartDevMsg = {
+      type: 'start_development',
+      projectPath: '/test/proj',
+      intentId: 'B',
+    }
+
+    await Promise.all([
+      startDevelopment(
+        ctx as unknown as Parameters<typeof startDevelopment>[0],
+        first.conn as unknown as Parameters<typeof startDevelopment>[1],
+        msg,
+      ),
+      startDevelopment(
+        ctx as unknown as Parameters<typeof startDevelopment>[0],
+        second.conn as unknown as Parameters<typeof startDevelopment>[1],
+        msg,
+      ),
+    ])
+
+    expect(ctx.launchRun).toHaveBeenCalledTimes(1)
+    expect(createWorktree).not.toHaveBeenCalled()
+    expect(second.sent).toEqual([{ type: 'error', error: { code: 'intent.devStartInFlight' } }])
+  })
+
+  it('worktree concurrent manual start creates only one worktree', async () => {
+    const req = makeIntent({ id: 'B', title: 'Child B' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-B', branchName: 'intent/B' })
+
+    const first = makeConn()
+    const second = makeConn()
+    const ctx = makeCtx()
+    const msg: StartDevMsg = {
+      type: 'start_development',
+      projectPath: '/test/proj',
+      intentId: 'B',
+    }
+
+    await Promise.all([
+      startDevelopment(
+        ctx as unknown as Parameters<typeof startDevelopment>[0],
+        first.conn as unknown as Parameters<typeof startDevelopment>[1],
+        msg,
+      ),
+      startDevelopment(
+        ctx as unknown as Parameters<typeof startDevelopment>[0],
+        second.conn as unknown as Parameters<typeof startDevelopment>[1],
+        msg,
+      ),
+    ])
+
+    expect(createWorktree).toHaveBeenCalledTimes(1)
+    expect(ctx.launchRun).toHaveBeenCalledTimes(1)
+    expect(second.sent[0]?.error).toEqual({ code: 'intent.devStartInFlight' })
+  })
+
+  it('run:bound release lets the same intent start again', async () => {
+    const req = makeIntent({ id: 'B', title: 'Child B' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('main')
+
+    const ctx = makeCtx()
+    const msg: StartDevMsg = {
+      type: 'start_development',
+      projectPath: '/test/proj',
+      intentId: 'B',
+    }
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      makeConn().conn as unknown as Parameters<typeof startDevelopment>[1],
+      msg,
+    )
+
+    releaseDevLaunch('B')
+
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      makeConn().conn as unknown as Parameters<typeof startDevelopment>[1],
+      msg,
+    )
+
+    expect(ctx.launchRun).toHaveBeenCalledTimes(2)
+  })
+
+  it('startup failure releases the claim so the same intent can retry', async () => {
+    const req = makeIntent({ id: 'B', title: 'Child B' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(createWorktree)
+      .mockImplementationOnce(() => {
+        throw new Error('boom')
+      })
+      .mockReturnValueOnce({ worktreePath: '/tmp/wt-B', branchName: 'intent/B' })
+
+    const ctx = makeCtx()
+    const msg: StartDevMsg = {
+      type: 'start_development',
+      projectPath: '/test/proj',
+      intentId: 'B',
+    }
+    const failed = makeConn()
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      failed.conn as unknown as Parameters<typeof startDevelopment>[1],
+      msg,
+    )
+    expect(failed.sent[0]?.error).toMatchObject({ code: 'intent.worktreeCreateFailed' })
+
+    const retry = makeConn()
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      retry.conn as unknown as Parameters<typeof startDevelopment>[1],
+      msg,
+    )
+
+    expect(ctx.launchRun).toHaveBeenCalledTimes(1)
+    expect(retry.sent).toHaveLength(0)
+  })
 })
 
 // =============================================================================
@@ -329,6 +471,11 @@ describe('startDevelopment — manual start dep merge validation', () => {
 describe('automation controller — branch-mode git alignment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(createWorktree).mockImplementation(() => ({
+      worktreePath: '/tmp/wt',
+      branchName: 'wt-branch',
+    }))
+    vi.mocked(readBranch).mockReturnValue('main')
   })
 
   /** Flush microtasks + the fire-and-forget launch chain. */

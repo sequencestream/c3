@@ -654,6 +654,7 @@ function setAdminPassword(payload: {
 // A transient, auto-dismissing global toast. Minimal by design (single message,
 // error-only today); the language-switch rollback surfaces failures through it.
 const toast = ref<string | null>(null)
+const intentActionErrorSeq = ref(0)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 function showToast(text: string) {
   toast.value = text
@@ -1347,6 +1348,7 @@ function handleMessage(msg: ServerToClient) {
       break
     case 'error':
       // Machine-readable code translated locally via the web i18n catalog (spec 003).
+      if (msg.error.code.startsWith('intent.')) intentActionErrorSeq.value += 1
       add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
       break
     case 'wait_user_events':
@@ -1866,7 +1868,7 @@ function createPr(intentId: string) {
 
 function startDevelopment(intentId: string, hasUnfinishedDeps: boolean) {
   if (!intentsProject.value) return
-  if (hasUnfinishedDeps && !window.confirm(t('intent.startDev.confirmUnfinishedDeps'))) return
+  void hasUnfinishedDeps
   client?.send({
     type: 'start_development',
     projectPath: intentsProject.value,
@@ -2142,6 +2144,7 @@ function dismissSkillApproval() {
           :project="intentsProject"
           :intents="currentIntents"
           :automation="currentAutomation"
+          :intent-action-error-seq="intentActionErrorSeq"
           :intent-sessions="currentIntentSessions"
           :selected-intent-session-id="selectedIntentSessionId"
           :intent-session-run-states="intentSessionRunStates"

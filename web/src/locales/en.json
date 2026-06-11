@@ -1182,6 +1182,7 @@
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "cannotStartDev": "Cannot start development from status \"{status}\".",
+      "devStartInFlight": "Development is already starting for this intent.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",

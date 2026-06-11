@@ -36,6 +36,7 @@ defineProps<{
   project: string
   intents: Intent[]
   automation: AutomationStatus | null
+  intentActionErrorSeq?: number
   // middle: intent session list
   intentSessions: IntentSessionInfo[]
   selectedIntentSessionId: string | null
@@ -109,6 +110,7 @@ defineExpose({
     :project="project"
     :intents="intents"
     :automation="automation"
+    :intent-action-error-seq="intentActionErrorSeq"
     @filter="(status: IntentStatus | null) => emit('filter', status)"
     @refine="(id: string) => emit('refine', id)"
     @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"

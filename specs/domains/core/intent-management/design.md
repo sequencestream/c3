@@ -298,15 +298,20 @@ prompted to query the ledger before splitting items or setting `dependsOn`.
 
 ## Launch development (`start_development`)
 
-1. Validate the intent exists and is `todo`, or `in_progress` with a dangling (deleted)
+1. Resolve the project and synchronously claim `intentId` in the feature-private in-memory
+   launch set before worktree creation or `launchRun`. If already claimed, reply
+   `intent.devStartInFlight` and stop. Release the claim on `run:bound` after the pending dev link
+   is consumed, and on every pre-launch / startup failure path (including worktree creation failure
+   and launch rejection).
+2. Validate the intent exists and is `todo`, or `in_progress` with a dangling (deleted)
    `lastDevSessionId` (allowing relaunch; other states → `error`) (RM-R8).
-2. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the response carries a
-   warning (the frontend also second-confirms before sending) (RM-R11).
-3. Start a **background normal runtime** (`pending:`) via `launchRun` with
-   prompt `[<devSkill> ]<title + content + dependency summary>` (the configurable development
+3. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the frontend
+   second-confirms before sending in the manual path (RM-R11).
+4. Start a **background normal runtime** (`pending:`) via `launchRun` with prompt
+   `[<devSkill> ]<title + content + dependency summary>` (the configurable development
    skill from system settings, `getDevSkill()`; empty by default ⇒ no skill prefix); on `onSessionId`,
    `setLastDevSession` + `updateStatus(in_progress)` + broadcast `intents` + `broadcastStatuses`.
-4. The run is backgrounded and survives disconnect; the development session is a **normal**
+5. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.
 
 ## Automation orchestrator (`automation.ts` + `git.ts` + `judge.ts`)

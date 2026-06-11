@@ -1180,6 +1180,7 @@
       "dbUnavailable": "意図機能は利用できません(c3.db)。",
       "chatOpenFailed": "意図チャットを開けませんでした。",
       "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。",
+      "devStartInFlight": "この意図の開発はすでに開始中です。",
       "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
       "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",

@@ -54,7 +54,12 @@ import {
   updateIntentDeps,
   updateStatus,
 } from './store.js'
-import { registerPendingDevLink } from './dev-link.js'
+import {
+  clearPendingDevLink,
+  registerPendingDevLink,
+  releaseDevLaunch,
+  tryClaimDevLaunch,
+} from './dev-link.js'
 import { reconcileInProgress } from './reconcile.js'
 import { judgeCompletion } from './judge.js'
 import {
@@ -448,9 +453,15 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
+  if (!tryClaimDevLaunch(msg.intentId)) {
+    conn.send({ type: 'error', error: { code: 'intent.devStartInFlight' } })
+    return
+  }
+  const releaseClaim = (): void => releaseDevLaunch(msg.intentId)
   const req = getIntent(msg.intentId)
   if (!req) {
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    releaseClaim()
     return
   }
   // Allow `todo`, or `in_progress` whose dev session has gone missing (a
@@ -463,6 +474,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       type: 'error',
       error: { code: 'intent.cannotStartDev', params: { status: req.status } },
     })
+    releaseClaim()
     return
   }
   // ── Dependency validation (2026-06-10) ─────────────────────────────────
@@ -489,6 +501,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
           params: { title: unmerged[0].title, id: unmerged[0].id },
         },
       })
+      releaseClaim()
       return
     }
   }
@@ -513,6 +526,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
           params: { message: err instanceof Error ? err.message : String(err) },
         },
       })
+      releaseClaim()
       return
     }
   } else {
@@ -538,7 +552,21 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // flips the intent to `in_progress` and links the real dev session id
   // (ADR-0018 resident subs model).
   registerPendingDevLink(devId, req.id)
-  void ctx.launchRun(devRt, devPrompt)
+  try {
+    void ctx.launchRun(devRt, devPrompt).catch((err: unknown) => {
+      clearPendingDevLink(devId)
+      releaseClaim()
+      console.warn(
+        `[c3:intents] start_development launch failed before bind: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    })
+  } catch (err) {
+    clearPendingDevLink(devId)
+    releaseClaim()
+    throw err
+  }
 }
 
 export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, msg) => {

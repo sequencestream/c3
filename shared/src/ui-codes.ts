@@ -57,6 +57,7 @@ export const UI_ERROR_CODES = {
     params: ['detail'],
   },
   'intent.cannotStartDev': { key: 'error.intent.cannotStartDev', params: ['status'] },
+  'intent.devStartInFlight': { key: 'error.intent.devStartInFlight' },
   'intent.illegalStatusTransition': {
     key: 'error.intent.illegalStatusTransition',
     params: ['from', 'to'],

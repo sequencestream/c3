@@ -68,7 +68,11 @@ import {
   updateStatus,
   listIntents,
 } from '../features/intents/store.js'
-import { takePendingDevLink } from '../features/intents/dev-link.js'
+import {
+  clearPendingDevLink,
+  releaseDevLaunch,
+  takePendingDevLink,
+} from '../features/intents/dev-link.js'
 import { notifyTurnSettled } from '../features/intents/automation.js'
 import {
   cancelBySourceId,
@@ -140,6 +144,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       const intentId = takePendingDevLink(prevId)
       if (intentId) {
         setLastDevSession(intentId, realId)
+        releaseDevLaunch(intentId)
         // Record the dev session start in intent_sessions (fire-and-forget
         // on the DB write — the insert is synchronous but cheap).
         insertIntentSession(intentId, realId, resolveSessionVendor(realId))
@@ -174,6 +179,9 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastSessions(workspacePath)
 
     if (kind !== 'session') return // only session runs affect intent state
+
+    const unboundIntentId = clearPendingDevLink(sessionId)
+    if (unboundIntentId) releaseDevLaunch(unboundIntentId)
 
     // Match settled session to an intent's lastDevSessionId.
     // Scan the workspace's intents — O(n) per settle; n is small (active

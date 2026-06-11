@@ -5,7 +5,7 @@
  * 数据由 App 提供;过滤器是本组件的 UI 状态,切换时上抛 `filter` 事件让 App 拉取。
  * 动作(完善/启动开发/开发详情/标记状态)经事件上抛,由 App 统一发往服务端。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type {
   AutomationStatus,
   DepType,
@@ -35,6 +35,7 @@ const props = defineProps<{
   project: string
   intents: Intent[]
   automation: AutomationStatus | null
+  intentActionErrorSeq?: number
 }>()
 
 const emit = defineEmits<{
@@ -207,6 +208,39 @@ const titleById = computed<Record<string, string>>(() => {
   return out
 })
 
+const startDevInFlightIds = ref<Set<string>>(new Set())
+
+function setStartDevInFlight(intentId: string, inFlight: boolean): void {
+  const next = new Set(startDevInFlightIds.value)
+  if (inFlight) next.add(intentId)
+  else next.delete(intentId)
+  startDevInFlightIds.value = next
+}
+
+function isStartDevInFlight(intentId: string): boolean {
+  return startDevInFlightIds.value.has(intentId)
+}
+
+watch(
+  () => props.intents.map((r) => `${r.id}:${r.status}`).join('|'),
+  () => {
+    const byId = new Map(props.intents.map((r) => [r.id, r]))
+    const next = new Set(startDevInFlightIds.value)
+    for (const id of startDevInFlightIds.value) {
+      const intent = byId.get(id)
+      if (!intent || intent.status !== 'todo') next.delete(id)
+    }
+    startDevInFlightIds.value = next
+  },
+)
+
+watch(
+  () => props.intentActionErrorSeq,
+  (next, prev) => {
+    if (next !== prev) startDevInFlightIds.value = new Set()
+  },
+)
+
 // Intents this one depends on that aren't `done` yet (the unfinished set).
 function unfinishedDeps(r: Intent): Intent[] {
   const byId = new Map(props.intents.map((x) => [x.id, x]))
@@ -216,7 +250,11 @@ function unfinishedDeps(r: Intent): Intent[] {
 }
 
 function startDev(r: Intent) {
-  emit('start-dev', r.id, unfinishedDeps(r).length > 0)
+  if (isStartDevInFlight(r.id)) return
+  const hasUnfinishedDeps = unfinishedDeps(r).length > 0
+  if (hasUnfinishedDeps && !window.confirm(t('intent.startDev.confirmUnfinishedDeps'))) return
+  setStartDevInFlight(r.id, true)
+  emit('start-dev', r.id, hasUnfinishedDeps)
 }
 
 // 手风琴展开状态:记录当前展开项的 id,null 表示全部收起;天然保证至多一项展开。
@@ -314,7 +352,12 @@ function datePrefix(r: Intent): string {
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">
               {{ t('intent.action.refine.label') }}
             </button>
-            <button v-if="r.status === 'todo'" class="req-btn primary" @click="startDev(r)">
+            <button
+              v-if="r.status === 'todo'"
+              class="req-btn primary"
+              :disabled="isStartDevInFlight(r.id)"
+              @click="startDev(r)"
+            >
               {{ t('intent.action.startDev.label') }}
             </button>
             <button

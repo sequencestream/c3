@@ -1182,6 +1182,7 @@
       "renameChatSessionFailed": "重命名意图对话会话失败: {detail}。",
       "deleteChatSessionFailed": "删除意图对话会话失败: {detail}。",
       "cannotStartDev": "当前状态({status})不可启动开发。",
+      "devStartInFlight": "该意图正在启动开发,请稍候。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",

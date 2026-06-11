@@ -34,7 +34,11 @@ vi.mock('../features/intents/store.js', () => ({
   updateStatus: vi.fn(),
   listIntents: vi.fn(() => []),
 }))
-vi.mock('../features/intents/dev-link.js', () => ({ takePendingDevLink: vi.fn(() => null) }))
+vi.mock('../features/intents/dev-link.js', () => ({
+  clearPendingDevLink: vi.fn(() => undefined),
+  releaseDevLaunch: vi.fn(),
+  takePendingDevLink: vi.fn(() => null),
+}))
 vi.mock('../features/intents/automation.js', () => ({ notifyTurnSettled: vi.fn() }))
 vi.mock('../features/user-involve/store.js', () => ({
   cancelBySourceId: vi.fn(),

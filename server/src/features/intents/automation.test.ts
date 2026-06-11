@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Intent } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 
 // ---- Mocks (must be before imports) ----
 
@@ -86,20 +87,19 @@ vi.mock('./checkpoint-consensus.js', () => ({
 
 // ---- Imports ----
 
-import { pickNext } from './automation.js'
+import { pickNext, startAutomation, notifyTurnSettled } from './automation.js'
+import type { AutomationHooks, DevTurnResult, RunDevTurnInput } from './automation.js'
 import { startDevelopment } from './index.js'
-import { listIntents, getIntent } from './store.js'
-import { getGitBranchMode } from '../../kernel/config/index.js'
+import { listIntents, getIntent, setBranchName, setPrInfo, updateStatus } from './store.js'
+import { getGitBranchMode, getDefaultMainBranch } from '../../kernel/config/index.js'
+import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
+import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
+import { judgeCompletion } from './judge.js'
+import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
 
-interface MockConn {
-  send: (msg: Record<string, unknown>) => void
-}
-interface MockCtx {
-  launchRun: (...args: unknown[]) => unknown
-}
 interface StartDevMsg {
   type: 'start_development'
   projectPath: string
@@ -210,9 +210,9 @@ describe('startDevelopment — manual start dep merge validation', () => {
   })
 
   function makeConn() {
-    const sent: unknown[] = []
+    const sent: Record<string, unknown>[] = []
     const conn = {
-      send: (msg: unknown) => sent.push(msg),
+      send: (msg: unknown) => sent.push(msg as Record<string, unknown>),
     }
     return { sent, conn }
   }
@@ -241,7 +241,11 @@ describe('startDevelopment — manual start dep merge validation', () => {
       projectPath: '/test/proj',
       intentId: 'B',
     }
-    await startDevelopment(ctx as unknown as MockCtx, conn as unknown as MockConn, msg)
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      conn as unknown as Parameters<typeof startDevelopment>[1],
+      msg,
+    )
 
     expect(sent).toHaveLength(1)
     const err = sent[0] as Record<string, unknown>
@@ -272,7 +276,11 @@ describe('startDevelopment — manual start dep merge validation', () => {
       projectPath: '/test/proj',
       intentId: 'B',
     }
-    await startDevelopment(ctx as unknown as MockCtx, conn as unknown as MockConn, msg1)
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      conn as unknown as Parameters<typeof startDevelopment>[1],
+      msg1,
+    )
 
     // current-branch mode: no merge check → should proceed (no error sent)
     const errors = sent.filter((m: Record<string, unknown>) => m.type === 'error')
@@ -299,7 +307,11 @@ describe('startDevelopment — manual start dep merge validation', () => {
       projectPath: '/test/proj',
       intentId: 'B',
     }
-    await startDevelopment(ctx as unknown as MockCtx, conn as unknown as MockConn, msg2)
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      conn as unknown as Parameters<typeof startDevelopment>[1],
+      msg2,
+    )
 
     const depErrors = sent.filter((m: Record<string, unknown>) => {
       if (m.type !== 'error') return false
@@ -307,5 +319,148 @@ describe('startDevelopment — manual start dep merge validation', () => {
       return err?.code === 'intent.dependencyNotMerged'
     })
     expect(depErrors).toHaveLength(0)
+  })
+})
+
+// =============================================================================
+// AutomationController — branch-mode alignment (launch + commit/push/PR cwd)
+// =============================================================================
+
+describe('automation controller — branch-mode git alignment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  /** Flush microtasks + the fire-and-forget launch chain. */
+  const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+
+  /** Build a hooks bag whose runDevTurn records its launch input. */
+  function makeHooks(): { hooks: AutomationHooks; runDevTurn: ReturnType<typeof vi.fn> } {
+    const runDevTurn = vi.fn(
+      (_input: RunDevTurnInput): Promise<DevTurnResult> =>
+        Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: '' }),
+    )
+    const hooks: AutomationHooks = {
+      runDevTurn,
+      broadcastIntents: vi.fn(),
+      emitStatus: vi.fn(),
+      sessionExists: vi.fn(() => Promise.resolve(false)),
+      isRunning: vi.fn(() => false),
+    }
+    return { hooks, runDevTurn }
+  }
+
+  it('current-branch: 全新启动不调用 createWorktree,effectiveCwd=projectPath,写当前分支', async () => {
+    const proj = '/test/cb-launch'
+    const intent = makeIntent({ id: 'X', status: 'todo' })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('feature/x')
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+
+    expect(createWorktree).not.toHaveBeenCalled()
+    expect(setBranchName).toHaveBeenCalledWith('X', 'feature/x')
+    expect(runDevTurn).toHaveBeenCalledTimes(1)
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+    expect(launchedId.startsWith(PENDING_SESSION_PREFIX)).toBe(true)
+    const rt = vi.mocked(ensureRuntime).mock.results.at(-1)?.value as { effectiveCwd?: string }
+    expect(rt.effectiveCwd).toBe(proj)
+  })
+
+  it('worktree: 全新启动 createWorktree 传 getDefaultMainBranch 作基底,effectiveCwd=worktree', async () => {
+    const proj = '/test/wt-launch'
+    const intent = makeIntent({ id: 'Y', status: 'todo' })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-Y', branchName: 'intent/Y' })
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+
+    expect(createWorktree).toHaveBeenCalledWith(proj, 'Y', 'Test', 'main')
+    expect(readBranch).not.toHaveBeenCalled()
+    expect(setBranchName).toHaveBeenCalledWith('Y', 'intent/Y')
+    expect(runDevTurn).toHaveBeenCalledTimes(1)
+    const rt = vi.mocked(ensureRuntime).mock.results.at(-1)?.value as { effectiveCwd?: string }
+    expect(rt.effectiveCwd).toBe('/tmp/wt-Y')
+  })
+
+  it('worktree: 端到端 develop→commit→PR 全针对 worktree 工作目录,setPrInfo reviewing', async () => {
+    const proj = '/test/wt-e2e'
+    const intent = makeIntent({ id: 'Z', status: 'todo', branchName: 'intent/Z' })
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-Z', branchName: 'intent/Z' })
+    vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-Z')
+    // Mutate status so the post-done _startNext stops re-picking the same intent.
+    vi.mocked(updateStatus).mockImplementation((_id, status) => {
+      intent.status = status
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '77', prUrl: 'http://x/pull/77' })
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+
+    await notifyTurnSettled(proj, launchedId, 'complete', 'Z')
+
+    // Judge evidence + commit/push + PR all scoped to the worktree, not proj.
+    expect(gitDiffStat).toHaveBeenCalledWith('/tmp/wt-Z')
+    expect(gitRecentLog).toHaveBeenCalledWith('/tmp/wt-Z')
+    expect(commitAndPush).toHaveBeenCalledWith('/tmp/wt-Z', expect.stringContaining('feat:'))
+    expect(createGhPr).toHaveBeenCalledWith(
+      '/tmp/wt-Z',
+      expect.any(String),
+      expect.any(String),
+      'intent/Z',
+    )
+    expect(setPrInfo).toHaveBeenCalledWith('Z', '77', 'reviewing')
+    expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
+  })
+
+  it('current-branch: 端到端 commit 用 projectPath 且不建 worktree、不建 PR', async () => {
+    const proj = '/test/cb-e2e'
+    const intent = makeIntent({ id: 'W', status: 'todo' })
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(updateStatus).mockImplementation((_id, status) => {
+      intent.status = status
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+
+    await notifyTurnSettled(proj, launchedId, 'complete', 'W')
+
+    expect(createWorktree).not.toHaveBeenCalled()
+    expect(gitDiffStat).toHaveBeenCalledWith(proj)
+    expect(commitAndPush).toHaveBeenCalledWith(proj, expect.stringContaining('feat:'))
+    expect(createGhPr).not.toHaveBeenCalled()
+    expect(setPrInfo).not.toHaveBeenCalled()
+    expect(updateStatus).toHaveBeenCalledWith('W', 'done')
   })
 })

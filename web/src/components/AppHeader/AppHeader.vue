@@ -25,6 +25,9 @@ defineProps<{
   tabsEnabled?: boolean
   /** Current view mode: workspace or workcenter. */
   viewMode: 'workspace' | 'workcenter'
+  /** Show the logout button. Only true once authenticated (ADR-0023); when auth
+   *  is disabled this stays false so the no-auth UI is unchanged. */
+  showLogout?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +38,7 @@ const emit = defineEmits<{
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
+  logout: []
 }>()
 </script>
 
@@ -110,6 +114,14 @@ const emit = defineEmits<{
         @click="emit('open-settings')"
       >
         ⚙
+      </button>
+      <button
+        v-if="showLogout"
+        class="icon-btn logout-btn"
+        :title="t('auth.logout.tooltip')"
+        @click="emit('logout')"
+      >
+        {{ t('auth.logout.label') }}
       </button>
       <span class="status" :class="status === 'open' ? 'ok' : 'err'">
         {{ status }}

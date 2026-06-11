@@ -18,6 +18,8 @@ import Schedules from './pages/schedules/Schedules.vue'
 import WorkCenter from './pages/workcenter/WorkCenter.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
 import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
+import Login from './pages/login/Login.vue'
+import { useAuth } from './composables/useAuth'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import type { ApprovalRequest } from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import {
@@ -88,6 +90,12 @@ const modeLabel = useModeLabel()
 
 const messages = ref<ChatMsg[]>([])
 const status = ref<'connecting' | 'open' | 'closed'>('connecting')
+
+// Authentication (ADR-0023). Purely reactive: `auth.status` stays 'unknown'
+// until the server emits `unauthenticated` (login gate) or a login succeeds.
+// When auth is disabled the server never signals, so the app renders normally.
+const auth = useAuth()
+const authStatus = computed(() => auth.status.value)
 // Live run status per session (sidebar badges + input lock for the viewed one).
 // Source of truth: server `ready.statuses` + `session_status` broadcasts.
 const sessionStatus = ref<Record<string, SessionStatus>>({})
@@ -675,6 +683,9 @@ onMounted(() => {
   client = createWsClient({
     onMessage: handleMessage,
     onStatus: (s) => (status.value = s),
+    // Present the persisted session token on the handshake (`?token=`); read
+    // per-connect so reconnects after login/logout carry the right token.
+    getToken: auth.currentToken,
     // After a reconnect the server has a fresh per-connection view (`viewing`
     // reset). Re-select the active session so its history + live stream replay
     // and this connection re-attaches as a viewer.
@@ -710,6 +721,9 @@ onMounted(() => {
       client?.send({ type: 'request_session_status' })
     },
   })
+
+  // Let the auth store fire `login` / `logout` over this connection.
+  auth.bindSender(client.send)
 
   // Session-layer status heartbeat: periodically pull the authoritative snapshot
   // so the UI reconciles even when the server's event-driven broadcast is dropped.
@@ -776,6 +790,22 @@ function transcriptToChat(item: TranscriptItem): ChatBody {
 
 function handleMessage(msg: ServerToClient) {
   switch (msg.type) {
+    case 'login_result':
+      auth.handleLoginResult(msg.result)
+      break
+    case 'unauthenticated': {
+      // The WS analogue of HTTP 401 — drop the local session, show the login
+      // gate, and surface why (session expired / invalid / sign-in required).
+      auth.handleUnauthenticated(msg.reason)
+      const reasonKey =
+        msg.reason === 'expired'
+          ? 'auth.session.expired'
+          : msg.reason === 'invalid'
+            ? 'auth.session.invalid'
+            : 'auth.session.missing'
+      showToast(t(reasonKey))
+      break
+    }
     case 'ready':
       workspaces.value = msg.workspaces
       // Close workspace setting on reconnect — workspace may have changed.
@@ -2003,233 +2033,241 @@ function dismissSkillApproval() {
 </script>
 
 <template>
-  <AppHeader
-    :workspaces="workspaces"
-    :current-workspace="currentWorkspace"
-    :status="status"
-    :tabs="HEADER_TABS"
-    :active-tab="activeTab"
-    :tabs-enabled="currentWorkspace !== null"
-    :view-mode="viewMode"
-    @select-tab="onSelectTab"
-    @update:view-mode="setViewMode"
-    @open-settings="openSettings"
-    @open-workspace-setting="openWorkspaceSetting"
-    @add-workspace="addWorkspace"
-    @select-workspace="selectWorkspace"
-    @remove-workspace="removeWorkspace"
-  />
-
-  <div class="body">
-    <template v-if="viewMode === 'workspace'">
-      <Works
-        v-if="activeTab === 'console'"
-        ref="composer"
-        :current-workspace="currentWorkspace"
-        :sessions="currentSessions"
-        :session-status="sessionStatus"
-        :active-workspace="activeWorkspace"
-        :active-session="activeSession"
-        :active-title="activeTitle"
-        :vendor="activeVendor"
-        :agent-switch="activeAgentSwitch"
-        :vendor-session-caps="sessionCapabilities ?? undefined"
-        :opencode-status="opencodeStatus"
-        :has-active-session="hasActiveSession"
-        :mode="mode"
-        :mode-options="modeOptions"
-        :codex-policy="codexPolicy"
-        :messages="messages"
-        :actionable-permission-id="actionablePermId"
-        :task-model="taskModel"
-        :has-task-store="taskStoreAvailable"
-        :running="running"
-        :team-active="activeIsTeam"
-        :connection="status"
-        :activity="activity"
-        :current-agent-name="currentAgentName"
-        :reconnecting="reconnecting"
-        :side-effect-pending="sideEffectPending"
-        :queue="currentQueue"
-        :available-commands="availableCommands"
-        :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-        @create-session="openNewSession"
-        @refresh-sessions="() => refreshSessions(currentWorkspace)"
-        @select-session="selectSession"
-        @delete-session="deleteSession"
-        @rename-session="renameSession"
-        @set-mode="setMode"
-        @set-codex-policy="setCodexPolicy"
-        @set-session-agent="onSetSessionAgent"
-        @respond="respond"
-        @submit-ask="submitAsk"
-        @refresh="refreshStatus"
-        @edit-queued="onEditQueued"
-        @delete-queued="onDeleteQueued"
-        @submit="onSubmit"
-        @enqueue="onEnqueue"
-        @stop="stopRun"
-        @continue="onContinue"
-        @list-commands="listCommands"
-      />
-
-      <Intents
-        v-else-if="activeTab === 'intents' && intentsProject"
-        ref="composer"
-        :project="intentsProject"
-        :intents="currentIntents"
-        :automation="currentAutomation"
-        :intent-sessions="currentIntentSessions"
-        :selected-intent-session-id="selectedIntentSessionId"
-        :intent-session-run-states="intentSessionRunStates"
-        :active-title="activeTitle"
-        :has-active-session="hasActiveSession"
-        :messages="messages"
-        :actionable-permission-id="actionablePermId"
-        :task-model="taskModel"
-        :has-task-store="taskStoreAvailable"
-        :running="running"
-        :team-active="activeIsTeam"
-        :connection="status"
-        :activity="activity"
-        :current-agent-name="currentAgentName"
-        :reconnecting="reconnecting"
-        :side-effect-pending="sideEffectPending"
-        :queue="currentQueue"
-        :available-commands="availableCommands"
-        :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-        :vendor="activeVendor"
-        :agent-switch="activeAgentSwitch"
-        @filter="setIntentFilter"
-        @refine="refineIntent"
-        @start-dev="startDevelopment"
-        @open-dev="openDevSession"
-        @set-status="setIntentStatus"
-        @set-automate="setIntentAutomate"
-        @update-deps="updateIntentDeps"
-        @create-pr="createPr"
-        @start-automation="startAutomation"
-        @stop-automation="stopAutomation"
-        @new-intent="newIntentChat"
-        @select-intent-session="selectIntentSession"
-        @new-intent-session="newIntentChat"
-        @rename-intent-session="renameIntentSession"
-        @delete-intent-session="deleteIntentSession"
-        @set-session-agent="onSetSessionAgent"
-        @respond="respond"
-        @submit-ask="submitAsk"
-        @refresh="refreshStatus"
-        @edit-queued="onEditQueued"
-        @delete-queued="onDeleteQueued"
-        @submit="onSubmit"
-        @enqueue="onEnqueue"
-        @stop="stopRun"
-        @continue="onContinue"
-        @list-commands="listCommands"
-      />
-
-      <Discussions
-        v-else-if="activeTab === 'discussion' && discussionsProject"
-        :discussions="currentDiscussions"
-        :active-id="activeDiscussionId"
-        :run-state="discussionRunState"
-        :active-discussion="activeDiscussion"
-        :active-run-state="activeDiscussionRunState"
-        :messages="discussionMessages"
-        :research-messages="researchMessages"
-        :phase="activeDiscussionPhase"
-        :show-start="showStart"
-        :dispatch="activeDiscussionDispatch"
-        :input="discussionInput"
-        @open="openDiscussion"
-        @create="createDiscussion"
-        @start="startDiscussion"
-        @pause="pauseDiscussion"
-        @resume="resumeDiscussion"
-        @convert="convertDiscussionToIntent"
-        @update:input="discussionInput = $event"
-        @submit-input="submitDiscussionInput"
-      />
-
-      <Schedules
-        v-else-if="activeTab === 'schedules' && schedulesProject"
-        :schedules="currentSchedules"
-        :active-id="selectedScheduleId"
-        :schedule="selectedSchedule"
-        :logs="selectedScheduleLogs"
-        :transcripts="executionTranscripts"
-        :form-open="scheduleFormOpen"
-        :form-target="scheduleFormTarget"
-        :workspace-path="schedulesProject ?? ''"
-        :timezone="scheduleTimezone"
-        :execution-id="selectedExecutionId"
-        :execution="selectedExecution"
-        :tool-manifest="scheduleToolManifest"
-        :tool-manifest-loading="scheduleToolManifestLoading"
-        :tool-manifest-error="scheduleToolManifestError"
-        :host-status="hostStatus"
-        @select="onSelectSchedule"
-        @open-form="openScheduleForm"
-        @toggle-enabled="onToggleScheduleEnabled"
-        @load-session="onLoadExecutionSession"
-        @select-execution="onSelectExecution"
-        @close-form="scheduleFormOpen = false"
-        @create="createSchedule"
-        @update="updateSchedule"
-        @load-tool-manifest="onLoadScheduleToolManifest"
-      />
-    </template>
-
-    <WorkCenter
-      v-else
-      :events="workcenterEvents"
+  <!-- Login gate (ADR-0023): when the server says this connection is
+       unauthenticated, the gate replaces the whole app. The toast lives outside
+       the gate (at root) so a "session expired" notice shows over it too. -->
+  <Login v-if="authStatus === 'login-required'" />
+  <template v-else>
+    <AppHeader
+      :workspaces="workspaces"
       :current-workspace="currentWorkspace"
-      @respond="respondWorkcenter"
-      @submit-ask="submitAskWorkcenter"
-      @jump-to-source="jumpToSource"
+      :status="status"
+      :tabs="HEADER_TABS"
+      :active-tab="activeTab"
+      :tabs-enabled="currentWorkspace !== null"
+      :view-mode="viewMode"
+      :show-logout="authStatus === 'authenticated'"
+      @select-tab="onSelectTab"
+      @update:view-mode="setViewMode"
+      @open-settings="openSettings"
+      @open-workspace-setting="openWorkspaceSetting"
+      @add-workspace="addWorkspace"
+      @select-workspace="selectWorkspace"
+      @remove-workspace="removeWorkspace"
+      @logout="auth.logout"
     />
-  </div>
 
-  <NewSessionModal
-    :open="newSessionOpen"
-    :agents="serverSettings?.agents ?? []"
-    :default-agent-id="serverSettings?.defaultAgentId ?? null"
-    :host-status="hostStatus"
-    @confirm="confirmNewSession"
-    @close="newSessionOpen = false"
-    @goto-settings="openSettingsFromPicker"
-  />
+    <div class="body">
+      <template v-if="viewMode === 'workspace'">
+        <Works
+          v-if="activeTab === 'console'"
+          ref="composer"
+          :current-workspace="currentWorkspace"
+          :sessions="currentSessions"
+          :session-status="sessionStatus"
+          :active-workspace="activeWorkspace"
+          :active-session="activeSession"
+          :active-title="activeTitle"
+          :vendor="activeVendor"
+          :agent-switch="activeAgentSwitch"
+          :vendor-session-caps="sessionCapabilities ?? undefined"
+          :opencode-status="opencodeStatus"
+          :has-active-session="hasActiveSession"
+          :mode="mode"
+          :mode-options="modeOptions"
+          :codex-policy="codexPolicy"
+          :messages="messages"
+          :actionable-permission-id="actionablePermId"
+          :task-model="taskModel"
+          :has-task-store="taskStoreAvailable"
+          :running="running"
+          :team-active="activeIsTeam"
+          :connection="status"
+          :activity="activity"
+          :current-agent-name="currentAgentName"
+          :reconnecting="reconnecting"
+          :side-effect-pending="sideEffectPending"
+          :queue="currentQueue"
+          :available-commands="availableCommands"
+          :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
+          @create-session="openNewSession"
+          @refresh-sessions="() => refreshSessions(currentWorkspace)"
+          @select-session="selectSession"
+          @delete-session="deleteSession"
+          @rename-session="renameSession"
+          @set-mode="setMode"
+          @set-codex-policy="setCodexPolicy"
+          @set-session-agent="onSetSessionAgent"
+          @respond="respond"
+          @submit-ask="submitAsk"
+          @refresh="refreshStatus"
+          @edit-queued="onEditQueued"
+          @delete-queued="onDeleteQueued"
+          @submit="onSubmit"
+          @enqueue="onEnqueue"
+          @stop="stopRun"
+          @continue="onContinue"
+          @list-commands="listCommands"
+        />
 
-  <SystemSettingsPage
-    :open="settingsOpen"
-    :settings="serverSettings"
-    :host-status="hostStatus"
-    :binding-stats="bindingStats"
-    @close="settingsOpen = false"
-    @save="saveSettings"
-    @set-ui-lang="setLocale"
-  />
+        <Intents
+          v-else-if="activeTab === 'intents' && intentsProject"
+          ref="composer"
+          :project="intentsProject"
+          :intents="currentIntents"
+          :automation="currentAutomation"
+          :intent-sessions="currentIntentSessions"
+          :selected-intent-session-id="selectedIntentSessionId"
+          :intent-session-run-states="intentSessionRunStates"
+          :active-title="activeTitle"
+          :has-active-session="hasActiveSession"
+          :messages="messages"
+          :actionable-permission-id="actionablePermId"
+          :task-model="taskModel"
+          :has-task-store="taskStoreAvailable"
+          :running="running"
+          :team-active="activeIsTeam"
+          :connection="status"
+          :activity="activity"
+          :current-agent-name="currentAgentName"
+          :reconnecting="reconnecting"
+          :side-effect-pending="sideEffectPending"
+          :queue="currentQueue"
+          :available-commands="availableCommands"
+          :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
+          :vendor="activeVendor"
+          :agent-switch="activeAgentSwitch"
+          @filter="setIntentFilter"
+          @refine="refineIntent"
+          @start-dev="startDevelopment"
+          @open-dev="openDevSession"
+          @set-status="setIntentStatus"
+          @set-automate="setIntentAutomate"
+          @update-deps="updateIntentDeps"
+          @create-pr="createPr"
+          @start-automation="startAutomation"
+          @stop-automation="stopAutomation"
+          @new-intent="newIntentChat"
+          @select-intent-session="selectIntentSession"
+          @new-intent-session="newIntentChat"
+          @rename-intent-session="renameIntentSession"
+          @delete-intent-session="deleteIntentSession"
+          @set-session-agent="onSetSessionAgent"
+          @respond="respond"
+          @submit-ask="submitAsk"
+          @refresh="refreshStatus"
+          @edit-queued="onEditQueued"
+          @delete-queued="onDeleteQueued"
+          @submit="onSubmit"
+          @enqueue="onEnqueue"
+          @stop="stopRun"
+          @continue="onContinue"
+          @list-commands="listCommands"
+        />
 
-  <WorkspaceSettingPage
-    :open="workspaceSettingOpen"
-    :workspace-setting="currentWorkspaceSetting"
-    :detected-main-branch="detectedMainBranch"
-    :current-workspace="currentWorkspace"
-    :vendor-modes="vendorModes"
-    :system-sandboxes="serverSettings?.sandboxes ?? []"
-    @close="workspaceSettingOpen = false"
-    @save="saveWorkspaceSetting"
-  />
+        <Discussions
+          v-else-if="activeTab === 'discussion' && discussionsProject"
+          :discussions="currentDiscussions"
+          :active-id="activeDiscussionId"
+          :run-state="discussionRunState"
+          :active-discussion="activeDiscussion"
+          :active-run-state="activeDiscussionRunState"
+          :messages="discussionMessages"
+          :research-messages="researchMessages"
+          :phase="activeDiscussionPhase"
+          :show-start="showStart"
+          :dispatch="activeDiscussionDispatch"
+          :input="discussionInput"
+          @open="openDiscussion"
+          @create="createDiscussion"
+          @start="startDiscussion"
+          @pause="pauseDiscussion"
+          @resume="resumeDiscussion"
+          @convert="convertDiscussionToIntent"
+          @update:input="discussionInput = $event"
+          @submit-input="submitDiscussionInput"
+        />
+
+        <Schedules
+          v-else-if="activeTab === 'schedules' && schedulesProject"
+          :schedules="currentSchedules"
+          :active-id="selectedScheduleId"
+          :schedule="selectedSchedule"
+          :logs="selectedScheduleLogs"
+          :transcripts="executionTranscripts"
+          :form-open="scheduleFormOpen"
+          :form-target="scheduleFormTarget"
+          :workspace-path="schedulesProject ?? ''"
+          :timezone="scheduleTimezone"
+          :execution-id="selectedExecutionId"
+          :execution="selectedExecution"
+          :tool-manifest="scheduleToolManifest"
+          :tool-manifest-loading="scheduleToolManifestLoading"
+          :tool-manifest-error="scheduleToolManifestError"
+          :host-status="hostStatus"
+          @select="onSelectSchedule"
+          @open-form="openScheduleForm"
+          @toggle-enabled="onToggleScheduleEnabled"
+          @load-session="onLoadExecutionSession"
+          @select-execution="onSelectExecution"
+          @close-form="scheduleFormOpen = false"
+          @create="createSchedule"
+          @update="updateSchedule"
+          @load-tool-manifest="onLoadScheduleToolManifest"
+        />
+      </template>
+
+      <WorkCenter
+        v-else
+        :events="workcenterEvents"
+        :current-workspace="currentWorkspace"
+        @respond="respondWorkcenter"
+        @submit-ask="submitAskWorkcenter"
+        @jump-to-source="jumpToSource"
+      />
+    </div>
+
+    <NewSessionModal
+      :open="newSessionOpen"
+      :agents="serverSettings?.agents ?? []"
+      :default-agent-id="serverSettings?.defaultAgentId ?? null"
+      :host-status="hostStatus"
+      @confirm="confirmNewSession"
+      @close="newSessionOpen = false"
+      @goto-settings="openSettingsFromPicker"
+    />
+
+    <SystemSettingsPage
+      :open="settingsOpen"
+      :settings="serverSettings"
+      :host-status="hostStatus"
+      :binding-stats="bindingStats"
+      @close="settingsOpen = false"
+      @save="saveSettings"
+      @set-ui-lang="setLocale"
+    />
+
+    <WorkspaceSettingPage
+      :open="workspaceSettingOpen"
+      :workspace-setting="currentWorkspaceSetting"
+      :detected-main-branch="detectedMainBranch"
+      :current-workspace="currentWorkspace"
+      :vendor-modes="vendorModes"
+      :system-sandboxes="serverSettings?.sandboxes ?? []"
+      @close="workspaceSettingOpen = false"
+      @save="saveWorkspaceSetting"
+    />
+
+    <SkillApprovalModal
+      :open="skillApprovalRequest !== null"
+      :approval="skillApprovalRequest"
+      @approve="approveSkillLoad"
+      @cancel="cancelSkillLoad"
+      @close="dismissSkillApproval"
+    />
+  </template>
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
-
-  <SkillApprovalModal
-    :open="skillApprovalRequest !== null"
-    :approval="skillApprovalRequest"
-    @approve="approveSkillLoad"
-    @cancel="cancelSkillLoad"
-    @close="dismissSkillApproval"
-  />
 </template>
 
 <style scoped>

@@ -45,9 +45,14 @@ import { registerPendingDevLink } from './dev-link.js'
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
-import { getDevSkill, getDefaultMode, getGitBranchMode } from '../../kernel/config/index.js'
+import {
+  getDevSkill,
+  getDefaultMode,
+  getDefaultMainBranch,
+  getGitBranchMode,
+} from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
-import { createWorktree, getWorktreePath, worktreeExists } from './worktree.js'
+import { createWorktree, getWorktreePath, readBranch, worktreeExists } from './worktree.js'
 
 // ---------------------------------------------------------------------------
 // Public types (unchanged)
@@ -297,6 +302,21 @@ class AutomationController {
     )
   }
 
+  /**
+   * The git working directory for an intent's commit/push/PR/evidence ops:
+   * the isolated worktree in `worktree` mode, else the project checkout itself
+   * (`current-branch`). Deterministic from (projectPath, intentId) — mirrors the
+   * manual `startDevelopment` effectiveCwd choice so both paths target the same
+   * tree. Without this, worktree-mode git ops would run on the main checkout
+   * (stuck on the base branch), so the branch never reaches the remote.
+   */
+  private _gitCwd(intentId: string): string {
+    if (getGitBranchMode(this.projectPath) === 'worktree') {
+      return getWorktreePath(this.projectPath, intentId)
+    }
+    return this.projectPath
+  }
+
   // ── Intent selection & launch ─────────────────────────────────────────
 
   /**
@@ -382,9 +402,9 @@ class AutomationController {
 
     // Resumable: session exists on disk (continued context).
     if (req.status === 'in_progress' && req.lastDevSessionId) {
-      // Ensure the runtime exists with the worktree path as effectiveCwd so
-      // the agent's CWD points to the isolated worktree across process restarts.
-      this._ensureWorktreeRuntime(req)
+      // Ensure the runtime exists with the right effectiveCwd (worktree, or the
+      // project checkout in current-branch mode) across process restarts.
+      this._ensureResumeRuntime(req)
 
       this.status.currentIntentId = req.id
       this.status.currentSessionId = req.lastDevSessionId
@@ -402,14 +422,32 @@ class AutomationController {
       return
     }
 
-    // Fresh launch: compute worktree info synchronously first (fully
-    // deterministic from projectPath + intentId) so the dev turn launch
-    // stays synchronous — preserving the existing microtask timing contract
-    // that tests and the event-driven FSM rely on.
+    // Fresh launch: pick the git strategy from the workspace setting, mirroring
+    // the manual `startDevelopment` path (index.ts). Both branches are fully
+    // synchronous (createWorktree / readBranch use execFileSync) so the dev turn
+    // launch stays synchronous — preserving the microtask timing contract that
+    // tests and the event-driven FSM rely on.
+    //  - `worktree`: isolated worktree branched from the workspace's default main
+    //    branch (NOT the project's current HEAD — that was defect D).
+    //  - `current-branch`: develop in place on the project checkout; no worktree,
+    //    no PR later. Record the current branch so branch_name reflects reality.
     const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-    const { worktreePath, branchName } = createWorktree(this.projectPath, req.id, req.title)
-    // Persist branch name immediately so the UI can show it.
-    setBranchName(req.id, branchName)
+    let effectiveCwd: string
+    if (getGitBranchMode(this.projectPath) === 'worktree') {
+      const wt = createWorktree(
+        this.projectPath,
+        req.id,
+        req.title,
+        getDefaultMainBranch(this.projectPath),
+      )
+      effectiveCwd = wt.worktreePath
+      // Persist branch name immediately so the UI can show it.
+      setBranchName(req.id, wt.branchName)
+    } else {
+      effectiveCwd = this.projectPath
+      const branch = readBranch(this.projectPath)
+      if (branch) setBranchName(req.id, branch)
+    }
 
     this.status.currentIntentId = req.id
     this.status.currentSessionId = pendingId
@@ -417,8 +455,8 @@ class AutomationController {
     this.emit()
 
     // Use the ORIGINAL project path for ensureRuntime so broadcasts use the
-    // correct workspace scope; effectiveCwd overrides the agent's CWD to
-    // the worktree.
+    // correct workspace scope; effectiveCwd overrides the agent's CWD to the
+    // worktree (or the project checkout itself in current-branch mode).
     const rt = ensureRuntime(
       pendingId,
       this.projectPath,
@@ -426,7 +464,7 @@ class AutomationController {
       [],
       'session',
     )
-    rt.effectiveCwd = worktreePath
+    rt.effectiveCwd = effectiveCwd
     registerPendingDevLink(pendingId, req.id)
 
     const prompt = `${skillPrefix}${req.title}\n\n${req.content}${dependencyNote}`
@@ -441,27 +479,30 @@ class AutomationController {
   }
 
   /**
-   * Ensure the runtime for a resume scenario has the worktree path set as
-   * effectiveCwd. The runtime may already exist (in-memory) or need fresh
-   * creation (after server restart); in either case, ensure its effectiveCwd
-   * points to the isolated worktree.
+   * Ensure the runtime for a resume scenario has the right effectiveCwd. The
+   * runtime may already exist (in-memory) or need fresh creation (after server
+   * restart); in either case, point its effectiveCwd at the mode's working dir:
+   *  - `worktree`: the isolated worktree — but ONLY if it actually exists on
+   *    disk (a missing worktree means there's nothing to resume into).
+   *  - `current-branch`: the project checkout itself.
+   * Deterministic from (projectPath, intentId) — no extra storage needed.
    */
-  private _ensureWorktreeRuntime(req: Intent): void {
-    // The worktree path is fully deterministic from (projectPath, intentId)
-    // — no extra storage needed.
-    const worktreePath = getWorktreePath(this.projectPath, req.id)
-    if (worktreeExists(worktreePath)) {
-      // If the runtime already exists (same sessionId), ensureRuntime is a
-      // no-op and preserves existing fields; only set effectiveCwd if missing.
-      const rt = ensureRuntime(
-        req.lastDevSessionId!,
-        this.projectPath,
-        getDefaultMode(this.projectPath),
-        [],
-        'session',
-      )
-      if (!rt.effectiveCwd) rt.effectiveCwd = worktreePath
-    }
+  private _ensureResumeRuntime(req: Intent): void {
+    const worktreeMode = getGitBranchMode(this.projectPath) === 'worktree'
+    const cwd = this._gitCwd(req.id)
+    // Worktree mode with no worktree on disk → nothing to point at; leave the
+    // runtime's effectiveCwd alone (current-branch never has this gate).
+    if (worktreeMode && !worktreeExists(cwd)) return
+    // If the runtime already exists (same sessionId), ensureRuntime is a no-op
+    // and preserves existing fields; only set effectiveCwd if missing.
+    const rt = ensureRuntime(
+      req.lastDevSessionId!,
+      this.projectPath,
+      getDefaultMode(this.projectPath),
+      [],
+      'session',
+    )
+    if (!rt.effectiveCwd) rt.effectiveCwd = cwd
   }
 
   /**
@@ -559,10 +600,14 @@ class AutomationController {
       }
 
       // Compute git evidence early so both the pending-question checkpoint
-      // consensus and the completion judge have diff/recent-log context.
+      // consensus and the completion judge have diff/recent-log context. Scope
+      // it to the intent's actual working dir — in worktree mode the changes
+      // live in the worktree, not the main checkout, so reading projectPath
+      // would yield empty evidence and mislead the judge.
+      const evidenceCwd = this._gitCwd(intentId)
       const [diffStat, recentLog] = await Promise.all([
-        gitDiffStat(this.projectPath),
-        gitRecentLog(this.projectPath),
+        gitDiffStat(evidenceCwd),
+        gitRecentLog(evidenceCwd),
       ])
       if (this.abort.signal.aborted) {
         this._processing = false
@@ -617,19 +662,8 @@ class AutomationController {
           return
         }
         if (commitResult === 'committed') {
-          // ── Commit succeeded → create PR (best-effort) ──
-          const prResult = await this._createPrForIntent(req).catch((err) => {
-            console.warn(
-              `[c3:automation]「${req.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`,
-            )
-            return null
-          })
-          if (prResult?.ok) {
-            setPrInfo(req.id, prResult.prId, 'reviewing')
-            console.log(`[c3:automation]「${req.title}」PR #${prResult.prId} 已创建`)
-          } else if (prResult) {
-            console.warn(`[c3:automation]「${req.title}」PR 创建失败: ${prResult.error}`)
-          }
+          // ── Commit succeeded → create PR (best-effort, worktree mode only) ──
+          await this._maybeCreatePr(req)
 
           updateStatus(req.id, 'done')
           this.status.completedIds.push(req.id)
@@ -710,26 +744,15 @@ class AutomationController {
     }
 
     try {
-      const res = await commitAndPush(this.projectPath, `feat: ${fixReq.title}`)
+      const res = await commitAndPush(this._gitCwd(fixReq.id), `feat: ${fixReq.title}`)
       if (this.abort.signal.aborted) {
         this._processing = false
         return
       }
 
       if (res.ok) {
-        // Commit succeeded after auto-fix. Create PR (best-effort).
-        const prResult = await this._createPrForIntent(fixReq).catch((err) => {
-          console.warn(
-            `[c3:automation]「${fixReq.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`,
-          )
-          return null
-        })
-        if (prResult?.ok) {
-          setPrInfo(fixReq.id, prResult.prId, 'reviewing')
-          console.log(`[c3:automation]「${fixReq.title}」PR #${prResult.prId} 已创建`)
-        } else if (prResult) {
-          console.warn(`[c3:automation]「${fixReq.title}」PR 创建失败: ${prResult.error}`)
-        }
+        // Commit succeeded after auto-fix. Create PR (best-effort, worktree only).
+        await this._maybeCreatePr(fixReq)
 
         updateStatus(fixReq.id, 'done')
         this.status.completedIds.push(fixReq.id)
@@ -750,6 +773,30 @@ class AutomationController {
       this.fail(
         `「${fixReq.title}」lint 修复异常:${err instanceof Error ? err.message : String(err)}`,
       )
+    }
+  }
+
+  /**
+   * Best-effort PR creation after a successful commit+push, gated by git mode:
+   *  - `worktree`: create the PR (branch is already pushed), record prId +
+   *    `reviewing` on success; on failure just log — the intent still goes
+   *    `done` (the code is pushed; the user can open the PR manually).
+   *  - `current-branch`: NEVER create a PR — develop-in-place mode produces no
+   *    reviewable branch, mirroring the manual `startDevelopment` path.
+   */
+  private async _maybeCreatePr(req: Intent): Promise<void> {
+    if (getGitBranchMode(this.projectPath) !== 'worktree') return
+    const prResult = await this._createPrForIntent(req).catch((err) => {
+      console.warn(
+        `[c3:automation]「${req.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return null
+    })
+    if (prResult?.ok) {
+      setPrInfo(req.id, prResult.prId, 'reviewing')
+      console.log(`[c3:automation]「${req.title}」PR #${prResult.prId} 已创建`)
+    } else if (prResult) {
+      console.warn(`[c3:automation]「${req.title}」PR 创建失败: ${prResult.error}`)
     }
   }
 
@@ -781,7 +828,7 @@ class AutomationController {
     }
     const body = bodyParts.join('\n')
     const title = `feat: ${req.title}`
-    const prResult = await createGhPr(this.projectPath, title, body, headBranch)
+    const prResult = await createGhPr(this._gitCwd(req.id), title, body, headBranch)
     if (prResult.ok && prResult.prId) {
       return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '' }
     }
@@ -795,7 +842,7 @@ class AutomationController {
    */
   private async _commit(req: Intent, sessionId: string): Promise<'committed' | 'fixing' | 'error'> {
     const message = `feat: ${req.title}`
-    const firstAttempt = await commitAndPush(this.projectPath, message)
+    const firstAttempt = await commitAndPush(this._gitCwd(req.id), message)
     if (firstAttempt.ok) return 'committed'
 
     // Non-lint failure — surface as a hard stop (RM-A6).

@@ -1524,5 +1524,36 @@
       "hoursAgo": "{n}h ago"
     },
     "empty": "No pending events"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Authentication is required to continue.",
+      "username": {
+        "label": "Username",
+        "placeholder": "Username"
+      },
+      "password": {
+        "label": "Password",
+        "placeholder": "Password"
+      },
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "error": {
+        "invalid_credentials": "Incorrect username or password.",
+        "auth_disabled": "Authentication is currently disabled.",
+        "rate_limited": "Too many attempts. Please wait and try again.",
+        "unknown": "Sign-in failed. Please try again."
+      }
+    },
+    "logout": {
+      "label": "Sign out",
+      "tooltip": "Sign out"
+    },
+    "session": {
+      "missing": "Please sign in to continue.",
+      "expired": "Your session has expired. Please sign in again.",
+      "invalid": "Your session is no longer valid. Please sign in again."
+    }
   }
 }

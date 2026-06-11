@@ -19,13 +19,25 @@ export interface WsClientOptions {
   // Fired after a *reconnect* succeeds (not the first connect), so callers can
   // resync server-side per-connection view state (e.g. re-select the session).
   onReopen?: () => void
+  // Session token to present on the handshake (ADR-0023). The browser WebSocket
+  // can't set an Authorization header, so the token rides as a `?token=` query
+  // param. Read per-connect (not once) so a token minted after login — or
+  // cleared on logout — is picked up automatically on the next reconnect.
+  getToken?: () => string | null
 }
 
 export function createWsClient(opts: WsClientOptions) {
-  const { onMessage, onStatus, onReopen } = opts
+  const { onMessage, onStatus, onReopen, getToken } = opts
   const loc = window.location
   const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:'
-  const url = `${proto}//${loc.host}/ws`
+
+  // Built per-connect so the current token (which changes across login/logout)
+  // is reflected on every reconnect.
+  function buildUrl(): string {
+    const base = `${proto}//${loc.host}/ws`
+    const token = getToken?.()
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base
+  }
 
   let ws: WebSocket | null = null
   let stopped = false
@@ -81,7 +93,7 @@ export function createWsClient(opts: WsClientOptions) {
   function connect() {
     if (stopped) return
     onStatus('connecting')
-    ws = new WebSocket(url)
+    ws = new WebSocket(buildUrl())
 
     ws.onopen = () => {
       backoff = RECONNECT_MIN_MS

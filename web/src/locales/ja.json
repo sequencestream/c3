@@ -1525,5 +1525,36 @@
       "hoursAgo": "{n}h ago"
     },
     "empty": "No pending events"
+  },
+  "auth": {
+    "login": {
+      "title": "サインイン",
+      "subtitle": "続行するには認証が必要です。",
+      "username": {
+        "label": "ユーザー名",
+        "placeholder": "ユーザー名"
+      },
+      "password": {
+        "label": "パスワード",
+        "placeholder": "パスワード"
+      },
+      "submit": "サインイン",
+      "submitting": "サインインしています…",
+      "error": {
+        "invalid_credentials": "ユーザー名またはパスワードが正しくありません。",
+        "auth_disabled": "認証は現在無効です。",
+        "rate_limited": "試行回数が多すぎます。しばらくしてからもう一度お試しください。",
+        "unknown": "サインインに失敗しました。もう一度お試しください。"
+      }
+    },
+    "logout": {
+      "label": "サインアウト",
+      "tooltip": "サインアウト"
+    },
+    "session": {
+      "missing": "続行するにはサインインしてください。",
+      "expired": "セッションの有効期限が切れました。もう一度サインインしてください。",
+      "invalid": "セッションが無効になりました。もう一度サインインしてください。"
+    }
   }
 }

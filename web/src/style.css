@@ -583,6 +583,12 @@ header h1 {
   min-height: 0;
 }
 
+@media (max-width: 700px) {
+  .body {
+    margin-bottom: 56px;
+  }
+}
+
 .content {
   flex: 1;
   display: flex;

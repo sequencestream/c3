@@ -124,6 +124,9 @@ const activeTitle = ref<string>('')
 
 // WorkCenter: pending user-involve events for event list.
 const workcenterEvents = ref<WaitUserInvolveEvent[]>([])
+const workcenterPendingCount = computed(
+  () => workcenterEvents.value.filter((event) => event.status === 'todo').length,
+)
 
 // The 「会话」(console) tab remembers its OWN last-viewed session, independent of
 // the 「需求」tab's comm session — so switching tabs never crosses chat content.
@@ -2085,6 +2088,7 @@ function dismissSkillApproval() {
       :active-tab="activeTab"
       :tabs-enabled="currentWorkspace !== null"
       :view-mode="viewMode"
+      :workcenter-badge-count="workcenterPendingCount"
       :show-logout="authStatus === 'authenticated'"
       @select-tab="onSelectTab"
       @update:view-mode="setViewMode"

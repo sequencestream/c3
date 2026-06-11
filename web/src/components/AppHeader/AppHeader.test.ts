@@ -6,6 +6,7 @@ const TABS = [
   { key: 'console', label: 'Works' },
   { key: 'intents', label: 'Intents' },
   { key: 'discussion', label: 'Discussions' },
+  { key: 'schedules', label: 'Schedules' },
 ]
 
 const baseProps = {
@@ -16,13 +17,14 @@ const baseProps = {
   activeTab: 'console',
   tabsEnabled: true,
   viewMode: 'workspace' as const,
+  workcenterBadgeCount: 2,
 }
 
 describe('AppHeader.vue — top-bar tabs', () => {
   it('按 tabs 数据渲染全部 tab,标记当前 tab', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions'])
+    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Schedules'])
     expect(tabs[0].classes()).toContain('active')
     expect(tabs[1].classes()).not.toContain('active')
     expect(tabs[2].classes()).not.toContain('active')
@@ -56,5 +58,45 @@ describe('AppHeader.vue — top-bar tabs', () => {
     const w = mount(AppHeader, { props: { ...baseProps, activeTab: 'console' } })
     expect(w.find('.crumbs').exists()).toBe(false)
     expect(w.find('.mode').exists()).toBe(false)
+  })
+
+  it('移动端底部导航渲染 5 个视图并保留工作台徽标', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    const tabs = w.findAll('.mobile-bottom-tab')
+    expect(tabs.map((t) => t.text())).toEqual([
+      'Works',
+      'Intents',
+      'Discussions',
+      'Schedules',
+      'Workcenter2',
+    ])
+    expect(tabs[4].classes()).toContain('has-badge')
+    expect(tabs[4].find('.tab-badge').text()).toBe('2')
+  })
+
+  it('点击移动端工作台 tab → 切换 viewMode 到 workcenter', async () => {
+    const w = mount(AppHeader, { props: baseProps })
+    await w.findAll('.mobile-bottom-tab')[4].trigger('click')
+    expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
+  })
+
+  it('workcenter 模式点击移动端工作区 tab → 先回 workspace 再选择 tab', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
+    await w.findAll('.mobile-bottom-tab')[1].trigger('click')
+    expect(w.emitted('update:viewMode')).toEqual([['workspace']])
+    expect(w.emitted('select-tab')).toEqual([['intents']])
+  })
+
+  it('无当前工作区时移动端工作区 tab 禁用,工作台 tab 仍可进入', async () => {
+    const w = mount(AppHeader, {
+      props: { ...baseProps, currentWorkspace: null, tabsEnabled: false },
+    })
+    const tabs = w.findAll('.mobile-bottom-tab')
+    expect(tabs[0].attributes('disabled')).toBeDefined()
+    expect(tabs[4].attributes('disabled')).toBeUndefined()
+    await tabs[0].trigger('click')
+    await tabs[4].trigger('click')
+    expect(w.emitted('select-tab')).toBeUndefined()
+    expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
   })
 })

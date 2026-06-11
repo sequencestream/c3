@@ -8,7 +8,7 @@ web/src/
 ├── main.ts                                          # 应用入口:创建 Vue 实例、安装 i18n、挂载 App
 │
 ├── components/                                      # 跨页面通用组件
-│   ├── AppHeader/AppHeader.vue                      # 顶部栏:工作区切换器、tab 导航(工作/需求/讨论/定时任务/工作台,带未处理事件计数徽标)、项目配置/系统设置入口、登出按钮(仅已认证时显示)、连接状态指示
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态),移动端顶部精简栏 + 底部 5 视图 tab(工作/需求/讨论/定时任务/工作台,带未处理事件计数徽标)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、自动折叠工具调用、渲染权限提示与共识结果
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定

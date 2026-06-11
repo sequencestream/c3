@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * AppHeader.vue — 顶部栏:工作区切换器、tab nav、viewMode 切换、设置入口、连接状态。
+ * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 底部 5 视图 tab。
  * 会话标题与权限模式已下移到聊天列顶部的 SessionTitleBar(WC-R9)。
  *
  * 2026-06-08 新增 viewMode 支持:
@@ -13,18 +13,26 @@ import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
 
-defineProps<{
+interface HeaderTab {
+  key: string
+  label: string
+  badgeCount?: number
+}
+
+const props = defineProps<{
   workspaces: WorkspaceInfo[]
   currentWorkspace: string | null
   status: 'connecting' | 'open' | 'closed'
   /** Top-bar tabs (data-driven so a future tab is one more entry). */
-  tabs: { key: string; label: string; badgeCount?: number }[]
+  tabs: HeaderTab[]
   /** Currently selected tab key. */
   activeTab: string
   /** Tabs require a current workspace; disabled until one is selected. */
   tabsEnabled?: boolean
   /** Current view mode: workspace or workcenter. */
   viewMode: 'workspace' | 'workcenter'
+  /** Pending user-involve events shown on the WorkCenter tab. */
+  workcenterBadgeCount?: number
   /** Show the logout button. Only true once authenticated (ADR-0023); when auth
    *  is disabled this stays false so the no-auth UI is unchanged. */
   showLogout?: boolean
@@ -40,97 +48,187 @@ const emit = defineEmits<{
   'update:viewMode': [mode: 'workspace' | 'workcenter']
   logout: []
 }>()
+
+function isTabDisabled(tab: HeaderTab): boolean {
+  return tab.key !== 'workcenter' && props.tabsEnabled === false
+}
+
+function isTabActive(tab: HeaderTab): boolean {
+  if (tab.key === 'workcenter') return props.viewMode === 'workcenter'
+  return props.viewMode === 'workspace' && tab.key === props.activeTab
+}
+
+function selectTab(tab: HeaderTab): void {
+  if (isTabDisabled(tab)) return
+  if (tab.key === 'workcenter') {
+    emit('update:viewMode', 'workcenter')
+    return
+  }
+  if (props.viewMode !== 'workspace') emit('update:viewMode', 'workspace')
+  emit('select-tab', tab.key)
+}
 </script>
 
 <template>
-  <header>
-    <!-- Left area: workspace mode — WorkspaceSwitcher + project config -->
-    <template v-if="viewMode === 'workspace'">
-      <WorkspaceSwitcher
-        :workspaces="workspaces"
-        :current-workspace="currentWorkspace"
-        @add-workspace="emit('add-workspace', $event)"
-        @select-workspace="emit('select-workspace', $event)"
-        @remove-workspace="emit('remove-workspace', $event)"
-      />
-      <button
-        class="icon-btn project-config-btn"
-        :title="t('workspaceSetting.entry.tooltip')"
-        :disabled="!currentWorkspace"
-        @click="emit('open-workspace-setting')"
+  <header class="app-header">
+    <div class="desktop-header-row">
+      <!-- Left area: workspace mode — WorkspaceSwitcher + project config -->
+      <template v-if="viewMode === 'workspace'">
+        <WorkspaceSwitcher
+          :workspaces="workspaces"
+          :current-workspace="currentWorkspace"
+          @add-workspace="emit('add-workspace', $event)"
+          @select-workspace="emit('select-workspace', $event)"
+          @remove-workspace="emit('remove-workspace', $event)"
+        />
+        <button
+          class="icon-btn project-config-btn"
+          :title="t('workspaceSetting.entry.tooltip')"
+          :disabled="!currentWorkspace"
+          @click="emit('open-workspace-setting')"
+        >
+          ⚙
+        </button>
+      </template>
+
+      <!-- Left area: workcenter mode — nav button -->
+      <template v-else>
+        <button class="header-tab active" disabled>
+          {{ t('workcenter.title') }}
+        </button>
+      </template>
+
+      <!-- Middle: workspace tabs (hidden in workcenter mode) -->
+      <nav
+        v-if="viewMode === 'workspace'"
+        class="header-tabs"
+        :class="{ disabled: tabsEnabled === false }"
       >
-        ⚙
-      </button>
-    </template>
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="header-tab"
+          :class="{ active: tab.key === activeTab, 'has-badge': (tab.badgeCount ?? 0) > 0 }"
+          :disabled="tabsEnabled === false"
+          @click="emit('select-tab', tab.key)"
+        >
+          {{ tab.label }}
+          <span v-if="tab.badgeCount" class="tab-badge">{{ tab.badgeCount }}</span>
+        </button>
+      </nav>
 
-    <!-- Left area: workcenter mode — nav button -->
-    <template v-else>
-      <button class="header-tab active" disabled>
-        {{ t('workcenter.title') }}
-      </button>
-    </template>
+      <!-- Right area: viewMode toggle + settings + status -->
+      <div class="header-right">
+        <div class="view-mode-toggle">
+          <button
+            class="vm-toggle-btn"
+            :class="{ active: viewMode === 'workspace' }"
+            @click="emit('update:viewMode', 'workspace')"
+          >
+            {{ t('nav.viewMode.workspace') }}
+          </button>
+          <button
+            class="vm-toggle-btn"
+            :class="{ active: viewMode === 'workcenter' }"
+            @click="emit('update:viewMode', 'workcenter')"
+          >
+            {{ t('nav.viewMode.workcenter') }}
+          </button>
+        </div>
 
-    <!-- Middle: workspace tabs (hidden in workcenter mode) -->
-    <nav
-      v-if="viewMode === 'workspace'"
-      class="header-tabs"
-      :class="{ disabled: tabsEnabled === false }"
-    >
+        <button
+          class="icon-btn settings-btn"
+          :title="t('nav.settings.tooltip')"
+          @click="emit('open-settings')"
+        >
+          ⚙
+        </button>
+        <button
+          v-if="showLogout"
+          class="icon-btn logout-btn"
+          :title="t('auth.logout.tooltip')"
+          @click="emit('logout')"
+        >
+          {{ t('auth.logout.label') }}
+        </button>
+        <span class="status" :class="status === 'open' ? 'ok' : 'err'">
+          {{ status }}
+        </span>
+      </div>
+    </div>
+
+    <div class="mobile-header-row">
+      <div class="mobile-workspace">
+        <WorkspaceSwitcher
+          :workspaces="workspaces"
+          :current-workspace="currentWorkspace"
+          @add-workspace="emit('add-workspace', $event)"
+          @select-workspace="emit('select-workspace', $event)"
+          @remove-workspace="emit('remove-workspace', $event)"
+        />
+      </div>
+
+      <details class="mobile-actions">
+        <summary class="icon-btn mobile-actions-trigger" aria-label="Actions">⋯</summary>
+        <div class="mobile-actions-menu">
+          <button
+            class="mobile-action-item"
+            :disabled="!currentWorkspace"
+            @click="emit('open-workspace-setting')"
+          >
+            {{ t('workspaceSetting.entry.tooltip') }}
+          </button>
+          <button class="mobile-action-item" @click="emit('open-settings')">
+            {{ t('nav.settings.tooltip') }}
+          </button>
+          <button v-if="showLogout" class="mobile-action-item" @click="emit('logout')">
+            {{ t('auth.logout.label') }}
+          </button>
+          <span class="status mobile-status" :class="status === 'open' ? 'ok' : 'err'">
+            {{ status }}
+          </span>
+        </div>
+      </details>
+    </div>
+
+    <nav class="mobile-bottom-tabs" role="tablist" aria-label="Primary views">
       <button
-        v-for="tab in tabs"
+        v-for="tab in [
+          ...tabs,
+          {
+            key: 'workcenter',
+            label: t('nav.tab.workcenter.label'),
+            badgeCount: workcenterBadgeCount,
+          },
+        ]"
         :key="tab.key"
-        class="header-tab"
-        :class="{ active: tab.key === activeTab, 'has-badge': (tab.badgeCount ?? 0) > 0 }"
-        :disabled="tabsEnabled === false"
-        @click="emit('select-tab', tab.key)"
+        class="mobile-bottom-tab"
+        :class="{ active: isTabActive(tab), 'has-badge': (tab.badgeCount ?? 0) > 0 }"
+        :disabled="isTabDisabled(tab)"
+        role="tab"
+        :aria-selected="isTabActive(tab)"
+        @click="selectTab(tab)"
       >
-        {{ tab.label }}
+        <span class="mobile-tab-label">{{ tab.label }}</span>
         <span v-if="tab.badgeCount" class="tab-badge">{{ tab.badgeCount }}</span>
       </button>
     </nav>
-
-    <!-- Right area: viewMode toggle + settings + status -->
-    <div class="header-right">
-      <div class="view-mode-toggle">
-        <button
-          class="vm-toggle-btn"
-          :class="{ active: viewMode === 'workspace' }"
-          @click="emit('update:viewMode', 'workspace')"
-        >
-          {{ t('nav.viewMode.workspace') }}
-        </button>
-        <button
-          class="vm-toggle-btn"
-          :class="{ active: viewMode === 'workcenter' }"
-          @click="emit('update:viewMode', 'workcenter')"
-        >
-          {{ t('nav.viewMode.workcenter') }}
-        </button>
-      </div>
-
-      <button
-        class="icon-btn settings-btn"
-        :title="t('nav.settings.tooltip')"
-        @click="emit('open-settings')"
-      >
-        ⚙
-      </button>
-      <button
-        v-if="showLogout"
-        class="icon-btn logout-btn"
-        :title="t('auth.logout.tooltip')"
-        @click="emit('logout')"
-      >
-        {{ t('auth.logout.label') }}
-      </button>
-      <span class="status" :class="status === 'open' ? 'ok' : 'err'">
-        {{ status }}
-      </span>
-    </div>
   </header>
 </template>
 
 <style scoped>
+.desktop-header-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--sp-3);
+}
+
+.mobile-header-row,
+.mobile-bottom-tabs {
+  display: none;
+}
+
 .view-mode-toggle {
   display: inline-flex;
   align-items: center;
@@ -160,5 +258,138 @@ const emit = defineEmits<{
 .vm-toggle-btn.active {
   color: var(--c-text);
   background: var(--c-card);
+}
+
+@media (max-width: 700px) {
+  .app-header {
+    height: auto;
+    padding: 0;
+    display: block;
+    background: var(--c-panel);
+    border-bottom: 0;
+  }
+
+  .desktop-header-row {
+    display: none;
+  }
+
+  .mobile-header-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 44px;
+    padding: 0 var(--sp-3);
+    border-bottom: 1px solid var(--c-border);
+  }
+
+  .mobile-workspace {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .mobile-actions {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .mobile-actions-trigger {
+    list-style: none;
+    font-size: 20px;
+  }
+
+  .mobile-actions-trigger::-webkit-details-marker {
+    display: none;
+  }
+
+  .mobile-actions-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + var(--sp-2));
+    z-index: 120;
+    min-width: 190px;
+    padding: var(--sp-2);
+    display: grid;
+    gap: var(--sp-1);
+    background: var(--c-panel);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+  }
+
+  .mobile-action-item {
+    min-height: 34px;
+    padding: 0 var(--sp-3);
+    text-align: left;
+    color: var(--c-text);
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-caption);
+  }
+
+  .mobile-action-item:active:not(:disabled) {
+    background: var(--c-card);
+  }
+
+  .mobile-action-item:disabled {
+    opacity: 0.5;
+  }
+
+  .mobile-status {
+    padding: var(--sp-1) var(--sp-3);
+  }
+
+  .mobile-bottom-tabs {
+    position: fixed;
+    left: var(--safe-area-left);
+    right: var(--safe-area-right);
+    bottom: 0;
+    z-index: 90;
+    height: calc(56px + var(--safe-area-bottom));
+    padding: 0 var(--sp-1) var(--safe-area-bottom);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: var(--c-panel);
+    border-top: 1px solid var(--c-border);
+  }
+
+  .mobile-bottom-tab {
+    position: relative;
+    min-width: 0;
+    min-height: 56px;
+    padding: var(--sp-1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-text-muted);
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  .mobile-bottom-tab.active {
+    color: var(--c-text);
+    background: var(--c-card);
+  }
+
+  .mobile-bottom-tab:disabled {
+    opacity: 0.5;
+  }
+
+  .mobile-tab-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-bottom-tab .tab-badge {
+    position: absolute;
+    top: 7px;
+    right: max(8px, calc(50% - 28px));
+    margin-left: 0;
+  }
 }
 </style>

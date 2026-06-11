@@ -20,7 +20,7 @@ import type {
   VendorModeCatalog,
   ModeToken,
 } from '@ccc/shared/protocol'
-import { GIT_COMMIT_MODES } from '@ccc/shared/protocol'
+import { GIT_BRANCH_MODES } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 
@@ -98,7 +98,7 @@ const draft = ref<WorkspaceSetting>({
   maxSpeechChars: DEFAULT_SPEECH_CHARS,
   consensus: { enabled: false, majority: false },
   skillRepos: [],
-  gitCommitMode: 'current-branch',
+  gitBranchMode: 'current-branch',
   defaultMainBranch: '',
 })
 
@@ -130,7 +130,7 @@ watch(
         majority: config?.consensus?.majority ?? false,
       },
       skillRepos: config?.skillRepos ? config.skillRepos.map((r) => ({ ...r })) : [],
-      gitCommitMode: config?.gitCommitMode ?? 'current-branch',
+      gitBranchMode: config?.gitBranchMode ?? 'current-branch',
       // Pre-fill from the saved value, else the server-probed default branch.
       defaultMainBranch: config?.defaultMainBranch ?? detected ?? '',
     }
@@ -385,19 +385,19 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 
       <section class="project-config-section">
         <p class="project-config-section-title">
-          {{ t('workspaceSetting.gitCommitMode.title.label') }}
+          {{ t('workspaceSetting.gitBranchMode.title.label') }}
         </p>
-        <p class="project-config-hint">{{ t('workspaceSetting.gitCommitMode.hint') }}</p>
+        <p class="project-config-hint">{{ t('workspaceSetting.gitBranchMode.hint') }}</p>
         <div class="project-config-row">
           <span class="project-config-row-label">{{
-            t('workspaceSetting.gitCommitMode.title.label')
+            t('workspaceSetting.gitBranchMode.title.label')
           }}</span>
-          <select v-model="draft.gitCommitMode" class="mode-select" data-testid="git-commit-mode">
-            <option v-for="m in GIT_COMMIT_MODES" :key="m" :value="m">
+          <select v-model="draft.gitBranchMode" class="mode-select" data-testid="git-branch-mode">
+            <option v-for="m in GIT_BRANCH_MODES" :key="m" :value="m">
               {{
                 m === 'worktree'
-                  ? t('workspaceSetting.gitCommitMode.option.worktree.label')
-                  : t('workspaceSetting.gitCommitMode.option.currentBranch.label')
+                  ? t('workspaceSetting.gitBranchMode.option.worktree.label')
+                  : t('workspaceSetting.gitBranchMode.option.currentBranch.label')
               }}
             </option>
           </select>

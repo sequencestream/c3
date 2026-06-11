@@ -457,14 +457,14 @@ export interface ProjectSandboxConfig {
 }
 
 /**
- * Git commit strategy for `start_development` in a workspace (2026-06-10).
+ * Git branch strategy for `start_development` in a workspace (2026-06-10).
  * - `current-branch`: the dev agent runs directly in the project checkout on its
  *   current branch — no worktree is created.
  * - `worktree`: the dev agent runs in an isolated git worktree branched from the
  *   workspace's {@link WorkspaceSetting.defaultMainBranch} (existing isolation path).
  */
-export const GIT_COMMIT_MODES = ['current-branch', 'worktree'] as const
-export type GitCommitMode = (typeof GIT_COMMIT_MODES)[number]
+export const GIT_BRANCH_MODES = ['current-branch', 'worktree'] as const
+export type GitBranchMode = (typeof GIT_BRANCH_MODES)[number]
 
 /**
  * Per-project (workspace) configuration, keyed by resolved project path in
@@ -509,13 +509,14 @@ export interface WorkspaceSetting {
    * to disabled). The system's sandboxes list is in {@link SystemSettings.sandboxes}. */
   sandbox?: ProjectSandboxConfig
   /**
-   * Git commit strategy for `start_development` (2026-06-10). See
-   * {@link GitCommitMode}. Absent ⇒ `current-branch` (backward compatible with
-   * pre-2026-06-10 configs, normalized on read).
+   * Git branch strategy for `start_development` (2026-06-10). See
+   * {@link GitBranchMode}. Absent ⇒ `current-branch` (backward compatible with
+   * pre-2026-06-10 configs, normalized on read). The legacy on-disk key is still
+   * read as a fallback — see `normalizeWorkspaceSetting`.
    */
-  gitCommitMode?: GitCommitMode
+  gitBranchMode?: GitBranchMode
   /**
-   * Base / merge-target branch used when {@link gitCommitMode} is `worktree` —
+   * Base / merge-target branch used when {@link gitBranchMode} is `worktree` —
    * new worktrees branch from it. Optional; absent ⇒ branch from current HEAD.
    * The settings form auto-detects it (origin/HEAD → current HEAD) on open.
    */
@@ -757,7 +758,7 @@ export interface SystemSettings {
    * Per-project (workspace) configuration map, keyed by resolved project path.
    * Each entry holds the project's own {@link WorkspaceSetting} — the workspace-level
    * knobs (`defaultMode`, `consensus`, `devSkill`, `maxRoundsPerStage`,
-   * `maxSpeechChars`, `gitCommitMode`, `defaultMainBranch`, sandbox) that were
+   * `maxSpeechChars`, `gitBranchMode`, `defaultMainBranch`, sandbox) that were
    * previously global. A project absent from this map falls back to the normalized
    * defaults. Absent/empty ⇒ no project has customised settings yet.
    * NOTE: the on-disk key stays `projectConfigs` for backward compatibility even

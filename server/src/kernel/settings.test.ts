@@ -17,7 +17,7 @@ import {
 import {
   getDefaultMainBranch,
   getDevSkill,
-  getGitCommitMode,
+  getGitBranchMode,
   getMaxRoundsPerStage,
   getMaxSpeechChars,
   getServerTimezone,
@@ -910,39 +910,70 @@ describe('Claude launch non-regression (AC-R4/R5)', () => {
   })
 })
 
-describe('gitCommitMode + defaultMainBranch (2026-06-10)', () => {
+describe('gitBranchMode + defaultMainBranch (2026-06-10)', () => {
   it('defaults to current-branch when absent (backward compatible)', () => {
     saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
-    expect(getGitCommitMode(TEST_PROJ)).toBe('current-branch')
+    expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
     expect(getDefaultMainBranch(TEST_PROJ)).toBeUndefined()
   })
 
-  it('normalize emits gitCommitMode even on an empty config', () => {
+  it('normalize emits gitBranchMode even on an empty config', () => {
     saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
-    expect(loadWorkspaceSetting(TEST_PROJ).gitCommitMode).toBe('current-branch')
+    expect(loadWorkspaceSetting(TEST_PROJ).gitBranchMode).toBe('current-branch')
   })
 
   it('persists and reads back worktree mode + a default main branch', () => {
     saveWorkspaceSetting(TEST_PROJ, {
-      gitCommitMode: 'worktree',
+      gitBranchMode: 'worktree',
       defaultMainBranch: 'develop',
     } as WorkspaceSetting)
-    expect(getGitCommitMode(TEST_PROJ)).toBe('worktree')
+    expect(getGitBranchMode(TEST_PROJ)).toBe('worktree')
     expect(getDefaultMainBranch(TEST_PROJ)).toBe('develop')
   })
 
   it('falls back to current-branch for an unknown mode value', () => {
     saveWorkspaceSetting(TEST_PROJ, {
-      gitCommitMode: 'bogus',
+      gitBranchMode: 'bogus',
     } as unknown as WorkspaceSetting)
-    expect(getGitCommitMode(TEST_PROJ)).toBe('current-branch')
+    expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
   })
 
   it('trims a blank default main branch to undefined', () => {
     saveWorkspaceSetting(TEST_PROJ, {
-      gitCommitMode: 'worktree',
+      gitBranchMode: 'worktree',
       defaultMainBranch: '   ',
     } as WorkspaceSetting)
     expect(getDefaultMainBranch(TEST_PROJ)).toBeUndefined()
+  })
+
+  it('reads the legacy on-disk key `gitCommitMode` when the new key is absent', () => {
+    // Simulate a pre-rename settings.json: only the legacy `gitCommitMode` key is
+    // persisted (no `gitBranchMode`). Write it straight to disk to bypass the
+    // normalize-on-save path, then prove load falls back to the legacy key.
+    const disk = readJsonFile<SystemSettings>(settingsPath()) ?? ({} as SystemSettings)
+    writeAtomic(settingsPath(), {
+      ...disk,
+      projectConfigs: {
+        ...disk.projectConfigs,
+        [TEST_PROJ]: { gitCommitMode: 'worktree' } as unknown as WorkspaceSetting,
+      },
+    })
+    expect(getGitBranchMode(TEST_PROJ)).toBe('worktree')
+    expect(loadWorkspaceSetting(TEST_PROJ).gitBranchMode).toBe('worktree')
+  })
+
+  it('prefers the new key `gitBranchMode` over the legacy `gitCommitMode` on disk', () => {
+    const disk = readJsonFile<SystemSettings>(settingsPath()) ?? ({} as SystemSettings)
+    writeAtomic(settingsPath(), {
+      ...disk,
+      projectConfigs: {
+        ...disk.projectConfigs,
+        [TEST_PROJ]: {
+          gitBranchMode: 'current-branch',
+          gitCommitMode: 'worktree',
+        } as unknown as WorkspaceSetting,
+      },
+    })
+    expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
   })
 })

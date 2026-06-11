@@ -29,7 +29,7 @@ import type {
   AgentConfig,
   ClaudeAgentConfig,
   CodexPolicy,
-  GitCommitMode,
+  GitBranchMode,
   ModeToken,
   WorkspaceSetting,
   ProjectSandboxConfig,
@@ -346,7 +346,8 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
  * - `maxSpeechChars` is floored and clamped to ≥ `MIN_SPEECH_CHARS`.
  * - `skillRepos` is a fail-soft passthrough (array shape preserved); the deep
  *   fail-HARD validation lives in `validateSkillRepos()` / `getSkillRepos()`.
- * - `gitCommitMode` falls back to `current-branch` for any absent/unknown value.
+ * - `gitBranchMode` falls back to `current-branch` for any absent/unknown value;
+ *   the legacy on-disk key `gitCommitMode` is read as a fallback when absent.
  * - `defaultMainBranch` is trimmed; empty ⇒ omitted.
  */
 export function normalizeWorkspaceSetting(raw: unknown): WorkspaceSetting {
@@ -363,7 +364,9 @@ export function normalizeWorkspaceSetting(raw: unknown): WorkspaceSetting {
     ? (rec.skillRepos as SkillRepoConfig[])
     : undefined
   const sandbox = normalizeSandboxConfig(rec.sandbox)
-  const gitCommitMode = normalizeGitCommitMode(rec.gitCommitMode)
+  // Backward compat: new key `gitBranchMode` takes precedence; fall back to the
+  // legacy on-disk key `gitCommitMode` so pre-rename saved configs aren't lost.
+  const gitBranchMode = normalizeGitBranchMode(rec.gitBranchMode ?? rec.gitCommitMode)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   return {
     defaultMode,
@@ -371,7 +374,7 @@ export function normalizeWorkspaceSetting(raw: unknown): WorkspaceSetting {
     devSkill,
     maxRoundsPerStage,
     maxSpeechChars,
-    gitCommitMode,
+    gitBranchMode,
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
@@ -379,11 +382,11 @@ export function normalizeWorkspaceSetting(raw: unknown): WorkspaceSetting {
 }
 
 /**
- * Normalize the git commit mode — any value other than the explicit `worktree`
+ * Normalize the git branch mode — any value other than the explicit `worktree`
  * (including absent / unknown) falls back to `current-branch`. This keeps
  * pre-2026-06-10 configs (no field) on the backward-compatible in-place path.
  */
-function normalizeGitCommitMode(raw: unknown): GitCommitMode {
+function normalizeGitBranchMode(raw: unknown): GitBranchMode {
   return raw === 'worktree' ? 'worktree' : 'current-branch'
 }
 
@@ -964,11 +967,11 @@ export function getDevSkill(projectPath: string): string {
 }
 
 /**
- * The workspace's git commit mode for `start_development`. Absent/unknown ⇒
+ * The workspace's git branch mode for `start_development`. Absent/unknown ⇒
  * `current-branch` (the backward-compatible in-place path).
  */
-export function getGitCommitMode(projectPath: string): GitCommitMode {
-  return normalizeGitCommitMode(loadWorkspaceSetting(projectPath).gitCommitMode)
+export function getGitBranchMode(projectPath: string): GitBranchMode {
+  return normalizeGitBranchMode(loadWorkspaceSetting(projectPath).gitBranchMode)
 }
 
 /**

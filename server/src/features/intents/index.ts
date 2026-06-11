@@ -27,7 +27,7 @@ import {
   getDefaultMainBranch,
   getDefaultMode,
   getDevSkill,
-  getGitCommitMode,
+  getGitBranchMode,
 } from '../../kernel/config/index.js'
 import {
   getDefaultAgentId,
@@ -470,7 +470,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // main branch (prStatus === 'merged') before a downstream intent can safely
   // branch off. In current-branch mode, this check is skipped (status-only
   // validation is done by the domain layer / pickNext for automation).
-  if (req.dependsOn.length > 0 && getGitCommitMode(proj) === 'worktree') {
+  if (req.dependsOn.length > 0 && getGitBranchMode(proj) === 'worktree') {
     const all = listIntents(proj)
     const byId = new Map(all.map((r) => [r.id, r]))
     const unmerged = req.dependsOn
@@ -492,15 +492,15 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       return
     }
   }
-  // ── Git commit strategy (2026-06-10) ───────────────────────────────────
-  // The workspace's `gitCommitMode` decides where the dev agent runs:
+  // ── Git branch strategy (2026-06-10) ───────────────────────────────────
+  // The workspace's `gitBranchMode` decides where the dev agent runs:
   //  - `worktree`: create (or reuse) an isolated git worktree at
   //    $TMPDIR/c3-worktrees/<project>/intent-<ID>, branched from the workspace's
   //    default main branch. Idempotent on dangling / resume.
   //  - `current-branch` (default): no worktree — develop in place on the project
   //    checkout's current branch.
   let effectiveCwd: string
-  if (getGitCommitMode(proj) === 'worktree') {
+  if (getGitBranchMode(proj) === 'worktree') {
     try {
       const wt = createWorktree(proj, req.id, req.title, getDefaultMainBranch(proj))
       effectiveCwd = wt.worktreePath

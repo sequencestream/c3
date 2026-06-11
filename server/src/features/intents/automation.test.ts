@@ -1,7 +1,7 @@
 /**
  * Unit tests for the automation orchestrator — dependency merge validation.
  *
- * Covers the `pickNext` function's behavior under different git commit modes
+ * Covers the `pickNext` function's behavior under different git branch modes
  * and dependency merge states. The `startDevelopment` handler's dependency
  * check is tested in the handler test below.
  */
@@ -24,7 +24,7 @@ vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMainBranch: vi.fn(() => 'main'),
   getDevSkill: vi.fn(),
   getDefaultMode: vi.fn(),
-  getGitCommitMode: vi.fn(),
+  getGitBranchMode: vi.fn(),
 }))
 
 vi.mock('./worktree.js', () => ({
@@ -89,7 +89,7 @@ vi.mock('./checkpoint-consensus.js', () => ({
 import { pickNext } from './automation.js'
 import { startDevelopment } from './index.js'
 import { listIntents, getIntent } from './store.js'
-import { getGitCommitMode } from '../../kernel/config/index.js'
+import { getGitBranchMode } from '../../kernel/config/index.js'
 import { hasWorkspace } from '../../state.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
@@ -143,7 +143,7 @@ describe('pickNext — worktree dep merge validation', () => {
     const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing' })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
-    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
 
     const result = pickNext('/test/proj')
     expect(result).toBeNull()
@@ -153,7 +153,7 @@ describe('pickNext — worktree dep merge validation', () => {
     const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'merged' })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
-    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
 
     const result = pickNext('/test/proj')
     expect(result?.id).toBe('B')
@@ -163,7 +163,7 @@ describe('pickNext — worktree dep merge validation', () => {
     const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing' })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
-    vi.mocked(getGitCommitMode).mockReturnValue('current-branch')
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
 
     const result = pickNext('/test/proj')
     expect(result?.id).toBe('B')
@@ -174,7 +174,7 @@ describe('pickNext — worktree dep merge validation', () => {
     const depB = makeIntent({ id: 'B', status: 'done', prStatus: 'reviewing' })
     const child = makeIntent({ id: 'C', dependsOn: ['A', 'B'] })
     vi.mocked(listIntents).mockReturnValue([depA, depB, child])
-    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
 
     const result = pickNext('/test/proj')
     expect(result).toBeNull()
@@ -183,7 +183,7 @@ describe('pickNext — worktree dep merge validation', () => {
   it('worktree: non-existent dep is treated as satisfied', () => {
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([child])
-    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
 
     const result = pickNext('/test/proj')
     expect(result?.id).toBe('B')
@@ -193,7 +193,7 @@ describe('pickNext — worktree dep merge validation', () => {
     const dep = makeIntent({ id: 'A', status: 'in_progress', prStatus: null, automate: false })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
-    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
 
     const result = pickNext('/test/proj')
     expect(result).toBeNull()
@@ -231,7 +231,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
       return null
     })
     vi.mocked(listIntents).mockReturnValue([dep, req])
-    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
 
     const { sent, conn } = makeConn()
     const ctx = makeCtx()
@@ -262,7 +262,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
       return null
     })
     vi.mocked(listIntents).mockReturnValue([dep, req])
-    vi.mocked(getGitCommitMode).mockReturnValue('current-branch')
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
 
     const { sent, conn } = makeConn()
     const ctx = makeCtx()
@@ -289,7 +289,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
       return null
     })
     vi.mocked(listIntents).mockReturnValue([dep, req])
-    vi.mocked(getGitCommitMode).mockReturnValue('worktree')
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
 
     const { sent, conn } = makeConn()
     const ctx = makeCtx()

@@ -54,7 +54,7 @@ web/src/
 │   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮)
 │   │
 │   ├── workspacesetting/                         # 工作区配置页
-│   │   └── WorkspaceSetting.vue                  # 工作区级配置编辑(弹窗):per-vendor 默认模式、讨论轮数上限、演讲字符限制、git 提交模式(current-branch/worktree)+默认主分支(打开时服务端探测预填)等 workspace 级配置
+│   │   └── WorkspaceSetting.vue                  # 工作区级配置编辑(弹窗):per-vendor 默认模式、讨论轮数上限、演讲字符限制、git 分支模式(current-branch/worktree)+默认主分支(打开时服务端探测预填)等 workspace 级配置
 │   │
 │   └── systemsettings/                              # 系统设置页
 │       ├── SystemSettings.vue                       # 系统设置容器(弹窗):封装 SettingsPanel

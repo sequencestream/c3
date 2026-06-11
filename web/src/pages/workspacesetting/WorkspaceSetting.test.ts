@@ -105,7 +105,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
       },
     })
     // 2 codex policy selects (sandbox + approval) + 1 claude + 1 opencode
-    // + 1 git-commit-mode select = 5
+    // + 1 git-branch-mode select = 5
     const selects = w.findAll('.mode-select')
     expect(selects).toHaveLength(5)
     // Claude + OpenCode still have a mode select; Codex uses dual-policy selects.
@@ -211,7 +211,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
       },
     })
     // 3 vendor row-labels + devSkill + rounds + speechChars
-    // + gitCommitMode + defaultMainBranch = 8
+    // + gitBranchMode + defaultMainBranch = 8
     const labels = w.findAll('.project-config-row-label')
     expect(labels).toHaveLength(8)
     expect(labels[0].text()).toBeTruthy()
@@ -622,7 +622,7 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
   })
 })
 
-describe('WorkspaceSetting.vue — git commit mode + default main branch', () => {
+describe('WorkspaceSetting.vue — git branch mode + default main branch', () => {
   it('defaults to current-branch with an empty branch when config is null', () => {
     const w = mount(WorkspaceSetting, {
       props: {
@@ -634,7 +634,7 @@ describe('WorkspaceSetting.vue — git commit mode + default main branch', () =>
         systemSandboxes: [],
       },
     })
-    expect((w.find('[data-testid="git-commit-mode"]').element as HTMLSelectElement).value).toBe(
+    expect((w.find('[data-testid="git-branch-mode"]').element as HTMLSelectElement).value).toBe(
       'current-branch',
     )
     expect((w.find('[data-testid="default-main-branch"]').element as HTMLInputElement).value).toBe(
@@ -662,14 +662,14 @@ describe('WorkspaceSetting.vue — git commit mode + default main branch', () =>
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        workspaceSetting: cfg({ gitCommitMode: 'worktree', defaultMainBranch: 'develop' }),
+        workspaceSetting: cfg({ gitBranchMode: 'worktree', defaultMainBranch: 'develop' }),
         detectedMainBranch: 'main',
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
-    expect((w.find('[data-testid="git-commit-mode"]').element as HTMLSelectElement).value).toBe(
+    expect((w.find('[data-testid="git-branch-mode"]').element as HTMLSelectElement).value).toBe(
       'worktree',
     )
     expect((w.find('[data-testid="default-main-branch"]').element as HTMLInputElement).value).toBe(
@@ -677,7 +677,7 @@ describe('WorkspaceSetting.vue — git commit mode + default main branch', () =>
     )
   })
 
-  it('emits the edited git commit mode + branch on save', async () => {
+  it('emits the edited git branch mode + branch on save', async () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
@@ -688,12 +688,12 @@ describe('WorkspaceSetting.vue — git commit mode + default main branch', () =>
         systemSandboxes: [],
       },
     })
-    await w.find('[data-testid="git-commit-mode"]').setValue('worktree')
+    await w.find('[data-testid="git-branch-mode"]').setValue('worktree')
     await w.find('[data-testid="default-main-branch"]').setValue('release')
     await w.find('[data-testid="project-config-save"]').trigger('click')
     const emitted = w.emitted('save') as [WorkspaceSettingType][]
     const payload = emitted[0][0]
-    expect(payload.gitCommitMode).toBe('worktree')
+    expect(payload.gitBranchMode).toBe('worktree')
     expect(payload.defaultMainBranch).toBe('release')
   })
 
@@ -701,7 +701,7 @@ describe('WorkspaceSetting.vue — git commit mode + default main branch', () =>
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        workspaceSetting: cfg({ gitCommitMode: 'worktree', defaultMainBranch: '   ' }),
+        workspaceSetting: cfg({ gitBranchMode: 'worktree', defaultMainBranch: '   ' }),
         detectedMainBranch: null,
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,

@@ -432,7 +432,7 @@
 
 ### `workspace_setting`
 
-工作区的标准化设置（回复 `load_workspace_setting` 或 `save_workspace_setting`）。`config` 含两个 git 提交模式字段：`gitCommitMode: 'current-branch' | 'worktree'`（缺省 `current-branch`）与 `defaultMainBranch?: string`（`worktree` 模式下新 worktree 的基准分支）。`detectedMainBranch?` 是服务端探测到的仓库默认分支（`origin/HEAD` → 当前 HEAD），仅在 `load` 回复时下发，表单用它预填 `defaultMainBranch`（已保存值优先于探测值）。
+工作区的标准化设置（回复 `load_workspace_setting` 或 `save_workspace_setting`）。`config` 含两个 git 分支模式字段：`gitBranchMode: 'current-branch' | 'worktree'`（缺省 `current-branch`）与 `defaultMainBranch?: string`（`worktree` 模式下新 worktree 的基准分支）。`detectedMainBranch?` 是服务端探测到的仓库默认分支（`origin/HEAD` → 当前 HEAD），仅在 `load` 回复时下发，表单用它预填 `defaultMainBranch`（已保存值优先于探测值）。
 
 **字段：** `projectPath: string`, `config: WorkspaceSetting`, `detectedMainBranch?: string`
 
@@ -692,7 +692,7 @@ schedule 的执行日志。
 
 - **`AgentConfig`** — 供应商**可区分联合类型**：供应商无关的公共外壳 `AgentConfigBase = { id, vendor, configMode, displayName, enabled?, icon? }` 与供应商特定的 `config` 子对象相交。当前分支：`{ vendor: 'claude'; config: ClaudeAgentConfig }`、`{ vendor: 'opencode'; config: OpencodeAgentConfig }`、`{ vendor: 'codex'; config: CodexAgentConfig }`。`configMode` 为 `'system'` 表示使用供应商 CLI 自身的系统配置/登录（`config` 的 provider 字段被忽略）；为 `'custom'` 表示应用 `config` 的 provider 字段作为启动覆盖。内置 agent id `=== SYSTEM_AGENT_ID`（`'system'`）仅作为迁移哨兵和合成回退存在。
 - **`SystemSettings`** — `{ agents, defaultAgentId, voiceLang?, uiLang?, timezone?, showToolSessions?, degradationChain?, socketAutoResume?, sandboxes?, projectConfigs? }`。持久化在 `~/.c3/settings.json`。曾有的顶级 `defaultMode`、`consensus`、`devSkill`、`maxRoundsPerStage`、`maxSpeechChars`、`skillRepos` 字段已**废弃**（2026-06-07），移至 `WorkspaceSetting`。
-- **`WorkspaceSetting`** — `{ defaultMode?, consensus?, devSkill?, maxRoundsPerStage?, maxSpeechChars?, skillRepos?, gitCommitMode?, defaultMainBranch?, sandbox? }`。工作区级设置，键控于 `SystemSettings.projectConfigs`（on-disk 键名仍为 `projectConfigs`，兼容旧数据）。`defaultMode` 是 `Record<VendorId, ModeToken | CodexPolicy>`（每个供应商独立的默认权限模式）。`gitCommitMode: 'current-branch' | 'worktree'`（缺省 `current-branch`，normalize 对缺省/未知值回退 `current-branch`）决定启动开发时的 git 提交策略；`defaultMainBranch?` 为 `worktree` 模式下新 worktree 的基准分支（缺省则从当前 HEAD 切）。
+- **`WorkspaceSetting`** — `{ defaultMode?, consensus?, devSkill?, maxRoundsPerStage?, maxSpeechChars?, skillRepos?, gitBranchMode?, defaultMainBranch?, sandbox? }`。工作区级设置，键控于 `SystemSettings.projectConfigs`（on-disk 键名仍为 `projectConfigs`，兼容旧数据）。`defaultMode` 是 `Record<VendorId, ModeToken | CodexPolicy>`（每个供应商独立的默认权限模式）。`gitBranchMode: 'current-branch' | 'worktree'`（缺省 `current-branch`，normalize 对缺省/未知值回退 `current-branch`，并兼容回读旧磁盘键 `gitCommitMode`）决定启动开发时的 git 分支策略；`defaultMainBranch?` 为 `worktree` 模式下新 worktree 的基准分支（缺省则从当前 HEAD 切）。
 - **`ConsensusConfig`** — `{ enabled, majority? }`。多方代理共识投票配置。`majority` 可选；`false`/缺失 ⇒ 仅一致同意才自动解决；`true` ⇒ 多数裁决。
 - **`ConsensusOutcome`** — `{ kind: 'tool', votes, summary, unanimous, decision, vendorScope?, crossVendorExcluded? }`。`kind` 区分 `'tool'`（allow/deny 投票）和 `'ask'`（`AskUserQuestion` 回答）。`vendorScope` 是投票限定于的供应商（共识是供应商同质的）。`crossVendorExcluded` 是因跨供应商范围而被排除的 voter 数量。
 - **`AskConsensusOutcome`** — `{ kind: 'ask', perQuestion, fullyUnanimous, agreedAnswers, summary, vendorScope?, crossVendorExcluded? }`。`AskUserQuestion` 上共识的逐问题汇总。`agreedAnswers` 是问题文本 → 同意答案的预构建映射。

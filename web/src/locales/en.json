@@ -1362,9 +1362,9 @@
       },
       "hint": "The per-turn character budget participants see in their prompt guidance. Participants are asked to keep replies within this limit, but over-long replies are accepted verbatim (no hard truncation). Minimum {min} (lower values are clamped up on save)."
     },
-    "gitCommitMode": {
+    "gitBranchMode": {
       "title": {
-        "label": "Git commit mode"
+        "label": "Git branch mode"
       },
       "hint": "How Start development handles branches for this workspace: develop in place on the current branch, or isolate the dev agent in a git worktree.",
       "option": {

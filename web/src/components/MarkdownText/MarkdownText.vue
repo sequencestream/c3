@@ -60,6 +60,19 @@ const html = computed(() => {
 // 非流式(整段 push),每条消息只需在挂载 / text 变更后跑一次。
 const root = ref<HTMLElement | null>(null)
 
+function wrapScrollableTables(): void {
+  const el = root.value
+  if (!el) return
+  const tables = el.querySelectorAll<HTMLTableElement>('table')
+  for (const table of tables) {
+    if (table.parentElement?.classList.contains('md-scroll')) continue
+    const wrapper = document.createElement('div')
+    wrapper.className = 'md-scroll md-table-scroll'
+    table.parentNode?.insertBefore(wrapper, table)
+    wrapper.appendChild(table)
+  }
+}
+
 async function highlightBlocks() {
   const el = root.value
   if (!el) return
@@ -76,12 +89,19 @@ async function highlightBlocks() {
 }
 
 onMounted(() => {
-  if (isMarkdown.value) void highlightBlocks()
+  if (isMarkdown.value) {
+    wrapScrollableTables()
+    void highlightBlocks()
+  }
 })
 watch(
   () => props.text,
   () => {
-    if (isMarkdown.value) void nextTick(highlightBlocks)
+    if (isMarkdown.value)
+      void nextTick(() => {
+        wrapScrollableTables()
+        void highlightBlocks()
+      })
   },
 )
 </script>

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MessageInput from './MessageInput.vue'
@@ -34,6 +34,16 @@ function stubScrollHeight(el: HTMLElement): void {
     get: () => scrollHeight,
   })
 }
+
+const originalVisualViewport = window.visualViewport
+
+afterEach(() => {
+  Object.defineProperty(window, 'visualViewport', {
+    configurable: true,
+    value: originalVisualViewport,
+  })
+  document.documentElement.style.removeProperty('--composer-keyboard-offset')
+})
 
 describe('MessageInput.vue — 输入框自动增高(auto-grow)', () => {
   beforeEach(() => {
@@ -142,5 +152,37 @@ describe('MessageInput.vue — 停止控件已上移到状态栏', () => {
     await w.find('.send-btn').trigger('click')
     expect(w.emitted('enqueue')).toHaveLength(1)
     expect(w.emitted('submit')).toBeFalsy()
+  })
+})
+
+describe('MessageInput.vue — 移动端软键盘避让', () => {
+  it('visualViewport 变化时同步 composer 键盘偏移 CSS 变量', async () => {
+    const viewport = new EventTarget() as EventTarget & {
+      height: number
+      offsetTop: number
+      addEventListener: EventTarget['addEventListener']
+      removeEventListener: EventTarget['removeEventListener']
+    }
+    viewport.height = 520
+    viewport.offsetTop = 0
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+
+    const w = mountInput()
+    await nextTick()
+
+    expect(document.documentElement.style.getPropertyValue('--composer-keyboard-offset')).toBe(
+      '280px',
+    )
+
+    viewport.height = 700
+    viewport.dispatchEvent(new Event('resize'))
+
+    expect(document.documentElement.style.getPropertyValue('--composer-keyboard-offset')).toBe(
+      '100px',
+    )
+
+    w.unmount()
+    expect(document.documentElement.style.getPropertyValue('--composer-keyboard-offset')).toBe('')
   })
 })

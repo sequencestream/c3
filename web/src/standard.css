@@ -100,6 +100,7 @@
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
   --app-height: 100vh;
+  --composer-keyboard-offset: 0px;
 }
 
 /* ---- 亮色模式 ---- */

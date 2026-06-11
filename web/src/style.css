@@ -1294,6 +1294,7 @@ main {
 
 .msg {
   max-width: 88%;
+  min-width: 0;
   padding: var(--sp-1) var(--sp-4);
   border-radius: var(--radius-md);
   word-wrap: break-word;
@@ -1424,9 +1425,12 @@ main {
   border-radius: var(--radius-sm);
   font-size: var(--fs-caption);
   line-height: var(--lh-code);
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
   overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ============ 工具批次（两段文本之间的连续工具调用折叠为一批） ============ */
@@ -1434,6 +1438,7 @@ main {
   align-self: flex-start;
   max-width: 88%;
   width: 100%;
+  min-width: 0;
 }
 
 /* 批次折叠头：单行摘要 Name.count Name.count … */
@@ -1505,6 +1510,7 @@ main {
   align-self: flex-start;
   max-width: 88%;
   width: 100%;
+  min-width: 0;
 }
 
 /* 折叠头：单行工具名摘要 */
@@ -1568,6 +1574,9 @@ main {
 .md-body {
   /* 覆盖 .msg 的 pre-wrap：块级元素自管换行，避免标签间空白被保留成空行 */
   white-space: normal;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .md-body > :first-child {
   margin-top: 0;
@@ -1633,13 +1642,21 @@ main {
   background: var(--c-code);
   padding: var(--sp-3);
   border-radius: var(--radius-sm);
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   line-height: var(--lh-code);
+  white-space: pre;
+  -webkit-overflow-scrolling: touch;
 }
 .md-body pre code {
+  display: block;
+  min-width: 100%;
+  width: max-content;
   background: transparent;
   padding: 0;
   font-size: var(--fs-caption);
+  white-space: pre;
 }
 /* Shiki 高亮:Shiki 输出的 <pre class="shiki"> 已被剥除 inline style,沿用上面的 .md-body pre 配色。
    token 配色全部绑 --c-*,随 [data-theme] 暗/亮主题自动切换(见 lib/highlight.ts 的哨兵→class 映射)。 */
@@ -1677,8 +1694,15 @@ main {
 /* 表格：边框 + 斑马纹 */
 .md-body table {
   border-collapse: collapse;
-  margin: var(--sp-2) 0;
+  margin: 0;
   width: auto;
+  min-width: max-content;
+}
+.md-scroll {
+  max-width: 100%;
+  margin: var(--sp-2) 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .md-body th,
 .md-body td {
@@ -1724,6 +1748,10 @@ footer {
   gap: var(--sp-3);
   align-items: flex-end;
   position: relative;
+}
+
+.message-input {
+  z-index: 30;
 }
 
 /* 发送按钮 + 悬停提示气泡 */
@@ -1836,6 +1864,7 @@ button.mic-btn.error {
 
 textarea {
   flex: 1;
+  min-width: 0;
   resize: none;
   padding: var(--sp-3);
   font-family: var(--font-ui);
@@ -1861,6 +1890,75 @@ textarea:focus {
 textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+  .content {
+    min-height: 0;
+  }
+
+  main {
+    padding: var(--sp-3) var(--sp-3);
+  }
+
+  .msg,
+  .batch,
+  .standalone {
+    max-width: 100%;
+  }
+
+  footer.message-input {
+    position: sticky;
+    bottom: var(--composer-keyboard-offset);
+    padding: var(--sp-2) var(--sp-3) calc(var(--sp-2) + var(--safe-area-bottom));
+    gap: var(--sp-2);
+    align-items: flex-end;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.24);
+  }
+
+  footer.message-input textarea {
+    min-height: 48px;
+    max-height: min(34vh, 180px);
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  footer.message-input .send-btn,
+  footer.message-input button.mic-btn {
+    min-width: 48px;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+  }
+
+  footer.message-input .send-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  footer.message-input .slash-menu {
+    left: var(--sp-3);
+    right: var(--sp-3);
+    bottom: calc(100% + var(--sp-2));
+    max-height: min(42vh, 260px);
+  }
+
+  footer.message-input .slash-item {
+    min-height: 44px;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+
+  footer.message-input .slash-desc {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  footer.message-input .send-hint {
+    right: 0;
+    max-width: calc(100vw - var(--sp-6));
+    white-space: normal;
+  }
 }
 
 /* ============ 按钮（规范 3.5） ============ */

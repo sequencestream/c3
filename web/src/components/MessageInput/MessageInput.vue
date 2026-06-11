@@ -5,7 +5,7 @@
  * 自身持有输入文本与斜杠菜单状态；可用命令由 App 注入（懒加载，按会话 cwd）。
  * 首次输入 `/` 且命令未加载时上抛 list-commands，由 App 向服务端请求。
  */
-import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import type { SlashCommandInfo } from '@ccc/shared/protocol'
 import { useSpeechRecognition } from '../../composables/useSpeechRecognition'
 import { composerAction, mergeIntoDraft } from '../../lib/pending-queue'
@@ -44,6 +44,31 @@ const emit = defineEmits<{
 
 const input = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+function updateKeyboardOffset(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const viewport = window.visualViewport
+  if (!viewport) {
+    document.documentElement.style.setProperty('--composer-keyboard-offset', '0px')
+    return
+  }
+  const hiddenBottom = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+  document.documentElement.style.setProperty('--composer-keyboard-offset', `${hiddenBottom}px`)
+}
+
+onMounted(() => {
+  updateKeyboardOffset()
+  window.visualViewport?.addEventListener('resize', updateKeyboardOffset)
+  window.visualViewport?.addEventListener('scroll', updateKeyboardOffset)
+  window.addEventListener('orientationchange', updateKeyboardOffset)
+})
+
+onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', updateKeyboardOffset)
+  window.visualViewport?.removeEventListener('scroll', updateKeyboardOffset)
+  window.removeEventListener('orientationchange', updateKeyboardOffset)
+  document.documentElement.style.removeProperty('--composer-keyboard-offset')
+})
 
 // Auto-grow: the composer grows with its content up to this cap, then scrolls
 // internally so a long draft never pushes the layout. The CSS `min-height`
@@ -231,7 +256,7 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <template>
-  <footer>
+  <footer class="message-input">
     <div v-if="slashOpen" ref="slashMenuEl" class="slash-menu">
       <div
         v-for="(c, i) in menuCommands"

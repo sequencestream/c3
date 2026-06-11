@@ -29,6 +29,13 @@ describe('MarkdownText.vue — assistant 文本 Markdown 渲染', () => {
     expect(w.findAll('.md-body td').length).toBe(2)
   })
 
+  it('表格包裹独立横向滚动容器', () => {
+    const w = mountMd('| a | b |\n| - | - |\n| 1 | 2 |')
+    const wrapper = w.find('.md-body .md-scroll')
+    expect(wrapper.exists()).toBe(true)
+    expect(wrapper.find('table').exists()).toBe(true)
+  })
+
   it('任务列表渲染为复选框', () => {
     const w = mountMd('- [ ] todo\n- [x] done')
     // markdown-it 默认不渲染 GFM 任务列表为 checkbox，但列表项必须存在

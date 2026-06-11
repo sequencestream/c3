@@ -6,6 +6,8 @@
  * 创建/编辑表单弹窗。所有数据(列表/日志/transcript)与弹窗开关状态由 App.vue
  * 持有,经 props 注入;用户动作经 emit 上抛。
  */
+import { computed } from 'vue'
+import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import ScheduleList from './components/ScheduleList/ScheduleList.vue'
 import ExecutionHistoryList from './components/ExecutionHistoryList/ExecutionHistoryList.vue'
 import ScheduleDetail from './components/ScheduleDetail/ScheduleDetail.vue'
@@ -21,7 +23,7 @@ import type {
   VendorHostStatus,
 } from '@ccc/shared/protocol'
 
-defineProps<{
+const props = defineProps<{
   schedules: Schedule[]
   activeId: string | null
   schedule: Schedule | null
@@ -44,7 +46,7 @@ defineProps<{
   hostStatus: VendorHostStatus[]
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   select: [id: string]
   'open-form': [target: Schedule | null]
   'toggle-enabled': [id: string, enabled: boolean]
@@ -54,39 +56,67 @@ defineEmits<{
   create: [input: CreateScheduleInput]
   update: [id: string, input: UpdateScheduleInput]
   'load-tool-manifest': [vendor: string]
+  'mobile-back': [targetKey: string]
 }>()
+
+const mobilePanes = [
+  { key: 'schedules', title: 'Schedules' },
+  { key: 'history', title: 'History' },
+  { key: 'detail', title: 'Detail' },
+] as const
+
+const mobileActiveKey = computed(() => {
+  if (props.executionId) return 'detail'
+  if (props.activeId) return 'history'
+  return 'schedules'
+})
+const mobileActiveToken = computed(() => props.executionId ?? props.activeId ?? 'schedules')
 </script>
 
 <template>
-  <ScheduleList
-    :schedules="schedules"
-    :active-id="activeId"
-    :timezone="timezone"
-    @select="(id: string) => $emit('select', id)"
-    @new-schedule="$emit('open-form', null)"
-    @edit-schedule="(s: Schedule) => $emit('open-form', s)"
-    @toggle-enabled="(id: string, enabled: boolean) => $emit('toggle-enabled', id, enabled)"
-  />
+  <MobileStack
+    :panes="mobilePanes"
+    :active-key="mobileActiveKey"
+    :active-token="mobileActiveToken"
+    back-label="Back"
+    @back="(targetKey: string) => emit('mobile-back', targetKey)"
+  >
+    <template #schedules>
+      <ScheduleList
+        :schedules="schedules"
+        :active-id="activeId"
+        :timezone="timezone"
+        @select="(id: string) => emit('select', id)"
+        @new-schedule="emit('open-form', null)"
+        @edit-schedule="(s: Schedule) => emit('open-form', s)"
+        @toggle-enabled="(id: string, enabled: boolean) => emit('toggle-enabled', id, enabled)"
+      />
+    </template>
 
-  <ExecutionHistoryList
-    :schedule="schedule"
-    :logs="logs"
-    :active-execution-id="executionId"
-    @select-execution="(id: string) => $emit('select-execution', id)"
-  />
+    <template #history>
+      <ExecutionHistoryList
+        :schedule="schedule"
+        :logs="logs"
+        :active-execution-id="executionId"
+        @select-execution="(id: string) => emit('select-execution', id)"
+      />
+    </template>
 
-  <ScheduleDetail
-    v-if="schedule && !execution"
-    :schedule="schedule"
-    :tool-manifest="toolManifest"
-  />
-  <ExecutionDetail
-    v-else
-    :execution="execution"
-    :execution-type="schedule?.type ?? null"
-    :transcripts="transcripts"
-    @load-session="(executionId: string) => $emit('load-session', executionId)"
-  />
+    <template #detail>
+      <ScheduleDetail
+        v-if="schedule && !execution"
+        :schedule="schedule"
+        :tool-manifest="toolManifest"
+      />
+      <ExecutionDetail
+        v-else
+        :execution="execution"
+        :execution-type="schedule?.type ?? null"
+        :transcripts="transcripts"
+        @load-session="(executionId: string) => emit('load-session', executionId)"
+      />
+    </template>
+  </MobileStack>
 
   <ScheduleForm
     :open="formOpen"
@@ -97,9 +127,9 @@ defineEmits<{
     :tool-manifest-loading="toolManifestLoading"
     :tool-manifest-error="toolManifestError"
     :host-status="hostStatus"
-    @close="$emit('close-form')"
-    @create="(input: CreateScheduleInput) => $emit('create', input)"
-    @update="(id: string, input: UpdateScheduleInput) => $emit('update', id, input)"
-    @load-tool-manifest="(vendor: string) => $emit('load-tool-manifest', vendor)"
+    @close="emit('close-form')"
+    @create="(input: CreateScheduleInput) => emit('create', input)"
+    @update="(id: string, input: UpdateScheduleInput) => emit('update', id, input)"
+    @load-tool-manifest="(vendor: string) => emit('load-tool-manifest', vendor)"
   />
 </template>

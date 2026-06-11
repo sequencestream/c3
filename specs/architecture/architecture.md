@@ -171,6 +171,9 @@ c3 is a single local process with two halves connected by one WebSocket:
 - **Web module structure.** The frontend follows a page/component directory convention:
   - Shared (cross-page) components: `web/src/components/<Name>/<Name>.vue`, one dir per component
     with its colocated `<Name>.test.ts`.
+    `MobileStack` is the shared mobile-only drill-down shell for list/detail and three-column
+    pages: desktop renders each pane slot in order, while mobile shows a single pane stack with
+    an explicit back event; page containers keep owning their selection/data state.
   - Page-private components: `web/src/pages/<page>/components/<Name>/<Name>.vue` (+ colocated test).
   - Page containers: `web/src/pages/<page>/<Page>.vue`. Pages are
     `works` / `intents` / `discussions` / `schedules` / `systemsettings`.

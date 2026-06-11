@@ -6,8 +6,9 @@
  * 输入框)。所有状态/连接由 App.vue 持有,经 props 注入;用户动作经 emit 上抛。
  * composer ref 经 defineExpose 转发,供 App.vue 的待发队列「编辑」回填草稿。
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import SessionList from './components/SessionList/SessionList.vue'
+import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
@@ -29,7 +30,7 @@ import type {
   VendorId,
 } from '@ccc/shared/protocol'
 
-defineProps<{
+const props = defineProps<{
   // left: session list
   currentWorkspace: string | null
   sessions: SessionInfo[]
@@ -90,7 +91,18 @@ const emit = defineEmits<{
   stop: []
   continue: []
   'list-commands': []
+  'mobile-back': [targetKey: string]
 }>()
+
+const mobilePanes = [
+  { key: 'sessions', title: 'Sessions' },
+  { key: 'chat', title: 'Chat' },
+] as const
+
+const mobileActiveKey = computed(() => (props.activeSession ? 'chat' : 'sessions'))
+const mobileActiveToken = computed(
+  () => props.activeSession ?? props.currentWorkspace ?? 'sessions',
+)
 
 // Forward the composer's prefill so App.vue's queue-edit can fold text back in.
 const composer = ref<InstanceType<typeof MessageInput> | null>(null)
@@ -100,74 +112,90 @@ defineExpose({
 </script>
 
 <template>
-  <SessionList
-    :current-workspace="currentWorkspace"
-    :sessions="sessions"
-    :session-status="sessionStatus"
-    :active-workspace="activeWorkspace"
-    :active-session="activeSession"
-    :active-title="activeTitle"
-    :vendor-session-caps="vendorSessionCaps"
-    :opencode-status="opencodeStatus"
-    @create-session="(path: string) => emit('create-session', path)"
-    @refresh-sessions="emit('refresh-sessions')"
-    @select-session="(path: string, sessionId: string) => emit('select-session', path, sessionId)"
-    @delete-session="(path: string, sessionId: string) => emit('delete-session', path, sessionId)"
-    @rename-session="
-      (path: string, sessionId: string, title: string) =>
-        emit('rename-session', path, sessionId, title)
-    "
-  />
+  <MobileStack
+    :panes="mobilePanes"
+    :active-key="mobileActiveKey"
+    :active-token="mobileActiveToken"
+    back-label="Sessions"
+    @back="(targetKey: string) => emit('mobile-back', targetKey)"
+  >
+    <template #sessions>
+      <SessionList
+        :current-workspace="currentWorkspace"
+        :sessions="sessions"
+        :session-status="sessionStatus"
+        :active-workspace="activeWorkspace"
+        :active-session="activeSession"
+        :active-title="activeTitle"
+        :vendor-session-caps="vendorSessionCaps"
+        :opencode-status="opencodeStatus"
+        @create-session="(path: string) => emit('create-session', path)"
+        @refresh-sessions="emit('refresh-sessions')"
+        @select-session="
+          (path: string, sessionId: string) => emit('select-session', path, sessionId)
+        "
+        @delete-session="
+          (path: string, sessionId: string) => emit('delete-session', path, sessionId)
+        "
+        @rename-session="
+          (path: string, sessionId: string, title: string) =>
+            emit('rename-session', path, sessionId, title)
+        "
+      />
+    </template>
 
-  <div class="content">
-    <SessionTitleBar
-      v-if="hasActiveSession"
-      :active-title="activeTitle"
-      :vendor="vendor"
-      :agent-switch="agentSwitch"
-      :mode="mode"
-      :codex-policy="codexPolicy"
-      :mode-options="modeOptions"
-      @set-mode="(m: ModeToken) => emit('set-mode', m)"
-      @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
-      @set-session-agent="(id: string) => emit('set-session-agent', id)"
-    />
-    <ChatMessages
-      :messages="messages"
-      :has-active-session="hasActiveSession"
-      :actionable-permission-id="actionablePermissionId"
-      @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
-      @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
-    />
-    <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
-    <SessionStatusBar
-      :has-active-session="hasActiveSession"
-      :running="running"
-      :team-active="teamActive"
-      :connection="connection"
-      :activity="activity"
-      :current-agent-name="currentAgentName"
-      :reconnecting="reconnecting"
-      :side-effect-pending="sideEffectPending"
-      @refresh="emit('refresh')"
-      @stop="emit('stop')"
-      @continue="emit('continue')"
-    />
-    <PendingQueue
-      :items="queue"
-      @edit="(item: PendingItem) => emit('edit-queued', item)"
-      @delete="(id: number) => emit('delete-queued', id)"
-    />
-    <MessageInput
-      ref="composer"
-      :running="running"
-      :team-active="teamActive"
-      :has-active-session="hasActiveSession"
-      :available-commands="availableCommands"
-      :voice-lang="voiceLang"
-      @submit="(text: string) => emit('submit', text)"
-      @enqueue="(text: string) => emit('enqueue', text)"
-      @list-commands="emit('list-commands')"
-    />
-  </div>
+    <template #chat>
+      <div class="content">
+        <SessionTitleBar
+          v-if="hasActiveSession"
+          :active-title="activeTitle"
+          :vendor="vendor"
+          :agent-switch="agentSwitch"
+          :mode="mode"
+          :codex-policy="codexPolicy"
+          :mode-options="modeOptions"
+          @set-mode="(m: ModeToken) => emit('set-mode', m)"
+          @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
+          @set-session-agent="(id: string) => emit('set-session-agent', id)"
+        />
+        <ChatMessages
+          :messages="messages"
+          :has-active-session="hasActiveSession"
+          :actionable-permission-id="actionablePermissionId"
+          @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+          @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
+        />
+        <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
+        <SessionStatusBar
+          :has-active-session="hasActiveSession"
+          :running="running"
+          :team-active="teamActive"
+          :connection="connection"
+          :activity="activity"
+          :current-agent-name="currentAgentName"
+          :reconnecting="reconnecting"
+          :side-effect-pending="sideEffectPending"
+          @refresh="emit('refresh')"
+          @stop="emit('stop')"
+          @continue="emit('continue')"
+        />
+        <PendingQueue
+          :items="queue"
+          @edit="(item: PendingItem) => emit('edit-queued', item)"
+          @delete="(id: number) => emit('delete-queued', id)"
+        />
+        <MessageInput
+          ref="composer"
+          :running="running"
+          :team-active="teamActive"
+          :has-active-session="hasActiveSession"
+          :available-commands="availableCommands"
+          :voice-lang="voiceLang"
+          @submit="(text: string) => emit('submit', text)"
+          @enqueue="(text: string) => emit('enqueue', text)"
+          @list-commands="emit('list-commands')"
+        />
+      </div>
+    </template>
+  </MobileStack>
 </template>

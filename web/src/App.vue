@@ -1669,6 +1669,17 @@ function onSelectExecution(id: string) {
   selectedExecutionId.value = id
 }
 
+function onScheduleMobileBack(targetKey: string) {
+  if (targetKey === 'history') {
+    selectedExecutionId.value = null
+    return
+  }
+  if (targetKey === 'schedules') {
+    selectedExecutionId.value = null
+    selectedScheduleId.value = null
+  }
+}
+
 // 列表行的 enable/disable 开关:映射到 update_schedule 的 status(无独立 pause/resume
 // 协议消息)。enabled → active(评估),disabled → paused(跳过评估)。
 function onToggleScheduleEnabled(id: string, enabled: boolean) {
@@ -2136,6 +2147,7 @@ function dismissSkillApproval() {
           @stop="stopRun"
           @continue="onContinue"
           @list-commands="listCommands"
+          @mobile-back="clearViewedSession"
         />
 
         <Intents
@@ -2239,6 +2251,7 @@ function dismissSkillApproval() {
           @toggle-enabled="onToggleScheduleEnabled"
           @load-session="onLoadExecutionSession"
           @select-execution="onSelectExecution"
+          @mobile-back="onScheduleMobileBack"
           @close-form="scheduleFormOpen = false"
           @create="createSchedule"
           @update="updateSchedule"

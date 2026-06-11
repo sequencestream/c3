@@ -30,7 +30,7 @@ web/src/
 │   │   └── components/
 │   │       └── EventList.vue                        # 事件列表:按项目分组、状态徽标、标题、来源图标、时间、行内 Allow/Deny、AskUserQuestion 作答面板、跳转到源
 │   ├── works/                                    # 工作页
-│   │   ├── Works.vue                             # 工作容器页:左侧会话列表 + 右侧聊天列(标题栏/消息/任务面板/状态栏/待发队列/输入框)
+│   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
 │   │       ├── SessionList/SessionList.vue          # 左栏会话列表:当前工作区会话、新增、删除/改名、分页、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板

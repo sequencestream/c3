@@ -6,7 +6,7 @@
  * 输入框)。所有状态/连接由 App.vue 持有,经 props 注入;用户动作经 emit 上抛。
  * composer ref 经 defineExpose 转发,供 App.vue 的待发队列「编辑」回填草稿。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import SessionList from './components/SessionList/SessionList.vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
@@ -99,10 +99,29 @@ const mobilePanes = [
   { key: 'chat', title: 'Chat' },
 ] as const
 
-const mobileActiveKey = computed(() => (props.activeSession ? 'chat' : 'sessions'))
+type MobilePaneKey = (typeof mobilePanes)[number]['key']
+
+const mobileActiveKey = ref<MobilePaneKey>('sessions')
 const mobileActiveToken = computed(
   () => props.activeSession ?? props.currentWorkspace ?? 'sessions',
 )
+
+watch(
+  () => props.activeSession,
+  (activeSession) => {
+    if (!activeSession) mobileActiveKey.value = 'sessions'
+  },
+)
+
+function selectSession(path: string, sessionId: string): void {
+  mobileActiveKey.value = 'chat'
+  emit('select-session', path, sessionId)
+}
+
+function handleMobileBack(targetKey: string): void {
+  if (targetKey === 'sessions') mobileActiveKey.value = 'sessions'
+  emit('mobile-back', targetKey)
+}
 
 // Forward the composer's prefill so App.vue's queue-edit can fold text back in.
 const composer = ref<InstanceType<typeof MessageInput> | null>(null)
@@ -117,7 +136,7 @@ defineExpose({
     :active-key="mobileActiveKey"
     :active-token="mobileActiveToken"
     back-label="Sessions"
-    @back="(targetKey: string) => emit('mobile-back', targetKey)"
+    @back="handleMobileBack"
   >
     <template #sessions>
       <SessionList
@@ -131,9 +150,7 @@ defineExpose({
         :opencode-status="opencodeStatus"
         @create-session="(path: string) => emit('create-session', path)"
         @refresh-sessions="emit('refresh-sessions')"
-        @select-session="
-          (path: string, sessionId: string) => emit('select-session', path, sessionId)
-        "
+        @select-session="selectSession"
         @delete-session="
           (path: string, sessionId: string) => emit('delete-session', path, sessionId)
         "

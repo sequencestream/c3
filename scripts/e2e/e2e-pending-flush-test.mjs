@@ -80,7 +80,13 @@ ws.addEventListener('message', (evt) => {
     }
     case 'session_started': {
       // Pending id re-keyed to the real SDK id; track the real one.
-      if (sessionId === msg.clientId) sessionId = msg.sessionId
+      if (sessionId === msg.clientId) {
+        sessionId = msg.sessionId
+        // Echo rebind_view so the server updates conn.viewing (ADR-0018).
+        // Without this, the second user_prompt finds no runtime and is
+        // rejected with session.notSelected.
+        ws.send(JSON.stringify({ type: 'rebind_view', from: msg.clientId, to: msg.sessionId }))
+      }
       break
     }
     case 'session_status': {
@@ -101,8 +107,9 @@ ws.addEventListener('message', (evt) => {
       break
     }
     case 'error': {
-      console.error(`[e2e] error: ${msg.message}`)
-      if (/already running/i.test(msg.message ?? '')) sawAlreadyRunningError = true
+      const errMsg = msg?.error?.code || msg?.message || JSON.stringify(msg)
+      console.error(`[e2e] error: ${errMsg}`)
+      if (/already running/i.test(errMsg)) sawAlreadyRunningError = true
       // The race rejection is terminal for the test — judge immediately.
       if (secondSent) finish(judge())
       break

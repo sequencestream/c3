@@ -50,6 +50,7 @@ let originalSettings = null // captured from get_settings, restored on exit
 let consensusEnabled = false
 let voterCount = 0
 let workspaceAdded = false
+let consensusSaveSent = false
 let sessionCreated = false
 let promptSent = false
 
@@ -96,30 +97,22 @@ ws.addEventListener('message', (evt) => {
       break
 
     case 'settings': {
-      // First settings reply is the real config — capture + enable consensus.
+      // First settings reply is the real config — capture original settings.
       if (!originalSettings) {
         originalSettings = msg.settings
         const voters = msg.settings.agents.filter((a) => a.id !== msg.settings.defaultAgentId)
         voterCount = voters.length
         console.log(
-          `[e2e] agents=${msg.settings.agents.length} default=${msg.settings.defaultAgentId} voters=${voterCount} consensus=${!!msg.settings.consensus?.enabled}`,
+          `[e2e] agents=${msg.settings.agents.length} default=${msg.settings.defaultAgentId} voters=${voterCount}`,
         )
         if (voterCount < 1) {
           console.error('[e2e] need at least one agent besides the default to vote — aborting')
           finish(5)
           return
         }
-        console.log('[e2e] temporarily enabling consensus for the test run')
-        send({
-          type: 'save_settings',
-          settings: { ...msg.settings, consensus: { enabled: true } },
-        })
-        return
-      }
-      // Second settings reply confirms consensus is on — start the scenario.
-      if (!workspaceAdded) {
-        consensusEnabled = !!msg.settings.consensus?.enabled
-        console.log(`[e2e] consensus now enabled=${consensusEnabled} → adding workspace`)
+        // Consensus is per-project (WorkspaceSetting), not global. Add the
+        // workspace first, then enable consensus via save_workspace_setting.
+        console.log('[e2e] adding workspace')
         workspaceAdded = true
         send({ type: 'add_workspace', path: PROJECT_DIR })
       }
@@ -127,9 +120,27 @@ ws.addEventListener('message', (evt) => {
     }
 
     case 'workspaces':
-      if (workspaceAdded && !sessionCreated) {
+      if (workspaceAdded && !consensusSaveSent) {
+        // Workspace exists — enable consensus via per-project path.
+        console.log('[e2e] enabling consensus for the project')
+        consensusSaveSent = true
+        send({
+          type: 'save_workspace_setting',
+          projectPath: PROJECT_DIR,
+          config: { consensus: { enabled: true, majority: false } },
+        })
+      }
+      break
+
+    case 'workspace_setting':
+      if (consensusSaveSent && !sessionCreated) {
+        const ws = msg.config
+        consensusEnabled = ws?.consensus?.enabled === true
+        console.log(`[e2e] consensus enabled=${consensusEnabled} → creating session`)
+        if (!consensusEnabled) {
+          console.error('[e2e] ⚠️ save_workspace_setting did not enable consensus')
+        }
         sessionCreated = true
-        console.log('[e2e] creating session')
         send({ type: 'create_session', workspacePath: PROJECT_DIR })
       }
       break

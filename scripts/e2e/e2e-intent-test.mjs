@@ -101,6 +101,8 @@ let sawSavePermission = false // permission_request for save_intents
 let proposedValid = false // the proposed payload looked well-formed
 let savedReqId = null // id of the persisted intent (from the broadcast)
 let sawSaveResult = false // tool_result for the save call (not an error)
+// Track whether we've sent the first (todo→in_progress) status update.
+let pendingInProgress = false
 let statusUpdated = false // the saved row flipped to `done` via update_intent_status
 let statusUpdateSent = false
 
@@ -215,6 +217,10 @@ ws.addEventListener('message', (evt) => {
       if (commSessionId === msg.clientId) {
         commSessionId = msg.sessionId
         console.log(`[e2e] comm session rekeyed → ${commSessionId}`)
+        // Echo rebind_view so the server updates conn.viewing (ADR-0018).
+        // Without this, the next user_prompt finds no runtime and is
+        // rejected with session.notSelected.
+        send({ type: 'rebind_view', from: msg.clientId, to: msg.sessionId })
       }
       break
 
@@ -256,6 +262,13 @@ ws.addEventListener('message', (evt) => {
         console.log(
           `[e2e] ✅ intent persisted: id=${mine.id} status=${mine.status} priority=${mine.priority}`,
         )
+      }
+      // First status update: todo → in_progress. On broadcast, drive the second
+      // step in_progress → done (which is a valid transition).
+      if (mine && mine.status === 'in_progress' && pendingInProgress) {
+        pendingInProgress = false
+        console.log(`[e2e] ✅ status updated → in_progress, now driving → done`)
+        send({ type: 'update_intent_status', intentId: mine.id, status: 'done' })
       }
       if (mine && mine.status === 'done') {
         statusUpdated = true
@@ -377,9 +390,13 @@ ws.addEventListener('message', (evt) => {
       saveTurnEnded = true
       if (savedReqId && !statusUpdateSent) {
         statusUpdateSent = true
-        console.log(`[e2e] update_intent_status ${savedReqId} → done`)
-        send({ type: 'update_intent_status', intentId: savedReqId, status: 'done' })
-        setTimeout(maybeStartAskTurn, 4000)
+        // Intent is `todo` after save. Valid transitions are:
+        //   todo → { in_progress, cancelled, blocked }
+        // Must go through in_progress before reaching done.
+        pendingInProgress = true
+        console.log(`[e2e] update_intent_status ${savedReqId} → in_progress`)
+        send({ type: 'update_intent_status', intentId: savedReqId, status: 'in_progress' })
+        setTimeout(maybeStartAskTurn, 8000)
       } else {
         maybeStartAskTurn()
       }

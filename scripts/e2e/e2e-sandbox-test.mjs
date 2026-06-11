@@ -142,18 +142,23 @@ function onMessage(evt) {
 
   if (msg.type === 'workspaces') {
     // add_workspace response — project now registered
+    // Guard: only handle this once during sandbox setup (phase 1).
+    if (phase !== 1) return
     console.log('[e2e-sandbox] sandbox workspace added')
-    // Now save the project config
+    // Now save the workspace setting with sandbox enabled
     send({
-      type: 'save_project_config',
+      type: 'save_workspace_setting',
       projectPath: sandboxProject,
       config: { sandbox: { enabled: true, sandbox: sandboxDefName } },
     })
     return
   }
 
-  if (msg.type === 'project_config') {
+  if (msg.type === 'workspace_setting') {
     // Config saved. Now start Phase 1 (non-sandboxed).
+    // Guard: only handle this once during sandbox setup.
+    if (phase !== 1) return
+    phase = 2 // advance phase so we don't re-enter
     console.log('[e2e-sandbox] sandbox project config saved')
     startNonSandboxedRun()
     return

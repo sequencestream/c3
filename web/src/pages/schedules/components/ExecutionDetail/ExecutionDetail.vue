@@ -274,8 +274,15 @@ function logStatus(log: ScheduleExecutionLog): string {
   background: var(--c-panel);
   padding: 0 var(--sp-2);
   gap: 0;
+  /* 窄屏 Tab 溢出时可横向滑动,不撑破容器(桌面 Tab 数少不触发) */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.exec-tab-bar::-webkit-scrollbar {
+  display: none;
 }
 .exec-tab {
+  flex-shrink: 0;
   padding: 0 var(--sp-3);
   font-size: var(--fs-body);
   font-weight: 500;

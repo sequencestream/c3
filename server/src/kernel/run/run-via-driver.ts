@@ -21,7 +21,7 @@ import { PENDING_SESSION_PREFIX, type RunEndReason } from '@ccc/shared/protocol'
 import type { CanonicalMessage, RemoteMcpServer, VendorAdapter } from '../agent/adapters/types.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
-import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
+import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
 import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
@@ -222,13 +222,19 @@ export async function runViaDriver(
   // a wrapper script that runs the vendor CLI inside the container. The adapter
   // uses this path instead of the default host binary resolution.
   const vendorBinaryName = adapter.vendor === 'codex' ? 'codex' : 'opencode'
+  // Env-file for the sandbox wrapper. Base = the same child env the host path
+  // builds (keepalive + process.env + agent env overrides). For a codex DIRECT
+  // (wireApi=responses) run the SDK delivers the provider apiKey as the
+  // host-process `CODEX_API_KEY`, which `docker exec --env-file` does NOT carry
+  // into the container — so mirror it into the env-file here (overriding any host
+  // CODEX_API_KEY). baseUrl/model ride the wrapper's "$@" argv natively and need
+  // no env translation (ADR-0024).
+  const sandboxEnv = {
+    ...buildChildEnv(envOverrides),
+    ...(adapter.vendor === 'codex' ? codexDirectSandboxEnv({ apiKey, wireApi }) : {}),
+  }
   const sandboxWrapperPath = rt.sandboxHandle
-    ? createSandboxWrapper(
-        rt.sandboxHandle,
-        rt.sandboxTmpDir ?? '',
-        vendorBinaryName,
-        buildChildEnv(envOverrides),
-      )
+    ? createSandboxWrapper(rt.sandboxHandle, rt.sandboxTmpDir ?? '', vendorBinaryName, sandboxEnv)
     : undefined
   // Override cwd: sandbox container, effectiveCwd (worktree isolation), or original workspacePath.
   const driverCwd = rt.sandboxHandle ? '/workspace' : (rt.effectiveCwd ?? workspacePath)

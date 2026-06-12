@@ -35,6 +35,7 @@ ADR-0020/0021 建立了 sandbox 驱动与双层配置；ADR-0019 之后的 workt
    该 run **硬失败**（`turn_end` error + `finalizeRun` + `run:settled` error）后返回，**绝不 host 裸跑**。
 5. **本轮限 claude vendor**：随机选中 codex/opencode → 硬失败（`unsupported-vendor`）。非 claude 的 provider 接线
    （codex relay / SDK 构造器 baseUrl/apiKey）尚不能进容器 env-file，留作后续需求。
+   （**2026-06-13 放宽**：codex DIRECT(wireApi=responses) 已容器化，见下方 Follow-up。）
 
 ## Consequences
 
@@ -57,3 +58,35 @@ ADR-0020/0021 建立了 sandbox 驱动与双层配置；ADR-0019 之后的 workt
 - **非 claude 写约定环境变量名进 env-file**（OPENAI_BASE_URL 等）：容器内连通性未经验证、变量名可能需校正，
   作为 MVP 引入未验证行为风险高。改为本轮硬失败、留作后续。否决（本轮）。
 - **容器启动失败时降级 host 裸跑**：违反 deny-by-default。否决。
+
+## Follow-up (2026-06-13) — codex DIRECT(Responses) 容器化
+
+承接决策项 5。依赖 wireApi 判别落地后（2026-06-12-006，`CodexAgentConfig.wireApi`），把 **codex DIRECT 路
+（`wireApi=responses`）** 接进容器，DIRECT = 自定义 provider 原生讲 OpenAI Responses，codex 直连、无 relay。
+
+**关键机制更正**：原决策假设「baseUrl/apiKey/model 都进不了容器、需全部翻译成 env/`-c` 标志」。实测
+`@openai/codex-sdk@0.137.0` 后更正——sandbox wrapper 是 `exec docker exec --env-file <f> -i -w /workspace <cid> codex "$@"`，
+SDK 仍在 host 构造 codex 的 **argv** 并 spawn wrapper，wrapper 经 `"$@"` 把全部 argv 转发进容器：
+
+- `baseUrl` → SDK 译为 `--config openai_base_url="…"`（argv）→ 随 `"$@"` 进容器 ✅
+- `model` → SDK 译为 `--model …`（argv）→ 随 `"$@"` 进容器 ✅
+- `apiKey` → SDK 设为 **host 进程 env `CODEX_API_KEY`** → `docker exec --env-file` 不带 host 进程 env → **丢失** ❌
+
+故 DIRECT 唯一缺失位是 `CODEX_API_KEY` 没进 env-file。**无需**注入 `-c openai_base_url` / `-c model_provider`
+标志（避免重复 SDK 已做的事，与 host DIRECT 路完全等价，风险最低）。变量名 `CODEX_API_KEY` / config 键
+`openai_base_url` 经 SDK 源码 + 既有 codex-relay 实现交叉校正。
+
+**落地**：
+
+1. `codex/driver.ts`：`opts.sandboxWrapperPath` 作 `codexPathOverride`（codex 跑进容器）；导出纯函数
+   `codexDirectSandboxEnv({apiKey,wireApi})` → DIRECT 返回 `{CODEX_API_KEY}`，RELAY/缺 key/system 返回 `{}`。
+2. `run-via-driver.ts`：codex sandbox 路径下把 `codexDirectSandboxEnv(...)` 合并进 `createSandboxWrapper` 的 env-file
+   （覆盖 host 同名 `CODEX_API_KEY`）。
+3. `pickSandboxAgent`：resolve 回调扩 `wireApi?`；放行 `codex+responses`；codex chat / system-login（wireApi 缺）→
+   新拒因 `unsupported-wire`；opencode/其它仍 `unsupported-vendor`。
+
+**仍未覆盖（后续意图）**：codex RELAY 路（`wireApi=chat`，需把 c3 进程内 Responses→Chat relay 桥进容器）；
+opencode；system-login codex（容器内无注入凭据）。这些命中即硬失败（`unsupported-wire` / `unsupported-vendor`）。
+
+**未做 live 校验**：本轮交付含类型/单测/规范同步；「真实 Responses 兼容 provider + docker 容器内成功直连出站」
+需用户在装有 codex CLI 的容器 image 上 live 验证（验收①）。

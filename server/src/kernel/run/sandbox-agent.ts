@@ -13,7 +13,11 @@
 import type { VendorId } from '@ccc/shared/protocol'
 
 /** Why a sandbox agent pick was rejected (each maps to a hard-fail of the run). */
-export type SandboxPickReason = 'empty-pool' | 'unavailable' | 'unsupported-vendor'
+export type SandboxPickReason =
+  | 'empty-pool'
+  | 'unavailable'
+  | 'unsupported-vendor'
+  | 'unsupported-wire'
 
 /** A successful pick (an agent id) or a typed rejection. */
 export type SandboxAgentPick =
@@ -34,7 +38,7 @@ export type SandboxAgentPick =
  */
 export function pickSandboxAgent(
   pool: readonly string[],
-  resolve: (id: string) => { id: string; vendor: VendorId },
+  resolve: (id: string) => { id: string; vendor: VendorId; wireApi?: 'responses' | 'chat' },
   rand: () => number = Math.random,
 ): SandboxAgentPick {
   if (pool.length === 0) return { ok: false, reason: 'empty-pool' }
@@ -46,13 +50,20 @@ export function pickSandboxAgent(
   // A deleted agent falls back to the default/system agent → id mismatch.
   if (resolved.id !== pickedId) return { ok: false, reason: 'unavailable', agentId: pickedId }
 
-  // Sandbox currently supports only claude-vendor agents in the container: the
-  // non-claude provider plumbing (codex relay / SDK-constructor baseUrl/apiKey)
-  // does not translate into the container env-file yet (ADR-0024). A non-claude
-  // pick hard-fails this run rather than silently degrading.
-  if (resolved.vendor !== 'claude') {
-    return { ok: false, reason: 'unsupported-vendor', agentId: pickedId }
+  // Sandbox container vendor support (ADR-0024):
+  //  - claude: the original supported vendor (provider env via the claude wrapper).
+  //  - codex DIRECT (wireApi=responses): the custom provider serves Responses
+  //    natively; baseUrl/model ride the wrapper argv and the apiKey is mirrored
+  //    into the env-file as CODEX_API_KEY (codexDirectSandboxEnv). Supported.
+  //  - codex RELAY (wireApi=chat) / system-login codex (wireApi undefined): need
+  //    c3's in-process Responses→Chat relay or host login creds, neither of which
+  //    bridges into the container yet ⇒ unsupported-wire (a later intent).
+  //  - opencode / anything else: no container provider plumbing yet ⇒ unsupported-vendor.
+  // A bad pick hard-fails this run rather than silently degrading.
+  if (resolved.vendor === 'claude') return { ok: true, agentId: pickedId }
+  if (resolved.vendor === 'codex') {
+    if (resolved.wireApi === 'responses') return { ok: true, agentId: pickedId }
+    return { ok: false, reason: 'unsupported-wire', agentId: pickedId }
   }
-
-  return { ok: true, agentId: pickedId }
+  return { ok: false, reason: 'unsupported-vendor', agentId: pickedId }
 }

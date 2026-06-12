@@ -7,12 +7,19 @@ import { describe, it, expect } from 'vitest'
 import type { VendorId } from '@ccc/shared/protocol'
 import { pickSandboxAgent } from './sandbox-agent.js'
 
+/** One agent's resolved shell: its vendor, plus (for codex) its provider wireApi. */
+type Entry = { vendor: VendorId; wireApi?: 'responses' | 'chat' }
+
 /** A resolver over a fixed agent table; unknown ids fall back to a default agent. */
 function resolverOver(
-  table: Record<string, VendorId>,
+  table: Record<string, VendorId | Entry>,
   fallbackId = 'default-agent',
-): (id: string) => { id: string; vendor: VendorId } {
-  return (id) => (table[id] ? { id, vendor: table[id] } : { id: fallbackId, vendor: 'claude' })
+): (id: string) => { id: string; vendor: VendorId; wireApi?: 'responses' | 'chat' } {
+  return (id) => {
+    const e = table[id]
+    if (!e) return { id: fallbackId, vendor: 'claude' }
+    return typeof e === 'string' ? { id, vendor: e } : { id, ...e }
+  }
 }
 
 describe('pickSandboxAgent', () => {
@@ -56,17 +63,35 @@ describe('pickSandboxAgent', () => {
     })
   })
 
-  it('hard-fails with unsupported-vendor when the picked agent is not claude', () => {
-    const resolve = resolverOver({ cod: 'codex', oc: 'opencode' })
-    expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({
-      ok: false,
-      reason: 'unsupported-vendor',
-      agentId: 'cod',
-    })
+  it('hard-fails with unsupported-vendor for opencode (no container provider plumbing)', () => {
+    const resolve = resolverOver({ oc: 'opencode' })
     expect(pickSandboxAgent(['oc'], resolve, () => 0)).toEqual({
       ok: false,
       reason: 'unsupported-vendor',
       agentId: 'oc',
+    })
+  })
+
+  it('admits a codex DIRECT agent (wireApi=responses)', () => {
+    const resolve = resolverOver({ cod: { vendor: 'codex', wireApi: 'responses' } })
+    expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({ ok: true, agentId: 'cod' })
+  })
+
+  it('hard-fails with unsupported-wire for codex RELAY (wireApi=chat)', () => {
+    const resolve = resolverOver({ cod: { vendor: 'codex', wireApi: 'chat' } })
+    expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({
+      ok: false,
+      reason: 'unsupported-wire',
+      agentId: 'cod',
+    })
+  })
+
+  it('hard-fails with unsupported-wire for system-login codex (wireApi absent)', () => {
+    const resolve = resolverOver({ cod: { vendor: 'codex' } })
+    expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({
+      ok: false,
+      reason: 'unsupported-wire',
+      agentId: 'cod',
     })
   })
 })

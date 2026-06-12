@@ -224,23 +224,31 @@ export async function launchRun(
         })
       }
       // Randomly pick one custom agent from the normalized pool; it decides the run's
-      // vendor (the container binary) and provider env. No health check / retry — a
-      // bad pick hard-fails (user-confirmed random strategy).
-      const pick = pickSandboxAgent(sbCfg.agentIds ?? [], (id) => resolveAgent(id))
+      // vendor (the container binary) and provider env. The pick resolver also reports
+      // the agent's `wireApi` so a codex DIRECT (responses) agent is admitted while a
+      // chat/relay or system-login codex is rejected (ADR-0024). No health check /
+      // retry — a bad pick hard-fails (user-confirmed random strategy).
+      const pick = pickSandboxAgent(sbCfg.agentIds ?? [], (id) => {
+        const a = resolveAgent(id)
+        return { id: a.id, vendor: a.vendor, wireApi: launchForAgent(a).wireApi }
+      })
       if (!pick.ok) {
         failHard(
           pick.reason === 'empty-pool'
-            ? '[c3] sandbox is enabled but its agent pool is empty (configure at least one custom Claude agent).'
-            : pick.reason === 'unsupported-vendor'
-              ? `[c3] sandbox-selected agent ${pick.agentId} is not a Claude-vendor agent; sandbox currently supports only Claude agents (ADR-0024).`
-              : `[c3] sandbox-selected agent ${pick.agentId} is unavailable (deleted after the config was saved).`,
+            ? '[c3] sandbox is enabled but its agent pool is empty (configure at least one sandbox-capable agent).'
+            : pick.reason === 'unavailable'
+              ? `[c3] sandbox-selected agent ${pick.agentId} is unavailable (deleted after the config was saved).`
+              : pick.reason === 'unsupported-wire'
+                ? `[c3] sandbox-selected codex agent ${pick.agentId} is not a custom Responses-native provider (wireApi=responses); the sandbox supports only DIRECT codex with an injected provider key for now — Chat-Completions (relay) and system-login codex are follow-ups (ADR-0024).`
+                : `[c3] sandbox-selected agent ${pick.agentId} is not a sandbox-capable vendor (the sandbox supports Claude and Responses-native Codex agents; ADR-0024).`,
         )
         return
       }
       // Pin the picked agent onto this (pending) dev session so every downstream
       // resolveSessionLaunch(runId) — the vendor fork, the agent chain, the SDK
-      // launch — resolves to it, and its provider env (ANTHROPIC_*) flows into the
-      // container env-file via the unchanged claude wrapper path.
+      // launch — resolves to it, and its provider connection flows into the
+      // container: claude via env-file (ANTHROPIC_*); codex DIRECT via the wrapper
+      // argv (baseUrl/model) plus CODEX_API_KEY in the env-file (ADR-0024).
       setSessionAgent(runId, pick.agentId)
       try {
         const sandbox = await launchSandbox(

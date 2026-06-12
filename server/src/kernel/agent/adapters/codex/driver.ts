@@ -157,6 +157,33 @@ export function codexPolicyToGrid(policy: CodexPolicy): {
   }
 }
 
+/**
+ * Translate the DIRECT-route provider triple into the env-file additions a
+ * **sandboxed** codex container needs (ADR-0024 follow-up). DIRECT means
+ * `wireApi === 'responses'` — the custom provider serves OpenAI Responses
+ * natively, so codex connects to it directly (no relay).
+ *
+ * In a sandbox run the SDK still builds the codex CLI argv on the host and spawns
+ * the wrapper script; the wrapper forwards every argv via `"$@"` into the
+ * container, so `baseUrl` (→ `--config openai_base_url`) and `model` (→ `--model`)
+ * already reach the container codex. The ONE option the SDK delivers as a
+ * host-*process* env var — `apiKey` → `CODEX_API_KEY` — does NOT cross
+ * `docker exec --env-file`, so it must be written into the env-file explicitly.
+ * `CODEX_API_KEY` is the exact var the codex CLI reads for the provider key
+ * (the same var the relay path binds its token to — driver.ts above).
+ *
+ * Returns `{}` (no codex provider env) for: the RELAY route (`wireApi === 'chat'`,
+ * a later intent), a missing key, or system-mode codex (no override) — the caller
+ * then writes no codex-specific provider env into the env-file.
+ */
+export function codexDirectSandboxEnv(opts: {
+  apiKey?: string
+  wireApi?: 'responses' | 'chat'
+}): Record<string, string> {
+  if (opts.wireApi !== 'responses' || !opts.apiKey) return {}
+  return { CODEX_API_KEY: opts.apiKey }
+}
+
 /** Push/close/fail async-iterable buffer bridging the event pump into a pull stream. */
 class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
   private readonly items: CanonicalMessage[] = []
@@ -285,13 +312,19 @@ export class CodexDriver implements AgentDriver {
     if (mcpConfig) {
       codexOptions.config = { ...(codexOptions.config ?? {}), mcp_servers: mcpConfig }
     }
-    // Bypass the SDK's internal npm-based binary resolution (findCodexPath) in
-    // favor of c3's own ProcessLauncher PATH probe. The launcher's resolve()
-    // caches the result, so this is a no-op after the first health check. When
-    // the vendor binary is not on PATH, c3's higher layers handle the absence
-    // before the adapter is ever constructed — by this point in the code it is
-    // always present.
-    codexOptions.codexPathOverride = resolve('codex') ?? undefined
+    // Binary resolution. In a sandbox run a wrapper script is supplied
+    // (`opts.sandboxWrapperPath`) — it becomes the codex executable, so the SDK
+    // spawns `docker exec … codex "$@"` and the run executes INSIDE the container
+    // (ADR-0024). The wrapper forwards every SDK-built argv via `"$@"`, so
+    // `baseUrl` (→ `--config openai_base_url`) and `model` (→ `--model`) cross into
+    // the container natively; only the SDK's host-process `CODEX_API_KEY` env does
+    // not cross `docker exec --env-file`, which the caller mirrors into the
+    // env-file via {@link codexDirectSandboxEnv}. Without a wrapper, bypass the
+    // SDK's internal npm-based binary resolution (findCodexPath) in favor of c3's
+    // own ProcessLauncher PATH probe (cached; a no-op after the first health
+    // check). When the binary is not on PATH, higher layers handle the absence
+    // before the adapter is constructed — by this point it is always present.
+    codexOptions.codexPathOverride = opts.sandboxWrapperPath ?? resolve('codex') ?? undefined
     const codex = this.createCodex(codexOptions)
     // Codex's launch-time policy IS the per-tool-approval substitute (008). It is
     // derived from the session permission mode (defaultMode → neutral grid →

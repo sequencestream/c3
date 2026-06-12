@@ -11,6 +11,7 @@ import type { ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
 import type { CanonicalMessage, DriverStartOptions } from '../types.js'
 import {
   CodexDriver,
+  codexDirectSandboxEnv,
   gateToCodexPolicy,
   mcpServersToCodexConfig,
   type CodexClient,
@@ -275,6 +276,59 @@ describe('CodexDriver provider routing — wireApi DIRECT vs RELAY (2026-06-12-0
     await driver.start(startOpts({ baseUrl: 'https://api.deepseek.com', wireApi: 'chat' }))
     expect(captured?.baseUrl).toBe('https://api.deepseek.com')
     expect(captured?.config?.model_provider).toBeUndefined()
+  })
+})
+
+describe('codexDirectSandboxEnv (sandbox DIRECT provider, ADR-0024)', () => {
+  it('mirrors the DIRECT apiKey into CODEX_API_KEY', () => {
+    expect(codexDirectSandboxEnv({ apiKey: 'sk-real', wireApi: 'responses' })).toEqual({
+      CODEX_API_KEY: 'sk-real',
+    })
+  })
+
+  it('writes nothing for the RELAY route (wireApi=chat)', () => {
+    expect(codexDirectSandboxEnv({ apiKey: 'sk-real', wireApi: 'chat' })).toEqual({})
+  })
+
+  it('writes nothing when wireApi is absent (system-mode codex)', () => {
+    expect(codexDirectSandboxEnv({ apiKey: 'sk-real' })).toEqual({})
+  })
+
+  it('writes nothing when the apiKey is missing even on the DIRECT route', () => {
+    expect(codexDirectSandboxEnv({ wireApi: 'responses' })).toEqual({})
+  })
+})
+
+describe('CodexDriver sandbox wrapper wiring (ADR-0024)', () => {
+  it('uses sandboxWrapperPath as the codex executable when supplied', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(startOpts({ sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh' }))
+    expect(captured?.codexPathOverride).toBe('/tmp/c3-sb-xyz/wrapper.sh')
+  })
+
+  it('keeps DIRECT baseUrl/apiKey as SDK options (they ride the wrapper argv/env)', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(
+      startOpts({
+        baseUrl: 'https://api.openai.com',
+        apiKey: 'sk-real',
+        wireApi: 'responses',
+        sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh',
+      }),
+    )
+    expect(captured?.codexPathOverride).toBe('/tmp/c3-sb-xyz/wrapper.sh')
+    expect(captured?.baseUrl).toBe('https://api.openai.com')
+    expect(captured?.apiKey).toBe('sk-real')
   })
 })
 

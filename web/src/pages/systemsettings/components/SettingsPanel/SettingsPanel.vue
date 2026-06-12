@@ -515,6 +515,9 @@ function submitPassword() {
                 h.present ? t('settings.diagnostics.present') : t('settings.diagnostics.missing')
               }}
             </span>
+            <code v-if="h.present && h.path" class="diagnostics-path" :title="h.path">{{
+              h.path
+            }}</code>
           </li>
         </ul>
       </section>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * SessionList.vue — 「会话」tab 的左栏:当前工作区的会话列表。
+ * WorkSessionList.vue — 「会话」tab 的左栏:当前工作区的会话列表。
  *
  * 工作区的新增/切换/移除已收敛到顶部的 WorkspaceSwitcher;本组件只呈现 currentWorkspace
  * 的会话列表(只在「会话」tab 渲染,与「需求」tab 的 IntentList 左栏对称)。会话分页

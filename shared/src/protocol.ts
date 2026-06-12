@@ -1127,8 +1127,9 @@ export interface VendorModeCatalog {
 /**
  * One vendor's host-CLI presence (ADR-0012), surfaced to the web so the
  * new-session agent picker can grey out an agent whose binary is not on PATH and
- * the settings diagnostics panel can list what is/isn't installed. No absolute
- * path is sent (operator-facing guidance only, never a filesystem detail).
+ * the settings diagnostics panel can list what is/isn't installed — together with
+ * the resolved absolute path of each installed binary, so the operator can see
+ * exactly which executable c3 will launch.
  */
 export interface VendorHostStatus {
   vendor: VendorId
@@ -1136,6 +1137,8 @@ export interface VendorHostStatus {
   present: boolean
   /** The probed executable name (e.g. `claude`). */
   binary: string
+  /** The resolved absolute path of the binary, or `null` when it is not installed. */
+  path: string | null
   /** Operator-facing install guidance shown when the binary is missing. */
   installHint: string
 }

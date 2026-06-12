@@ -336,4 +336,31 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
   })
 })
 
+describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {
+  const hostStatus = [
+    {
+      vendor: 'claude' as const,
+      present: true,
+      binary: 'claude',
+      path: '/usr/local/bin/claude',
+      installHint: '',
+    },
+    {
+      vendor: 'codex' as const,
+      present: false,
+      binary: 'codex',
+      path: null,
+      installHint: 'install codex',
+    },
+  ]
+
+  it('shows the resolved absolute path for an installed binary, none for a missing one', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings, hostStatus } })
+    const paths = w.findAll('[data-testid="settings-diagnostics"] .diagnostics-path')
+    // Only the present vendor renders a path row.
+    expect(paths).toHaveLength(1)
+    expect(paths[0].text()).toBe('/usr/local/bin/claude')
+  })
+})
+
 // Skill-repo tests moved to WorkspaceSetting.test.ts (ADR-0016/0017 migration)

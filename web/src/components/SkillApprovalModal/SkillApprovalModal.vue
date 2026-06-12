@@ -149,7 +149,7 @@ function onCancel() {
   margin-top: var(--sp-3);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .sa-overlay {
     align-items: stretch;
     justify-content: stretch;

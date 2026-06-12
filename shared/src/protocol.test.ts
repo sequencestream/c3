@@ -107,8 +107,20 @@ describe('protocol wire format', () => {
       type: 'settings',
       settings: { agents: [], defaultAgentId: 'system' },
       hostStatus: [
-        { vendor: 'claude', present: true, binary: 'claude', installHint: 'install claude' },
-        { vendor: 'codex', present: false, binary: 'codex', installHint: 'install codex' },
+        {
+          vendor: 'claude',
+          present: true,
+          binary: 'claude',
+          path: '/usr/local/bin/claude',
+          installHint: 'install claude',
+        },
+        {
+          vendor: 'codex',
+          present: false,
+          binary: 'codex',
+          path: null,
+          installHint: 'install codex',
+        },
       ],
       bindingStats: { bound: 3, pending: 1 },
       sessionCapabilities: {

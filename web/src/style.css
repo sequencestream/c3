@@ -583,7 +583,7 @@ header h1 {
   min-height: 0;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   .body {
     margin-bottom: 56px;
   }
@@ -611,6 +611,15 @@ header h1 {
 /* 展开态:宽度翻倍,便于阅读较长的会话标题(同 RequirementList 折叠范式) */
 .sidebar.expanded {
   width: 520px;
+}
+/* 移动端 drill-down:侧栏即当前单栏,撑满 pane 全宽(对齐 DiscussionList 范式) */
+@media (max-width: 767px) {
+  .sidebar,
+  .sidebar.expanded {
+    width: 100%;
+    min-width: 0;
+    border-right: 0;
+  }
 }
 .sidebar-head {
   height: 36px;
@@ -1899,7 +1908,7 @@ textarea:disabled {
   cursor: not-allowed;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   .content {
     min-height: 0;
   }
@@ -2555,7 +2564,15 @@ button.deny:hover:not(:disabled) {
 .diagnostics-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-2);
+}
+.diagnostics-path {
+  flex-basis: 100%;
+  margin-left: calc(6rem + var(--sp-2));
+  color: var(--c-text-dim);
+  font-size: var(--fs-code);
+  word-break: break-all;
 }
 .diagnostics-vendor {
   min-width: 6rem;
@@ -2647,7 +2664,7 @@ button.deny:hover:not(:disabled) {
   color: var(--c-text);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .settings-page {
     height: 100dvh;
   }
@@ -2723,6 +2740,10 @@ button.deny:hover:not(:disabled) {
     margin-left: 0;
   }
 
+  .diagnostics-path {
+    margin-left: 0;
+  }
+
   .settings-foot {
     padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
   }
@@ -2757,6 +2778,15 @@ button.deny:hover:not(:disabled) {
   .req-list.collapsed {
     width: min(480px, 34vw);
     min-width: 280px;
+  }
+}
+/* 移动端 drill-down:列表即当前单栏,撑满全宽;清除 min-width 否则会比视口更宽而横向溢出 */
+@media (max-width: 767px) {
+  .req-list,
+  .req-list.collapsed {
+    width: 100%;
+    min-width: 0;
+    border-right: 0;
   }
 }
 .req-list-head {

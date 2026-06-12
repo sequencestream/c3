@@ -433,7 +433,7 @@
 
 （标准化后的）系统配置，回复 `get_settings` / `save_settings`。携带三个运行时派生的伴生数据，配置对象本身不包含：
 
-- `hostStatus: VendorHostStatus[]` — 每个供应商的主机 CLI 存在情况（ADR-0012），驱动新建会话选择器灰显
+- `hostStatus: VendorHostStatus[]` — 每个供应商的主机 CLI 存在情况 + 已安装二进制的绝对路径 `path`（ADR-0012），驱动新建会话选择器灰显与设置诊断面板的安装位置展示
 - `bindingStats: SessionBindingStats` — 会话→代理绑定计数（ADR-0015），用于说明"默认代理更改不回溯"
 - `sessionCapabilities: Record<VendorId, SessionCapabilities>` — 每个供应商的会话生命周期能力分级（ADR-0011 附录），UI 按 `vendor` 标签降级会话行操作
 - `vendorCapabilities?: Record<VendorId, Record<AdapterCapability, boolean>>` — 每个供应商的二进制能力账本（`interrupt` / `setActionMode` / … / `taskStore`），控制台据此以零 `if (vendor === …)` 的方式门控能力绑定 UI

@@ -341,7 +341,7 @@ function onCreate(): void {
   display: inline-block;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .ns-overlay {
     align-items: stretch;
     justify-content: stretch;

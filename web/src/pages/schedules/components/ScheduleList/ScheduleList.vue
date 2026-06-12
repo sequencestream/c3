@@ -145,7 +145,7 @@ function toggleDetail(s: Schedule): void {
   emit('select', s.id)
 }
 
-// 面板展开切换(与 SessionList 一致):默认窄,展开把宽度翻倍,内容始终可见。
+// 面板展开切换(与 WorkSessionList 一致):默认窄,展开把宽度翻倍,内容始终可见。
 // 持久化:跨页面切换后保持原状。
 const expanded = usePersistentToggle('c3.scheduleListExpanded')
 function toggleExpand(): void {
@@ -330,6 +330,15 @@ function toggleExpand(): void {
   .sched-list.expanded {
     width: min(960px, 68vw);
     min-width: 450px;
+  }
+}
+/* 移动端 drill-down:列表即当前单栏,撑满全宽(对齐 DiscussionList 范式) */
+@media (max-width: 767px) {
+  .sched-list,
+  .sched-list.expanded {
+    width: 100%;
+    min-width: 0;
+    border-right: 0;
   }
 }
 .sched-list-head {

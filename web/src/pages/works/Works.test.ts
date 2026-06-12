@@ -90,8 +90,8 @@ const SESSIONS: SessionInfo[] = [
   },
 ]
 
-const SessionListStub = defineComponent({
-  name: 'SessionList',
+const WorkSessionListStub = defineComponent({
+  name: 'WorkSessionList',
   props: {
     currentWorkspace: { type: String, default: null },
   },
@@ -131,7 +131,7 @@ function mountWorks(options: { activeSession?: string | null } = {}) {
     },
     global: {
       stubs: {
-        SessionList: SessionListStub,
+        WorkSessionList: WorkSessionListStub,
         SessionTitleBar: { template: '<div data-testid="title-bar" />' },
         ChatMessages: { template: '<div data-testid="chat-slot" />' },
         TaskPanel: { template: '<div />' },

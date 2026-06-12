@@ -60,7 +60,13 @@ describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
   it('host-binary 缺失的 vendor 在下拉里被禁用', () => {
     const w = mountModal({
       hostStatus: [
-        { vendor: 'codex', present: false, binary: 'codex', installHint: 'install codex' },
+        {
+          vendor: 'codex',
+          present: false,
+          binary: 'codex',
+          path: null,
+          installHint: 'install codex',
+        },
       ] as VendorHostStatus[],
     })
     const codexOption = w
@@ -73,7 +79,13 @@ describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
   it('存在缺失 binary 时给出「前往检测面板」入口 → emit goto-settings', async () => {
     const w = mountModal({
       hostStatus: [
-        { vendor: 'codex', present: false, binary: 'codex', installHint: 'install codex' },
+        {
+          vendor: 'codex',
+          present: false,
+          binary: 'codex',
+          path: null,
+          installHint: 'install codex',
+        },
       ] as VendorHostStatus[],
     })
     const link = w.find('[data-testid="new-session-goto-settings"]')
@@ -85,8 +97,20 @@ describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
   it('host 全部就绪时不显示缺失提示', () => {
     const w = mountModal({
       hostStatus: [
-        { vendor: 'claude', present: true, binary: 'claude', installHint: '' },
-        { vendor: 'codex', present: true, binary: 'codex', installHint: '' },
+        {
+          vendor: 'claude',
+          present: true,
+          binary: 'claude',
+          path: '/usr/local/bin/claude',
+          installHint: '',
+        },
+        {
+          vendor: 'codex',
+          present: true,
+          binary: 'codex',
+          path: '/usr/local/bin/codex',
+          installHint: '',
+        },
       ] as VendorHostStatus[],
     })
     expect(w.find('[data-testid="new-session-missing"]').exists()).toBe(false)

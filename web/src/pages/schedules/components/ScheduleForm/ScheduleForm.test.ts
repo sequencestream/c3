@@ -5,9 +5,21 @@ import { isValidCron } from '@ccc/shared/cron'
 import ScheduleForm from './ScheduleForm.vue'
 
 const HOST_PRESENT: VendorHostStatus[] = [
-  { vendor: 'claude', present: true, binary: 'claude', installHint: '' },
-  { vendor: 'codex', present: true, binary: 'codex', installHint: '' },
-  { vendor: 'opencode', present: false, binary: 'opencode', installHint: 'install it' },
+  {
+    vendor: 'claude',
+    present: true,
+    binary: 'claude',
+    path: '/usr/local/bin/claude',
+    installHint: '',
+  },
+  {
+    vendor: 'codex',
+    present: true,
+    binary: 'codex',
+    path: '/usr/local/bin/codex',
+    installHint: '',
+  },
+  { vendor: 'opencode', present: false, binary: 'opencode', path: null, installHint: 'install it' },
 ]
 
 const READ_TOOLS: ToolManifestEntry[] = [
@@ -414,9 +426,27 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     const w = mountForm({
       schedule: sched({ vendor: 'opencode', mode: 'build' }),
       hostStatus: [
-        { vendor: 'claude', present: true, binary: 'claude', installHint: '' },
-        { vendor: 'codex', present: true, binary: 'codex', installHint: '' },
-        { vendor: 'opencode', present: true, binary: 'opencode', installHint: '' },
+        {
+          vendor: 'claude',
+          present: true,
+          binary: 'claude',
+          path: '/usr/local/bin/claude',
+          installHint: '',
+        },
+        {
+          vendor: 'codex',
+          present: true,
+          binary: 'codex',
+          path: '/usr/local/bin/codex',
+          installHint: '',
+        },
+        {
+          vendor: 'opencode',
+          present: true,
+          binary: 'opencode',
+          path: '/usr/local/bin/opencode',
+          installHint: '',
+        },
       ],
     })
     await w.find('.sf-btn.primary').trigger('click')

@@ -7,7 +7,7 @@
  * composer ref 经 defineExpose 转发,供 App.vue 的待发队列「编辑」回填草稿。
  */
 import { computed, ref, watch } from 'vue'
-import SessionList from './components/SessionList/SessionList.vue'
+import WorkSessionList from './components/WorkSessionList/WorkSessionList.vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
@@ -139,7 +139,7 @@ defineExpose({
     @back="handleMobileBack"
   >
     <template #sessions>
-      <SessionList
+      <WorkSessionList
         :current-workspace="currentWorkspace"
         :sessions="sessions"
         :session-status="sessionStatus"

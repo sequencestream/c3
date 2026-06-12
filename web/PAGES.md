@@ -48,7 +48,7 @@ web/src/
 │   ├── works/                                    # 工作页
 │   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
-│   │       ├── SessionList/SessionList.vue          # 左栏会话列表:当前工作区会话、新增、删除/改名、分页、offline 警告
+│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区会话、新增、删除/改名、分页、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页

@@ -543,7 +543,7 @@ function togglePanel(): void {
   gap: var(--sp-3);
 }
 /* Mobile: full-screen sheet so the participant list + keyboard fit. */
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .disc-modal-overlay {
     padding: 0;
   }

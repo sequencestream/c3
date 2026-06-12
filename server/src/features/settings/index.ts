@@ -5,7 +5,7 @@
  * runtime-derived companions the config object itself does not hold:
  *  - `hostStatus` — each vendor's host-CLI presence (ADR-0012), probed via the
  *    ProcessLauncher, so the console can grey out an agent whose binary is not on
- *    PATH. No absolute path is sent (operator guidance only).
+ *    PATH and show the resolved absolute path of each installed binary.
  *  - `bindingStats` — the session→agent binding counts (ADR-0015), so the console
  *    can show that a default-agent change is not retroactive.
  */
@@ -33,12 +33,13 @@ import { getOpencodeStatus } from '../../opencode-status.js'
 import { getSkillSupport } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
-/** Map the ProcessLauncher probe into the wire shape (drop the absolute path). */
+/** Map the ProcessLauncher probe into the wire shape (carrying the resolved path). */
 function hostStatus(): VendorHostStatus[] {
   return probeAll().map((p) => ({
     vendor: p.vendor,
     present: p.path !== null,
     binary: p.binary,
+    path: p.path,
     installHint: p.installHint,
   }))
 }

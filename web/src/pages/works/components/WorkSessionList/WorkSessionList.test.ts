@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import SessionList from './SessionList.vue'
+import WorkSessionList from './WorkSessionList.vue'
 import type {
   OpencodeServerStatus,
   SessionCapabilities,
@@ -25,7 +25,7 @@ function mountList(
     opencodeStatus?: OpencodeServerStatus
   } = {},
 ) {
-  return mount(SessionList, {
+  return mount(WorkSessionList, {
     props: {
       currentWorkspace: opts.currentWorkspace === undefined ? WS : opts.currentWorkspace,
       sessions: opts.sessions ?? [],
@@ -55,7 +55,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('SessionList.vue — 当前工作区会话列表', () => {
+describe('WorkSessionList.vue — 当前工作区会话列表', () => {
   it('无工作区 → 空提示,不渲染列表', () => {
     const w = mountList({ currentWorkspace: null })
     expect(w.find('[data-testid="session-list-empty"]').exists()).toBe(true)

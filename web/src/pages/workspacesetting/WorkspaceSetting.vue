@@ -816,7 +816,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   white-space: nowrap;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .project-config-page {
     height: 100dvh;
   }

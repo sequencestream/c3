@@ -10,8 +10,46 @@
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { onBeforeUnmount, ref } from 'vue'
 
 const { t } = useTypedI18n()
+
+// 移动端「⋯」操作菜单:受控 <details>,选任一项或点页面其它位置即关闭。
+// 原生 details 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet 之上。
+const actionsEl = ref<HTMLDetailsElement | null>(null)
+
+function closeActions(): void {
+  if (actionsEl.value) actionsEl.value.open = false
+}
+
+function onDocumentPointerDown(event: PointerEvent): void {
+  if (!actionsEl.value?.open) return
+  if (!actionsEl.value.contains(event.target as Node)) closeActions()
+}
+
+function onActionsToggle(): void {
+  if (actionsEl.value?.open) {
+    document.addEventListener('pointerdown', onDocumentPointerDown)
+  } else {
+    document.removeEventListener('pointerdown', onDocumentPointerDown)
+  }
+}
+
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointerDown))
+
+// 菜单项:先收起菜单再上抛动作,避免浮层悬停在随后打开的 sheet 之上。
+function chooseWorkspaceSetting(): void {
+  closeActions()
+  emit('open-workspace-setting')
+}
+function chooseSettings(): void {
+  closeActions()
+  emit('open-settings')
+}
+function chooseLogout(): void {
+  closeActions()
+  emit('logout')
+}
 
 interface HeaderTab {
   key: string
@@ -168,20 +206,20 @@ function selectTab(tab: HeaderTab): void {
         />
       </div>
 
-      <details class="mobile-actions">
+      <details ref="actionsEl" class="mobile-actions" @toggle="onActionsToggle">
         <summary class="icon-btn mobile-actions-trigger" aria-label="Actions">⋯</summary>
         <div class="mobile-actions-menu">
           <button
             class="mobile-action-item"
             :disabled="!currentWorkspace"
-            @click="emit('open-workspace-setting')"
+            @click="chooseWorkspaceSetting"
           >
             {{ t('workspaceSetting.entry.tooltip') }}
           </button>
-          <button class="mobile-action-item" @click="emit('open-settings')">
+          <button class="mobile-action-item" @click="chooseSettings">
             {{ t('nav.settings.tooltip') }}
           </button>
-          <button v-if="showLogout" class="mobile-action-item" @click="emit('logout')">
+          <button v-if="showLogout" class="mobile-action-item" @click="chooseLogout">
             {{ t('auth.logout.label') }}
           </button>
           <span class="status mobile-status" :class="status === 'open' ? 'ok' : 'err'">
@@ -260,7 +298,7 @@ function selectTab(tab: HeaderTab): void {
   background: var(--c-card);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   .app-header {
     height: auto;
     padding: 0;

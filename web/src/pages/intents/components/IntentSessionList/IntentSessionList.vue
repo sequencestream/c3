@@ -326,6 +326,15 @@ const visibleSessions = computed<IntentSessionInfo[]>(() => [
     min-width: 80px;
   }
 }
+/* 移动端 drill-down:列表即当前单栏,撑满全宽(对齐 DiscussionList 范式) */
+@media (max-width: 767px) {
+  .int-sess-list,
+  .int-sess-list.collapsed {
+    width: 100%;
+    min-width: 0;
+    border-right: 0;
+  }
+}
 .int-sess-list-head {
   height: 36px;
   flex-shrink: 0;

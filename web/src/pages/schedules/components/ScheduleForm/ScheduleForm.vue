@@ -798,7 +798,8 @@ function save(): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  /* 与其它全屏 sheet 一致(>底部导航 z-index:90),否则移动端底栏会盖住页脚/末项字段 */
+  z-index: 200;
   padding: var(--sp-4);
 }
 .sf-modal {
@@ -1121,7 +1122,7 @@ function save(): void {
   cursor: not-allowed;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .sf-overlay {
     align-items: stretch;
     justify-content: stretch;

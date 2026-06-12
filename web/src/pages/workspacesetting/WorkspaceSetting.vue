@@ -15,6 +15,7 @@ import type {
   WorkspaceSetting,
   ProjectSandboxConfig,
   SkillRepoConfig,
+  SkillLinkStatus,
   SystemSandboxDef,
   VendorId,
   VendorModeCatalog,
@@ -47,11 +48,19 @@ const props = defineProps<{
   vendorModes: Record<VendorId, VendorModeCatalog> | null
   /** System sandbox definitions — drives the sandbox name dropdown. */
   systemSandboxes: SystemSandboxDef[]
+  /** Per-skill link status for the current workspace (reply to get_skill_link_status). */
+  linkStatuses?: SkillLinkStatus[]
+  /** Skill ids whose install is in flight — drives per-row busy/disabled state. */
+  installingSkillIds?: string[]
 }>()
 
 const emit = defineEmits<{
   close: []
   save: [config: WorkspaceSetting]
+  /** Ask the parent to (re)fetch link status for the current workspace. */
+  queryLinkStatus: []
+  /** Ask the parent to install/update the configured skill repo with this id. */
+  installSkill: [skillId: string]
 }>()
 
 /**
@@ -163,6 +172,9 @@ watch(
       // auto or fallback
       draftCodexPolicy.value = { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' }
     }
+    // Ask the parent to (re)fetch each skill repo's link status for this workspace.
+    // No auto-polling — only on open (and after an install completes, via the parent).
+    emit('queryLinkStatus')
   },
   { immediate: true },
 )
@@ -237,6 +249,27 @@ function addSkillRepo() {
 
 function removeSkillRepo(id: string) {
   draft.value.skillRepos = (draft.value.skillRepos ?? []).filter((r) => r.id !== id)
+}
+
+/** A row is "linked" only when both vendor skill dirs carry the `_c3_<id>` symlink. */
+function rowLinked(r: SkillRepoConfig): boolean {
+  const s = (props.linkStatuses ?? []).find((x) => x.id === r.id)
+  return !!s && s.claudeSkills && s.agentsSkills
+}
+
+/** Whether this row's install round-trip is currently in flight. */
+function rowInstalling(r: SkillRepoConfig): boolean {
+  return (props.installingSkillIds ?? []).includes(r.id)
+}
+
+/** Install is allowed once repo + ref are filled and no install is already running. */
+function canInstall(r: SkillRepoConfig): boolean {
+  return !rowInstalling(r) && !missingRef(r) && !!r.repo.trim()
+}
+
+function onInstall(r: SkillRepoConfig): void {
+  if (!canInstall(r)) return
+  emit('installSkill', r.id)
 }
 
 function onSave() {
@@ -502,6 +535,31 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             data-testid="skill-repo-subpath"
             @input="onSubpathInput(r)"
           />
+          <span
+            class="skill-repo-status"
+            :class="rowLinked(r) ? 'skill-repo-status-linked' : 'skill-repo-status-unlinked'"
+            :data-linked="rowLinked(r) ? 'true' : 'false'"
+            data-testid="skill-repo-status"
+          >
+            {{
+              rowLinked(r)
+                ? t('workspaceSetting.skillRepos.status.linked.label')
+                : t('workspaceSetting.skillRepos.status.unlinked.label')
+            }}
+          </span>
+          <button
+            class="agent-field skill-repo-install"
+            :disabled="!canInstall(r)"
+            :title="t('workspaceSetting.skillRepos.install.tooltip')"
+            data-testid="skill-repo-install"
+            @click="onInstall(r)"
+          >
+            {{
+              rowInstalling(r)
+                ? t('workspaceSetting.skillRepos.install.busy.label')
+                : t('workspaceSetting.skillRepos.install.label')
+            }}
+          </button>
           <button
             class="icon-btn"
             :title="t('workspaceSetting.skillRepos.remove.tooltip')"
@@ -733,6 +791,30 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   gap: 8px;
   padding: 12px 24px;
   border-top: 1px solid var(--border, #313244);
+}
+
+.skill-repo-status {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.skill-repo-status-linked {
+  color: var(--c-success, #a6e3a1);
+}
+.skill-repo-status-unlinked {
+  color: var(--text-secondary, #a6adc8);
+}
+
+.skill-repo-install {
+  flex: 0 0 auto;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.skill-repo-install:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @media (max-width: 640px) {

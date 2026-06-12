@@ -1493,6 +1493,21 @@
       },
       "subpath": {
         "placeholder": "Optional sub-directory (e.g. skills/my-skill)"
+      },
+      "status": {
+        "linked": {
+          "label": "Linked"
+        },
+        "unlinked": {
+          "label": "Not linked"
+        }
+      },
+      "install": {
+        "label": "Install",
+        "busy": {
+          "label": "Installing…"
+        },
+        "tooltip": "Clone the configured ref and link this skill into every supported vendor"
       }
     },
     "sandbox": {

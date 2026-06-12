@@ -1494,6 +1494,21 @@
       },
       "subpath": {
         "placeholder": "선택적 하위 디렉토리(예: skills/my-skill)"
+      },
+      "status": {
+        "linked": {
+          "label": "링크됨"
+        },
+        "unlinked": {
+          "label": "링크 안 됨"
+        }
+      },
+      "install": {
+        "label": "설치",
+        "busy": {
+          "label": "설치 중…"
+        },
+        "tooltip": "설정된 ref를 클론하고 이 스킬을 지원되는 모든 벤더에 링크합니다"
       }
     },
     "sandbox": {

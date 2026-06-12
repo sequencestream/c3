@@ -69,6 +69,7 @@ import type {
   SessionInfo,
   SessionRunStatus,
   SessionStatus,
+  SkillLinkStatus,
   SkillSupportState,
   SlashCommandInfo,
   SystemSettings,
@@ -564,6 +565,12 @@ const vendorModes = ref<Record<VendorId, VendorModeCatalog> | null>(null)
 // `skill_load_approval_resolve` and clears it.
 const skillApprovalRequest = ref<ApprovalRequest | null>(null)
 
+// Per-skill link status for the current workspace (reply to get_skill_link_status).
+// Re-fetched whenever the WorkspaceSetting panel opens and after each install.
+const skillLinkStatuses = ref<SkillLinkStatus[]>([])
+// Skill ids whose install round-trip is in flight — drives per-row busy/disabled UI.
+const installingSkillIds = ref<string[]>([])
+
 // ---- Workspace setting ----
 const workspaceSettingOpen = ref(false)
 const currentWorkspaceSetting = ref<WorkspaceSettingType | null>(null)
@@ -635,6 +642,24 @@ function saveWorkspaceSetting(config: WorkspaceSettingType) {
   const path = currentWorkspace.value
   if (path) client?.send({ type: 'save_workspace_setting', projectPath: path, config })
   workspaceSettingOpen.value = false
+}
+
+// Fetch link status for every configured skill repo in the current workspace.
+// Read-only, zero network — the panel calls this on open and after an install.
+function querySkillLinkStatus() {
+  const path = currentWorkspace.value
+  if (path) client?.send({ type: 'get_skill_link_status', projectPath: path })
+}
+
+// Explicitly (re)install a configured skill repo; marks the row busy until the
+// `skill_install_result` reply clears it.
+function installSkill(skillId: string) {
+  const path = currentWorkspace.value
+  if (!path) return
+  if (!installingSkillIds.value.includes(skillId)) {
+    installingSkillIds.value = [...installingSkillIds.value, skillId]
+  }
+  client?.send({ type: 'install_skill', projectPath: path, skillId })
 }
 
 function saveSettings(settings: SystemSettings) {
@@ -1015,6 +1040,18 @@ function handleMessage(msg: ServerToClient) {
         applyLocale(msg.settings.uiLang)
         setStoredLocale(msg.settings.uiLang)
       }
+      break
+    case 'skill_link_status':
+      // Only adopt statuses for the workspace currently being edited.
+      if (msg.projectPath === currentWorkspace.value) {
+        skillLinkStatuses.value = msg.statuses
+      }
+      break
+    case 'skill_install_result':
+      // Clear the row's busy flag, then re-fetch link status so the indicator
+      // flips to "linked" on success (or stays "not linked" on failure).
+      installingSkillIds.value = installingSkillIds.value.filter((id) => id !== msg.skillId)
+      if (msg.projectPath === currentWorkspace.value) querySkillLinkStatus()
       break
     case 'skill_load_approval_request':
       skillApprovalRequest.value = {
@@ -2321,8 +2358,12 @@ function dismissSkillApproval() {
       :current-workspace="currentWorkspace"
       :vendor-modes="vendorModes"
       :system-sandboxes="serverSettings?.sandboxes ?? []"
+      :link-statuses="skillLinkStatuses"
+      :installing-skill-ids="installingSkillIds"
       @close="workspaceSettingOpen = false"
       @save="saveWorkspaceSetting"
+      @query-link-status="querySkillLinkStatus"
+      @install-skill="installSkill"
     />
 
     <SkillApprovalModal

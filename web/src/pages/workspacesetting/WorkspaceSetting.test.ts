@@ -620,6 +620,117 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
     const emitted = w.emitted('save') as [WorkspaceSettingType][]
     expect(emitted[0][0].skillRepos?.[0]?.ref).toBe('develop')
   })
+
+  it('emits queryLinkStatus when the panel opens', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    expect((w.emitted('queryLinkStatus') ?? []).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders linked vs not-linked per row from linkStatuses (both dirs required)', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+        // row 0 fully linked; row 1 only one dir → counts as not linked
+        linkStatuses: [
+          { id: 'my-skills', claudeSkills: true, agentsSkills: true },
+          { id: 'more-skills', claudeSkills: true, agentsSkills: false },
+        ],
+      },
+    })
+    const statuses = w.findAll('[data-testid="skill-repo-status"]')
+    expect(statuses).toHaveLength(2)
+    expect(statuses[0].text()).toBe('Linked')
+    expect(statuses[0].attributes('data-linked')).toBe('true')
+    expect(statuses[1].text()).toBe('Not linked')
+    expect(statuses[1].attributes('data-linked')).toBe('false')
+  })
+
+  it('shows not-linked for a row absent from linkStatuses', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+        linkStatuses: [],
+      },
+    })
+    const statuses = w.findAll('[data-testid="skill-repo-status"]')
+    expect(statuses[0].attributes('data-linked')).toBe('false')
+  })
+
+  it('emits installSkill with the row id on Install click', async () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    const buttons = w.findAll('[data-testid="skill-repo-install"]')
+    expect(buttons).toHaveLength(2)
+    await buttons[0].trigger('click')
+    const emitted = w.emitted('installSkill') as [string][]
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0]).toBe('my-skills')
+  })
+
+  it('disables Install when ref is missing or repo is empty', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: {
+          ...cfg(),
+          skillRepos: [{ id: 's', repo: '', ref: '' } as SkillRepoConfig],
+        },
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    const btn = w.find('[data-testid="skill-repo-install"]')
+    expect(btn.attributes('disabled')).toBeDefined()
+  })
+
+  it('shows a busy label and disables Install while installing', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: configWithSkillRepos,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+        installingSkillIds: ['my-skills'],
+      },
+    })
+    const buttons = w.findAll('[data-testid="skill-repo-install"]')
+    expect(buttons[0].text()).toBe('Installing…')
+    expect(buttons[0].attributes('disabled')).toBeDefined()
+    // the other row is not installing → enabled, default label
+    expect(buttons[1].text()).toBe('Install')
+    expect(buttons[1].attributes('disabled')).toBeUndefined()
+  })
 })
 
 describe('WorkspaceSetting.vue — git branch mode + default main branch', () => {

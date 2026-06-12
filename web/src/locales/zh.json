@@ -1493,6 +1493,21 @@
       },
       "subpath": {
         "placeholder": "可选子目录（如 skills/my-skill）"
+      },
+      "status": {
+        "linked": {
+          "label": "已链接"
+        },
+        "unlinked": {
+          "label": "未链接"
+        }
+      },
+      "install": {
+        "label": "安装",
+        "busy": {
+          "label": "安装中…"
+        },
+        "tooltip": "克隆配置的 ref 并将该技能链接到所有受支持的 vendor"
       }
     },
     "sandbox": {

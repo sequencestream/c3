@@ -1494,6 +1494,21 @@
       },
       "subpath": {
         "placeholder": "オプションのサブディレクトリ（例: skills/my-skill）"
+      },
+      "status": {
+        "linked": {
+          "label": "リンク済み"
+        },
+        "unlinked": {
+          "label": "未リンク"
+        }
+      },
+      "install": {
+        "label": "インストール",
+        "busy": {
+          "label": "インストール中…"
+        },
+        "tooltip": "設定された ref をクローンし、このスキルをすべての対応ベンダーにリンクします"
       }
     },
     "sandbox": {

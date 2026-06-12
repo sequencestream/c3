@@ -23,6 +23,8 @@ function capture(): { conn: Conn; sent: ServerToClient[] } {
     deliver: () => {},
     sendWorkspaces: () => {},
     sendSessions: async () => {},
+    authed: false,
+    authToken: null,
   }
   return { conn, sent }
 }

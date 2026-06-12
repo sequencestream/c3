@@ -49,18 +49,14 @@ import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js
 import {
   createOpencodeSupervisor,
   createOpencodeAdapter,
-  createOpencodeSkillLoader,
   type OpencodeSupervisor,
 } from './kernel/agent/adapters/opencode/index.js'
-import { createCodexAdapter, createCodexSkillLoader } from './kernel/agent/adapters/codex/index.js'
-import {
-  createClaudeAdapter,
-  createClaudeSkillLoader,
-} from './kernel/agent/adapters/claude/index.js'
+import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
+import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
 import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
-import type { VendorAdapter, SkillLoader } from './kernel/agent/adapters/types.js'
+import type { VendorAdapter } from './kernel/agent/adapters/types.js'
 import type { VendorId } from '@ccc/shared/protocol'
-import { ensureLinksForLaunch } from './kernel/skill-loader/index.js'
+import { hasAnyInstalledSkill } from './kernel/skill-loader/index.js'
 import { setSkillApprovalSend } from './kernel/skill-loader/approval.js'
 import { getSkillRepos } from './kernel/config/index.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
@@ -410,25 +406,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // The neutral Codex adapter, or null when its host CLI is missing (launchRun
     // forks to the driver path for codex sessions; 2026-06-06-007).
     getCodexAdapter: () => codexAdapter,
-    // Pre-launch skill mount (mount layer 2/3, ADR-0017): mount every configured
-    // skill repo into each vendor's discovery dir before the run starts. The call
-    // is non-blocking (a mount failure degrades silently — the worst case is a
-    // subset of external skills unavailable, which is indistinguishable from no
-    // external skills configured).
-    skillMount: async (rt) => {
+    // Supply-chain write-guard probe (ADR-0017 D5, 2026-06-12): external skills are
+    // installed explicitly from the settings panel (`install_skill`), NOT mounted
+    // here. Launch only reads whether any configured skill is already installed (a
+    // live `_c3_<id>` link in a public dir) — zero network — to decide the guard.
+    detectMountedSkills: async (rt) => {
       const configs = getSkillRepos(rt.workspacePath)
-      if (!configs.length) return { ok: true }
-      const loaders: Partial<Record<VendorId, SkillLoader>> = {
-        claude: createClaudeSkillLoader(),
-        codex: createCodexSkillLoader(),
-        opencode: createOpencodeSkillLoader(),
-      }
-      const outcome = await ensureLinksForLaunch({
-        projectDir: rt.workspacePath,
-        configs,
-        loaders,
-      })
-      return { ok: true, outcome }
+      if (!configs.length) return false
+      return hasAnyInstalledSkill(rt.workspacePath, configs)
     },
     // Permission-event hook: before each `permission_request` wire frame, create
     // a WaitUserInvolveEvent in the store and broadcast the updated todo list.

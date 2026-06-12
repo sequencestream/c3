@@ -14,11 +14,11 @@
  *   admin exists, skipped on the first (localhost bootstrap) set.
  * - `logout` stays a no-op (no server-side session store exists yet).
  */
-import { randomBytes } from 'node:crypto'
 import type { AuthConfig, AuthSessionPolicy } from '@ccc/shared/protocol'
 import type { Handler } from '../../transport/handler-registry.js'
 import { loadSettings, saveSettings } from '../../kernel/config/index.js'
 import { hashPassword, verifyPassword } from './password.js'
+import { mintSession, revokeSession } from './session-store.js'
 
 /** Minimum new-password length. Deliberately light (ADR-0023 non-goal: no
  *  complex strength policy) — just non-empty username + a floor on length. */
@@ -43,16 +43,25 @@ export const login: Handler<'login'> = (_ctx, conn, msg) => {
     conn.send({ type: 'login_result', result: { ok: false, code: 'invalid_credentials' } })
     return
   }
-  // Token signing is deferred (ADR-0023): mint an opaque random id with a
-  // TTL-derived expiry. Handshake enforcement lands with the middleware slice.
-  const token = randomBytes(24).toString('hex')
-  const expiresAt = Date.now() + auth.session.ttlSeconds * 1000
+  // Mint an opaque session the in-process store remembers so the handshake can
+  // verify the token a (re)connecting client presents (token *signing* is still
+  // deferred — ADR-0023). Bind it to THIS connection too, so the post-login
+  // reconnect that re-presents the token sails through the handshake gate.
+  const { token, expiresAt } = mintSession(auth.provider.username, auth.session.ttlSeconds)
+  conn.authed = true
+  conn.authToken = token
   conn.send({ type: 'login_result', result: { ok: true, token, expiresAt } })
 }
 
-export const logout: Handler<'logout'> = () => {
-  // Contract-only: no session token is ever issued server-side yet, so there is
-  // nothing to invalidate. Token revocation arrives with the middleware slice.
+export const logout: Handler<'logout'> = (_ctx, conn) => {
+  // Revoke the server-side session so the token can never re-authenticate a
+  // future handshake. When auth is enabled, also drop this connection back to
+  // unauthenticated so its subsequent frames hit the dispatch gate; when auth
+  // is disabled the connection was never gated (AUTH-R2) so we leave it admitted.
+  revokeSession(conn.authToken)
+  conn.authToken = null
+  const auth = loadSettings().auth
+  if (auth?.enabled && auth.provider.kind === 'basic') conn.authed = false
 }
 
 export const setAdminPassword: Handler<'set_admin_password'> = (_ctx, conn, msg) => {

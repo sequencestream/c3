@@ -806,6 +806,11 @@ function handleMessage(msg: ServerToClient) {
   switch (msg.type) {
     case 'login_result':
       auth.handleLoginResult(msg.result)
+      // Login minted a token but this socket is still unauthenticated — force a
+      // fresh handshake so `buildUrl()` carries the `?token=` and the server
+      // admits us + emits `ready` (with the workspaces snapshot). Without this
+      // the connection stays gated and the workspace list never loads.
+      if (msg.result.ok) client?.reconnect()
       break
     case 'admin_password_result':
       if (msg.result.ok) {

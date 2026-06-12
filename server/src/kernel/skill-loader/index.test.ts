@@ -1,49 +1,29 @@
 /**
- * Unit tests for the skill mount lifecycle orchestrator (mount layer 2/3).
+ * Unit tests for the external-skill install + link-status engine (2026-06-12).
  *
- * External skills now mount silently into every build-link-capable vendor at the
- * configured ref's head — no trust knobs, no orphan/consume tracking. Covers:
- * - ensureLinksForLaunch: full path, cache hit, unsupported vendor (grey),
- *   multi-vendor fan-out, .gitignore ack gate, repo error → skip (not throw).
+ * External skills are installed explicitly (not mounted at launch) into the two
+ * shared public dirs (`.claude/skills`, `.agents/skills`). Covers:
+ * - getSkillLinkStatuses: link presence per public dir, reflects create/delete.
+ * - installSkill: force-relink into both dirs, overwrite stale link, .gitignore
+ *   append + one-time ack, gitignore-cancel, repo-error (never throws).
+ * - hasAnyInstalledSkill: two-state probe for the launch write guard.
  *
  * From repo root: `rtk proxy npx vitest run skill-loader/index.test.ts`
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, rm, readlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, readlink, readFile, symlink, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { SkillRepoConfig, VendorId } from '@ccc/shared/protocol'
-import type { SkillLoader } from '../agent/adapters/types.js'
+import type { SkillRepoConfig } from '@ccc/shared/protocol'
 import { resetStateCacheForTests } from '../../state.js'
-import { ensureLinksForLaunch } from './index.js'
+import {
+  getSkillLinkStatuses,
+  hasAnyInstalledSkill,
+  installSkill,
+  PUBLIC_SKILL_DIRS,
+} from './index.js'
 import type { EnsureSkillRepoResult } from '../../skill-repo.js'
-import type { SkillApprovalAsk } from './approval.js'
 import { setSkillApprovalSend } from './approval.js'
-
-// ---------------------------------------------------------------------------
-// Fake SkillLoader
-// ---------------------------------------------------------------------------
-
-function fakeLoader(vendor: VendorId, skillDir: string): SkillLoader {
-  return {
-    vendor,
-    getVendorSkillDir: () => skillDir,
-    detectSkillSupport: async () => ({ state: 'full', sdkVersion: 'test', checkedAt: 0 }),
-    ensureLink: async (target: string, linkPath: string) => {
-      const { symlink } = await import('node:fs/promises')
-      await symlink(target, linkPath, 'dir')
-    },
-  }
-}
-
-function unsupportedLoader(vendor: VendorId, skillDir: string): SkillLoader {
-  return {
-    vendor,
-    getVendorSkillDir: () => skillDir,
-    detectSkillSupport: async () => ({ state: 'none', sdkVersion: 'test', checkedAt: 0 }),
-    ensureLink: async () => {},
-  }
-}
 
 const baseConfig: SkillRepoConfig = {
   id: 'my-skill',
@@ -61,26 +41,23 @@ function failRepo(
   return async () => ({ ok: false, cacheDir: '/tmp/cache', error: msg })
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+function claudeLink(projectDir: string, id: string): string {
+  return join(projectDir, ...PUBLIC_SKILL_DIRS.claudeSkills, `_c3_${id}`)
+}
+function agentsLink(projectDir: string, id: string): string {
+  return join(projectDir, ...PUBLIC_SKILL_DIRS.agentsSkills, `_c3_${id}`)
+}
 
-describe('ensureLinksForLaunch', () => {
+describe('external skill install + status', () => {
   let tmpRoot: string
-  let claudeSkillDir: string
-  let codexSkillDir: string
   let origConfigDir: string | undefined
 
   beforeEach(async () => {
     origConfigDir = process.env.CLAUDE_CONFIG_DIR
     resetStateCacheForTests()
     setSkillApprovalSend(() => {})
-    tmpRoot = await mkdtemp(join(tmpdir(), 'skill-mount-'))
+    tmpRoot = await mkdtemp(join(tmpdir(), 'skill-install-'))
     process.env.CLAUDE_CONFIG_DIR = tmpRoot
-    claudeSkillDir = join(tmpRoot, '.claude', 'skills')
-    codexSkillDir = join(tmpRoot, '.codex', 'skills')
-    await mkdir(claudeSkillDir, { recursive: true })
-    await mkdir(codexSkillDir, { recursive: true })
   })
 
   afterEach(async () => {
@@ -91,134 +68,139 @@ describe('ensureLinksForLaunch', () => {
     setSkillApprovalSend(() => {})
   })
 
-  it('mounts a new skill with a symlink', async () => {
+  // -------------------------------------------------------------------------
+  // Status query
+  // -------------------------------------------------------------------------
+
+  it('status reports unlinked for a fresh project', async () => {
+    const [s] = await getSkillLinkStatuses(tmpRoot, [baseConfig])
+    expect(s).toEqual({ id: 'my-skill', claudeSkills: false, agentsSkills: false })
+  })
+
+  it('status flips to linked after a symlink is created, and back after delete', async () => {
     const source = join(tmpRoot, 'source')
     await mkdir(source, { recursive: true })
-    const result = await ensureLinksForLaunch({
-      projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-      ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-resolved',
-      requestApproval: async () => true,
-    })
-    expect(result.mounted).toHaveLength(1)
-    expect(result.mounted[0].vendor).toBe('claude')
-    expect(result.mounted[0].linkPath).toContain('_c3_my-skill')
-    const linkTarget = await readlink(result.mounted[0].linkPath)
-    expect(linkTarget).toBe(source)
+    const link = claudeLink(tmpRoot, baseConfig.id)
+    await mkdir(join(tmpRoot, ...PUBLIC_SKILL_DIRS.claudeSkills), { recursive: true })
+    await symlink(source, link, 'dir')
+
+    let [s] = await getSkillLinkStatuses(tmpRoot, [baseConfig])
+    expect(s.claudeSkills).toBe(true)
+    expect(s.agentsSkills).toBe(false)
+
+    await rm(link, { recursive: true, force: true })
+    ;[s] = await getSkillLinkStatuses(tmpRoot, [baseConfig])
+    expect(s.claudeSkills).toBe(false)
   })
 
-  it('cache hit on second call (skip clone + skip relink)', async () => {
+  // -------------------------------------------------------------------------
+  // Install action
+  // -------------------------------------------------------------------------
+
+  it('install links both public dirs to the repo skill dir + appends .gitignore', async () => {
     const source = join(tmpRoot, 'source')
     await mkdir(source, { recursive: true })
-    // First call: mounts
-    const r1 = await ensureLinksForLaunch({
+    const result = await installSkill({
       projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
+      config: baseConfig,
       ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-1',
       requestApproval: async () => true,
     })
-    expect(r1.mounted).toHaveLength(1)
-    // Second call: cache hit
-    const r2 = await ensureLinksForLaunch({
-      projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-      ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-1',
-      requestApproval: async () => true,
-    })
-    expect(r2.mounted).toHaveLength(0)
-    expect(r2.skipped.some((s) => s.reason === 'cache-hit')).toBe(true)
+    expect(result.ok).toBe(true)
+    expect(result.linkedDirs?.sort()).toEqual(['agentsSkills', 'claudeSkills'])
+
+    expect(await readlink(claudeLink(tmpRoot, baseConfig.id))).toBe(source)
+    expect(await readlink(agentsLink(tmpRoot, baseConfig.id))).toBe(source)
+
+    const gitignore = await readFile(join(tmpRoot, '.gitignore'), 'utf-8')
+    expect(gitignore).toContain('.claude/skills/_c3_*/')
+    expect(gitignore).toContain('.agents/skills/_c3_*/')
+
+    const [s] = await getSkillLinkStatuses(tmpRoot, [baseConfig])
+    expect(s).toEqual({ id: 'my-skill', claudeSkills: true, agentsSkills: true })
   })
 
-  it('unsupported vendor → skip + greyed, session still launched', async () => {
-    const result = await ensureLinksForLaunch({
+  it('install OVERWRITES a stale link, pointing it at the new head', async () => {
+    const oldSrc = join(tmpRoot, 'old')
+    const newSrc = join(tmpRoot, 'new')
+    await mkdir(oldSrc, { recursive: true })
+    await mkdir(newSrc, { recursive: true })
+    // Seed a stale link at the claude dir.
+    await mkdir(join(tmpRoot, ...PUBLIC_SKILL_DIRS.claudeSkills), { recursive: true })
+    await symlink(oldSrc, claudeLink(tmpRoot, baseConfig.id), 'dir')
+
+    const result = await installSkill({
       projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: { claude: unsupportedLoader('claude', claudeSkillDir) },
-      ensureRepo: okRepo(join(tmpRoot, 'source')),
-      resolveRef: async () => 'sha-1',
+      config: baseConfig,
+      ensureRepo: okRepo(newSrc),
       requestApproval: async () => true,
     })
-    expect(result.mounted).toHaveLength(0)
-    expect(result.greyed).toContain('claude')
-    expect(result.skipped.some((s) => s.reason === 'unsupported')).toBe(true)
+    expect(result.ok).toBe(true)
+    expect(await readlink(claudeLink(tmpRoot, baseConfig.id))).toBe(newSrc)
   })
 
-  it('fans out to every build-link-capable vendor', async () => {
+  it('install asks the .gitignore ack only once per project', async () => {
     const source = join(tmpRoot, 'source')
     await mkdir(source, { recursive: true })
-    const result = await ensureLinksForLaunch({
-      projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: {
-        claude: fakeLoader('claude', claudeSkillDir),
-        codex: fakeLoader('codex', codexSkillDir),
-      },
-      ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-1',
-      requestApproval: async () => true,
-    })
-    expect(result.mounted).toHaveLength(2)
-    expect(result.mounted.map((m) => m.vendor).sort()).toEqual(['claude', 'codex'])
-  })
-
-  it('repo error → skip (not throw)', async () => {
-    const result = await ensureLinksForLaunch({
-      projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
-      ensureRepo: failRepo('clone failed'),
-      resolveRef: async () => 'sha-1',
-      requestApproval: async () => true,
-    })
-    expect(result.mounted).toHaveLength(0)
-    expect(result.skipped.some((s) => s.reason === 'repo-error')).toBe(true)
-  })
-
-  it('gitignore ack is consumed after first approval', async () => {
-    const source = join(tmpRoot, 'source')
-    await mkdir(source, { recursive: true })
-    let gitignoreCount = 0
-    const approve = async (ask: SkillApprovalAsk) => {
-      if (ask.kind === 'gitignore') gitignoreCount++
+    let acks = 0
+    const approve = async (): Promise<boolean> => {
+      acks++
       return true
     }
-    await ensureLinksForLaunch({
+    await installSkill({
       projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
+      config: baseConfig,
       ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-1',
       requestApproval: approve,
     })
-    expect(gitignoreCount).toBe(1)
-    // Second mount: gitignore already acked → no new gitignore approval
-    await ensureLinksForLaunch({
+    await installSkill({
       projectDir: tmpRoot,
-      configs: [{ ...baseConfig, id: 's2' }],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
+      config: { ...baseConfig, id: 's2' },
       ensureRepo: okRepo(source),
-      resolveRef: async () => 'sha-2',
       requestApproval: approve,
     })
-    expect(gitignoreCount).toBe(1) // no new gitignore approval
+    expect(acks).toBe(1)
   })
 
-  it('gitignore cancel → skip (gitignore-cancelled), session still launches', async () => {
-    const result = await ensureLinksForLaunch({
+  it('gitignore cancel → ok:false (gitignore-cancelled), no link built', async () => {
+    const result = await installSkill({
       projectDir: tmpRoot,
-      configs: [baseConfig],
-      loaders: { claude: fakeLoader('claude', claudeSkillDir) },
+      config: baseConfig,
       ensureRepo: okRepo(join(tmpRoot, 'source')),
-      resolveRef: async () => 'sha-1',
       requestApproval: async () => false,
     })
-    expect(result.mounted).toHaveLength(0)
-    expect(result.skipped.some((s) => s.reason === 'gitignore-cancelled')).toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('gitignore-cancelled')
+    await expect(lstat(claudeLink(tmpRoot, baseConfig.id))).rejects.toThrow()
+  })
+
+  it('repo error → ok:false (repo-error), never throws', async () => {
+    const result = await installSkill({
+      projectDir: tmpRoot,
+      config: baseConfig,
+      ensureRepo: failRepo('clone failed'),
+      requestApproval: async () => true,
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('repo-error')
+    expect(result.detail).toBe('clone failed')
+  })
+
+  // -------------------------------------------------------------------------
+  // Launch write-guard probe
+  // -------------------------------------------------------------------------
+
+  it('hasAnyInstalledSkill: false when configured-but-not-installed, true after install', async () => {
+    const source = join(tmpRoot, 'source')
+    await mkdir(source, { recursive: true })
+    expect(await hasAnyInstalledSkill(tmpRoot, [baseConfig])).toBe(false)
+
+    await installSkill({
+      projectDir: tmpRoot,
+      config: baseConfig,
+      ensureRepo: okRepo(source),
+      requestApproval: async () => true,
+    })
+    expect(await hasAnyInstalledSkill(tmpRoot, [baseConfig])).toBe(true)
   })
 })

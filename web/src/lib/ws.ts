@@ -153,6 +153,27 @@ export function createWsClient(opts: WsClientOptions) {
     ws = null
   }
 
+  // Force a fresh handshake immediately — used after login mints a token so the
+  // next connect's `buildUrl()` carries it (the server gates the handshake on
+  // `?token=`). Tears down the current socket without scheduling the usual
+  // backoff'd reconnect, then connects right away with the now-current token.
+  function reconnect() {
+    if (stopped) return
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    clearTimers()
+    if (ws) {
+      // Drop the old socket's onclose so it doesn't also schedule a reconnect.
+      ws.onclose = null
+      ws.close()
+      ws = null
+    }
+    backoff = RECONNECT_MIN_MS
+    connect()
+  }
+
   connect()
-  return { send, close }
+  return { send, close, reconnect }
 }

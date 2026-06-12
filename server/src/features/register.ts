@@ -81,6 +81,7 @@ import { login, logout, setAdminPassword } from './auth/index.js'
 import { listWaitUserEvents } from './user-involve/index.js'
 import { getTimeRangeStatsHandler } from './workcenter/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
+import { getSkillLinkStatus, installSkillHandler } from './skills/index.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -162,6 +163,9 @@ export const handlerMap: HandlerMap = {
   skill_load_approval_resolve: (_ctx, _conn, msg) => {
     resolveSkillApprovalImpl(msg.requestId, msg.decision)
   },
+  // external skill install + link status (2026-06-12)
+  get_skill_link_status: getSkillLinkStatus,
+  install_skill: installSkillHandler,
 }
 
 /** Assemble the startup handler registry from the exhaustive map. */

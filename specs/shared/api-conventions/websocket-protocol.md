@@ -333,6 +333,18 @@
 
 **字段：** `requestId: string`, `decision: 'approve' | 'cancel'`
 
+### `get_skill_link_status`
+
+查询某项目下每个已配置 skill repo 的安装链接状态（2026-06-12）。服务器回复 `skill_link_status`：按 `id` 返回 `_c3_<id>` 是否为两个共享公共 skill 目录（`.claude/skills`、`.agents/skills`）下的活跃软链。只读、零网络。外部 skill 已不在启动时挂载，改由设置面板显式安装。
+
+**字段：** `projectPath: string`
+
+### `install_skill`
+
+显式安装（或更新）某个已配置 skill repo（2026-06-12）：clone/pull 配置 ref 的最新 head，删除旧 `_c3_<id>` 软链/目录后重新建链到两个公共目录。保留一次性 `.gitignore` 追加确认。服务器回复 `skill_install_result`。替代已移除的启动时自动挂载——安装只由用户动作触发。
+
+**字段：** `projectPath: string`, `skillId: string`
+
 ### `list_wait_user_events`
 
 请求项目的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。服务器回复 `wait_user_events`。
@@ -669,6 +681,20 @@ schedule 的执行日志。
 启动前 skill 加载门控等待人类决策（挂载层 2/3；模态框由 3/3 渲染）。后端在项目中首次挂载外部 skill 之前发出，此时一次性 `.gitignore` 写入需要确认，然后阻塞该挂载等待匹配的 `skill_load_approval_resolve`。`detail` 是人类可读的即将发生操作的摘要（要追加的 `.gitignore` 行）。
 
 **字段：** `requestId: string`, `kind: SkillApprovalKind`, `id: string`（SkillRepoConfig.id）, `vendor: VendorId`, `repo: string`, `ref: string`, `detail: string`
+
+> 安装动作仍复用此门控做一次性 `.gitignore` 确认（2026-06-12）；安装由 `install_skill` 触发，而非启动时挂载。
+
+### `skill_link_status`
+
+回复 `get_skill_link_status`（2026-06-12）：每个已配置 skill repo 一条 `SkillLinkStatus`，报告 `_c3_<id>` 在两个共享公共目录下的软链存在性。
+
+**字段：** `projectPath: string`, `statuses: SkillLinkStatus[]`（`SkillLinkStatus = { id, claudeSkills, agentsSkills }`）
+
+### `skill_install_result`
+
+回复 `install_skill`（2026-06-12）。`ok` 表示该 skill 已 clone/pull 到 ref 最新 head 并重新链入两个公共目录。失败时 `reason` 为机器标记（`not-configured` / `repo-error` / `gitignore-cancelled`，UI 映射文案），`detail` 为英文调试文本（非 UI 文案）。
+
+**字段：** `projectPath: string`, `skillId: string`, `ok: boolean`, `reason?: string`, `detail?: string`
 
 ### `pong`
 

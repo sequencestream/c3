@@ -25,6 +25,15 @@ import type { KernelContext } from '../kernel/types.js'
 export interface Conn {
   /** Send one wire frame to this connection's socket. */
   send: (msg: ServerToClient) => void
+  /**
+   * Whether this connection has cleared the auth handshake (ADR-0023). Set at
+   * `onOpen`: always `true` when auth is disabled (AUTH-R2 — no-auth users
+   * unchanged); when auth is enabled it reflects the `?token=` verification.
+   * The dispatch gate admits only `login`/`logout`/`ping` while this is `false`.
+   */
+  authed: boolean
+  /** The session token bound to this connection (for `logout` revocation). */
+  authToken: string | null
   /** The session id this connection currently watches (null = none). Mutable. */
   viewing: string | null
   /** This connection's stable delivery callback (added/removed as a viewer). */

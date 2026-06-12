@@ -327,6 +327,23 @@ export interface SkillRepoConfig {
 }
 
 /**
+ * The install-link presence of one configured skill in the two shared public
+ * skill dirs (`get_skill_link_status` reply, 2026-06-12). External skills are no
+ * longer mounted at launch; the settings panel queries this and triggers an
+ * explicit `install_skill`. Both flags report whether `_c3_<id>` is a live
+ * symlink under that dir — the dirs are shared across vendors, so we check the
+ * directories directly rather than enumerating vendors.
+ */
+export interface SkillLinkStatus {
+  /** The {@link SkillRepoConfig.id} this status is for. */
+  id: string
+  /** `_c3_<id>` exists as a symlink under `<project>/.claude/skills/`. */
+  claudeSkills: boolean
+  /** `_c3_<id>` exists as a symlink under `<project>/.agents/skills/`. */
+  agentsSkills: boolean
+}
+
+/**
  * How a target vendor's SKILL-discovery support is reported to the console
  * (mount layer 2/3). Reuses {@link CapabilityState} (single SoT): `full` ⇒ c3's
  * soft-linked `_c3_<id>` skills are discovered and the vendor builds links;
@@ -2196,6 +2213,21 @@ export type ClientToServer =
    */
   | { type: 'skill_load_approval_resolve'; requestId: string; decision: 'approve' | 'cancel' }
   /**
+   * Query the install-link status of every configured skill repo in a project
+   * (2026-06-12). Server replies with {@link skill_link_status}: per `id`, whether
+   * `_c3_<id>` is a live symlink under each of the two shared public skill dirs
+   * (`.claude/skills`, `.agents/skills`). Read-only, zero network.
+   */
+  | { type: 'get_skill_link_status'; projectPath: string }
+  /**
+   * Explicitly install (or update) one configured skill repo (2026-06-12): clone/
+   * pull the configured ref's latest head, then force-relink `_c3_<id>` into the
+   * two shared public skill dirs (old link/dir removed first). Keeps the one-time
+   * `.gitignore` ack. Server replies with {@link skill_install_result}. This
+   * replaces the removed launch-time auto-mount — installs happen on user action.
+   */
+  | { type: 'install_skill'; projectPath: string; skillId: string }
+  /**
    * Request the project's wait-user-involve events — the server replies with
    * {@link wait_user_events}. An optional `status` filter narrows to one
    * lifecycle state (default: all).
@@ -2689,4 +2721,24 @@ export type ServerToClient =
     }
   /** WorkCenter cross-project rollup (reply to `get_timerange_stats`). One entry per workspace. */
   | { type: 'timerange_stats'; stats: TimeRangeProjectStats[] }
+  /**
+   * Reply to {@link get_skill_link_status} (2026-06-12): one {@link SkillLinkStatus}
+   * per configured skill repo, reporting `_c3_<id>` symlink presence in each of the
+   * two shared public skill dirs.
+   */
+  | { type: 'skill_link_status'; projectPath: string; statuses: SkillLinkStatus[] }
+  /**
+   * Reply to {@link install_skill} (2026-06-12). `ok` ⇒ the skill is cloned/pulled
+   * to its ref's latest head and (re)linked into both public dirs. On failure,
+   * `reason` is a machine token (UI maps it to copy; mirrors `SkippedSkill.reason`)
+   * and `detail` carries English debug text (not UI copy).
+   */
+  | {
+      type: 'skill_install_result'
+      projectPath: string
+      skillId: string
+      ok: boolean
+      reason?: 'not-configured' | 'repo-error' | 'gitignore-cancelled'
+      detail?: string
+    }
   | { type: 'pong' }

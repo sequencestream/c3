@@ -27,6 +27,8 @@ import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listStatuses, removeViewer } from '../runs.js'
 import { getOpencodeStatus } from '../opencode-status.js'
+import { loadSettings } from '../kernel/config/index.js'
+import { verifySession } from '../features/auth/session-store.js'
 
 /**
  * Rollback escape hatch for the cross-vendor `list_sessions` swap (ADR-0013).
@@ -71,7 +73,7 @@ export function createWsHandler(deps: {
   const send = (ws: { send: (d: string) => void }, msg: ServerToClient): void =>
     ws.send(JSON.stringify(msg))
 
-  return upgradeWebSocket(() => {
+  return upgradeWebSocket((c) => {
     // This connection is a *view* onto sessions, not an owner of runs (ADR-0006).
     // Per-connection state (which session it watches + how to deliver) lives on
     // `conn`; shared run state lives in the module-level registry and `ctx`.
@@ -80,6 +82,9 @@ export function createWsHandler(deps: {
       send: (msg) => {
         if (sock) send(sock, msg)
       },
+      // Default unauthenticated; `onOpen` resolves the handshake gate below.
+      authed: false,
+      authToken: null,
       viewing: null,
       deliver: (msg) => {
         if (sock) send(sock, msg)
@@ -109,6 +114,29 @@ export function createWsHandler(deps: {
     return {
       onOpen(_evt, ws) {
         sock = ws
+        // Handshake auth gate (ADR-0023). Auth disabled ⇒ admit unconditionally
+        // (AUTH-R2: existing no-auth users are unaffected — the server never
+        // emits `unauthenticated`). Auth enabled ⇒ verify the `?token=` handshake
+        // param against the session store. On failure keep the socket OPEN but
+        // unauthenticated and emit the 401-analogue WITHOUT leaking any snapshot:
+        // no `ready`, no broadcaster subscription. The client shows the login gate;
+        // a successful login mints a token and reconnects through this same gate.
+        const auth = loadSettings().auth
+        const authRequired = !!(auth && auth.enabled && auth.provider.kind === 'basic')
+        if (authRequired) {
+          const token = c.req.query('token') ?? null
+          const result = verifySession(token)
+          if (!result.ok) {
+            conn.authed = false
+            conn.authToken = null
+            send(ws, { type: 'unauthenticated', reason: result.reason })
+            return
+          }
+          conn.authed = true
+          conn.authToken = token
+        } else {
+          conn.authed = true
+        }
         broadcaster.add(conn.deliver)
         send(ws, {
           type: 'ready',

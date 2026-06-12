@@ -38,8 +38,8 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0013](0013-canonical-envelope-on-wire-c3-session-namespace.md) | Canonical envelope on the wire + c3 session namespace internalization                                                                | accepted   |
 | [0014](0014-codex-in-process-responses-chat-relay.md)           | In-process Responses→Chat relay for codex Chat-Completions providers                                                                 | accepted   |
 | [0015](0015-session-agent-binding-vendor-ownership.md)          | Two-key session→agent binding + frozen vendor ownership                                                                              | accepted   |
-| [0016](0016-external-skill-git-mount.md)                        | 外部 skill 经 git 仓库挂载(扁平目录布局 + claude/codex vendor 范围)                                                                  | proposed   |
-| [0017](0017-external-skill-mount-mechanism.md)                  | 外部 skill 加载机制:软链挂载 + 信任审批 + 写操作管控                                                                                 | proposed   |
+| [0016](0016-external-skill-git-mount.md)                        | 外部 skill 经 git 仓库挂载(扁平目录布局;2026-06-12 改显式安装 + 两公共目录)                                                          | proposed   |
+| [0017](0017-external-skill-mount-mechanism.md)                  | 外部 skill 加载机制:软链 + 写操作管控;2026-06-12 启动挂载→显式安装(`install_skill`)+ 状态查询(`get_skill_link_status`)               | proposed   |
 | [0018](0018-event-bus-kernel-layer.md)                          | In-process event bus in the kernel layer (typed publish/subscribe, error isolation)                                                  | accepted   |
 | [0020](0020-sandbox-driver-independent-kernel-module.md)        | SandboxDriver 作为独立 kernel 模块                                                                                                   | accepted   |
 | [0021](0021-system-project-two-tier-sandbox-config.md)          | 系统定义 + 项目选择双层配置                                                                                                          | accepted   |

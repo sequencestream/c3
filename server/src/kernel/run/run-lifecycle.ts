@@ -118,13 +118,13 @@ export interface LaunchRunDeps {
    */
   getCodexAdapter?: () => VendorAdapter | null
   /**
-   * Skill mount step — mount external skill repos into vendor discovery dirs
-   * before the run starts (mount layer 2/3, ADR-0017). Pure function; a `false`
-   * `ok` means a mount failed (the run still starts, skills degrade to the
-   * subset of what mounted). When absent (pre-2/3 or no external skills configured)
-   * the step is silently skipped.
+   * Read-only probe: does this run's project have ANY installed external skill
+   * (a live `_c3_<id>` link in a public skill dir)? External skills are no longer
+   * mounted at launch (2026-06-12) — install is an explicit user action. This zero-
+   * network check only decides whether to enable the supply-chain write guard
+   * (`skillWriteGuard`). When absent or it resolves `false`, the guard stays off.
    */
-  skillMount?: (rt: SessionRuntime) => Promise<SkillMountStep>
+  detectMountedSkills?: (rt: SessionRuntime) => Promise<boolean>
   /**
    * Optional callback invoked before a `permission_request` wire frame is sent
    * to the human. Receives the full {@link PermissionRequestCtx} including
@@ -140,15 +140,6 @@ export interface LaunchRunDeps {
    */
   sandboxDriver?: import('../sandbox/SandboxDriver.js').SandboxDriver
   sandboxRegistry?: import('../sandbox/SandboxRegistry.js').SandboxRegistry
-}
-
-import type { SkillMountOutcome } from '../skill-loader/index.js'
-
-/** Outcome of the pre-launch skill mount step, for telemetry / UI status. */
-export interface SkillMountStep {
-  ok: boolean
-  outcome?: SkillMountOutcome
-  error?: string
 }
 
 /**
@@ -189,20 +180,20 @@ export async function launchRun(
     kind: rt.kind,
   })
 
-  // Pre-launch skill mount (mount layer 2/3, ADR-0017): mount external skill repos
-  // into vendor discovery dirs before the run starts. Mount failures degrade
-  // skills silently (worst case: subset unavailable = indistinguishable from no
-  // external skills). If any skills were mounted, the supply-chain write guard
-  // (`skillWriteGuard`) is enabled for this run's permission gateway.
-  let skillMountStep: SkillMountStep | undefined
-  if (deps.skillMount) {
+  // Supply-chain write guard signal (ADR-0017 D5, 2026-06-12): external skills are
+  // installed explicitly via the settings panel, NOT mounted here. Launch only does
+  // a zero-network read-only probe — if the project has any installed external skill
+  // (a live `_c3_<id>` link), enable `skillWriteGuard` for this run's gateway. A
+  // configured-but-not-installed skill has no link ⇒ guard stays off (and the skill
+  // is genuinely unavailable, so this is correct, not a regression).
+  let hasMountedSkills = false
+  if (deps.detectMountedSkills) {
     try {
-      skillMountStep = await deps.skillMount(rt)
+      hasMountedSkills = await deps.detectMountedSkills(rt)
     } catch (err) {
-      console.warn('[c3] skill mount error (non-fatal):', err)
+      console.warn('[c3] skill link probe error (non-fatal):', err)
     }
   }
-  const hasMountedSkills = skillMountStep?.ok && (skillMountStep.outcome?.mounted.length ?? 0) > 0
 
   // Resolve the intent profile once, before the vendor fork, so both the
   // claude path and the driver path can use it.

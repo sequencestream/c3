@@ -16,10 +16,14 @@
 
 c3 的后台 dev skill 现仅支持 `devSkill?: string`(斜杠命令前缀=触发器,见
 `shared/protocol.ts` 的 `SystemSettings.devSkill`)。新增独立配置 `skillRepos: SkillRepoConfig[]`,
-允许用户配置一个 git 仓库作为外部 skill 来源,由 c3 在 session 启动前 clone 并以**软链**挂载到
+允许用户配置一个 git 仓库作为外部 skill 来源,由 c3 clone 并以**软链**挂载到
 对应 vendor 的 skill 发现目录。挂载的前提是:c3 放进 vendor skill 目录的文件**确实会被该 vendor 发现**。
-故本批必须先以 spike 验证两点 —— ① Claude SDK 的嵌套目录扫描行为;② codex/opencode 的 skill 发现机制 ——
-再据此定型最终目录布局与 vendor 范围。
+
+> **2026-06-12 生命周期更新**:挂载时机由「session 启动前自动挂载」改为「设置面板**显式安装** + **链接状态查询**」,
+> 启动不再做任何 clone/建链(详见 ADR-0017 的 2026-06-12 块)。本 ADR 的扁平布局 `_c3_<id>/` 与缓存策略不变;
+> 安装目标收敛为两个共享公共目录(`.claude/skills`、`.agents/skills`)。
+> 故本批必须先以 spike 验证两点 —— ① Claude SDK 的嵌套目录扫描行为;② codex/opencode 的 skill 发现机制 ——
+> 再据此定型最终目录布局与 vendor 范围。
 
 ## Spike 实证结论
 

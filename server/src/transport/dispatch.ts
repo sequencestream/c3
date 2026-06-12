@@ -21,6 +21,14 @@ function errMsg(err: unknown): string {
 }
 
 /**
+ * Message types an UNAUTHENTICATED connection may still send (ADR-0023 handshake
+ * gate): the credential exchange (`login`/`logout`) and the transport heartbeat
+ * (`ping`). Everything else is rejected until the handshake clears. When auth is
+ * disabled the connection is marked `authed` at `onOpen`, so this gate is inert.
+ */
+const ALLOWED_WHEN_UNAUTHED = new Set<ClientToServer['type']>(['login', 'logout', 'ping'])
+
+/**
  * Parse, validate, and dispatch one raw WS frame. A malformed frame is dropped
  * silently (matches the prior `JSON.parse` try/catch `return`); a handler that
  * throws is wrapped into a uniform `error` frame rather than tearing down the
@@ -40,6 +48,14 @@ export async function dispatch(
     return
   }
   if (!msg || typeof msg !== 'object' || typeof (msg as { type?: unknown }).type !== 'string') {
+    return
+  }
+  // Connection-level auth gate (ADR-0023): an unauthenticated connection may only
+  // exchange credentials / heartbeat. Any other frame is refused with the 401-
+  // analogue rather than reaching a handler. Inert when auth is disabled (the
+  // connection is marked `authed` at handshake).
+  if (!conn.authed && !ALLOWED_WHEN_UNAUTHED.has(msg.type)) {
+    conn.send({ type: 'unauthenticated', reason: 'missing' })
     return
   }
   try {

@@ -38,6 +38,9 @@ const TEST_HANDLE: SandboxHandle = {
 }
 
 const TEST_PROJECT = '/home/user/projects/my-project'
+// The worktree dir bind-mounted into the container — distinct from the workspace
+// path used to look up the sandbox config (ADR-0024).
+const TEST_WORKTREE = '/tmp/c3-worktrees/_home_user_projects_my-project/intent-abc123'
 const TEST_VENDOR_BINARY = 'claude'
 
 // ─── Mock Driver ─────────────────────────────────────────────────────────────
@@ -77,7 +80,7 @@ describe('SandboxLauncher', () => {
     it('returns null when sandbox config is missing', async () => {
       vi.mocked(getProjectSandbox).mockReturnValue(undefined)
 
-      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT)
+      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT, TEST_WORKTREE)
       expect(result).toBeNull()
     })
 
@@ -87,7 +90,7 @@ describe('SandboxLauncher', () => {
         enabled: false,
       })
 
-      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT)
+      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT, TEST_WORKTREE)
       expect(result).toBeNull()
     })
 
@@ -97,7 +100,7 @@ describe('SandboxLauncher', () => {
         // no 'sandbox' field → no def referenced
       })
 
-      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT)
+      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT, TEST_WORKTREE)
       expect(result).toBeNull()
     })
 
@@ -107,7 +110,7 @@ describe('SandboxLauncher', () => {
         enabled: true,
       })
 
-      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT)
+      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT, TEST_WORKTREE)
 
       expect(result).not.toBeNull()
       expect(result!.handle).toBe(TEST_HANDLE)
@@ -118,7 +121,12 @@ describe('SandboxLauncher', () => {
       expect(mockDriver.start).toHaveBeenCalledTimes(1)
       const startCall = mockDriver.start.mock.calls[0]
       expect(startCall[0].image).toBe('node:20-alpine')
-      expect(startCall[1]?.binds).toContain(`${TEST_PROJECT}:/workspace`)
+      // The bind mount is the WORKTREE (mountPath), not the workspace/config path.
+      expect(startCall[1]?.binds).toContain(`${TEST_WORKTREE}:/workspace`)
+      expect(startCall[1]?.binds).not.toContain(`${TEST_PROJECT}:/workspace`)
+      // Labels carry both: the workspace (config key) and the worktree (mount).
+      expect(startCall[1]?.labels?.['c3.project']).toBe(TEST_PROJECT.replace(/\//g, '_'))
+      expect(startCall[1]?.labels?.['c3.worktree']).toBe(TEST_WORKTREE.replace(/\//g, '_'))
     })
 
     it('stops container and cleans up tmp dir', async () => {
@@ -127,7 +135,7 @@ describe('SandboxLauncher', () => {
         enabled: true,
       })
 
-      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT)
+      const result = await launchSandbox(mockDriver, registry, TEST_PROJECT, TEST_WORKTREE)
       expect(result).not.toBeNull()
 
       const tmpDir = result!.tmpDir
@@ -148,9 +156,9 @@ describe('SandboxLauncher', () => {
       })
       mockDriver.start.mockRejectedValue(new Error('connection refused'))
 
-      await expect(launchSandbox(mockDriver, registry, TEST_PROJECT)).rejects.toThrow(
-        'connection refused',
-      )
+      await expect(
+        launchSandbox(mockDriver, registry, TEST_PROJECT, TEST_WORKTREE),
+      ).rejects.toThrow('connection refused')
     })
   })
 

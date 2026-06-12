@@ -91,11 +91,18 @@ export async function checkDockerAvailable(driver: SandboxDriver): Promise<strin
 }
 
 /**
- * Attempt to resolve and start a sandbox container for the given project path.
+ * Attempt to resolve and start a sandbox container for a worktree intent-dev run.
  *
- * @param driver   The sandbox driver (DockerDriver).
- * @param registry The sandbox registry containing system defs.
- * @param projectPath  Absolute path to the project workspace.
+ * The sandbox **config** is keyed by the workspace (`workspacePath`), but the
+ * directory bind-mounted into the container is the run's isolated **worktree**
+ * (`mountPath` = `rt.effectiveCwd`) — ADR-0024. These differ: the worktree lives
+ * under `$TMPDIR/c3-worktrees/<project>/intent-<id>/`, while the config is stored
+ * per workspace.
+ *
+ * @param driver        The sandbox driver (DockerDriver).
+ * @param registry      The sandbox registry containing system defs.
+ * @param workspacePath Absolute path to the workspace (the sandbox config key).
+ * @param mountPath     Absolute path bind-mounted at `/workspace` (the worktree).
  * @returns A {@link SandboxLaunchResult} when sandbox is enabled and the
  *          container starts successfully, or `null` when sandbox is not enabled.
  * @throws When sandbox is enabled but container startup fails.
@@ -103,9 +110,10 @@ export async function checkDockerAvailable(driver: SandboxDriver): Promise<strin
 export async function launchSandbox(
   driver: SandboxDriver,
   registry: SandboxRegistry,
-  projectPath: string,
+  workspacePath: string,
+  mountPath: string,
 ): Promise<SandboxLaunchResult | null> {
-  const projectCfg: WorkspaceSandboxConfig | undefined = getProjectSandbox(projectPath)
+  const projectCfg: WorkspaceSandboxConfig | undefined = getProjectSandbox(workspacePath)
 
   // Not configured, explicitly disabled, or the referenced system def no longer
   // exists (e.g. deleted/renamed after the project config was saved) → skip sandbox
@@ -115,12 +123,13 @@ export async function launchSandbox(
   // Resolve the system def + project overrides into a full config
   const resolvedConfig = registry.resolve(projectCfg.sandbox, projectCfg)
 
-  // Start the container with the project dir bind-mounted at /workspace
+  // Start the container with the worktree dir bind-mounted at /workspace
   const handle = await driver.start(resolvedConfig, {
-    binds: [`${projectPath}:/workspace`],
+    binds: [`${mountPath}:/workspace`],
     labels: {
       'c3.sandbox': 'true',
-      'c3.project': projectPath.replace(/\//g, '_'),
+      'c3.project': workspacePath.replace(/\//g, '_'),
+      'c3.worktree': mountPath.replace(/\//g, '_'),
     },
   })
 

@@ -32,9 +32,11 @@ import {
   resolveAgent,
   launchForAgent,
   freezeSessionAgent,
+  setSessionAgent,
 } from '../agent-config/index.js'
-import { getSocketAutoResume } from '../config/index.js'
+import { getSocketAutoResume, getProjectSandbox } from '../config/index.js'
 import { launchSandbox } from '../sandbox/SandboxLauncher.js'
+import { pickSandboxAgent } from './sandbox-agent.js'
 import {
   bindPending,
   clearPending,
@@ -200,24 +202,70 @@ export async function launchRun(
   const resolvedIntentProfile =
     isIntent && deps.intentProfile ? deps.intentProfile(workspacePath) : undefined
 
-  // Sandbox launch: when the project has sandboxing enabled and the
-  // composition root wired a driver + registry, start a container before
-  // the run. The container outlives socket disconnects (ADR-0006); it is
-  // stopped by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`.
-  if (deps.sandboxDriver && deps.sandboxRegistry && !isIntent) {
-    try {
-      const sandbox = await launchSandbox(deps.sandboxDriver, deps.sandboxRegistry, workspacePath)
-      if (sandbox) {
+  // Sandbox launch (ADR-0024): containers serve ONLY the worktree intent-dev run —
+  // a run with an isolated `rt.effectiveCwd` (the worktree). A plain chat run has no
+  // effectiveCwd and never sandboxes; a current-branch dev run's sandbox config is
+  // stripped by normalize (worktree-only), so it falls through too. When the
+  // workspace's sandbox is enabled, this is HARD isolation (deny-by-default): an
+  // empty agent pool, a deleted/non-claude pick, or a container start failure settles
+  // the run as an error — never a bare host run. The container outlives socket
+  // disconnects (ADR-0006); it is stopped by `finalizeRun` / `removeRuntime` via
+  // `rt.sandboxStop`.
+  if (deps.sandboxDriver && deps.sandboxRegistry && rt.effectiveCwd) {
+    const sbCfg = getProjectSandbox(workspacePath)
+    const sandboxEnabled =
+      !!sbCfg?.enabled && !!sbCfg.sandbox && deps.sandboxRegistry.has(sbCfg.sandbox)
+    if (sandboxEnabled) {
+      // Hard-isolation failure: settle the run as an error and stop. Mirrors the
+      // vendor-unavailable early return below so the started→settled invariant holds.
+      const failHard = (error: string): void => {
+        emit(runId, { type: 'user_text', text: prompt })
+        emit(runId, { type: 'turn_end', reason: 'error', error })
+        finalizeRun(runId)
+        deps.eventBus.publish('run:settled', {
+          sessionId: runId,
+          workspacePath,
+          reason: 'error',
+          kind: rt.kind,
+        })
+      }
+      // Randomly pick one custom agent from the normalized pool; it decides the run's
+      // vendor (the container binary) and provider env. No health check / retry — a
+      // bad pick hard-fails (user-confirmed random strategy).
+      const pick = pickSandboxAgent(sbCfg.agentIds ?? [], (id) => resolveAgent(id))
+      if (!pick.ok) {
+        failHard(
+          pick.reason === 'empty-pool'
+            ? '[c3] sandbox is enabled but its agent pool is empty (configure at least one custom Claude agent).'
+            : pick.reason === 'unsupported-vendor'
+              ? `[c3] sandbox-selected agent ${pick.agentId} is not a Claude-vendor agent; sandbox currently supports only Claude agents (ADR-0024).`
+              : `[c3] sandbox-selected agent ${pick.agentId} is unavailable (deleted after the config was saved).`,
+        )
+        return
+      }
+      // Pin the picked agent onto this (pending) dev session so every downstream
+      // resolveSessionLaunch(runId) — the vendor fork, the agent chain, the SDK
+      // launch — resolves to it, and its provider env (ANTHROPIC_*) flows into the
+      // container env-file via the unchanged claude wrapper path.
+      setSessionAgent(runId, pick.agentId)
+      try {
+        const sandbox = await launchSandbox(
+          deps.sandboxDriver,
+          deps.sandboxRegistry,
+          workspacePath,
+          rt.effectiveCwd,
+        )
+        if (!sandbox) {
+          failHard('[c3] sandbox is enabled but the container did not start.')
+          return
+        }
         rt.sandboxHandle = sandbox.handle
         rt.sandboxTmpDir = sandbox.tmpDir
         rt.sandboxStop = sandbox.stop
+      } catch (err) {
+        failHard(`[c3] sandbox container launch failed: ${errMsg(err)}`)
+        return
       }
-    } catch (err) {
-      // Sandbox launch failure is non-fatal for the run: degrade gracefully
-      // by logging the error and proceeding without sandbox. This covers the
-      // case where Docker is unavailable, the config is misconfigured, or the
-      // container start fails transiently.
-      console.warn('[c3] sandbox launch failed (run proceeds without sandbox):', err)
     }
   }
 

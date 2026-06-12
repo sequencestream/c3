@@ -1552,8 +1552,7 @@
       "agents": {
         "label": "允许进入沙箱的 agent",
         "hint": "选择哪些 custom agent 可以在沙箱容器内运行。",
-        "empty": "没有可选 agent。只有已启用的 custom agent 才能进入沙箱。",
-        "worktreeOnly": "沙箱 agent 需要 worktree 分支模式。"
+        "empty": "没有可选 agent。只有已启用的 custom agent 才能进入沙箱。"
       }
     }
   },

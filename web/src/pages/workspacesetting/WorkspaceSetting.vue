@@ -301,9 +301,14 @@ function onSave() {
     ...(draft.value.defaultMode as Record<string, unknown>),
   }
   defaultMode['codex'] = { ...draftCodexPolicy.value }
-  // Only emit sandbox when enabled (or has meaningful fields); the server
-  // normalizeSandboxConfig also strips empty objects on persist.
-  const sandbox = sandboxDraft.value.enabled ? sandboxDraft.value : undefined
+  // Sandbox is worktree-only: emit it only when the branch mode is `worktree`
+  // AND it is enabled. Under current-branch the section is hidden, so we drop
+  // any (now-stale) sandbox draft rather than persisting a hidden dirty config.
+  // The server normalizeSandboxConfig also enforces this + strips empty objects.
+  const sandbox =
+    draft.value.gitBranchMode === 'worktree' && sandboxDraft.value.enabled
+      ? sandboxDraft.value
+      : undefined
   // Trim the branch; empty ⇒ omit (server normalizes blank → undefined anyway).
   const defaultMainBranch = draft.value.defaultMainBranch?.trim() || undefined
   emit('save', {
@@ -472,6 +477,124 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         <p class="project-config-hint">{{ t('workspaceSetting.defaultMainBranch.hint') }}</p>
       </section>
 
+      <!-- Sandbox section: worktree-only — isolation only makes sense in an
+           isolated worktree (under current-branch the container would bind-mount
+           the live checkout), so it is grouped right after the git branch
+           strategy and hidden whenever the mode is not `worktree`. -->
+      <section
+        v-if="draft.gitBranchMode === 'worktree' && props.systemSandboxes.length > 0"
+        class="project-config-section"
+        data-testid="project-config-sandbox"
+      >
+        <p class="project-config-section-title">{{ t('workspaceSetting.sandbox.title.label') }}</p>
+        <p class="project-config-hint">{{ t('workspaceSetting.sandbox.hint') }}</p>
+
+        <label class="project-config-toggle">
+          <input
+            v-model="sandboxDraft.enabled"
+            type="checkbox"
+            :true-value="true"
+            :false-value="undefined"
+            data-testid="project-config-sandbox-enabled"
+          />
+          {{ t('workspaceSetting.sandbox.enable.label') }}
+        </label>
+
+        <template v-if="sandboxDraft.enabled">
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.name.label')
+            }}</span>
+            <select
+              v-model="sandboxDraft.sandbox"
+              class="mode-select"
+              data-testid="project-config-sandbox-name"
+            >
+              <option value="" disabled>
+                {{ t('workspaceSetting.sandbox.name.placeholder') }}
+              </option>
+              <option v-for="sb in props.systemSandboxes" :key="sb.name" :value="sb.name">
+                {{ sb.name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.networkDisabled.label')
+            }}</span>
+            <input v-model="sandboxDraft.networkDisabled" type="checkbox" />
+          </div>
+
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.memoryLimitOverride.label')
+            }}</span>
+            <input
+              v-model="sandboxDraft.memoryLimitOverride"
+              class="project-config-field"
+              :placeholder="t('workspaceSetting.sandbox.memoryLimitOverride.placeholder')"
+              data-testid="project-config-sandbox-memory"
+            />
+          </div>
+
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.cpuLimitOverride.label')
+            }}</span>
+            <input
+              v-model.number="sandboxDraft.cpuLimitOverride"
+              class="project-config-field project-config-number"
+              type="number"
+              min="0"
+              step="0.5"
+              :placeholder="t('workspaceSetting.sandbox.cpuLimitOverride.placeholder')"
+              data-testid="project-config-sandbox-cpu"
+            />
+          </div>
+
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.imageOverride.label')
+            }}</span>
+            <input
+              v-model="sandboxDraft.imageOverride"
+              class="project-config-field"
+              :placeholder="t('workspaceSetting.sandbox.imageOverride.placeholder')"
+              data-testid="project-config-sandbox-image"
+            />
+          </div>
+
+          <!-- Agent multi-select: the whole section is already worktree-gated,
+               so no inner branch-mode check is needed — list the enabled custom
+               agents, or an empty-state hint when there are none. -->
+          <div class="project-config-row project-config-sandbox-agents">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.agents.label')
+            }}</span>
+            <div
+              v-if="selectableAgents.length > 0"
+              class="project-config-agent-list"
+              data-testid="project-config-sandbox-agents"
+            >
+              <p class="project-config-hint">{{ t('workspaceSetting.sandbox.agents.hint') }}</p>
+              <label v-for="a in selectableAgents" :key="a.id" class="project-config-agent-item">
+                <input
+                  type="checkbox"
+                  :checked="isAgentSelected(a.id)"
+                  :data-testid="`project-config-sandbox-agent-${a.id}`"
+                  @change="toggleAgent(a.id)"
+                />
+                {{ a.displayName || a.id }}
+              </label>
+            </div>
+            <p v-else class="project-config-hint" data-testid="project-config-sandbox-agents-empty">
+              {{ t('workspaceSetting.sandbox.agents.empty') }}
+            </p>
+          </div>
+        </template>
+      </section>
+
       <section class="project-config-section">
         <p class="project-config-section-title">
           {{ t('workspaceSetting.consensus.title.label') }}
@@ -595,123 +718,6 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         <button class="agent-add" data-testid="project-config-add-skill-repo" @click="addSkillRepo">
           {{ t('workspaceSetting.skillRepos.add.label') }}
         </button>
-      </section>
-
-      <!-- Sandbox section: only visible when system sandbox definitions exist -->
-      <section
-        v-if="props.systemSandboxes.length > 0"
-        class="project-config-section"
-        data-testid="project-config-sandbox"
-      >
-        <p class="project-config-section-title">{{ t('workspaceSetting.sandbox.title.label') }}</p>
-        <p class="project-config-hint">{{ t('workspaceSetting.sandbox.hint') }}</p>
-
-        <label class="project-config-toggle">
-          <input
-            v-model="sandboxDraft.enabled"
-            type="checkbox"
-            :true-value="true"
-            :false-value="undefined"
-            data-testid="project-config-sandbox-enabled"
-          />
-          {{ t('workspaceSetting.sandbox.enable.label') }}
-        </label>
-
-        <template v-if="sandboxDraft.enabled">
-          <div class="project-config-row">
-            <span class="project-config-row-label">{{
-              t('workspaceSetting.sandbox.name.label')
-            }}</span>
-            <select
-              v-model="sandboxDraft.sandbox"
-              class="mode-select"
-              data-testid="project-config-sandbox-name"
-            >
-              <option value="" disabled>
-                {{ t('workspaceSetting.sandbox.name.placeholder') }}
-              </option>
-              <option v-for="sb in props.systemSandboxes" :key="sb.name" :value="sb.name">
-                {{ sb.name }}
-              </option>
-            </select>
-          </div>
-
-          <div class="project-config-row">
-            <span class="project-config-row-label">{{
-              t('workspaceSetting.sandbox.networkDisabled.label')
-            }}</span>
-            <input v-model="sandboxDraft.networkDisabled" type="checkbox" />
-          </div>
-
-          <div class="project-config-row">
-            <span class="project-config-row-label">{{
-              t('workspaceSetting.sandbox.memoryLimitOverride.label')
-            }}</span>
-            <input
-              v-model="sandboxDraft.memoryLimitOverride"
-              class="project-config-field"
-              :placeholder="t('workspaceSetting.sandbox.memoryLimitOverride.placeholder')"
-              data-testid="project-config-sandbox-memory"
-            />
-          </div>
-
-          <div class="project-config-row">
-            <span class="project-config-row-label">{{
-              t('workspaceSetting.sandbox.cpuLimitOverride.label')
-            }}</span>
-            <input
-              v-model.number="sandboxDraft.cpuLimitOverride"
-              class="project-config-field project-config-number"
-              type="number"
-              min="0"
-              step="0.5"
-              :placeholder="t('workspaceSetting.sandbox.cpuLimitOverride.placeholder')"
-              data-testid="project-config-sandbox-cpu"
-            />
-          </div>
-
-          <div class="project-config-row">
-            <span class="project-config-row-label">{{
-              t('workspaceSetting.sandbox.imageOverride.label')
-            }}</span>
-            <input
-              v-model="sandboxDraft.imageOverride"
-              class="project-config-field"
-              :placeholder="t('workspaceSetting.sandbox.imageOverride.placeholder')"
-              data-testid="project-config-sandbox-image"
-            />
-          </div>
-
-          <div class="project-config-row project-config-sandbox-agents">
-            <span class="project-config-row-label">{{
-              t('workspaceSetting.sandbox.agents.label')
-            }}</span>
-            <template v-if="draft.gitBranchMode === 'worktree'">
-              <div
-                v-if="selectableAgents.length > 0"
-                class="project-config-agent-list"
-                data-testid="project-config-sandbox-agents"
-              >
-                <p class="project-config-hint">{{ t('workspaceSetting.sandbox.agents.hint') }}</p>
-                <label v-for="a in selectableAgents" :key="a.id" class="project-config-agent-item">
-                  <input
-                    type="checkbox"
-                    :checked="isAgentSelected(a.id)"
-                    :data-testid="`project-config-sandbox-agent-${a.id}`"
-                    @change="toggleAgent(a.id)"
-                  />
-                  {{ a.displayName || a.id }}
-                </label>
-              </div>
-              <p v-else class="project-config-hint">
-                {{ t('workspaceSetting.sandbox.agents.empty') }}
-              </p>
-            </template>
-            <p v-else class="project-config-hint">
-              {{ t('workspaceSetting.sandbox.agents.worktreeOnly') }}
-            </p>
-          </div>
-        </template>
       </section>
     </div>
     <div class="project-config-foot">

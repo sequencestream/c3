@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import ChatMessages from './ChatMessages.vue'
 import type { ChatMsg, SpeakerView } from '../../lib/chat-types'
 
@@ -25,6 +26,35 @@ function mountChat(messages: ChatMsg[], actionablePermissionId: string | null = 
   return mount(ChatMessages, {
     props: { messages, hasActiveSession: true, actionablePermissionId },
   })
+}
+
+function installScrollBox(
+  el: HTMLElement,
+  metrics: { scrollTop: number; scrollHeight: number; clientHeight: number },
+): { readonly scrollTop: number } {
+  let scrollTop = metrics.scrollTop
+  Object.defineProperties(el, {
+    scrollTop: {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value
+      },
+    },
+    scrollHeight: {
+      configurable: true,
+      get: () => metrics.scrollHeight,
+    },
+    clientHeight: {
+      configurable: true,
+      get: () => metrics.clientHeight,
+    },
+  })
+  return {
+    get scrollTop() {
+      return scrollTop
+    },
+  }
 }
 
 describe('ChatMessages.vue — 折叠批次头追加首个工具请求预览', () => {
@@ -123,5 +153,37 @@ describe('ChatMessages.vue — 审批双色标(预放行 vs c3 手动)(2026-06-0
     const w = mountChat([toolUse('bash', { cmd: 'ls' })])
     await w.find('.batch-head').trigger('click')
     expect(w.find('.approval-tag.pre-approved').exists()).toBe(false)
+  })
+})
+
+describe('ChatMessages.vue — 新输出滚动跟随', () => {
+  it('用户停在底部时,新消息自动滚到底', async () => {
+    const messages = [speakerMsg('old')]
+    const w = mountChat(messages)
+    const box = installScrollBox(w.get('main').element, {
+      scrollTop: 800,
+      scrollHeight: 1000,
+      clientHeight: 200,
+    })
+
+    await w.setProps({ messages: [...messages, speakerMsg('new')] })
+    await nextTick()
+
+    expect(box.scrollTop).toBe(1000)
+  })
+
+  it('用户已向上查看历史时,新消息不改变当前位置', async () => {
+    const messages = [speakerMsg('old')]
+    const w = mountChat(messages)
+    const box = installScrollBox(w.get('main').element, {
+      scrollTop: 500,
+      scrollHeight: 1000,
+      clientHeight: 200,
+    })
+
+    await w.setProps({ messages: [...messages, speakerMsg('new')] })
+    await nextTick()
+
+    expect(box.scrollTop).toBe(500)
   })
 })

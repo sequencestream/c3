@@ -11,6 +11,7 @@ import ConsensusBlock from '../ConsensusBlock/ConsensusBlock.vue'
 import MarkdownText from '../MarkdownText/MarkdownText.vue'
 import ExitPlanModeDisplay from '../ExitPlanModeDisplay/ExitPlanModeDisplay.vue'
 import { fmt, oneLine } from '../../lib/format'
+import { chatScrollKey, isNearBottom } from '../../lib/chat-scroll'
 import type { Block, ChatMsg, PermissionMsg, TextMsg } from '../../lib/chat-types'
 import { VENDOR_LABEL } from '../../lib/vendor'
 import { useTypedI18n } from '@/i18n'
@@ -44,12 +45,13 @@ const expanded = ref<Set<number>>(new Set())
 const expandedBatches = ref<Set<number>>(new Set())
 const expandedStandalone = ref<Set<number>>(new Set())
 
-// Keep the view pinned to the latest message as the buffer grows or a session loads.
+// Keep following new output only while the user is already reading the bottom.
 watch(
-  () => props.messages.length,
+  () => chatScrollKey(props.messages),
   () => {
+    const shouldFollow = !mainEl.value || isNearBottom(mainEl.value)
     nextTick(() => {
-      if (mainEl.value) mainEl.value.scrollTop = mainEl.value.scrollHeight
+      if (shouldFollow && mainEl.value) mainEl.value.scrollTop = mainEl.value.scrollHeight
     })
   },
 )

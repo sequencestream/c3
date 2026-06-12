@@ -124,3 +124,36 @@ host loopback，到不了 host relay。
 
 **未做 live 校验**：base_url 改写 + token 穿透 + ExtraHosts + pick 放行均有单测；「wireApi=chat 第三方 provider +
 docker 容器内经 relay 成功出站」需用户在装有 codex CLI 的 image（Docker Desktop）上 live 验证（验收①）。
+
+## Follow-up (2026-06-13, 第三批) — opencode 明确不支持(决策记录,不实作)
+
+承接决策项 5 一直遗留的「opencode」。本条**只记决策、不实作**：明确写下 sandbox 当前不支持 opencode vendor
+及其原因，避免后人误以为是「漏接线」而重复调研。
+
+**为什么不兼容 wrapper 隔离模型**：claude / codex 的 sandbox 容器化建立在「per-run 子进程 + wrapper 替换二进制」
+之上——sandbox wrapper 是 `exec docker exec --env-file <f> -i -w /workspace <cid> <vendor-cli> "$@"`，每个 run
+spawn 一个 vendor CLI 子进程，wrapper 把这个子进程换成「容器内执行」即完成隔离，provider 凭据经 per-run env-file
+注入。opencode 的进程模型截然不同：
+
+- opencode 是 **host 常驻 server**（`opencode serve`），由 `OpencodeSupervisor`
+  （`kernel/agent/adapters/opencode/supervisor.ts`）管理生命周期——managed 模式下 c3 自己 spawn 并健康检查/自愈，
+  run 之间复用同一个 server 进程。
+- **provider 配置是 server 级、boot 时注入**：经 `OPENCODE_CONFIG_CONTENT` 在 server 启动时一次性写入，不是 per-run。
+- run 通过 **REST/SSE 够到这个 host server**，而非 spawn 一个可被 wrapper 替换的子进程。
+
+故「run 用的二进制」就是这台 host server——**没有可被 sandbox wrapper 替换的 per-run 子进程**，wrapper 隔离模型
+（替子进程 + per-run env-file）对 opencode 根本不适用。
+
+**将来支持的方案草图（不实作，留作另起意图的锚点）**：要让 opencode 进沙箱，须换整条 launch 路径——
+① 在**容器内**起 `opencode serve`（容器内常驻 server，而非 host）；② host 侧 REST/SSE 客户端改为**够到容器映射端口**
+（容器网络/端口直通，类比 codex RELAY 的 `host.docker.internal` 回连，但方向相反——host→容器）；
+③ `OpencodeSupervisor` **面向容器改造**生命周期（容器内 spawn/健康检查/进程树杀死/provider config 经容器原生
+env/config 而非 host `OPENCODE_CONFIG_CONTENT`）。改造面覆盖 supervisor + launch + 配置注入三处，过大，本阶段不值得。
+
+**决策**：本阶段**接受 opencode agent 在 sandbox 下不可用**；随机选中 opencode → 维持现状硬失败
+（`pickSandboxAgent` 返回 `unsupported-vendor`，run-lifecycle 硬失败文案指向本 ADR）。**不**为 opencode 实作容器内 serve。
+
+**文案确认（验收②）**：硬失败走 `unsupported-vendor` catch-all，文案
+`[c3] sandbox-selected agent <id> is not a sandbox-capable vendor (the sandbox supports Claude and custom Codex agents; ADR-0024).`
+——opencode 准确落入「非 sandbox-capable vendor」且指向本 ADR。该 catch-all **同时覆盖其它未知 vendor**，故**刻意不点名
+opencode**（点名会使其它 vendor 的文案失真）；保持泛化 + 指向 ADR-0024 即准确。无代码逻辑改动。

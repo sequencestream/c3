@@ -2881,6 +2881,10 @@ button.deny:hover:not(:disabled) {
 }
 .auto-status.error {
   color: var(--c-error);
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* 需求行尾的自动化开关图标:✋ 人工触发 / ⏳ 已入自动化队列 */
 .req-automate {

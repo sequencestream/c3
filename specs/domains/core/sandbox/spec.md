@@ -98,6 +98,22 @@ The sandbox subsystem is plumbing; the **run lifecycle** (`kernel/run/run-lifecy
 
 > Supported in the container today: **claude**, **codex DIRECT** (`wireApi=responses`), and **codex RELAY** (`wireApi=chat`, via `host.docker.internal` on Docker Desktop; Linux-native is a known limitation awaiting an in-container relay sidecar — SND-R17, codex-relay.md §2.6). ADR-0024 follow-ups (2026-06-13). Still unsupported (each hard-fails on pick): **system-login codex** (no injected creds in the container) and **opencode**.
 
+## opencode — Explicitly Unsupported (decision record, ADR-0024 follow-up 2026-06-13)
+
+opencode is **not container-supported, by decision** — this is a recorded non-goal, not a missing wire-up. A random pick of an opencode agent hard-fails the run via `pickSandboxAgent` → `unsupported-vendor` (SND-R16).
+
+**Why the wrapper isolation model does not apply.** claude / codex containerization rests on a **per-run child process + wrapper binary-swap**: the sandbox wrapper is `exec docker exec --env-file <f> -i -w /workspace <cid> <vendor-cli> "$@"`, so each run spawns a vendor CLI child, the wrapper swaps that child for in-container execution, and provider credentials ride a per-run env-file. opencode's process model is fundamentally different:
+
+- opencode is a **host-resident server** (`opencode serve`) whose lifecycle is owned by `OpencodeSupervisor` (`kernel/agent/adapters/opencode/supervisor.ts`) — in managed mode c3 spawns and health-checks/self-heals it, and **runs reuse the same server process**.
+- Its **provider config is server-level, injected once at boot** via `OPENCODE_CONFIG_CONTENT` — not per-run.
+- A run reaches that host server over **REST/SSE**, rather than spawning a child the wrapper could swap.
+
+So "the binary a run uses" _is_ that host server — there is **no per-run child process for the wrapper to replace**, and the wrapper model (swap-child + per-run env-file) simply does not fit opencode.
+
+**Future support sketch (not implemented — anchor for a separate intent).** Sandboxing opencode requires replacing the whole launch path: ① run `opencode serve` **inside the container** (an in-container resident server, not on the host); ② change the host-side REST/SSE client to **reach the container's mapped port** (container networking / port forwarding — analogous to codex RELAY's `host.docker.internal` hop but in the host→container direction); ③ make `OpencodeSupervisor` **container-aware** (in-container spawn / health-check / process-tree kill, with provider config via the container's native env/config instead of host `OPENCODE_CONFIG_CONTENT`). This spans supervisor + launch + config-injection — too large for this phase.
+
+**Decision:** this phase **accepts that opencode agents are unavailable under sandbox**; a random opencode pick stays a hard-fail (`unsupported-vendor`, message points to ADR-0024). No in-container `opencode serve` is implemented here.
+
 ## Phase Plan
 
 | Phase         | Scope                                                                                                      | Status     |

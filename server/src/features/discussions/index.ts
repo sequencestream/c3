@@ -61,6 +61,9 @@ export const createDiscussionHandler: Handler<'create_discussion'> = (ctx, conn,
     type: msg.discussionType,
     goal: msg.goal,
     context: msg.context ?? '',
+    // The participant set selected at creation; the orchestrator nominates from
+    // this subset only (organizer always folded in). Absent ⇒ legacy whole-roster.
+    participantAgentIds: msg.participantAgentIds ?? [],
     status: 'draft',
   })
   // Open the new discussion on the creating connection right away (so the right

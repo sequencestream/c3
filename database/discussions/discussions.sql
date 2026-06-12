@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   status          TEXT NOT NULL,                     -- 状态: 'draft' | 'active' | 'paused' | 'completed'
   agenda          TEXT NOT NULL DEFAULT '[]',        -- JSON 数组, 有序子议题列表
   agenda_index    INTEGER NOT NULL DEFAULT 0,        -- 当前正在进行的议题 0-based 下标
+  participant_agent_ids TEXT NOT NULL DEFAULT '[]',  -- JSON 数组, 创建时选定的参与 agent id 集合; '[]'=未设置→编排时回退全员 (organizer 恒并入)
   conclusion      TEXT,                              -- 讨论结论文本
   created_at      INTEGER NOT NULL,                  -- 创建时间 (epoch ms)
   updated_at      INTEGER NOT NULL,                  -- 最后更新时间 (epoch ms)

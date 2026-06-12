@@ -17,6 +17,7 @@ function disc(over: Partial<Discussion> = {}): Discussion {
     status: 'in_progress',
     agenda: [],
     agendaIndex: 0,
+    participantAgentIds: [],
     conclusion: null,
     createdAt: 1,
     updatedAt: 1,
@@ -52,6 +53,8 @@ function mountDiscussions(
       showStart: over.showStart ?? false,
       dispatch,
       input: '',
+      agents: [],
+      defaultAgentId: null,
     },
     global: {
       stubs: {

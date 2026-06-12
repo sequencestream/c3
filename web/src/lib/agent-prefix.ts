@@ -11,27 +11,45 @@
 import type { SystemSettings } from '@ccc/shared/protocol'
 
 /**
- * 服务端尝试顺序的客户端复刻:默认 agent 在前,随后是 degradationChain 中去重、
- * 去掉默认 agent 自身的条目。只保留 `agents` 里真实存在的 id。空/无 settings → []。
+ * 服务端尝试顺序的客户端复刻:链头是 session 绑定的 agent(`anchorAgentId`,缺省或
+ * 不在 `agents` 中时退回 `settings.defaultAgentId`),随后是 degradationChain 中与链头
+ * 【同 vendor】、去重、去链头自身的条目。只保留 `agents` 里真实存在的 id。
+ * 空/无 settings、或解析不到链头 agent → []。
+ *
+ * 链头取【绑定 agent】而非写死默认 agent 是关键:server 的 `agentsToTry` 以 session
+ * 实际运行的 agent 作 entry 0(build-chain.ts),codex session 绑定 codex agent 时,
+ * 写死默认(claude)agent 会让状态栏错显默认名。vendor 过滤复刻 server 的 vendor 同质化
+ * (跨 vendor 无法承接上下文,不进降级链),避免另一 vendor 的链 agent 冒充"下一项"。
  */
-export function agentAttemptOrder(settings: SystemSettings | null): string[] {
+export function agentAttemptOrder(
+  settings: SystemSettings | null,
+  anchorAgentId?: string,
+): string[] {
   if (!settings) return []
-  const known = new Set(settings.agents.map((a) => a.id))
-  const order: string[] = []
-  const push = (id: string): void => {
-    if (id && known.has(id) && !order.includes(id)) order.push(id)
+  const byId = new Map(settings.agents.map((a) => [a.id, a]))
+  const headId = anchorAgentId && byId.has(anchorAgentId) ? anchorAgentId : settings.defaultAgentId
+  const head = byId.get(headId)
+  if (!head) return []
+  const order: string[] = [head.id]
+  for (const id of settings.degradationChain ?? []) {
+    const a = byId.get(id)
+    if (!a || a.vendor !== head.vendor || order.includes(a.id)) continue
+    order.push(a.id)
   }
-  push(settings.defaultAgentId)
-  for (const id of settings.degradationChain ?? []) push(id)
   return order
 }
 
 /**
- * 链位下标 → agent 展示名。下标越界向末项夹取(降到链尾就停在最后一个)。
- * order 为空或解析不到名字时返回 '',调用方据此不渲染前缀。
+ * 链位下标 → agent 展示名。`anchorAgentId` 锚定链头(session 绑定 agent)。下标越界
+ * 向末项夹取(降到链尾就停在最后一个)。order 为空或解析不到名字时返回 '',
+ * 调用方据此不渲染前缀。
  */
-export function agentNameAt(settings: SystemSettings | null, index: number): string {
-  const order = agentAttemptOrder(settings)
+export function agentNameAt(
+  settings: SystemSettings | null,
+  anchorAgentId: string | undefined,
+  index: number,
+): string {
+  const order = agentAttemptOrder(settings, anchorAgentId)
   if (order.length === 0) return ''
   const clamped = Math.min(Math.max(index, 0), order.length - 1)
   const id = order[clamped]
@@ -39,32 +57,34 @@ export function agentNameAt(settings: SystemSettings | null, index: number): str
 }
 
 /**
- * 根据 agent id 在 agentAttemptOrder 中的位置返回下标。
- * 用于 session_selected 时查找 session 实际绑定 agent 的链位,
- * 替代直接写死 0(默认 agent)。
- * 在 order 中找不到 agentId 时返回 0(默认 agent),避免空显示。
+ * 根据 agent id 在 anchorAgentId 锚定的 agentAttemptOrder 中的位置返回下标。
+ * 用于 session_selected/started 时查找当前运行 agent 的链位。链头即绑定 agent,
+ * 故绑定 agent 本身通常落在 0。在 order 中找不到 agentId 时返回 0(链头),避免空显示。
  */
 export function resolveAgentIndex(
   settings: SystemSettings | null,
+  anchorAgentId: string | undefined,
   agentId: string | undefined,
 ): number {
   if (!agentId) return 0
-  const order = agentAttemptOrder(settings)
+  const order = agentAttemptOrder(settings, anchorAgentId)
   if (order.length === 0) return 0
   const pos = order.indexOf(agentId)
   return pos >= 0 ? pos : 0
 }
 
 /**
- * `agent_failed` 推进:失败 agent 的下一项接管,夹取到链尾。优先按 failedAgentId
- * 在链上的位置推进(对漏数/乱序更鲁棒);链上找不到该 id 时退回 currentIndex+1。
+ * `agent_failed` 推进:失败 agent 的下一项接管,夹取到链尾。`anchorAgentId` 锚定链头。
+ * 优先按 failedAgentId 在链上的位置推进(对漏数/乱序更鲁棒);链上找不到该 id 时
+ * 退回 currentIndex+1。
  */
 export function advanceOnFailure(
   settings: SystemSettings | null,
+  anchorAgentId: string | undefined,
   currentIndex: number,
   failedAgentId: string,
 ): number {
-  const order = agentAttemptOrder(settings)
+  const order = agentAttemptOrder(settings, anchorAgentId)
   if (order.length === 0) return 0
   const last = order.length - 1
   const failedPos = order.indexOf(failedAgentId)

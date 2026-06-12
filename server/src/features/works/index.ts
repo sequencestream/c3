@@ -44,7 +44,8 @@ import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { ensureOpencodeRunning } from '../../opencode-status.js'
-import { upsertPendingRow } from './work-session-store.js'
+import { getByC3Id, upsertPendingRow } from './work-session-store.js'
+import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -60,6 +61,32 @@ function presentVendorSet(): Set<VendorId> {
 /** The title-bar agent-switcher payload for a console session, or undefined (no switcher). */
 export function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
   return resolveSessionAgentSwitch(sessionId, presentVendorSet()) ?? undefined
+}
+
+/** Projection-stored titles that are placeholders, not a real derived title. */
+const PLACEHOLDER_TITLES = new Set(['New session', 'Untitled session'])
+
+/**
+ * The title-bar title for a just-selected real session, read projection-first so
+ * the right (title bar) is same-source as the left (session list) — ADR-0013.
+ * The `work_session_metadata` projection carries the run-end-derived title for
+ * EVERY vendor, including codex, which the legacy `sessionTitle` path can't
+ * resolve (it wraps the claude-only SDK listing). Returns null when the
+ * projection has no real title yet (empty db, or still a placeholder), so the
+ * caller falls back to the legacy path. `sessionId` is the wire id —
+ * `vendorSessionId` for a real row, or a c3 id on the rebuild fallback — so both
+ * shapes are probed against the projection.
+ */
+function projectionSelectionTitle(vendor: VendorId, sessionId: string): string | null {
+  const rows = [
+    getByC3Id(mintC3SessionId({ vendor, vendorSessionId: sessionId })),
+    getByC3Id(sessionId),
+  ]
+  for (const row of rows) {
+    const t = row?.title?.trim()
+    if (t && !PLACEHOLDER_TITLES.has(t)) return t
+  }
+  return null
 }
 
 export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) => {
@@ -149,7 +176,12 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     // checks scattered downstream.
     const effectiveVendor = resolveSessionVendor(msg.sessionId)
     if (effectiveVendor === 'opencode') await ensureOpencodeRunning()
-    const title = await sessionTitle(abs, msg.sessionId)
+    // Projection-first (ADR-0013 left/right same-source): prefer the title the
+    // session list shows; fall back to the claude-only legacy path only when the
+    // projection has no real title yet (codex never resolves through the latter).
+    const title =
+      projectionSelectionTitle(effectiveVendor, msg.sessionId) ??
+      (await sessionTitle(abs, msg.sessionId))
     // Cold session ⇒ read disk once and seed a runtime; warm session ⇒
     // reuse its in-memory runtime (baseline + live buffer). After this
     // point there is no `await`, so the replay below is atomic w.r.t.

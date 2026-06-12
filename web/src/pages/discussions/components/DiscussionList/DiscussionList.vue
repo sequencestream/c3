@@ -6,7 +6,7 @@
  * 顶部「+」展开内联新建表单(类型/目标/上下文),提交上抛 `create`(写路径)。
  */
 import { computed, ref, watch } from 'vue'
-import type { Discussion } from '@ccc/shared/protocol'
+import type { AgentConfig, Discussion } from '@ccc/shared/protocol'
 import { listDiscussionTypes } from '@ccc/shared/discussion-types'
 import { formatDate } from '../../../../lib/intent-list-view'
 import {
@@ -36,9 +36,24 @@ const props = withDefaults(
     // `<agent>` segment of the run-state indicator. Only the active discussion has one (its
     // dispatch view lives in the parent); absent id ⇒ the segment is gracefully omitted.
     runAgentNames?: Record<string, string>
+    // All configured agents — the create modal lists the enabled ones as selectable
+    // participants. Absent ⇒ empty (the participant panel renders its empty state).
+    agents?: AgentConfig[]
+    // The organizer (default agent) id: its participant row is force-selected and
+    // disabled (the organizer always joins). Absent ⇒ no row is locked.
+    defaultAgentId?: string | null
   }>(),
-  { runState: () => ({}), runAgentNames: () => ({}) },
+  { runState: () => ({}), runAgentNames: () => ({}), agents: () => [], defaultAgentId: null },
 )
+
+// The enabled agents are the selectable participant roster (back-compat: no `enabled`
+// field counts as enabled — mirrors the server's `enabledAgents()`).
+const enabledAgents = computed(() => props.agents.filter((a) => a.enabled !== false))
+
+// Is this agent the organizer (default agent)? Its row is locked on (always joins).
+function isOrganizer(id: string): boolean {
+  return id === props.defaultAgentId
+}
 
 // The live run-state for a row, or undefined when it has no active run.
 function liveState(d: Discussion): 'running' | 'paused' | undefined {
@@ -68,16 +83,27 @@ const rowStatuses = computed(
 
 const emit = defineEmits<{
   open: [discussionId: string]
-  create: [payload: { type: string; goal: string; context: string }]
+  create: [payload: { type: string; goal: string; context: string; participantAgentIds: string[] }]
 }>()
 
 const TYPES = listDiscussionTypes()
 
-// Inline create form state. The "+" toggles it; submit emits `create`.
+// Create modal state. The "+" toggles it; submit emits `create`.
 const showForm = ref(false)
 const formType = ref(TYPES[0]?.id ?? '')
 const formGoal = ref('')
 const formContext = ref('')
+// Selected participant ids. Defaults to all enabled on open; the organizer is always
+// in (its row is locked). Reassigned (not mutated) so the template stays reactive.
+const selectedIds = ref<Set<string>>(new Set())
+
+function toggleAgent(id: string): void {
+  if (isOrganizer(id)) return // organizer is locked on — always joins
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
 
 // Auto-grow: the Goal/Context textareas grow with their content up to this cap,
 // then scroll internally. Closing the form (v-if) destroys the elements, so a
@@ -93,6 +119,8 @@ function autoGrow(e: Event): void {
 
 function openForm(): void {
   showForm.value = true
+  // Default-select every enabled agent (organizer included — its row is locked).
+  selectedIds.value = new Set(enabledAgents.value.map((a) => a.id))
 }
 
 function closeForm(): void {
@@ -100,12 +128,22 @@ function closeForm(): void {
   formType.value = TYPES[0]?.id ?? ''
   formGoal.value = ''
   formContext.value = ''
+  selectedIds.value = new Set()
 }
 
 function submitForm(): void {
   const goal = formGoal.value.trim()
   if (!formType.value || !goal) return
-  emit('create', { type: formType.value, goal, context: formContext.value.trim() })
+  // Always fold the organizer in even if it isn't an enabled/listed agent, so the
+  // persisted set matches the orchestrator's organizer-union rule.
+  const ids = new Set(selectedIds.value)
+  if (props.defaultAgentId) ids.add(props.defaultAgentId)
+  emit('create', {
+    type: formType.value,
+    goal,
+    context: formContext.value.trim(),
+    participantAgentIds: [...ids],
+  })
   closeForm()
 }
 
@@ -191,42 +229,91 @@ function togglePanel(): void {
         +
       </button>
     </div>
-    <form v-if="showForm" class="disc-form" @submit.prevent="submitForm">
-      <label class="disc-field">
-        <span class="disc-field-label">{{ t('discussion.form.type.label') }}</span>
-        <select v-model="formType" class="disc-input">
-          <option v-for="ty in TYPES" :key="ty.id" :value="ty.id">{{ ty.label }}</option>
-        </select>
-      </label>
-      <label class="disc-field">
-        <span class="disc-field-label">{{ t('discussion.form.goal.label') }}</span>
-        <textarea
-          v-model="formGoal"
-          class="disc-input disc-textarea"
-          rows="2"
-          :placeholder="t('discussion.form.goal.placeholder')"
-          @input="autoGrow"
-        />
-      </label>
-      <label class="disc-field">
-        <span class="disc-field-label">{{ t('discussion.form.context.label') }}</span>
-        <textarea
-          v-model="formContext"
-          class="disc-input disc-textarea"
-          rows="3"
-          :placeholder="t('discussion.form.context.placeholder')"
-          @input="autoGrow"
-        />
-      </label>
-      <div class="disc-form-actions">
-        <button type="button" class="disc-btn" @click="closeForm">
-          {{ t('common.action.cancel.label') }}
-        </button>
-        <button type="submit" class="disc-btn primary" :disabled="!formGoal.trim()">
-          {{ t('discussion.form.create.label') }}
-        </button>
-      </div>
-    </form>
+    <!-- Create modal: opened by the "+" (no longer an inline accordion). The overlay
+         click-outside / Cancel closes it; submit emits `create` with the selected
+         participants and resets. -->
+    <div
+      v-if="showForm"
+      class="disc-modal-overlay"
+      @click.self="closeForm"
+      @keydown.esc="closeForm"
+    >
+      <form class="disc-modal" role="dialog" aria-modal="true" @submit.prevent="submitForm">
+        <div class="disc-modal-head">
+          <h3 class="disc-modal-title">{{ t('discussion.form.title.label') }}</h3>
+          <button
+            type="button"
+            class="icon-btn"
+            :aria-label="t('common.action.cancel.label')"
+            @click="closeForm"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="disc-modal-body">
+          <label class="disc-field">
+            <span class="disc-field-label">{{ t('discussion.form.type.label') }}</span>
+            <select v-model="formType" class="disc-input">
+              <option v-for="ty in TYPES" :key="ty.id" :value="ty.id">{{ ty.label }}</option>
+            </select>
+          </label>
+          <label class="disc-field">
+            <span class="disc-field-label">{{ t('discussion.form.goal.label') }}</span>
+            <textarea
+              v-model="formGoal"
+              class="disc-input disc-textarea"
+              rows="2"
+              :placeholder="t('discussion.form.goal.placeholder')"
+              @input="autoGrow"
+            />
+          </label>
+          <label class="disc-field">
+            <span class="disc-field-label">{{ t('discussion.form.context.label') }}</span>
+            <textarea
+              v-model="formContext"
+              class="disc-input disc-textarea"
+              rows="3"
+              :placeholder="t('discussion.form.context.placeholder')"
+              @input="autoGrow"
+            />
+          </label>
+          <!-- Participant picker: lists enabled agents (default all selected). The
+               organizer row is locked on — it always joins the discussion. -->
+          <fieldset class="disc-field disc-participants">
+            <legend class="disc-field-label">{{ t('discussion.form.participants.label') }}</legend>
+            <p class="disc-participants-hint">{{ t('discussion.form.participants.hint') }}</p>
+            <label
+              v-for="a in enabledAgents"
+              :key="a.id"
+              class="disc-participant"
+              :data-testid="`disc-participant-${a.id}`"
+            >
+              <input
+                type="checkbox"
+                :checked="selectedIds.has(a.id) || isOrganizer(a.id)"
+                :disabled="isOrganizer(a.id)"
+                @change="toggleAgent(a.id)"
+              />
+              <span class="disc-participant-name">{{ a.displayName }}</span>
+              <span v-if="isOrganizer(a.id)" class="disc-participant-badge">
+                {{ t('discussion.form.participants.organizer.label') }}
+              </span>
+            </label>
+            <p v-if="enabledAgents.length === 0" class="disc-participants-empty">
+              {{ t('discussion.form.participants.empty') }}
+            </p>
+          </fieldset>
+        </div>
+        <div class="disc-form-actions">
+          <button type="button" class="disc-btn" @click="closeForm">
+            {{ t('common.action.cancel.label') }}
+          </button>
+          <button type="submit" class="disc-btn primary" :disabled="!formGoal.trim()">
+            {{ t('discussion.form.create.label') }}
+          </button>
+        </div>
+      </form>
+    </div>
     <div class="disc-items">
       <p v-if="discussions.length === 0" class="disc-empty">{{ t('discussion.list.empty') }}</p>
       <div
@@ -411,19 +498,111 @@ function togglePanel(): void {
   color: var(--c-text);
   border-color: var(--c-primary);
 }
-.disc-form {
+/* Create modal: centered overlay sheet (replaces the old inline accordion form). */
+.disc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  background: rgba(0, 0, 0, 0.5);
+}
+.disc-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.3));
+  overflow: hidden;
+}
+.disc-modal-head {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--c-border);
+}
+.disc-modal-title {
+  margin: 0;
+  font-size: var(--fs-title-sm);
+  font-weight: 600;
+}
+.disc-modal-body {
+  flex: 1;
+  overflow-y: auto;
   padding: var(--sp-3);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
-  border-bottom: 1px solid var(--c-border);
-  background: var(--c-card);
+  gap: var(--sp-3);
+}
+/* Mobile: full-screen sheet so the participant list + keyboard fit. */
+@media (max-width: 640px) {
+  .disc-modal-overlay {
+    padding: 0;
+  }
+  .disc-modal {
+    max-width: 100%;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: none;
+  }
 }
 .disc-field {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
+}
+/* Participant picker: bordered scrollable checkbox list. */
+.disc-participants {
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2);
+  margin: 0;
+}
+.disc-participants-hint {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.disc-participants-empty {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.disc-participant {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  cursor: pointer;
+}
+.disc-participant input[disabled] {
+  cursor: not-allowed;
+}
+.disc-participant-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.disc-participant-badge {
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-hover);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
 }
 .disc-field-label {
   font-size: var(--fs-caption);

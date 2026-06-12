@@ -21,7 +21,7 @@ import {
   type DiscussionPhase,
 } from '../../lib/discussion-view'
 import { useTypedI18n } from '@/i18n'
-import type { Discussion } from '@ccc/shared/protocol'
+import type { AgentConfig, Discussion } from '@ccc/shared/protocol'
 import type { ChatMsg } from '../../lib/chat-types'
 
 const { t } = useTypedI18n()
@@ -46,11 +46,15 @@ const props = defineProps<{
   // the chat tail. Runtime-only; never part of the persisted transcript.
   dispatch: DispatchView
   input: string
+  // All configured agents — passed through to the create modal's participant picker.
+  agents: AgentConfig[]
+  // The organizer (default agent) id — its participant row is locked on.
+  defaultAgentId: string | null
 }>()
 
 const emit = defineEmits<{
   open: [discussionId: string]
-  create: [payload: { type: string; goal: string; context: string }]
+  create: [payload: { type: string; goal: string; context: string; participantAgentIds: string[] }]
   start: []
   pause: []
   resume: []
@@ -100,6 +104,8 @@ const runAgentNames = computed<Record<string, string>>(() => {
         :active-id="activeId"
         :run-state="runState"
         :run-agent-names="runAgentNames"
+        :agents="agents"
+        :default-agent-id="defaultAgentId"
         @open="(id: string) => emit('open', id)"
         @create="(payload) => emit('create', payload)"
       />

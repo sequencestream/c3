@@ -14,6 +14,7 @@ ignore.
 | What a term means                             | [`glossary.md`](glossary.md)                                                                   |
 | The system shape and how the pieces connect   | [`architecture/architecture.md`](architecture/architecture.md)                                 |
 | Why a key decision was made                   | [`architecture/adr/`](architecture/adr/)                                                       |
+| The end-to-end path through a scenario        | [`flows/flows.md`](flows/flows.md)                                                             |
 | The WebSocket wire contract                   | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
 | The frontend visual style guide               | [`style/style-spec.md`](style/style-spec.md)                                                   |
 | Performance / security / availability targets | [`non-functional/`](non-functional/)                                                           |

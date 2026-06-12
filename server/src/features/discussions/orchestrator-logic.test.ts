@@ -32,6 +32,7 @@ const discussion: Discussion = {
   status: 'in_progress',
   agenda: [],
   agendaIndex: 0,
+  participantAgentIds: [],
   conclusion: null,
   createdAt: 1,
   updatedAt: 1,

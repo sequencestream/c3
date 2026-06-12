@@ -129,13 +129,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // is empty (this turn's messages live in `rt.buffer`), so that fallback
     // degrades to the placeholder "New session" and the sidebar shows it forever
     // (even across refresh, since lazy validation only re-checks rows older than
-    // 24h). `sessionAccessor` / `broadcasts` are forward-referenced (built below);
+    // 24h). `titleAccessor` / `broadcasts` are forward-referenced (built below);
     // this closure only runs at run-end, long after the composition root finishes
-    // — the same pattern as the janitor's native list above.
+    // — the same pattern as the janitor's native list above. NOTE: this uses
+    // `titleAccessor`, NOT the list/janitor `sessionAccessor` — the latter
+    // excludes codex on purpose (its disk-scan listing is a separate concern), but
+    // run-end title backfill MUST read codex's JSONL or a codex session's title
+    // stays "New session" forever (codex's `baseline` is always empty — resume-only,
+    // no history read — so `firstUserTitle` can never recover it).
     void (async () => {
       let title = input.title
       try {
-        const summaries = await sessionAccessor.list({ cwd: input.workspacePath })
+        const summaries = await titleAccessor.list({ cwd: input.workspacePath })
         const hit = summaries.find((s) => {
           if (s.vendor !== vendor) return false
           const vsid = s.vendorExtra?.vendorSessionId
@@ -302,6 +307,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     sessionSources.push({ vendor: 'opencode', sessions: opencodeAdapter.sessions })
   }
   const sessionAccessor = new SessionAccessor(sessionSources)
+
+  // Run-end title-backfill accessor (codex "New session" fix). Separate from the
+  // list/janitor `sessionAccessor` above so codex's disk-scan store can feed the
+  // `onRunEnd` title lookup WITHOUT joining the cross-vendor list/janitor union
+  // (codex stays excluded there per ADR-0013 — its list semantics depend on the
+  // projection table, not a disk scan). `codexAdapter.sessions` is a
+  // `CodexSessionStore` that derives the title from the first user prompt in the
+  // on-disk JSONL; absent when the codex CLI isn't installed (then there are no
+  // codex sessions to title anyway).
+  const titleAccessor = codexAdapter
+    ? new SessionAccessor([...sessionSources, { vendor: 'codex', sessions: codexAdapter.sessions }])
+    : sessionAccessor
 
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })

@@ -1654,6 +1654,13 @@ export interface Discussion {
    * are complete. Completion status is derived from this index (strictly forward).
    */
   agendaIndex: number
+  /**
+   * The agent ids selected at creation to participate — the orchestrator nominates
+   * speakers from this set only (the organizer is always included even when absent
+   * here). `[]` means "unset" (legacy rows / pre-selection discussions) and the
+   * orchestrator falls back to the whole `enabledAgents()` roster for back-compat.
+   */
+  participantAgentIds: string[]
   /** The concluded outcome; `null` until set. */
   conclusion: string | null
   createdAt: number
@@ -2126,6 +2133,14 @@ export type ClientToServer =
       discussionType: string
       goal: string
       context?: string
+      /**
+       * The agents selected to participate. Persisted to the discussion; the
+       * orchestrator nominates speakers from this set only (the organizer/default
+       * agent is always folded in). Defaults all-enabled in the UI, with the
+       * organizer entry forced on. An empty/omitted array means the legacy
+       * "whole roster" fallback.
+       */
+      participantAgentIds?: string[]
     }
   /**
    * Open a discussion: enter the discussion view for one discussion and return

@@ -238,8 +238,17 @@ export async function runDiscussion(
 
   const cwd = initial.projectPath
   const def = getDiscussionType(initial.type)
-  const participantCfgs = deps.participants()
   const organizerCfg = deps.organizer()
+  // The participant roster is the discussion's selected subset, resolved against
+  // the live enabled pool. `participantAgentIds` empty ⇒ legacy/unset, so fall back
+  // to the whole roster (old behaviour = everyone). The organizer is always folded
+  // in (∪ organizer) so a discussion is always runnable even if it wasn't selected.
+  const pool = deps.participants()
+  const selected = initial.participantAgentIds ?? []
+  const base = selected.length ? pool.filter((a) => selected.includes(a.id)) : pool
+  const participantCfgs = base.some((a) => a.id === organizerCfg.id)
+    ? base
+    : [...base, organizerCfg]
   const participants: DiscussionParticipant[] = participantCfgs.map((a) => ({
     id: a.id,
     name: a.displayName,

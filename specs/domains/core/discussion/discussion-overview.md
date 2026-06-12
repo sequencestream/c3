@@ -81,8 +81,14 @@ Conclusion → Details` so the read-order follows the right-pane's two-phase tim
     the transcript + orchestration view in the right pane \_and\* toggles that row's inline detail
     accordion in one gesture (re-clicking the same row collapses the detail; `open` stays idempotent).
     There is no chevron and no per-row "Open chat" button. All list copy is English (web/CLAUDE.md).
+- **Targeted participants (2026-06-12)**: a discussion's roster is **chosen at creation** — the create
+  modal lists the enabled agents (default all selected; the organizer row is force-selected and disabled)
+  and persists the picks to `Discussion.participantAgentIds`. The orchestrator nominates **only** from
+  that set (∪ the always-included organizer), so unrelated agents no longer add noise. An empty/unset set
+  (legacy rows) falls back to the whole `enabledAgents()` pool. See design.md §Roles.
 - **Heterogeneous roundtable (multi-vendor, 2026-06-06-004)**: a discussion is **vendor-agnostic
-  by construction** — the organizer nominates among the configured `enabledAgents()`, which may mix
+  by construction** — the organizer nominates among the **selected** participants (a subset of
+  `enabledAgents()`; see Targeted participants above), which may mix
   vendors (e.g. a Claude agent and an OpenCode agent at the same table), and every turn's speech is
   normalized to the same `CanonicalMessage` / `ChatBody` shape, so divergent multi-vendor
   perspectives become value rather than a rendering fork. Each `agent` bubble carries a **vendor

@@ -1,7 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { Discussion } from '@ccc/shared/protocol'
+import type { AgentConfig, Discussion } from '@ccc/shared/protocol'
 import DiscussionList from './DiscussionList.vue'
+
+function ag(id: string, displayName: string, over: Partial<AgentConfig> = {}): AgentConfig {
+  return {
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName,
+    config: { baseUrl: '', apiKey: '', model: '' },
+    ...over,
+  }
+}
 
 function disc(id: string, title: string, over: Partial<Discussion> = {}): Discussion {
   return {
@@ -15,6 +26,7 @@ function disc(id: string, title: string, over: Partial<Discussion> = {}): Discus
     status: 'in_progress',
     agenda: [],
     agendaIndex: 0,
+    participantAgentIds: [],
     conclusion: null,
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
@@ -29,6 +41,8 @@ function mountList(
     activeId: string | null
     runState: Record<string, 'running' | 'paused'>
     runAgentNames: Record<string, string>
+    agents: AgentConfig[]
+    defaultAgentId: string | null
   }> = {},
 ) {
   return mount(DiscussionList, {
@@ -174,35 +188,68 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.findAll('.disc-item').length).toBe(0)
   })
 
-  it('点击顶部「+」展开新建表单,填写后提交 → emit create(payload)', async () => {
-    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
-    // 默认不显示表单
-    expect(w.find('.disc-form').exists()).toBe(false)
+  it('点击顶部「+」打开弹窗,填写后提交 → emit create(含 participantAgentIds)', async () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      agents: [ag('system', 'System'), ag('gpt', 'GPT')],
+      defaultAgentId: 'system',
+    })
+    // 默认不显示弹窗
+    expect(w.find('.disc-modal-overlay').exists()).toBe(false)
     await w.find('.disc-new-btn').trigger('click')
-    expect(w.find('.disc-form').exists()).toBe(true)
+    expect(w.find('.disc-modal-overlay').exists()).toBe(true)
     // 选类型 + 填目标/上下文,提交
-    const options = w.findAll('.disc-form select option')
+    const options = w.findAll('.disc-modal select option')
     expect(options.length).toBeGreaterThan(0)
     const firstValue = (options[0].element as HTMLOptionElement).value
-    await w.find('.disc-form select').setValue(firstValue)
-    await w.findAll('.disc-form textarea')[0].setValue('Decide cache TTL')
-    await w.findAll('.disc-form textarea')[1].setValue('Redis today')
-    await w.find('.disc-form').trigger('submit')
-    expect(w.emitted('create')).toEqual([
-      [{ type: firstValue, goal: 'Decide cache TTL', context: 'Redis today' }],
-    ])
-    // 提交后表单收起
-    expect(w.find('.disc-form').exists()).toBe(false)
+    await w.find('.disc-modal select').setValue(firstValue)
+    await w.findAll('.disc-modal textarea')[0].setValue('Decide cache TTL')
+    await w.findAll('.disc-modal textarea')[1].setValue('Redis today')
+    await w.find('.disc-modal').trigger('submit')
+    // 默认全选(system + gpt),participantAgentIds 含两者(顺序无关)。
+    const events = w.emitted('create') as Array<
+      [{ type: string; goal: string; context: string; participantAgentIds: string[] }]
+    >
+    expect(events).toHaveLength(1)
+    const payload = events[0][0]
+    expect(payload).toMatchObject({
+      type: firstValue,
+      goal: 'Decide cache TTL',
+      context: 'Redis today',
+    })
+    expect([...payload.participantAgentIds].sort()).toEqual(['gpt', 'system'])
+    // 提交后弹窗关闭
+    expect(w.find('.disc-modal-overlay').exists()).toBe(false)
   })
 
-  it('目标为空时不提交,「+」可再次点击收起表单', async () => {
+  it('参与者面板:默认全选,组织者项恒选且禁用,取消勾选未选 agent 不进集合', async () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      agents: [ag('system', 'System'), ag('gpt', 'GPT'), ag('claude', 'Claude')],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    // 组织者(system)复选框选中且禁用。
+    const orgBox = w.find('[data-testid="disc-participant-system"] input')
+    expect((orgBox.element as HTMLInputElement).checked).toBe(true)
+    expect((orgBox.element as HTMLInputElement).disabled).toBe(true)
+    // 取消勾选 gpt 与 claude,只剩组织者。
+    await w.find('[data-testid="disc-participant-gpt"] input').trigger('change')
+    await w.find('[data-testid="disc-participant-claude"] input').trigger('change')
+    await w.findAll('.disc-modal textarea')[0].setValue('Goal')
+    await w.find('.disc-modal').trigger('submit')
+    const events = w.emitted('create') as Array<[{ participantAgentIds: string[] }]>
+    expect(events[0][0].participantAgentIds).toEqual(['system'])
+  })
+
+  it('目标为空时不提交,「+」可再次点击关闭弹窗', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha')] })
     await w.find('.disc-new-btn').trigger('click')
-    await w.find('.disc-form').trigger('submit')
+    await w.find('.disc-modal').trigger('submit')
     expect(w.emitted('create')).toBeUndefined()
-    // 再次点击「+」收起
+    // 再次点击「+」关闭
     await w.find('.disc-new-btn').trigger('click')
-    expect(w.find('.disc-form').exists()).toBe(false)
+    expect(w.find('.disc-modal-overlay').exists()).toBe(false)
   })
 
   it('生命周期态以统一指示器 tone class 呈现(不依赖文案译文)', () => {
@@ -216,7 +263,7 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
   it('Goal/Context textarea auto-grow:高度跟随内容并在 200px 上限处出现内部滚动', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha')] })
     await w.find('.disc-new-btn').trigger('click')
-    const goal = w.findAll('.disc-form textarea')[0]
+    const goal = w.findAll('.disc-modal textarea')[0]
     const el = goal.element as HTMLTextAreaElement
     // happy-dom 不做布局,scrollHeight 恒为 0;桩入它以验证 auto-grow 接线。
     let fakeScrollHeight = 80
@@ -243,15 +290,15 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
   it('关闭后重开表单:textarea 为全新元素,无残留内联高度', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha')] })
     await w.find('.disc-new-btn').trigger('click')
-    const el = w.findAll('.disc-form textarea')[0].element as HTMLTextAreaElement
+    const el = w.findAll('.disc-modal textarea')[0].element as HTMLTextAreaElement
     Object.defineProperty(el, 'scrollHeight', { get: () => 360, configurable: true })
-    await w.findAll('.disc-form textarea')[0].setValue('lots of text')
+    await w.findAll('.disc-modal textarea')[0].setValue('lots of text')
     expect(el.style.height).toBe('200px')
-    // 关闭(Cancel)后表单 v-if 移除,重开为全新 DOM,高度复位。
-    await w.find('.disc-form button.disc-btn').trigger('click')
-    expect(w.find('.disc-form').exists()).toBe(false)
+    // 关闭(Cancel)后弹窗 v-if 移除,重开为全新 DOM,高度复位。
+    await w.find('.disc-modal button.disc-btn').trigger('click')
+    expect(w.find('.disc-modal-overlay').exists()).toBe(false)
     await w.find('.disc-new-btn').trigger('click')
-    const reopened = w.findAll('.disc-form textarea')[0].element as HTMLTextAreaElement
+    const reopened = w.findAll('.disc-modal textarea')[0].element as HTMLTextAreaElement
     expect(reopened.style.height).toBe('')
   })
 

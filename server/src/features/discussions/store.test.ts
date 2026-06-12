@@ -67,7 +67,10 @@ describe('schema', () => {
     expect(indexes).toContain('idx_disc_project_status')
     expect(indexes).toContain('idx_disc_msg_discussion')
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(2)
+    expect(version?.user_version).toBe(3)
+    // v3 added the participant selection column.
+    const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((r) => r.name)
+    expect(cols).toContain('participant_agent_ids')
   })
 })
 
@@ -82,6 +85,7 @@ describe('discussions CRUD', () => {
     expect(d.completedAt).toBeNull()
     expect(d.agenda).toEqual([]) // default empty agenda
     expect(d.agendaIndex).toBe(0)
+    expect(d.participantAgentIds).toEqual([]) // default unset → orchestrator falls back to all
     expect(d.createdAt).toBe(d.updatedAt)
     const got = getDiscussion(d.id)
     expect(got?.title).toBe('T')
@@ -100,6 +104,17 @@ describe('discussions CRUD', () => {
     expect(d.goal).toBe('decide X')
     expect(d.context).toBe('background Y')
     expect(d.status).toBe('in_progress')
+  })
+
+  it('persists and reads back the selected participant set', () => {
+    const d = createDiscussion({
+      projectPath: proj,
+      title: 'T',
+      type: 'design',
+      participantAgentIds: ['gpt', 'claude'],
+    })
+    expect(d.participantAgentIds).toEqual(['gpt', 'claude'])
+    expect(getDiscussion(d.id)?.participantAgentIds).toEqual(['gpt', 'claude'])
   })
 
   it('setDiscussionResearchResult writes research_result and leaves context untouched', () => {
@@ -353,6 +368,7 @@ describe('migration', () => {
     expect(got?.completedAt).toBeNull()
     expect(got?.agenda).toEqual([]) // backfilled default '[]' → parsed to empty list
     expect(got?.agendaIndex).toBe(0) // backfilled default 0
+    expect(got?.participantAgentIds).toEqual([]) // backfilled default '[]' → fallback all
 
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((c) => c.name)
     expect(cols).toEqual(
@@ -362,6 +378,7 @@ describe('migration', () => {
         'research_result',
         'agenda',
         'agenda_index',
+        'participant_agent_ids',
         'conclusion',
         'completed_at',
       ]),

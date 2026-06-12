@@ -24,10 +24,15 @@ vi.mock('../../runs.js', () => ({
 vi.mock('../../state.js', () => ({
   getActiveSessionId: vi.fn(() => null),
   getSessionMode: vi.fn(() => 'default'),
+  getSessionCodexPolicy: vi.fn(() => null),
   hasWorkspace: vi.fn(() => true),
   setActiveSessionId: vi.fn(),
   setSessionMode: vi.fn(),
   touchWorkspace: vi.fn(),
+}))
+vi.mock('./work-session-store.js', () => ({
+  upsertPendingRow: vi.fn(),
+  getByC3Id: vi.fn(() => null),
 }))
 vi.mock('../../sessions.js', () => ({
   loadHistory: vi.fn(async () => []),
@@ -51,6 +56,7 @@ import { selectSession } from './index.js'
 import { loadHistory, sessionTitle } from '../../sessions.js'
 import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { ensureOpencodeRunning } from '../../opencode-status.js'
+import { getByC3Id } from './work-session-store.js'
 
 afterEach(() => vi.clearAllMocks())
 
@@ -80,6 +86,40 @@ describe('select_session', () => {
     expect(ensureOpencodeRunning).not.toHaveBeenCalled()
     const sel = conn.sent.find((m) => m.type === 'session_selected')
     expect(sel?.vendor).toBe('claude')
+  })
+
+  it('codex select → uses the projection title (same-source as the list), not the claude-only legacy path', async () => {
+    // Regression: codex never resolves through `sessionTitle` (claude-only), so
+    // the title bar showed "Untitled session". Projection-first fixes it — the
+    // run-end-derived title in `work_session_metadata` is the same source the
+    // session list reads.
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+    vi.mocked(getByC3Id).mockReturnValue({ title: 'Refactor the parser' } as never)
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspacePath: '/abs/proj',
+      sessionId: 'codex-thread-1',
+    })
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.title).toBe('Refactor the parser')
+    // Projection hit ⇒ the legacy claude-only lookup is short-circuited.
+    expect(sessionTitle).not.toHaveBeenCalled()
+  })
+
+  it('codex select with only a placeholder in the projection → falls back to the legacy path', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+    vi.mocked(getByC3Id).mockReturnValue({ title: 'New session' } as never)
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspacePath: '/abs/proj',
+      sessionId: 'codex-thread-2',
+    })
+    // Placeholder is not adopted ⇒ legacy lookup runs (returns its own value).
+    expect(sessionTitle).toHaveBeenCalled()
   })
 
   it('opencode select → lazily ensures the server (grace), opens the session, never fatal', async () => {

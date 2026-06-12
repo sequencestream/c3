@@ -1278,6 +1278,17 @@
         "label": "背景",
         "placeholder": "背景材料(研究智能体会补全它)"
       },
+      "participants": {
+        "label": "参与者",
+        "hint": "所选智能体会被邀请发言;组织者始终参与。",
+        "empty": "没有已启用的智能体。",
+        "organizer": {
+          "label": "组织者"
+        }
+      },
+      "title": {
+        "label": "新建讨论"
+      },
       "create": {
         "label": "新建"
       }

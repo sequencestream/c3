@@ -1279,6 +1279,17 @@
         "label": "컨텍스트",
         "placeholder": "배경 자료 (리서치 에이전트가 보완합니다)"
       },
+      "participants": {
+        "label": "참여자",
+        "hint": "선택한 에이전트가 발언에 초대됩니다. 진행자는 항상 참여합니다.",
+        "empty": "활성화된 에이전트가 없습니다.",
+        "organizer": {
+          "label": "진행자"
+        }
+      },
+      "title": {
+        "label": "새 토론"
+      },
       "create": {
         "label": "새로 만들기"
       }

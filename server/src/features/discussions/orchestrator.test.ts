@@ -83,6 +83,7 @@ const seedDiscussion = (): Discussion => ({
   status: 'draft',
   agenda: [],
   agendaIndex: 0,
+  participantAgentIds: [],
   conclusion: null,
   createdAt: 1,
   updatedAt: 1,
@@ -190,6 +191,92 @@ describe('runDiscussion', () => {
     expect(get().status).toBe('completed')
     expect(get().conclusion).toBe('Done solo.')
     expect(messages.some((m) => m.speakerKind === 'agent' && m.speakerName === 'Solo')).toBe(true)
+  })
+
+  it('asks only the selected participants — unselected enabled agents never speak', async () => {
+    // Three agents enabled in the pool, but the discussion was created selecting
+    // only GPT. The organizer (System) is always folded in. A broadcast "all"
+    // therefore reaches GPT + System only; Claude must never be asked.
+    const seed = { ...seedDiscussion(), participantAgentIds: ['gpt'] }
+    const { store, messages, get } = makeStore(seed)
+    const asked: string[] = []
+    const h = harness({
+      store,
+      participants: [agent('system', 'System'), agent('gpt', 'GPT'), agent('claude', 'Claude')],
+      organizer: agent('system', 'System'),
+      organizerScript: [],
+      participantReply: 'a view',
+    })
+    const queue = [
+      '{"action":"broadcast","speakers":"all","note":"齐发"}',
+      '{"action":"conclude","conclusion":"Done."}',
+    ]
+    h.deps.ask = async (_id, a, prompt) => {
+      if (isOrganizerPrompt(prompt))
+        return queue.shift() ?? '{"action":"conclude","conclusion":"x"}'
+      asked.push(a.id)
+      return 'a view'
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    // Claude (unselected) was never dispatched; only GPT spoke as a participant.
+    expect(asked).not.toContain('claude')
+    expect(asked).toContain('gpt')
+    const agentSpeakers = new Set(
+      messages.filter((m) => m.speakerKind === 'agent').map((m) => m.speakerAgentId),
+    )
+    expect(agentSpeakers.has('claude')).toBe(false)
+  })
+
+  it('always folds the organizer into the roster even when not selected', async () => {
+    // The selected set names GPT only; the organizer (System) is not in it but
+    // must still be nominatable — proven by letting System speak.
+    const seed = { ...seedDiscussion(), participantAgentIds: ['gpt'] }
+    const { store, messages, get } = makeStore(seed)
+    const h = harness({
+      store,
+      participants: [agent('system', 'System'), agent('gpt', 'GPT'), agent('claude', 'Claude')],
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        '{"action":"speak","speaker":"system","note":""}',
+        '{"action":"conclude","conclusion":"Done."}',
+      ],
+      participantReply: 'organizer-as-participant view',
+    })
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    expect(messages.some((m) => m.speakerKind === 'agent' && m.speakerAgentId === 'system')).toBe(
+      true,
+    )
+  })
+
+  it('falls back to the whole roster when no participants were selected (legacy)', async () => {
+    // Empty participantAgentIds = legacy/unset → every enabled agent participates.
+    const { store, messages, get } = makeStore(seedDiscussion())
+    const h = harness({
+      store,
+      participants: [agent('system', 'System'), agent('gpt', 'GPT'), agent('claude', 'Claude')],
+      organizer: agent('system', 'System'),
+      organizerScript: [
+        '{"action":"broadcast","speakers":"all","note":"齐发"}',
+        '{"action":"conclude","conclusion":"Done."}',
+      ],
+      participantReply: 'a view',
+    })
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+
+    expect(get().status).toBe('completed')
+    const agentSpeakers = new Set(
+      messages.filter((m) => m.speakerKind === 'agent').map((m) => m.speakerAgentId),
+    )
+    // Whole roster spoke in the broadcast — including the otherwise-unselected Claude.
+    expect(agentSpeakers.has('claude')).toBe(true)
+    expect(agentSpeakers.has('gpt')).toBe(true)
   })
 
   it('honors the configured per-stage round cap (forces advance after the cap)', async () => {

@@ -106,9 +106,14 @@ Split for testability:
 | Orchestration loop    | `server/src/discussions/orchestrator.ts`       | `runDiscussion(id, signal, deps)` + `defaultDiscussionDeps`. All collaborators injected (`DiscussionDeps`), including the pause `gate`.  |
 | One-shot agent turn   | `server/src/agent-once.ts`                     | `askAgentOnce` (extracted from consensus): a single tool-disabled turn under the agent's launch overrides, registered as a tool session. |
 
-**Roles.** The **organizer** is the default agent (`resolveAgent(null)`); the **participants** are
-all configured agents (`loadSettings().agents`) — the organizer included, so it may nominate itself
-and is the sole speaker when only one agent is configured (the consensus "no voters" degeneration).
+**Roles.** The **organizer** is the default agent (`resolveAgent(null)`); the **participants** are the
+subset of agents **selected at creation** (`Discussion.participantAgentIds`, picked in the create modal,
+default-all-enabled), resolved against the live `enabledAgents()` pool, **∪ the organizer** — the
+organizer is always folded in (even if not selected) so it may nominate itself and is the sole speaker
+when only one agent participates (the consensus "no voters" degeneration). **Back-compat:** an empty
+`participantAgentIds` (legacy/pre-selection rows) means _unset_, and the roster falls back to the whole
+`enabledAgents()` pool (the old "everyone participates" behaviour). The selection is fixed for the
+discussion's life — later rounds / resume reuse the same set (no post-creation editing this iteration).
 
 **Round model.** Each round the organizer is asked, over the live transcript + the active workflow
 stage (+ the live agenda in `discuss`), for a decision; `parseOrganizerDecision` reads it (JSON

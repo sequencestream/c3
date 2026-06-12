@@ -1278,6 +1278,17 @@
         "label": "Context",
         "placeholder": "Background material (a research agent will complete it)"
       },
+      "participants": {
+        "label": "Participants",
+        "hint": "Selected agents are invited to speak; the organizer always joins.",
+        "empty": "No enabled agents.",
+        "organizer": {
+          "label": "Organizer"
+        }
+      },
+      "title": {
+        "label": "New discussion"
+      },
       "create": {
         "label": "Create"
       }

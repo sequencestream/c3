@@ -37,6 +37,7 @@ function disc(over: Partial<Discussion> = {}): Discussion {
     status: 'in_progress',
     agenda: [],
     agendaIndex: 0,
+    participantAgentIds: [],
     conclusion: null,
     createdAt: 0,
     updatedAt: 0,

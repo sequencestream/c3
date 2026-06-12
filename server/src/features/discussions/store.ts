@@ -27,7 +27,7 @@ import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
  * value is informational only: migrations key off `PRAGMA table_info` /
  * `CREATE TABLE IF NOT EXISTS`, never off the version number.
  */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS discussions (
@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   status        TEXT NOT NULL,
   agenda        TEXT NOT NULL DEFAULT '[]',
   agenda_index  INTEGER NOT NULL DEFAULT 0,
+  participant_agent_ids TEXT NOT NULL DEFAULT '[]',
   conclusion    TEXT,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL,
@@ -100,6 +101,7 @@ function db(): Db | null {
     ensureColumn(d, 'discussions', 'research_result', "TEXT NOT NULL DEFAULT ''")
     ensureColumn(d, 'discussions', 'agenda', "TEXT NOT NULL DEFAULT '[]'")
     ensureColumn(d, 'discussions', 'agenda_index', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(d, 'discussions', 'participant_agent_ids', "TEXT NOT NULL DEFAULT '[]'")
     ensureColumn(d, 'discussions', 'conclusion', 'TEXT')
     ensureColumn(d, 'discussions', 'completed_at', 'INTEGER')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
@@ -153,14 +155,18 @@ interface DiscussionRow {
   status: string
   agenda: string | null
   agenda_index: number | null
+  participant_agent_ids: string | null
   conclusion: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
 }
 
-/** Parse the persisted agenda JSON to a string list; tolerate null/blank/corrupt → `[]`. */
-function parseAgenda(raw: string | null): string[] {
+/**
+ * Parse a persisted JSON string-list column (agenda, participant ids) to a string
+ * list; tolerate null/blank/corrupt → `[]`.
+ */
+function parseStringList(raw: string | null): string[] {
   if (!raw) return []
   try {
     const v = JSON.parse(raw)
@@ -180,8 +186,9 @@ function toDiscussion(r: DiscussionRow): Discussion {
     context: r.context,
     researchResult: r.research_result ?? '',
     status: r.status as DiscussionStatus,
-    agenda: parseAgenda(r.agenda),
+    agenda: parseStringList(r.agenda),
     agendaIndex: r.agenda_index ?? 0,
+    participantAgentIds: parseStringList(r.participant_agent_ids),
     conclusion: r.conclusion,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -196,6 +203,11 @@ export interface CreateDiscussionInput {
   type: string
   goal?: string
   context?: string
+  /**
+   * Agents selected to participate. Persisted as a JSON string list; `[]`/omitted
+   * means the legacy whole-roster fallback at orchestration time.
+   */
+  participantAgentIds?: string[]
   /** Defaults to `draft`. */
   status?: DiscussionStatus
 }
@@ -266,8 +278,8 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
   const completedAt = status === 'completed' ? now : null
   d.run(
     `INSERT INTO discussions
-       (id, project_path, title, type, goal, context, status, agenda, agenda_index, conclusion, created_at, updated_at, completed_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, project_path, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, conclusion, created_at, updated_at, completed_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     resolve(input.projectPath),
     input.title,
@@ -277,6 +289,7 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
     status,
     '[]',
     0,
+    JSON.stringify(input.participantAgentIds ?? []),
     null,
     now,
     now,

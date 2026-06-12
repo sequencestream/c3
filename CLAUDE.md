@@ -44,6 +44,7 @@ do format/lint/typecheck at the end of an edit session.
 - specs/architecture/architecture.md: architecture spec
 - specs/adr/adr.md: architecture decision records
 - specs/domains/: domain specs
+- specs/flows/flows.md: flow specs
 - specs/non-functional/: non-functional specs
 - database/tables.md: 数据库表结构索引，DDL 在 database/<module>/<table>.sql ,表结构变更需同步更新，变更记录 database/migrate/<YYYY>/<MM>/<DD>/<NNN>-<table>.sql
 

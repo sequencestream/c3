@@ -1,0 +1,156 @@
+import type { createWsClient } from '@/lib/ws'
+import type { PermissionMsg } from '@/lib/chat-types'
+import type { PendingItem } from '@/lib/pending-queue'
+import type {
+  ClientToServer,
+  CodexPolicy,
+  CreateScheduleInput,
+  IntentStatus,
+  ModeToken,
+  Schedule,
+  ServerToClient,
+  SessionRunStatus,
+  SystemSettings,
+  UiLang,
+  UpdateScheduleInput,
+  WaitUserInvolveEvent,
+  WorkspaceInfo,
+  WorkspaceSetting as WorkspaceSettingType,
+} from '@ccc/shared/protocol'
+import type { AppState, AuthApi, DepType, TypedT } from './state'
+
+export type WsClient = ReturnType<typeof createWsClient>
+
+// Runtime plumbing attached to the shared ctx by `useAppController`.
+export interface AppRuntime {
+  // The live WS client, (re)assigned on (re)connect; null before the first connect.
+  client: WsClient | null
+  // Send a message over the live client (no-op when not connected).
+  send(msg: ClientToServer): void
+  // Force a fresh handshake (used after login mints a token).
+  reconnect(): void
+  // The typed i18n translator (bound to the component composer) + auth store.
+  t: TypedT
+  auth: AuthApi
+}
+
+// Every method attached to the ctx by the domain installers. Listing them here
+// keeps the cross-module call surface a compile-time contract (no `any` escape).
+export interface AppMethods {
+  // persistence
+  readStoredWorkspace(): string | null
+  persistCurrentWorkspace(): void
+  persistViewMode(): void
+  maybeRestoreIntents(list: WorkspaceInfo[]): void
+  maybeRestoreDiscussions(list: WorkspaceInfo[]): void
+  maybeRestoreSchedules(list: WorkspaceInfo[]): void
+
+  // message handler
+  handleMessage(msg: ServerToClient): void
+  applyStatuses(statuses: SessionRunStatus[]): void
+  notifyAwaitingPermission(id: string): void
+
+  // session / workspace / tab navigation
+  refreshSessions(path: string | null): void
+  ensureSessions(path: string | null): void
+  selectWorkspace(path: string): void
+  addWorkspace(path: string): void
+  removeWorkspace(path: string): void
+  openNewSession(path: string): void
+  confirmNewSession(agentId: string | null): void
+  openSettingsFromPicker(): void
+  selectSession(path: string, sessionId: string): void
+  onSelectTab(key: string): void
+  enterConsole(): void
+  switchToConsoleTab(): void
+  bindConsoleSession(): void
+  clearViewedSession(): void
+  deleteSession(path: string, sessionId: string): void
+  renameSession(path: string, sessionId: string, title: string): void
+  openDevSession(sessionId: string): void
+
+  // intents
+  openIntents(path: string): void
+  setIntentFilter(status: IntentStatus | null): void
+  refineIntent(intentId: string): void
+  startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
+  setIntentStatus(intentId: string, status: IntentStatus): void
+  setIntentAutomate(intentId: string, automateOn: boolean): void
+  updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
+  createPr(intentId: string): void
+  startAutomation(): void
+  stopAutomation(): void
+  newIntentChat(): void
+  selectIntentSession(sessionId: string): void
+  renameIntentSession(sessionId: string, title: string): void
+  deleteIntentSession(sessionId: string): void
+
+  // discussions
+  openDiscussions(path: string): void
+  openDiscussion(discussionId: string): void
+  onDiscussionMobileBack(targetKey: string): void
+  createDiscussion(payload: {
+    type: string
+    goal: string
+    context: string
+    participantAgentIds: string[]
+  }): void
+  startDiscussion(): void
+  pauseDiscussion(): void
+  resumeDiscussion(): void
+  convertDiscussionToIntent(): void
+  submitDiscussionInput(): void
+
+  // schedules
+  openSchedules(path: string): void
+  onSelectSchedule(id: string): void
+  onLoadExecutionSession(executionId: string): void
+  onSelectExecution(id: string): void
+  onScheduleMobileBack(targetKey: string): void
+  onToggleScheduleEnabled(id: string, enabled: boolean): void
+  openScheduleForm(target: Schedule | null): void
+  createSchedule(input: CreateScheduleInput): void
+  updateSchedule(id: string, input: UpdateScheduleInput): void
+  onLoadScheduleToolManifest(vendor: string): void
+
+  // chat / queue
+  onSubmit(text: string): void
+  onContinue(): void
+  stopRun(): void
+  refreshStatus(): void
+  setMode(next: ModeToken): void
+  setCodexPolicy(policy: CodexPolicy): void
+  onSetSessionAgent(agentId: string): void
+  respond(m: PermissionMsg, decision: 'allow' | 'deny'): void
+  submitAsk(m: PermissionMsg, answers: Record<string, string>): void
+  listCommands(): void
+  onEnqueue(text: string): void
+  onDeleteQueued(id: number): void
+  onEditQueued(item: PendingItem): void
+  flushIfReady(): void
+
+  // settings / skills / view mode
+  openSettings(): void
+  openWorkspaceSetting(): void
+  saveWorkspaceSetting(config: WorkspaceSettingType): void
+  querySkillLinkStatus(): void
+  installSkill(skillId: string): void
+  saveSettings(settings: SystemSettings): void
+  setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
+  setLocale(next: UiLang): void
+  setViewMode(mode: 'workspace' | 'workcenter'): void
+  approveSkillLoad(requestId: string): void
+  cancelSkillLoad(requestId: string): void
+  dismissSkillApproval(): void
+
+  // workcenter
+  respondWorkcenter(event: WaitUserInvolveEvent, decision: 'allow' | 'deny'): void
+  submitAskWorkcenter(event: WaitUserInvolveEvent, answers: Record<string, string>): void
+  jumpToSource(event: WaitUserInvolveEvent): void
+}
+
+// The shared controller context: reactive state + runtime plumbing + all the
+// domain methods. Installers read state/other-methods off this object so any
+// cross-domain call resolves through late binding (definition order doesn't
+// matter), while staying fully typed.
+export type AppCtx = AppState & AppRuntime & AppMethods

@@ -548,7 +548,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             }}
           </span>
           <button
-            class="agent-field skill-repo-install"
+            class="skill-repo-install"
             :disabled="!canInstall(r)"
             :title="t('workspaceSetting.skillRepos.install.tooltip')"
             data-testid="skill-repo-install"
@@ -809,12 +809,11 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 
 .skill-repo-install {
   flex: 0 0 auto;
-  cursor: pointer;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
-}
-.skill-repo-install:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 @media (max-width: 640px) {

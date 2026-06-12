@@ -152,29 +152,38 @@ export class CodexSessionStore implements SessionStore {
    * 2. `response_item` with `payload.role === 'user'` and
    *    `content[].type === 'input_text'` — the Claude SDK's JSONL format
    *    (carried over when c3 prescribes system-generated context blocks
-   *    like environment overrides). This is checked AFTER format 1 so that
-   *    system preamble text is not mistaken for the user's prompt.
+   *    like environment overrides). Used only as a FALLBACK.
+   *
+   * The scan runs in TWO passes, not line order. Format 2 system-context lines
+   * (the AGENTS.md instructions blob, XML-tagged environment/user-instruction
+   * wrappers) are written to disk BEFORE the user's actual prompt, so a single
+   * "first match wins" loop picks the AGENTS.md blob as the title (the bug this
+   * guards against). Pass 1 therefore scans ALL lines for the native
+   * `user_message` (format 1) first; only when none exists does pass 2 fall back
+   * to a format-2 line, and even then it skips recognisable injected context.
    */
   private extractTitle(lines: string[], _fullContent: string): string {
     const limit = Math.min(lines.length, 2000)
+
+    // Pass 1: the codex-native user_message (format 1) — the actual human prompt.
     for (let i = 1; i < limit; i++) {
       const line = lines[i].trim()
       if (!line) continue
       const obj = tryParseJson(line)
-      if (!obj) continue
-
-      // Format 1: Codex-native user_message event (actual user prompt)
-      if (obj.type === 'event_msg') {
-        const pl = obj.payload as Record<string, unknown> | undefined
-        if (pl?.type === 'user_message' && typeof pl.message === 'string') {
-          const text = (pl.message as string).trim()
-          if (text) return text.slice(0, 120)
-        }
-        continue // other event_msg types are not titles (agent_message, token_count, etc.)
+      if (!obj || obj.type !== 'event_msg') continue
+      const pl = obj.payload as Record<string, unknown> | undefined
+      if (pl?.type === 'user_message' && typeof pl.message === 'string') {
+        const text = pl.message.trim()
+        if (text) return text.slice(0, 120)
       }
+    }
 
-      // Format 2: Claude-style response_item with role=user (system-generated context)
-      if (obj.type !== 'response_item') continue
+    // Pass 2 (fallback): the first non-injected response_item/role=user text.
+    for (let i = 1; i < limit; i++) {
+      const line = lines[i].trim()
+      if (!line) continue
+      const obj = tryParseJson(line)
+      if (!obj || obj.type !== 'response_item') continue
       const pl = obj.payload as Record<string, unknown> | undefined
       if (!pl || pl.role !== 'user') continue
       const content = pl.content as unknown[]
@@ -183,7 +192,7 @@ export class CodexSessionStore implements SessionStore {
         const b = block as Record<string, unknown>
         if (b.type === 'input_text' && typeof b.text === 'string') {
           const text = b.text.trim()
-          if (text) return text.slice(0, 120)
+          if (text && !isInjectedContext(text)) return text.slice(0, 120)
         }
       }
     }
@@ -194,6 +203,22 @@ export class CodexSessionStore implements SessionStore {
     // TODO(codex-l2): back-read a thread (on-disk reader or resume-and-replay).
     return []
   }
+}
+
+/**
+ * Whether a role=user text block is c3/codex-injected context rather than the
+ * human's prompt. c3 prepends the AGENTS.md instructions blob and XML-tagged
+ * environment / user-instruction wrappers as role=user lines; none of these may
+ * become a session title. Kept deliberately narrow (known injected shapes only)
+ * so a genuine prompt that merely starts with '#' is not misclassified.
+ */
+function isInjectedContext(text: string): boolean {
+  return (
+    /^#\s*AGENTS\.md\b/.test(text) ||
+    text.includes('<INSTRUCTIONS>') ||
+    text.includes('<environment_context>') ||
+    text.includes('<user_instructions>')
+  )
 }
 
 /** Safe JSON parse that returns null (not throws) on invalid input. */

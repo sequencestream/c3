@@ -8,13 +8,20 @@ import { describe, it, expect } from 'vitest'
 import type { AgentConfig } from '@ccc/shared/protocol'
 import { buildAgentsToTry } from './build-chain.js'
 
-const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig => ({
-  id,
-  vendor,
-  configMode: 'custom',
-  displayName: id.toUpperCase(),
-  config: { baseUrl: '', apiKey: '', model: '' },
-})
+const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig =>
+  ({
+    id,
+    vendor,
+    configMode: 'custom',
+    displayName: id.toUpperCase(),
+    // codex carries the extra `wireApi`; the other arms take the bare triple. The
+    // discriminant is a runtime variable here, so the union can't be narrowed —
+    // cast through the per-vendor config shape.
+    config:
+      vendor === 'codex'
+        ? { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' as const }
+        : { baseUrl: '', apiKey: '', model: '' },
+  }) as AgentConfig
 
 const REGISTRY: Record<string, AgentConfig> = {
   c1: agent('c1', 'claude'),

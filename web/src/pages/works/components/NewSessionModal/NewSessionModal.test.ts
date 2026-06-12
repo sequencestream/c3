@@ -19,7 +19,7 @@ const AGENTS: AgentConfig[] = [
     configMode: 'custom',
     displayName: 'Codex A',
     enabled: true,
-    config: { baseUrl: '', apiKey: '', model: '' },
+    config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
   },
 ]
 

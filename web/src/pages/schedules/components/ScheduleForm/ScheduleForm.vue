@@ -718,7 +718,19 @@ function save(): void {
 
         <!-- Tool checklist -->
         <div class="sf-field sf-field--stacked">
-          <span class="sf-label">{{ t('schedule.form.tools.label') }}</span>
+          <div class="sf-tools-labelrow">
+            <span class="sf-label">{{ t('schedule.form.tools.label') }}</span>
+            <!-- Select/clear stay on the label row so they remain visible while
+                 the (capped, scrollable) list below scrolls. -->
+            <div v-if="currentTools.length" class="sf-tools-actions">
+              <button type="button" class="sf-tools-btn" @click="selectAll">
+                {{ t('schedule.form.tools.selectAll.label') }}
+              </button>
+              <button type="button" class="sf-tools-btn" @click="clearAll">
+                {{ t('schedule.form.tools.clearAll.label') }}
+              </button>
+            </div>
+          </div>
 
           <!-- Loading -->
           <span v-if="props.toolManifestLoading" class="sf-hint">{{
@@ -730,21 +742,12 @@ function save(): void {
             props.toolManifestError
           }}</span>
 
-          <!-- Manifest loaded -->
-          <template v-else-if="currentTools.length">
+          <!-- Manifest loaded: list auto-sizes to content, caps at max-height then
+               scrolls — so it never over/under-fills the modal. -->
+          <div v-else-if="currentTools.length" class="sf-tools-scroll">
             <!-- Read-only tools -->
             <div class="sf-tools-group">
-              <div class="sf-tools-header">
-                <span class="sf-tools-subtitle">{{ t('schedule.form.tools.readOnly.label') }}</span>
-                <div class="sf-tools-actions">
-                  <button type="button" class="sf-tools-btn" @click="selectAll">
-                    {{ t('schedule.form.tools.selectAll.label') }}
-                  </button>
-                  <button type="button" class="sf-tools-btn" @click="clearAll">
-                    {{ t('schedule.form.tools.clearAll.label') }}
-                  </button>
-                </div>
-              </div>
+              <span class="sf-tools-subtitle">{{ t('schedule.form.tools.readOnly.label') }}</span>
               <div class="sf-tools-grid">
                 <label v-for="_t in readTools" :key="_t.name" class="sf-tool-item">
                   <input
@@ -771,7 +774,7 @@ function save(): void {
                 </label>
               </div>
             </div>
-          </template>
+          </div>
 
           <!-- Empty (no tools returned) -->
           <span v-else class="sf-hint">{{ t('schedule.form.tools.empty') }}</span>
@@ -1031,7 +1034,7 @@ function save(): void {
 .sf-select {
   max-width: 280px;
 }
-.sf-tools-header {
+.sf-tools-labelrow {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -1041,6 +1044,16 @@ function save(): void {
   display: flex;
   gap: var(--sp-2);
   margin-left: auto;
+}
+/* Tool list scroll box: grows with content, caps at max-height then scrolls so
+   the list neither over-fills the modal nor leaves a big blank when sparse. */
+.sf-tools-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: var(--sp-1);
 }
 .sf-tools-btn {
   background: var(--c-card);
@@ -1181,7 +1194,7 @@ function save(): void {
     display: none;
   }
 
-  .sf-tools-header,
+  .sf-tools-labelrow,
   .sf-tools-actions {
     align-items: stretch;
   }

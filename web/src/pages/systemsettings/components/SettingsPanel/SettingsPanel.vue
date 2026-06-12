@@ -197,8 +197,10 @@ function makeAgent(
       return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
     case 'codex':
       // Codex's sandbox/approval gate is derived from `defaultMode` at launch
-      // (2026-06-06-008), so its config is the neutral provider triple only.
-      return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
+      // (2026-06-06-008), so its config is the neutral provider triple plus
+      // `wireApi` — the upstream protocol the driver routes on (2026-06-12-006).
+      // Default `chat` (most third parties are Chat-Completions-only ⇒ relay).
+      return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' } }
   }
 }
 
@@ -235,6 +237,26 @@ function isEnabled(a: AgentConfig): boolean {
 // `system` mode defers to the vendor CLI's own config (2026-06-06-007).
 function showProviderFields(a: AgentConfig): boolean {
   return a.configMode === 'custom'
+}
+
+// The `wireApi` selector is codex-only and custom-only (2026-06-12-006): it
+// declares the provider's upstream protocol the driver routes on. A `system`-mode
+// codex (or any other vendor) has no such field.
+const WIRE_APIS = ['chat', 'responses'] as const
+function showWireApi(a: AgentConfig): boolean {
+  return a.vendor === 'codex' && a.configMode === 'custom'
+}
+function wireApiLabel(w: 'responses' | 'chat'): string {
+  return w === 'responses'
+    ? t('settings.agents.wireApi.responses.label')
+    : t('settings.agents.wireApi.chat.label')
+}
+// Narrow the union for template read/write — `wireApi` lives only on the codex arm.
+function wireApiOf(a: AgentConfig): 'responses' | 'chat' {
+  return a.vendor === 'codex' ? a.config.wireApi : 'chat'
+}
+function setWireApi(a: AgentConfig, w: 'responses' | 'chat'): void {
+  if (a.vendor === 'codex') a.config.wireApi = w
 }
 
 function removeAgent(id: string) {
@@ -463,6 +485,18 @@ function submitPassword() {
               :title="t('settings.agents.col.model.label')"
               :placeholder="t('settings.agents.model.placeholder')"
             />
+            <select
+              v-if="showWireApi(a)"
+              class="agent-field agent-wireapi"
+              :value="wireApiOf(a)"
+              :title="t('settings.agents.wireApi.tooltip')"
+              data-testid="agent-wireapi"
+              @change="
+                setWireApi(a, ($event.target as HTMLSelectElement).value as 'responses' | 'chat')
+              "
+            >
+              <option v-for="w in WIRE_APIS" :key="w" :value="w">{{ wireApiLabel(w) }}</option>
+            </select>
             <span class="col-actions">
               <button
                 class="icon-btn"

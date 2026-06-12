@@ -25,7 +25,7 @@ const mockSettings: SystemSettings = {
       vendor: 'codex',
       configMode: 'system' as const,
       displayName: 'Codex Agent',
-      config: { baseUrl: '', apiKey: '', model: '' },
+      config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' as const },
       enabled: true,
     },
     {
@@ -50,7 +50,7 @@ vi.mock('../config/index.js', () => ({
 }))
 
 // Import AFTER the mock is set up.
-import { resolveFirstAgentOfVendor } from './index.js'
+import { launchForAgent, resolveFirstAgentOfVendor } from './index.js'
 
 describe('resolveFirstAgentOfVendor', () => {
   beforeEach(() => {
@@ -80,5 +80,40 @@ describe('resolveFirstAgentOfVendor', () => {
     const agent = resolveFirstAgentOfVendor('opencode')
     // No opencode agents configured — should fall back to default (claude-pro)
     expect(agent.id).toBe('claude-pro')
+  })
+})
+
+describe('launchForAgent — codex wireApi (2026-06-12-006)', () => {
+  it('a custom codex agent carries baseUrl/apiKey + wireApi into the launch overrides', () => {
+    const launch = launchForAgent({
+      id: 'cx',
+      vendor: 'codex',
+      configMode: 'custom',
+      displayName: 'Codex',
+      config: {
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'sk',
+        model: 'm',
+        wireApi: 'responses',
+      },
+      enabled: true,
+    })
+    expect(launch.baseUrl).toBe('https://api.deepseek.com')
+    expect(launch.apiKey).toBe('sk')
+    expect(launch.wireApi).toBe('responses')
+  })
+
+  it('a system-mode codex agent applies no provider override and omits wireApi', () => {
+    const launch = launchForAgent({
+      id: 'cx-sys',
+      vendor: 'codex',
+      configMode: 'system',
+      displayName: 'Codex',
+      config: { baseUrl: 'https://ignored', apiKey: 'ignored', model: 'm', wireApi: 'chat' },
+      enabled: true,
+    })
+    expect(launch.baseUrl).toBeUndefined()
+    expect(launch.apiKey).toBeUndefined()
+    expect(launch.wireApi).toBeUndefined()
   })
 })

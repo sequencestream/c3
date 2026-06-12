@@ -108,6 +108,7 @@ export interface AppMethods {
   onSelectExecution(id: string): void
   onScheduleMobileBack(targetKey: string): void
   onToggleScheduleEnabled(id: string, enabled: boolean): void
+  runNowSchedule(id: string): void
   openScheduleForm(target: Schedule | null): void
   createSchedule(input: CreateScheduleInput): void
   updateSchedule(id: string, input: UpdateScheduleInput): void

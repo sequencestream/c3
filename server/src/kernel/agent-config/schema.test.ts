@@ -80,6 +80,44 @@ describe('agent-config schema — unknown vendors are the extension point', () =
   })
 })
 
+describe('agent-config schema — codex arm wireApi (2026-06-12-006)', () => {
+  const baseCodex = {
+    id: 'cx1',
+    vendor: 'codex' as const,
+    configMode: 'custom' as const,
+    displayName: 'Codex',
+  }
+
+  it('accepts an explicit wireApi (responses / chat) and routes by vendor tag', () => {
+    for (const wireApi of ['responses', 'chat'] as const) {
+      const parsed = parseAgentConfig({
+        ...baseCodex,
+        config: { baseUrl: 'https://x', apiKey: 'k', model: 'm', wireApi },
+      })
+      expect(parsed?.vendor).toBe('codex')
+      expect(parsed?.vendor === 'codex' && parsed.config.wireApi).toBe(wireApi)
+    }
+  })
+
+  it('migrates a legacy codex config without wireApi to the chat default (relay path)', () => {
+    const parsed = parseAgentConfig({
+      ...baseCodex,
+      config: { baseUrl: 'https://api.deepseek.com', apiKey: 'sk', model: 'deepseek-chat' },
+    })
+    // Default `chat` ⇒ the pre-2026-06-12-006 third-party-via-relay behaviour is preserved.
+    expect(parsed?.vendor === 'codex' && parsed.config.wireApi).toBe('chat')
+  })
+
+  it('rejects an out-of-range wireApi value', () => {
+    expect(
+      parseAgentConfig({
+        ...baseCodex,
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'websocket' },
+      }),
+    ).toBeNull()
+  })
+})
+
 describe('claudeConfigSchema', () => {
   it('requires all three override fields as strings', () => {
     expect(claudeConfigSchema.safeParse({ baseUrl: '', apiKey: '', model: '' }).success).toBe(true)

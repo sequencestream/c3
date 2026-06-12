@@ -252,6 +252,15 @@
           "label": "カスタム"
         }
       },
+      "wireApi": {
+        "tooltip": "プロバイダーが話す API：Chat Completions（c3 のリレー経由）または Responses（直接接続）",
+        "chat": {
+          "label": "Chat API"
+        },
+        "responses": {
+          "label": "Responses API"
+        }
+      },
       "defaultNote": "デフォルトエージェントの変更は遡及しません：保留中のセッション {pending} 件に影響します。バインド済みの {bound} 件のセッションは元のベンダーを維持します。",
       "copy": {
         "tooltip": "エージェントをコピー"
@@ -878,6 +887,10 @@
       },
       "edit": {
         "tooltip": "スケジュールを編集"
+      },
+      "runNow": {
+        "tooltip": "今すぐ実行",
+        "disabledTooltip": "今すぐ実行するにはスケジュールを有効にしてください"
       },
       "toggle": {
         "enabled": {

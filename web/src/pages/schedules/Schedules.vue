@@ -50,6 +50,7 @@ const emit = defineEmits<{
   select: [id: string]
   'open-form': [target: Schedule | null]
   'toggle-enabled': [id: string, enabled: boolean]
+  'run-now': [id: string]
   'load-session': [executionId: string]
   'select-execution': [id: string]
   'close-form': []
@@ -90,6 +91,7 @@ const mobileActiveToken = computed(() => props.executionId ?? props.activeId ?? 
         @new-schedule="emit('open-form', null)"
         @edit-schedule="(s: Schedule) => emit('open-form', s)"
         @toggle-enabled="(id: string, enabled: boolean) => emit('toggle-enabled', id, enabled)"
+        @run-now="(id: string) => emit('run-now', id)"
       />
     </template>
 

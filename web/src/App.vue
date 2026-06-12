@@ -144,6 +144,7 @@ const {
   onSelectSchedule,
   openScheduleForm,
   onToggleScheduleEnabled,
+  runNowSchedule,
   onLoadExecutionSession,
   onSelectExecution,
   onScheduleMobileBack,
@@ -365,6 +366,7 @@ const {
           @select="onSelectSchedule"
           @open-form="openScheduleForm"
           @toggle-enabled="onToggleScheduleEnabled"
+          @run-now="runNowSchedule"
           @load-session="onLoadExecutionSession"
           @select-execution="onSelectExecution"
           @mobile-back="onScheduleMobileBack"

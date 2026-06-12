@@ -163,6 +163,7 @@ export class AgentSessionManager {
       ...(launch.envOverrides ? { envOverrides: launch.envOverrides } : {}),
       ...(launch.baseUrl ? { baseUrl: launch.baseUrl } : {}),
       ...(launch.apiKey ? { apiKey: launch.apiKey } : {}),
+      ...(launch.wireApi ? { wireApi: launch.wireApi } : {}),
     })
 
     // Collect assistant text FIRST, then resolve sessionId (the id is always
@@ -199,6 +200,7 @@ export class AgentSessionManager {
       ...(launch.envOverrides ? { envOverrides: launch.envOverrides } : {}),
       ...(launch.baseUrl ? { baseUrl: launch.baseUrl } : {}),
       ...(launch.apiKey ? { apiKey: launch.apiKey } : {}),
+      ...(launch.wireApi ? { wireApi: launch.wireApi } : {}),
     })
 
     const text = await collectAssistantText(run)

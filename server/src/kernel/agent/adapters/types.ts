@@ -229,6 +229,13 @@ export interface DriverStartOptions {
   /** Raw provider api key override, paired with {@link baseUrl} (driver-path vendors). */
   apiKey?: string
   /**
+   * Codex-only: the custom provider's wire protocol (`responses`/`chat`). The
+   * codex driver routes on it — `chat` ⇒ the in-process Responses→Chat relay,
+   * `responses` ⇒ direct to the provider (2026-06-12-006). Omit ⇒ no custom
+   * provider (system mode / first-party) ⇒ direct. Other vendors ignore it.
+   */
+  wireApi?: 'responses' | 'chat'
+  /**
    * Path to a sandbox-wrapper script. When set, the driver MUST use this path
    * as the vendor binary executable instead of the default host binary resolution.
    * The wrapper transparently runs the vendor CLI inside a sandbox container.

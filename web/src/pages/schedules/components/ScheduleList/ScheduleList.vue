@@ -30,6 +30,7 @@ const emit = defineEmits<{
   'new-schedule': []
   'edit-schedule': [schedule: Schedule]
   'toggle-enabled': [id: string, enabled: boolean]
+  'run-now': [id: string]
 }>()
 
 // Live countdown: refreshed every 30s so relative times stay current.
@@ -207,6 +208,21 @@ function toggleExpand(): void {
             <span class="sched-label">{{ scheduleLabel(s) }}</span>
             <span class="sched-countdown">{{ timeLeft(s.nextRunAt) }}</span>
             <span class="sched-status" :class="s.status">{{ s.status }}</span>
+            <!-- Exec Now:手动触发一次执行(schedule_run_now)。仅 active 时可用,
+                 服务端 triggerRunNow 对非 active 任务为 no-op,故 disabled 兜底。 -->
+            <button
+              type="button"
+              class="sched-run-btn"
+              :disabled="!isEnabled(s)"
+              :title="
+                isEnabled(s)
+                  ? t('schedule.list.runNow.tooltip')
+                  : t('schedule.list.runNow.disabledTooltip')
+              "
+              @click.stop="emit('run-now', s.id)"
+            >
+              ▶
+            </button>
             <!-- 编辑按钮:打开 ScheduleForm 编辑模式弹框,预填当前值。 -->
             <button
               type="button"
@@ -481,6 +497,36 @@ function toggleExpand(): void {
 .sched-status.error {
   background: rgba(239, 68, 68, 0.12);
   color: var(--c-error);
+}
+/* Exec Now 按钮:小型 icon 按钮,与 edit/toggle 等高;disabled 时灰显不可点。 */
+.sched-run-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 18px;
+  padding: 0;
+  font-size: var(--fs-badge);
+  line-height: 1;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.sched-run-btn:hover:not(:disabled) {
+  color: var(--c-success);
+  border-color: var(--c-success);
+  background: var(--c-hover);
+}
+.sched-run-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 /* 编辑按钮:小型 icon 按钮,与 toggle 等高,鼠标悬停变色。 */
 .sched-edit-btn {

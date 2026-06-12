@@ -251,6 +251,15 @@
           "label": "自定义"
         }
       },
+      "wireApi": {
+        "tooltip": "provider 讲哪种 API:Chat Completions(经 c3 relay 中转)或 Responses(直连)",
+        "chat": {
+          "label": "Chat API"
+        },
+        "responses": {
+          "label": "Responses API"
+        }
+      },
       "defaultNote": "更改默认 agent 不会回溯:仅影响 {pending} 个待运行会话;已绑定的 {bound} 个会话维持原 vendor。",
       "copy": {
         "tooltip": "复制智能体"
@@ -877,6 +886,10 @@
       },
       "edit": {
         "tooltip": "编辑定时任务"
+      },
+      "runNow": {
+        "tooltip": "立即执行一次",
+        "disabledTooltip": "请先启用该任务再立即执行"
       },
       "toggle": {
         "enabled": {

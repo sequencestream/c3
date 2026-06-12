@@ -35,6 +35,12 @@ export interface LaunchOverrides {
   model?: string
   baseUrl?: string
   apiKey?: string
+  /**
+   * Codex-only: the custom provider's wire protocol (`responses`/`chat`), which
+   * the codex driver routes on — `chat` ⇒ relay, `responses` ⇒ direct
+   * (2026-06-12-006). Only set for a `custom` codex agent; omitted otherwise.
+   */
+  wireApi?: 'responses' | 'chat'
 }
 import {
   bindSessionAgent,
@@ -110,6 +116,7 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
   let model: string | undefined
   let baseUrl: string | undefined
   let apiKey: string | undefined
+  let wireApi: 'responses' | 'chat' | undefined
 
   // `custom` applies the provider triple; `system` leaves it to the vendor CLI.
   const custom = agent.configMode === 'custom'
@@ -150,11 +157,14 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
     case 'codex': {
       // Provider connection (custom only): raw baseUrl/apiKey for the Codex SDK
       // constructor (NOT env — CodexOptions.env replaces process.env), model neutral.
+      // `wireApi` rides along so the driver routes DIRECT (responses) vs RELAY
+      // (chat) deterministically rather than guessing from baseUrl (2026-06-12-006).
       if (custom) {
-        const { baseUrl: u, apiKey: k, model: m } = agent.config
+        const { baseUrl: u, apiKey: k, model: m, wireApi: w } = agent.config
         if (u) baseUrl = u
         if (k) apiKey = k
         if (m) model = m
+        wireApi = w
       }
       // The launch-time policy gate (sandbox/approval) is the per-tool-approval
       // substitute (008), but it is NOT stored on the agent: the codex driver
@@ -168,6 +178,7 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
     ...(model ? { model } : {}),
     ...(baseUrl ? { baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
+    ...(wireApi ? { wireApi } : {}),
   }
 }
 

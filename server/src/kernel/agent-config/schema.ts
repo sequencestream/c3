@@ -65,6 +65,12 @@ export const codexConfigSchema = z.object({
   baseUrl: z.string(),
   apiKey: z.string(),
   model: z.string(),
+  // Declares the custom provider's upstream protocol so the driver routes DIRECT
+  // vs RELAY deterministically (see CodexAgentConfig). `.default('chat')` migrates
+  // a legacy record without the field to the relay path — preserving the
+  // pre-2026-06-12-006 third-party-via-relay behaviour — and keeps the inferred
+  // OUTPUT type required, matching the wire `CodexAgentConfig`.
+  wireApi: z.enum(['responses', 'chat']).default('chat'),
 })
 
 /** The `codex` agent arm: public shell + `vendor: 'codex'` + codex config. */

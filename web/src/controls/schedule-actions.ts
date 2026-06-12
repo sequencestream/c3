@@ -70,6 +70,11 @@ export function installScheduleActions(ctx: AppCtx): void {
     ctx.updateSchedule(id, { status: enabled ? 'active' : 'paused' })
   }
 
+  // 列表行的「Exec Now」:手动触发一次执行(不改 next_run_at,服务端 triggerRunNow)。
+  ctx.runNowSchedule = (id: string): void => {
+    send({ type: 'schedule_run_now', scheduleId: id })
+  }
+
   // The modal serves both create (target = null) and edit (target = a schedule).
   ctx.openScheduleForm = (target: Schedule | null): void => {
     scheduleFormTarget.value = target

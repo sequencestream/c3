@@ -190,7 +190,7 @@ const codexAgent: AgentConfig = {
   ...claudeAgent,
   id: 'agent-b',
   vendor: 'codex',
-  config: { baseUrl: '', apiKey: '', model: '' },
+  config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
   displayName: 'Agent B',
 }
 

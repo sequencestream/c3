@@ -14,8 +14,12 @@ c3 用 **in-process relay** 填补这个鸿沟：在 c3 自身 Hono 服务器上
 **关键约束：**
 
 - 第一方 OpenAI 不走 relay（`configMode: system`，codex 自己的 openai provider 直接对话 OpenAI Responses API）。
-- 只有 `custom` codex agent（用户配置了第三方 baseUrl）才走 relay。
-- relay 只服务 Chat-Completions-only 提供商；如果某个提供商未来也支持 Responses API，可跳过 relay。
+- 路由由 agent 配置的 `wireApi`（codex 术语 `wire_api`）**显式声明**决定，不再靠 baseUrl 启发式猜（2026-06-12-006）：
+  - `wireApi: 'chat'` + 有 custom baseUrl + relay 在场 ⇒ 走 **relay**（上游只讲 Chat Completions）。
+  - `wireApi: 'responses'` ⇒ 走 **DIRECT**（上游原生讲 Responses，baseUrl/apiKey 作 SDK 构造参数直连其 `/responses`）。
+  - `system` 模式 / 无 baseUrl / relay 缺席 ⇒ DIRECT（第一方或 CLI 自身配置）。
+- 旧 custom codex 配置无 `wireApi` → 幂等迁移到默认值 `chat`（第三方多为 Chat-only），保证现存第三方 agent 走 relay 的行为不变。
+- 弃用旧启发式（`relay && baseUrl ⇒ relay`）：它把原生讲 Responses 的 custom provider 也塞进 relay，relay 的 Responses→Chat→Responses 双向翻译会损坏/失败。
 
 ## 2. 核心实现方案
 

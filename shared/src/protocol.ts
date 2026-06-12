@@ -250,6 +250,19 @@ export interface CodexAgentConfig {
   apiKey: string
   /** Model alias or id. Empty ⇒ no override. */
   model: string
+  /**
+   * Which wire protocol the (custom) provider speaks — codex's own `wire_api`
+   * term (2026-06-12-006). It declares the upstream's REAL API surface so the
+   * driver routes deterministically instead of guessing from `baseUrl`:
+   *  - `'responses'` ⇒ the provider natively serves OpenAI Responses
+   *    (`/responses`); codex connects DIRECT, no relay translation.
+   *  - `'chat'` ⇒ the provider is Chat-Completions-only (most third parties);
+   *    codex is pointed at c3's in-process Responses→Chat relay (ADR-0014).
+   * Legacy records without the field migrate to `'chat'` (the relay default —
+   * preserves the pre-existing third-party-via-relay behaviour). Irrelevant to
+   * `system`-mode codex (no provider override ⇒ DIRECT regardless).
+   */
+  wireApi: 'responses' | 'chat'
 }
 
 /**

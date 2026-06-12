@@ -252,6 +252,15 @@
           "label": "사용자 지정"
         }
       },
+      "wireApi": {
+        "tooltip": "프로바이더가 사용하는 API: Chat Completions(c3 릴레이 경유) 또는 Responses(직접 연결)",
+        "chat": {
+          "label": "Chat API"
+        },
+        "responses": {
+          "label": "Responses API"
+        }
+      },
       "defaultNote": "기본 에이전트 변경은 소급 적용되지 않습니다: 대기 중인 세션 {pending}개에 영향을 줍니다. 바인딩된 세션 {bound}개는 원래 공급자를 유지합니다.",
       "copy": {
         "tooltip": "에이전트 복사"
@@ -878,6 +887,10 @@
       },
       "edit": {
         "tooltip": "스케줄 편집"
+      },
+      "runNow": {
+        "tooltip": "지금 실행",
+        "disabledTooltip": "지금 실행하려면 스케줄을 활성화하세요"
       },
       "toggle": {
         "enabled": {

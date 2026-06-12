@@ -4,6 +4,8 @@ import type { AgentConfig, Discussion } from '@ccc/shared/protocol'
 import DiscussionList from './DiscussionList.vue'
 
 function ag(id: string, displayName: string, over: Partial<AgentConfig> = {}): AgentConfig {
+  // Base is a claude agent; `over` may widen the vendor discriminant, which the
+  // union can't track through a spread — cast back to the (claude-shaped) base.
   return {
     id,
     vendor: 'claude',
@@ -11,7 +13,7 @@ function ag(id: string, displayName: string, over: Partial<AgentConfig> = {}): A
     displayName,
     config: { baseUrl: '', apiKey: '', model: '' },
     ...over,
-  }
+  } as AgentConfig
 }
 
 function disc(id: string, title: string, over: Partial<Discussion> = {}): Discussion {

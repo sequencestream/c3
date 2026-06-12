@@ -233,21 +233,26 @@ export class CodexDriver implements AgentDriver {
     if (opts.signal.aborted) controller.abort()
     else opts.signal.addEventListener('abort', () => controller.abort(), { once: true })
 
-    // Provider connection comes from the agent's `custom` config. Two routes:
-    //  - RELAY (ADR-0014): a custom provider URL + the relay present ⇒ codex 0.137
-    //    only speaks the Responses API (over a websocket), but most third-party
-    //    providers are Chat-Completions-only. So point codex at c3's in-process
-    //    Responses→Chat relay: register the REAL upstream behind an opaque token,
-    //    pass the token as the codex API key, define a custom model_provider with
-    //    `supports_websockets=false` (forces plain HTTP POST + SSE the relay
-    //    serves), and inject NO_PROXY so the loopback hop bypasses a user proxy.
-    //  - DIRECT (original path): no relay or no custom URL ⇒ baseUrl/apiKey go
+    // Provider connection comes from the agent's `custom` config. The route is
+    // decided by the provider's declared `wireApi` (2026-06-12-006), NOT guessed
+    // from the presence of a baseUrl — the old heuristic sent EVERY custom codex
+    // provider through the relay, corrupting providers that natively speak
+    // Responses. Two routes:
+    //  - RELAY (ADR-0014): `wireApi === 'chat'` + a custom provider URL + the relay
+    //    present ⇒ the provider is Chat-Completions-only, but codex 0.137 only
+    //    speaks Responses. So point codex at c3's in-process Responses→Chat relay:
+    //    register the REAL upstream behind an opaque token, pass the token as the
+    //    codex API key, define a custom model_provider with `supports_websockets=false`
+    //    (forces plain HTTP POST + SSE the relay serves), and inject NO_PROXY so the
+    //    loopback hop bypasses a user proxy.
+    //  - DIRECT (original path): `wireApi === 'responses'` (provider serves Responses
+    //    natively), or no relay / no custom URL (system mode) ⇒ baseUrl/apiKey go
     //    straight to the SDK as constructor options (NOT env — CodexOptions.env
     //    REPLACES process.env and would drop PATH). `system` configMode leaves
     //    them undefined ⇒ the Codex CLI's own login/config applies.
     let relayToken: string | undefined
     let codexOptions: CodexFactoryOptions
-    if (this.relay && opts.baseUrl) {
+    if (this.relay && opts.baseUrl && opts.wireApi === 'chat') {
       relayToken = this.relay.register({ baseUrl: opts.baseUrl, apiKey: opts.apiKey ?? '' })
       codexOptions = {
         apiKey: relayToken, // becomes CODEX_API_KEY; the relay reads it as the binding token.

@@ -251,6 +251,15 @@
           "label": "Custom"
         }
       },
+      "wireApi": {
+        "tooltip": "Which API the provider speaks: Chat Completions (routed through c3’s relay) or Responses (connected directly)",
+        "chat": {
+          "label": "Chat API"
+        },
+        "responses": {
+          "label": "Responses API"
+        }
+      },
       "defaultNote": "Changing the default agent is not retroactive: it affects {pending} pending session(s); {bound} bound session(s) keep their original vendor.",
       "copy": {
         "tooltip": "Copy agent"
@@ -877,6 +886,10 @@
       },
       "edit": {
         "tooltip": "Edit schedule"
+      },
+      "runNow": {
+        "tooltip": "Run now",
+        "disabledTooltip": "Enable the schedule to run it now"
       },
       "toggle": {
         "enabled": {

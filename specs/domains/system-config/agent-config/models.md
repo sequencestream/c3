@@ -29,6 +29,19 @@ compile-time assertion.
 | `apiKey`  | text       | API key / auth token override; empty ⇒ no override (AC-R5) |
 | `model`   | text       | Model alias or id; empty ⇒ no override (AC-R5)             |
 
+### Codex config sub-object (`CodexAgentConfig`, `vendor === 'codex'`)
+
+The neutral provider triple plus `wireApi`. Codex's launch-time policy gate
+(`sandboxMode`/`approvalPolicy`) is NOT persisted here — it is derived at launch from the
+session `defaultMode` via the neutral grid (2026-06-06-008).
+
+| Attribute | Type                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseUrl` | text (url)              | OpenAI-compatible base URL override (custom mode only); empty ⇒ no override                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `apiKey`  | text                    | API key / auth token override; empty ⇒ no override                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `model`   | text                    | Model alias or id; empty ⇒ no override                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `wireApi` | `'responses' \| 'chat'` | The custom provider's wire protocol — codex's own `wire_api` term (2026-06-12-006). `'responses'` ⇒ provider serves Responses natively ⇒ codex connects **DIRECT**; `'chat'` ⇒ Chat-Completions-only ⇒ codex routes through c3's in-process Responses→Chat **relay** (ADR-0014). Legacy records without the field migrate to `'chat'` (preserves the prior third-party-via-relay behaviour). Irrelevant to `system`-mode codex. See [codex-relay](../../../architecture/codex-relay.md). |
+
 Relationships: zero or more Sessions bind to an Agent; an unbound session uses the default.
 
 ## System Agent

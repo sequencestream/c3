@@ -216,7 +216,7 @@ export async function runViaDriver(
   // claude-hardwired path applies these to the SDK; the driver path threads the
   // neutral subset the vendor's driver understands (2026-06-06-007). Codex's policy
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
-  const { agentId, model, baseUrl, apiKey, envOverrides } = resolveSessionLaunch(runId)
+  const { agentId, model, baseUrl, apiKey, envOverrides, wireApi } = resolveSessionLaunch(runId)
 
   // Sandbox wrapper: when the session has a running sandbox container, create
   // a wrapper script that runs the vendor CLI inside the container. The adapter
@@ -262,6 +262,7 @@ export async function runViaDriver(
       ...(model ? { model } : {}),
       ...(baseUrl ? { baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
+      ...(wireApi ? { wireApi } : {}),
       ...(envOverrides ? { envOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
       ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),

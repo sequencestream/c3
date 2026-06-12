@@ -113,7 +113,8 @@ driver.register({baseUrl: "https://api.deepseek.com", apiKey: "sk-xxx"})
 
 防御层次：
 
-1. **loopback 绑定** — relay 只监听 `127.0.0.1`，外部不可达。
+1. **loopback 绑定** — relay 路由挂在 c3 主 Hono app 上，期望只监听 `127.0.0.1`，外部不可达。
+   _（修正注 2026-06-13，F1）：主 server `serve({ port })` 当前**未传 hostname**，Node 实际绑定 `0.0.0.0`（全网卡），故本层在当前代码里**不成立**——relay 端点事实上已对 LAN 可达，token 验证是唯一闸。这是独立于 relay 的既有 constitution C-SEC-5 偏差，记为 finding 待单独修（见 §2.7）。容器化路径**刻意不依赖**这个 0.0.0.0 行为，见下。_
 2. **token 验证** — 未知 token 返回 401 JSON，拒绝处理。
 3. **token 一次性** — run 结束即注销，不存在长期凭证。
 4. **真实 key 不离开 c3** — codex 子进程只看到 UUID token，永远不接触上游 apiKey。
@@ -148,6 +149,61 @@ app.post(`${CODEX_RELAY_PATH}/responses`, (c) => codexRelay.handler(c))
 ```
 
 在 `compositionRoot` 中传递给 codex adapter factory 的是 `codexRelay` 的 kernel 面（`baseUrl` + `register`/`unregister`），不是 HTTP handler。遵循 ADR-0009 R2（kernel 不碰 HTTP）。
+
+### 2.6 容器内 codex RELAY（sandbox，ADR-0024 follow-up，2026-06-13）
+
+当被随机选中的 sandbox agent 是一个 **codex RELAY 路（`wireApi=chat`）** 的自定义 agent 时，codex 在 Docker 容器内执行（wrapper = `docker exec --env-file <f> -i -w /workspace <cid> codex "$@"`，ADR-0024）。容器 loopback ≠ host loopback，直接 `127.0.0.1:<c3port>` 到不了 host relay。本期方案（Q1-A，**relay 不放宽监听面**）：
+
+```
+┌── host ────────────────────────────────────────┐
+│  c3 server (relay 仍绑 c3 loopback)             │
+│        ▲  http://host.docker.internal:<port>/…  │
+│        │  (Docker host-gateway → host loopback) │
+│  ┌─────┴───────────────── docker bridge ──────┐ │
+│  │  container:  codex                          │ │
+│  │    base_url = http://host.docker.internal…  │ │
+│  │    CODEX_API_KEY = <relay token>  (env-file)│ │
+│  └─────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────┘
+```
+
+四个穿透机制：
+
+| 需求                  | 实现                                                                                                                                                                                                                                                                     | 代码                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| (a) base_url 容器可达 | relay base_url 的 loopback host 改写为 `host.docker.internal`（保留 port+path）；relay **本身不改绑定**，容器经 Docker host-gateway 回连 host loopback                                                                                                                   | `rewriteRelayHostForSandbox()`（driver.ts），仅当 `opts.sandboxWrapperPath` 在场时触发                      |
+| (b) host-gateway 接线 | 容器 `HostConfig.ExtraHosts = ['host.docker.internal:host-gateway']`，仅当 `networkDisabled=false`                                                                                                                                                                       | `DockerDriver.start()`                                                                                      |
+| (c) token 穿透        | token 由 `register()` 在 driver 内铸造（晚于 env-file 创建），driver 在铸造后 `appendFileSync` 把 `CODEX_API_KEY=<token>` 追加进 env-file；env-file 被 `docker exec` 在 `runStreamed` 时懒读，时序成立。`-c model_providers.c3relay.*` 是 SDK argv，随 `"$@"` 自动进容器 | `codexRelaySandboxEnv()` + `appendEnvFile()`（driver.ts），`sandboxEnvFile` opt 由 `run-via-driver.ts` 传入 |
+| (d) NO_PROXY 容器语义 | env-file 内 `NO_PROXY`/`no_proxy` 含 `host.docker.internal,127.0.0.1,localhost,::1`，防容器内代理劫持 relay hop                                                                                                                                                          | 同 (c)                                                                                                      |
+
+**平台覆盖**：
+
+- **Docker Desktop（macOS/Windows）**：`host.docker.internal` 由 Desktop 直通 host loopback，relay 保持 loopback 即可达，**零新网络暴露**，constitution-clean。这是支持的目标路径。
+- **Linux 原生 Docker**：`host.docker.internal` 经 `host-gateway` 解析到 bridge 网关 IP；要到达 host relay，host 须在该接口监听。当前虽因 F1（0.0.0.0）可达，但**本设计刻意不背书该依赖**——一旦 F1 被修为 loopback-only，Linux 原生下此路径不再连通。Linux 原生的 RELAY-in-sandbox 因此列为**已知限制**，正式支持留待方案二（容器内 relay sidecar，见 §6 与 ADR-0024）。
+
+### 2.7 安全评审：relay 绑定面（容器化后）
+
+验收②的威胁模型与 constitution 合规判定。
+
+**资产与暴露面**：
+
+- 资产：上游真实 `apiKey`（仅存于 host 内存的 token registry，永不进 codex 子进程 / 容器 / env-file）；relay `/responses` 端点。
+- 本期对 relay **监听接口零改动**：relay 仍只挂在主 app 上，容器经 `host.docker.internal`（host-gateway）回连，未新增任何 `0.0.0.0`/bridge/LAN 绑定。**新暴露面 = 容器**：与 c3 同宿主、由 c3 自己启动并随 run 销毁的 Docker 容器，新增了对 relay 的访问能力。
+
+**补偿措施（沿用 token registry，四层在容器面下复核）**：
+
+1. 不透明 token — `crypto.randomUUID()`（122 bit 熵），容器内 codex 只持 token，不可枚举他人 binding。
+2. token 一次性 — run 结束 `unregister`，容器随 run 销毁，无长期凭证残留。
+3. 真实 key 隔离 — registry 在 host 内存，token→真实 key 的解析只在 host relay handler 内发生；容器/env-file 永不见真实 key（与非容器路一致）。
+4. loopback 退化的补偿 — 容器可达性不靠放宽 relay 绑定，而靠 Docker host-gateway 这一宿主私有路径；docker bridge 默认不路由到 LAN，故未把 relay 暴露给 host 之外。
+
+**constitution 判定**：
+
+- **C-SEC-3（deny-by-default）**：满足。容器内非法 token → relay 401；sandbox 选取失败/容器启动失败一律硬失败（ADR-0024），无静默降级。
+- **C-SEC-5（localhost-only）**：本任务**未引入**任何非 loopback 绑定，relay 与主 server 的绑定面未被本任务改动，故本任务**不削弱** C-SEC-5。
+- **F1 独立 finding（不在本任务范围内修，用户 Q2-B 决策）**：主 server `serve({ port })` 未传 hostname → Node 绑 `0.0.0.0`，与 C-SEC-5 及本文 §2.3 防御层①叙述冲突。**这是既有偏差，先于且独立于本任务**。建议单独修复（`serve({ port, hostname: '127.0.0.1' })`）。修复后：Docker Desktop 路径不受影响（host.docker.internal 仍直通 loopback）；Linux 原生 RELAY-in-sandbox 将不再连通（如上，已知限制 → 方案二）。
+
+**结论**：在 Q1-A（relay 不放宽 + host.docker.internal）下，容器内 codex RELAY 不扩大 relay 的网络暴露面，满足 deny-by-default 与 localhost-only；唯一新增的是同宿主、随 run 销毁的容器对 relay 的访问，由不透明一次性 token + 真实 key 隔离兜底。F1 是需单独闭环的既有 constitution 偏差。
 
 ## 3. 兼容性保障
 
@@ -306,3 +362,5 @@ rtk proxy pnpm check:codex-upstream
 5. **Token usage 忠实映射** — Chat usage 转为 Responses 格式，非 OpenAI 提供商可能返回自定义 usage 字段，当前 `mapUsage` 只处理标准字段，额外字段丢失。
 6. **Reasoning tokens 依赖上游** — 只有支持 `reasoning_content` 的上游（DeepSeek-R 系列）才产生 `reasoning_text.delta`；其他提供商无副作用。
 7. **无缓存** — 每次请求都经过翻译，不存在映射缓存。loopback 延迟可忽略不计。
+8. **容器内 RELAY 仅 Docker Desktop 路径受支持（ADR-0024 follow-up）** — sandbox 容器内的 codex RELAY 经 `host.docker.internal` 回连 host loopback relay（§2.6）。Docker Desktop 直通 host loopback，零新暴露；**Linux 原生 Docker** 下 `host.docker.internal` 只到 bridge 网关，到达 host relay 依赖 host 在该接口监听（当前仅因 F1=0.0.0.0 偶然可达，本设计不背书），故 Linux 原生 RELAY-in-sandbox 列为已知限制，正式支持待**方案二：容器内 relay sidecar**（容器内跑一份 relay，监听容器自身 loopback，零 host 暴露）。
+9. **F1：主 server 绑定面与 C-SEC-5 偏差（既有，独立 finding）** — 主 server `serve({ port })` 未传 hostname → Node 绑 `0.0.0.0`，与 constitution C-SEC-5（localhost-only）及 §2.3 防御层①冲突。先于本任务存在；建议单独修为 `hostname:'127.0.0.1'`。详见 §2.7。

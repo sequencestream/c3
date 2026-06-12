@@ -55,14 +55,19 @@ export function pickSandboxAgent(
   //  - codex DIRECT (wireApi=responses): the custom provider serves Responses
   //    natively; baseUrl/model ride the wrapper argv and the apiKey is mirrored
   //    into the env-file as CODEX_API_KEY (codexDirectSandboxEnv). Supported.
-  //  - codex RELAY (wireApi=chat) / system-login codex (wireApi undefined): need
-  //    c3's in-process Responses→Chat relay or host login creds, neither of which
-  //    bridges into the container yet ⇒ unsupported-wire (a later intent).
+  //  - codex RELAY (wireApi=chat): the provider is Chat-only, so codex reaches c3's
+  //    in-process Responses→Chat relay — which stays loopback-bound — across the
+  //    container boundary via `host.docker.internal` (base_url rewrite) with the
+  //    per-run token mirrored into the env-file (ADR-0024 follow-up). Supported.
+  //  - system-login codex (wireApi undefined): no injected provider credentials reach
+  //    the container ⇒ unsupported-wire (a later intent).
   //  - opencode / anything else: no container provider plumbing yet ⇒ unsupported-vendor.
   // A bad pick hard-fails this run rather than silently degrading.
   if (resolved.vendor === 'claude') return { ok: true, agentId: pickedId }
   if (resolved.vendor === 'codex') {
-    if (resolved.wireApi === 'responses') return { ok: true, agentId: pickedId }
+    if (resolved.wireApi === 'responses' || resolved.wireApi === 'chat') {
+      return { ok: true, agentId: pickedId }
+    }
     return { ok: false, reason: 'unsupported-wire', agentId: pickedId }
   }
   return { ok: false, reason: 'unsupported-vendor', agentId: pickedId }

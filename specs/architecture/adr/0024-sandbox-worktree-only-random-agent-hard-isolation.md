@@ -90,3 +90,37 @@ opencode；system-login codex（容器内无注入凭据）。这些命中即硬
 
 **未做 live 校验**：本轮交付含类型/单测/规范同步；「真实 Responses 兼容 provider + docker 容器内成功直连出站」
 需用户在装有 codex CLI 的容器 image 上 live 验证（验收①）。
+
+## Follow-up (2026-06-13, 第二批) — codex RELAY(Chat) 容器化 + relay 绑定面安全评审
+
+承接上一条遗留的「codex RELAY 路（`wireApi=chat`）」。第三方 Chat-only provider（DeepSeek/Kimi 等）经 c3 进程内
+Responses→Chat relay（ADR-0014）出站；relay 路由挂在 c3 主 app（host loopback）。容器内 codex 的 loopback 不是
+host loopback，到不了 host relay。
+
+**决策（用户定，2026-06-13）**：
+
+- **Q1-A：relay 不放宽监听面**。容器经 Docker `host.docker.internal`（host-gateway）回连 host loopback relay，
+  relay 本身仍只挂主 app；**零新网络暴露**。Docker Desktop 直通 host loopback（支持的目标路径）；Linux 原生只到
+  bridge 网关，正式支持留待**方案二（容器内 relay sidecar）**，本期列为已知限制（codex-relay.md §2.6/§6）。
+- **Q2-B：F1 仅记录、本期不动 bind**。发现主 server `serve({ port })` 未传 hostname → Node 绑 `0.0.0.0`，与
+  constitution C-SEC-5（localhost-only）冲突、且使 relay「loopback-only」防御层在当前代码里为假。这是**独立于本任务
+  的既有偏差**，记为 finding（codex-relay.md §2.7/§6 限制 9），建议单独修 `hostname:'127.0.0.1'`；本任务刻意不依赖
+  该 0.0.0.0 行为。
+
+**落地**：
+
+1. `codex/driver.ts`：relay 分支感知 sandbox（`opts.sandboxWrapperPath` 在场）。导出纯函数
+   `rewriteRelayHostForSandbox(baseUrl)`（loopback host → `host.docker.internal`，保留 port/path）改写
+   `model_providers.c3relay.base_url`；导出 `codexRelaySandboxEnv(token)`（→ `CODEX_API_KEY` + `NO_PROXY`）。
+   token 在 `register()` 内铸造（晚于 env-file），driver `appendFileSync` 把它追加进 env-file——env-file 被
+   `docker exec` 在 `runStreamed` 时懒读，时序成立。`-c model_providers.c3relay.*` 是 SDK argv，随 `"$@"` 自动进容器。
+2. `DriverStartOptions.sandboxEnvFile`：env-file 路径，由 `run-via-driver.ts` 传入；`SandboxLauncher` 导出
+   `sandboxEnvFilePath(tmpDir)` 作文件名单一来源。
+3. `DockerDriver.start`：`networkDisabled=false` 时加 `HostConfig.ExtraHosts=['host.docker.internal:host-gateway']`。
+4. `pickSandboxAgent`：放行 `codex + wireApi=chat`（与 `responses` 并列）；`unsupported-wire` 现仅命中 system-login
+   codex（`wireApi` 缺）。`run-lifecycle.ts` 文案随之更新。
+
+**仍未覆盖（后续意图）**：Linux 原生 RELAY（→ 方案二 sidecar）；F1 主 server bind 修复；opencode；system-login codex。
+
+**未做 live 校验**：base_url 改写 + token 穿透 + ExtraHosts + pick 放行均有单测；「wireApi=chat 第三方 provider +
+docker 容器内经 relay 成功出站」需用户在装有 codex CLI 的 image（Docker Desktop）上 live 验证（验收①）。

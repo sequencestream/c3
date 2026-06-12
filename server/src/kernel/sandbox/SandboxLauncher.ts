@@ -153,6 +153,19 @@ export async function launchSandbox(
   }
 }
 
+/** The fixed filename of the wrapper's docker `--env-file` inside the run's tmp dir. */
+const SANDBOX_ENV_FILENAME = 'env.txt'
+
+/**
+ * Resolve the wrapper's `--env-file` path for a run's sandbox tmp dir. Single source
+ * of the filename so callers that need to augment the env-file after the wrapper is
+ * created (codex RELAY token injection, ADR-0024 follow-up) stay in sync with
+ * {@link createSandboxWrapper}.
+ */
+export function sandboxEnvFilePath(tmpDir: string): string {
+  return join(tmpDir, SANDBOX_ENV_FILENAME)
+}
+
 /**
  * Create a wrapper script that runs the given binary inside the sandbox container.
  *
@@ -175,7 +188,7 @@ export function createSandboxWrapper(
   envVars: Record<string, string>,
 ): string {
   // Write the env file that docker exec will read
-  const envFilePath = join(tmpDir, 'env.txt')
+  const envFilePath = sandboxEnvFilePath(tmpDir)
   const envLines = Object.entries(envVars)
     .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${k}=${serializeEnvValue(v)}`)

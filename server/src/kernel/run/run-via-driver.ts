@@ -24,7 +24,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
 import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
-import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
+import { createSandboxWrapper, sandboxEnvFilePath } from '../sandbox/SandboxLauncher.js'
 import { buildChildEnv } from '../infra/child-env.js'
 import {
   bindPending,
@@ -228,7 +228,9 @@ export async function runViaDriver(
   // host-process `CODEX_API_KEY`, which `docker exec --env-file` does NOT carry
   // into the container — so mirror it into the env-file here (overriding any host
   // CODEX_API_KEY). baseUrl/model ride the wrapper's "$@" argv natively and need
-  // no env translation (ADR-0024).
+  // no env translation (ADR-0024). The codex RELAY (wireApi=chat) token is NOT known
+  // here — it is minted inside the driver's `register()` — so the driver appends it
+  // to this same env-file (via `sandboxEnvFile` below) after minting (ADR-0024 follow-up).
   const sandboxEnv = {
     ...buildChildEnv(envOverrides),
     ...(adapter.vendor === 'codex' ? codexDirectSandboxEnv({ apiKey, wireApi }) : {}),
@@ -236,6 +238,8 @@ export async function runViaDriver(
   const sandboxWrapperPath = rt.sandboxHandle
     ? createSandboxWrapper(rt.sandboxHandle, rt.sandboxTmpDir ?? '', vendorBinaryName, sandboxEnv)
     : undefined
+  const sandboxEnvFile =
+    rt.sandboxHandle && rt.sandboxTmpDir ? sandboxEnvFilePath(rt.sandboxTmpDir) : undefined
   // Override cwd: sandbox container, effectiveCwd (worktree isolation), or original workspacePath.
   const driverCwd = rt.sandboxHandle ? '/workspace' : (rt.effectiveCwd ?? workspacePath)
 
@@ -271,6 +275,7 @@ export async function runViaDriver(
       ...(wireApi ? { wireApi } : {}),
       ...(envOverrides ? { envOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
+      ...(sandboxEnvFile ? { sandboxEnvFile } : {}),
       ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),
       // A pending session starts fresh; a real id resumes that native session.
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),

@@ -178,6 +178,20 @@ describe('DockerDriver', () => {
       expect(createCall.HostConfig.NetworkMode).toBe('none')
     })
 
+    it('maps host.docker.internal to host-gateway when the network is enabled (codex RELAY hop, ADR-0024)', async () => {
+      await driver.start({ ...TEST_CONFIG, networkDisabled: false })
+
+      const createCall = mocks.docker.createContainer.mock.calls[0][0]
+      expect(createCall.HostConfig.ExtraHosts).toEqual(['host.docker.internal:host-gateway'])
+    })
+
+    it('omits ExtraHosts when the network is disabled (no route to the host anyway)', async () => {
+      await driver.start({ ...TEST_CONFIG, networkDisabled: true })
+
+      const createCall = mocks.docker.createContainer.mock.calls[0][0]
+      expect(createCall.HostConfig.ExtraHosts).toBeUndefined()
+    })
+
     it('sets readonly rootfs when configured', async () => {
       await driver.start({ ...TEST_CONFIG, readonlyRootfs: true })
 

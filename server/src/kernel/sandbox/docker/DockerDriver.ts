@@ -124,6 +124,16 @@ export class DockerDriver implements SandboxDriver {
       hostConfig.StopTimeout = Math.round(config.resourceLimits.stopTimeoutMs / 1000)
     }
 
+    // Container→host reachability for the codex RELAY hop (ADR-0024 follow-up): map
+    // `host.docker.internal` to the host gateway so a sandboxed codex can reach c3's
+    // loopback-bound relay (which never leaves loopback — no exposure widening).
+    // Docker Desktop provides this alias automatically; on Linux it requires the
+    // explicit `host-gateway` mapping. Only meaningful when the container has a
+    // network (`--network none` has no route to the host).
+    if (!config.networkDisabled) {
+      hostConfig.ExtraHosts = ['host.docker.internal:host-gateway']
+    }
+
     // ── Network allowlist — Phase 2 ──────────────────────────────────────
     if (config.networkAllowlist && config.networkAllowlist.length > 0) {
       throw new Error(

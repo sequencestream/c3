@@ -242,6 +242,15 @@ export interface DriverStartOptions {
    */
   sandboxWrapperPath?: string
   /**
+   * Path to the sandbox wrapper's `docker --env-file` (set alongside
+   * {@link sandboxWrapperPath} on a sandbox run). The codex RELAY route appends the
+   * per-run relay token (`CODEX_API_KEY`) + NO_PROXY here so it crosses into the
+   * container — the SDK only sets the token as a host-process env, which
+   * `docker exec --env-file` does not carry in (ADR-0024 follow-up). Other vendors /
+   * routes ignore it.
+   */
+  sandboxEnvFile?: string
+  /**
    * Remote (HTTP) MCP servers to attach to this run, keyed by server name
    * (2026-06-12-005). Each driver translates to its native MCP config; a driver
    * that does not support remote MCP ignores it. Currently produced only for the

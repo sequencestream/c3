@@ -22,6 +22,7 @@
  * ADR-0009: imports `@openai/codex-sdk` (inside `adapters/codex/`); only canonical
  * shapes leave via {@link AgentRun.messages}.
  */
+import { appendFileSync } from 'node:fs'
 import { Codex } from '@openai/codex-sdk'
 import type {
   ApprovalMode,
@@ -281,6 +282,24 @@ export class CodexDriver implements AgentDriver {
     let codexOptions: CodexFactoryOptions
     if (this.relay && opts.baseUrl && opts.wireApi === 'chat') {
       relayToken = this.relay.register({ baseUrl: opts.baseUrl, apiKey: opts.apiKey ?? '' })
+      // Sandbox (ADR-0024 follow-up): the run executes INSIDE a container (a wrapper
+      // path is supplied), so the relay must be reached across the container boundary.
+      // The relay STAYS bound to c3's loopback (no network-exposure widening, Q1-A);
+      // the container reaches it through Docker's `host.docker.internal` host-gateway
+      // alias, so the provider base_url's loopback host is rewritten to that alias.
+      // The per-run token must also cross into the container: the SDK only sets it as
+      // a HOST-process `CODEX_API_KEY`, which `docker exec --env-file` does not carry
+      // in, so mirror token + NO_PROXY (bypass the host.docker.internal hop) into the
+      // env-file the wrapper reads. The env-file is read lazily at `docker exec` time
+      // (during `runStreamed` below), so appending here — after register, before the
+      // turn — lands the token in time.
+      const sandboxed = !!opts.sandboxWrapperPath
+      const relayBase = sandboxed
+        ? rewriteRelayHostForSandbox(this.relay.baseUrl)
+        : this.relay.baseUrl
+      if (sandboxed && opts.sandboxEnvFile) {
+        appendEnvFile(opts.sandboxEnvFile, codexRelaySandboxEnv(relayToken))
+      }
       codexOptions = {
         apiKey: relayToken, // becomes CODEX_API_KEY; the relay reads it as the binding token.
         env: relayEnv(opts.envOverrides),
@@ -289,7 +308,7 @@ export class CodexDriver implements AgentDriver {
           model_providers: {
             [CODEX_RELAY_PROVIDER]: {
               name: CODEX_RELAY_PROVIDER,
-              base_url: this.relay.baseUrl,
+              base_url: relayBase,
               env_key: 'CODEX_API_KEY',
               wire_api: 'responses',
               supports_websockets: false,
@@ -431,4 +450,57 @@ function withLoopback(value?: string): string {
     if (!parts.includes(host)) parts.push(host)
   }
   return parts.join(',')
+}
+
+/**
+ * The host alias a sandboxed container uses to reach c3's loopback-bound relay
+ * (ADR-0024 follow-up). Docker maps it to the host gateway — provided automatically
+ * on Docker Desktop (→ the host's loopback), and via the explicit
+ * `host.docker.internal:host-gateway` ExtraHost on Linux (DockerDriver). The relay
+ * itself never leaves loopback, so this adds no network-exposure surface (Q1-A).
+ */
+export const SANDBOX_RELAY_HOST = 'host.docker.internal'
+
+/**
+ * Rewrite a relay base URL's loopback host to the container-reachable
+ * {@link SANDBOX_RELAY_HOST} for a sandboxed codex RELAY run. Port and path are
+ * preserved; a non-loopback host (or an unparseable URL) passes through unchanged.
+ */
+export function rewriteRelayHostForSandbox(baseUrl: string): string {
+  try {
+    const u = new URL(baseUrl)
+    // WHATWG URL returns IPv6 hosts bracketed (`[::1]`); cover both forms.
+    const loopback = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+    if (loopback.has(u.hostname)) {
+      u.hostname = SANDBOX_RELAY_HOST
+      return u.toString()
+    }
+    return baseUrl
+  } catch {
+    return baseUrl
+  }
+}
+
+/**
+ * The env-file additions a sandboxed codex RELAY run needs (ADR-0024 follow-up):
+ * the per-run relay token as `CODEX_API_KEY` (the SDK only sets it as a host-process
+ * env, which `docker exec --env-file` drops), plus NO_PROXY entries covering the
+ * `host.docker.internal` hop and loopback so an in-container proxy cannot hijack it.
+ */
+export function codexRelaySandboxEnv(token: string): Record<string, string> {
+  const noProxy = [SANDBOX_RELAY_HOST, '127.0.0.1', 'localhost', '::1'].join(',')
+  return { CODEX_API_KEY: token, NO_PROXY: noProxy, no_proxy: noProxy }
+}
+
+/**
+ * Append `KEY=VALUE` lines to a docker `--env-file` (later keys override earlier
+ * ones, so these win over the base env the wrapper wrote). Values are trimmed of
+ * trailing whitespace per docker's env-file convention; the relay token (UUID) and
+ * NO_PROXY (comma list) carry no characters needing escaping.
+ */
+function appendEnvFile(envFile: string, vars: Record<string, string>): void {
+  const lines = Object.entries(vars)
+    .map(([k, v]) => `${k}=${v.replace(/\s+$/, '')}`)
+    .join('\n')
+  appendFileSync(envFile, lines + '\n', 'utf-8')
 }

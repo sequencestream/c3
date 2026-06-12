@@ -77,13 +77,9 @@ describe('pickSandboxAgent', () => {
     expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({ ok: true, agentId: 'cod' })
   })
 
-  it('hard-fails with unsupported-wire for codex RELAY (wireApi=chat)', () => {
+  it('admits a codex RELAY agent (wireApi=chat) — reaches the relay via host.docker.internal', () => {
     const resolve = resolverOver({ cod: { vendor: 'codex', wireApi: 'chat' } })
-    expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({
-      ok: false,
-      reason: 'unsupported-wire',
-      agentId: 'cod',
-    })
+    expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({ ok: true, agentId: 'cod' })
   })
 
   it('hard-fails with unsupported-wire for system-login codex (wireApi absent)', () => {

@@ -9,7 +9,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
 import type { CanonicalMessage, DriverStartOptions } from '../types.js'
-import { CodexDriver, gateToCodexPolicy, type CodexClient, type CodexThread } from './driver.js'
+import {
+  CodexDriver,
+  gateToCodexPolicy,
+  mcpServersToCodexConfig,
+  type CodexClient,
+  type CodexFactoryOptions,
+  type CodexThread,
+} from './driver.js'
 import { CodexApprovalBridge } from './approval.js'
 import { createCodexAdapter } from './index.js'
 
@@ -148,6 +155,62 @@ describe('CodexDriver', () => {
       workingDirectory: '/work',
       skipGitRepoCheck: true,
     })
+  })
+})
+
+describe('mcpServersToCodexConfig (2026-06-12-005)', () => {
+  it('returns undefined for absent or empty server maps', () => {
+    expect(mcpServersToCodexConfig(undefined)).toBeUndefined()
+    expect(mcpServersToCodexConfig({})).toBeUndefined()
+  })
+
+  it('translates a neutral http descriptor to codex mcp_servers { url }', () => {
+    const out = mcpServersToCodexConfig({
+      c3: { type: 'http', url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=abc' },
+    })
+    expect(out).toEqual({
+      c3: { url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=abc' },
+    })
+  })
+
+  it('carries bearer_token_env_var only when present', () => {
+    expect(
+      mcpServersToCodexConfig({
+        c3: { type: 'http', url: 'http://x', bearerTokenEnvVar: 'C3_TOKEN' },
+      }),
+    ).toEqual({ c3: { url: 'http://x', bearer_token_env_var: 'C3_TOKEN' } })
+  })
+})
+
+describe('CodexDriver mcpServers injection (2026-06-12-005)', () => {
+  it('threads mcpServers into codex config.mcp_servers, merged with any relay config', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(
+      startOpts({
+        mcpServers: {
+          c3: { type: 'http', url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=t1' },
+        },
+      }),
+    )
+    expect(captured?.config?.mcp_servers).toEqual({
+      c3: { url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=t1' },
+    })
+  })
+
+  it('omits config.mcp_servers when no mcpServers given', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(startOpts())
+    expect(captured?.config?.mcp_servers).toBeUndefined()
   })
 })
 

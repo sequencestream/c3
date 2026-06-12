@@ -285,6 +285,10 @@ update id rejecting the whole batch — so the agent learns it did not save). `p
 closed over from the runtime's resolved `workspacePath` and re-bound each run, so the tool never
 crosses projects.
 
+The three tools' zod shapes, descriptions, and core logic (`runFind`/`runView`/`runSaveConfirmed`)
+live ONE source in `tool-defs.ts`, consumed by both MCP surfaces (the in-process SDK MCP here and
+the HTTP MCP below) so they never drift.
+
 **Read-only query tools (RM-R19).** The same server also carries `find_intents`
 (`{ keyword?, module?, status? }`, all optional; `status` is a `z.enum` over the five
 `IntentStatus` values) → `store.findIntents` → a **slim** JSON list
@@ -295,6 +299,36 @@ unknown / other-project id returns a friendly「未找到」text (not `isError`)
 `projectPath` (no cross-project reads), inherit `alwaysLoad`, and are auto-allowed by the gate
 (`classifyIntentTool` → `allow`), unlike `save_intents`'s confirmation. The agent is
 prompted to query the ledger before splitting items or setting `dependsOn`.
+
+## Intent tools over localhost HTTP MCP — cross-vendor (`transport/intent-mcp/`, 2026-06-12-005)
+
+The `c3` server above is an **in-process** SDK MCP server (`createSdkMcpServer`), which only the
+Claude run path can load (`capabilities.inProcessMcp: true`). Codex/opencode run through
+`runViaDriver` with `inProcessMcp: false`, so they cannot see those tools. To keep the intent
+panel vendor-neutral, the SAME three tools are re-exposed over a **localhost streamable-HTTP MCP
+route** at `INTENT_MCP_PATH` (`/internal/intent-mcp/v1`), mounted on c3's own Hono server (before
+the SPA catch-all, like the codex relay), backed by `@modelcontextprotocol/sdk`'s `McpServer` +
+`StreamableHTTPServerTransport`.
+
+- **Per-run binding + isolation.** `runViaDriver` calls `intentProfile.bindDriverMcp({ projectPath,
+getRunId, signal })` (only when `adapter.vendor === 'codex'` today), which mints an opaque token →
+  a private MCP server whose tool handlers close over that run's project. The token rides the URL
+  query (`?token=…`); the project binding lives in the closure, so an agent can neither read nor
+  write another project's ledger. The binding is evicted (`dispose`) at run end.
+- **Loopback-only.** A defence-in-depth guard rejects non-loopback peers (403) on top of c3's
+  localhost bind; an unknown/expired token is 404 (Constitution localhost-only / deny-by-default).
+- **Save gate (driver path).** Codex calls the tool outside any c3 `canUseTool`, so the gate lives
+  in the save handler (`save-gate.ts` `gatedSave`): it emits the SAME `permission_request` frame the
+  claude path uses (toolName `mcp__c3__save_intents`, `input.intents`), blocks on `waitForDecision`,
+  and persists only on `allow`. `find_intents`/`view_intent` are auto-allowed (read-only). A deny /
+  aborted run never reaches the store.
+- **Driver translation.** `DriverStartOptions.mcpServers` carries a neutral `RemoteMcpServer`
+  (`{ type:'http', url, bearerTokenEnvVar? }`); the codex driver translates it to
+  `config.mcp_servers.<name> = { url }` (the streamable-HTTP form `codex mcp add --url` writes).
+- **Claude unchanged.** The claude path still uses the in-process `mcpServers` and ignores
+  `bindDriverMcp`. **opencode is deferred**: its MCP is server-level (set at supervisor startup via
+  `OPENCODE_CONFIG_CONTENT`, no per-prompt MCP and no custom headers), incompatible with a per-run
+  token URL — a later intent must design its isolation, not relax the per-project guard.
 
 ## Launch development (`start_development`)
 

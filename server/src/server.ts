@@ -9,7 +9,7 @@
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
-import { INTENT_DISALLOWED_TOOLS } from './kernel/permission/index.js'
+import { INTENT_DISALLOWED_TOOLS, waitForDecision } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
 import { addWorkspace, listWorkspaces } from './state.js'
@@ -21,12 +21,20 @@ import {
   setOnRunEnd,
   setOnEmit,
   setTaskObserver,
+  emit,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, getUiLang, setOnPendingIntentLookup } from './kernel/config/index.js'
 import { setAutomationHooks } from './features/intents/automation.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
+import { runFind, runView } from './features/intents/tool-defs.js'
+import { gatedSave } from './features/intents/save-gate.js'
+import {
+  createIntentMcp,
+  INTENT_MCP_PATH,
+  type IntentMcpTools,
+} from './transport/intent-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import { createPermissionRequestHandler } from './features/user-involve/hooks.js'
 import { EventBus } from './kernel/events/event-bus.js'
@@ -333,6 +341,25 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const broadcaster = createBroadcaster(connections)
   const broadcasts = createBroadcasts({ broadcaster, sessionAccessor })
   setOnStatusChange(broadcasts.broadcastStatuses)
+
+  // Intent tools over localhost HTTP MCP (2026-06-12-005): the driver-path twin of
+  // the in-process SDK MCP (`createIntentMcpServer`). codex's comm-agent reaches
+  // find/view/save here. find/view are read-only; `save` runs the SAME confirmation
+  // gate the claude path uses — a `permission_request` frame on the bound run +
+  // `waitForDecision` — so a save still needs the user's OK in c3 UI, and a deny
+  // never reaches the store. The intent route is mounted below (before the SPA
+  // catch-all) and bound per-run via `intentProfile.bindDriverMcp`.
+  const intentMcpTools: IntentMcpTools = {
+    find: (projectPath, args) => runFind(projectPath, args),
+    view: (projectPath, args) => runView(projectPath, args),
+    save: (binding, args) =>
+      gatedSave(
+        { emit, waitForDecision, broadcastIntents: broadcasts.broadcastIntents },
+        binding,
+        args,
+      ),
+  }
+  const intentMcp = createIntentMcp(`http://127.0.0.1:${opts.port}`, intentMcpTools)
   // Wire the skill-load approval egress (mount layer 2/3, ADR-0017). Without this
   // the `send` sink stays null: `requestSkillApproval` delivers no modal AND its
   // promise never resolves, so the pre-launch `skillMount` step in `launchRun`
@@ -416,6 +443,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       mcpServers: createIntentMcpServer(workspacePath, broadcasts.broadcastIntents),
       gate: 'intent' as const,
+      // Driver-path (codex) intent tools over localhost HTTP MCP (2026-06-12-005).
+      // runViaDriver binds this per-run and injects the descriptors; claude ignores
+      // it (it uses the in-process `mcpServers` above).
+      bindDriverMcp: (binding) => intentMcp.bind(binding),
     }),
     // The neutral OpenCode adapter, or null when unavailable (launchRun forks to
     // the driver path for opencode sessions; 2026-06-06-003).
@@ -508,6 +539,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Codex relay loopback endpoint (ADR-0014). MUST be registered before the static
   // catch-all (`app.get('*')`) so it is not swallowed by the SPA fallback.
   app.post(`${CODEX_RELAY_PATH}/responses`, (c) => codexRelay.handler(c))
+
+  // Intent MCP loopback endpoint (2026-06-12-005). `all` covers POST (JSON-RPC
+  // messages), GET (SSE stream), and DELETE (session end). Loopback-guarded +
+  // per-run token inside the handler. Before the SPA catch-all, same as the relay.
+  app.all(INTENT_MCP_PATH, (c) => intentMcp.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

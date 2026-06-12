@@ -36,6 +36,7 @@ import type {
   AgentRun,
   CanonicalMessage,
   DriverStartOptions,
+  RemoteMcpServer,
   ToolGate,
 } from '../types.js'
 import type { CodexPolicy } from '@ccc/shared/protocol'
@@ -100,6 +101,29 @@ export function gateToCodexPolicy(
       // Codex cannot ask per-tool (008); the safe degrade is a read-only sandbox.
       return { sandboxMode: 'read-only', approvalPolicy: 'on-request' }
   }
+}
+
+/**
+ * Translate the neutral {@link RemoteMcpServer} map into codex's
+ * `config.mcp_servers` shape (2026-06-12-005): each entry becomes
+ * `{ url, [bearer_token_env_var] }` — the streamable-HTTP MCP form codex 0.139
+ * accepts (the `codex mcp add <name> --url <URL>` config). Returns `undefined`
+ * when there is nothing to attach, so the caller can skip the `config` merge.
+ */
+export function mcpServersToCodexConfig(
+  servers: Record<string, RemoteMcpServer> | undefined,
+): Record<string, { url: string; bearer_token_env_var?: string }> | undefined {
+  if (!servers) return undefined
+  const entries = Object.entries(servers)
+  if (entries.length === 0) return undefined
+  const out: Record<string, { url: string; bearer_token_env_var?: string }> = {}
+  for (const [name, s] of entries) {
+    out[name] = {
+      url: s.url,
+      ...(s.bearerTokenEnvVar ? { bearer_token_env_var: s.bearerTokenEnvVar } : {}),
+    }
+  }
+  return out
 }
 
 /**
@@ -247,6 +271,14 @@ export class CodexDriver implements AgentDriver {
         ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
         ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
       }
+    }
+    // Remote MCP servers (2026-06-12-005): codex 0.139 supports streamable-HTTP MCP
+    // via `config.mcp_servers.<name> = { url }` (the `codex mcp add --url` shape). Merge
+    // onto whatever config the relay branch set — the two never share keys. The intent
+    // route is c3's only producer today; its per-run binding token rides the URL query.
+    const mcpConfig = mcpServersToCodexConfig(opts.mcpServers)
+    if (mcpConfig) {
+      codexOptions.config = { ...(codexOptions.config ?? {}), mcp_servers: mcpConfig }
     }
     // Bypass the SDK's internal npm-based binary resolution (findCodexPath) in
     // favor of c3's own ProcessLauncher PATH probe. The launcher's resolve()

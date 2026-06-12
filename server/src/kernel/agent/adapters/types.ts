@@ -187,6 +187,22 @@ void _sessKeysMatchEnum
 // The three interfaces
 // ---------------------------------------------------------------------------
 
+/**
+ * Vendor-neutral description of a remote (HTTP) MCP server to attach to a run
+ * (2026-06-12-005). Each driver translates it to its native MCP config (codex →
+ * `config.mcp_servers.<name> = { url }`; opencode → `mcp.<name> = { type:'remote', url }`,
+ * a later intent). The URL is loopback (c3's own HTTP MCP route); `bearerTokenEnvVar`
+ * names an env var the vendor reads a bearer token from (codex-only knob; omit ⇒ none).
+ * c3's only current producer is the intent route, which carries its per-run binding
+ * token in the URL query — so this stays a minimal `{ url }` description, not a
+ * full MCP-config union.
+ */
+export interface RemoteMcpServer {
+  readonly type: 'http'
+  readonly url: string
+  readonly bearerTokenEnvVar?: string
+}
+
 /** Caller-resolved inputs to start one run, neutral across vendors. */
 export interface DriverStartOptions {
   prompt: string
@@ -218,6 +234,13 @@ export interface DriverStartOptions {
    * The wrapper transparently runs the vendor CLI inside a sandbox container.
    */
   sandboxWrapperPath?: string
+  /**
+   * Remote (HTTP) MCP servers to attach to this run, keyed by server name
+   * (2026-06-12-005). Each driver translates to its native MCP config; a driver
+   * that does not support remote MCP ignores it. Currently produced only for the
+   * intent comm-agent on the driver path (codex), carrying the three intent tools.
+   */
+  mcpServers?: Record<string, RemoteMcpServer>
 }
 
 /**

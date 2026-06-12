@@ -18,7 +18,7 @@
  *    `tool_result`, so the existing web console renders an OpenCode turn unchanged.
  */
 import { PENDING_SESSION_PREFIX, type RunEndReason } from '@ccc/shared/protocol'
-import type { CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
+import type { CanonicalMessage, RemoteMcpServer, VendorAdapter } from '../agent/adapters/types.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
@@ -44,8 +44,24 @@ import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 export interface IntentProfile {
   appendSystemPrompt: string
   disallowedTools: string[]
+  /** In-process SDK MCP servers — the CLAUDE path (`createSdkMcpServer`). */
   mcpServers: Record<string, McpServerConfig>
   gate: 'intent'
+  /**
+   * Driver-path remote MCP (2026-06-12-005). Codex/opencode can't load in-process
+   * SDK MCP, so the three intent tools are exposed over c3's localhost HTTP MCP
+   * route instead. The composition root binds a per-run token (project + run id +
+   * abort signal) and returns the neutral {@link RemoteMcpServer} descriptors plus
+   * a `dispose` to evict the binding at run end. Absent ⇒ no remote MCP route
+   * (the run gets no intent tools, same as before this change). Only codex
+   * consumes it today (opencode injection is a later intent — its MCP is
+   * server-level, incompatible with a per-run token URL).
+   */
+  bindDriverMcp?: (binding: {
+    projectPath: string
+    getRunId: () => string
+    signal: AbortSignal
+  }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
 }
 
 function errMsg(err: unknown): string {
@@ -217,6 +233,25 @@ export async function runViaDriver(
   // Override cwd: sandbox container, effectiveCwd (worktree isolation), or original workspacePath.
   const driverCwd = rt.sandboxHandle ? '/workspace' : (rt.effectiveCwd ?? workspacePath)
 
+  // Intent tools over localhost HTTP MCP (2026-06-12-005). Codex/opencode can't load
+  // the in-process SDK MCP claude uses, so the comm-agent's find/view/save tools are
+  // exposed via c3's loopback HTTP MCP route, bound to THIS run (project + run id +
+  // abort signal). Only codex consumes it today; opencode's MCP is server-level
+  // (incompatible with a per-run token URL) and is a later intent. `getRunId`
+  // reads the live `runId` so a pending→real rebind routes the save gate's
+  // `permission_request` to the bound session, not the stale pending id.
+  let disposeDriverMcp: () => void = () => {}
+  let driverMcpServers: Record<string, RemoteMcpServer> | undefined
+  if (intentProfile?.bindDriverMcp && adapter.vendor === 'codex') {
+    const bound = intentProfile.bindDriverMcp({
+      projectPath: workspacePath,
+      getRunId: () => runId,
+      signal: cycleAbort.signal,
+    })
+    driverMcpServers = bound.servers
+    disposeDriverMcp = bound.dispose
+  }
+
   try {
     const run = await adapter.driver.start({
       prompt: effectivePrompt,
@@ -229,6 +264,7 @@ export async function runViaDriver(
       ...(apiKey ? { apiKey } : {}),
       ...(envOverrides ? { envOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
+      ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),
       // A pending session starts fresh; a real id resumes that native session.
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
     })
@@ -260,6 +296,7 @@ export async function runViaDriver(
     }
   } finally {
     disposeApproval()
+    disposeDriverMcp() // evict the per-run intent-MCP token binding (2026-06-12-005).
     if (rt.run) rt.run = null
     // The driver path is non-Claude (opencode / codex). Agent-teams are Claude-locked
     // (2026-06-06-006): no non-Claude vendor has `streamingPush`, so this path never

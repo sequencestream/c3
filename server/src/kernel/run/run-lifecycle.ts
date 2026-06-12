@@ -14,13 +14,12 @@
  * The control flow is still the original nested loop (3c-2a is a verbatim move);
  * 3c-2b refactors it onto the pure `decideResume` state machine.
  */
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
 import { canFormTeam } from '../agent/adapters/capabilities.js'
-import { runViaDriver } from './run-via-driver.js'
+import { runViaDriver, type IntentProfile } from './run-via-driver.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
@@ -97,12 +96,7 @@ export interface LaunchRunDeps {
    * plain/dev runs. A intent runtime launched without it throws (a missing
    * composition-root wiring is a bug, never a silent drop of the security lock).
    */
-  intentProfile?: (workspacePath: string) => {
-    appendSystemPrompt: string
-    disallowedTools: string[]
-    mcpServers: Record<string, McpServerConfig>
-    gate: 'intent'
-  }
+  intentProfile?: (workspacePath: string) => IntentProfile
   /**
    * The OpenCode {@link VendorAdapter} (built at the composition root over a
    * started supervisor), or null/absent when OpenCode is unavailable. `launchRun`

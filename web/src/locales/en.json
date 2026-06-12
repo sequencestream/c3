@@ -1548,6 +1548,12 @@
       "imageOverride": {
         "label": "Image override",
         "placeholder": "e.g. node:22-alpine"
+      },
+      "agents": {
+        "label": "Agents allowed in sandbox",
+        "hint": "Pick which custom agents may run inside the sandbox container.",
+        "empty": "No eligible agents. Only enabled custom agents can run in the sandbox.",
+        "worktreeOnly": "Sandbox agents require the worktree git branch mode."
       }
     }
   },

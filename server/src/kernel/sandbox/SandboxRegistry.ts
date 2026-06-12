@@ -13,7 +13,7 @@
  * @module
  */
 
-import type { SystemSandboxDef, ProjectSandboxConfig, ResolvedSandboxConfig } from './types.js'
+import type { SystemSandboxDef, WorkspaceSandboxConfig, ResolvedSandboxConfig } from './types.js'
 import { mergeSandboxConfig } from './SandboxConfig.js'
 
 /**
@@ -61,7 +61,7 @@ export class SandboxRegistry {
    * @returns The fully resolved sandbox config.
    * @throws {Error} If no definition exists for the given name.
    */
-  resolve(name: string, projectCfg?: ProjectSandboxConfig): ResolvedSandboxConfig {
+  resolve(name: string, projectCfg?: WorkspaceSandboxConfig): ResolvedSandboxConfig {
     const def = this.#defs.get(name)
     if (!def) {
       throw new Error(`Unknown sandbox definition: "${name}"`)

@@ -24,7 +24,7 @@
 import { chmodSync, mkdtempSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ProjectSandboxConfig } from '@ccc/shared/protocol'
+import type { WorkspaceSandboxConfig } from '@ccc/shared/protocol'
 import type { SandboxDriver } from './SandboxDriver.js'
 import type { SandboxRegistry } from './SandboxRegistry.js'
 import type { SandboxHandle, ResolvedSandboxConfig } from './types.js'
@@ -105,7 +105,7 @@ export async function launchSandbox(
   registry: SandboxRegistry,
   projectPath: string,
 ): Promise<SandboxLaunchResult | null> {
-  const projectCfg: ProjectSandboxConfig | undefined = getProjectSandbox(projectPath)
+  const projectCfg: WorkspaceSandboxConfig | undefined = getProjectSandbox(projectPath)
 
   // Not configured, explicitly disabled, or the referenced system def no longer
   // exists (e.g. deleted/renamed after the project config was saved) → skip sandbox

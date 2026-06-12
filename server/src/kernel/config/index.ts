@@ -32,7 +32,7 @@ import type {
   GitBranchMode,
   ModeToken,
   WorkspaceSetting,
-  ProjectSandboxConfig,
+  WorkspaceSandboxConfig,
   SkillRepoConfig,
   SystemSandboxDef,
   SystemSettings,
@@ -350,7 +350,10 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
  *   the legacy on-disk key `gitCommitMode` is read as a fallback when absent.
  * - `defaultMainBranch` is trimmed; empty ⇒ omitted.
  */
-export function normalizeWorkspaceSetting(raw: unknown): WorkspaceSetting {
+export function normalizeWorkspaceSetting(
+  raw: unknown,
+  agents: readonly AgentConfig[] = [],
+): WorkspaceSetting {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const defaultMode = normalizeDefaultMode(rec.defaultMode)
   const consensus = {
@@ -363,10 +366,15 @@ export function normalizeWorkspaceSetting(raw: unknown): WorkspaceSetting {
   const skillRepos = Array.isArray(rec.skillRepos)
     ? (rec.skillRepos as SkillRepoConfig[])
     : undefined
-  const sandbox = normalizeSandboxConfig(rec.sandbox)
   // Backward compat: new key `gitBranchMode` takes precedence; fall back to the
   // legacy on-disk key `gitCommitMode` so pre-rename saved configs aren't lost.
+  // Resolved before sandbox because sandbox is worktree-only (drops otherwise).
   const gitBranchMode = normalizeGitBranchMode(rec.gitBranchMode ?? rec.gitCommitMode)
+  // Pool of agents that may run inside the sandbox container: enabled + custom only.
+  const validCustomAgentIds = new Set(
+    agents.filter((a) => a.enabled && a.configMode === 'custom').map((a) => a.id),
+  )
+  const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode, validCustomAgentIds)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   return {
     defaultMode,
@@ -398,15 +406,30 @@ function normalizeDefaultMainBranch(raw: unknown): string | undefined {
 }
 
 /**
- * Normalize a raw project sandbox config value. Returns `undefined` when the
+ * Normalize a raw workspace sandbox config value. Returns `undefined` when the
  * value is absent/null/non-object, preserving the "not configured" signal so
  * the UI knows to hide sandbox options. When present, trims string fields and
  * delegates numeric/boolean passthrough. Absent/empty after trimming ⇒ undefined.
+ *
+ * Two invariants are enforced here (see `WorkspaceSandboxConfig` doc):
+ * - **worktree-only**: when `gitBranchMode !== 'worktree'` the config is dropped
+ *   entirely (returns `undefined`) — under `current-branch` the container would
+ *   bind-mount the live project checkout, so sandboxing offers no isolation.
+ * - **custom-only**: `agentIds` keeps only ids present in `validCustomAgentIds`
+ *   (the workspace's `enabled && configMode: 'custom'` agents); invalid / system
+ *   / disabled ids are silently dropped — mirrors the "stale sandbox def name ⇒
+ *   not configured" handling.
  */
-function normalizeSandboxConfig(raw: unknown): ProjectSandboxConfig | undefined {
+function normalizeSandboxConfig(
+  raw: unknown,
+  gitBranchMode: GitBranchMode,
+  validCustomAgentIds: ReadonlySet<string>,
+): WorkspaceSandboxConfig | undefined {
+  // worktree-only: sandbox is meaningless outside worktree isolation.
+  if (gitBranchMode !== 'worktree') return undefined
   if (!raw || typeof raw !== 'object') return undefined
   const rec = raw as Record<string, unknown>
-  const sb: ProjectSandboxConfig = {}
+  const sb: WorkspaceSandboxConfig = {}
   if (typeof rec.sandbox === 'string' && rec.sandbox.trim()) sb.sandbox = rec.sandbox.trim()
   if (rec.enabled === true) sb.enabled = true
   if (rec.networkDisabled === true) sb.networkDisabled = true
@@ -426,6 +449,19 @@ function normalizeSandboxConfig(raw: unknown): ProjectSandboxConfig | undefined 
     !Array.isArray(rec.envVarsOverride)
   )
     sb.envVarsOverride = rec.envVarsOverride as Record<string, string>
+  // custom-only: drop ids that aren't enabled custom agents; de-dupe; preserve order.
+  if (Array.isArray(rec.agentIds)) {
+    const seen = new Set<string>()
+    const agentIds: string[] = []
+    for (const id of rec.agentIds) {
+      if (typeof id !== 'string') continue
+      const trimmed = id.trim()
+      if (!trimmed || seen.has(trimmed) || !validCustomAgentIds.has(trimmed)) continue
+      seen.add(trimmed)
+      agentIds.push(trimmed)
+    }
+    if (agentIds.length > 0) sb.agentIds = agentIds
+  }
   // Return undefined when nothing meaningful was set (keeps old configs clean).
   if (Object.keys(sb).length === 0) return undefined
   return sb
@@ -480,13 +516,13 @@ function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken | CodexP
 export function loadWorkspaceSetting(projectPath: string): WorkspaceSetting {
   const settings = loadSettings()
   const existing = settings.projectConfigs?.[projectPath]
-  if (existing) return normalizeWorkspaceSetting(existing)
+  if (existing) return normalizeWorkspaceSetting(existing, settings.agents)
 
   // Migration window: seed from legacy global values (one-shot).
   const seed = legacyProjectSeed
   if (seed) {
     legacyProjectSeed = null // clear — one shot only
-    const merged = normalizeWorkspaceSetting(seed)
+    const merged = normalizeWorkspaceSetting(seed, settings.agents)
     // Persist the seeded config so the next read finds it.
     const configs = { ...(settings.projectConfigs ?? {}), [projectPath]: merged }
     saveSettings({ ...settings, projectConfigs: configs })
@@ -494,7 +530,7 @@ export function loadWorkspaceSetting(projectPath: string): WorkspaceSetting {
   }
 
   // No existing config and no migration seed — return normalized defaults.
-  return normalizeWorkspaceSetting(undefined)
+  return normalizeWorkspaceSetting(undefined, settings.agents)
 }
 
 /**
@@ -506,7 +542,7 @@ export function loadWorkspaceSetting(projectPath: string): WorkspaceSetting {
  * the directory lock is non-reentrant, so a nested acquire would self-deadlock.
  */
 export function saveWorkspaceSetting(projectPath: string, cfg: WorkspaceSetting): WorkspaceSetting {
-  const normalized = normalizeWorkspaceSetting(cfg)
+  const normalized = normalizeWorkspaceSetting(cfg, loadSettings().agents)
   withFileLock(settingsFile(), () => {
     const disk = readSettingsFromDisk()
     const configs = { ...(disk?.projectConfigs ?? {}), [projectPath]: normalized }
@@ -1117,8 +1153,10 @@ export function getSystemSandboxes(): SystemSandboxDef[] {
  * Get the project-level sandbox config (normalized). Returns `undefined`
  * when the project has no sandbox config (equivalent to disabled).
  */
-export function getProjectSandbox(projectPath: string): ProjectSandboxConfig | undefined {
-  return normalizeSandboxConfig(loadWorkspaceSetting(projectPath).sandbox)
+export function getProjectSandbox(projectPath: string): WorkspaceSandboxConfig | undefined {
+  // Already normalized (worktree-only + custom-only invariants applied) by
+  // loadWorkspaceSetting → normalizeWorkspaceSetting → normalizeSandboxConfig.
+  return loadWorkspaceSetting(projectPath).sandbox
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

@@ -13,7 +13,8 @@ import type {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   CodexSandboxMode,
   WorkspaceSetting,
-  ProjectSandboxConfig,
+  WorkspaceSandboxConfig,
+  AgentConfig,
   SkillRepoConfig,
   SkillLinkStatus,
   SystemSandboxDef,
@@ -48,6 +49,8 @@ const props = defineProps<{
   vendorModes: Record<VendorId, VendorModeCatalog> | null
   /** System sandbox definitions — drives the sandbox name dropdown. */
   systemSandboxes: SystemSandboxDef[]
+  /** All configured agents — the sandbox agent picker shows enabled custom ones. */
+  agents?: AgentConfig[]
   /** Per-skill link status for the current workspace (reply to get_skill_link_status). */
   linkStatuses?: SkillLinkStatus[]
   /** Skill ids whose install is in flight — drives per-row busy/disabled state. */
@@ -189,12 +192,32 @@ const draftDefaultMode = computed(
  * Exported as `sandboxDraft` so v-model bindings don't trigger "possibly undefined"
  * even when sandbox hasn't been explicitly set.
  */
-const sandboxDraft = computed<ProjectSandboxConfig>({
+const sandboxDraft = computed<WorkspaceSandboxConfig>({
   get: () => draft.value.sandbox ?? {},
   set: (val) => {
     draft.value.sandbox = val
   },
 })
+
+/**
+ * Custom agents that may be selected for the sandbox container — mirrors the
+ * server's custom-only normalize invariant (`enabled && configMode === 'custom'`).
+ */
+const selectableAgents = computed<AgentConfig[]>(() =>
+  (props.agents ?? []).filter((a) => a.enabled && a.configMode === 'custom'),
+)
+
+/** Whether the given agent id is in the sandbox draft's `agentIds` pool. */
+function isAgentSelected(id: string): boolean {
+  return (sandboxDraft.value.agentIds ?? []).includes(id)
+}
+
+/** Toggle an agent id in the sandbox draft's `agentIds` pool. */
+function toggleAgent(id: string): void {
+  const current = sandboxDraft.value.agentIds ?? []
+  const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+  sandboxDraft.value = { ...sandboxDraft.value, agentIds: next.length > 0 ? next : undefined }
+}
 
 // ---- External skill repos (ADR-0016/0017) ----
 
@@ -657,6 +680,36 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
               :placeholder="t('workspaceSetting.sandbox.imageOverride.placeholder')"
               data-testid="project-config-sandbox-image"
             />
+          </div>
+
+          <div class="project-config-row project-config-sandbox-agents">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.agents.label')
+            }}</span>
+            <template v-if="draft.gitBranchMode === 'worktree'">
+              <div
+                v-if="selectableAgents.length > 0"
+                class="project-config-agent-list"
+                data-testid="project-config-sandbox-agents"
+              >
+                <p class="project-config-hint">{{ t('workspaceSetting.sandbox.agents.hint') }}</p>
+                <label v-for="a in selectableAgents" :key="a.id" class="project-config-agent-item">
+                  <input
+                    type="checkbox"
+                    :checked="isAgentSelected(a.id)"
+                    :data-testid="`project-config-sandbox-agent-${a.id}`"
+                    @change="toggleAgent(a.id)"
+                  />
+                  {{ a.displayName || a.id }}
+                </label>
+              </div>
+              <p v-else class="project-config-hint">
+                {{ t('workspaceSetting.sandbox.agents.empty') }}
+              </p>
+            </template>
+            <p v-else class="project-config-hint">
+              {{ t('workspaceSetting.sandbox.agents.worktreeOnly') }}
+            </p>
           </div>
         </template>
       </section>

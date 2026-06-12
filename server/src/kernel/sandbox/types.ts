@@ -59,7 +59,7 @@ export interface ResourceLimits {
  * from the system config sandbox profiles section.
  *
  * Each profile has a unique {@link name} that the project config references
- * via {@link ProjectSandboxConfig.sandbox}.
+ * via {@link WorkspaceSandboxConfig.sandbox}.
  */
 export interface SystemSandboxDef {
   /** Unique name for this sandbox definition (e.g. "default", "nodejs", "python"). */
@@ -102,17 +102,23 @@ export interface SystemSandboxDef {
 }
 
 /**
- * Project-level sandbox config overrides — the subset of config a c3 project
+ * Workspace-level sandbox config overrides — the subset of config a c3 project
  * can override without defining a full sandbox profile.
  *
- * IMPORTANT: Keep in sync with shared/src/protocol.ts ProjectSandboxConfig.
+ * IMPORTANT: Keep in sync with shared/src/protocol.ts WorkspaceSandboxConfig.
  * The Zod schema and _AssertEqual pin in SandboxConfig.ts enforce this.
  */
-export interface ProjectSandboxConfig {
+export interface WorkspaceSandboxConfig {
   /** Master switch — sandboxing is off by default (absent or false ⇔ disabled). */
   readonly enabled?: boolean
   /** Name of the system sandbox def to use (required to activate sandboxing). */
   readonly sandbox?: string
+  /**
+   * Custom agents allowed to run inside the sandbox container (worktree-only +
+   * custom-only — kept by the normalize layer to `enabled && configMode:'custom'`
+   * ids). Absent / empty ⇒ empty pool.
+   */
+  readonly agentIds?: readonly string[]
   /** Override the system def's networkDisabled setting. */
   readonly networkDisabled?: boolean
   /** Override the base image. */
@@ -127,7 +133,7 @@ export interface ProjectSandboxConfig {
 
 /**
  * Fully resolved sandbox configuration — the output of merging a
- * {@link SystemSandboxDef} with an optional {@link ProjectSandboxConfig}.
+ * {@link SystemSandboxDef} with an optional {@link WorkspaceSandboxConfig}.
  *
  * All optional fields that have sensible defaults are filled in during
  * resolution, so driver implementations can assume every field is defined.

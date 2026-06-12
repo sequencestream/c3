@@ -103,9 +103,10 @@ interface SystemSandboxDef {
 }
 
 // 项目级沙箱配置（项目开发者管理）
-interface ProjectSandboxConfig {
+interface WorkspaceSandboxConfig {
   enabled: boolean // 主开关
   sandbox?: string // 引用的系统定义名称
+  agentIds?: string[] // 容器内可运行的 custom agent id（worktree-only + custom-only）
   imageOverride?: string // 覆盖镜像
   memoryLimitOverride?: string // 覆盖内存限制
   cpuLimitOverride?: number // 覆盖 CPU 限制
@@ -113,21 +114,27 @@ interface ProjectSandboxConfig {
 }
 ```
 
+> **改名说明（2026-06-12）**：原 `ProjectSandboxConfig` 统一改名为
+> `WorkspaceSandboxConfig`，与 `WorkspaceSetting` 对齐。仅改类型标识符，磁盘键
+> （`WorkspaceSetting.sandbox` 及其内部键）不变，无 wire/磁盘迁移。
+
 ### 合并规则
 
-1. 如果项目配置缺失、`enabled` 为 `false`、或者未指定 `sandbox` 名称 → **不使用沙箱**。
-2. 如果项目配置引用了一个不存在的系统定义名称 → **运行时抛错**（`SandboxRegistry.resolve()` 抛 `Unknown sandbox definition: "name"`）。
-3. 合并优先级（从高到低）：项目覆盖 > 系统定义 > 默认值。
-4. 环境变量是**合并**（不是替换）的，项目值在冲突时取胜。
-5. 结构化 `resourceLimits` 中的 `memory` 和 `cpu` 优先于扁平 `memoryLimit`/`cpuLimit`（同一层级内，不是跨层覆盖）。
-6. 未指定的可选字段使用合理默认值：`memoryLimit: "512m"`、`cpuLimit: 1`、`networkDisabled: true`、`readonlyRootfs: false`、`envVars: {}`。
+0. **worktree-only**：仅当工作区 `gitBranchMode === 'worktree'` 时项目沙箱配置才生效；`current-branch` 模式下容器挂的是主工作区检出，隔离形同虚设，故 normalize 直接丢弃整块配置。
+1. **custom-only**：`agentIds` 仅保留 `enabled && configMode === 'custom'` 的 agent id，失效/system/disabled 静默剔除。
+2. 如果项目配置缺失、`enabled` 为 `false`、或者未指定 `sandbox` 名称 → **不使用沙箱**。
+3. 如果项目配置引用了一个不存在的系统定义名称 → **运行时抛错**（`SandboxRegistry.resolve()` 抛 `Unknown sandbox definition: "name"`）。
+4. 合并优先级（从高到低）：项目覆盖 > 系统定义 > 默认值。
+5. 环境变量是**合并**（不是替换）的，项目值在冲突时取胜。
+6. 结构化 `resourceLimits` 中的 `memory` 和 `cpu` 优先于扁平 `memoryLimit`/`cpuLimit`（同一层级内，不是跨层覆盖）。
+7. 未指定的可选字段使用合理默认值：`memoryLimit: "512m"`、`cpuLimit: 1`、`networkDisabled: true`、`readonlyRootfs: false`、`envVars: {}`。
 
 ### 验证逻辑
 
 ```typescript
-export function getProjectSandbox(projectPath: string): ProjectSandboxConfig | undefined {
-  const raw = loadWorkspaceSetting(projectPath).sandbox
-  return normalizeSandboxConfig(raw) // undefined → 等价于 disabled
+export function getProjectSandbox(projectPath: string): WorkspaceSandboxConfig | undefined {
+  // loadWorkspaceSetting 已在 normalize 阶段应用 worktree-only + custom-only 不变量。
+  return loadWorkspaceSetting(projectPath).sandbox // undefined → 等价于 disabled
 }
 
 // 在 launchRun 中使用：

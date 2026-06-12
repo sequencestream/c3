@@ -365,7 +365,7 @@ export type SkillSupportState = CapabilityState
 export type SkillApprovalKind = 'gitignore'
 
 // ─── Sandbox Config Types ───────────────────────────────────────────────────
-// Wire representation of the kernel's SystemSandboxDef / ProjectSandboxConfig.
+// Wire representation of the kernel's SystemSandboxDef / WorkspaceSandboxConfig.
 // The kernel maintains its own copies in server/src/kernel/sandbox/types.ts
 // (with runtime types like SandboxHandle); these protocol-level interfaces are
 // the persistence shape, kept in sync by the normalize layer.
@@ -400,7 +400,7 @@ export interface ResourceLimits {
 /**
  * System-level sandbox definition — a "template" the administrator defines
  * in System Settings. Each has a unique {@link name} that a project-level
- * {@link ProjectSandboxConfig.sandbox} references.
+ * {@link WorkspaceSandboxConfig.sandbox} references.
  */
 export interface SystemSandboxDef {
   /** Unique name for this sandbox definition (e.g. "default", "nodejs"). */
@@ -445,18 +445,33 @@ export interface SystemSandboxDef {
 }
 
 /**
- * Project-level sandbox configuration — what a project user can configure
+ * Workspace-level sandbox configuration — what a project user can configure
  * after an administrator has defined a {@link SystemSandboxDef}.
  *
  * The project **selects** a system def by name and may enable/disable
  * sandboxing. Image/type/seccomp are NOT overridable at the project level
  * (they are security-sensitive and only the admin sets them).
+ *
+ * Two server-side normalize invariants apply (see `normalizeSandboxConfig`):
+ * - **worktree-only**: sandbox is only meaningful when the workspace's
+ *   {@link WorkspaceSetting.gitBranchMode} is `worktree`. Under `current-branch`
+ *   the container would bind-mount the live project checkout, so the config is
+ *   dropped (treated as not configured).
+ * - **custom-only**: {@link agentIds} keeps only ids of agents that are both
+ *   `enabled` and `configMode: 'custom'`; invalid / system / disabled ids are
+ *   silently dropped.
  */
-export interface ProjectSandboxConfig {
+export interface WorkspaceSandboxConfig {
   /** Name of the system sandbox def to use. Required when enabled. */
   sandbox?: string
   /** Master switch — sandboxing is off by default. */
   enabled?: boolean
+  /**
+   * Custom agents allowed to run inside the sandbox container when enabled.
+   * Pool of `enabled && configMode: 'custom'` agent ids (worktree-only +
+   * custom-only — see the interface doc). Absent / empty ⇒ empty pool.
+   */
+  agentIds?: string[]
   /**
    * Override the system def's networkDisabled setting.
    * When true, the container has no network, regardless of the system def.
@@ -524,7 +539,7 @@ export interface WorkspaceSetting {
   /** Project-level sandbox configuration. References a system sandbox def
    * by name. Absent or undefined ⇒ sandboxing is not configured (equivalent
    * to disabled). The system's sandboxes list is in {@link SystemSettings.sandboxes}. */
-  sandbox?: ProjectSandboxConfig
+  sandbox?: WorkspaceSandboxConfig
   /**
    * Git branch strategy for `start_development` (2026-06-10). See
    * {@link GitBranchMode}. Absent ⇒ `current-branch` (backward compatible with

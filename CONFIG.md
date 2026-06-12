@@ -40,15 +40,15 @@ Each project workspace has its own config entry in `systemSettings.projectConfig
 keyed by the resolved absolute project path. All settings are optional; absent
 fields use their defaults.
 
-| Key                 | Type                    | Default | Description                                        |
-| ------------------- | ----------------------- | ------- | -------------------------------------------------- |
-| `defaultMode`       | `Record<VendorId, ...>` | Vendor  | Per-vendor permission mode                         |
-| `sandbox`           | `ProjectSandboxConfig`  | —       | Per-project sandbox configuration (see below)      |
-| `consensus`         | `ConsensusConfig`       | `null`  | Multi-agent consensus settings                     |
-| `devSkill`          | `string`                | `""`    | Slash command prefix for dev sessions              |
-| `maxRoundsPerStage` | `number`                | `8`     | Per-stage round cap (minimum 8, clamped)           |
-| `maxSpeechChars`    | `number`                | `300`   | Per-turn character guidance (minimum 300, clamped) |
-| `skillRepos`        | `SkillRepoConfig[]`     | `[]`    | External git repos mounted as skills               |
+| Key                 | Type                     | Default | Description                                        |
+| ------------------- | ------------------------ | ------- | -------------------------------------------------- |
+| `defaultMode`       | `Record<VendorId, ...>`  | Vendor  | Per-vendor permission mode                         |
+| `sandbox`           | `WorkspaceSandboxConfig` | —       | Per-project sandbox configuration (see below)      |
+| `consensus`         | `ConsensusConfig`        | `null`  | Multi-agent consensus settings                     |
+| `devSkill`          | `string`                 | `""`    | Slash command prefix for dev sessions              |
+| `maxRoundsPerStage` | `number`                 | `8`     | Per-stage round cap (minimum 8, clamped)           |
+| `maxSpeechChars`    | `number`                 | `300`   | Per-turn character guidance (minimum 300, clamped) |
+| `skillRepos`        | `SkillRepoConfig[]`      | `[]`    | External git repos mounted as skills               |
 
 ---
 
@@ -122,19 +122,28 @@ via this sub-object.
 
 ### Project-Level: `sandbox`
 
-Configured per-project via `ProjectConfig.sandbox`. The project **selects** a
+Configured per-project via `WorkspaceSetting.sandbox`. The project **selects** a
 system definition by name and may enable/disable sandboxing. Only non-security
 fields are overridable.
 
-| Field                 | Type      | Required | Description                                                         |
-| --------------------- | --------- | -------- | ------------------------------------------------------------------- |
-| `enabled`             | `boolean` | —        | Master switch. `false` or unset → no sandbox.                       |
-| `sandbox`             | `string`  | —        | Name of the system sandbox definition to use.                       |
-| `networkDisabled`     | `boolean` | —        | Override system def's network setting.                              |
-| `imageOverride`       | `string`  | —        | Override the base image (overrides system `image`).                 |
-| `memoryLimitOverride` | `string`  | —        | Override system `memoryLimit`.                                      |
-| `cpuLimitOverride`    | `number`  | —        | Override system `cpuLimit`.                                         |
-| `envVarsOverride`     | `Record`  | —        | Additional env vars (merged with system `envVars`; wins conflicts). |
+Two normalize invariants apply (`normalizeSandboxConfig`):
+
+- **worktree-only**: the whole `sandbox` block is dropped unless the workspace's
+  `gitBranchMode` is `worktree` — under `current-branch` the container would
+  bind-mount the live project checkout, so sandboxing offers no isolation.
+- **custom-only**: `agentIds` keeps only `enabled && configMode: 'custom'` agent
+  ids; invalid / system / disabled ids are silently dropped.
+
+| Field                 | Type       | Required | Description                                                           |
+| --------------------- | ---------- | -------- | --------------------------------------------------------------------- |
+| `enabled`             | `boolean`  | —        | Master switch. `false` or unset → no sandbox.                         |
+| `sandbox`             | `string`   | —        | Name of the system sandbox definition to use.                         |
+| `agentIds`            | `string[]` | —        | Custom agents allowed in the container (worktree-only + custom-only). |
+| `networkDisabled`     | `boolean`  | —        | Override system def's network setting.                                |
+| `imageOverride`       | `string`   | —        | Override the base image (overrides system `image`).                   |
+| `memoryLimitOverride` | `string`   | —        | Override system `memoryLimit`.                                        |
+| `cpuLimitOverride`    | `number`   | —        | Override system `cpuLimit`.                                           |
+| `envVarsOverride`     | `Record`   | —        | Additional env vars (merged with system `envVars`; wins conflicts).   |
 
 ### Merge Precedence
 
@@ -244,11 +253,13 @@ returns `null`. Run proceeds on the host.
 All sandbox configuration is validated at persistence time via Zod schemas in
 `server/src/kernel/sandbox/SandboxConfig.ts`. Two TypeScript type pins
 (`_AssertEqual`) ensure the Zod schemas stay in sync with the kernel's
-`SystemSandboxDef` and `ProjectSandboxConfig` interfaces.
+`SystemSandboxDef` and `WorkspaceSandboxConfig` interfaces.
 
 Server-side normalization in `server/src/kernel/config/index.ts`:
 
 - `normalizeSandboxConfig()` trims string fields and strips empty strings
+- **worktree-only** — the config is dropped entirely unless `gitBranchMode` is `worktree`
+- **custom-only** — `agentIds` is filtered to `enabled && configMode: 'custom'` agents
 - Unknown system definition names are caught at `registry.resolve()` time
 
 ---
@@ -259,5 +270,5 @@ Server-side normalization in `server/src/kernel/config/index.ts`:
 - [ADR-0020](specs/architecture/adr/0020-sandbox-driver-independent-kernel-module.md) — SandboxDriver module decision
 - [ADR-0021](specs/architecture/adr/0021-system-project-two-tier-sandbox-config.md) — Two-tier config decision
 - [ADR-0022](specs/architecture/adr/0022-canonical-not-extended.md) — CanonicalMessage not extended for sandbox
-- [Protocol types](shared/src/protocol.ts) — `SystemSandboxDef`, `ProjectSandboxConfig`, `ResourceLimits`
+- [Protocol types](shared/src/protocol.ts) — `SystemSandboxDef`, `WorkspaceSandboxConfig`, `ResourceLimits`
 - [Kernel types](server/src/kernel/sandbox/types.ts) — Runtime types with strict readonly

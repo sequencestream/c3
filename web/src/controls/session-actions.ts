@@ -49,8 +49,15 @@ export function installSessionActions(ctx: AppCtx): void {
     workspaceSettingOpen.value = false
     currentWorkspaceSetting.value = null
     detectedMainBranch.value = null
+    // The console tab's remembered session belonged to the previous workspace —
+    // drop it and clear the chat column so it can't keep showing stale content.
+    // The new workspace's first session is bound once its `list_sessions` reply
+    // lands (see `pendingConsoleBind` in the `sessions` handler).
+    consoleSession.value = null
+    ctx.clearViewedSession()
+    ctx.flags.pendingConsoleBind = true
+    if (fx.enterConsole) ctx.enterConsole()
     if (fx.refreshSessions) ctx.refreshSessions(path)
-    if (fx.enterConsole) ctx.switchToConsoleTab()
   }
 
   ctx.addWorkspace = (path: string): void => {

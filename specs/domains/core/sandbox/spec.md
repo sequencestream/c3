@@ -43,15 +43,15 @@ seccomp/profiles.ts → seccomp JSON files
 
 ### File Responsibilities
 
-| File                     | Responsibility                                                                                                                                                   |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `types.ts`               | `SandboxType`, `SystemSandboxDef`, `ProjectSandboxConfig`, `ResolvedSandboxConfig`, `SandboxHandle`, `ExecResult`, `HealthStatus`, `StartOptions`, `StopOptions` |
-| `SandboxDriver.ts`       | Abstract interface with `start` / `stop` / `exec` / `spawnStream` / `snapshot` / `healthCheck`                                                                   |
-| `SandboxConfig.ts`       | Zod `systemSandboxDefSchema` + `projectSandboxConfigSchema` + `mergeSandboxConfig()` function                                                                    |
-| `SandboxRegistry.ts`     | `class SandboxRegistry` — stores named defs, `register/get/resolve/has/names/size`                                                                               |
-| `docker/DockerDriver.ts` | `class DockerDriver implements SandboxDriver` using dockerode                                                                                                    |
-| `seccomp/default.json`   | Docker-compatible seccomp JSON profile (SCMP_ACT_ALLOW)                                                                                                          |
-| `seccomp/profiles.ts`    | `loadDefaultProfile()`, `loadProfile(path)`, `mergeProfiles(base, override)`                                                                                     |
+| File                     | Responsibility                                                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `types.ts`               | `SandboxType`, `SystemSandboxDef`, `WorkspaceSandboxConfig`, `ResolvedSandboxConfig`, `SandboxHandle`, `ExecResult`, `HealthStatus`, `StartOptions`, `StopOptions` |
+| `SandboxDriver.ts`       | Abstract interface with `start` / `stop` / `exec` / `spawnStream` / `snapshot` / `healthCheck`                                                                     |
+| `SandboxConfig.ts`       | Zod `systemSandboxDefSchema` + `workspaceSandboxConfigSchema` + `mergeSandboxConfig()` function                                                                    |
+| `SandboxRegistry.ts`     | `class SandboxRegistry` — stores named defs, `register/get/resolve/has/names/size`                                                                                 |
+| `docker/DockerDriver.ts` | `class DockerDriver implements SandboxDriver` using dockerode                                                                                                      |
+| `seccomp/default.json`   | Docker-compatible seccomp JSON profile (SCMP_ACT_ALLOW)                                                                                                            |
+| `seccomp/profiles.ts`    | `loadDefaultProfile()`, `loadProfile(path)`, `mergeProfiles(base, override)`                                                                                       |
 
 ### Driver Method Contract
 

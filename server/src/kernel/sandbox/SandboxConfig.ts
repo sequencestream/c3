@@ -17,7 +17,7 @@
 import { z } from 'zod'
 import type {
   SystemSandboxDef,
-  ProjectSandboxConfig,
+  WorkspaceSandboxConfig,
   ResolvedSandboxConfig,
   ResourceLimits,
 } from './types.js'
@@ -60,12 +60,12 @@ export const systemSandboxDefSchema = z.object({
 })
 
 /**
- * Zod schema for project-level sandbox config overrides.
+ * Zod schema for workspace-level sandbox config overrides.
  *
- * IMPORTANT: Keep in sync with shared/src/protocol.ts ProjectSandboxConfig.
+ * IMPORTANT: Keep in sync with shared/src/protocol.ts WorkspaceSandboxConfig.
  * The _AssertEqual pin below enforces this at compile time.
  */
-export const projectSandboxConfigSchema = z.object({
+export const workspaceSandboxConfigSchema = z.object({
   enabled: z.boolean().optional(),
   sandbox: z.string().optional(),
   networkDisabled: z.boolean().optional(),
@@ -76,6 +76,8 @@ export const projectSandboxConfigSchema = z.object({
     .optional(),
   cpuLimitOverride: z.number().positive().optional(),
   envVarsOverride: z.record(z.string(), z.string()).optional(),
+  /** Custom agents allowed in the sandbox container (worktree-only + custom-only). */
+  agentIds: z.array(z.string()).optional(),
 })
 
 // ─── Default Values ──────────────────────────────────────────────────────────
@@ -106,7 +108,7 @@ const DEFAULTS = {
  */
 export function mergeSandboxConfig(
   systemDef: SystemSandboxDef,
-  projectCfg?: ProjectSandboxConfig,
+  projectCfg?: WorkspaceSandboxConfig,
 ): ResolvedSandboxConfig {
   const merged: ResolvedSandboxConfig = {
     type: systemDef.type,
@@ -150,9 +152,9 @@ type _PinResourceLimitsSchema = _AssertEqual<z.infer<typeof resourceLimitsSchema
 type _PinSystemDefSchema = _AssertEqual<z.infer<typeof systemSandboxDefSchema>, SystemSandboxDef>
 
 /**
- * Pin projectSandboxConfigSchema to ProjectSandboxConfig.
+ * Pin workspaceSandboxConfigSchema to WorkspaceSandboxConfig.
  */
-type _PinProjectConfigSchema = _AssertEqual<
-  z.infer<typeof projectSandboxConfigSchema>,
-  ProjectSandboxConfig
+type _PinWorkspaceConfigSchema = _AssertEqual<
+  z.infer<typeof workspaceSandboxConfigSchema>,
+  WorkspaceSandboxConfig
 >

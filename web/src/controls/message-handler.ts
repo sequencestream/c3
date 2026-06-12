@@ -177,6 +177,13 @@ export function installMessageHandler(ctx: AppCtx): void {
             workspacePath: msg.workspacePath,
             sessions: msg.sessions,
           }) ?? activeTitle.value
+        // A workspace switch cleared the chat column and flagged a pending re-bind.
+        // Now that the new workspace's session list has landed, bind its first
+        // session (or stay empty when it has none).
+        if (ctx.flags.pendingConsoleBind && msg.workspacePath === currentWorkspace.value) {
+          ctx.flags.pendingConsoleBind = false
+          if (activeTab.value === 'console') ctx.bindConsoleSession()
+        }
         break
       case 'session_selected':
         activeWorkspace.value = msg.workspacePath

@@ -7,7 +7,10 @@
 ## Context
 
 ADR-0020/0021 建立了 sandbox 驱动与双层配置；ADR-0019 之后的 worktree intent-dev 让每个意图在
-`$TMPDIR/c3-worktrees/<project>/intent-<id>/` 的隔离 worktree 上开发（`rt.effectiveCwd`）。
+`<c3-home>/worktrees/<project>/intent-<id>/` 的隔离 worktree 上开发（`rt.effectiveCwd`）。
+（follow-up 2026-06-13：worktree 根从 `$TMPDIR/c3-worktrees` 迁至 `<c3-home>/worktrees`——`$TMPDIR`
+即 macOS 的 `/var/folders`，不在 Docker Desktop 默认共享集内，会让 SND-R14 的 bind-mount 挂到**空**
+`/workspace`；c3-home 默认在 HOME 下，恒被共享。c3-home 由 `--settings`/`C3_DIR`/`~/.c3` 解析。）
 
 但接线之前，sandbox 启动门是 `run-lifecycle.ts` 的 `!isIntent` 分支，且 `launchSandbox` 挂的是
 `projectPath`（主项目目录）。这有两个问题：
@@ -144,11 +147,57 @@ spawn 一个 vendor CLI 子进程，wrapper 把这个子进程换成「容器内
 故「run 用的二进制」就是这台 host server——**没有可被 sandbox wrapper 替换的 per-run 子进程**，wrapper 隔离模型
 （替子进程 + per-run env-file）对 opencode 根本不适用。
 
+**为何不能照搬 codex RELAY 方向（容器内 opencode → 宿主 server）**：一个自然的设想是「让容器里的 opencode 经
+`host.docker.internal` 连宿主常驻 server，复用 codex RELAY 的回连」。**方向恰好反了，且会让沙箱隔离彻底失效**——
+
+- codex RELAY 跨边界的只有 **LLM provider 网络出站**：codex CLI **本身跑在容器里**，改文件/跑 bash 都在容器内对
+  `/workspace`，relay 只给「那一个网络调用」找条路回宿主 loopback。隔离成立，是因为**执行器（动文件、跑命令的进程）在容器里**。
+- opencode 把「客户端」与「执行器」拆开了：工具调用（read/write/edit/**bash**）真正执行在 **host 的 `opencode serve`
+  进程**里，c3 只是 REST/SSE 客户端 + 审批网关（`task-store.ts` 注释明确 c3 OBSERVE-ONLY）。**容器里根本没有 opencode 进程**。
+- 故即便在容器里塞个 opencode 客户端连宿主 server，真正改文件/跑 bash 的仍是**宿主 server 进程**，副作用全落在**宿主文件系统**，
+  容器成空壳——沙箱「把 agent 副作用关进容器」的全部意义归零。**relay 隔离的是网络，opencode 要隔离的是执行器，而执行器在宿主。**
+- 退一步连目录都立不住：sandbox 路径下 `driverCwd = rt.sandboxHandle ? '/workspace' : …`（`run-via-driver.ts`），`/workspace`
+  是**容器内**路径；宿主 server 收到 `directory: '/workspace'` 会按宿主路径解析——宿主上无此路径，cwd 都对不上。
+
+结论：relay 能搬的前提是「执行器已在容器里、只差网络」；opencode 缺的不是网络，是**执行器的位置**。所以方向必须反过来——
+把 **server 放进容器**（host→容器），即下方方案草图，而非容器→宿主的 relay。
+
 **将来支持的方案草图（不实作，留作另起意图的锚点）**：要让 opencode 进沙箱，须换整条 launch 路径——
 ① 在**容器内**起 `opencode serve`（容器内常驻 server，而非 host）；② host 侧 REST/SSE 客户端改为**够到容器映射端口**
 （容器网络/端口直通，类比 codex RELAY 的 `host.docker.internal` 回连，但方向相反——host→容器）；
 ③ `OpencodeSupervisor` **面向容器改造**生命周期（容器内 spawn/健康检查/进程树杀死/provider config 经容器原生
 env/config 而非 host `OPENCODE_CONFIG_CONTENT`）。改造面覆盖 supervisor + launch + 配置注入三处，过大，本阶段不值得。
+
+**难度拆解（2026-06-13 第二次调研补，附证据）**。当前事实：c3 **完全忽略 opencode 的 `baseUrl/apiKey`**
+（`agent-config/index.ts:150-155`，注释明示 server-level / supervisor boot 应用，凭据实走 opencode 自己在宿主的 auth）；
+supervisor 是**全局单例**，一个宿主 `opencode serve` 被所有 run 共用（`server.ts:262` 全局变量 + `index.ts:88`
+`getClient=()=>supervisor.client()`）；server 端口动态分配、绑 `127.0.0.1`（`supervisor.ts:496/505`）；即便 sandbox handle
+在场，REST 仍打宿主 server（driver 零 sandbox 感知，只换 `directory=/workspace`，`run-via-driver.ts:244` + `driver.ts:109`）。
+难度极不均匀：
+
+- **A｜全局单例 → 每容器一实例（最大头）**：今天「一个宿主 server 服务所有 run + 宿主 `spawn`/进程树杀死」要改成「每沙箱 run
+  一个容器内 server」——启动改容器 entrypoint/`docker exec`、健康检查改探容器端口、杀死 = stop 容器、并把 adapter 的全局
+  `getClient()` 换成 **runId/containerId → client 注册表**。等于给 `supervisor.ts` 写一套面向容器的孪生实现 + 改
+  `server.ts`/`index.ts` 全局接线。工作量主体在此。
+- **B｜host→容器可达性（中）**：容器内 server 绑容器端口，宿主 c3 经 `-p 127.0.0.1:<hostport>:<cport>`（**只绑 loopback，守
+  C-SEC-5**）够到，每容器分配唯一宿主端口，per-run `OpencodeClient` 指向之；SSE 走映射端口。
+- **C｜凭据/egress 入容器（中）**：宿主 opencode auth 不在容器里，须解决凭据进入——见下「经宿主够 provider」。
+
+**「让容器内 server 经宿主够到 LLM provider」评估（回应该方向提问）**。这是解 C 的最优解，思路与 codex RELAY 的宿主 hop 同源，
+但**三个要点**决定它不是「接根线」：
+
+- **它不是复用 codex relay，是新建组件**：codex relay 是 **Responses→Chat 协议翻译器**（专给 OpenAI wire）；opencode 用自己
+  provider 层讲 Anthropic/OpenAI 等**原生协议**，故须在宿主**新起一个通用认证转发代理**（收容器请求→注入真实凭据→转发上游）。
+  **赢点**：凭据**留宿主、不下沉容器**（复用 SND-R17 `host.docker.internal`，Docker Desktop 零新暴露）。
+- **前提未验证：opencode 自定义 baseURL**：把 provider 指向 `host.docker.internal:<port>` 需把 baseURL 写进容器内 server 的
+  `OPENCODE_CONFIG_CONTENT`——而 c3 现在根本不写（`index.ts:150` 忽略）；且原生 Anthropic/Google provider 是否统一认 baseURL
+  覆盖，需对 opencode provider schema 验证，**逐 provider 可行性不一**。
+- **egress 须锁定**：够 `host.docker.internal` 要 `networkDisabled=false`（SND-R17 才加 ExtraHosts），但默认 `--network none`
+  （SND-R10）；不把出站限定到这条宿主 hop，隔离就只是「网络开着」——真正锁住要靠 Phase 2 egress 过滤 / 自定义网络。
+- 更简单但更差的替代：把 opencode auth **挂/注入进容器**让其直连 provider——接线简单，但**凭据下沉容器** + 仍需开放/allowlist 出站。
+
+**分阶段路径（若另起意图）**：先做 A+B 把容器内 server 跑通（凭据先用「挂载 auth 进容器」的简单形态验证隔离打通）→ 再上宿主认证代理
+把凭据收回宿主（C 的最优解）。
 
 **决策**：本阶段**接受 opencode agent 在 sandbox 下不可用**；随机选中 opencode → 维持现状硬失败
 （`pickSandboxAgent` 返回 `unsupported-vendor`，run-lifecycle 硬失败文案指向本 ADR）。**不**为 opencode 实作容器内 serve。

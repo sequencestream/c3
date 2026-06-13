@@ -215,6 +215,33 @@ describe('SandboxLauncher', () => {
       const envContent = readFileSync(envFilePath, 'utf-8')
       expect(envContent.trim()).toBe('')
     })
+
+    it('strips host-loopback proxy vars (unreachable inside the container)', () => {
+      // The c3 server forwards its own process.env (buildChildEnv); a host
+      // loopback proxy (127.0.0.1) is the container's own loopback inside the
+      // namespace, so leaving it in makes every provider call ConnectionRefused.
+      createSandboxWrapper(TEST_HANDLE, tmpDir, TEST_VENDOR_BINARY, {
+        ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+        http_proxy: 'http://127.0.0.1:7890',
+        https_proxy: 'http://127.0.0.1:7890',
+        all_proxy: 'socks5://127.0.0.1:7890',
+        HTTPS_PROXY: 'http://localhost:7890',
+      })
+      const envContent = readFileSync(join(tmpDir, 'env.txt'), 'utf-8')
+      expect(envContent).toContain('ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic')
+      expect(envContent).not.toMatch(/http_proxy/)
+      expect(envContent).not.toMatch(/https_proxy/)
+      expect(envContent).not.toMatch(/all_proxy/)
+      expect(envContent).not.toMatch(/HTTPS_PROXY/)
+    })
+
+    it('keeps a non-loopback proxy (a reachable corporate proxy is still valid)', () => {
+      createSandboxWrapper(TEST_HANDLE, tmpDir, TEST_VENDOR_BINARY, {
+        https_proxy: 'http://proxy.corp.example:8080',
+      })
+      const envContent = readFileSync(join(tmpDir, 'env.txt'), 'utf-8')
+      expect(envContent).toContain('https_proxy=http://proxy.corp.example:8080')
+    })
   })
 
   describe('checkDockerAvailable', () => {

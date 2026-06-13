@@ -487,6 +487,10 @@
         "label": "Allow network exposure",
         "hint": "Bind beyond localhost (0.0.0.0) so other machines can reach this console.",
         "needAdmin": "Set an admin account to allow network exposure."
+      },
+      "ttl": {
+        "label": "Session lifetime (days)",
+        "hint": "How long a sign-in stays valid before re-prompting. Default is 30 days. A server restart still signs everyone out."
       }
     }
   },

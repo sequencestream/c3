@@ -19,7 +19,9 @@
 
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { Readable, PassThrough } from 'node:stream'
 import Docker from 'dockerode'
 import type {
@@ -50,6 +52,37 @@ export interface DockerDriverOptions {
    * SeccompProfile or undefined if not found.
    */
   readonly seccompLoader?: (name: string) => SeccompProfile | undefined
+}
+
+// ─── Daemon connection resolution ──────────────────────────────────────────────
+
+/**
+ * Resolve how dockerode should reach the Docker daemon.
+ *
+ * dockerode's bare `new Docker()` hard-codes the socket at `/var/run/docker.sock`
+ * and does NOT read the active `docker` CLI **context**. That breaks every common
+ * macOS setup where the daemon socket lives elsewhere and is selected via context
+ * (Colima → `~/.colima/<profile>/docker.sock`, Docker Desktop → `~/.docker/run/docker.sock`,
+ * Rancher Desktop → `~/.rd/docker.sock`) — c3 would get `ENOENT /var/run/docker.sock`.
+ *
+ * Resolution order:
+ *  1. `DOCKER_HOST` env — return `{}` so docker-modem parses it (unix:// or tcp://).
+ *  2. The first existing socket among the well-known daemon locations.
+ *  3. Fall back to `{}` (dockerode's own `/var/run/docker.sock` default) so the
+ *     error message stays the familiar one when no daemon is found.
+ */
+function resolveDockerConnection(): Docker.DockerOptions {
+  if (process.env.DOCKER_HOST) return {}
+  const candidates = [
+    '/var/run/docker.sock', // Linux native / Docker Desktop symlink
+    join(homedir(), '.docker', 'run', 'docker.sock'), // Docker Desktop (macOS)
+    join(homedir(), '.colima', 'default', 'docker.sock'), // Colima default profile
+    join(homedir(), '.rd', 'docker.sock'), // Rancher Desktop
+  ]
+  for (const socketPath of candidates) {
+    if (existsSync(socketPath)) return { socketPath }
+  }
+  return {}
 }
 
 // ─── Memory/Cpu Helpers ──────────────────────────────────────────────────────
@@ -100,7 +133,7 @@ export class DockerDriver implements SandboxDriver {
   readonly #seccompLoader?: (name: string) => SeccompProfile | undefined
 
   constructor(opts: DockerDriverOptions = {}) {
-    this.#docker = opts.docker ?? new Docker()
+    this.#docker = opts.docker ?? new Docker(resolveDockerConnection())
     this.#seccompLoader = opts.seccompLoader
   }
 

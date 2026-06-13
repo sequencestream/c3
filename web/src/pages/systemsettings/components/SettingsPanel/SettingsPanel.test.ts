@@ -334,6 +334,20 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.auth?.exposure?.bindAddress).toBe('0.0.0.0')
   })
+
+  it('shows the default 30-day session lifetime when no auth block exists yet', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const ttl = w.find('[data-testid="settings-auth-ttl"]').element as HTMLInputElement
+    expect(ttl.value).toBe('30')
+  })
+
+  it('carries an edited session lifetime (days → seconds) through on save', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-ttl"]').setValue('45')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.auth?.session.ttlSeconds).toBe(45 * 24 * 60 * 60)
+  })
 })
 
 describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {

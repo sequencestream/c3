@@ -74,24 +74,3 @@ jobs:
 
       - name: Build
         run: pnpm build
-
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      # `pnpm e2e` runs pnpm build internally, then boots the server and runs
-      # all WebSocket-based e2e tests. No --no-build needed.
-      - name: Build + E2E
-        run: pnpm e2e

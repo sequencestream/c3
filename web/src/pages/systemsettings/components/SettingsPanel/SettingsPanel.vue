@@ -335,7 +335,9 @@ const AUTH_PROVIDERS: { value: string; disabled: boolean }[] = [
   { value: 'sso', disabled: true },
 ]
 // Signing key is a reference (an env name), never the key itself (ADR-0023).
-const DEFAULT_AUTH_SESSION = { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' }
+// 30-day TTL mirrors the server default (auth-schema.ts DEFAULT_SESSION_TTL_SECONDS).
+const SECONDS_PER_DAY = 24 * 60 * 60
+const DEFAULT_AUTH_SESSION = { ttlSeconds: 30 * SECONDS_PER_DAY, signingKeyRef: 'C3_AUTH_KEY' }
 
 // Write-only password inputs. The hash is NEVER echoed here; these hold the
 // plaintext only until `submitPassword` ships it to the server, then clear.
@@ -379,6 +381,21 @@ function setAuthUsername(v: string) {
 }
 function setExposure(v: boolean) {
   ensureAuth().exposure = { bindAddress: v ? '0.0.0.0' : '127.0.0.1' }
+}
+// Session TTL is edited in whole days (friendly unit); stored as seconds. Reads
+// fall back to the 30-day default; writes floor to ≥1 day so an empty/zero input
+// can never mint a zero-second (instantly-expired) session.
+const authTtlDays = computed(() =>
+  Math.max(
+    1,
+    Math.round(
+      (draft.value.auth?.session.ttlSeconds ?? DEFAULT_AUTH_SESSION.ttlSeconds) / SECONDS_PER_DAY,
+    ),
+  ),
+)
+function setAuthTtlDays(v: number) {
+  const days = Math.max(1, Math.floor(v) || 1)
+  ensureAuth().session.ttlSeconds = days * SECONDS_PER_DAY
 }
 
 /** Ship the new credentials to the server (it hashes + persists). Bootstrap (no
@@ -727,6 +744,20 @@ function submitPassword() {
               : t('settings.auth.exposure.needAdmin')
           }}
         </p>
+
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.auth.ttl.label') }}</span>
+          <input
+            class="agent-field"
+            type="number"
+            min="1"
+            step="1"
+            :value="authTtlDays"
+            data-testid="settings-auth-ttl"
+            @input="setAuthTtlDays(Number(($event.target as HTMLInputElement).value))"
+          />
+        </label>
+        <p class="settings-hint">{{ t('settings.auth.ttl.hint') }}</p>
       </section>
 
       <section class="settings-section">

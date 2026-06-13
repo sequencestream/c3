@@ -34,6 +34,10 @@ await build({
   external: [
     // Native bindings the SDK may dlopen at runtime
     '@anthropic-ai/claude-agent-sdk',
+    // Sandbox Docker driver (ADR-0024). dockerode pulls in ssh2 → cpu-features,
+    // which ships a native `.node` esbuild can't bundle. Keep it external so it
+    // loads from node_modules at runtime (a direct @ccc/server dependency).
+    'dockerode',
     // Runtime-selected SQLite drivers (db.ts). Marking both external
     // is mandatory: esbuild (platform node) cannot resolve `bun:sqlite`, and even
     // a dynamic import of it fails the bundle without this. `node:sqlite` is a

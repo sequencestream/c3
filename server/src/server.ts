@@ -11,6 +11,9 @@ import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { INTENT_DISALLOWED_TOOLS, waitForDecision } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
+import { DockerDriver } from './kernel/sandbox/docker/DockerDriver.js'
+import { SandboxRegistry } from './kernel/sandbox/SandboxRegistry.js'
+import { getSystemSandboxes } from './kernel/config/index.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
 import { addWorkspace, listWorkspaces } from './state.js'
 import { sessionExists } from './sessions.js'
@@ -432,7 +435,24 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   //    explicitly. The intent profile is wired HERE so the kernel
   //    launcher stays features-free (ADR-0009 R1).
   const eventBus = new EventBus()
+
+  // ── Sandbox wiring (ADR-0024) ──────────────────────────────────────────────
+  // Build the system sandbox-def registry from settings and instantiate the
+  // Docker driver, then thread both into the run lifecycle. The run-lifecycle
+  // gate only fires when a project actually enables sandbox with an existing
+  // def, so wiring this unconditionally is harmless for non-sandbox users (and
+  // dockerode connects lazily — no throw when Docker is absent). Defs are read
+  // at startup; a settings change needs a restart to re-register (MVP).
+  const sandboxRegistry = new SandboxRegistry()
+  for (const def of getSystemSandboxes()) sandboxRegistry.register(def)
+  const sandboxDriver = new DockerDriver()
+  if (sandboxRegistry.size > 0) {
+    console.log(`[sandbox] registry ready: ${sandboxRegistry.names().join(', ')}`)
+  }
+
   const launchDeps: LaunchRunDeps = {
+    sandboxDriver,
+    sandboxRegistry,
     eventBus,
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,

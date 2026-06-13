@@ -507,15 +507,25 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         opts.sandboxHandle,
         opts.sandboxTmpDir!,
         'claude',
-        buildChildEnv(envOverrides),
+        // IS_SANDBOX=1: the container IS the sandbox, so claude must allow
+        // `--dangerously-skip-permissions` even though it runs as root inside the
+        // image (without this claude aborts: "cannot be used with root/sudo
+        // privileges"). Safe here precisely because the run is container-isolated.
+        { ...buildChildEnv(envOverrides), IS_SANDBOX: '1' },
       )
     : findClaudeExecutable()
-  // Override cwd to the container's workspace path when sandboxed
-  const sandboxCwd = opts.sandboxHandle ? '/workspace' : cwd
+  // The SDK spawns the wrapper ON THE HOST, so `cwd` must be a real host dir.
+  // `cwd` here is the run's worktree (`effectiveCwd`) — exactly the directory
+  // bind-mounted into the container at /workspace. The CONTAINER working dir is
+  // set independently by the wrapper's `docker exec -w /workspace`, and claude
+  // (running in the container) reports /workspace to the model from its own
+  // process cwd. Setting this to '/workspace' (a path that exists only inside the
+  // container) made the host spawn fail with ENOENT — "native binary ... failed
+  // to launch" — so always keep the host `cwd` here.
   const q = query({
     prompt: input,
     options: {
-      cwd: sandboxCwd,
+      cwd,
       ...(resume ? { resume } : {}),
       // Inherit user (~/.claude) and project (.claude) settings — hooks, allow
       // rules, Skills, CLAUDE.md (ADR 0005). Tools not pre-decided by inherited

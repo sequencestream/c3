@@ -17,7 +17,11 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
   [`shared/api-conventions/websocket-protocol.md`](../../shared/api-conventions/websocket-protocol.md)
   (`get_settings`, `save_settings`, `settings`, `load_workspace_setting`, `save_workspace_setting`,
   `workspace_setting`).
-- Persists to `~/.c3/settings.json` — stored as `SystemSettings.projectConfigs` (a
+- Persists to `~/.c3/settings.json` by default. The path is overridable for isolated launches
+  (e.g. e2e) via the `c3 start --settings <path>` CLI flag — it names the exact settings.json file
+  and its directory also holds `state.json`, relocating the whole config dir without touching the
+  real `~/.c3`. (The `C3_DIR` env var, already honored by the db layer, likewise relocates the dir.)
+  Stored as `SystemSettings.projectConfigs` (a
   `Record<projectPath, WorkspaceSetting>`). **All writes go through the single, concurrency-safe
   write path** (`kernel/config/store.ts`): in-process serialization + a cross-process file
   lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes

@@ -3,10 +3,12 @@
  * E2E suite runner — boots one c3 server and runs every WebSocket e2e against it,
  * then tears the server down and reports a pass/fail summary. Wired as `pnpm e2e`.
  *
- * Isolation: the intent db is pointed at a throwaway `C3_DB_PATH` so the run
- * never touches the real `~/.c3/c3.db`. Agent config (`~/.c3/settings.json`) is
- * left untouched — the consensus tests need the real agents, and skip themselves
- * (exit 5) when none beyond the default are configured.
+ * Isolation: the intent db is pointed at a throwaway `C3_DB_PATH` and the server
+ * is launched with `--settings <throwaway>` so the run never touches the real
+ * `~/.c3`. The throwaway settings.json is seeded from the real one when present
+ * (so the consensus tests keep their configured agents) but with `auth` stripped
+ * — the suite connects without a token, so an auth-enabled real config must not
+ * gate the handshake. Tests still SKIP (exit 5) when no extra agents are present.
  *
  * The server is built first (`pnpm build`) unless `--no-build` / `E2E_NO_BUILD=1`.
  * Override the port with `--port` / `E2E_PORT`. The one-off SDK spike
@@ -36,10 +38,10 @@
  */
 import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { hostTarget } from '../release/targets.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -64,6 +66,25 @@ writeFileSync(join(STATE_DIR, '.keep'), '')
 mkdirSync(SEED_PROJECT, { recursive: true })
 writeFileSync(join(SEED_PROJECT, 'README.md'), '# c3 e2e seed\n')
 
+// Isolated settings.json: the suite runs against its OWN settings (passed via
+// `--settings`), never the real ~/.c3/settings.json. We seed it from the real
+// file when present (so the consensus tests keep their configured agents) but
+// strip `auth` — the suite connects without a token, and an auth-enabled real
+// config would otherwise gate the WS handshake. Absent real file ⇒ `{}` (the
+// server normalizes to the default single-agent config).
+const SETTINGS_PATH = join(STATE_DIR, 'settings.json')
+;(() => {
+  let settings = {}
+  const real = join(homedir(), '.c3', 'settings.json')
+  try {
+    settings = JSON.parse(readFileSync(real, 'utf-8'))
+  } catch {
+    /* no real settings — start from empty (default agent) */
+  }
+  delete settings.auth
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2))
+})()
+
 // Each test: name, script file, and whether a non-(0/5) exit fails the suite.
 const TESTS = [
   { name: 'smoke (permission flow)', file: 'e2e-ws-test.mjs' },
@@ -72,6 +93,7 @@ const TESTS = [
   { name: 'consensus (voting)', file: 'e2e-consensus-test.mjs' },
   { name: 'ask-consensus (per-question)', file: 'e2e-ask-consensus-test.mjs' },
   { name: 'sandbox (backward compat)', file: 'e2e-sandbox-test.mjs' },
+  { name: 'sandbox container (config + container path)', file: 'e2e-sandbox-container-test.mjs' },
 ]
 
 function log(s) {
@@ -124,7 +146,16 @@ async function main() {
     log(`--obfuscated: starting bun ${stagePath} start`)
     const server = spawn(
       'bun',
-      [stagePath, 'start', '--project', SEED_PROJECT, '--port', String(PORT)],
+      [
+        stagePath,
+        'start',
+        '--project',
+        SEED_PROJECT,
+        '--port',
+        String(PORT),
+        '--settings',
+        SETTINGS_PATH,
+      ],
       { cwd: ROOT, stdio: 'inherit', env: { ...process.env, C3_DB_PATH: DB_PATH } },
     )
     try {
@@ -160,6 +191,8 @@ async function main() {
       SEED_PROJECT,
       '--port',
       String(PORT),
+      '--settings',
+      SETTINGS_PATH,
     ],
     { cwd: ROOT, stdio: 'inherit', env: { ...process.env, C3_DB_PATH: DB_PATH } },
   )

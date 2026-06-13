@@ -4,9 +4,17 @@ steps:
 
 `scripts/e2e/run-all.mjs` boots one server, runs every WebSocket e2e against it,
 then tears it down and prints a pass/fail summary. The intent db is pointed
-at a throwaway `C3_DB_PATH` (never touches `~/.c3/c3.db`); agent config
-(`~/.c3/settings.json`) is left as-is, so the consensus tests use the real
-agents and `SKIP` (exit 5) when none beyond the default are configured.
+at a throwaway `C3_DB_PATH` (never touches `~/.c3/c3.db`), and the server is
+launched with `--settings <throwaway>` so it reads its OWN settings.json — seeded
+from the real `~/.c3/settings.json` when present (consensus tests keep their
+configured agents) but with `auth` stripped, since the suite connects without a
+token. Consensus tests still `SKIP` (exit 5) when none beyond the default are
+configured.
+
+> `c3 start --settings <path>` (new) points c3 at an explicit settings.json,
+> relocating the whole config dir (its directory also holds `state.json`) without
+> touching `~/.c3`. Use it to run any e2e by hand against an isolated, auth-free
+> config: write `{}` (or a tailored settings.json) to a temp path and pass it.
 
 - `pnpm e2e` → builds, boots, runs all, reports.
 - `pnpm e2e --no-build` → reuse the existing `server/dist` build.
@@ -91,6 +99,40 @@ split) which the test fills in. Verifies the answer is injected and the run
 completes. Same settings handling as the consensus test.
 
 - `node scripts/e2e/e2e-ask-consensus-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
+
+## Sandbox container test (config-via-c3 + real container path)
+
+The "true" sandbox e2e — unlike `e2e-sandbox-test.mjs` (backward-compat, runs a
+plain chat `create_session` which per ADR-0024/SND-R13 never sandboxes), this
+covers the two halves that matter for the container feature:
+
+- **Part A — config flow (protocol):** registers a system sandbox def pointing at
+  a local base image (`get_settings` → `save_settings`), enables sandbox on a
+  worktree-mode workspace (`save_workspace_setting`), then reads both back and
+  asserts they persisted (worktree-only normalize kept). This is exactly what the
+  System Settings + Workspace Settings UI emit.
+- **Part B — container path (token-free):** starts a container from that image
+  with a worktree bind-mounted at `/workspace` and runs `claude --version` /
+  `codex --version` inside via `docker exec -w /workspace <cid> <bin>` — the
+  identical mechanism `SandboxLauncher.createSandboxWrapper` uses. Proves the
+  image has the CLIs and the mount/exec path works on a real daemon, with no
+  provider credentials and no token spend.
+
+There is no protocol hook to "launch the sandbox only" — c3 starts the container
+as step 4 of a real `start_development` run whose step 5 spawns a real agent turn
+(needs creds, spends tokens). The launchSandbox→wrapper wiring is already
+unit-tested; what units can't cover — a real image on a real daemon — is Part B.
+
+**Prereqs:** Docker running + the base image built. The image installs the
+vendor CLIs (`claude` ← `@anthropic-ai/claude-code`, `codex` ← `@openai/codex`)
+on a glibc base (`node:22-bookworm-slim`; NOT alpine — codex ships a native
+binary). opencode is intentionally omitted (unsupported under sandbox, ADR-0024).
+
+- Build the image (once): `node scripts/e2e/sandbox/build-image.mjs`
+  (custom tag via `C3_SANDBOX_IMAGE=foo:bar`, clean rebuild via `--no-cache`).
+- `pnpm start --project /tmp --port 13000`
+- `node scripts/e2e/e2e-sandbox-container-test.mjs ws://localhost:13000/ws` →
+  expect `RESULT: PASS`. SKIPs (exit 5) when Docker or the image is missing.
 
 ## SDK answer-injection spike (one-off)
 

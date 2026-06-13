@@ -213,6 +213,7 @@ export async function launchRun(
       // Hard-isolation failure: settle the run as an error and stop. Mirrors the
       // vendor-unavailable early return below so the started→settled invariant holds.
       const failHard = (error: string): void => {
+        console.warn(`[sandbox] run hard-failed: ${error}`)
         emit(runId, { type: 'user_text', text: prompt })
         emit(runId, { type: 'turn_end', reason: 'error', error })
         finalizeRun(runId)

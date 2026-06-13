@@ -30,7 +30,12 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
   (**BasicAuthProvider** `{ username, passwordHash }`) this phase. The single extension point for
   OAuth/SSO/multi-user.
 - **AuthSessionPolicy** — `{ ttlSeconds, signingKeyRef }`. Provider-neutral session-token policy.
-  `signingKeyRef` is a _reference_ (env var name / keystore id), never the key itself.
+  `signingKeyRef` is a _reference_ (env var name / keystore id), never the key itself. Default
+  `ttlSeconds` is **30 days** (`DEFAULT_SESSION_TTL_SECONDS`) — long enough that closing the tab and
+  returning later does not re-prompt; there is no TTL-editing UI yet. `normalize` migrates a
+  persisted legacy `3600` (the former 1h default) up to the 30-day default one-shot
+  (`migrateLegacySessionTtl`). Sessions still live only in-process (no persistent store, ADR-0006),
+  so a server restart invalidates every token regardless of TTL and re-prompts on next reconnect.
 - **AuthExposureConfig** — `{ bindAddress? }`. Network-exposure / bind intent.
 - **AuthSessionToken** — `{ tokenId, subject, issuedAt, expiresAt }`. Provider-neutral issued token.
 - **Wire messages** — `login` / `logout` / `set_admin_password` (client→server), `login_result` /

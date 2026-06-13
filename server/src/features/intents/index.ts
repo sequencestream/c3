@@ -508,7 +508,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // ── Git branch strategy (2026-06-10) ───────────────────────────────────
   // The workspace's `gitBranchMode` decides where the dev agent runs:
   //  - `worktree`: create (or reuse) an isolated git worktree at
-  //    $TMPDIR/c3-worktrees/<project>/intent-<ID>, branched from the workspace's
+  //    <c3-home>/worktrees/<project>/intent-<ID>, branched from the workspace's
   //    default main branch. Idempotent on dangling / resume.
   //  - `current-branch` (default): no worktree — develop in place on the project
   //    checkout's current branch.

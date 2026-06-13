@@ -57,7 +57,7 @@ flowchart TD
    synchronously **claims** the `intentId` in a single-process launch set; a concurrent duplicate
    start returns `intent.devStartInFlight` and creates nothing (`RM-R8`).
 2. **Git branch mode (`WorkspaceSetting.gitBranchMode`).** `worktree` ⇒ create/reuse an isolated
-   worktree at `$TMPDIR/c3-worktrees/<project>/intent-<ID>` branched from `defaultMainBranch`;
+   worktree at `<c3-home>/worktrees/<project>/intent-<ID>` branched from `defaultMainBranch`;
    `current-branch` (default) ⇒ develop in place. The dev session's `effectiveCwd` is set
    accordingly (`RM-R8`).
 3. **intent-management → agent-session.** A **background normal session** is started running the

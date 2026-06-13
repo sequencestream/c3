@@ -23,7 +23,7 @@
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import type {
   AgentConfig,
@@ -47,7 +47,7 @@ import {
   systemAgent,
 } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
-import { normalizeAuth } from './auth-schema.js'
+import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
 
 /**
  * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
@@ -153,12 +153,43 @@ interface SessionAgentState {
   sessionAgents: Record<string, SessionAgentFact>
 }
 
+/**
+ * Explicit settings-file path override (CLI `--settings <path>`), set once at
+ * startup before any load. When set, it is the exact settings.json path and its
+ * directory also holds `state.json` — so the whole c3 config dir is relocated.
+ * Lets an isolated launch (e.g. e2e) point at its own auth-free settings without
+ * touching the real `~/.c3`. Mirrors the `C3_DIR` override already honored by
+ * the db layer (kernel/infra/db.ts).
+ */
+let settingsPathOverride: string | null = null
+
+/**
+ * Set the settings.json path used for all subsequent loads/saves. Must be called
+ * before the first {@link loadSettings} (the cli's `start` action does this).
+ */
+export function setSettingsPath(path: string): void {
+  settingsPathOverride = resolve(path)
+}
+
 function c3Dir(): string {
+  if (settingsPathOverride) return dirname(settingsPathOverride)
+  if (process.env.C3_DIR) return resolve(process.env.C3_DIR)
   return join(homedir(), '.c3')
 }
 
+/**
+ * The resolved c3 home directory (honoring `--settings` / `C3_DIR` / default
+ * `~/.c3`). Exposed so other domains anchor their on-disk data under the same
+ * dir — notably intent worktrees, which must live somewhere the Docker daemon
+ * can bind-mount (on macOS Docker Desktop that excludes `$TMPDIR`/`/var/folders`
+ * but always includes the user's HOME). See features/intents/worktree.ts.
+ */
+export function c3HomeDir(): string {
+  return c3Dir()
+}
+
 function settingsFile(): string {
-  return join(c3Dir(), 'settings.json')
+  return settingsPathOverride ?? join(c3Dir(), 'settings.json')
 }
 
 function stateFile(): string {
@@ -294,7 +325,10 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // Auth config (ADR-0023): validate via the zod schema; a malformed or absent
   // block normalizes to undefined ⇒ "no auth" (the C-SEC-5 localhost-only
   // default). Contract-only — no runtime enforcement exists yet.
-  const auth = normalizeAuth(raw?.auth) ?? undefined
+  // One-shot migration (2026-06-13): bump the legacy 1h session TTL up to the
+  // 30-day default so existing installs stop re-prompting hourly.
+  const parsedAuth = normalizeAuth(raw?.auth)
+  const auth = parsedAuth ? migrateLegacySessionTtl(parsedAuth) : undefined
   return {
     agents,
     defaultAgentId,

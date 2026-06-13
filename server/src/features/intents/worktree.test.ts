@@ -113,6 +113,10 @@ describe('worktreeExists', () => {
 
 describe('createWorktree', () => {
   let repoDir: string
+  // Worktrees now anchor under the c3 home (honoring C3_DIR); redirect it to a
+  // throwaway dir so the test never writes into the real ~/.c3.
+  let c3DirTmp: string
+  let prevC3Dir: string | undefined
   const INTENT_ID = 'abc-123'
 
   function wtPath(): string {
@@ -132,6 +136,9 @@ describe('createWorktree', () => {
   }
 
   beforeEach(() => {
+    prevC3Dir = process.env.C3_DIR
+    c3DirTmp = mkdtempSync(join(tmpdir(), 'c3-wt-home-'))
+    process.env.C3_DIR = c3DirTmp
     repoDir = mkdtempSync(join(tmpdir(), 'c3-wt-repo-'))
     createGitRepo(repoDir)
   })
@@ -157,6 +164,9 @@ describe('createWorktree', () => {
     } catch {
       // ignore
     }
+    rmSync(c3DirTmp, { recursive: true, force: true })
+    if (prevC3Dir === undefined) delete process.env.C3_DIR
+    else process.env.C3_DIR = prevC3Dir
   })
 
   it('creates a worktree and branch', () => {

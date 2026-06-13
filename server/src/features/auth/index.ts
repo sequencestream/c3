@@ -17,6 +17,7 @@
 import type { AuthConfig, AuthSessionPolicy } from '@ccc/shared/protocol'
 import type { Handler } from '../../transport/handler-registry.js'
 import { loadSettings, saveSettings } from '../../kernel/config/index.js'
+import { DEFAULT_SESSION_TTL_SECONDS } from '../../kernel/config/auth-schema.js'
 import { hashPassword, verifyPassword } from './password.js'
 import { mintSession, revokeSession } from './session-store.js'
 
@@ -27,7 +28,10 @@ const MIN_PASSWORD_LEN = 4
 /** Default session policy stamped onto a freshly-created auth block. The signing
  *  key is a *reference* (resolved by the future token-signing runtime), never the
  *  key itself (ADR-0023 — `signingKeyRef` is an env-var name / keystore id). */
-const DEFAULT_SESSION: AuthSessionPolicy = { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' }
+const DEFAULT_SESSION: AuthSessionPolicy = {
+  ttlSeconds: DEFAULT_SESSION_TTL_SECONDS,
+  signingKeyRef: 'C3_AUTH_KEY',
+}
 
 export const login: Handler<'login'> = (_ctx, conn, msg) => {
   const auth = loadSettings().auth

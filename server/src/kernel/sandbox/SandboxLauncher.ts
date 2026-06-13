@@ -96,7 +96,7 @@ export async function checkDockerAvailable(driver: SandboxDriver): Promise<strin
  * The sandbox **config** is keyed by the workspace (`workspacePath`), but the
  * directory bind-mounted into the container is the run's isolated **worktree**
  * (`mountPath` = `rt.effectiveCwd`) — ADR-0024. These differ: the worktree lives
- * under `$TMPDIR/c3-worktrees/<project>/intent-<id>/`, while the config is stored
+ * under `<c3-home>/worktrees/<project>/intent-<id>/`, while the config is stored
  * per workspace.
  *
  * @param driver        The sandbox driver (DockerDriver).
@@ -137,12 +137,22 @@ export async function launchSandbox(
   const shortContainerId = handle.containerId.slice(0, 12)
   const tmpDir = mkdtempSync(join(tmpdir(), `c3-sb-${shortContainerId}-`))
 
+  console.log(
+    `[sandbox] container started: id=${shortContainerId} image=${resolvedConfig.image} ` +
+      `network=${resolvedConfig.networkDisabled ? 'none' : 'host-gateway'} ` +
+      `mount=${mountPath}:/workspace project=${workspacePath}`,
+  )
+
   return {
     handle,
     resolvedConfig,
     tmpDir,
     stop: async () => {
+      console.log(
+        `[sandbox] container stopping: id=${shortContainerId} image=${resolvedConfig.image}`,
+      )
       await driver.stop(handle, { timeout: 10, remove: true })
+      console.log(`[sandbox] container stopped + removed: id=${shortContainerId}`)
       // Clean up temp dir (best-effort)
       try {
         rmSync(tmpDir, { recursive: true, force: true })
@@ -191,6 +201,7 @@ export function createSandboxWrapper(
   const envFilePath = sandboxEnvFilePath(tmpDir)
   const envLines = Object.entries(envVars)
     .filter(([, v]) => v !== undefined && v !== null)
+    .filter(([k, v]) => !isLoopbackProxyVar(k, v))
     .map(([k, v]) => `${k}=${serializeEnvValue(v)}`)
     .join('\n')
   writeFileSync(envFilePath, envLines + '\n', 'utf-8')
@@ -278,4 +289,29 @@ function serializeEnvValue(value: string): string {
   // Docker's --env-file format: everything after the first `=` is the value.
   // Trim trailing whitespace (Docker's convention), keep everything else verbatim.
   return value.replace(/\s+$/, '')
+}
+
+/** Proxy env vars (both cases) that route HTTP/SOCKS traffic. */
+const PROXY_VAR_NAMES = new Set([
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'ftp_proxy',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'FTP_PROXY',
+])
+
+/**
+ * Whether `key=value` is a proxy var pointing at the **host loopback**. These leak
+ * from the c3 server's own environment (buildChildEnv forwards process.env) and
+ * MUST NOT reach the container: inside the container `127.0.0.1` is the container
+ * itself, so a host-loopback proxy is unreachable and every provider call fails
+ * with `ConnectionRefused`. Non-loopback proxies (e.g. a reachable corporate proxy)
+ * are left intact. The container reaches the network directly via its own bridge.
+ */
+function isLoopbackProxyVar(key: string, value: string): boolean {
+  if (!PROXY_VAR_NAMES.has(key)) return false
+  return /\b(127\.0\.0\.1|localhost|\[?::1\]?)\b/.test(value)
 }

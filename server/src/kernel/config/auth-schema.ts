@@ -48,6 +48,16 @@ export const authSessionPolicySchema = z.object({
   signingKeyRef: z.string(),
 })
 
+/** Default session-token lifetime: 30 days. Long enough that closing the tab and
+ *  returning later no longer re-prompts (the previous 1h default expired between
+ *  visits). Sessions still live only in-process (session-store.ts), so a server
+ *  restart invalidates them regardless of this TTL. */
+export const DEFAULT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+/** The former default (1h). A persisted block carrying exactly this value predates
+ *  the 30-day bump; since the TTL has no editing UI it can only be the old default,
+ *  never a deliberate user choice, so `normalize` migrates it up one-shot. */
+export const LEGACY_DEFAULT_SESSION_TTL_SECONDS = 3600
+
 /** Network-exposure / bind-address intent. */
 export const authExposureConfigSchema = z.object({
   bindAddress: z.string().optional(),
@@ -73,6 +83,17 @@ export function normalizeAuth(raw: unknown): AuthConfig | null {
   if (raw === undefined || raw === null) return null
   const result = authConfigSchema.safeParse(raw)
   return result.success ? result.data : null
+}
+
+/**
+ * One-shot migration: a persisted session TTL equal to the former 1h default
+ * (it had no editing UI, so this value can only be the old hard-coded default,
+ * never a deliberate user choice) is bumped to the 30-day default so existing
+ * installs stop re-prompting hourly. Any other value is left untouched.
+ */
+export function migrateLegacySessionTtl(auth: AuthConfig): AuthConfig {
+  if (auth.session.ttlSeconds !== LEGACY_DEFAULT_SESSION_TTL_SECONDS) return auth
+  return { ...auth, session: { ...auth.session, ttlSeconds: DEFAULT_SESSION_TTL_SECONDS } }
 }
 
 // ---- Type pin: the zod schema's inferred type IS the wire `AuthConfig` ----

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { AuthConfig } from '@ccc/shared/protocol'
-import { authConfigSchema, normalizeAuth } from './auth-schema.js'
+import {
+  authConfigSchema,
+  normalizeAuth,
+  migrateLegacySessionTtl,
+  DEFAULT_SESSION_TTL_SECONDS,
+  LEGACY_DEFAULT_SESSION_TTL_SECONDS,
+} from './auth-schema.js'
 
 /**
  * Contract tests for the ADR-0023 auth config schema. They guard the three
@@ -67,5 +73,31 @@ describe('auth-schema', () => {
   it('rejects a non-boolean enabled flag', () => {
     const badEnabled = { ...validBasic, enabled: 'yes' }
     expect(normalizeAuth(badEnabled)).toBeNull()
+  })
+
+  describe('migrateLegacySessionTtl', () => {
+    it('bumps the legacy 1h TTL up to the 30-day default', () => {
+      const legacy: AuthConfig = {
+        ...validBasic,
+        session: { ttlSeconds: LEGACY_DEFAULT_SESSION_TTL_SECONDS, signingKeyRef: 'k' },
+      }
+      expect(migrateLegacySessionTtl(legacy).session.ttlSeconds).toBe(DEFAULT_SESSION_TTL_SECONDS)
+    })
+
+    it('leaves any other (user-chosen) TTL untouched', () => {
+      const custom: AuthConfig = {
+        ...validBasic,
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      expect(migrateLegacySessionTtl(custom)).toBe(custom)
+    })
+
+    it('leaves the new 30-day default untouched (idempotent)', () => {
+      const current: AuthConfig = {
+        ...validBasic,
+        session: { ttlSeconds: DEFAULT_SESSION_TTL_SECONDS, signingKeyRef: 'k' },
+      }
+      expect(migrateLegacySessionTtl(current).session.ttlSeconds).toBe(DEFAULT_SESSION_TTL_SECONDS)
+    })
   })
 })

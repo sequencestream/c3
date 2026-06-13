@@ -1,8 +1,17 @@
 /**
  * Git worktree management for intent development isolation.
  *
- * Creates detached worktrees at `$TMPDIR/c3-worktrees/<project>/intent-<ID>/` so
- * the agent works on an isolated branch without touching the main checkout.
+ * Creates detached worktrees at `<c3-home>/worktrees/<project>/intent-<ID>/`
+ * (c3-home = `--settings` dir / `C3_DIR` / `~/.c3`) so the agent works on an
+ * isolated branch without touching the main checkout.
+ *
+ * Why under the c3 home and not `$TMPDIR`: the sandbox bind-mounts the worktree
+ * into the container at `/workspace` (ADR-0024, SND-R14). On macOS Docker
+ * Desktop the default file-sharing set excludes `$TMPDIR` (`/var/folders`) and
+ * `/tmp` but always includes the user's HOME — a worktree under `$TMPDIR` would
+ * mount as an EMPTY `/workspace`. Anchoring under the c3 home (which lives under
+ * HOME by default) keeps real sandbox runs working on macOS, and isolated
+ * launches (`--settings <throwaway>`) keep their worktrees in the throwaway dir.
  *
  * Cross-session persistence: worktrees are NOT automatically removed — they
  * survive across agent / server restarts. Cleanup is a future feature (only
@@ -14,8 +23,8 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { c3HomeDir } from '../../kernel/config/index.js'
 
 // ---------------------------------------------------------------------------
 // Local git helper — synchronous (worktree creation MUST be sync to preserve
@@ -54,15 +63,15 @@ function execGit(cwd: string, args: string[]): GitResult {
 
 /**
  * Convert an absolute project path to a safe filesystem segment under
- * `$TMPDIR/c3-worktrees/`, e.g. `/Users/foo/project` → `Users-foo-project`.
+ * `<c3-home>/worktrees/`, e.g. `/Users/foo/project` → `Users-foo-project`.
  */
 export function projectDirName(projectPath: string): string {
   return projectPath.replace(/^\/+/, '').replace(/[/:]/g, '-')
 }
 
-/** The base directory under $TMPDIR that holds all worktrees for a project. */
+/** The base directory under the c3 home that holds all worktrees for a project. */
 export function getWorktreeBase(projectPath: string): string {
-  return join(tmpdir(), 'c3-worktrees', projectDirName(projectPath))
+  return join(c3HomeDir(), 'worktrees', projectDirName(projectPath))
 }
 
 /** The full path for a specific intent's worktree. Fully deterministic. */

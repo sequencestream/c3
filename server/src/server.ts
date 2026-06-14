@@ -345,6 +345,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const broadcasts = createBroadcasts({ broadcaster, sessionAccessor })
   setOnStatusChange(broadcasts.broadcastStatuses)
 
+  // WorkCenter event hook (createEvent + broadcast before each human permission
+  // prompt). ONE instance shared by every permission_request exit — the claude/driver
+  // run paths (via launchDeps.onPermissionRequest) AND the codex intent save gate
+  // (via gatedSave below) — so multi-vendor prompts all land in the pending-items panel.
+  const onPermissionRequest = createPermissionRequestHandler({ broadcaster })
+
   // Intent tools over localhost HTTP MCP (2026-06-12-005): the driver-path twin of
   // the in-process SDK MCP (`createIntentMcpServer`). codex's comm-agent reaches
   // find/view/save here. find/view are read-only; `save` runs the SAME confirmation
@@ -357,7 +363,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     view: (projectPath, args) => runView(projectPath, args),
     save: (binding, args) =>
       gatedSave(
-        { emit, waitForDecision, broadcastIntents: broadcasts.broadcastIntents },
+        {
+          emit,
+          waitForDecision,
+          broadcastIntents: broadcasts.broadcastIntents,
+          onPermissionRequest,
+        },
         binding,
         args,
       ),
@@ -485,7 +496,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     },
     // Permission-event hook: before each `permission_request` wire frame, create
     // a WaitUserInvolveEvent in the store and broadcast the updated todo list.
-    onPermissionRequest: createPermissionRequestHandler({ broadcaster }),
+    // Shared with the codex intent save gate (hoisted above).
+    onPermissionRequest,
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).

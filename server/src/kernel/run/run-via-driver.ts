@@ -17,8 +17,19 @@
  *    diffs successive frames into `assistant_text` deltas + one-shot `tool_use` /
  *    `tool_result`, so the existing web console renders an OpenCode turn unchanged.
  */
-import { PENDING_SESSION_PREFIX, type RunEndReason } from '@ccc/shared/protocol'
-import type { CanonicalMessage, RemoteMcpServer, VendorAdapter } from '../agent/adapters/types.js'
+import {
+  PENDING_SESSION_PREFIX,
+  type RunEndReason,
+  type ServerToClient,
+  type WaitUserInvolveSource,
+} from '@ccc/shared/protocol'
+import type {
+  ApprovalHandler,
+  CanonicalMessage,
+  RemoteMcpServer,
+  VendorAdapter,
+} from '../agent/adapters/types.js'
+import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
@@ -136,6 +147,61 @@ export class WireEmitter {
 }
 
 /**
+ * Build the driver path's {@link ApprovalHandler}: the bridge between a vendor's
+ * per-tool approval prompt and c3's browser approval registry. Extracted (and
+ * dependency-injected) so the WorkCenter-event registration can be unit-tested
+ * without a live driver.
+ *
+ * The order matters: `onPermissionRequest` fires FIRST (creating the
+ * WaitUserInvolveEvent + broadcasting the todo list) BEFORE the `permission_request`
+ * wire frame, mirroring the claude gateway. Then it blocks on `waitForDecision` —
+ * the exact path a Claude prompt takes — and default-denies on stop.
+ *
+ * NB: Codex has no per-tool approval point (`perToolApproval: false`), so its
+ * registered handler never fires — this path's live registration is exercised by
+ * OpenCode. Codex's human-involvement is the `save_intents` gate (see save-gate.ts).
+ */
+export function makeDriverApprovalHandler(deps: {
+  getRunId: () => string
+  workspacePath: string
+  source: WaitUserInvolveSource
+  signal: AbortSignal
+  emit: (runId: string, frame: ServerToClient) => void
+  waitForDecision: (
+    requestId: string,
+    signal?: AbortSignal,
+  ) => Promise<{ decision: 'allow' | 'deny' }>
+  onPermissionRequest?: (ctx: PermissionRequestCtx) => void
+}): ApprovalHandler {
+  return async (req) => {
+    const isUI = USER_INTERACTION_TOOLS.has(req.toolName)
+    const runId = deps.getRunId()
+    // Register the WorkCenter event + broadcast BEFORE the wire frame, so a prompt
+    // on a codex/opencode session lands in the pending-items panel + badge, not just
+    // the active chat. Source is the runtime kind (session / intent).
+    deps.onPermissionRequest?.({
+      requestId: req.requestId,
+      toolName: req.toolName,
+      input: req.input,
+      sessionId: runId,
+      workspacePath: deps.workspacePath,
+      source: deps.source,
+    })
+    deps.emit(runId, {
+      type: 'permission_request',
+      requestId: req.requestId,
+      toolName: req.toolName,
+      input: req.input,
+      ...(isUI ? { isUserInteraction: true } : {}),
+    })
+    const { decision } = await deps.waitForDecision(req.requestId, deps.signal)
+    return decision === 'allow'
+      ? { behavior: 'allow' }
+      : { behavior: 'deny', reason: 'User denied in c3 UI' }
+  }
+}
+
+/**
  * Run one turn through a vendor adapter's driver. Owns the same registry/emit
  * concerns `launchRun` does for claude (abort wiring, prompt echo, status flips,
  * pending→real bind, terminal turn_end) but via the neutral interface. Used for
@@ -145,6 +211,10 @@ export class WireEmitter {
  * is prepended to the prompt, and `actionMode`/`toolGate` are overridden to reflect
  * the read-only gate (safe for non-Claude vendors that don't natively support the
  * full intent gate).
+ *
+ * `onPermissionRequest` (when wired at the composition root) registers a
+ * WaitUserInvolveEvent before every human approval prompt — the WorkCenter
+ * coverage for the driver path.
  */
 export async function runViaDriver(
   rt: SessionRuntime,
@@ -152,6 +222,7 @@ export async function runViaDriver(
   adapter: VendorAdapter,
   eventBus: EventBus<EventBusEvents>,
   intentProfile?: IntentProfile,
+  onPermissionRequest?: (ctx: PermissionRequestCtx) => void,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -174,22 +245,21 @@ export async function runViaDriver(
   let settledReason: RunEndReason = 'complete'
 
   // Wire the driver's approval bridge to c3's browser approval registry: a tool
-  // prompt becomes a `permission_request` frame, the decision comes back through
-  // `waitForDecision` (the exact path a Claude prompt takes). Default-deny on stop.
-  const disposeApproval = adapter.approval.onRequest(async (req) => {
-    const isUI = USER_INTERACTION_TOOLS.has(req.toolName)
-    emit(runId, {
-      type: 'permission_request',
-      requestId: req.requestId,
-      toolName: req.toolName,
-      input: req.input,
-      ...(isUI ? { isUserInteraction: true } : {}),
-    })
-    const { decision } = await waitForDecision(req.requestId, cycleAbort.signal)
-    return decision === 'allow'
-      ? { behavior: 'allow' }
-      : { behavior: 'deny', reason: 'User denied in c3 UI' }
-  })
+  // prompt registers a WorkCenter event (onPermissionRequest), becomes a
+  // `permission_request` frame, and the decision comes back through `waitForDecision`
+  // (the exact path a Claude prompt takes). Default-deny on stop. `getRunId` reads the
+  // live `runId` so a pending→real rebind routes to the bound session.
+  const disposeApproval = adapter.approval.onRequest(
+    makeDriverApprovalHandler({
+      getRunId: () => runId,
+      workspacePath,
+      source: rt.kind === 'intent' ? 'intent' : 'session',
+      signal: cycleAbort.signal,
+      emit,
+      waitForDecision,
+      onPermissionRequest,
+    }),
+  )
 
   // The session's stored mode is a vendor-native ModeToken; resolve it to the
   // neutral grid through THIS run's vendor catalog (2026-06-07-012). A token from

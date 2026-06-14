@@ -19,8 +19,9 @@ vi.mock('../../consensus.js')
 import { runConsensusVote, runAskConsensus } from '../../consensus.js'
 
 function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
-  return {
+  const base: GatewaySpec = {
     gate: 'intent',
+    source: 'intent',
     send: () => {},
     signal: new AbortController().signal,
     currentAgentId: null,
@@ -29,6 +30,11 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
     sessionId: () => '',
     ...overrides,
   }
+  // Mirror production (agent/index.ts): source is derived from the gate unless the
+  // test pins it explicitly, so a standard-gate prompt registers as 'session'.
+  return overrides.source
+    ? base
+    : { ...base, source: base.gate === 'intent' ? 'intent' : 'session' }
 }
 
 beforeEach(() => {
@@ -123,10 +129,13 @@ describe('onPermissionRequest callback', () => {
       input: { items: [] },
       sessionId: '',
       workspacePath: '/tmp',
+      source: 'intent',
     })
   })
 
-  it('does NOT call callback on intent-gate AskUserQuestion (excluded per spec)', async () => {
+  it('calls callback on intent-gate AskUserQuestion with source intent (#3)', async () => {
+    // The read-only comm agent's clarifying question DOES involve the human, so
+    // it must register a WaitUserInvolveEvent — previously (wrongly) excluded.
     const onPermissionRequest = vi.fn()
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(
@@ -141,7 +150,10 @@ describe('onPermissionRequest callback', () => {
     if (req?.type === 'permission_request')
       resolveDecision(req.requestId, 'allow', { 'test?': 'a' })
     await p
-    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    expect(onPermissionRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: 'AskUserQuestion', source: 'intent' }),
+    )
   })
 
   it('does NOT call callback on discussion-research read tool (no permission_request)', async () => {
@@ -170,6 +182,9 @@ describe('onPermissionRequest callback', () => {
     if (req?.type === 'permission_request') resolveDecision(req.requestId, 'allow')
     await p
     expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    expect(onPermissionRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: 'Write', source: 'session' }),
+    )
   })
 
   // ── Standard gate: AskUserQuestion consensus ──

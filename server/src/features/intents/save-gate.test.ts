@@ -76,6 +76,32 @@ describe('gatedSave', () => {
     expect(listIntents(proj).map((i) => i.title)).toContain('加缓存')
   })
 
+  it('registers a WorkCenter event (onPermissionRequest) with source=intent before the frame', async () => {
+    const order: string[] = []
+    const onPermissionRequest = vi.fn(() => order.push('hook'))
+    await gatedSave(
+      {
+        emit: () => order.push('emit'),
+        waitForDecision: async () => ({ decision: 'deny' as const }),
+        broadcastIntents: () => {},
+        onPermissionRequest,
+        makeRequestId: () => 'req-reg',
+      },
+      binding({ getRunId: () => 'run-7' }),
+      oneIntent,
+    )
+    expect(onPermissionRequest).toHaveBeenCalledWith({
+      requestId: 'req-reg',
+      toolName: 'mcp__c3__save_intents',
+      input: { intents: oneIntent.intents },
+      sessionId: 'run-7',
+      workspacePath: proj,
+      source: 'intent',
+    })
+    // The hook fires BEFORE the wire frame (claude-parity ordering).
+    expect(order).toEqual(['hook', 'emit'])
+  })
+
   it('deny ⇒ emits the frame but persists nothing', async () => {
     const broadcastIntents = vi.fn()
     const res = await gatedSave(

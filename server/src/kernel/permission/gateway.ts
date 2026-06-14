@@ -17,7 +17,12 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
-import type { AskConsensusOutcome, ConsensusOutcome, ServerToClient } from '@ccc/shared/protocol'
+import type {
+  AskConsensusOutcome,
+  ConsensusOutcome,
+  ServerToClient,
+  WaitUserInvolveSource,
+} from '@ccc/shared/protocol'
 import { allow, deny, type PermissionDecision } from './decision.js'
 import { classifyIntentTool, INTENT_READ_TOOLS, withAnswers } from './tools.js'
 import { waitForDecision } from './registry.js'
@@ -34,6 +39,13 @@ export interface PermissionRequestCtx {
   input: unknown
   sessionId: string
   workspacePath: string
+  /**
+   * Where this prompt originates (drives the WaitUserInvolveEvent's `source`, and
+   * thus WorkCenter's `jumpToSource` target). Resolved by the caller — a work
+   * session is `'session'`, the read-only intent comm agent is `'intent'`, etc.
+   * Never hard-coded downstream (the handler reads it verbatim).
+   */
+  source: WaitUserInvolveSource
 }
 
 /** Everything the gateway needs from the run it guards (all caller-resolved). */
@@ -64,14 +76,22 @@ export interface GatewaySpec {
    */
   sessionId: () => string
   /**
+   * The WaitUserInvolveEvent `source` for prompts this gateway raises — `'intent'`
+   * for the read-only comm agent, `'session'` for a normal dev/user session.
+   * Forwarded verbatim into every {@link PermissionRequestCtx}; the composition
+   * root resolves it from the runtime kind.
+   */
+  source: WaitUserInvolveSource
+  /**
    * Optional callback invoked **before** a `permission_request` wire frame is
    * sent. Receives the full {@link PermissionRequestCtx} including session-level
    * fields. NOT invoked for `consensus_auto` frames (the human is not involved).
    *
-   * Only the 4 `send(permission_request)` call sites that involve the human
-   * trigger this callback — intent-gate AskUserQuestion (line 86) and standard
-   * AskUserQuestion after a full-unanimous auto-answer are excluded, as they
-   * require no human involvement (the latter emits `consensus_auto` instead).
+   * Every `send(permission_request)` call site that blocks on a human decision
+   * triggers it — the standard split/no-consensus prompt, the standard
+   * AskUserQuestion panel, the skill write-guard, AND both intent-gate prompts
+   * (`save_intents` confirm and AskUserQuestion). Only the full-unanimous
+   * AskUserQuestion auto-answer is excluded (it emits `consensus_auto`, no human).
    */
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
 }
@@ -104,6 +124,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           input,
           sessionId: spec.sessionId(),
           workspacePath: spec.cwd,
+          source: spec.source,
         })
         send({ type: 'permission_request', requestId, toolName, input })
         const { decision } = await waitForDecision(requestId, signal)
@@ -118,6 +139,14 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       // when `input.answers` is pre-filled). Single agent ⇒ no consensus: just
       // prompt the human and inject the answers (or deny on cancel).
       if (decisionClass === 'ask' && askQuestions(input)) {
+        spec.onPermissionRequest?.({
+          requestId,
+          toolName,
+          input,
+          sessionId: spec.sessionId(),
+          workspacePath: spec.cwd,
+          source: spec.source,
+        })
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
         const { decision, answers } = await waitForDecision(requestId, signal)
         if (decision === 'allow') {
@@ -194,6 +223,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         input,
         sessionId: spec.sessionId(),
         workspacePath: spec.cwd,
+        source: spec.source,
       })
       send(
         ask
@@ -240,6 +270,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         input,
         sessionId: spec.sessionId(),
         workspacePath: spec.cwd,
+        source: spec.source,
       })
       send({ type: 'permission_request', requestId, toolName, input })
       const { decision } = await waitForDecision(requestId, signal)
@@ -279,6 +310,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       input,
       sessionId: spec.sessionId(),
       workspacePath: spec.cwd,
+      source: spec.source,
     })
     // Split / no consensus ⇒ ask the human, attaching the opinions (if any).
     const isUI = USER_INTERACTION_TOOLS.has(toolName)

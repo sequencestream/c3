@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,             -- 事件唯一标识 (UUID v4)
   project_path  TEXT NOT NULL,                -- 所属项目绝对路径 (resolve 后)
-  source        TEXT NOT NULL,                -- 触发源类型: 'schedule' | 'session' | ...
+  source        TEXT NOT NULL,                -- 触发源类型: 'session' | 'intent' | 'discussion' | 'schedule' (= WaitUserInvolveSource); 由调用方传入,驱动 WorkCenter jumpToSource 目标
   source_id     TEXT,                         -- 触发源 ID (如 schedule id 或 session id)
   title         TEXT,                         -- 事件标题
   request_id    TEXT,                         -- 权限请求 ID (用于关联 permission-response 消息)

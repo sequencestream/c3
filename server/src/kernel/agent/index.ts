@@ -565,6 +565,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // appending to the rolling context the consensus voters read.
       canUseTool: createCanUseTool({
         gate,
+        // WorkCenter event source: the read-only comm agent's prompts are `intent`,
+        // every other gate (standard work session) is `session`. discussion-research
+        // never raises a human prompt, so its source value is inert.
+        source: gate === 'intent' ? 'intent' : 'session',
         send,
         signal,
         currentAgentId: currentAgentId ?? null,

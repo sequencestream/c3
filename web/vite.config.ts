@@ -35,5 +35,15 @@ export default defineConfig({
     // 语法含 cpp,无法被 Vite 拆出共享)。这些是首屏不加载、仅在对应代码块出现时才拉取的
     // 懒加载 chunk,体积大不影响首屏,故按 Vite 官方建议放宽阈值消除噪音告警。
     chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        // 把变动频率低的第三方运行时从业务主包中拆出:既稳定缓存,又让单个 chunk
+        // 回到告警阈值以下。markdown-it/dompurify 仅服务 Markdown 渲染管线。
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-i18n'],
+          'vendor-markdown': ['markdown-it', 'dompurify'],
+        },
+      },
+    },
   },
 })

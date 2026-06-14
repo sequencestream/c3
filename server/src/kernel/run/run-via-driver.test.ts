@@ -3,10 +3,10 @@
  * diff that lets the existing web console render an OpenCode turn. Text emits only
  * new suffixes; a tool_use emits once, its result once, no duplicates on re-emit.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { CanonicalBlock, CanonicalMessage } from '../agent/adapters/types.js'
-import { WireEmitter } from './run-via-driver.js'
+import { WireEmitter, makeDriverApprovalHandler } from './run-via-driver.js'
 
 function frame(blocks: CanonicalBlock[], extra?: Partial<CanonicalMessage>): CanonicalMessage {
   return { vendor: 'opencode', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
@@ -75,5 +75,82 @@ describe('WireEmitter', () => {
       { type: 'tool_use', toolUseId: 'c1', toolName: 'bash', input: { cmd: 'ls' } },
     ])
     expect(out[0]).not.toHaveProperty('preApproved')
+  })
+})
+
+describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
+  function deps(over: Partial<Parameters<typeof makeDriverApprovalHandler>[0]> = {}) {
+    return {
+      getRunId: () => 'run-1',
+      workspacePath: '/proj',
+      source: 'session' as const,
+      signal: new AbortController().signal,
+      emit: vi.fn(),
+      waitForDecision: vi.fn(async () => ({ decision: 'allow' as const })),
+      onPermissionRequest: vi.fn(),
+      ...over,
+    }
+  }
+
+  it('registers the event BEFORE the wire frame, with the runtime source + live run id', async () => {
+    const order: string[] = []
+    const d = deps({
+      source: 'intent',
+      getRunId: () => 'run-9',
+      workspacePath: '/w',
+      emit: vi.fn(() => order.push('emit')),
+      onPermissionRequest: vi.fn(() => order.push('hook')),
+    })
+    const handler = makeDriverApprovalHandler(d)
+    const decision = await handler({
+      requestId: 'r1',
+      toolName: 'Write',
+      input: { file_path: '/x' },
+    })
+
+    expect(d.onPermissionRequest).toHaveBeenCalledWith({
+      requestId: 'r1',
+      toolName: 'Write',
+      input: { file_path: '/x' },
+      sessionId: 'run-9',
+      workspacePath: '/w',
+      source: 'intent',
+    })
+    expect(order).toEqual(['hook', 'emit'])
+    expect(d.emit).toHaveBeenCalledWith('run-9', {
+      type: 'permission_request',
+      requestId: 'r1',
+      toolName: 'Write',
+      input: { file_path: '/x' },
+    })
+    expect(decision).toEqual({ behavior: 'allow' })
+  })
+
+  it('tags an interaction tool frame with isUserInteraction', async () => {
+    const d = deps()
+    const handler = makeDriverApprovalHandler(d)
+    await handler({ requestId: 'r2', toolName: 'AskUserQuestion', input: {} })
+    expect(d.emit).toHaveBeenCalledWith('run-1', {
+      type: 'permission_request',
+      requestId: 'r2',
+      toolName: 'AskUserQuestion',
+      input: {},
+      isUserInteraction: true,
+    })
+  })
+
+  it('maps a deny decision to a default-deny ApprovalDecision', async () => {
+    const d = deps({ waitForDecision: vi.fn(async () => ({ decision: 'deny' as const })) })
+    const handler = makeDriverApprovalHandler(d)
+    const decision = await handler({ requestId: 'r3', toolName: 'Bash', input: {} })
+    expect(decision).toEqual({ behavior: 'deny', reason: 'User denied in c3 UI' })
+  })
+
+  it('is a no-op-safe registration when onPermissionRequest is absent', async () => {
+    const d = deps({ onPermissionRequest: undefined })
+    const handler = makeDriverApprovalHandler(d)
+    const decision = await handler({ requestId: 'r4', toolName: 'Read', input: {} })
+    expect(decision).toEqual({ behavior: 'allow' })
+    expect(d.emit).toHaveBeenCalledTimes(1)
   })
 })

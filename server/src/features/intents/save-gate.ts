@@ -15,6 +15,7 @@
  */
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { SAVE_INTENTS_TOOL } from '../../kernel/permission/index.js'
+import type { PermissionRequestCtx } from '../../kernel/permission/index.js'
 import { runSaveConfirmed, type IntentToolResult, type SaveArgs } from './tool-defs.js'
 
 export interface SaveGateDeps {
@@ -24,6 +25,13 @@ export interface SaveGateDeps {
     signal?: AbortSignal,
   ) => Promise<{ decision: 'allow' | 'deny' }>
   broadcastIntents: (projectPath: string) => void
+  /**
+   * WorkCenter event hook — invoked BEFORE the `permission_request` frame so the
+   * codex intent save lands a `source='intent'` WaitUserInvolveEvent + broadcast,
+   * not just the active-chat prompt. Wired at the composition root (the same handler
+   * the claude/driver paths use). Absent in tests that don't assert registration.
+   */
+  onPermissionRequest?: (ctx: PermissionRequestCtx) => void
   /** Injected for tests; defaults to `crypto.randomUUID`. */
   makeRequestId?: () => string
 }
@@ -42,11 +50,23 @@ export async function gatedSave(
   args: SaveArgs,
 ): Promise<IntentToolResult> {
   const requestId = (deps.makeRequestId ?? (() => crypto.randomUUID()))()
-  deps.emit(binding.getRunId(), {
+  const runId = binding.getRunId()
+  const input = { intents: args.intents }
+  // Register the WorkCenter event + broadcast BEFORE the wire frame (claude-parity).
+  // A codex intent save always originates from the read-only comm agent ⇒ source 'intent'.
+  deps.onPermissionRequest?.({
+    requestId,
+    toolName: SAVE_INTENTS_TOOL,
+    input,
+    sessionId: runId,
+    workspacePath: binding.projectPath,
+    source: 'intent',
+  })
+  deps.emit(runId, {
     type: 'permission_request',
     requestId,
     toolName: SAVE_INTENTS_TOOL,
-    input: { intents: args.intents },
+    input,
   })
   const { decision } = await deps.waitForDecision(requestId, binding.signal)
   if (decision !== 'allow') {

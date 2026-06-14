@@ -283,7 +283,15 @@ export async function launchRun(
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
     if (vendor === 'opencode' || vendor === 'codex') {
       const adapter = vendor === 'opencode' ? deps.getOpencodeAdapter?.() : deps.getCodexAdapter?.()
-      if (adapter) return runViaDriver(rt, prompt, adapter, deps.eventBus, resolvedIntentProfile)
+      if (adapter)
+        return runViaDriver(
+          rt,
+          prompt,
+          adapter,
+          deps.eventBus,
+          resolvedIntentProfile,
+          deps.onPermissionRequest,
+        )
       const unavailable =
         vendor === 'opencode'
           ? 'OpenCode is unavailable (host CLI missing, or start c3 with --opencode-url).'

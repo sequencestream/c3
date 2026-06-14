@@ -41,10 +41,12 @@ export function createPermissionRequestHandler(deps: {
       // permission_request path. The event is still created with a null title.
     }
 
-    // Persist the event (status defaults to 'todo').
+    // Persist the event (status defaults to 'todo'). `source` is caller-provided
+    // (session / intent / …) so WorkCenter's jumpToSource targets the right tab —
+    // a codex/opencode intent prompt is 'intent', a work session is 'session'.
     createEvent({
       projectPath: ctx.workspacePath,
-      source: 'session',
+      source: ctx.source,
       sourceId: ctx.sessionId,
       title,
       requestId: ctx.requestId,

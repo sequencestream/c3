@@ -21,7 +21,7 @@ describe('buildResearchPrompt', () => {
   const base = {
     goal: 'Decide the cache strategy',
     context: 'We use Redis today',
-    projectPath: '/abs/proj',
+    workspacePath: '/abs/proj',
   }
 
   it('includes the type label/description, goal, project path, and user context', () => {
@@ -33,7 +33,7 @@ describe('buildResearchPrompt', () => {
   })
 
   it('notes a missing type and missing context explicitly', () => {
-    const p = buildResearchPrompt({ goal: '', context: '   ', projectPath: '/p' }, undefined)
+    const p = buildResearchPrompt({ goal: '', context: '   ', workspacePath: '/p' }, undefined)
     expect(p).toContain('(unspecified)')
     expect(p).toContain('(not provided)')
     expect(p).toContain('The user provided no initial context')
@@ -54,7 +54,7 @@ describe('buildResearchPrompt', () => {
 describe('canAutoStartDiscussion', () => {
   const draft: Discussion = {
     id: 'd1',
-    projectPath: '/p',
+    workspacePath: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',
@@ -111,7 +111,7 @@ describe('DISCUSSION_RESEARCH_PROMPT', () => {
 describe('researchDiscussionContext', () => {
   const disc: Discussion = {
     id: 'd1',
-    projectPath: '/p',
+    workspacePath: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',

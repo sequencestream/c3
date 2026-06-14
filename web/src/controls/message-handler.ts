@@ -304,14 +304,14 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'skill_link_status':
         // Only adopt statuses for the workspace currently being edited.
-        if (msg.projectPath === currentWorkspace.value) {
+        if (msg.workspacePath === currentWorkspace.value) {
           skillLinkStatuses.value = msg.statuses
         }
         break
       case 'skill_install_result':
         // Clear the row's busy flag, then re-fetch link status.
         installingSkillIds.value = installingSkillIds.value.filter((id) => id !== msg.skillId)
-        if (msg.projectPath === currentWorkspace.value) ctx.querySkillLinkStatus()
+        if (msg.workspacePath === currentWorkspace.value) ctx.querySkillLinkStatus()
         break
       case 'skill_load_approval_request':
         skillApprovalRequest.value = {
@@ -325,16 +325,16 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'intents':
-        intents.value = { ...intents.value, [msg.projectPath]: msg.items }
+        intents.value = { ...intents.value, [msg.workspacePath]: msg.items }
         break
       case 'intent_sessions':
-        intentSessions.value = { ...intentSessions.value, [msg.projectPath]: msg.items }
+        intentSessions.value = { ...intentSessions.value, [msg.workspacePath]: msg.items }
         // Authoritatively reconcile the live run-state from the snapshot.
         if (msg.runStates) {
           intentSessionRunStates.value = msg.runStates
         }
         // Update the selected session id when the list changes.
-        if (msg.projectPath === intentsProject.value && msg.items.length > 0) {
+        if (msg.workspacePath === intentsProject.value && msg.items.length > 0) {
           const active = msg.items.find((s) => s.sessionId === activeSession.value)
           if (active) {
             selectedIntentSessionId.value = active.sessionId
@@ -350,10 +350,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'automation_status':
-        automation.value = { ...automation.value, [msg.status.projectPath]: msg.status }
+        automation.value = { ...automation.value, [msg.status.workspacePath]: msg.status }
         break
       case 'discussions': {
-        discussions.value = { ...discussions.value, [msg.projectPath]: msg.items }
+        discussions.value = { ...discussions.value, [msg.workspacePath]: msg.items }
         // Authoritatively reconcile the live run-state for THIS list's discussions.
         discussionRunState.value = reconcileRunState(
           discussionRunState.value,

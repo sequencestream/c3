@@ -206,7 +206,7 @@ async function main() {
   await waitFor((m) => m.type === 'workspaces', 'workspaces')
   send({
     type: 'save_workspace_setting',
-    projectPath: PROJ,
+    workspacePath: PROJ,
     config: {
       gitBranchMode: 'worktree',
       // bypassPermissions (never-ask): the in-container agent is isolated, so it
@@ -229,7 +229,7 @@ async function main() {
   }
 
   // Enter intent view → comm session + intent list.
-  send({ type: 'open_intent_chat', projectPath: PROJ })
+  send({ type: 'open_intent_chat', workspacePath: PROJ })
   const commSel = await waitFor((m) => m.type === 'session_selected', 'comm session_selected')
   commSessionId = commSel.sessionId
   console.log(`[real-run] comm session ${commSessionId}`)
@@ -255,7 +255,7 @@ async function main() {
   // Trigger the real worktree intent-dev run (this launches the sandbox).
   console.log('[real-run] start_development → expect worktree + container launch …')
   devWatch = true
-  send({ type: 'start_development', projectPath: PROJ, intentId })
+  send({ type: 'start_development', workspacePath: PROJ, intentId })
 
   // The pinned agent runs INSIDE the container; success = it wrote the proof file
   // into the bind-mounted worktree on the host.

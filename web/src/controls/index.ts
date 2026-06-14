@@ -68,11 +68,11 @@ export function useAppController(): AppCtx {
       onReopen: () => {
         // In the intent view, resume the comm session; otherwise re-select normally.
         if (ctx.activeTab.value === 'intents' && ctx.intentsProject.value) {
-          ctx.send({ type: 'open_intent_chat', projectPath: ctx.intentsProject.value })
-          ctx.send({ type: 'list_intent_sessions', projectPath: ctx.intentsProject.value })
+          ctx.send({ type: 'open_intent_chat', workspacePath: ctx.intentsProject.value })
+          ctx.send({ type: 'list_intent_sessions', workspacePath: ctx.intentsProject.value })
         } else if (ctx.activeTab.value === 'discussion' && ctx.discussionsProject.value) {
           // Re-fetch the list and re-open the viewed discussion (read path).
-          ctx.send({ type: 'list_discussions', projectPath: ctx.discussionsProject.value })
+          ctx.send({ type: 'list_discussions', workspacePath: ctx.discussionsProject.value })
           if (ctx.activeDiscussionId.value)
             ctx.send({ type: 'open_discussion', discussionId: ctx.activeDiscussionId.value })
         } else if (ctx.activeTab.value === 'schedules' && ctx.schedulesProject.value) {
@@ -82,7 +82,7 @@ export function useAppController(): AppCtx {
         } else if (ctx.viewMode.value === 'workcenter') {
           // Re-fetch the pending event list (read path).
           if (ctx.currentWorkspace.value)
-            ctx.send({ type: 'list_wait_user_events', projectPath: ctx.currentWorkspace.value })
+            ctx.send({ type: 'list_wait_user_events', workspacePath: ctx.currentWorkspace.value })
         } else if (ctx.activeWorkspace.value && ctx.activeSession.value) {
           ctx.send({
             type: 'select_session',

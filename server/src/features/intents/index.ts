@@ -109,24 +109,24 @@ function bindDefaultAgent(sessionId: string): void {
 // ---- Handlers ----
 
 export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
   conn.send({
     type: 'intents',
-    projectPath: proj,
+    workspacePath: proj,
     items: listIntents(proj, msg.status),
   })
 }
 
 export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!hasWorkspace(proj)) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+      error: { code: 'workspace.unknown', params: { path: msg.workspacePath } },
     })
     return
   }
@@ -208,7 +208,7 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
   // the background below and re-broadcasts the refreshed list once it settles.
   conn.send({
     type: 'intents',
-    projectPath: proj,
+    workspacePath: proj,
     items: enrichRunStatus(listIntents(proj)),
   })
   conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
@@ -261,11 +261,11 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
 }
 
 export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!hasWorkspace(proj)) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+      error: { code: 'workspace.unknown', params: { path: msg.workspacePath } },
     })
     return
   }
@@ -297,14 +297,14 @@ export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
   })
   conn.send({
     type: 'intents',
-    projectPath: proj,
+    workspacePath: proj,
     items: enrichRunStatus(listIntents(proj)),
   })
   conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
 }
 
 export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
@@ -333,7 +333,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     vendor: resolveSessionVendor(chatId),
     agentSwitch: agentSwitchFor(chatId),
   })
-  conn.send({ type: 'intents', projectPath: proj, items: listIntents(proj) })
+  conn.send({ type: 'intents', workspacePath: proj, items: listIntents(proj) })
   const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
   await ctx.launchRun(rt, firstPrompt)
 }
@@ -352,7 +352,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     conn.send({ type: 'error', error: { code: 'discussion.notConcludable' } })
     return
   }
-  const proj = resolve(discussion.projectPath)
+  const proj = resolve(discussion.workspacePath)
   // Seed a fresh comm session with the conclusion — a refine variant.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
@@ -372,7 +372,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     vendor: resolveSessionVendor(chatId),
     agentSwitch: agentSwitchFor(chatId),
   })
-  conn.send({ type: 'intents', projectPath: proj, items: listIntents(proj) })
+  conn.send({ type: 'intents', workspacePath: proj, items: listIntents(proj) })
   const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents。`
   await ctx.launchRun(rt, firstPrompt)
 }
@@ -380,7 +380,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
 // ── Intent-communication-session CRUD (session-collection upgrade) ──
 
 export const listIntentSessions: Handler<'list_intent_sessions'> = (_ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
@@ -396,14 +396,14 @@ export const listIntentSessions: Handler<'list_intent_sessions'> = (_ctx, conn, 
   }
   conn.send({
     type: 'intent_sessions',
-    projectPath: proj,
+    workspacePath: proj,
     items,
     runStates: found ? runStates : undefined,
   })
 }
 
 export const renameIntentSession: Handler<'rename_intent_session'> = (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
@@ -420,7 +420,7 @@ export const renameIntentSession: Handler<'rename_intent_session'> = (ctx, conn,
 }
 
 export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
@@ -428,7 +428,7 @@ export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn,
   try {
     // Remove runtime (abort + drop) BEFORE the db row so no stale runtime lingers.
     removeRuntime(msg.sessionId)
-    deleteChatSession(msg.projectPath, msg.sessionId)
+    deleteChatSession(msg.workspacePath, msg.sessionId)
     if (conn.viewing === msg.sessionId) conn.viewing = null
     ctx.broadcastIntentSessions(proj)
     ctx.broadcastStatuses()
@@ -441,11 +441,11 @@ export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn,
 }
 
 export const startDevelopment: Handler<'start_development'> = async (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!hasWorkspace(proj)) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+      error: { code: 'workspace.unknown', params: { path: msg.workspacePath } },
     })
     return
   }
@@ -601,11 +601,11 @@ export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, m
   // Publish domain event for cross-feature subscribers (ADR-0018).
   ctx.eventBus.publish('intent:status_changed', {
     intentId: msg.intentId,
-    projectPath: req.projectPath,
+    workspacePath: req.workspacePath,
     fromStatus: prevStatus,
     toStatus: msg.status,
   })
-  ctx.broadcastIntents(req.projectPath)
+  ctx.broadcastIntents(req.workspacePath)
 }
 
 export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg) => {
@@ -619,7 +619,7 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
     return
   }
   setAutomate(msg.intentId, msg.automate)
-  ctx.broadcastIntents(req.projectPath)
+  ctx.broadcastIntents(req.workspacePath)
 }
 
 export const setIntentGitInfo: Handler<'set_intent_git_info'> = (ctx, conn, msg) => {
@@ -637,7 +637,7 @@ export const setIntentGitInfo: Handler<'set_intent_git_info'> = (ctx, conn, msg)
   if (msg.prId !== undefined && msg.prStatus !== undefined) {
     setPrInfo(msg.intentId, msg.prId, msg.prStatus)
   }
-  ctx.broadcastIntents(req.projectPath)
+  ctx.broadcastIntents(req.workspacePath)
 }
 
 export const updateIntentDepsHandler: Handler<'update_intent_deps'> = (ctx, conn, msg) => {
@@ -651,15 +651,15 @@ export const updateIntentDepsHandler: Handler<'update_intent_deps'> = (ctx, conn
     return
   }
   updateIntentDeps(msg.intentId, msg.deps)
-  ctx.broadcastIntents(req.projectPath)
+  ctx.broadcastIntents(req.workspacePath)
 }
 
 export const startAutomationHandler: Handler<'start_automation'> = (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!hasWorkspace(proj)) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { path: msg.projectPath } },
+      error: { code: 'workspace.unknown', params: { path: msg.workspacePath } },
     })
     return
   }
@@ -671,12 +671,12 @@ export const startAutomationHandler: Handler<'start_automation'> = (ctx, conn, m
 }
 
 export const stopAutomationHandler: Handler<'stop_automation'> = (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   ctx.broadcastAutomation(stopAutomation(proj))
 }
 
 export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
@@ -726,7 +726,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     const pr = await createGhPr(proj, title, body, headBranch)
     if (pr.ok && pr.prId) {
       setPrInfo(msg.intentId, pr.prId, 'reviewing')
-      ctx.broadcastIntents(req.projectPath)
+      ctx.broadcastIntents(req.workspacePath)
       conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })
     } else {
       conn.send({

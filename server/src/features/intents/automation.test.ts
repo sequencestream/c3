@@ -99,14 +99,14 @@ import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-
 
 interface StartDevMsg {
   type: 'start_development'
-  projectPath: string
+  workspacePath: string
   intentId: string
 }
 
 // ---- Factory ----
 
 const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
-  projectPath: '/test/proj',
+  workspacePath: '/test/proj',
   title: 'Test',
   content: '',
   priority: 'P1',
@@ -242,7 +242,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg: StartDevMsg = {
       type: 'start_development',
-      projectPath: '/test/proj',
+      workspacePath: '/test/proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -277,7 +277,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg1: StartDevMsg = {
       type: 'start_development',
-      projectPath: '/test/proj',
+      workspacePath: '/test/proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -308,7 +308,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg2: StartDevMsg = {
       type: 'start_development',
-      projectPath: '/test/proj',
+      workspacePath: '/test/proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -338,7 +338,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      projectPath: '/test/proj',
+      workspacePath: '/test/proj',
       intentId: 'B',
     }
 
@@ -373,7 +373,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      projectPath: '/test/proj',
+      workspacePath: '/test/proj',
       intentId: 'B',
     }
 
@@ -406,7 +406,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      projectPath: '/test/proj',
+      workspacePath: '/test/proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -441,7 +441,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      projectPath: '/test/proj',
+      workspacePath: '/test/proj',
       intentId: 'B',
     }
     const failed = makeConn()
@@ -497,7 +497,7 @@ describe('automation controller — branch-mode git alignment', () => {
     return { hooks, runDevTurn }
   }
 
-  it('current-branch: 全新启动不调用 createWorktree,effectiveCwd=projectPath,写当前分支', async () => {
+  it('current-branch: 全新启动不调用 createWorktree,effectiveCwd=workspacePath,写当前分支', async () => {
     const proj = '/test/cb-launch'
     const intent = makeIntent({ id: 'X', status: 'todo' })
     vi.mocked(listIntents).mockReturnValue([intent])
@@ -580,7 +580,7 @@ describe('automation controller — branch-mode git alignment', () => {
     expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
   })
 
-  it('current-branch: 端到端 commit 用 projectPath 且不建 worktree、不建 PR', async () => {
+  it('current-branch: 端到端 commit 用 workspacePath 且不建 worktree、不建 PR', async () => {
     const proj = '/test/cb-e2e'
     const intent = makeIntent({ id: 'W', status: 'todo' })
     vi.mocked(getGitBranchMode).mockReturnValue('current-branch')

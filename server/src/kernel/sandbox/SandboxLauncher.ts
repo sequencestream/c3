@@ -6,7 +6,7 @@
  * a wrapper mechanism so vendor CLIs run inside the container transparently.
  *
  * ## Flow
- * 1. `launch(projectPath)` — checks if sandbox is enabled, resolves config,
+ * 1. `launch(workspacePath)` — checks if sandbox is enabled, resolves config,
  *    starts a Docker container, returns a handle.
  * 2. `createWrapper(handle, binaryName, env)` — creates a shell script that
  *    runs the vendor CLI inside the container via `docker exec --env-file`.

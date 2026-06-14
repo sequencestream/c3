@@ -69,7 +69,7 @@ export interface IntentProfile {
    * server-level, incompatible with a per-run token URL).
    */
   bindDriverMcp?: (binding: {
-    projectPath: string
+    workspacePath: string
     getRunId: () => string
     signal: AbortSignal
   }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
@@ -324,7 +324,7 @@ export async function runViaDriver(
   let driverMcpServers: Record<string, RemoteMcpServer> | undefined
   if (intentProfile?.bindDriverMcp && adapter.vendor === 'codex') {
     const bound = intentProfile.bindDriverMcp({
-      projectPath: workspacePath,
+      workspacePath: workspacePath,
       getRunId: () => runId,
       signal: cycleAbort.signal,
     })

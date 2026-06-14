@@ -23,7 +23,7 @@ const { judgeCompletion } = await import('./judge.js')
 
 const req: Intent = {
   id: 'r1',
-  projectPath: '/p',
+  workspacePath: '/p',
   title: '示例需求',
   content: '做点事',
   priority: 'P0',

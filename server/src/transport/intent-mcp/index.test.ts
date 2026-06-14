@@ -82,7 +82,7 @@ describe('intent MCP HTTP route', () => {
 
   it('lists and calls all three tools via a real streamable-HTTP MCP client', async () => {
     const { dispose } = intentMcp.bind({
-      projectPath: '/abs/p',
+      workspacePath: '/abs/p',
       getRunId: () => 'run-1',
       signal: new AbortController().signal,
     })

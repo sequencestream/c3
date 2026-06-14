@@ -596,7 +596,7 @@ describe('skillRepos migration from SystemSettings to WorkspaceSetting', () => {
     // Loading a project config for the first time should seed it from the legacy value.
     const cfg = loadWorkspaceSetting(TEST_PROJ)
     expect(cfg.skillRepos).toEqual(repos)
-    // getSkillRepos(projectPath) should read from the project config.
+    // getSkillRepos(workspacePath) should read from the project config.
     expect(getSkillRepos(TEST_PROJ)).toEqual(repos)
   })
 

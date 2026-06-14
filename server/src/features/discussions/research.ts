@@ -33,7 +33,7 @@ export const DISCUSSION_RESEARCH_PROMPT = `You are the discussion's "context res
  * when omitted (kept as a param so tests don't depend on the catalog).
  */
 export function buildResearchPrompt(
-  input: { goal: string; context: string; projectPath: string },
+  input: { goal: string; context: string; workspacePath: string },
   def: DiscussionTypeDef | undefined,
   langName?: string,
 ): string {
@@ -45,7 +45,7 @@ export function buildResearchPrompt(
   return [
     typeLine,
     `Discussion goal: ${input.goal.trim() || '(not provided)'}`,
-    `Project path: ${input.projectPath}`,
+    `Project path: ${input.workspacePath}`,
     ctx ? `User-provided initial context:\n${ctx}` : 'The user provided no initial context.',
     '',
     'Read the relevant project material and research background from the web, then produce the research findings (output the findings only).',
@@ -109,7 +109,7 @@ export async function researchDiscussionContext(
   )
   const def = getDiscussionType(discussion.type)
   const prompt = buildResearchPrompt(
-    { goal: discussion.goal, context: discussion.context, projectPath: discussion.projectPath },
+    { goal: discussion.goal, context: discussion.context, workspacePath: discussion.workspacePath },
     def,
     getUiLangName(),
   )
@@ -120,7 +120,7 @@ export async function researchDiscussionContext(
   try {
     await runClaude({
       prompt,
-      cwd: discussion.projectPath,
+      cwd: discussion.workspacePath,
       signal: abort.signal,
       // Pinned to `default` so the gateway's canUseTool always fires.
       permissionMode: 'default',

@@ -1461,7 +1461,7 @@ export interface Intent {
   /** Stable uuid. */
   id: string
   /** Owning project — the workspace absolute path (resolved). */
-  projectPath: string
+  workspacePath: string
   title: string
   content: string
   priority: IntentPriority
@@ -1573,7 +1573,7 @@ export type AutomationState =
 /** A project's automation orchestrator status, broadcast to every connection. */
 export interface AutomationStatus {
   /** Owning project — the workspace absolute path (resolved). */
-  projectPath: string
+  workspacePath: string
   state: AutomationState
   /** The intent currently being developed (null when not running). */
   currentIntentId: string | null
@@ -1659,7 +1659,7 @@ export interface Discussion {
   /** Stable uuid. */
   id: string
   /** Owning project — the workspace absolute path (resolved). */
-  projectPath: string
+  workspacePath: string
   title: string
   /** Free-form discussion type/category. */
   type: string
@@ -1905,7 +1905,7 @@ export type WaitUserInvolveStatus = 'todo' | 'done' | 'canceled'
 export interface WaitUserInvolveEvent {
   id: string
   /** Owning project absolute path (resolved). */
-  projectPath: string
+  workspacePath: string
   /** Which kind of run produced this event. */
   source: WaitUserInvolveSource
   /** The run's owning entity id (session / intent / discussion / schedule id). */
@@ -1926,7 +1926,7 @@ export interface WaitUserInvolveEvent {
 
 /** Fields the client may supply when listing events. */
 export interface ListWaitUserEventsInput {
-  projectPath: string
+  workspacePath: string
   /** Optional status filter; absent = all. */
   status?: WaitUserInvolveStatus
 }
@@ -1954,7 +1954,7 @@ export interface WorkspaceMcpConfig {
  */
 export interface TimeRangeProjectStats {
   /** Absolute workspace path (the project key). */
-  projectPath: string
+  workspacePath: string
   /** Display name — the workspace directory's basename. */
   projectName: string
   /** Work sessions: `total` real projection rows in range; `running` live non-idle runtimes. */
@@ -2050,11 +2050,11 @@ export type ClientToServer =
    */
   | { type: 'set_admin_password'; username: string; password: string; currentPassword?: string }
   /** Load a workspace's setting (reply: `workspace_setting`). */
-  | { type: 'load_workspace_setting'; projectPath: string }
+  | { type: 'load_workspace_setting'; workspacePath: string }
   /** Save a workspace's setting. */
-  | { type: 'save_workspace_setting'; projectPath: string; config: WorkspaceSetting }
+  | { type: 'save_workspace_setting'; workspacePath: string; config: WorkspaceSetting }
   /** List a project's intents (reply: `intents`), optionally filtered by status. */
-  | { type: 'list_intents'; projectPath: string; status?: IntentStatus }
+  | { type: 'list_intents'; workspacePath: string; status?: IntentStatus }
   /**
    * Enter the intent view for a project: open or resume a communication session
    * and return the intent list. `sessionId` is optional — when provided the
@@ -2062,37 +2062,37 @@ export type ClientToServer =
    * the project's current (`is_current`) session (same as before). Replies with
    * a `session_selected` for the comm session plus an `intents` list.
    */
-  | { type: 'open_intent_chat'; projectPath: string; sessionId?: string }
+  | { type: 'open_intent_chat'; workspacePath: string; sessionId?: string }
   /**
    * List a project's intent communication sessions (reply: `intent_sessions`).
    * Each session carries id, title (nullable), and updatedAt. The response also
    * carries a `runStates` snapshot of which sessions have a live agent run.
    */
-  | { type: 'list_intent_sessions'; projectPath: string }
+  | { type: 'list_intent_sessions'; workspacePath: string }
   /**
    * Rename an intent communication session (must exist; error otherwise).
    * The server broadcasts the refreshed `intent_sessions` list on success.
    */
-  | { type: 'rename_intent_session'; projectPath: string; sessionId: string; title: string }
+  | { type: 'rename_intent_session'; workspacePath: string; sessionId: string; title: string }
   /**
    * Delete an intent communication session: removes the db row, removes the
    * runtime (aborts any active run), and broadcasts the refreshed list. If the
    * deleted session was `is_current`, the most recent remaining session becomes
    * the new default. Error if the session does not exist.
    */
-  | { type: 'delete_intent_session'; projectPath: string; sessionId: string }
+  | { type: 'delete_intent_session'; workspacePath: string; sessionId: string }
   /**
    * Start a brand-new communication session for a project: resets the previous
    * `is_current` comm session to 0, creates a fresh one marked current, and
    * replies with a `session_selected` (empty history) plus the `intents`
    * list. The "+" button in the intent view title bar triggers this.
    */
-  | { type: 'new_intent_chat'; projectPath: string }
+  | { type: 'new_intent_chat'; workspacePath: string }
   /**
    * Restart the comm session as a fresh one seeded with a intent to refine;
    * the server injects the first prompt with the intent's id and content.
    */
-  | { type: 'refine_intent'; projectPath: string; intentId: string }
+  | { type: 'refine_intent'; workspacePath: string; intentId: string }
   /**
    * Bridge a completed discussion's conclusion into the intent domain: a
    * `refine_intent` variant whose seed is the discussion's conclusion rather
@@ -2105,7 +2105,7 @@ export type ClientToServer =
    */
   | { type: 'discussion_to_intent'; discussionId: string }
   /** Launch a background dev session for a `todo` intent via the configurable development skill. */
-  | { type: 'start_development'; projectPath: string; intentId: string }
+  | { type: 'start_development'; workspacePath: string; intentId: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
@@ -2133,9 +2133,9 @@ export type ClientToServer =
       prStatus?: IntentPrStatus
     }
   /** Start the project's automation orchestrator (develops `automate` intents). */
-  | { type: 'start_automation'; projectPath: string }
+  | { type: 'start_automation'; workspacePath: string }
   /** Stop the project's automation orchestrator (aborts the current dev run). */
-  | { type: 'stop_automation'; projectPath: string }
+  | { type: 'stop_automation'; workspacePath: string }
   /**
    * Create a GitHub Pull Request for a `done` intent that has no PR yet.
    * The server runs `gh pr create`, sets `prId` and `prStatus='reviewing'`
@@ -2143,9 +2143,9 @@ export type ClientToServer =
    * Rejected if the intent is not `done`, already has a `prId`,
    * or `gh` CLI is unavailable.
    */
-  | { type: 'create_pr'; projectPath: string; intentId: string }
+  | { type: 'create_pr'; workspacePath: string; intentId: string }
   /** List a project's discussions (reply: `discussions`), optionally filtered by status. */
-  | { type: 'list_discussions'; projectPath: string; status?: DiscussionStatus }
+  | { type: 'list_discussions'; workspacePath: string; status?: DiscussionStatus }
   /**
    * Create a discussion from the "+" form. The server persists it as `draft`
    * (title derived from `goal`), **replies to the creating connection with
@@ -2160,7 +2160,7 @@ export type ClientToServer =
    */
   | {
       type: 'create_discussion'
-      projectPath: string
+      workspacePath: string
       discussionType: string
       goal: string
       context?: string
@@ -2264,7 +2264,7 @@ export type ClientToServer =
    * `_c3_<id>` is a live symlink under each of the two shared public skill dirs
    * (`.claude/skills`, `.agents/skills`). Read-only, zero network.
    */
-  | { type: 'get_skill_link_status'; projectPath: string }
+  | { type: 'get_skill_link_status'; workspacePath: string }
   /**
    * Explicitly install (or update) one configured skill repo (2026-06-12): clone/
    * pull the configured ref's latest head, then force-relink `_c3_<id>` into the
@@ -2272,13 +2272,13 @@ export type ClientToServer =
    * `.gitignore` ack. Server replies with {@link skill_install_result}. This
    * replaces the removed launch-time auto-mount — installs happen on user action.
    */
-  | { type: 'install_skill'; projectPath: string; skillId: string }
+  | { type: 'install_skill'; workspacePath: string; skillId: string }
   /**
    * Request the project's wait-user-involve events — the server replies with
    * {@link wait_user_events}. An optional `status` filter narrows to one
    * lifecycle state (default: all).
    */
-  | { type: 'list_wait_user_events'; projectPath: string; status?: WaitUserInvolveStatus }
+  | { type: 'list_wait_user_events'; workspacePath: string; status?: WaitUserInvolveStatus }
   /**
    * WorkCenter cross-project rollup: aggregate per-project counts (work sessions /
    * intents / discussions / schedules) across **all** registered workspaces in one
@@ -2429,7 +2429,7 @@ export type ServerToClient =
    */
   | {
       type: 'workspace_setting'
-      projectPath: string
+      workspacePath: string
       config: WorkspaceSetting
       detectedMainBranch?: string
     }
@@ -2453,7 +2453,7 @@ export type ServerToClient =
    */
   | { type: 'unauthenticated'; reason: 'missing' | 'expired' | 'invalid' }
   /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
-  | { type: 'intents'; projectPath: string; items: Intent[] }
+  | { type: 'intents'; workspacePath: string; items: Intent[] }
   /**
    * A project's intent-communication-session list (reply to `list_intent_sessions`
    * or push after a change). `runStates` is a live snapshot of which listed
@@ -2464,7 +2464,7 @@ export type ServerToClient =
    */
   | {
       type: 'intent_sessions'
-      projectPath: string
+      workspacePath: string
       items: IntentSessionInfo[]
       runStates?: Record<string, 'running'>
     }
@@ -2488,7 +2488,7 @@ export type ServerToClient =
    */
   | {
       type: 'discussions'
-      projectPath: string
+      workspacePath: string
       items: Discussion[]
       runStates?: Record<string, 'running' | 'paused'>
       /**
@@ -2772,7 +2772,7 @@ export type ServerToClient =
    * per configured skill repo, reporting `_c3_<id>` symlink presence in each of the
    * two shared public skill dirs.
    */
-  | { type: 'skill_link_status'; projectPath: string; statuses: SkillLinkStatus[] }
+  | { type: 'skill_link_status'; workspacePath: string; statuses: SkillLinkStatus[] }
   /**
    * Reply to {@link install_skill} (2026-06-12). `ok` ⇒ the skill is cloned/pulled
    * to its ref's latest head and (re)linked into both public dirs. On failure,
@@ -2781,7 +2781,7 @@ export type ServerToClient =
    */
   | {
       type: 'skill_install_result'
-      projectPath: string
+      workspacePath: string
       skillId: string
       ok: boolean
       reason?: 'not-configured' | 'repo-error' | 'gitignore-cancelled'

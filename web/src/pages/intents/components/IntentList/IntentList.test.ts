@@ -5,7 +5,7 @@ import IntentList from './IntentList.vue'
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    projectPath: '/proj',
+    workspacePath: '/proj',
     title: 'Start me',
     content: 'Do work',
     priority: 'P1',

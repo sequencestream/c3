@@ -20,7 +20,7 @@ import { discussionRunSnapshot, getDiscussionRun, hasDiscussionRun } from './run
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, msg) => {
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   if (!isDiscussionStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'discussion.dbUnavailable' } })
     return
@@ -28,7 +28,7 @@ export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, m
   const discItems = listDiscussions(proj, msg.status)
   conn.send({
     type: 'discussions',
-    projectPath: proj,
+    workspacePath: proj,
     items: discItems,
     runStates: discussionRunSnapshot(discItems),
   })
@@ -46,7 +46,7 @@ export const createDiscussionHandler: Handler<'create_discussion'> = (ctx, conn,
     })
     return
   }
-  const proj = resolve(msg.projectPath)
+  const proj = resolve(msg.workspacePath)
   // Title is derived from the goal (the form has no title field): first
   // non-empty line, trimmed and capped.
   const firstLine =
@@ -56,7 +56,7 @@ export const createDiscussionHandler: Handler<'create_discussion'> = (ctx, conn,
       .find(Boolean) ?? ''
   const title = (firstLine || 'Discussion').slice(0, 80)
   const created = createDiscussion({
-    projectPath: proj,
+    workspacePath: proj,
     title,
     type: msg.discussionType,
     goal: msg.goal,
@@ -207,6 +207,6 @@ export const continueDiscussion: Handler<'continue_discussion'> = (ctx, conn, ms
   })
   ctx.broadcastDiscussionMessage(discussion.id, message)
   updateDiscussionStatus(discussion.id, 'in_progress')
-  ctx.broadcastDiscussions(discussion.projectPath)
+  ctx.broadcastDiscussions(discussion.workspacePath)
   ctx.startDiscussionRun({ ...discussion, status: 'in_progress' })
 }

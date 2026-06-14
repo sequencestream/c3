@@ -317,7 +317,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // Skill repos are no longer written here (deprecated — moved to per-project
   // `WorkspaceSetting.skillRepos`). The captureLegacyProjectSeed one-shot below handles
   // reading the old global value from disk; the per-project authoritative getter is
-  // `getSkillRepos(projectPath)`, which reads from `loadWorkspaceSetting(projectPath)`.
+  // `getSkillRepos(workspacePath)`, which reads from `loadWorkspaceSetting(workspacePath)`.
   // Per-project configurations passthrough (project-level knobs).
   const projectConfigs = raw?.projectConfigs
   // System sandbox definitions passthrough. Validated by SandboxRegistry at startup.
@@ -547,9 +547,9 @@ function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken | CodexP
  * written back so it persists, and `legacyProjectSeed` is cleared so subsequent
  * reads fall through to defaults or existing configs.
  */
-export function loadWorkspaceSetting(projectPath: string): WorkspaceSetting {
+export function loadWorkspaceSetting(workspacePath: string): WorkspaceSetting {
   const settings = loadSettings()
-  const existing = settings.projectConfigs?.[projectPath]
+  const existing = settings.projectConfigs?.[workspacePath]
   if (existing) return normalizeWorkspaceSetting(existing, settings.agents)
 
   // Migration window: seed from legacy global values (one-shot).
@@ -558,7 +558,7 @@ export function loadWorkspaceSetting(projectPath: string): WorkspaceSetting {
     legacyProjectSeed = null // clear — one shot only
     const merged = normalizeWorkspaceSetting(seed, settings.agents)
     // Persist the seeded config so the next read finds it.
-    const configs = { ...(settings.projectConfigs ?? {}), [projectPath]: merged }
+    const configs = { ...(settings.projectConfigs ?? {}), [workspacePath]: merged }
     saveSettings({ ...settings, projectConfigs: configs })
     return merged
   }
@@ -575,11 +575,14 @@ export function loadWorkspaceSetting(projectPath: string): WorkspaceSetting {
  * normalize, atomic-write, refresh the cache. Does NOT call {@link saveSettings}:
  * the directory lock is non-reentrant, so a nested acquire would self-deadlock.
  */
-export function saveWorkspaceSetting(projectPath: string, cfg: WorkspaceSetting): WorkspaceSetting {
+export function saveWorkspaceSetting(
+  workspacePath: string,
+  cfg: WorkspaceSetting,
+): WorkspaceSetting {
   const normalized = normalizeWorkspaceSetting(cfg, loadSettings().agents)
   withFileLock(settingsFile(), () => {
     const disk = readSettingsFromDisk()
-    const configs = { ...(disk?.projectConfigs ?? {}), [projectPath]: normalized }
+    const configs = { ...(disk?.projectConfigs ?? {}), [workspacePath]: normalized }
     const mergedSettings = normalize({ ...(disk ?? {}), projectConfigs: configs })
     try {
       writeAtomic(settingsFile(), mergedSettings)
@@ -707,8 +710,8 @@ export function saveSettings(next: SystemSettings): SystemSettings {
  * fallback); callers that need the dual {@link CodexPolicy} should use
  * {@link getCodexDefaultPolicy} separately. Falls back to `DEFAULT_MODE_MAP`.
  */
-export function getDefaultMode(projectPath: string, vendor?: VendorId): ModeToken {
-  const map = loadWorkspaceSetting(projectPath).defaultMode ?? DEFAULT_MODE_MAP
+export function getDefaultMode(workspacePath: string, vendor?: VendorId): ModeToken {
+  const map = loadWorkspaceSetting(workspacePath).defaultMode ?? DEFAULT_MODE_MAP
   const v = vendor ?? 'claude'
   const val = map[v]
   // If the stored value is a CodexPolicy object, extract the legacy token.
@@ -725,8 +728,8 @@ export function getDefaultMode(projectPath: string, vendor?: VendorId): ModeToke
  * through the catalog + `gateToCodexPolicy` when stored as a string or
  * missing. Returns `undefined` for non-codex vendors.
  */
-export function getCodexDefaultPolicy(projectPath: string): CodexPolicy | undefined {
-  const map = loadWorkspaceSetting(projectPath).defaultMode
+export function getCodexDefaultPolicy(workspacePath: string): CodexPolicy | undefined {
+  const map = loadWorkspaceSetting(workspacePath).defaultMode
   if (!map) return undefined
   const val = map['codex']
   if (val && typeof val === 'object' && 'sandboxMode' in (val as object)) {
@@ -979,8 +982,8 @@ export function getSessionBindingStats(): { bound: number; pending: number } {
 }
 
 /** Whether multi-agent consensus voting is enabled for a project. */
-export function isConsensusEnabled(projectPath: string): boolean {
-  return loadWorkspaceSetting(projectPath).consensus?.enabled === true
+export function isConsensusEnabled(workspacePath: string): boolean {
+  return loadWorkspaceSetting(workspacePath).consensus?.enabled === true
 }
 
 /**
@@ -988,8 +991,8 @@ export function isConsensusEnabled(projectPath: string): boolean {
  * only an explicit `consensus.majority: true` enables it. Independent of
  * {@link isConsensusEnabled} — meaningful only when consensus is also enabled.
  */
-export function isConsensusMajorityEnabled(projectPath: string): boolean {
-  return loadWorkspaceSetting(projectPath).consensus?.majority === true
+export function isConsensusMajorityEnabled(workspacePath: string): boolean {
+  return loadWorkspaceSetting(workspacePath).consensus?.majority === true
 }
 
 /**
@@ -1032,24 +1035,24 @@ export function getTimezone(): string {
 }
 
 /** The slash command prefixed to a intent when launching development; empty ⇒ no prefix. */
-export function getDevSkill(projectPath: string): string {
-  return normalizeDevSkill(loadWorkspaceSetting(projectPath).devSkill)
+export function getDevSkill(workspacePath: string): string {
+  return normalizeDevSkill(loadWorkspaceSetting(workspacePath).devSkill)
 }
 
 /**
  * The workspace's git branch mode for `start_development`. Absent/unknown ⇒
  * `current-branch` (the backward-compatible in-place path).
  */
-export function getGitBranchMode(projectPath: string): GitBranchMode {
-  return normalizeGitBranchMode(loadWorkspaceSetting(projectPath).gitBranchMode)
+export function getGitBranchMode(workspacePath: string): GitBranchMode {
+  return normalizeGitBranchMode(loadWorkspaceSetting(workspacePath).gitBranchMode)
 }
 
 /**
  * The workspace's configured default main branch (base for `worktree` mode), or
  * `undefined` when unset — callers then branch from current HEAD.
  */
-export function getDefaultMainBranch(projectPath: string): string | undefined {
-  return normalizeDefaultMainBranch(loadWorkspaceSetting(projectPath).defaultMainBranch)
+export function getDefaultMainBranch(workspacePath: string): string | undefined {
+  return normalizeDefaultMainBranch(loadWorkspaceSetting(workspacePath).defaultMainBranch)
 }
 
 // ---- External skill repos (ADR-0016) ----
@@ -1155,14 +1158,14 @@ export function validateSkillRepos(
  * against the project's own devSkill, since both values now live in the
  * same project-level config.
  */
-export function getSkillRepos(projectPath: string): SkillRepoConfig[] {
-  const cfg = loadWorkspaceSetting(projectPath)
+export function getSkillRepos(workspacePath: string): SkillRepoConfig[] {
+  const cfg = loadWorkspaceSetting(workspacePath)
   return validateSkillRepos(cfg.skillRepos, cfg.devSkill)
 }
 
 /** The per-stage discussion round cap (normalized; always ≥ {@link MIN_ROUNDS_PER_STAGE}). */
-export function getMaxRoundsPerStage(projectPath: string): number {
-  return normalizeMaxRoundsPerStage(loadWorkspaceSetting(projectPath).maxRoundsPerStage)
+export function getMaxRoundsPerStage(workspacePath: string): number {
+  return normalizeMaxRoundsPerStage(loadWorkspaceSetting(workspacePath).maxRoundsPerStage)
 }
 
 /**
@@ -1170,8 +1173,8 @@ export function getMaxRoundsPerStage(projectPath: string): number {
  * {@link MIN_SPEECH_CHARS}). This is a prompt-level guidance — over-long
  * replies are accepted verbatim.
  */
-export function getMaxSpeechChars(projectPath: string): number {
-  return normalizeMaxSpeechChars(loadWorkspaceSetting(projectPath).maxSpeechChars)
+export function getMaxSpeechChars(workspacePath: string): number {
+  return normalizeMaxSpeechChars(loadWorkspaceSetting(workspacePath).maxSpeechChars)
 }
 
 /**
@@ -1187,10 +1190,10 @@ export function getSystemSandboxes(): SystemSandboxDef[] {
  * Get the project-level sandbox config (normalized). Returns `undefined`
  * when the project has no sandbox config (equivalent to disabled).
  */
-export function getProjectSandbox(projectPath: string): WorkspaceSandboxConfig | undefined {
+export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig | undefined {
   // Already normalized (worktree-only + custom-only invariants applied) by
   // loadWorkspaceSetting → normalizeWorkspaceSetting → normalizeSandboxConfig.
-  return loadWorkspaceSetting(projectPath).sandbox
+  return loadWorkspaceSetting(workspacePath).sandbox
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

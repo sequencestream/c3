@@ -45,7 +45,7 @@ export function createPermissionRequestHandler(deps: {
     // (session / intent / …) so WorkCenter's jumpToSource targets the right tab —
     // a codex/opencode intent prompt is 'intent', a work session is 'session'.
     createEvent({
-      projectPath: ctx.workspacePath,
+      workspacePath: ctx.workspacePath,
       source: ctx.source,
       sourceId: ctx.sessionId,
       title,

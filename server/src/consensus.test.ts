@@ -54,11 +54,11 @@ vi.mock('./kernel/agent-config/index.js', () => ({
   resolveAgent: () => agent('decider'),
 }))
 vi.mock('./kernel/config/index.js', () => ({
-  isConsensusEnabled: (_projectPath?: string) => true,
+  isConsensusEnabled: (_workspacePath?: string) => true,
   // Driven by `settings.majority` so a test can exercise the ask path's majority
   // pre-step coexisting with the decider. The per-question decision matrix itself
   // is covered exhaustively in consensus-tally.test.ts.
-  isConsensusMajorityEnabled: (_projectPath?: string) => settings.majority,
+  isConsensusMajorityEnabled: (_workspacePath?: string) => settings.majority,
   // Summary language name injected into the decider prompt; fixed here since the
   // prompt's language wiring is asserted in consensus-tally.test.ts.
   getUiLangName: () => 'English',

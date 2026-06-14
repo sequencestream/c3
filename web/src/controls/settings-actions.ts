@@ -32,19 +32,19 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.openWorkspaceSetting = (): void => {
     workspaceSettingOpen.value = true
     const path = currentWorkspace.value
-    if (path) send({ type: 'load_workspace_setting', projectPath: path })
+    if (path) send({ type: 'load_workspace_setting', workspacePath: path })
   }
 
   ctx.saveWorkspaceSetting = (config: WorkspaceSettingType): void => {
     const path = currentWorkspace.value
-    if (path) send({ type: 'save_workspace_setting', projectPath: path, config })
+    if (path) send({ type: 'save_workspace_setting', workspacePath: path, config })
     workspaceSettingOpen.value = false
   }
 
   // Fetch link status for every configured skill repo in the current workspace.
   ctx.querySkillLinkStatus = (): void => {
     const path = currentWorkspace.value
-    if (path) send({ type: 'get_skill_link_status', projectPath: path })
+    if (path) send({ type: 'get_skill_link_status', workspacePath: path })
   }
 
   // Explicitly (re)install a configured skill repo; marks the row busy.
@@ -54,7 +54,7 @@ export function installSettingsActions(ctx: AppCtx): void {
     if (!installingSkillIds.value.includes(skillId)) {
       installingSkillIds.value = [...installingSkillIds.value, skillId]
     }
-    send({ type: 'install_skill', projectPath: path, skillId })
+    send({ type: 'install_skill', workspacePath: path, skillId })
   }
 
   ctx.saveSettings = (settings: SystemSettings): void => {
@@ -108,7 +108,7 @@ export function installSettingsActions(ctx: AppCtx): void {
       if (flags.viewModeFirstWorkcenter) {
         flags.viewModeFirstWorkcenter = false
         if (currentWorkspace.value)
-          send({ type: 'list_wait_user_events', projectPath: currentWorkspace.value })
+          send({ type: 'list_wait_user_events', workspacePath: currentWorkspace.value })
       }
     } else {
       viewMode.value = 'workspace'

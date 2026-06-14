@@ -39,7 +39,7 @@ describe.skipIf(!enabled)('codex ⇄ intent MCP route end-to-end', () => {
   beforeAll(async () => {
     const intentMcp = createIntentMcp('http://127.0.0.1', tools, () => 'e2e-tok')
     const bound = intentMcp.bind({
-      projectPath: '/abs/e2e',
+      workspacePath: '/abs/e2e',
       getRunId: () => 'e2e-run',
       signal: new AbortController().signal,
     })

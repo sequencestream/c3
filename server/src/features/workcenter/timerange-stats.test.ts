@@ -331,7 +331,7 @@ describe('getTimeRangeStatsHandler', () => {
     const stats = sentStats(conn as never)
 
     expect(stats).toHaveLength(2)
-    const a = stats.find((s) => s.projectPath === A)!
+    const a = stats.find((s) => s.workspacePath === A)!
     expect(a).toMatchObject({
       projectName: 'proj-a',
       workSessions: { total: 2, running: 1 },
@@ -339,7 +339,7 @@ describe('getTimeRangeStatsHandler', () => {
       discussions: { in_progress: 1, completed: 1 },
       schedules: { total: 2, active: 1, running: 1 },
     })
-    const b = stats.find((s) => s.projectPath === B)!
+    const b = stats.find((s) => s.workspacePath === B)!
     expect(b).toMatchObject({
       projectName: 'proj-b',
       workSessions: { total: 0, running: 0 },

@@ -67,7 +67,7 @@ export interface DevTurnResult {
 }
 
 export interface RunDevTurnInput {
-  projectPath: string
+  workspacePath: string
   sessionId: string | null
   prompt: string
   intentId: string
@@ -79,9 +79,9 @@ export interface RunDevTurnInput {
 
 export interface AutomationHooks {
   runDevTurn(input: RunDevTurnInput): Promise<DevTurnResult>
-  broadcastIntents(projectPath: string): void
+  broadcastIntents(workspacePath: string): void
   emitStatus(status: AutomationStatus): void
-  sessionExists(projectPath: string, sessionId: string): Promise<boolean>
+  sessionExists(workspacePath: string, sessionId: string): Promise<boolean>
   isRunning(sessionId: string): boolean
 }
 
@@ -123,9 +123,9 @@ export function hasPendingQuestion(buffer: readonly ServerToClient[]): boolean {
 
 const MAX_CONTINUATIONS = 10
 
-function idleStatus(projectPath: string): AutomationStatus {
+function idleStatus(workspacePath: string): AutomationStatus {
   return {
-    projectPath,
+    workspacePath,
     state: 'idle',
     currentIntentId: null,
     currentSessionId: null,
@@ -138,10 +138,10 @@ function idleStatus(projectPath: string): AutomationStatus {
 }
 
 /** @internal exported for testing only */
-export function pickNext(projectPath: string): Intent | null {
-  const all = listIntents(projectPath)
+export function pickNext(workspacePath: string): Intent | null {
+  const all = listIntents(workspacePath)
   const byId = new Map(all.map((r) => [r.id, r]))
-  const gitBranchMode = getGitBranchMode(projectPath)
+  const gitBranchMode = getGitBranchMode(workspacePath)
   const eligible = all.filter(
     (r) =>
       r.automate &&
@@ -176,12 +176,12 @@ class AutomationController {
   private _phase: 'normal' | 'fixing' = 'normal'
 
   constructor(
-    private readonly projectPath: string,
+    private readonly workspacePath: string,
     private readonly hooks: AutomationHooks,
     startedAt: number,
   ) {
     this.status = {
-      ...idleStatus(projectPath),
+      ...idleStatus(workspacePath),
       state: 'running',
       startedAt,
     }
@@ -274,12 +274,12 @@ class AutomationController {
     setLastDevSession(reqId, sessionId)
     if (getIntent(reqId)?.status !== 'in_progress') updateStatus(reqId, 'in_progress')
     this.status.currentSessionId = sessionId
-    this.hooks.broadcastIntents(this.projectPath)
+    this.hooks.broadcastIntents(this.workspacePath)
     this.emit()
   }
 
   private fail(reason: string): void {
-    console.warn(`[c3:automation] 停止 (${this.projectPath}): ${reason}`)
+    console.warn(`[c3:automation] 停止 (${this.workspacePath}): ${reason}`)
     this.status.state = 'error'
     this.status.error = reason
     this.status.currentIntentId = null
@@ -293,7 +293,7 @@ class AutomationController {
    * Returns the blocking intent, or undefined if the gate is clear.
    */
   private _findBlockingIntent(): Intent | undefined {
-    const all = listIntents(this.projectPath)
+    const all = listIntents(this.workspacePath)
     return all.find(
       (r) =>
         r.status === 'in_progress' &&
@@ -305,16 +305,16 @@ class AutomationController {
   /**
    * The git working directory for an intent's commit/push/PR/evidence ops:
    * the isolated worktree in `worktree` mode, else the project checkout itself
-   * (`current-branch`). Deterministic from (projectPath, intentId) — mirrors the
+   * (`current-branch`). Deterministic from (workspacePath, intentId) — mirrors the
    * manual `startDevelopment` effectiveCwd choice so both paths target the same
    * tree. Without this, worktree-mode git ops would run on the main checkout
    * (stuck on the base branch), so the branch never reaches the remote.
    */
   private _gitCwd(intentId: string): string {
-    if (getGitBranchMode(this.projectPath) === 'worktree') {
-      return getWorktreePath(this.projectPath, intentId)
+    if (getGitBranchMode(this.workspacePath) === 'worktree') {
+      return getWorktreePath(this.workspacePath, intentId)
     }
-    return this.projectPath
+    return this.workspacePath
   }
 
   // ── Intent selection & launch ─────────────────────────────────────────
@@ -326,7 +326,7 @@ class AutomationController {
   private _startNext(): void {
     if (this.abort.signal.aborted) return
 
-    const req = pickNext(this.projectPath)
+    const req = pickNext(this.workspacePath)
     if (!req) {
       this.status.state = 'done'
       this.status.currentIntentId = null
@@ -384,7 +384,7 @@ class AutomationController {
       this.emit()
 
       void this.hooks.runDevTurn({
-        projectPath: this.projectPath,
+        workspacePath: this.workspacePath,
         sessionId: req.lastDevSessionId,
         prompt: '',
         intentId: req.id,
@@ -396,7 +396,7 @@ class AutomationController {
     }
 
     // Resumable (existing dev session on disk) or fresh (todo or dangling).
-    const skill = getDevSkill(this.projectPath)
+    const skill = getDevSkill(this.workspacePath)
     const skillPrefix = skill ? `${skill} ` : ''
     const dependencyNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
 
@@ -412,7 +412,7 @@ class AutomationController {
       this.emit()
 
       void this.hooks.runDevTurn({
-        projectPath: this.projectPath,
+        workspacePath: this.workspacePath,
         sessionId: req.lastDevSessionId,
         prompt: 'continue',
         intentId: req.id,
@@ -433,19 +433,19 @@ class AutomationController {
     //    no PR later. Record the current branch so branch_name reflects reality.
     const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
     let effectiveCwd: string
-    if (getGitBranchMode(this.projectPath) === 'worktree') {
+    if (getGitBranchMode(this.workspacePath) === 'worktree') {
       const wt = createWorktree(
-        this.projectPath,
+        this.workspacePath,
         req.id,
         req.title,
-        getDefaultMainBranch(this.projectPath),
+        getDefaultMainBranch(this.workspacePath),
       )
       effectiveCwd = wt.worktreePath
       // Persist branch name immediately so the UI can show it.
       setBranchName(req.id, wt.branchName)
     } else {
-      effectiveCwd = this.projectPath
-      const branch = readBranch(this.projectPath)
+      effectiveCwd = this.workspacePath
+      const branch = readBranch(this.workspacePath)
       if (branch) setBranchName(req.id, branch)
     }
 
@@ -459,8 +459,8 @@ class AutomationController {
     // worktree (or the project checkout itself in current-branch mode).
     const rt = ensureRuntime(
       pendingId,
-      this.projectPath,
-      getDefaultMode(this.projectPath),
+      this.workspacePath,
+      getDefaultMode(this.workspacePath),
       [],
       'session',
     )
@@ -469,7 +469,7 @@ class AutomationController {
 
     const prompt = `${skillPrefix}${req.title}\n\n${req.content}${dependencyNote}`
     void this.hooks.runDevTurn({
-      projectPath: this.projectPath,
+      workspacePath: this.workspacePath,
       sessionId: pendingId,
       prompt,
       intentId: req.id,
@@ -485,10 +485,10 @@ class AutomationController {
    *  - `worktree`: the isolated worktree — but ONLY if it actually exists on
    *    disk (a missing worktree means there's nothing to resume into).
    *  - `current-branch`: the project checkout itself.
-   * Deterministic from (projectPath, intentId) — no extra storage needed.
+   * Deterministic from (workspacePath, intentId) — no extra storage needed.
    */
   private _ensureResumeRuntime(req: Intent): void {
-    const worktreeMode = getGitBranchMode(this.projectPath) === 'worktree'
+    const worktreeMode = getGitBranchMode(this.workspacePath) === 'worktree'
     const cwd = this._gitCwd(req.id)
     // Worktree mode with no worktree on disk → nothing to point at; leave the
     // runtime's effectiveCwd alone (current-branch never has this gate).
@@ -497,8 +497,8 @@ class AutomationController {
     // and preserves existing fields; only set effectiveCwd if missing.
     const rt = ensureRuntime(
       req.lastDevSessionId!,
-      this.projectPath,
-      getDefaultMode(this.projectPath),
+      this.workspacePath,
+      getDefaultMode(this.workspacePath),
       [],
       'session',
     )
@@ -515,7 +515,7 @@ class AutomationController {
     this.emit()
 
     void this.hooks.runDevTurn({
-      projectPath: this.projectPath,
+      workspacePath: this.workspacePath,
       sessionId,
       prompt: 'continue',
       intentId: req.id,
@@ -602,7 +602,7 @@ class AutomationController {
       // Compute git evidence early so both the pending-question checkpoint
       // consensus and the completion judge have diff/recent-log context. Scope
       // it to the intent's actual working dir — in worktree mode the changes
-      // live in the worktree, not the main checkout, so reading projectPath
+      // live in the worktree, not the main checkout, so reading workspacePath
       // would yield empty evidence and mislead the judge.
       const evidenceCwd = this._gitCwd(intentId)
       const [diffStat, recentLog] = await Promise.all([
@@ -618,7 +618,7 @@ class AutomationController {
       // Unless the checkpoint consensus majority decides otherwise.
       if (pendingQuestion) {
         const ckConsensus = await runCheckpointConsensus({
-          projectPath: this.projectPath,
+          workspacePath: this.workspacePath,
           intent: req,
           lastMessage,
           trigger: 'pending_question',
@@ -646,7 +646,7 @@ class AutomationController {
         req,
         lastMessages: [lastMessage],
         evidence: { diffStat, recentLog },
-        cwd: this.projectPath,
+        cwd: this.workspacePath,
         signal: this.abort.signal,
       })
       if (this.abort.signal.aborted) {
@@ -667,7 +667,7 @@ class AutomationController {
 
           updateStatus(req.id, 'done')
           this.status.completedIds.push(req.id)
-          this.hooks.broadcastIntents(this.projectPath)
+          this.hooks.broadcastIntents(this.workspacePath)
           console.log(`[c3:automation]「${req.title}」已完成 → done`)
           this._processing = false
           this._startNext()
@@ -701,7 +701,7 @@ class AutomationController {
       // Stuck — try checkpoint consensus before stopping.
       if (verdict.verdict === 'stuck') {
         const ckConsensus = await runCheckpointConsensus({
-          projectPath: this.projectPath,
+          workspacePath: this.workspacePath,
           intent: req,
           lastMessage,
           trigger: 'judge_stuck',
@@ -756,7 +756,7 @@ class AutomationController {
 
         updateStatus(fixReq.id, 'done')
         this.status.completedIds.push(fixReq.id)
-        this.hooks.broadcastIntents(this.projectPath)
+        this.hooks.broadcastIntents(this.workspacePath)
         console.log(`[c3:automation]「${fixReq.title}」已完成 → done (lint 修复后提交)`)
         this._processing = false
         this._startNext()
@@ -785,7 +785,7 @@ class AutomationController {
    *    reviewable branch, mirroring the manual `startDevelopment` path.
    */
   private async _maybeCreatePr(req: Intent): Promise<void> {
-    if (getGitBranchMode(this.projectPath) !== 'worktree') return
+    if (getGitBranchMode(this.workspacePath) !== 'worktree') return
     const prResult = await this._createPrForIntent(req).catch((err) => {
       console.warn(
         `[c3:automation]「${req.title}」PR 创建异常: ${err instanceof Error ? err.message : String(err)}`,
@@ -864,7 +864,7 @@ class AutomationController {
     const fixPrompt = `pre-commit 钩子的 lint 检查未通过,本次提交被拦截。请修复以下 lint/格式报错,改完即可,无需自行 git commit:\n\n${firstAttempt.error ?? 'pre-commit lint 失败'}`
 
     void this.hooks.runDevTurn({
-      projectPath: this.projectPath,
+      workspacePath: this.workspacePath,
       sessionId,
       prompt: fixPrompt,
       intentId: req.id,
@@ -881,8 +881,8 @@ class AutomationController {
 const controllers = new Map<string, AutomationController>()
 
 /** Current automation status for a project (idle when never started). */
-export function getAutomationStatus(projectPath: string): AutomationStatus {
-  return controllers.get(projectPath)?.status ?? idleStatus(projectPath)
+export function getAutomationStatus(workspacePath: string): AutomationStatus {
+  return controllers.get(workspacePath)?.status ?? idleStatus(workspacePath)
 }
 
 /**
@@ -892,11 +892,11 @@ export function getAutomationStatus(projectPath: string): AutomationStatus {
  * via `onTurnSettled`.
  */
 export function startAutomation(
-  projectPath: string,
+  workspacePath: string,
   hooks: AutomationHooks,
   now: number,
 ): AutomationStatus {
-  const existing = controllers.get(projectPath)
+  const existing = controllers.get(workspacePath)
   if (existing) {
     if (
       existing.status.state !== 'error' &&
@@ -906,19 +906,19 @@ export function startAutomation(
       return existing.status
     }
     // Re-start a stopped/done/errored controller.
-    controllers.delete(projectPath)
+    controllers.delete(workspacePath)
   }
-  const controller = new AutomationController(projectPath, hooks, now)
-  controllers.set(projectPath, controller)
+  const controller = new AutomationController(workspacePath, hooks, now)
+  controllers.set(workspacePath, controller)
   controller.kickstart()
   return controller.status
 }
 
 /** Stop the orchestrator for a project (aborts the current dev run). */
-export function stopAutomation(projectPath: string): AutomationStatus {
-  const c = controllers.get(projectPath)
+export function stopAutomation(workspacePath: string): AutomationStatus {
+  const c = controllers.get(workspacePath)
   if (c) c.stop()
-  return getAutomationStatus(projectPath)
+  return getAutomationStatus(workspacePath)
 }
 
 /**
@@ -931,12 +931,12 @@ export function stopAutomation(projectPath: string): AutomationStatus {
  * processing completes (used by tests to sequence assertions).
  */
 export function notifyTurnSettled(
-  projectPath: string,
+  workspacePath: string,
   sessionId: string,
   reason: RunEndReason,
   intentId: string,
 ): Promise<void> | undefined {
-  const controller = controllers.get(projectPath)
+  const controller = controllers.get(workspacePath)
   if (!controller) return undefined
   controller.onTurnSettled(sessionId, reason, intentId)
   return controller['_processingPromise'] ?? undefined

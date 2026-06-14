@@ -56,7 +56,7 @@ matching wire arm. `parseAgentConfig(raw)` routes by tag and returns the typed a
   compatibility during the migration window. The authoritative source is the per-project
   `WorkspaceSetting.defaultMode`, read via `loadWorkspaceSetting`; the same validation (one of the five
   `PermissionMode` values) and fallback (`default`) apply per-project. Consumed by
-  `getDefaultMode(projectPath)`, which seeds a new session's runtime mode in `create_session` (SR-R6).
+  `getDefaultMode(workspacePath)`, which seeds a new session's runtime mode in `create_session` (SR-R6).
 - `enabled` is persisted as an explicit boolean using `a.enabled !== false` (absent/`true` ⇒
   `true`, only explicit `false` ⇒ `false`) — so old configs lacking the field stay enabled
   (AC-R10). The re-injected system agent's `enabled` is read from the incoming `system` entry the

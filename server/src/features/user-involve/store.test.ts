@@ -59,7 +59,7 @@ describe('schema', () => {
 
 describe('events CRUD', () => {
   it('creates an event with defaults and reads it back', () => {
-    const ev = createEvent({ projectPath: proj, source: 'session' })
+    const ev = createEvent({ workspacePath: proj, source: 'session' })
     expect(ev.status).toBe('todo') // default
     expect(ev.source).toBe('session')
     expect(ev.title).toBeNull()
@@ -71,12 +71,12 @@ describe('events CRUD', () => {
 
     const got = getEvent(ev.id)
     expect(got?.id).toBe(ev.id)
-    expect(got?.projectPath).toBe(resolve(proj))
+    expect(got?.workspacePath).toBe(resolve(proj))
   })
 
   it('honors all explicit fields and persists toolInput as JSON', () => {
     const ev = createEvent({
-      projectPath: proj,
+      workspacePath: proj,
       source: 'discussion',
       sourceId: 'disc-1',
       title: '需要审批文件写入',
@@ -93,8 +93,8 @@ describe('events CRUD', () => {
   })
 
   it('lists events for a project, ordered by created_at descending', () => {
-    createEvent({ projectPath: proj, source: 'session' })
-    createEvent({ projectPath: proj, source: 'intent' })
+    createEvent({ workspacePath: proj, source: 'session' })
+    createEvent({ workspacePath: proj, source: 'intent' })
     const list = listEvents(proj)
     // b was created after a, so b should come first (DESC order)
     const titles = list.map((x) => x.id)
@@ -107,8 +107,8 @@ describe('events CRUD', () => {
   })
 
   it('filters by status when provided', () => {
-    const a = createEvent({ projectPath: proj, source: 'session' }) // todo
-    const b = createEvent({ projectPath: proj, source: 'intent' }) // todo
+    const a = createEvent({ workspacePath: proj, source: 'session' }) // todo
+    const b = createEvent({ workspacePath: proj, source: 'intent' }) // todo
     updateStatus(a.id, 'done')
 
     const todo = listEvents(proj, 'todo')
@@ -119,14 +119,14 @@ describe('events CRUD', () => {
   })
 
   it('scopes by project and normalizes the path (resolve)', () => {
-    createEvent({ projectPath: '/abs/project-a/', source: 'session' }) // trailing slash
-    createEvent({ projectPath: '/abs/project-b', source: 'session' })
+    createEvent({ workspacePath: '/abs/project-a/', source: 'session' }) // trailing slash
+    createEvent({ workspacePath: '/abs/project-b', source: 'session' })
     expect(listEvents('/abs/project-a').map((x) => x.source)).toEqual(['session'])
     expect(listEvents('/abs/project-b').map((x) => x.source)).toEqual(['session'])
   })
 
   it('updateStatus changes the status and bumps updated_at', () => {
-    const ev = createEvent({ projectPath: proj, source: 'session' })
+    const ev = createEvent({ workspacePath: proj, source: 'session' })
     updateStatus(ev.id, 'done')
     const got = getEvent(ev.id)
     expect(got?.status).toBe('done')
@@ -135,7 +135,7 @@ describe('events CRUD', () => {
 
   it('getEventByRequestId finds an event by requestId and returns null for unknown ids', () => {
     const ev = createEvent({
-      projectPath: proj,
+      workspacePath: proj,
       source: 'session',
       sourceId: 'sess-1',
       requestId: 'req-abc',
@@ -155,19 +155,19 @@ describe('events CRUD', () => {
   it('cancelBySourceId cancels all todo events for a source and skips others', () => {
     // Two todo events for source 'sess-1', one for 'sess-2', one done for 'sess-1'.
     const todo1 = createEvent({
-      projectPath: proj,
+      workspacePath: proj,
       source: 'session',
       sourceId: 'sess-1',
       title: '待处理 1',
     })
     const todo2 = createEvent({
-      projectPath: proj,
+      workspacePath: proj,
       source: 'session',
       sourceId: 'sess-1',
       title: '待处理 2',
     })
     const other = createEvent({
-      projectPath: proj,
+      workspacePath: proj,
       source: 'session',
       sourceId: 'sess-2',
       title: '其他 session',
@@ -192,7 +192,7 @@ describe('migration', () => {
     raw.exec('CREATE TABLE unrelated (id TEXT PRIMARY KEY); PRAGMA user_version=7;')
 
     resetStoreForTests()
-    expect(() => createEvent({ projectPath: proj, source: 'session' })).not.toThrow()
+    expect(() => createEvent({ workspacePath: proj, source: 'session' })).not.toThrow()
     const tables = raw
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")
       .map((r) => r.name)
@@ -208,7 +208,7 @@ describe('degradation', () => {
     expect(isStoreAvailable()).toBe(false)
     expect(listEvents(proj)).toEqual([])
     expect(getEvent('x')).toBeNull()
-    expect(() => createEvent({ projectPath: proj, source: 'session' })).toThrow(
+    expect(() => createEvent({ workspacePath: proj, source: 'session' })).toThrow(
       /待处理事件库不可用/,
     )
   })

@@ -13,7 +13,7 @@ A ledger item scoped to one project.
 | Attribute          | Type                        | Description                                                                                                                                           |
 | ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`               | text (UUID)                 | Stable identifier; referenced by dependencies and the dev back-link                                                                                   |
-| `projectPath`      | text (path)                 | Resolved absolute workspace path; the project key (RM-R1, RM-R10)                                                                                     |
+| `workspacePath`    | text (path)                 | Resolved absolute workspace path; the project key (RM-R1, RM-R10)                                                                                     |
 | `title`            | text                        | Short intent title                                                                                                                                    |
 | `content`          | text                        | Full intent description                                                                                                                               |
 | `priority`         | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别; P0 highest                                                                                                                                  |
@@ -26,7 +26,7 @@ A ledger item scoped to one project.
 | `updatedAt`        | timestamp                   | Last mutation time                                                                                                                                    |
 | `completedAt`      | timestamp \| null           | When the intent entered `done`; stamped on transition to `done`, cleared (null) whenever status leaves `done` (RM-R6/RM-R9)                           |
 
-Relationships: belongs to one project (by `projectPath`); has zero or more Intent
+Relationships: belongs to one project (by `workspacePath`); has zero or more Intent
 Dependencies; may reference one development Session (a normal session, owned by session-registry).
 
 ## Proposed Intent
@@ -68,13 +68,13 @@ normal `list_sessions` response. One session per project is marked `isCurrent` a
 the default-open pointer when entering the intent view without an explicit session id.
 Sessions can be listed, renamed, and deleted.
 
-| Attribute     | Type         | Description                                                                                        |
-| ------------- | ------------ | -------------------------------------------------------------------------------------------------- |
-| `sessionId`   | text         | The SDK session id (may be a `pending:` id before its first run binds it)                          |
-| `projectPath` | text (path)  | Resolved absolute workspace path (RM-R10)                                                          |
-| `title`       | text \| null | User-assigned title; null ⇒ client fallback to "New Intent" or first-prompt / timestamp derivation |
-| `isCurrent`   | boolean      | Default-open pointer — at most one per project is current (RM-R4)                                  |
-| `updatedAt`   | timestamp    | Last bind / rename / run time                                                                      |
+| Attribute       | Type         | Description                                                                                        |
+| --------------- | ------------ | -------------------------------------------------------------------------------------------------- |
+| `sessionId`     | text         | The SDK session id (may be a `pending:` id before its first run binds it)                          |
+| `workspacePath` | text (path)  | Resolved absolute workspace path (RM-R10)                                                          |
+| `title`         | text \| null | User-assigned title; null ⇒ client fallback to "New Intent" or first-prompt / timestamp derivation |
+| `isCurrent`     | boolean      | Default-open pointer — at most one per project is current (RM-R4)                                  |
+| `updatedAt`     | timestamp    | Last bind / rename / run time                                                                      |
 
 Relationships: every row for a project forms that project's **hidden set** (excluded from
 `list_sessions`, RM-R4); the `isCurrent` row is the session re-loaded on entering the
@@ -91,7 +91,7 @@ project; not persisted — a server restart resets it to `idle`). Pushed to ever
 
 | Attribute            | Type                   | Description                                                                                                                     |
 | -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `projectPath`        | text (path)            | Resolved absolute workspace path (RM-R10)                                                                                       |
+| `workspacePath`      | text (path)            | Resolved absolute workspace path (RM-R10)                                                                                       |
 | `state`              | enum `AutomationState` | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                                                                                |
 | `currentIntentId`    | id \| null             | The intent being developed now (null when not running)                                                                          |
 | `currentSessionId`   | text \| null           | The current intent's dev session, for a back-link                                                                               |

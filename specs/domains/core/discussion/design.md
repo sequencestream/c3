@@ -69,14 +69,14 @@ feature, consistent with the intent store's degradation contract.
 
 ## Store (`store.ts`)
 
-- **Path normalization:** every `projectPath` arg (`listDiscussions`, `createDiscussion`) is
+- **Path normalization:** every `workspacePath` arg (`listDiscussions`, `createDiscussion`) is
   `resolve()`d before read/write, matching the workspace key / runtime `workspacePath` / SDK `cwd`.
   Id-keyed operations (`getDiscussion`, `updateDiscussionStatus`, `setConclusion`, `appendMessage`,
-  `listMessages`) take no `projectPath`.
-- `listDiscussions(projectPath, status?)` → `Discussion[]`, `ORDER BY updated_at DESC` (optionally
+  `listMessages`) take no `workspacePath`.
+- `listDiscussions(workspacePath, status?)` → `Discussion[]`, `ORDER BY updated_at DESC` (optionally
   status-filtered).
 - `getDiscussion(id)` → `Discussion | null`.
-- `createDiscussion({ projectPath, title, type, goal?, context?, status? })` → `Discussion`. Mints a
+- `createDiscussion({ workspacePath, title, type, goal?, context?, status? })` → `Discussion`. Mints a
   uuid, `created_at = updated_at = now`, default `status = 'draft'`; if created directly as
   `completed`, `completed_at` is stamped.
 - `updateDiscussionStatus(id, status)` — updates status + `updated_at`; `completed_at = completed ?

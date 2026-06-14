@@ -16,7 +16,7 @@ const SIGNAL = new AbortController().signal
 function makeReq(overrides: Partial<Intent> = {}): Intent {
   return {
     id: 'r-default',
-    projectPath: PROJECT,
+    workspacePath: PROJECT,
     title: '测试需求',
     content: '实现某个功能',
     priority: 'P0',

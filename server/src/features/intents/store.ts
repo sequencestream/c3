@@ -3,7 +3,7 @@
  *
  * Owns the schema (created lazily, versioned via `PRAGMA user_version`) and all
  * intent / dependency / communication-session operations. Every
- * `projectPath` is `resolve()`d so it matches the workspace registry key, the
+ * `workspacePath` is `resolve()`d so it matches the workspace registry key, the
  * runtime `workspacePath`, and the SDK `cwd` (otherwise lookups and the
  * hidden-session filter silently miss).
  *
@@ -254,7 +254,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
   }
   return rows.map((r) => ({
     id: r.id,
-    projectPath: r.project_path,
+    workspacePath: r.project_path,
     title: r.title,
     content: r.content,
     priority: r.priority as Intent['priority'],
@@ -278,10 +278,10 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
 // ---- Intents ----
 
 /** A project's intents (optionally status-filtered), priority then recency. */
-export function listIntents(projectPath: string, status?: IntentStatus): Intent[] {
+export function listIntents(workspacePath: string, status?: IntentStatus): Intent[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   const rows = status
     ? d.all<Row>(
         'SELECT * FROM intents WHERE project_path=? AND status=? ORDER BY priority ASC, updated_at DESC',
@@ -302,14 +302,14 @@ export function listIntents(projectPath: string, status?: IntentStatus): Intent[
  * empty map when the db is unavailable (graceful degradation, never throws).
  */
 export function countByStatusInRange(
-  projectPath: string,
+  workspacePath: string,
   startTime?: number,
   endTime?: number,
 ): Record<string, number> {
   const d = db()
   if (!d) return {}
   const where: string[] = ['project_path=?']
-  const params: (string | number)[] = [resolve(projectPath)]
+  const params: (string | number)[] = [resolve(workspacePath)]
   if (startTime != null) {
     where.push('updated_at >= ?')
     params.push(startTime)
@@ -349,13 +349,13 @@ function escapeLike(s: string): string {
  * (priority asc, then recency). Returns `[]` when the db is unavailable.
  */
 export function findIntents(
-  projectPath: string,
+  workspacePath: string,
   filter: { keyword?: string; module?: string; status?: IntentStatus } = {},
 ): Intent[] {
   const d = db()
   if (!d) return []
   const where: string[] = ['project_path=?']
-  const params: (string | number)[] = [resolve(projectPath)]
+  const params: (string | number)[] = [resolve(workspacePath)]
   if (filter.keyword) {
     where.push("(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')")
     const like = `%${escapeLike(filter.keyword)}%`
@@ -439,9 +439,9 @@ function detectBatchCycle(edges: number[][]): void {
 }
 
 /** Insert a batch of proposed intents (status `todo`) in one transaction. */
-export function insertIntents(projectPath: string, items: ProposedIntent[]): Intent[] {
+export function insertIntents(workspacePath: string, items: ProposedIntent[]): Intent[] {
   const d = requireDb()
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   const now = Date.now()
   // Mint every id up front so intra-batch `dependsOnIndexes` can resolve to a real
   // sibling id; validate + resolve BEFORE any write so an invalid batch (out-of-range
@@ -512,9 +512,9 @@ export function insertIntents(projectPath: string, items: ProposedIntent[]): Int
  * `dependsOnIndexes` resolves against the FULL batch, so a new item can depend (by index)
  * on an updated sibling and vice-versa.
  */
-export function upsertIntents(projectPath: string, items: ProposedIntent[]): Intent[] {
+export function upsertIntents(workspacePath: string, items: ProposedIntent[]): Intent[] {
   const d = requireDb()
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   const now = Date.now()
   // Resolve every item to a stable id up front: the existing id for updates, a fresh
   // uuid for inserts. dependsOnIndexes then resolves against THIS id array regardless of
@@ -830,20 +830,20 @@ export function updateIntentDeps(
 // the hidden-session set (every row is hidden from the normal session list).
 
 /** The current comm session id for a project, or null. */
-export function getChatSession(projectPath: string): string | null {
+export function getChatSession(workspacePath: string): string | null {
   const d = db()
   if (!d) return null
   const row = d.get<{ session_id: string }>(
     'SELECT session_id FROM intent_chats WHERE project_path=? AND is_current=1',
-    resolve(projectPath),
+    resolve(workspacePath),
   )
   return row?.session_id ?? null
 }
 
 /** Make `sessionId` the project's current comm session (clearing any prior one). */
-export function setChatSession(projectPath: string, sessionId: string, title?: string): void {
+export function setChatSession(workspacePath: string, sessionId: string, title?: string): void {
   const d = requireDb()
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   const now = Date.now()
   tx(d, () => {
     d.run('UPDATE intent_chats SET is_current=0 WHERE project_path=? AND is_current=1', proj)
@@ -889,14 +889,14 @@ export function isHiddenSession(sessionId: string): boolean {
 }
 
 /** All comm session ids for a project (the hidden set), for list filtering. */
-export function listHiddenSessions(projectPath: string): string[] {
+export function listHiddenSessions(workspacePath: string): string[] {
   if (!isDbAvailable()) return []
   const d = db()
   if (!d) return []
   return d
     .all<{
       session_id: string
-    }>('SELECT session_id FROM intent_chats WHERE project_path=?', resolve(projectPath))
+    }>('SELECT session_id FROM intent_chats WHERE project_path=?', resolve(workspacePath))
     .map((r) => r.session_id)
 }
 
@@ -906,10 +906,10 @@ export function listHiddenSessions(projectPath: string): string[] {
 // derivation on the client. `is_current` is the "default-open" pointer.
 
 /** All comm sessions for a project, newest-first. */
-export function listChatSessions(projectPath: string): IntentSessionInfo[] {
+export function listChatSessions(workspacePath: string): IntentSessionInfo[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   return d
     .all<{
       session_id: string
@@ -947,9 +947,9 @@ export function renameChatSession(sessionId: string, title: string): void {
  *
  * @returns The project path of the deleted session (for callers to broadcast).
  */
-export function deleteChatSession(projectPath: string, sessionId: string): void {
+export function deleteChatSession(workspacePath: string, sessionId: string): void {
   const d = requireDb()
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   tx(d, () => {
     const row = d.get<{ is_current: number }>(
       'SELECT is_current FROM intent_chats WHERE session_id=?',

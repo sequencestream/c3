@@ -42,11 +42,11 @@ program
     }) => {
       // Relocate the config dir before anything reads settings (loadSettings is lazy).
       if (opts.settings) setSettingsPath(opts.settings)
-      let projectPath: string | undefined
+      let workspacePath: string | undefined
       if (opts.project) {
-        projectPath = resolve(opts.project)
-        if (!existsSync(projectPath) || !statSync(projectPath).isDirectory()) {
-          console.error(`[c3] error: project path is not a directory: ${projectPath}`)
+        workspacePath = resolve(opts.project)
+        if (!existsSync(workspacePath) || !statSync(workspacePath).isDirectory()) {
+          console.error(`[c3] error: project path is not a directory: ${workspacePath}`)
           process.exit(1)
         }
       }
@@ -55,7 +55,7 @@ program
         console.error(`[c3] error: invalid port: ${opts.port}`)
         process.exit(1)
       }
-      await startServer({ projectPath, port, dev: opts.dev, opencodeUrl: opts.opencodeUrl })
+      await startServer({ workspacePath, port, dev: opts.dev, opencodeUrl: opts.opencodeUrl })
     },
   )
 

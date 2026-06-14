@@ -76,7 +76,7 @@ describe('schema', () => {
 
 describe('discussions CRUD', () => {
   it('creates a discussion with defaults and reads it back', () => {
-    const d = createDiscussion({ projectPath: proj, title: 'T', type: 'design' })
+    const d = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
     expect(d.status).toBe('draft') // default
     expect(d.goal).toBe('') // default
     expect(d.context).toBe('')
@@ -94,7 +94,7 @@ describe('discussions CRUD', () => {
 
   it('honors explicit goal/context/status on create', () => {
     const d = createDiscussion({
-      projectPath: proj,
+      workspacePath: proj,
       title: 'T',
       type: 'arch',
       goal: 'decide X',
@@ -108,7 +108,7 @@ describe('discussions CRUD', () => {
 
   it('persists and reads back the selected participant set', () => {
     const d = createDiscussion({
-      projectPath: proj,
+      workspacePath: proj,
       title: 'T',
       type: 'design',
       participantAgentIds: ['gpt', 'claude'],
@@ -119,7 +119,7 @@ describe('discussions CRUD', () => {
 
   it('setDiscussionResearchResult writes research_result and leaves context untouched', () => {
     const d = createDiscussion({
-      projectPath: proj,
+      workspacePath: proj,
       title: 'T',
       type: 'design',
       context: 'USER ORIGINAL',
@@ -131,8 +131,8 @@ describe('discussions CRUD', () => {
   })
 
   it('orders by updated_at descending and filters by status', () => {
-    const a = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
-    createDiscussion({ projectPath: proj, title: 'B', type: 't' })
+    const a = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
+    createDiscussion({ workspacePath: proj, title: 'B', type: 't' })
     updateDiscussionStatus(a.id, 'in_progress')
     const list = listDiscussions(proj)
     expect(list.map((x) => x.title).sort()).toEqual(['A', 'B'])
@@ -147,14 +147,14 @@ describe('discussions CRUD', () => {
   })
 
   it('scopes by project and normalizes the path (resolve)', () => {
-    createDiscussion({ projectPath: '/abs/project-a/', title: 'A', type: 't' }) // trailing slash
-    createDiscussion({ projectPath: '/abs/project-b', title: 'B', type: 't' })
+    createDiscussion({ workspacePath: '/abs/project-a/', title: 'A', type: 't' }) // trailing slash
+    createDiscussion({ workspacePath: '/abs/project-b', title: 'B', type: 't' })
     expect(listDiscussions('/abs/project-a').map((x) => x.title)).toEqual(['A'])
     expect(listDiscussions('/abs/project-b').map((x) => x.title)).toEqual(['B'])
   })
 
   it('stamps completedAt when completed and clears it when reverted', () => {
-    const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    const d = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
     expect(getDiscussion(d.id)?.completedAt).toBeNull()
 
     updateDiscussionStatus(d.id, 'completed')
@@ -168,7 +168,7 @@ describe('discussions CRUD', () => {
   })
 
   it('sets the conclusion and bumps updated_at', () => {
-    const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    const d = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
     setConclusion(d.id, 'we will use approach X')
     const got = getDiscussion(d.id)
     expect(got?.conclusion).toBe('we will use approach X')
@@ -176,7 +176,7 @@ describe('discussions CRUD', () => {
   })
 
   it('persists the agenda (subtopics + index) and round-trips the JSON', () => {
-    const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    const d = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
     setAgenda(d.id, ['延迟', '成本', '运维'], 1)
     const got = getDiscussion(d.id)
     expect(got?.agenda).toEqual(['延迟', '成本', '运维'])
@@ -188,7 +188,7 @@ describe('discussions CRUD', () => {
   })
 
   it('persists across a cache reset (real file)', () => {
-    const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    const d = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
     setAgenda(d.id, ['x'], 0)
     resetDbForTests()
     resetStoreForTests()
@@ -199,7 +199,7 @@ describe('discussions CRUD', () => {
 
 describe('discussion messages', () => {
   it('appends messages with monotonic per-discussion seq and bumps the discussion', () => {
-    const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    const d = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
     const m1 = appendMessage({ discussionId: d.id, speakerKind: 'human', content: 'hi' })
     const m2 = appendMessage({
       discussionId: d.id,
@@ -217,15 +217,15 @@ describe('discussion messages', () => {
   })
 
   it('keeps seq independent per discussion', () => {
-    const a = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
-    const b = createDiscussion({ projectPath: proj, title: 'B', type: 't' })
+    const a = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
+    const b = createDiscussion({ workspacePath: proj, title: 'B', type: 't' })
     appendMessage({ discussionId: a.id, speakerKind: 'human', content: 'a1' })
     const b1 = appendMessage({ discussionId: b.id, speakerKind: 'human', content: 'b1' })
     expect(b1.seq).toBe(1) // not 2 — scoped to discussion b
   })
 
   it('lists messages in seq order with nullable speaker fields defaulting to null', () => {
-    const d = createDiscussion({ projectPath: proj, title: 'A', type: 't' })
+    const d = createDiscussion({ workspacePath: proj, title: 'A', type: 't' })
     appendMessage({ discussionId: d.id, speakerKind: 'organizer', content: 'first' })
     appendMessage({ discussionId: d.id, speakerKind: 'human', content: 'second' })
     const msgs = listMessages(d.id)
@@ -320,7 +320,7 @@ describe('migration', () => {
 
     // First store access ensures the discussion schema.
     resetStoreForTests()
-    expect(() => createDiscussion({ projectPath: proj, title: 'A', type: 't' })).not.toThrow()
+    expect(() => createDiscussion({ workspacePath: proj, title: 'A', type: 't' })).not.toThrow()
     const tables = raw
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")
       .map((r) => r.name)
@@ -402,7 +402,7 @@ describe('degradation', () => {
     expect(listMessages('x')).toEqual([])
     expect(getAgentSession('x', 'y')).toBeNull()
     expect(listAgentSessions('x')).toEqual([])
-    expect(() => createDiscussion({ projectPath: proj, title: 'A', type: 't' })).toThrow(
+    expect(() => createDiscussion({ workspacePath: proj, title: 'A', type: 't' })).toThrow(
       /讨论库不可用/,
     )
     expect(() => setAgentSession('x', 'y', 's')).toThrow(/讨论库不可用/)

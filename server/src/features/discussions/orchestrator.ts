@@ -236,7 +236,7 @@ export async function runDiscussion(
   if (!initial) return
   console.log(`[c3:discussion] (${RUN_KIND}) start「${initial.goal.slice(0, 60)}」(${id})`)
 
-  const cwd = initial.projectPath
+  const cwd = initial.workspacePath
   const def = getDiscussionType(initial.type)
   const organizerCfg = deps.organizer()
   // The participant roster is the discussion's selected subset, resolved against

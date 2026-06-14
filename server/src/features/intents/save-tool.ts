@@ -8,7 +8,7 @@
  *  - `find_intents` / `view_intent` (read-only): let the agent search
  *    the project ledger and inspect one item so it can discover related work,
  *    avoid duplicates, and set `dependsOn` correctly. The gate auto-allows these
- *    (no confirmation). All three are bound to ONE project via `projectPath` in
+ *    (no confirmation). All three are bound to ONE project via `workspacePath` in
  *    the closure, so the agent can never read/write another project's ledger.
  *
  * Tools are named on the `c3` server, so the fully-qualified names are
@@ -41,14 +41,14 @@ import {
 /**
  * Build the `c3` MCP server carrying `save_intents`, bound to one project.
  *
- * `projectPath` is captured in the closure so the agent can't redirect the save
+ * `workspacePath` is captured in the closure so the agent can't redirect the save
  * to another project; `onSaved` lets the server broadcast the refreshed list
  * (the tool stays decoupled from connection state). Re-construct per run so the
  * binding always matches the current comm runtime's workspace.
  */
 export function createIntentMcpServer(
-  projectPath: string,
-  onSaved: (projectPath: string) => void,
+  workspacePath: string,
+  onSaved: (workspacePath: string) => void,
 ): Record<string, McpServerConfig> {
   // The three tools delegate to the shared core (`tool-defs.ts`). The save gate on
   // THIS (Claude) path is the SDK's `canUseTool` (classifyIntentTool ⇒ confirm-save),
@@ -56,10 +56,10 @@ export function createIntentMcpServer(
   // Spread into a fresh literal: the SDK's `tool()` result type carries an index
   // signature, which a named interface (`IntentToolResult`) is not assignable to.
   const saveHandler = async (args: SaveArgs) => ({
-    ...runSaveConfirmed(projectPath, args, onSaved),
+    ...runSaveConfirmed(workspacePath, args, onSaved),
   })
-  const findHandler = async (args: FindArgs) => ({ ...runFind(projectPath, args) })
-  const viewHandler = async (args: ViewArgs) => ({ ...runView(projectPath, args) })
+  const findHandler = async (args: FindArgs) => ({ ...runFind(workspacePath, args) })
+  const viewHandler = async (args: ViewArgs) => ({ ...runView(workspacePath, args) })
 
   const server = createSdkMcpServer({
     name: 'c3',

@@ -58,14 +58,14 @@ export interface Broadcasts {
   /** Push the supervised OpenCode server's current reachability to every connection. */
   broadcastOpencodeStatus: () => void
   /** Push a project's refreshed intent list (with runStatus enrichment). */
-  broadcastIntents: (projectPath: string) => void
+  broadcastIntents: (workspacePath: string) => void
   /**
    * Push a project's refreshed intent-communication-session list (with a
    * runStates snapshot). Used after list/add/rename/delete and on reconnect,
    * so the frontend authoritatively knows which sessions exist and which have
    * a live background agent run.
    */
-  broadcastIntentSessions: (projectPath: string) => void
+  broadcastIntentSessions: (workspacePath: string) => void
   /**
    * Push a workspace's refreshed session list to EVERY connection (the
    * `work_session_metadata` projection read). The per-connection `conn.sendSessions`
@@ -77,7 +77,7 @@ export interface Broadcasts {
    */
   broadcastSessions: (workspacePath: string) => void
   /** Push a project's refreshed discussion list (with run/research snapshots). */
-  broadcastDiscussions: (projectPath: string) => void
+  broadcastDiscussions: (workspacePath: string) => void
   /** Push a workspace's refreshed schedule list. */
   broadcastSchedules: (workspacePath: string) => void
   /** Push an automation-orchestrator status to every connection. */
@@ -96,7 +96,7 @@ export interface Broadcasts {
   /** Broadcast a discussion's research-run liveness (runtime-only). */
   broadcastResearchRunStatus: (discussionId: string, state: 'running' | 'ended') => void
   /** Push a project's refreshed wait-user-involve event list (todo status). */
-  broadcastWaitUserEvents: (projectPath: string) => void
+  broadcastWaitUserEvents: (workspacePath: string) => void
 }
 
 /**
@@ -125,11 +125,11 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   // a status change, or a dev launch. Applies runStatus enrichment so each
   // client sees the reconciled running/dangling/idle state. No-op when the
   // store is unavailable.
-  const broadcastIntents = (projectPath: string): void => {
+  const broadcastIntents = (workspacePath: string): void => {
     if (!isStoreAvailable()) return
-    const proj = resolve(projectPath)
+    const proj = resolve(workspacePath)
     const items = enrichRunStatus(listIntents(proj))
-    broadcaster.toAll({ type: 'intents', projectPath: proj, items })
+    broadcaster.toAll({ type: 'intents', workspacePath: proj, items })
   }
 
   // Snapshot helper: which listed intent sessions have a live agent run.
@@ -151,12 +151,12 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   // Push a project's refreshed intent-communication-session list (with a
   // runStates snapshot). No-op when the store is unavailable. The frontend
   // pops back to the latest is_current when its current session is deleted.
-  const broadcastIntentSessions = (projectPath: string): void => {
+  const broadcastIntentSessions = (workspacePath: string): void => {
     if (!isStoreAvailable()) return
-    const proj = resolve(projectPath)
+    const proj = resolve(workspacePath)
     const items = listChatSessions(proj)
     const runStates = intentSessionRunSnapshot(items)
-    broadcaster.toAll({ type: 'intent_sessions', projectPath: proj, items, runStates })
+    broadcaster.toAll({ type: 'intent_sessions', workspacePath: proj, items, runStates })
   }
 
   // Push a workspace's refreshed session list to every connection. Mirrors the
@@ -175,13 +175,19 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   // Push a project's refreshed discussion list. The frontend keeps a
   // per-project cache and renders the one it's viewing. No-op when the store
   // is unavailable.
-  const broadcastDiscussions = (projectPath: string): void => {
+  const broadcastDiscussions = (workspacePath: string): void => {
     if (!isDiscussionStoreAvailable()) return
-    const proj = resolve(projectPath)
+    const proj = resolve(workspacePath)
     const items = listDiscussions(proj)
     const runStates = discussionRunSnapshot(items)
     const researchStates = researchRunSnapshot(items)
-    broadcaster.toAll({ type: 'discussions', projectPath: proj, items, runStates, researchStates })
+    broadcaster.toAll({
+      type: 'discussions',
+      workspacePath: proj,
+      items,
+      runStates,
+      researchStates,
+    })
   }
 
   // Push a workspace's schedule list. Used after create/update/delete. No-op
@@ -254,9 +260,9 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   // events are broadcast — the frontend's pending-items badge count uses them.
   // 'done' / 'canceled' events are still queryable via list_wait_user_events
   // with an explicit status filter, but are never pushed proactively.
-  const broadcastWaitUserEvents = (projectPath: string): void => {
+  const broadcastWaitUserEvents = (workspacePath: string): void => {
     if (!isWaitUserEventsStoreAvailable()) return
-    const proj = resolve(projectPath)
+    const proj = resolve(workspacePath)
     const items = listWaitUserEvents(proj, 'todo')
     broadcaster.toAll({ type: 'wait_user_events', items })
   }

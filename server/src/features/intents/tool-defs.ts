@@ -100,12 +100,12 @@ export const findDesc =
 
 export const viewDesc = '按 id 查看本项目单条意图的完整详情(只读,含 content、dependsOn 等)。'
 
-// ---- Core logic (framing-free; bound to ONE project via `projectPath`) ----
+// ---- Core logic (framing-free; bound to ONE project via `workspacePath`) ----
 
 /** Search the project ledger (read-only). */
-export function runFind(projectPath: string, args: FindArgs): IntentToolResult {
+export function runFind(workspacePath: string, args: FindArgs): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,无法检索。'), isError: true }
-  const rows = findIntents(projectPath, {
+  const rows = findIntents(workspacePath, {
     keyword: args.keyword,
     module: args.module,
     status: args.status,
@@ -128,10 +128,10 @@ export function runFind(projectPath: string, args: FindArgs): IntentToolResult {
 }
 
 /** View one item by id, bound to the closure project (no cross-project reads). */
-export function runView(projectPath: string, args: ViewArgs): IntentToolResult {
+export function runView(workspacePath: string, args: ViewArgs): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,无法查看。'), isError: true }
   const req = getIntent(args.id)
-  if (!req || req.projectPath !== resolve(projectPath)) {
+  if (!req || req.workspacePath !== resolve(workspacePath)) {
     return { content: text(`未找到 id 为 ${args.id} 的意图(本项目)。`) }
   }
   return { content: text(JSON.stringify(req, null, 2)) }
@@ -139,19 +139,19 @@ export function runView(projectPath: string, args: ViewArgs): IntentToolResult {
 
 /**
  * Persist a CONFIRMED batch (the caller already passed the save gate). Bound to
- * `projectPath`; `onSaved` lets the caller broadcast the refreshed list.
+ * `workspacePath`; `onSaved` lets the caller broadcast the refreshed list.
  */
 export function runSaveConfirmed(
-  projectPath: string,
+  workspacePath: string,
   args: SaveArgs,
-  onSaved: (projectPath: string) => void,
+  onSaved: (workspacePath: string) => void,
 ): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,未保存。'), isError: true }
   try {
     const updated = args.intents.filter((it) => it.id !== undefined).length
     const created = args.intents.length - updated
-    const saved = upsertIntents(projectPath, args.intents)
-    onSaved(projectPath)
+    const saved = upsertIntents(workspacePath, args.intents)
+    onSaved(workspacePath)
     const summary =
       updated > 0
         ? `已保存 ${saved.length} 条意图(新建 ${created}、更新 ${updated})`

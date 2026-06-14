@@ -89,15 +89,15 @@ export interface DomainSubDeps {
   /** Fan the sessions list for a workspace to every connection. */
   broadcastSessions: (workspacePath: string) => void
   /** Fan the intent list for a project to every connection. */
-  broadcastIntents: (projectPath: string) => void
+  broadcastIntents: (workspacePath: string) => void
   /** Fan the intent-session list for a project to every connection. */
-  broadcastIntentSessions: (projectPath: string) => void
+  broadcastIntentSessions: (workspacePath: string) => void
   /** Fan the discussion list for a project to every connection (2026-06-08-010). */
-  broadcastDiscussions: (projectPath: string) => void
+  broadcastDiscussions: (workspacePath: string) => void
   /** Fan the schedule list for a workspace to every connection (2026-06-08-010). */
   broadcastSchedules: (workspacePath: string) => void
   /** Fan the wait-user-involve event (todo) list for a project to every connection. */
-  broadcastWaitUserEvents: (projectPath: string) => void
+  broadcastWaitUserEvents: (workspacePath: string) => void
 }
 
 /**

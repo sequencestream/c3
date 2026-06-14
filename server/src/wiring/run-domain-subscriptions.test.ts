@@ -337,7 +337,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
         id: 'intent-1',
         lastDevSessionId: 'sess-m1',
         title: 'Test',
-        projectPath: '/proj',
+        workspacePath: '/proj',
       } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({

@@ -131,13 +131,13 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // Publish discussion run lifecycle events (2026-06-08-010).
     eventBus.publish('run:started', {
       sessionId: discussion.id,
-      workspacePath: discussion.projectPath,
+      workspacePath: discussion.workspacePath,
       kind: 'discussion',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
       realId: discussion.id,
-      workspacePath: discussion.projectPath,
+      workspacePath: discussion.workspacePath,
     })
 
     const sessionManager = new AgentSessionManager({
@@ -154,7 +154,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       sessionManager,
       onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
       // Status/conclusion changes ride the refreshed list broadcast.
-      onStatusChange: () => broadcastDiscussions(discussion.projectPath),
+      onStatusChange: () => broadcastDiscussions(discussion.workspacePath),
       onDispatchStatus: (s) => broadcastDiscussionDispatchStatus(discussion.id, s),
       gate: makeDiscussionGate(ctrl),
     })
@@ -170,7 +170,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         if (abort.signal.aborted) settledReason = 'aborted'
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: discussion.projectPath,
+          workspacePath: discussion.workspacePath,
           reason: settledReason,
           kind: 'discussion',
         })
@@ -197,13 +197,13 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // Publish research run lifecycle events (2026-06-08-010).
     eventBus.publish('run:started', {
       sessionId: discussion.id,
-      workspacePath: discussion.projectPath,
+      workspacePath: discussion.workspacePath,
       kind: 'discussion',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
       realId: discussion.id,
-      workspacePath: discussion.projectPath,
+      workspacePath: discussion.workspacePath,
     })
 
     void researchDiscussionContext(discussion, {
@@ -215,7 +215,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         const reason: RunEndReason = abort.signal.aborted ? 'aborted' : ok ? 'complete' : 'error'
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: discussion.projectPath,
+          workspacePath: discussion.workspacePath,
           reason,
           kind: 'discussion',
         })
@@ -241,7 +241,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         // so this only fires on a wiring fault. Ensure settled fires for liveness.
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: discussion.projectPath,
+          workspacePath: discussion.workspacePath,
           reason: 'error',
           kind: 'discussion',
         })

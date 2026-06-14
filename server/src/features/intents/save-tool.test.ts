@@ -242,7 +242,7 @@ describe('save_intents tool handler', () => {
   })
 
   it('binds to the closure project path, not a wire-supplied one (no cross-project save)', async () => {
-    // Design R6 / §4.5: projectPath is captured in the closure so the agent can't
+    // Design R6 / §4.5: workspacePath is captured in the closure so the agent can't
     // redirect the save elsewhere. Two servers for two projects stay isolated.
     const handlerA = getSaveHandler(createIntentMcpServer('/abs/proj-a', () => {}))
     const handlerB = getSaveHandler(createIntentMcpServer('/abs/proj-b', () => {}))

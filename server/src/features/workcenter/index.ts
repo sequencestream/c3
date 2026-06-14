@@ -27,20 +27,20 @@ import { countRealInRange } from '../works/work-session-store.js'
 
 /** Build one project's rollup from the store/runtime counts. */
 function projectStats(
-  projectPath: string,
+  workspacePath: string,
   projectName: string,
   startTime?: number,
   endTime?: number,
 ): TimeRangeProjectStats {
-  const intents = countIntentsByStatus(projectPath, startTime, endTime)
-  const discussions = countDiscussionsByStatus(projectPath, startTime, endTime)
-  const schedules = countSchedulesInRange(projectPath, startTime, endTime)
+  const intents = countIntentsByStatus(workspacePath, startTime, endTime)
+  const discussions = countDiscussionsByStatus(workspacePath, startTime, endTime)
+  const schedules = countSchedulesInRange(workspacePath, startTime, endTime)
   return {
-    projectPath,
+    workspacePath,
     projectName,
     workSessions: {
-      total: countRealInRange(projectPath, startTime, endTime),
-      running: runningCountForWorkspace(projectPath),
+      total: countRealInRange(workspacePath, startTime, endTime),
+      running: runningCountForWorkspace(workspacePath),
     },
     intents: {
       in_progress: intents.in_progress ?? 0,
@@ -54,7 +54,7 @@ function projectStats(
     schedules: {
       total: schedules.total,
       active: schedules.active,
-      running: countRunningSchedules(projectPath),
+      running: countRunningSchedules(workspacePath),
     },
   }
 }

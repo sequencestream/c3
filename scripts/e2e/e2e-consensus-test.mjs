@@ -126,7 +126,7 @@ ws.addEventListener('message', (evt) => {
         consensusSaveSent = true
         send({
           type: 'save_workspace_setting',
-          projectPath: PROJECT_DIR,
+          workspacePath: PROJECT_DIR,
           config: { consensus: { enabled: true, majority: false } },
         })
       }

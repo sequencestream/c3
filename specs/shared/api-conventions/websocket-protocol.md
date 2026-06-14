@@ -113,55 +113,55 @@
 
 加载工作区设置。服务器回复 `workspace_setting`。
 
-**字段：** `projectPath: string`
+**字段：** `workspacePath: string`
 
 ### `save_workspace_setting`
 
 保存工作区设置。
 
-**字段：** `projectPath: string`, `config: WorkspaceSetting`
+**字段：** `workspacePath: string`, `config: WorkspaceSetting`
 
 ### `list_intents`
 
 请求项目的 intent 列表，可按状态过滤。服务器回复 `intents`。如果账本不可用则返回 `error`。
 
-**字段：** `projectPath: string`, `status?: IntentStatus`
+**字段：** `workspacePath: string`, `status?: IntentStatus`
 
 ### `open_intent_chat`
 
 进入 intent 视图：打开或切换到通信会话。提供 `sessionId` 时打开该特定会话（并将其设为 `isCurrent`）；不提供时打开项目的 `is_current` 会话（若无则创建一个新的 `pending:` 会话）。回复 `session_selected` 加 `intents` 列表（intent-management RM-R4）。
 
-**字段：** `projectPath: string`, `sessionId?: string`
+**字段：** `workspacePath: string`, `sessionId?: string`
 
 ### `list_intent_sessions`
 
 列出项目的 intent 通信会话。回复 `intent_sessions`。每个会话携带 `sessionId`、`title`（可为空）和 `updatedAt`。响应还携带活跃 agent run 会话的 `runStates` 快照。
 
-**字段：** `projectPath: string`
+**字段：** `workspacePath: string`
 
 ### `rename_intent_session`
 
 重命名 intent 通信会话。成功后服务器广播刷新后的 `intent_sessions` 列表。
 
-**字段：** `projectPath: string`, `sessionId: string`, `title: string`
+**字段：** `workspacePath: string`, `sessionId: string`, `title: string`
 
 ### `delete_intent_session`
 
 删除 intent 通信会话：移除数据库行、移除运行时（中止任何活跃 run）、广播刷新后的列表。如果被删除的会话是 `isCurrent`，则最近的剩余会话成为新的默认。会话不存在时返回错误。
 
-**字段：** `projectPath: string`, `sessionId: string`
+**字段：** `workspacePath: string`, `sessionId: string`
 
 ### `new_intent_chat`
 
 启动全新的通信会话：将之前 `is_current` 的通信会话重置为 0，创建一个标记为当前的新会话，回复 `session_selected`（空历史记录）加 `intents` 列表。由 intent 标题栏中的 "+" 按钮触发（RM-R4）。
 
-**字段：** `projectPath: string`
+**字段：** `workspacePath: string`
 
 ### `refine_intent`
 
 重新启动通信会话，注入一个 intent 的内容作为种子，以进一步细化该 intent（RM-R7）。
 
-**字段：** `projectPath: string`, `intentId: string`
+**字段：** `workspacePath: string`, `intentId: string`
 
 ### `discussion_to_intent`
 
@@ -173,7 +173,7 @@
 
 为 `todo` 状态的 intent 启动后台开发会话，使用可配置的开发 skill（系统设置中的 `devSkill`；默认为空 ⇒ 不加 skill 前缀）。将其设为 `in_progress` 并记录 `lastDevSessionId`（RM-R8）。对未满足的依赖关系仅警告（不阻止）。
 
-**字段：** `projectPath: string`, `intentId: string`
+**字段：** `workspacePath: string`, `intentId: string`
 
 ### `update_intent_status`
 
@@ -191,19 +191,19 @@
 
 启动项目的自动化编排器（已在运行则为空操作）；回复 `automation_status`（RM-A2/A3）。
 
-**字段：** `projectPath: string`
+**字段：** `workspacePath: string`
 
 ### `stop_automation`
 
 停止编排器，中止当前开发 run；回复 `automation_status` → `idle`（RM-A7）。
 
-**字段：** `projectPath: string`
+**字段：** `workspacePath: string`
 
 ### `list_discussions`
 
 请求项目的 discussion 列表，可按状态过滤。服务器回复 `discussions`。如果 discussion store 不可用（`c3.db`）则返回 `error`。
 
-**字段：** `projectPath: string`, `status?: DiscussionStatus`
+**字段：** `workspacePath: string`, `status?: DiscussionStatus`
 
 ### `create_discussion`
 
@@ -211,7 +211,7 @@
 
 研究 run 是**可观察的**——每个回合作为 `research_message` 流式传输，其活跃状态作为 `research_run_status` 广播（`running` 然后完成/失败/进程死亡时 `ended`）——并在结算时再次推送 `discussions`。**研究成功后服务器自动启动编排**（`canAutoStartDiscussion` 守卫重新检查 `draft` + 无活跃 run；等同于自动 `start_discussion`）；研究失败则保持 `draft` 状态等待手动 **Start**。
 
-**字段：** `projectPath: string`, `discussionType: string`, `goal: string`, `context?: string`
+**字段：** `workspacePath: string`, `discussionType: string`, `goal: string`, `context?: string`
 
 ### `open_discussion`
 
@@ -337,19 +337,19 @@
 
 查询某项目下每个已配置 skill repo 的安装链接状态（2026-06-12）。服务器回复 `skill_link_status`：按 `id` 返回 `_c3_<id>` 是否为两个共享公共 skill 目录（`.claude/skills`、`.agents/skills`）下的活跃软链。只读、零网络。外部 skill 已不在启动时挂载，改由设置面板显式安装。
 
-**字段：** `projectPath: string`
+**字段：** `workspacePath: string`
 
 ### `install_skill`
 
 显式安装（或更新）某个已配置 skill repo（2026-06-12）：clone/pull 配置 ref 的最新 head，删除旧 `_c3_<id>` 软链/目录后重新建链到两个公共目录。保留一次性 `.gitignore` 追加确认。服务器回复 `skill_install_result`。替代已移除的启动时自动挂载——安装只由用户动作触发。
 
-**字段：** `projectPath: string`, `skillId: string`
+**字段：** `workspacePath: string`, `skillId: string`
 
 ### `list_wait_user_events`
 
 请求项目的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。服务器回复 `wait_user_events`。
 
-**字段：** `projectPath: string`, `status?: WaitUserInvolveStatus`
+**字段：** `workspacePath: string`, `status?: WaitUserInvolveStatus`
 
 ### `ping`
 
@@ -446,19 +446,19 @@
 
 工作区的标准化设置（回复 `load_workspace_setting` 或 `save_workspace_setting`）。`config` 含两个 git 分支模式字段：`gitBranchMode: 'current-branch' | 'worktree'`（缺省 `current-branch`）与 `defaultMainBranch?: string`（`worktree` 模式下新 worktree 的基准分支）。`detectedMainBranch?` 是服务端探测到的仓库默认分支（`origin/HEAD` → 当前 HEAD），仅在 `load` 回复时下发，表单用它预填 `defaultMainBranch`（已保存值优先于探测值）。
 
-**字段：** `projectPath: string`, `config: WorkspaceSetting`, `detectedMainBranch?: string`
+**字段：** `workspacePath: string`, `config: WorkspaceSetting`, `detectedMainBranch?: string`
 
 ### `intents`
 
 项目的 intent 列表，回复 `list_intents` / `open_intent_chat`，或在确认 `save_intents` 后广播（intent-management）。
 
-**字段：** `projectPath: string`, `items: Intent[]`
+**字段：** `workspacePath: string`, `items: Intent[]`
 
 ### `intent_sessions`
 
 项目的 intent 通信会话列表（回复 `list_intent_sessions` 或在更改后推送）。`runStates` 是哪些列出的会话有活跃 agent run 的实时快照（id → `'running'`）——缺失条目表示没有活跃 run。每次列表发送都携带（首次获取 / 重连重新获取 / 状态变更推送），因此刷新或重连可权威地对账后台会话的 run 状态（与持久化 `status` 解耦）。
 
-**字段：** `projectPath: string`, `items: IntentSessionInfo[]`, `runStates?: Record<string, 'running'>`
+**字段：** `workspacePath: string`, `items: IntentSessionInfo[]`, `runStates?: Record<string, 'running'>`
 
 ### `automation_status`
 
@@ -470,7 +470,7 @@
 
 项目的 discussion 列表（回复 `list_discussions`，或在更改后推送）。`runStates` 是哪些列出的 discussion 有活跃编排 run 的实时快照（id → `running`/`paused`）——仅活跃条目存在。`researchStates` 是只读研究阶段的伴生快照（id → `running`，仅活跃研究 run 的 discussion 存在）。两者每次列表发送都携带，因此刷新或重连可权威地重建右侧面板的研究阶段或编排 run 状态。
 
-**字段：** `projectPath: string`, `items: Discussion[]`, `runStates?: Record<string, 'running' | 'paused'>`, `researchStates?: Record<string, 'running'>`
+**字段：** `workspacePath: string`, `items: Discussion[]`, `runStates?: Record<string, 'running' | 'paused'>`, `researchStates?: Record<string, 'running'>`
 
 ### `discussion_detail`
 
@@ -688,13 +688,13 @@ schedule 的执行日志。
 
 回复 `get_skill_link_status`（2026-06-12）：每个已配置 skill repo 一条 `SkillLinkStatus`，报告 `_c3_<id>` 在两个共享公共目录下的软链存在性。
 
-**字段：** `projectPath: string`, `statuses: SkillLinkStatus[]`（`SkillLinkStatus = { id, claudeSkills, agentsSkills }`）
+**字段：** `workspacePath: string`, `statuses: SkillLinkStatus[]`（`SkillLinkStatus = { id, claudeSkills, agentsSkills }`）
 
 ### `skill_install_result`
 
 回复 `install_skill`（2026-06-12）。`ok` 表示该 skill 已 clone/pull 到 ref 最新 head 并重新链入两个公共目录。失败时 `reason` 为机器标记（`not-configured` / `repo-error` / `gitignore-cancelled`，UI 映射文案），`detail` 为英文调试文本（非 UI 文案）。
 
-**字段：** `projectPath: string`, `skillId: string`, `ok: boolean`, `reason?: string`, `detail?: string`
+**字段：** `workspacePath: string`, `skillId: string`, `ok: boolean`, `reason?: string`, `detail?: string`
 
 ### `pong`
 
@@ -755,10 +755,10 @@ schedule 的执行日志。
 
 - **`IntentPriority`** — `'P0' | 'P1' | 'P2' | 'P3'`（P0 最高）。
 - **`IntentStatus`** — `'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'`。
-- **`Intent`** — `{ id, projectPath, title, content, priority, module, status, dependsOn, lastDevSessionId, automate, createdAt, updatedAt, completedAt, runStatus }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态。
+- **`Intent`** — `{ id, workspacePath, title, content, priority, module, status, dependsOn, lastDevSessionId, automate, createdAt, updatedAt, completedAt, runStatus }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态。
 - **`ProposedIntent`** — `{ id?, title, content, priority, module?, dependsOn?, dependsOnIndexes? }`。`save_intents` 调用中的一个项。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。
 - **`AutomationState`** — `'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'`。
-- **`AutomationStatus`** — `{ projectPath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。
+- **`AutomationStatus`** — `{ workspacePath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。
 
 通信 agent 的保存确认复用 `permission_request` / `permission_response`，其中 `toolName === 'mcp__c3__save_intents'`，`input.intents: ProposedIntent[]`。
 
@@ -768,7 +768,7 @@ schedule 的执行日志。
 
 - **`DiscussionStatus`** — `'draft' | 'in_progress' | 'completed' | 'cancelled'`。
 - **`DiscussionSpeakerKind`** — `'organizer' | 'agent' | 'human'`。消息作者类别。
-- **`Discussion`** — `{ id, projectPath, title, type, goal, context, researchResult, status, agenda, agendaIndex, conclusion, createdAt, updatedAt, completedAt }`。项目范围 discussion。`context` 是用户的原始输入，永不覆写。`researchResult` 是只读研究 agent 的完成输出，独立于 `context`。`agenda` 是 organizer 的有序子主题（`[]` 表示未设置）；`agendaIndex` 是当前子主题的 0 基索引。
+- **`Discussion`** — `{ id, workspacePath, title, type, goal, context, researchResult, status, agenda, agendaIndex, conclusion, createdAt, updatedAt, completedAt }`。项目范围 discussion。`context` 是用户的原始输入，永不覆写。`researchResult` 是只读研究 agent 的完成输出，独立于 `context`。`agenda` 是 organizer 的有序子主题（`[]` 表示未设置）；`agendaIndex` 是当前子主题的 0 基索引。
 - **`DiscussionMessage`** — `{ id, discussionId, seq, speakerKind, speakerAgentId, speakerName, content, createdAt }`。一条消息，按每个 discussion 单调递增的 `seq`（从 1 开始）排序。
 - **`ResearchMessage`** — `{ discussionId, seq, kind, content, createdAt }`。研究 run 的流式项。仅运行时——不持久化。
 
@@ -794,7 +794,7 @@ schedule 的执行日志。
 
 - **`WaitUserInvolveSource`** — `'session' | 'intent' | 'discussion' | 'schedule'`。事件的来源类别。
 - **`WaitUserInvolveStatus`** — `'todo' | 'done' | 'canceled'`。
-- **`WaitUserInvolveEvent`** — `{ id, projectPath, source, sourceId, title, requestId, toolName, toolInput, status, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。
+- **`WaitUserInvolveEvent`** — `{ id, workspacePath, source, sourceId, title, requestId, toolName, toolInput, status, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。
 
 ## UI 错误码（`UiError`）
 

@@ -128,7 +128,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent {
   }
   return {
     id: r.id,
-    projectPath: r.project_path,
+    workspacePath: r.project_path,
     source: r.source as WaitUserInvolveSource,
     sourceId: r.source_id,
     title: r.title,
@@ -143,7 +143,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent {
 
 /** Fields a caller supplies when creating a wait-user-involve event. */
 export interface CreateEventInput {
-  projectPath: string
+  workspacePath: string
   source: WaitUserInvolveSource
   sourceId?: string | null
   title?: string | null
@@ -167,7 +167,7 @@ export function createEvent(input: CreateEventInput): WaitUserInvolveEvent {
        (id, project_path, source, source_id, title, request_id, tool_name, tool_input, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     id,
-    resolve(input.projectPath),
+    resolve(input.workspacePath),
     input.source,
     input.sourceId ?? null,
     input.title ?? null,
@@ -194,12 +194,12 @@ export function getEvent(id: string): WaitUserInvolveEvent | null {
  * first (descending `created_at` — events are insert-only, so no `updated_at` sort).
  */
 export function listEvents(
-  projectPath: string,
+  workspacePath: string,
   status?: WaitUserInvolveStatus,
 ): WaitUserInvolveEvent[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   const rows = status
     ? d.all<EventRow>(
         'SELECT * FROM wait_user_involve_events WHERE project_path=? AND status=? ORDER BY created_at DESC',

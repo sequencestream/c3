@@ -25,7 +25,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
     discussionMaxSeq.value = 0
     discussionInput.value = ''
     ctx.persistViewMode()
-    send({ type: 'list_discussions', projectPath: path })
+    send({ type: 'list_discussions', workspacePath: path })
   }
 
   // Click a discussion in the list: pull its detail (discussion + full history).
@@ -63,7 +63,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
     if (!discussionsProject.value) return
     send({
       type: 'create_discussion',
-      projectPath: discussionsProject.value,
+      workspacePath: discussionsProject.value,
       discussionType: payload.type,
       goal: payload.goal,
       context: payload.context,
@@ -108,7 +108,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
   ctx.convertDiscussionToIntent = (): void => {
     const d = activeDiscussion.value
     if (!d || d.status !== 'completed') return
-    intentsProject.value = d.projectPath
+    intentsProject.value = d.workspacePath
     activeTab.value = 'intents'
     ctx.persistViewMode()
     send({ type: 'discussion_to_intent', discussionId: d.id })

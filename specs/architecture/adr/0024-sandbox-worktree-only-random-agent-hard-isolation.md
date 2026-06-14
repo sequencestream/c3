@@ -13,7 +13,7 @@ ADR-0020/0021 建立了 sandbox 驱动与双层配置；ADR-0019 之后的 workt
 `/workspace`；c3-home 默认在 HOME 下，恒被共享。c3-home 由 `--settings`/`C3_DIR`/`~/.c3` 解析。）
 
 但接线之前，sandbox 启动门是 `run-lifecycle.ts` 的 `!isIntent` 分支，且 `launchSandbox` 挂的是
-`projectPath`（主项目目录）。这有两个问题：
+`workspacePath`（主项目目录）。这有两个问题：
 
 1. **挂错目录**：容器挂主目录而非 worktree，意图 A/B 的"工作目录隔离"形同虚设——容器看到并能改主项目。
 2. **门太宽**：`!isIntent` 覆盖了所有非 intent-comm run（普通 chat 会话也中招），与"sandbox 服务 worktree
@@ -56,7 +56,7 @@ ADR-0020/0021 建立了 sandbox 驱动与双层配置；ADR-0019 之后的 workt
 
 ## Alternatives Considered
 
-- **保留 `!isIntent` 门 + 挂 projectPath**：现状，隔离不成立。否决。
+- **保留 `!isIntent` 门 + 挂 workspacePath**：现状，隔离不成立。否决。
 - **"首个可用" agent 而非随机**：需健康探测，偏离用户确认的随机策略。否决。
 - **非 claude 写约定环境变量名进 env-file**（OPENAI_BASE_URL 等）：容器内连通性未经验证、变量名可能需校正，
   作为 MVP 引入未验证行为风险高。改为本轮硬失败、留作后续。否决（本轮）。

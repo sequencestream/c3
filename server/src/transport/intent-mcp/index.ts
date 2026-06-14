@@ -43,7 +43,7 @@ export const INTENT_MCP_PATH = '/internal/intent-mcp/v1'
 
 /** Per-run binding: which project the tools act on, the live run id, and the run's abort signal. */
 export interface IntentMcpBinding {
-  projectPath: string
+  workspacePath: string
   /** Reads the LIVE run id so a pending→real session rebind routes the save gate correctly. */
   getRunId: () => string
   signal: AbortSignal
@@ -55,8 +55,8 @@ export interface IntentMcpBinding {
  * root wires it to `permission_request`/`waitForDecision` + the intent store.
  */
 export interface IntentMcpTools {
-  find(projectPath: string, args: FindArgs): IntentToolResult | Promise<IntentToolResult>
-  view(projectPath: string, args: ViewArgs): IntentToolResult | Promise<IntentToolResult>
+  find(workspacePath: string, args: FindArgs): IntentToolResult | Promise<IntentToolResult>
+  view(workspacePath: string, args: ViewArgs): IntentToolResult | Promise<IntentToolResult>
   save(binding: IntentMcpBinding, args: SaveArgs): Promise<IntentToolResult>
 }
 
@@ -116,12 +116,12 @@ export function createIntentMcp(
     server.registerTool(
       'find_intents',
       { description: findDesc, inputSchema: findSchema },
-      async (args) => toCallResult(await tools.find(binding.projectPath, args as FindArgs)),
+      async (args) => toCallResult(await tools.find(binding.workspacePath, args as FindArgs)),
     )
     server.registerTool(
       'view_intent',
       { description: viewDesc, inputSchema: viewSchema },
-      async (args) => toCallResult(await tools.view(binding.projectPath, args as ViewArgs)),
+      async (args) => toCallResult(await tools.view(binding.workspacePath, args as ViewArgs)),
     )
     return server
   }

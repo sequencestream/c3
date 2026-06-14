@@ -73,8 +73,8 @@ export function installPersistence(ctx: AppCtx): void {
     if (saved.mode === 'intents' && saved.proj && list.some((w) => w.path === saved.proj)) {
       activeTab.value = 'intents'
       intentsProject.value = saved.proj
-      send({ type: 'open_intent_chat', projectPath: saved.proj })
-      send({ type: 'list_intent_sessions', projectPath: saved.proj })
+      send({ type: 'open_intent_chat', workspacePath: saved.proj })
+      send({ type: 'list_intent_sessions', workspacePath: saved.proj })
     }
   }
 
@@ -94,7 +94,7 @@ export function installPersistence(ctx: AppCtx): void {
     if (saved.mode === 'discussion' && saved.proj && list.some((w) => w.path === saved.proj)) {
       activeTab.value = 'discussion'
       discussionsProject.value = saved.proj
-      send({ type: 'list_discussions', projectPath: saved.proj })
+      send({ type: 'list_discussions', workspacePath: saved.proj })
       if (saved.id) {
         activeDiscussionId.value = saved.id
         send({ type: 'open_discussion', discussionId: saved.id })

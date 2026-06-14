@@ -12,7 +12,7 @@ A goal-directed conversation scoped to one project.
 | Attribute             | Type                    | Description                                                                                                                                                                                                                                     |
 | --------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                  | text (UUID)             | Stable identifier; referenced by messages                                                                                                                                                                                                       |
-| `projectPath`         | text (path)             | Resolved absolute workspace path; the project key (always `resolve()`d)                                                                                                                                                                         |
+| `workspacePath`       | text (path)             | Resolved absolute workspace path; the project key (always `resolve()`d)                                                                                                                                                                         |
 | `title`               | text                    | Short discussion title                                                                                                                                                                                                                          |
 | `type`                | text                    | Free-form discussion type/category (e.g. design, arch); no enum constraint at the persistence layer                                                                                                                                             |
 | `goal`                | text                    | What the discussion aims to achieve; `''` when unset                                                                                                                                                                                            |
@@ -30,7 +30,7 @@ A goal-directed conversation scoped to one project.
 `DiscussionStatus`: `draft` (created, not started) → `in_progress` (underway) →
 `completed` (concluded; stamps `completedAt`) / `cancelled` (abandoned, terminal, no stamp).
 
-Relationships: belongs to one project (by `projectPath`); has zero or more Discussion Messages.
+Relationships: belongs to one project (by `workspacePath`); has zero or more Discussion Messages.
 
 ## Discussion Message
 

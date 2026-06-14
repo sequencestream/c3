@@ -87,7 +87,7 @@ import {
 
 export interface ServerOptions {
   /** Optional seed workspace — added to the registry and made discoverable. */
-  projectPath?: string
+  workspacePath?: string
   port: number
   dev: boolean
   /**
@@ -335,7 +335,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
   // Seed the registry with the CLI-provided workspace (idempotent).
-  if (opts.projectPath) addWorkspace(opts.projectPath, Date.now())
+  if (opts.workspacePath) addWorkspace(opts.workspacePath, Date.now())
 
   // Single broadcast egress (ADR-0009 R2 / server refactor 2/3b). All wire frames
   // funnel through `broadcaster.toAll`; the per-run delivery (emit/viewers,
@@ -359,8 +359,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // never reaches the store. The intent route is mounted below (before the SPA
   // catch-all) and bound per-run via `intentProfile.bindDriverMcp`.
   const intentMcpTools: IntentMcpTools = {
-    find: (projectPath, args) => runFind(projectPath, args),
-    view: (projectPath, args) => runView(projectPath, args),
+    find: (workspacePath, args) => runFind(workspacePath, args),
+    view: (workspacePath, args) => runView(workspacePath, args),
     save: (binding, args) =>
       gatedSave(
         {
@@ -584,7 +584,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const server = serve({ fetch: app.fetch, port: opts.port }, (info) => {
     const url = `http://localhost:${info.port}`
     console.log(`[c3] server running at ${url}`)
-    if (opts.projectPath) console.log(`[c3] seed workspace: ${opts.projectPath}`)
+    if (opts.workspacePath) console.log(`[c3] seed workspace: ${opts.workspacePath}`)
     if (opts.dev) console.log(`[c3] dev mode — open Vite at http://localhost:5173`)
   })
   injectWebSocket(server)

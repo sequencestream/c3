@@ -17,7 +17,7 @@
  * survive across agent / server restarts. Cleanup is a future feature (only
  * optionally on intent done / cancelled / archived).
  *
- * The worktree path is fully deterministic from (projectPath, intentId), so
+ * The worktree path is fully deterministic from (workspacePath, intentId), so
  * resume scenarios can compute it without database lookups.
  */
 
@@ -65,18 +65,18 @@ function execGit(cwd: string, args: string[]): GitResult {
  * Convert an absolute project path to a safe filesystem segment under
  * `<c3-home>/worktrees/`, e.g. `/Users/foo/project` → `Users-foo-project`.
  */
-export function projectDirName(projectPath: string): string {
-  return projectPath.replace(/^\/+/, '').replace(/[/:]/g, '-')
+export function projectDirName(workspacePath: string): string {
+  return workspacePath.replace(/^\/+/, '').replace(/[/:]/g, '-')
 }
 
 /** The base directory under the c3 home that holds all worktrees for a project. */
-export function getWorktreeBase(projectPath: string): string {
-  return join(c3HomeDir(), 'worktrees', projectDirName(projectPath))
+export function getWorktreeBase(workspacePath: string): string {
+  return join(c3HomeDir(), 'worktrees', projectDirName(workspacePath))
 }
 
 /** The full path for a specific intent's worktree. Fully deterministic. */
-export function getWorktreePath(projectPath: string, intentId: string): string {
-  return join(getWorktreeBase(projectPath), `intent-${intentId}`)
+export function getWorktreePath(workspacePath: string, intentId: string): string {
+  return join(getWorktreeBase(workspacePath), `intent-${intentId}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -144,8 +144,8 @@ export function readBranch(worktreePath: string): string | null {
  * Returns `undefined` when neither resolves (detached HEAD with no remote, or a
  * non-git path) — callers then leave `defaultMainBranch` unset. Synchronous.
  */
-export function detectDefaultBranch(projectPath: string): string | undefined {
-  const sym = execGit(projectPath, [
+export function detectDefaultBranch(workspacePath: string): string | undefined {
+  const sym = execGit(workspacePath, [
     'symbolic-ref',
     '--quiet',
     '--short',
@@ -155,7 +155,7 @@ export function detectDefaultBranch(projectPath: string): string | undefined {
     const short = sym.stdout.trim().replace(/^origin\//, '')
     if (short) return short
   }
-  return readBranch(projectPath) ?? undefined
+  return readBranch(workspacePath) ?? undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -189,12 +189,12 @@ export interface CreateWorktreeResult {
  * communicate the error to the user (or stop the automation).
  */
 export function createWorktree(
-  projectPath: string,
+  workspacePath: string,
   intentId: string,
   title: string,
   baseBranch?: string,
 ): CreateWorktreeResult {
-  const worktreePath = getWorktreePath(projectPath, intentId)
+  const worktreePath = getWorktreePath(workspacePath, intentId)
 
   // Idempotent: existing worktree → return current info.
   if (worktreeExists(worktreePath)) {
@@ -220,7 +220,7 @@ export function createWorktree(
   const addArgs = ['worktree', 'add', '-b', branchName, worktreePath]
   const base = baseBranch?.trim()
   if (base) addArgs.push(base)
-  const res = execGit(projectPath, addArgs)
+  const res = execGit(workspacePath, addArgs)
 
   if (res.code === 0) {
     return { worktreePath, branchName }
@@ -229,7 +229,7 @@ export function createWorktree(
   // Branch already exists? Try with the existing branch instead.
   const stderr = res.stderr.toLowerCase()
   if (stderr.includes('already exists')) {
-    const retry = execGit(projectPath, ['worktree', 'add', worktreePath, branchName])
+    const retry = execGit(workspacePath, ['worktree', 'add', worktreePath, branchName])
     if (retry.code === 0) {
       return { worktreePath, branchName }
     }

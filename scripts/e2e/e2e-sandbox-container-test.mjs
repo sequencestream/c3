@@ -297,7 +297,7 @@ async function main() {
 
   send({
     type: 'save_workspace_setting',
-    projectPath: workspace,
+    workspacePath: workspace,
     config: {
       gitBranchMode: 'worktree',
       sandbox: { enabled: true, sandbox: DEF_NAME, agentIds: [] },

@@ -64,7 +64,7 @@ import {
 
 export interface CheckpointConsensusParams {
   /** The project path (resolved). */
-  projectPath: string
+  workspacePath: string
   /** The intent being developed. */
   intent: Intent
   /** The last assistant message from the dev turn. */
@@ -261,12 +261,12 @@ async function summarize(
 export async function runCheckpointConsensus(
   params: CheckpointConsensusParams,
 ): Promise<CheckpointConsensusOutcome | null> {
-  const { projectPath, intent, lastMessage, trigger, triggerReason, diffStat, signal } = params
+  const { workspacePath, intent, lastMessage, trigger, triggerReason, diffStat, signal } = params
 
   // Check both that consensus is enabled AND majority is on — checkpoint
   // consensus only makes sense with majority rule (unanimous-only would
   // routinely deadlock on a checkpoint that every agent agrees to pass).
-  if (!isConsensusEnabled(projectPath) || !isConsensusMajorityEnabled(projectPath)) {
+  if (!isConsensusEnabled(workspacePath) || !isConsensusMajorityEnabled(workspacePath)) {
     return null
   }
 
@@ -281,7 +281,7 @@ export async function runCheckpointConsensus(
   const votes: CheckpointConsensusVote[] = await Promise.all(
     voters.map(async (agent): Promise<CheckpointConsensusVote> => {
       try {
-        const text = await askAgentOnce(agent, prompt, projectPath, signal)
+        const text = await askAgentOnce(agent, prompt, workspacePath, signal)
         const parsed = parseCheckpointVote(text)
         if (!parsed) {
           return {
@@ -305,9 +305,9 @@ export async function runCheckpointConsensus(
 
   // Majority toggle is guaranteed true by the early return above, but we pass
   // it explicitly so the tally is consistent with the setting.
-  const majority = isConsensusMajorityEnabled(projectPath)
+  const majority = isConsensusMajorityEnabled(workspacePath)
   const { unanimous, decision } = tallyCheckpoint(votes, majority)
-  const summary = await summarize(votes, unanimous, decision, projectPath, signal)
+  const summary = await summarize(votes, unanimous, decision, workspacePath, signal)
 
   console.log(
     `[c3:checkpoint-consensus] (auto) result: ${decision ?? 'no_decision'} (unanimous=${unanimous}): ${summary}`,

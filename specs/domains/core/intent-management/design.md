@@ -84,35 +84,35 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
 
 ## Store (`store.ts`)
 
-- **Path normalization (RM-R10):** every `projectPath` arg is `resolve()`d before read/write,
+- **Path normalization (RM-R10):** every `workspacePath` arg is `resolve()`d before read/write,
   matching the workspace key / runtime `workspacePath` / SDK `cwd`. Otherwise queries miss and
   hidden filtering breaks.
-- Intents: `listIntents(projectPath, status?)` (with `dependsOn` aggregation),
-  `insertIntents(projectPath, items)` (transactional batch, uuid, status `todo`; persists
-  `module` as `it.module ?? ''`, `automate` defaults to `0`), `upsertIntents(projectPath, items)`
+- Intents: `listIntents(workspacePath, status?)` (with `dependsOn` aggregation),
+  `insertIntents(workspacePath, items)` (transactional batch, uuid, status `todo`; persists
+  `module` as `it.module ?? ''`, `automate` defaults to `0`), `upsertIntents(workspacePath, items)`
   (the `save_intents` write path — insert or in-place update per item `id`, RM-R20; see below),
   `updateStatus`, `setLastDevSession`, `setAutomate(id, automate)`, `updateIntent`, `getIntent`. The
   internal `Row`/`hydrate` carry `module` + `automate` (mapped to boolean) so every read path returns
   them; `updateIntent` does not patch `module` (`upsertIntents` writes `module` directly instead).
-- **Upsert write path (RM-R20).** `upsertIntents(projectPath, items)` backs `save_intents` (replacing
+- **Upsert write path (RM-R20).** `upsertIntents(workspacePath, items)` backs `save_intents` (replacing
   the old direct `insertIntents` call). It resolves each item to a stable id up front — the supplied
   `id` for an update, a fresh uuid for an insert — so `dependsOnIndexes` (RM-R17) resolves against the
   full batch regardless of whether a referenced sibling is new or being updated. **All validation runs
   before the transaction opens** (atomic reject, nothing half-written): each update `id` is fetched and
-  guarded `project_path === resolve(projectPath)` (unknown / cross-project ⇒ throw), and its current
+  guarded `project_path === resolve(workspacePath)` (unknown / cross-project ⇒ throw), and its current
   status is checked — `in_progress`/`done` throw as immutable, `cancelled` is flagged for reactivation.
   Inside the single `tx`, an update writes `title`/`content`/`priority`, writes `module` only when supplied
   (else keeps the prior), sets status to `todo` for a reactivated `cancelled` (else unchanged) with
   `completed_at` cleared, and rewrites `intent_deps` only when `dependsOn`/`dependsOnIndexes` was supplied;
   an insert behaves exactly as `insertIntents` (status `todo`, `created_at = now + index`). The
   `save_intents` handler turns any throw into an `isError` result so the agent learns nothing was written.
-- **Read-only agent query (RM-R19):** `findIntents(projectPath, { keyword?, module?, status? })`
+- **Read-only agent query (RM-R19):** `findIntents(workspacePath, { keyword?, module?, status? })`
   backs the agent's `find_intents` tool — filters compose with `AND`, all optional: `keyword`
   is a `LIKE` substring over `title` OR `content` (a tiny `escapeLike` escapes `% _ \` and the query
   uses `ESCAPE '\'` so a literal `%` doesn't act as a wildcard), `module`/`status` are exact-match;
   same `resolve()` + `project_path` scoping and `priority ASC, updated_at DESC` order as
   `listIntents`; `[]` when the db is unavailable. `view_intent` reuses the existing
-  `getIntent(id)` (id-only) and the **tool handler** guards `req.projectPath === resolve(projectPath)`
+  `getIntent(id)` (id-only) and the **tool handler** guards `req.workspacePath === resolve(workspacePath)`
   so an id from another project reads as not-found (no cross-project leak).
 - **Intra-batch dependencies (RM-R17).** `insertIntents` mints **all** row ids up front
   (`items.map(() => randomUUID())`) so a batch can reference its own siblings before any row has an
@@ -126,12 +126,12 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   same-priority, dependency-free items keep a deterministic submission-order rank in the
   orchestrator's oldest-first tiebreak (RM-A3), instead of the arbitrary order a single shared
   `now` produced.
-- Communication session (collection table): `getChatSession(projectPath)`
+- Communication session (collection table): `getChatSession(workspacePath)`
   (`is_current=1` — default-open pointer), `setChatSession` (clear the project's `is_current` then
   upsert the new row as `is_current=1`, also entering the hidden set),
-  `listChatSessions(projectPath)` (all rows, ordered by `updated_at` DESC),
+  `listChatSessions(workspacePath)` (all rows, ordered by `updated_at` DESC),
   `renameChatSession(sessionId, title)` (updates `title` + bumps `updated_at`),
-  `deleteChatSession(projectPath, sessionId)` (physically deletes the row; if the deleted row was
+  `deleteChatSession(workspacePath, sessionId)` (physically deletes the row; if the deleted row was
   `is_current`, promotes the most recent remaining row by `updated_at` to `is_current=1`),
   `isHiddenSession`/`listHiddenSessions`,
   `rebindChatSession(pendingId, realId)` (rewrite the pending row to the real id on first bind,
@@ -213,7 +213,7 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
 - **From discussion (`discussion_to_intent`):** the same refine machinery, but the seed is a
   completed discussion's `conclusion` rather than an existing intent. The server loads the
   discussion (`getDiscussion`), rejects unless `completed` with a non-empty `conclusion`, resolves
-  the project from `discussion.projectPath`, then runs the identical `pending:` intent-runtime
+  the project from `discussion.workspacePath`, then runs the identical `pending:` intent-runtime
   flow with a first prompt carrying the discussion title + conclusion ("基于以下讨论结论拆分出可验证
   的需求条目 …, 定稿后调用 save_intents"). Triggered by the discussion view's **Convert to
   Intent** button (RM-R7).
@@ -281,7 +281,7 @@ order so the orchestrator sequences correctly. The handler runs **only after** t
 (the gateway already allowed); it writes via `store.upsertIntents` (insert or in-place update per
 item id) and broadcasts a `intents` refresh, returning a text result that notes the insert/update
 split (or `isError` text on db-unavailable / failure — incl. an immutable-status or unknown / cross-project
-update id rejecting the whole batch — so the agent learns it did not save). `projectPath` is
+update id rejecting the whole batch — so the agent learns it did not save). `workspacePath` is
 closed over from the runtime's resolved `workspacePath` and re-bound each run, so the tool never
 crosses projects.
 
@@ -294,9 +294,9 @@ the HTTP MCP below) so they never drift.
 `IntentStatus` values) → `store.findIntents` → a **slim** JSON list
 (`id`/`title`/`module`/`priority`/`status`/`dependsOn`; `content` is deliberately omitted to keep the
 list compact) or a「未找到」message, and `view_intent` (`{ id }`) → `store.getIntent` →
-the single intent's **full** JSON, guarding `req.projectPath === resolve(projectPath)` so an
+the single intent's **full** JSON, guarding `req.workspacePath === resolve(workspacePath)` so an
 unknown / other-project id returns a friendly「未找到」text (not `isError`). Both close over the same
-`projectPath` (no cross-project reads), inherit `alwaysLoad`, and are auto-allowed by the gate
+`workspacePath` (no cross-project reads), inherit `alwaysLoad`, and are auto-allowed by the gate
 (`classifyIntentTool` → `allow`), unlike `save_intents`'s confirmation. The agent is
 prompted to query the ledger before splitting items or setting `dependsOn`.
 
@@ -310,7 +310,7 @@ route** at `INTENT_MCP_PATH` (`/internal/intent-mcp/v1`), mounted on c3's own Ho
 the SPA catch-all, like the codex relay), backed by `@modelcontextprotocol/sdk`'s `McpServer` +
 `StreamableHTTPServerTransport`.
 
-- **Per-run binding + isolation.** `runViaDriver` calls `intentProfile.bindDriverMcp({ projectPath,
+- **Per-run binding + isolation.** `runViaDriver` calls `intentProfile.bindDriverMcp({ workspacePath,
 getRunId, signal })` (only when `adapter.vendor === 'codex'` today), which mints an opaque token →
   a private MCP server whose tool handlers close over that run's project. The token rides the URL
   query (`?token=…`); the project binding lives in the closure, so an agent can neither read nor
@@ -522,9 +522,9 @@ All three check store availability first and return `error` on db-unavailable.
 
 ## Broadcast (`broadcasts.ts` + `KernelContext`)
 
-`broadcastIntentSessions(projectPath)` follows the same pattern as `broadcastDiscussions`:
+`broadcastIntentSessions(workspacePath)` follows the same pattern as `broadcastDiscussions`:
 it reads the session list via `listChatSessions`, attaches a `runStates` snapshot derived from
-`isRunning()`, and fans out `{ type: 'intent_sessions', projectPath, items, runStates }` to
+`isRunning()`, and fans out `{ type: 'intent_sessions', workspacePath, items, runStates }` to
 every connection via `broadcaster.toAll`. Wired into `KernelContext` so intent session handlers
 and any background mutation can push the refreshed list.
 
@@ -603,8 +603,8 @@ the list) (RM-R12).
   "依赖本批:#N「title」" — a `batchDepLabels` helper resolves each 0-based index back to the
   sibling's title in the same `proposedIntents` array so the user sees the order relationship
   before allowing (RM-R17).
-- **Intent data:** `App.vue` holds `intents: Record<projectPath, Intent[]>`,
-  refreshed by the `intents` message, and `automation: Record<projectPath, AutomationStatus>`,
+- **Intent data:** `App.vue` holds `intents: Record<workspacePath, Intent[]>`,
+  refreshed by the `intents` message, and `automation: Record<workspacePath, AutomationStatus>`,
   refreshed by the `automation_status` message; `IntentList` receives the current project's
   status as the `automation` prop.
 

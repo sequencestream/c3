@@ -81,7 +81,7 @@ function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
  */
 export interface LaunchRunDeps {
   broadcastStatuses: () => void
-  broadcastIntents: (projectPath: string) => void
+  broadcastIntents: (workspacePath: string) => void
   /**
    * The kernel event bus (ADR-0018). `launchRun` publishes `'run:bound'` and
    * `'run:settled'` on this bus instead of calling a per-call `onEvent` callback.

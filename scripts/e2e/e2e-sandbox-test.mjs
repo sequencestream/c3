@@ -148,7 +148,7 @@ function onMessage(evt) {
     // Now save the workspace setting with sandbox enabled
     send({
       type: 'save_workspace_setting',
-      projectPath: sandboxProject,
+      workspacePath: sandboxProject,
       config: { sandbox: { enabled: true, sandbox: sandboxDefName } },
     })
     return

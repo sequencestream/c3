@@ -162,11 +162,16 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
 }
 
 export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_ctx, conn, msg) => {
-  const config = loadWorkspaceSetting(msg.projectPath)
+  const config = loadWorkspaceSetting(msg.workspacePath)
   // Probe the repo's default branch so the form can pre-fill `defaultMainBranch`
   // (origin/HEAD → current HEAD; undefined when unresolvable).
-  const detectedMainBranch = detectDefaultBranch(msg.projectPath)
-  conn.send({ type: 'workspace_setting', projectPath: msg.projectPath, config, detectedMainBranch })
+  const detectedMainBranch = detectDefaultBranch(msg.workspacePath)
+  conn.send({
+    type: 'workspace_setting',
+    workspacePath: msg.workspacePath,
+    config,
+    detectedMainBranch,
+  })
 }
 
 export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_ctx, conn, msg) => {
@@ -191,6 +196,6 @@ export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_
     }
   }
 
-  const config = saveWorkspaceSetting(msg.projectPath, msg.config)
-  conn.send({ type: 'workspace_setting', projectPath: msg.projectPath, config })
+  const config = saveWorkspaceSetting(msg.workspacePath, msg.config)
+  conn.send({ type: 'workspace_setting', workspacePath: msg.workspacePath, config })
 }

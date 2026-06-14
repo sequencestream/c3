@@ -132,9 +132,9 @@ interface WorkspaceSandboxConfig {
 ### 验证逻辑
 
 ```typescript
-export function getProjectSandbox(projectPath: string): WorkspaceSandboxConfig | undefined {
+export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig | undefined {
   // loadWorkspaceSetting 已在 normalize 阶段应用 worktree-only + custom-only 不变量。
-  return loadWorkspaceSetting(projectPath).sandbox // undefined → 等价于 disabled
+  return loadWorkspaceSetting(workspacePath).sandbox // undefined → 等价于 disabled
 }
 
 // 在 launchRun 中使用：

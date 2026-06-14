@@ -52,7 +52,7 @@ export type RunDomainEvent =
  */
 export interface LaunchRunDeps {
   broadcastStatuses: () => void
-  broadcastIntents: (projectPath: string) => void
+  broadcastIntents: (workspacePath: string) => void
   readonly eventBus: EventBus<EventBusEvents>
 }
 
@@ -84,9 +84,9 @@ export interface KernelContext {
   // ── broadcasts (transport-owned in spirit; slice 2/3b folds them into a single
   //    transport/Broadcaster — for now they are closure refs reached via ctx) ──
   readonly broadcastStatuses: () => void
-  readonly broadcastIntents: (projectPath: string) => void
-  readonly broadcastIntentSessions: (projectPath: string) => void
-  readonly broadcastDiscussions: (projectPath: string) => void
+  readonly broadcastIntents: (workspacePath: string) => void
+  readonly broadcastIntentSessions: (workspacePath: string) => void
+  readonly broadcastDiscussions: (workspacePath: string) => void
   readonly broadcastSchedules: (workspacePath: string) => void
   readonly broadcastAutomation: (status: AutomationStatus) => void
   readonly broadcastDiscussionMessage: (discussionId: string, message: DiscussionMessage) => void
@@ -95,7 +95,7 @@ export interface KernelContext {
     state: 'running' | 'paused' | 'ended',
   ) => void
   /** Push a project's refreshed wait-user-involve event list (todo status). */
-  readonly broadcastWaitUserEvents: (projectPath: string) => void
+  readonly broadcastWaitUserEvents: (workspacePath: string) => void
 
   // ── background run starters (still live in the server.ts closure) ──
   readonly startDiscussionRun: (discussion: Discussion) => void

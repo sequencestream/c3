@@ -283,7 +283,7 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
 describe('hidden-filter resolve-key consistency (US-3 AC-3.4 §4.8)', () => {
   it('hides a comm session under both the raw and trailing-slash project key', () => {
     // §4.8: listWorkspaceSessions filters with resolve(dir); the store keys
-    // intent_chats by resolve(projectPath). A trailing slash must resolve to
+    // intent_chats by resolve(workspacePath). A trailing slash must resolve to
     // the same key so the hidden set is found regardless of how the path is spelled.
     setChatSession(proj, 'comm-1')
     expect(listHiddenSessions(proj)).toEqual(['comm-1'])

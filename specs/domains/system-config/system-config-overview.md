@@ -22,7 +22,7 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
   and its directory also holds `state.json`, relocating the whole config dir without touching the
   real `~/.c3`. (The `C3_DIR` env var, already honored by the db layer, likewise relocates the dir.)
   Stored as `SystemSettings.projectConfigs` (a
-  `Record<projectPath, WorkspaceSetting>`). **All writes go through the single, concurrency-safe
+  `Record<workspacePath, WorkspaceSetting>`). **All writes go through the single, concurrency-safe
   write path** (`kernel/config/store.ts`): in-process serialization + a cross-process file
   lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes
   per-project config. See [persistence.md](persistence.md) (唯一写入路径 + 双层锁，2026-06-08-003).

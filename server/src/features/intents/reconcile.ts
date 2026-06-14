@@ -25,10 +25,10 @@ export interface ReconcileDeps {
   /**
    * Load the last N assistant messages from a session's on-disk transcript.
    * Returns an array of plain-text assistant replies, most-recent first.
-   * `projectPath` is the workspace path (needed to resolve the SDK session dir).
+   * `workspacePath` is the workspace path (needed to resolve the SDK session dir).
    */
   loadTranscriptMessages: (
-    projectPath: string,
+    workspacePath: string,
     sessionId: string,
     count: number,
   ) => Promise<string[]>
@@ -42,7 +42,7 @@ export interface ReconcileDeps {
   }) => Promise<JudgeVerdict>
   /** Commit uncommitted changes + push (or just push if tree is already clean). */
   commitAndPush: (
-    projectPath: string,
+    workspacePath: string,
     message: string,
   ) => Promise<{ ok: boolean; committed: boolean; error?: string }>
   /** Persist a intent's status + broadcast the new list. */
@@ -64,7 +64,7 @@ export interface ReconcileItem {
  */
 export async function reconcileInProgress(
   inProgressReqs: Intent[],
-  projectPath: string,
+  workspacePath: string,
   deps: ReconcileDeps,
   signal: AbortSignal,
 ): Promise<ReconcileItem[]> {
@@ -86,7 +86,7 @@ export async function reconcileInProgress(
 
     if (req.lastDevSessionId) {
       try {
-        const messages = await deps.loadTranscriptMessages(projectPath, req.lastDevSessionId, 3)
+        const messages = await deps.loadTranscriptMessages(workspacePath, req.lastDevSessionId, 3)
         // Judge with only the assistant messages (no git evidence — the process
         // is already dead and the working tree may be in any state; the judge
         // will decide from the messages alone).
@@ -94,13 +94,13 @@ export async function reconcileInProgress(
           req,
           lastMessages: messages,
           evidence: { diffStat: '', recentLog: '' },
-          cwd: projectPath,
+          cwd: workspacePath,
           signal,
         })
 
         if (verdict.verdict === 'done' && !signal.aborted) {
           // Auto-complete: commit & push, then mark done.
-          const res = await deps.commitAndPush(projectPath, `feat: ${req.title}`)
+          const res = await deps.commitAndPush(workspacePath, `feat: ${req.title}`)
           if (res.ok) {
             deps.updateStatus(req.id, 'done')
             runStatus = 'idle'

@@ -12,29 +12,29 @@ export function installIntentActions(ctx: AppCtx): void {
     intentsProject.value = path
     ctx.persistViewMode()
     // The response carries both the comm `session_selected` and the list.
-    send({ type: 'open_intent_chat', projectPath: path })
+    send({ type: 'open_intent_chat', workspacePath: path })
     // Populate the middle-column intent session list.
-    send({ type: 'list_intent_sessions', projectPath: path })
+    send({ type: 'list_intent_sessions', workspacePath: path })
   }
 
   // "+" in the intent title bar: start a brand-new comm session.
   ctx.newIntentChat = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'new_intent_chat', projectPath: intentsProject.value })
+    send({ type: 'new_intent_chat', workspacePath: intentsProject.value })
   }
 
   // Select an existing intent communication session by id.
   ctx.selectIntentSession = (sessionId: string): void => {
     if (!intentsProject.value) return
     selectedIntentSessionId.value = sessionId
-    send({ type: 'open_intent_chat', projectPath: intentsProject.value, sessionId })
+    send({ type: 'open_intent_chat', workspacePath: intentsProject.value, sessionId })
   }
 
   ctx.renameIntentSession = (sessionId: string, title: string): void => {
     if (!intentsProject.value) return
     send({
       type: 'rename_intent_session',
-      projectPath: intentsProject.value,
+      workspacePath: intentsProject.value,
       sessionId,
       title,
     })
@@ -43,14 +43,14 @@ export function installIntentActions(ctx: AppCtx): void {
   // Delete an intent communication session.
   ctx.deleteIntentSession = (sessionId: string): void => {
     if (!intentsProject.value) return
-    send({ type: 'delete_intent_session', projectPath: intentsProject.value, sessionId })
+    send({ type: 'delete_intent_session', workspacePath: intentsProject.value, sessionId })
   }
 
   ctx.setIntentFilter = (status: IntentStatus | null): void => {
     if (!intentsProject.value) return
     send({
       type: 'list_intents',
-      projectPath: intentsProject.value,
+      workspacePath: intentsProject.value,
       ...(status ? { status } : {}),
     })
   }
@@ -59,7 +59,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'refine_intent',
-      projectPath: intentsProject.value,
+      workspacePath: intentsProject.value,
       intentId,
     })
   }
@@ -68,7 +68,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'create_pr',
-      projectPath: intentsProject.value,
+      workspacePath: intentsProject.value,
       intentId,
     })
   }
@@ -78,7 +78,7 @@ export function installIntentActions(ctx: AppCtx): void {
     void hasUnfinishedDeps
     send({
       type: 'start_development',
-      projectPath: intentsProject.value,
+      workspacePath: intentsProject.value,
       intentId,
     })
   }
@@ -100,11 +100,11 @@ export function installIntentActions(ctx: AppCtx): void {
 
   ctx.startAutomation = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'start_automation', projectPath: intentsProject.value })
+    send({ type: 'start_automation', workspacePath: intentsProject.value })
   }
 
   ctx.stopAutomation = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'stop_automation', projectPath: intentsProject.value })
+    send({ type: 'stop_automation', workspacePath: intentsProject.value })
   }
 }

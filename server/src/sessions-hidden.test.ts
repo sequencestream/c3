@@ -60,7 +60,7 @@ describe('listWorkspaceSessions hidden filter', () => {
   })
 
   it('filters using the resolved path key, regardless of how dir is spelled', async () => {
-    // §4.8: the store keys by resolve(projectPath); the filter must resolve(dir)
+    // §4.8: the store keys by resolve(workspacePath); the filter must resolve(dir)
     // too. Passing a trailing-slash dir still finds the hidden id.
     setChatSession(proj, 'comm-abc')
     listSessionsMock.mockResolvedValue(sdkSessions)

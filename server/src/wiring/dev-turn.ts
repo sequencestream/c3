@@ -62,8 +62,8 @@ export function makeRunDevTurn(
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
       const rt = ensureRuntime(
         id,
-        input.projectPath,
-        getDefaultMode(input.projectPath),
+        input.workspacePath,
+        getDefaultMode(input.workspacePath),
         [],
         'session',
       )

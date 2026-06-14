@@ -4,7 +4,7 @@
  * Owns the discussion schema (created lazily, versioned via `PRAGMA user_version`)
  * and all discussion / message operations. Sibling to the intent store: both
  * ride the one `~/.c3/c3.db` connection, each owning its own tables and a private
- * `schemaReady` flag. Every `projectPath` arg is `resolve()`d so it matches the
+ * `schemaReady` flag. Every `workspacePath` arg is `resolve()`d so it matches the
  * workspace registry key, the runtime `workspacePath`, and the SDK `cwd`.
  *
  * Degradation: when the db is unavailable, reads return empty/null and writes
@@ -179,7 +179,7 @@ function parseStringList(raw: string | null): string[] {
 function toDiscussion(r: DiscussionRow): Discussion {
   return {
     id: r.id,
-    projectPath: r.project_path,
+    workspacePath: r.project_path,
     title: r.title,
     type: r.type,
     goal: r.goal,
@@ -198,7 +198,7 @@ function toDiscussion(r: DiscussionRow): Discussion {
 
 /** Fields a caller supplies when creating a discussion. */
 export interface CreateDiscussionInput {
-  projectPath: string
+  workspacePath: string
   title: string
   type: string
   goal?: string
@@ -213,10 +213,10 @@ export interface CreateDiscussionInput {
 }
 
 /** A project's discussions (optionally status-filtered), most-recently-updated first. */
-export function listDiscussions(projectPath: string, status?: DiscussionStatus): Discussion[] {
+export function listDiscussions(workspacePath: string, status?: DiscussionStatus): Discussion[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(projectPath)
+  const proj = resolve(workspacePath)
   const rows = status
     ? d.all<DiscussionRow>(
         'SELECT * FROM discussions WHERE project_path=? AND status=? ORDER BY updated_at DESC',
@@ -237,14 +237,14 @@ export function listDiscussions(projectPath: string, status?: DiscussionStatus):
  * empty map when the db is unavailable (graceful degradation, never throws).
  */
 export function countByStatusInRange(
-  projectPath: string,
+  workspacePath: string,
   startTime?: number,
   endTime?: number,
 ): Record<string, number> {
   const d = db()
   if (!d) return {}
   const where: string[] = ['project_path=?']
-  const params: (string | number)[] = [resolve(projectPath)]
+  const params: (string | number)[] = [resolve(workspacePath)]
   if (startTime != null) {
     where.push('updated_at >= ?')
     params.push(startTime)
@@ -281,7 +281,7 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
        (id, project_path, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, conclusion, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
-    resolve(input.projectPath),
+    resolve(input.workspacePath),
     input.title,
     input.type,
     input.goal ?? '',

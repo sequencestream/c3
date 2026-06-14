@@ -33,7 +33,7 @@ afterEach(() => {
 
 function binding(over: Partial<SaveGateBinding> = {}): SaveGateBinding {
   return {
-    projectPath: proj,
+    workspacePath: proj,
     getRunId: () => 'run-1',
     signal: new AbortController().signal,
     ...over,

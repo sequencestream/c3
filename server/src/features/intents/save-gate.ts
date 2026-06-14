@@ -24,7 +24,7 @@ export interface SaveGateDeps {
     requestId: string,
     signal?: AbortSignal,
   ) => Promise<{ decision: 'allow' | 'deny' }>
-  broadcastIntents: (projectPath: string) => void
+  broadcastIntents: (workspacePath: string) => void
   /**
    * WorkCenter event hook — invoked BEFORE the `permission_request` frame so the
    * codex intent save lands a `source='intent'` WaitUserInvolveEvent + broadcast,
@@ -38,7 +38,7 @@ export interface SaveGateDeps {
 
 /** Per-run binding (structurally the transport's `IntentMcpBinding`, imported by value). */
 export interface SaveGateBinding {
-  projectPath: string
+  workspacePath: string
   getRunId: () => string
   signal: AbortSignal
 }
@@ -59,7 +59,7 @@ export async function gatedSave(
     toolName: SAVE_INTENTS_TOOL,
     input,
     sessionId: runId,
-    workspacePath: binding.projectPath,
+    workspacePath: binding.workspacePath,
     source: 'intent',
   })
   deps.emit(runId, {
@@ -72,5 +72,5 @@ export async function gatedSave(
   if (decision !== 'allow') {
     return { content: [{ type: 'text', text: '用户在 c3 UI 拒绝了保存,未落库。' }] }
   }
-  return runSaveConfirmed(binding.projectPath, args, deps.broadcastIntents)
+  return runSaveConfirmed(binding.workspacePath, args, deps.broadcastIntents)
 }

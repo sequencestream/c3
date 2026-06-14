@@ -69,8 +69,8 @@ function isGitRepo(dir: string): boolean {
  * Return the current git branch name for a repo directory, or `null` when the
  * directory isn't a git repo, git is unavailable, or HEAD is detached.
  */
-export async function getCurrentBranch(projectPath: string): Promise<string | null> {
-  const res = await git(projectPath, ['-C', projectPath, 'rev-parse', '--abbrev-ref', 'HEAD'])
+export async function getCurrentBranch(workspacePath: string): Promise<string | null> {
+  const res = await git(workspacePath, ['-C', workspacePath, 'rev-parse', '--abbrev-ref', 'HEAD'])
   if (res.code !== 0 || !res.stdout.trim()) return null
   const branch = res.stdout.trim()
   // HEAD detached → `rev-parse --abbrev-ref HEAD` returns "HEAD"
@@ -126,16 +126,16 @@ async function collectFromSubRepos(
 /**
  * `git diff` summary as objective evidence for the completion judge.
  *
- * **Multi-repo aware, mirroring {@link commitAndPush}:** if `projectPath` is
+ * **Multi-repo aware, mirroring {@link commitAndPush}:** if `workspacePath` is
  * itself a repo, report that one repo (classic path); otherwise the workspace
  * root holds repos in subdirectories — sum each sub-repo's diff, labelled by repo.
  * This stops evidence from being permanently empty just because the root isn't a
  * git repo and the changes live in a sub-repo. Empty string when nothing changed
  * or git errors (the judge then leans on the assistant message alone).
  */
-export async function gitDiffStat(projectPath: string): Promise<string> {
-  if (isGitRepo(projectPath)) return diffStatRepo(projectPath)
-  return collectFromSubRepos(projectPath, diffStatRepo)
+export async function gitDiffStat(workspacePath: string): Promise<string> {
+  if (isGitRepo(workspacePath)) return diffStatRepo(workspacePath)
+  return collectFromSubRepos(workspacePath, diffStatRepo)
 }
 
 /**
@@ -143,9 +143,9 @@ export async function gitDiffStat(projectPath: string): Promise<string> {
  * **Multi-repo aware** like {@link gitDiffStat}: a root repo reports its own log;
  * otherwise each sub-repo's recent log is summed and labelled by repo.
  */
-export async function gitRecentLog(projectPath: string, n = 5): Promise<string> {
-  if (isGitRepo(projectPath)) return recentLogRepo(projectPath, n)
-  return collectFromSubRepos(projectPath, (repo) => recentLogRepo(repo, n))
+export async function gitRecentLog(workspacePath: string, n = 5): Promise<string> {
+  if (isGitRepo(workspacePath)) return recentLogRepo(workspacePath, n)
+  return collectFromSubRepos(workspacePath, (repo) => recentLogRepo(repo, n))
 }
 
 // Heavy / irrelevant directories we never descend into while hunting for repos.
@@ -248,7 +248,7 @@ async function isAhead(repo: string): Promise<boolean> {
 /**
  * Commit & push the work a finished automation turn produced.
  *
- * If `projectPath` is itself a git repo (root has `.git`), behaviour is the
+ * If `workspacePath` is itself a git repo (root has `.git`), behaviour is the
  * classic single-repo path — unchanged. Otherwise the workspace root holds one or
  * more git repos in subdirectories: we discover them and commit each **affected**
  * repo independently. `git -C <repo> add -A` naturally scopes staging to that
@@ -258,12 +258,12 @@ async function isAhead(repo: string): Promise<boolean> {
  * alone. Any repo's push failure is a hard stop, and the error names the repo.
  * Finding no git repo at all is also an error (nothing can be committed).
  */
-export async function commitAndPush(projectPath: string, message: string): Promise<CommitResult> {
-  if (isGitRepo(projectPath)) {
-    return commitAndPushRepo(projectPath, message, '')
+export async function commitAndPush(workspacePath: string, message: string): Promise<CommitResult> {
+  if (isGitRepo(workspacePath)) {
+    return commitAndPushRepo(workspacePath, message, '')
   }
 
-  const repos = discoverSubRepos(projectPath)
+  const repos = discoverSubRepos(workspacePath)
   if (repos.length === 0) {
     return {
       ok: false,
@@ -275,7 +275,7 @@ export async function commitAndPush(projectPath: string, message: string): Promi
 
   let anyCommitted = false
   for (const repo of repos) {
-    const label = relative(projectPath, repo) || repo
+    const label = relative(workspacePath, repo) || repo
     const status = await git(repo, ['-C', repo, 'status', '--porcelain'])
     if (status.code !== 0) {
       return {

@@ -109,7 +109,7 @@ export interface EventBusEvents {
    */
   'intent:status_changed': {
     intentId: string
-    projectPath: string
+    workspacePath: string
     fromStatus: IntentStatus
     toStatus: IntentStatus
   }

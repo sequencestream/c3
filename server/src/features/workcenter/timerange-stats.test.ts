@@ -69,7 +69,7 @@ function d(): Db {
 
 function seedIntent(proj: string, status: string, updatedAt: number): void {
   d().run(
-    `INSERT INTO intents (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
+    `INSERT INTO intents (id, workspace_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     randomUUID(),
     proj,
@@ -87,7 +87,7 @@ function seedIntent(proj: string, status: string, updatedAt: number): void {
 
 function seedDiscussion(proj: string, status: string, updatedAt: number): void {
   d().run(
-    `INSERT INTO discussions (id, project_path, title, type, status, created_at, updated_at)
+    `INSERT INTO discussions (id, workspace_path, title, type, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?)`,
     randomUUID(),
     proj,

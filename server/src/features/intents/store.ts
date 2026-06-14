@@ -26,12 +26,12 @@ import type {
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 11
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS intents (
   id              TEXT PRIMARY KEY,
-  project_path    TEXT NOT NULL,
+  workspace_path    TEXT NOT NULL,
   title           TEXT NOT NULL,
   content         TEXT NOT NULL,
   priority        TEXT NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS intents (
   updated_at      INTEGER NOT NULL,
   completed_at    INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_intent_project_status ON intents(project_path, status);
+CREATE INDEX IF NOT EXISTS idx_intent_workspace_status ON intents(workspace_path, status);
 
 CREATE TABLE IF NOT EXISTS intent_deps (
   intent_id       TEXT NOT NULL,
@@ -59,11 +59,11 @@ CREATE TABLE IF NOT EXISTS intent_deps (
 
 CREATE TABLE IF NOT EXISTS intent_chats (
   session_id    TEXT PRIMARY KEY,
-  project_path  TEXT NOT NULL,
+  workspace_path  TEXT NOT NULL,
   is_current    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_chat_project ON intent_chats(project_path);
+CREATE INDEX IF NOT EXISTS idx_chat_project ON intent_chats(workspace_path);
 
 CREATE TABLE IF NOT EXISTS tool_sessions (
   session_id    TEXT PRIMARY KEY,
@@ -146,9 +146,43 @@ function migrateLegacyTablesToIntents(d: Db): void {
     d.exec('ALTER TABLE intent_deps RENAME COLUMN requirement_id TO intent_id')
   }
   // Index: SQLite has no RENAME INDEX — drop the old (the table rename re-pointed it
-  // at `intents`) and let SCHEMA recreate `idx_intent_project_status`.
+  // at `intents`) and let SCHEMA recreate `idx_intent_workspace_status`.
   if (indexExists(d, 'idx_req_project_status')) {
     d.exec('DROP INDEX idx_req_project_status')
+  }
+}
+
+/**
+ * v10 → v11: rename the workspace-key column `project_path` → `workspace_path` IN
+ * PLACE on `intents` and `intent_chats` (zero data movement — the product renamed
+ * the term "project" to "workspace" at the DB layer). DELIBERATELY DIVERGES from the
+ * `projectConfigs` settings.json key, which keeps its legacy name for back-compat —
+ * here the user chose to rename the DB columns through; see the 012 migration record.
+ *
+ * MUST run BEFORE `exec(SCHEMA)`: SCHEMA now declares `workspace_path` and the index
+ * `idx_intent_workspace_status` on it, so creating the index before the rename would
+ * reference a missing column. Order in db(): legacy rename → THIS → exec(SCHEMA).
+ *
+ * Idempotent + re-entrant: every step guards on `PRAGMA table_info` / `sqlite_master`,
+ * so a db interrupted mid-rename converges on re-run. NEVER drops a table — columns use
+ * `ALTER … RENAME COLUMN`; the composite index uses `DROP INDEX` (an index, not a table)
+ * and lets SCHEMA's `CREATE INDEX IF NOT EXISTS` rebuild it under the new name. The
+ * single-column `idx_chat_project` keeps its name — SQLite's RENAME COLUMN auto-updates
+ * its column reference, so no drop/rebuild is needed.
+ */
+function migrateProjectPathToWorkspacePath(d: Db): void {
+  for (const table of ['intents', 'intent_chats']) {
+    if (
+      tableExists(d, table) &&
+      columnExists(d, table, 'project_path') &&
+      !columnExists(d, table, 'workspace_path')
+    ) {
+      d.exec(`ALTER TABLE ${table} RENAME COLUMN project_path TO workspace_path`)
+    }
+  }
+  // Composite index renamed (project_status → workspace_status): drop old, SCHEMA rebuilds.
+  if (indexExists(d, 'idx_intent_project_status')) {
+    d.exec('DROP INDEX idx_intent_project_status')
   }
 }
 
@@ -159,6 +193,8 @@ function db(): Db | null {
   if (!schemaReady) {
     // v5 → v6 rename MUST precede SCHEMA (see migrateLegacyTablesToIntents docstring).
     migrateLegacyTablesToIntents(d)
+    // v10 → v11 project_path → workspace_path; MUST also precede SCHEMA (see docstring).
+    migrateProjectPathToWorkspacePath(d)
     d.exec(SCHEMA)
     // v1 → v2: add `module` to pre-existing intents tables (historic rows default to '').
     ensureColumn(d, 'intents', 'module', "TEXT NOT NULL DEFAULT ''")
@@ -216,7 +252,7 @@ function tx<T>(d: Db, fn: () => T): T {
 
 interface Row {
   id: string
-  project_path: string
+  workspace_path: string
   title: string
   content: string
   priority: string
@@ -254,7 +290,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
   }
   return rows.map((r) => ({
     id: r.id,
-    workspacePath: r.project_path,
+    workspacePath: r.workspace_path,
     title: r.title,
     content: r.content,
     priority: r.priority as Intent['priority'],
@@ -284,12 +320,12 @@ export function listIntents(workspacePath: string, status?: IntentStatus): Inten
   const proj = resolve(workspacePath)
   const rows = status
     ? d.all<Row>(
-        'SELECT * FROM intents WHERE project_path=? AND status=? ORDER BY priority ASC, updated_at DESC',
+        'SELECT * FROM intents WHERE workspace_path=? AND status=? ORDER BY priority ASC, updated_at DESC',
         proj,
         status,
       )
     : d.all<Row>(
-        'SELECT * FROM intents WHERE project_path=? ORDER BY priority ASC, updated_at DESC',
+        'SELECT * FROM intents WHERE workspace_path=? ORDER BY priority ASC, updated_at DESC',
         proj,
       )
   return hydrate(d, rows)
@@ -308,7 +344,7 @@ export function countByStatusInRange(
 ): Record<string, number> {
   const d = db()
   if (!d) return {}
-  const where: string[] = ['project_path=?']
+  const where: string[] = ['workspace_path=?']
   const params: (string | number)[] = [resolve(workspacePath)]
   if (startTime != null) {
     where.push('updated_at >= ?')
@@ -344,7 +380,7 @@ function escapeLike(s: string): string {
  * `find_intents` tool. Filters compose with AND; all are optional:
  *  - `keyword` — case-handled LIKE substring over `title` OR `content` (wildcards escaped).
  *  - `module` / `status` — exact-match column filters.
- * Same `(project_path)` scoping + `resolve()` as the rest of the store, so the
+ * Same `(workspace_path)` scoping + `resolve()` as the rest of the store, so the
  * agent can never read another project's ledger. Ordered like `listIntents`
  * (priority asc, then recency). Returns `[]` when the db is unavailable.
  */
@@ -354,7 +390,7 @@ export function findIntents(
 ): Intent[] {
   const d = db()
   if (!d) return []
-  const where: string[] = ['project_path=?']
+  const where: string[] = ['workspace_path=?']
   const params: (string | number)[] = [resolve(workspacePath)]
   if (filter.keyword) {
     where.push("(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')")
@@ -456,7 +492,7 @@ export function insertIntents(workspacePath: string, items: ProposedIntent[]): I
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
+           (id, workspace_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
@@ -525,7 +561,7 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
   const priors = items.map((it) => {
     if (it.id === undefined) return null
     const row = d.get<Row>('SELECT * FROM intents WHERE id=?', it.id)
-    if (!row || row.project_path !== proj) {
+    if (!row || row.workspace_path !== proj) {
       throw new Error(`无法更新意图 ${it.id}:它在本项目中不存在`)
     }
     if (row.status === 'in_progress' || row.status === 'done') {
@@ -577,7 +613,7 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, project_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
+             (id, workspace_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
@@ -834,7 +870,7 @@ export function getChatSession(workspacePath: string): string | null {
   const d = db()
   if (!d) return null
   const row = d.get<{ session_id: string }>(
-    'SELECT session_id FROM intent_chats WHERE project_path=? AND is_current=1',
+    'SELECT session_id FROM intent_chats WHERE workspace_path=? AND is_current=1',
     resolve(workspacePath),
   )
   return row?.session_id ?? null
@@ -846,12 +882,12 @@ export function setChatSession(workspacePath: string, sessionId: string, title?:
   const proj = resolve(workspacePath)
   const now = Date.now()
   tx(d, () => {
-    d.run('UPDATE intent_chats SET is_current=0 WHERE project_path=? AND is_current=1', proj)
+    d.run('UPDATE intent_chats SET is_current=0 WHERE workspace_path=? AND is_current=1', proj)
     if (title !== undefined) {
       d.run(
-        `INSERT INTO intent_chats (session_id, project_path, is_current, updated_at, title)
+        `INSERT INTO intent_chats (session_id, workspace_path, is_current, updated_at, title)
          VALUES (?,?,1,?,?)
-         ON CONFLICT(session_id) DO UPDATE SET is_current=1, project_path=excluded.project_path, updated_at=excluded.updated_at`,
+         ON CONFLICT(session_id) DO UPDATE SET is_current=1, workspace_path=excluded.workspace_path, updated_at=excluded.updated_at`,
         sessionId,
         proj,
         now,
@@ -859,9 +895,9 @@ export function setChatSession(workspacePath: string, sessionId: string, title?:
       )
     } else {
       d.run(
-        `INSERT INTO intent_chats (session_id, project_path, is_current, updated_at)
+        `INSERT INTO intent_chats (session_id, workspace_path, is_current, updated_at)
          VALUES (?,?,1,?)
-         ON CONFLICT(session_id) DO UPDATE SET is_current=1, project_path=excluded.project_path, updated_at=excluded.updated_at`,
+         ON CONFLICT(session_id) DO UPDATE SET is_current=1, workspace_path=excluded.workspace_path, updated_at=excluded.updated_at`,
         sessionId,
         proj,
         now,
@@ -896,7 +932,7 @@ export function listHiddenSessions(workspacePath: string): string[] {
   return d
     .all<{
       session_id: string
-    }>('SELECT session_id FROM intent_chats WHERE project_path=?', resolve(workspacePath))
+    }>('SELECT session_id FROM intent_chats WHERE workspace_path=?', resolve(workspacePath))
     .map((r) => r.session_id)
 }
 
@@ -916,7 +952,7 @@ export function listChatSessions(workspacePath: string): IntentSessionInfo[] {
       title: string | null
       updated_at: number
     }>(
-      'SELECT session_id, title, updated_at FROM intent_chats WHERE project_path=? ORDER BY updated_at DESC',
+      'SELECT session_id, title, updated_at FROM intent_chats WHERE workspace_path=? ORDER BY updated_at DESC',
       proj,
     )
     .map((r) => ({
@@ -960,7 +996,7 @@ export function deleteChatSession(workspacePath: string, sessionId: string): voi
     // If the deleted row was is_current, promote the latest remaining.
     if (row.is_current) {
       const next = d.get<{ session_id: string }>(
-        'SELECT session_id FROM intent_chats WHERE project_path=? ORDER BY updated_at DESC LIMIT 1',
+        'SELECT session_id FROM intent_chats WHERE workspace_path=? ORDER BY updated_at DESC LIMIT 1',
         proj,
       )
       if (next) {

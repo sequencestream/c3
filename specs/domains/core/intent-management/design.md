@@ -54,22 +54,29 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 
 ## Schema (`PRAGMA user_version` migrations)
 
-- `intents` — the ledger (`id`, `project_path`, `title`, `content`, `priority`, `status`,
+- `intents` — the ledger (`id`, `workspace_path`, `title`, `content`, `priority`, `status`,
   `module`, `last_dev_session_id`, `automate`, `created_at`, `updated_at`, `completed_at`), indexed
-  by `(project_path, status)`. `module` is `TEXT NOT NULL DEFAULT ''`; `automate` is
+  by `(workspace_path, status)`. `module` is `TEXT NOT NULL DEFAULT ''`; `automate` is
   `INTEGER NOT NULL DEFAULT 0`.
 - `intent_deps` — `(intent_id, depends_on_id)` edges.
-- `intent_chats` — one table doubling as the **per-project communication session
-  collection** and the **hidden set**: `session_id` (PK, may be a `pending:` id), `project_path`,
+- `intent_chats` — one table doubling as the **per-workspace communication session
+  collection** and the **hidden set**: `session_id` (PK, may be a `pending:` id), `workspace_path`,
   `title` (nullable, client fallback to "New Intent" or first-prompt derivation),
   `is_current` (0/1, at most one per project — the default-open pointer),
   `updated_at`. The full set of rows for a project is the hidden set; the `is_current=1` row
   is the session re-loaded on entering the intent view without a specific `sessionId`.
 
-**Schema version (current: v7).** `SCHEMA_VERSION` is `7`. Each bump adds one idempotent
-`ensureColumn` after `exec(SCHEMA)`: v2 `module`, v3 `completed_at` (nullable), v4 `automate`
-(`INTEGER NOT NULL DEFAULT 0`), v7 `intent_chats.title` (`TEXT`). Same key-off-column-presence pattern
-as below.
+**Schema version (current: v11).** `SCHEMA_VERSION` is `11`. Each bump adds one idempotent
+migration after the legacy renames and before `exec(SCHEMA)`/`ensureColumn`: v2 `module`, v3
+`completed_at` (nullable), v4 `automate` (`INTEGER NOT NULL DEFAULT 0`), v6 legacy `requirement*`
+→ `intent*` rename, v7 `intent_chats.title` (`TEXT`), v8 git-tracking fields, v9 `intent_deps`
+(`dep_type` and `created_at`), v10 `intent_sessions` audit table, **v11 the workspace-key column
+`project_path` → `workspace_path` in-place rename** on `intents` + `intent_chats` (composite index rebuilt as
+`idx_intent_workspace_status`; single-column `idx_chat_project` keeps its name, its column reference
+auto-updated by `RENAME COLUMN`). v11 **deliberately diverges** from the back-compat `projectConfigs`
+settings.json key, which keeps its legacy name (see `database/migrate/2026/06/14/012`). The rename
+runs as `migrateProjectPathToWorkspacePath` BEFORE `exec(SCHEMA)` (the new composite index references
+the renamed column); idempotent, never drops a table. Same key-off-column-presence pattern as below.
 
 **Schema version & migration (v1 → v2).** The fresh-create `SCHEMA`
 already declares `intents.module`. For pre-existing dbs (v1, no `module` column), `db()`
@@ -99,7 +106,7 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   `id` for an update, a fresh uuid for an insert — so `dependsOnIndexes` (RM-R17) resolves against the
   full batch regardless of whether a referenced sibling is new or being updated. **All validation runs
   before the transaction opens** (atomic reject, nothing half-written): each update `id` is fetched and
-  guarded `project_path === resolve(workspacePath)` (unknown / cross-project ⇒ throw), and its current
+  guarded `workspace_path === resolve(workspacePath)` (unknown / cross-project ⇒ throw), and its current
   status is checked — `in_progress`/`done` throw as immutable, `cancelled` is flagged for reactivation.
   Inside the single `tx`, an update writes `title`/`content`/`priority`, writes `module` only when supplied
   (else keeps the prior), sets status to `todo` for a reactivated `cancelled` (else unchanged) with
@@ -110,7 +117,7 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   backs the agent's `find_intents` tool — filters compose with `AND`, all optional: `keyword`
   is a `LIKE` substring over `title` OR `content` (a tiny `escapeLike` escapes `% _ \` and the query
   uses `ESCAPE '\'` so a literal `%` doesn't act as a wildcard), `module`/`status` are exact-match;
-  same `resolve()` + `project_path` scoping and `priority ASC, updated_at DESC` order as
+  same `resolve()` + `workspace_path` scoping and `priority ASC, updated_at DESC` order as
   `listIntents`; `[]` when the db is unavailable. `view_intent` reuses the existing
   `getIntent(id)` (id-only) and the **tool handler** guards `req.workspacePath === resolve(workspacePath)`
   so an id from another project reads as not-found (no cross-project leak).
@@ -537,7 +544,7 @@ and any background mutation can push the refreshed list.
 
 `listWorkspaceSessions(dir)` filters out `store.listHiddenSessions(resolve(dir))` so communication
 sessions never enter the normal list (RM-R4) — using the resolved path so the key matches the
-stored `project_path`. If the store is unavailable it does **not** filter (degrade, don't break
+stored `workspace_path`. If the store is unavailable it does **not** filter (degrade, don't break
 the list) (RM-R12).
 
 ## Frontend (`web/`)

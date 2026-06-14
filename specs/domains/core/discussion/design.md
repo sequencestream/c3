@@ -33,20 +33,25 @@ and a private `schemaReady` flag.
 Two tables, ensured lazily on the discussion store's first access via `exec(SCHEMA)`
 (`CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`):
 
-- `discussions` — `id` (PK), `project_path`, `title`, `type`, `goal` (`TEXT NOT NULL DEFAULT ''`),
+- `discussions` — `id` (PK), `workspace_path`, `title`, `type`, `goal` (`TEXT NOT NULL DEFAULT ''`),
   `context` (`TEXT NOT NULL DEFAULT ''` — the user's original input, never overwritten by research),
   `research_result` (`TEXT NOT NULL DEFAULT ''` — the read-only research agent's completed output,
   stored apart from `context`; `''` until research yields a non-empty result), `status`,
   `agenda` (`TEXT NOT NULL DEFAULT '[]'` — the
   organizer's ordered subtopics, a JSON string array), `agenda_index` (`INTEGER NOT NULL DEFAULT 0`
   — 0-based current subtopic; `=== agenda.length` ⇒ all done), `conclusion` (nullable), `created_at`,
-  `updated_at`, `completed_at` (nullable). Indexed by `idx_disc_project_status (project_path,
+  `updated_at`, `completed_at` (nullable). Indexed by `idx_disc_workspace_status (workspace_path,
 status)`.
 - `discussion_messages` — `id` (PK), `discussion_id`, `seq`, `speaker_kind`, `speaker_agent_id`
   (nullable), `speaker_name` (nullable), `content`, `created_at`. Indexed by
   `idx_disc_msg_discussion (discussion_id, seq)` — the natural read path for `listMessages`.
 
-**Schema version (current: v1).** `SCHEMA_VERSION = 1`, written via `PRAGMA user_version`. The
+**Schema version (current: v4).** `SCHEMA_VERSION = 4`, written via `PRAGMA user_version`. v2→v3
+added `participant_agent_ids`; **v3→v4 renamed the workspace-key column `project_path` →
+`workspace_path` in place** (composite index rebuilt as `idx_disc_workspace_status`), via
+`migrateProjectPathToWorkspacePath` run BEFORE `exec(SCHEMA)` — idempotent, never drops a table.
+This **deliberately diverges** from the back-compat `projectConfigs` settings.json key (see
+`database/migrate/2026/06/14/012`). The
 single c3.db `user_version` counter is **shared** with the intent store, so the two clobber
 each other on write — this is intentional and harmless: migrations key off **actual presence**
 (`PRAGMA table_info` for columns, `CREATE TABLE IF NOT EXISTS` for tables), never off the version

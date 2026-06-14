@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,             -- 事件唯一标识 (UUID v4)
-  project_path  TEXT NOT NULL,                -- 所属项目绝对路径 (resolve 后)
+  workspace_path TEXT NOT NULL,               -- 所属工作区绝对路径 (resolve 后); v1→v2 由 project_path 改名
   source        TEXT NOT NULL,                -- 触发源类型: 'session' | 'intent' | 'discussion' | 'schedule' (= WaitUserInvolveSource); 由调用方传入,驱动 WorkCenter jumpToSource 目标
   source_id     TEXT,                         -- 触发源 ID (如 schedule id 或 session id)
   title         TEXT,                         -- 事件标题
@@ -16,5 +16,5 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   created_at    INTEGER NOT NULL,             -- 创建时间 (epoch ms)
   updated_at    INTEGER NOT NULL              -- 最后更新时间 (epoch ms)
 );
-CREATE INDEX IF NOT EXISTS idx_wui_project_status ON wait_user_involve_events(project_path, status);
+CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_path, status);
 CREATE INDEX IF NOT EXISTS idx_wui_source_status ON wait_user_involve_events(source_id, status);

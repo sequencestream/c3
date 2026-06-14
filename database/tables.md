@@ -32,15 +32,15 @@
 
 ### intents
 
-意图管理的核心域。`intents` 是主表，记录每个需求/任务的生命周期；`intent_deps` 表达意图间的先后依赖；`intent_chats` 同时充当 per-project 沟通会话映射和隐藏会话过滤器；`tool_sessions` 持久化工具自动创建的会话 ID 集合；`intent_sessions` 记录每次 intent dev session 的执行审计历史。
+意图管理的核心域。`intents` 是主表，记录每个需求/任务的生命周期；`intent_deps` 表达意图间的先后依赖；`intent_chats` 同时充当 per-workspace 沟通会话映射和隐藏会话过滤器；`tool_sessions` 持久化工具自动创建的会话 ID 集合；`intent_sessions` 记录每次 intent dev session 的执行审计历史。
 
-Schema 版本: 10。v5→v6 完成了 `requirements*` → `intents*` 的就地表重命名迁移。v7→v8 新增 git 追踪字段: `branch_name`, `latest_commit_hash`, `pr_id`, `pr_status`。v8→v9 扩展 `intent_deps` 新增 `dep_type` (blocks/informs/soft_after) + `created_at`。v9→v10 新增 `intent_sessions` 表 (dev session 审计追踪)。
+Schema 版本: 11。v5→v6 完成了 `requirements*` → `intents*` 的就地表重命名迁移。v7→v8 新增 git 追踪字段: `branch_name`, `latest_commit_hash`, `pr_id`, `pr_status`。v8→v9 扩展 `intent_deps` 新增 `dep_type` (blocks/informs/soft_after) + `created_at`。v9→v10 新增 `intent_sessions` 表 (dev session 审计追踪)。v10→v11 把工作区主键列 `project_path` 就地改名为 `workspace_path` (`intents` + `intent_chats`)，复合索引 `idx_intent_project_status` → `idx_intent_workspace_status`；单列索引 `idx_chat_project` 保留索引名、列引用随改 (详见迁移记录 `migrate/2026/06/14/012`)。
 
 ### discussions
 
 多 agent 结构化讨论域。`discussions` 记录讨论线程的元数据 (类型、目标、议程、参与者、结论)；`discussion_messages` 按 seq 序号存储发言；`discussion_agent_sessions` 记录每个讨论内 agent 与 vendor session 的绑定关系 (支持 resume)。
 
-Schema 版本: 3。v2→v3 新增 `discussions.participant_agent_ids` (创建时选定的参与 agent 集合; `'[]'`=未设置→编排时回退全员, organizer 恒并入)。
+Schema 版本: 4。v2→v3 新增 `discussions.participant_agent_ids` (创建时选定的参与 agent 集合; `'[]'`=未设置→编排时回退全员, organizer 恒并入)。v3→v4 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_disc_project_status` → `idx_disc_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。
 
 ### schedules
 
@@ -52,7 +52,7 @@ Schema 版本: 5。迁移历史: status 列、write_approvals/workspace_mcp_conf
 
 用户介入事件域。`wait_user_involve_events` 记录需要人工决策的工具调用事件（如 schedule 运行时触发的敏感操作），按 source/source_id 关联触发源。`source ∈ {session, intent, discussion, schedule}`（= `WaitUserInvolveSource`），由发 `permission_request` 的调用方传入，决定 WorkCenter 点击事件时 `jumpToSource` 的目标 tab。所有人工权限出口统一在发帧前登记并广播：claude 进程内网关、codex/opencode 的 driver approval 路径、codex intent 的 `save_intents` 保存门——故非 claude vendor 的确认事项同样进 WorkCenter 待办与角标。
 
-Schema 版本: 1。
+Schema 版本: 2。v1→v2 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_wui_project_status` → `idx_wui_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。
 
 ### works
 

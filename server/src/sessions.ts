@@ -70,7 +70,7 @@ function titleOf(s: {
  * intent view, not the normal list). Tool-created sessions (completion
  * judge, consensus advisor) are also hidden by default, controlled by the
  * `showToolSessions` system setting. Uses the resolved path as the key, to
- * match how the store records `project_path`. If the store is unavailable it
+ * match how the store records `workspace_path`. If the store is unavailable it
  * returns an empty hidden set, so the list degrades to "show everything".
  */
 export async function listWorkspaceSessions(dir: string): Promise<SessionInfo[]> {

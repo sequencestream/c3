@@ -64,10 +64,10 @@ describe('schema', () => {
     const indexes = raw
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='index'")
       .map((r) => r.name)
-    expect(indexes).toContain('idx_disc_project_status')
+    expect(indexes).toContain('idx_disc_workspace_status')
     expect(indexes).toContain('idx_disc_msg_discussion')
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(3)
+    expect(version?.user_version).toBe(4)
     // v3 added the participant selection column.
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((r) => r.name)
     expect(cols).toContain('participant_agent_ids')

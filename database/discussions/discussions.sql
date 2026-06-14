@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS discussions (
   id              TEXT PRIMARY KEY,                  -- 讨论唯一标识 (UUID v4)
-  project_path    TEXT NOT NULL,                     -- 所属项目绝对路径 (resolve 后)
+  workspace_path  TEXT NOT NULL,                     -- 所属工作区绝对路径 (resolve 后); v3→v4 由 project_path 改名
   title           TEXT NOT NULL,                     -- 讨论标题
   type            TEXT NOT NULL,                     -- 讨论类型 (如 'brainstorm' | 'code_review' | ...)
   goal            TEXT NOT NULL DEFAULT '',          -- 讨论目标描述
@@ -20,4 +20,4 @@ CREATE TABLE IF NOT EXISTS discussions (
   updated_at      INTEGER NOT NULL,                  -- 最后更新时间 (epoch ms)
   completed_at    INTEGER                            -- 完成时间 (epoch ms), status='completed' 时打戳
 );
-CREATE INDEX IF NOT EXISTS idx_disc_project_status ON discussions(project_path, status);
+CREATE INDEX IF NOT EXISTS idx_disc_workspace_status ON discussions(workspace_path, status);

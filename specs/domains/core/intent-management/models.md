@@ -103,10 +103,15 @@ project; not persisted — a server restart resets it to `idle`). Pushed to ever
 ## Persisted store (c3.db)
 
 The SQLite ledger at `~/.c3/c3.db` (distinct from the registry's `state.json`). Schema version is
-managed via `PRAGMA user_version` (currently `7` — v2 added the `intents.module` column, v3
+managed via `PRAGMA user_version` (currently `11` — v2 added the `intents.module` column, v3
 added the nullable `intents.completed_at` column, v4 added `intents.automate` INTEGER NOT
 NULL DEFAULT 0, v6 renamed legacy requirement- tables to intent-, v7 added the nullable
-`intent_chats.title` column). Tables: `intents`, `intent_deps`, `intent_chats`
+`intent_chats.title` column, v8 added git-tracking fields, v9 added `intent_deps.dep_type` +
+`created_at`, v10 added the `intent_sessions` audit table, v11 renamed the workspace-key column
+`project_path` → `workspace_path` in place on `intents` + `intent_chats` and rebuilt the composite
+index as `idx_intent_workspace_status`. The rename deliberately diverges from the back-compat
+`projectConfigs` settings.json key, which keeps its legacy name — see migration record
+`database/migrate/2026/06/14/012`). Tables: `intents`, `intent_deps`, `intent_chats`
 (session collection + hidden set in one table), and `tool_sessions`
 (`session_id` PRIMARY KEY + `created_at`) — the persisted set of tool-created sessions (completion
 judge, consensus advisor) so the session-registry's "show tool sessions" filter survives restarts.

@@ -52,7 +52,7 @@ describe('schema', () => {
     const indexes = raw
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='index'")
       .map((r) => r.name)
-    expect(indexes).toContain('idx_wui_project_status')
+    expect(indexes).toContain('idx_wui_workspace_status')
     expect(indexes).toContain('idx_wui_source_status')
   })
 })

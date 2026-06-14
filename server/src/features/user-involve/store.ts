@@ -23,12 +23,12 @@ import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
  * Schema version — informational only, see discussion store comment.
  * Migrations key off `PRAGMA table_info`, never off the version number.
  */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,
-  project_path  TEXT NOT NULL,
+  workspace_path  TEXT NOT NULL,
   source        TEXT NOT NULL,
   source_id     TEXT,
   title         TEXT,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_wui_project_status ON wait_user_involve_events(project_path, status);
+CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_path, status);
 CREATE INDEX IF NOT EXISTS idx_wui_source_status ON wait_user_involve_events(source_id, status);
 `
 
@@ -55,11 +55,44 @@ function ensureColumn(d: Db, table: string, col: string, decl: string): void {
   }
 }
 
+function tableExists(d: Db, name: string): boolean {
+  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", name)
+}
+function columnExists(d: Db, table: string, col: string): boolean {
+  return d.all<{ name: string }>(`PRAGMA table_info(${table})`).some((c) => c.name === col)
+}
+function indexExists(d: Db, name: string): boolean {
+  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", name)
+}
+
+/**
+ * v1 → v2: rename the workspace-key column `project_path` → `workspace_path` IN PLACE
+ * on `wait_user_involve_events`, mirroring the intent store's v10→v11. MUST run BEFORE
+ * `exec(SCHEMA)` (SCHEMA's `idx_wui_workspace_status` references the new column).
+ * Idempotent + never drops a table; the composite index is dropped and rebuilt under
+ * the new name by SCHEMA. Deliberately diverges from the back-compat `projectConfigs`
+ * settings.json key — see the 012 migration record.
+ */
+function migrateProjectPathToWorkspacePath(d: Db): void {
+  if (
+    tableExists(d, 'wait_user_involve_events') &&
+    columnExists(d, 'wait_user_involve_events', 'project_path') &&
+    !columnExists(d, 'wait_user_involve_events', 'workspace_path')
+  ) {
+    d.exec('ALTER TABLE wait_user_involve_events RENAME COLUMN project_path TO workspace_path')
+  }
+  if (indexExists(d, 'idx_wui_project_status')) {
+    d.exec('DROP INDEX idx_wui_project_status')
+  }
+}
+
 /** Return the db with the events schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
+    // v1 → v2 project_path → workspace_path; MUST precede SCHEMA (see docstring).
+    migrateProjectPathToWorkspacePath(d)
     d.exec(SCHEMA)
     // Idempotent backfill for columns that may be missing on upgraded builds.
     ensureColumn(d, 'wait_user_involve_events', 'tool_input', "TEXT NOT NULL DEFAULT ''")
@@ -105,7 +138,7 @@ function _tx<T>(d: Db, fn: () => T): T {
 
 interface EventRow {
   id: string
-  project_path: string
+  workspace_path: string
   source: string
   source_id: string | null
   title: string | null
@@ -128,7 +161,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent {
   }
   return {
     id: r.id,
-    workspacePath: r.project_path,
+    workspacePath: r.workspace_path,
     source: r.source as WaitUserInvolveSource,
     sourceId: r.source_id,
     title: r.title,
@@ -164,7 +197,7 @@ export function createEvent(input: CreateEventInput): WaitUserInvolveEvent {
   const toolInput = input.toolInput !== undefined ? JSON.stringify(input.toolInput) : ''
   d.run(
     `INSERT INTO wait_user_involve_events
-       (id, project_path, source, source_id, title, request_id, tool_name, tool_input, status, created_at, updated_at)
+       (id, workspace_path, source, source_id, title, request_id, tool_name, tool_input, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     resolve(input.workspacePath),
@@ -202,12 +235,12 @@ export function listEvents(
   const proj = resolve(workspacePath)
   const rows = status
     ? d.all<EventRow>(
-        'SELECT * FROM wait_user_involve_events WHERE project_path=? AND status=? ORDER BY created_at DESC',
+        'SELECT * FROM wait_user_involve_events WHERE workspace_path=? AND status=? ORDER BY created_at DESC',
         proj,
         status,
       )
     : d.all<EventRow>(
-        'SELECT * FROM wait_user_involve_events WHERE project_path=? ORDER BY created_at DESC',
+        'SELECT * FROM wait_user_involve_events WHERE workspace_path=? ORDER BY created_at DESC',
         proj,
       )
   return rows.map(toEvent)

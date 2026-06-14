@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS intents (
   id                  TEXT PRIMARY KEY,              -- 意图唯一标识 (UUID v4)
-  project_path        TEXT NOT NULL,                 -- 所属项目绝对路径 (resolve 后)
+  workspace_path      TEXT NOT NULL,                 -- 所属工作区绝对路径 (resolve 后); v10→v11 由 project_path 改名
   title               TEXT NOT NULL,                 -- 意图标题
   content             TEXT NOT NULL,                 -- 意图详细描述
   priority            TEXT NOT NULL,                 -- 优先级: 'low' | 'medium' | 'high' | 'critical'
@@ -21,4 +21,4 @@ CREATE TABLE IF NOT EXISTS intents (
   updated_at          INTEGER NOT NULL,              -- 最后更新时间 (epoch ms)
   completed_at        INTEGER                        -- 完成时间 (epoch ms), status='done' 时打戳
 );
-CREATE INDEX IF NOT EXISTS idx_intent_project_status ON intents(project_path, status);
+CREATE INDEX IF NOT EXISTS idx_intent_workspace_status ON intents(workspace_path, status);

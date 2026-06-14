@@ -200,7 +200,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(10)
+    expect(version?.user_version).toBe(11)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -270,7 +270,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(10)
+    expect(version?.user_version).toBe(11)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()

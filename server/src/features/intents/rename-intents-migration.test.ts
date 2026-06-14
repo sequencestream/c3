@@ -120,10 +120,16 @@ function expectTerminalSchema(raw: Db): void {
   // Column renamed: intent_deps keys on intent_id, no leftover requirement_id.
   expect(cols(raw, 'intent_deps').has('intent_id')).toBe(true)
   expect(cols(raw, 'intent_deps').has('requirement_id')).toBe(false)
-  // Index renamed.
+  // Index renamed (requirement → intent, then project → workspace at v10→v11).
   const idx = indexes(raw)
-  expect(idx.has('idx_intent_project_status')).toBe(true)
+  expect(idx.has('idx_intent_workspace_status')).toBe(true)
+  expect(idx.has('idx_intent_project_status')).toBe(false)
   expect(idx.has('idx_req_project_status')).toBe(false)
+  // v10 → v11 column rename: intents/intent_chats key on workspace_path now.
+  expect(cols(raw, 'intents').has('workspace_path')).toBe(true)
+  expect(cols(raw, 'intents').has('project_path')).toBe(false)
+  expect(cols(raw, 'intent_chats').has('workspace_path')).toBe(true)
+  expect(cols(raw, 'intent_chats').has('project_path')).toBe(false)
   // v8: git tracking columns are present.
   const ic = cols(raw, 'intents')
   expect(ic.has('branch_name')).toBe(true)
@@ -134,7 +140,7 @@ function expectTerminalSchema(raw: Db): void {
   const dc = cols(raw, 'intent_deps')
   expect(dc.has('dep_type')).toBe(true)
   expect(dc.has('created_at')).toBe(true)
-  expect(userVersion(raw)).toBe(10)
+  expect(userVersion(raw)).toBe(11)
 }
 
 describe('v5 → v6 rename: fresh db starts at the intents terminal state', () => {

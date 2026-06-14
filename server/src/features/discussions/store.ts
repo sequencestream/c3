@@ -27,12 +27,12 @@ import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
  * value is informational only: migrations key off `PRAGMA table_info` /
  * `CREATE TABLE IF NOT EXISTS`, never off the version number.
  */
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS discussions (
   id            TEXT PRIMARY KEY,
-  project_path  TEXT NOT NULL,
+  workspace_path  TEXT NOT NULL,
   title         TEXT NOT NULL,
   type          TEXT NOT NULL,
   goal          TEXT NOT NULL DEFAULT '',
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   updated_at    INTEGER NOT NULL,
   completed_at  INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_disc_project_status ON discussions(project_path, status);
+CREATE INDEX IF NOT EXISTS idx_disc_workspace_status ON discussions(workspace_path, status);
 
 CREATE TABLE IF NOT EXISTS discussion_messages (
   id                TEXT PRIMARY KEY,
@@ -87,11 +87,44 @@ function ensureColumn(d: Db, table: string, col: string, decl: string): void {
   }
 }
 
+function tableExists(d: Db, name: string): boolean {
+  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", name)
+}
+function columnExists(d: Db, table: string, col: string): boolean {
+  return d.all<{ name: string }>(`PRAGMA table_info(${table})`).some((c) => c.name === col)
+}
+function indexExists(d: Db, name: string): boolean {
+  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", name)
+}
+
+/**
+ * v3 → v4: rename the workspace-key column `project_path` → `workspace_path` IN PLACE
+ * on `discussions`, mirroring the intent store's v10→v11. MUST run BEFORE `exec(SCHEMA)`
+ * (SCHEMA's `idx_disc_workspace_status` references the new column). Idempotent + never
+ * drops a table; the composite index is dropped and rebuilt under the new name by SCHEMA.
+ * Deliberately diverges from the back-compat `projectConfigs` settings.json key — see
+ * the 012 migration record.
+ */
+function migrateProjectPathToWorkspacePath(d: Db): void {
+  if (
+    tableExists(d, 'discussions') &&
+    columnExists(d, 'discussions', 'project_path') &&
+    !columnExists(d, 'discussions', 'workspace_path')
+  ) {
+    d.exec('ALTER TABLE discussions RENAME COLUMN project_path TO workspace_path')
+  }
+  if (indexExists(d, 'idx_disc_project_status')) {
+    d.exec('DROP INDEX idx_disc_project_status')
+  }
+}
+
 /** Return the db with the discussion schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
+    // v3 → v4 project_path → workspace_path; MUST precede SCHEMA (see docstring).
+    migrateProjectPathToWorkspacePath(d)
     d.exec(SCHEMA)
     // Defensive idempotent backfill: a `discussions` table created by an earlier
     // (in-development) build may predate these columns. Keyed off column presence,
@@ -146,7 +179,7 @@ function tx<T>(d: Db, fn: () => T): T {
 
 interface DiscussionRow {
   id: string
-  project_path: string
+  workspace_path: string
   title: string
   type: string
   goal: string
@@ -179,7 +212,7 @@ function parseStringList(raw: string | null): string[] {
 function toDiscussion(r: DiscussionRow): Discussion {
   return {
     id: r.id,
-    workspacePath: r.project_path,
+    workspacePath: r.workspace_path,
     title: r.title,
     type: r.type,
     goal: r.goal,
@@ -219,12 +252,12 @@ export function listDiscussions(workspacePath: string, status?: DiscussionStatus
   const proj = resolve(workspacePath)
   const rows = status
     ? d.all<DiscussionRow>(
-        'SELECT * FROM discussions WHERE project_path=? AND status=? ORDER BY updated_at DESC',
+        'SELECT * FROM discussions WHERE workspace_path=? AND status=? ORDER BY updated_at DESC',
         proj,
         status,
       )
     : d.all<DiscussionRow>(
-        'SELECT * FROM discussions WHERE project_path=? ORDER BY updated_at DESC',
+        'SELECT * FROM discussions WHERE workspace_path=? ORDER BY updated_at DESC',
         proj,
       )
   return rows.map(toDiscussion)
@@ -243,7 +276,7 @@ export function countByStatusInRange(
 ): Record<string, number> {
   const d = db()
   if (!d) return {}
-  const where: string[] = ['project_path=?']
+  const where: string[] = ['workspace_path=?']
   const params: (string | number)[] = [resolve(workspacePath)]
   if (startTime != null) {
     where.push('updated_at >= ?')
@@ -278,7 +311,7 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
   const completedAt = status === 'completed' ? now : null
   d.run(
     `INSERT INTO discussions
-       (id, project_path, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, conclusion, created_at, updated_at, completed_at)
+       (id, workspace_path, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, conclusion, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     resolve(input.workspacePath),

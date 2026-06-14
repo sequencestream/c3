@@ -43,8 +43,8 @@ to `ws://localhost:5173/ws` transparently.
 ```bash
 pnpm build
 pnpm start
-# defaults: --project = current directory, --port 3000
-# or override: pnpm start --project /absolute/path/to/your/project --port 3000
+# defaults: --workspace = current directory, --port 3000
+# or override: pnpm start --workspace /absolute/path/to/your/project --port 3000
 # open http://localhost:3000
 ```
 
@@ -56,7 +56,7 @@ pnpm start
 pnpm binary
 # outputs: dist/c3-macos-arm64  (~61MB)
 ./dist/c3-macos-arm64
-# or override: ./dist/c3-macos-arm64 start --project /abs/path --port 3000
+# or override: ./dist/c3-macos-arm64 start --workspace /abs/path --port 3000
 ```
 
 Built with [`bun build --compile`](https://bun.sh/docs/bundler/executables).
@@ -204,7 +204,7 @@ the smoke test:
 
 ```bash
 # Terminal A
-pnpm start --project /tmp --port 13000
+pnpm start --workspace /tmp --port 13000
 
 # Terminal B
 node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws
@@ -222,7 +222,7 @@ The smoke prompt asks Claude to write `/tmp/c3-e2e-test.txt`. The script:
 ## CLI
 
 ```
-c3 [start] [--project <path>] [--port 3000] [--dev]
+c3 [start] [--workspace <path>] [--port 3000] [--dev]
 c3 verify <file>
 ```
 
@@ -232,9 +232,10 @@ c3 verify <file>
   key (see [Download & verify](#download--verify)). Exit 0 = `VERIFIED`, non-zero = tampered
   or unsigned.
 
-- `--project` _(optional)_: seed workspace directory passed to the SDK as `cwd`.
+- `--workspace` _(optional)_: seed workspace directory passed to the SDK as `cwd`.
   Claude reads/writes files relative to it. Defaults to the current directory;
-  more workspaces can be added from the UI.
+  more workspaces can be added from the UI. `--project` remains as a deprecated
+  alias (prints a warning) for one cycle.
 - `--port`: HTTP port (default 3000).
 - `--dev`: skip serving the frontend bundle (use Vite at :5173 instead).
 

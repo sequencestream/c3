@@ -51,7 +51,7 @@ ws.addEventListener('message', (evt) => {
     sawReady = true
     const ws0 = msg.workspaces?.[0]?.path
     if (!ws0) {
-      console.error('[e2e] no seed workspace in ready — start with --project <dir>')
+      console.error('[e2e] no seed workspace in ready — start with --workspace <dir>')
       finish(5)
       return
     }

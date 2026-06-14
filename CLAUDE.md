@@ -20,7 +20,7 @@
 pnpm install                                   # bootstrap
 pnpm dev                                        # server :3000 + Vite :5173 — open :5173
 pnpm build                                      # web THEN server (order matters)
-pnpm start [--project /abs/path] [--port 3000] # start is default cmd; --project defaults to cwd, --port to 3000
+pnpm start [--workspace /abs/path] [--port 3000] # start is default cmd; --workspace defaults to cwd (--project deprecated alias), --port to 3000
 pnpm typecheck                                  # vue-tsc --noEmit across packages
 pnpm lint                                        # eslint . , exec `pnpm lint:fix` to fix lint errors
 pnpm format                                      # prettier --write . (--check via format:check)

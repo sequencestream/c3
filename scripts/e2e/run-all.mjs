@@ -149,7 +149,7 @@ async function main() {
       [
         stagePath,
         'start',
-        '--project',
+        '--workspace',
         SEED_PROJECT,
         '--port',
         String(PORT),
@@ -187,7 +187,7 @@ async function main() {
     [
       join(ROOT, 'server', 'dist', 'cli.cjs'),
       'start',
-      '--project',
+      '--workspace',
       SEED_PROJECT,
       '--port',
       String(PORT),

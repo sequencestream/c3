@@ -41,7 +41,7 @@
  * at a throwaway file.
  *
  * Usage:
- *   pnpm start --project /tmp --port 13000     # in another terminal
+ *   pnpm start --workspace /tmp --port 13000     # in another terminal
  *   node scripts/e2e/e2e-intent-test.mjs [ws-url]
  */
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'

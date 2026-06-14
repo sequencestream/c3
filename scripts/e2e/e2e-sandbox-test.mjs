@@ -115,7 +115,7 @@ function onMessage(evt) {
   if (msg.type === 'ready') {
     seedWorkspace = msg.workspaces?.[0]?.path
     if (!seedWorkspace) {
-      console.error('[e2e-sandbox] no seed workspace — start with --project <dir>')
+      console.error('[e2e-sandbox] no seed workspace — start with --workspace <dir>')
       finish(5)
       return
     }

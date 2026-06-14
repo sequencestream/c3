@@ -23,7 +23,7 @@
    串行化本进程写入（强于 async mutex）。仍统一收口到单一入口，使该不变量是结构性的、非偶然的。
 2. **跨进程文件锁**：基于原子 `mkdirSync` 的目录锁（`${file}.lock/`，零依赖、跨平台）。
    `mkdirSync`（不带 `recursive`）在目录已存在时抛 `EEXIST`，即原子 test-and-set，守护
-   多 c3 实例（不同 `--project`）对同一文件的 read-modify-write **序列**。
+   多 c3 实例（不同 `--workspace`）对同一文件的 read-modify-write **序列**。
 
 ## 写前持锁重读磁盘（不信任内存缓存）
 

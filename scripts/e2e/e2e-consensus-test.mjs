@@ -19,7 +19,7 @@
  * A plain `permission_request` with no `consensus` would mean voting did not run.
  *
  * Usage:
- *   pnpm start --project /tmp --port 13000     # in another terminal
+ *   pnpm start --workspace /tmp --port 13000     # in another terminal
  *   node scripts/e2e/e2e-consensus-test.mjs [ws-url]
  */
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'

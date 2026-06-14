@@ -31,7 +31,7 @@ hard to expose to a non-terminal workflow, and hard to centralize. c3 decouples 
 - Not an authentication or authorization system — it assumes the local OS user is trusted.
 - Not a replacement for the `claude` CLI. The CLI is a **hard runtime dependency**: it
   must be installed and logged in (`claude /login`) on the host.
-- Not a multi-project workspace. One server process serves one `--project` directory.
+- Not a multi-project workspace. One server process serves one `--workspace` directory.
 - Not a persistent store. There is no database, no history persistence across restarts.
 
 ## Stakeholders

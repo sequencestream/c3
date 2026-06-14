@@ -27,7 +27,7 @@ section.
 
 ## Smoke test (permission flow)
 
-- `pnpm start --project /tmp --port 13000`
+- `pnpm start --workspace /tmp --port 13000`
 - `node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Pending-queue flush race (running→idle re-submit)
@@ -43,7 +43,7 @@ turn completes; FAIL = the "already running" error fires.
 
 Needs only the default agent (spends two short tool-less turns of real tokens).
 
-- `pnpm start --project /tmp --port 13000`
+- `pnpm start --workspace /tmp --port 13000`
 - `node scripts/e2e/e2e-pending-flush-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Intent management (save flow + AskUserQuestion gate)
@@ -69,7 +69,7 @@ Needs only the default agent (spends two short turns of real tokens — save, th
 AskUserQuestion) and the intent db available (`C3_DB_PATH`, which `pnpm e2e`
 provides automatically).
 
-- `pnpm start --project /tmp --port 13000` (with a throwaway `C3_DB_PATH` set if
+- `pnpm start --workspace /tmp --port 13000` (with a throwaway `C3_DB_PATH` set if
   you don't want to touch `~/.c3/c3.db`)
 - `node scripts/e2e/e2e-intent-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
@@ -85,7 +85,7 @@ original settings are restored on exit; the agents are never modified.
 Requires at least one agent besides the default (to vote). Hits the configured
 providers' APIs (spends real tokens).
 
-- `pnpm build` then `pnpm start --project /tmp --port 13000`
+- `pnpm build` then `pnpm start --workspace /tmp --port 13000`
   (or `pnpm dev` and use `ws://localhost:3000/ws`)
 - `node scripts/e2e/e2e-consensus-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
@@ -130,7 +130,7 @@ binary). opencode is intentionally omitted (unsupported under sandbox, ADR-0024)
 
 - Build the image (once): `node scripts/e2e/sandbox/build-image.mjs`
   (custom tag via `C3_SANDBOX_IMAGE=foo:bar`, clean rebuild via `--no-cache`).
-- `pnpm start --project /tmp --port 13000`
+- `pnpm start --workspace /tmp --port 13000`
 - `node scripts/e2e/e2e-sandbox-container-test.mjs ws://localhost:13000/ws` →
   expect `RESULT: PASS`. SKIPs (exit 5) when Docker or the image is missing.
 

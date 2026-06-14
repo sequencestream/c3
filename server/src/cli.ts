@@ -18,10 +18,11 @@ program
   .command('start', { isDefault: true })
   .description('Start the local web server (default command)')
   .option(
-    '-p, --project <path>',
+    '-w, --workspace <path>',
     'seed workspace directory; more can be added from the UI',
     process.cwd(),
   )
+  .option('-p, --project <path>', '[deprecated] alias for --workspace')
   .option('--port <number>', 'HTTP port', '3000')
   .option('--dev', 'development mode (do not serve static frontend)', false)
   .option(
@@ -34,6 +35,7 @@ program
   )
   .action(
     async (opts: {
+      workspace?: string
       project?: string
       port: string
       dev: boolean
@@ -42,11 +44,18 @@ program
     }) => {
       // Relocate the config dir before anything reads settings (loadSettings is lazy).
       if (opts.settings) setSettingsPath(opts.settings)
+      // --workspace carries the cwd default; --project (no default) is a deprecated
+      // alias kept for one cycle. Explicit --project wins and warns once.
+      let seed = opts.workspace
+      if (opts.project !== undefined) {
+        console.error('[c3] warning: --project is deprecated; use --workspace instead')
+        seed = opts.project
+      }
       let workspacePath: string | undefined
-      if (opts.project) {
-        workspacePath = resolve(opts.project)
+      if (seed) {
+        workspacePath = resolve(seed)
         if (!existsSync(workspacePath) || !statSync(workspacePath).isDirectory()) {
-          console.error(`[c3] error: project path is not a directory: ${workspacePath}`)
+          console.error(`[c3] error: workspace path is not a directory: ${workspacePath}`)
           process.exit(1)
         }
       }

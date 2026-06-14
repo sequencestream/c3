@@ -14,7 +14,7 @@
  * consensus e2e.
  *
  * Usage:
- *   pnpm start --project /tmp --port 13000     # in another terminal
+ *   pnpm start --workspace /tmp --port 13000     # in another terminal
  *   node scripts/e2e/e2e-ask-consensus-test.mjs [ws-url]
  */
 const URL = process.argv[2] || 'ws://localhost:13000/ws'

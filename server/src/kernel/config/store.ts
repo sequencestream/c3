@@ -13,7 +13,7 @@
  *     invariant is structural, not incidental.
  *  2. **Cross-process file lock** — a zero-dependency, atomic `mkdirSync`-based
  *     directory lock guards the read-modify-write *sequence* across multiple c3
- *     instances (different `--project`). `mkdirSync` without `recursive` fails with
+ *     instances (different `--workspace`). `mkdirSync` without `recursive` fails with
  *     `EEXIST` when the directory already exists, which is an atomic test-and-set on
  *     macOS/Linux/Windows alike — no native dependency, bundles cleanly into the
  *     single binary.

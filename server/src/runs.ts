@@ -45,7 +45,7 @@ export interface SessionRuntime {
   /**
    * The session's action mode as a vendor-aware {@link ModeToken} (NOT the narrow
    * Claude `PermissionMode`): claude tokens map 1:1 to `PermissionMode`, while
-   * codex/opencode carry their own tokens. The claude path narrows it back with
+   * codex carries its own policy object. The claude path narrows it back with
    * `rt.mode as PermissionMode` at launch.
    */
   mode: ModeToken

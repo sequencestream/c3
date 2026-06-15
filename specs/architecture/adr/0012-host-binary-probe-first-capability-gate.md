@@ -6,7 +6,6 @@
 ## Context
 
 ADR-0011 made the agent layer vendor-neutral: a `VendorAdapter` (driver + approval bridge +
-session store) plus an `AdapterCapabilities` ledger lets c3 drive Claude, Codex, or OpenCode through
 one shape. But ADR-0011's reference adapter (`createClaudeAdapter`) had **no runtime caller** — there
 was no registry deciding _which_ vendors are actually drivable on a given host.
 
@@ -80,7 +79,6 @@ The single binary is c3 only; agent types are opt-in by installing their host CL
   the launcher.
 - **Deferred:** surfacing vendor availability through the wire protocol / front-end settings list is a
   later phase (decision D3 — this phase stops at the kernel registry + boot health check). `codex` /
-  `opencode` are listed in `HOST_BINARIES` for the health check but have no factory yet, so they are not
   registry candidates until their adapters land.
 
 ## Compliance

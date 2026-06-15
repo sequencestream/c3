@@ -11,7 +11,7 @@
  * separate class with its own lifecycle.
  *
  * # Cross-vendor resume
- * All three vendor drivers (`ClaudeDriver`, `CodexDriver`, `OpencodeDriver`) accept
+ * Vendor drivers (`ClaudeDriver`, `CodexDriver`) accept
  * `DriverStartOptions.resume` — the manager unifies them through that single path.
  *
  * # Lifecycle

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WorkSessionList from './WorkSessionList.vue'
 import type {
-  OpencodeServerStatus,
   SessionCapabilities,
   SessionInfo,
   SessionStatus,
@@ -22,7 +21,6 @@ function mountList(
     currentWorkspace?: string | null
     activeSession?: string | null
     vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
-    opencodeStatus?: OpencodeServerStatus
   } = {},
 ) {
   return mount(WorkSessionList, {
@@ -34,7 +32,6 @@ function mountList(
       activeSession: opts.activeSession ?? null,
       activeTitle: '',
       vendorSessionCaps: opts.vendorSessionCaps,
-      opencodeStatus: opts.opencodeStatus,
     },
   })
 }
@@ -167,11 +164,11 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
       expect(w.find('[data-testid="session-row-delete"]').exists()).toBe(false)
     })
 
-    it('temporarily-unavailable(OpenCode)→ 按钮渲染但禁用,tooltip 为暂不可用', () => {
+    it('temporarily-unavailable(Codex)→ 按钮渲染但禁用,tooltip 为暂不可用', () => {
       const w = mountList({
-        sessions: [session('s1', 'Alpha', { vendor: 'opencode' })],
+        sessions: [session('s1', 'Alpha', { vendor: 'codex' })],
         vendorSessionCaps: {
-          opencode: caps({ rename: 'temporarily-unavailable', delete: 'temporarily-unavailable' }),
+          codex: caps({ rename: 'temporarily-unavailable', delete: 'temporarily-unavailable' }),
         },
       })
       const del = w.find('[data-testid="session-row-delete"]')
@@ -254,37 +251,6 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
       expect(rows.length).toBe(1)
       // 余下的是 claude 行(codex 被过滤)。
       expect(rows[0].find('.session-title').text()).toContain('Alpha')
-    })
-  })
-
-  describe('OpenCode 离线预警(first-class 状态信号)', () => {
-    it('reachability=temporarily-unavailable → 渲染离线预警', () => {
-      const w = mountList({
-        sessions: [session('s1', 'Alpha')],
-        opencodeStatus: { reachability: 'temporarily-unavailable', retrying: true },
-      })
-      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(true)
-    })
-
-    it('reachability=full → 不渲染预警', () => {
-      const w = mountList({
-        sessions: [session('s1', 'Alpha')],
-        opencodeStatus: { reachability: 'full', retrying: false },
-      })
-      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(false)
-    })
-
-    it('reachability=none(未注册)→ 不渲染预警', () => {
-      const w = mountList({
-        sessions: [session('s1', 'Alpha')],
-        opencodeStatus: { reachability: 'none', retrying: false },
-      })
-      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(false)
-    })
-
-    it('未提供 opencodeStatus → 不渲染预警(向后兼容)', () => {
-      const w = mountList({ sessions: [session('s1', 'Alpha')] })
-      expect(w.find('[data-testid="opencode-offline"]').exists()).toBe(false)
     })
   })
 })

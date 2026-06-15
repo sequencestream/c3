@@ -51,7 +51,6 @@ export { tokenToGrid, gridToToken, isKnownToken } from './mode-catalog.js'
 import type { VendorId, VendorModeCatalog } from './types.js'
 import { claudeModeCatalog } from './claude/modes.js'
 import { codexModeCatalog } from './codex/modes.js'
-import { opencodeModeCatalog } from './opencode/modes.js'
 
 /**
  * Every vendor's {@link VendorModeCatalog}, keyed by {@link VendorId}. The
@@ -64,5 +63,4 @@ import { opencodeModeCatalog } from './opencode/modes.js'
 export const MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
   claude: claudeModeCatalog,
   codex: codexModeCatalog,
-  opencode: opencodeModeCatalog,
 }

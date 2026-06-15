@@ -56,6 +56,7 @@ export interface ScheduleNameOverride {
   source: 'user' | 'auto'
 }
 
+const AGENT_RECOVERY_ACTION = 'agent_quota_recovery'
 const SCHEMA_VERSION = 5
 
 const SCHEMA = `
@@ -247,7 +248,7 @@ interface ExecutionLogRow {
 
 /**
  * Parse the `mode` column: try JSON-object first (CodexPolicy), fall back to
- * plain string (ModeToken for claude/opencode, or legacy McpMode for migrated rows).
+ * plain string (ModeToken for claude, or legacy McpMode for migrated rows).
  */
 function parseMode(raw: string | null): ModeToken | CodexPolicy {
   if (!raw) return 'sandboxed' // default for empty/missing
@@ -326,6 +327,27 @@ function toExecutionLog(r: ExecutionLogRow): ScheduleExecutionLog {
     status: r.status,
     sessionId: r.session_id,
   }
+}
+
+export interface AgentQuotaRecoveryConfig {
+  internalAction: typeof AGENT_RECOVERY_ACTION
+  agentId: string
+  resetAt: number
+}
+
+export function isAgentQuotaRecoveryConfig(config: unknown): config is AgentQuotaRecoveryConfig {
+  if (!config || typeof config !== 'object') return false
+  const record = config as Record<string, unknown>
+  return (
+    record.internalAction === AGENT_RECOVERY_ACTION &&
+    typeof record.agentId === 'string' &&
+    typeof record.resetAt === 'number' &&
+    Number.isFinite(record.resetAt)
+  )
+}
+
+export function isAgentQuotaRecoverySchedule(schedule: Schedule): boolean {
+  return schedule.type === 'command' && isAgentQuotaRecoveryConfig(schedule.config)
 }
 
 // ---- Schedules CRUD ----
@@ -454,6 +476,44 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     now,
   )
   return getSchedule(id)!
+}
+
+export function createAgentQuotaRecoverySchedule(input: {
+  workspacePath: string
+  agentId: string
+  resetAt: number
+}): Schedule {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: getTimezone(),
+    hourCycle: 'h23',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+  }).formatToParts(new Date(input.resetAt))
+  const byType: Record<string, number> = {}
+  for (const part of parts) {
+    if (part.type !== 'literal') byType[part.type] = Number.parseInt(part.value, 10)
+  }
+  const schedule = createSchedule(
+    {
+      type: 'command',
+      config: {
+        internalAction: AGENT_RECOVERY_ACTION,
+        agentId: input.agentId,
+        resetAt: input.resetAt,
+      } satisfies AgentQuotaRecoveryConfig,
+      workspacePath: input.workspacePath,
+      cronExpression: `${byType.minute} ${byType.hour} ${byType.day} ${byType.month} *`,
+      mode: 'read-only',
+      vendor: 'claude',
+      toolAllowlist: [],
+      toolDenylist: [],
+    },
+    `Restore agent ${input.agentId}`,
+  )
+  updateNextRunAt(schedule.id, input.resetAt)
+  return getSchedule(schedule.id) ?? schedule
 }
 
 /**

@@ -13,7 +13,6 @@ ADR-0011 introduced the vendor-neutral `CanonicalMessage` model, but it lived on
    models. The 010 field-diff already proved a single common envelope exists; it should be the
    one shape that crosses the wire, gaining only a `vendor` _dimension_, never a parallel schema.
 2. **How are sessions named across vendors?** Claude keys transcripts by JSONL under
-   `~/.claude/projects/`, OpenCode by REST, Codex by thread items. If a vendor's native id (and
    the vendor name) leaks into c3's URLs and storage keys, the namespace is vendor-coupled and a
    session can't be addressed neutrally. The native stores must stay the source of truth — c3
    must not become a second copy of every transcript.
@@ -52,7 +51,6 @@ Adopt option 3.
 - **D-A — embedded tool result preserved.** 011's D3 ruling stands: there is **no standalone
   `tool_result` block**; a tool's return is folded into `tool_use.result` by id-upsert. The
   three-vendor common block set is `text` / `thinking` / `tool_use`.
-- **D-D — vendor-unique blocks ride `vendorExtra`.** Codex `reasoning`, OpenCode `diff`, etc. are
   NOT promoted to their own block variant (no adapter produces them yet — 宁丢勿强塞). A future
   `vendorTag`-discriminated escape variant is the extension point.
 - **Two-form upsert.** `CanonicalAccumulator` / `upsertBlock` (`adapters/canonical-accumulator.ts`)
@@ -87,7 +85,6 @@ in memory only, so there is no migration debt).
 - **Boundary:** `shared/protocol.ts` and `adapters/` stay SDK-free (ADR-0009); the accessor depends
   only on the neutral `SessionStore`.
 - **Deferred:** wiring the envelope/c3 id through the live wire frames, the front-end, and the URL/
-  storage layer; the real Codex/OpenCode adapters (the incremental form is exercised here only via
   synthetic frames against the neutral reducer); explicit `reasoning`/`diff` blocks.
 
 ## Compliance
@@ -130,14 +127,12 @@ projection table in `c3.db`. This amendment records the contract.
 The `work_session_metadata` table is a **rebuildable cache**, not a second copy of
 session content. The only source of truth for session _content_ (transcript,
 prompt, tool_use, tool_result, blocks) is the vendor's native store (Claude
-JSONL, OpenCode REST, Codex thread items). The projection holds **only** core
 metadata:
 
 | Column              | Purpose                                                                                                                                                                    |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `c3_id`             | Opaque c3 session id (the `C3SessionId` from `mintC3SessionId`). PK.                                                                                                       |
 | `workspace_path`    | The workspace this row belongs to; drives the daily read path's SQL filter.                                                                                                |
-| `vendor`            | Owning vendor tag (`claude` / `codex` / `opencode`).                                                                                                                       |
 | `vendor_session_id` | The native vendor id (nullable for pending rows).                                                                                                                          |
 | `agent_id`          | The agent the session runs on (binding fact or pending intent).                                                                                                            |
 | `title`             | Display title; rewritten by lazy validation / run-end.                                                                                                                     |

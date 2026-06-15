@@ -19,7 +19,6 @@ const HOST_PRESENT: VendorHostStatus[] = [
     path: '/usr/local/bin/codex',
     installHint: '',
   },
-  { vendor: 'opencode', present: false, binary: 'opencode', path: null, installHint: 'install it' },
 ]
 
 const READ_TOOLS: ToolManifestEntry[] = [
@@ -232,15 +231,14 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
 
   // ---- Vendors -------------------------------------------------------------
 
-  it('渲染 vendor 下拉选择器,三个品牌均可见', () => {
+  it('渲染 vendor 下拉选择器,两个品牌均可见', () => {
     const w = mountForm()
     const select = w.find('select.sf-select')
     expect(select.exists()).toBe(true)
     const opts = select.findAll('option')
-    expect(opts).toHaveLength(3)
+    expect(opts).toHaveLength(2)
     expect(opts[0].text()).toBe('Claude')
     expect(opts[1].text()).toBe('Codex')
-    expect(opts[2].text()).toBe('OpenCode')
   })
 
   it('host 缺失的 vendor 选项 disabled, host 存在的不 disabled', () => {
@@ -250,8 +248,6 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect(opts[0].attributes('disabled')).toBeUndefined()
     // codex present → enabled
     expect(opts[1].attributes('disabled')).toBeUndefined()
-    // opencode missing → disabled
-    expect(opts[2].attributes('disabled')).toBeDefined()
   })
 
   it('create payload 默认 vendor=claude,含 toolAllowlist', async () => {
@@ -422,39 +418,6 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     })
   })
 
-  it('edit(opencode):payload 携带 ModeToken', async () => {
-    const w = mountForm({
-      schedule: sched({ vendor: 'opencode', mode: 'build' }),
-      hostStatus: [
-        {
-          vendor: 'claude',
-          present: true,
-          binary: 'claude',
-          path: '/usr/local/bin/claude',
-          installHint: '',
-        },
-        {
-          vendor: 'codex',
-          present: true,
-          binary: 'codex',
-          path: '/usr/local/bin/codex',
-          installHint: '',
-        },
-        {
-          vendor: 'opencode',
-          present: true,
-          binary: 'opencode',
-          path: '/usr/local/bin/opencode',
-          installHint: '',
-        },
-      ],
-    })
-    await w.find('.sf-btn.primary').trigger('click')
-
-    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
-    expect(input.mode).toBe('build')
-  })
-
   it('权限模式控件随 vendor 切换联动', async () => {
     const w = mountForm({
       toolManifest: { claude: ALL_TOOLS },
@@ -470,15 +433,5 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     const codexSegs = w.findAll('.sf-segmented')
     // task type + trigger + codex sandbox + codex approval = 4
     expect(codexSegs).toHaveLength(4)
-
-    // 切到 opencode → dropdown 可见
-    const w2 = mountForm({
-      toolManifest: { claude: ALL_TOOLS },
-      hostStatus: HOST_PRESENT.map((h) => (h.vendor === 'opencode' ? { ...h, present: true } : h)),
-    })
-    const vSelect2 = w2.find('select.sf-select')
-    await vSelect2.setValue('opencode')
-    const opencodeSelects = w2.findAll('select.sf-select')
-    expect(opencodeSelects).toHaveLength(2)
   })
 })

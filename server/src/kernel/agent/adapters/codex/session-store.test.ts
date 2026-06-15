@@ -36,6 +36,14 @@ function responseItemUser(text: string): string {
   return `{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"${text}"}]}}`
 }
 
+function responseItemAssistant(text: string): string {
+  return `{"type":"response_item","payload":{"role":"assistant","content":[{"type":"output_text","text":"${text}"}]}}`
+}
+
+function responseItemCommand(id: string, command: string, output: string): string {
+  return `{"type":"response_item","payload":{"id":"${id}","type":"command_execution","command":"${command}","status":"completed","aggregated_output":"${output}","exit_code":0}}`
+}
+
 /**
  * Write a codex session JSONL into the temp home under today's date dir (so it
  * falls inside `list`'s recent-days scan window). `lines` are raw post-meta
@@ -125,6 +133,42 @@ describe('CodexSessionStore.list — title derivation', () => {
     writeSession('other', '/work/elsewhere', [userMessage('drop me')])
     const out = await new CodexSessionStore().list({ cwd: '/work/proj' })
     expect(out.map((s) => s.sessionId)).toEqual(['mine'])
+  })
+})
+
+describe('CodexSessionStore.read — history replay', () => {
+  it('replays user, assistant, and command execution frames as canonical messages', async () => {
+    const cwd = '/work/proj'
+    writeSession('sess-history', cwd, [
+      userMessage('Fix the login bug'),
+      responseItemAssistant('I will inspect the auth flow.'),
+      responseItemCommand('cmd-1', 'pnpm test', 'ok'),
+    ])
+
+    const out = await new CodexSessionStore().read('sess-history', { cwd })
+
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'assistant'])
+    expect(out[0].blocks[0]).toMatchObject({ type: 'text', text: 'Fix the login bug' })
+    expect(out[1].blocks[0]).toMatchObject({
+      type: 'text',
+      text: 'I will inspect the auth flow.',
+    })
+    expect(out[2]).toMatchObject({ preApproved: true })
+    expect(out[2].blocks[0]).toMatchObject({
+      type: 'tool_use',
+      id: 'cmd-1',
+      name: 'shell',
+      input: { command: 'pnpm test' },
+      result: { content: 'ok', isError: false },
+    })
+  })
+
+  it('returns an empty history for a missing session or mismatched cwd', async () => {
+    writeSession('sess-history', '/work/proj', [userMessage('Keep me')])
+    const store = new CodexSessionStore()
+
+    await expect(store.read('missing', { cwd: '/work/proj' })).resolves.toEqual([])
+    await expect(store.read('sess-history', { cwd: '/work/elsewhere' })).resolves.toEqual([])
   })
 })
 

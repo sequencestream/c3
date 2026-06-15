@@ -128,7 +128,7 @@ describe('vendor field', () => {
   })
 
   it('accepts all vendor values', () => {
-    for (const v of ['claude', 'codex', 'opencode'] as const) {
+    for (const v of ['claude', 'codex'] as const) {
       const sch = createSchedule({
         type: 'command',
         config: {},
@@ -152,8 +152,8 @@ describe('vendor field', () => {
     })
     expect(sch.vendor).toBe('claude')
 
-    updateSchedule(sch.id, { vendor: 'opencode' })
-    expect(getSchedule(sch.id)!.vendor).toBe('opencode')
+    updateSchedule(sch.id, { vendor: 'codex' })
+    expect(getSchedule(sch.id)!.vendor).toBe('codex')
   })
 })
 

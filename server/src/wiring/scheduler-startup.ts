@@ -28,6 +28,7 @@ import {
   startScheduler,
   stopScheduler,
 } from '../features/schedules/scheduler.js'
+import { registerAgentQuotaRecovery } from '../features/agent-quota-recovery.js'
 import type { Broadcasts } from './broadcasts.js'
 
 /** Start the scheduler + wire its execution store. */
@@ -35,8 +36,9 @@ export function startSchedulerWiring(deps: {
   broadcasts: Pick<Broadcasts, 'broadcastSchedules'>
   eventBus: EventBus<EventBusEvents>
 }): void {
-  if (!isScheduleStoreAvailable()) return
   const { broadcasts, eventBus } = deps
+  registerAgentQuotaRecovery({ eventBus })
+  if (!isScheduleStoreAvailable()) return
 
   // Wire the kernel event bus for scheduling run lifecycle events (2026-06-08-010).
   setEventBus(eventBus)
@@ -71,7 +73,6 @@ export function startSchedulerWiring(deps: {
   // the whole server run, so the handlers are intentionally never torn down.
   eventBus.subscribe('run:started', (e) => dispatchEventSchedules('run:started', e))
   eventBus.subscribe('run:settled', (e) => dispatchEventSchedules('run:settled', e))
-
   startScheduler()
 }
 

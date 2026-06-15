@@ -12,7 +12,6 @@ import type { CapabilityState, VendorAdapter } from './types.js'
 // import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
-import { listOpencodeTools } from './opencode/index.js'
 
 /** The seven boolean live-run capability flags — the complete, closed set. */
 const BOOLEAN_CAPABILITY_KEYS = [
@@ -130,14 +129,12 @@ describe('neutral adapter contract', () => {
     }
   })
 
-  it('Codex reports list = full (on-disk JSONL scan), read = none, resume = full', () => {
+  it('Codex reports list/read = full (on-disk JSONL), resume = full', () => {
     const { capabilities } = createCodexAdapter()
-    // Codex now enumerates via on-disk JSONL file scan (2026-06-08) list=full.
-    // The SDK has no listing/reading API, but ~/.codex/sessions/ is enumerable.
+    // Codex now enumerates and back-reads via on-disk JSONL.
     expect(capabilities.sessions.list).toBe('full')
-    expect(capabilities.sessions.read).toBe('none')
-    // …but a known thread still resumes end-to-end (`resumeThread`). The exact
-    // pair structured states exist to express; a single boolean would erase it.
+    expect(capabilities.sessions.read).toBe('full')
+    // A known thread still resumes end-to-end (`resumeThread`).
     expect(capabilities.sessions.resume).toBe('full')
     expect(capabilities.sessions.rename).toBe('none')
     expect(capabilities.sessions.delete).toBe('none')
@@ -226,56 +223,5 @@ describe('neutral adapter contract', () => {
     // Codex write tools
     expect(tools.find((e) => e.name === 'shell')!.isWrite).toBe(true)
     expect(tools.find((e) => e.name === 'apply_patch')!.isWrite).toBe(true)
-  })
-
-  // -----------------------------------------------------------------------
-  // OpenCode listTools
-  // -----------------------------------------------------------------------
-
-  it('OpenCode listTools returns lowercase OpenCode SDK tools', () => {
-    const tools = listOpencodeTools('/tmp')
-
-    // OpenCode lowercase read tools present
-    expect(tools.find((e) => e.name === 'read')).toBeTruthy()
-    expect(tools.find((e) => e.name === 'grep')).toBeTruthy()
-    expect(tools.find((e) => e.name === 'glob')).toBeTruthy()
-
-    // OpenCode lowercase write tools present
-    expect(tools.find((e) => e.name === 'write')).toBeTruthy()
-    expect(tools.find((e) => e.name === 'edit')).toBeTruthy()
-    expect(tools.find((e) => e.name === 'bash')).toBeTruthy()
-
-    // Claude-style capitalized tools must NOT appear
-    expect(tools.find((e) => e.name === 'Read')).toBeFalsy()
-    expect(tools.find((e) => e.name === 'Write')).toBeFalsy()
-    expect(tools.find((e) => e.name === 'Bash')).toBeFalsy()
-
-    // Task tools present
-    expect(tools.find((e) => e.name === 'TaskCreate')).toBeTruthy()
-  })
-
-  it('OpenCode listTools correctly classifies read vs write', () => {
-    const tools = listOpencodeTools('/tmp')
-
-    // OpenCode read tools
-    expect(tools.find((e) => e.name === 'read')!.isWrite).toBe(false)
-    expect(tools.find((e) => e.name === 'grep')!.isWrite).toBe(false)
-    expect(tools.find((e) => e.name === 'web_search')!.isWrite).toBe(false)
-
-    // OpenCode write tools
-    expect(tools.find((e) => e.name === 'write')!.isWrite).toBe(true)
-    expect(tools.find((e) => e.name === 'edit')!.isWrite).toBe(true)
-    expect(tools.find((e) => e.name === 'bash')!.isWrite).toBe(true)
-  })
-
-  it('OpenCode listTools has no MCP namespace prefixes (OpenCode manages MCP server-side)', () => {
-    const tools = listOpencodeTools('/tmp')
-    expect(tools.filter((e) => e.name.startsWith('mcp__'))).toHaveLength(0)
-  })
-
-  it('OpenCode listTools works without crashing', () => {
-    const tools = listOpencodeTools('/tmp')
-    expect(Array.isArray(tools)).toBe(true)
-    expect(tools.length).toBeGreaterThan(0)
   })
 })

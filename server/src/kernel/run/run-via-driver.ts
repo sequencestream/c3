@@ -2,7 +2,7 @@
  * Vendor-neutral run path via {@link AgentDriver} (2026-06-06-003). This is the
  * FIRST run that flows through the neutral adapter interface rather than the
  * claude-hardwired `runClaude` loop — `launchRun` forks here when the session's
- * vendor is `opencode`. It is deliberately the *minimal* driver route (range C):
+ * vendor is `codex`. It is deliberately the *minimal* driver route:
  * it does NOT reuse the claude path's degradation chain, socket auto-resume FSM,
  * consensus, or intent profile — those are claude-shaped and out of scope for
  * the first non-Claude integration. The claude path stays byte-for-byte unchanged.
@@ -10,12 +10,12 @@
  * Two translations live here:
  *  - **approval** — the driver's {@link ApprovalBridge} handler is wired to c3's
  *    existing browser approval registry (`permission_request` wire frame +
- *    `waitForDecision`), so an OpenCode permission prompt reaches the same UI a
+ *    `waitForDecision`), so a driver-path permission prompt reaches the same UI a
  *    Claude one does.
- *  - **canonical → wire** — OpenCode streams append-with-upsert canonical frames;
+ *  - **canonical → wire** — driver-path sessions stream append-with-upsert canonical frames;
  *    the c3 wire protocol is claude-shaped incremental append. {@link WireEmitter}
  *    diffs successive frames into `assistant_text` deltas + one-shot `tool_use` /
- *    `tool_result`, so the existing web console renders an OpenCode turn unchanged.
+ *    `tool_result`, so the existing web console renders a driver turn unchanged.
  */
 import {
   PENDING_SESSION_PREFIX,
@@ -34,9 +34,15 @@ import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
-import { freezeSessionAgent, resolveSessionLaunch } from '../agent-config/index.js'
+import {
+  freezeSessionAgent,
+  isDegradableError,
+  resolveAgent,
+  resolveSessionLaunch,
+} from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper, sandboxEnvFilePath } from '../sandbox/SandboxLauncher.js'
+import { agentErrorEvent } from './agent-events.js'
 import { buildChildEnv } from '../infra/child-env.js'
 import {
   bindPending,
@@ -60,13 +66,13 @@ export interface IntentProfile {
   mcpServers: Record<string, McpServerConfig>
   gate: 'intent'
   /**
-   * Driver-path remote MCP (2026-06-12-005). Codex/opencode can't load in-process
+   * Driver-path remote MCP (2026-06-12-005). Codex can't load in-process
    * SDK MCP, so the three intent tools are exposed over c3's localhost HTTP MCP
    * route instead. The composition root binds a per-run token (project + run id +
    * abort signal) and returns the neutral {@link RemoteMcpServer} descriptors plus
    * a `dispose` to evict the binding at run end. Absent ⇒ no remote MCP route
    * (the run gets no intent tools, same as before this change). Only codex
-   * consumes it today (opencode injection is a later intent — its MCP is
+   * consumes it today.
    * server-level, incompatible with a per-run token URL).
    */
   bindDriverMcp?: (binding: {
@@ -103,7 +109,7 @@ export function intentDriverModeForVendor(vendor: VendorId): {
  * Diffs append-with-upsert canonical frames into claude-shaped incremental wire
  * events. Text blocks emit only their new suffix; a tool_use emits once when first
  * seen and its result once it back-fills (D3). Keyed by block id (anonymous text
- * is bucketed under a single key — OpenCode text parts always carry an id).
+ * is bucketed under a single key.
  */
 export class WireEmitter {
   private readonly textLen = new Map<string, number>()
@@ -171,7 +177,7 @@ export class WireEmitter {
  *
  * NB: Codex has no per-tool approval point (`perToolApproval: false`), so its
  * registered handler never fires — this path's live registration is exercised by
- * OpenCode. Codex's human-involvement is the `save_intents` gate (see save-gate.ts).
+ * Codex's human-involvement is the `save_intents` gate (see save-gate.ts).
  */
 export function makeDriverApprovalHandler(deps: {
   getRunId: () => string
@@ -189,7 +195,7 @@ export function makeDriverApprovalHandler(deps: {
     const isUI = USER_INTERACTION_TOOLS.has(req.toolName)
     const runId = deps.getRunId()
     // Register the WorkCenter event + broadcast BEFORE the wire frame, so a prompt
-    // on a codex/opencode session lands in the pending-items panel + badge, not just
+    // on a codex session lands in the pending-items panel + badge, not just
     // the active chat. Source is the runtime kind (session / intent).
     deps.onPermissionRequest?.({
       requestId: req.requestId,
@@ -217,7 +223,7 @@ export function makeDriverApprovalHandler(deps: {
  * Run one turn through a vendor adapter's driver. Owns the same registry/emit
  * concerns `launchRun` does for claude (abort wiring, prompt echo, status flips,
  * pending→real bind, terminal turn_end) but via the neutral interface. Used for
- * `opencode` and `codex` (2026-06-06-007); any future driver-routed vendor reuses it.
+ * `codex` (2026-06-06-007); any future driver-routed vendor reuses it.
  *
  * When `intentProfile` is present (intent comm session), its `appendSystemPrompt`
  * is prepended to the prompt, and `actionMode`/`toolGate` are overridden to reflect
@@ -276,7 +282,7 @@ export async function runViaDriver(
   // The session's stored mode is a vendor-native ModeToken; resolve it to the
   // neutral grid through THIS run's vendor catalog (2026-06-07-012). A token from
   // another vendor (e.g. a project defaultMode set under claude, now launching
-  // opencode) degrades to the launching vendor's defaultToken grid — one knob,
+  // a future driver vendor) degrades to the launching vendor's defaultToken grid — one knob,
   // every vendor.
   // For codex sessions with a stored CodexPolicy (2026-06-08), use the dual-policy
   // grid directly instead of going through the catalog token.
@@ -304,7 +310,7 @@ export async function runViaDriver(
   // Sandbox wrapper: when the session has a running sandbox container, create
   // a wrapper script that runs the vendor CLI inside the container. The adapter
   // uses this path instead of the default host binary resolution.
-  const vendorBinaryName = adapter.vendor === 'codex' ? 'codex' : 'opencode'
+  const vendorBinaryName = adapter.vendor
   // Env-file for the sandbox wrapper. Base = the same child env the host path
   // builds (keepalive + process.env + agent env overrides). For a codex DIRECT
   // (wireApi=responses) run the SDK delivers the provider apiKey as the
@@ -326,10 +332,10 @@ export async function runViaDriver(
   // Override cwd: sandbox container, effectiveCwd (worktree isolation), or original workspacePath.
   const driverCwd = rt.sandboxHandle ? '/workspace' : (rt.effectiveCwd ?? workspacePath)
 
-  // Intent tools over localhost HTTP MCP (2026-06-12-005). Codex/opencode can't load
+  // Intent tools over localhost HTTP MCP (2026-06-12-005). Codex can't load
   // the in-process SDK MCP claude uses, so the comm-agent's find/view/save tools are
   // exposed via c3's loopback HTTP MCP route, bound to THIS run (project + run id +
-  // abort signal). Only codex consumes it today; opencode's MCP is server-level
+  // abort signal).
   // (incompatible with a per-run token URL) and is a later intent. `getRunId`
   // reads the live `runId` so a pending→real rebind routes the save gate's
   // `permission_request` to the bound session, not the stale pending id.
@@ -362,7 +368,7 @@ export async function runViaDriver(
       ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),
       // Work & intent sessions are interactive, user-driven runs that must be able
       // to reach the network (web search/fetch + sandboxed command network access).
-      // Codex denies both by default; claude/opencode ignore these flags and govern
+      // Codex denies both by default; claude ignores these flags and governs
       // network via their tool allowlist (2026-06-15). Scheduled runs do NOT pass
       // through here — they stay config-gated by toolAllowlist (dispatcher.ts).
       networkAccess: true,
@@ -371,7 +377,7 @@ export async function runViaDriver(
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
     })
 
-    // Bind pending→real once the native session id resolves (OpenCode mints it at
+    // Bind pending→real once the native session id resolves.
     // session.create, so this is immediate). Mirrors launchRun's bind so the
     // sidebar/url settle onto the real id.
     const sid = await run.sessionId()
@@ -393,14 +399,29 @@ export async function runViaDriver(
     if (!cycleAbort.signal.aborted) emit(runId, { type: 'turn_end', reason: 'complete' })
   } catch (err) {
     settledReason = 'error'
+    const message = errMsg(err)
+    if (isDegradableError(message)) {
+      const agent = resolveAgent(agentId)
+      eventBus.publish(
+        'agent:error',
+        agentErrorEvent({
+          sessionId: runId,
+          workspacePath,
+          agentId: agent.id,
+          agentName: agent.displayName,
+          error: message,
+          degradable: true,
+        }),
+      )
+    }
     if (!cycleAbort.signal.aborted) {
-      emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
+      emit(runId, { type: 'turn_end', reason: 'error', error: message })
     }
   } finally {
     disposeApproval()
     disposeDriverMcp() // evict the per-run intent-MCP token binding (2026-06-12-005).
     if (rt.run) rt.run = null
-    // The driver path is non-Claude (opencode / codex). Agent-teams are Claude-locked
+    // The driver path is non-Claude. Agent-teams are Claude-locked
     // (2026-06-06-006): no non-Claude vendor has `streamingPush`, so this path never
     // detects a team tool and never wires `onTeam` — a driver session can never be a
     // team. Force the flag false defensively (a team lead can only live on the

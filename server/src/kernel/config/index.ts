@@ -55,12 +55,11 @@ import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
  * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
  * its key is absent from the per-project {@link WorkspaceSetting.defaultMode} map.
  * These MUST match each vendor's `defaultToken` in its {@link VendorModeCatalog}
- * (claude=default, codex=auto, opencode=build).
+ * (claude=default, codex=auto).
  */
 const DEFAULT_MODE_MAP: Record<VendorId, ModeToken> = {
   claude: 'default',
   codex: 'auto',
-  opencode: 'build',
 }
 
 /** UI display languages. Only `en`/`zh` ship translations today; the rest are
@@ -246,7 +245,7 @@ function migrateAgentCandidate(id: string, rec: Record<string, unknown>): unknow
       config: buildClaudeConfig(configSrc),
     }
   }
-  // codex/opencode (and any unknown vendor): pass the nested config through for the
+  // codex (and any unknown vendor): pass the nested config through for the
   // schema to validate + route by tag; an unknown vendor / bad config ⇒ dropped.
   return { id, vendor, configMode, displayName, enabled, icon, config: configSrc }
 }
@@ -537,7 +536,7 @@ function normalizeSandboxConfig(
  * 3. undefined/null/missing — every vendor gets its DEFAULT_MODE_MAP entry.
  */
 function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken | CodexPolicy> {
-  const VENDORS: VendorId[] = ['claude', 'codex', 'opencode']
+  const VENDORS: VendorId[] = ['claude', 'codex']
 
   // Legacy: single string value → per-vendor distribution.
   if (typeof raw === 'string' && raw.length > 0) {
@@ -826,7 +825,7 @@ function migrateState(raw: unknown, now: number): SessionAgentState {
       if (!v || typeof v !== 'object') continue
       const { agentId, vendor } = v as Record<string, unknown>
       if (typeof agentId !== 'string' || !agentId) continue
-      if (vendor !== 'claude' && vendor !== 'codex' && vendor !== 'opencode') continue
+      if (vendor !== 'claude' && vendor !== 'codex') continue
       sessionAgents[id] = { agentId, vendor }
     }
   }

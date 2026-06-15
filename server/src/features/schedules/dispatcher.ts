@@ -20,9 +20,13 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { CodexPolicy, ModeToken, RunKind, Schedule, VendorId } from '@ccc/shared/protocol'
-import { resolveFirstAgentOfVendor, launchForAgent } from '../../kernel/agent-config/index.js'
+import {
+  resolveFirstAgentOfVendor,
+  launchForAgent,
+  setAgentEnabled,
+} from '../../kernel/agent-config/index.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
-import { getWorkspaceMcpConfig } from './store.js'
+import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 
@@ -71,11 +75,44 @@ export async function execute(
   executionLogId: string,
   updateLog: UpdateLogFn,
 ): Promise<void> {
+  if (isAgentQuotaRecoveryConfig(schedule.config)) {
+    executeAgentQuotaRecovery(schedule, executionLogId, updateLog)
+    return
+  }
   if (schedule.type === 'command') {
     await executeCommand(schedule, executionLogId, updateLog)
   } else {
     await executeLlmPrompt(schedule, executionLogId, updateLog)
   }
+}
+
+function executeAgentQuotaRecovery(
+  schedule: Schedule,
+  logId: string,
+  updateLog: UpdateLogFn,
+): void {
+  const config = isAgentQuotaRecoveryConfig(schedule.config) ? schedule.config : null
+  if (!config) {
+    updateLog(logId, {
+      finishedAt: Date.now(),
+      exitCode: null,
+      output: '',
+      status: 'failed',
+      error: 'invalid_agent_recovery_config',
+    })
+    return
+  }
+  const now = Date.now()
+  const ok = setAgentEnabled(config.agentId, true)
+  updateLog(logId, {
+    finishedAt: now,
+    exitCode: null,
+    output: ok
+      ? `agent ${config.agentId} re-enabled after quota reset`
+      : `agent ${config.agentId} not found`,
+    status: ok ? 'success' : 'failed',
+    error: ok ? null : 'agent_not_found',
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +278,7 @@ async function executeCommand(
  *
  * Uses the frozen tool set for allowlist/denylist enforcement. Permission mode
  * is determined by vendor + mode (replacing the old three-way McpMode):
- * - Claude / OpenCode: `'plan'` token denies all writes; all other tokens allow
+ * - Claude: `'plan'` token denies all writes; all other tokens allow
  *   reads but deny writes (schedules run unattended — write permissions must be
  *   pre-configured via toolAllowlist / toolDenylist).
  * - Codex: `CodexPolicy.sandboxMode === 'read-only'` denies all writes;
@@ -297,7 +334,7 @@ function isReadOnlyMode(vendor: VendorId, mode: ModeToken | CodexPolicy): boolea
     const policy = mode as CodexPolicy
     return policy.sandboxMode === 'read-only'
   }
-  // claude / opencode
+  // claude
   return (mode as ModeToken) === 'plan'
 }
 

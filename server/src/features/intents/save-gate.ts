@@ -2,7 +2,7 @@
  * The `save_intents` confirmation gate for the DRIVER path (2026-06-12-005).
  *
  * On the claude path the SDK's `canUseTool` (classifyIntentTool ⇒ confirm-save)
- * gates a save. Codex/opencode call the intent tools over HTTP MCP, outside any
+ * gates a save. Codex calls the intent tools over HTTP MCP, outside any
  * c3 `canUseTool`, so the gate must live in the save handler itself: emit the SAME
  * `permission_request` wire frame the claude path uses (toolName
  * `mcp__c3__save_intents`, `input.intents`), block on `waitForDecision`, and only

@@ -4,7 +4,7 @@
  * each {@link VendorModeDescriptor} pairs a native `token` with the neutral
  * `ActionMode × ToolGate` grid cell it means. These two pure helpers turn that
  * declaration into the bidirectional translation every adapter needs — so an
- * adapter only DECLARES its catalog (claude/codex/opencode `modes.ts`) and reuses
+ * adapter only DECLARES its catalog (claude/codex `modes.ts`) and reuses
  * the math here, instead of hand-writing a `permission-map` each.
  *
  * The forward map (`tokenToGrid`) is total: an unknown token degrades to the

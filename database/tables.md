@@ -50,8 +50,6 @@ Schema 版本: 5。迁移历史: status 列、write_approvals/workspace_mcp_conf
 
 ### user-involve
 
-用户介入事件域。`wait_user_involve_events` 记录需要人工决策的工具调用事件（如 schedule 运行时触发的敏感操作），按 source/source_id 关联触发源。`source ∈ {session, intent, discussion, schedule}`（= `WaitUserInvolveSource`），由发 `permission_request` 的调用方传入，决定 WorkCenter 点击事件时 `jumpToSource` 的目标 tab。所有人工权限出口统一在发帧前登记并广播：claude 进程内网关、codex/opencode 的 driver approval 路径、codex intent 的 `save_intents` 保存门——故非 claude vendor 的确认事项同样进 WorkCenter 待办与角标。
-
 Schema 版本: 2。v1→v2 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_wui_project_status` → `idx_wui_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。
 
 ### works

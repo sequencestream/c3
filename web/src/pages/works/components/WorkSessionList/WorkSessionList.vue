@@ -10,7 +10,6 @@
 import { ref } from 'vue'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type {
-  OpencodeServerStatus,
   SessionCapabilities,
   SessionCapability,
   SessionInfo,
@@ -36,19 +35,7 @@ const props = defineProps<{
    * (pre-`settings`) ⇒ optimistic enable, so the list never locks on first paint.
    */
   vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
-  /**
-   * Live reachability of the supervised OpenCode server (2026-06-07-003). When it is
-   * `temporarily-unavailable` the list shows an offline/reconnecting warning so a cold
-   * server reads as honest degrade, not a broken list. Absent / `none` ⇒ no warning.
-   */
-  opencodeStatus?: OpencodeServerStatus
 }>()
-
-// The OpenCode server is registered but currently unreachable (down / starting /
-// retrying) — drives the list-head offline warning. `none` (unregistered) shows nothing.
-function opencodeOffline(): boolean {
-  return props.opencodeStatus?.reachability === 'temporarily-unavailable'
-}
 
 const emit = defineEmits<{
   'create-session': [path: string]
@@ -59,7 +46,7 @@ const emit = defineEmits<{
 }>()
 
 // Stable vendor order for both the dots and the filter chips.
-const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex', 'opencode']
+const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex']
 
 // How many sessions are visible; grows by SESSION_PAGE on demand.
 const SESSION_PAGE = 10
@@ -240,15 +227,6 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         {{ t('session.list.noWorkspace') }}
       </p>
       <div v-else class="session-list">
-        <div
-          v-if="opencodeOffline()"
-          class="opencode-offline"
-          role="status"
-          data-testid="opencode-offline"
-        >
-          <span class="opencode-offline-dot"></span>
-          {{ t('session.list.opencodeOffline', { vendor: VENDOR_LABEL.opencode }) }}
-        </div>
         <div v-if="vendorChips().length > 1" class="vendor-filter" data-testid="vendor-filter">
           <button
             v-for="v in vendorChips()"

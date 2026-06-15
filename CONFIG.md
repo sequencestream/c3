@@ -191,7 +191,6 @@ session starts
 
 ### Sandbox Wrapper
 
-When sandbox is active, the vendor CLI (`claude` / `codex` / `opencode`) is
 not spawned directly on the host. Instead, `SandboxLauncher.createSandboxWrapper()`
 creates a shell script that invokes `docker exec --env-file <env> -i -w /workspace
 <container> <binary> "$@"`. The wrapper:

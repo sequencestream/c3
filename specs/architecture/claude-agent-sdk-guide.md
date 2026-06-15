@@ -9,9 +9,7 @@
 > - **源码仓库**：<https://github.com/anthropics/claude-agent-sdk-typescript>
 > - 与 c3 的关系见 [`architecture.md`](architecture.md)（`agent-session` 模块封装 `query()`）。
 
-> **关于其他 vendor SDK**：c3 还使用 `@openai/codex-sdk`（OpenAI Codex）和 `@opencode-ai/sdk`（OpenCode），
 > 它们的架构与本指南描述的 Claude Agent SDK 不同，分别封装在各自 adapter 中（`server/src/kernel/agent/adapters/codex/`、
-> `server/src/kernel/agent/adapters/opencode/`）。三者的能力差异由 `AdapterCapabilities` 管理（ADR-0011）。
 > 本指南的内容（子进程包装、`canUseTool` 回调、Skill 发现）**仅适用于 Claude**，不适用于其它 vendor。
 
 ## 1. 它是什么架构
@@ -216,7 +214,6 @@ options: {
 
 → c3 软链挂载外部 skill 时，目录布局必须是扁平的 `<vendorSkillsDir>/_c3_<id>/SKILL.md`
 （一个配置 id 一个目录、直挂 `SKILL.md`），不能用嵌套的 `_c3_session/<id>/`。codex（`~/.codex/skills/<name>/SKILL.md`，
-frontmatter 与 Claude 兼容）同为单层布局；opencode 本机未装，发现机制待补证。
 
 ## 6. 外部 skill 加载路径(挂载层)
 
@@ -251,11 +248,10 @@ flowchart LR
 
 ### 6.2. 发现目录(项目级)
 
-| vendor   | 发现目录(SKILL.md 直接子级)    |
-| -------- | ------------------------------ |
-| claude   | `<projectDir>/.claude/skills/` |
-| codex    | `<projectDir>/.codex/skills/`  |
-| opencode | `<projectDir>/.agents/skills/` |
+| vendor | 发现目录(SKILL.md 直接子级)    |
+| ------ | ------------------------------ |
+| claude | `<projectDir>/.claude/skills/` |
+| codex  | `<projectDir>/.codex/skills/`  |
 
 挂载固定挂入所有 `detectSkillSupport=full` 的 vendor,各建一份软链(无 per-repo vendor 选择)。
 

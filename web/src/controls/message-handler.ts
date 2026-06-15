@@ -42,7 +42,6 @@ export function installMessageHandler(ctx: AppCtx): void {
     mode,
     codexPolicy,
     sessionStatus,
-    opencodeStatus,
     messages,
     counters,
     availableCommands,
@@ -161,9 +160,6 @@ export function installMessageHandler(ctx: AppCtx): void {
       }
       case 'session_status':
         ctx.applyStatuses(msg.statuses)
-        break
-      case 'opencode_status':
-        opencodeStatus.value = msg.status
         break
       case 'sessions':
         sessionsByWorkspace.value = {

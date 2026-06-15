@@ -3,7 +3,7 @@
  *
  * A `SkillRepoConfig` names a git repo + ref; c3 clones it into a **shared** cache
  * under `~/.c3/repo/<hash>` keyed by `(repo, ref)` ONLY — never by vendor — so the
- * three vendors (claude / codex / opencode) reuse one clone and switching a repo's
+ * vendors (claude / codex) reuse one clone and switching a repo's
  * target vendor downloads nothing extra (the 2/3 mount layer just soft-links into
  * each vendor's skill dir). This module is the data plane: clone / pull / ls-remote
  * / subpath-resolve / pinned-commit verify. It does NOT mount, link, or touch any
@@ -53,7 +53,7 @@ export function skillRepoCacheRoot(): string {
 
 /**
  * Deterministic cache directory for a `(repo, ref)` pair. The key is the repo URL
- * and ref ONLY — **vendor is deliberately excluded** so claude/codex/opencode map
+ * and ref ONLY — **vendor is deliberately excluded** so claude/codex map
  * to the same clone (ADR-0016: "三 vendor 共用同一份, 切 vendor 零重复下载"). Two
  * configs that pin different refs of the same repo get separate working trees (a
  * tree can only be checked out at one ref), which is correct and still vendor-shared.

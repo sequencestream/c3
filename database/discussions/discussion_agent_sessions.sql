@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS discussion_agent_sessions (
   discussion_id TEXT NOT NULL,                  -- 讨论 ID (外键 → discussions.id)
   agent_id      TEXT NOT NULL,                  -- agent 角色标识
   session_id    TEXT NOT NULL,                  -- vendor-native 会话 ID
-  vendor        TEXT NOT NULL DEFAULT '',       -- vendor 标识: 'claude' | 'codex' | 'opencode'
   last_seq      INTEGER NOT NULL DEFAULT 0,    -- 上次同步到的消息序号, 用于增量 prompt
   created_at    INTEGER NOT NULL,              -- 创建时间 (epoch ms)
   PRIMARY KEY (discussion_id, agent_id)

@@ -52,6 +52,7 @@ See [models.md](models.md) for full attributes.
 | SCH-R17 | A schedule's **trigger** is one of `cron` (time-based; the default, and the only mode for legacy rows migrated before this field existed) or `event` (a kernel run-lifecycle event, 2026-06-08). An `event` trigger declares an `eventTopic` (`run:started` or `run:settled`) and fires its execution when a matching event is published on the kernel event bus (ADR-0018) — reusing the **same** dispatch path, three-tier MCP security, and write-approval queue as a cron run. Event schedules carry no `cronExpression` / `nextRunAt` and are **never** evaluated by the tick loop. Creating/updating an `event` schedule without an `eventTopic` is rejected (`schedule.invalidEventTrigger`). |
 | SCH-R18 | An `event` trigger fires only when **all** hold: the event's run `kind` is `normal` (internal intent comm runs never fire user schedules); the event's `workspacePath` equals the schedule's workspace; and, for `run:settled`, the terminal `reason` (`complete` / `error` / `aborted`) is in the schedule's optional `eventReasonFilter` (empty/null = any reason). Event-storm throttling reuses SCH-R7 serial execution: an event arriving while the schedule already has an in-flight execution is **skipped**, not queued.                                                                                                                                                                     |
 | SCH-R19 | The display `name` is **auto-generated on create** (client name stripped, SCH naming). On **update** the client may supply a manual title via `config.name`: a non-empty value is stored as a **sticky user-set name** (`config.nameSource='user'`) that auto-naming never overrides — it survives later body edits (an update with no `name` key keeps the existing name and its provenance). An empty `name` on update **reverts** to a freshly auto-derived name (clears the user marker). Create never accepts a client name (manual titles are edit-only).                                                                                                                                      |
+| SCH-R20 | **Internal one-shot agent recovery schedules** (2026-06-15-002). The agent-config quota recovery flow may create a system-owned schedule row whose `config.internalAction='agent_quota_recovery'`, `config.agentId` names the disabled agent, and `config.resetAt` is the absolute reset instant. It reuses the cron/`next_run_at` tick engine but is one-shot: when due, the dispatcher sets that agent `enabled=true`, then the scheduler marks the schedule `paused` and clears `next_run_at` so it will not fire again. These rows are not user-authored command schedules and do not run shell commands.                                                                                        |
 
 ## States & transitions
 
@@ -162,6 +163,10 @@ A schedule fires from one of two trigger types (SCH-R17, SCH-R18):
 | ------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `cron`  | A wall-clock match of `cronExpression` in the system time zone (SCH-R3a), via the 10 s tick loop.    | Tick loop recomputes `nextRunAt` after each run.    |
 | `event` | A subscribed run lifecycle event on the kernel event bus (ADR-0018): `run:started` or `run:settled`. | Waits for the next matching event — no `nextRunAt`. |
+
+Internal agent recovery rows use the cron trigger storage plus a concrete `nextRunAt` equal to the
+parsed reset instant. After firing they are paused, so they behave as one-shot schedules without a
+new scheduler or a new table column.
 
 ### Run lifecycle events (publish points)
 
@@ -305,7 +310,6 @@ Each vendor adapter exposes a `listTools(workspacePath, mcpServers?)` method tha
   `TaskCreate`, `TaskList`, `TaskUpdate`, `TaskGet`, `Write`, `Edit`, `NotebookEdit`, `Agent`, `Bash`)
   plus workspace MCP server namespace prefixes (`mcp__<server>__`). MCP namespaces are classified as
   write (conservative).
-- **Codex / OpenCode**: returns SDK built-in tools only (same list as Claude). No MCP namespace prefixes.
 
 The tool manifest is fetched by the web via `get_schedule_tool_manifest { vendor, workspacePath }` and
 returned as `schedule_tool_manifest { vendor, tools }`. The frontend uses this to render the tool
@@ -320,7 +324,6 @@ resolveFirstAgentOfVendor(schedule.vendor) → first enabled agent of that vendo
                                            → fallback to default agent
 ```
 
-Only the Claude adapter has a full SDK `query()` execution path. Codex and OpenCode vendors currently
 log a warning and fall back to the same SDK `query()` path — their dedicated execution paths are a
 future entry.
 

@@ -71,7 +71,7 @@ const props = withDefaults(
 
 // Host-CLI diagnostics rows, in canonical vendor order, each with its brand
 // colour/label (ADR-0012).
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex', 'opencode']
+const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
 const diagnostics = computed(() => {
   const byVendor = new Map(props.hostStatus.map((h) => [h.vendor, h]))
   return VENDOR_ORDER.map((v) => byVendor.get(v)).filter(
@@ -163,7 +163,7 @@ watch(
 // (2026-06-06-007). Vendor decides which client launches; configMode decides
 // whether the provider triple (baseUrl/apiKey/model) is applied or the vendor
 // CLI's own system config is used.
-const VENDORS: VendorId[] = ['claude', 'codex', 'opencode']
+const VENDORS: VendorId[] = ['claude', 'codex']
 const CONFIG_MODES = ['system', 'custom'] as const
 
 // Vendor display names are product identifiers (do-not-translate, see
@@ -172,7 +172,6 @@ const CONFIG_MODES = ['system', 'custom'] as const
 const VENDOR_LABELS: Record<VendorId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  opencode: 'OpenCode',
 }
 
 // configMode is a c3 concept, so it IS localized.
@@ -197,8 +196,6 @@ function makeAgent(
 ): AgentConfig {
   switch (vendor) {
     case 'claude':
-      return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
-    case 'opencode':
       return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
     case 'codex':
       // Codex's sandbox/approval gate is derived from `defaultMode` at launch
@@ -589,9 +586,13 @@ function submitPassword() {
             >
             <label class="col-on">
               <input
+                class="agent-enabled-switch"
                 type="checkbox"
+                role="switch"
                 :checked="isEnabled(a)"
+                :aria-checked="isEnabled(a)"
                 :title="t('settings.agents.toggle.tooltip')"
+                data-testid="agent-enabled-switch"
                 @change="onToggleEnabled(a, ($event.target as HTMLInputElement).checked)"
               />
             </label>

@@ -6,7 +6,7 @@
  * `VendorId === 'codex'` and drives it through the neutral {@link VendorAdapter}
  * faces only.
  *
- * Like Claude (per-run CLI) and unlike OpenCode (supervised server), Codex needs no
+ * Like Claude (per-run CLI), Codex needs no
  * supervisor — it spawns `codex exec` per run via the SDK — so it registers as a
  * no-arg factory in `adapters/registry.ts`.
  */

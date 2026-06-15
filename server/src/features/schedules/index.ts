@@ -28,7 +28,6 @@ import { C3_MCP_TOOLS } from './mcp-freeze.js'
 // lightweight instances without a supervisor or registry probe.
 import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
-import { listOpencodeTools } from '../../kernel/agent/adapters/opencode/index.js'
 
 /**
  * Read a client-supplied `config.name`. Returns:
@@ -223,12 +222,6 @@ export const getScheduleToolManifest: Handler<'get_schedule_tool_manifest'> = (_
   switch (msg.vendor) {
     case 'claude':
       tools = createClaudeAdapter().listTools(msg.workspacePath, mcpServers)
-      break
-    // OpenCode shares the same built-in SDK tool set as Codex for static listing;
-    // both currently return the same SDK tool list (no MCP namespace). When OpenCode
-    // gains its own distinct tool surface, branch it here.
-    case 'opencode':
-      tools = listOpencodeTools(msg.workspacePath)
       break
     case 'codex':
       tools = createCodexAdapter().listTools(msg.workspacePath, mcpServers)

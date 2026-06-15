@@ -8,9 +8,8 @@
  *     directly — field-for-field, modulo the new `vendor: 'claude'` tag. The SDK
  *     `listSessions` is mocked (as in `sessions-hidden/tool.test.ts`) so the test
  *     exercises only the c3 normalization layer.
- *  2. **Cross-vendor merge.** With a claude + opencode source pair (fake stores),
- *     the entries merge, normalize per-vendor (opencode has no c3 mode / tool tag,
- *     its `time` becomes `lastModified`), and sort newest-first globally.
+ *  2. **Cross-vendor merge.** With a claude + codex source pair (fake stores),
+ *     the entries merge, normalize per-vendor, and sort newest-first globally.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -84,7 +83,7 @@ describe('listSessionsVia — zero-regression vs listWorkspaceSessions (claude o
   })
 })
 
-describe('listSessionsVia — cross-vendor merge (claude + opencode)', () => {
+describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
   it('merges, normalizes per vendor, and sorts newest-first globally', async () => {
     const claudeSrc: VendorSessionSource = {
       vendor: 'claude',
@@ -101,22 +100,21 @@ describe('listSessionsVia — cross-vendor merge (claude + opencode)', () => {
         },
       ]),
     }
-    const opencodeSrc: VendorSessionSource = {
-      vendor: 'opencode',
+    const codexSrc: VendorSessionSource = {
+      vendor: 'codex',
       sessions: fakeStore([
         {
-          sessionId: 'o-1',
-          title: 'OpenCode one',
-          // OpenCode carries `time = { created, updated? }`; updated wins as the key.
+          sessionId: 'cx-1',
+          title: 'Codex one',
           vendorExtra: { time: { created: 200, updated: 300 } },
         },
       ]),
     }
-    const accessor = new SessionAccessor([claudeSrc, opencodeSrc])
+    const accessor = new SessionAccessor([claudeSrc, codexSrc])
     const out = await listSessionsVia(accessor, '/ws')
 
-    // Global newest-first: c-new(400) > o-1(300) > c-old(100).
-    expect(out.map((s) => s.sessionId)).toEqual(['c-new', 'o-1', 'c-old'])
+    // Global newest-first: c-new(400) > cx-1(300) > c-old(100).
+    expect(out.map((s) => s.sessionId)).toEqual(['c-new', 'cx-1', 'c-old'])
     const byId = Object.fromEntries(out.map((s) => [s.sessionId, s]))
 
     // The projection-backed path reads `mode` from state.ts (defaults to
@@ -139,13 +137,12 @@ describe('listSessionsVia — cross-vendor merge (claude + opencode)', () => {
       lastModified: 400,
       state: 'alive',
     })
-    // OpenCode has no c3 mode / tool tag ⇒ defaults; `time.updated` is the sort key.
-    expect(byId['o-1']).toMatchObject({
-      vendor: 'opencode',
+    expect(byId['cx-1']).toMatchObject({
+      vendor: 'codex',
       mode: 'default',
       isToolSession: false,
       lastModified: 300,
-      title: 'OpenCode one',
+      title: 'Codex one',
       state: 'alive',
     })
   })
@@ -161,16 +158,16 @@ describe('listSessionsVia — cross-vendor merge (claude + opencode)', () => {
         },
       ]),
     }
-    const brokenOpencode: VendorSessionSource = {
-      vendor: 'opencode',
+    const brokenCodex: VendorSessionSource = {
+      vendor: 'codex',
       sessions: {
         list: vi.fn(async () => {
-          throw new Error('opencode server down')
+          throw new Error('codex store down')
         }),
         read: vi.fn(async () => []),
       },
     }
-    const accessor = new SessionAccessor([claudeSrc, brokenOpencode])
+    const accessor = new SessionAccessor([claudeSrc, brokenCodex])
     const out = await listSessionsVia(accessor, '/ws')
     expect(out.map((s) => s.sessionId)).toEqual(['c-1'])
   })

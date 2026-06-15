@@ -3,7 +3,7 @@
  * (ADR-0011, 2026-06-07-012). Two halves:
  *  - The catalog contract every vendor's {@link VendorModeCatalog} must satisfy
  *    (the runtime drift-pin companion to the `Record<VendorId, …>` compile pin).
- *  - The bidirectional translation for each of the three adapters: every declared
+ *  - The bidirectional translation for each adapter: every declared
  *    token round-trips through the neutral grid, and the lossy reverse picks the
  *    nearest token (never crossing the plan/build action boundary).
  */
@@ -12,14 +12,13 @@ import type { ActionMode, ToolGate, VendorModeCatalog } from './types.js'
 import { MODE_CATALOGS, tokenToGrid, gridToToken, isKnownToken } from './index.js'
 import { claudeModeCatalog } from './claude/modes.js'
 import { codexModeCatalog } from './codex/modes.js'
-import { opencodeModeCatalog } from './opencode/modes.js'
 
 const ACTION_MODES: ActionMode[] = ['plan', 'build']
 const TOOL_GATES: ToolGate[] = ['always-ask', 'on-sensitive', 'trusted-prefix', 'never-ask']
 
 describe('MODE_CATALOGS contract', () => {
-  it('registers exactly the three current vendors', () => {
-    expect(Object.keys(MODE_CATALOGS).sort()).toEqual(['claude', 'codex', 'opencode'])
+  it('registers exactly the current vendors', () => {
+    expect(Object.keys(MODE_CATALOGS).sort()).toEqual(['claude', 'codex'])
   })
 
   for (const [key, cat] of Object.entries(MODE_CATALOGS)) {
@@ -105,20 +104,6 @@ describe('codex token ⇄ grid', () => {
       toolGate: 'on-sensitive',
     })
     expect(tokenToGrid(codexModeCatalog, 'full-access')).toEqual({
-      actionMode: 'build',
-      toolGate: 'never-ask',
-    })
-  })
-})
-
-describe('opencode token ⇄ grid', () => {
-  it('translates bidirectionally', () => assertBidirectional(opencodeModeCatalog))
-  it('maps plan to the Plan agent cell and build-allow to never-ask', () => {
-    expect(tokenToGrid(opencodeModeCatalog, 'plan')).toEqual({
-      actionMode: 'plan',
-      toolGate: 'on-sensitive',
-    })
-    expect(tokenToGrid(opencodeModeCatalog, 'build-allow')).toEqual({
       actionMode: 'build',
       toolGate: 'never-ask',
     })

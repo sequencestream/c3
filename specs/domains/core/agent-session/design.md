@@ -39,7 +39,6 @@ The claude path attaches MCP via in-process SDK servers (`createSdkMcpServer`). 
 each driver translates to its native config — the codex driver → `config.mcp_servers.<name> =
 { url }` (the streamable-HTTP form `codex mcp add --url` writes). c3's only producer today is the
 intent comm-agent: `runViaDriver` binds a per-run localhost HTTP MCP route carrying the three intent
-tools and injects its descriptors (codex only; opencode deferred — its MCP is server-level). See
 [intent-management design § Intent tools over localhost HTTP MCP](../intent-management/design.md).
 
 ### InputStream — the streaming-input prompt

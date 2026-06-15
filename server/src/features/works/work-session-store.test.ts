@@ -401,8 +401,8 @@ describe('C3SessionId de-dup', () => {
 
   it('different vendors with the same id do NOT collide', () => {
     const claude = mintC3SessionId({ vendor: 'claude', vendorSessionId: 'shared' })
-    const opencode = mintC3SessionId({ vendor: 'opencode', vendorSessionId: 'shared' })
-    expect(claude).not.toBe(opencode)
+    const codex = mintC3SessionId({ vendor: 'codex', vendorSessionId: 'shared' })
+    expect(claude).not.toBe(codex)
   })
 })
 

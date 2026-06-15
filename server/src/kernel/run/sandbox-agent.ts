@@ -61,7 +61,7 @@ export function pickSandboxAgent(
   //    per-run token mirrored into the env-file (ADR-0024 follow-up). Supported.
   //  - system-login codex (wireApi undefined): no injected provider credentials reach
   //    the container ⇒ unsupported-wire (a later intent).
-  //  - opencode / anything else: no container provider plumbing yet ⇒ unsupported-vendor.
+  //  - anything else: no container provider plumbing yet ⇒ unsupported-vendor.
   // A bad pick hard-fails this run rather than silently degrading.
   if (resolved.vendor === 'claude') return { ok: true, agentId: pickedId }
   if (resolved.vendor === 'codex') {

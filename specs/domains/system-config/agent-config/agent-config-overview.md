@@ -9,7 +9,6 @@
 An **agent** is a vendor-agnostic public shell (`id`, `vendor`, `displayName`, `enabled?`, `icon?`)
 plus a `vendor`-discriminated `config` sub-object. Today the only vendor with an adapter — and thus
 a config shape — is **claude** (`config = { baseUrl, apiKey, model }`, the Claude Code launch
-overrides); `codex`/`opencode` are the extension point (ADR-0011). The built-in **system agent** is
 a claude agent with an all-empty config (it launches exactly as the bare SDK would, using the user's
 existing `claude` login) and cannot be removed. The user may add more agents and pick one as the
 **default**. Every session launches with its bound agent, or the default agent when unbound — its

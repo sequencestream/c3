@@ -119,14 +119,14 @@ describe('ChatMessages.vue — 折叠批次头追加首个工具请求预览', (
 })
 
 describe('ChatMessages.vue — 异构 vendor 徽章(2026-06-06-004)', () => {
-  it('discussion 发言带 speaker.vendor → 渲染对应 vendor-tag(claude / opencode 各色)', () => {
+  it('discussion 发言带 speaker.vendor → 渲染对应 vendor-tag(claude / codex 各色)', () => {
     const w = mountChat([
       speakerMsg('hi', { icon: '🤖', name: 'Claude A', vendor: 'claude' }),
-      speakerMsg('yo', { icon: '🦊', name: 'OpenCode A', vendor: 'opencode' }),
+      speakerMsg('yo', { icon: 'C', name: 'Codex A', vendor: 'codex' }),
     ])
     // 双家同席:两个 vendor 各自的色标类都在,来源可识别。
     expect(w.find('.vendor-tag.vendor-claude').exists()).toBe(true)
-    expect(w.find('.vendor-tag.vendor-opencode').exists()).toBe(true)
+    expect(w.find('.vendor-tag.vendor-codex').exists()).toBe(true)
   })
 
   it('speaker 无 vendor(human / organizer)→ 有 speaker 行但不渲染 vendor-tag', () => {

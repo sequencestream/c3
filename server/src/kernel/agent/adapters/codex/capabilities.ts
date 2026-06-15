@@ -30,11 +30,11 @@
  * amendment): `list` was upgraded from `'none'` to `'full'` in 2026-06-08 when
  * the {@link import('./session-store.js').CodexSessionStore} gained on-disk JSONL
  * scanning — the filesystem under `~/.codex/sessions/` is enumerable even though
- * the SDK has no listing API. `read` remains `'none'` (the SDK has no reading API
- * and the on-disk format translation is future work). `resume` is `full` — the
+ * the SDK has no listing API. `read` was upgraded to `'full'` in 2026-06-15 when
+ * the same on-disk JSONL store gained history translation. `resume` is `full` — the
  * SDK's `resumeThread(id)` continues a known thread end-to-end. `rename`/`delete`
  * are `none` (the SDK supports neither). This is the matrix that proves a boolean
- * could not have expressed `list=full ∧ read=none ∧ resume=full`.
+ * could not have expressed the staged `list/read/resume` support.
  */
 import type { AdapterCapabilities } from '../types.js'
 
@@ -48,7 +48,7 @@ export const codexCapabilities: AdapterCapabilities = {
   taskStore: true,
   sessions: {
     list: 'full',
-    read: 'none',
+    read: 'full',
     resume: 'full',
     rename: 'none',
     delete: 'none',

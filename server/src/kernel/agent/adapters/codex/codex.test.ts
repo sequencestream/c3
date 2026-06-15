@@ -198,12 +198,18 @@ describe('mcpServersToCodexConfig (2026-06-12-005)', () => {
     expect(mcpServersToCodexConfig({})).toBeUndefined()
   })
 
-  it('translates a neutral http descriptor to codex mcp_servers { url }', () => {
+  it('translates a neutral http descriptor to codex mcp_servers with approved tools', () => {
     const out = mcpServersToCodexConfig({
       c3: { type: 'http', url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=abc' },
     })
     expect(out).toEqual({
-      c3: { url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=abc' },
+      c3: {
+        url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=abc',
+        enabled: true,
+        required: true,
+        enabled_tools: ['find_intents', 'view_intent', 'save_intents'],
+        default_tools_approval_mode: 'approve',
+      },
     })
   })
 
@@ -212,7 +218,16 @@ describe('mcpServersToCodexConfig (2026-06-12-005)', () => {
       mcpServersToCodexConfig({
         c3: { type: 'http', url: 'http://x', bearerTokenEnvVar: 'C3_TOKEN' },
       }),
-    ).toEqual({ c3: { url: 'http://x', bearer_token_env_var: 'C3_TOKEN' } })
+    ).toEqual({
+      c3: {
+        url: 'http://x',
+        enabled: true,
+        required: true,
+        enabled_tools: ['find_intents', 'view_intent', 'save_intents'],
+        default_tools_approval_mode: 'approve',
+        bearer_token_env_var: 'C3_TOKEN',
+      },
+    })
   })
 })
 
@@ -232,8 +247,16 @@ describe('CodexDriver mcpServers injection (2026-06-12-005)', () => {
       }),
     )
     expect(captured?.config?.mcp_servers).toEqual({
-      c3: { url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=t1' },
+      c3: {
+        url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=t1',
+        enabled: true,
+        required: true,
+        enabled_tools: ['find_intents', 'view_intent', 'save_intents'],
+        default_tools_approval_mode: 'approve',
+      },
     })
+    expect(captured?.env?.NO_PROXY).toContain('127.0.0.1')
+    expect(captured?.env?.no_proxy).toContain('localhost')
   })
 
   it('omits config.mcp_servers when no mcpServers given', async () => {

@@ -281,7 +281,7 @@ describe('agent sessions', () => {
   it('lists all sessions for a discussion', () => {
     setAgentSession('disc-1', 'ag-1', 'sess-a', 'claude')
     setAgentSession('disc-1', 'ag-2', 'sess-b', 'codex', 3)
-    setAgentSession('disc-2', 'ag-1', 'sess-c', 'opencode') // different discussion
+    setAgentSession('disc-2', 'ag-1', 'sess-c', 'codex') // different discussion
 
     const list = listAgentSessions('disc-1')
     expect(list).toHaveLength(2)

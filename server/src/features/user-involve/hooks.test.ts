@@ -2,7 +2,7 @@
  * `createPermissionRequestHandler` — the CREATE side of the wait-user-involve
  * lifecycle. Asserts the handler persists an event with the caller-provided
  * `source` (NOT a hard-coded 'session') and broadcasts the refreshed todo list,
- * so a codex/opencode intent prompt lands in WorkCenter under the right tab.
+ * so a codex intent prompt lands in WorkCenter under the right tab.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'

@@ -1,12 +1,8 @@
 /**
  * `select_session` handler branch contract.
  *
- * Two paths matter here and are easy to regress when nearby code changes:
- *  - a normal Claude select cold-loads history (`sessionTitle`/`loadHistory`) and
- *    does NOT touch the opencode lazy-start gate;
- *  - an opencode select lazily (re)starts the supervised server within its grace
- *    window before opening, and a down server is NEVER fatal (the session still
- *    opens — honest degrade, 2026-06-07-003).
+ * A normal Claude select cold-loads history (`sessionTitle`/`loadHistory`), while
+ * Codex projection placeholders fall back to the legacy title path.
  * The IO-heavy collaborators are mocked; we assert the handler's branch contract.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +10,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../runs.js', () => ({
   addViewer: vi.fn(),
   emit: vi.fn(),
-  ensureRuntime: vi.fn(() => ({ mode: 'default', baseline: [], status: 'idle', buffer: [] })),
+  ensureRuntime: vi.fn(
+    (_id: string, _workspacePath: string, mode: string, baseline: unknown[] = []) => ({
+      mode,
+      baseline,
+      status: 'idle',
+      buffer: [],
+    }),
+  ),
   getRuntime: vi.fn(() => undefined),
   removeRuntime: vi.fn(),
   removeViewer: vi.fn(),
@@ -50,13 +53,12 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   setSessionAgent: vi.fn(() => ({ ok: true })),
 }))
 vi.mock('../../kernel/agent/process/launcher.js', () => ({ probeAll: vi.fn(() => []) }))
-vi.mock('../../opencode-status.js', () => ({ ensureOpencodeRunning: vi.fn(async () => {}) }))
 
 import { selectSession } from './index.js'
 import { loadHistory, sessionTitle } from '../../sessions.js'
 import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
-import { ensureOpencodeRunning } from '../../opencode-status.js'
 import { getByC3Id } from './work-session-store.js'
+import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 
 afterEach(() => vi.clearAllMocks())
 
@@ -72,7 +74,7 @@ function fakeConn() {
 }
 
 describe('select_session', () => {
-  it('normal Claude select → cold-loads history, no opencode lazy-start', async () => {
+  it('normal Claude select → cold-loads history', async () => {
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
@@ -82,8 +84,6 @@ describe('select_session', () => {
     })
     expect(loadHistory).toHaveBeenCalledWith('/abs/proj', 'claude-1')
     expect(sessionTitle).toHaveBeenCalled()
-    // Claude is not server-backed ⇒ no opencode lazy-start.
-    expect(ensureOpencodeRunning).not.toHaveBeenCalled()
     const sel = conn.sent.find((m) => m.type === 'session_selected')
     expect(sel?.vendor).toBe('claude')
   })
@@ -108,6 +108,53 @@ describe('select_session', () => {
     expect(sessionTitle).not.toHaveBeenCalled()
   })
 
+  it('codex select → replays codex JSONL history instead of claude-only history', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+    vi.mocked(getByC3Id).mockReturnValue({ title: 'Fix the login bug' } as never)
+    const readSpy = vi.spyOn(CodexSessionStore.prototype, 'read').mockResolvedValue([
+      {
+        vendor: 'codex',
+        sessionId: 'codex-thread-history',
+        role: 'user',
+        blocks: [{ type: 'text', id: 'u1', text: 'Fix the login bug' }],
+        ts: 1,
+      },
+      {
+        vendor: 'codex',
+        sessionId: 'codex-thread-history',
+        role: 'assistant',
+        blocks: [
+          {
+            type: 'tool_use',
+            id: 'cmd-1',
+            name: 'shell',
+            input: { command: 'pnpm test' },
+            result: { content: 'ok', isError: false },
+          },
+        ],
+        ts: 2,
+        preApproved: true,
+      },
+    ])
+    const conn = fakeConn()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspacePath: '/abs/proj',
+      sessionId: 'codex-thread-history',
+    })
+
+    expect(loadHistory).not.toHaveBeenCalled()
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.history).toEqual([
+      { kind: 'user', text: 'Fix the login bug' },
+      { kind: 'tool_use', toolUseId: 'cmd-1', toolName: 'shell', input: { command: 'pnpm test' } },
+      { kind: 'tool_result', toolUseId: 'cmd-1', content: 'ok', isError: false },
+    ])
+    readSpy.mockRestore()
+  })
+
   it('codex select with only a placeholder in the projection → falls back to the legacy path', async () => {
     vi.mocked(resolveSessionVendor).mockReturnValue('codex')
     vi.mocked(getByC3Id).mockReturnValue({ title: 'New session' } as never)
@@ -120,22 +167,5 @@ describe('select_session', () => {
     })
     // Placeholder is not adopted ⇒ legacy lookup runs (returns its own value).
     expect(sessionTitle).toHaveBeenCalled()
-  })
-
-  it('opencode select → lazily ensures the server (grace), opens the session, never fatal', async () => {
-    vi.mocked(resolveSessionVendor).mockReturnValue('opencode')
-    const conn = fakeConn()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await selectSession({} as any, conn as any, {
-      type: 'select_session',
-      workspacePath: '/abs/proj',
-      sessionId: 'opencode-1',
-    })
-    // The lazy-start gate fired before reading; opencode read='full' ⇒ normal path.
-    expect(ensureOpencodeRunning).toHaveBeenCalledOnce()
-    // Honest degrade contract: a down server is NEVER fatal — the session still opens.
-    expect(conn.sent.some((m) => m.type === 'error')).toBe(false)
-    const sel = conn.sent.find((m) => m.type === 'session_selected')
-    expect(sel?.vendor).toBe('opencode')
   })
 })

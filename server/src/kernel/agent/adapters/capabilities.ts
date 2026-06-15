@@ -9,13 +9,11 @@
 import type { VendorId } from '@ccc/shared/protocol'
 import type { AdapterCapabilities } from './types.js'
 import { claudeCapabilities } from './claude/capabilities.js'
-import { opencodeCapabilities } from './opencode/capabilities.js'
 import { codexCapabilities } from './codex/capabilities.js'
 
 /** Every vendor's capability ledger, keyed by {@link VendorId}. */
 export const VENDOR_CAPABILITIES: Record<VendorId, AdapterCapabilities> = {
   claude: claudeCapabilities,
-  opencode: opencodeCapabilities,
   codex: codexCapabilities,
 }
 
@@ -25,8 +23,7 @@ export const VENDOR_CAPABILITIES: Record<VendorId, AdapterCapabilities> = {
  * receive pushed input, and (b) run in-process `TeamCreate` / `SendMessage`. Both
  * collapse to the `streamingPush` capability — the SDK control channel kept live
  * so the lead process outlives a `result` (ADR-0008 / AS-R14). Only Claude has it
- * (`streamingPush: true`); Codex closes stdin after dispatch and OpenCode is a
- * remote out-of-loop server, so neither can host a lead. So agent-teams are
+ * (`streamingPush: true`); Codex closes stdin after dispatch, so it cannot host a lead. So agent-teams are
  * **Claude-locked**, and a non-Claude session must never be marked `team`
  * (2026-06-06-006). A heterogeneous *teammate* (one-shot task dispatch, Codex as a
  * read-only advisor seat) is a documented later phase, not this gate.

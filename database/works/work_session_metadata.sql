@@ -10,7 +10,6 @@
 CREATE TABLE IF NOT EXISTS work_session_metadata (
   c3_id              TEXT PRIMARY KEY,       -- opaque c3 session ID (由 vendor + vendor_session_id 派生)
   workspace_path     TEXT NOT NULL,           -- 所属 workspace 绝对路径
-  vendor             TEXT NOT NULL,           -- vendor 标识: 'claude' | 'codex' | 'opencode'
   vendor_session_id  TEXT,                    -- vendor-native 会话 ID (pending 行时为 null)
   agent_id           TEXT NOT NULL,           -- 当前绑定的 agent ID
   title              TEXT NOT NULL,           -- 会话标题

@@ -540,7 +540,7 @@ describe('enabled flag (AC-R10)', () => {
   })
 
   it('vendorScopedVoters keeps only same-vendor agents and counts the cross-vendor exclusions', () => {
-    // A heterogeneous table: the session runs a claude agent; an opencode agent
+    // A heterogeneous table: the session runs a claude agent; a codex agent
     // and a claude (system-mode) agent are also enabled.
     saveAgents([
       SYS_RECORD,
@@ -552,11 +552,11 @@ describe('enabled flag (AC-R10)', () => {
         config: { baseUrl: '', apiKey: '', model: '' },
       },
       {
-        id: 'oc',
-        vendor: 'opencode',
+        id: 'cx',
+        vendor: 'codex',
         configMode: 'custom',
-        displayName: 'OC',
-        config: { baseUrl: '', apiKey: '', model: '' },
+        displayName: 'CX',
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
       },
     ])
     const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters('a1')
@@ -564,26 +564,26 @@ describe('enabled flag (AC-R10)', () => {
     expect(vendorScope).toBe('claude')
     expect(ids).toContain(SYSTEM_AGENT_ID) // same-vendor claude voter kept
     expect(ids).not.toContain('a1') // self excluded
-    expect(ids).not.toContain('oc') // cross-vendor (opencode) excluded
-    expect(crossVendorExcluded).toBe(1) // the one opencode agent
+    expect(ids).not.toContain('cx') // cross-vendor (codex) excluded
+    expect(crossVendorExcluded).toBe(1) // the one codex agent
   })
 
   it('vendorScopedVoters yields zero voters when the session vendor is the only one present', () => {
-    // Session runs the lone opencode agent; the only other enabled agent is a
+    // Session runs the lone codex agent; the only other enabled agent is a
     // different vendor (claude system-mode) → no same-vendor voter → consensus skipped.
     const saved = saveAgents([
       SYS_RECORD,
       {
-        id: 'oc',
-        vendor: 'opencode',
+        id: 'cx',
+        vendor: 'codex',
         configMode: 'custom',
-        displayName: 'OC',
-        config: { baseUrl: '', apiKey: '', model: '' },
+        displayName: 'CX',
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
       },
     ])
-    expect(saved.agents.find((a) => a.id === 'oc')?.vendor).toBe('opencode')
-    const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters('oc')
-    expect(vendorScope).toBe('opencode')
+    expect(saved.agents.find((a) => a.id === 'cx')?.vendor).toBe('codex')
+    const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters('cx')
+    expect(vendorScope).toBe('codex')
     expect(voters).toHaveLength(0)
     expect(crossVendorExcluded).toBe(1) // the claude system agent
   })
@@ -975,7 +975,7 @@ describe('vendor discriminated-union migration (legacy-flat → claude)', () => 
     expect(a1.displayName).toBe('One')
   })
 
-  it('drops an agent whose vendor has no registered schema (codex/opencode have no adapter yet)', () => {
+  it('drops an agent whose config fails its registered schema', () => {
     const saved = saveAgents([
       { id: 'cx', vendor: 'codex', displayName: 'Codex', config: { foo: 'bar' } },
       { id: 'a1', name: 'One', baseUrl: '', apiKey: '', model: '' },

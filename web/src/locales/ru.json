@@ -495,7 +495,7 @@
         },
         "allowedEmails": {
           "label": "Разрешённые адреса",
-          "placeholder": "alice@example.com\nbob@example.com",
+          "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
           "hint": "Войти могут только эти подтверждённые адреса. Пустой список не авторизует никого."
         }
       },
@@ -789,8 +789,7 @@
       "ghost": {
         "retry": "Повторить"
       },
-      "titleSource": "заголовок предоставлен {vendor}",
-      "opencodeOffline": "Сервер {vendor} не готов — переподключение…"
+      "titleSource": "заголовок предоставлен {vendor}"
     },
     "row": {
       "rename": {
@@ -1135,11 +1134,6 @@
           "approvalOnRequest": "По запросу",
           "approvalOnFailure": "При сбое",
           "approvalNever": "Никогда"
-        },
-        "opencode": {
-          "plan": "План",
-          "build": "Сборка",
-          "buildAllow": "Сборка (разрешено)"
         }
       },
       "saveChanges": {
@@ -1466,9 +1460,6 @@
         },
         "codex": {
           "label": "Codex"
-        },
-        "opencode": {
-          "label": "OpenCode"
         }
       }
     },

@@ -65,8 +65,8 @@ describe('agent-config schema — claude arm', () => {
 })
 
 describe('agent-config schema — unknown vendors are the extension point', () => {
-  it('rejects a vendor with no registered arm (codex / opencode have no adapter yet)', () => {
-    for (const vendor of ['codex', 'opencode', 'bogus']) {
+  it('rejects a vendor with no registered arm', () => {
+    for (const vendor of ['bogus']) {
       expect(
         parseAgentConfig({ id: 'x', vendor, displayName: 'X', config: { foo: 'bar' } }),
       ).toBeNull()

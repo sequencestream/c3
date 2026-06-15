@@ -54,9 +54,9 @@ flowchart TD
    full record: `session_selected.history` (on-disk baseline) + the runtime's live buffer tail for
    any in-flight/background turn (`SR-R8`). It reports the stored mode and authoritative runtime
    `status` so the composer locks immediately (`SR-R8`). It stops no run (`AS-R8`).
-2. **Resume-only vendors.** A tracked Codex session (`read: 'none'`) replays an **empty baseline +
-   live buffer** with a "cannot back-read history" banner (`SR-R8` Codex scenario, WC-R23). c3
-   never persists such a vendor's transcript content.
+2. **Codex local replay.** A tracked Codex session (`read: 'full'`) replays its local JSONL
+   baseline from `~/.codex/sessions/` plus the runtime live buffer tail (`SR-R8`). Unknown Codex
+   JSONL event shapes are skipped rather than making session selection fail.
 3. **Selecting another session** unsubscribes the old view and subscribes the new; the old run keeps
    running in the background (`SR-R8`, `AS-R8`).
 

@@ -251,7 +251,7 @@ function toggle(id: number): void {
             <!--
               Vendor tag — only on a discussion `agent` turn whose vendor resolved
               (human/organizer carry none). Makes a heterogeneous roundtable (e.g. a
-              Claude agent next to an OpenCode agent) visually attributable.
+              Claude agent next to a Codex agent) visually attributable.
             -->
             <span
               v-if="b.msg.speaker.vendor"
@@ -427,10 +427,6 @@ function toggle(id: number): void {
 .vendor-claude {
   color: var(--c-primary);
   background: var(--c-primary-soft);
-}
-.vendor-opencode {
-  color: var(--c-purple-text);
-  background: var(--c-purple-soft);
 }
 .vendor-codex {
   color: var(--c-info, #3b82f6);

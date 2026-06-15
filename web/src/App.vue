@@ -44,7 +44,6 @@ const {
   activeVendor,
   activeAgentSwitch,
   sessionCapabilities,
-  opencodeStatus,
   hasActiveSession,
   mode,
   modeOptions,
@@ -223,7 +222,6 @@ const {
           :vendor="activeVendor"
           :agent-switch="activeAgentSwitch"
           :vendor-session-caps="sessionCapabilities ?? undefined"
-          :opencode-status="opencodeStatus"
           :has-active-session="hasActiveSession"
           :mode="mode"
           :mode-options="modeOptions"

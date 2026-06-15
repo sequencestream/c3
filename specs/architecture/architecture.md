@@ -14,11 +14,9 @@ c3 is a single local process with two halves connected by one WebSocket:
 │ Allow/Deny │                 │              ↕                                   │
 │ mode       │                 │  Vendor-neutral adapter layer (ADR-0011)         │
 │            │                 │  ┌──────────┬──────────┬──────────────┐          │
-│            │                 │  │  Claude  │  Codex   │  OpenCode    │          │
 │            │                 │  │  adapter │  adapter │  adapter     │          │
 │            │                 │  └────┬─────┴────┬─────┴──────┬───────┘          │
 │            │                 │       │          │            │                  │
-│            │                 │  @anthropic-ai  @openai      @opencode-ai       │
 │            │                 │  /claude-agent  /codex-sdk   /sdk               │
 │            │                 │  -sdk           │            │                  │
 │            │                 │       │          │            │                  │
@@ -28,18 +26,16 @@ c3 is a single local process with two halves connected by one WebSocket:
 └────────────┘                 └───────┼────┼──────────────────┼──────────────────┘
                                        │    │                  │
                                        ▼    ▼                  ▼
-                                   `claude` `codex`        `opencode`
                                     CLI      CLI        remote server
 ```
 
 > 三个 SDK 的架构模式完全不同，详情见 [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)（Claude）、
 > ADR-0011（vendor-neutral 抽象层设计）和 ADR-0014（Codex Responses→Chat relay）。
 >
-> | Vendor   | SDK 架构                 | 进程模型       | 工具级审批 |
-> | -------- | ------------------------ | -------------- | ---------- |
-> | Claude   | 子进程包装（JSON stdio） | 本地常驻子进程 | ✔ 逐工具   |
-> | Codex    | 子进程包装（HTTP/SSE）   | 本地子进程     | ✗ 仅整轮   |
-> | OpenCode | 远程服务（REST + SSE）   | 远程进程       | ✔ 回调+API |
+> | Vendor | SDK 架构                 | 进程模型       | 工具级审批 |
+> | ------ | ------------------------ | -------------- | ---------- |
+> | Claude | 子进程包装（JSON stdio） | 本地常驻子进程 | ✔ 逐工具   |
+> | Codex  | 子进程包装（HTTP/SSE）   | 本地子进程     | ✗ 仅整轮   |
 >
 > 三者的能力差异（中断、模式切换、流式输入、fork、session 操作等）由 `AdapterCapabilities` 荣誉标记检查表
 > 管理，上层统一通过中性接口驱动（ADR-0011）。
@@ -63,38 +59,33 @@ c3 is a single local process with two halves connected by one WebSocket:
     (see [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)).
   - **Codex** uses `@openai/codex-sdk` via subprocess HTTP/SSE, with an in-process
     Responses→Chat relay for third-party providers (ADR-0014).
-  - **OpenCode** uses `@opencode-ai/sdk` via REST + SSE to a remote developer server.
 - **permission-gateway** — the `ApprovalBridge` callback plus a request→resolver registry. For
-  Claude and OpenCode (which support per-tool approval) it blocks the SDK until the browser
   answers; for Codex it degrades to launch-time policy (per-tool approval is structurally absent,
   ADR-0011 008 probe).
 - **Agent host CLIs** — each vendor's CLI is a hard runtime dependency:
   - `claude` CLI — spawned by `@anthropic-ai/claude-agent-sdk` as a subprocess.
   - `codex` CLI — spawned by `@openai/codex-sdk` as a subprocess.
-  - `opencode` CLI — runs as a remote server; `@opencode-ai/sdk` connects via HTTP.
 
 ## Module map
 
-| Module                   | File                                | Role                                                                                                                                                                                                                                                                                         |
-| ------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI entry                | `server/src/cli.ts`                 | `commander` entry; `start` is the default command; `--workspace` defaults to cwd (`--project` deprecated alias), `--port` to 3000                                                                                                                                                            |
-| HTTP/WS server           | `server/src/server.ts`              | Hono app, `/ws` upgrade, static serving, per-connection viewed session + dispatch + status broadcast                                                                                                                                                                                         |
-| Session-runtime registry | `server/src/runs.ts`                | Module-level `Map<sessionId, SessionRuntime>`: run handle, baseline+buffer, viewers, status (ADR 0006)                                                                                                                                                                                       |
-| Agent loop               | `server/src/claude.ts`              | `runClaude` — drives a vendor-neutral `AgentDriver.start()` through the adapter layer. Three concrete adapters (Claude/Codex/OpenCode) each import their own SDK inside the adapter, never in the run loop.                                                                                  |
-| Vendor-neutral adapters  | `server/src/kernel/agent/adapters/` | Neutral three-piece interface (`AgentDriver`/`ApprovalBridge`/`SessionStore`) + capability ledger + permission grid + canonical message model; three concrete adapters, each importing a different SDK: `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk` (ADR-0011) |
-| ProcessLauncher          | `server/src/kernel/agent/process/   | Vendor-agnostic host-CLI probe: `resolve(vendor) → abs path \| null` + `HOST_BINARIES` table (binary/`*_PATH`/install hint) + `probeAll` health check; the first capability gate (ADR-0012). `infra/child-env.ts` Claude shims delegate here                                                 |
-| Kernel event bus         | `server/src/kernel/events/`         | In-process typed publish/subscribe bus. Producers `publish(topic, payload)`, consumers `subscribe(topic, handler)`. Synchronous dispatch, error-isolated, statically typed topic→payload map. Hosts `'run:bound'` and `'run:settled'` events (ADR-0018).                                     |
-| Session registry         | `server/src/state.ts`               | Persisted workspace registry, per-session mode, last active session                                                                                                                                                                                                                          |
-| Session IO               | `server/src/sessions.ts`            | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                                                                                                                                                                                                               |
-| Permission registry      | `server/src/permissions.ts`         | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                                                                                                                                                                                                         |
-| Result formatting        | `server/src/format.ts`              | Flatten SDK `tool_result` content to a display string                                                                                                                                                                                                                                        |
-| Intent ledger            | `server/src/intents/`               | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_intents` tool (ADR 0007)                                                                                                                                                                                                 |
-| Static embed             | `server/src/static-embed.ts`        | Generated; Bun-inlined web bundle                                                                                                                                                                                                                                                            |
-| Wire protocol            | `shared/src/protocol.ts`            | `ClientToServer` / `ServerToClient` unions + workspace/session types                                                                                                                                                                                                                         |
-| WS client                | `web/src/lib/ws.ts`                 | Browser WebSocket wrapper                                                                                                                                                                                                                                                                    |
-| UI shell                 | `web/src/App.vue`                   | Shell: owns WS client + `handleMessage` + all shared state; dispatches by tab to page containers                                                                                                                                                                                             |
-| Pages                    | `web/src/pages/<page>/`             | Per-page containers (`works`/`intents`/`discussions`/`schedules`/`systemsettings`) + private components                                                                                                                                                                                      |
-| Shared components        | `web/src/components/<Name>/`        | Cross-page components, one dir each with colocated `.test.ts`                                                                                                                                                                                                                                |
+| Module                   | File                              | Role                                                                                                                                                                                                                                                     |
+| ------------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI entry                | `server/src/cli.ts`               | `commander` entry; `start` is the default command; `--workspace` defaults to cwd (`--project` deprecated alias), `--port` to 3000                                                                                                                        |
+| HTTP/WS server           | `server/src/server.ts`            | Hono app, `/ws` upgrade, static serving, per-connection viewed session + dispatch + status broadcast                                                                                                                                                     |
+| Session-runtime registry | `server/src/runs.ts`              | Module-level `Map<sessionId, SessionRuntime>`: run handle, baseline+buffer, viewers, status (ADR 0006)                                                                                                                                                   |
+| ProcessLauncher          | `server/src/kernel/agent/process/ | Vendor-agnostic host-CLI probe: `resolve(vendor) → abs path \| null` + `HOST_BINARIES` table (binary/`*_PATH`/install hint) + `probeAll` health check; the first capability gate (ADR-0012). `infra/child-env.ts` Claude shims delegate here             |
+| Kernel event bus         | `server/src/kernel/events/`       | In-process typed publish/subscribe bus. Producers `publish(topic, payload)`, consumers `subscribe(topic, handler)`. Synchronous dispatch, error-isolated, statically typed topic→payload map. Hosts `'run:bound'` and `'run:settled'` events (ADR-0018). |
+| Session registry         | `server/src/state.ts`             | Persisted workspace registry, per-session mode, last active session                                                                                                                                                                                      |
+| Session IO               | `server/src/sessions.ts`          | SDK `listSessions`/`getSessionMessages`/`rename`/`delete` + transcript mapping                                                                                                                                                                           |
+| Permission registry      | `server/src/permissions.ts`       | `pendingApprovals` map, `waitForDecision`/`resolveDecision`, timeout                                                                                                                                                                                     |
+| Result formatting        | `server/src/format.ts`            | Flatten SDK `tool_result` content to a display string                                                                                                                                                                                                    |
+| Intent ledger            | `server/src/intents/`             | SQLite ledger (`~/.c3/c3.db`), read-only communication agent, `save_intents` tool (ADR 0007)                                                                                                                                                             |
+| Static embed             | `server/src/static-embed.ts`      | Generated; Bun-inlined web bundle                                                                                                                                                                                                                        |
+| Wire protocol            | `shared/src/protocol.ts`          | `ClientToServer` / `ServerToClient` unions + workspace/session types                                                                                                                                                                                     |
+| WS client                | `web/src/lib/ws.ts`               | Browser WebSocket wrapper                                                                                                                                                                                                                                |
+| UI shell                 | `web/src/App.vue`                 | Shell: owns WS client + `handleMessage` + all shared state; dispatches by tab to page containers                                                                                                                                                         |
+| Pages                    | `web/src/pages/<page>/`           | Per-page containers (`works`/`intents`/`discussions`/`schedules`/`systemsettings`) + private components                                                                                                                                                  |
+| Shared components        | `web/src/components/<Name>/`      | Cross-page components, one dir each with colocated `.test.ts`                                                                                                                                                                                            |
 
 ## Cross-cutting conventions
 
@@ -143,14 +134,12 @@ c3 is a single local process with two halves connected by one WebSocket:
 - **Vendor neutrality lives in `kernel/agent/adapters/` (ADR-0011).** A neutral three-piece interface
   (`AgentDriver` lifecycle + canonical message stream, `ApprovalBridge` intercept/suspend/write-back,
   `SessionStore` history behind one face) plus an `AdapterCapabilities` ledger lets c3 drive Claude,
-  Codex, or OpenCode through one shape. Required capabilities have no flag; seven optional/degradable
   ones (`interrupt`/`setActionMode`/`streamingPush`/`inProcessMcp`/`forkSession`/`perToolApproval`/`taskStore`) are
   probed before use. **Amendment (2026-06-07):** the session-lifecycle operations
   (`list`/`read`/`resume`/`rename`/`delete`) are graded honestly as a structured
   `SessionCapabilities` sub-ledger on `AdapterCapabilities` — each op a
   `'none' | 'partial' | 'full' | 'temporarily-unavailable'` `CapabilityState` — because a boolean
-  could not tell `none` (structural NO — Codex's SDK has no listing/reading API) apart from
-  `temporarily-unavailable` (mechanism exists, not currently reachable — OpenCode's REST write-back
+  could not tell `none` (structural NO — no SDK or local-store route) apart from
   for `rename`/`delete`); the wire carries the per-vendor matrix on
   `settings.sessionCapabilities: Record<VendorId, SessionCapabilities>` and the console renders
   session-row actions by capability _state_, with **zero `if (vendor === …)`**. Permission is a

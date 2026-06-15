@@ -77,12 +77,6 @@ describe('resolveFirstAgentOfVendor', () => {
     expect(agent.id).not.toBe('disabled-claude')
     expect(agent.id).toBe('claude-pro')
   })
-
-  it('falls back to default agent when no enabled agent of matching vendor exists', () => {
-    const agent = resolveFirstAgentOfVendor('opencode')
-    // No opencode agents configured — should fall back to default (claude-pro)
-    expect(agent.id).toBe('claude-pro')
-  })
 })
 
 describe('resolveToolAgent — toolAgentId → defaultAgentId → system fall-through (2026-06-15-001)', () => {

@@ -1,6 +1,6 @@
 /**
  * ProcessLauncher — the host-binary probing layer (ADR-0012). Every agent vendor
- * c3 drives runs as a **host CLI subprocess**: the Claude/Codex/OpenCode binaries
+ * c3 drives runs as a **host CLI subprocess**: the Claude/Codex binaries
  * can NOT be packed into c3's `bun --compile` single binary, so the single binary
  * ships c3 itself and nothing else. "Self-contained" is an illusion — each agent
  * type needs its vendor's CLI installed on the host PATH (ADR-0003 already proved
@@ -35,8 +35,7 @@ export interface HostBinarySpec {
 
 /**
  * The host CLI each vendor needs. New vendors add a row here; the table also
- * drives the first-launch health check, so it lists all three vendors even though
- * only `claude` has a runtime adapter today.
+ * drives the first-launch health check.
  */
 export const HOST_BINARIES: Record<VendorId, HostBinarySpec> = {
   claude: {
@@ -52,13 +51,6 @@ export const HOST_BINARIES: Record<VendorId, HostBinarySpec> = {
     pathEnv: 'CODEX_PATH',
     installHint:
       'Install the OpenAI Codex CLI (see https://github.com/openai/codex) and ensure `codex` is on PATH. Override the path with $CODEX_PATH.',
-  },
-  opencode: {
-    vendor: 'opencode',
-    binary: 'opencode',
-    pathEnv: 'OPENCODE_PATH',
-    installHint:
-      'Install the OpenCode CLI (see https://opencode.ai) and ensure `opencode` is on PATH. Override the path with $OPENCODE_PATH.',
   },
 }
 

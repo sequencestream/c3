@@ -21,7 +21,7 @@
  * `runClaude`.
  *
  * `onUpdate` is deliberately absent: the SDK has no native task-push event (unlike
- * OpenCode's `EventTodoUpdated`), and the interface declares it "present iff the
+ * event-driven SDK task updates), and the interface declares it "present iff the
  * vendor supports push" — so Claude omits it rather than fake a poll behind it.
  */
 import type { TaskData, TaskStatus, TaskStore } from '../types.js'

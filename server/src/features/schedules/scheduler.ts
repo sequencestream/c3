@@ -33,6 +33,7 @@ import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
 const SCHEDULE_TRIGGER_KINDS: readonly RunKind[] = ['session']
 import { getTimezone } from '../../kernel/config/index.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
+import { isAgentQuotaRecoverySchedule } from './store.js'
 
 export { computeNextRunAt }
 
@@ -242,7 +243,11 @@ async function tick(): Promise<void> {
 
   for (const schedule of due) {
     // Grace window check
-    if (schedule.nextRunAt !== null && schedule.nextRunAt < now - GRACE_WINDOW_MS) {
+    if (
+      schedule.nextRunAt !== null &&
+      schedule.nextRunAt < now - GRACE_WINDOW_MS &&
+      !isAgentQuotaRecoverySchedule(schedule)
+    ) {
       console.warn(
         '[scheduler] schedule %s missed trigger window (next_run_at=%d, now=%d)',
         schedule.id,
@@ -324,7 +329,11 @@ function dispatchAndTrack(schedule: Schedule): void {
         const updated = store.getSchedule(schedule.id)
         // Event-triggered schedules have no cron: they re-arm by waiting for the
         // next lifecycle event, so next_run_at stays null (never recompute it).
-        if (updated && updated.status === 'active' && updated.triggerType !== 'event') {
+        if (updated && updated.status === 'active' && isAgentQuotaRecoverySchedule(updated)) {
+          store.updateSchedule(schedule.id, { status: 'paused' })
+          store.updateNextRunAt(schedule.id, null)
+          console.log('[scheduler] one-shot agent recovery schedule %s paused', schedule.id)
+        } else if (updated && updated.status === 'active' && updated.triggerType !== 'event') {
           const next = computeNextRunAt(updated.cronExpression, Date.now(), getTimezone())
           store.updateNextRunAt(schedule.id, next)
           console.log(

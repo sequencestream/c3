@@ -47,6 +47,7 @@ import {
   changeSessionAgentFact,
   getSessionAgentId,
   loadSettings,
+  saveSettings,
   setPendingIntent,
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
@@ -60,6 +61,7 @@ export {
   systemAgent,
 } from './normalize.js'
 export { isDegradableError, isSocketDisconnect } from './errors.js'
+export { parseQuotaResetAt } from './quota-reset.js'
 
 export function getDefaultAgentId(): string {
   return loadSettings().defaultAgentId
@@ -89,6 +91,17 @@ export function enabledAgents(settings: SystemSettings = loadSettings()): AgentC
   return settings.agents
     .filter((a) => a.enabled !== false)
     .sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0))
+}
+
+/** Persistently enable/disable one agent. Normalization rewrites default/tool fallbacks. */
+export function setAgentEnabled(agentId: string, enabled: boolean): boolean {
+  const settings = loadSettings()
+  if (!settings.agents.some((agent) => agent.id === agentId)) return false
+  saveSettings({
+    ...settings,
+    agents: settings.agents.map((agent) => (agent.id === agentId ? { ...agent, enabled } : agent)),
+  })
+  return true
 }
 
 /**
@@ -181,13 +194,6 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
         // `system` claude agent (first-party Anthropic) skips this whole arm.
         env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
       }
-      break
-    }
-    case 'opencode': {
-      // OpenCode runs as a shared c3-supervised server (2026-06-06-003), so only
-      // the model is a per-run override; baseUrl/apiKey are server-level provider
-      // config applied at supervisor boot, not per-run child env.
-      if (custom && agent.config.model) model = agent.config.model
       break
     }
     case 'codex': {

@@ -11,13 +11,9 @@
 - **Amended:** 2026-06-07 — Claude `TaskStore` reference implementation landed
   (`adapters/claude/task-store.ts` + `task-parse.ts`). See the _Claude TaskStore_ paragraph under
   "Decision".
-- **Amended:** 2026-06-07 — Codex + OpenCode `TaskStore` implementations landed
-  (`adapters/codex/task-store.ts`, `adapters/opencode/task-store.ts`), establishing the **observe-only**
   archetype (agent-driven plan, `create`/`update` reject; `onUpdate` push present). See the
-  _Codex + OpenCode TaskStore_ paragraph under "Decision".
 - **Amended:** 2026-06-07 (012) — `ActionMode`/`ToolGate` (the neutral permission grid) promoted from kernel
   archetype (agent-driven plan, `create`/`update` reject; `onUpdate` push present). See the
-  _Codex + OpenCode TaskStore_ paragraph under "Decision".
 
 ## Context
 
@@ -25,7 +21,6 @@ Through ADR-0010 c3 was a Claude-only product: the run loop (`kernel/agent/index
 imports `@anthropic-ai/claude-agent-sdk` directly, the permission gateway returns the SDK's
 `PermissionResult`, session history is read straight from Claude's JSONL transcripts
 (`sessions.ts`), and the wire `PermissionMode` is the SDK's five-way union verbatim. To support
-other agent vendors (OpenAI Codex, OpenCode) without forking the product, c3 needs a vendor-neutral
 layer the rest of the kernel can drive, with each vendor's SDK quirks sealed behind it.
 
 Three Phase-0 probes established the ground truth that any neutral interface must respect — the
@@ -35,13 +30,11 @@ vendors do **not** share one mechanism:
   (`stdin.end()`) after dispatching a turn; its event stream is read-only with no write-back
   half-channel and no "approval request" event. A tool can only be allowed/denied for the **whole
   turn** via `AbortSignal`. There is no in-the-loop interception point.
-- **009 (OpenCode) — GO, but out-of-loop.** OpenCode approves via a `permission.updated` event +
   a REST write-back (`POST /session/{id}/permissions/{permissionID}`), needing a Promise bridge,
   a timeout default-deny (~600 ms), and reconnect reconciliation. Its lifecycle is a remote
   long-running server, not an in-process child.
 - **010 (message diff) — narrow common set.** Across the three vendors only `sessionId` is an
   unconditional common field; `role` (Codex must synthesize it), `blocks` (append-with-upsert, not
-  stack), `ts` (only OpenCode is authoritative — c3 stamps the rest), and `turnId?` (droppable)
   carry discounts. Everything else ("宁丢勿强塞") belongs in a `vendorExtra` overflow, not a faked
   top-level union.
 
@@ -78,7 +71,6 @@ Adopt option 3. Establish `server/src/kernel/agent/adapters/` with:
     (`interrupt` / `setActionMode` / `pushInput` / `forkSession`) exist iff the capability flag is set.
   - `ApprovalBridge` — intercept → suspend → write back. Required: `onRequest(handler) → disposer`.
     For vendors with `perToolApproval` the handler fires per tool and the verdict is written back
-    (Claude resolves the blocking callback; OpenCode POSTs). For Codex it never fires — approval
     degrades to launch-time policy.
   - `SessionStore` — the dirtiest coupling (direct JSONL reads) sealed behind `list` / `read`
     (returns neutral `CanonicalMessage[]`), with optional `rename` / `delete`.
@@ -96,9 +88,9 @@ Adopt option 3. Establish `server/src/kernel/agent/adapters/` with:
 - **Amendment (this phase) — structured session-lifecycle capability states.** The six flags above
   are honestly boolean (a vendor either has a mid-turn interrupt point or it does not). The
   **session-lifecycle** operations (`list` / `read` / `resume` / `rename` / `delete`) are **not**:
-  008 proved `list`/`read` are structurally absent for Codex (the SDK has no listing/reading API),
-  009 proved OpenCode's `rename`/`delete` exist behind a REST write-back that is not yet wired,
-  and a remote server that is briefly down would be the same shape. A boolean cannot tell
+  008 proved the Codex SDK has no listing/reading API; later local JSONL readers made Codex
+  `rename`/`delete` exist behind a REST write-back that is not yet wired, and a remote server
+  that is briefly down would be the same shape. A boolean cannot tell
   `none` (structural NO) apart from `temporarily-unavailable` (mechanism exists, not currently
   reachable), and that distinction is exactly what the UI must render. So these ops are graded
   honestly as a `CapabilityState` per op: `'none' | 'partial' | 'full' | 'temporarily-unavailable'`,
@@ -109,13 +101,12 @@ Adopt option 3. Establish `server/src/kernel/agent/adapters/` with:
   its grades is correctly degraded with **zero `if (vendor === …)`** in the upper layer. The
   authoritative matrix as of this amendment:
 
-  | Op     | claude | opencode                | codex |
   | ------ | ------ | ----------------------- | ----- |
-  | list   | full   | full                    | none  |
-  | read   | full   | full                    | none  |
-  | resume | full   | full                    | full  |
-  | rename | full   | temporarily-unavailable | none  |
-  | delete | full   | temporarily-unavailable | none  |
+  | list | full | full | full |
+  | read | full | full | full |
+  | resume | full | full | full |
+  | rename | full | temporarily-unavailable | none |
+  | delete | full | temporarily-unavailable | none |
 
   The console renders the rename/delete row buttons by capability _state_ (hide on `none`, disabled
   on `temporarily-unavailable`, enabled on `full`/`partial`) — one degradation function, no vendor
@@ -139,14 +130,11 @@ Record<VendorId, SessionCapabilities>` companion (parallel to `hostStatus` / `bi
 | Claude `acceptEdits`           | build                | trusted-prefix           |
 | Claude `bypassPermissions`     | build                | never-ask                |
 | Codex `sandboxMode`+`approval` | sandbox ⇒ plan/build | approvalPolicy ⇒ gate    |
-| OpenCode permission model      | build                | on-sensitive             |
 
 **Scope (decision D1 — additive-only):** this phase ships the interfaces + a **Claude reference
 adapter** that delegates to the existing `runClaude` / permission gateway / `sessions.ts` (untouched),
-proving the interface is satisfiable. Codex / OpenCode adapters and the run-loop rewrite (folding the
 live gateway through `ApprovalBridge`) are later phases.
 
-> **Status (later phases landed).** The **OpenCode** adapter shipped as the first full non-Claude
 > integration (2026-06-06-003): supervised server, out-of-loop `perToolApproval: true`, preApproved
 > audit. The **Codex** adapter shipped as c3's **read-only advisor seat** (2026-06-06-005), honouring
 > the 008 NO-GO verbatim: capability ledger **all-false** (`perToolApproval: false`), launch-time
@@ -159,14 +147,12 @@ live gateway through `ApprovalBridge`) are later phases.
 >
 > **Codex as a primary session driver (2026-06-06-007).** The read-only advisor framing is **widened**:
 > a Codex agent can now be a session's primary driver, not only a consensus voter. `launchRun` forks a
-> `codex` session to `runViaDriver` (joining `opencode`), the composition root injects the Codex adapter
 > via `launchDeps.getCodexAdapter` (host-binary gated). This does **not** reverse 008: there is still
 > no per-tool runtime approval (`perToolApproval: false`, `ApprovalBridge` never fires) — the
 > launch-time sandbox/approval gate is the accepted substitute.
 >
 > **Codex policy derived from `defaultMode`, not per-agent (2026-06-06-008).** The per-agent
 > `sandboxMode`/`approvalPolicy` config (and the `DriverStartOptions.codexPolicy` plumbing) of 007 is
-> **removed**: a codex agent's config is now the neutral provider triple, identical to claude/opencode.
 > The launch-time gate is derived from the session permission mode the same way every vendor's is —
 > `defaultMode` → `fromPermissionMode` (neutral `ActionMode × ToolGate` grid) → `gateToCodexPolicy` →
 > codex `sandboxMode`/`approvalPolicy` — so one permission knob drives the whole table and a codex
@@ -208,7 +194,6 @@ live gateway through `ApprovalBridge`) are later phases.
 > throw, and the shadow keeps the last good state (a `TaskList` parse-miss is NOT a clear, mirroring
 > the web `task-list.ts` "无法解析快照时保持现状" rule). `TaskUpdate` returns only a confirmation, so the
 > store merges the patch onto its shadow entry to return a full `TaskData`. `onUpdate` is **omitted**:
-> the SDK has no native task-push event (unlike OpenCode's `EventTodoUpdated`), so the optional method
 > is absent and the upper layer degrades to pull-based `list()`/`get()` (probe protocol). The store is
 > **session-scoped** (it binds its executor to a cwd/model/env/resume context), so it is built per
 > session by the upper layer rather than wired onto the stateless no-arg `createClaudeAdapter()` —
@@ -217,14 +202,11 @@ live gateway through `ApprovalBridge`) are later phases.
 > is mocked, no `claude` process spawns, and they cover the JSON+text parse matrix and the
 > shadow-merge/degradation rules.
 
-> **Codex + OpenCode TaskStore — the observe-only archetype (2026-06-07).** The Claude reference is
 > **imperative**: its store _drives_ the SDK task tools, so `create`/`update`/`get` all do real work.
-> Codex and OpenCode reveal the second archetype, **observe-only**: their task concept is the agent's
 > own running plan, which c3 _watches_ but does not author. `CodexTaskStore`
 > (`adapters/codex/task-store.ts`) consumes the Codex `todo_list` THREAD ITEM —
 > `TodoListItem { id, items: TodoItem{text,completed}[] }`, a **full snapshot** re-emitted on
 > `item.started/updated/completed` (the driver maps it to `null` for the canonical stream, ADR-0013
-> D-D, so it lands in the store instead). `OpencodeTaskStore` (`adapters/opencode/task-store.ts`)
 > seeds from the REST full-fetch `GET /session/{id}/todo` (`init()`) then tracks the
 > `todo.updated` event (`EventTodoUpdated { sessionID, todos: Todo[] }`). Both stores: `list()`/`get()`
 > serve an in-memory snapshot; `onUpdate()` is the **live push channel** (present ⇒ the optional-method
@@ -233,30 +215,25 @@ live gateway through `ApprovalBridge`) are later phases.
 > a fake one.
 >
 > Three mapping decisions. (1) **Feed seam, not a second stream:** both stores are FED by the driver's
-> single event pump — Codex via `ingest(item)`, OpenCode via `handleTodoUpdated(props)` — mirroring how
 > the approval bridges are dispatched into, so there is one connection and one jitter-recovery, not two.
 > Tests drive these seams directly, hermetic with no process/server. (2) **Id synthesis (Codex):** a
 > `TodoItem` carries no id, so a stable id is synthesised as `<listId>#<index>` (ordering is the only
-> correlation Codex offers). (3) **Status normalisation (OpenCode):** the free-string `status` folds to
 > the neutral `TaskStatus` — `cancelled → completed` (no longer active) and any unknown value →
 > `pending`, both preserving the raw string in `vendorExtra.rawStatus`; `priority` rides
 > `vendorExtra.priority`. Each frame/event is a full snapshot ⇒ the cache is replaced wholesale and
 > `onUpdate` fires only for **new or changed** tasks (subject/status diff), not the whole list. Like
 > `ClaudeTaskStore`, both are **session-scoped** (bound to a session/event stream) and built per session
-> rather than wired onto the stateless `createCodexAdapter()` / `createOpencodeAdapter()`.
 
 > **Vendor mode catalog — token ⇄ grid translation (2026-06-07-012).** The neutral permission grid
 > (`ActionMode × ToolGate`) had been the kernel's internal permission truth since Phase 1, but the wire
 > representation of session `mode` was still Claude's five-value `PermissionMode`. The generalization
 > replaces it with a **per-vendor `VendorModeCatalog`** — the single SoT for one vendor's native mode
 > tokens. Each `VendorModeDescriptor` pairs a vendor's native `token` (e.g. Claude `plan`, Codex
-> `read-only`, OpenCode `build-allow`) with its `labelCode` (the web i18n leaf key) and the neutral grid
 > cell it maps to. Generic `tokenToGrid`/`gridToToken` helpers (`adapters/mode-catalog.ts`) turn that
 > declaration into the bidirectional translation every adapter needs.
 >
 > Three design rules hold. (1) **Catalog IS the interface, no hand-written switches.** Claude's former
 > `permission-map.ts` is refactored onto `tokenToGrid`/`gridToToken` driven by `claudeModeCatalog`. Codex
-> and OpenCode declare their own catalogs in `adapters/<vendor>/modes.ts`, and the single `MODE_CATALOGS`
 > record in `adapters/index.ts` (`Record<VendorId, VendorModeCatalog>`) provides the compile-time
 > exhaustiveness pin — adding a vendor without registering its catalog stops type-checking. (2) **Lossy
 > reverse but safe.** The grid → token direction picks closest declared token (exact cell → same
@@ -317,7 +294,6 @@ method **present ⇒ its flag is true** (no false method without capability).
 - [agent-session spec](../../domains/core/agent-session/spec.md) — the run lifecycle the `AgentDriver`
   abstracts; `PermissionMode` table the neutral grid replaces.
 - Phase-0 probes: `changes/2026/06/05/2026-06-05-008-codex-approval-probe/` (NO-GO),
-  `…-009-opencode-approval-poc/` (GO), `…-010-canonical-message-field-diff/` (common set).
 - This phase's spec: `changes/2026/06/05/2026-06-05-011-vendor-neutral-agent-abstraction/spec.md`.
 
 ```

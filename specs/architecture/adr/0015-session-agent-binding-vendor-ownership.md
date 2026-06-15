@@ -6,7 +6,6 @@
 ## Context
 
 c3's ordinary session domain is evolving from "100% read-only Claude directory" to multi-agent /
-multi-vendor (claude / codex / opencode, ADR-0011). The binding that records which agent a session
 runs on was a single map — `sessionAgents: Record<sessionId, agentId>` in
 `server/src/kernel/config/index.ts` — keyed by whatever id a session currently has. A new session
 starts life as `pending:<uuid>` (SR-R6/SR-R7) and is re-keyed to the real SDK `sessionId` on its
@@ -16,7 +15,6 @@ in-flight run). The binding map carried no vendor and was never updated at bind 
 Two problems followed:
 
 1. **No vendor invariant.** A session's transcript lives **only** in its vendor's native store
-   (claude reads `~/.claude/projects/` JSONL; codex/opencode each have their own store; the
    `SessionAccessor` routes reads by vendor — ADR-0013). c3 itself **never stores any session
    content**. So once a session has produced a transcript, re-binding it to an agent of a
    _different_ vendor would read nothing back — the history would silently vanish. Nothing enforced
@@ -66,7 +64,6 @@ agentId)` routes a pending id to `setPendingIntent` and a real id through `chang
   returning `{ ok }` so a cross-vendor attempt is reported, not silently dropped.
 - **Bind timing.** The freeze fires at the same moment as the runtime `bindPending`, on the first
   real `sessionId`, in both run paths: `run/run-lifecycle.ts` (claude) and `run/run-via-driver.ts`
-  (codex/opencode). The fact records the agent that _actually_ ran (default-fallback already applied),
   not merely an explicit intent.
 - **Janitor.** `server.ts` sweeps `pendingIntents` older than `PENDING_INTENT_TTL_MS` (7 days) at boot
   and hourly. Clearing an intent never touches `sessionAgents`, so it cannot orphan a fact.

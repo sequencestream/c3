@@ -105,7 +105,7 @@ describe('SessionAccessor', () => {
 
   it('returns [] for a c3 id no vendor owns', async () => {
     const acc = new SessionAccessor(sources())
-    const orphan = mintC3SessionId({ vendor: 'opencode', vendorSessionId: 'nope' })
+    const orphan = mintC3SessionId({ vendor: 'codex', vendorSessionId: 'nope' })
     expect(await acc.read(orphan, cwd)).toEqual([])
   })
 })

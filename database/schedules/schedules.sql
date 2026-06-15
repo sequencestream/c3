@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS schedules (
   mode                TEXT NOT NULL DEFAULT '',             -- 执行模式: ModeToken 字符串或 CodexPolicy JSON (v7 改名自 mcp_mode)
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',           -- JSON 数组, 允许使用的工具名列表
   tool_denylist       TEXT NOT NULL DEFAULT '[]',           -- JSON 数组, 禁止使用的工具名列表
-  vendor              TEXT NOT NULL DEFAULT 'claude',       -- 执行 vendor: 'claude' | 'codex' | 'opencode' (v6 新增)
   created_at          INTEGER NOT NULL,                     -- 创建时间 (epoch ms)
   updated_at          INTEGER NOT NULL                      -- 最后更新时间 (epoch ms)
 );

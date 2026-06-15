@@ -316,7 +316,6 @@ prompted to query the ledger before splitting items or setting `dependsOn`.
 ## Intent tools over localhost HTTP MCP — cross-vendor (`transport/intent-mcp/`, 2026-06-12-005)
 
 The `c3` server above is an **in-process** SDK MCP server (`createSdkMcpServer`), which only the
-Claude run path can load (`capabilities.inProcessMcp: true`). Codex/opencode run through
 `runViaDriver` with `inProcessMcp: false`, so they cannot see those tools. To keep the intent
 panel vendor-neutral, the SAME three tools are re-exposed over a **localhost streamable-HTTP MCP
 route** at `INTENT_MCP_PATH` (`/internal/intent-mcp/v1`), mounted on c3's own Hono server (before
@@ -339,8 +338,6 @@ getRunId, signal })` (only when `adapter.vendor === 'codex'` today), which mints
   (`{ type:'http', url, bearerTokenEnvVar? }`); the codex driver translates it to
   `config.mcp_servers.<name> = { url }` (the streamable-HTTP form `codex mcp add --url` writes).
 - **Claude unchanged.** The claude path still uses the in-process `mcpServers` and ignores
-  `bindDriverMcp`. **opencode is deferred**: its MCP is server-level (set at supervisor startup via
-  `OPENCODE_CONFIG_CONTENT`, no per-prompt MCP and no custom headers), incompatible with a per-run
   token URL — a later intent must design its isolation, not relax the per-project guard.
 
 ## Launch development (`start_development`)

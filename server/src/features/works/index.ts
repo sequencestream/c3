@@ -7,7 +7,13 @@
  */
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { CodexPolicy, ModeToken, PermissionMode } from '@ccc/shared/protocol'
+import type {
+  CanonicalMessage,
+  CodexPolicy,
+  ModeToken,
+  PermissionMode,
+  TranscriptItem,
+} from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import {
   addViewer,
@@ -39,11 +45,11 @@ import {
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
+import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
-import { ensureOpencodeRunning } from '../../opencode-status.js'
 import { getByC3Id, upsertPendingRow } from './work-session-store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
@@ -87,6 +93,48 @@ function projectionSelectionTitle(vendor: VendorId, sessionId: string): string |
     if (t && !PLACEHOLDER_TITLES.has(t)) return t
   }
   return null
+}
+
+const codexHistoryStore = new CodexSessionStore()
+
+async function loadHistoryForVendor(
+  vendor: VendorId,
+  workspacePath: string,
+  sessionId: string,
+): Promise<TranscriptItem[]> {
+  if (vendor === 'codex') {
+    return canonicalToTranscript(await codexHistoryStore.read(sessionId, { cwd: workspacePath }))
+  }
+  return loadHistory(workspacePath, sessionId)
+}
+
+function canonicalToTranscript(messages: readonly CanonicalMessage[]): TranscriptItem[] {
+  const out: TranscriptItem[] = []
+  for (const msg of messages) {
+    for (const block of msg.blocks) {
+      if (block.type === 'text') {
+        const text = block.text.trim()
+        if (!text) continue
+        out.push(msg.role === 'user' ? { kind: 'user', text } : { kind: 'assistant', text })
+      } else if (block.type === 'tool_use') {
+        out.push({
+          kind: 'tool_use',
+          toolUseId: block.id,
+          toolName: block.name,
+          input: block.input,
+        })
+        if (block.result) {
+          out.push({
+            kind: 'tool_result',
+            toolUseId: block.id,
+            content: block.result.content,
+            isError: block.result.isError,
+          })
+        }
+      }
+    }
+  }
+  return out
 }
 
 export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) => {
@@ -167,15 +215,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   try {
     const existing = getRuntime(msg.sessionId)
-    // OpenCode is a long-lived local REST server every back-read / resume talks to
-    // (2026-06-07-003). Lazily (re)start it within its grace window before opening an
-    // opencode session. A down server degrades honestly — `ensureOpencodeRunning` never
-    // throws, the first-class `opencode_status` signal flips to `temporarily-unavailable`
-    // + self-heals, and the console shows the offline/retry warning — so selection is
-    // NEVER fatal on a cold server. Gate by the session's resolved vendor, not identity
-    // checks scattered downstream.
     const effectiveVendor = resolveSessionVendor(msg.sessionId)
-    if (effectiveVendor === 'opencode') await ensureOpencodeRunning()
     // Projection-first (ADR-0013 left/right same-source): prefer the title the
     // session list shows; fall back to the claude-only legacy path only when the
     // projection has no real title yet (codex never resolves through the latter).
@@ -192,7 +232,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
           msg.sessionId,
           abs,
           getSessionMode(msg.sessionId, getDefaultMode(abs, effectiveVendor)),
-          await loadHistory(abs, msg.sessionId),
+          await loadHistoryForVendor(effectiveVendor, abs, msg.sessionId),
         )
     conn.viewing = msg.sessionId
     touchWorkspace(abs, Date.now())
@@ -285,7 +325,7 @@ export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
       return
     }
 
-    // String (ModeToken) path — claude / opencode / legacy codex.
+    // String (ModeToken) path — claude / legacy codex.
     const vendor = resolveSessionVendor(rt.sessionId)
     const cat = MODE_CATALOGS[vendor]
     if (cat && !isKnownToken(cat, msg.mode as string)) {

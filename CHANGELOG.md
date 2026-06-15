@@ -5,8 +5,6 @@ tag (`git describe --tags`); `package.json` is the fallback baseline.
 
 ## v0.2.0
 
-- support codex/opencode
-
 ## v0.1.0
 
 ### Distribution trust

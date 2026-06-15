@@ -63,15 +63,6 @@ describe('pickSandboxAgent', () => {
     })
   })
 
-  it('hard-fails with unsupported-vendor for opencode (no container provider plumbing)', () => {
-    const resolve = resolverOver({ oc: 'opencode' })
-    expect(pickSandboxAgent(['oc'], resolve, () => 0)).toEqual({
-      ok: false,
-      reason: 'unsupported-vendor',
-      agentId: 'oc',
-    })
-  })
-
   it('admits a codex DIRECT agent (wireApi=responses)', () => {
     const resolve = resolverOver({ cod: { vendor: 'codex', wireApi: 'responses' } })
     expect(pickSandboxAgent(['cod'], resolve, () => 0)).toEqual({ ok: true, agentId: 'cod' })

@@ -1,6 +1,6 @@
 /**
  * The shared {@link SkillLoader} engine (mount layer 2/3, ADR-0016/0017). The three
- * vendor skill loaders (`claude/skill.ts`, `codex/skill.ts`, `opencode/skill.ts`)
+ * vendor skill loaders (`claude/skill.ts`, `codex/skill.ts`)
  * differ only in (a) their vendor id, (b) their project-level discovery dir
  * segments, and (c) how support is probed — so the path math, the cache +
  * SDK-version invalidation, and the idempotent symlink all live here once.

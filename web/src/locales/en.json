@@ -156,7 +156,7 @@
         "label": "Agents"
       },
       "hint": {
-        "text": "New sessions launch with the default agent. Each agent has a type ({claude} / Codex / OpenCode) and either uses system config or a custom Base URL / API Key / Model. Toggle {on} to enable an agent; a disabled agent is excluded from discussion participants, consensus voting, the degradation chain, and the default picker — but bound or fallback launches still work, so no existing session is locked out.",
+        "text": "New sessions launch with the default agent. Each agent has a type ({claude} / Codex) and either uses system config or a custom Base URL / API Key / Model. Toggle {on} to enable an agent; a disabled agent is excluded from discussion participants, consensus voting, the degradation chain, and the default picker — but bound or fallback launches still work, so no existing session is locked out.",
         "claude": "claude",
         "on": "On"
       },
@@ -494,7 +494,7 @@
         },
         "allowedEmails": {
           "label": "Allowed emails",
-          "placeholder": "alice@example.com\nbob@example.com",
+          "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
           "hint": "Only these verified emails may sign in. An empty list authorizes nobody."
         }
       },
@@ -788,8 +788,7 @@
       "ghost": {
         "retry": "Retry"
       },
-      "titleSource": "title provided by {vendor}",
-      "opencodeOffline": "{vendor} server not ready — reconnecting…"
+      "titleSource": "title provided by {vendor}"
     },
     "row": {
       "rename": {
@@ -1174,11 +1173,6 @@
           "approvalOnRequest": "On request",
           "approvalOnFailure": "On failure",
           "approvalNever": "Never"
-        },
-        "opencode": {
-          "plan": "Plan",
-          "build": "Build",
-          "buildAllow": "Build (allow)"
         }
       },
       "saveChanges": {
@@ -1465,9 +1459,6 @@
         },
         "codex": {
           "label": "Codex"
-        },
-        "opencode": {
-          "label": "OpenCode"
         }
       }
     },

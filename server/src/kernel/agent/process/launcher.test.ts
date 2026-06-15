@@ -3,7 +3,7 @@
  *
  * `lookupCommand` is the pure platform seam — testable without spawning. The
  * `resolve` path-override + caching behavior is testable by stubbing the env var
- * (no real `claude`/`codex`/`opencode` need be installed on the test host).
+ * (no real `claude`/`codex` need be installed on the test host).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { HOST_BINARIES, lookupCommand, probeAll, resetProbeCache, resolve } from './launcher.js'
@@ -12,7 +12,6 @@ afterEach(() => {
   resetProbeCache()
   delete process.env.CLAUDE_PATH
   delete process.env.CODEX_PATH
-  delete process.env.OPENCODE_PATH
 })
 
 describe('lookupCommand', () => {
@@ -22,13 +21,12 @@ describe('lookupCommand', () => {
 
   it('uses portable `sh -c command -v <binary>` on POSIX', () => {
     expect(lookupCommand('claude', 'darwin')).toEqual(['sh', ['-c', 'command -v claude']])
-    expect(lookupCommand('opencode', 'linux')).toEqual(['sh', ['-c', 'command -v opencode']])
   })
 })
 
 describe('HOST_BINARIES', () => {
-  it('lists all three vendors with a non-empty install hint and a *_PATH override', () => {
-    for (const vendor of ['claude', 'codex', 'opencode'] as const) {
+  it('lists all vendors with a non-empty install hint and a *_PATH override', () => {
+    for (const vendor of ['claude', 'codex'] as const) {
       const spec = HOST_BINARIES[vendor]
       expect(spec.binary).toBe(vendor)
       expect(spec.pathEnv).toBe(`${vendor.toUpperCase()}_PATH`)
@@ -44,11 +42,11 @@ describe('resolve', () => {
   })
 
   it('caches the override (env mutation after first resolve does not leak through)', () => {
-    process.env.OPENCODE_PATH = '/first/opencode'
-    expect(resolve('opencode')).toBe('/first/opencode')
-    process.env.OPENCODE_PATH = '/second/opencode'
+    process.env.CODEX_PATH = '/first/codex'
+    expect(resolve('codex')).toBe('/first/codex')
+    process.env.CODEX_PATH = '/second/codex'
     // Cached from the first call — no re-read.
-    expect(resolve('opencode')).toBe('/first/opencode')
+    expect(resolve('codex')).toBe('/first/codex')
   })
 
   it('returns null when the PATH probe finds nothing (no override, binary absent)', () => {
@@ -69,7 +67,7 @@ describe('resolve', () => {
 describe('probeAll', () => {
   it('covers every known vendor and carries each install hint', () => {
     const probes = probeAll()
-    expect(probes.map((p) => p.vendor).sort()).toEqual(['claude', 'codex', 'opencode'])
+    expect(probes.map((p) => p.vendor).sort()).toEqual(['claude', 'codex'])
     for (const p of probes) {
       expect(p.installHint).toBe(HOST_BINARIES[p.vendor].installHint)
     }

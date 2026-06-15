@@ -71,7 +71,6 @@ queue (`SCH-R17`).
    first SDK event and persisted on the log immediately (so the transcript stays reachable even if
    the run later fails). The run streams into the log; terminal `complete`/`error` maps to
    `success`/`failed` (`SCH-R13`). Vendor routing resolves the first enabled agent of
-   `schedule.vendor` (Codex/OpenCode currently fall back to the Claude `query()` path).
 5. **Execution identity governs permissions (`SCH-R9`).** `read-only` ⇒ `plan`-equivalent, any write
    tool denied; `sandboxed` ⇒ a curated allowlist, off-list tools denied silently; `full-access` ⇒
    the workspace session's mode, all tools auto-allowed. **No `permission_request` ever reaches the

@@ -10,6 +10,7 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 | ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                                                                                                                                                                                                         |
 | Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12)                                                                                                                                                                                   |
+| Quota reset parsing             | `kernel/agent-config/quota-reset.ts`   | Pure parser for quota/session-limit errors carrying `reset(s) <time>`; maps the reset wall-clock through `SystemSettings.timezone` to a Unix-ms instant (AC-R22)                                                                                                                                        |
 | Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                                                                                                                                                                                                        |
 | Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                                                                                                                                                                                                               |
 | Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, drag-reorder; a single **default-agent dropdown** below the list (enabled agents only, `order_seq` order) replaces the per-row radio; save. Per-project controls (defaultMode, devSkill, rounds, speechChars, consensus) moved to `WorkspaceSetting.vue` |
@@ -126,6 +127,28 @@ re-pins the system agent and regularizes to a dense `0..n` (AC-R20).
 **not** call `enabledAgents` — a disabled agent stays a valid fallback so a bound/default/system
 launch is never blocked (AC-R10).
 
+## Quota-limit auto-disable + recovery (AC-R22)
+
+`features/agent-quota-recovery.ts` is wired at startup as a resident subscriber to the kernel
+`agent:error` event. On each degradable agent failure it calls
+`parseQuotaResetAt(error, getTimezone())`. The parser is intentionally narrow: the message must
+look like a quota/session/rate-limit exhaustion and must contain a `reset`/`resets` time such as
+`10:40pm` or `22:40`. The time is interpreted as a wall-clock in the normalized
+`SystemSettings.timezone`; if that local time has already passed for the current local day, it rolls
+to the next local day.
+
+When parsing succeeds, `setAgentEnabled(agentId, false)` persists the disabled flag through the
+normal `saveSettings(normalize(...))` path. This means default/tool fall-through is not special-cased:
+if the disabled agent was the default or a non-empty tool agent, normalize rewrites those ids to the
+next enabled agent by `order_seq`. The recovery subscriber then creates an internal one-shot schedule
+through the schedules store; when it fires, the schedule dispatcher calls
+`setAgentEnabled(agentId, true)`, and the scheduler pauses that one-shot row and clears
+`next_run_at`.
+
+If parsing fails, or the schedule store is unavailable, the existing agent error/degradation flow is
+left intact. A store outage can still leave the agent disabled without a timed recovery; the warning
+is logged and the user can re-enable the agent manually.
+
 ## Launch resolution (`resolveSessionLaunch`)
 
 ```
@@ -138,7 +161,6 @@ overrides = {}
       agent.config.apiKey  → ANTHROPIC_API_KEY + ANTHROPIC_AUTH_TOKEN
       agent.config.model   → model
       (non-system agent only) CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1"   // claude-scoped workaround, see below
-    case 'codex' | 'opencode':           // custom ⇒ neutral { baseUrl, apiKey, model } (AC-R5)
       agent.config.{baseUrl,apiKey,model} → overrides   // codex's are then re-routed through the relay in its driver (AC-R15)
 ```
 
@@ -191,7 +213,6 @@ kept apart from a real session's settled agent (vendor-bearing).
   routes a pending id → `setPendingIntent`, a real id → `changeSessionAgentFact`, returning `{ ok }`.
 - **Bind timing.** `freezeSessionAgent` fires at the same moment as the runtime `bindPending` on the
   first real `sessionId`, in both run paths: `run/run-lifecycle.ts` (claude) and `run/run-via-driver.ts`
-  (codex/opencode). It records the agent that actually ran (`agentCfg.agentId` / the resolved launch).
 - **Janitor.** `server.ts` calls `cleanupStalePendingIntents(Date.now(), PENDING_INTENT_TTL_MS)` (7
   days) at boot and hourly. Clearing an intent never touches `sessionAgents`, so a fact is never
   orphaned.

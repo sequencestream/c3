@@ -1,6 +1,6 @@
 /**
- * WireEmitter (2026-06-06-003) — the canonical(upsert) → wire(claude-incremental)
- * diff that lets the existing web console render an OpenCode turn. Text emits only
+ * WireEmitter — the canonical(upsert) → wire(claude-incremental)
+ * diff that lets the existing web console render driver-path turns. Text emits only
  * new suffixes; a tool_use emits once, its result once, no duplicates on re-emit.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ import {
 } from './run-via-driver.js'
 
 function frame(blocks: CanonicalBlock[], extra?: Partial<CanonicalMessage>): CanonicalMessage {
-  return { vendor: 'opencode', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
+  return { vendor: 'codex', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
 }
 
 describe('WireEmitter', () => {
@@ -87,13 +87,6 @@ describe('intentDriverModeForVendor', () => {
     expect(intentDriverModeForVendor('codex')).toEqual({
       actionMode: 'plan',
       toolGate: 'never-ask',
-    })
-  })
-
-  it('keeps per-tool-gated vendors on always-ask for intent runs', () => {
-    expect(intentDriverModeForVendor('opencode')).toEqual({
-      actionMode: 'plan',
-      toolGate: 'always-ask',
     })
   })
 })

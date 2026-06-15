@@ -1,7 +1,7 @@
 /**
  * Codex's {@link AgentDriver} (2026-06-06-005) — the read-only advisor seat
  * Phase 0 (008 NO-GO) pinned. Unlike Claude (per-run CLI with a blocking
- * `canUseTool`) or OpenCode (long-lived server with out-of-loop approval), Codex
+ * `canUseTool`), Codex
  * is a one-shot non-interactive exec: `startThread` fixes the launch-time policy
  * (`sandboxMode` + `approvalPolicy`), `runStreamed` dispatches the prompt and
  * yields a **read-only** `AsyncGenerator<ThreadEvent>`, and the ONLY runtime
@@ -46,6 +46,8 @@ import { itemToCanonical } from './translate.js'
 import { CODEX_RELAY_PROVIDER, type CodexRelay } from './relay-contract.js'
 import { resolve } from '../../process/launcher.js'
 
+const INTENT_MCP_TOOL_NAMES = ['find_intents', 'view_intent', 'save_intents'] as const
+
 /** The minimal structural face of a Codex thread the driver consumes (real `Thread` satisfies it). */
 export interface CodexThread {
   readonly id: string | null
@@ -73,6 +75,15 @@ export interface CodexFactoryOptions {
 
 /** Builds a {@link CodexClient}. Injected for tests; defaults to the real SDK. */
 export type CodexFactory = (options: CodexFactoryOptions) => CodexClient
+
+interface CodexMcpServerConfig {
+  url: string
+  enabled: true
+  required: true
+  enabled_tools: typeof INTENT_MCP_TOOL_NAMES
+  default_tools_approval_mode: 'approve'
+  bearer_token_env_var?: string
+}
 
 const defaultFactory: CodexFactory = (options) =>
   new Codex(options as CodexOptions) as unknown as CodexClient
@@ -117,20 +128,26 @@ export function gateToCodexPolicy(
 /**
  * Translate the neutral {@link RemoteMcpServer} map into codex's
  * `config.mcp_servers` shape (2026-06-12-005): each entry becomes
- * `{ url, [bearer_token_env_var] }` — the streamable-HTTP MCP form codex 0.139
- * accepts (the `codex mcp add <name> --url <URL>` config). Returns `undefined`
- * when there is nothing to attach, so the caller can skip the `config` merge.
+ * a required streamable-HTTP MCP server with the intent tools explicitly enabled
+ * and approved. Returns `undefined` when there is nothing to attach, so the
+ * caller can skip the `config` merge.
  */
 export function mcpServersToCodexConfig(
   servers: Record<string, RemoteMcpServer> | undefined,
-): Record<string, { url: string; bearer_token_env_var?: string }> | undefined {
+): Record<string, CodexMcpServerConfig> | undefined {
   if (!servers) return undefined
   const entries = Object.entries(servers)
   if (entries.length === 0) return undefined
-  const out: Record<string, { url: string; bearer_token_env_var?: string }> = {}
+  const out: Record<string, CodexMcpServerConfig> = {}
   for (const [name, s] of entries) {
     out[name] = {
       url: s.url,
+      enabled: true,
+      required: true,
+      enabled_tools: INTENT_MCP_TOOL_NAMES,
+      // Codex has its own MCP approval layer. c3 already gates save_intents inside
+      // the MCP handler, so the Codex layer must not hide or prompt these tools.
+      default_tools_approval_mode: 'approve',
       ...(s.bearerTokenEnvVar ? { bearer_token_env_var: s.bearerTokenEnvVar } : {}),
     }
   }
@@ -340,6 +357,10 @@ export class CodexDriver implements AgentDriver {
     const mcpConfig = mcpServersToCodexConfig(opts.mcpServers)
     if (mcpConfig) {
       codexOptions.config = { ...(codexOptions.config ?? {}), mcp_servers: mcpConfig }
+      // Intent MCP is also a c3 loopback HTTP hop. Ensure Codex's MCP client does
+      // not route 127.0.0.1 through a user/system proxy and receive a proxy's empty
+      // or non-MCP response during initialize.
+      codexOptions.env = relayEnv(opts.envOverrides)
     }
     // Binary resolution. In a sandbox run a wrapper script is supplied
     // (`opts.sandboxWrapperPath`) — it becomes the codex executable, so the SDK

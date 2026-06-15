@@ -29,7 +29,6 @@ import {
 import { detectDefaultBranch } from '../intents/worktree.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
-import { getOpencodeStatus } from '../../opencode-status.js'
 import { getSkillSupport } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -55,15 +54,6 @@ function sessionCapabilities(): Record<VendorId, SessionCapabilities> {
   const out = {} as Record<VendorId, SessionCapabilities>
   for (const v of Object.keys(VENDOR_CAPABILITIES) as VendorId[])
     out[v] = VENDOR_CAPABILITIES[v].sessions
-  // Runtime overlay (2026-06-07-003): OpenCode's server-backed lifecycle ops
-  // (list/read/resume) are only as reachable as its REST server. While the server
-  // is `temporarily-unavailable`, downgrade those grades from the SAME enum the
-  // first-class signal uses — so the console degrades opencode rows by state, not
-  // by vendor, and recovers automatically once the signal flips back to `full`.
-  if (getOpencodeStatus().reachability === 'temporarily-unavailable' && out.opencode) {
-    const TU = 'temporarily-unavailable' as const
-    out.opencode = { ...out.opencode, list: TU, read: TU, resume: TU }
-  }
   return out
 }
 

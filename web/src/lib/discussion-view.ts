@@ -65,7 +65,7 @@ export function resolveDiscussionSpeaker(
     return { icon: AGENT_FALLBACK_ICON, name: t('discussion.speaker.organizer') }
   }
   // 'agent' — also resolve the backing vendor so a heterogeneous roundtable
-  // (e.g. a Claude agent and an OpenCode agent at the same table) renders a small
+  // (e.g. a Claude agent and a Codex agent at the same table) renders a small
   // vendor tag per bubble. Vendor is a property of the agent config, not the
   // persisted message (2026-06-06-004 decision: derive, don't persist), so it is
   // only known when the agent still resolves; an unresolvable agent gets no tag.

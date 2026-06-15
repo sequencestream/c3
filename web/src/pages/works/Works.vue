@@ -21,7 +21,6 @@ import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
   CodexPolicy,
   ModeToken,
-  OpencodeServerStatus,
   SessionAgentSwitch,
   SessionCapabilities,
   SessionInfo,
@@ -44,8 +43,6 @@ const props = defineProps<{
   agentSwitch?: SessionAgentSwitch | null
   /** Per-vendor session-lifecycle capability ledger (ADR-0011), gating row actions. */
   vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
-  /** Live OpenCode server reachability (2026-06-07-003), drives the list offline warning. */
-  opencodeStatus?: OpencodeServerStatus
   // right: chat column
   hasActiveSession: boolean
   mode: ModeToken
@@ -147,7 +144,6 @@ defineExpose({
         :active-session="activeSession"
         :active-title="activeTitle"
         :vendor-session-caps="vendorSessionCaps"
-        :opencode-status="opencodeStatus"
         @create-session="(path: string) => emit('create-session', path)"
         @refresh-sessions="emit('refresh-sessions')"
         @select-session="selectSession"

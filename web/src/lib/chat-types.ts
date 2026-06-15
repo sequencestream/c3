@@ -21,7 +21,7 @@ export interface SpeakerView {
    * The vendor backing this speaker, resolved from the agent config by
    * `speakerAgentId` (2026-06-06-004). Set only for `agent` turns in a
    * heterogeneous discussion so the renderer can draw a small vendor tag —
-   * a Claude turn and an OpenCode turn are visually distinguishable while both
+   * a Claude turn and a Codex turn are visually distinguishable while both
    * normalize to the same canonical bubble. Absent for human/organizer turns.
    */
   vendor?: VendorId

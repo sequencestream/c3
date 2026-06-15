@@ -35,17 +35,14 @@ hop through a configured `HTTP(S)_PROXY` unless `NO_PROXY` excludes `127.0.0.1`.
 
 ## Options considered
 
-1. **External relay binary (codex-relay / LiteLLM), supervised like OpenCode.** _Con:_ requires the user
-   to install a second runtime (pip/cargo/Python), and bundling a per-platform binary breaks the
-   single-binary distribution (ADR-0003). Contradicts "c3 starts it, no extra install."
-2. **In-process TS translation mounted on c3's own Hono server.** c3 hosts a loopback endpoint; the codex
-   driver points the CLI at it via a custom `model_provider` (`supports_websockets = false`) and the
-   relay rewrites Responses⇄Chat both ways. _Pro:_ no external dependency, survives single-binary
-   packaging, full control. _Con:_ c3 owns the protocol-translation logic and its correctness.
-3. **Per-agent `wireApi` toggle.** Add config so the user declares chat-vs-responses. _Con:_ pushes a
-   protocol detail onto the user; against the "just configure the URL" requirement. Deferred — every
-   `custom` codex provider is routed today (first-party OpenAI uses `configMode: system`, which bypasses
-   the relay entirely).
+to install a second runtime (pip/cargo/Python), and bundling a per-platform binary breaks the
+single-binary distribution (ADR-0003). Contradicts "c3 starts it, no extra install." 2. **In-process TS translation mounted on c3's own Hono server.** c3 hosts a loopback endpoint; the codex
+driver points the CLI at it via a custom `model_provider` (`supports_websockets = false`) and the
+relay rewrites Responses⇄Chat both ways. _Pro:_ no external dependency, survives single-binary
+packaging, full control. _Con:_ c3 owns the protocol-translation logic and its correctness. 3. **Per-agent `wireApi` toggle.** Add config so the user declares chat-vs-responses. _Con:_ pushes a
+protocol detail onto the user; against the "just configure the URL" requirement. Deferred — every
+`custom` codex provider is routed today (first-party OpenAI uses `configMode: system`, which bypasses
+the relay entirely).
 
 ## Decision
 
@@ -91,7 +88,6 @@ Responses→Chat relay; the user's configuration is unchanged (the real upstream
   (`kernel/.../relay-contract.ts`: `baseUrl` + `register`/`unregister` + the provider-name constant),
   injected into the driver at the composition root; the driver never sees the Hono handler. `git grep`
   for `hono`/`JSON.stringify` under `kernel/` stays empty.
-- **ADR-0009 R1** — kernel does not import transport; the relay is injected (the OpenCode-client pattern).
 - **ADR-0003** — no new bundled binary; the relay is in-process and survives `bun build --compile`.
 - **ADR-0011 / ADR-0009 SDK boundary** — no vendor SDK type enters the relay; only JSON shapes cross it.
 

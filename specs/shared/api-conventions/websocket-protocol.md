@@ -371,12 +371,6 @@
 
 **字段：** `statuses: SessionRunStatus[]`
 
-### `opencode_status`
-
-受监管的 OpenCode REST 服务器的活跃可达性（2026-06-07-003）——**一级信号**，在每次状态转换（up / down / retrying）时推送，并在连接时作为快照发送（紧随 `ready` 之后）。驱动会话列表的离线警告；同一状态还叠加到 `settings.sessionCapabilities.opencode`（宕机时 list/read/resume 降级为 `'temporarily-unavailable'`），使整个控制台按状态降级而非按供应商降级。
-
-**字段：** `status: OpencodeServerStatus`
-
 ### `workspaces`
 
 完整的工作区列表，按最近访问降序排列。
@@ -555,8 +549,6 @@ discussion 的只读研究 run 的活跃状态：研究 agent 工作时为 `runn
 
 ### `task_created` / `task_updated`
 
-单个任务 upsert（创建或状态/字段更改）。适用于原生推送单任务更新的供应商（Codex/OpenCode `onUpdate`，按 ADR-0011 修订 / 2026-06-07-008 §6 稍后接入）和未来的增量使用。客户端按 `id` upsert，保留已有条目的 `order`。
-
 **字段：** `task: TaskItem`（`task_created`），`task: TaskItem`（`task_updated`）
 
 ### `task_deleted`
@@ -716,7 +708,6 @@ schedule 的执行日志。
 
 ## 系统配置类型
 
-- **`AgentConfig`** — 供应商**可区分联合类型**：供应商无关的公共外壳 `AgentConfigBase = { id, vendor, configMode, displayName, enabled?, icon? }` 与供应商特定的 `config` 子对象相交。当前分支：`{ vendor: 'claude'; config: ClaudeAgentConfig }`、`{ vendor: 'opencode'; config: OpencodeAgentConfig }`、`{ vendor: 'codex'; config: CodexAgentConfig }`。`configMode` 为 `'system'` 表示使用供应商 CLI 自身的系统配置/登录（`config` 的 provider 字段被忽略）；为 `'custom'` 表示应用 `config` 的 provider 字段作为启动覆盖。内置 agent id `=== SYSTEM_AGENT_ID`（`'system'`）仅作为迁移哨兵和合成回退存在。
 - **`SystemSettings`** — `{ agents, defaultAgentId, voiceLang?, uiLang?, timezone?, showToolSessions?, degradationChain?, socketAutoResume?, sandboxes?, projectConfigs? }`。持久化在 `~/.c3/settings.json`。曾有的顶级 `defaultMode`、`consensus`、`devSkill`、`maxRoundsPerStage`、`maxSpeechChars`、`skillRepos` 字段已**废弃**（2026-06-07），移至 `WorkspaceSetting`。
 - **`WorkspaceSetting`** — `{ defaultMode?, consensus?, devSkill?, maxRoundsPerStage?, maxSpeechChars?, skillRepos?, gitBranchMode?, defaultMainBranch?, sandbox? }`。工作区级设置，键控于 `SystemSettings.projectConfigs`（on-disk 键名仍为 `projectConfigs`，兼容旧数据）。`defaultMode` 是 `Record<VendorId, ModeToken | CodexPolicy>`（每个供应商独立的默认权限模式）。`gitBranchMode: 'current-branch' | 'worktree'`（缺省 `current-branch`，normalize 对缺省/未知值回退 `current-branch`，并兼容回读旧磁盘键 `gitCommitMode`）决定启动开发时的 git 分支策略；`defaultMainBranch?` 为 `worktree` 模式下新 worktree 的基准分支（缺省则从当前 HEAD 切）。
 - **`ConsensusConfig`** — `{ enabled, majority? }`。多方代理共识投票配置。`majority` 可选；`false`/缺失 ⇒ 仅一致同意才自动解决；`true` ⇒ 多数裁决。
@@ -733,17 +724,12 @@ schedule 的执行日志。
 
 线路上的供应商中立信封的单一事实来源（`shared/src/protocol.ts`，不含 SDK）。该模型最初在 `kernel/agent/adapters/types.ts` 中编写（ADR-0011），并由 ADR-0013 提升至此，因此线路仅增加一个 `vendor` **维度**——绝不启动每个供应商的第二个模式。
 
-- **`VendorId`** — `'claude' | 'codex' | 'opencode'`。每个信封上携带的供应商标签。
-- **`ActionMode`** — `'plan' | 'build'`。run 被允许执行的**操作**维度。Claude 的 `plan` 模式、Codex 的只读 `sandboxMode`、OpenCode 的 Plan agent 都转换为此维度。
 - **`ToolGate`** — `'always-ask' | 'on-sensitive' | 'trusted-prefix' | 'never-ask'`。工具门控的**激进程度**维度，与 `ActionMode` 正交。替换 Claude 的五向 `PermissionMode` 作为内部权限真相。
 - **`NeutralMode`** — `{ actionMode: ActionMode, toolGate: ToolGate }`。一个模式 token 解析到的中立权限网格单元。
 - **`AdapterCapability`** — 六个二进制能力：`'interrupt' | 'setActionMode' | 'streamingPush' | 'inProcessMcp' | 'forkSession' | 'perToolApproval' | 'taskStore'`。内核的 `AdapterCapabilities` 布尔账本以此精确键名。
 - **`SessionCapability`** — 五个会话生命周期操作：`'list' | 'read' | 'resume' | 'rename' | 'delete'`。每个供应商通过 `SessionCapabilities` 按 `CapabilityState`（`'none' | 'partial' | 'full' | 'temporarily-unavailable'`）分级自我报告。
-- **`CapabilityState`** — `'none' | 'partial' | 'full' | 'temporarily-unavailable'`。一个可降级能力的分级状态，比 `boolean` 更丰富。用于会话生命周期操作（`SessionCapability`）和 OpenCode 服务器可达性（`OpencodeServerStatus`）。
 - **`CanonicalRole`** — `'user' | 'assistant'`。模型承诺的唯一角色。Codex 从项类型合成。
-- **`CanonicalBlock`** — 三供应商公共块联合类型：`text` / `thinking` / `tool_use`。**没有独立的 `tool_result` 块**（ADR-0011 D3 裁决）：工具的返回通过 id-upsert 折叠到 `tool_use.result` 中。供应商独有类型（Codex `reasoning`、OpenCode `diff`）在 `vendorExtra` 中携带。块 `id` 用于 upsert 关联，而非跨供应商身份。
 - **`CanonicalMessage`** — `{ vendor, sessionId, turnId?, role, blocks: CanonicalBlock[], ts, preApproved?, vendorExtra? }`。`vendor`/`sessionId` 是无条件的；`role`/`blocks`/`ts`/`turnId?` 携带折扣（合成/upsert/c3 时间戳/可丢弃）。无法在所有三种供应商中存活的任何内容落在 `vendorExtra` 中，永不放在顶层。
-- **`OpencodeServerStatus`** — `{ reachability: CapabilityState, retrying: boolean, url? }`。受监管 OpenCode REST 服务器的活跃可达性。`reachability` 复用 `CapabilityState`，使 UI 按状态降级而非按供应商。
 
 **双形式 upsert。**两种供应商消息形式折叠为一种规则——块按 `(sessionId, block.id)` 键控并 **upsert**，而非仅追加：Claude 发出完整消息（完整块集，幂等重新发出），Codex 发出增量 `ItemUpdated` 帧原地修订较早的块。工具结果单调回填其 `tool_use`（后续仅输入的修订永不擦除已到达的结果）。
 

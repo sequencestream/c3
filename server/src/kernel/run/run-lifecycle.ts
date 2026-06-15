@@ -98,14 +98,6 @@ export interface LaunchRunDeps {
    */
   intentProfile?: (workspacePath: string) => IntentProfile
   /**
-   * The OpenCode {@link VendorAdapter} (built at the composition root over a
-   * started supervisor), or null/absent when OpenCode is unavailable. `launchRun`
-   * forks to the neutral {@link runViaDriver} path when the session's vendor is
-   * `opencode` (2026-06-06-003); the claude path is untouched. Injected here so the
-   * kernel launcher never builds the adapter or imports the supervisor itself.
-   */
-  getOpencodeAdapter?: () => VendorAdapter | null
-  /**
    * The Codex {@link VendorAdapter} (built at the composition root via the no-arg
    * factory, host-binary gated), or null/absent when Codex's host CLI is missing.
    * `launchRun` forks to {@link runViaDriver} when the session's vendor is `codex`
@@ -274,15 +266,15 @@ export async function launchRun(
     }
   }
 
-  // Vendor fork (2026-06-06-003 / -007): an `opencode` or `codex` session runs
+  // Vendor fork (2026-06-06-007): a `codex` session runs
   // through the neutral AgentDriver path, NOT the claude-hardwired loop below (which
   // stays unchanged). Intent runtimes previously only ran on the claude path; now
-  // they fork to the driver when their bound agent's vendor is codex/opencode (2026-06-08).
+  // they fork to the driver when their bound agent's vendor is codex (2026-06-08).
   // `system`/`claude` vendors fall through to the claude path.
   {
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
-    if (vendor === 'opencode' || vendor === 'codex') {
-      const adapter = vendor === 'opencode' ? deps.getOpencodeAdapter?.() : deps.getCodexAdapter?.()
+    if (vendor === 'codex') {
+      const adapter = deps.getCodexAdapter?.()
       if (adapter)
         return runViaDriver(
           rt,
@@ -293,9 +285,7 @@ export async function launchRun(
           deps.onPermissionRequest,
         )
       const unavailable =
-        vendor === 'opencode'
-          ? 'OpenCode is unavailable (host CLI missing, or start c3 with --opencode-url).'
-          : 'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
+        'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
       emit(runId, { type: 'user_text', text: prompt })
       emit(runId, { type: 'turn_end', reason: 'error', error: unavailable })
       finalizeRun(runId)

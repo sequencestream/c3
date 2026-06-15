@@ -53,7 +53,7 @@ import {
 const USE_PROJECTION = process.env.C3_LIST_FROM_PROJECTION !== '0'
 
 /** All known vendor tags. The rebuild tries each; absent sources no-op. */
-const KNOWN_VENDORS: readonly VendorId[] = ['claude', 'codex', 'opencode']
+const KNOWN_VENDORS: readonly VendorId[] = ['claude', 'codex']
 
 function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined
@@ -63,8 +63,8 @@ function num(v: unknown): number | undefined {
  * The session's last-modified sort key, normalized per vendor (used by the
  * OFF path / rebuild path; the projection's `last_modified` is already ms).
  *  - claude carries `lastModified` (ms) directly (via `listWorkspaceSessions`);
- *  - opencode carries `time = { created, updated? }` (see `opencode/translate.ts`),
- *    so the most-recent of `updated`/`created` is the sort key.
+ *  - future vendors may carry `time = { created, updated? }`, where the
+ *    most-recent of `updated`/`created` is the sort key.
  * Falls back to 0 when a vendor surfaces neither (sorts last).
  */
 function lastModifiedOf(extra: Record<string, unknown>): number {

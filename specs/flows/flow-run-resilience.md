@@ -24,7 +24,6 @@ flowchart TD
     EXH -- no --> CH
     EXH -- yes --> AF[all_agents_failed]
     D -- agent unusable --> SW[manual same-vendor switch]
-    D -- opencode down --> HEAL[degrade + self-heal · never fatal]
 ```
 
 ## Branch A — socket disconnect (prevent, then recover)
@@ -69,13 +68,8 @@ enabled peers; a cross-vendor change is rejected (`AS-R23`, `AC-R17`). The switc
 only — it does **not** relaunch; the next `user_prompt` resumes the same run with the new agent via
 the unchanged launch path (`AS-R23`). The candidate set rides `session_selected.agentSwitch`.
 
-## Branch D — OpenCode server reachability
-
-OpenCode is a long-lived local server (not a per-run subprocess). Its up/down state is first-class:
-`OpencodeSupervisor` carries a `reachability` broadcast as `opencode_status` on every transition
 (`AS-R24`). `select_session` lazily (re)starts it within a 2–10s grace window. A down server
 **degrades honestly and self-heals** via background backoff — reachability flips to
-`temporarily-unavailable`, the list shows an offline warning, and `sessionCapabilities.opencode`
 overlays from the same source. It is **never fatal** (`AS-R24`).
 
 ## Branches & exceptions (anti-scenarios)

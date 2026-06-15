@@ -50,10 +50,6 @@ describe('SkillLoader base', () => {
       const loader = createSkillLoader('claude', ['.claude', 'skills'], fakeProbe('v1'))
       expect(loader.getVendorSkillDir(tmpProject)).toBe(join(tmpProject, '.claude', 'skills'))
     })
-    it('opencode uses .agents/skills', () => {
-      const loader = createSkillLoader('opencode', ['.agents', 'skills'], fakeProbe('v1'))
-      expect(loader.getVendorSkillDir(tmpProject)).toBe(join(tmpProject, '.agents', 'skills'))
-    })
   })
 
   describe('detectSkillSupport', () => {
@@ -98,7 +94,7 @@ describe('SkillLoader base', () => {
     })
 
     it('supports=false vendor (none) still records the report', async () => {
-      const loader = createSkillLoader('opencode', ['.agents', 'skills'], fakeProbe('v1', 'none'))
+      const loader = createSkillLoader('codex', ['.codex', 'skills'], fakeProbe('v1', 'none'))
       const report = await loader.detectSkillSupport()
       expect(report.state).toBe('none')
       expect(report.sdkVersion).toBe('v1')

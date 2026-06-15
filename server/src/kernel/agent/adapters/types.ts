@@ -1,7 +1,7 @@
 /**
  * Vendor-neutral Agent abstraction — the geology under every agent vendor
  * (ADR-0011, Phase 1). Three interfaces + a neutral permission policy + a
- * capability ledger let c3 drive Claude, Codex, or OpenCode through one shape,
+ * capability ledger let c3 drive Claude or Codex through one shape,
  * while each vendor's SDK quirks stay locked inside its `adapters/<vendor>/`.
  *
  * The hard boundary (ADR-0009): NO `@anthropic-ai/claude-agent-sdk` (or any
@@ -13,7 +13,7 @@
  * Why neutral and not a Claude clone: the Phase 0 probes proved the vendors do
  * NOT share one mechanism. Codex (008) has NO per-tool runtime approval — its
  * stdin closes after dispatch, so a tool can only be allowed/denied for the
- * whole turn via `AbortSignal`. OpenCode (009) approves out-of-loop via a
+ * whole turn via `AbortSignal`. Future vendors may approve out-of-loop via a
  * `permission.updated` event + REST write-back. Claude approves in-the-loop via
  * a blocking `canUseTool` callback. A neutral interface that pretended these
  * were the same would lie; instead, the shared surface is the *required* subset
@@ -105,8 +105,8 @@ export type PermissionPolicy = (
  * `ApprovalBridge.onRequest`. Method *presence* is the contract; what each method
  * can actually deliver is the ledger's job: the seven booleans gate the optional
  * live-run controls, and {@link sessions} carries the structured state of the
- * session-lifecycle operations (so `SessionStore.list`/`read` always *exist* but
- * may honestly report `none` — Codex's list/read return empty, advertised as such).
+ * session-lifecycle operations (so `SessionStore.list`/`read` always *exist* and
+ * can honestly report `none`, `partial`, `full`, or `temporarily-unavailable`).
  *
  * The seven boolean fields below are **optional, degradable** live-run controls:
  * the upper layer probes the flag, calls the matching optional method when true,
@@ -135,7 +135,7 @@ export interface AdapterCapabilities {
   readonly forkSession: boolean
   /**
    * In-the-loop, per-tool runtime approval (intercept → suspend → write back).
-   * Claude (blocking `canUseTool`) = true; OpenCode (`permission.updated` + REST)
+   * Claude (blocking `canUseTool`) = true; Codex = false.
    * = true; **Codex = false** (008 NO-GO: stdin closes after dispatch, no
    * write-back half-channel). When false, the adapter has no live approval point
    * and degrades to launch-time policy (Codex `sandboxMode` + `approvalPolicy`).
@@ -143,7 +143,7 @@ export interface AdapterCapabilities {
   readonly perToolApproval: boolean
   /**
    * SDK-level task-tool surface (TaskCreate / TaskList / TaskUpdate / TaskGet).
-   * All three current vendors (Claude, Codex, OpenCode) support the SDK task
+   * Current vendors (Claude, Codex) support the SDK task
    * tools, so this is `true` for every vendor shipping today. The flag exists
    * for future vendors that may not offer a native task API.
    */
@@ -190,7 +190,7 @@ void _sessKeysMatchEnum
 /**
  * Vendor-neutral description of a remote (HTTP) MCP server to attach to a run
  * (2026-06-12-005). Each driver translates it to its native MCP config (codex →
- * `config.mcp_servers.<name> = { url }`; opencode → `mcp.<name> = { type:'remote', url }`,
+ * `config.mcp_servers.<name> = { url }`;
  * a later intent). The URL is loopback (c3's own HTTP MCP route); `bearerTokenEnvVar`
  * names an env var the vendor reads a bearer token from (codex-only knob; omit ⇒ none).
  * c3's only current producer is the intent route, which carries its per-run binding
@@ -223,7 +223,7 @@ export interface DriverStartOptions {
    * Raw provider base URL override for driver-path vendors whose SDK takes it as
    * a constructor option rather than an env var (Codex). Omit ⇒ vendor default /
    * system config (2026-06-06-007). Claude carries this via {@link envOverrides}
-   * instead; opencode resolves it server-side, so its driver ignores this.
+   * instead.
    */
   baseUrl?: string
   /** Raw provider api key override, paired with {@link baseUrl} (driver-path vendors). */
@@ -263,7 +263,7 @@ export interface DriverStartOptions {
    * still fetch over the network. Codex maps it to `ThreadOptions.networkAccessEnabled`
    * (its sandbox denies network by default, which is why work/intent/discussion
    * codex sessions previously failed any network call). Omit ⇒ vendor default
-   * (codex = denied). Claude/opencode govern network via their tool allowlist and
+   * (codex = denied). Claude governs network via its tool allowlist and
    * ignore this flag.
    */
   networkAccess?: boolean
@@ -335,7 +335,7 @@ export type Disposer = () => void
 /** Intercept → suspend → write back. The neutral approval channel. For vendors
  * with `perToolApproval`, the adapter calls the registered handler when a tool
  * needs a decision and writes the result back (Claude: resolve the blocking
- * callback; OpenCode: REST POST). For vendors without it (Codex), `onRequest`
+ * callback). For vendors without it (Codex), `onRequest`
  * registers a handler that simply never fires — approval degraded to launch-time
  * policy, no live interception point exists.
  */
@@ -396,7 +396,7 @@ export interface SessionListOptions {
 
 /**
  * The dirtiest coupling — reading a vendor's on-disk transcript (Claude reads
- * JSONL under `~/.claude/projects/`, OpenCode reads via REST, Codex via thread
+ * JSONL under `~/.claude/projects/`, Codex via thread
  * items) — locked behind one interface. `read` returns neutral
  * {@link CanonicalMessage}[]; no JSONL/SDK shape escapes.
  */
@@ -440,7 +440,7 @@ export interface TaskData {
   readonly blocks?: string[]
   /**
    * Vendor-specific extras the neutral surface does not model
-   * (e.g., OpenCode's priority, Codex's review state).
+   * (e.g., Codex's review state).
    */
   readonly vendorExtra?: Record<string, unknown>
 }
@@ -463,7 +463,7 @@ export interface TaskStore {
   get(taskId: string): Promise<TaskData | undefined>
   /**
    * Present iff the vendor supports push-based task updates
-   * (e.g., OpenCode `EventTodoUpdated`). Returns a disposer to
+   * (e.g., SDK task-update events). Returns a disposer to
    * unsubscribe the handler.
    */
   onUpdate?(handler: (task: TaskData) => void): Disposer
@@ -531,7 +531,7 @@ export interface VendorAdapter {
    * List the tools this vendor's SDK provides, classified as read or write.
    *
    * For the Claude adapter this includes both built-in SDK tools and workspace
-   * MCP server namespace prefixes (`mcp__<server>__`). For Codex/OpenCode it
+   * MCP server namespace prefixes (`mcp__<server>__`). For Codex it
    * returns only the built-in SDK tool set. The result is a **static** pre-judged
    * list (not a runtime MCP server probe) — the same classification convention
    * used by the schedule executor's `freezeTools()`.
@@ -542,7 +542,7 @@ export interface VendorAdapter {
    * @param mcpServers - Pre-resolved MCP server definitions keyed by server name.
    *   The caller (schedules feature handler) loads this from the workspace config
    *   store and passes it here so the adapter does not need to import from
-   *   `features/`. Ignored by adapters that don't support MCP (Codex, OpenCode).
+   *   `features/`. Ignored by adapters that don't support MCP (Codex).
    */
   listTools(
     workspacePath: string,

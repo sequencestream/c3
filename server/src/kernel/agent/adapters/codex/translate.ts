@@ -16,7 +16,7 @@
  * `sandboxMode` + `approvalPolicy` gate, never by a c3/human decision. So a
  * canonical message that carries a tool item is stamped `preApproved: true`,
  * reconstructing the pre-adjudication for the audit trail + the UI's pre-approved
- * colour (mirrors OpenCode's `preApproved` semantics, but here it is structural:
+ * colour (mirrors generic `preApproved` semantics, but here it is structural:
  * ALL Codex tool calls are pre-adjudicated, not just rule-engine bypasses).
  *
  * ADR-0009: SDK types (`ThreadItem`/`ThreadEvent`) are imported here (inside

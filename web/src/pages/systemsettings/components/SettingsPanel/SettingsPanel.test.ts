@@ -56,14 +56,19 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
     ],
   }
 
-  it('renders an On checkbox per agent row, reflecting enabled state', () => {
+  it('renders an accessible switch per agent row, reflecting enabled state', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
-    const checks = w.findAll('.col-on input[type="checkbox"]')
-    expect(checks).toHaveLength(3)
+    const switches = w.findAll('[data-testid="agent-enabled-switch"]')
+    expect(switches).toHaveLength(3)
+    expect(switches.every((s) => s.attributes('role') === 'switch')).toBe(true)
     // System + a1 enabled (absent/true), a2 disabled.
-    expect((checks[0].element as HTMLInputElement).checked).toBe(true)
-    expect((checks[1].element as HTMLInputElement).checked).toBe(true)
-    expect((checks[2].element as HTMLInputElement).checked).toBe(false)
+    expect((switches[0].element as HTMLInputElement).checked).toBe(true)
+    expect(switches[0].attributes('aria-checked')).toBe('true')
+    expect((switches[1].element as HTMLInputElement).checked).toBe(true)
+    expect(switches[1].attributes('aria-checked')).toBe('true')
+    expect((switches[2].element as HTMLInputElement).checked).toBe(false)
+    expect(switches[2].attributes('aria-checked')).toBe('false')
+    expect(switches[0].attributes('title')).toBe('Enable / disable this agent')
   })
 
   it('offers only enabled agents in the default-agent dropdown (no per-row radio)', () => {
@@ -79,8 +84,9 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
 
   it('emits the toggled enabled value on save', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
-    const checks = w.findAll('.col-on input[type="checkbox"]')
-    await checks[1].setValue(false) // disable a1
+    const switches = w.findAll('[data-testid="agent-enabled-switch"]')
+    await switches[1].setValue(false) // disable a1
+    expect(switches[1].attributes('aria-checked')).toBe('false')
     await w.find('[data-testid="settings-save"]').trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
@@ -91,7 +97,7 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
     const addBtn = w.find('[data-testid="settings-add-agent"]')
     expect(addBtn.exists()).toBe(true)
     await addBtn.trigger('click')
-    const checks = w.findAll('.col-on input[type="checkbox"]')
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
     // System row + the freshly added one, both checked.
     expect((checks[checks.length - 1].element as HTMLInputElement).checked).toBe(true)
   })
@@ -120,8 +126,8 @@ describe('SettingsPanel.vue — default-agent dropdown + fall-through (2026-06-1
 
   it('rewrites the default to the next enabled agent when the current default is disabled', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
-    // Disable a2 (the current default) via its On checkbox (2nd row).
-    const checks = w.findAll('.col-on input[type="checkbox"]')
+    // Disable a2 (the current default) via its enabled switch (2nd row).
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="default-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a3')
@@ -132,7 +138,7 @@ describe('SettingsPanel.vue — default-agent dropdown + fall-through (2026-06-1
 
   it('falls back to SYSTEM_AGENT_ID when every agent is disabled', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
-    const checks = w.findAll('.col-on input[type="checkbox"]')
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
     await checks[0].setValue(false)
     await checks[1].setValue(false)
     await checks[2].setValue(false)

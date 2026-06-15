@@ -14,7 +14,6 @@ import { VENDOR_CAPABILITIES, canFormTeam } from './capabilities.js'
 describe('canFormTeam — agent-teams are Claude-locked (streamingPush)', () => {
   it('is true only for Claude', () => {
     expect(canFormTeam('claude')).toBe(true)
-    expect(canFormTeam('opencode')).toBe(false)
     expect(canFormTeam('codex')).toBe(false)
   })
 
@@ -29,30 +28,22 @@ describe('canFormTeam — agent-teams are Claude-locked (streamingPush)', () => 
   it('covers every vendor that has a capability ledger', () => {
     // The map is total over the implemented vendors, so the gate never throws on a
     // resolvable vendor.
-    expect(Object.keys(VENDOR_CAPABILITIES).sort()).toEqual(['claude', 'codex', 'opencode'])
+    expect(Object.keys(VENDOR_CAPABILITIES).sort()).toEqual(['claude', 'codex'])
   })
 })
 
 /**
  * The structured session-capability matrix (ADR-0011 amendment). Each vendor
  * self-reports a {@link CapabilityState} per session-lifecycle op; this pins the
- * honest matrix so a regression that flattens a state (silently turning OpenCode's
- * `temporarily-unavailable` into `none`, or pretending Codex can read) fails loud.
+ * honest matrix so a regression that flattens a state fails loud.
  */
 const STATES: readonly CapabilityState[] = ['none', 'partial', 'full', 'temporarily-unavailable']
 const OPS = ['list', 'read', 'resume', 'rename', 'delete'] as const
 
 /** The authoritative honest matrix — the table in the ADR-0011 amendment. */
-const EXPECTED: Record<VendorId, SessionCapabilities> = {
+const EXPECTED: Partial<Record<VendorId, SessionCapabilities>> = {
   claude: { list: 'full', read: 'full', resume: 'full', rename: 'full', delete: 'full' },
-  opencode: {
-    list: 'full',
-    read: 'full',
-    resume: 'full',
-    rename: 'temporarily-unavailable',
-    delete: 'temporarily-unavailable',
-  },
-  codex: { list: 'full', read: 'none', resume: 'full', rename: 'none', delete: 'none' },
+  codex: { list: 'full', read: 'full', resume: 'full', rename: 'none', delete: 'none' },
 }
 
 describe('structured session-capability ledger', () => {
@@ -64,20 +55,19 @@ describe('structured session-capability ledger', () => {
     }
   })
 
-  it('matches the honest per-vendor matrix (Codex read=none, OpenCode rename/delete temporarily-unavailable)', () => {
+  it('matches the honest per-vendor matrix', () => {
     for (const vendor of Object.keys(EXPECTED) as VendorId[]) {
       expect(VENDOR_CAPABILITIES[vendor].sessions).toEqual(EXPECTED[vendor])
     }
   })
 
-  it('exercises all three non-partial states across the matrix (a boolean could not)', () => {
+  it('exercises multiple states across the matrix (a boolean could not)', () => {
     const reported = new Set<CapabilityState>()
     for (const vendor of Object.keys(VENDOR_CAPABILITIES) as VendorId[]) {
       for (const op of OPS) reported.add(VENDOR_CAPABILITIES[vendor].sessions[op])
     }
-    // none (Codex), temporarily-unavailable (OpenCode), full (Claude) all live.
+    // none (Codex) and full (Claude) both live.
     expect(reported.has('none')).toBe(true)
-    expect(reported.has('temporarily-unavailable')).toBe(true)
     expect(reported.has('full')).toBe(true)
   })
 })

@@ -93,7 +93,7 @@ const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
 ])
 
 // ---- Vendor ----------------------------------------------------------------
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex', 'opencode']
+const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
 
 const presentByVendor = computed(() => {
   const m = new Map<VendorId, boolean>()
@@ -119,7 +119,6 @@ const title = ref('')
 const claudeMode = ref<string>('default')
 const codexSandboxMode = ref<CodexSandboxMode>('workspace-write')
 const codexApprovalPolicy = ref<CodexApprovalPolicy>('on-request')
-const opencodeMode = ref<string>('plan')
 const command = ref('')
 const prompt = ref('')
 const cronExpression = ref('*/30 * * * *')
@@ -169,16 +168,6 @@ watch(
           codexApprovalPolicy.value =
             legacy === 'read-only' || legacy === 'full-access' ? 'never' : 'on-request'
         }
-      } else if (sched.vendor === 'opencode') {
-        const m = typeof sched.mode === 'string' ? sched.mode : 'plan'
-        opencodeMode.value =
-          m === 'read-only'
-            ? 'plan'
-            : m === 'sandboxed'
-              ? 'build'
-              : m === 'full-access'
-                ? 'buildAllow'
-                : m
       } else {
         // claude
         const m = typeof sched.mode === 'string' ? sched.mode : 'default'
@@ -208,7 +197,6 @@ watch(
       claudeMode.value = 'default'
       codexSandboxMode.value = 'workspace-write'
       codexApprovalPolicy.value = 'on-request'
-      opencodeMode.value = 'plan'
       cronExpression.value = '*/30 * * * *'
       command.value = ''
       prompt.value = ''
@@ -355,8 +343,6 @@ function serializeMode(): ModeToken | CodexPolicy {
       sandboxMode: codexSandboxMode.value,
       approvalPolicy: codexApprovalPolicy.value,
     }
-  } else if (vendor.value === 'opencode') {
-    return opencodeMode.value
   }
   return claudeMode.value
 }
@@ -705,15 +691,6 @@ function save(): void {
               </button>
             </div>
           </template>
-
-          <!-- OpenCode: dropdown -->
-          <select v-else v-model="opencodeMode" class="sf-input sf-select">
-            <option value="plan">{{ t('schedule.form.permissionMode.opencode.plan') }}</option>
-            <option value="build">{{ t('schedule.form.permissionMode.opencode.build') }}</option>
-            <option value="buildAllow">
-              {{ t('schedule.form.permissionMode.opencode.buildAllow') }}
-            </option>
-          </select>
         </div>
 
         <!-- Tool checklist -->

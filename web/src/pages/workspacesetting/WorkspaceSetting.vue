@@ -30,7 +30,7 @@ const { t } = useTypedI18n()
 const modeLabel = useModeLabel()
 
 // Render order for per-vendor sections in the form.
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex', 'opencode']
+const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
 
 // Per-stage discussion round cap: floor enforced both here and server-side.
 const MIN_ROUNDS_PER_STAGE = 8
@@ -77,7 +77,7 @@ function freshDefaultMode(
   const out: Partial<Record<VendorId, ModeToken>> = {}
   for (const v of VENDOR_ORDER) {
     out[v] = (vendorModes?.[v]?.defaultToken ??
-      { claude: 'default', codex: 'auto', opencode: 'build' }[v]) as ModeToken
+      { claude: 'default', codex: 'auto' }[v]) as ModeToken
   }
   return out as Record<VendorId, ModeToken>
 }
@@ -184,7 +184,7 @@ watch(
 
 // Always-non-null defaultMode ref for the template (WorkspaceSetting.defaultMode is optional).
 const draftDefaultMode = computed(
-  () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto', opencode: 'build' },
+  () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto' },
 )
 
 /**

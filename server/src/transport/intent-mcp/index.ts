@@ -1,7 +1,7 @@
 /**
  * Localhost HTTP MCP route for the three intent tools (2026-06-12-005). The
  * comm-agent's `find_intents` / `view_intent` / `save_intents` are a Claude
- * in-process SDK MCP server (`features/intents/save-tool.ts`); codex/opencode
+ * in-process SDK MCP server (`features/intents/save-tool.ts`); codex
  * (`inProcessMcp: false`) can't load that, so this route re-exposes the SAME
  * three tools over a streamable-HTTP MCP server bound to ONE run.
  *
@@ -13,17 +13,16 @@
  * plumbing and never reaches into `kernel/permission` or the intent store itself.
  *
  * Per-run isolation: each `bind()` mints a token → a private {@link McpServer} +
- * {@link StreamableHTTPServerTransport} whose tool handlers close over the run's
- * binding (project path + live run id + abort signal). The token rides the URL
- * query; the project binding lives in the closure, so an agent can neither read
- * nor write another project's ledger. `dispose()` evicts the binding at run end.
+ * Web-standards streamable HTTP transport whose tool handlers close over the
+ * run's binding (project path + live run id + abort signal). The token rides the
+ * URL query; the project binding lives in the closure, so an agent can neither
+ * read nor write another project's ledger. `dispose()` evicts the binding at run
+ * end.
  */
 import type { Context } from 'hono'
-import type { HttpBindings } from '@hono/node-server'
 import { getConnInfo } from '@hono/node-server/conninfo'
-import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import type { RemoteMcpServer } from '../../kernel/agent/adapters/types.js'
 import {
   findDesc,
@@ -78,7 +77,7 @@ export interface ServedIntentMcp {
 }
 
 interface Entry {
-  transport: StreamableHTTPServerTransport
+  transport: WebStandardStreamableHTTPServerTransport
   server: McpServer
   /** Resolves once `server.connect(transport)` finishes — `handler` awaits it before dispatch. */
   ready: Promise<void>
@@ -133,7 +132,7 @@ export function createIntentMcp(
       const server = buildServer(binding)
       // Stateful: the client initializes once, gets a session id, and reuses it.
       // One transport per token === one MCP session per run.
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
         enableJsonResponse: true,
       })
@@ -162,11 +161,7 @@ export function createIntentMcp(
         return c.json({ error: 'unknown or expired intent-MCP token' }, 404)
       }
       await entry.ready
-      // POST carries a JSON-RPC body; GET (SSE) / DELETE (session end) carry none.
-      const body = c.req.method === 'POST' ? await c.req.json().catch(() => undefined) : undefined
-      const { incoming, outgoing } = c.env as unknown as HttpBindings
-      await entry.transport.handleRequest(incoming, outgoing, body)
-      return RESPONSE_ALREADY_SENT
+      return entry.transport.handleRequest(c.req.raw)
     },
   }
 }

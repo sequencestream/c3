@@ -24,7 +24,6 @@ import type {
   Schedule,
   ScheduleExecutionLog,
   ToolManifestEntry,
-  OpencodeServerStatus,
   AdapterCapability,
   SessionAgentSwitch,
   SessionBindingStats,
@@ -332,9 +331,6 @@ export function createState(deps: StateDeps) {
   const currentWorkspaceSetting = ref<WorkspaceSettingType | null>(null)
   const detectedMainBranch = ref<string | null>(null)
 
-  // First-class OpenCode server reachability (2026-06-07-003).
-  const opencodeStatus = ref<OpencodeServerStatus>({ reachability: 'none', retrying: false })
-
   // ---- New-session agent picker (the "+" modal) ----
   const newSessionOpen = ref(false)
   const newSessionWorkspace = ref<string | null>(null)
@@ -465,7 +461,6 @@ export function createState(deps: StateDeps) {
     workspaceSettingOpen,
     currentWorkspaceSetting,
     detectedMainBranch,
-    opencodeStatus,
     newSessionOpen,
     newSessionWorkspace,
     activeVendor,

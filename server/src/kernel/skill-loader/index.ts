@@ -31,7 +31,7 @@ import {
 
 /**
  * The two shared public skill-discovery dirs (project-relative segments). Claude
- * reads `.claude/skills`; the OpenCode-family agents read `.agents/skills`. Both
+ * reads `.claude/skills`; Codex reads its own skills directory. Both
  * are vendor-shared, so external-skill install/status targets these dirs directly.
  */
 export const PUBLIC_SKILL_DIRS = {

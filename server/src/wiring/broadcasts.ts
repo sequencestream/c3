@@ -28,7 +28,6 @@ import {
   listDiscussions,
 } from '../features/discussions/store.js'
 import { discussionRunSnapshot, researchRunSnapshot } from '../features/discussions/run-controls.js'
-import { getOpencodeStatus } from '../opencode-status.js'
 import type { ResearchStreamItem } from '../features/discussions/research.js'
 import type { DispatchStatus } from '../features/discussions/orchestrator.js'
 import {
@@ -55,8 +54,6 @@ export interface BroadcastsDeps {
 export interface Broadcasts {
   /** Re-broadcast the session-status snapshot to every connection. */
   broadcastStatuses: () => void
-  /** Push the supervised OpenCode server's current reachability to every connection. */
-  broadcastOpencodeStatus: () => void
   /** Push a project's refreshed intent list (with runStatus enrichment). */
   broadcastIntents: (workspacePath: string) => void
   /**
@@ -111,13 +108,6 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   // connections (e.g. a server-startup tick before the first WS opens).
   const broadcastStatuses = (): void => {
     broadcaster.toAll({ type: 'session_status', statuses: listStatuses() })
-  }
-
-  // Push the supervised OpenCode server's current reachability (2026-06-07-003).
-  // The composition root wires this to the supervisor's `onStatusChange`, so every
-  // up/down/retrying transition fans out and the console's offline warning tracks it.
-  const broadcastOpencodeStatus = (): void => {
-    broadcaster.toAll({ type: 'opencode_status', status: getOpencodeStatus() })
   }
 
   // Push a project's intent list to every connection. The frontend keeps
@@ -269,7 +259,6 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
 
   return {
     broadcastStatuses,
-    broadcastOpencodeStatus,
     broadcastIntents,
     broadcastIntentSessions,
     broadcastSessions,

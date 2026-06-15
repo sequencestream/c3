@@ -57,11 +57,6 @@ import {
 import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
 import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
 import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js'
-import {
-  createOpencodeSupervisor,
-  createOpencodeAdapter,
-  type OpencodeSupervisor,
-} from './kernel/agent/adapters/opencode/index.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
 import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
@@ -72,7 +67,6 @@ import { setSkillApprovalSend } from './kernel/skill-loader/approval.js'
 import { getSkillRepos } from './kernel/config/index.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
-import { setOpencodeEnsure, setOpencodeStatus } from './opencode-status.js'
 import {
   createBroadcasts,
   createDiscussionRuns,
@@ -90,12 +84,6 @@ export interface ServerOptions {
   workspacePath?: string
   port: number
   dev: boolean
-  /**
-   * Attach to an operator-run OpenCode server instead of c3 spawning + supervising
-   * one (the escape hatch, 2026-06-06-003). When set, c3 only builds a client for
-   * it — no spawn / health / restart / kill.
-   */
-  opencodeUrl?: string
 }
 
 /** How often the server broadcasts a full session-status snapshot. */
@@ -145,9 +133,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // — the same pattern as the janitor's native list above. NOTE: this uses
     // `titleAccessor`, NOT the list/janitor `sessionAccessor` — the latter
     // excludes codex on purpose (its disk-scan listing is a separate concern), but
-    // run-end title backfill MUST read codex's JSONL or a codex session's title
-    // stays "New session" forever (codex's `baseline` is always empty — resume-only,
-    // no history read — so `firstUserTitle` can never recover it).
+    // run-end title backfill MUST read codex's JSONL so a codex session's title
+    // does not stay "New session" when the live baseline has not yet been
+    // hydrated from disk.
     void (async () => {
       let title = input.title
       try {
@@ -244,48 +232,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // present/missing + install guidance loudly, like checkDbDriver — c3 still starts.
   logHostBinaryHealth()
 
-  // OpenCode lifecycle governance (2026-06-06-003, risk #2): c3 spawns + supervises
-  // the long-lived OpenCode server (or attaches to an external one via --opencode-url).
-  // Built here at the composition root so the kernel launcher only ever sees the
-  // neutral VendorAdapter (injected via launchDeps.getOpencodeAdapter). Failure is
-  // non-fatal — c3 still starts, the opencode agent type is just unavailable.
-  // The supervisor's reachability is now a first-class signal (2026-06-07-003): the
-  // adapter is built **unconditionally** when opencode is registered (host CLI present
-  // or `--opencode-url`), so opencode is always an available vendor and its server is
-  // (re)started lazily on demand (`select_session`) within a grace window — boot only
-  // makes a best-effort, non-fatal attempt. Every reachability transition updates the
-  // runtime singleton + broadcasts an `opencode_status` frame. `broadcastOpencodeStatus`
-  // is late-bound (the broadcaster is built below) via a mutable thunk.
-  let opencodeAdapter: VendorAdapter | null = null
-  let opencodeSupervisor: OpencodeSupervisor | null = null
-  let broadcastOpencodeStatus: () => void = () => {}
-  const opencodeExternal = !!opts.opencodeUrl
-  if (opencodeExternal || resolveHostBinary('opencode')) {
-    try {
-      const sup = createOpencodeSupervisor({
-        externalUrl: opts.opencodeUrl,
-        onStatusChange: (status) => {
-          setOpencodeStatus(status)
-          broadcastOpencodeStatus()
-        },
-      })
-      opencodeSupervisor = sup
-      // Adapter pulls the live client lazily, so it works across (re)starts even
-      // when the boot attempt below fails — the server comes up on first demand.
-      opencodeAdapter = createOpencodeAdapter(sup)
-      setOpencodeEnsure(() => sup.ensureRunning())
-      setOpencodeStatus(sup.status)
-      // Best-effort boot start (non-fatal): ensureRunning degrades honestly + self-heals.
-      await sup.ensureRunning()
-      console.log(
-        `[c3] opencode ${sup.status.reachability}: ${sup.url ?? '?'}${opencodeExternal ? ' (external)' : ''}`,
-      )
-    } catch (e) {
-      console.warn(`[c3] opencode unavailable: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
-  // Codex lifecycle (2026-06-06-007): unlike OpenCode, Codex spawns its CLI per run
+  // Codex lifecycle (2026-06-06-007): Codex spawns its CLI per run
   // via the SDK (no supervisor), so the adapter is built directly — host-binary
   // gated like the others. Built here so the kernel launcher only sees the neutral
   // VendorAdapter (injected via launchDeps.getCodexAdapter). Missing CLI ⇒ null, and
@@ -309,14 +256,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // `list_sessions` path lists through. Sources are built explicitly (not via
   // `resolveAvailableAdapters`) so we take only each vendor's `SessionStore` and
   // can EXCLUDE codex — codex is not enumerable (its list entries depend on the
-  // projection table, a separate concern). claude is always present; opencode
-  // joins only when its supervised adapter came up.
+  // projection table, a separate concern). claude is always present.
   const sessionSources: VendorSessionSource[] = [
     { vendor: 'claude', sessions: new ClaudeSessionStore() },
   ]
-  if (opencodeAdapter) {
-    sessionSources.push({ vendor: 'opencode', sessions: opencodeAdapter.sessions })
-  }
   const sessionAccessor = new SessionAccessor(sessionSources)
 
   // Run-end title-backfill accessor (codex "New session" fix). Separate from the
@@ -425,9 +368,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       console.warn('[c3] auto-title derivation failed:', err)
     }
   })
-  // Bind the late thunk now the broadcaster exists, so the supervisor's
-  // onStatusChange (registered above) fans out `opencode_status` transitions.
-  broadcastOpencodeStatus = broadcasts.broadcastOpencodeStatus
   setInterval(() => {
     // Reap stale/hung runs before broadcasting, so the snapshot is authoritative.
     reconcileLiveness(Date.now(), RUN_STALE_MS)
@@ -479,9 +419,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // it (it uses the in-process `mcpServers` above).
       bindDriverMcp: (binding) => intentMcp.bind(binding),
     }),
-    // The neutral OpenCode adapter, or null when unavailable (launchRun forks to
-    // the driver path for opencode sessions; 2026-06-06-003).
-    getOpencodeAdapter: () => opencodeAdapter,
     // The neutral Codex adapter, or null when its host CLI is missing (launchRun
     // forks to the driver path for codex sessions; 2026-06-06-007).
     getCodexAdapter: () => codexAdapter,
@@ -509,13 +446,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     isRunning,
   })
   // Build the adapter lookup for AgentSessionManager (used by discussion runs).
-  // claude is always present; codex and opencode join only when their host CLI
+  // claude is always present; codex joins only when its host CLI
   // was detected at boot (null-entries are skipped — missing vendors throw at
   // runtime, which is a fatal developer error, not a silent degradation).
   const discussionAdapters = new Map<VendorId, VendorAdapter>()
   discussionAdapters.set('claude', createClaudeAdapter())
   if (codexAdapter) discussionAdapters.set('codex', codexAdapter)
-  if (opencodeAdapter) discussionAdapters.set('opencode', opencodeAdapter)
   const discussionRuns = createDiscussionRuns({
     broadcasts,
     eventBus,
@@ -596,9 +532,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
     await stopSchedulerWiring(30_000)
-    // Tree-kill the supervised OpenCode server so no orphan/port leaks (idempotent;
-    // the supervisor also self-registers exit handlers as a backstop).
-    opencodeSupervisor?.stop()
     server.close()
     process.exit(0)
   }

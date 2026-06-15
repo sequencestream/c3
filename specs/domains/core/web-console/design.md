@@ -224,7 +224,6 @@ selector `taskPanelView` plus the client-side fold `applyTaskEvent` (both unit-t
   removes by id. Ordinary `tool_use`/`tool_result` chat rows are untouched (kept as history); the task
   panel reads `taskModel` via `taskPanelView`.
 - **Per-task variants.** `task_created`/`task_updated`/`task_deleted` exist for vendors that push
-  single-task updates natively (Codex/OpenCode `onUpdate`, wired later per 2026-06-07-008 §6). The
   Claude path uses `task_list` snapshots only.
 - **Capability gating (2026-06-07-010).** The `settings` message carries an optional
   `vendorCapabilities: Record<VendorId, Record<AdapterCapability, boolean>>` (the kernel's binary

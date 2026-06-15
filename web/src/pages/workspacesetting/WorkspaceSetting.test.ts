@@ -56,36 +56,12 @@ const MOCK_VENDOR_MODES: Record<VendorId, VendorModeCatalog> = {
       },
     ],
   },
-  opencode: {
-    vendor: 'opencode',
-    defaultToken: 'build',
-    modes: [
-      {
-        token: 'plan',
-        labelCode: 'nav.mode.plan.label',
-        actionMode: 'plan',
-        toolGate: 'on-sensitive',
-      },
-      {
-        token: 'build',
-        labelCode: 'nav.mode.build.label',
-        actionMode: 'build',
-        toolGate: 'on-sensitive',
-      },
-      {
-        token: 'build-allow',
-        labelCode: 'nav.mode.buildAllow.label',
-        actionMode: 'build',
-        toolGate: 'never-ask',
-      },
-    ],
-  },
 }
 
 /** Convenience: per-vendor config with the given claude token. */
 function cfg(overrides?: Partial<WorkspaceSettingType>): WorkspaceSettingType {
   return {
-    defaultMode: { claude: 'plan', codex: 'auto', opencode: 'build' },
+    defaultMode: { claude: 'plan', codex: 'auto' },
     devSkill: '/my-skill',
     maxRoundsPerStage: 14,
     maxSpeechChars: 400,
@@ -106,15 +82,14 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
         systemSandboxes: [],
       },
     })
-    // 2 codex policy selects (sandbox + approval) + 1 claude + 1 opencode
-    // + 1 git-branch-mode select = 5
+    // 2 codex policy selects (sandbox + approval) + 1 claude
+    // + 1 git-branch-mode select = 4
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(5)
-    // Claude + OpenCode still have a mode select; Codex uses dual-policy selects.
+    expect(selects).toHaveLength(4)
+    // Claude still has a mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-codex-sandbox"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-codex-approval"]').length).toBe(1)
-    expect(w.findAll('[data-testid="default-mode-opencode"]').length).toBe(1)
   })
 
   it('seeds each vendor select from per-vendor project config', () => {
@@ -138,9 +113,6 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     expect(
       (w.find('[data-testid="default-mode-codex-approval"]').element as HTMLSelectElement).value,
     ).toBe('on-request')
-    expect(
-      (w.find('[data-testid="default-mode-opencode"]').element as HTMLSelectElement).value,
-    ).toBe('build')
   })
 
   it('defaults each vendor to the catalog defaultToken when config omits defaultMode', () => {
@@ -154,7 +126,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
         systemSandboxes: [],
       },
     })
-    // catalog defaultTokens: claude='default', codex='auto', opencode='build'
+    // catalog defaultTokens: claude='default', codex='auto'
     expect((w.find('[data-testid="default-mode-claude"]').element as HTMLSelectElement).value).toBe(
       'default',
     )
@@ -165,9 +137,6 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     expect(
       (w.find('[data-testid="default-mode-codex-approval"]').element as HTMLSelectElement).value,
     ).toBe('on-request')
-    expect(
-      (w.find('[data-testid="default-mode-opencode"]').element as HTMLSelectElement).value,
-    ).toBe('build')
   })
 
   it('renders vendor-specific mode options (not the full cross-vendor set)', () => {
@@ -237,7 +206,6 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     expect(payload.defaultMode).toEqual({
       claude: 'plan',
       codex: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
-      opencode: 'build',
     })
   })
 
@@ -474,7 +442,6 @@ describe('WorkspaceSetting.vue — save emits full payload', () => {
     expect(payload.defaultMode).toEqual({
       claude: 'plan',
       codex: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
-      opencode: 'build',
     })
     expect(payload.devSkill).toBe('/my-skill')
     expect(payload.maxRoundsPerStage).toBe(14)

@@ -1032,7 +1032,7 @@ describe('intent_sessions CRUD (dev session execution records)', () => {
   it('listIntentSessions returns records for an intent, newest first', () => {
     insertIntentSession('intent-3', 'sess-a', 'claude')
     // slight delay to ensure ordering
-    insertIntentSession('intent-3', 'sess-b', 'opencode')
+    insertIntentSession('intent-3', 'sess-b', 'codex')
     insertIntentSession('intent-3', 'sess-c', 'codex')
 
     const list = listIntentSessions('intent-3')
@@ -1043,7 +1043,7 @@ describe('intent_sessions CRUD (dev session execution records)', () => {
     expect(list[2].sessionId).toBe('sess-a')
     // each record has the right vendor
     expect(list[0].vendor).toBe('codex')
-    expect(list[1].vendor).toBe('opencode')
+    expect(list[1].vendor).toBe('codex')
     expect(list[2].vendor).toBe('claude')
   })
 
@@ -1103,13 +1103,13 @@ describe('intent_sessions CRUD (dev session execution records)', () => {
   })
 
   it('updateIntentSession partial update does not clear other fields', () => {
-    const id = insertIntentSession('intent-u3', 'sess-u3', 'opencode', 'agent-z')
+    const id = insertIntentSession('intent-u3', 'sess-u3', 'codex', 'agent-z')
     updateIntentSession(id, { exitCode: 'failure' })
     const got = getIntentSession(id)
     expect(got!.exitCode).toBe('failure')
     // Other fields should remain unchanged
     expect(got!.agentId).toBe('agent-z')
-    expect(got!.vendor).toBe('opencode')
+    expect(got!.vendor).toBe('codex')
     expect(got!.endAt).toBeNull()
     expect(got!.summary).toBeNull()
   })

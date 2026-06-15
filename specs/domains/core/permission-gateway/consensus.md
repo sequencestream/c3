@@ -82,7 +82,6 @@ different vendor), consensus is skipped and the human is prompted as usual.
 Consensus is **vendor-scoped**: only agents of the **session's own vendor** vote
 (`vendorScopedVoters` in `kernel/agent-config/`). A heterogeneous roundtable can mix
 vendors, but a cross-vendor vote is **meaningless** — the tool name + risk meaning a
-voter must judge is not comparable across vendors (a Claude `Bash`, an OpenCode shell
 tool, and a Codex `shell` are different verdicts under different risk taxonomies). So
 c3 does **not** neutralize the request into a vendor-free "intent + risk-tag" form for
 cross-vendor voting (a deliberately-deferred option — low ROI until a real need); it

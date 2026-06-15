@@ -13,11 +13,13 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import type {
+  CanonicalBlock,
   CanonicalMessage,
   SessionListOptions,
   SessionStore,
   SessionSummary,
 } from '../types.js'
+import type { CanonicalRole } from '@ccc/shared/protocol'
 
 export class CodexSessionStore implements SessionStore {
   /**
@@ -199,10 +201,257 @@ export class CodexSessionStore implements SessionStore {
     return 'New session'
   }
 
-  async read(_sessionId: string, _opts: SessionListOptions): Promise<CanonicalMessage[]> {
-    // TODO(codex-l2): back-read a thread (on-disk reader or resume-and-replay).
-    return []
+  async read(sessionId: string, opts: SessionListOptions): Promise<CanonicalMessage[]> {
+    const filepath = this.findSessionFile(sessionId, opts.cwd)
+    if (!filepath) return []
+    try {
+      return this.readSessionHistoryFile(filepath, sessionId)
+    } catch {
+      return []
+    }
   }
+
+  private findSessionFile(sessionId: string, workspacePath: string): string | null {
+    const sessionsDir = path.join(os.homedir(), '.codex', 'sessions')
+    if (!existsSync(sessionsDir)) return null
+    const now = new Date()
+    const MAX_READ_DAYS = 365
+    const cutoff = new Date(now.getTime() - MAX_READ_DAYS * 86400 * 1000)
+    for (const yearDir of readdirSync(sessionsDir)) {
+      const yearN = Number(yearDir)
+      if (!Number.isInteger(yearN)) continue
+      if (yearN < cutoff.getFullYear()) continue
+      if (yearN > now.getFullYear() + 1) continue
+      const yearPath = path.join(sessionsDir, yearDir)
+      if (!existsSync(yearPath)) continue
+      for (const monthDir of readdirSync(yearPath)) {
+        const monthN = Number(monthDir)
+        if (!Number.isInteger(monthN) || monthN < 1 || monthN > 12) continue
+        if (yearN === cutoff.getFullYear() && monthN < cutoff.getMonth() + 1) continue
+        if (yearN === now.getFullYear() && monthN > now.getMonth() + 1) continue
+        const monthPath = path.join(yearPath, monthDir)
+        if (!existsSync(monthPath)) continue
+        for (const dayDir of readdirSync(monthPath)) {
+          const dayN = Number(dayDir)
+          if (!Number.isInteger(dayN) || dayN < 1 || dayN > 31) continue
+          if (
+            yearN === cutoff.getFullYear() &&
+            monthN === cutoff.getMonth() + 1 &&
+            dayN < cutoff.getDate()
+          )
+            continue
+          if (yearN === now.getFullYear() && monthN === now.getMonth() + 1 && dayN > now.getDate())
+            continue
+          const dayPath = path.join(monthPath, dayDir)
+          if (!existsSync(dayPath)) continue
+          for (const file of readdirSync(dayPath)) {
+            if (!file.endsWith('.jsonl')) continue
+            const filepath = path.join(dayPath, file)
+            const summary = this.readSessionFile(filepath, workspacePath)
+            if (summary?.sessionId === sessionId) return filepath
+          }
+        }
+      }
+    }
+    return null
+  }
+
+  private readSessionHistoryFile(filepath: string, sessionId: string): CanonicalMessage[] {
+    const content = readFileSync(filepath, { encoding: 'utf-8', flag: 'r' })
+    const out: CanonicalMessage[] = []
+    let seq = 0
+    for (const line of content.split('\n')) {
+      const obj = tryParseJson(line.trim())
+      if (!obj) continue
+      const msg = lineToCanonical(obj, sessionId, seq++)
+      if (msg) out.push(msg)
+    }
+    return out
+  }
+}
+
+function lineToCanonical(
+  obj: Record<string, unknown>,
+  sessionId: string,
+  seq: number,
+): CanonicalMessage | null {
+  const payload = recordOf(obj.payload)
+  if (!payload) return null
+  if (obj.type === 'event_msg') return eventMessageToCanonical(payload, sessionId, seq)
+  if (obj.type === 'response_item') return responseItemToCanonical(payload, sessionId, seq)
+  return null
+}
+
+function eventMessageToCanonical(
+  payload: Record<string, unknown>,
+  sessionId: string,
+  seq: number,
+): CanonicalMessage | null {
+  if (payload.type === 'user_message' && typeof payload.message === 'string') {
+    const text = payload.message.trim()
+    if (!text) return null
+    return canonicalText('user', sessionId, `user-${seq}`, text, seq)
+  }
+  if (payload.type === 'agent_message' && typeof payload.message === 'string') {
+    const text = payload.message.trim()
+    if (!text) return null
+    return canonicalText('assistant', sessionId, `assistant-${seq}`, text, seq)
+  }
+  return null
+}
+
+function responseItemToCanonical(
+  payload: Record<string, unknown>,
+  sessionId: string,
+  seq: number,
+): CanonicalMessage | null {
+  const role = payload.role === 'user' || payload.role === 'assistant' ? payload.role : null
+  if (role) {
+    const text = textFromContent(payload.content)
+    if (!text || (role === 'user' && isInjectedContext(text))) return null
+    return canonicalText(role, sessionId, blockId(payload, `${role}-${seq}`), text, seq)
+  }
+  const block = codexItemPayloadToBlock(payload)
+  if (!block) return null
+  return {
+    vendor: 'codex',
+    sessionId,
+    role: 'assistant',
+    blocks: [block],
+    ts: seq,
+    ...(block.type === 'tool_use' ? { preApproved: true } : {}),
+  }
+}
+
+function canonicalText(
+  role: CanonicalRole,
+  sessionId: string,
+  id: string,
+  text: string,
+  seq: number,
+): CanonicalMessage {
+  return { vendor: 'codex', sessionId, role, blocks: [{ type: 'text', id, text }], ts: seq }
+}
+
+function codexItemPayloadToBlock(payload: Record<string, unknown>): CanonicalBlock | null {
+  const id = blockId(payload, `item-${String(payload.type ?? 'unknown')}`)
+  if (payload.type === 'agent_message' && typeof payload.text === 'string') {
+    return { type: 'text', id, text: payload.text }
+  }
+  if (payload.type === 'reasoning' && typeof payload.text === 'string') {
+    return { type: 'thinking', id, thinking: payload.text }
+  }
+  if (payload.type === 'error' && typeof payload.message === 'string') {
+    return { type: 'text', id, text: payload.message, vendorExtra: { itemType: 'error' } }
+  }
+  if (payload.type === 'command_execution') {
+    const status = typeof payload.status === 'string' ? payload.status : undefined
+    const command = typeof payload.command === 'string' ? payload.command : ''
+    const aggregated =
+      typeof payload.aggregated_output === 'string' ? payload.aggregated_output : ''
+    return {
+      type: 'tool_use',
+      id,
+      name: 'shell',
+      input: { command },
+      ...(status && status !== 'in_progress'
+        ? { result: { content: aggregated, isError: status === 'failed' } }
+        : {}),
+      vendorExtra: { status },
+    }
+  }
+  if (payload.type === 'file_change') {
+    const changes = Array.isArray(payload.changes) ? payload.changes : []
+    const status = typeof payload.status === 'string' ? payload.status : undefined
+    return {
+      type: 'tool_use',
+      id,
+      name: 'apply_patch',
+      input: { changes },
+      result: {
+        content: changes.map(formatChangeSummary).join('\n'),
+        isError: status === 'failed',
+      },
+      vendorExtra: { status },
+    }
+  }
+  if (payload.type === 'mcp_tool_call') {
+    const server = typeof payload.server === 'string' ? payload.server : 'mcp'
+    const tool = typeof payload.tool === 'string' ? payload.tool : 'tool'
+    const result = mcpToolResult(payload)
+    return {
+      type: 'tool_use',
+      id,
+      name: `${server}/${tool}`,
+      input: payload.arguments ?? {},
+      ...(result ? { result } : {}),
+      vendorExtra: { server, tool, status: payload.status },
+    }
+  }
+  if (payload.type === 'web_search') {
+    return {
+      type: 'tool_use',
+      id,
+      name: 'web_search',
+      input: { query: typeof payload.query === 'string' ? payload.query : '' },
+      vendorExtra: { itemType: 'web_search' },
+    }
+  }
+  return null
+}
+
+function mcpToolResult(
+  payload: Record<string, unknown>,
+): { content: string; isError: boolean } | null {
+  const error = recordOf(payload.error)
+  if (typeof error?.message === 'string') return { content: error.message, isError: true }
+  const result = recordOf(payload.result)
+  const content = Array.isArray(result?.content)
+    ? result.content
+        .map((item) => {
+          const c = recordOf(item)
+          if (c?.type === 'text' && typeof c.text === 'string') return c.text
+          return c?.type ? `[${String(c.type)}]` : ''
+        })
+        .join('')
+    : ''
+  return content ? { content, isError: false } : null
+}
+
+function textFromContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block) => {
+      const b = recordOf(block)
+      if (!b) return ''
+      if (
+        (b.type === 'input_text' || b.type === 'output_text' || b.type === 'text') &&
+        typeof b.text === 'string'
+      ) {
+        return b.text
+      }
+      return ''
+    })
+    .join('')
+    .trim()
+}
+
+function blockId(payload: Record<string, unknown>, fallback: string): string {
+  return typeof payload.id === 'string' && payload.id ? payload.id : fallback
+}
+
+function formatChangeSummary(change: unknown): string {
+  const c = recordOf(change)
+  const kind = typeof c?.kind === 'string' ? c.kind : 'change'
+  const p = typeof c?.path === 'string' ? c.path : ''
+  return p ? `${kind} ${p}` : kind
+}
+
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }
 
 /**

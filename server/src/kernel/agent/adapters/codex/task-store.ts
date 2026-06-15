@@ -16,7 +16,7 @@
  *
  * The feed seam is {@link ingest}: the driver calls it for each `todo_list` item it
  * sees. This mirrors how {@link import('./approval.js').CodexApprovalBridge} and
- * OpenCode's bridges are FED by the driver's dispatch rather than opening a second
+ * Driver-path task bridges are fed by the driver's dispatch rather than opening a second
  * stream — one event pump, many consumers. Tests drive `ingest` directly, so the
  * store is unit-testable with no `codex` process (mirrors the injected-seam pattern
  * the {@link import('../claude/task-store.js').ClaudeTaskStore} uses for its executor).

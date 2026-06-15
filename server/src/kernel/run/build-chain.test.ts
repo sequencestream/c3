@@ -26,7 +26,6 @@ const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig =>
 const REGISTRY: Record<string, AgentConfig> = {
   c1: agent('c1', 'claude'),
   c2: agent('c2', 'claude'),
-  oc: agent('oc', 'opencode'),
   cx: agent('cx', 'codex'),
 }
 const resolve = (id: string): AgentConfig => REGISTRY[id] ?? agent(id, 'claude')
@@ -52,16 +51,13 @@ describe('buildAgentsToTry — vendor-homogeneous chain', () => {
     const { agentsToTry, crossVendorSkipped } = buildAgentsToTry(
       first,
       'claude',
-      ['oc', 'c2', 'cx'],
+      ['cx', 'c2'],
       resolve,
       launch,
     )
     // Only the same-vendor (claude) c2 is kept after c1.
     expect(agentsToTry.map((a) => a.agentId)).toEqual(['c1', 'c2'])
-    expect(crossVendorSkipped).toEqual([
-      { agentId: 'oc', agentName: 'OC', vendor: 'opencode' },
-      { agentId: 'cx', agentName: 'CX', vendor: 'codex' },
-    ])
+    expect(crossVendorSkipped).toEqual([{ agentId: 'cx', agentName: 'CX', vendor: 'codex' }])
   })
 
   it('drops the session agent and duplicates from the chain', () => {
@@ -92,24 +88,24 @@ describe('buildAgentsToTry — vendor-homogeneous chain', () => {
     const { agentsToTry, crossVendorSkipped } = buildAgentsToTry(
       first,
       'claude',
-      ['oc', 'cx'],
+      ['cx'],
       resolve,
       launch,
     )
     expect(agentsToTry.map((a) => a.agentId)).toEqual(['c1'])
-    expect(crossVendorSkipped.map((a) => a.agentId)).toEqual(['oc', 'cx'])
+    expect(crossVendorSkipped.map((a) => a.agentId)).toEqual(['cx'])
   })
 
-  it('anchors on the session vendor — an opencode session keeps opencode fallbacks', () => {
+  it('anchors on the session vendor — a codex session keeps codex fallbacks', () => {
     const { agentsToTry, crossVendorSkipped } = buildAgentsToTry(
-      { agentId: 'oc', model: 'model-oc' },
-      'opencode',
-      ['c1', 'oc'],
+      { agentId: 'cx', model: 'model-cx' },
+      'codex',
+      ['c1', 'cx'],
       resolve,
       launch,
     )
-    // c1 (claude) is cross-vendor for an opencode session → skipped; oc == self → dropped.
-    expect(agentsToTry.map((a) => a.agentId)).toEqual(['oc'])
+    // c1 (claude) is cross-vendor for a codex session → skipped; cx == self → dropped.
+    expect(agentsToTry.map((a) => a.agentId)).toEqual(['cx'])
     expect(crossVendorSkipped).toEqual([{ agentId: 'c1', agentName: 'C1', vendor: 'claude' }])
   })
 })

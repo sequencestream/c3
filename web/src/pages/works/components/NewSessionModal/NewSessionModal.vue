@@ -33,7 +33,7 @@ const emit = defineEmits<{
 }>()
 
 // Stable vendor order so the dropdown is deterministic regardless of agent order.
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex', 'opencode']
+const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
 
 // '' = Auto (inherit defaultAgentId); otherwise the chosen vendor.
 const vendor = ref<'' | VendorId>('')

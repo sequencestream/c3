@@ -7,7 +7,6 @@
  */
 import { describe, expect, it } from 'vitest'
 import { resolveAvailableAdapters } from './registry.js'
-import type { VendorAdapter } from './types.js'
 
 describe('resolveAvailableAdapters', () => {
   it('drops a vendor from `available` and lists it in `missing` when its host CLI is absent', () => {
@@ -57,37 +56,5 @@ describe('resolveAvailableAdapters', () => {
     expect(codexMissing).toBeDefined()
     expect(codexMissing?.binary).toBe('codex')
     expect(codexMissing?.installHint.length).toBeGreaterThan(0)
-  })
-
-  // ── OpenCode injection (2026-06-06-003) ──────────────────────────────────────
-  const fakeOpencode = { vendor: 'opencode' } as unknown as VendorAdapter
-
-  it('registers the injected opencode adapter when its host CLI resolves', () => {
-    const { available } = resolveAvailableAdapters(
-      (v) => (v === 'opencode' ? '/bin/opencode' : null),
-      {
-        adapter: fakeOpencode,
-        external: false,
-      },
-    )
-    expect(available.map((a) => a.vendor)).toContain('opencode')
-  })
-
-  it('lists opencode in `missing` when its host CLI is absent and not external', () => {
-    const { available, missing } = resolveAvailableAdapters(() => null, {
-      adapter: fakeOpencode,
-      external: false,
-    })
-    expect(available.map((a) => a.vendor)).not.toContain('opencode')
-    expect(missing.map((m) => m.vendor)).toContain('opencode')
-  })
-
-  it('external opencode (--opencode-url) bypasses the host-binary gate', () => {
-    const { available, missing } = resolveAvailableAdapters(() => null, {
-      adapter: fakeOpencode,
-      external: true,
-    })
-    expect(available.map((a) => a.vendor)).toContain('opencode')
-    expect(missing.map((m) => m.vendor)).not.toContain('opencode')
   })
 })

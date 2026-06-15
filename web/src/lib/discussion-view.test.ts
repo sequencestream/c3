@@ -307,13 +307,13 @@ describe('discussion-view — resolveDiscussionSpeaker(纯解析,五分支)', ()
 })
 
 describe('discussion-view — 异构圆桌 vendor 解析(2026-06-06-004)', () => {
-  // A heterogeneous table: a Claude agent and an OpenCode agent sit together.
+  // A heterogeneous table: a Claude agent and a Codex agent sit together.
   const HETERO: AgentConfig[] = [
     agent({ id: 'claude-a', vendor: 'claude', displayName: 'Claude A', icon: '🤖' }),
-    agent({ id: 'oc-a', vendor: 'opencode', displayName: 'OpenCode A', icon: '🦊' }),
+    agent({ id: 'cx-a', vendor: 'codex', displayName: 'Codex A', icon: 'C' }),
   ]
 
-  it('agent 命中 → speaker.vendor 取自 agent 配置(claude / opencode 各自归位)', () => {
+  it('agent 命中 → speaker.vendor 取自 agent 配置(claude / codex 各自归位)', () => {
     expect(
       resolveDiscussionSpeaker(
         msg({ speakerKind: 'agent', speakerAgentId: 'claude-a', speakerName: 'Claude A' }),
@@ -324,12 +324,12 @@ describe('discussion-view — 异构圆桌 vendor 解析(2026-06-06-004)', () =>
     ).toEqual({ icon: '🤖', name: 'Claude A', vendor: 'claude' })
     expect(
       resolveDiscussionSpeaker(
-        msg({ speakerKind: 'agent', speakerAgentId: 'oc-a', speakerName: 'OpenCode A' }),
+        msg({ speakerKind: 'agent', speakerAgentId: 'cx-a', speakerName: 'Codex A' }),
         HETERO,
         'claude-a',
         T,
       ),
-    ).toEqual({ icon: '🦊', name: 'OpenCode A', vendor: 'opencode' })
+    ).toEqual({ icon: 'C', name: 'Codex A', vendor: 'codex' })
   })
 
   it('agent 未命中 → 无 vendor(无法从配置推导,不臆测)', () => {

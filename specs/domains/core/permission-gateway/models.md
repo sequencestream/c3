@@ -28,14 +28,12 @@ The resolution of a request.
 
 Relationships: at most one Decision per Permission Request (spec invariant). An `abort`
 source always carries `deny`. The `timeout` source exists **only for out-of-loop vendors**
-(OpenCode, PG-R11): the request blocks in the vendor's process across an SSE link, so an
 unanswered one times out to `deny` rather than hanging forever. The in-loop Claude path has
 no timeout source — its request waits indefinitely (PG-R2).
 
 ### Vendor write-back (out-of-loop only, 2026-06-06-003)
 
 For an out-of-loop vendor the neutral `allow`/`deny` is translated to the vendor's native
-write-back value, e.g. OpenCode `POST /session/{id}/permissions/{permissionID}` with
 `response`: `allow` → `once`, `deny` → `reject` (`always` is not used). A structured
 `404 PermissionNotFoundError` on write-back means the id went stale and is treated as resolved.
 

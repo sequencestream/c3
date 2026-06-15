@@ -495,7 +495,7 @@
         },
         "allowedEmails": {
           "label": "許可するメールアドレス",
-          "placeholder": "alice@example.com\nbob@example.com",
+          "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
           "hint": "これらの確認済みメールアドレスのみサインインできます。空のリストでは誰も許可されません。"
         }
       },
@@ -789,8 +789,7 @@
       "ghost": {
         "retry": "再試行"
       },
-      "titleSource": "タイトルは {vendor} 提供",
-      "opencodeOffline": "{vendor} サーバーが準備できていません — 再接続中…"
+      "titleSource": "タイトルは {vendor} 提供"
     },
     "row": {
       "rename": {
@@ -1135,11 +1134,6 @@
           "approvalOnRequest": "リクエスト時",
           "approvalOnFailure": "失敗時",
           "approvalNever": "なし"
-        },
-        "opencode": {
-          "plan": "計画",
-          "build": "ビルド",
-          "buildAllow": "ビルド（許可）"
         }
       },
       "saveChanges": {
@@ -1466,9 +1460,6 @@
         },
         "codex": {
           "label": "Codex"
-        },
-        "opencode": {
-          "label": "OpenCode"
         }
       }
     },

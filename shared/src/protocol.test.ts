@@ -126,14 +126,7 @@ describe('protocol wire format', () => {
       bindingStats: { bound: 3, pending: 1 },
       sessionCapabilities: {
         claude: { list: 'full', read: 'full', resume: 'full', rename: 'full', delete: 'full' },
-        codex: { list: 'none', read: 'none', resume: 'full', rename: 'none', delete: 'none' },
-        opencode: {
-          list: 'full',
-          read: 'full',
-          resume: 'full',
-          rename: 'temporarily-unavailable',
-          delete: 'temporarily-unavailable',
-        },
+        codex: { list: 'full', read: 'full', resume: 'full', rename: 'none', delete: 'none' },
       },
     },
     // Auth replies (ADR-0023): a successful login carries the issued token +

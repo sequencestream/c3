@@ -37,7 +37,6 @@ CREATE TABLE schedules (
     mcp_mode        TEXT NOT NULL,                           -- 'read-only' | 'sandboxed' | 'full-access'
     tool_allowlist  TEXT NOT NULL DEFAULT '[]',
     tool_denylist   TEXT NOT NULL DEFAULT '[]',
-    vendor          TEXT NOT NULL DEFAULT 'claude',           -- 'claude' | 'codex' | 'opencode' (v6, 2026-06-08)
     created_at      INTEGER NOT NULL,                        -- Unix ms
     updated_at      INTEGER NOT NULL                         -- Unix ms
 );
@@ -70,6 +69,11 @@ Design notes:
   `getDueSchedules` only returns cron rows (event rows have null `next_run_at`). The v5 migration adds
   the three columns idempotently via `PRAGMA table_info` (the shared global `user_version` is untrusted,
   same as the v2–v4 migrations), defaulting legacy rows to `cron` (SCH-R17).
+- **Internal one-shot agent recovery (2026-06-15-002):** no schema migration is required. The
+  recovery flow stores a normal `command` row with `config.internalAction='agent_quota_recovery'`,
+  `config.agentId`, and `config.resetAt`; `next_run_at` is set to that absolute reset instant. The
+  dispatcher recognizes this config and re-enables the agent instead of spawning a shell; the scheduler
+  then sets `status='paused'` and `next_run_at=NULL`, making the row one-shot.
 - `type` maps to the spec's `task_type` but uses `'llm'` instead of `'llm_prompt'` for brevity.
 - `config` is a JSON blob validated at the application layer. There is no check constraint —
   validation is type-dependent and happens at create/update time.
@@ -156,7 +160,9 @@ class ScheduleScheduler {
 2. Filter out schedules already tracked in `inFlight` (serial execution per schedule).
 3. For each due schedule: call `appendExecutionLog()` to create a log entry, then dispatch
    via the dispatcher. The promise is stored in `inFlight` and removed via `.finally()`.
-4. All errors in the tick are caught and logged — the tick loop never silently stops.
+4. Internal agent-recovery rows are paused and have `next_run_at` cleared after execution, instead
+   of being re-armed from their cron expression.
+5. All errors in the tick are caught and logged — the tick loop never silently stops.
 
 ### Grace window for stale triggers
 
@@ -165,6 +171,8 @@ When the server restarts, some schedules' `next_run_at` may be in the past:
 - Within 5 minutes of `now` → execute normally.
 - Beyond 5 minutes → set status to `error`, record a `failed` execution log with
   `error_message = 'missed_trigger_window'`.
+- Internal agent-recovery rows are exempt from the missed-trigger error path; a late server restart
+  should still re-enable the agent rather than strand it disabled.
 
 ### Manual trigger (run now)
 
@@ -222,6 +230,15 @@ export async function executeCommand(
 7. Support `config.maxRetries` (default 0): on non-zero exit or timeout, retry up to N times.
    All retries share the same log entry — only the final attempt's result is recorded.
 
+### Internal agent recovery execution
+
+Before normal command dispatch, `dispatcher.ts` checks for
+`config.internalAction === 'agent_quota_recovery'`. Such a row is system-owned: it never spawns a
+shell and ignores the user command config. The dispatcher calls `setAgentEnabled(config.agentId,
+true)` through the agent-config module, writes a success/failure execution log, and returns. The
+scheduler's post-run branch detects the same config, marks the schedule `paused`, and clears
+`next_run_at`, so the row is retained for audit but cannot repeat.
+
 ### LLM prompt execution (`executeLlmPrompt`)
 
 ```typescript
@@ -235,7 +252,6 @@ export async function executeLlmPrompt(
 1. Parse `config.prompt` (LLM prompt text) from the schedule's JSON config.
 2. Resolve agent by vendor: `resolveFirstAgentOfVendor(schedule.vendor)` instead of
    the old `resolveAgent(null)`. This routes execution to the first enabled agent of
-   the schedule's declared vendor. Non-Claude vendors (codex, opencode) log a warning
    and fall back to the SDK `query()` path — dedicated adapter driver paths are a
    future entry.
 3. Launch a lightweight agent session via SDK `query()`:

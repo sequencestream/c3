@@ -29,10 +29,6 @@ program
     '--settings <path>',
     'path to settings.json (overrides the default ~/.c3/settings.json; its directory also holds state.json)',
   )
-  .option(
-    '--opencode-url <url>',
-    'attach to an external OpenCode server instead of c3 spawning + supervising one',
-  )
   .action(
     async (opts: {
       workspace?: string
@@ -40,7 +36,6 @@ program
       port: string
       dev: boolean
       settings?: string
-      opencodeUrl?: string
     }) => {
       // Relocate the config dir before anything reads settings (loadSettings is lazy).
       if (opts.settings) setSettingsPath(opts.settings)
@@ -64,7 +59,7 @@ program
         console.error(`[c3] error: invalid port: ${opts.port}`)
         process.exit(1)
       }
-      await startServer({ workspacePath, port, dev: opts.dev, opencodeUrl: opts.opencodeUrl })
+      await startServer({ workspacePath, port, dev: opts.dev })
     },
   )
 

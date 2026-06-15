@@ -44,7 +44,6 @@ flowchart TD
    (`AS-R1`). The prompt is echoed as `user_text` so all viewers and switch-back replay see it.
 2. **agent-config → agent-session.** `resolveSessionLaunch` supplies the run's launch overrides —
    the bound agent's vendor + `model`/`baseUrl`/`apiKey`/`envOverrides`, else the default agent's
-   (`AC-R4`/`AC-R6`). `claude` runs the reference path; `codex`/`opencode` fork to the neutral
    driver (`AS-R*` vendor note, ADR-0011).
 3. **agent-session → SDK.** The run drives `query()` in **streaming-input mode** (`AS-R13`), keeping
    the control channel live so `set_mode`/stop reach it.

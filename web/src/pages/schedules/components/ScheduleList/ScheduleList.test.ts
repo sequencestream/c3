@@ -121,16 +121,16 @@ describe('ScheduleList.vue — 左栏列表交互', () => {
 
   describe('vendor 与工具摘要', () => {
     it('展开后显示 vendor 色点 + 品牌名', async () => {
-      const w = mountList([sched({ id: 'a', vendor: 'opencode' })])
+      const w = mountList([sched({ id: 'a', vendor: 'codex' })])
       await w.find('.sched-item-main').trigger('click')
 
       // vendor dot 存在且颜色正确
       const dot = w.find('.sched-detail-inline .vendor-dot')
       expect(dot.exists()).toBe(true)
-      expect(dot.attributes('style')).toContain(VENDOR_COLOR.opencode)
+      expect(dot.attributes('style')).toContain(VENDOR_COLOR.codex)
 
       // 品牌名出现
-      expect(w.text()).toContain(VENDOR_LABEL.opencode)
+      expect(w.text()).toContain(VENDOR_LABEL.codex)
     })
 
     it('空 toolAllowlist 显示 "All tools unrestricted"', async () => {

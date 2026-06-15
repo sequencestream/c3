@@ -43,7 +43,7 @@ export function createPermissionRequestHandler(deps: {
 
     // Persist the event (status defaults to 'todo'). `source` is caller-provided
     // (session / intent / …) so WorkCenter's jumpToSource targets the right tab —
-    // a codex/opencode intent prompt is 'intent', a work session is 'session'.
+    // a codex intent prompt is 'intent', a work session is 'session'.
     createEvent({
       workspacePath: ctx.workspacePath,
       source: ctx.source,

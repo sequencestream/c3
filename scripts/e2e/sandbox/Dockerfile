@@ -12,7 +12,6 @@
 # claude  ← npm @anthropic-ai/claude-code      (the Claude Code CLI)
 # codex   ← npm @openai/codex                   (the OpenAI Codex CLI)
 #
-# opencode is intentionally NOT installed: it is unsupported under sandbox by
 # decision (ADR-0024 follow-up — see specs/domains/core/sandbox/spec.md).
 #
 # Build via scripts/e2e/sandbox/build-image.mjs (tags c3-sandbox-e2e:latest).

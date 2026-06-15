@@ -6,13 +6,9 @@
  * assertion at the bottom pins the two together so they cannot drift (the same
  * discipline `AdapterCapability` ↔ `AdapterCapabilities` uses).
  *
- * Today only `claude` has a real adapter (ADR-0011 reference) and thus a config
- * shape. `codex`/`opencode` are the **extension point**: a new vendor adds its
- * `z.object` arm to {@link VENDOR_AGENT_SCHEMAS}, appends it to the
- * {@link agentConfigSchema} union, and the type pin forces the matching wire arm
- * in `shared/protocol.ts`. Until then their configs simply fail to parse — the
- * normalize layer drops them (fail-soft), matching the registry reality where
- * only `claude` has a factory.
+ * Claude and Codex have config shapes. A new vendor adds its `z.object` arm to
+ * {@link VENDOR_AGENT_SCHEMAS}, appends it to the {@link agentConfigSchema}
+ * union, and the type pin forces the matching wire arm in `shared/protocol.ts`.
  */
 import { z } from 'zod'
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
@@ -46,24 +42,11 @@ const claudeAgentSchema = baseShellSchema.extend({
   config: claudeConfigSchema,
 })
 
-/** The `opencode` vendor's config sub-object (provider launch overrides). */
-export const opencodeConfigSchema = z.object({
-  baseUrl: z.string(),
-  apiKey: z.string(),
-  model: z.string(),
-})
-
-/** The `opencode` agent arm: public shell + `vendor: 'opencode'` + opencode config. */
-const opencodeAgentSchema = baseShellSchema.extend({
-  vendor: z.literal('opencode'),
-  config: opencodeConfigSchema,
-})
-
 /**
  * The `codex` vendor's config sub-object (2026-06-06-005). The neutral provider
  * triple only: Codex's launch-time policy gate (`sandboxMode`/`approvalPolicy`) is
  * NOT persisted — it is derived at launch from the session `defaultMode`
- * (2026-06-06-008), so the codex arm mirrors claude/opencode exactly.
+ * (2026-06-06-008), so the codex arm mirrors claude exactly.
  */
 export const codexConfigSchema = z.object({
   baseUrl: z.string(),
@@ -88,23 +71,21 @@ const codexAgentSchema = baseShellSchema.extend({
  * registers its arm here (and in {@link agentConfigSchema} below). Partial over
  * {@link VendorId} on purpose: a vendor without an entry has no config shape yet
  * and cannot be persisted as an agent (it would have no adapter to run on).
- * `claude`, `opencode`, and `codex` all have real adapters.
+ * `claude` and `codex` have real adapters.
  */
 export const VENDOR_AGENT_SCHEMAS = {
   claude: claudeAgentSchema,
-  opencode: opencodeAgentSchema,
   codex: codexAgentSchema,
 } satisfies Partial<Record<VendorId, z.ZodTypeAny>>
 
 /**
  * The full {@link AgentConfig} schema, routed by the `vendor` discriminant:
  * `safeParse` dispatches an object to its vendor's arm and rejects an unknown
- * vendor or a config that fails that arm. claude + opencode + codex arms; new
+ * vendor or a config that fails that arm. claude + codex arms; new
  * vendors append their arm.
  */
 export const agentConfigSchema = z.discriminatedUnion('vendor', [
   claudeAgentSchema,
-  opencodeAgentSchema,
   codexAgentSchema,
 ])
 

@@ -89,7 +89,6 @@ web/src/
 ├── composables/                                     # 可复用组合式逻辑
 │   ├── useAuth.ts                                    # 认证状态 reactive 单例(ADR-0023):status(unknown/authenticated/login-required)、submitLogin/logout、login_result/unauthenticated 回流、token 持久化,纯响应服务端
 │   ├── useBreakpoint.ts                              # 响应式媒体查询断点:提供 useBreakpoint/useIsMobile,统一移动端判断与 matchMedia 变更监听
-│   ├── useModeLabel.ts                              # agent 权限模式本地化标签解析器:覆盖 Claude/Codex/OpenCode 各 vendor 模式
 │   ├── usePersistentToggle.ts                       # localStorage 绑定的布尔 ref:记住列表面板收缩/展开态,跨刷新保留
 │   └── useSpeechRecognition.ts                      # Web Speech API 轻封装:浏览器语音转文字,持续聆听、自动重启、final/interim 回调
 │

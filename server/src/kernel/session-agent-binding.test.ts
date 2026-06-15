@@ -66,13 +66,6 @@ function seedAgents(): void {
         config: { baseUrl: '', apiKey: '', model: '' },
       },
       {
-        id: 'oc',
-        vendor: 'opencode',
-        configMode: 'custom',
-        displayName: 'OC',
-        config: { baseUrl: '', apiKey: '', model: '' },
-      },
-      {
         id: 'cx',
         vendor: 'codex',
         configMode: 'custom',
@@ -123,10 +116,10 @@ describe('freezeSessionAgent (bind → freeze vendor)', () => {
   beforeEach(seedAgents)
 
   it('copies the intent into a fact, freezes vendor, and drops the intent', () => {
-    setPendingIntent('pending:p1', 'oc')
-    freezeSessionAgent('pending:p1', 'real-oc', 'oc', '/abs/proj')
-    expect(getSessionAgentId('real-oc')).toBe('oc')
-    expect(getSessionVendor('real-oc')).toBe('opencode')
+    setPendingIntent('pending:p1', 'cx')
+    freezeSessionAgent('pending:p1', 'real-cx', 'cx', '/abs/proj')
+    expect(getSessionAgentId('real-cx')).toBe('cx')
+    expect(getSessionVendor('real-cx')).toBe('codex')
     // Intent is gone — only the fact remains.
     expect(getSessionAgentId('pending:p1')).toBeNull()
   })
@@ -159,20 +152,20 @@ describe('changeSessionAgentFact / setSessionAgent (same-vendor swap vs cross-ve
 
   it('rejects a cross-vendor change and leaves the fact untouched', () => {
     bindSessionAgent('pending:s2', 'real-2', SYSTEM_AGENT_ID, 'claude')
-    expect(changeSessionAgentFact('real-2', 'oc', 'opencode')).toBe(false)
+    expect(changeSessionAgentFact('real-2', 'cx', 'codex')).toBe(false)
     expect(getSessionAgentId('real-2')).toBe(SYSTEM_AGENT_ID)
     expect(getSessionVendor('real-2')).toBe('claude')
   })
 
   it('setSessionAgent routes pending→intent and real→vendor-checked fact', () => {
     // Pending: always succeeds, updates the mutable intent.
-    expect(setSessionAgent('pending:s3', 'oc')).toEqual({ ok: true })
-    expect(getSessionAgentId('pending:s3')).toBe('oc')
+    expect(setSessionAgent('pending:s3', 'cx')).toEqual({ ok: true })
+    expect(getSessionAgentId('pending:s3')).toBe('cx')
 
     // Real, same vendor → ok; cross vendor → rejected.
     bindSessionAgent('pending:s3', 'real-3', SYSTEM_AGENT_ID, 'claude')
     expect(setSessionAgent('real-3', 'claude-b')).toEqual({ ok: true })
-    expect(setSessionAgent('real-3', 'oc')).toEqual({ ok: false })
+    expect(setSessionAgent('real-3', 'cx')).toEqual({ ok: false })
     expect(getSessionAgentId('real-3')).toBe('claude-b')
   })
 })
@@ -259,19 +252,19 @@ describe('sameVendorEnabledAgents (shared same-vendor candidate rule)', () => {
     expect(sameVendorEnabledAgents('claude', SYSTEM_AGENT_ID).map((a) => a.id)).toEqual([
       'claude-b',
     ])
-    // No exclusion ⇒ both claude agents; never the opencode/codex ones.
+    // No exclusion ⇒ both claude agents; never the codex one.
     expect(sameVendorEnabledAgents('claude', null).map((a) => a.id)).toEqual([
       SYSTEM_AGENT_ID,
       'claude-b',
     ])
     // A vendor with a single agent has no same-vendor peers once it's excluded.
-    expect(sameVendorEnabledAgents('opencode', 'oc')).toEqual([])
+    expect(sameVendorEnabledAgents('codex', 'cx')).toEqual([])
   })
 })
 
 describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
   beforeEach(seedAgents)
-  const allPresent = new Set<VendorId>(['claude', 'opencode', 'codex'])
+  const allPresent = new Set<VendorId>(['claude', 'codex'])
 
   it('returns null only for null sessionId', () => {
     expect(resolveSessionAgentSwitch(null, allPresent)).toBeNull()
@@ -297,17 +290,17 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
     // claude present, but suppose only system is reachable — claude-b shares the
     // claude binary, so host presence is per-vendor: claude present ⇒ both listed.
     // Drop claude from the present set to assert the current-unavailable path below.
-    const sw = resolveSessionAgentSwitch('real-2', new Set<VendorId>(['opencode', 'codex']))
+    const sw = resolveSessionAgentSwitch('real-2', new Set<VendorId>(['codex']))
     expect(sw?.currentUnavailable).toBe(true)
     // No claude candidates survive when the claude binary is absent.
     expect(sw?.candidates).toEqual([])
   })
 
   it('includes current agent when available and has no same-vendor peer', () => {
-    bindSessionAgent('pending:w3', 'real-3', 'oc', 'opencode')
+    bindSessionAgent('pending:w3', 'real-3', 'cx', 'codex')
     const sw = resolveSessionAgentSwitch('real-3', allPresent)
     expect(sw).not.toBeNull()
-    expect(sw?.current).toEqual({ id: 'oc', displayName: 'OC' })
+    expect(sw?.current).toEqual({ id: 'cx', displayName: 'CX' })
     expect(sw?.candidates).toEqual([])
     expect(sw?.currentUnavailable).toBe(false)
   })

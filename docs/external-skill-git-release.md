@@ -10,12 +10,11 @@ c3 支持从外部 Git 仓库加载 Skill 文件(SKILL.md),将其挂载到各 ve
 
 `vendor` 字段决定该仓库的 skill 被挂载到哪个 vendor 的发现目录。支持以下值:
 
-| Vendor          | 值         | 支持状态                                   |
-| --------------- | ---------- | ------------------------------------------ |
-| Claude Code     | `claude`   | ✅ 已验证(claude 发现 `skills/*/SKILL.md`) |
-| Codex           | `codex`    | ✅ User 级已验证(项目级未实证,假定可用)    |
-| OpenCode        | `opencode` | ❌ 未验证 — 暂不建链                       |
-| 全部支持 vendor | `all`      | 挂载到所有已验证 vendor 的发现目录         |
+| Vendor          | 值       | 支持状态                                   |
+| --------------- | -------- | ------------------------------------------ |
+| Claude Code     | `claude` | ✅ 已验证(claude 发现 `skills/*/SKILL.md`) |
+| Codex           | `codex`  | ✅ User 级已验证(项目级未实证,假定可用)    |
+| 全部支持 vendor | `all`    | 挂载到所有已验证 vendor 的发现目录         |
 
 **注意**:选择一个 `detectSkillSupport` 返回 `none` 的 vendor 时,技能链接不会被构建,但 session 正常启动。设置面板中这些 vendor 会标灰显示。
 

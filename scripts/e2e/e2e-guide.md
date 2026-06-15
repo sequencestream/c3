@@ -126,7 +126,6 @@ unit-tested; what units can't cover — a real image on a real daemon — is Par
 **Prereqs:** Docker running + the base image built. The image installs the
 vendor CLIs (`claude` ← `@anthropic-ai/claude-code`, `codex` ← `@openai/codex`)
 on a glibc base (`node:22-bookworm-slim`; NOT alpine — codex ships a native
-binary). opencode is intentionally omitted (unsupported under sandbox, ADR-0024).
 
 - Build the image (once): `node scripts/e2e/sandbox/build-image.mjs`
   (custom tag via `C3_SANDBOX_IMAGE=foo:bar`, clean rebuild via `--no-cache`).

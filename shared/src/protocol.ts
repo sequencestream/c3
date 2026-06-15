@@ -58,7 +58,7 @@ export interface SessionRunStatus {
 export interface SessionInfo {
   /**
    * The session's wire id. Still the **vendor-native** id (Claude SDK UUID,
-   * OpenCode session id) — NOT the opaque c3 id. The c3 namespace on the wire is
+   * Codex thread id) — NOT the opaque c3 id. The c3 namespace on the wire is
    * an ADR-0013 deferred phase; `select_session`/`delete_session`/`rename_session`
    * round-trip this id back to the server, which resolves it against the owning
    * vendor's native store.
@@ -237,24 +237,8 @@ export interface ClaudeAgentConfig {
 }
 
 /**
- * The `opencode` vendor's config sub-object: the per-agent launch overrides
- * routed into the OpenCode server's provider resolution. Mirrors the claude
- * shape (the neutral minimal set); each empty field ⇒ no override. OpenCode runs
- * as a c3-supervised local server (ADR-0011 reference vendor, 2026-06-06-003);
- * these overrides flow to that server, not to a per-run CLI env like claude.
- */
-export interface OpencodeAgentConfig {
-  /** Provider base URL override. Empty ⇒ no override. */
-  baseUrl: string
-  /** API key / auth token override. Empty ⇒ no override. */
-  apiKey: string
-  /** Model alias or id (e.g. `anthropic/claude-...`). Empty ⇒ no override. */
-  model: string
-}
-
-/**
  * The `codex` vendor's config sub-object (2026-06-06-005). The neutral launch
- * overrides (mirroring claude/opencode); each empty string ⇒ no override.
+ * overrides (mirroring claude); each empty string ⇒ no override.
  *
  * Codex has NO per-tool runtime approval (Phase 0 probe 008 NO-GO), so its
  * launch-time policy gate (`sandboxMode` + `approvalPolicy`) is the substitute for
@@ -292,19 +276,14 @@ export interface CodexAgentConfig {
  * sub-object. A session launches the agent's vendor CLI using its agent (or the
  * default agent when unassigned), routing the `config` per its `vendor` tag.
  *
- * `claude` (ADR-0011 reference), `opencode` (Phase 1 full integration,
- * 2026-06-06-003), and `codex` (read-only advisor seat, Phase 0 008 NO-GO,
- * 2026-06-06-005) all have real adapters and config shapes. The runtime
+ * `claude` (ADR-0011 reference) and `codex` (read-only advisor seat, Phase 0
+ * 008 NO-GO, 2026-06-06-005) have real adapters and config shapes. The runtime
  * validation/routing lives server-side in `kernel/agent-config/schema.ts` (zod
  * stays out of this zero-runtime, SDK-free wire module — ADR-0009); a type-level
  * assertion there pins the zod schema to this union so the two cannot drift.
  */
 export type AgentConfig = AgentConfigBase &
-  (
-    | { vendor: 'claude'; config: ClaudeAgentConfig }
-    | { vendor: 'opencode'; config: OpencodeAgentConfig }
-    | { vendor: 'codex'; config: CodexAgentConfig }
-  )
+  ({ vendor: 'claude'; config: ClaudeAgentConfig } | { vendor: 'codex'; config: CodexAgentConfig })
 
 /**
  * Resolve the effective `defaultAgentId` for an agent registry, applying the
@@ -583,7 +562,7 @@ export interface WorkspaceSetting {
    */
   /**
    * Per-vendor default permission mode map (2026-06-07-017).
-   * For `claude` / `opencode`: value is a {@link ModeToken} validated against
+   * For `claude`: value is a {@link ModeToken} validated against
    * that vendor's {@link VendorModeCatalog} at save time.
    * For `codex`: value is either a {@link CodexPolicy} (new dual-policy format)
    * or a {@link ModeToken} (legacy, migrated on read via `gateToCodexPolicy`).
@@ -1149,7 +1128,7 @@ export interface SlashCommandInfo {
 // adapter before they ever travel on the wire.
 
 /** The agent vendors c3 can drive. New vendors extend this union (ADR-0011). */
-export type VendorId = 'claude' | 'codex' | 'opencode'
+export type VendorId = 'claude' | 'codex'
 
 // ---------------------------------------------------------------------------
 // Neutral permission grid + per-vendor mode catalog (ADR-0011, 2026-06-07-012)
@@ -1161,7 +1140,7 @@ export type VendorId = 'claude' | 'codex' | 'opencode'
  * the kernel's `adapters/types.ts` so it is the single, SDK-free SoT both the wire
  * (this file) and the adapters re-export — the same promotion `CanonicalMessage`
  * and `AdapterCapability` already took. Claude's `plan` mode, Codex's read-only
- * `sandboxMode`, OpenCode's Plan agent all translate INTO this dimension.
+ * `sandboxMode` translate INTO this dimension.
  */
 export type ActionMode = 'plan' | 'build'
 
@@ -1218,7 +1197,7 @@ export interface CodexPolicy {
  * A vendor-native permission mode token (ADR-0011, 2026-06-07-012). The neutral
  * replacement for the Claude-centric `PermissionMode` as the wire/persistence
  * representation of a session's mode: it carries each vendor's OWN token (Claude
- * `plan`, Codex `read-only`, OpenCode `build`), disambiguated by the session's
+ * `plan`, Codex `read-only`), disambiguated by the session's
  * {@link VendorId}. A bare `string` by design — the closed set per vendor lives in
  * that vendor's {@link VendorModeCatalog}, not in this type. `PermissionMode`
  * (still defined above) is now just *Claude's* token set, a subset of this.
@@ -1320,8 +1299,8 @@ export type AdapterCapability =
  *                  cannot reconstruct full prior history).
  *  - `'full'`    — first-class support (the Claude reference grade).
  *  - `'temporarily-unavailable'` — the ability normally exists but is unreachable
- *                  *right now* (a remote-backed vendor like OpenCode whose REST
- *                  server is down). Distinct from `'none'`: the upper layer/UI
+ *                  *right now* (for a remote-backed future vendor whose service
+ *                  is down). Distinct from `'none'`: the upper layer/UI
  *                  degrades softly (greyed-out, "try again later") rather than
  *                  hiding the affordance as structurally absent.
  */
@@ -1345,9 +1324,9 @@ export type SessionCapability = 'list' | 'read' | 'resume' | 'rename' | 'delete'
  * degraded with no `if (vendor === …)` branch anywhere above the adapter.
  */
 export interface SessionCapabilities {
-  /** Enumerate a workspace's sessions. Codex: `'none'` (the SDK has no listing API). */
+  /** Enumerate a workspace's sessions. Codex: `'full'` via local JSONL scan. */
   readonly list: CapabilityState
-  /** Back-read a session's history as canonical messages. Codex: `'none'`. */
+  /** Back-read a session's history as canonical messages. Codex: `'full'` via local JSONL read. */
   readonly read: CapabilityState
   /** Continue an existing session by id (vendor-native resume). */
   readonly resume: CapabilityState
@@ -1358,34 +1337,8 @@ export interface SessionCapabilities {
 }
 
 /**
- * Live runtime reachability of the c3-supervised OpenCode REST server — a
- * **first-class wire signal** (2026-06-07-003). Unlike Claude/Codex (a CLI
- * subprocess per run) OpenCode is a long-lived local server every back-read /
- * resume talks to; its up/down state is therefore real product state the console
- * must reflect, not an internal detail. The server is lazily (re)started on
- * demand (`select_session` of an opencode session) with a short grace window;
- * failure degrades honestly (this signal flips to `temporarily-unavailable`) and
- * a background loop self-heals — it is never fatal.
- *
- * `reachability` reuses {@link CapabilityState} so the degraded state is expressed
- * by the *same* enum as the session-lifecycle capability ledger (the UI degrades
- * by state, never by vendor): `'full'` = the server is up, `'temporarily-unavailable'`
- * = registered but currently down / starting / retrying, `'none'` = opencode is not
- * registered at all (no host CLI and no `--opencode-url`). `'partial'` is unused.
- * Pushed to every connection on each state transition and as a snapshot on connect.
- */
-export interface OpencodeServerStatus {
-  /** Graded reachability of the supervised server (`'full'`/`'temporarily-unavailable'`/`'none'`). */
-  reachability: CapabilityState
-  /** True while a lazy (re)start / self-heal attempt is in flight — drives the "retrying…" hint. */
-  retrying: boolean
-  /** The base URL the server is listening on when up (operator-facing; absent when down/unregistered). */
-  url?: string
-}
-
-/**
  * The only role the canonical model commits to. Codex carries no role on its
- * items and must synthesize one (item-type → role); Claude/OpenCode carry it
+ * items and must synthesize one (item-type → role); Claude carries it
  * natively. `system`/`result` SDK frames are NOT messages — they map to side
  * channels (session id, turn end) or the {@link ApprovalBridge} stream, never to
  * a CanonicalMessage.
@@ -1409,12 +1362,12 @@ export interface CanonicalToolResult {
  * A content block. **011 D3 ruling:** there is NO standalone `tool_result`
  * block — a tool's return is embedded as `tool_use.result`, back-filled by
  * id-upsert when it arrives. This matches the incremental vendors (Codex
- * collapses a tool into a single in-place item; OpenCode correlates by `callID`)
+ * collapses a tool into a single in-place item)
  * more naturally than Claude's two-block split, which the Claude adapter folds
  * inward.
  *
  * The union is the **three-vendor common set** (`text`/`thinking`/`tool_use`).
- * Vendor-unique kinds (Codex `reasoning`, OpenCode `diff`, …) are NOT promoted
+ * Vendor-unique kinds (Codex `reasoning`, …) are NOT promoted
  * to their own variant yet (ADR-0013 D-D: no adapter produces them); they ride
  * `vendorExtra`. A future `vendorTag`-discriminated escape variant is the
  * extension point. `thinking.signature` / `redacted_thinking` drop to
@@ -1436,7 +1389,7 @@ export type CanonicalBlock =
     }
   | {
       type: 'tool_use'
-      /** Correlation id (Claude `tool_use.id`, OpenCode `callID`, Codex item id). */
+      /** Correlation id (Claude `tool_use.id`, Codex item id). */
       id: string
       name: string
       input: unknown
@@ -1470,21 +1423,21 @@ export interface CanonicalMessage {
   /** `assistant` for model output; `user` for prompts/tool returns. Codex synthesizes this. */
   role: CanonicalRole
   /**
-   * Append-only with **id-upsert**: incremental vendors (Codex item, OpenCode
+   * Append-only with **id-upsert**: incremental vendors (Codex item
    * part) revise an earlier block in place rather than stacking a new one, so a
    * consumer keys blocks by {@link CanonicalBlock} id, not array position.
    */
   blocks: CanonicalBlock[]
   /**
    * c3 ingest timestamp (epoch ms), NOT a vendor-authoritative value — only
-   * OpenCode carries a real `time`; Claude/Codex do not. The vendor's own time,
+   * The vendor's own time,
    * if any, goes to {@link vendorExtra}.
    */
   ts: number
   /**
    * Audit marker: this turn's tool call(s) were auto-allowed by the vendor's own
    * permission rule engine WITHOUT a c3/human decision — i.e. c3 observed the
-   * vendor reply to its own `permission.asked` (OpenCode: a `permission.replied`
+   * vendor reply to its own `permission.asked`
    * with no matching c3 write-back) and is reconstructing the bypass for the
    * audit trail (2026-06-06-003). Absent/`false` ⇒ a normal turn (either no
    * approval was needed, or c3/the human decided it). This is the ONE top-level
@@ -2095,7 +2048,7 @@ export type ClientToServer =
    */
   /**
    * Change the active session's permission mode (per-session, persisted). `mode`
-   * is a vendor-native {@link ModeToken} (claude/opencode) or a {@link CodexPolicy}
+   * is a vendor-native {@link ModeToken} (claude) or a {@link CodexPolicy}
    * (codex) the server resolves against the session's vendor catalog.
    */
   | { type: 'set_mode'; mode: ModeToken | CodexPolicy }
@@ -2408,14 +2361,6 @@ export type ServerToClient =
     }
   /** Live run statuses for all sessions with a runtime; drives sidebar badges. */
   | { type: 'session_status'; statuses: SessionRunStatus[] }
-  /**
-   * The supervised OpenCode server's live reachability (2026-06-07-003) — a
-   * first-class signal pushed on every state transition (up/down/retrying) and as
-   * a snapshot on connect. Drives the session-list offline warning; the same state
-   * also overlays `settings.sessionCapabilities.opencode` (list/read/resume degrade
-   * to `'temporarily-unavailable'` while down) so the whole UI degrades by state.
-   */
-  | { type: 'opencode_status'; status: OpencodeServerStatus }
   /** Full workspace list, sorted by recent access (desc). */
   | { type: 'workspaces'; workspaces: WorkspaceInfo[] }
   /** Session list for one workspace, sorted by last-modified (desc). */
@@ -2721,7 +2666,7 @@ export type ServerToClient =
    * the SDK has no native task-push event) and on history replay (from the
    * baseline transcript); a full {@link task_list} snapshot is the primary form
    * (idempotent, replay-friendly). The per-task variants exist for vendors that
-   * push single-task updates natively (Codex/OpenCode `onUpdate`, wired later per
+   * push single-task updates natively (Codex `onUpdate`, wired later per
    * 2026-06-07-008 §6) and future incremental use. {@link TaskItem} carries
    * `order`, so the client consumes it directly into its `taskModel`.
    */

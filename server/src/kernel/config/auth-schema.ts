@@ -5,12 +5,13 @@
  * module. A type-level assertion at the bottom pins the two together so they
  * cannot drift (same discipline as `agent-config/schema.ts`).
  *
- * Only `basic` has a provider arm this phase. `oauth`/`sso`/multi-user are the
- * **extension point**: a new provider adds its `z.object` arm to
- * {@link AUTH_PROVIDER_SCHEMAS}, appends it to {@link authProviderSchema}, and
- * the type pin forces the matching wire arm in `shared/protocol.ts`. Until then
- * an unknown `kind` simply fails to parse — `normalizeAuth` drops it (fail-soft,
- * equivalent to "auth disabled"), keeping the C-SEC-5 localhost-only default.
+ * `basic` and `oauth` (generic OIDC, contract-only) have provider arms this
+ * phase. `sso`/multi-user remain the **extension point**: a new provider adds its
+ * `z.object` arm to {@link AUTH_PROVIDER_SCHEMAS}, appends it to
+ * {@link authProviderSchema}, and the type pin forces the matching wire arm in
+ * `shared/protocol.ts`. Until then an unknown `kind` simply fails to parse —
+ * `normalizeAuth` drops it (fail-soft, equivalent to "auth disabled"), keeping
+ * the C-SEC-5 localhost-only default.
  *
  * Contract-only: no middleware, login, hashing, or token signing exists yet
  * (ADR-0023). This module only validates the persisted shape.
@@ -25,6 +26,29 @@ export const basicAuthProviderSchema = z.object({
   passwordHash: z.string(),
 })
 
+/** Default OAuth scopes — OIDC core identity + verified email. */
+export const DEFAULT_OAUTH_SCOPES = ['openid', 'profile', 'email']
+
+/**
+ * The generic-OIDC `oauth` provider arm — contract-only (no runtime). `scopes`,
+ * `usePkce`, and `allowedEmails` carry zod defaults so a persisted block always
+ * normalizes to fully-populated, matching the wire type's required fields (the
+ * type pin checks the inferred *output* type). `clientSecretRef` is a reference
+ * (env var name / keystore id), never the plaintext secret. An empty
+ * `allowedEmails` is valid here — it means "nobody authorized", a decision the
+ * future runtime enforces; the contract does not reject it.
+ */
+export const oauthAuthProviderSchema = z.object({
+  kind: z.literal('oauth'),
+  issuer: z.string(),
+  clientId: z.string(),
+  clientSecretRef: z.string(),
+  redirectUri: z.string(),
+  scopes: z.array(z.string()).default(DEFAULT_OAUTH_SCOPES),
+  usePkce: z.boolean().default(true),
+  allowedEmails: z.array(z.string()).default([]),
+})
+
 /**
  * Per-kind provider-arm registry — the **extension point**. A new auth method
  * registers its arm here (and in {@link authProviderSchema}). Partial over
@@ -32,15 +56,19 @@ export const basicAuthProviderSchema = z.object({
  */
 export const AUTH_PROVIDER_SCHEMAS = {
   basic: basicAuthProviderSchema,
+  oauth: oauthAuthProviderSchema,
 } satisfies Partial<Record<AuthProvider['kind'], z.ZodTypeAny>>
 
 /**
  * The full {@link AuthProvider} schema, routed by the `kind` discriminant.
  * `safeParse` dispatches an object to its kind's arm and rejects an unknown
- * kind or a provider that fails its arm. Single `basic` arm this phase; new
+ * kind or a provider that fails its arm. `basic` + `oauth` arms this phase; new
  * providers append their arm.
  */
-export const authProviderSchema = z.discriminatedUnion('kind', [basicAuthProviderSchema])
+export const authProviderSchema = z.discriminatedUnion('kind', [
+  basicAuthProviderSchema,
+  oauthAuthProviderSchema,
+])
 
 /** Session-token policy: TTL (seconds) + a reference to the signing key. */
 export const authSessionPolicySchema = z.object({

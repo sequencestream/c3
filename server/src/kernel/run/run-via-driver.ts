@@ -28,6 +28,7 @@ import type {
   CanonicalMessage,
   RemoteMcpServer,
   VendorAdapter,
+  VendorId,
 } from '../agent/adapters/types.js'
 import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
@@ -86,6 +87,17 @@ function errMsg(err: unknown): string {
  * without a client-side name-based allowlist.
  */
 const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
+/** Forced permission grid for intent comm sessions on the driver path. */
+export function intentDriverModeForVendor(vendor: VendorId): {
+  actionMode: import('@ccc/shared/protocol').ActionMode
+  toolGate: import('@ccc/shared/protocol').ToolGate
+} {
+  return {
+    actionMode: 'plan',
+    toolGate: vendor === 'codex' ? 'never-ask' : 'always-ask',
+  }
+}
 
 /**
  * Diffs append-with-upsert canonical frames into claude-shaped incremental wire
@@ -268,15 +280,16 @@ export async function runViaDriver(
   // every vendor.
   // For codex sessions with a stored CodexPolicy (2026-06-08), use the dual-policy
   // grid directly instead of going through the catalog token.
-  // For intent sessions, the read-only gate overrides the session mode:
-  // force 'plan' action (read-only) and 'always-ask' tool gate (every tool
-  // prompts). This is the safest combo for the intent comm analyst on a
-  // non-Claude driver. When no intentProfile, use the normal mode resolution.
+  // For intent sessions, the read-only gate overrides the session mode.
+  // Codex has no live approval channel, so `always-ask` would ask a question no
+  // c3 can answer and can prevent its MCP tools from being used. Keep Codex in a
+  // read-only sandbox, but let it call the c3 MCP tools; `save_intents` still
+  // raises c3's own confirmation inside the MCP handler.
   const mode: {
     actionMode: import('@ccc/shared/protocol').ActionMode
     toolGate: import('@ccc/shared/protocol').ToolGate
   } = intentProfile
-    ? { actionMode: 'plan', toolGate: 'always-ask' }
+    ? intentDriverModeForVendor(adapter.vendor)
     : adapter.vendor === 'codex' && rt.codexPolicy
       ? codexPolicyToGrid(rt.codexPolicy)
       : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)

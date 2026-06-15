@@ -26,9 +26,16 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
 
 - **AuthConfig** — `{ enabled, provider, session, exposure? }`. Hung on `SystemSettings.auth?`.
   Absent block or `enabled: false` ⇒ no auth.
-- **AuthProvider** — a `kind`-discriminated union. Only `kind: 'basic'`
-  (**BasicAuthProvider** `{ username, passwordHash }`) this phase. The single extension point for
-  OAuth/SSO/multi-user.
+- **AuthProvider** — a `kind`-discriminated union, the single extension point for OAuth/SSO/multi-user.
+  - `kind: 'basic'` (**BasicAuthProvider** `{ username, passwordHash }`) — single-admin, runtime-live.
+  - `kind: 'oauth'` (**OAuthAuthProvider** `{ issuer, clientId, clientSecretRef, redirectUri, scopes, usePkce, allowedEmails }`)
+    — generic OIDC, **contract-only**: the config persists, but with no OAuth runtime yet (`/auth/callback`,
+    discovery, PKCE/state, token exchange, JWKS verification, session minting are all deferred) enabling
+    auth still works only with `basic`. `issuer` is the OIDC discovery base URL; `clientSecretRef` is a
+    _reference_ (env var name / keystore id) to the client secret, never the plaintext (same discipline as
+    `signingKeyRef`); `scopes` defaults to `['openid','profile','email']`; `usePkce` defaults to `true`;
+    `allowedEmails` is the authorization allowlist (empty ⇒ nobody authorized — the future runtime enforces
+    this). Authorization is by email allowlist only this phase (no sub allowlist / roles).
 - **AuthSessionPolicy** — `{ ttlSeconds, signingKeyRef }`. Provider-neutral session-token policy.
   `signingKeyRef` is a _reference_ (env var name / keystore id), never the key itself. Default
   `ttlSeconds` is **30 days** (`DEFAULT_SESSION_TTL_SECONDS`) — long enough that closing the tab and
@@ -86,8 +93,14 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
    **still deferred:** token signing/verification, request-level auth middleware, and the
    "enabled auth ⇒ may bind non-loopback" enforcement (the actual C-SEC-5 relaxation).
 3. **Partial** — System Settings auth config panel ✅ (enable/username/change-password/exposure
-   toggle); login page already shipped (件①); **still deferred:** full session-lifecycle UI.
+   toggle + the `oauth` provider config form ✅); login page already shipped (件①); **still deferred:**
+   full session-lifecycle UI.
 4. Harden the settings file: tighten permissions (it now carries a password hash) + log redaction.
+5. **OAuth runtime** (deferred) — the `oauth` provider is **contract-only**. Building the runtime means:
+   `/auth/callback` endpoint, OIDC discovery fetch, PKCE + `state` generation/verification, the
+   authorization-code → token exchange, JWKS signature verification, email-allowlist authorization, and
+   session minting. Library choice (`openid-client` vs `arctic`, plus `bun build --compile` compatibility)
+   is recorded in ADR-0023 and not yet locked.
 
 ## Shared context
 

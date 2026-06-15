@@ -581,12 +581,13 @@ export interface WorkspaceSetting {
 // ===========================================================================
 
 /**
- * Auth provider kinds — the extension point. Only `basic` is implemented this
- * phase; `oauth`/`sso`/multi-user are reserved (add a `kind` here + an arm to
+ * Auth provider kinds — the extension point. `basic` (single admin) and `oauth`
+ * (generic OIDC, contract-only — see {@link OAuthAuthProvider}) are defined;
+ * `sso`/multi-user remain reserved (add a `kind` here + an arm to
  * {@link AuthProvider} + a server zod arm; nothing else changes — same shape as
  * the ADR-0011 vendor extension point).
  */
-export const AUTH_PROVIDER_KINDS = ['basic'] as const
+export const AUTH_PROVIDER_KINDS = ['basic', 'oauth'] as const
 export type AuthProviderKind = (typeof AUTH_PROVIDER_KINDS)[number]
 
 /**
@@ -604,10 +605,47 @@ export interface BasicAuthProvider {
 }
 
 /**
- * The active auth provider — a `kind`-discriminated union (single arm this
- * phase). Narrow on `kind` before reading provider-specific fields.
+ * Generic OIDC `oauth` provider — **contract-only** (no runtime this phase). The
+ * config an admin fills so c3 can later delegate login to an external IdP
+ * (Google / Keycloak / any compliant OpenID Connect issuer). Authorization is by
+ * email allowlist only (no sub allowlist / roles this phase).
+ *
+ * Runtime — `/auth/callback`, discovery fetch, PKCE/state, token exchange, JWKS
+ * verification, session minting — is ALL deferred to a later OAuth-runtime task.
+ * Persisting this block does NOT enable OAuth login; with the runtime absent,
+ * turning auth on still only works with `basic` (the UI marks oauth accordingly).
  */
-export type AuthProvider = BasicAuthProvider
+export interface OAuthAuthProvider {
+  kind: 'oauth'
+  /** OIDC issuer / discovery base URL (its `.well-known/openid-configuration`). */
+  issuer: string
+  /** OAuth 2.0 client id registered with the IdP. */
+  clientId: string
+  /**
+   * Reference (env var name / keystore id) to the OAuth client secret — NEVER
+   * the secret itself. Same secret-by-indirection discipline as
+   * {@link AuthSessionPolicy.signingKeyRef}; the runtime resolves the real value.
+   */
+  clientSecretRef: string
+  /** Redirect URI the IdP returns the user to (validated by the future runtime). */
+  redirectUri: string
+  /** Requested OAuth scopes. Defaults to `['openid', 'profile', 'email']`. */
+  scopes: string[]
+  /** Whether to use PKCE on the authorization-code flow. Defaults to `true`. */
+  usePkce: boolean
+  /**
+   * Authorization allowlist: only these verified emails may sign in. An empty
+   * list means nobody is authorized (the future runtime enforces this).
+   */
+  allowedEmails: string[]
+}
+
+/**
+ * The active auth provider — a `kind`-discriminated union. Narrow on `kind`
+ * before reading provider-specific fields. `basic` is runtime-live; `oauth` is
+ * contract-only (config persists, login awaits the OAuth-runtime task).
+ */
+export type AuthProvider = BasicAuthProvider | OAuthAuthProvider
 
 /**
  * Session-token policy — provider-neutral. The signing secret itself is NEVER

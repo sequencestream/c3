@@ -448,8 +448,41 @@
       "provider": {
         "label": "认证方式",
         "basic": "用户名与密码",
-        "oauth": "OAuth（即将支持）",
+        "oauth": "OAuth / OIDC",
         "sso": "SSO（即将支持）"
+      },
+      "oauth": {
+        "hint": "把登录委托给外部 OpenID Connect 提供方（Google、Keycloak 或任何兼容的 issuer）。",
+        "runtimePending": "OAuth 契约已就绪，但登录仍待 OAuth 运行时上线。目前启用认证仍只能用用户名与密码。",
+        "issuer": {
+          "label": "Issuer（discovery URL）",
+          "placeholder": "https://accounts.example.com"
+        },
+        "clientId": {
+          "label": "Client ID",
+          "placeholder": "your-oauth-client-id"
+        },
+        "clientSecretRef": {
+          "label": "Client secret 引用",
+          "placeholder": "C3_OAUTH_CLIENT_SECRET",
+          "hint": "存的是引用（环境变量名 / keystore id），绝不存 secret 明文本身。"
+        },
+        "redirectUri": {
+          "label": "回调 URI",
+          "placeholder": "https://console.example.com/auth/callback"
+        },
+        "scopes": {
+          "label": "Scopes",
+          "placeholder": "openid profile email"
+        },
+        "usePkce": {
+          "label": "启用 PKCE"
+        },
+        "allowedEmails": {
+          "label": "授权邮箱白名单",
+          "placeholder": "alice@example.com\nbob@example.com",
+          "hint": "仅这些已验证邮箱可登录。留空则无人可登录。"
+        }
       },
       "enable": {
         "label": "要求登录",

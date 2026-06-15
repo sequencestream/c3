@@ -127,8 +127,8 @@ function vendorModes(): Record<VendorId, VendorModeCatalog> {
  */
 function preserveAdminPasswordHash(next: SystemSettings): SystemSettings {
   if (next.auth?.provider.kind !== 'basic') return next
-  const diskHash =
-    loadSettings().auth?.provider.kind === 'basic' ? loadSettings().auth!.provider.passwordHash : ''
+  const diskProvider = loadSettings().auth?.provider
+  const diskHash = diskProvider?.kind === 'basic' ? diskProvider.passwordHash : ''
   return {
     ...next,
     auth: { ...next.auth, provider: { ...next.auth.provider, passwordHash: diskHash } },

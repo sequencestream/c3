@@ -187,6 +187,12 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   SDK-level `disallowedTools` hard-disabled list
   (Write/Edit/MultiEdit/NotebookEdit/Bash/BashOutput/KillShell/Task/SlashCommand) is unchanged and
   **does not include `AskUserQuestion`**.
+- **Codex driver permission shape.** When the default/bound communication agent is Codex, the
+  driver path still runs the intent profile and injects the localhost HTTP MCP server, but uses the
+  Codex grid `plan + never-ask` (mapped to `read-only + never`) instead of `plan + always-ask`.
+  Codex has no live approval channel, so `always-ask` can block MCP use; the filesystem remains
+  read-only, while `save_intents` is still gated by c3 inside the MCP handler before any ledger
+  write.
 - **Independent viewer orchestration.** `open_intent_chat` / `new_intent_chat` /
   `refine_intent` manage the
   viewer switch themselves (`removeViewer(old)` → `viewing=chatId` → `addViewer`) and do **not**

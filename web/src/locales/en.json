@@ -448,8 +448,41 @@
       "provider": {
         "label": "Provider",
         "basic": "Username & password",
-        "oauth": "OAuth (coming soon)",
+        "oauth": "OAuth / OIDC",
         "sso": "SSO (coming soon)"
+      },
+      "oauth": {
+        "hint": "Delegate sign-in to an external OpenID Connect provider (Google, Keycloak, or any compliant issuer).",
+        "runtimePending": "OAuth contract is ready, but sign-in awaits the OAuth runtime. Enabling auth still works only with username & password for now.",
+        "issuer": {
+          "label": "Issuer (discovery URL)",
+          "placeholder": "https://accounts.example.com"
+        },
+        "clientId": {
+          "label": "Client ID",
+          "placeholder": "your-oauth-client-id"
+        },
+        "clientSecretRef": {
+          "label": "Client secret reference",
+          "placeholder": "C3_OAUTH_CLIENT_SECRET",
+          "hint": "A reference (env var name / keystore id) to the client secret — never the secret value itself."
+        },
+        "redirectUri": {
+          "label": "Redirect URI",
+          "placeholder": "https://console.example.com/auth/callback"
+        },
+        "scopes": {
+          "label": "Scopes",
+          "placeholder": "openid profile email"
+        },
+        "usePkce": {
+          "label": "Use PKCE"
+        },
+        "allowedEmails": {
+          "label": "Allowed emails",
+          "placeholder": "alice@example.com\nbob@example.com",
+          "hint": "Only these verified emails may sign in. An empty list authorizes nobody."
+        }
       },
       "enable": {
         "label": "Require sign-in",

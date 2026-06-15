@@ -9,6 +9,7 @@ import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
   AuthConfig,
+  OAuthAuthProvider,
   SessionBindingStats,
   SystemSandboxDef,
   SandboxType,
@@ -327,13 +328,17 @@ function removeSandbox(index: number) {
 }
 
 // ---- Authentication (ADR-0023) ------------------------------------------
-// Only `basic` ships a provider form this phase; oauth/sso are greyed-out
-// placeholders that mirror the protocol extension point (AUTH_PROVIDER_KINDS).
+// `basic` and `oauth` (generic OIDC, contract-only) ship a provider form; `sso`
+// stays a greyed-out placeholder mirroring the protocol extension point
+// (AUTH_PROVIDER_KINDS). Selecting `oauth` persists its config, but with no
+// OAuth runtime yet, enabling auth still only works with `basic` — the enable
+// toggle is locked under oauth and labelled "contract ready, login pending".
 const AUTH_PROVIDERS: { value: string; disabled: boolean }[] = [
   { value: 'basic', disabled: false },
-  { value: 'oauth', disabled: true },
+  { value: 'oauth', disabled: false },
   { value: 'sso', disabled: true },
 ]
+const DEFAULT_OAUTH_SCOPES = ['openid', 'profile', 'email']
 // Signing key is a reference (an env name), never the key itself (ADR-0023).
 // 30-day TTL mirrors the server default (auth-schema.ts DEFAULT_SESSION_TTL_SECONDS).
 const SECONDS_PER_DAY = 24 * 60 * 60
@@ -396,6 +401,76 @@ const authTtlDays = computed(() =>
 function setAuthTtlDays(v: number) {
   const days = Math.max(1, Math.floor(v) || 1)
   ensureAuth().session.ttlSeconds = days * SECONDS_PER_DAY
+}
+
+// ---- Provider kind switch + OAuth (generic OIDC) contract form -----------
+// Switching kind materializes a fresh default block of that kind (provider is a
+// single arm — the previous kind's draft is replaced; saved config round-trips
+// back on reopen). Only `basic`/`oauth` are selectable; `sso` stays disabled.
+const authProviderKind = computed(() => draft.value.auth?.provider.kind ?? 'basic')
+const isOAuth = computed(() => authProviderKind.value === 'oauth')
+function setAuthProviderKind(v: string) {
+  const a = ensureAuth()
+  if (v === a.provider.kind) return
+  if (v === 'oauth') {
+    a.provider = {
+      kind: 'oauth',
+      issuer: '',
+      clientId: '',
+      clientSecretRef: '',
+      redirectUri: '',
+      scopes: [...DEFAULT_OAUTH_SCOPES],
+      usePkce: true,
+      allowedEmails: [],
+    }
+  } else if (v === 'basic') {
+    a.provider = { kind: 'basic', username: '', passwordHash: '' }
+  }
+}
+/** Mutate the oauth provider in place (no-op unless the active arm is oauth). */
+function patchOAuth(patch: Partial<OAuthAuthProvider>) {
+  const a = ensureAuth()
+  if (a.provider.kind === 'oauth') Object.assign(a.provider, patch)
+}
+const oauthIssuer = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.issuer : '',
+)
+const oauthClientId = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.clientId : '',
+)
+const oauthClientSecretRef = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.clientSecretRef : '',
+)
+const oauthRedirectUri = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.redirectUri : '',
+)
+const oauthUsePkce = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.usePkce : true,
+)
+// Scopes edit as whitespace/comma-separated text; emails one-per-line.
+const oauthScopesText = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.scopes.join(' ') : '',
+)
+function setOAuthScopes(v: string) {
+  patchOAuth({
+    scopes: v
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+  })
+}
+const oauthAllowedEmailsText = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth'
+    ? draft.value.auth.provider.allowedEmails.join('\n')
+    : '',
+)
+function setOAuthAllowedEmails(v: string) {
+  patchOAuth({
+    allowedEmails: v
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  })
 }
 
 /** Ship the new credentials to the server (it hashes + persists). Bootstrap (no
@@ -651,7 +726,12 @@ function submitPassword() {
 
         <label class="auth-field">
           <span class="auth-label">{{ t('settings.auth.provider.label') }}</span>
-          <select class="mode-select" data-testid="settings-auth-provider" :value="'basic'">
+          <select
+            class="mode-select"
+            data-testid="settings-auth-provider"
+            :value="authProviderKind"
+            @change="setAuthProviderKind(($event.target as HTMLSelectElement).value)"
+          >
             <option
               v-for="p in AUTH_PROVIDERS"
               :key="p.value"
@@ -667,17 +747,20 @@ function submitPassword() {
           <input
             type="checkbox"
             :checked="authEnabled"
-            :disabled="!adminConfigured"
+            :disabled="!adminConfigured || isOAuth"
             data-testid="settings-auth-enable"
             @change="setAuthEnabled(($event.target as HTMLInputElement).checked)"
           />
           {{ t('settings.auth.enable.label') }}
         </label>
-        <p v-if="!adminConfigured" class="settings-hint">
+        <p v-if="isOAuth" class="settings-hint" data-testid="settings-auth-oauth-pending">
+          {{ t('settings.auth.oauth.runtimePending') }}
+        </p>
+        <p v-else-if="!adminConfigured" class="settings-hint">
           {{ t('settings.auth.enable.needAdmin') }}
         </p>
 
-        <label class="auth-field">
+        <label v-if="!isOAuth" class="auth-field">
           <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
           <input
             class="agent-field"
@@ -689,7 +772,7 @@ function submitPassword() {
           />
         </label>
 
-        <div class="auth-password" data-testid="settings-auth-password">
+        <div v-if="!isOAuth" class="auth-password" data-testid="settings-auth-password">
           <p class="settings-hint">{{ t('settings.auth.password.hint') }}</p>
           <label v-if="adminConfigured" class="auth-field">
             <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>
@@ -725,6 +808,82 @@ function submitPassword() {
                 : t('settings.auth.password.set.label')
             }}
           </button>
+        </div>
+
+        <div v-if="isOAuth" class="auth-oauth" data-testid="settings-auth-oauth">
+          <p class="settings-hint">{{ t('settings.auth.oauth.hint') }}</p>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.oauth.issuer.label') }}</span>
+            <input
+              class="agent-field"
+              :value="oauthIssuer"
+              :placeholder="t('settings.auth.oauth.issuer.placeholder')"
+              data-testid="settings-auth-oauth-issuer"
+              @input="patchOAuth({ issuer: ($event.target as HTMLInputElement).value })"
+            />
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.oauth.clientId.label') }}</span>
+            <input
+              class="agent-field"
+              :value="oauthClientId"
+              :placeholder="t('settings.auth.oauth.clientId.placeholder')"
+              data-testid="settings-auth-oauth-client-id"
+              @input="patchOAuth({ clientId: ($event.target as HTMLInputElement).value })"
+            />
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.oauth.clientSecretRef.label') }}</span>
+            <input
+              class="agent-field"
+              :value="oauthClientSecretRef"
+              :placeholder="t('settings.auth.oauth.clientSecretRef.placeholder')"
+              data-testid="settings-auth-oauth-client-secret-ref"
+              @input="patchOAuth({ clientSecretRef: ($event.target as HTMLInputElement).value })"
+            />
+          </label>
+          <p class="settings-hint">{{ t('settings.auth.oauth.clientSecretRef.hint') }}</p>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.oauth.redirectUri.label') }}</span>
+            <input
+              class="agent-field"
+              :value="oauthRedirectUri"
+              :placeholder="t('settings.auth.oauth.redirectUri.placeholder')"
+              data-testid="settings-auth-oauth-redirect-uri"
+              @input="patchOAuth({ redirectUri: ($event.target as HTMLInputElement).value })"
+            />
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.oauth.scopes.label') }}</span>
+            <input
+              class="agent-field"
+              :value="oauthScopesText"
+              :placeholder="t('settings.auth.oauth.scopes.placeholder')"
+              data-testid="settings-auth-oauth-scopes"
+              @input="setOAuthScopes(($event.target as HTMLInputElement).value)"
+            />
+          </label>
+          <label class="consensus-toggle">
+            <input
+              type="checkbox"
+              :checked="oauthUsePkce"
+              data-testid="settings-auth-oauth-pkce"
+              @change="patchOAuth({ usePkce: ($event.target as HTMLInputElement).checked })"
+            />
+            {{ t('settings.auth.oauth.usePkce.label') }}
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.oauth.allowedEmails.label') }}</span>
+            <textarea
+              class="agent-field"
+              rows="3"
+              :value="oauthAllowedEmailsText"
+              :placeholder="t('settings.auth.oauth.allowedEmails.placeholder')"
+              data-testid="settings-auth-oauth-allowed-emails"
+              @input="setOAuthAllowedEmails(($event.target as HTMLTextAreaElement).value)"
+            ></textarea>
+          </label>
+          <p class="settings-hint">{{ t('settings.auth.oauth.allowedEmails.hint') }}</p>
         </div>
 
         <label class="consensus-toggle">

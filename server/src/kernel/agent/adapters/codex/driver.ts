@@ -84,13 +84,23 @@ const defaultFactory: CodexFactory = (options) =>
  * REAL enforcement and `approvalPolicy` is best-effort (in non-interactive exec it
  * has no user channel). The mapping favours the tight side — `plan` and
  * `always-ask` (which Codex cannot honour live) both collapse to `read-only`.
+ * `plan + never-ask` is the intentional exception used for read-only MCP-backed
+ * flows: the filesystem stays read-only while Codex is allowed to call MCP tools
+ * whose handlers enforce their own gates.
  */
 export function gateToCodexPolicy(
   actionMode: ActionMode,
   toolGate: ToolGate,
 ): { sandboxMode: SandboxMode; approvalPolicy: ApprovalMode } {
-  // `plan` never executes changes ⇒ read-only regardless of gate.
-  if (actionMode === 'plan') return { sandboxMode: 'read-only', approvalPolicy: 'on-request' }
+  // `plan` never executes filesystem changes ⇒ read-only regardless of gate. If
+  // the caller explicitly chose `never-ask`, do not request an approval channel
+  // Codex exec does not have; this is required for read-only MCP-backed flows.
+  if (actionMode === 'plan') {
+    return {
+      sandboxMode: 'read-only',
+      approvalPolicy: toolGate === 'never-ask' ? 'never' : 'on-request',
+    }
+  }
   switch (toolGate) {
     case 'never-ask':
       return { sandboxMode: 'workspace-write', approvalPolicy: 'never' }

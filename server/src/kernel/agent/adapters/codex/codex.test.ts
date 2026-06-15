@@ -447,8 +447,15 @@ describe('CodexDriver RELAY route inside a sandbox container (ADR-0024 follow-up
 })
 
 describe('gateToCodexPolicy', () => {
-  it('plan ⇒ read-only regardless of gate', () => {
+  it('plan + never-ask ⇒ read-only + never for read-only MCP-backed flows', () => {
     expect(gateToCodexPolicy('plan', 'never-ask')).toEqual({
+      sandboxMode: 'read-only',
+      approvalPolicy: 'never',
+    })
+  })
+
+  it('plan + gated tools ⇒ read-only + on-request', () => {
+    expect(gateToCodexPolicy('plan', 'always-ask')).toEqual({
       sandboxMode: 'read-only',
       approvalPolicy: 'on-request',
     })

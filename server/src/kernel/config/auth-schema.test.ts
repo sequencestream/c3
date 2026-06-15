@@ -51,7 +51,7 @@ describe('auth-schema', () => {
   it('rejects an unknown provider kind', () => {
     const unknownKind = {
       ...validBasic,
-      provider: { kind: 'oauth', clientId: 'x' },
+      provider: { kind: 'ldap', host: 'x' },
     }
     expect(authConfigSchema.safeParse(unknownKind).success).toBe(false)
     expect(normalizeAuth(unknownKind)).toBeNull()
@@ -73,6 +73,102 @@ describe('auth-schema', () => {
   it('rejects a non-boolean enabled flag', () => {
     const badEnabled = { ...validBasic, enabled: 'yes' }
     expect(normalizeAuth(badEnabled)).toBeNull()
+  })
+
+  // ---- oauth (generic OIDC) provider arm — contract-only (no runtime) ----
+  describe('oauth provider arm', () => {
+    // A complete, valid generic-OIDC config. `clientSecretRef` is a *reference*
+    // (env var name / keystore id) — never the plaintext secret (ADR-0023).
+    const validOAuth: AuthConfig = {
+      enabled: false,
+      provider: {
+        kind: 'oauth',
+        issuer: 'https://accounts.example.com',
+        clientId: 'c3-console',
+        clientSecretRef: 'C3_OAUTH_CLIENT_SECRET',
+        redirectUri: 'https://console.example.com/auth/callback',
+        scopes: ['openid', 'profile', 'email'],
+        usePkce: true,
+        allowedEmails: ['alice@example.com'],
+      },
+      session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_SIGNING_KEY' },
+    }
+
+    it('parses a complete valid oauth config', () => {
+      const parsed = authConfigSchema.safeParse(validOAuth)
+      expect(parsed.success).toBe(true)
+      expect(normalizeAuth(validOAuth)).toEqual(validOAuth)
+    })
+
+    it('applies defaults for scopes, usePkce, and allowedEmails when omitted', () => {
+      const minimal = {
+        enabled: false,
+        provider: {
+          kind: 'oauth',
+          issuer: 'https://accounts.example.com',
+          clientId: 'c3-console',
+          clientSecretRef: 'C3_OAUTH_CLIENT_SECRET',
+          redirectUri: 'https://console.example.com/auth/callback',
+        },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      const normalized = normalizeAuth(minimal)
+      expect(normalized?.provider.kind).toBe('oauth')
+      if (normalized?.provider.kind !== 'oauth') throw new Error('expected oauth')
+      expect(normalized.provider.scopes).toEqual(['openid', 'profile', 'email'])
+      expect(normalized.provider.usePkce).toBe(true)
+      expect(normalized.provider.allowedEmails).toEqual([])
+    })
+
+    it('accepts an empty allowedEmails list (valid contract — "nobody authorized")', () => {
+      const empty = {
+        ...validOAuth,
+        provider: { ...validOAuth.provider, allowedEmails: [] },
+      }
+      expect(authConfigSchema.safeParse(empty).success).toBe(true)
+    })
+
+    it('rejects an oauth config missing the issuer', () => {
+      const noIssuer = {
+        ...validOAuth,
+        provider: {
+          kind: 'oauth',
+          clientId: 'c3-console',
+          clientSecretRef: 'C3_OAUTH_CLIENT_SECRET',
+          redirectUri: 'https://console.example.com/auth/callback',
+        },
+      }
+      expect(normalizeAuth(noIssuer)).toBeNull()
+    })
+
+    it('rejects an oauth config missing the clientSecretRef', () => {
+      const noSecretRef = {
+        ...validOAuth,
+        provider: {
+          kind: 'oauth',
+          issuer: 'https://accounts.example.com',
+          clientId: 'c3-console',
+          redirectUri: 'https://console.example.com/auth/callback',
+        },
+      }
+      expect(normalizeAuth(noSecretRef)).toBeNull()
+    })
+
+    it('stores only the secret *reference*, never a plaintext secret', () => {
+      // A client that round-trips an extra plaintext `clientSecret` field must
+      // not get it persisted: zod strips unknown keys, so the normalized config
+      // — and anything serialized from it — contains the ref but no plaintext.
+      const withPlaintext = {
+        ...validOAuth,
+        provider: { ...validOAuth.provider, clientSecret: 'super-secret-plaintext' },
+      }
+      const normalized = normalizeAuth(withPlaintext)
+      expect(normalized?.provider.kind).toBe('oauth')
+      if (normalized?.provider.kind !== 'oauth') throw new Error('expected oauth')
+      expect(normalized.provider.clientSecretRef).toBe('C3_OAUTH_CLIENT_SECRET')
+      expect('clientSecret' in normalized.provider).toBe(false)
+      expect(JSON.stringify(normalized)).not.toContain('super-secret-plaintext')
+    })
   })
 
   describe('migrateLegacySessionTtl', () => {

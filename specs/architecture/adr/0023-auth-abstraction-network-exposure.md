@@ -90,8 +90,8 @@ _Con:_ 仍把 basic 的字段（username/passwordHash）焊在顶层；加 OAuth
 ### 类型结构（落 `shared/src/protocol.ts`，零运行时）
 
 ```typescript
-// 认证 provider 种类——扩展点。本期仅 'basic';oauth/sso 后续追加一个 kind。
-export const AUTH_PROVIDER_KINDS = ['basic'] as const
+// 认证 provider 种类——扩展点。'basic'(运行时已上线) + 'oauth'(通用 OIDC,契约 only);sso/多用户后续追加。
+export const AUTH_PROVIDER_KINDS = ['basic', 'oauth'] as const
 export type AuthProviderKind = (typeof AUTH_PROVIDER_KINDS)[number]
 
 // 单管理员 basic provider:用户名 + 口令哈希(PHC 串,永不明文)。
@@ -101,8 +101,22 @@ export interface BasicAuthProvider {
   passwordHash: string // PHC 串(算法+参数+盐+摘要),如 $argon2id$...;绝不存明文
 }
 
-// provider 抽象——按 kind 的 discriminated union(本期单臂)。
-export type AuthProvider = BasicAuthProvider
+// 通用 OIDC oauth provider——契约 only(零运行时本期)。配置可填可持久化,但 /auth/callback、
+// discovery、PKCE/state、token 交换、JWKS 校验、session 铸造全留给后续 OAuth 运行时件;运行时缺位时
+// 启用认证仍只能用 basic(UI 标「契约就绪、登录待运行时」)。授权仅用邮箱白名单(无 sub 白名单/角色)。
+export interface OAuthAuthProvider {
+  kind: 'oauth'
+  issuer: string // OIDC discovery base URL(其 .well-known/openid-configuration)
+  clientId: string // OAuth client id
+  clientSecretRef: string // 引用(env 名/keystore id),绝不存 secret 明文——仿 signingKeyRef
+  redirectUri: string // 回调 URI(运行时校验)
+  scopes: string[] // 默认 ['openid','profile','email'](zod .default)
+  usePkce: boolean // 默认 true(zod .default)
+  allowedEmails: string[] // 授权白名单;空 ⇒ 无人可登录(运行时判定)。zod 层允许空(契约合法)
+}
+
+// provider 抽象——按 kind 的 discriminated union。
+export type AuthProvider = BasicAuthProvider | OAuthAuthProvider
 
 // 会话令牌策略——TTL + 签名密钥*引用*(env 名/keystore id),密钥本体绝不入设置文件。
 export interface AuthSessionPolicy {
@@ -154,7 +168,7 @@ export type AuthLoginResult =
 
 1. **缺省即未启用**：`SystemSettings.auth` 缺失，或 `auth.enabled === false`，或 provider 校验失败 ⇒ 等价于「无认证」（保持 C-SEC-5 localhost-only 默认）。`normalize()` fail-soft：非法 `auth` 被丢弃为 `undefined`，而非抛错。
 2. **永不明文**：类型与示例中绝不出现口令明文。`BasicAuthProvider.passwordHash` 是 PHC 串；`AuthLoginRequest.password` 是仅存在于「传输期」的明文，校验后即弃、绝不持久化。
-3. **引用而非本体**：`signingKeyRef` 是密钥的**引用**（env 名/keystore id），签名密钥本体绝不进 `settings.json`。
+3. **引用而非本体**：`signingKeyRef` 是签名密钥的**引用**（env 名/keystore id），`clientSecretRef` 是 OAuth client secret 的**引用**，两者本体均绝不进 `settings.json`。zod `z.object` 默认剥离未声明键，客户端误带的明文 `clientSecret` 不会被持久化。
 4. **provider 无关的中立层**：`AuthSessionToken`、`AuthLoginRequest/Result`、login/logout/unauthenticated 消息都不含 provider 专有字段，新增 provider 不改动它们。
 5. **扩展点单点**：新增认证方式 = 给 `AUTH_PROVIDER_KINDS` 加一个值 + 给 `AuthProvider` union 追加一个臂 + 给服务端 zod registry 追加一个臂；既有臂、会话令牌模型、消息契约均不动（与 ADR-0011 vendor 扩展、ADR-0021 双层配置同构）。
 
@@ -162,12 +176,23 @@ export type AuthLoginResult =
 
 遵循 ADR-0009/ADR-0011 的分工：**类型**在 `shared/src/protocol.ts`（零运行时），**zod 运行时 schema**在 `server/src/kernel/config/auth-schema.ts`，底部 `_AssertExtends` 双向类型钉死防止 schema 与 wire 类型漂移（复刻 `agent-config/schema.ts` 体例）。`normalize()`（`server/src/kernel/config/index.ts`）在加载时校验 `auth`，非法 ⇒ 省略（fail-soft）。
 
+### OAuth 运行时库选型（注解，决策不锁死实现）
+
+OAuth provider **本期契约 only**，运行时库不在本期落地，但先记录候选对比供后续件决策（不锁死）：
+
+| 库                              | 优点                                                                                  | 风险 / 待验                                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`openid-client`**（推荐起点） | 成熟、完整 OIDC（discovery + PKCE + JWKS + token 交换一站式）、广泛使用、规范覆盖最全 | 体积较大、依赖 `jose`；**`bun build --compile` 单二进制兼容性待验**（c3 用 `bun build --compile` 打包，须验证其动态 import / WebCrypto 在编译产物中可用） |
+| **`arctic`**                    | 轻量、显式底层流程、依赖少、对 compile 友好                                           | 偏「provider 预置」而非纯通用 OIDC，通用 issuer 的 discovery/JWKS 需自行补齐，样板更多                                                                    |
+
+**倾向**：以 `openid-client` 为起点（规范完整度优先），但**前置验证 `bun build --compile` 兼容性**——若编译产物下 discovery/JWKS 不可用，则回退 `arctic` + 手写 discovery/JWKS。该决策在 OAuth 运行时件正式锁定。
+
 ## Consequences
 
 ### 正面
 
 - **边界先于实现**：本期零运行时即固定跨层契约；后续三件在稳定边界上填实现，不返工。
-- **可扩展**：OAuth/SSO/多用户加一个 union 臂即可，会话令牌与消息契约不动。
+- **可扩展**：OAuth/SSO/多用户加一个 union 臂即可，会话令牌与消息契约不动。`oauth` 通用 OIDC 配置契约已按此扩展点落地（运行时待后续件），印证边界有效。
 - **向后兼容**：旧 `settings.json` 无 `auth` 字段 ⇒ 行为完全不变（未启用 = 当前 localhost-only 现状）。
 - **暴露面最小化**：口令存哈希、密钥存引用——设置文件即便泄露也不含明文口令或签名密钥本体。
 

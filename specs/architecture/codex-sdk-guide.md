@@ -145,13 +145,14 @@ SDK 对子进程的控制比 Claude 更有限，总结如下：
 
 c3 将中性的 `ActionMode × ToolGate` 网格映射为 Codex 原生的 `sandboxMode + approvalPolicy`：
 
-| 网格 `(actionMode, toolGate)` | sandboxMode       | approvalPolicy | 说明                                         |
-| ----------------------------- | ----------------- | -------------- | -------------------------------------------- |
-| `plan` × 任意                 | `read-only`       | `on-request`   | plan 模式永远只读                            |
-| `build` × `never-ask`         | `workspace-write` | `never`        | 完全放行                                     |
-| `build` × `trusted-prefix`    | `workspace-write` | `on-failure`   | 仅在失败时干预                               |
-| `build` × `on-sensitive`      | `workspace-write` | `on-request`   | 默认/自动模式                                |
-| `build` × `always-ask`        | `read-only`       | `on-request`   | **降级**——Codex 无法 per-tool 询问，退为只读 |
+| 网格 `(actionMode, toolGate)` | sandboxMode       | approvalPolicy | 说明                                                   |
+| ----------------------------- | ----------------- | -------------- | ------------------------------------------------------ |
+| `plan` × `never-ask`          | `read-only`       | `never`        | 只读 MCP 流程使用；文件系统只读，MCP handler 自行 gate |
+| `plan` × 其他                 | `read-only`       | `on-request`   | plan 模式永远只读                                      |
+| `build` × `never-ask`         | `workspace-write` | `never`        | 完全放行                                               |
+| `build` × `trusted-prefix`    | `workspace-write` | `on-failure`   | 仅在失败时干预                                         |
+| `build` × `on-sensitive`      | `workspace-write` | `on-request`   | 默认/自动模式                                          |
+| `build` × `always-ask`        | `read-only`       | `on-request`   | **降级**——Codex 无法 per-tool 询问，退为只读           |
 
 反向映射 `codexPolicyToGrid` 用于 session 启动时从存储的 `CodexPolicy` 回算网格值，使中性驱动路径
 （`run-via-driver.ts`）统一消费。

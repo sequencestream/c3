@@ -6,7 +6,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { CanonicalBlock, CanonicalMessage } from '../agent/adapters/types.js'
-import { WireEmitter, makeDriverApprovalHandler } from './run-via-driver.js'
+import {
+  WireEmitter,
+  intentDriverModeForVendor,
+  makeDriverApprovalHandler,
+} from './run-via-driver.js'
 
 function frame(blocks: CanonicalBlock[], extra?: Partial<CanonicalMessage>): CanonicalMessage {
   return { vendor: 'opencode', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
@@ -75,6 +79,22 @@ describe('WireEmitter', () => {
       { type: 'tool_use', toolUseId: 'c1', toolName: 'bash', input: { cmd: 'ls' } },
     ])
     expect(out[0]).not.toHaveProperty('preApproved')
+  })
+})
+
+describe('intentDriverModeForVendor', () => {
+  it('lets Codex use read-only MCP tools without a non-existent live approval channel', () => {
+    expect(intentDriverModeForVendor('codex')).toEqual({
+      actionMode: 'plan',
+      toolGate: 'never-ask',
+    })
+  })
+
+  it('keeps per-tool-gated vendors on always-ask for intent runs', () => {
+    expect(intentDriverModeForVendor('opencode')).toEqual({
+      actionMode: 'plan',
+      toolGate: 'always-ask',
+    })
   })
 })
 

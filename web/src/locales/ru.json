@@ -449,8 +449,41 @@
       "provider": {
         "label": "Провайдер",
         "basic": "Имя пользователя и пароль",
-        "oauth": "OAuth (скоро)",
+        "oauth": "OAuth / OIDC",
         "sso": "SSO (скоро)"
+      },
+      "oauth": {
+        "hint": "Делегировать вход внешнему провайдеру OpenID Connect (Google, Keycloak или любой совместимый issuer).",
+        "runtimePending": "Контракт OAuth готов, но вход ожидает реализации среды выполнения OAuth. Пока что включение аутентификации работает только с именем пользователя и паролем.",
+        "issuer": {
+          "label": "Issuer (URL обнаружения)",
+          "placeholder": "https://accounts.example.com"
+        },
+        "clientId": {
+          "label": "Client ID",
+          "placeholder": "your-oauth-client-id"
+        },
+        "clientSecretRef": {
+          "label": "Ссылка на client secret",
+          "placeholder": "C3_OAUTH_CLIENT_SECRET",
+          "hint": "Хранится ссылка (имя переменной окружения / id хранилища ключей), а не само значение секрета."
+        },
+        "redirectUri": {
+          "label": "Redirect URI",
+          "placeholder": "https://console.example.com/auth/callback"
+        },
+        "scopes": {
+          "label": "Scopes",
+          "placeholder": "openid profile email"
+        },
+        "usePkce": {
+          "label": "Использовать PKCE"
+        },
+        "allowedEmails": {
+          "label": "Разрешённые адреса",
+          "placeholder": "alice@example.com\nbob@example.com",
+          "hint": "Войти могут только эти подтверждённые адреса. Пустой список не авторизует никого."
+        }
       },
       "enable": {
         "label": "Требовать вход",

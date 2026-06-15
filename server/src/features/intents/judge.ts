@@ -36,7 +36,7 @@
  */
 import type { Intent, RunKind } from '@ccc/shared/protocol'
 import { askOneShot } from '../../kernel/agent/index.js'
-import { resolveSessionLaunch } from '../../kernel/agent-config/index.js'
+import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
 
 /**
  * This module's RunKind: completion judging is an internal, socket-less tool call
@@ -116,7 +116,9 @@ export async function judgeCompletion(input: {
   cwd: string
   signal: AbortSignal
 }): Promise<JudgeVerdict> {
-  const launch = resolveSessionLaunch(null)
+  // Completion judging is a background tool session ⇒ run on the configured tool
+  // agent (falls back to the default agent when toolAgentId is unset).
+  const launch = resolveToolSessionLaunch()
   const text = await askOneShot({
     prompt: buildPrompt(input.req, input.lastMessages, input.evidence),
     cwd: input.cwd,

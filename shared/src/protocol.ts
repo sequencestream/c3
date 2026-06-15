@@ -812,6 +812,20 @@ export interface SystemSettings {
   agents: AgentConfig[]
   /** Id of the agent new/unassigned sessions launch with. */
   defaultAgentId: string
+  /**
+   * Id of the agent that runs **background tool sessions** (completion judge,
+   * session summary; the exception-handling session is not yet agent-driven) so
+   * these housekeeping tasks can run on a cheaper/faster agent decoupled from the
+   * main conversation's quota. Semantics mirror {@link defaultAgentId} with ONE
+   * difference: an **empty string is "follow the default agent"** (the runtime
+   * resolves it through `resolveAgent`, falling back `toolAgentId → defaultAgentId
+   * → system`). A *non-empty* value that points at a removed/now-disabled agent is
+   * **rewritten** on store to the next enabled agent in `order_seq` order — the same
+   * `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20); when
+   * every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
+   * is left empty (never auto-filled), so "follow the default" survives a save.
+   */
+  toolAgentId: string
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
   /** UI display language for the web console. `en` when unset. Decoupled from

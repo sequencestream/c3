@@ -1,4 +1,26 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+// The default LLM path (`defaultInvokeLlm`, used when no `deps.invokeLlm` is
+// injected) runs name derivation as a background tool session: it resolves the
+// tool agent via `resolveToolSessionLaunch` and feeds its model/env into the
+// one-shot `query`. Mock both so we can assert that routing without the network.
+const queryMock = vi.fn((opts: { options?: { model?: string; env?: Record<string, string> } }) => {
+  void opts
+  return (async function* () {
+    yield { type: 'assistant', message: { content: [{ type: 'text', text: 'Tool Named' }] } }
+    yield { type: 'result' }
+  })()
+})
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: (o: unknown) => queryMock(o as never) }))
+const toolLaunchMock = vi.fn(() => ({
+  agentId: 'tool-agent',
+  model: 'tool-model',
+  envOverrides: { TOOL: '1' },
+}))
+vi.mock('../../kernel/agent-config/index.js', () => ({
+  resolveToolSessionLaunch: () => toolLaunchMock(),
+}))
+
 import { fallbackName, generateScheduleName } from './naming.js'
 import { getUiLangName } from '../../kernel/config/index.js'
 
@@ -94,5 +116,15 @@ describe('generateScheduleName', () => {
       },
     )
     expect(name).toBe('LLM task')
+  })
+
+  it('default LLM path runs on the tool agent: model/env from resolveToolSessionLaunch (2026-06-15-001)', async () => {
+    // No injected invokeLlm ⇒ exercises defaultInvokeLlm (the real tool-session path).
+    const name = await generateScheduleName({ type: 'command', config: { command: 'pnpm build' } })
+    expect(name).toBe('Tool Named')
+    expect(toolLaunchMock).toHaveBeenCalled()
+    const opts = queryMock.mock.calls[0][0].options
+    expect(opts?.model).toBe('tool-model')
+    expect(opts?.env).toMatchObject({ TOOL: '1' })
   })
 })

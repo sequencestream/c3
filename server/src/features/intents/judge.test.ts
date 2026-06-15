@@ -10,13 +10,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Intent } from '@ccc/shared/protocol'
 
-// Capture the prompt handed to the one-shot Claude and control its reply.
-const askMock = vi.fn<(args: { prompt: string }) => Promise<string>>()
+// Capture the args handed to the one-shot Claude (prompt + the launch overrides
+// resolved from the tool agent) and control its reply.
+const askMock =
+  vi.fn<
+    (args: {
+      prompt: string
+      model?: string
+      envOverrides?: Record<string, string>
+    }) => Promise<string>
+  >()
 vi.mock('../../kernel/agent/index.js', () => ({
-  askOneShot: (a: { prompt: string }) => askMock(a),
+  askOneShot: (a: { prompt: string; model?: string; envOverrides?: Record<string, string> }) =>
+    askMock(a),
+}))
+// The completion judge is a background tool session ⇒ it resolves its launch via
+// `resolveToolSessionLaunch` (the tool agent), NOT `resolveSessionLaunch`. The mock
+// pins a recognizable model so the routing can be asserted.
+const toolLaunchMock = vi.fn(() => ({
+  agentId: 'tool-agent',
+  model: 'tool-model',
+  envOverrides: { TOOL: '1' },
 }))
 vi.mock('../../kernel/agent-config/index.js', () => ({
-  resolveSessionLaunch: () => ({ model: 'test-model', envOverrides: {} }),
+  resolveToolSessionLaunch: () => toolLaunchMock(),
 }))
 
 const { judgeCompletion } = await import('./judge.js')
@@ -139,6 +156,17 @@ describe('judge — evidence is not a hard gate on the verdict', () => {
   it('still surfaces a human-intervention stuck verdict with empty evidence', async () => {
     askMock.mockResolvedValue('{"verdict":"stuck","reason":"asked the user"}')
     expect((await judge('用方案A还是B?')).verdict).toBe('stuck')
+  })
+})
+
+describe('judge — runs on the tool agent (toolAgentId routing, 2026-06-15-001)', () => {
+  it('resolves its launch via resolveToolSessionLaunch and passes that model/env to askOneShot', async () => {
+    askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
+    await judge('done')
+    expect(toolLaunchMock).toHaveBeenCalled()
+    const args = askMock.mock.calls[0][0]
+    expect(args.model).toBe('tool-model')
+    expect(args.envOverrides).toEqual({ TOOL: '1' })
   })
 })
 

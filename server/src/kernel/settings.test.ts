@@ -109,7 +109,7 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
   it('anti-clobber: saveSettings WITHOUT projectConfigs preserves existing project configs', () => {
     saveWorkspaceSetting('/proj/a', { devSkill: '/a' } as WorkspaceSetting)
     // The old bug: a save_settings carrying no projectConfigs wiped them from disk.
-    saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID } as SystemSettings)
+    saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, toolAgentId: '' } as SystemSettings)
     expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
     expect(getDevSkill('/proj/a')).toBe('/a')
   })
@@ -183,11 +183,69 @@ describe('defaultAgentId rewrite-on-store — fall through to next enabled (AC-R
   })
 })
 
+describe('toolAgentId rewrite-on-store — empty=follow-default, set=fall-through (2026-06-15-001)', () => {
+  /** A minimal custom-claude agent at an explicit `order_seq`. */
+  const agent = (id: string, order: number, enabled?: boolean): unknown => ({
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: id,
+    order_seq: order,
+    ...(enabled === undefined ? {} : { enabled }),
+    config: { baseUrl: `https://${id}`, apiKey: 'k', model: '' },
+  })
+
+  it('keeps an empty toolAgentId empty (follow the default agent, never auto-filled)', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1)],
+      defaultAgentId: 'a1',
+      toolAgentId: '',
+    } as unknown as SystemSettings)
+    expect(loadSettings().toolAgentId).toBe('')
+  })
+
+  it('keeps an empty toolAgentId empty even when a missing field defaults it', () => {
+    saveSettings({
+      agents: [agent('a1', 0)],
+      defaultAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().toolAgentId).toBe('')
+  })
+
+  it('keeps an enabled, explicitly-set toolAgentId untouched', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      toolAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().toolAgentId).toBe('a2')
+  })
+
+  it('rewrites a now-disabled toolAgentId to the next enabled agent by order_seq', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      toolAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().toolAgentId).toBe('a3')
+  })
+
+  it('falls back to SYSTEM_AGENT_ID when a set toolAgentId has no enabled agent left', () => {
+    saveSettings({
+      agents: [agent('a1', 0, false), agent('a2', 1, false)],
+      defaultAgentId: 'a1',
+      toolAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().toolAgentId).toBe(SYSTEM_AGENT_ID)
+  })
+})
+
 describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
   const save = (socketAutoResume: boolean | undefined): void => {
     saveSettings({
       agents: [],
       defaultAgentId: SYSTEM_AGENT_ID,
+      toolAgentId: '',
       socketAutoResume,
     } as SystemSettings)
   }
@@ -665,7 +723,12 @@ describe('skillRepos migration from SystemSettings to WorkspaceSetting', () => {
 
 /** Persist just a `uiLang` value (with the required baseline fields). */
 function saveWithUiLang(uiLang: unknown): void {
-  saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, uiLang } as SystemSettings)
+  saveSettings({
+    agents: [],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    toolAgentId: '',
+    uiLang,
+  } as SystemSettings)
 }
 
 describe('getUiLang normalization', () => {
@@ -694,6 +757,7 @@ describe('getUiLang normalization', () => {
     saveSettings({
       agents: [],
       defaultAgentId: SYSTEM_AGENT_ID,
+      toolAgentId: '',
       uiLang: 'zh',
       voiceLang: 'en-US',
     } as SystemSettings)
@@ -731,7 +795,12 @@ describe('getUiLangName', () => {
 
 /** Persist just a `timezone` value (with the required baseline fields). */
 function saveWithTimezone(timezone: unknown): void {
-  saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, timezone } as SystemSettings)
+  saveSettings({
+    agents: [],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    toolAgentId: '',
+    timezone,
+  } as SystemSettings)
 }
 
 describe('isValidTimeZone', () => {

@@ -18,6 +18,7 @@ function settings(over: Partial<SystemSettings> = {}): SystemSettings {
   return {
     agents: [agent('a', 'Alpha'), agent('b', 'Bravo'), agent('c', 'Charlie')],
     defaultAgentId: 'a',
+    toolAgentId: '',
     ...over,
   }
 }

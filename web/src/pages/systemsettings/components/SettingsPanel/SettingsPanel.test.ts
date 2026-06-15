@@ -15,6 +15,7 @@ const baseSettings: SystemSettings = {
     },
   ],
   defaultAgentId: SYSTEM_AGENT_ID,
+  toolAgentId: '',
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',

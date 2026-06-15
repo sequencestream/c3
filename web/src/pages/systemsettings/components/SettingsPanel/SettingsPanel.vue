@@ -99,6 +99,8 @@ const emit = defineEmits<{
 const draft = ref<SystemSettings>({
   agents: [],
   defaultAgentId: SYSTEM_AGENT_ID,
+  // '' ⇒ background tool sessions follow the default agent.
+  toolAgentId: '',
   voiceLang: 'zh-CN',
   uiLang: 'en',
   timezone: BROWSER_TZ,
@@ -146,6 +148,8 @@ watch(
       // this watcher and leave `draft.agents` empty (no agents rendered at all).
       agents: settings.agents.map((a) => structuredClone(toRaw(a))),
       defaultAgentId: settings.defaultAgentId,
+      // '' ⇒ background tool sessions follow the default agent (AC-R21).
+      toolAgentId: settings.toolAgentId ?? '',
       voiceLang: settings.voiceLang ?? 'zh-CN',
       uiLang: settings.uiLang ?? 'en',
       timezone: settings.timezone ?? BROWSER_TZ,
@@ -241,10 +245,15 @@ const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.fil
 // Toggle an agent's enabled flag. If this disables (or the inverse — never)
 // the current default, fall through to the next enabled agent and persist that
 // rewrite (mirrors the server `normalize`, AC-R2/AC-R10). Recompute against the
-// live array order so the choice tracks order_seq.
+// live array order so the choice tracks order_seq. The tool agent follows the
+// same fall-through, but ONLY when it's explicitly set: an empty toolAgentId
+// ("follow the default") stays empty.
 function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   a.enabled = checked
   draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
+  if (draft.value.toolAgentId) {
+    draft.value.toolAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.toolAgentId)
+  }
 }
 
 // Provider fields (baseUrl/apiKey/model) are only meaningful in `custom` mode;
@@ -686,6 +695,23 @@ function submitPassword() {
             </option>
             <option v-if="defaultPickerAgents.length === 0" value="" disabled>
               {{ t('settings.agents.defaultPicker.empty') }}
+            </option>
+          </select>
+        </div>
+        <div class="agent-default-picker">
+          <label class="agent-default-label" for="tool-agent-select">
+            {{ t('settings.agents.toolPicker.label') }}
+          </label>
+          <select
+            id="tool-agent-select"
+            v-model="draft.toolAgentId"
+            class="agent-field"
+            data-testid="tool-agent-select"
+            :title="t('settings.agents.tool.tooltip')"
+          >
+            <option value="">{{ t('settings.agents.toolPicker.followDefault') }}</option>
+            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+              {{ a.displayName || a.id }}
             </option>
           </select>
         </div>

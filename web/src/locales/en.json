@@ -193,6 +193,13 @@
         "label": "Default agent",
         "empty": "No enabled agent"
       },
+      "tool": {
+        "tooltip": "Agent that runs background tool sessions (completion judge, summary)"
+      },
+      "toolPicker": {
+        "label": "Tool agent",
+        "followDefault": "Follow default agent"
+      },
       "remove": {
         "tooltip": "Remove agent"
       },

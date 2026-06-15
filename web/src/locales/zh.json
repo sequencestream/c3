@@ -193,6 +193,13 @@
         "label": "默认智能体",
         "empty": "无已启用的智能体"
       },
+      "tool": {
+        "tooltip": "执行后台工具型会话的智能体(完成判定、总结)"
+      },
+      "toolPicker": {
+        "label": "工具智能体",
+        "followDefault": "跟随默认智能体"
+      },
       "remove": {
         "tooltip": "移除智能体"
       },

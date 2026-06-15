@@ -18,6 +18,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { CreateScheduleInput, RunKind, ScheduleType } from '@ccc/shared/protocol'
 import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getUiLangName } from '../../kernel/config/index.js'
+import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
 
 /**
  * This module's RunKind: title/name derivation is an internal, socket-less tool
@@ -91,6 +92,9 @@ const defaultInvokeLlm: InvokeLlm = async (prompt) => {
   const timer = setTimeout(() => abort.abort(), NAMING_TIMEOUT_MS)
   timer.unref()
   const claudePath = findClaudeExecutable()
+  // Name derivation is a background tool session ⇒ run on the configured tool
+  // agent's model/provider env (falls back to the default agent when unset).
+  const launch = resolveToolSessionLaunch()
   try {
     const q = query({
       prompt,
@@ -98,6 +102,8 @@ const defaultInvokeLlm: InvokeLlm = async (prompt) => {
         disallowedTools: ['Bash', 'Edit', 'Write', 'Read', 'Task', 'WebFetch', 'WebSearch'],
         permissionMode: 'default',
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+        ...(launch.model ? { model: launch.model } : {}),
+        ...(launch.envOverrides ? { env: { ...process.env, ...launch.envOverrides } } : {}),
       },
     })
     let text = ''

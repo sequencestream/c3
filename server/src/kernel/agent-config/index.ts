@@ -66,6 +66,14 @@ export function getDefaultAgentId(): string {
 }
 
 /**
+ * The configured tool-agent id (background tool sessions' executor). An empty
+ * string means "follow the default agent" — see {@link resolveToolAgent}.
+ */
+export function getToolAgentId(): string {
+  return loadSettings().toolAgentId
+}
+
+/**
  * The enabled agents only — the canonical "list of agents" every consumer pool
  * draws from (discussion participants, consensus voters, default-agent picker),
  * returned in the user-controlled global order (`order_seq` ascending — the
@@ -105,6 +113,28 @@ export function resolveAgent(agentId: string | null): AgentConfig {
     settings.agents.find((a) => a.id === SYSTEM_AGENT_ID) ??
     systemAgent()
   )
+}
+
+/**
+ * The agent that runs **background tool sessions** (completion judge, session
+ * summary; the exception-handling session is not yet agent-driven — reserved for
+ * a follow-up intent). Reads `toolAgentId` and resolves it through
+ * {@link resolveAgent}, so the fall-through is `toolAgentId → defaultAgentId →
+ * system → synthesized fallback`: an empty/unknown `toolAgentId` (the "follow the
+ * default" sentinel) lands on the default agent, never locking a tool session out.
+ */
+export function resolveToolAgent(): AgentConfig {
+  return resolveAgent(loadSettings().toolAgentId)
+}
+
+/**
+ * Launch overrides for a background tool session — the {@link resolveToolAgent}
+ * mirror of {@link resolveSessionLaunch} (model + provider env), so the completion
+ * judge / naming one-shots execute on the configured tool agent.
+ */
+export function resolveToolSessionLaunch(): { agentId: string } & LaunchOverrides {
+  const agent = resolveToolAgent()
+  return { agentId: agent.id, ...launchForAgent(agent) }
 }
 
 /**

@@ -32,7 +32,7 @@ function capture(): { conn: Conn; sent: ServerToClient[] } {
 const KCTX = {} as never
 
 beforeEach(() => {
-  h.store = { agents: [], defaultAgentId: 'x' } as SystemSettings
+  h.store = { agents: [], defaultAgentId: 'x', toolAgentId: '' } as SystemSettings
 })
 
 describe('login (ADR-0023 runtime)', () => {

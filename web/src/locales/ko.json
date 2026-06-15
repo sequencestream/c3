@@ -194,6 +194,13 @@
         "label": "기본 에이전트",
         "empty": "활성화된 에이전트 없음"
       },
+      "tool": {
+        "tooltip": "백그라운드 도구 세션(완료 판정, 요약)을 실행하는 에이전트"
+      },
+      "toolPicker": {
+        "label": "도구 에이전트",
+        "followDefault": "기본 에이전트 따르기"
+      },
       "remove": {
         "tooltip": "에이전트 제거"
       },

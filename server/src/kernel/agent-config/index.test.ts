@@ -38,6 +38,8 @@ const mockSettings: SystemSettings = {
     },
   ],
   defaultAgentId: 'claude-pro',
+  // '' ⇒ tool sessions follow the default agent; tests mutate this per-case.
+  toolAgentId: '',
   degradationChain: [],
 }
 
@@ -50,7 +52,7 @@ vi.mock('../config/index.js', () => ({
 }))
 
 // Import AFTER the mock is set up.
-import { launchForAgent, resolveFirstAgentOfVendor } from './index.js'
+import { launchForAgent, resolveFirstAgentOfVendor, resolveToolAgent } from './index.js'
 
 describe('resolveFirstAgentOfVendor', () => {
   beforeEach(() => {
@@ -80,6 +82,39 @@ describe('resolveFirstAgentOfVendor', () => {
     const agent = resolveFirstAgentOfVendor('opencode')
     // No opencode agents configured — should fall back to default (claude-pro)
     expect(agent.id).toBe('claude-pro')
+  })
+})
+
+describe('resolveToolAgent — toolAgentId → defaultAgentId → system fall-through (2026-06-15-001)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('follows the default agent when toolAgentId is empty', () => {
+    mockSettings.toolAgentId = ''
+    expect(resolveToolAgent().id).toBe('claude-pro')
+  })
+
+  it('resolves an explicitly set, enabled toolAgentId', () => {
+    mockSettings.toolAgentId = 'claude-sonnet'
+    expect(resolveToolAgent().id).toBe('claude-sonnet')
+  })
+
+  it('resolves a cross-vendor tool agent (codex) when set', () => {
+    mockSettings.toolAgentId = 'codex-agent'
+    expect(resolveToolAgent().vendor).toBe('codex')
+  })
+
+  it('falls back to the default agent when toolAgentId is unknown', () => {
+    mockSettings.toolAgentId = 'gone'
+    expect(resolveToolAgent().id).toBe('claude-pro')
+  })
+
+  it('still resolves a disabled tool agent by id (launch is never locked out)', () => {
+    // normalize rewrites a disabled toolAgentId before persist; the runtime resolver
+    // itself does not filter on `enabled`, mirroring resolveAgent (AC-R10).
+    mockSettings.toolAgentId = 'disabled-claude'
+    expect(resolveToolAgent().id).toBe('disabled-claude')
   })
 })
 

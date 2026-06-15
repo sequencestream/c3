@@ -313,6 +313,13 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // only when every agent is disabled.
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : ''
   const defaultAgentId = resolveDefaultAgentId(agents, wanted)
+  // toolAgentId: background tool sessions' executor. Empty string ⇒ "follow the
+  // default agent" — kept empty (NOT auto-filled to the first enabled agent, unlike
+  // the default), so the runtime falls back through `resolveAgent` to defaultAgentId.
+  // A *set* toolAgentId that's now removed/disabled is rewritten by the same
+  // order_seq fall-through the default uses (rewrite-on-store, AC-R2/AC-R10).
+  const wantedTool = typeof raw?.toolAgentId === 'string' ? raw.toolAgentId : ''
+  const toolAgentId = wantedTool === '' ? '' : resolveDefaultAgentId(agents, wantedTool)
   // ---- Legacy migration (one-shot): capture old global top-level fields ----
   // The 5 workspace-level knobs used to live at the SystemSettings top level.
   // Capture them once for the project-level migration; they no longer survive in
@@ -350,6 +357,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   return {
     agents,
     defaultAgentId,
+    toolAgentId,
     voiceLang,
     uiLang,
     timezone,

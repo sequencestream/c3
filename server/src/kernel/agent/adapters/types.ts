@@ -257,6 +257,25 @@ export interface DriverStartOptions {
    * intent comm-agent on the driver path (codex), carrying the three intent tools.
    */
   mcpServers?: Record<string, RemoteMcpServer>
+  /**
+   * Allow the run's sandboxed processes to reach the network (2026-06-15). Neutral
+   * knob, orthogonal to filesystem write permission: a `plan`/read-only run can
+   * still fetch over the network. Codex maps it to `ThreadOptions.networkAccessEnabled`
+   * (its sandbox denies network by default, which is why work/intent/discussion
+   * codex sessions previously failed any network call). Omit ⇒ vendor default
+   * (codex = denied). Claude/opencode govern network via their tool allowlist and
+   * ignore this flag.
+   */
+  networkAccess?: boolean
+  /**
+   * Enable the vendor's built-in web-search tool for this run (2026-06-15). Codex
+   * maps it to `ThreadOptions.webSearchEnabled` + `webSearchMode: 'live'` (default
+   * disabled). Separate from {@link networkAccess}: this is the agent's first-party
+   * search/fetch capability, that is raw socket access for shell commands. Omit ⇒
+   * vendor default (codex = disabled). Other vendors expose search via tools and
+   * ignore this flag.
+   */
+  webSearch?: boolean
 }
 
 /**

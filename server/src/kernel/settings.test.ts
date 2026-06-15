@@ -977,3 +977,70 @@ describe('gitBranchMode + defaultMainBranch (2026-06-10)', () => {
     expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
   })
 })
+
+describe('agent order_seq — user-controlled global order (normalize + enabledAgents)', () => {
+  /** A minimal claude agent; `order_seq`/`enabled` are spread in only when given so
+   *  the "missing field" back-compat path is exercised verbatim. */
+  function ag(
+    id: string,
+    opts: { order_seq?: number; enabled?: boolean } = {},
+  ): Record<string, unknown> {
+    return {
+      id,
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: id,
+      config: { baseUrl: '', apiKey: '', model: '' },
+      ...(opts.order_seq !== undefined ? { order_seq: opts.order_seq } : {}),
+      ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
+    }
+  }
+
+  function saveAgents(agents: Record<string, unknown>[], defaultAgentId: string): void {
+    saveSettings({ agents, defaultAgentId } as unknown as SystemSettings)
+  }
+
+  it('backfills a missing order_seq by array order into a dense 0..n sequence', () => {
+    saveAgents([ag('x'), ag('y'), ag('z')], 'x')
+    expect(loadSettings().agents.map((a) => [a.id, a.order_seq])).toEqual([
+      ['x', 0],
+      ['y', 1],
+      ['z', 2],
+    ])
+  })
+
+  it('sorts by explicit order_seq, breaks duplicate positions stably, regularizes to 0..n', () => {
+    // y and z both claim position 2 → stable tie-break by array order (y before z);
+    // x at 5 lands last; the final order_seq is reassigned densely.
+    saveAgents(
+      [ag('x', { order_seq: 5 }), ag('y', { order_seq: 2 }), ag('z', { order_seq: 2 })],
+      'x',
+    )
+    expect(loadSettings().agents.map((a) => a.id)).toEqual(['y', 'z', 'x'])
+    expect(loadSettings().agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
+  })
+
+  it('appends agents missing order_seq at the tail, after the explicitly-ordered ones', () => {
+    saveAgents([ag('a', { order_seq: 1 }), ag('b'), ag('c', { order_seq: 0 })], 'a')
+    expect(loadSettings().agents.map((a) => a.id)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('pins the system agent to the front regardless of its order_seq', () => {
+    saveAgents([ag('x', { order_seq: 0 }), ag(SYSTEM_AGENT_ID, { order_seq: 9 })], 'x')
+    const ids = loadSettings().agents.map((a) => a.id)
+    expect(ids).toEqual([SYSTEM_AGENT_ID, 'x'])
+    expect(loadSettings().agents[0].order_seq).toBe(0)
+  })
+
+  it('enabledAgents() returns the order_seq order and excludes disabled agents', () => {
+    saveAgents(
+      [
+        ag('x', { order_seq: 2 }),
+        ag('y', { order_seq: 0, enabled: false }),
+        ag('z', { order_seq: 1 }),
+      ],
+      'x',
+    )
+    expect(enabledAgents().map((a) => a.id)).toEqual(['z', 'x'])
+  })
+})

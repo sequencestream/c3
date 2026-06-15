@@ -263,6 +263,9 @@
       "defaultNote": "Changing the default agent is not retroactive: it affects {pending} pending session(s); {bound} bound session(s) keep their original vendor.",
       "copy": {
         "tooltip": "Copy agent"
+      },
+      "reorder": {
+        "tooltip": "Drag to reorder"
       }
     },
     "defaultMode": {

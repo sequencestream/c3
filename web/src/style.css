@@ -2426,6 +2426,23 @@ button.deny:hover:not(:disabled) {
 .agent-model {
   flex: 0 0 150px;
 }
+.agent-row > .col-drag {
+  flex: 0 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: var(--c-text-muted);
+  user-select: none;
+}
+.agent-row > .col-drag:active {
+  cursor: grabbing;
+}
+/* Drop-target hint while a row is dragged over another. */
+.agent-row.drag-over {
+  outline: 2px dashed var(--c-accent, var(--c-border));
+  outline-offset: -2px;
+}
 .agent-row > .col-on {
   flex: 0 0 30px;
 }
@@ -2721,6 +2738,7 @@ button.deny:hover:not(:disabled) {
     flex: 1 1 auto;
   }
 
+  .agent-row > .col-drag,
   .agent-row > .col-on,
   .agent-row > .col-default,
   .agent-row > .icon-cell,

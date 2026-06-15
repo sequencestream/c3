@@ -378,3 +378,54 @@ describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {
 })
 
 // Skill-repo tests moved to WorkspaceSetting.test.ts (ADR-0016/0017 migration)
+
+describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {
+  const threeAgents: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        enabled: true,
+        config: { baseUrl: 'https://one', apiKey: 'k', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Two',
+        enabled: true,
+        config: { baseUrl: 'https://two', apiKey: 'k', model: '' },
+      },
+    ],
+  }
+
+  it('dropping a row into a new slot persists the new order + dense order_seq on Save', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
+    const rows = w.findAll('[data-testid="agent-card"]')
+    // Grab the 3rd row (a2) and drop it onto the 1st slot.
+    await rows[2].find('[data-testid="agent-drag"]').trigger('dragstart')
+    await rows[0].trigger('dragover')
+    await rows[0].trigger('drop')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.map((a) => a.id)).toEqual(['a2', SYSTEM_AGENT_ID, 'a1'])
+    expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
+  })
+
+  it('Save stamps order_seq from array order even without any drag', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
+  })
+})

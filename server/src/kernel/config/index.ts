@@ -41,11 +41,13 @@ import type {
 } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import {
+  canonicalizeAgentOrder,
   defaultSettings,
   normalizeDegradationChain,
   normalizeIcon,
   systemAgent,
 } from '../agent-config/normalize.js'
+import type { AgentOrderEntry } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
 
@@ -277,21 +279,34 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // Every record is migrated + validated like any other; `configMode: 'system'`
   // is now just a per-agent option. We only guarantee the registry is never empty
   // (synthesize a fallback) and that the default points at a real agent.
-  const agents: AgentConfig[] = []
+  // Collect parsed agents alongside the raw `order_seq` each carried on disk, so
+  // the order regularization can tell an explicit position from a missing one
+  // (the zod default would otherwise erase that distinction).
+  const entries: AgentOrderEntry[] = []
+  const seenIds = new Set<string>()
   for (const a of incoming) {
     if (!a || typeof a !== 'object') continue
     const rec = a as Record<string, unknown>
     const id = typeof rec.id === 'string' && rec.id ? rec.id : randomUUID()
-    if (agents.some((x) => x.id === id)) continue // de-dupe
+    if (seenIds.has(id)) continue // de-dupe
     // Migrate legacy → discriminated candidate, then validate + route by `vendor`
     // tag through the zod schema. An unknown vendor or a config that fails its arm
     // ⇒ `null` ⇒ dropped (fail-soft, same policy as a dup id).
     const parsed = parseAgentConfig(migrateAgentCandidate(id, rec))
-    if (parsed) agents.push(parsed)
+    if (!parsed) continue
+    seenIds.add(id)
+    const rawOrder =
+      typeof rec.order_seq === 'number' && Number.isFinite(rec.order_seq)
+        ? rec.order_seq
+        : undefined
+    entries.push({ agent: parsed, rawOrder })
   }
   // Never leave the registry empty (a session must always resolve a launch agent):
   // synthesize the claude+system fallback when nothing valid survived.
-  if (agents.length === 0) agents.push(systemAgent())
+  if (entries.length === 0) entries.push({ agent: systemAgent(), rawOrder: 0 })
+  // Regularize the user-controlled order: pin the system agent, sort by explicit
+  // `order_seq`, append missing ones by array order, stamp a dense 0..n sequence.
+  const agents: AgentConfig[] = canonicalizeAgentOrder(entries)
   // The default must reference an existing agent; otherwise fall back to the first.
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : ''
   const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : agents[0].id

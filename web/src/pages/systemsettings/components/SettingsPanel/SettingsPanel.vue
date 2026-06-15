@@ -294,6 +294,48 @@ function copyAgent(a: AgentConfig) {
   draft.value.agents.splice(idx + 1, 0, cloned)
 }
 
+// ---- Drag-to-reorder the agent list (native HTML5 DnD, no library) ----------
+// The grip handle is the draggable element (so the row's text inputs stay
+// selectable as usual); the whole row is the drop target. On drop we splice the
+// dragged agent into the dropped row's slot. `order_seq` is (re)stamped from the
+// final array order at Save time (see `save`), so a reorder survives the round
+// trip to the server, which then regularizes it into a dense 0..n sequence.
+const dragIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+
+function onAgentDragStart(index: number, e: DragEvent): void {
+  dragIndex.value = index
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+function onAgentDragOver(index: number): void {
+  dragOverIndex.value = dragIndex.value === null || dragIndex.value === index ? null : index
+}
+function onAgentDrop(index: number): void {
+  const from = dragIndex.value
+  dragIndex.value = null
+  dragOverIndex.value = null
+  if (from === null || from === index) return
+  const list = draft.value.agents
+  const [moved] = list.splice(from, 1)
+  list.splice(index, 0, moved)
+}
+function onAgentDragEnd(): void {
+  dragIndex.value = null
+  dragOverIndex.value = null
+}
+
+// Stamp the user-controlled order onto every agent from its current array
+// position right before emitting, so a drag-reorder (or add / copy / remove) is
+// persisted; the server `normalize` then regularizes it into a dense 0..n and
+// pins the system agent. Single point, so the structural ops above need not each
+// maintain `order_seq` themselves.
+function save(): void {
+  draft.value.agents.forEach((a, i) => {
+    a.order_seq = i
+  })
+  emit('save', draft.value)
+}
+
 // Live-switch the UI language on select change (App applies + persists + pushes
 // to server); the draft is also updated so a later Save carries the same value.
 function onUiLangChange(e: Event) {
@@ -507,7 +549,24 @@ function submitPassword() {
           >
         </i18n-t>
         <div class="agent-list">
-          <div v-for="a in draft.agents" :key="a.id" class="agent-row" data-testid="agent-card">
+          <div
+            v-for="(a, i) in draft.agents"
+            :key="a.id"
+            class="agent-row"
+            :class="{ 'drag-over': dragOverIndex === i }"
+            data-testid="agent-card"
+            @dragover.prevent="onAgentDragOver(i)"
+            @drop.prevent="onAgentDrop(i)"
+          >
+            <span
+              class="col-drag"
+              draggable="true"
+              :title="t('settings.agents.reorder.tooltip')"
+              data-testid="agent-drag"
+              @dragstart="onAgentDragStart(i, $event)"
+              @dragend="onAgentDragEnd"
+              >⠿</span
+            >
             <label class="col-on">
               <input
                 type="checkbox"
@@ -958,7 +1017,7 @@ function submitPassword() {
     </div>
     <div class="settings-foot">
       <button class="ghost" @click="emit('close')">{{ t('common.action.cancel.label') }}</button>
-      <button data-testid="settings-save" @click="emit('save', draft)">
+      <button data-testid="settings-save" @click="save">
         {{ t('common.action.save.label') }}
       </button>
     </div>

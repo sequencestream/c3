@@ -159,6 +159,10 @@ export class AgentSessionManager {
       signal,
       actionMode: DISCUSS_ACTION_MODE,
       toolGate: DISCUSS_TOOL_GATE,
+      // Discussion agents research as they deliberate, so they get network access
+      // + web search; codex denies both by default (2026-06-15).
+      networkAccess: true,
+      webSearch: true,
       ...(launch.model ? { model: launch.model } : {}),
       ...(launch.envOverrides ? { envOverrides: launch.envOverrides } : {}),
       ...(launch.baseUrl ? { baseUrl: launch.baseUrl } : {}),
@@ -196,6 +200,10 @@ export class AgentSessionManager {
       resume: stored.sessionId,
       actionMode: DISCUSS_ACTION_MODE,
       toolGate: DISCUSS_TOOL_GATE,
+      // Discussion agents research as they deliberate, so they get network access
+      // + web search; codex denies both by default (2026-06-15).
+      networkAccess: true,
+      webSearch: true,
       ...(launch.model ? { model: launch.model } : {}),
       ...(launch.envOverrides ? { envOverrides: launch.envOverrides } : {}),
       ...(launch.baseUrl ? { baseUrl: launch.baseUrl } : {}),

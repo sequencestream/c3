@@ -27,6 +27,10 @@ const baseShellSchema = z.object({
   displayName: z.string(),
   enabled: z.boolean().optional(),
   icon: z.string().optional(),
+  // User-controlled global sort position (regularized to a dense 0..n sequence by
+  // the server `normalize`). Optional on the wire — a legacy record without it is
+  // backfilled by array order; the matching wire field is `order_seq?: number`.
+  order_seq: z.number().optional(),
 })
 
 /** The `claude` vendor's config sub-object (the Claude Code launch overrides). */

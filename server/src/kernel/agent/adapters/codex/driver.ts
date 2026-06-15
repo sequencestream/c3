@@ -366,6 +366,13 @@ export class CodexDriver implements AgentDriver {
       sandboxMode: policy.sandboxMode,
       approvalPolicy: policy.approvalPolicy,
       ...(opts.model ? { model: opts.model } : {}),
+      // Network: codex's sandbox denies network access by default (orthogonal to the
+      // filesystem sandboxMode), so any web fetch/search in work/intent/discussion
+      // failed until these were threaded through (2026-06-15). `networkAccess` opens
+      // raw socket access for sandboxed shell commands; `webSearch` enables codex's
+      // first-party web-search tool. Both omitted ⇒ codex defaults (denied) stand.
+      ...(opts.networkAccess !== undefined ? { networkAccessEnabled: opts.networkAccess } : {}),
+      ...(opts.webSearch ? { webSearchEnabled: true, webSearchMode: 'live' as const } : {}),
     }
     const thread = opts.resume
       ? codex.resumeThread(opts.resume, threadOptions)

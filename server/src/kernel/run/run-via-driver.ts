@@ -360,6 +360,13 @@ export async function runViaDriver(
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
       ...(sandboxEnvFile ? { sandboxEnvFile } : {}),
       ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),
+      // Work & intent sessions are interactive, user-driven runs that must be able
+      // to reach the network (web search/fetch + sandboxed command network access).
+      // Codex denies both by default; claude/opencode ignore these flags and govern
+      // network via their tool allowlist (2026-06-15). Scheduled runs do NOT pass
+      // through here — they stay config-gated by toolAllowlist (dispatcher.ts).
+      networkAccess: true,
+      webSearch: true,
       // A pending session starts fresh; a real id resumes that native session.
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
     })

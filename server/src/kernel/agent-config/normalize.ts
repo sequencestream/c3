@@ -52,8 +52,56 @@ export function systemAgent(enabled = true, icon = ''): AgentConfig {
     displayName: 'System',
     enabled,
     icon,
+    order_seq: 0,
     config: defaultConfigFor('claude'),
   }
+}
+
+/**
+ * One parsed agent paired with the `order_seq` it carried on disk (a finite
+ * number) or `undefined` when the persisted record had none — the input to
+ * {@link canonicalizeAgentOrder}. The raw presence is tracked separately from the
+ * parsed agent because the zod layer may default a missing value, which would
+ * erase the "this one had no explicit position ⇒ append at the tail" signal.
+ */
+export interface AgentOrderEntry {
+  agent: AgentConfig
+  rawOrder: number | undefined
+}
+
+/**
+ * Regularize the agent registry into the canonical, user-controlled order and
+ * stamp a dense `0..n` `order_seq` on each (the single sort key every implicit
+ * "list of agents" consumer reads — see {@link AgentConfigBase.order_seq}).
+ *
+ * Stable sort, three tiers:
+ *  1. the system agent ({@link SYSTEM_AGENT_ID}) is pinned to the front (kept
+ *     stable on top even if its persisted `order_seq` is larger);
+ *  2. then agents with an explicit `order_seq`, ascending;
+ *  3. then agents missing one, in their current array order (insertion order),
+ *     appended at the tail.
+ * Ties (and the missing-order group) break by original index ⇒ stable. The final
+ * `order_seq` is reassigned sequentially, which also dedupes any duplicate
+ * positions a hand-edited config might carry.
+ */
+export function canonicalizeAgentOrder(entries: AgentOrderEntry[]): AgentConfig[] {
+  const ranked = entries.map((e, i) => ({ ...e, i }))
+  ranked.sort((x, y) => {
+    const sx = x.agent.id === SYSTEM_AGENT_ID ? 0 : 1
+    const sy = y.agent.id === SYSTEM_AGENT_ID ? 0 : 1
+    if (sx !== sy) return sx - sy
+    const ox = x.rawOrder ?? Infinity
+    const oy = y.rawOrder ?? Infinity
+    if (ox !== oy) return ox - oy
+    return x.i - y.i
+  })
+  return ranked.map(({ agent }, idx) => {
+    // The parsed agent is a fresh object from zod (or the synthesized fallback);
+    // mutate in place to avoid spreading the discriminated union (which would
+    // widen `vendor`/`config` and break the arm correlation).
+    agent.order_seq = idx
+    return agent
+  })
 }
 
 export function defaultSettings(): SystemSettings {

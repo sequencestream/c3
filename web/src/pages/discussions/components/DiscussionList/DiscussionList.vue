@@ -47,8 +47,13 @@ const props = withDefaults(
 )
 
 // The enabled agents are the selectable participant roster (back-compat: no `enabled`
-// field counts as enabled — mirrors the server's `enabledAgents()`).
-const enabledAgents = computed(() => props.agents.filter((a) => a.enabled !== false))
+// field counts as enabled — mirrors the server's `enabledAgents()`, including its
+// user-controlled `order_seq` ordering).
+const enabledAgents = computed(() =>
+  props.agents
+    .filter((a) => a.enabled !== false)
+    .sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0)),
+)
 
 // Is this agent the organizer (default agent)? Its row is locked on (always joins).
 function isOrganizer(id: string): boolean {

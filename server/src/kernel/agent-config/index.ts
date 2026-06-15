@@ -67,14 +67,20 @@ export function getDefaultAgentId(): string {
 
 /**
  * The enabled agents only — the canonical "list of agents" every consumer pool
- * draws from (discussion participants, consensus voters, default-agent picker).
- * Back-compat: an agent with no `enabled` field counts as enabled. NOTE this is
+ * draws from (discussion participants, consensus voters, default-agent picker),
+ * returned in the user-controlled global order (`order_seq` ascending — the
+ * single sort key shared across every implicit agent-list consumer). Back-compat:
+ * an agent with no `enabled` field counts as enabled, and a missing `order_seq`
+ * sorts as `0` (a fully-normalized registry always carries a dense sequence; the
+ * `?? 0` only guards an un-normalized `settings` passed straight in). NOTE this is
  * deliberately NOT used by {@link resolveAgent}/{@link resolveSessionLaunch}: a
  * disabled agent is still a valid launch fallback so a session is never locked
  * out (AC-R10).
  */
 export function enabledAgents(settings: SystemSettings = loadSettings()): AgentConfig[] {
-  return settings.agents.filter((a) => a.enabled !== false)
+  return settings.agents
+    .filter((a) => a.enabled !== false)
+    .sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0))
 }
 
 /**

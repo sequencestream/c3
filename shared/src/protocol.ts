@@ -200,6 +200,27 @@ export interface AgentConfigBase {
    * may have an icon too.
    */
   icon?: string
+  /**
+   * The agent's position in the user-controlled global ordering — the single
+   * sort key every *implicit* "list of agents" consumer reads (the settings list,
+   * the default/tool-agent dropdowns, discussion participants, consensus voters,
+   * and the default-agent "fall through to the next enabled one" picker). Smaller
+   * sorts earlier. The server `normalize` regularizes these to a dense, stable
+   * `0..n` sequence on every load/save: the system agent ({@link SYSTEM_AGENT_ID})
+   * is pinned to the front, then agents with an explicit `order_seq` in ascending
+   * order, then any missing ones appended at the tail in their current array
+   * order; duplicates are broken stably. The SettingsPanel drag-reorder writes it
+   * back so the order survives a Save.
+   *
+   * NOT consulted by the *explicit* `degradationChain` (its user-authored id order
+   * IS the fallback priority — see {@link SystemSettings.degradationChain}), nor by
+   * `resolveSessionLaunch` (a launch target is resolved by id, never by position).
+   *
+   * Back-compat: a legacy config without this field is filled in by `normalize`
+   * using the current array order (insertion order), so existing installs keep
+   * their present visual order until the user drags to re-rank.
+   */
+  order_seq?: number
 }
 
 /**

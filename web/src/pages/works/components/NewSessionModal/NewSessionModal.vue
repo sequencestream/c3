@@ -40,8 +40,13 @@ const vendor = ref<'' | VendorId>('')
 const agentId = ref<string>('')
 
 // Only enabled agents are pickable (a disabled agent is still a valid *fallback*
-// server-side, but the explicit picker offers the active roster only).
-const enabledAgents = computed(() => props.agents.filter((a) => a.enabled !== false))
+// server-side, but the explicit picker offers the active roster only). Sorted by
+// the user-controlled global order (`order_seq`), mirroring the server roster.
+const enabledAgents = computed(() =>
+  props.agents
+    .filter((a) => a.enabled !== false)
+    .sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0)),
+)
 
 // The vendors that actually have an enabled agent, in canonical order.
 const vendorsWithAgents = computed(() =>

@@ -65,10 +65,36 @@ matching wire arm. `parseAgentConfig(raw)` routes by tag and returns the typed a
 The normalized object is echoed to the client as `settings`, so the browser's temporary
 client-side ids (`new-…`) are replaced by the server's stable uuids.
 
-## Enabled filtering (AC-R10)
+## Order regularization (`canonicalizeAgentOrder`, AC-R20)
 
-`enabledAgents(settings?)` returns `agents.filter(a => a.enabled !== false)` — the single source
-the "list of agents" consumers draw from:
+After the parse/de-dupe loop, `normalize` collects each survivor as an `AgentOrderEntry`
+(`{ agent, rawOrder }`) — `rawOrder` read **straight off the on-disk record** (`rec.order_seq`,
+finite-number-or-`undefined`), independent of the zod default, so the "this record had no explicit
+position" signal is not lost. `canonicalizeAgentOrder` (in `kernel/agent-config/normalize.ts`, a
+pure leaf) then produces the canonical order with a single stable sort, three tiers:
+
+1. the system agent (`SYSTEM_AGENT_ID`) is **pinned to the front** (kept on top even if its stored
+   `order_seq` is larger);
+2. then agents with an explicit `rawOrder`, ascending;
+3. then agents missing one, in their current array order, appended at the **tail**.
+
+Ties (and the whole missing group) break by original index ⇒ stable. The final `order_seq` is then
+reassigned to a dense `0..n`, which also **dedupes** any duplicate positions a hand-edited config
+might carry. `order_seq` is **optional on the wire** (`order_seq?: number`, matching the
+`enabled?`/`icon?` back-compat convention; zod arm `order_seq: z.number().optional()`), but a
+normalized/persisted registry always carries a dense sequence. The empty-registry fallback seeds the
+synthesized system agent at `order_seq: 0`.
+
+**Out of scope of `order_seq`:** the `degradationChain` is an independent user-authored ordered id
+list (its sequence IS the fallback priority) and is **not** re-sorted here; `resolveSessionLaunch`
+resolves by id, never by position.
+
+## Enabled filtering (AC-R10, AC-R20)
+
+`enabledAgents(settings?)` returns `agents.filter(a => a.enabled !== false)` **in `order_seq`
+ascending order** (a defensive `.sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0))` — the
+canonical registry is already ordered, so the sort only guards an un-normalized `settings` passed
+straight in) — the single source the "list of agents" consumers draw from:
 
 - **Discussion participants** — `orchestrator.ts` `participants: () => enabledAgents()`.
 - **Consensus voters** — `consensusVoters()` filters `enabledAgents()` (minus the session's own).
@@ -77,6 +103,15 @@ the "list of agents" consumers draw from:
   `agentsToTry` from `getDegradationChain()` (already filtered) with entry 0 = the resolved
   session agent.
 - **Default-agent picker** — `SettingsPanel.vue` disables the default radio on a disabled row.
+
+The front-end mirrors the `order_seq` order so an unsaved local edit looks like the server result:
+`NewSessionModal.vue` and `DiscussionList.vue` sort their `enabledAgents` computed by
+`(a.order_seq ?? 0) - (b.order_seq ?? 0)`, and `SettingsPanel.vue` renders/reorders `draft.agents`
+in array order. The settings list is drag-reorderable via **native HTML5 DnD** (no library): a grip
+handle (`.col-drag`, `draggable`) is the drag source so the row's text inputs stay selectable, the
+row is the drop target, and `save()` stamps `order_seq` from the final array order before emitting —
+so a reorder (or add/copy/remove) survives the round-trip, after which the server `normalize`
+re-pins the system agent and regularizes to a dense `0..n` (AC-R20).
 
 `resolveAgent`/`resolveSessionLaunch`/`resolveDegradationAgent` (the launch path) deliberately do
 **not** call `enabledAgents` — a disabled agent stays a valid fallback so a bound/default/system

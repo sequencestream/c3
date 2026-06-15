@@ -4,7 +4,7 @@
 > 是什么、其架构与 Claude Agent SDK 的关键差异、数据存在哪里、如何读取 Skill，
 > 以及 c3 如何在 Adapter 层封装它。
 >
-> - **适用版本**：`@openai/codex-sdk@0.137.0`（见 `server/package.json`，精确锁定）。
+> - **适用版本**：`@openai/codex-sdk@0.139.0`（见 `server/package.json`，精确锁定）。
 > - **官方文档**：<https://developers.openai.com/codex/sdk>
 > - **源码仓库**：<https://github.com/openai/codex/tree/main/sdk/typescript>
 > - **Python 对应**：`pip install openai-codex`，控制 app-server 二进制；本文档仅覆盖 TypeScript SDK。
@@ -156,6 +156,28 @@ c3 将中性的 `ActionMode × ToolGate` 网格映射为 Codex 原生的 `sandbo
 
 反向映射 `codexPolicyToGrid` 用于 session 启动时从存储的 `CodexPolicy` 回算网格值，使中性驱动路径
 （`run-via-driver.ts`）统一消费。
+
+### 网络访问（与 sandboxMode 正交）
+
+Codex 的 sandbox **默认禁止网络访问**，且内置 `web_search` 工具默认 `disabled`——这与
+`sandboxMode`（文件系统读写）相互独立。若不显式开启，任何 work/intent/discussion 的 codex
+session 一联网即被拒。c3 通过两个中性 `DriverStartOptions` 字段控制，由 codex driver 映射到
+`ThreadOptions`：
+
+| 中性字段（DriverStartOptions） | Codex `ThreadOptions`                              | 含义                                |
+| ------------------------------ | -------------------------------------------------- | ----------------------------------- |
+| `networkAccess`                | `networkAccessEnabled`                             | sandbox 内 shell 命令的原始网络访问 |
+| `webSearch`                    | `webSearchEnabled: true` + `webSearchMode: 'live'` | codex 第一方 `web_search` 工具      |
+
+二者均省略 ⇒ codex 默认值（均禁止）。Claude/opencode 忽略这两个字段，其网络能力由工具白名单治理。
+
+各 session 类型的取值（2026-06-15）：
+
+| Session       | 启动点                               | networkAccess / webSearch | 说明                                               |
+| ------------- | ------------------------------------ | ------------------------- | -------------------------------------------------- |
+| work / intent | `run-via-driver.ts`                  | 固定 `true` / `true`      | 交互式、用户驱动的运行，恒开网络                   |
+| discussion    | `agent-session-manager.ts`           | 固定 `true` / `true`      | 讨论 agent 边研究边推演                            |
+| schedule      | `dispatcher.ts`（不经 codex driver） | 不传                      | 仍由 `toolAllowlist`（WebSearch/WebFetch）配置驱动 |
 
 ### 零运行时审批（c3 的关键差异）
 

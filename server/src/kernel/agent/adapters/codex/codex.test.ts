@@ -162,6 +162,34 @@ describe('CodexDriver', () => {
       skipGitRepoCheck: true,
     })
   })
+
+  it('threads networkAccess + webSearch into ThreadOptions (2026-06-15)', async () => {
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver(() => client)
+    await driver.start(startOpts({ networkAccess: true, webSearch: true }))
+    expect(calls[0].options).toMatchObject({
+      networkAccessEnabled: true,
+      webSearchEnabled: true,
+      webSearchMode: 'live',
+    })
+  })
+
+  it('omits network/web-search options when not requested (codex defaults stand)', async () => {
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver(() => client)
+    await driver.start(startOpts())
+    expect(calls[0].options).not.toHaveProperty('networkAccessEnabled')
+    expect(calls[0].options).not.toHaveProperty('webSearchEnabled')
+    expect(calls[0].options).not.toHaveProperty('webSearchMode')
+  })
+
+  it('networkAccess:false explicitly disables sandbox network (without enabling web search)', async () => {
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver(() => client)
+    await driver.start(startOpts({ networkAccess: false }))
+    expect(calls[0].options).toMatchObject({ networkAccessEnabled: false })
+    expect(calls[0].options).not.toHaveProperty('webSearchEnabled')
+  })
 })
 
 describe('mcpServersToCodexConfig (2026-06-12-005)', () => {

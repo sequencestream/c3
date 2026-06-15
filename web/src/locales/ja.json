@@ -614,6 +614,9 @@
       "pr": {
         "label": "PR #{id}",
         "tooltip": "PR番号をコピー"
+      },
+      "more": {
+        "label": "その他の操作"
       }
     },
     "automate": {

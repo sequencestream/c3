@@ -5,7 +5,7 @@
  * 数据由 App 提供;过滤器是本组件的 UI 状态,切换时上抛 `filter` 事件让 App 拉取。
  * 动作(完善/启动开发/开发详情/标记状态)经事件上抛,由 App 统一发往服务端。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type {
   AutomationStatus,
   DepType,
@@ -20,6 +20,7 @@ import {
   compareByCompletion,
   formatDate,
   formatDependsOn,
+  type IntentRowAction,
   panelToggleLabel,
   reqRunStatusLabel,
   rowVisibility,
@@ -27,6 +28,7 @@ import {
   sliceTerminated,
   statusLabel,
   TERMINAL_PAGE_SIZE,
+  visibleIntentActions,
 } from '../../../../lib/intent-list-view'
 
 const { t, locale } = useTypedI18n()
@@ -283,6 +285,94 @@ function togglePanel(): void {
 function datePrefix(r: Intent): string {
   return formatDate(r.completedAt ?? r.createdAt, locale.value, { style: 'short' })
 }
+
+// ── 折叠态行内操作 kebab 菜单 ───────────────────────────────────────────────
+// 折叠态隐藏了内联按钮行,改由每行的 ⋮ 按钮弹出下拉暴露相同操作。
+// 单值状态天然保证至多一个菜单打开;菜单项可见性复用 visibleIntentActions(纯函数)。
+const openMenuId = ref<string | null>(null)
+
+function toggleRowMenu(id: string): void {
+  openMenuId.value = openMenuId.value === id ? null : id
+}
+
+function closeRowMenu(): void {
+  openMenuId.value = null
+}
+
+function onMenuKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') closeRowMenu()
+}
+
+// 仅在有菜单打开时挂监听:document 点击关闭(kebab/菜单容器 @click.stop 拦截内部点击),Esc 关闭。
+watch(openMenuId, (id) => {
+  if (id) {
+    document.addEventListener('click', closeRowMenu)
+    document.addEventListener('keydown', onMenuKeydown)
+  } else {
+    document.removeEventListener('click', closeRowMenu)
+    document.removeEventListener('keydown', onMenuKeydown)
+  }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeRowMenu)
+  document.removeEventListener('keydown', onMenuKeydown)
+})
+
+// 菜单项文案:复用展开态内联按钮的既有 i18n key;automate 项 emoji + 当前态提示。
+function rowActionLabel(action: IntentRowAction, r: Intent): string {
+  switch (action) {
+    case 'refine':
+      return t('intent.action.refine.label')
+    case 'startDev':
+      return t('intent.action.startDev.label')
+    case 'openSession':
+      return t('intent.action.session.label')
+    case 'markDone':
+      return t('intent.action.markDone.label')
+    case 'cancel':
+      return t('common.action.cancel.label')
+    case 'createPr':
+      return t('intent.action.createPr.label')
+    case 'prLink':
+      return t('intent.action.pr.label', { id: r.prId ?? '' })
+    case 'automate':
+      return r.automate
+        ? `⏳ ${t('intent.automate.queued.tooltip')}`
+        : `✋ ${t('intent.automate.manual.tooltip')}`
+  }
+}
+
+// 菜单项点击:先关菜单再复用与展开态完全相同的 emit/逻辑。
+function runRowAction(action: IntentRowAction, r: Intent): void {
+  closeRowMenu()
+  switch (action) {
+    case 'refine':
+      emit('refine', r.id)
+      break
+    case 'startDev':
+      startDev(r)
+      break
+    case 'openSession':
+      if (r.lastDevSessionId) emit('open-dev', r.lastDevSessionId)
+      break
+    case 'markDone':
+      emit('set-status', r.id, 'done')
+      break
+    case 'cancel':
+      emit('set-status', r.id, 'cancelled')
+      break
+    case 'createPr':
+      emit('create-pr', r.id)
+      break
+    case 'prLink':
+      if (r.prId) copyPrId(r.prId)
+      break
+    case 'automate':
+      emit('set-automate', r.id, !r.automate)
+      break
+  }
+}
 </script>
 
 <template>
@@ -354,6 +444,32 @@ function datePrefix(r: Intent): string {
             <span v-if="showRunStatus(r.runStatus)" class="req-run-status" :class="r.runStatus">{{
               reqRunStatusLabel(r.runStatus)
             }}</span>
+            <div v-if="collapsed" class="req-row-menu" @click.stop>
+              <button
+                type="button"
+                class="req-kebab"
+                :aria-label="t('intent.action.more.label')"
+                :title="t('intent.action.more.label')"
+                aria-haspopup="menu"
+                :aria-expanded="openMenuId === r.id"
+                @click="toggleRowMenu(r.id)"
+              >
+                ⋮
+              </button>
+              <div v-if="openMenuId === r.id" class="req-menu" role="menu">
+                <button
+                  v-for="action in visibleIntentActions(r)"
+                  :key="action"
+                  type="button"
+                  class="req-menu-item"
+                  role="menuitem"
+                  :disabled="action === 'startDev' && isStartDevInFlight(r.id)"
+                  @click="runRowAction(action, r)"
+                >
+                  {{ rowActionLabel(action, r) }}
+                </button>
+              </div>
+            </div>
           </div>
           <div v-if="rowVis.showActions" class="req-actions" @click.stop>
             <button v-if="r.status === 'todo'" class="req-btn" @click="emit('refine', r.id)">

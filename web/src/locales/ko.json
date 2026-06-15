@@ -614,6 +614,9 @@
       "pr": {
         "label": "PR #{id}",
         "tooltip": "PR 번호 복사"
+      },
+      "more": {
+        "label": "추가 작업"
       }
     },
     "automate": {

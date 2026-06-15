@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Intent } from '@ccc/shared/protocol'
 import type { CompletionOrderInput } from './intent-list-view'
+import type { IntentActionInput } from './intent-list-view'
 import {
   compareByCompletion,
   formatDate,
@@ -12,6 +13,7 @@ import {
   sliceTerminated,
   statusLabel,
   TERMINAL_PAGE_SIZE,
+  visibleIntentActions,
 } from './intent-list-view'
 
 describe('statusLabel', () => {
@@ -81,6 +83,83 @@ describe('rowVisibility', () => {
 
   it('收缩态隐藏模块名与操作区', () => {
     expect(rowVisibility(true)).toEqual({ showModule: false, showActions: false })
+  })
+})
+
+describe('visibleIntentActions', () => {
+  const make = (o: Partial<IntentActionInput>): IntentActionInput => ({
+    status: 'todo',
+    lastDevSessionId: null,
+    prId: null,
+    ...o,
+  })
+
+  it('todo:Refine/Start dev/Mark done/Cancel/automate(无 session/无 PR)', () => {
+    expect(visibleIntentActions(make({ status: 'todo' }))).toEqual([
+      'refine',
+      'startDev',
+      'markDone',
+      'cancel',
+      'automate',
+    ])
+  })
+
+  it('有 lastDevSessionId 时插入 openSession(顺序在 cancel 之前)', () => {
+    expect(visibleIntentActions(make({ status: 'todo', lastDevSessionId: 's-1' }))).toEqual([
+      'refine',
+      'startDev',
+      'openSession',
+      'markDone',
+      'cancel',
+      'automate',
+    ])
+  })
+
+  it('in_progress:无 Refine/Start dev,有 Mark done/Cancel/automate', () => {
+    expect(visibleIntentActions(make({ status: 'in_progress' }))).toEqual([
+      'markDone',
+      'cancel',
+      'automate',
+    ])
+  })
+
+  it('done 且无 prId:Create PR + automate,无 Mark done/Cancel', () => {
+    expect(visibleIntentActions(make({ status: 'done' }))).toEqual(['createPr', 'automate'])
+  })
+
+  it('done 且有 prId:prLink 而非 Create PR', () => {
+    expect(visibleIntentActions(make({ status: 'done', prId: '42' }))).toEqual([
+      'prLink',
+      'automate',
+    ])
+  })
+
+  it('cancelled:仅 automate(终止态无 markDone/cancel/createPr)', () => {
+    expect(visibleIntentActions(make({ status: 'cancelled' }))).toEqual(['automate'])
+  })
+
+  it('prId 在非 done 态也渲染 prLink', () => {
+    expect(visibleIntentActions(make({ status: 'in_progress', prId: '7' }))).toEqual([
+      'markDone',
+      'cancel',
+      'prLink',
+      'automate',
+    ])
+  })
+
+  it('automate 恒为最后一项', () => {
+    for (const status of [
+      'draft',
+      'todo',
+      'in_progress',
+      'done',
+      'cancelled',
+      'blocked',
+      'failed',
+    ] as const) {
+      const actions = visibleIntentActions(make({ status }))
+      expect(actions[actions.length - 1]).toBe('automate')
+    }
   })
 })
 

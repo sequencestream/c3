@@ -613,6 +613,9 @@
       "pr": {
         "label": "PR #{id}",
         "tooltip": "复制 PR 编号"
+      },
+      "more": {
+        "label": "更多操作"
       }
     },
     "automate": {

@@ -54,7 +54,7 @@ web/src/
 │   ├── intents/                                     # 需求页
 │   │   ├── Intents.vue                              # 需求容器页:桌面三栏(需求+session+聊天),移动端 MobileStack 三级 drill-down(意图列表→sessions→聊天)
 │   │   ├── components/
-│   │   │   ├── IntentList/IntentList.vue            # 左栏需求列表:按状态过滤、行内操作(完善/启动开发/标记状态)、自动化编排启停、新建需求;点击行 emit select-intent(mobile drill-down 导航)
+│   │   │   ├── IntentList/IntentList.vue            # 左栏需求列表:按状态过滤、行内操作(完善/启动开发/标记状态)、折叠态 kebab(⋮)菜单暴露全部行内操作、自动化编排启停、新建需求;点击行 emit select-intent(mobile drill-down 导航)
 │   │   │   └── IntentSessionList/
 │   │   │       └── IntentSessionList.vue            # 中栏意图通信会话列表:行内重命名/删除、展开/收起、活跃会话常驻
 │   │

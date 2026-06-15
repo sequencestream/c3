@@ -613,6 +613,9 @@
       "pr": {
         "label": "PR #{id}",
         "tooltip": "Copy PR number"
+      },
+      "more": {
+        "label": "More actions"
       }
     },
     "automate": {

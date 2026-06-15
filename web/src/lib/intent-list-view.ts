@@ -78,6 +78,46 @@ export function rowVisibility(collapsed: boolean): RowVisibility {
   return { showModule: !collapsed, showActions: !collapsed }
 }
 
+/**
+ * 行内操作标识。展开态内联按钮与折叠态 kebab 下拉菜单共用此集合,
+ * 由 {@link visibleIntentActions} 统一裁决可见性,杜绝两态分叉。
+ * 顺序即渲染顺序,与 IntentList 模板内联按钮排布一致。
+ */
+export const INTENT_ROW_ACTIONS = [
+  'refine',
+  'startDev',
+  'openSession',
+  'markDone',
+  'cancel',
+  'createPr',
+  'prLink',
+  'automate',
+] as const
+
+export type IntentRowAction = (typeof INTENT_ROW_ACTIONS)[number]
+
+/** 裁决行内操作可见性所需的最小字段集(便于测试轻量构造)。 */
+export type IntentActionInput = Pick<Intent, 'status' | 'lastDevSessionId' | 'prId'>
+
+/**
+ * 单个意图行在当前状态下应显示哪些行内操作,按渲染顺序返回。
+ * 条件沿用 IntentList 模板既有的 per-status 渲染规则:
+ * - `refine`/`startDev` ← `todo`;`openSession` ← 有 `lastDevSessionId`;
+ * - `markDone`/`cancel` ← 非终止态(非 done/cancelled);
+ * - `createPr` ← `done` 且无 `prId`;`prLink` ← 有 `prId`;`automate` ← 恒显示。
+ */
+export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
+  const terminal = r.status === 'done' || r.status === 'cancelled'
+  const out: IntentRowAction[] = []
+  if (r.status === 'todo') out.push('refine', 'startDev')
+  if (r.lastDevSessionId) out.push('openSession')
+  if (!terminal) out.push('markDone', 'cancel')
+  if (r.status === 'done' && !r.prId) out.push('createPr')
+  if (r.prId) out.push('prLink')
+  out.push('automate')
+  return out
+}
+
 /** 已完成/已取消需求排序所需的最小字段集(便于在测试中轻量构造)。 */
 export type CompletionOrderInput = Pick<Intent, 'completedAt' | 'updatedAt' | 'priority'>
 

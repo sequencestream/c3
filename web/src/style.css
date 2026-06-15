@@ -3289,6 +3289,65 @@ button.deny:hover:not(:disabled) {
   flex-wrap: wrap;
   gap: var(--sp-1, 4px);
 }
+/* 折叠态行内操作:⋮ kebab 按钮 + 绝对定位下拉菜单(仅折叠态渲染) */
+.req-row-menu {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.req-kebab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: var(--fs-body);
+  line-height: 1;
+  background: transparent;
+  color: var(--c-text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.req-kebab:hover,
+.req-kebab[aria-expanded='true'] {
+  background: var(--c-hover);
+  color: var(--c-text);
+  border-color: var(--c-border);
+}
+.req-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-mid);
+}
+.req-menu-item {
+  text-align: left;
+  white-space: nowrap;
+  padding: 6px 10px;
+  font-size: var(--fs-caption);
+  background: transparent;
+  color: var(--c-text);
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.req-menu-item:hover {
+  background: var(--c-hover);
+}
+.req-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .req-btn {
   background: var(--c-input);
   color: var(--c-text);

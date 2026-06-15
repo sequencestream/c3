@@ -614,6 +614,9 @@
       "pr": {
         "label": "PR #{id}",
         "tooltip": "Копировать номер PR"
+      },
+      "more": {
+        "label": "Ещё действия"
       }
     },
     "automate": {

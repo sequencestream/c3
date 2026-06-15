@@ -189,6 +189,10 @@
       "default": {
         "tooltip": "Only an enabled agent can be the default"
       },
+      "defaultPicker": {
+        "label": "Default agent",
+        "empty": "No enabled agent"
+      },
       "remove": {
         "tooltip": "Remove agent"
       },

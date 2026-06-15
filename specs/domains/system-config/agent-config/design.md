@@ -6,13 +6,13 @@ in `server/src/claude.ts` (override application), and the full-page settings vie
 
 ## Module split
 
-| Concern                         | File                                   | Notes                                                                                                                                                                                 |
-| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                                                                                       |
-| Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12)                                                                 |
-| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                                                                                      |
-| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                                                                                             |
-| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, pick default agent, save. Per-project controls (defaultMode, devSkill, rounds, speechChars, consensus) moved to `WorkspaceSetting.vue` |
+| Concern                         | File                                   | Notes                                                                                                                                                                                                                                                                                                   |
+| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings + binding persistence  | `server/src/settings.ts`               | Two files under `~/.c3/`; module cache; atomic write; fail-soft                                                                                                                                                                                                                                         |
+| Vendor config schema + routing  | `kernel/agent-config/schema.ts`        | zod discriminated-union per `vendor`; type-pinned to the wire `AgentConfig`; extension point for new vendors (AC-R12)                                                                                                                                                                                   |
+| Event dispatch + run resolution | `server/src/server.ts`                 | `get_settings` / `save_settings`; `resolveSessionLaunch` per run                                                                                                                                                                                                                                        |
+| Override application            | `server/src/claude.ts`                 | Maps overrides onto `query()` `env` (merged over `process.env`) + `model`                                                                                                                                                                                                                               |
+| Full-page settings view         | `web/src/components/SettingsPanel.vue` | Editable draft, one row per agent, add/remove, drag-reorder; a single **default-agent dropdown** below the list (enabled agents only, `order_seq` order) replaces the per-row radio; save. Per-project controls (defaultMode, devSkill, rounds, speechChars, consensus) moved to `WorkspaceSetting.vue` |
 
 ## Persistence (`settings.ts`)
 
@@ -50,8 +50,13 @@ matching wire arm. `parseAgentConfig(raw)` routes by tag and returns the typed a
   keep their `vendor`/nested `config`. String fields are trimmed; `displayName` falls back to the
   id. The candidate is then validated/routed by `parseAgentConfig`; an unknown vendor or a config
   that fails its arm yields `null` and the agent is **dropped** (fail-soft).
-- `defaultAgentId` is kept only if it references a surviving agent; otherwise it falls back to
-  `SYSTEM_AGENT_ID`.
+- `defaultAgentId` is resolved by the shared `resolveDefaultAgentId(agents, wanted)` (AC-R2,
+  2026-06-15-001): kept iff it references a surviving **enabled** agent; an unknown, removed, or
+  now-disabled default is **rewritten** to the next enabled agent in `order_seq` (scan forward from
+  its position, then wrap to the first enabled overall); if **no** agent is enabled it falls back to
+  `SYSTEM_AGENT_ID`. `normalize` runs after `canonicalizeAgentOrder`, so `agents` is already in dense
+  `order_seq` order when the scan runs. The rule is **single-sourced in `shared/src/protocol.ts`** so
+  the web console (on disable/remove) and the server (on save/load) rewrite identically.
 - Legacy global `defaultMode` (deprecated in SystemSettings) is still accepted for backward
   compatibility during the migration window. The authoritative source is the per-project
   `WorkspaceSetting.defaultMode`, read via `loadWorkspaceSetting`; the same validation (one of the five
@@ -102,7 +107,11 @@ straight in) — the single source the "list of agents" consumers draw from:
   agents only, so disabled ids are dropped from the stored/loaded chain; `server.ts` assembles
   `agentsToTry` from `getDegradationChain()` (already filtered) with entry 0 = the resolved
   session agent.
-- **Default-agent picker** — `SettingsPanel.vue` disables the default radio on a disabled row.
+- **Default-agent picker** — `SettingsPanel.vue` renders a single dropdown below the agent list
+  (`defaultPickerAgents = draft.agents.filter(enabled)`, options in array/`order_seq` order); the
+  per-row radio is gone. Disabling (or removing) an agent calls `resolveDefaultAgentId` to rewrite
+  `draft.defaultAgentId` to the next enabled agent immediately, so the dropdown never points at a
+  disabled agent (AC-R2).
 
 The front-end mirrors the `order_seq` order so an unsaved local edit looks like the server result:
 `NewSessionModal.vue` and `DiscussionList.vue` sort their `enabledAgents` computed by

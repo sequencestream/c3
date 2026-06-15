@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import type { ClientToServer, ServerToClient } from './protocol.js'
+import { resolveDefaultAgentId, SYSTEM_AGENT_ID } from './protocol.js'
+import type { AgentConfig, ClientToServer, ServerToClient } from './protocol.js'
 
 /**
  * The protocol module is types-only, so there is no runtime behavior to test.
@@ -177,5 +178,54 @@ describe('protocol wire format', () => {
       )
       .map((m) => m.decision)
     expect(decisions).toEqual(['allow', 'deny'])
+  })
+})
+
+describe('resolveDefaultAgentId — fall through to next enabled (AC-R2/AC-R10, 2026-06-15-001)', () => {
+  /** A minimal claude agent in `order_seq` array position; `enabled` defaults true. */
+  function agent(id: string, enabled?: boolean): AgentConfig {
+    return {
+      id,
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: id,
+      ...(enabled === undefined ? {} : { enabled }),
+      config: { baseUrl: '', apiKey: '', model: '' },
+    }
+  }
+
+  it('keeps the current default when it exists and is enabled', () => {
+    const agents = [agent('a'), agent('b'), agent('c')]
+    expect(resolveDefaultAgentId(agents, 'b')).toBe('b')
+  })
+
+  it('falls through to the NEXT enabled agent after a disabled default', () => {
+    const agents = [agent('a'), agent('b', false), agent('c')]
+    expect(resolveDefaultAgentId(agents, 'b')).toBe('c')
+  })
+
+  it('skips further disabled agents when scanning forward', () => {
+    const agents = [agent('a'), agent('b', false), agent('c', false), agent('d')]
+    expect(resolveDefaultAgentId(agents, 'b')).toBe('d')
+  })
+
+  it('wraps to the first enabled agent when nothing enabled follows the default', () => {
+    const agents = [agent('a'), agent('b'), agent('c', false)]
+    expect(resolveDefaultAgentId(agents, 'c')).toBe('a')
+  })
+
+  it('falls to the first enabled agent when the current default was removed', () => {
+    const agents = [agent('a', false), agent('b'), agent('c')]
+    expect(resolveDefaultAgentId(agents, 'gone')).toBe('b')
+  })
+
+  it('returns SYSTEM_AGENT_ID when every agent is disabled', () => {
+    const agents = [agent('a', false), agent('b', false)]
+    expect(resolveDefaultAgentId(agents, 'a')).toBe(SYSTEM_AGENT_ID)
+  })
+
+  it('treats a missing `enabled` flag as enabled (back-compat)', () => {
+    const agents = [agent('a'), agent('b')]
+    expect(resolveDefaultAgentId(agents, 'a')).toBe('a')
   })
 })

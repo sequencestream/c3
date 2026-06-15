@@ -307,6 +307,40 @@ export type AgentConfig = AgentConfigBase &
   )
 
 /**
+ * Resolve the effective `defaultAgentId` for an agent registry, applying the
+ * **"fall through to the next enabled agent"** rule (AC-R2/AC-R10/AC-R20,
+ * 2026-06-15-001). The chosen id is meant to be **persisted** (rewrite-on-store
+ * semantics, not a runtime-only resolution) — both the web SettingsPanel (on
+ * disabling/removing an agent) and the server `normalize` (on every save) call
+ * this so a disabled default never silently degrades to the synthesized system
+ * fallback at launch time.
+ *
+ * `agents` must be in the user-controlled order (`order_seq` ascending; the
+ * server passes the canonicalized registry, the console passes its draft array
+ * whose order already is the visual order). Rule:
+ *  1. the current default still present **and** enabled ⇒ keep it;
+ *  2. otherwise the **next enabled** agent after its position (scanning forward),
+ *     wrapping to the first enabled agent overall when nothing follows or the
+ *     current default was removed;
+ *  3. no enabled agent at all ⇒ {@link SYSTEM_AGENT_ID} (the id `resolveAgent`
+ *     synthesizes a fallback for — a session is never locked out).
+ *
+ * An agent counts as enabled unless `enabled === false` (back-compat with
+ * configs predating the field, matching {@link AgentConfigBase.enabled}).
+ */
+export function resolveDefaultAgentId(agents: AgentConfig[], currentDefaultId: string): string {
+  const isEnabled = (a: AgentConfig): boolean => a.enabled !== false
+  const current = agents.find((a) => a.id === currentDefaultId)
+  if (current && isEnabled(current)) return currentDefaultId
+  const idx = agents.findIndex((a) => a.id === currentDefaultId)
+  for (let k = idx + 1; idx >= 0 && k < agents.length; k++) {
+    if (isEnabled(agents[k])) return agents[k].id
+  }
+  const firstEnabled = agents.find(isEnabled)
+  return firstEnabled ? firstEnabled.id : SYSTEM_AGENT_ID
+}
+
+/**
  * Multi-agent consensus voting over permission prompts. When enabled, a pending
  * permission request is first put to the *other* configured agents (every agent
  * except the session's own); if they unanimously agree it is auto-resolved,

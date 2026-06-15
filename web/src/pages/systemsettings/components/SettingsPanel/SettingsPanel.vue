@@ -5,7 +5,7 @@
  * 编辑用本地草稿，打开时从 App 注入的服务端设置深拷贝而来，保存时整体上抛。
  */
 import { computed, ref, toRaw, watch } from 'vue'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID, resolveDefaultAgentId } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
   AuthConfig,
@@ -234,6 +234,19 @@ function isEnabled(a: AgentConfig): boolean {
   return a.enabled !== false
 }
 
+// The default-agent dropdown only offers enabled agents, in the current array
+// order (= the visual order_seq order before Save stamps it).
+const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.filter(isEnabled))
+
+// Toggle an agent's enabled flag. If this disables (or the inverse — never)
+// the current default, fall through to the next enabled agent and persist that
+// rewrite (mirrors the server `normalize`, AC-R2/AC-R10). Recompute against the
+// live array order so the choice tracks order_seq.
+function onToggleEnabled(a: AgentConfig, checked: boolean): void {
+  a.enabled = checked
+  draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
+}
+
 // Provider fields (baseUrl/apiKey/model) are only meaningful in `custom` mode;
 // `system` mode defers to the vendor CLI's own config (2026-06-06-007).
 function showProviderFields(a: AgentConfig): boolean {
@@ -263,8 +276,8 @@ function setWireApi(a: AgentConfig, w: 'responses' | 'chat'): void {
 function removeAgent(id: string) {
   draft.value.agents = draft.value.agents.filter((a) => a.id !== id)
   // Invariant: never leave the registry empty, and keep one valid default. If the
-  // removed agent was the default, move it to the first remaining agent; if none
-  // remain, synthesize a claude+system default (mirrors the server fallback).
+  // removed agent was the default, fall through to the next enabled agent (AC-R2);
+  // if none remain, synthesize a claude+system default (mirrors the server fallback).
   if (draft.value.agents.length === 0) {
     draft.value.agents.push(
       makeAgent('claude', {
@@ -276,9 +289,7 @@ function removeAgent(id: string) {
       }),
     )
   }
-  if (!draft.value.agents.some((a) => a.id === draft.value.defaultAgentId)) {
-    draft.value.defaultAgentId = draft.value.agents[0].id
-  }
+  draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
 }
 
 /** Deep-copy an agent, append "-copy" to its displayName, and insert the copy
@@ -572,18 +583,7 @@ function submitPassword() {
                 type="checkbox"
                 :checked="isEnabled(a)"
                 :title="t('settings.agents.toggle.tooltip')"
-                @change="a.enabled = ($event.target as HTMLInputElement).checked"
-              />
-            </label>
-            <label class="col-default">
-              <input
-                type="radio"
-                name="default-agent"
-                :value="a.id"
-                :checked="draft.defaultAgentId === a.id"
-                :disabled="!isEnabled(a)"
-                :title="t('settings.agents.default.tooltip')"
-                @change="draft.defaultAgentId = a.id"
+                @change="onToggleEnabled(a, ($event.target as HTMLInputElement).checked)"
               />
             </label>
             <div class="icon-cell">
@@ -669,6 +669,26 @@ function submitPassword() {
         <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
           {{ t('settings.agents.add.label') }}
         </button>
+        <div class="agent-default-picker">
+          <label class="agent-default-label" for="default-agent-select">
+            {{ t('settings.agents.defaultPicker.label') }}
+          </label>
+          <select
+            id="default-agent-select"
+            v-model="draft.defaultAgentId"
+            class="agent-field"
+            data-testid="default-agent-select"
+            :title="t('settings.agents.default.tooltip')"
+            :disabled="defaultPickerAgents.length === 0"
+          >
+            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+              {{ a.displayName || a.id }}
+            </option>
+            <option v-if="defaultPickerAgents.length === 0" value="" disabled>
+              {{ t('settings.agents.defaultPicker.empty') }}
+            </option>
+          </select>
+        </div>
         <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">
           {{
             t('settings.agents.defaultNote', {

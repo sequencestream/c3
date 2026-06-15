@@ -32,6 +32,7 @@ import {
   isValidTimeZone,
   loadWorkspaceSetting,
   loadSettings,
+  bindSessionAgent,
   saveWorkspaceSetting,
   saveSettings,
   resetSettingsCacheForTests,
@@ -142,6 +143,43 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       socketAutoResume: true,
     } as unknown as SystemSettings)
     expect(getSocketAutoResume()).toBe(true)
+  })
+})
+
+describe('defaultAgentId rewrite-on-store — fall through to next enabled (AC-R2/AC-R10, 2026-06-15-001)', () => {
+  /** A minimal custom-claude agent at an explicit `order_seq`. */
+  const agent = (id: string, order: number, enabled?: boolean): unknown => ({
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: id,
+    order_seq: order,
+    ...(enabled === undefined ? {} : { enabled }),
+    config: { baseUrl: `https://${id}`, apiKey: 'k', model: '' },
+  })
+
+  it('rewrites a now-disabled default to the next enabled agent by order_seq', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
+      defaultAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().defaultAgentId).toBe('a3')
+  })
+
+  it('falls back to SYSTEM_AGENT_ID when every agent is disabled', () => {
+    saveSettings({
+      agents: [agent('a1', 0, false), agent('a2', 1, false)],
+      defaultAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().defaultAgentId).toBe(SYSTEM_AGENT_ID)
+  })
+
+  it('keeps an enabled default untouched', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
+      defaultAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().defaultAgentId).toBe('a2')
   })
 })
 
@@ -498,9 +536,12 @@ describe('enabled flag (AC-R10)', () => {
     ])
     // Sanity: a1 is disabled yet present.
     expect(settings.agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
-    // No binding for this session → falls back to the default. The system agent is
-    // no longer auto-injected, so with `a1` the only agent it becomes the default
-    // (2026-06-06-007); the launch still resolves — a disabled agent never locks out.
+    // A session BOUND to a1 still resolves it for launch — `resolveSessionLaunch`/
+    // `resolveAgent` never filter on `enabled`, so a bound (or fallback) disabled
+    // agent never locks a session out. The 2026-06-15-001 default rewrite only
+    // moves the *unbound* default off a disabled agent (see normalize tests); a
+    // frozen binding is untouched.
+    bindSessionAgent('pending:s', 'some-session', 'a1', 'claude')
     const launch = resolveSessionLaunch('some-session')
     expect(launch.agentId).toBe('a1')
     // loadSettings is consistent with the saved set.

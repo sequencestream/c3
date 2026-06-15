@@ -39,7 +39,7 @@ import type {
   UiLang,
   VendorId,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, resolveDefaultAgentId } from '@ccc/shared/protocol'
 import {
   canonicalizeAgentOrder,
   defaultSettings,
@@ -307,9 +307,12 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // Regularize the user-controlled order: pin the system agent, sort by explicit
   // `order_seq`, append missing ones by array order, stamp a dense 0..n sequence.
   const agents: AgentConfig[] = canonicalizeAgentOrder(entries)
-  // The default must reference an existing agent; otherwise fall back to the first.
+  // The default must reference an existing *enabled* agent; an unknown, removed,
+  // or now-disabled default falls through to the next enabled agent in order_seq
+  // (rewrite-on-store, AC-R2/AC-R10) — `resolveDefaultAgentId` returns SYSTEM_AGENT_ID
+  // only when every agent is disabled.
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : ''
-  const defaultAgentId = agents.some((a) => a.id === wanted) ? wanted : agents[0].id
+  const defaultAgentId = resolveDefaultAgentId(agents, wanted)
   // ---- Legacy migration (one-shot): capture old global top-level fields ----
   // The 5 workspace-level knobs used to live at the SystemSettings top level.
   // Capture them once for the project-level migration; they no longer survive in

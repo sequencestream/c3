@@ -190,6 +190,10 @@
       "default": {
         "tooltip": "활성화된 에이전트만 기본값이 될 수 있습니다"
       },
+      "defaultPicker": {
+        "label": "기본 에이전트",
+        "empty": "활성화된 에이전트 없음"
+      },
       "remove": {
         "tooltip": "에이전트 제거"
       },

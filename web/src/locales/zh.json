@@ -189,6 +189,10 @@
       "default": {
         "tooltip": "只有已启用的智能体才能设为默认"
       },
+      "defaultPicker": {
+        "label": "默认智能体",
+        "empty": "无已启用的智能体"
+      },
       "remove": {
         "tooltip": "移除智能体"
       },

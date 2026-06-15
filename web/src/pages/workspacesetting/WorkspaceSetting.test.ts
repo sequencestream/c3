@@ -423,6 +423,91 @@ describe('WorkspaceSetting.vue — consensus majority toggle', () => {
   })
 })
 
+describe('WorkspaceSetting.vue — consensus custom voters', () => {
+  const VOTER_AGENTS: AgentConfig[] = [
+    {
+      id: 'v1',
+      vendor: 'claude',
+      configMode: 'custom',
+      displayName: 'Voter One',
+      enabled: true,
+      config: { baseUrl: '', apiKey: '', model: '' },
+    },
+    {
+      id: 'v2',
+      vendor: 'claude',
+      configMode: 'custom',
+      displayName: 'Voter Two',
+      enabled: true,
+      config: { baseUrl: '', apiKey: '', model: '' },
+    },
+  ]
+
+  it('defaults the mode radio to "all" when config omits it', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+        agents: VOTER_AGENTS,
+      },
+    })
+    const all = w.find('[data-testid="project-config-consensus-mode-all"]')
+    expect((all.element as HTMLInputElement).checked).toBe(true)
+    // No agent checklist while in "all" mode.
+    expect(w.find('[data-testid="project-config-consensus-agent-v1"]').exists()).toBe(false)
+  })
+
+  it('shows the agent checklist in custom mode and emits the picked agentIds on save', async () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg({ consensus: { enabled: true, mode: 'custom', agentIds: [] } }),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+        agents: VOTER_AGENTS,
+      },
+    })
+    expect(
+      (w.find('[data-testid="project-config-consensus-mode-custom"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    // Pick v2 only.
+    await w.find('[data-testid="project-config-consensus-agent-v2"]').setValue(true)
+    await w.find('[data-testid="project-config-save"]').trigger('click')
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
+    expect(emitted[0][0].consensus?.mode).toBe('custom')
+    expect(emitted[0][0].consensus?.agentIds).toEqual(['v2'])
+  })
+
+  it('seeds the custom agentIds from config', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg({ consensus: { enabled: true, mode: 'custom', agentIds: ['v1'] } }),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+        agents: VOTER_AGENTS,
+      },
+    })
+    expect(
+      (w.find('[data-testid="project-config-consensus-agent-v1"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    expect(
+      (w.find('[data-testid="project-config-consensus-agent-v2"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(false)
+  })
+})
+
 describe('WorkspaceSetting.vue — save emits full payload', () => {
   it('emits the entire draft on save', async () => {
     const w = mount(WorkspaceSetting, {

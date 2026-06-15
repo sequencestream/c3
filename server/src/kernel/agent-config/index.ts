@@ -16,6 +16,7 @@
  */
 import type {
   AgentConfig,
+  ConsensusConfig,
   SessionAgentSwitch,
   SystemSettings,
   VendorId,
@@ -389,9 +390,16 @@ export function resolveDegradationAgent(
  * agents never vote. **Vendor-homogeneous** — only same-vendor agents are kept
  * (see {@link vendorScopedVoters}); cross-vendor agents never vote because tool
  * names and risk semantics are not comparable across vendors.
+ *
+ * `consensus` optionally narrows the set: with `mode: 'custom'` only agents whose
+ * id is in `consensus.agentIds` vote (intersected with the same-vendor enabled
+ * non-self set). Absent / `mode: 'all'` keeps the full same-vendor set.
  */
-export function consensusVoters(currentAgentId: string | null): AgentConfig[] {
-  return vendorScopedVoters(currentAgentId).voters
+export function consensusVoters(
+  currentAgentId: string | null,
+  consensus?: Pick<ConsensusConfig, 'mode' | 'agentIds'>,
+): AgentConfig[] {
+  return vendorScopedVoters(currentAgentId, consensus).voters
 }
 
 /**
@@ -405,16 +413,36 @@ export function consensusVoters(currentAgentId: string | null): AgentConfig[] {
  * implying the whole heterogeneous table weighed in. A table where the session's
  * vendor is the only one present yields `voters: []` ⇒ consensus is skipped and
  * the human is prompted as usual (the existing no-voter fallback).
+ *
+ * `consensus` optionally restricts the voters to a user-chosen subset. With
+ * `mode: 'custom'` only same-vendor enabled non-self agents whose id is in
+ * `consensus.agentIds` remain; `mode: 'all'`/absent keeps the full set. The
+ * custom narrowing is applied **after** the vendor split, so `crossVendorExcluded`
+ * still counts only the *different-vendor* drops — agents excluded by the custom
+ * allowlist are same-vendor and are not reported as cross-vendor. Disabled agents
+ * are already absent (the set is built from {@link sameVendorEnabledAgents}), so a
+ * stale/disabled id in `agentIds` is silently a no-op.
  */
-export function vendorScopedVoters(currentAgentId: string | null): {
+export function vendorScopedVoters(
+  currentAgentId: string | null,
+  consensus?: Pick<ConsensusConfig, 'mode' | 'agentIds'>,
+): {
   voters: AgentConfig[]
   vendorScope: VendorId
   crossVendorExcluded: number
 } {
   const vendorScope = resolveAgent(currentAgentId).vendor
   const others = enabledAgents().filter((a) => a.id !== currentAgentId)
-  const voters = sameVendorEnabledAgents(vendorScope, currentAgentId)
-  return { voters, vendorScope, crossVendorExcluded: others.length - voters.length }
+  const sameVendor = sameVendorEnabledAgents(vendorScope, currentAgentId)
+  // Cross-vendor exclusions are vendor-only — measured before the custom narrowing
+  // so a same-vendor agent dropped by the allowlist never inflates this count.
+  const crossVendorExcluded = others.length - sameVendor.length
+  let voters = sameVendor
+  if (consensus?.mode === 'custom') {
+    const allow = new Set(consensus.agentIds ?? [])
+    voters = sameVendor.filter((a) => allow.has(a.id))
+  }
+  return { voters, vendorScope, crossVendorExcluded }
 }
 
 /**

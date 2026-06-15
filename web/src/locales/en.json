@@ -1521,6 +1521,16 @@
       },
       "majority": {
         "label": "Allow majority rule (a tie or no clear majority still defers to you)"
+      },
+      "voters": {
+        "hint": "Choose who votes. Voting is always limited to enabled agents of the session's own vendor (different vendors never vote); custom only narrows within that set.",
+        "all": {
+          "label": "All agents"
+        },
+        "custom": {
+          "label": "Custom"
+        },
+        "empty": "No agents available to select."
       }
     },
     "skillRepos": {

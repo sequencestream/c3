@@ -55,6 +55,9 @@ vi.mock('./kernel/agent-config/index.js', () => ({
 }))
 vi.mock('./kernel/config/index.js', () => ({
   isConsensusEnabled: (_workspacePath?: string) => true,
+  // Voter-selection config snapshot; the voter mock ignores it, so `all`/undefined
+  // is sufficient (custom narrowing is unit-tested in settings.test.ts).
+  getConsensusConfig: (_workspacePath?: string) => undefined,
   // Driven by `settings.majority` so a test can exercise the ask path's majority
   // pre-step coexisting with the decider. The per-question decision matrix itself
   // is covered exhaustively in consensus-tally.test.ts.

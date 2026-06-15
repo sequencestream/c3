@@ -29,6 +29,7 @@ import type {
   AgentConfig,
   ClaudeAgentConfig,
   CodexPolicy,
+  ConsensusConfig,
   GitBranchMode,
   ModeToken,
   WorkspaceSetting,
@@ -395,11 +396,36 @@ function captureLegacyProjectSeed(raw: Partial<SystemSettings> | undefined): voi
 }
 
 /**
+ * Normalize the consensus config. `enabled`/`majority` are strict opt-in (only an
+ * explicit `true` is truthy). `mode` defaults to `'all'` (back-compat: existing
+ * configs without the field keep the full same-vendor voter set). For `'custom'`
+ * mode the `agentIds` allowlist is cleaned against the current agent table —
+ * deduped and stripped of ids that no longer exist or are disabled (`enabled !==
+ * false`, matching `enabledAgents()`), so a stale id can never resurrect a voter.
+ * `'all'` mode never carries `agentIds` (it is ignored there).
+ */
+function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]): ConsensusConfig {
+  const rec = raw as Partial<ConsensusConfig> | undefined
+  const mode: 'all' | 'custom' = rec?.mode === 'custom' ? 'custom' : 'all'
+  const base: ConsensusConfig = {
+    enabled: rec?.enabled === true,
+    majority: rec?.majority === true,
+    mode,
+  }
+  if (mode !== 'custom') return base
+  const enabledIds = new Set(agents.filter((a) => a.enabled !== false).map((a) => a.id))
+  const rawIds = Array.isArray(rec?.agentIds) ? rec.agentIds : []
+  const agentIds = [...new Set(rawIds.filter((id) => typeof id === 'string' && enabledIds.has(id)))]
+  return { ...base, agentIds }
+}
+
+/**
  * Normalize a partial or raw WorkspaceSetting into its canonical shape.
  * - `defaultMode` accepts both old (single string) and new (`Record<VendorId, ModeToken>`)
  *   formats — the old format is converted by distributing the value to each vendor
  *   where valid, falling back to that vendor's defaultToken otherwise.
- * - `consensus` is strict opt-in (only explicit `true` is truthy).
+ * - `consensus` is strict opt-in (only explicit `true` is truthy); `mode` defaults
+ *   to `'all'` and `custom`-mode `agentIds` are cleaned (see {@link normalizeConsensusConfig}).
  * - `devSkill` is trimmed, slash-normalized, and defaults to `''`.
  * - `maxRoundsPerStage` is floored and clamped to ≥ `MIN_ROUNDS_PER_STAGE`.
  * - `maxSpeechChars` is floored and clamped to ≥ `MIN_SPEECH_CHARS`.
@@ -415,10 +441,7 @@ export function normalizeWorkspaceSetting(
 ): WorkspaceSetting {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const defaultMode = normalizeDefaultMode(rec.defaultMode)
-  const consensus = {
-    enabled: (rec.consensus as { enabled?: boolean })?.enabled === true,
-    majority: (rec.consensus as { majority?: boolean })?.majority === true,
-  }
+  const consensus = normalizeConsensusConfig(rec.consensus, agents)
   const devSkill = normalizeDevSkill(rec.devSkill)
   const maxRoundsPerStage = normalizeMaxRoundsPerStage(rec.maxRoundsPerStage)
   const maxSpeechChars = normalizeMaxSpeechChars(rec.maxSpeechChars)
@@ -1009,6 +1032,17 @@ export function getSessionBindingStats(): { bound: number; pending: number } {
 /** Whether multi-agent consensus voting is enabled for a project. */
 export function isConsensusEnabled(workspacePath: string): boolean {
   return loadWorkspaceSetting(workspacePath).consensus?.enabled === true
+}
+
+/**
+ * The normalized consensus config for a project (mode + cleaned agentIds), or
+ * `undefined` when none is configured. Passed to `vendorScopedVoters` so the
+ * voter set respects the `custom`-mode allowlist. Returns the already-normalized
+ * value (`loadWorkspaceSetting` ran `normalizeWorkspaceSetting`), so `agentIds`
+ * is pre-cleaned of stale/disabled ids.
+ */
+export function getConsensusConfig(workspacePath: string): ConsensusConfig | undefined {
+  return loadWorkspaceSetting(workspacePath).consensus
 }
 
 /**

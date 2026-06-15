@@ -108,7 +108,7 @@ const draft = ref<WorkspaceSetting>({
   devSkill: '',
   maxRoundsPerStage: DEFAULT_ROUNDS_PER_STAGE,
   maxSpeechChars: DEFAULT_SPEECH_CHARS,
-  consensus: { enabled: false, majority: false },
+  consensus: { enabled: false, majority: false, mode: 'all', agentIds: [] },
   skillRepos: [],
   gitBranchMode: 'current-branch',
   defaultMainBranch: '',
@@ -140,6 +140,8 @@ watch(
       consensus: {
         enabled: config?.consensus?.enabled ?? false,
         majority: config?.consensus?.majority ?? false,
+        mode: config?.consensus?.mode ?? 'all',
+        agentIds: config?.consensus?.agentIds ? [...config.consensus.agentIds] : [],
       },
       skillRepos: config?.skillRepos ? config.skillRepos.map((r) => ({ ...r })) : [],
       gitBranchMode: config?.gitBranchMode ?? 'current-branch',
@@ -217,6 +219,32 @@ function toggleAgent(id: string): void {
   const current = sandboxDraft.value.agentIds ?? []
   const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
   sandboxDraft.value = { ...sandboxDraft.value, agentIds: next.length > 0 ? next : undefined }
+}
+
+// ---- Consensus custom voter picker ----
+
+/**
+ * Agents selectable as custom consensus voters — every enabled agent. The
+ * runtime intersects this allowlist with the session's own vendor + enabled set
+ * (`vendorScopedVoters`), so the picker need not pre-filter by vendor; a cross-
+ * vendor pick is simply inert for a session of a different vendor.
+ */
+const consensusSelectableAgents = computed<AgentConfig[]>(() =>
+  (props.agents ?? []).filter((a) => a.enabled !== false),
+)
+
+/** Whether the given agent id is in the consensus custom allowlist. */
+function isConsensusAgentSelected(id: string): boolean {
+  return (draft.value.consensus?.agentIds ?? []).includes(id)
+}
+
+/** Toggle an agent id in the consensus custom allowlist. */
+function toggleConsensusAgent(id: string): void {
+  if (!draft.value.consensus) return
+  const current = draft.value.consensus.agentIds ?? []
+  draft.value.consensus.agentIds = current.includes(id)
+    ? current.filter((x) => x !== id)
+    : [...current, id]
 }
 
 // ---- External skill repos (ADR-0016/0017) ----
@@ -629,6 +657,56 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
             {{ t('workspaceSetting.consensus.majority.label') }}
           </label>
         </div>
+        <template v-if="draft.consensus">
+          <p class="project-config-hint">{{ t('workspaceSetting.consensus.voters.hint') }}</p>
+          <div class="project-config-row">
+            <label class="project-config-toggle">
+              <input
+                v-model="draft.consensus.mode"
+                type="radio"
+                value="all"
+                data-testid="project-config-consensus-mode-all"
+              />
+              {{ t('workspaceSetting.consensus.voters.all.label') }}
+            </label>
+            <label class="project-config-toggle">
+              <input
+                v-model="draft.consensus.mode"
+                type="radio"
+                value="custom"
+                data-testid="project-config-consensus-mode-custom"
+              />
+              {{ t('workspaceSetting.consensus.voters.custom.label') }}
+            </label>
+          </div>
+          <div
+            v-if="draft.consensus.mode === 'custom'"
+            class="project-config-row project-config-consensus-agents"
+          >
+            <template v-if="consensusSelectableAgents.length > 0">
+              <label
+                v-for="a in consensusSelectableAgents"
+                :key="a.id"
+                class="project-config-agent-item"
+              >
+                <input
+                  type="checkbox"
+                  :checked="isConsensusAgentSelected(a.id)"
+                  :data-testid="`project-config-consensus-agent-${a.id}`"
+                  @change="toggleConsensusAgent(a.id)"
+                />
+                {{ a.displayName || a.id }}
+              </label>
+            </template>
+            <p
+              v-else
+              class="project-config-hint"
+              data-testid="project-config-consensus-agents-empty"
+            >
+              {{ t('workspaceSetting.consensus.voters.empty') }}
+            </p>
+          </div>
+        </template>
       </section>
 
       <section class="project-config-section">

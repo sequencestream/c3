@@ -337,6 +337,23 @@ export interface ConsensusConfig {
    * `permission-gateway/consensus.md`).
    */
   majority?: boolean
+  /**
+   * Voter-selection mode. Optional; absent/`'all'` keeps the current behaviour
+   * (every same-vendor enabled non-self agent votes). `'custom'` restricts the
+   * voters to the intersection of {@link agentIds} with that same-vendor enabled
+   * non-self set — letting the user exclude irrelevant read-only agents or limit
+   * voting to high-trust ones. The vendor-homogeneity rule is unchanged; custom
+   * only ever *narrows* within the same-vendor set, never crosses vendors.
+   */
+  mode?: 'all' | 'custom'
+  /**
+   * Allowlist of agent ids for `mode: 'custom'`. Ignored when `mode` is absent or
+   * `'all'`. Cleaned by `normalizeWorkspaceSetting`: ids that no longer exist or
+   * are disabled are dropped (and a disabled agent is also filtered at runtime),
+   * so a stale id can never resurrect a voter. Empty (or all-stale) ⇒ no voters
+   * ⇒ consensus is skipped and the human is prompted as usual.
+   */
+  agentIds?: string[]
 }
 
 /**

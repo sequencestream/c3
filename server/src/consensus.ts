@@ -27,6 +27,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { resolveAgent, vendorScopedVoters } from './kernel/agent-config/index.js'
 import {
+  getConsensusConfig,
   getUiLangName,
   isConsensusEnabled,
   isConsensusMajorityEnabled,
@@ -105,7 +106,10 @@ async function summarize(
  */
 export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOutcome | null> {
   if (!isConsensusEnabled(p.cwd)) return null
-  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(p.currentAgentId)
+  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(
+    p.currentAgentId,
+    getConsensusConfig(p.cwd),
+  )
   if (voters.length === 0) return null
   console.log(`[c3:consensus] (${RUN_KIND}) vote on "${p.toolName}" → ${voters.length} voter(s)`)
 
@@ -192,7 +196,10 @@ async function decideAndSummarizeAsk(
  */
 export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusOutcome | null> {
   if (!isConsensusEnabled(p.cwd)) return null
-  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(p.currentAgentId)
+  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(
+    p.currentAgentId,
+    getConsensusConfig(p.cwd),
+  )
   if (voters.length === 0) return null
   const questions = askQuestions(p.input)
   if (!questions) return null

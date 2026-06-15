@@ -53,6 +53,7 @@ import type {
 import { askAgentOnce } from '../../agent-once.js'
 import { vendorScopedVoters } from '../../kernel/agent-config/index.js'
 import {
+  getConsensusConfig,
   getUiLangName,
   isConsensusEnabled,
   isConsensusMajorityEnabled,
@@ -225,8 +226,9 @@ async function summarize(
   if (signal.aborted) return fallback
   try {
     // Use the first same-vendor agent as decider, or fall back to the
-    // deterministic summary if none is available.
-    const voters = vendorScopedVoters(null).voters
+    // deterministic summary if none is available. Respect the custom voter
+    // allowlist so the decider is drawn from the configured voter pool.
+    const voters = vendorScopedVoters(null, getConsensusConfig(cwd)).voters
     if (voters.length === 0) return fallback
     const decider = voters[0]
     const prompt = [
@@ -270,7 +272,10 @@ export async function runCheckpointConsensus(
     return null
   }
 
-  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(null)
+  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(
+    null,
+    getConsensusConfig(workspacePath),
+  )
   if (voters.length === 0) return null
 
   console.log(

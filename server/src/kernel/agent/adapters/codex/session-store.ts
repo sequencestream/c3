@@ -256,29 +256,97 @@ export class CodexSessionStore implements SessionStore {
     return null
   }
 
+  /**
+   * Replay a codex session JSONL into canonical messages, de-duplicating the two
+   * on-disk encodings of the same text.
+   *
+   * Codex rollout files persist every human/agent text message TWICE: once as a
+   * native `event_msg` (`user_message`/`agent_message`) and once as the canonical
+   * `response_item` (`role: user|assistant`) transcript entry — the very same
+   * string in both. Converting both made every message render twice. The
+   * `response_item` entries are the authoritative transcript (stable ids, and
+   * interleaved with `reasoning`/tool items in turn order), so an `event_msg`
+   * text frame is dropped whenever its text already appears as a `response_item`
+   * message. An `event_msg` is kept only when no matching `response_item` exists
+   * (defensive: a prompt that lives solely in the native event still surfaces).
+   */
   private readSessionHistoryFile(filepath: string, sessionId: string): CanonicalMessage[] {
     const content = readFileSync(filepath, { encoding: 'utf-8', flag: 'r' })
-    const out: CanonicalMessage[] = []
-    let seq = 0
+    const objs: Record<string, unknown>[] = []
     for (const line of content.split('\n')) {
       const obj = tryParseJson(line.trim())
-      if (!obj) continue
-      const msg = lineToCanonical(obj, sessionId, seq++)
+      if (obj) objs.push(obj)
+    }
+
+    // Pre-scan the response_item text messages that will be emitted, so an
+    // event_msg duplicate of any of them can be skipped below.
+    const responseItemTexts = new Set<string>()
+    // Tool results live on their OWN `*_output` lines, paired to the call by
+    // `call_id`. Pre-index them so a `function_call`/`custom_tool_call` can carry
+    // its output inline (matching the live driver, where one item holds both).
+    const toolOutputs = new Map<string, string>()
+    for (const obj of objs) {
+      if (obj.type !== 'response_item') continue
+      const pl = recordOf(obj.payload)
+      if (!pl) continue
+      if (pl.type === 'function_call_output' || pl.type === 'custom_tool_call_output') {
+        const callId = typeof pl.call_id === 'string' ? pl.call_id : null
+        if (callId) toolOutputs.set(callId, coerceOutput(pl.output))
+        continue
+      }
+      const role = pl.role === 'user' || pl.role === 'assistant' ? pl.role : null
+      if (!role) continue
+      const text = textFromContent(pl.content)
+      if (text && !(role === 'user' && isInjectedContext(text))) {
+        responseItemTexts.add(dedupKey(role, text))
+      }
+    }
+
+    const out: CanonicalMessage[] = []
+    let seq = 0
+    for (const obj of objs) {
+      const ts = seq++
+      if (isDuplicateEventText(obj, responseItemTexts)) continue
+      const msg = lineToCanonical(obj, sessionId, ts, toolOutputs)
       if (msg) out.push(msg)
     }
     return out
   }
 }
 
+/**
+ * Whether `obj` is an `event_msg` user/agent text frame whose text already
+ * appears as a `response_item` transcript entry (the duplicate to drop).
+ */
+function isDuplicateEventText(
+  obj: Record<string, unknown>,
+  responseItemTexts: Set<string>,
+): boolean {
+  if (obj.type !== 'event_msg') return false
+  const pl = recordOf(obj.payload)
+  const role =
+    pl?.type === 'user_message' ? 'user' : pl?.type === 'agent_message' ? 'assistant' : null
+  if (!role || typeof pl?.message !== 'string') return false
+  const text = pl.message.trim()
+  return text !== '' && responseItemTexts.has(dedupKey(role, text))
+}
+
+/** Stable key for matching the same text message across its two encodings. */
+function dedupKey(role: string, text: string): string {
+  return `${role}\n${text.trim()}`
+}
+
 function lineToCanonical(
   obj: Record<string, unknown>,
   sessionId: string,
   seq: number,
+  toolOutputs: Map<string, string>,
 ): CanonicalMessage | null {
   const payload = recordOf(obj.payload)
   if (!payload) return null
   if (obj.type === 'event_msg') return eventMessageToCanonical(payload, sessionId, seq)
-  if (obj.type === 'response_item') return responseItemToCanonical(payload, sessionId, seq)
+  if (obj.type === 'response_item')
+    return responseItemToCanonical(payload, sessionId, seq, toolOutputs)
   return null
 }
 
@@ -304,6 +372,7 @@ function responseItemToCanonical(
   payload: Record<string, unknown>,
   sessionId: string,
   seq: number,
+  toolOutputs: Map<string, string>,
 ): CanonicalMessage | null {
   const role = payload.role === 'user' || payload.role === 'assistant' ? payload.role : null
   if (role) {
@@ -311,7 +380,7 @@ function responseItemToCanonical(
     if (!text || (role === 'user' && isInjectedContext(text))) return null
     return canonicalText(role, sessionId, blockId(payload, `${role}-${seq}`), text, seq)
   }
-  const block = codexItemPayloadToBlock(payload)
+  const block = codexItemPayloadToBlock(payload, toolOutputs)
   if (!block) return null
   return {
     vendor: 'codex',
@@ -333,13 +402,26 @@ function canonicalText(
   return { vendor: 'codex', sessionId, role, blocks: [{ type: 'text', id, text }], ts: seq }
 }
 
-function codexItemPayloadToBlock(payload: Record<string, unknown>): CanonicalBlock | null {
+function codexItemPayloadToBlock(
+  payload: Record<string, unknown>,
+  toolOutputs: Map<string, string>,
+): CanonicalBlock | null {
   const id = blockId(payload, `item-${String(payload.type ?? 'unknown')}`)
+  // The actual on-disk tool-call shapes. `function_call` (`exec_command`, …) and
+  // `custom_tool_call` (`apply_patch`, …) carry the call; the matching result was
+  // pre-indexed by `call_id` from a sibling `*_output` line. Normalised to the
+  // same block names the live driver emits (translate.ts) so history and live
+  // render identically.
+  if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
+    return toolCallBlock(payload, toolOutputs)
+  }
   if (payload.type === 'agent_message' && typeof payload.text === 'string') {
     return { type: 'text', id, text: payload.text }
   }
-  if (payload.type === 'reasoning' && typeof payload.text === 'string') {
-    return { type: 'thinking', id, thinking: payload.text }
+  if (payload.type === 'reasoning') {
+    const thinking = typeof payload.text === 'string' ? payload.text : reasoningSummary(payload)
+    if (!thinking) return null
+    return { type: 'thinking', id, thinking }
   }
   if (payload.type === 'error' && typeof payload.message === 'string') {
     return { type: 'text', id, text: payload.message, vendorExtra: { itemType: 'error' } }
@@ -398,6 +480,110 @@ function codexItemPayloadToBlock(payload: Record<string, unknown>): CanonicalBlo
     }
   }
   return null
+}
+
+/**
+ * Convert an on-disk `function_call` / `custom_tool_call` payload into a
+ * `tool_use` block, pairing its result from the pre-indexed `*_output` line.
+ * Tool names are normalised to match the live driver: `exec_command` → `shell`,
+ * `apply_patch` stays `apply_patch`; anything else passes through verbatim.
+ */
+function toolCallBlock(
+  payload: Record<string, unknown>,
+  toolOutputs: Map<string, string>,
+): CanonicalBlock {
+  const callId = typeof payload.call_id === 'string' ? payload.call_id : null
+  const name = typeof payload.name === 'string' ? payload.name : 'tool'
+  const id = callId ?? blockId(payload, `tool-${name}`)
+  const status = typeof payload.status === 'string' ? payload.status : undefined
+  const output = callId ? toolOutputs.get(callId) : undefined
+  const result =
+    output !== undefined ? { content: output, isError: status === 'failed' } : undefined
+  const vendorExtra = status ? { status } : undefined
+
+  if (name === 'exec_command' || name === 'shell' || name === 'local_shell') {
+    const args = parseToolArgs(payload.arguments ?? payload.input)
+    const cmd = args.cmd ?? args.command
+    const command = typeof cmd === 'string' ? cmd : Array.isArray(cmd) ? cmd.join(' ') : ''
+    return {
+      type: 'tool_use',
+      id,
+      name: 'shell',
+      input: { command },
+      ...(result ? { result } : {}),
+      ...(vendorExtra ? { vendorExtra } : {}),
+    }
+  }
+  if (name === 'apply_patch') {
+    const args = parseToolArgs(payload.arguments)
+    const patch =
+      typeof payload.input === 'string'
+        ? payload.input
+        : typeof args.input === 'string'
+          ? args.input
+          : typeof args.patch === 'string'
+            ? args.patch
+            : ''
+    return {
+      type: 'tool_use',
+      id,
+      name: 'apply_patch',
+      input: { patch },
+      ...(result ? { result } : {}),
+      ...(vendorExtra ? { vendorExtra } : {}),
+    }
+  }
+  const input =
+    typeof payload.input === 'string' ? { input: payload.input } : parseToolArgs(payload.arguments)
+  return {
+    type: 'tool_use',
+    id,
+    name,
+    input,
+    ...(result ? { result } : {}),
+    ...(vendorExtra ? { vendorExtra } : {}),
+  }
+}
+
+/** Parse a tool-call `arguments` field (a JSON string or already an object). */
+function parseToolArgs(raw: unknown): Record<string, unknown> {
+  const direct = recordOf(raw)
+  if (direct) return direct
+  if (typeof raw === 'string') {
+    const parsed = tryParseJson(raw)
+    if (parsed) return parsed
+  }
+  return {}
+}
+
+/** Extract readable text from a `reasoning` item's `summary` array, if present. */
+function reasoningSummary(payload: Record<string, unknown>): string {
+  if (!Array.isArray(payload.summary)) return ''
+  return payload.summary
+    .map((part) => {
+      const p = recordOf(part)
+      return p && typeof p.text === 'string' ? p.text : ''
+    })
+    .join('')
+    .trim()
+}
+
+/** Normalise a `*_output` payload's `output` field to a string. */
+function coerceOutput(output: unknown): string {
+  if (typeof output === 'string') return output
+  const rec = recordOf(output)
+  if (rec) {
+    if (typeof rec.content === 'string') return rec.content
+    if (Array.isArray(rec.content)) {
+      return rec.content
+        .map((item) => {
+          const c = recordOf(item)
+          return c && typeof c.text === 'string' ? c.text : ''
+        })
+        .join('')
+    }
+  }
+  return ''
 }
 
 function mcpToolResult(

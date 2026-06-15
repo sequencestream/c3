@@ -69,10 +69,10 @@ agent pool or configuration field exists.
 
 ## Roles
 
-| Role    | Who                                                                            | Job                                                               |
-| ------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| Voters  | Every configured **same-vendor** agent **except** the session's own (resolved) | Judge the tool call from recent context; return `allow`/`deny`    |
-| Decider | The session's own agent                                                        | Summarize the voters' opinions in one sentence (Display language) |
+| Role    | Who                                                                                                                                             | Job                                                               |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Voters  | Every configured **same-vendor** agent **except** the session's own (resolved), optionally narrowed by the `custom` voter allowlist (see below) | Judge the tool call from recent context; return `allow`/`deny`    |
+| Decider | The session's own agent                                                                                                                         | Summarize the voters' opinions in one sentence (Display language) |
 
 If there are no voters (only the session's own agent, **or** every other agent is a
 different vendor), consensus is skipped and the human is prompted as usual.
@@ -90,6 +90,35 @@ The outcome carries `vendorScope` (the voting vendor) and `crossVendorExcluded` 
 many enabled non-self agents of a different vendor were dropped); when `> 0` the console
 notes "共识限 \<vendor\> 内 · N 个跨 vendor 顾问未参与" so the human knows the whole
 heterogeneous table did **not** weigh in — never faking a cross-vendor consensus.
+
+### Custom voter selection (2026-06-15)
+
+`ConsensusConfig.mode` chooses **who** votes within the vendor-homogeneous set:
+
+- `mode: 'all'` (default / absent) — every same-vendor enabled non-self agent
+  votes (the original behaviour). `agentIds` is ignored and not persisted.
+- `mode: 'custom'` — voters are the **intersection** of `agentIds` with the
+  same-vendor enabled non-self set (`vendorScopedVoters(currentAgentId, consensus)`
+  in `kernel/agent-config/`). This lets the user exclude irrelevant read-only
+  agents or restrict voting to high-trust ones. It only ever **narrows within the
+  same vendor** — it never crosses the frozen vendor boundary, and `crossVendorExcluded`
+  is still measured **before** the custom narrowing so an allowlist-dropped
+  same-vendor agent is never miscounted as a cross-vendor exclusion. An empty (or
+  all-stale) allowlist ⇒ zero voters ⇒ consensus is skipped and the human is
+  prompted as usual.
+
+**Double static filtering of disabled agents.** A disabled agent never votes by
+two independent guards: (1) `normalizeWorkspaceSetting` cleans `agentIds`, dropping
+ids that no longer exist or are disabled (deduped); (2) the runtime set is built
+from `sameVendorEnabledAgents` (enabled-only), so even a stale id that slipped
+through cannot resurrect a voter. Both are **static** snapshots — there is no
+mid-run add/remove of voters; the config snapshot at vote time governs.
+
+The selection is configured per workspace in the Workspace Setting consensus
+section (an `All / Custom` radio; custom reveals an enabled-agent checklist). The
+server reads it via `getConsensusConfig(workspacePath)` and passes it to
+`vendorScopedVoters` at every voting site (tool permission, AskUserQuestion, and
+the automation checkpoint).
 
 ## Flow
 

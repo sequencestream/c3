@@ -27,6 +27,7 @@ import {
   getUiLang,
   getUiLangName,
   UI_LANG_NAMES,
+  getConsensusConfig,
   isConsensusEnabled,
   isConsensusMajorityEnabled,
   isValidTimeZone,
@@ -586,6 +587,161 @@ describe('enabled flag (AC-R10)', () => {
     expect(vendorScope).toBe('codex')
     expect(voters).toHaveLength(0)
     expect(crossVendorExcluded).toBe(1) // the claude system agent
+  })
+
+  it('consensus custom mode keeps only allowlisted same-vendor non-self agents', () => {
+    saveAgents([
+      SYS_RECORD,
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Two',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ])
+    // Session runs SYSTEM agent; custom allowlist names a1 only → a2 is excluded
+    // even though it is a same-vendor enabled non-self agent.
+    const voters = consensusVoters(SYSTEM_AGENT_ID, { mode: 'custom', agentIds: ['a1'] }).map(
+      (a) => a.id,
+    )
+    expect(voters).toEqual(['a1'])
+  })
+
+  it('consensus custom mode ignores a disabled id in the allowlist at runtime', () => {
+    saveAgents([
+      SYS_RECORD,
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        enabled: false,
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Two',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ])
+    // a1 is in the allowlist but disabled → never a voter (built from the enabled set).
+    const voters = consensusVoters(SYSTEM_AGENT_ID, {
+      mode: 'custom',
+      agentIds: ['a1', 'a2'],
+    }).map((a) => a.id)
+    expect(voters).toEqual(['a2'])
+  })
+
+  it('consensus all mode (and absent config) keeps the full same-vendor set', () => {
+    saveAgents([
+      SYS_RECORD,
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Two',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ])
+    const expected = [SYSTEM_AGENT_ID, 'a2'].sort()
+    // all mode ignores agentIds; absent config behaves identically.
+    expect(
+      consensusVoters('a1', { mode: 'all', agentIds: ['a1'] })
+        .map((a) => a.id)
+        .sort(),
+    ).toEqual(expected)
+    expect(
+      consensusVoters('a1')
+        .map((a) => a.id)
+        .sort(),
+    ).toEqual(expected)
+  })
+
+  it('consensus custom narrowing does not inflate crossVendorExcluded (vendor-only count)', () => {
+    saveAgents([
+      SYS_RECORD,
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'cx',
+        vendor: 'codex',
+        configMode: 'custom',
+        displayName: 'CX',
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+      },
+    ])
+    // Session = a1 (claude). Custom allowlist excludes the same-vendor SYSTEM agent,
+    // leaving zero voters — but crossVendorExcluded still counts only the codex agent.
+    const { voters, crossVendorExcluded } = vendorScopedVoters('a1', {
+      mode: 'custom',
+      agentIds: [],
+    })
+    expect(voters).toHaveLength(0)
+    expect(crossVendorExcluded).toBe(1)
+  })
+
+  it('normalize cleans custom agentIds: drops stale and disabled ids, dedups', () => {
+    saveAgents([
+      SYS_RECORD,
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Two',
+        enabled: false,
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ])
+    saveWorkspaceSetting('/ws', {
+      consensus: {
+        enabled: true,
+        mode: 'custom',
+        agentIds: ['a1', 'a1', 'a2', 'ghost'],
+      },
+    } as WorkspaceSetting)
+    const consensus = getConsensusConfig('/ws')
+    expect(consensus?.mode).toBe('custom')
+    // a1 kept (enabled, exists); a2 dropped (disabled); ghost dropped (missing); a1 deduped.
+    expect(consensus?.agentIds).toEqual(['a1'])
+  })
+
+  it('normalize defaults mode to all and drops agentIds outside custom mode', () => {
+    saveAgents([SYS_RECORD])
+    saveWorkspaceSetting('/ws2', {
+      consensus: { enabled: true, agentIds: [SYSTEM_AGENT_ID] },
+    } as WorkspaceSetting)
+    const consensus = getConsensusConfig('/ws2')
+    expect(consensus?.mode).toBe('all')
+    expect(consensus?.agentIds).toBeUndefined()
   })
 
   it('still launches a session bound to a disabled agent (no lock-out — AC-R10)', () => {

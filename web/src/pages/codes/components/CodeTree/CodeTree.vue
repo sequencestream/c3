@@ -8,6 +8,7 @@
 import { computed, onBeforeUnmount, watch } from 'vue'
 import type { CodeDirEntry, CodeSearchHit, CodeSearchMode } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import type { CodesSearchResultView } from '@/lib/codes-view'
 import CodeTreeNode from './CodeTreeNode.vue'
 
@@ -34,6 +35,15 @@ const emit = defineEmits<{
 
 const { t } = useTypedI18n()
 
+// 侧栏展开态:持久化 UI 状态(镜像 WorkSessionList 折叠范式)。展开态把文件树宽度
+// 翻倍(280→560px),便于看清深层目录 / 长 workspace 路径下的文件名。跨刷新保持;
+// localStorage 不可用时由 composable 内置 try/catch 降级为纯内存 ref。
+const treeExpanded = usePersistentToggle('c3.codesTreeExpanded')
+
+function toggleExpand(): void {
+  treeExpanded.value = !treeExpanded.value
+}
+
 const searchActive = computed(() => props.searchQuery.trim().length > 0)
 const SEARCH_MODES: CodeSearchMode[] = ['filename', 'content']
 
@@ -59,7 +69,32 @@ function runNow(): void {
 </script>
 
 <template>
-  <div class="code-tree">
+  <div class="code-tree" :class="{ expanded: treeExpanded }">
+    <div class="tree-head">
+      <div class="tree-head-left">
+        <button
+          type="button"
+          class="tree-collapse-btn"
+          :title="
+            treeExpanded
+              ? t('codes.tree.toggle.collapse.tooltip')
+              : t('codes.tree.toggle.expand.tooltip')
+          "
+          :aria-label="
+            treeExpanded
+              ? t('codes.tree.toggle.collapse.tooltip')
+              : t('codes.tree.toggle.expand.tooltip')
+          "
+          :aria-pressed="treeExpanded"
+          data-testid="codes-tree-toggle"
+          @click="toggleExpand"
+        >
+          {{ treeExpanded ? '⇤' : '⇥' }}
+        </button>
+        <span class="tree-title">{{ t('codes.tree.title.label') }}</span>
+      </div>
+      <span class="tree-actions"></span>
+    </div>
     <div class="search-box">
       <div class="search-modes">
         <button
@@ -143,6 +178,63 @@ function runNow(): void {
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
   overflow: hidden;
+  transition: width 0.2s ease;
+}
+/* 展开态:宽度翻倍,便于看清深层目录 / 长路径下的文件名(镜像 .sidebar.expanded) */
+.code-tree.expanded {
+  width: 560px;
+}
+/* 移动端 drill-down:文件树即当前单栏,撑满 pane 全宽(对齐 MobileStack 范式) */
+@media (max-width: 767px) {
+  .code-tree,
+  .code-tree.expanded {
+    width: 100%;
+    min-width: 0;
+    border-right: 0;
+  }
+}
+
+/* 侧栏头:左侧展开/收缩切换 + 「Files」标题,右侧预留操作位(镜像 .sidebar-head) */
+.tree-head {
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 var(--sp-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--c-border);
+}
+.tree-head-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+/* 切换按钮:图标反映点击后将切换到的目标态(⇥ 展开 / ⇤ 收起) */
+.tree-collapse-btn {
+  flex-shrink: 0;
+  background: var(--c-input);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: var(--fs-caption);
+  line-height: 1;
+  cursor: pointer;
+}
+.tree-collapse-btn:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
+}
+.tree-title {
+  font-size: var(--fs-badge);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--c-text-muted);
+}
+.tree-actions {
+  display: inline-flex;
+  flex-shrink: 0;
 }
 
 .search-box {

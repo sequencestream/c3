@@ -1787,7 +1787,18 @@
     "tree": {
       "loading": "加载中…",
       "empty": "此工作区为空。",
-      "emptyDir": "空文件夹"
+      "emptyDir": "空文件夹",
+      "title": {
+        "label": "文件"
+      },
+      "toggle": {
+        "expand": {
+          "tooltip": "展开文件树(宽度翻倍)"
+        },
+        "collapse": {
+          "tooltip": "收起文件树,恢复默认宽度"
+        }
+      }
     },
     "tabs": {
       "empty": "选择一个文件以查看内容。"

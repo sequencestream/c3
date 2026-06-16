@@ -1706,7 +1706,18 @@
     "tree": {
       "loading": "Loading…",
       "empty": "This workspace is empty.",
-      "emptyDir": "Empty folder"
+      "emptyDir": "Empty folder",
+      "title": {
+        "label": "Files"
+      },
+      "toggle": {
+        "expand": {
+          "tooltip": "Expand the file tree (double its width)"
+        },
+        "collapse": {
+          "tooltip": "Collapse the file tree back to normal width"
+        }
+      }
     },
     "tabs": {
       "empty": "Select a file to view its contents."

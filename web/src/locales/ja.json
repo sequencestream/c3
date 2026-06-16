@@ -1788,7 +1788,18 @@
     "tree": {
       "loading": "読み込み中…",
       "empty": "このワークスペースは空です。",
-      "emptyDir": "空のフォルダ"
+      "emptyDir": "空のフォルダ",
+      "title": {
+        "label": "ファイル"
+      },
+      "toggle": {
+        "expand": {
+          "tooltip": "ファイルツリーを展開(幅を2倍に)"
+        },
+        "collapse": {
+          "tooltip": "ファイルツリーを通常の幅に戻す"
+        }
+      }
     },
     "tabs": {
       "empty": "表示するファイルを選択してください。"

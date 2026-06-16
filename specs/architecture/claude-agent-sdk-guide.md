@@ -242,7 +242,7 @@ flowchart LR
 
 ### 6.1. clone 与缓存
 
-- 所有 vendor 共用 `~/.c3/repo/<hash>` — hash = SHA256(repo + ref),不按 vendor 区分。
+- 所有 vendor 共用 `${C3_DIR:-~/.c3}/repo/<hash>` — hash = SHA256(repo + ref),不按 vendor 区分。
 - `ensureSkillRepo(config)` 在 1/3 实现:clone(首次)或 pull(后续 `fetch + reset --hard FETCH_HEAD`,始终取 ref 最新 head),然后 `resolveSubpath`。
 - 静默挂载:不做 pin / `git cat-file` 防伪校验(2026-06-07 简化,见 ADR-0016/0017)。
 

@@ -36,6 +36,12 @@ export const UI_ERROR_CODES = {
   'workspace.unknown': { key: 'error.workspace.unknown', params: ['path'] },
   'path.notDirectory': { key: 'error.path.notDirectory', params: ['path'] },
   'command.listFailed': { key: 'error.command.listFailed', params: ['detail'] },
+  // codes
+  'codes.invalidPath': { key: 'error.codes.invalidPath', params: ['path'] },
+  'codes.notDirectory': { key: 'error.codes.notDirectory', params: ['path'] },
+  'codes.notFile': { key: 'error.codes.notFile', params: ['path'] },
+  'codes.readFailed': { key: 'error.codes.readFailed', params: ['path'] },
+  'codes.searchFailed': { key: 'error.codes.searchFailed' },
   // session
   'session.listFailed': { key: 'error.session.listFailed', params: ['detail'] },
   'session.openFailed': { key: 'error.session.openFailed', params: ['detail'] },

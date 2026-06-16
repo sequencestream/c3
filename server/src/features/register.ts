@@ -82,6 +82,7 @@ import { listWaitUserEvents } from './user-involve/index.js'
 import { getTimeRangeStatsHandler } from './workcenter/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 import { getSkillLinkStatus, installSkillHandler } from './skills/index.js'
+import { listDirHandler, readFileHandler, searchCodesHandler } from './codes/index.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -104,6 +105,9 @@ export const handlerMap: HandlerMap = {
   remove_workspace: removeWorkspaceHandler,
   // sessions
   list_sessions: listSessions,
+  list_dir: listDirHandler,
+  read_file: readFileHandler,
+  search_codes: searchCodesHandler,
   list_commands: listCommandsHandler,
   create_session: createSession,
   select_session: selectSession,

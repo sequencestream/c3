@@ -181,10 +181,10 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
         systemSandboxes: [],
       },
     })
-    // 3 vendor row-labels + devSkill + rounds + speechChars
-    // + gitBranchMode + defaultMainBranch = 8
+    // 2 vendor row-labels + devSkill + rounds + speechChars
+    // + gitBranchMode + defaultMainBranch = 7
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(8)
+    expect(labels).toHaveLength(7)
     expect(labels[0].text()).toBeTruthy()
   })
 

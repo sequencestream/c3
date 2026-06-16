@@ -19,7 +19,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createCodexRelay, CODEX_RELAY_PATH, CODEX_RELAY_PROVIDER } from './index.js'
 
 const codexBin = spawnSync('which', ['codex']).stdout?.toString().trim()
-const hasCodex = !!codexBin
+const codexExecProbe = codexBin
+  ? spawnSync(
+      'codex',
+      ['exec', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', 'probe'],
+      { encoding: 'utf-8', input: '', timeout: 5_000 },
+    )
+  : null
+const codexExecBlocked =
+  codexExecProbe?.stderr.includes('failed to initialize in-process app-server client') ||
+  codexExecProbe?.stderr.includes('Operation not permitted')
+const hasCodex = !!codexBin && !codexExecBlocked
 
 /** A Chat-Completions SSE upstream that streams `chunks` then `[DONE]`. */
 function fakeUpstream(chunks: object[]): Promise<{ server: Server; port: number }> {

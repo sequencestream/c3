@@ -1242,6 +1242,13 @@
     "command": {
       "listFailed": "명령 목록을 불러오지 못했습니다: {detail}"
     },
+    "codes": {
+      "invalidPath": "잘못된 워크스페이스 경로입니다: {path}",
+      "notDirectory": "디렉터리가 아닙니다: {path}",
+      "notFile": "파일이 아닙니다: {path}",
+      "readFailed": "읽지 못했습니다: {path}",
+      "searchFailed": "코드 검색에 실패했습니다."
+    },
     "session": {
       "listFailed": "세션 목록을 불러오지 못했습니다: {detail}",
       "openFailed": "세션을 열지 못했습니다: {detail}",

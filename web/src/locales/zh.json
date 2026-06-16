@@ -1241,6 +1241,13 @@
     "command": {
       "listFailed": "列出命令失败:{detail}"
     },
+    "codes": {
+      "invalidPath": "工作区路径无效:{path}",
+      "notDirectory": "不是目录:{path}",
+      "notFile": "不是文件:{path}",
+      "readFailed": "读取失败:{path}",
+      "searchFailed": "代码搜索失败。"
+    },
     "session": {
       "listFailed": "列出会话失败:{detail}",
       "openFailed": "打开会话失败:{detail}",

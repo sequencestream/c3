@@ -121,7 +121,7 @@ describe('set_session_agent handler', () => {
     setSessionAgentHandler({} as any, conn as any, {
       type: 'set_session_agent',
       sessionId: 'real-2',
-      agentId: 'oc',
+      agentId: 'cx',
     })
     const reply = conn.sent[0] as unknown as { ok: boolean; vendor: string }
     expect(reply.ok).toBe(false)

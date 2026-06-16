@@ -2110,6 +2110,32 @@ export interface TimeRangeProjectStats {
   schedules: { running: number; active: number; total: number }
 }
 
+export type CodeEntryType = 'file' | 'directory'
+
+export interface CodeDirEntry {
+  name: string
+  path: string
+  type: CodeEntryType
+}
+
+export interface CodeFileRead {
+  path: string
+  size: number
+  binary: boolean
+  truncated: boolean
+  content?: string
+}
+
+export type CodeSearchMode = 'filename' | 'content'
+
+export interface CodeSearchHit {
+  path: string
+  type: CodeEntryType
+  line?: number
+  lineText?: string
+  match?: string
+}
+
 // Client → Server
 export type ClientToServer =
   /**
@@ -2170,6 +2196,12 @@ export type ClientToServer =
   | { type: 'select_session'; workspaceId: string; sessionId: string }
   /** Rename a session's title. */
   | { type: 'rename_session'; workspaceId: string; sessionId: string; title: string }
+  /** List one workspace-relative directory. Server replies with `dir_listed`. */
+  | { type: 'list_dir'; workspaceId: string; rel: string }
+  /** Read one workspace-relative file. Server replies with `file_read`. */
+  | { type: 'read_file'; workspaceId: string; rel: string }
+  /** Search code by filename or content. Server replies with `codes_searched`. */
+  | { type: 'search_codes'; workspaceId: string; query: string; mode: CodeSearchMode }
   /** Stop the in-flight run of the currently-viewed session (if any). */
   | { type: 'stop_run' }
   /** Rebinding `${conn.viewing}` from a pending id to the real SDK id (ADR-0018 resident subs model). */
@@ -2454,6 +2486,20 @@ export type ServerToClient =
   | { type: 'workspaces'; workspaces: WorkspaceInfo[] }
   /** Session list for one workspace, sorted by last-modified (desc). */
   | { type: 'sessions'; workspaceId: string; sessions: SessionInfo[] }
+  /** Directory listing for one workspace-relative path. */
+  | { type: 'dir_listed'; workspaceId: string; rel: string; entries: CodeDirEntry[] }
+  /** File metadata and optional text content for one workspace-relative path. */
+  | { type: 'file_read'; workspaceId: string; file: CodeFileRead }
+  /** Bounded code search result set. */
+  | {
+      type: 'codes_searched'
+      workspaceId: string
+      query: string
+      mode: CodeSearchMode
+      hits: CodeSearchHit[]
+      truncated: boolean
+      timedOut: boolean
+    }
   /**
    * A session became active in this connection's view; carries its mode and
    * replayed history. `status` is the runtime's authoritative live status at

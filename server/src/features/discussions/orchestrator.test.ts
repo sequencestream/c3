@@ -337,7 +337,7 @@ describe('runDiscussion', () => {
     await runDiscussion('d1', new AbortController().signal, h.deps)
 
     expect(get().status).toBe('completed')
-    expect(get().conclusion).toContain('Max rounds')
+    expect(get().conclusion).toMatch(/Max rounds|轮数上限/)
     expect(messages.filter((m) => m.speakerKind === 'agent').length).toBe(2)
   })
 

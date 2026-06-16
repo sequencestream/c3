@@ -818,7 +818,6 @@ export async function rebuildOne(input: {
 }): Promise<number> {
   const d = db()
   if (!d) return 0
-  if (input.vendor === 'codex') return 0
   const t = now()
   let count = 0
   let native: Awaited<ReturnType<NativeListFn>>

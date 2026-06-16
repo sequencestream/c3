@@ -198,8 +198,9 @@ When the projection disagrees with the native store (title mismatch, session
 gone, store errored), the native store wins. The projection is refreshed, not
 preferred. When the projection is empty (a fresh install or a deleted table),
 the read path transparently rebuilds from the accessor + `sessionAgents`
-facts and re-reads. The projection is a cache, not a gate — it never blocks
-the wire.
+facts and re-reads; enumerable vendors such as Claude and Codex both
+participate in this one-shot rebuild. The projection is a cache, not a gate —
+it never blocks the wire.
 
 ### References
 

@@ -610,14 +610,24 @@ describe('rebuild (F-10)', () => {
     expect(rows.every((r) => r.state === 'alive')).toBe(true)
   })
 
-  it('rebuildOne no-ops on Codex (not enumerable)', async () => {
+  it('rebuildOne populates Codex rows from a native list', async () => {
     const count = await rebuildOne({
       workspacePath: wsA,
       vendor: 'codex',
-      agentIdFor: () => agent1,
-      nativeList: async () => null,
+      agentIdFor: () => codexAgent,
+      nativeList: async () => ({
+        sessions: [{ vendorSessionId: 'cx-1', title: 'Codex one', lastModified: 300 }],
+      }),
     })
-    expect(count).toBe(0)
+    expect(count).toBe(1)
+    const row = getByC3Id(mintC3SessionId({ vendor: 'codex', vendorSessionId: 'cx-1' }))
+    expect(row).toMatchObject({
+      vendor: 'codex',
+      vendorSessionId: 'cx-1',
+      agentId: codexAgent,
+      title: 'Codex one',
+      state: 'alive',
+    })
   })
 })
 

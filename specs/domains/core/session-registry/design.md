@@ -41,8 +41,9 @@ validation source, not the daily read source. `listSessionsVia` reads per
 workspace (`WHERE workspace_path=? AND kind='real'`), maps each row to a
 `SessionInfo` (additive `state` field), applies `isHiddenSession` /
 `isToolSessionRecorded` filters, and sorts newest-first. The accessor union
-is used for (a) rebuilding an empty projection (F-10) and (b) fire-and-forget
-lazy validation (F-8). The env flag `C3_LIST_FROM_PROJECTION=0` rolls the read
+is used for (a) rebuilding an empty projection across enumerable vendors
+(including Codex's local transcript scan) and (b) fire-and-forget lazy
+validation (F-8). The env flag `C3_LIST_FROM_PROJECTION=0` rolls the read
 path back to the legacy claude-only `listWorkspaceSessions` (the old path is
 retired only after the transition).
 

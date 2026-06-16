@@ -53,7 +53,30 @@
 
 请求工作区的会话列表。服务器回复 `sessions`。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceId: string`
+
+### `list_dir`
+
+列出已注册工作区内某个相对目录的直接子项。只读。服务器必须通过 `workspaceId`
+解析已注册工作区根,再解释 `rel`；绝不把 wire 上的任意路径当根。服务器回复
+`dir_listed` 或 `error`。
+
+**字段：** `workspaceId: string`, `rel: string`
+
+### `read_file`
+
+读取已注册工作区内某个相对文件。文本且未超限时返回内容；二进制或超大文件只返回元信息。
+服务器回复 `file_read` 或 `error`。
+
+**字段：** `workspaceId: string`, `rel: string`
+
+### `search_codes`
+
+在已注册工作区内搜索代码。`mode: 'filename'` 匹配相对路径/文件名；`mode: 'content'`
+返回命中文件和行。搜索有结果上限和超时,并排除 `.git`。服务器回复 `codes_searched`
+或 `error`。
+
+**字段：** `workspaceId: string`, `query: string`, `mode: 'filename' | 'content'`
 
 ### `create_session`
 
@@ -381,7 +404,28 @@
 
 一个工作区的会话列表，按最后修改降序排列。
 
-**字段：** `workspacePath: string`, `sessions: SessionInfo[]`
+**字段：** `workspaceId: string`, `sessions: SessionInfo[]`
+
+### `dir_listed`
+
+回复 `list_dir`。返回某个工作区相对目录的直接子项；每个子项路径仍为工作区相对路径。
+不返回 `.git`。
+
+**字段：** `workspaceId: string`, `rel: string`, `entries: CodeDirEntry[]`
+
+### `file_read`
+
+回复 `read_file`。返回文件元信息；当文件是文本且未超过大小上限时携带 `content`。二进制
+或超大文件只返回 `path` / `size` / `binary` / `truncated` 元信息。
+
+**字段：** `workspaceId: string`, `file: CodeFileRead`
+
+### `codes_searched`
+
+回复 `search_codes`。返回至多服务器上限数量的命中；`truncated` 表示结果数触顶，
+`timedOut` 表示搜索达到运行时间上限。所有命中路径均为工作区相对路径且不包含 `.git`。
+
+**字段：** `workspaceId: string`, `query: string`, `mode: 'filename' | 'content'`, `hits: CodeSearchHit[]`, `truncated: boolean`, `timedOut: boolean`
 
 ### `session_selected`
 
@@ -389,7 +433,7 @@
 
 **字段：**
 
-- `workspacePath: string`
+- `workspaceId: string`
 - `sessionId: string`
 - `title: string`
 - `mode: ModeToken` — 供应商原生 token，通过 `vendor` 的目录解析
@@ -696,8 +740,11 @@ schedule 的执行日志。
 
 ## 工作区和会话类型
 
-- **`WorkspaceInfo`** — `{ path, name, lastAccessed }`。已注册的项目目录。
+- **`WorkspaceInfo`** — `{ id, name, lastAccessed }`。已注册的项目目录；`id` 是服务器分配的不透明工作区身份。
 - **`SessionInfo`** — `{ sessionId, title, lastModified, mode, isToolSession, vendor, state? }`。工作区中的一个会话。`sessionId` 是供应商**原生** id（而非不透明的 c3 id）；`vendor` 是拥有供应商的标签，来自跨供应商 `SessionAccessor` 列表（ADR-0013）——显示维度（侧边栏颜色点 / 过滤 / 同供应商代理切换候选项）。`mode` 是供应商原生 `ModeToken`，根据此行的 `vendor` 通过该供应商的 `VendorModeCatalog` 解释。`state` 是支持此线路条目的投影行的生命周期状态（ADR-0013 修订——`work_session_metadata` 投影），驱动侧边栏新鲜度 UX：`born`/`alive` 为正常列表项；`stale` 显示 "Unvalidated" 标签；`orphaned` 灰显该行（原生 store 已清除会话）；`ghost` 显示 "Retry" 操作（原生 store 错误，不知该行是否真实）。
+- **`CodeDirEntry`** — `{ name, path, type }`。`path` 为工作区相对路径；`type` 为 `file` 或 `directory`。
+- **`CodeFileRead`** — `{ path, size, binary, truncated, content? }`。`content` 只在文本且未超限时出现。
+- **`CodeSearchHit`** — `{ path, type, line?, lineText?, match? }`。内容搜索命中带行号和行文本；文件名搜索命中可只带路径与匹配片段。
 - **`SessionStatus`** — `'idle' | 'running' | 'awaiting_permission' | 'team' | 'reconnecting'`。会话的活跃 run 状态。`team` 是持久化 agent-team 会话：lead 进程在回合之间保持活跃，因此即使没有回合产生输出，run 仍在进行中（非 `idle`）；仅当用户显式停止时才结束。`reconnecting` 是瞬态保持：正常会话的回合遇到 socket 断连，在单次自动 `resume` 同一 run 之前进行退避（AS-R18）。
 - **`SessionRunStatus`** — `{ sessionId, status: SessionStatus }`。一个会话的状态，携带于 `ready.statuses` 和 `session_status` 中。
 - **`TranscriptItem`** — 重放的历史项：`user` / `assistant` / `tool_use` / `tool_result` / `notice`，镜像活跃渲染种类。

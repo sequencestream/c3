@@ -1242,6 +1242,13 @@
     "command": {
       "listFailed": "Не удалось получить список команд: {detail}"
     },
+    "codes": {
+      "invalidPath": "Недопустимый путь рабочей области: {path}",
+      "notDirectory": "Не каталог: {path}",
+      "notFile": "Не файл: {path}",
+      "readFailed": "Не удалось прочитать: {path}",
+      "searchFailed": "Не удалось выполнить поиск по коду."
+    },
     "session": {
       "listFailed": "Не удалось получить список сессий: {detail}",
       "openFailed": "Не удалось открыть сессию: {detail}",

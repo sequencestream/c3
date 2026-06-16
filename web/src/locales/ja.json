@@ -1242,6 +1242,13 @@
     "command": {
       "listFailed": "コマンドの一覧取得に失敗しました: {detail}"
     },
+    "codes": {
+      "invalidPath": "ワークスペースパスが無効です: {path}",
+      "notDirectory": "ディレクトリではありません: {path}",
+      "notFile": "ファイルではありません: {path}",
+      "readFailed": "読み取りに失敗しました: {path}",
+      "searchFailed": "コード検索に失敗しました。"
+    },
     "session": {
       "listFailed": "セッションの一覧取得に失敗しました: {detail}",
       "openFailed": "セッションを開けませんでした: {detail}",

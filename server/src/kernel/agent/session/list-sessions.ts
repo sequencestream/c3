@@ -117,7 +117,8 @@ function accessorNativeList(accessor: SessionAccessor): NativeListFn {
           .filter((s) => s.vendor === vendor)
           .map((s) => {
             const extra = s.vendorExtra ?? {}
-            const vsid = typeof extra.vendorSessionId === 'string' ? extra.vendorSessionId : ''
+            const vsid =
+              typeof extra.vendorSessionId === 'string' ? extra.vendorSessionId : s.c3SessionId
             return {
               vendorSessionId: vsid,
               title: s.title,
@@ -151,10 +152,9 @@ export async function listSessionsVia(
   let rows = listForWorkspace(workspacePath)
   if (rows.length === 0) {
     // Rebuild path (F-10): the projection is empty for this workspace.
-    // Rebuild from the accessor + the `sessionAgents` fact map (Codex is
-    // NOT enumerable, so the caller's fact list is the source — but
-    // `rebuildOne` no-ops on Codex; the bind-time writes have already
-    // populated Codex rows via `upsertForBind`).
+    // Rebuild from the accessor + the `sessionAgents` fact map. Codex is
+    // enumerable via its local JSONL session store, so it participates in
+    // the same one-shot rebuild as Claude.
     const nativeList = accessorNativeList(accessor)
     // Rebuild source-of-truth ordering (F-10): the per-vendor native list
     // is the primary source; the agent id comes from `sessionAgents` when

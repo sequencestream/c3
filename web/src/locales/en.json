@@ -1241,6 +1241,13 @@
     "command": {
       "listFailed": "Failed to list commands: {detail}"
     },
+    "codes": {
+      "invalidPath": "Invalid workspace path: {path}",
+      "notDirectory": "Not a directory: {path}",
+      "notFile": "Not a file: {path}",
+      "readFailed": "Failed to read: {path}",
+      "searchFailed": "Code search failed."
+    },
     "session": {
       "listFailed": "Failed to list sessions: {detail}",
       "openFailed": "Failed to open session: {detail}",

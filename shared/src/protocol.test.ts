@@ -35,6 +35,9 @@ describe('protocol wire format', () => {
     { type: 'add_workspace', path: '/abs/proj' },
     { type: 'remove_workspace', path: '/abs/proj' },
     { type: 'list_sessions', workspaceId: 'ws-1' },
+    { type: 'list_dir', workspaceId: 'ws-1', rel: 'src' },
+    { type: 'read_file', workspaceId: 'ws-1', rel: 'src/index.ts' },
+    { type: 'search_codes', workspaceId: 'ws-1', query: 'handler', mode: 'content' },
     { type: 'create_session', workspaceId: 'ws-1' },
     // With an explicit agent (recorded as the pending session's intent, ADR-0015).
     { type: 'create_session', workspaceId: 'ws-1', agentId: 'claude-b' },
@@ -72,6 +75,34 @@ describe('protocol wire format', () => {
           vendor: 'claude',
         },
       ],
+    },
+    {
+      type: 'dir_listed',
+      workspaceId: 'ws-1',
+      rel: '',
+      entries: [{ name: 'src', path: 'src', type: 'directory' }],
+    },
+    {
+      type: 'file_read',
+      workspaceId: 'ws-1',
+      file: {
+        path: 'src/index.ts',
+        size: 12,
+        binary: false,
+        truncated: false,
+        content: 'export {}',
+      },
+    },
+    {
+      type: 'codes_searched',
+      workspaceId: 'ws-1',
+      query: 'handler',
+      mode: 'content',
+      hits: [
+        { path: 'src/index.ts', type: 'file', line: 1, lineText: 'handler', match: 'handler' },
+      ],
+      truncated: false,
+      timedOut: false,
     },
     {
       type: 'session_selected',

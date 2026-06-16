@@ -46,9 +46,9 @@ export function runGit(args: string[], cwd?: string): Promise<GitRunResult> {
   })
 }
 
-/** The shared clone-cache root: `~/.c3/repo/`. All vendors share clones under here. */
+/** The shared clone-cache root: `$C3_DIR/repo` or `~/.c3/repo`. */
 export function skillRepoCacheRoot(): string {
-  return join(homedir(), '.c3', 'repo')
+  return join(process.env.C3_DIR || join(homedir(), '.c3'), 'repo')
 }
 
 /**

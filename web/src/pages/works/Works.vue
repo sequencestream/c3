@@ -21,6 +21,7 @@ import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
   CodexPolicy,
   ModeToken,
+  PromptImage,
   SessionAgentSwitch,
   SessionCapabilities,
   SessionInfo,
@@ -83,8 +84,8 @@ const emit = defineEmits<{
   refresh: []
   'edit-queued': [item: PendingItem]
   'delete-queued': [id: number]
-  submit: [text: string]
-  enqueue: [text: string]
+  submit: [text: string, images: PromptImage[]]
+  enqueue: [text: string, images: PromptImage[]]
   stop: []
   continue: []
   'list-commands': []
@@ -120,10 +121,10 @@ function handleMobileBack(targetKey: string): void {
   emit('mobile-back', targetKey)
 }
 
-// Forward the composer's prefill so App.vue's queue-edit can fold text back in.
+// Forward the composer's prefill so App.vue's queue-edit can fold text+images back in.
 const composer = ref<InstanceType<typeof MessageInput> | null>(null)
 defineExpose({
-  prefill: (text: string) => composer.value?.prefill(text),
+  prefill: (text: string, images?: PromptImage[]) => composer.value?.prefill(text, images),
 })
 </script>
 
@@ -204,8 +205,8 @@ defineExpose({
           :has-active-session="hasActiveSession"
           :available-commands="availableCommands"
           :voice-lang="voiceLang"
-          @submit="(text: string) => emit('submit', text)"
-          @enqueue="(text: string) => emit('enqueue', text)"
+          @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+          @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
           @list-commands="emit('list-commands')"
         />
       </div>

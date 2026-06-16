@@ -1,8 +1,9 @@
 import { watch } from 'vue'
-import type { CodexPolicy, ModeToken } from '@ccc/shared/protocol'
+import type { CodexPolicy, ModeToken, PromptImage } from '@ccc/shared/protocol'
 import type { PermissionMsg } from '@/lib/chat-types'
 import {
   appendItem,
+  mergeImages,
   mergeQueue,
   removeItem,
   shouldFlush,
@@ -30,10 +31,10 @@ export function installChatActions(ctx: AppCtx): void {
   } = ctx
 
   // ---- Pending send queue ----
-  ctx.onEnqueue = (text: string): void => {
+  ctx.onEnqueue = (text: string, images?: PromptImage[]): void => {
     const sid = activeSession.value
     if (!sid) return
-    setQueue(sid, appendItem(currentQueue.value, text, counters.nextQueueId++))
+    setQueue(sid, appendItem(currentQueue.value, text, counters.nextQueueId++, images))
   }
 
   ctx.onDeleteQueued = (id: number): void => {
@@ -42,12 +43,12 @@ export function installChatActions(ctx: AppCtx): void {
     setQueue(sid, removeItem(currentQueue.value, id))
   }
 
-  // Edit: pull the item out of the queue and fold its text back into the composer.
+  // Edit: pull the item out of the queue and fold its text + images back into the composer.
   ctx.onEditQueued = (item: PendingItem): void => {
     const sid = activeSession.value
     if (!sid) return
     setQueue(sid, removeItem(currentQueue.value, item.id))
-    composer.value?.prefill(item.text)
+    composer.value?.prefill(item.text, item.images)
   }
 
   // Flush the viewed session's queue once it is idle: merge into one prompt, send.
@@ -56,8 +57,9 @@ export function installChatActions(ctx: AppCtx): void {
     if (!sid) return
     if (!shouldFlush(running.value, activeIsTeam.value, currentQueue.value.length)) return
     const merged = mergeQueue(currentQueue.value)
+    const mergedImages = mergeImages(currentQueue.value)
     setQueue(sid, [])
-    ctx.onSubmit(merged)
+    ctx.onSubmit(merged, mergedImages)
   }
 
   // Trigger on a running→idle transition or when switching to an already-idle
@@ -65,9 +67,9 @@ export function installChatActions(ctx: AppCtx): void {
   watch([running, activeSession, activeIsTeam], () => ctx.flushIfReady())
 
   // ---- Chat actions ----
-  ctx.onSubmit = (text: string): void => {
+  ctx.onSubmit = (text: string, images?: PromptImage[]): void => {
     if (!ctx.client || !hasActiveSession.value) return
-    send({ type: 'user_prompt', text })
+    send({ type: 'user_prompt', text, ...(images && images.length > 0 ? { images } : {}) })
     // Optimistic lock; the server confirms via `session_status`.
     sessionStatus.value = { ...sessionStatus.value, [activeSession.value as string]: 'running' }
     // Clear any held error and show progress immediately.

@@ -864,11 +864,22 @@
       },
       "send": {
         "label": "Send"
+      },
+      "attach": {
+        "tooltip": "Attach images",
+        "ariaLabel": "Attach images",
+        "listAriaLabel": "Attached images",
+        "rejected": "Only images can be attached — other files were ignored.",
+        "remove": {
+          "tooltip": "Remove image",
+          "ariaLabel": "Remove image"
+        }
       }
     },
     "queue": {
       "ariaLabel": "Pending queue",
       "head": "Queued · merged into the next turn ({count})",
+      "imageCount": "🖼️ {count}",
       "edit": {
         "tooltip": "Edit: pull back into the input box to re-edit",
         "ariaLabel": "Edit"

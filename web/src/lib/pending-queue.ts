@@ -7,9 +7,13 @@
  * 纯函数,便于在 Node 环境下单测(web 测试不含 DOM)。
  */
 
+import type { PromptImage } from '@ccc/shared/protocol'
+
 export interface PendingItem {
   id: number
   text: string
+  /** 入队时随这条消息附带的图片(运行中点击发送时一并缓存);flush 时合并发送。 */
+  images?: PromptImage[]
 }
 
 /** flush 时条目之间的分隔:空行(双换行),合并为一条 prompt。 */
@@ -18,6 +22,11 @@ const FLUSH_SEPARATOR = '\n\n'
 /** 把队列条目按顺序、用空行连接合并为一条 prompt。 */
 export function mergeQueue(items: PendingItem[]): string {
   return items.map((i) => i.text).join(FLUSH_SEPARATOR)
+}
+
+/** 把队列各条目附带的图片按顺序拼平为一组,随合并 prompt 一并 flush。 */
+export function mergeImages(items: PendingItem[]): PromptImage[] {
+  return items.flatMap((i) => i.images ?? [])
 }
 
 /**
@@ -37,9 +46,14 @@ export function composerAction(running: boolean, teamActive: boolean): 'enqueue'
   return running && !teamActive ? 'enqueue' : 'send'
 }
 
-/** 追加一条(调用方提供去空白后的文本与递增 id),返回新数组。 */
-export function appendItem(items: PendingItem[], text: string, id: number): PendingItem[] {
-  return [...items, { id, text }]
+/** 追加一条(调用方提供去空白后的文本、递增 id、可选附图),返回新数组。 */
+export function appendItem(
+  items: PendingItem[],
+  text: string,
+  id: number,
+  images?: PromptImage[],
+): PendingItem[] {
+  return [...items, { id, text, ...(images && images.length > 0 ? { images } : {}) }]
 }
 
 /** 移除指定 id 的条目,返回新数组。 */

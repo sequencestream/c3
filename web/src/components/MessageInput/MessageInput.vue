@@ -1,14 +1,19 @@
 <script setup lang="ts">
 /*
- * MessageInput.vue — 底部输入区：斜杠命令自动补全 + 文本框 + 发送/停止。
+ * MessageInput.vue — 底部输入区：斜杠命令自动补全 + 文本框 + 图片附件 + 发送/停止。
  *
- * 自身持有输入文本与斜杠菜单状态；可用命令由 App 注入（懒加载，按会话 cwd）。
+ * 自身持有输入文本、斜杠菜单状态与待发图片；可用命令由 App 注入（懒加载，按会话 cwd）。
  * 首次输入 `/` 且命令未加载时上抛 list-commands，由 App 向服务端请求。
+ *
+ * 图片附件（点击附件按钮 / 粘贴 / 拖拽放下）：经 lib/prompt-image 正规化（仅图片，
+ * 超阈压缩），在文本框上方以缩略图列表展示，可逐张删除；submit/enqueue 时以 wire 形态
+ * 的 PromptImage 随文本一并上抛（image-only 也可发送），发送后清空。非图片被忽略并提示。
  */
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import type { SlashCommandInfo } from '@ccc/shared/protocol'
+import type { PromptImage, SlashCommandInfo } from '@ccc/shared/protocol'
 import { useSpeechRecognition } from '../../composables/useSpeechRecognition'
 import { composerAction, mergeIntoDraft } from '../../lib/pending-queue'
+import { fromWire, readImageFiles, toWire, type SelectedImage } from '../../lib/prompt-image'
 import { autoGrowHeight } from '../../lib/textarea'
 import { useTypedI18n } from '@/i18n'
 
@@ -37,13 +42,81 @@ const inputDisabled = computed(() => !props.hasActiveSession)
 const ordinaryRunning = computed(() => props.running && !props.teamActive)
 
 const emit = defineEmits<{
-  submit: [text: string]
-  enqueue: [text: string]
+  submit: [text: string, images: PromptImage[]]
+  enqueue: [text: string, images: PromptImage[]]
   'list-commands': []
 }>()
 
 const input = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+// ---- Attached images (click / paste / drag-drop) ----
+// Selected-but-not-yet-sent images, shown as thumbnails above the textarea. They
+// ride along with the next submit/enqueue (toWire), then clear. Non-images are
+// ignored at intake and surface a transient notice.
+const images = ref<SelectedImage[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
+const dragOver = ref(false)
+const attachNotice = ref(false)
+let nextImageId = 0
+let noticeTimer: ReturnType<typeof setTimeout> | null = null
+
+function flashAttachNotice(): void {
+  attachNotice.value = true
+  if (noticeTimer) clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => (attachNotice.value = false), 4000)
+}
+
+// Normalize a batch of files into selected images (filter non-images, compress
+// oversize), append to the pending thumbnails, and notice any rejections.
+async function intakeFiles(files: File[]): Promise<void> {
+  if (files.length === 0) return
+  const { images: processed, rejectedCount } = await readImageFiles(files)
+  for (const img of processed) images.value.push({ id: nextImageId++, ...img })
+  if (rejectedCount > 0) flashAttachNotice()
+}
+
+function openFilePicker(): void {
+  if (!props.hasActiveSession) return
+  fileInput.value?.click()
+}
+
+function onFileChange(e: Event): void {
+  const el = e.target as HTMLInputElement
+  void intakeFiles(Array.from(el.files ?? []))
+  // Reset so picking the same file again re-triggers change.
+  el.value = ''
+}
+
+function onPaste(e: ClipboardEvent): void {
+  const files = Array.from(e.clipboardData?.files ?? [])
+  if (files.length === 0) return // plain-text paste — leave default behavior
+  e.preventDefault()
+  void intakeFiles(files)
+}
+
+function onDrop(e: DragEvent): void {
+  dragOver.value = false
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (files.length === 0) return
+  e.preventDefault()
+  void intakeFiles(files)
+}
+
+function onDragOver(e: DragEvent): void {
+  if (!props.hasActiveSession) return
+  if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return
+  e.preventDefault()
+  dragOver.value = true
+}
+
+function onDragLeave(): void {
+  dragOver.value = false
+}
+
+function removeImage(id: number): void {
+  images.value = images.value.filter((img) => img.id !== id)
+}
 
 function updateKeyboardOffset(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
@@ -128,6 +201,7 @@ function onSendLeave() {
 }
 onUnmounted(() => {
   if (hintTimer) clearTimeout(hintTimer)
+  if (noticeTimer) clearTimeout(noticeTimer)
 })
 const slashIndex = ref(0)
 const slashDismissed = ref(false)
@@ -186,19 +260,24 @@ function applyCommand(c: SlashCommandInfo) {
 
 function submit() {
   const t = input.value.trim()
-  if (!t || !props.hasActiveSession) return
+  // Send when there is text OR at least one attached image (image-only is allowed).
+  if ((!t && images.value.length === 0) || !props.hasActiveSession) return
   if (voiceState.value === 'listening') voiceStop()
+  const wire = toWire(images.value)
   // Ordinary in-flight turn → enqueue (server would reject user_prompt); else
   // submit immediately (idle, or a team session feeding its live lead).
-  if (composerAction(props.running, props.teamActive) === 'enqueue') emit('enqueue', t)
-  else emit('submit', t)
+  if (composerAction(props.running, props.teamActive) === 'enqueue') emit('enqueue', t, wire)
+  else emit('submit', t, wire)
   input.value = ''
+  images.value = []
 }
 
 // Re-open a queued item for editing: fold its text back into the current draft
-// (single-newline append so an in-progress draft isn't lost), then focus.
-function prefill(text: string) {
+// (single-newline append so an in-progress draft isn't lost) and restore its
+// images (rebuilding preview metadata from the wire shape), then focus.
+function prefill(text: string, queuedImages: PromptImage[] = []) {
   input.value = mergeIntoDraft(input.value, text)
+  for (const img of queuedImages) images.value.push(fromWire(img, nextImageId++))
   nextTick(() => inputEl.value?.focus())
 }
 
@@ -256,7 +335,42 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <template>
-  <footer class="message-input">
+  <footer
+    class="message-input"
+    :class="{ 'drag-over': dragOver }"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+    <div v-if="attachNotice" class="attach-notice" role="status">
+      {{ t('session.input.attach.rejected') }}
+    </div>
+    <div
+      v-if="images.length"
+      class="image-previews"
+      :aria-label="t('session.input.attach.listAriaLabel')"
+    >
+      <div v-for="img in images" :key="img.id" class="image-thumb">
+        <img :src="img.previewUrl" :alt="img.name" />
+        <button
+          class="image-remove"
+          :title="t('session.input.attach.remove.tooltip')"
+          :aria-label="t('session.input.attach.remove.ariaLabel')"
+          @click="removeImage(img.id)"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+    <input
+      ref="fileInput"
+      class="file-input"
+      type="file"
+      accept="image/*"
+      multiple
+      hidden
+      @change="onFileChange"
+    />
     <div v-if="slashOpen" ref="slashMenuEl" class="slash-menu">
       <div
         v-for="(c, i) in menuCommands"
@@ -288,7 +402,21 @@ function onKey(e: KeyboardEvent) {
       "
       :disabled="inputDisabled"
       @keydown="onKey"
+      @paste="onPaste"
     />
+    <button
+      class="attach-btn"
+      :disabled="!hasActiveSession"
+      :title="t('session.input.attach.tooltip')"
+      :aria-label="t('session.input.attach.ariaLabel')"
+      @click="openFilePicker"
+    >
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+        <path
+          d="M16.5 6.5v9a4.5 4.5 0 0 1-9 0V6a3 3 0 0 1 6 0v9a1.5 1.5 0 0 1-3 0V7h-1.5v8a3 3 0 0 0 6 0V6a4.5 4.5 0 0 0-9 0v9.5a6 6 0 0 0 12 0v-9z"
+        />
+      </svg>
+    </button>
     <button
       v-if="voiceSupported"
       class="mic-btn"
@@ -319,7 +447,11 @@ function onKey(e: KeyboardEvent) {
           ordinaryRunning ? t('session.input.sendHint.running') : t('session.input.sendHint.ready')
         }}
       </div>
-      <button class="send-btn" :disabled="!input.trim() || !hasActiveSession" @click="submit">
+      <button
+        class="send-btn"
+        :disabled="(!input.trim() && images.length === 0) || !hasActiveSession"
+        @click="submit"
+      >
         {{ t('session.input.send.label') }}
       </button>
     </div>

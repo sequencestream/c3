@@ -26,6 +26,9 @@ const emit = defineEmits<{
     <div class="pending-head">{{ t('session.queue.head', { count: items.length }) }}</div>
     <div v-for="item in items" :key="item.id" class="pending-item">
       <span class="pending-text">{{ item.text }}</span>
+      <span v-if="item.images?.length" class="pending-images">
+        {{ t('session.queue.imageCount', { count: item.images.length }) }}
+      </span>
       <button
         class="pending-act"
         :title="t('session.queue.edit.tooltip')"

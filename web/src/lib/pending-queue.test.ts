@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import type { PendingItem } from './pending-queue'
+import type { PromptImage } from '@ccc/shared/protocol'
 import {
   appendItem,
   composerAction,
+  mergeImages,
   mergeIntoDraft,
   mergeQueue,
   removeItem,
@@ -96,6 +98,31 @@ describe('appendItem / removeItem', () => {
 
   it('移除不存在的 id 原样返回内容', () => {
     expect(removeItem(items('a'), 99)).toEqual([{ id: 0, text: 'a' }])
+  })
+})
+
+describe('appendItem / mergeImages — 附图', () => {
+  const img = (data: string): PromptImage => ({ mediaType: 'image/png', data })
+
+  it('appendItem 带图时写入 images,空图省略字段', () => {
+    expect(appendItem([], 'a', 0, [img('AAAA')])).toEqual([
+      { id: 0, text: 'a', images: [{ mediaType: 'image/png', data: 'AAAA' }] },
+    ])
+    expect(appendItem([], 'b', 1, [])).toEqual([{ id: 1, text: 'b' }])
+    expect(appendItem([], 'c', 2)).toEqual([{ id: 2, text: 'c' }])
+  })
+
+  it('mergeImages 按序拼平各条目附图(无图条目跳过)', () => {
+    const q: PendingItem[] = [
+      { id: 0, text: 'a', images: [img('AAAA')] },
+      { id: 1, text: 'b' },
+      { id: 2, text: 'c', images: [img('BBBB'), img('CCCC')] },
+    ]
+    expect(mergeImages(q)).toEqual([img('AAAA'), img('BBBB'), img('CCCC')])
+  })
+
+  it('全无图 → 空数组', () => {
+    expect(mergeImages(items('a', 'b'))).toEqual([])
   })
 })
 

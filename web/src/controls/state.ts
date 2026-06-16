@@ -20,6 +20,7 @@ import type {
   VendorModeCatalog,
   Intent,
   IntentSessionInfo,
+  PromptImage,
   WorkspaceSetting as WorkspaceSettingType,
   Schedule,
   ScheduleExecutionLog,
@@ -151,7 +152,9 @@ export function createState(deps: StateDeps) {
   const pendingQueues = ref<Record<string, PendingItem[]>>({})
   // The active page container (Sessions / Intents) exposes `prefill`; this ref
   // binds to whichever is mounted so queue-edit can fold text back into the composer.
-  const composer = ref<{ prefill: (text: string) => void } | null>(null)
+  const composer = ref<{
+    prefill: (text: string, images?: PromptImage[]) => void
+  } | null>(null)
 
   const currentQueue = computed<PendingItem[]>(() =>
     activeSession.value ? (pendingQueues.value[activeSession.value] ?? []) : [],

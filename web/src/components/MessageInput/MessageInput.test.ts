@@ -1,7 +1,40 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MessageInput from './MessageInput.vue'
+import * as promptImage from '../../lib/prompt-image'
+
+// Drive image intake deterministically: stub the DOM-bound readImageFiles (which
+// would otherwise reach for FileReader/Image/canvas) while keeping the real
+// toWire/fromWire so the emitted payload reflects production mapping.
+vi.mock('../../lib/prompt-image', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/prompt-image')>('../../lib/prompt-image')
+  return { ...actual, readImageFiles: vi.fn() }
+})
+const readImageFiles = vi.mocked(promptImage.readImageFiles)
+
+function processed(over: Partial<promptImage.ProcessedImage> = {}): promptImage.ProcessedImage {
+  return {
+    mediaType: 'image/png',
+    data: 'AAAA',
+    previewUrl: 'data:image/png;base64,AAAA',
+    bytes: 3,
+    name: 'shot.png',
+    ...over,
+  }
+}
+
+// Intake awaits readImageFiles then mutates reactive state — flush both the
+// awaited promise chain and the ensuing render.
+async function flush(): Promise<void> {
+  await Promise.resolve()
+  await nextTick()
+  await Promise.resolve()
+  await nextTick()
+}
+
+const pngFile = (): File => new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
 
 /*
  * MessageInput auto-grow — the composer textarea sizes its height to content up
@@ -152,6 +185,128 @@ describe('MessageInput.vue — 停止控件已上移到状态栏', () => {
     await w.find('.send-btn').trigger('click')
     expect(w.emitted('enqueue')).toHaveLength(1)
     expect(w.emitted('submit')).toBeFalsy()
+  })
+})
+
+describe('MessageInput.vue — 输入框选图(点击/粘贴/拖拽)', () => {
+  beforeEach(() => {
+    readImageFiles.mockReset()
+    readImageFiles.mockResolvedValue({ images: [processed()], rejectedCount: 0 })
+  })
+
+  it('点击附件按钮:触发隐藏 file input 的文件选择', async () => {
+    const w = mountInput()
+    const fileEl = w.find('input.file-input').element as HTMLInputElement
+    const clickSpy = vi.spyOn(fileEl, 'click')
+    await w.find('.attach-btn').trigger('click')
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('选图(file input change):缩略图展示已选图片', async () => {
+    const w = mountInput()
+    readImageFiles.mockResolvedValue({
+      images: [processed(), processed({ name: 'b.png' })],
+      rejectedCount: 0,
+    })
+    const fileEl = w.find('input.file-input').element as HTMLInputElement
+    Object.defineProperty(fileEl, 'files', { configurable: true, value: [pngFile(), pngFile()] })
+    await w.find('input.file-input').trigger('change')
+    await flush()
+    expect(w.findAll('.image-thumb')).toHaveLength(2)
+  })
+
+  it('粘贴图片:加入待发送列表', async () => {
+    const w = mountInput()
+    await w.find('textarea').trigger('paste', { clipboardData: { files: [pngFile()] } })
+    await flush()
+    expect(w.findAll('.image-thumb')).toHaveLength(1)
+  })
+
+  it('粘贴纯文本(无文件):不拦截、不加图', async () => {
+    const w = mountInput()
+    await w.find('textarea').trigger('paste', { clipboardData: { files: [] } })
+    await flush()
+    expect(readImageFiles).not.toHaveBeenCalled()
+    expect(w.findAll('.image-thumb')).toHaveLength(0)
+  })
+
+  it('拖拽放下图片:加入待发送列表', async () => {
+    const w = mountInput()
+    await w.find('.message-input').trigger('drop', { dataTransfer: { files: [pngFile()] } })
+    await flush()
+    expect(w.findAll('.image-thumb')).toHaveLength(1)
+  })
+
+  it('删除某张缩略图:不再展示且发送不携带它', async () => {
+    const w = mountInput()
+    readImageFiles.mockResolvedValue({
+      images: [processed({ data: 'AAAA' }), processed({ data: 'BBBB', name: 'b.png' })],
+      rejectedCount: 0,
+    })
+    const fileEl = w.find('input.file-input').element as HTMLInputElement
+    Object.defineProperty(fileEl, 'files', { configurable: true, value: [pngFile(), pngFile()] })
+    await w.find('input.file-input').trigger('change')
+    await flush()
+    expect(w.findAll('.image-thumb')).toHaveLength(2)
+
+    await w.findAll('.image-remove')[0].trigger('click')
+    expect(w.findAll('.image-thumb')).toHaveLength(1)
+
+    await w.find('.send-btn').trigger('click')
+    const payload = w.emitted('submit')?.[0]
+    expect(payload?.[1]).toEqual([{ mediaType: 'image/png', data: 'BBBB' }])
+  })
+
+  it('发送:图片(wire 形态)随文本一并提交并清空', async () => {
+    const w = mountInput()
+    await w.find('.message-input').trigger('drop', { dataTransfer: { files: [pngFile()] } })
+    await flush()
+    await w.find('textarea').setValue('look at this')
+    await w.find('.send-btn').trigger('click')
+
+    expect(w.emitted('submit')?.[0]).toEqual([
+      'look at this',
+      [{ mediaType: 'image/png', data: 'AAAA' }],
+    ])
+    // Thumbnails clear after send.
+    expect(w.findAll('.image-thumb')).toHaveLength(0)
+  })
+
+  it('仅图片(无文本)也可发送', async () => {
+    const w = mountInput()
+    await w.find('.message-input').trigger('drop', { dataTransfer: { files: [pngFile()] } })
+    await flush()
+    // Send is enabled with images but no text.
+    expect((w.find('.send-btn').element as HTMLButtonElement).disabled).toBe(false)
+    await w.find('.send-btn').trigger('click')
+    expect(w.emitted('submit')?.[0]).toEqual(['', [{ mediaType: 'image/png', data: 'AAAA' }]])
+  })
+
+  it('运行中发送带图:走入队(enqueue)并携带图片', async () => {
+    const w = mountInput({ running: true })
+    await w.find('.message-input').trigger('drop', { dataTransfer: { files: [pngFile()] } })
+    await flush()
+    await w.find('textarea').setValue('queued with image')
+    await w.find('.send-btn').trigger('click')
+    expect(w.emitted('enqueue')?.[0]).toEqual([
+      'queued with image',
+      [{ mediaType: 'image/png', data: 'AAAA' }],
+    ])
+    expect(w.emitted('submit')).toBeFalsy()
+  })
+
+  it('非图片文件被拒:显示忽略提示', async () => {
+    const w = mountInput()
+    readImageFiles.mockResolvedValue({ images: [], rejectedCount: 1 })
+    await w.find('.message-input').trigger('drop', { dataTransfer: { files: [pngFile()] } })
+    await flush()
+    expect(w.find('.attach-notice').exists()).toBe(true)
+    expect(w.findAll('.image-thumb')).toHaveLength(0)
+  })
+
+  it('无文本无图片:发送按钮禁用', () => {
+    const w = mountInput()
+    expect((w.find('.send-btn').element as HTMLButtonElement).disabled).toBe(true)
   })
 })
 

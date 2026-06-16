@@ -865,11 +865,22 @@
       },
       "send": {
         "label": "送信"
+      },
+      "attach": {
+        "tooltip": "画像を添付",
+        "ariaLabel": "画像を添付",
+        "listAriaLabel": "添付された画像",
+        "rejected": "添付できるのは画像のみです。他のファイルは無視されました。",
+        "remove": {
+          "tooltip": "画像を削除",
+          "ariaLabel": "画像を削除"
+        }
       }
     },
     "queue": {
       "ariaLabel": "保留中のキュー",
       "head": "キュー待ち · 次のターンにマージされます({count})",
+      "imageCount": "🖼️ {count}",
       "edit": {
         "tooltip": "編集: 入力ボックスに戻して再編集します",
         "ariaLabel": "編集"

@@ -864,11 +864,22 @@
       },
       "send": {
         "label": "发送"
+      },
+      "attach": {
+        "tooltip": "添加图片",
+        "ariaLabel": "添加图片",
+        "listAriaLabel": "已添加的图片",
+        "rejected": "仅支持图片，其他文件已忽略。",
+        "remove": {
+          "tooltip": "移除图片",
+          "ariaLabel": "移除图片"
+        }
       }
     },
     "queue": {
       "ariaLabel": "待处理队列",
       "head": "已排队 · 合并到下一回合({count})",
+      "imageCount": "🖼️ {count}",
       "edit": {
         "tooltip": "编辑:拉回输入框重新编辑",
         "ariaLabel": "编辑"

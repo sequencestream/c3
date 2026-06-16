@@ -198,18 +198,9 @@ html {
 }
 
 @media (pointer: coarse) {
-  button,
-  input,
-  select,
-  textarea,
-  [role='button'],
-  [role='tab'],
-  [role='option'],
-  a[href] {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
+  /* 触控设备只做点击体验优化，不再无差别撑高/撑宽控件——否则顶栏 tab、各列
+     头部的紧凑按钮会被顶到 44px 而严重变形。真正需要大点击区的控件(底部导航
+     tab、发送/语音按钮等)都各自带显式尺寸,按需自行保证触控可点性。 */
   button,
   [role='button'],
   [role='tab'],

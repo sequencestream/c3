@@ -7,6 +7,7 @@ import type {
   CreateScheduleInput,
   IntentStatus,
   ModeToken,
+  PromptImage,
   Schedule,
   ServerToClient,
   SessionRunStatus,
@@ -115,7 +116,7 @@ export interface AppMethods {
   onLoadScheduleToolManifest(vendor: string): void
 
   // chat / queue
-  onSubmit(text: string): void
+  onSubmit(text: string, images?: PromptImage[]): void
   onContinue(): void
   stopRun(): void
   refreshStatus(): void
@@ -125,7 +126,7 @@ export interface AppMethods {
   respond(m: PermissionMsg, decision: 'allow' | 'deny'): void
   submitAsk(m: PermissionMsg, answers: Record<string, string>): void
   listCommands(): void
-  onEnqueue(text: string): void
+  onEnqueue(text: string, images?: PromptImage[]): void
   onDeleteQueued(id: number): void
   onEditQueued(item: PendingItem): void
   flushIfReady(): void

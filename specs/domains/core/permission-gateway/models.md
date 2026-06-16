@@ -11,11 +11,11 @@ A single pending question about one tool call.
 | ----------- | ----------- | -------------------------------------------------------------- |
 | `requestId` | text (UUID) | Unique correlation key for this request                        |
 | `toolName`  | text        | Name of the tool the agent wants to run (e.g. `Write`, `Bash`) |
-| `input`     | unknown     | The tool's proposed input, passed through verbatim for display |
+| `input`     | opaque      | The tool's proposed input, passed through verbatim for display |
 | state       | enum        | `Pending` → `Allowed` \| `Denied` (see spec state machine)     |
 
-Relationships: produced by one `canUseTool` invocation; resolved by at most one Permission
-Decision.
+Relationships: produced by one sensitive-tool callback invocation; resolved by at most one
+Permission Decision.
 
 ## Permission Decision
 
@@ -34,11 +34,12 @@ no timeout source — its request waits indefinitely (PG-R2).
 ### Vendor write-back (out-of-loop only, 2026-06-06-003)
 
 For an out-of-loop vendor the neutral `allow`/`deny` is translated to the vendor's native
-`response`: `allow` → `once`, `deny` → `reject` (`always` is not used). A structured
-`404 PermissionNotFoundError` on write-back means the id went stale and is treated as resolved.
+response: `allow` → "allow once", `deny` → "reject" (the "always allow" form is not used). A
+structured "permission not found" (404) on write-back means the id went stale and is treated as
+resolved.
 
 ## Notes
 
 - These entities are transient and in-memory; they are not persisted (SEC-2).
-- `input` is `unknown` at the domain boundary and is never interpreted or mutated by the
+- `input` is opaque at the domain boundary and is never interpreted or mutated by the
   gateway (rule PG-R6).

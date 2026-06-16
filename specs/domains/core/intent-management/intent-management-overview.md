@@ -13,7 +13,7 @@
   local `git` CLI (the automation orchestrator commits & pushes on a verified completion).
 - **Depended on by:** `web-console` (renders the intent view: list + communication chat +
   automation controls).
-- **exposes-api:** true — eight `ClientToServer` messages and two `ServerToClient` messages
+- **exposes-api:** true — eight client-to-server messages and two server-to-client messages
   (`intents`, `automation_status`) on the WebSocket `/ws`. Chat I/O, history replay, and save
   confirmation **reuse** existing protocol events; the intent list/launch/automation messages
   are new. Message shapes are defined in the shared protocol, not here.

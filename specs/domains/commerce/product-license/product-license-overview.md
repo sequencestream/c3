@@ -4,7 +4,7 @@
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Responsibility | Govern whether a c3 installation is **commercially entitled** to create new work, and surface that state to the user. Enforced in c3; the authoritative record lives in the separate **license-server (LS)**.                        |
 | API            | Outbound to LS over the [license-server API contract](../../../shared/api-conventions/license-server-api.md); inbound surfacing over the c3 WebSocket (see [shared protocol](../../../shared/api-conventions/websocket-protocol.md)) |
-| Status         | planned — architecture/spec foundation (ADR-0026); no runtime yet                                                                                                                                                                    |
+| Status         | in progress — LS service foundation built (config, caches, PostgreSQL migrations, health, public plan catalog, embedded web, single binary); activation/heartbeat/payment/OAuth flows pending                                        |
 
 The product-license domain answers one question authoritatively: **is this installation paid-for?**
 A c3 installation is **activated** once against the license-server, then **heartbeats**
@@ -47,9 +47,12 @@ no-refund-agreement flow (LS side), and admin license operations (LS side).
 1. **This deliverable — architecture/spec foundation.** ADR-0026 records why LS exists and the
    accepted technologies; this domain + the LS API contract define the behavior and boundary. No
    runtime.
-2. **LS MVP (authority core).** License + activation + heartbeat records in PostgreSQL; Ed25519
-   signing of entitlement tokens; one-time/short-lived activation codes; heartbeat bearer tokens;
-   admin issue/revoke/inspect over the GitHub-OAuth back-office.
+2. **LS MVP (authority core).** _Foundation in place_ — the standalone Go service boots from
+   environment config, applies idempotent PostgreSQL migrations, serves a redacted health signal and
+   the public plan catalog (`1m`/`6m`/`1y`), and embeds its web as a single binary. _Pending_ —
+   License + activation + heartbeat records in PostgreSQL; Ed25519 signing of entitlement tokens;
+   one-time/short-lived activation codes; heartbeat bearer tokens; admin issue/revoke/inspect over
+   the GitHub-OAuth back-office.
 3. **Buyer payment flow (LS web).** GitHub OAuth buyer login; WeChat Pay checkout; mandatory
    **no-refund service-agreement acceptance** before payment; order → activation-code issuance.
 4. **c3-side enforcement.** Activation, the heartbeat scheduler, the on-disk entitlement cache, the

@@ -52,7 +52,7 @@ See [models.md](models.md) for full attributes.
 | SCH-R17 | A schedule's **trigger** is one of `cron` (time-based; the default, and the only mode for legacy rows migrated before this field existed) or `event` (a kernel run-lifecycle event, 2026-06-08). An `event` trigger declares an `eventTopic` (`run:started` or `run:settled`) and fires its execution when a matching event is published on the kernel event bus (ADR-0018) — reusing the **same** dispatch path, three-tier MCP security, and write-approval queue as a cron run. Event schedules carry no `cronExpression` / `nextRunAt` and are **never** evaluated by the tick loop. Creating/updating an `event` schedule without an `eventTopic` is rejected (`schedule.invalidEventTrigger`). |
 | SCH-R18 | An `event` trigger fires only when **all** hold: the event's run `kind` is `normal` (internal intent comm runs never fire user schedules); the event's `workspacePath` equals the schedule's workspace; and, for `run:settled`, the terminal `reason` (`complete` / `error` / `aborted`) is in the schedule's optional `eventReasonFilter` (empty/null = any reason). Event-storm throttling reuses SCH-R7 serial execution: an event arriving while the schedule already has an in-flight execution is **skipped**, not queued.                                                                                                                                                                     |
 | SCH-R19 | The display `name` is **auto-generated on create** (client name stripped, SCH naming). On **update** the client may supply a manual title via `config.name`: a non-empty value is stored as a **sticky user-set name** (`config.nameSource='user'`) that auto-naming never overrides — it survives later body edits (an update with no `name` key keeps the existing name and its provenance). An empty `name` on update **reverts** to a freshly auto-derived name (clears the user marker). Create never accepts a client name (manual titles are edit-only).                                                                                                                                      |
-| SCH-R20 | **Internal one-shot agent recovery schedules** (2026-06-15-002). The agent-config quota recovery flow may create a system-owned schedule row whose `config.internalAction='agent_quota_recovery'`, `config.agentId` names the disabled agent, and `config.resetAt` is the absolute reset instant. It reuses the cron/`next_run_at` tick engine but is one-shot: when due, the dispatcher sets that agent `enabled=true`, then the scheduler marks the schedule `paused` and clears `next_run_at` so it will not fire again. These rows are not user-authored command schedules and do not run shell commands.                                                                                        |
+| SCH-R20 | **Internal one-shot agent recovery schedules** (2026-06-15-002). The agent-config quota recovery flow may create a system-owned schedule row whose config marks it an agent-quota-recovery action, names the disabled agent, and records the absolute reset instant. It reuses the cron / next-run tick engine but is one-shot: when due, the dispatcher re-enables that agent, then the scheduler marks the schedule `paused` and clears the next-run instant so it will not fire again. These rows are not user-authored command schedules and do not run shell commands.                                                                                                                          |
 
 ## States & transitions
 
@@ -97,25 +97,24 @@ chain from `pending` to a terminal state.
 
 The web-console uses a three-column layout for the schedules view:
 
-- **Left column** — `ScheduleList`: schedule accordion list with inline configuration summary (type,
+- **Left column** — the schedule list: an accordion list with inline configuration summary (type,
   cron, next/upcoming runs, MCP mode, tool allow/deny lists, config JSON, timestamps). Selecting a
   schedule here focuses the middle column on that schedule's execution history.
-- **Middle column** — `ExecutionHistoryList`: execution log rows for the currently selected schedule,
-  each showing **status** badge, **started** time, **duration**, and **exit code**. Clicking a row
-  selects that execution and focuses the right column on its details.
-- **Right column** — `ExecutionDetail`: tabbed detail panel for the selected execution. Three tabs are
-  available conditionally:
+- **Middle column** — the execution-history list: execution log rows for the currently selected
+  schedule, each showing **status** badge, **started** time, **duration**, and **exit code**.
+  Clicking a row selects that execution and focuses the right column on its details.
+- **Right column** — the execution detail: a tabbed detail panel for the selected execution. Three
+  tabs are available conditionally:
   - **Execution Info** (all types): status, started/finished times, duration, exit code, raw output,
     and error text.
   - **Session** (only `llm`-type schedules): a read-only replay of the execution's agent session,
-    rendered through the same `ChatMessages` component used by the sessions page — markdown
-    rendering, tool-call batch folding, and message grouping are all shared.
+    rendered through the same chat-message rendering used by the sessions page — markdown rendering,
+    tool-call batch folding, and message grouping are all shared.
   - **Command Log** (only `command`-type schedules): the shell output in a full-width terminal-like
     view.
 
-The client sends `get_schedule_detail { scheduleId }`; the server replies with
-`schedule_detail { schedule, logs }`, where `logs` are the schedule's execution logs ordered
-**most-recently-started first** (`started_at DESC`, fetched by `listExecutionLogs(scheduleId)`).
+The client requests a schedule's detail; the server replies with the schedule plus its logs, ordered
+**most-recently-started first**.
 
 A schedule with no logs shows an empty state in the middle column; selecting a schedule without any
 execution selected shows an empty state in the right column. The history re-fetches for the currently
@@ -126,31 +125,30 @@ execution selection.
 ### Session transcript (read path, SCH-R16)
 
 For `llm`-type schedules, the right column's **Session** tab renders a read-only replay of the
-execution's agent session through the `ChatMessages` component — the same component used by the
-sessions page, providing markdown rendering, tool-call batch folding, and message grouping. The view
-is purely historical: no permission responses, no streaming, no continue interaction. `command`-type
-schedules do not show the Session tab (no agent session is produced).
+execution's agent session through the same chat-message rendering used by the sessions page, providing
+markdown rendering, tool-call batch folding, and message grouping. The view is purely historical: no
+permission responses, no streaming, no continue interaction. `command`-type schedules do not show the
+Session tab (no agent session is produced).
 
-When the user switches to the Session tab, the client auto-fetches the transcript if not yet cached:
-`get_execution_transcript { scheduleId, executionId }`. The server resolves the execution log's
-recorded `sessionId`, replays the on-disk transcript via `agent-session` (`loadHistory`), and replies
-with `execution_transcript { executionId, sessionId, items }`. `items` is a flattened
-`TranscriptItem[]` (`assistant` / `user` / `tool_use` / `tool_result` / `notice`), identical to the
-live chat replay. A `command`-type or sessionless execution returns `{ sessionId: null, items: [] }`;
-an unknown `executionId` returns an `error`. The transcript is fetched once and cached client-side
-per `executionId`.
+When the user switches to the Session tab, the client auto-fetches the transcript if not yet cached
+via `get_execution_transcript`. The server resolves the execution log's recorded session id, replays
+the stored transcript via agent-session, and replies with `execution_transcript` carrying the
+execution id, session id, and a flattened list of transcript items (assistant / user / tool-use /
+tool-result / notice), identical to the live chat replay. A `command`-type or sessionless execution
+returns a null session id and an empty item list; an unknown execution id returns an error. The
+transcript is fetched once and cached client-side per execution.
 
-The mapping from `TranscriptItem[]` to `ChatMsg[]` is handled by a pure library module
-(`web/src/lib/execution-view.ts`), analogous to `discussion-view.ts` for discussions. See
-`transcriptItemToChat()` and `transcriptToChat()` there; the latter is also unit-tested.
+The mapping from transcript items to chat messages is handled by a pure presentation step, analogous
+to the one for discussions — converting one transcript item to a chat message, and a whole transcript
+to a chat-message list; the latter is also unit-tested.
 
 ## Task types
 
-| Type         | Config                              | Execution model                                                                                                                                                  |
-| ------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `command`    | Shell command string                | Spawn a headless OS process (`exec`/`spawn`) in the workspace `cwd`. Stdout + stderr captured into `output`. Exit code 0 ⇒ `success`; non-zero/error ⇒ `failed`. |
-| `llm_prompt` | Prompt text + optional session mode | Submit the text as the first user turn to a fresh agent session in the workspace. Run streams are captured. Session ends after the turn.                         |
-|              |                                     |                                                                                                                                                                  |
+| Type         | Config                              | Execution model                                                                                                                                           |
+| ------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`    | Shell command string                | Spawn a headless OS process in the workspace directory. Stdout + stderr are captured into the output. Exit code 0 ⇒ `success`; non-zero/error ⇒ `failed`. |
+| `llm_prompt` | Prompt text + optional session mode | Submit the text as the first user turn to a fresh agent session in the workspace. Run streams are captured. Session ends after the turn.                  |
+|              |                                     |                                                                                                                                                           |
 
 Both types share the common scheduling, permission, and logging infrastructure. Differences are in
 the execution driver only.
@@ -172,16 +170,16 @@ new scheduler or a new table column.
 
 The run path publishes these **kernel-bus** events (consumed here; they are not wire frames):
 
-- `run:started` — published once per `launchRun`, before the vendor fork, so it covers both the
-  claude and the driver path. Payload `{ sessionId, workspacePath, kind }`.
+- `run:started` — published once per run launch, before the vendor fork, so it covers both the
+  claude and the driver path. Payload: session id, workspace path, run kind.
 - `run:settled` — published at the terminal-state backstop of every run (claude path and driver
-  path) and on a vendor-unavailable early return. Payload `{ sessionId, workspacePath, reason, kind }`,
-  where `reason` ∈ `complete | error | aborted` (user stop ⇒ `aborted`; clean finish ⇒ `complete`;
-  a throw / chain exhaustion / single-attempt failure ⇒ `error`).
+  path) and on a vendor-unavailable early return. Payload: session id, workspace path, terminal
+  reason, run kind — where the reason ∈ `complete | error | aborted` (user stop ⇒ `aborted`; clean
+  finish ⇒ `complete`; a throw / chain exhaustion / single-attempt failure ⇒ `error`).
 
-`kind` is the unified **RunKind** (`session | intent | discussion | schedule | consensus | tool`;
-see glossary + ADR-0018), the single SoT in `shared/src/protocol.ts` that replaced the old two-value
-`normal | intent`. Only `session` runs fire event schedules (SCH-R18; migrated verbatim from the old
+The run kind is the unified **RunKind** (`session | intent | discussion | schedule | consensus | tool`;
+see glossary + ADR-0018), the single source of truth in the shared protocol that replaced the old
+two-value `normal | intent`. Only `session` runs fire event schedules (SCH-R18; migrated verbatim from the old
 `normal` guard — semantics unchanged). Note `schedule` is a _trigger source_, not a run type: an
 event-triggered schedule reacts to a `session`-kind run; `schedule` only tags the scheduler's own
 socket-less run, which never re-triggers a schedule. A `run:started` always has a matching `run:settled`.
@@ -190,8 +188,8 @@ socket-less run, which never re-triggers a schedule. A `run:started` always has 
 
 On each event the scheduler selects active `event` schedules whose `eventTopic` matches, then keeps
 only those passing the SCH-R18 filters (kind → workspace → reason). Each survivor dispatches through
-the normal `dispatchAndTrack` → `execute` path. SCH-R7 in-flight serialization doubles as
-event-storm throttling: a second event for a schedule already running is skipped.
+the normal dispatch-and-track → execute path. SCH-R7 in-flight serialisation doubles as event-storm
+throttling: a second event for a schedule already running is skipped.
 
 ## Workspace binding
 
@@ -302,14 +300,15 @@ The following capabilities are explicitly **out of scope** for the v1 schedules 
 
 ## Vendor tool manifest
 
-Each vendor adapter exposes a `listTools(workspacePath, mcpServers?)` method that returns the vendor's
-**static tool manifest** — a list of `{name, isWrite}` entries. The result is a pre-judged classification
-(not a runtime MCP server probe), following the same convention as the schedule executor's `freezeTools()`.
+Each vendor adapter exposes a capability that returns the vendor's **static tool manifest** — a list
+of entries, each a tool name plus a write/non-write classification. The result is a pre-judged
+classification (not a runtime MCP server probe), following the same convention as the schedule
+executor's tool-freezing step.
 
-- **Claude**: returns SDK built-in tools (`Read`, `Grep`, `Glob`, `LS`, `WebFetch`, `WebSearch`,
+- **Claude**: returns the SDK built-in tools (`Read`, `Grep`, `Glob`, `LS`, `WebFetch`, `WebSearch`,
   `TaskCreate`, `TaskList`, `TaskUpdate`, `TaskGet`, `Write`, `Edit`, `NotebookEdit`, `Agent`, `Bash`)
-  plus workspace MCP server namespace prefixes (`mcp__<server>__`). MCP namespaces are classified as
-  write (conservative).
+  plus the workspace MCP server namespace prefixes (`mcp__<server>__`). MCP namespaces are classified
+  as write (conservative).
 
 The tool manifest is fetched by the web via `get_schedule_tool_manifest { vendor, workspacePath }` and
 returned as `schedule_tool_manifest { vendor, tools }`. The frontend uses this to render the tool
@@ -317,15 +316,10 @@ selection UI in the schedule form.
 
 ## Vendor routing (execution)
 
-When an `llm_prompt` schedule fires, the dispatcher resolves the agent for the schedule's vendor:
-
-```
-resolveFirstAgentOfVendor(schedule.vendor) → first enabled agent of that vendor
-                                           → fallback to default agent
-```
-
-log a warning and fall back to the same SDK `query()` path — their dedicated execution paths are a
-future entry.
+When an `llm_prompt` schedule fires, the dispatcher resolves the agent for the schedule's vendor: the
+first enabled agent of that vendor, falling back to the default agent. Vendors without a dedicated
+execution path log a warning and fall back to the same shared SDK query path — their dedicated
+execution paths are a future entry.
 
 ## Domain events (wire)
 

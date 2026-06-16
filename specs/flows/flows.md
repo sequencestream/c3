@@ -6,9 +6,9 @@ rules — each step references the owning domain's rule ID (`AS-R*`, `SR-R*`, `P
 `RM-A*`, `SCH-R*`, `AC-R*`, `AUTH-R*`, `PL-R*`). Read the domain spec for _what a rule means_; read a
 flow for _the order things happen and where they branch_.
 
-Wire message shapes are defined once in
-[`shared/api-conventions/websocket-protocol.md`](../shared/api-conventions/websocket-protocol.md)
-(code: `shared/src/protocol.ts`). Flows name messages; they do not redefine their shapes.
+Wire message shapes are defined once in the
+[WebSocket protocol contract](../shared/api-conventions/websocket-protocol.md).
+Flows name messages; they do not redefine their shapes.
 
 ## The flows
 

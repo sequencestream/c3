@@ -90,48 +90,16 @@ owner before confirmation.
 
 ## Domain type values
 
-### `state`
+The permitted values for each enumerated attribute:
 
-```typescript
-type ScheduleState = 'active' | 'paused' | 'archived'
-```
-
-### `taskType`
-
-```typescript
-type ScheduleTaskType = 'command' | 'llm_prompt'
-```
-
-### `triggerType` / event trigger (2026-06-08)
-
-```typescript
-type ScheduleTriggerType = 'cron' | 'event'
-type RunLifecycleTopic = 'run:started' | 'run:settled'
-type RunEndReason = 'complete' | 'error' | 'aborted'
-// The `kind` carried on run:started/run:settled is the unified RunKind SoT:
-type RunKind = 'session' | 'intent' | 'discussion' | 'schedule' | 'consensus' | 'tool'
-```
-
-### `executionIdentity`
-
-```typescript
-type ExecutionIdentity = 'read-only' | 'sandboxed' | 'full-access'
-```
-
-### `executionStatus`
-
-```typescript
-type ExecutionStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
-```
-
-### `pendingChangeType`
-
-```typescript
-type PendingChangeType = 'create' | 'update_field' | 'pause' | 'resume'
-```
-
-### `trigger`
-
-```typescript
-type ScheduleTrigger = 'scheduled' | 'manual'
-```
+- **state** — `active` | `paused` | `archived`
+- **taskType** — `command` | `llm_prompt`
+- **triggerType** (event trigger, 2026-06-08) — `cron` | `event`
+  - run-lifecycle topic — `run:started` | `run:settled`
+  - run end reason — `complete` | `error` | `aborted`
+  - the run kind carried on `run:started` / `run:settled` is the unified RunKind (single source of
+    truth) — `session` | `intent` | `discussion` | `schedule` | `consensus` | `tool`
+- **executionIdentity** — `read-only` | `sandboxed` | `full-access`
+- **executionStatus** — `pending` | `running` | `success` | `failed` | `cancelled`
+- **pendingChangeType** — `create` | `update_field` | `pause` | `resume`
+- **trigger** — `scheduled` | `manual`

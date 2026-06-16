@@ -21,23 +21,22 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
   (e.g. e2e) via the `c3 start --settings <path>` CLI flag — it names the exact settings.json file
   and its directory also holds `state.json`, relocating the whole config dir without touching the
   real `~/.c3`. (The `C3_DIR` env var, already honored by the db layer, likewise relocates the dir.)
-  Stored as `SystemSettings.projectConfigs` (a
-  `Record<workspacePath, WorkspaceSetting>`). **All writes go through the single, concurrency-safe
-  write path** (`kernel/config/store.ts`): in-process serialization + a cross-process file
-  lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes
+  Stored under the `projectConfigs` key (a per-workspace-path → workspace-setting map). **All writes
+  go through the single, concurrency-safe write path:** in-process serialization + a cross-process
+  file lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes
   per-project config. See [persistence.md](persistence.md) (唯一写入路径 + 双层锁，2026-06-08-003).
 - Separate from the session-registry's `state.json` (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
-- **Migration (2026-06-07-017):** `defaultMode` is now a `Record<VendorId, ModeToken>` instead of a
-  single `ModeToken`. The old single-string format is detected by `normalizeWorkspaceSetting` and
-  automatically distributed to each vendor key (the value is used as-is for every vendor; each
-  vendor's catalog validation happens at the per-vendor save handler). The read-layer one-shot
-  migration of legacy global `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars`
+- **Migration (2026-06-07-017):** `defaultMode` is now a per-vendor map (vendor id → mode token)
+  instead of a single mode token. The old single-string format is detected during workspace-setting
+  normalization and automatically distributed to each vendor key (the value is used as-is for every
+  vendor; each vendor's catalog validation happens at the per-vendor save handler). The read-layer
+  one-shot migration of legacy global `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars`
   into per-project config is unchanged.
 
 ## Dependency direction
 
 ```
-web-console ──(/ws)──► agent-config ──supplies env/model overrides──► agent-session ──► SDK query()
+web-console ──(/ws)──► agent-config ──supplies env/model overrides──► agent-session ──► SDK run loop
                               │
                               └──► project-config ──supplies defaultMode/consensus/devSkill/rounds/speech──► agent-session
 ```

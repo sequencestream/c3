@@ -57,8 +57,8 @@ flowchart TD
    synchronously **claims** the `intentId` in a single-process launch set; a concurrent duplicate
    start returns `intent.devStartInFlight` and creates nothing (`RM-R8`).
 2. **Git branch mode (`WorkspaceSetting.gitBranchMode`).** `worktree` ⇒ create/reuse an isolated
-   worktree at `<c3-home>/worktrees/<project>/intent-<ID>` branched from `defaultMainBranch`;
-   `current-branch` (default) ⇒ develop in place. The dev session's `effectiveCwd` is set
+   per-intent worktree under the c3 home directory, branched from `defaultMainBranch`;
+   `current-branch` (default) ⇒ develop in place. The dev session's effective working directory is set
    accordingly (`RM-R8`).
 3. **intent-management → agent-session.** A **background normal session** is started running the
    configurable development skill (`devSkill`; empty ⇒ no prefix) with the intent content; the
@@ -75,7 +75,7 @@ flowchart TD
 - **Reconcile on entry (`RM-R18`).** On `open_intent_chat`, each `in_progress` intent's
   `lastDevSessionId` is checked against the process table: a **dead** process whose last 3 assistant
   messages the completion judge confirms `done` is **auto-completed** (commit + push +
-  `updateStatus(done)`) — for manual **and** automation runs alike; a live process derives
+  status set to `done`) — for manual **and** automation runs alike; a live process derives
   `runStatus = 'running'`; otherwise `dangling`. This is one of the two auto-`done` paths.
 
 ## Discussion bridge

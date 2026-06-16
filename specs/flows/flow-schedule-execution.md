@@ -19,7 +19,7 @@ flowchart TD
     Q --> CF[confirm_queue → persist]
     CF --> SCHED[active schedule]
     SCHED --> TRIG{trigger}
-    TRIG -- cron tick --> DISP[dispatchAndTrack]
+    TRIG -- cron tick --> DISP[dispatch & track]
     TRIG -- run lifecycle event --> DISP
     DISP --> ID{execution identity}
     ID --> CMD[command → headless shell]
@@ -54,7 +54,7 @@ A schedule's trigger is one of two (`SCH-R17`):
   `run:settled` — the terminal `reason` passes the optional `eventReasonFilter` (`SCH-R18`). Event
   schedules carry no `cronExpression`/`nextRunAt` and are never tick-evaluated (`SCH-R17`).
 
-Both reuse the **same** `dispatchAndTrack → execute` path, three-tier execution identity, and write
+Both reuse the **same** dispatch-and-track → execute path, three-tier execution identity, and write
 queue (`SCH-R17`).
 
 ## Execution path
@@ -81,9 +81,9 @@ queue (`SCH-R17`).
 - Execution logs are **append-only** once `startedAt` is set, advancing `pending → running →
 success | failed | cancelled` (`SCH-R10`). A `schedules` broadcast on completion re-fetches the
   selected schedule's history so finished runs appear without a manual refresh.
-- The three-column view (`ScheduleList` → `ExecutionHistoryList` → `ExecutionDetail`) shows config,
+- The three-column view (schedule list → execution-history list → execution detail) shows config,
   log rows, and a tabbed detail. The **Session** tab (llm only) replays the execution's transcript
-  read-only through the shared `ChatMessages` component via `get_execution_transcript` (`SCH-R16`);
+  read-only through the shared chat-message renderer via `get_execution_transcript` (`SCH-R16`);
   a sessionless/command execution shows no Session tab and returns an empty replay, never an error.
 
 ## Branches & exceptions (anti-scenarios)

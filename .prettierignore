@@ -3,3 +3,4 @@ dist
 web/dist
 changes
 pnpm-lock.yaml
+license-server

@@ -1,0 +1,9 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.ls-shell {
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+}

@@ -45,7 +45,7 @@ flowchart TD
    `basic.enabled` is derived: true ⇔ accounts non-empty and `adminUsername` references one.
 4. **Account-store ownership.** The whole `basic` account set is mutated **only** by these dedicated
    messages; a generic `save_settings` never touches it — the server forces the entire basic provider
-   back to the on-disk value (`preserveBasicProvider`), so a stale/empty client draft cannot wipe,
+   back to the on-disk value, so a stale/empty client draft cannot wipe,
    reassign, or overwrite accounts (`AUTH-R7`). OAuth's `adminEmail` (which flows through `save_settings`)
    must be non-empty and a member of `allowedEmails`, else the save is rejected (`auth.oauthAdminInvalid`).
 
@@ -56,7 +56,7 @@ flowchart TD
    the plaintext exists in transit only, never persisted (`AUTH-R3`).
 2. **Result.** `login_result` (`AuthLoginResult`) — success issues a provider-neutral
    `AuthSessionToken` (`{ tokenId, subject, issuedAt, expiresAt }`); the token signing secret is
-   referenced by `signingKeyRef`, never persisted in `settings.json` (`AUTH-R4`). **Token
+   referenced by `signingKeyRef`, never persisted in the system settings (`AUTH-R4`). **Token
    signing/verification is deferred.**
 3. **Unauthenticated.** `unauthenticated` is the WS analogue of HTTP 401; `logout` ends a session.
    **Request-level enforcement is deferred** — today the gate is UI-level only.
@@ -71,10 +71,10 @@ relaxation is deferred** — the server still binds localhost-only.
 ## Branches & exceptions (anti-scenarios)
 
 - **Default = disabled, fail-soft.** `SystemSettings.auth` absent / `enabled: false` / a provider
-  that fails validation ⇒ "no auth", the localhost-only default. `normalize()` drops a malformed
-  `auth` block to `undefined` and never throws — an invalid config can never lock the user out or
+  that fails validation ⇒ "no auth", the localhost-only default. Config normalization drops a malformed
+  `auth` block to absent and never throws — an invalid config can never lock the user out or
   break boot (`AUTH-R1`).
-- **Backward compatible.** An existing `settings.json` with no `auth` field round-trips with
+- **Backward compatible.** An existing settings store with no `auth` field round-trips with
   identical (no-auth) behaviour (`AUTH-R2`).
 - **Never plaintext.** No type, example, or test carries a real plaintext password as a stored
   value; only the PHC hash is persisted (`AUTH-R3`).

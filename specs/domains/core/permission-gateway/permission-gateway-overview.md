@@ -4,9 +4,9 @@
 - **One-line:** Gates every sensitive tool call behind a human decision routed to the browser.
 - **Owner:** maintainer
 - **Status:** active
-- **Depends on:** the SDK's `canUseTool` callback contract; the WebSocket transport
-  provided by `agent-session`.
-- **Depended on by:** `agent-session` (calls into the gateway from the `query()` options).
+- **Depends on:** the SDK's sensitive-tool callback contract; the WebSocket transport
+  provided by agent-session.
+- **Depended on by:** agent-session (calls into the gateway from the SDK run options).
 - **exposes-api:** false
 - **notes:** Internal domain. Its only outward surface is the `permission_request` /
   `permission_response` pair on the shared WebSocket protocol.

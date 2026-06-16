@@ -1,15 +1,15 @@
 # codes — Design
 
-Implements the [spec](spec.md). The server feature lives under `server/src/features/codes/` and
-uses the shared WebSocket protocol as its only API.
+Implements the [spec](spec.md). The server feature uses the shared WebSocket protocol as its only
+API.
 
 ## Data Model
 
-| Model         | Shape                                                                                   | Notes                                                          |
-| ------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `CodeDirItem` | `name`, `path`, `type`                                                                  | `path` is workspace-relative; `type` is `file` or `directory`. |
-| `CodeFile`    | `path`, `size`, `binary`, optional `content`                                            | `content` is present only for text files under the size limit. |
-| `CodeHit`     | `path`, optional `line`, optional `lineText`, optional `match`, `truncated` information | Content hits include line context; filename hits do not.       |
+| Model          | Shape                                                                                   | Notes                                                          |
+| -------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Directory item | `name`, `path`, `type`                                                                  | `path` is workspace-relative; `type` is `file` or `directory`. |
+| File read      | `path`, `size`, `binary`, optional `content`                                            | `content` is present only for text files under the size limit. |
+| Search hit     | `path`, optional `line`, optional `lineText`, optional `match`, `truncated` information | Content hits include line context; filename hits do not.       |
 
 ## API Design
 
@@ -60,6 +60,6 @@ This prevents symlink escape and sibling-prefix confusion (`/workspace` versus
 
 ## Dependencies
 
-- `server/src/state.ts` for workspace id resolution.
-- Node filesystem APIs for read-only inspection.
-- Shared protocol types in `shared/src/protocol.ts`.
+- The session registry for workspace id resolution.
+- Operating-system filesystem APIs for read-only inspection.
+- The shared WebSocket protocol contract.

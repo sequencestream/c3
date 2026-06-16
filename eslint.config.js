@@ -13,6 +13,9 @@ export default tseslint.config(
       '**/node_modules/**',
       'changes/**',
       'web/dist/**',
+      // Separate Go service with its own toolchain (ADR-0026); not part of the
+      // pnpm workspace, so the root TS/Vue lint never applies to it.
+      'license-server/**',
       '.claude/worktrees/**',
     ],
   },

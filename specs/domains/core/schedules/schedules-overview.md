@@ -11,10 +11,10 @@ prompt — that fires either at a configured time (cron) or on a subscribed **ru
 (`run:started` / `run:settled`, 2026-06-08). Each execution produces an **ExecutionLog** for review.
 
 Schedules are **workspace-scoped**: every schedule is bound to one workspace (registrant directory, via
-[session-registry](../session-registry/spec.md)) and **vendor-scoped**: a schedule declares which vendor
-via `resolveFirstAgentOfVendor()`. The vendor's tool manifest — the SDK built-in tools plus (for Claude)
-workspace MCP namespace prefixes — is listed at schedule creation time via `get_schedule_tool_manifest`
-so the user can select which tools the schedule may use.
+[session-registry](../session-registry/spec.md)) and **vendor-scoped**: a schedule declares which vendor,
+and execution resolves to the first enabled agent of that vendor. The vendor's tool manifest — the SDK
+built-in tools plus (for Claude) workspace MCP namespace prefixes — is listed at schedule creation time
+via `get_schedule_tool_manifest` so the user can select which tools the schedule may use.
 
 The scheduling engine runs inside the server process and drives execution via the same runtime
 infrastructure that [agent-session](../agent-session/spec.md) owns.

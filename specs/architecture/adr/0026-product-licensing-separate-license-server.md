@@ -95,8 +95,8 @@ On the **c3 side**, the accepted concessions are deliberately minimal:
 
 - **One new persistent store** — a small on-disk **entitlement cache** holding the last LS-signed
   entitlement token plus the heartbeat bearer token, so the 30-minute offline grace and restart
-  continuity work. This is an accepted cost, analogous to `settings.json` already carrying password
-  hashes (ADR-0023). c3 still has **no general database** and **no second agent runtime**.
+  continuity work. This is an accepted cost, analogous to the local configuration already carrying
+  password hashes (ADR-0023). c3 still has **no general database** and **no second agent runtime**.
 - **c3-side gating** — c3 verifies the Ed25519-signed token **offline**, treats entitlement as
   `active` while a valid token is within its term and the last successful heartbeat is under the
   grace window, and **gates new-session creation** when it is not. Running sessions and in-flight

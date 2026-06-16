@@ -36,7 +36,7 @@ flowchart TD
 1. **web-console → intent-management.** `start_automation`. At most **one** orchestrator runs per
    project; a second start is a no-op returning the live status (`RM-A2`). The orchestrator is
    in-memory and does not survive a server restart (`RM-A2`).
-2. **Global concurrency gate.** Before `pickNext`, if **any** `in_progress` intent in the project
+2. **Global concurrency gate.** Before picking the next intent, if **any** `in_progress` intent in the project
    (including manually-launched) has a **truly running** dev session, the orchestrator attaches an
    internal viewer and waits for that turn to settle before re-checking — preventing concurrent dev
    sessions that would conflict on file writes (`RM-A12`). A **dangling** session does not block.

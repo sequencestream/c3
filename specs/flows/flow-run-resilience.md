@@ -48,10 +48,10 @@ unexpectedly` at the source; it is decoupled from recovery.
 
 ## Branch B — agent failure → degradation chain
 
-1. **Collect.** A degradable agent error is collected at `onDegradableError`; the launcher publishes
+1. **Collect.** A degradable agent error is collected at the degradable-error hook; the launcher publishes
    `agent:error` on the kernel event bus **in addition to** the existing wire frames (`AS-R25`,
    ADR-0018).
-2. **Fall back — same vendor only.** `buildAgentsToTry` keeps only **same-vendor** chain agents;
+2. **Fall back — same vendor only.** The chain builder keeps only **same-vendor** chain agents;
    a different-vendor entry is **skipped, never launched** (`AS-R22`) — a Claude session cannot
    `resume` into Codex. Each fallback advance emits `agent_failed` + publishes `agent:fallback`. A
    fallback opens a **fresh** same-vendor session (degradation never resumes).
@@ -63,7 +63,7 @@ unexpectedly` at the source; it is decoupled from recovery.
 
 When the current agent is unavailable, the user re-targets the session via the title-bar switcher
 (`set_session_agent`). Candidates come from the **same** vendor-homogeneous rule as the chain and
-consensus voters (`sameVendorEnabledAgents`, `AC-R19`): only same-vendor, host-binary-present,
+consensus voters (the same-vendor enabled-agents set, `AC-R19`): only same-vendor, host-binary-present,
 enabled peers; a cross-vendor change is rejected (`AS-R23`, `AC-R17`). The switch rewrites the fact
 only — it does **not** relaunch; the next `user_prompt` resumes the same run with the new agent via
 the unchanged launch path (`AS-R23`). The candidate set rides `session_selected.agentSwitch`.

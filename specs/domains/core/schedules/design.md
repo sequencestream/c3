@@ -1,18 +1,18 @@
 # schedules — Design
 
-Implements the [spec](spec.md). Lives in `server/src/schedules/` — a self-contained module with
-its own store, scheduler loop, and execution dispatcher.
+Implements the [spec](spec.md). A self-contained domain module with its own store, scheduler loop,
+and execution dispatcher.
 
-## Module split
+## Responsibility split
 
-| Concern               | File / Area                              | Notes                                                                                      |
-| --------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Store (CRUD + SQLite) | `server/src/schedules/store.ts`          | Workspace-validated CRUD for schedules + execution logs                                    |
-| Scheduler engine      | `server/src/schedules/scheduler.ts`      | Fixed-interval tick loop; queries due schedules by `next_run_at`                           |
-| Execution dispatcher  | `server/src/schedules/dispatcher.ts`     | Spawns command process or LLM agent session; writes execution log                          |
-| Write queue           | `server/src/schedules/queue.ts`          | _(planned)_ Per-connection pending change queue; confirm/discard lifecycle — not yet impl. |
-| WS handler            | `server/src/server.ts` (schedule events) | Route schedule-related WS events to the store/scheduler                                    |
-| Workspace archiving   | `server/src/schedules/archiver.ts`       | Listens for workspace removal; pauses all schedules under that workspace                   |
+| Concern               | Responsibility                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| Store (CRUD + SQLite) | Workspace-validated CRUD for schedules + execution logs                                    |
+| Scheduler engine      | Fixed-interval tick loop; queries due schedules by their next-run instant                  |
+| Execution dispatcher  | Spawns a command process or an LLM agent session; writes the execution log                 |
+| Write queue           | _(planned)_ Per-connection pending-change queue; confirm/discard lifecycle — not yet impl. |
+| WS handling           | Routes schedule-related WebSocket events to the store/scheduler                            |
+| Workspace archiving   | Listens for workspace removal; pauses all schedules under that workspace                   |
 
 ## Data model (SQLite)
 
@@ -46,40 +46,40 @@ CREATE INDEX idx_sch_workspace ON schedules(workspace_path);
 Design notes:
 
 - `workspace_path` is the resolved absolute path (not UUID), matching the workspace registry key.
-- Timing is **cron-driven**: `cron_expression` + computed `next_run_at` (Unix ms). The scheduler
-  polls `SELECT * FROM schedules WHERE status='active' AND next_run_at <= ?`. After each execution,
-  `next_run_at` is recomputed from the cron expression.
-- **Time zone:** cron fields are interpreted in the **system-wide IANA time zone**
-  (`SystemSettings.timezone`, see [system-config](../../system-config/) / `server/src/settings.ts`),
-  not in UTC. `computeNextRunAt(expr, after, timeZone)` in `shared/src/cron.ts` takes the zone and
-  maps the wall-clock cron to an absolute `next_run_at` instant, handling daylight-saving transitions
-  (spring-forward gap times are skipped; fall-back fold times take the earlier offset). Both server
-  call sites (`store.ts` create/update, `scheduler.ts` post-run recompute) pass `getTimezone()`; the
-  web preview passes the same zone so its next/upcoming-run display matches the scheduled instant.
-  The default zone is the **server's local time zone**
-  (`Intl.DateTimeFormat().resolvedOptions().timeZone`) — an invalid/unset value falls back to it.
-  Omitting the zone (or passing `'UTC'`) keeps the historical UTC computation, unchanged.
-  **Behaviour change:** this replaces the previous UTC-only interpretation. On upgrade, existing
-  schedules' actual trigger moments shift from UTC to the server-local (or configured) zone — e.g.
-  `0 11 * * *` moves from 11:00 UTC to 11:00 local. This is intentional (it aligns cron with what the
-  user sees) and requires no migration: `next_run_at` is recomputed on the next create/update/run.
-- **Trigger type (v5, 2026-06-08):** `trigger_type` selects `cron` (timing via `cron_expression` /
-  `next_run_at`) or `event` (a kernel run-lifecycle event). Event rows keep `cron_expression=''`,
-  `next_run_at=NULL`, and set `event_topic` (+ optional `event_reason_filter`, a JSON `RunEndReason[]`).
-  `getDueSchedules` only returns cron rows (event rows have null `next_run_at`). The v5 migration adds
-  the three columns idempotently via `PRAGMA table_info` (the shared global `user_version` is untrusted,
-  same as the v2–v4 migrations), defaulting legacy rows to `cron` (SCH-R17).
+- Timing is **cron-driven**: a cron expression plus a computed next-run instant (Unix ms). The
+  scheduler polls for active rows whose next-run instant is at or before now. After each execution,
+  the next-run instant is recomputed from the cron expression.
+- **Time zone:** cron fields are interpreted in the **system-wide IANA time zone** (the configured
+  system timezone, see [system-config](../../system-config/)), not in UTC. The next-run computation
+  takes the zone and maps the wall-clock cron to an absolute instant, handling daylight-saving
+  transitions (spring-forward gap times are skipped; fall-back fold times take the earlier offset).
+  Both server call sites (create/update and the post-run recompute) pass the configured zone; the web
+  preview passes the same zone so its next/upcoming-run display matches the scheduled instant. The
+  default zone is the **server's local time zone** — an invalid/unset value falls back to it. Omitting
+  the zone (or specifying UTC) keeps the historical UTC computation, unchanged. **Behaviour change:**
+  this replaces the previous UTC-only interpretation. On upgrade, existing schedules' actual trigger
+  moments shift from UTC to the server-local (or configured) zone — e.g. `0 11 * * *` moves from 11:00
+  UTC to 11:00 local. This is intentional (it aligns cron with what the user sees) and requires no
+  migration: the next-run instant is recomputed on the next create/update/run.
+- **Trigger type (v5, 2026-06-08):** the trigger type selects `cron` (timing via the cron expression
+  and next-run instant) or `event` (a kernel run-lifecycle event). Event rows keep an empty cron
+  expression, a null next-run instant, and set the event topic (plus an optional event reason filter,
+  a JSON list of terminal reasons). The due-schedule query only returns cron rows (event rows have a
+  null next-run instant). The v5 migration adds the three columns idempotently by inspecting the
+  existing column set (the shared global schema-version counter is untrusted, same as the v2–v4
+  migrations), defaulting legacy rows to `cron` (SCH-R17).
 - **Internal one-shot agent recovery (2026-06-15-002):** no schema migration is required. The
-  recovery flow stores a normal `command` row with `config.internalAction='agent_quota_recovery'`,
-  `config.agentId`, and `config.resetAt`; `next_run_at` is set to that absolute reset instant. The
-  dispatcher recognizes this config and re-enables the agent instead of spawning a shell; the scheduler
-  then sets `status='paused'` and `next_run_at=NULL`, making the row one-shot.
-- `type` maps to the spec's `task_type` but uses `'llm'` instead of `'llm_prompt'` for brevity.
-- `config` is a JSON blob validated at the application layer. There is no check constraint —
+  recovery flow stores a normal `command` row whose config marks it an agent-quota-recovery action,
+  names the disabled agent, and records the absolute reset instant; the next-run instant is set to
+  that reset instant. The dispatcher recognises this config and re-enables the agent instead of
+  spawning a shell; the scheduler then sets the status to `paused` and clears the next-run instant,
+  making the row one-shot.
+- The stored `type` maps to the spec's task type but uses `'llm'` instead of `'llm_prompt'` for brevity.
+- The config column is a JSON blob validated at the application layer. There is no check constraint —
   validation is type-dependent and happens at create/update time.
-- There is no FK constraint on `workspace_path` — workspace existence is checked at the application
-  layer when creating schedules. When a workspace is removed, its schedules are **paused**
-  (not cascaded) by `archiver.ts` per SCH-R1.
+- There is no foreign-key constraint on the workspace path — workspace existence is checked at the
+  application layer when creating schedules. When a workspace is removed, its schedules are **paused**
+  (not cascaded) by the workspace-archiving step per SCH-R1.
 
 ### `schedule_execution_logs` (implemented schema)
 
@@ -99,291 +99,216 @@ CREATE INDEX idx_sch_exec_schedule ON schedule_execution_logs(schedule_id);
 
 Design notes:
 
-- `ON DELETE CASCADE` — when a schedule is deleted, its logs are cascade-removed (performed at the
-  application layer within a transaction, not via SQL FK, since the DDL uses simple `TEXT` columns).
-- `output` stores full command stdout+stderr, or aggregated LLM text. For LLM prompts exceeding
-  1 MB the output is truncated.
-- `status` follows the forward chain: `running → success | failed | cancelled`. A log never
+- Cascade delete — when a schedule is deleted, its logs are cascade-removed (performed at the
+  application layer within a transaction, not via a database foreign key, since the schema uses simple
+  text columns).
+- The output column stores full command stdout+stderr, or aggregated LLM text. For LLM prompts
+  exceeding 1 MB the output is truncated.
+- The status follows the forward chain: `running → success | failed | cancelled`. A log never
   transitions backward (enforced at the application layer — in v1 a log starts as `running` and
-  is finalized to a terminal state).
-- No `trigger` column — in v1 everything is cron-triggered. A manual trigger (`run_now`) dispatches
+  is finalised to a terminal state).
+- No trigger column — in v1 everything is cron-triggered. A manual trigger ("run now") dispatches
   through the same execution path.
 
-## Store design (`store.ts`)
+## Store design
 
 The store provides workspace-scoped CRUD for schedules and execution logs, using the shared SQLite
-database (`~/.c3/c3.db`). Key functions used by the scheduler and dispatcher:
+database under the c3 home. Key capabilities used by the scheduler and dispatcher:
 
-| Function                         | Purpose                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------ |
-| `getDueSchedules(now)`           | Query `WHERE status='active' AND next_run_at <= ? AND next_run_at IS NOT NULL` |
-| `getEventSchedules(topic)`       | Active `event` schedules subscribed to a run lifecycle `topic` (2026-06-08)    |
-| `updateNextRunAt(id, nextRunAt)` | Update `next_run_at` after execution                                           |
-| `pauseAllForWorkspace(path)`     | Set all schedules under a workspace to `paused`                                |
-| `appendExecutionLog(input)`      | Create an execution log entry with `status='running'`                          |
-| `updateExecutionLog(id, patch)`  | Update execution log status/output/error after execution                       |
-| `listExecutionLogs(scheduleId)`  | All execution logs for a schedule, most-recently-started first                 |
+| Capability                | Purpose                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| Fetch due schedules       | Return active rows whose next-run instant is set and at or before a given instant |
+| Fetch event schedules     | Return active `event` schedules subscribed to a run-lifecycle topic (2026-06-08)  |
+| Update next-run instant   | Persist the recomputed next-run instant after execution                           |
+| Pause all for a workspace | Set every schedule under a workspace to `paused`                                  |
+| Append execution log      | Create an execution-log entry in the `running` state                              |
+| Update execution log      | Update an execution log's status/output/error after execution                     |
+| List execution logs       | All execution logs for a schedule, most-recently-started first                    |
 
-## Scheduler engine (`scheduler.ts`)
+## Scheduler engine
 
-The scheduler runs a fixed-interval tick loop to query and dispatch due schedules.
+The scheduler runs a fixed-interval tick loop to query and dispatch due schedules. Its responsibilities:
 
-```typescript
-class ScheduleScheduler {
-  private timer: ReturnType<typeof setInterval> | null = null
-  private inFlight: Map<string, Promise<void>> = new Map()
+- **Start** the tick loop (10 s interval).
+- **Stop** gracefully, awaiting in-flight executions (30 s max).
+- **Run now** — manual trigger: dispatch immediately, bypassing the tick.
+- **Dispatch event schedules** — on a run-lifecycle bus event, dispatch the event-subscribed
+  schedules for that topic (2026-06-08).
+- **Cancel** an in-flight execution, or cancel all in-flight executions for a workspace.
 
-  /** Start the tick loop (10s interval). */
-  start(): void
-  /** Stop gracefully, awaiting in-flight executions (30s max). */
-  stop(timeoutMs?: number): Promise<void>
-
-  /** Manual trigger: dispatch immediately (bypasses tick). */
-  async triggerRunNow(scheduleId: string): Promise<void>
-  /** Event trigger: dispatch event-subscribed schedules on a bus event (2026-06-08). */
-  dispatchEventSchedules(topic: RunLifecycleTopic, payload: RunLifecyclePayload): void
-  /** Cancel an in-flight execution. */
-  cancelInFlight(scheduleId: string): void
-  /** Cancel all in-flight executions for a workspace. */
-  cancelAllForWorkspace(workspacePath: string): void
-}
-```
+It tracks in-flight executions in an in-memory map keyed by schedule id (one promise per schedule),
+which both enforces serial execution and bounds graceful shutdown.
 
 ### Tick loop
 
-```
-[10s interval] → query due schedules → for each: create log → dispatch → track in-flight
-```
+Every 10 s: query due schedules → for each, create a log → dispatch → track in-flight.
 
-1. Query `getDueSchedules(Date.now())` — returns schedules where `status='active'` and
-   `next_run_at <= now`.
-2. Filter out schedules already tracked in `inFlight` (serial execution per schedule).
-3. For each due schedule: call `appendExecutionLog()` to create a log entry, then dispatch
-   via the dispatcher. The promise is stored in `inFlight` and removed via `.finally()`.
-4. Internal agent-recovery rows are paused and have `next_run_at` cleared after execution, instead
-   of being re-armed from their cron expression.
+1. Query for due schedules — active rows whose next-run instant is at or before now.
+2. Filter out schedules already in-flight (serial execution per schedule).
+3. For each due schedule: append a log entry, then dispatch. The dispatch is tracked in the in-flight
+   map and removed when it settles.
+4. Internal agent-recovery rows are paused and have their next-run instant cleared after execution,
+   instead of being re-armed from their cron expression.
 5. All errors in the tick are caught and logged — the tick loop never silently stops.
 
 ### Grace window for stale triggers
 
-When the server restarts, some schedules' `next_run_at` may be in the past:
+When the server restarts, some schedules' next-run instant may be in the past:
 
-- Within 5 minutes of `now` → execute normally.
-- Beyond 5 minutes → set status to `error`, record a `failed` execution log with
-  `error_message = 'missed_trigger_window'`.
+- Within 5 minutes of now → execute normally.
+- Beyond 5 minutes → set status to `error`, record a `failed` execution log noting a missed trigger
+  window.
 - Internal agent-recovery rows are exempt from the missed-trigger error path; a late server restart
   should still re-enable the agent rather than strand it disabled.
 
 ### Manual trigger (run now)
 
-- WS event `schedule_run_now { scheduleId }` invokes `scheduler.triggerRunNow(scheduleId)`.
-- Validates: schedule must exist, be `active`, and not already in-flight.
-- Creates execution log and dispatches immediately (outside the tick loop).
-- The execution result is broadcast via `broadcastSchedules` to refresh the UI.
+- The `schedule_run_now` WebSocket event invokes the scheduler's run-now path for the target schedule.
+- Validates: the schedule must exist, be `active`, and not already in-flight.
+- Creates an execution log and dispatches immediately (outside the tick loop).
+- The execution result is broadcast to refresh the UI.
 
 ### Event-triggered dispatch (2026-06-08)
 
-`dispatchEventSchedules(topic, payload)` is wired to the kernel event bus in the composition root
-(`startSchedulerWiring` subscribes `run:started` / `run:settled`). On each event:
+The event-dispatch path is wired to the kernel event bus in the composition root (subscribing to
+`run:started` / `run:settled`). On each event:
 
-1. `payload.kind !== 'normal'` → return (intent comm runs never fire user schedules, SCH-R18).
-2. `getEventSchedules(topic)` → active `event` schedules for this topic.
-3. Keep those whose workspace matches (`resolve()`d both sides) and, for `run:settled`, whose
-   `eventReasonFilter` admits `payload.reason` (null/`[]` = any).
-4. Skip any schedule already in `inFlight` (SCH-R7 serial execution = event-storm throttle).
-5. Survivors run through the **same** `dispatchAndTrack` → `execute` path as cron runs (so the
-   three-tier MCP security + write-approval queue apply unchanged). `dispatchAndTrack`'s post-run
-   re-arm skips `next_run_at` recompute for `event` schedules (they have no cron).
+1. If the event's run kind is not a user `session` run → return (internal comm runs never fire user
+   schedules, SCH-R18).
+2. Fetch active `event` schedules for this topic.
+3. Keep those whose workspace matches (both sides resolved) and, for `run:settled`, whose event
+   reason filter admits the event's terminal reason (null/empty = any).
+4. Skip any schedule already in-flight (SCH-R7 serial execution = event-storm throttle).
+5. Survivors run through the **same** dispatch-and-track → execute path as cron runs (so the
+   three-tier MCP security + write-approval queue apply unchanged). The post-run re-arm skips the
+   next-run recompute for `event` schedules (they have no cron).
 
-The publish points live in the run path (`run-lifecycle.ts` / `run-via-driver.ts`); see spec.md
-§ Triggers → Run lifecycle events.
+The publish points live in the run path; see spec.md § Triggers → Run lifecycle events.
 
-## Execution dispatcher (`dispatcher.ts`)
+## Execution dispatcher
 
-The dispatcher provides two execution paths dispatched by schedule type:
+The dispatcher provides two execution paths, chosen by schedule type. Each takes the schedule, the
+execution-log id, and a callback to update the log, and runs to a terminal state.
 
-```typescript
-export async function execute(
-  schedule: Schedule,
-  executionLogId: string,
-  updateLog: (id: string, patch: UpdateLogInput) => void,
-): Promise<void>
-```
+### Command execution
 
-### Command execution (`executeCommand`)
-
-```typescript
-export async function executeCommand(
-  schedule: Schedule,
-  logId: string,
-  updateLog: (id: string, patch: UpdateLogInput) => void,
-): Promise<void>
-```
-
-1. Parse `config.command` (shell command string) from the schedule's JSON config.
-2. Spawn `child_process.spawn(command, { cwd: workspacePath, shell: true })`.
-3. Accumulate stdout + stderr into `output` buffer.
-4. Configurable hard timeout (`config.timeout`, default 30s) via `AbortController`:
-   - On timeout → kill process → record `failed` with `error: 'timeout'`.
-5. On `exit` event: exit code 0 → `success`; non-zero → `failed` with `error: 'exit_code_N'`.
-6. On `error` event (process not created) → `failed` with the error message.
-7. Support `config.maxRetries` (default 0): on non-zero exit or timeout, retry up to N times.
+1. Read the command string from the schedule's JSON config.
+2. Spawn a headless shell process in the schedule's workspace directory.
+3. Accumulate stdout + stderr into the output buffer.
+4. Configurable hard timeout (a config timeout field, default 30 s):
+   - On timeout → kill the process → record `failed` noting a timeout.
+5. On process exit: exit code 0 → `success`; non-zero → `failed` noting the non-zero exit code.
+6. On a process-creation failure → `failed` with the error message.
+7. Support a config max-retries field (default 0): on non-zero exit or timeout, retry up to N times.
    All retries share the same log entry — only the final attempt's result is recorded.
 
 ### Internal agent recovery execution
 
-Before normal command dispatch, `dispatcher.ts` checks for
-`config.internalAction === 'agent_quota_recovery'`. Such a row is system-owned: it never spawns a
-shell and ignores the user command config. The dispatcher calls `setAgentEnabled(config.agentId,
-true)` through the agent-config module, writes a success/failure execution log, and returns. The
-scheduler's post-run branch detects the same config, marks the schedule `paused`, and clears
-`next_run_at`, so the row is retained for audit but cannot repeat.
+Before normal command dispatch, the dispatcher checks whether the config marks the row an
+agent-quota-recovery action. Such a row is system-owned: it never spawns a shell and ignores the user
+command config. The dispatcher re-enables the named agent through the agent-config module, writes a
+success/failure execution log, and returns. The scheduler's post-run branch detects the same config,
+marks the schedule `paused`, and clears the next-run instant, so the row is retained for audit but
+cannot repeat.
 
-### LLM prompt execution (`executeLlmPrompt`)
+### LLM prompt execution
 
-```typescript
-export async function executeLlmPrompt(
-  schedule: Schedule,
-  logId: string,
-  updateLog: (id: string, patch: UpdateLogInput) => void,
-): Promise<void>
-```
-
-1. Parse `config.prompt` (LLM prompt text) from the schedule's JSON config.
-2. Resolve agent by vendor: `resolveFirstAgentOfVendor(schedule.vendor)` instead of
-   the old `resolveAgent(null)`. This routes execution to the first enabled agent of
-   and fall back to the SDK `query()` path — dedicated adapter driver paths are a
-   future entry.
-3. Launch a lightweight agent session via SDK `query()`:
-   - `cwd` = `schedule.workspacePath` (inherits workspace's CLAUDE.md, env vars, settings).
-   - `permissionMode` = `'default'` (so `canUseTool` fires for permission control).
-   - Tools available based on `schedule.mcpMode`:
-     - `full-access`: all tools auto-allowed via `bypassPermissions`.
-     - `sandboxed`: only Read/Grep/Glob/LS/WebFetch/WebSearch → allowed; write tools → denied.
+1. Read the prompt text from the schedule's JSON config.
+2. Resolve the agent by the schedule's vendor — the first enabled agent of that vendor, falling back
+   to the default agent. Execution routes through the shared SDK query path; dedicated adapter driver
+   paths are a future entry.
+3. Launch a lightweight agent session via the SDK query path:
+   - Working directory = the schedule's workspace (inherits the workspace's project instructions, env
+     vars, settings).
+   - Permission mode = default (so the per-tool permission callback fires for permission control).
+   - Tools available based on the schedule's execution identity:
+     - `full-access`: all tools auto-allowed (bypass-permissions).
+     - `sandboxed`: only the read-only tool set (read/grep/glob/list/web-fetch/web-search) is allowed;
+       write tools are denied.
      - `read-only`: all tools denied.
-   - Wall-clock timeout (`config.maxWallClockMs`, default 60s) via `AbortSignal`.
-4. Accumulate `assistant_text` blocks into `output`.
-5. If `config.outputSchema` is present (JSON Schema), validate the output:
+   - Wall-clock timeout (a config wall-clock field, default 60 s).
+4. Accumulate assistant-text blocks into the output.
+5. If the config carries an output schema (JSON Schema), validate the output:
    - If validation passes → `success`.
-   - If validation fails → `failed` with `error: 'schema_validation_failed: <detail>'`.
-6. No auto-retry (LLM execution may have side effects). Retry requires manual re-run.
-7. The agent session is ephemeral — no WebSocket viewer, not listed in session sidebar.
-   Session id is NOT persisted (no need for traceability in v1).
+   - If validation fails → `failed` noting a schema-validation failure with detail.
+6. No auto-retry (LLM execution may have side effects). Retry requires a manual re-run.
+7. The agent session is ephemeral — no WebSocket viewer, not listed in the session sidebar.
+   The session id is NOT persisted (no need for traceability in v1).
 
-## Write queue (`queue.ts`)
+## Write queue
 
 _(Planned — not implemented in v1)_
 
 See [spec.md](spec.md) § Write confirmation queue for the design. All schedule mutations in v1 are
 immediate (direct store operations + broadcast).
 
-## Workspace archiving (`archiver.ts`)
+## Workspace archiving
 
-Listens for workspace removal events and pauses all schedules belonging to that workspace.
+Listens for workspace-removal events and pauses all schedules belonging to that workspace. When a
+workspace is removed from the registry, the archiving step:
 
-```typescript
-/** Called when a workspace is removed from the registry (from server.ts remove_workspace handler). */
-export function onWorkspaceRemoved(workspacePath: string, scheduler: ScheduleScheduler): void {
-  // 1. Cancel any in-flight executions under this workspace.
-  scheduler.cancelAllForWorkspace(workspacePath)
-  // 2. Pause all schedules in this workspace.
-  store.pauseAllForWorkspace(workspacePath)
-  // 3. Broadcast updated schedules for this workspace (archiver doesn't do this —
-  //    the calling remove_workspace handler must call broadcastSchedules).
-}
-```
+1. Cancels any in-flight executions under that workspace.
+2. Pauses all schedules in that workspace.
+3. Leaves the post-removal schedule broadcast to the caller that handled the workspace removal.
 
-## Integration with server.ts
+## Integration with the server
 
 ### Init
 
 After the store is ready (post-db init), start the scheduler and subscribe to the kernel event bus
-for event-triggered schedules (2026-06-08):
+for event-triggered schedules (2026-06-08). When the schedule store is available, the scheduler is
+started and the event-dispatch path is subscribed to both `run:started` and `run:settled` for the
+whole server run (process-lifetime subscriptions, no dispose).
 
-```typescript
-const scheduler = new ScheduleScheduler()
-if (isScheduleStoreAvailable()) {
-  scheduler.start()
-  // Process-lifetime subscriptions (no dispose): the scheduler lives for the whole server run.
-  eventBus.subscribe('run:started', (e) => scheduler.dispatchEventSchedules('run:started', e))
-  eventBus.subscribe('run:settled', (e) => scheduler.dispatchEventSchedules('run:settled', e))
-}
-```
+### Workspace removal
 
-### remove_workspace handler
+The workspace-removal handler is extended to tear down its runtimes, run the archiving step (which
+cancels in-flight executions and pauses the workspace's schedules), remove the workspace, and then
+broadcast the now-paused schedules and refreshed statuses to the UI.
 
-The existing `remove_workspace` handler is extended:
+### Run now
 
-```typescript
-case 'remove_workspace': {
-  const abs = resolve(msg.path)
-  removeRuntimesForWorkspace(abs)
-  // Pause all schedules under this workspace
-  archiver.onWorkspaceRemoved(abs, scheduler)
-  removeWorkspace(abs)
-  sendWorkspaces(ws)
-  broadcastSchedules(abs) // notify UI: schedules are now paused
-  broadcastStatuses()
-  return
-}
-```
-
-### schedule_run_now handler
-
-New WS event handling:
-
-```typescript
-case 'schedule_run_now': {
-  if (!isScheduleStoreAvailable()) { /* error */ return }
-  await scheduler.triggerRunNow(msg.scheduleId)
-  // Broadcast to refresh UI with execution log
-  const schedule = getSchedule(msg.scheduleId)
-  if (schedule) broadcastSchedules(schedule.workspacePath)
-  return
-}
-```
+The run-now handler validates the store is available, invokes the scheduler's run-now path for the
+target schedule, then broadcasts the workspace's schedules to refresh the UI with the new execution
+log.
 
 ### Server shutdown
 
-On server close, stop the scheduler gracefully:
-
-```typescript
-await scheduler.stop(30_000) // 30s timeout for in-flight tasks
-```
+On server close, stop the scheduler gracefully with a 30 s timeout for in-flight tasks.
 
 ## Technology choices
 
 - **SQLite** for persistence — shares the existing project-level database. No additional runtime
   dependency.
-- **`child_process.spawn`** with `shell: true` for command execution. Simple, well-understood, no
-  external runner dependency.
-- **Fixed-interval tick** (10s) rather than event-driven timer per schedule. Avoids managing N
+- **A headless shell process** for command execution. Simple, well-understood, no external runner
+  dependency.
+- **Fixed-interval tick** (10 s) rather than an event-driven timer per schedule. Avoids managing N
   timers and is simpler to reason about.
 - **In-process dispatcher** — no job queue. All executions run in the server process.
-- **SDK `query()`** for LLM prompt execution — reuses the existing Agent SDK integration pattern.
-- **`config` as JSON** avoids schema evolution complexity across two task types.
+- **The SDK query path** for LLM prompt execution — reuses the existing Agent SDK integration pattern.
+- **Config as JSON** avoids schema-evolution complexity across two task types.
 
 ## Non-functional considerations
 
 - **Latency:** Scheduler ticks are low-latency (DB query + in-memory filter). Execution latency is
   task-dependent and unbounded.
-- **Reliability:** The scheduler loop is a single `setInterval`. If a tick's handler throws, the
-  error is caught and logged; the interval continues.
-- **Memory:** In-flight tracking uses a `Map<scheduleId, Promise>`. With typical usage (tens of
-  schedules), memory is negligible.
+- **Reliability:** The scheduler loop is a single fixed-interval timer. If a tick's handler throws,
+  the error is caught and logged; the interval continues.
+- **Memory:** In-flight tracking uses an in-memory map keyed by schedule id. With typical usage (tens
+  of schedules), memory is negligible.
 - **Storage:** Execution logs grow indefinitely. A log retention policy is deferred to a future
   iteration.
-- **Security:** Command schedules run with the server process's user. LLM prompt schedules use
-  the schedule's `mcpMode` for tool access control.
+- **Security:** Command schedules run as the server process's user. LLM prompt schedules use the
+  schedule's execution identity for tool-access control.
 
 ## Dependencies
 
-| Dependency                                  | Purpose                                       |
-| ------------------------------------------- | --------------------------------------------- |
-| `cron-parser` (npm, added)                  | Parse cron expressions, compute next run time |
-| `child_process` (built-in)                  | Execute command-type schedules                |
-| `@anthropic-ai/claude-agent-sdk` (existing) | LLM prompt execution via `query()`            |
-| `node:crypto` (existing)                    | Generate log ids                              |
+| Dependency                        | Purpose                                       |
+| --------------------------------- | --------------------------------------------- |
+| A cron-parsing library            | Parse cron expressions, compute next-run time |
+| The host's process-spawn facility | Execute command-type schedules                |
+| The Claude Agent SDK              | LLM prompt execution via the query path       |
+| A cryptographic id generator      | Generate log ids                              |
 
 ## Config shapes (JSON)
 
@@ -412,4 +337,4 @@ await scheduler.stop(30_000) // 30s timeout for in-flight tasks
 }
 ```
 
-Both are stored as the `config` column JSON blob, validated at the application layer.
+Both are stored as the config-column JSON blob, validated at the application layer.

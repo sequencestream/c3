@@ -48,12 +48,12 @@
 
 ### 2.3 多语言长字段防溢出
 
-CJK 无空格断词 + 长 token（路径 / URL / ID）易溢出或被裁剪。`standard.css` 提供两个可复用原子类，长字段按需引用：
+CJK 无空格断词 + 长 token（路径 / URL / ID）易溢出或被裁剪。全局样式基线提供两类可复用的长字段处理能力，长字段按需引用：
 
-- `.u-truncate`：单行截断（`min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis`），容器须可收缩。
-- `.u-wrap-anywhere`：多行换行（`min-width:0; overflow-wrap:anywhere; word-break:break-word; line-height:1.5`），任意位置断行（含 CJK 与超长无空格 token）。
+- **单行截断**：单行裁剪并以省略号收尾（`min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis`），容器须可收缩。
+- **任意位置换行**：多行换行（`min-width:0; overflow-wrap:anywhere; word-break:break-word; line-height:1.5`），任意位置断行（含 CJK 与超长无空格 token）。
 
-> `overflow-wrap:anywhere` 仅限原子类内，不做全局，避免破坏 flex 布局。
+> `overflow-wrap:anywhere` 仅限上述可复用能力内，不做全局，避免破坏 flex 布局。
 
 ### 2.4 间距与圆角
 
@@ -122,7 +122,7 @@ CJK 无空格断词 + 长 token（路径 / URL / ID）易溢出或被裁剪。`s
 
 全局 `button` 的默认尺寸不再硬编码固定高度，而是采用「文字高度」基线：`line-height: 1` 配合适度上下内边距（`padding: var(--sp-2) var(--sp-6)`，即上下 8px、左右 24px），高度由内容撑开（在正文字号下约 30px），宽度由内容撑开（不再设 `min-width`）。这是站内绝大多数按钮的合理默认值；需要更大或更紧凑尺寸的按钮按需显式声明高度，而非依赖全局默认。
 
-- **页脚大按钮**：发送（`.send-btn`）、停止（`.stop-btn`）、麦克风（`.mic-btn`）显式声明 `height: 56px`，与 56px 高的输入框对齐。
+- **页脚大按钮**：发送、停止、麦克风按钮显式声明 `height: 56px`，与 56px 高的输入框对齐。
 - **紧凑场景**：按需显式声明高度——权限决策按钮 / 设置页底部按钮 / 加 agent 按钮为 36px；侧边栏图标按钮 22px（方形），侧边栏行内按钮 30px / 24px。这些是有意的尺寸声明（自身使用零上下内边距，需显式 `height`），非对抗默认值的复位。
 
 > 历史说明：本规范 3.5 节曾记「主按钮高度 36px、内边距 0 20px」，与改动前实际代码的 `height: 56px; min-width: 80px;` 默认值并不一致；该 56px 默认又迫使全站多处按钮写 `height/min-width` 复位来对抗。2026-05-30 的全局 `button` 重构将默认回归文字高度、把 56px 还原为页脚大按钮的专属尺寸，并清理了对抗性复位，本节描述同步澄清了这一历史不一致。
@@ -144,7 +144,7 @@ CJK 无空格断词 + 长 token（路径 / URL / ID）易溢出或被裁剪。`s
 
 #### 标准下拉框（Dropdown）
 
-不使用原生 `<select>`（其浮层无法定制），统一采用自定义下拉组件（实现见 `web/src/lib/BaseDropdown.vue`，样式类 `.dd-*`）。结构为「触发按钮 + 浮层面板」：
+不使用原生 `<select>`（其浮层无法定制），统一采用标准自定义下拉组件。结构为「触发按钮 + 浮层面板」：
 
 - **触发按钮**：以 `<div role="button">` 实现（不用 `<button>`，避开全局主按钮样式污染高度），高度由内容撑开。（历史背景：该规避动机源于当时全局 `button` 默认 `height: 56px`；自 3.5 节按钮重构后全局默认已改为文字高度、高度污染显著弱化，此规避的成因已缓解，但当前实现保持现状不强制回归 `<button>`。）背景 `#2C2C33`，边框 `1px solid #3A3A42`，圆角 8px；右侧带下拉箭头，展开时旋转 180°。悬停边框变亮、背景升一级（`#27272D`）；展开时边框为强调色并带外发光 `0 0 0 2px rgba(99,102,241,0.25)`；禁用态透明度 0.5。
 - **浮层面板**：背景 `#1F1F24`，圆角 12px，中层级阴影，内边距 4px；相对触发按钮定位（默认向下，可向上），层级置于内容之上；最大高度约 320px 后内部滚动。出现动画为上移淡入（150ms）。

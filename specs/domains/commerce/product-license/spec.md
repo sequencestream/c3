@@ -20,17 +20,18 @@ interrupts an in-flight run or an existing session.
 
 ## Core entities
 
-| Entity              | Description                                                                                        | Key attributes                                                                          |
-| ------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| License             | The authoritative, LS-owned record that an installation is entitled, with a term and a status      | license identity, owner (buyer), term (validity window), status (active/revoked)        |
-| Entitlement         | The c3-side derived answer "may this installation create new work right now?"                      | state (see § States), last-successful-heartbeat time, grace deadline                    |
-| Entitlement token   | The LS-signed, offline-verifiable assertion of entitlement that c3 caches and checks between beats | subject/installation binding, validity window, signature (Ed25519)                      |
-| Activation code     | A **one-time, short-lived** credential a buyer redeems to activate an installation                 | opaque value, single-use flag, short expiry                                             |
-| Heartbeat token     | The **long-lived bearer credential** issued at activation, presented on every heartbeat; revocable | opaque bearer value, bound to the installation, revocable at LS                         |
-| Order               | The LS-owned purchase record produced by the buyer payment flow                                    | buyer (GitHub identity), payment reference (WeChat Pay), no-refund-agreement acceptance |
-| No-refund agreement | The service-agreement acceptance the buyer must record before payment                              | accepted flag, accepted-at, agreement version                                           |
+| Entity              | Description                                                                                        | Key attributes                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| License             | The authoritative, LS-owned record that an installation is entitled, with a term and a status      | license identity, owner (buyer), term (validity window), status (active/revoked)              |
+| Entitlement         | The c3-side derived answer "may this installation create new work right now?"                      | state (see § States), last-successful-heartbeat time, grace deadline                          |
+| Entitlement token   | The LS-signed, offline-verifiable assertion of entitlement that c3 caches and checks between beats | subject/installation binding, validity window, signature (Ed25519)                            |
+| Activation code     | A **one-time, short-lived** credential a buyer redeems to activate an installation                 | opaque value, single-use flag, short expiry                                                   |
+| Heartbeat token     | The **long-lived bearer credential** issued at activation, presented on every heartbeat; revocable | opaque bearer value, bound to the installation, revocable at LS                               |
+| Plan                | A purchasable license term in the LS-owned public catalog (the same for every buyer)               | stable id, name, duration, price (minor unit) + currency                                      |
+| Order               | The LS-owned purchase record produced by the buyer payment flow                                    | buyer (GitHub identity), plan, payment reference (WeChat Pay), no-refund-agreement acceptance |
+| No-refund agreement | The service-agreement acceptance the buyer must record before payment                              | accepted flag, accepted-at, agreement version                                                 |
 
-LS owns License, Activation code, Heartbeat token, Order, and No-refund agreement. c3 holds only the
+LS owns Plan, License, Activation code, Heartbeat token, Order, and No-refund agreement. c3 holds only the
 derived Entitlement and the cached Entitlement token (plus the heartbeat token, used as a credential
 — never as long-term proof of entitlement).
 

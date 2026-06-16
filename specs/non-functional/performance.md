@@ -17,5 +17,5 @@ waiting, not throughput.
 
 - End-to-end latency is dominated by the model and the `claude` process, which c3 does not
   control. These targets cover only c3's own added overhead.
-- Permission waits are unbounded by design (the user may take as long as they need); the
-  registry that holds pending requests lives in `server/src/permissions.ts`.
+- Permission waits are unbounded by design (the user may take as long as they need); a
+  process-side registry holds the pending requests until the user decides.

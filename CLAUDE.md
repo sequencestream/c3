@@ -44,6 +44,7 @@ do format/lint/typecheck at the end of an edit session.
 - specs/flows/flows.md: flow specs
 - specs/non-functional/: non-functional specs
 - database/tables.md: 数据库表结构索引，DDL 在 database/<module>/<table>.sql ,表结构变更需同步更新，变更记录 database/migrate/<YYYY>/<MM>/<DD>/<NNN>-<table>.sql
+- license-server/: 独立 Go 服务（许可证授权方，ADR-0026），与 c3 进程分离，自带 go.mod 不属于 pnpm workspace；std-lib net/http、PostgreSQL（迁移在 license-server/database/，独立于 c3 的 database/）、内嵌 Vue 前端、单二进制；见 license-server/README.md
 
 ## TypeScript Code Style
 

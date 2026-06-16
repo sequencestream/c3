@@ -1,54 +1,55 @@
 # intent-management — Design
 
-Implements the [spec](spec.md). Lives in `server/src/intents/` (SQLite layer, store,
-communication prompt, save tool), with hooks into `server/src/claude.ts` (run variant),
-`server/src/runs.ts` (runtime `kind` + shared launcher), `server/src/server.ts` (new WS
-branches), and `server/src/sessions.ts` (hidden-set filtering). The frontend adds a intent
-view to `web/src/`.
+Implements the [spec](spec.md). The capability is built from a SQLite ledger layer, a store over
+it, the read-only communication run variant plus the save tool, launch-development wiring, and the
+automation orchestrator (state machine + completion judge + git helper), with hooks into the agent
+run loop (a run variant), the runtime registry (a run `kind` + shared launcher), the WS dispatch
+layer (new message branches), and session listing (hidden-set filtering). The frontend adds an
+intent view.
 
-**Reuse baseline.** Almost everything rides on existing machinery: the runtime registry +
-`emit`/viewers + background runs (`runs.ts`); the chat stream and `user_prompt`; the permission
+**Reuse baseline.** Almost everything rides on existing machinery: the runtime registry, the
+emit/viewer fan-out, and background runs; the chat stream and `user_prompt`; the permission
 gateway for the save confirmation; `select_session` for the dev back-link. The genuinely new
 parts are: the **SQLite layer**, the **read-only communication run variant + `save_intents`
 tool**, the **intent frontend**, and the **automation orchestrator** (state machine +
 completion judge + git helper) layered on the same runtime/launcher/viewer machinery.
 
-## Module split
+## Responsibilities
 
-| Concern                     | File                               | Notes                                                                                                                          |
-| --------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| SQLite driver adapter       | `server/src/db.ts`                 | Shared cross-runtime adapter: `node:sqlite` vs `bun:sqlite`; minimal synchronous API (also used by the discussion store)       |
-| Ledger operations           | `server/src/intents/store.ts`      | Intent CRUD, dependency aggregation, communication-session map                                                                 |
-| Communication system prompt | `server/src/intents/prompt.ts`     | Read-only analyst prompt, injected as `appendSystemPrompt`                                                                     |
-| `c3` MCP tools              | `server/src/intents/save-tool.ts`  | `createSdkMcpServer` exposing `save_intents` (confirmed-save) + read-only `find_intents` / `view_intent` (RM-R19)              |
-| Run variant                 | `server/src/claude.ts`             | `runClaude` gains `appendSystemPrompt`/`disallowedTools`/`mcpServers`/`gate`; `askOneShot` (tool-less one-shot, for the judge) |
-| Runtime kind + launcher     | `server/src/runs.ts`               | `SessionRuntime.kind: RunKind` (here `'session'` or `'intent'`; was `'normal' \| 'intent'`); shared `launchRun`                |
-| WS branches + orchestration | `server/src/server.ts`             | Eight new branches; communication-session viewer management; `runDevTurn` + `broadcastAutomation`                              |
-| Hidden-set list filter      | `server/src/sessions.ts`           | `listWorkspaceSessions` excludes the project's hidden set                                                                      |
-| Automation orchestrator     | `server/src/intents/automation.ts` | Per-project state machine: `pickNext`, continuation loop, judge+commit; injected `AutomationHooks`                             |
-| Completion judge            | `server/src/intents/judge.ts`      | `judgeCompletion` — builds the prompt, runs `askOneShot`, parses `done`/`in_progress`/`stuck`                                  |
-| Reconcile                   | `server/src/intents/reconcile.ts`  | `reconcileInProgress` — reconciling dead-process in_progress intents on list entry (DI'd deps)                                 |
-| Git helper                  | `server/src/git.ts`                | `gitDiffStat` + `gitRecentLog` + `commitAndPush` (scoped via `git -C`, multi-repo aware); never rejects, returns codes/errors  |
+| Concern                     | Notes                                                                                                                         |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| SQLite driver adapter       | Shared cross-runtime adapter (Node vs Bun built-in SQLite); minimal synchronous API (also used by the discussion store)       |
+| Ledger operations           | Intent CRUD, dependency aggregation, communication-session map                                                                |
+| Communication system prompt | Read-only analyst prompt, injected as an appended system prompt                                                               |
+| `c3` MCP tools              | Exposes `save_intents` (confirmed-save) + read-only `find_intents` / `view_intent` (RM-R19)                                   |
+| Run variant                 | The run loop gains appended-system-prompt / disallowed-tools / MCP-servers / gate options; a tool-less one-shot for the judge |
+| Runtime kind + launcher     | A run kind (`session` or `intent`) on the runtime; a shared launcher                                                          |
+| WS branches + orchestration | Eight new message branches; communication-session viewer management; dev-turn helper + automation broadcast                   |
+| Hidden-set list filter      | Session listing excludes the project's hidden set                                                                             |
+| Automation orchestrator     | Per-project state machine: pick-next, continuation loop, judge + commit; injected hooks                                       |
+| Completion judge            | Builds the prompt, runs the tool-less one-shot, parses `done`/`in_progress`/`stuck`                                           |
+| Reconcile                   | Reconciles dead-process `in_progress` intents on list entry (injected deps)                                                   |
+| Git helper                  | Diff-stat + recent-log + commit-and-push (scoped per repo, multi-repo aware); never rejects, returns codes/errors             |
 
-## SQLite layer (`db.ts`)
+## SQLite layer
 
-- **Location:** `~/.c3/c3.db` — aligned with `settings.ts`'s `~/.c3/`, **not** the registry's
+- **Location:** `~/.c3/c3.db` — aligned with the c3 settings home `~/.c3/`, **not** the registry's
   `~/.claude/c3/`.
-- **Cross-runtime driver (ADR 0007).** `db.ts` exposes a minimal **synchronous** interface
-  (`exec`/`run`/`all`/`get`) and picks the driver by `globalThis.Bun`: Bun binary → `bun:sqlite`
-  `Database`, Node → `node:sqlite` `DatabaseSync`. The two never cross. Both are synchronous, so a
+- **Cross-runtime driver (ADR 0007).** The layer exposes a minimal **synchronous** interface
+  (exec / run / all / get) and picks the driver by runtime: the Bun binary uses Bun's built-in
+  SQLite, Node uses Node's built-in synchronous SQLite. The two never cross. Both are synchronous, so a
   single sync adapter matches c3's existing synchronous persistence style.
-- **Adapter constraints (the two APIs differ for real):** use only `?` positional placeholders
-  (named params bind differently); read rows by field only (node returns null-prototype objects,
-  bun plain objects). node uses `prepare(sql).all/get/run(...)` and `exec` for multi-statement;
-  bun uses `query(sql).all(...)`, `run(sql, ...)`, `exec(sql)`.
-- **Build (mandatory):** `server/build.mjs`'s esbuild `external` must include `'node:sqlite'`
-  and `'bun:sqlite'`. A dynamic `import()` is **not** enough — esbuild still fails to resolve
-  `bun:sqlite` without `external`.
-- **PRAGMA on create:** `journal_mode=WAL` + `busy_timeout=3000`, cheaply reducing lock conflicts
+- **Adapter constraints (the two APIs differ for real):** use only positional placeholders
+  (named params bind differently); read rows by field only (one driver returns null-prototype objects,
+  the other plain objects). The drivers differ in their prepare/query and multi-statement APIs, which
+  the adapter normalizes.
+- **Build (mandatory):** the server bundle must mark both built-in SQLite modules as external. A
+  dynamic import is **not** enough — the bundler still fails to resolve the Bun module without an
+  external marker.
+- **PRAGMA on create:** WAL journal mode + a busy timeout, cheaply reducing lock conflicts
   when multiple c3 processes point at one db (cross-process is not a v1 goal but the setting is
   free).
-- **Fail-soft (per entry point):** on open/create failure, set a module-level `dbAvailable=false`,
+- **Fail-soft (per entry point):** on open/create failure, mark the db unavailable,
   disabling intent features without affecting c3 boot (RM-R12) — consistent with the
   "boot even with broken config" rule.
 
@@ -66,126 +67,123 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
   `updated_at`. The full set of rows for a project is the hidden set; the `is_current=1` row
   is the session re-loaded on entering the intent view without a specific `sessionId`.
 
-**Schema version (current: v11).** `SCHEMA_VERSION` is `11`. Each bump adds one idempotent
-migration after the legacy renames and before `exec(SCHEMA)`/`ensureColumn`: v2 `module`, v3
+**Schema version (current: v11).** The schema version is `11`. Each bump adds one idempotent
+migration after the legacy renames and before applying the schema: v2 `module`, v3
 `completed_at` (nullable), v4 `automate` (`INTEGER NOT NULL DEFAULT 0`), v6 legacy `requirement*`
 → `intent*` rename, v7 `intent_chats.title` (`TEXT`), v8 git-tracking fields, v9 `intent_deps`
-(`dep_type` and `created_at`), v10 `intent_sessions` audit table, **v11 the workspace-key column
+(`dep_type` and `created_at`), v10 an audit table, **v11 the workspace-key column
 `project_path` → `workspace_path` in-place rename** on `intents` + `intent_chats` (composite index rebuilt as
-`idx_intent_workspace_status`; single-column `idx_chat_project` keeps its name, its column reference
-auto-updated by `RENAME COLUMN`). v11 **deliberately diverges** from the back-compat `projectConfigs`
-settings.json key, which keeps its legacy name (see `database/migrate/2026/06/14/012`). The rename
-runs as `migrateProjectPathToWorkspacePath` BEFORE `exec(SCHEMA)` (the new composite index references
+`idx_intent_workspace_status`; the single-column chat index keeps its name, its column reference
+auto-updated by the rename). v11 **deliberately diverges** from the back-compat `projectConfigs`
+settings.json key, which keeps its legacy name (see the 2026-06-14 workspace-path migration record). The rename
+runs BEFORE the schema is applied (the new composite index references
 the renamed column); idempotent, never drops a table. Same key-off-column-presence pattern as below.
 
-**Schema version & migration (v1 → v2).** The fresh-create `SCHEMA`
-already declares `intents.module`. For pre-existing dbs (v1, no `module` column), `db()`
-runs an **idempotent column migration** after `exec(SCHEMA)` and before writing `user_version`:
-`ensureColumn(d, 'intents', 'module', "TEXT NOT NULL DEFAULT ''")` checks
-`PRAGMA table_info(intents)` and only runs `ALTER TABLE intents ADD COLUMN module
-TEXT NOT NULL DEFAULT ''` if the column is absent. This keys off the actual column presence (not
-the exact `user_version` history), so it is safe on new and old dbs and idempotent across runs;
-`ALTER TABLE … ADD COLUMN` is a lightweight metadata-only op and historical rows take the `''`
-default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table_info` /
-`ALTER TABLE ADD COLUMN` through the shared `exec`/`all` adapter (RM-R14).
+**Schema version & migration (v1 → v2).** The fresh-create schema
+already declares `intents.module`. For pre-existing dbs (v1, no `module` column), the open path
+runs an **idempotent column migration** after applying the schema and before writing the schema
+version: it checks the table info and only adds the `module` column (`TEXT NOT NULL DEFAULT ''`) if
+absent. This keys off the actual column presence (not
+the exact version history), so it is safe on new and old dbs and idempotent across runs;
+adding a column is a lightweight metadata-only op and historical rows take the `''`
+default (no backfill). Both built-in SQLite drivers support table-info inspection and
+add-column through the shared adapter (RM-R14).
 
-## Store (`store.ts`)
+## Store
 
-- **Path normalization (RM-R10):** every `workspacePath` arg is `resolve()`d before read/write,
-  matching the workspace key / runtime `workspacePath` / SDK `cwd`. Otherwise queries miss and
-  hidden filtering breaks.
-- Intents: `listIntents(workspacePath, status?)` (with `dependsOn` aggregation),
-  `insertIntents(workspacePath, items)` (transactional batch, uuid, status `todo`; persists
-  `module` as `it.module ?? ''`, `automate` defaults to `0`), `upsertIntents(workspacePath, items)`
+- **Path normalization (RM-R10):** every `workspacePath` arg is resolved to an absolute path before
+  read/write, matching the workspace key / runtime working directory / agent working directory.
+  Otherwise queries miss and hidden filtering breaks.
+- Intents: list (with `dependsOn` aggregation), insert (transactional batch, uuid, status `todo`;
+  persists `module` as `it.module ?? ''`, `automate` defaults to `0`), upsert
   (the `save_intents` write path — insert or in-place update per item `id`, RM-R20; see below),
-  `updateStatus`, `setLastDevSession`, `setAutomate(id, automate)`, `updateIntent`, `getIntent`. The
-  internal `Row`/`hydrate` carry `module` + `automate` (mapped to boolean) so every read path returns
-  them; `updateIntent` does not patch `module` (`upsertIntents` writes `module` directly instead).
-- **Upsert write path (RM-R20).** `upsertIntents(workspacePath, items)` backs `save_intents` (replacing
-  the old direct `insertIntents` call). It resolves each item to a stable id up front — the supplied
+  update-status, set-last-dev-session, set-automate, update-intent, get-intent. The
+  internal row hydration carries `module` + `automate` (mapped to boolean) so every read path returns
+  them; the plain update does not patch `module` (the upsert writes `module` directly instead).
+- **Upsert write path (RM-R20).** The upsert backs `save_intents` (replacing
+  the old direct insert call). It resolves each item to a stable id up front — the supplied
   `id` for an update, a fresh uuid for an insert — so `dependsOnIndexes` (RM-R17) resolves against the
   full batch regardless of whether a referenced sibling is new or being updated. **All validation runs
   before the transaction opens** (atomic reject, nothing half-written): each update `id` is fetched and
-  guarded `workspace_path === resolve(workspacePath)` (unknown / cross-project ⇒ throw), and its current
-  status is checked — `in_progress`/`done` throw as immutable, `cancelled` is flagged for reactivation.
-  Inside the single `tx`, an update writes `title`/`content`/`priority`, writes `module` only when supplied
+  guarded to belong to the resolved workspace (unknown / cross-project ⇒ reject), and its current
+  status is checked — `in_progress`/`done` reject as immutable, `cancelled` is flagged for reactivation.
+  Inside the single transaction, an update writes `title`/`content`/`priority`, writes `module` only when supplied
   (else keeps the prior), sets status to `todo` for a reactivated `cancelled` (else unchanged) with
-  `completed_at` cleared, and rewrites `intent_deps` only when `dependsOn`/`dependsOnIndexes` was supplied;
-  an insert behaves exactly as `insertIntents` (status `todo`, `created_at = now + index`). The
-  `save_intents` handler turns any throw into an `isError` result so the agent learns nothing was written.
-- **Read-only agent query (RM-R19):** `findIntents(workspacePath, { keyword?, module?, status? })`
-  backs the agent's `find_intents` tool — filters compose with `AND`, all optional: `keyword`
-  is a `LIKE` substring over `title` OR `content` (a tiny `escapeLike` escapes `% _ \` and the query
-  uses `ESCAPE '\'` so a literal `%` doesn't act as a wildcard), `module`/`status` are exact-match;
-  same `resolve()` + `workspace_path` scoping and `priority ASC, updated_at DESC` order as
-  `listIntents`; `[]` when the db is unavailable. `view_intent` reuses the existing
-  `getIntent(id)` (id-only) and the **tool handler** guards `req.workspacePath === resolve(workspacePath)`
+  `completed_at` cleared, and rewrites the dependency edges only when `dependsOn`/`dependsOnIndexes` was supplied;
+  an insert behaves exactly as a plain insert (status `todo`, creation time offset by index). The
+  `save_intents` handler turns any rejection into an error result so the agent learns nothing was written.
+- **Read-only agent query (RM-R19):** the find operation backs the agent's `find_intents` tool —
+  filters compose with `AND`, all optional: `keyword`
+  is a substring match over `title` OR `content` (wildcard characters in the keyword are escaped so a
+  literal `%` doesn't act as a wildcard), `module`/`status` are exact-match;
+  same resolve + workspace scoping and `priority ASC, updated_at DESC` order as
+  the list; empty when the db is unavailable. The `view_intent` tool reuses the id-only
+  get and the **tool handler** guards that the intent belongs to the bound project,
   so an id from another project reads as not-found (no cross-project leak).
-- **Intra-batch dependencies (RM-R17).** `insertIntents` mints **all** row ids up front
-  (`items.map(() => randomUUID())`) so a batch can reference its own siblings before any row has an
-  id. A pure, exported `resolveBatchDependencies(items, ids)` then, per item, validates
-  `dependsOnIndexes` (each must be an in-range, non-self index), runs a 3-colour DFS
-  (`detectBatchCycle`) to reject any intra-batch cycle, and returns the merged & de-duplicated
-  dependency-id list (existing-id `dependsOn` ∪ the indexes resolved to `ids[index]`). It runs
-  **before** the transaction opens, so an invalid batch throws and nothing is written; the
-  `save_intents` handler turns the throw into an `isError` result. Being pure (items + ids in,
-  id-lists out) it is unit-tested without a db. Each row is stamped `created_at = now + index` so
+- **Intra-batch dependencies (RM-R17).** The insert mints **all** row ids up front
+  so a batch can reference its own siblings before any row has an
+  id. A pure batch-dependency resolver then, per item, validates
+  `dependsOnIndexes` (each must be an in-range, non-self index), runs a 3-colour cycle detection
+  to reject any intra-batch cycle, and returns the merged & de-duplicated
+  dependency-id list (existing-id `dependsOn` ∪ the indexes resolved to sibling ids). It runs
+  **before** the transaction opens, so an invalid batch is rejected and nothing is written; the
+  `save_intents` handler turns the rejection into an error result. Being pure (items + ids in,
+  id-lists out) it is unit-tested without a db. Each row is stamped with a creation time offset by index so
   same-priority, dependency-free items keep a deterministic submission-order rank in the
   orchestrator's oldest-first tiebreak (RM-A3), instead of the arbitrary order a single shared
-  `now` produced.
-- Communication session (collection table): `getChatSession(workspacePath)`
-  (`is_current=1` — default-open pointer), `setChatSession` (clear the project's `is_current` then
-  upsert the new row as `is_current=1`, also entering the hidden set),
-  `listChatSessions(workspacePath)` (all rows, ordered by `updated_at` DESC),
-  `renameChatSession(sessionId, title)` (updates `title` + bumps `updated_at`),
-  `deleteChatSession(workspacePath, sessionId)` (physically deletes the row; if the deleted row was
-  `is_current`, promotes the most recent remaining row by `updated_at` to `is_current=1`),
-  `isHiddenSession`/`listHiddenSessions`,
-  `rebindChatSession(pendingId, realId)` (rewrite the pending row to the real id on first bind,
+  timestamp produced.
+- Communication session (collection table): get the current session
+  (`is_current=1` — default-open pointer); set the current session (clear the project's `is_current` then
+  upsert the new row as `is_current=1`, also entering the hidden set);
+  list all rows (ordered by `updated_at` DESC);
+  rename (updates `title` + bumps `updated_at`);
+  delete (physically deletes the row; if the deleted row was
+  `is_current`, promotes the most recent remaining row by `updated_at` to `is_current=1`);
+  hidden-set queries;
+  rebind (rewrite the pending row to the real id on first bind,
   keeping `is_current` and hidden-set membership).
 
-## Run variant (`claude.ts` + `runs.ts`)
+## Run variant
 
-- `SessionRuntime` gains `kind: RunKind` (default `'session'`; was the two-value
-  `'normal' | 'intent'`, `'normal' → 'session'` — see glossary / ADR-0018); `user_prompt`
-  dispatches on `rt.kind` to the standard or intent variant of `runClaude`.
-- A shared launcher `launchRun(rt, prompt, opts?)` is extracted from `user_prompt`. **Boundary:**
-  it only touches module-level `emit`/`broadcastStatuses`/the registry; connection-specific
-  `send(ws, …)`/`sendSessions(ws, …)` stay with the caller as optional callbacks — so
-  `start_development` (no-ws background run) and `refine_intent` (seeded first prompt) reuse
+- The runtime gains a run `kind` (default `session`; was a two-value `normal | intent`, with
+  `normal → session` — see glossary / ADR-0018); `user_prompt`
+  dispatches on the runtime's kind to the standard or intent variant of the run loop.
+- A shared launcher is extracted from `user_prompt`. **Boundary:**
+  it only touches module-level emit / status-broadcast / the registry; connection-specific
+  replies stay with the caller as optional callbacks — so
+  `start_development` (no-connection background run) and `refine_intent` (seeded first prompt) reuse
   the same launcher.
-- `runClaude` gains optional `appendSystemPrompt`, `disallowedTools`, `mcpServers`, and
-  `gate: 'standard' | 'intent'` without breaking existing callers. The communication agent's
-  `mcpServers` is constructed **server-side** in the `user_prompt` branch (closing over the
-  resolved `rt.workspacePath`), keeping `claude.ts` free of `store`.
+- The run loop gains optional appended system prompt, disallowed tools, MCP servers, and a
+  gate selector (`standard` | `intent`) without breaking existing callers. The communication agent's
+  MCP servers are constructed **server-side** in the `user_prompt` branch (closing over the
+  resolved workspace), keeping the run loop free of the store.
 
 ## Read-only communication session (ADR 0007)
 
-- **Forced `default` mode (RM-R3).** The communication runtime is started with
-  `permissionMode: 'default'` and does **not** inherit the system default mode; `set_mode` is
-  ignored for `kind==='intent'` and the view renders no mode selector. Under
-  `bypassPermissions` the SDK skips `canUseTool`, which would silently save — forbidden.
-- **Double-locked read-only (RM-R2).** `disallowedTools` =
-  `['Write','Edit','MultiEdit','NotebookEdit','Bash','BashOutput','KillShell','Task','SlashCommand']`.
-  `Task` and `SlashCommand` are essential: a spawned sub-agent's tool calls bypass the parent
-  `canUseTool`, and slash commands could trigger writing skills. On top of that the
-  `gate==='intent'` `canUseTool` **denies by default**, routed by the pure, exported
-  `classifyIntentTool(toolName)` → `allow` | `confirm-save` | `ask` | `deny` (unit-tested in
-  `intent-gate.test.ts`, since the live closure is otherwise e2e-only): read-class tools
-  (`INTENT_READ_TOOLS` = Read/Grep/Glob/LS/NotebookRead/WebFetch/WebSearch/TaskCreate/TaskList/TaskUpdate/TaskGet) **and**
-  the two read-only c3 query tools (`INTENT_QUERY_TOOLS` = `mcp__c3__find_intents` /
-  `mcp__c3__view_intent`, RM-R19) → `allow` (auto-allow, no prompt — they only read the agent's
-  own project ledger); `mcp__c3__save_intents` → `confirm-save` (raises a `permission_request`);
-  `AskUserQuestion` → `ask`. `AskUserQuestion` is an **interactive
+- **Forced `default` mode (RM-R3).** The communication runtime is started in
+  `default` permission mode and does **not** inherit the system default mode; `set_mode` is
+  ignored for the intent kind and the view renders no mode selector. Under
+  `bypassPermissions` the SDK skips the permission gate, which would silently save — forbidden.
+- **Double-locked read-only (RM-R2).** The hard-disabled tool list blocks
+  Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand.
+  Task and SlashCommand are essential: a spawned sub-agent's tool calls bypass the parent
+  permission gate, and slash commands could trigger writing skills. On top of that the
+  intent gate **denies by default**, routed by a pure, exported tool classifier
+  → `allow` | `confirm-save` | `ask` | `deny` (unit-tested, since the live closure is otherwise
+  e2e-only): read-class tools
+  (Read / Grep / Glob / LS / NotebookRead / WebFetch / WebSearch / TaskCreate / TaskList / TaskUpdate / TaskGet) **and**
+  the two read-only c3 query tools (`find_intents` / `view_intent`, RM-R19) → `allow` (auto-allow,
+  no prompt — they only read the agent's own project ledger); `save_intents` → `confirm-save` (raises
+  a `permission_request`); `AskUserQuestion` → `ask`. `AskUserQuestion` is an **interactive
   (clarifying-only) tool, not a write tool** — it has no file/exec side effects, so the read-only
-  agent may use it. It is therefore **kept out of `disallowedTools`** and **allowed but routed via
-  user-answer injection** — `send` a `permission_request`, await the user decision, on allow return
-  `withAnswers(input, answers)` (the SDK only echoes answers when `input.answers` is pre-filled),
-  on cancel deny. It runs **without consensus** (single agent, no voting party). The
-  `askQuestions(input)` guard filters empty/invalid questions, which fall through to the default
+  agent may use it. It is therefore **kept out of the hard-disabled list** and **allowed but routed via
+  user-answer injection** — send a `permission_request`, await the user decision, on allow return
+  the answers (the SDK only echoes answers when they are pre-filled),
+  on cancel deny. It runs **without consensus** (single agent, no voting party). A guard
+  filters empty/invalid questions, which fall through to the default
   deny. Everything else is denied (belt-and-braces even if the SDK adds a new write tool). The
-  SDK-level `disallowedTools` hard-disabled list
-  (Write/Edit/MultiEdit/NotebookEdit/Bash/BashOutput/KillShell/Task/SlashCommand) is unchanged and
+  SDK-level hard-disabled list
+  (Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand) is unchanged and
   **does not include `AskUserQuestion`**.
 - **Codex driver permission shape.** When the default/bound communication agent is Codex, the
   driver path still runs the intent profile and injects the localhost HTTP MCP server, but uses the
@@ -195,49 +193,48 @@ default (no backfill). Both `node:sqlite` and `bun:sqlite` support `PRAGMA table
   write.
 - **Independent viewer orchestration.** `open_intent_chat` / `new_intent_chat` /
   `refine_intent` manage the
-  viewer switch themselves (`removeViewer(old)` → `viewing=chatId` → `addViewer`) and do **not**
-  reuse `select_session`'s internals (which unconditionally set the active session). The
-  communication session's `onSessionId` binds the real id (`bindPending` +
-  `store.rebindChatSession`) but **never** writes `activeSessionId` — hidden sessions must not
-  pollute the persisted active-session hint.
+  viewer switch themselves (remove the old viewer → set the viewed session → add the new viewer) and
+  do **not** reuse `select_session`'s internals (which unconditionally set the active session). The
+  communication session's session-id binding rebinds the real id but **never** writes the persisted
+  active-session hint — hidden sessions must not pollute it.
 - **Open/resume (`open_intent_chat`):** db unavailable → `error`. Accepts an optional
   `sessionId` — when provided, verifies the session exists for this project and opens it (also
   making it `isCurrent` so a subsequent no-sessionId open returns here); when absent, uses
-  `getChatSession` (`is_current=1`), creating a new `pending:` session if none exists.
-  Then switch the viewer, reply `session_selected` (history), and reply a `intents` list
+  the current (`is_current=1`) session, creating a new `pending:` session if none exists.
+  Then switch the viewer, reply `session_selected` (history), and reply an `intents` list
   **immediately** (run-state reconcile runs in the background afterward — see Reconcile). This same
   branch is what re-loads the project's current communication session on first entry, WS
   reconnect, and full-page refresh (RM-R4).
 - **New session (`new_intent_chat`):** unknown workspace / db unavailable → `error`; otherwise
-  unconditionally start a fresh `pending:` intent runtime (`default` mode) and `setChatSession`
-  it — which clears the project's prior `is_current=1` row before marking the new one current.
-  Switch the viewer, reply `session_selected` (empty history) and a `intents` list. No first
+  unconditionally start a fresh `pending:` intent runtime (`default` mode) and set it as the current
+  session — which clears the project's prior current row before marking the new one current.
+  Switch the viewer, reply `session_selected` (empty history) and an `intents` list. No first
   prompt is injected (unlike refine): the dialog opens empty for a new round of communication.
-  Because the new session is now `is_current=1`, a later `open_intent_chat` (refresh/reconnect)
+  Because the new session is now current, a later `open_intent_chat` (refresh/reconnect)
   resumes **this** session, not the abandoned one. Triggered by the "+" in the title bar (RM-R4).
 - **Refine (`refine_intent`):** switch away from the old communication view, start a new
-  `pending:` intent runtime (`default` mode), `setChatSession` to it, reply `session_selected`
-  (empty), then `launchRun` injects a first `user_prompt` equivalent to a user message (RM-R7). The
+  `pending:` intent runtime (`default` mode), set it as current, reply `session_selected`
+  (empty), then the launcher injects a first `user_prompt` equivalent to a user message (RM-R7). The
   seed prompt carries the **original intent id and its current status** and instructs the agent to
-  call `save_intents` with `id="<原id>"` so定稿 updates the original entry in place (upsert, RM-R20)
+  call `save_intents` with that id so定稿 updates the original entry in place (upsert, RM-R20)
   — not a duplicate — and to tell the user it cannot be modified if the intent is already
   `in_progress`/`done`. ("开始完善已存在意图 <id>(当前状态:…) …, 定稿后调用 save_intents 并回填
   id 以原地更新原意图")
 - **From discussion (`discussion_to_intent`):** the same refine machinery, but the seed is a
   completed discussion's `conclusion` rather than an existing intent. The server loads the
-  discussion (`getDiscussion`), rejects unless `completed` with a non-empty `conclusion`, resolves
-  the project from `discussion.workspacePath`, then runs the identical `pending:` intent-runtime
+  discussion, rejects unless `completed` with a non-empty `conclusion`, resolves
+  the project from the discussion's workspace, then runs the identical `pending:` intent-runtime
   flow with a first prompt carrying the discussion title + conclusion ("基于以下讨论结论拆分出可验证
   的需求条目 …, 定稿后调用 save_intents"). Triggered by the discussion view's **Convert to
   Intent** button (RM-R7).
 
-## Communication system prompt (`prompt.ts`)
+## Communication system prompt
 
-Injected as `appendSystemPrompt` on the `claude_code` preset, built per run by
-`buildIntentAgentPrompt(uiLang)`. **The prompt skeleton is in English**; only the closing
-"reply in this language" instruction follows the **Display language (`uiLang`)** —
-`getUiLang()` is read at run start so the analyst converses in the user's console language
-(via `UI_LANG_NAMES`), instead of a hard-coded one. In brief: you are a intent analyst; read
+Injected as an appended system prompt on the `claude_code` preset, built per run with the display
+language. **The prompt skeleton is in English**; only the closing
+"reply in this language" instruction follows the **Display language** —
+read at run start so the analyst converses in the user's console language,
+instead of a hard-coded one. In brief: you are an intent analyst; read
 project material only, never edit/write/run change commands/spawn sub-agents/run slash commands;
 you may query THIS project's existing ledger read-only via `find_intents` / `view_intent`,
 and should do so **before** splitting new items or setting `dependsOn` (reuse related items, avoid
@@ -270,176 +267,167 @@ rather than emitting a separate「更新测试」/「文档更新」item — cod
 change, kept on one ticket so no half is scheduled apart or dropped, which would drift tests/docs
 out of sync with code (RM-R15).
 
-## `c3` MCP tools (`save-tool.ts`)
+## `c3` MCP tools
 
-`createSdkMcpServer({ name: 'c3', alwaysLoad: true, tools: [ save_intents, find_intents, view_intent ] })`.
-`alwaysLoad: true` stamps `_meta['anthropic/alwaysLoad']` on each registered tool (≡ API
-`defer_loading: false`), so `save_intents` stays resident in the turn-1 prompt instead of
-being deferred behind the harness's tool search — the agent never has to ToolSearch its schema
-back before a save. The "blocks startup until the server connects" side effect is moot: this is an
-in-process SDK MCP server, so it connects instantly. Scope is the intent agent only — this
-server is built solely on the `kind === 'intent'` / `gate: 'intent'` launch path
-(ADR 0007). The `tool()`
-call uses four positional args (name, required description, a **raw zod shape** — not
-`z.object(...)` — and an async handler returning a `CallToolResult`). Each intent element
-includes an optional `id: z.string().optional()` (described as the existing-intent id to update
-in place — upsert, RM-R20; omit to insert) and an optional `module: z.string().optional()`
-(described as the inferred module name, may be left blank); both flow through to `upsertIntents`
+The in-process MCP server is named `c3` and carries `save_intents`, `find_intents`, and
+`view_intent`. Each registered tool is stamped to **stay resident in the turn-1 prompt** instead of
+being deferred behind the harness's tool search — so `save_intents` is available without the agent
+having to search its schema back before a save. The "blocks startup until the server connects" side
+effect is moot: this is an in-process MCP server, so it connects instantly. Scope is the intent
+agent only — this server is built solely on the intent kind / intent gate launch path (ADR 0007).
+Each intent element
+includes an optional `id` (the existing-intent id to update
+in place — upsert, RM-R20; omit to insert) and an optional `module`
+(the inferred module name, may be left blank); both flow through to the upsert
 (RM-R14/RM-R20). It also carries `dependsOn` (ids of already-existing intents) and
-`dependsOnIndexes: z.array(z.number().int()).optional()` (0-based indexes into the same batch,
-described as the intra-batch dependency to fill when items have先后关系); both flow through to
-`upsertIntents`, which resolves the indexes against the full batch (RM-R17). The tool's top-level
+`dependsOnIndexes` (0-based indexes into the same batch,
+the intra-batch dependency to fill when items have先后关系); both flow through to
+the upsert, which resolves the indexes against the full batch (RM-R17). The tool's top-level
 description tells the agent to use `id` for refine-in-place and `dependsOnIndexes` for intra-batch
 order so the orchestrator sequences correctly. The handler runs **only after** the human confirmation
-(the gateway already allowed); it writes via `store.upsertIntents` (insert or in-place update per
-item id) and broadcasts a `intents` refresh, returning a text result that notes the insert/update
-split (or `isError` text on db-unavailable / failure — incl. an immutable-status or unknown / cross-project
-update id rejecting the whole batch — so the agent learns it did not save). `workspacePath` is
-closed over from the runtime's resolved `workspacePath` and re-bound each run, so the tool never
+(the gateway already allowed); it writes via the store's upsert (insert or in-place update per
+item id) and broadcasts an `intents` refresh, returning a text result that notes the insert/update
+split (or an error text on db-unavailable / failure — incl. an immutable-status or unknown / cross-project
+update id rejecting the whole batch — so the agent learns it did not save). The workspace is
+closed over from the runtime's resolved workspace and re-bound each run, so the tool never
 crosses projects.
 
-The three tools' zod shapes, descriptions, and core logic (`runFind`/`runView`/`runSaveConfirmed`)
-live ONE source in `tool-defs.ts`, consumed by both MCP surfaces (the in-process SDK MCP here and
-the HTTP MCP below) so they never drift.
+The three tools' shapes, descriptions, and core logic live in ONE source, consumed by both MCP
+surfaces (the in-process SDK MCP here and the HTTP MCP below) so they never drift.
 
 **Read-only query tools (RM-R19).** The same server also carries `find_intents`
-(`{ keyword?, module?, status? }`, all optional; `status` is a `z.enum` over the five
-`IntentStatus` values) → `store.findIntents` → a **slim** JSON list
+(`{ keyword?, module?, status? }`, all optional; `status` is constrained to the five
+status values) → the store's find → a **slim** JSON list
 (`id`/`title`/`module`/`priority`/`status`/`dependsOn`; `content` is deliberately omitted to keep the
-list compact) or a「未找到」message, and `view_intent` (`{ id }`) → `store.getIntent` →
-the single intent's **full** JSON, guarding `req.workspacePath === resolve(workspacePath)` so an
-unknown / other-project id returns a friendly「未找到」text (not `isError`). Both close over the same
-`workspacePath` (no cross-project reads), inherit `alwaysLoad`, and are auto-allowed by the gate
-(`classifyIntentTool` → `allow`), unlike `save_intents`'s confirmation. The agent is
+list compact) or a「未找到」message, and `view_intent` (`{ id }`) → the store's get →
+the single intent's **full** JSON, guarding that the intent belongs to the bound project so an
+unknown / other-project id returns a friendly「未找到」text (not an error). Both close over the same
+workspace (no cross-project reads), stay resident, and are auto-allowed by the gate, unlike
+`save_intents`'s confirmation. The agent is
 prompted to query the ledger before splitting items or setting `dependsOn`.
 
-## Intent tools over localhost HTTP MCP — cross-vendor (`transport/intent-mcp/`, 2026-06-12-005)
+## Intent tools over localhost HTTP MCP — cross-vendor (2026-06-12-005)
 
-The `c3` server above is an **in-process** SDK MCP server (`createSdkMcpServer`), which only the
-`runViaDriver` with `inProcessMcp: false`, so they cannot see those tools. To keep the intent
+The `c3` server above is an **in-process** SDK MCP server, which only the Claude path can see;
+driver-path vendors cannot. To keep the intent
 panel vendor-neutral, the SAME three tools are re-exposed over a **localhost streamable-HTTP MCP
-route** at `INTENT_MCP_PATH` (`/internal/intent-mcp/v1`), mounted on c3's own Hono server (before
-the SPA catch-all, like the codex relay), backed by `@modelcontextprotocol/sdk`'s `McpServer` +
-`StreamableHTTPServerTransport`.
+route**, mounted on c3's own server (before the SPA catch-all, like the codex relay).
 
-- **Per-run binding + isolation.** `runViaDriver` calls `intentProfile.bindDriverMcp({ workspacePath,
-getRunId, signal })` (only when `adapter.vendor === 'codex'` today), which mints an opaque token →
-  a private MCP server whose tool handlers close over that run's project. The token rides the URL
-  query (`?token=…`); the project binding lives in the closure, so an agent can neither read nor
-  write another project's ledger. The binding is evicted (`dispose`) at run end.
+- **Per-run binding + isolation.** The intent profile binds a per-run MCP server (only for Codex
+  today): an opaque token maps to a private MCP server whose tool handlers close over that run's
+  project. The token rides the URL query; the project binding lives in the closure, so an agent can
+  neither read nor write another project's ledger. The binding is evicted at run end.
 - **Loopback-only.** A defence-in-depth guard rejects non-loopback peers (403) on top of c3's
   localhost bind; an unknown/expired token is 404 (Constitution localhost-only / deny-by-default).
-- **Save gate (driver path).** Codex calls the tool outside any c3 `canUseTool`, so the gate lives
-  in the save handler (`save-gate.ts` `gatedSave`): it emits the SAME `permission_request` frame the
-  claude path uses (toolName `mcp__c3__save_intents`, `input.intents`), blocks on `waitForDecision`,
+- **Save gate (driver path).** Codex calls the tool outside any c3 permission gate, so the gate lives
+  in the save handler: it emits the SAME `permission_request` frame the
+  claude path uses (the `save_intents` tool name plus the proposed intents), blocks on the decision,
   and persists only on `allow`. `find_intents`/`view_intent` are auto-allowed (read-only). A deny /
   aborted run never reaches the store.
-- **Driver translation.** `DriverStartOptions.mcpServers` carries a neutral `RemoteMcpServer`
-  (`{ type:'http', url, bearerTokenEnvVar? }`); the codex driver translates it to
-  `config.mcp_servers.<name> = { url }` (the streamable-HTTP form `codex mcp add --url` writes).
-- **Claude unchanged.** The claude path still uses the in-process `mcpServers` and ignores
-  token URL — a later intent must design its isolation, not relax the per-project guard.
+- **Driver translation.** The neutral remote-MCP descriptor (type, url, optional bearer-token env
+  var) is translated by the codex driver to the streamable-HTTP MCP form it writes.
+- **Claude unchanged.** The claude path still uses the in-process MCP servers and ignores
+  the token URL — a later intent must design its isolation, not relax the per-project guard.
 
 ## Launch development (`start_development`)
 
-1. Resolve the project and synchronously claim `intentId` in the feature-private in-memory
-   launch set before worktree creation or `launchRun`. If already claimed, reply
-   `intent.devStartInFlight` and stop. Release the claim on `run:bound` after the pending dev link
-   is consumed, and on every pre-launch / startup failure path (including worktree creation failure
+1. Resolve the project and synchronously claim the intent id in the feature-private in-memory
+   launch set before worktree creation or launch. If already claimed, reply
+   a dev-start-in-flight error and stop. Release the claim once the pending dev link
+   is consumed on bind, and on every pre-launch / startup failure path (including worktree creation failure
    and launch rejection).
 2. Validate the intent exists and is `todo`, or `in_progress` with a dangling (deleted)
    `lastDevSessionId` (allowing relaunch; other states → `error`) (RM-R8).
 3. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the frontend
    second-confirms before sending in the manual path (RM-R11).
-4. Start a **background normal runtime** (`pending:`) via `launchRun` with prompt
+4. Start a **background normal runtime** (`pending:`) via the launcher with prompt
    `[<devSkill> ]<title + content + dependency summary>` (the configurable development
-   skill from system settings, `getDevSkill()`; empty by default ⇒ no skill prefix); on `onSessionId`,
-   `setLastDevSession` + `updateStatus(in_progress)` + broadcast `intents` + `broadcastStatuses`.
+   skill from system settings; empty by default ⇒ no skill prefix); on session bind,
+   set last-dev-session + status `in_progress` + broadcast `intents` + broadcast statuses.
 5. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.
 
-## Automation orchestrator (`automation.ts` + `git.ts` + `judge.ts`)
+## Automation orchestrator
 
 A per-project, in-memory state machine driven entirely by message handlers and an internal viewer
-— no polling, no cron. One `AutomationController` per project lives in a module map; its `status`
-(the `AutomationStatus` model) is the single source of truth, broadcast on every change.
+— no polling, no cron. One controller per project lives in a module map; its automation status
+is the single source of truth, broadcast on every change.
 
-- **Wire branches (`server.ts`).** `set_intent_automate` → `store.setAutomate` + broadcast
-  `intents`. `start_automation` → `startAutomation(proj, hooks, now)` (no-op if already
-  running) then broadcast the status. `stop_automation` → `stopAutomation(proj)` (aborts the live
+- **Wire branches.** `set_intent_automate` → set the automate flag + broadcast
+  `intents`. `start_automation` → start the orchestrator (no-op if already
+  running) then broadcast the status. `stop_automation` → stop the orchestrator (aborts the live
   run). Entering the intent view (`open_intent_chat`) also pushes the current
   `automation_status` so a fresh connection restores the button state.
-- **Dependency injection.** `automation.ts` imports the store/judge/git directly but takes server
-  wiring via `AutomationHooks`: `runDevTurn` (bound to the WS-server closure),
-  `broadcastIntents`, `emitStatus` (→ `broadcastAutomation`), `sessionExists` (the same
-  `sessions.ts` disk check manual `start_development` uses — injected so the resume/dangling branch
-  stays unit-testable with fakes), and `isRunning` (the `runs.ts` in-flight check, injected so the
-  attach branch — RM-A10 — stays unit-testable with fakes). This keeps the state machine unit-testable
-  (see `automation.test.ts`).
-- **`runDevTurn` (server closure).** Ensures a `normal` runtime for the intent (fresh
+- **Dependency injection.** The orchestrator imports the store/judge/git directly but takes server
+  wiring via injected hooks: a dev-turn runner (bound to the WS-server closure),
+  an intents broadcaster, a status emitter, a session-exists disk check (the same
+  one manual launch uses — injected so the resume/dangling branch
+  stays unit-testable with fakes), and an is-running in-flight check (injected so the
+  attach branch — RM-A10 — stays unit-testable with fakes). This keeps the state machine unit-testable.
+- **Dev-turn runner (server closure).** Ensures a normal runtime for the intent (fresh
   `pending:` id, or resume an existing id for the continue continuation), registers an **internal
-  viewer** on it, and launches/resumes via the shared `launchRun`. It surfaces the SDK session bind
-  **early** via an `onSessionId` callback (fired from `launchRun`'s own `onSessionId`, well before
-  the turn ends). The viewer captures the last `assistant_text` and resolves the turn on: `turn_end`
-  → `complete`/`error`; the controller's abort → `blocked('aborted')`. A `permission_request` does
+  viewer** on it, and launches/resumes via the shared launcher. It surfaces the SDK session bind
+  **early** via a callback (fired well before the turn ends). The viewer captures the last
+  assistant message and resolves the turn on: `turn_end`
+  → `complete`/`error`; the controller's abort → blocked (aborted). A `permission_request` does
   **not** resolve the turn — automation **mirrors manual** (RM-A9): the run stays alive awaiting the
-  watching human's browser answer, and the viewer only fires `onAwaitingPermission(true)` (cleared on
-  the answering `tool_result`, or on `turn_end`) so the controller can flip `awaitingPermission` on
-  the status ("awaiting authorization" hint). A live team lead (rare for a dev skill) is fed via
-  `pushInput` instead of a fresh launch.
-  - **Attach mode (`input.attach`, RM-A10).** When the controller passes `attach: true`, the closure
-    only registers the viewer — it **never** launches or pushes. It seeds `lastText` from the runtime
-    **buffer**'s last `assistant_text` (the in-flight turn's latest message may have been emitted
-    before the viewer attached, so the judge would otherwise read `''`). If the run already settled in
-    the race between the controller's `isRunning` check and `addViewer` (`rt.run == null`), it resolves
+  watching human's browser answer, and the viewer only flips the awaiting-permission flag (cleared on
+  the answering tool-result, or on `turn_end`) so the controller can flip `awaitingPermission` on
+  the status ("awaiting authorization" hint). A live team lead (rare for a dev skill) is fed via a
+  push instead of a fresh launch.
+  - **Attach mode (RM-A10).** When the controller passes attach mode, the closure
+    only registers the viewer — it **never** launches or pushes. It seeds the last text from the runtime
+    **buffer**'s last assistant message (the in-flight turn's latest message may have been emitted
+    before the viewer attached, so the judge would otherwise read empty). If the run already settled in
+    the race between the controller's is-running check and viewer registration, it resolves
     immediately from the buffer's trailing `turn_end` (`complete`/`error`) instead of hanging. On
-    this replay path it also sets `pendingQuestion = hasPendingQuestion(rt.buffer)` so a settled turn
-    that ended on an unanswered `AskUserQuestion` is flagged for `develop()`'s human-decision guard
+    this replay path it also computes the pending-question flag from the buffer so a settled turn
+    that ended on an unanswered `AskUserQuestion` is flagged for the human-decision guard
     (RM-A11) — otherwise it would read as a plain `complete` and risk a blind continue.
-- **Main loop (`AutomationController.run`).** At the top of each loop iteration, **before** `pickNext`, the global concurrency gate (`awaitProjectRunning`, RM-A12) scans **all** `in_progress` intents (regardless of the `automate` flag) for a dev session that is **truly running** (`lastDevSessionId` non-null AND `hooks.isRunning` returns true). When found, it attaches an internal viewer to that in-flight turn (via `hooks.runDevTurn` with `attach: true`) and waits for it to settle — logging the outcome but **never** judging or interfering with the intent's lifecycle (manual intents are outside the orchestrator's scope). After the turn settles, the loop re-checks the gate; when clear, it falls through to `pickNext`. A dangling session (on disk but not running) passes the gate immediately. This is independent of `develop()`'s internal attach logic (RM-A10), which handles a **selected** intent's own running session after `pickNext`; the gate covers **any** running session from intents `pickNext` would not select (notably non-`automate` manual runs), preventing concurrent dev sessions that would conflict on file modifications in the same working tree.
-- **`pickNext`** selects the best eligible intent
+- **Main loop.** At the top of each loop iteration, **before** picking the next intent, the global concurrency gate (RM-A12) scans **all** `in_progress` intents (regardless of the `automate` flag) for a dev session that is **truly running** (`lastDevSessionId` non-null AND the run is live). When found, it attaches an internal viewer to that in-flight turn (in attach mode) and waits for it to settle — logging the outcome but **never** judging or interfering with the intent's lifecycle (manual intents are outside the orchestrator's scope). After the turn settles, the loop re-checks the gate; when clear, it falls through to pick the next intent. A dangling session (on disk but not running) passes the gate immediately. This is independent of the per-intent attach logic (RM-A10), which handles a **selected** intent's own running session after the pick; the gate covers **any** running session from intents the pick would not select (notably non-`automate` manual runs), preventing concurrent dev sessions that would conflict on file modifications in the same working tree.
+- **Pick next** selects the best eligible intent
   (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
-  each, `develop()` first picks its **starting** action by precedence: (1) if `lastDevSessionId` is
-  **already running** (`hooks.isRunning`) it **attaches** (RM-A10) — `attach: true`, starting id =
-  `lastDevSessionId`, and `markInProgress` is called **before** `runDevTurn` (no launch ⇒ no early
-  `onSessionId`, so the status must point at the tracked session up front); else (2) an `in_progress`
-  intent whose `lastDevSessionId` passes `sessionExists` is **resumed** (real id ⇒ `runDevTurn`
-  continues that context, first prompt continue); else (3) a `todo` or dangling one starts `null` (fresh
-  launch) — the same dangling rule as manual `start_development`. The `attach` flag applies to the
-  **first** turn only; it is cleared after the first `runDevTurn` so any continue continuation uses the
-  ordinary resume path (the attached turn settled the run). Then `develop()` loops: run a dev turn → **as soon as the dev session binds** (`onSessionId`,
-  early — mirroring manual `start_development`) `markInProgress` does `setLastDevSession` +
-  `updateStatus(in_progress)` + broadcast + emit, so the UI flips to `in_progress` immediately, not
-  at turn end (a fallback re-marks if the early bind never fired); → on `complete`, `gitDiffStat` +
-  `judgeCompletion`; `done` → `commitWithLintHeal` then `updateStatus(done)` + push id to `completedIds`;
-  `in_progress` → resume continue (cap `MAX_CONTINUATIONS=10`, RM-A8); `stuck`/`error`/push-fail (and a
-  torn-down `pendingQuestion`, RM-A11) → `fail(reason)` and stop the whole loop (RM-A6). A live
+  each, the develop step first picks its **starting** action by precedence: (1) if `lastDevSessionId` is
+  **already running** it **attaches** (RM-A10) — attach mode, starting id =
+  `lastDevSessionId`, and the in-progress mark is applied **before** the dev turn (no launch ⇒ no early
+  bind, so the status must point at the tracked session up front); else (2) an `in_progress`
+  intent whose `lastDevSessionId` passes the session-exists check is **resumed** (real id ⇒ the dev turn
+  continues that context, first prompt continue); else (3) a `todo` or dangling one starts a fresh
+  launch — the same dangling rule as manual launch. The attach flag applies to the
+  **first** turn only; it is cleared after the first turn so any continue continuation uses the
+  ordinary resume path (the attached turn settled the run). Then the develop step loops: run a dev turn → **as soon as the dev session binds**
+  (early — mirroring manual launch) the in-progress mark does set-last-dev-session +
+  status `in_progress` + broadcast + emit, so the UI flips to `in_progress` immediately, not
+  at turn end (a fallback re-marks if the early bind never fired); → on `complete`, gather diff-stat +
+  run the completion judge; `done` → commit (with lint self-heal) then mark `done` + push id to the completed set;
+  `in_progress` → resume continue (cap of 10 continuations, RM-A8); `stuck`/`error`/push-fail (and a
+  torn-down pending question, RM-A11) → fail with a reason and stop the whole loop (RM-A6). A live
   permission prompt does **not** stop the loop — it waits for the watching human (RM-A9), and
-  `setAwaiting(true/false)` flips the status `awaitingPermission` hint while paused. No eligible item
-  → state `done` (RM-A7). Abort mid-run (`blocked('aborted')`) → state `idle`.
-  - **Human-decision guard (RM-A11).** Before the `done`/`in_progress`/`stuck` branch, `develop()`
-    checks `turn.pendingQuestion`: when the turn ended on an **unanswered `AskUserQuestion`**, it
-    `fail(reason)`s immediately — **even if the judge said `in_progress`** — so a mis-judged verdict
-    can never drive a blind continue over a real user choice. The flag is computed by the pure
-    `hasPendingQuestion(buffer)` (exported from `automation.ts`, unit-tested): an `AskUserQuestion`
-    `tool_use` with no matching `tool_result` (by `toolUseId`) means the question was never answered.
-    A **live** AskUserQuestion no longer blocks — `runDevTurn` keeps the run alive for the watching
+  the awaiting-permission flag flips the status hint while paused. No eligible item
+  → state `done` (RM-A7). Abort mid-run (blocked/aborted) → state `idle`.
+  - **Human-decision guard (RM-A11).** Before the `done`/`in_progress`/`stuck` branch, the develop step
+    checks the turn's pending-question flag: when the turn ended on an **unanswered `AskUserQuestion`**, it
+    fails immediately — **even if the judge said `in_progress`** — so a mis-judged verdict
+    can never drive a blind continue over a real user choice. The flag is computed by a pure
+    detector (exported, unit-tested): an `AskUserQuestion`
+    tool-use with no matching tool-result (by tool-use id) means the question was never answered.
+    A **live** AskUserQuestion no longer blocks — the dev-turn runner keeps the run alive for the watching
     human to answer (RM-A9); the flag specifically covers the **torn-down / attach buffer-replay** path, where a
     settled run carrying a pending question would otherwise surface as `complete`.
-  - **Auto-commit lint self-heal (`commitWithLintHeal`, RM-A13).** The `done` branch commits through
-    `commitWithLintHeal(req, sessionId)` rather than a bare `commitAndPush`. It first commits; on
-    `ok` it returns `{ok, committed}`. A failure with `failure !== 'commit-hook'` (push rejected, no
+  - **Auto-commit lint self-heal (RM-A13).** The `done` branch commits through
+    a commit-with-lint-heal helper rather than a bare commit. It first commits; on
+    success it returns committed. A failure that is **not** a commit-hook failure (push rejected, no
     upstream, no repo …) is returned verbatim → hard stop (RM-A6), **never** retried. A
-    `failure: 'commit-hook'` (a pre-commit lint hook) is healed by a **single dev-agent attempt** —
+    commit-hook failure (a pre-commit lint hook) is healed by a **single dev-agent attempt** —
     lint toolchains differ per project, so there is no portable fix _command_: it resumes the **same**
-    dev session (`hooks.runDevTurn`, same `sessionId`, no `attach`) with a targeted prompt embedding the
-    lint error summary, lets the agent fix it, then retries the commit **once** (`commitAndPush` re-stages
-    via `git add -A`). A retry that succeeds ends the heal; a retry that fails non-`commit-hook` surfaces
+    dev session (same id, no attach) with a targeted prompt embedding the
+    lint error summary, lets the agent fix it, then retries the commit **once** (re-staging
+    everything). A retry that succeeds ends the heal; a retry that fails non-commit-hook surfaces
     verbatim; a retry that is still a lint failure returns `lint 自动修复失败(修复 agent 介入后仍未通过)…`
-    → `fail` (RM-A6, intent not `done`). The signal is checked around every await (abort returns
-    `{ok:false}` with no error so the caller stays quiet); the agent fix turn's permission pause flips
-    `setAwaiting` per RM-A9. Every stage `console.warn`s a trail.
-- **Completion judge (`judge.ts`).** `judgeCompletion` builds an English prompt (intent + last
+    → fail (RM-A6, intent not `done`). The abort signal is checked around every await (abort returns
+    failure with no error so the caller stays quiet); the agent fix turn's permission pause flips
+    the awaiting flag per RM-A9. Every stage logs a trail.
+- **Completion judge.** The judge builds an English prompt (intent + last
   message + **evidence**: `git diff HEAD --stat` for uncommitted work AND `git log --oneline -5` for
   recent commits — the dev skill often self-commits, leaving a clean tree, so an empty diff must NOT
   read as incomplete; either source counts) demanding a strict `{"verdict","reason"}` JSON. The
@@ -450,92 +438,91 @@ A per-project, in-memory state machine driven entirely by message handlers and a
   (2) **done** only if not stuck and the change evidence is consistent (the agent's word alone is
   insufficient); (3) **in_progress** as the **fallback** for a pure dev-skill checkpoint or
   self-driven remaining steps. The old "bias toward done / continue" wording is **removed** —
-  `in_progress` is no longer a default. It runs through the tool-less `askOneShot` (default-agent
-  env/model via `resolveSessionLaunch(null)`), logs the verdict, and tolerantly parses the first
-  `{…}`; an unparseable / out-of-range answer is treated as `stuck` (fail-safe — never silently
+  `in_progress` is no longer a default. It runs through the tool-less one-shot query (default-agent
+  env/model), logs the verdict, and tolerantly parses the first
+  JSON object; an unparseable / out-of-range answer is treated as `stuck` (fail-safe — never silently
   `in_progress`, RM-A4). The judge is the **first** line of the human-decision defence; the
-  orchestrator's `pendingQuestion` guard (RM-A11) is the second.
-- **Git (`git.ts`).** `gitDiffStat`, `gitRecentLog`, and `commitAndPush` shell out via
-  `execFile('git', ['-C', cwd, …])` and never reject (they return exit codes/stderr).
-  `commitAndPush` is **multi-repo aware**:
+  orchestrator's pending-question guard (RM-A11) is the second.
+- **Git helper.** Diff-stat, recent-log, and commit-and-push shell out via the git CLI scoped to a
+  directory and never reject (they return exit codes/stderr).
+  Commit-and-push is **multi-repo aware**:
   - If the project root has a `.git` marker it is treated as the single repo — classic behaviour:
     stage all, commit `feat: <title>` **only when there are changes**, then **always push** (an empty
     tree means the dev skill already self-committed — we still push so those commits reach the remote).
-  - Otherwise it discovers git repos under the root (`discoverSubRepos`: recursive, bounded depth,
+  - Otherwise it discovers git repos under the root (recursive, bounded depth,
     skips `node_modules`/`dist`/etc., stops at each repo boundary) and commits each **affected** repo
-    independently. `git -C <repo> add -A` scopes staging to that repo, so changed files group to their
+    independently. Staging is scoped per repo, so changed files group to their
     owning repo by location. A repo is affected when its tree is dirty **or** it is ahead of upstream
     (covers a subrepo the dev skill self-committed); untouched repos are left alone. Finding **no** repo
     is an error (`工作区内未找到 git 仓库,无法提交`).
-  - Any non-zero step returns `{ ok:false, error, failure }` (the failing subrepo's relative path is
-    named in the message), which becomes the orchestrator's stop reason (RM-A5/A6). The `failure:
-CommitFailureKind` field classifies **why**: a failed `git commit` whose output carries a
-    lint/pre-commit-hook signature (`eslint`/`prettier`/`lint-staged`/`husky`/`pre-commit`/`✖`, via the
-    pure, unit-tested `classifyCommitFailure`) is `'commit-hook'` (self-heal-eligible, RM-A13); every
-    other failure (`git add`/`status`/`push`, no-repo) is `'other'` (hard stop). Multi-repo runs
-    propagate the sub-repo's `failure` so a sub-repo lint failure still triggers the self-heal
+  - Any non-zero step returns a failure (the failing subrepo's relative path is
+    named in the message), which becomes the orchestrator's stop reason (RM-A5/A6). The failure
+    kind classifies **why**: a failed `git commit` whose output carries a
+    lint/pre-commit-hook signature (`eslint`/`prettier`/`lint-staged`/`husky`/`pre-commit`/`✖`, via a
+    pure, unit-tested classifier) is a commit-hook failure (self-heal-eligible, RM-A13); every
+    other failure (`git add`/`status`/`push`, no-repo) is a hard stop. Multi-repo runs
+    propagate the sub-repo's failure kind so a sub-repo lint failure still triggers the self-heal
     (RM-A13). There is **no** lint-fix _command_ helper — the heal is a single dev-agent fix, since
     lint toolchains are not portable across projects.
 
-## Reconcile (`reconcile.ts`)
+## Reconcile
 
-A standalone (DI'd) function `reconcileInProgress` called by the server's
+A standalone (injected) reconcile function is called by the server's
 `open_intent_chat` handler **in the background, after** the intent
 list is already sent to the client (perf: the panel renders immediately on the
-cached/derived `runStatus`, and a `broadcastIntents` pushes the refreshed
+cached/derived `runStatus`, and an intents-refresh broadcast pushes the refreshed
 list once reconcile settles — judging a dead session is an LLM call and must
 never block the first paint). It processes every `in_progress` intent for a
 project:
 
-1. **Liveness check:** if `lastDevSessionId` is non-null and `hooks.isRunning`
-   returns true, the dev process is still alive yields `runStatus: 'running'`.
+1. **Liveness check:** if `lastDevSessionId` is non-null and the run is live,
+   the dev process is still alive — yields `runStatus: 'running'`.
 2. **Dead process path:** otherwise, load the session's last 3 assistant
-   messages from disk via `hooks.loadTranscriptMessages` and run the completion
-   judge (through `hooks.judgeCompletion`, **without git evidence** since the
-   process is gone).
-3. **Judge `done`:** call `hooks.commitAndPush` + `hooks.updateStatus(done)` yields
+   messages from disk and run the completion
+   judge (**without git evidence** since the process is gone).
+3. **Judge `done`:** commit & push + mark `done` — yields
    `runStatus: 'idle'` (auto-completed).
 4. **Judge `in_progress` / `stuck` or no session:** yields `runStatus: 'dangling'`
    (keeps `in_progress`, but marked interrupted).
 
 All side-effect access (runtime registry, disk transcripts, AI judge, git,
-store) is injected via the `ReconcileDeps` interface so the logic is pure and
+store) is injected so the logic is pure and
 unit-testable. The reconcile auto-`done` is the explicit, documented exception
 to RM-R9 for process death, covering both manual and automation-started runs
-(RM-R18). On completion the server caches each derived `runStatus` (consumed by
-`enrichRunStatus` on later broadcasts) and `broadcastIntents` so every
+(RM-R18). On completion the server caches each derived `runStatus` (consumed
+on later broadcasts) and pushes an intents refresh so every
 connection sees the refreshed run-states and any auto-completes.
 
-**Dead-session de-dup (perf).** The handler keeps a `judgedSessions` map
+**Dead-session de-dup (perf).** The handler keeps a judged-sessions map
 (intent id → the `lastDevSessionId` last judged while dead) and filters the
-reconcile input: a intent whose **current dead session** is already recorded
+reconcile input: an intent whose **current dead session** is already recorded
 is skipped — re-judging on every entry / refresh / WS reconnect yields the same
-verdict at the cost of another LLM call. A live process (re-derived cheaply via
-`enrichRunStatus`) and a brand-new session id (differs from the record) still get
+verdict at the cost of another LLM call. A live process (re-derived cheaply) and
+a brand-new session id (differs from the record) still get
 (re)judged. The entry is cleared when the intent leaves `in_progress`.
 
 ## List / Rename / Delete communication sessions
 
 Three new WS handlers round out the session-collection CRUD:
 
-- **`list_intent_sessions`**: reads `listChatSessions(proj)`, derives a `runStates` snapshot
-  (sessions with a live agent run are `'running'`, absent = idle), and replies `intent_sessions`
+- **`list_intent_sessions`**: reads the session list, derives a run-states snapshot
+  (sessions with a live agent run are running, absent = idle), and replies `intent_sessions`
   on the same connection.
-- **`rename_intent_session`**: calls `renameChatSession(sessionId, title)`, then broadcasts
-  `intent_sessions` to all connections via `ctx.broadcastIntentSessions(proj)`.
-- **`delete_intent_session`**: calls `removeRuntime(sessionId)` (abort + drop the in-memory
-  runtime), then `deleteChatSession(proj, sessionId)` (db deletion with `is_current` fallback).
-  Clears `conn.viewing` if the deleted session was being watched, then broadcasts both
+- **`rename_intent_session`**: renames the session, then broadcasts
+  `intent_sessions` to all connections.
+- **`delete_intent_session`**: removes the runtime (abort + drop the in-memory
+  runtime), then deletes the session row (with `is_current` fallback).
+  Clears the connection's viewed session if the deleted session was being watched, then broadcasts both
   `intent_sessions` and `session_status` to all connections.
 
 All three check store availability first and return `error` on db-unavailable.
 
-## Broadcast (`broadcasts.ts` + `KernelContext`)
+## Broadcast
 
-`broadcastIntentSessions(workspacePath)` follows the same pattern as `broadcastDiscussions`:
-it reads the session list via `listChatSessions`, attaches a `runStates` snapshot derived from
-`isRunning()`, and fans out `{ type: 'intent_sessions', workspacePath, items, runStates }` to
-every connection via `broadcaster.toAll`. Wired into `KernelContext` so intent session handlers
+The intent-session broadcast follows the same pattern as the discussion broadcast:
+it reads the session list, attaches a run-states snapshot derived from the
+in-flight check, and fans out `{ type: 'intent_sessions', workspacePath, items, runStates }` to
+every connection. It is wired into the shared kernel context so intent session handlers
 and any background mutation can push the refreshed list.
 
 - `list_intents` / `update_intent_status` read/write the store and reply `intents`.
@@ -543,89 +530,85 @@ and any background mutation can push the refreshed list.
   longer exists, the existing `error` path returns and the frontend offers a friendly
   restart/cancel exit (RM-R13).
 
-## Hidden-set filtering (`sessions.ts`)
+## Hidden-set filtering
 
-`listWorkspaceSessions(dir)` filters out `store.listHiddenSessions(resolve(dir))` so communication
+The workspace session listing filters out the project's hidden set so communication
 sessions never enter the normal list (RM-R4) — using the resolved path so the key matches the
-stored `workspace_path`. If the store is unavailable it does **not** filter (degrade, don't break
+stored workspace path. If the store is unavailable it does **not** filter (degrade, don't break
 the list) (RM-R12).
 
-## Frontend (`web/`)
+## Frontend
 
-- **Entry button:** `SessionSidebar.vue` adds an idea (💡) button left of "＋ new session"
-  emitting `open-intents` with the workspace path.
-- **View switch:** `App.vue` gains `viewMode: 'console' | 'intents'` + `intentsProject`.
+- **Entry button:** the session sidebar adds an idea (💡) button left of "＋ new session"
+  emitting an open-intents event with the workspace path.
+- **View switch:** the app gains a view mode (`console` | `intents`) + the intents project.
   Opening sends `open_intent_chat` (its response carries the list); selecting any normal
   session resets to `console`. The intent view renders no mode selector (RM-R3).
-- **Title bar (RM-R3):** the dialog column reuses `SessionTitleBar.vue` with `show-mode=false`
-  (no mode selector). The console tab keeps the default `show-mode=true`. Title shows
-  `activeTitle || 'New Intent'`.
-- **New-intent button:** the "+" button lives in `IntentList.vue`'s header, to the
-  right of the status filter (`req-head-right`). It emits `new-intent` → `App.vue` sends
+- **Title bar (RM-R3):** the dialog column reuses the session title bar with the mode selector
+  hidden. The console tab keeps the mode selector shown. Title shows the active title or "New Intent".
+- **New-intent button:** the "+" button lives in the intent list's header, to the
+  right of the status filter. It emits a new-intent event → the app sends
   `new_intent_chat`; the resulting `session_selected` (empty history) clears the dialog so a
   fresh round starts.
 - **Reconnect / refresh recovery:** each project's current communication session is persisted in
-  `intent_chats.is_current`, so entering the intent view auto-reloads it. On WS reopen,
-  if `viewMode==='intents'`, re-send `open_intent_chat`; `viewMode`/`intentsProject`
-  are also mirrored to `localStorage` to survive a hard refresh. No new server message is needed —
+  the chat table's current flag, so entering the intent view auto-reloads it. On WS reopen,
+  if the view mode is intents, re-send `open_intent_chat`; the view mode and intents project
+  are also mirrored to local storage to survive a hard refresh. No new server message is needed —
   the existing resume branch suffices.
-- **Layout:** left `IntentList.vue` (默认完整宽度 960px,窄屏 `min(960px,68vw)`;可在标题栏
-  通过 `.req-collapse-btn` 在展开/收缩两态间切换,折叠态是组件本地 UI 状态 `collapsed`(同 `expandedId`
-  范式),收缩态宽度减半至 480px 并以 `v-if` **不渲染** `.req-module` 与 `.req-actions`,展开态恢复;
-  折叠态文案/可见性由纯函数 `lib/req-list-view.ts` 的 `panelToggleLabel`/`rowVisibility` 决定)
+- **Layout:** left intent list (默认完整宽度 960px,窄屏 `min(960px,68vw)`;可在标题栏
+  通过折叠按钮在展开/收缩两态间切换,折叠态是组件本地 UI 状态,收缩态宽度减半至 480px 并**不渲染**
+  模块标签与操作区,展开态恢复;折叠态文案/可见性由一个纯函数决定)
   (header: title + an **automation** button [▶ / ■ stop,
   highlighted while running, red on error] + status filter, with a status line below showing the
   current item or the stop reason;
-  **列表排序(纯客户端 `displayIntents`,服务端 `listIntents` 的 `priority ASC, updated_at DESC`
+  **列表排序(纯客户端展示排序,服务端 `priority ASC, updated_at DESC`
   不变):**「全部」视图未完成项保持服务端原序置顶、已完成(`done`)项置底;置底段与「已完成」筛选整列均
-  **按完成时间倒序、再优先级排序**——`lib/req-list-view.ts` 的 `compareByCompletion`:`completedAt` 降序为
+  **按完成时间倒序、再优先级排序**——一个纯比较函数:`completedAt` 降序为
   主键(缺失时回退 `createdAt`),同完成时刻按 `priority` 升序 P0→P3;其它单状态筛选原样不重排;
   per row a `MM/DD` date prefix
   — `completedAt` for done items, else `createdAt`, both zero-padded — an optional **module tag**
-  (`.req-module` 胶囊标签,渲染于 date 与 title 之间;`module===''` 时 `v-if` 不渲染,无占位不破版)
-  before the title/priority badge/status (`.req-status` 为彩色 pill 徽标,`:class="r.status"` 按
-  draft 灰 / todo 主色 / in_progress 橙 / done 绿 / cancelled 红映射语义色,风格同 `.req-priority`,
-  收缩态不隐藏;标签文案来自 `lib/req-list-view.ts` 的 `statusLabel`)
+  (胶囊标签,渲染于 date 与 title 之间;`module===''` 时不渲染,无占位不破版)
+  before the title/priority badge/status (彩色 pill 徽标,按
+  draft 灰 / todo 主色 / in_progress 橙 / done 绿 / cancelled 红映射语义色,风格同优先级徽标,
+  收缩态不隐藏;标签文案来自一个纯函数)
   and a dependency hint;
-  **展开详情(手风琴,至多一项展开):** `.req-detail` 复用 `MarkdownText.vue`
-  以 Markdown 安全渲染 `r.content` 全文(`<MarkdownText :text="r.content" markdown />`)——
-  `MarkdownText` 默认仅 `kind==='assistant'` 启用 Markdown,新增显式 `markdown` prop
-  强制走同一条管线(markdown-it `html:false` → DOMPurify.sanitize → v-html),与聊天消息
+  **展开详情(手风琴,至多一项展开):** 详情区复用安全 Markdown 渲染
+  把 `content` 全文以 Markdown 安全渲染——
+  详情显式走 Markdown 管线(markdown-it `html:false` → DOMPurify 清洗 → 注入),与聊天消息
   一致的 XSS 防护与外链加固(`target=_blank rel=noopener noreferrer`,剔除 `javascript:`/`data:`);
-  全局 `.md-body` 样式套用其排版,聊天既有行为不回归。
-  下方 `.req-meta` 显示次要元信息(字号 `--fs-caption`、灰色 `--c-text-muted`):
-  创建时间 `formatDate(r.createdAt)` (完整格式 `YYYY-MM-DD HH:mm`)、
-  完成时间(仅 `r.completedAt` 非空时显示,同完整格式)、
-  依赖列表(无依赖时不显示;已完成依赖灰色、未完成依赖以 `--c-warning` 橙色并加 ⚠ 标记);
-  时间与依赖格式化由 `lib/req-list-view.ts` 的 `formatDate`/`formatDependsOn` 纯函数完成;
-  再下方 `.req-deps` 仅当存在未完成依赖时显示简短警告;
+  套用同一排版样式,聊天既有行为不回归。
+  下方元信息区显示次要元信息(小字号、灰色):
+  创建时间 (完整格式 `YYYY-MM-DD HH:mm`)、
+  完成时间(仅 `completedAt` 非空时显示,同完整格式)、
+  依赖列表(无依赖时不显示;已完成依赖灰色、未完成依赖橙色并加 ⚠ 标记);
+  时间与依赖格式化由纯函数完成;
+  再下方仅当存在未完成依赖时显示简短警告;
   per-status actions: Refine + Launch-development for `todo`, Development-details
-  for launched, mark done/cancel for any), then a **trailing automate toggle icon** (`.req-automate`,
-  渲染于 `.req-actions` 操作按钮排末尾、所有操作按钮之后;`r.automate` → ⏳ tooltip `in auto queue`,
-  否则 ✋ tooltip `manual trigger mode`;因属于 `.req-actions`,收缩态随操作区一并隐藏);
-  right **reuses** `ChatMessages` + `SessionStatusBar` +
-  `MessageInput` against the already-viewed communication session. The automate icon emits
-  `set-automate` (`@click.stop`, toggles `!r.automate`); the button emits `start-automation`/`stop-automation`.
-- **Save confirmation:** `PermissionPrompt.vue` adds a branch for
-  `toolName==='mcp__c3__save_intents'` rendering each proposed item as a card
+  for launched, mark done/cancel for any), then a **trailing automate toggle icon**
+  (渲染于操作按钮排末尾、所有操作按钮之后;`automate` → ⏳ tooltip `in auto queue`,
+  否则 ✋ tooltip `manual trigger mode`;因属于操作区,收缩态随操作区一并隐藏);
+  right **reuses** the chat messages + session status bar +
+  message input against the already-viewed communication session. The automate icon emits
+  a set-automate event (toggles the flag); the button emits start/stop-automation.
+- **Save confirmation:** the permission prompt adds a branch for the
+  `save_intents` tool name, rendering each proposed item as a card
   (title/priority/dependency) with Save/Cancel mapped to allow/deny. Dependencies render on two
   lines: existing-id deps as "依赖:…" and intra-batch deps (`dependsOnIndexes`) as
-  "依赖本批:#N「title」" — a `batchDepLabels` helper resolves each 0-based index back to the
-  sibling's title in the same `proposedIntents` array so the user sees the order relationship
+  "依赖本批:#N「title」" — a helper resolves each 0-based index back to the
+  sibling's title in the same proposed-intents array so the user sees the order relationship
   before allowing (RM-R17).
-- **Intent data:** `App.vue` holds `intents: Record<workspacePath, Intent[]>`,
-  refreshed by the `intents` message, and `automation: Record<workspacePath, AutomationStatus>`,
-  refreshed by the `automation_status` message; `IntentList` receives the current project's
-  status as the `automation` prop.
+- **Intent data:** the app holds intents keyed by workspace path,
+  refreshed by the `intents` message, and automation status keyed by workspace path,
+  refreshed by the `automation_status` message; the intent list receives the current project's
+  status as a prop.
 
 ## Dependencies
 
-- **SQLite** — `node:sqlite` (Node) / `bun:sqlite` (Bun single binary); both `external` in
-  esbuild.
-- **agent-session** — the `intent`-kind runtime and the shared `launchRun`.
-- **permission-gateway** — gates `save_intents` via the existing `canUseTool` flow.
+- **SQLite** — Node's built-in SQLite (Node) / Bun's built-in SQLite (Bun single binary); both
+  marked external in the server bundle.
+- **agent-session** — the intent-kind runtime and the shared launcher.
+- **permission-gateway** — gates `save_intents` via the existing permission flow.
 - **session-registry** — its list filter consumes this domain's hidden set.
-- **git (local CLI)** — `automation.ts`'s commit/push on a verified `done` (`git.ts`).
-- **agent-session (one-shot)** — the completion judge runs `askOneShot` (tool-less SDK query).
-- **`@anthropic-ai/claude-agent-sdk`** — `appendSystemPrompt` preset, `disallowedTools`,
-  `createSdkMcpServer` / `tool`.
+- **git (local CLI)** — the orchestrator's commit/push on a verified `done`.
+- **agent-session (one-shot)** — the completion judge runs a tool-less one-shot SDK query.
+- **Claude Agent SDK** — appended-system-prompt preset, disallowed tools, in-process MCP server.

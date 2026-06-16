@@ -66,7 +66,21 @@ is the gating point above.
 ## License-server technical shape
 
 - **Runtime:** Go standard-library HTTP — a small, auditable surface, no heavy framework.
-- **Store:** PostgreSQL — licenses, orders, activations, heartbeat history, and revocations.
+- **Foundation surface:** the authority core boots from environment-driven configuration only (no
+  config file), applies its PostgreSQL schema via **idempotent** migrations on startup, and serves a
+  redacted **health** signal plus the public **plan catalog**. All secrets (signing key, OAuth and
+  payment credentials, database DSN) are presence-only in any health/log output (PL-R12). The whole
+  service — including the embedded web — ships as a **single binary**.
+- **Plan catalog:** the public, fixed set of purchasable terms is **code-owned** (not database-driven)
+  at the MVP stage — small, stable, and identical for every buyer — and served over the LS API
+  contract's `GET /v1/plans`. Prices are integer minor units (cents) in CNY (WeChat Pay's settlement
+  currency); plan ids are stable once published.
+- **Caching:** infrequently-changing read paths (the plan catalog today; license, auth, and payment
+  lookups as those surfaces land) are served through bounded in-process LRU caches.
+- **Embedded web:** the buyer/admin frontend is built and embedded into the binary and served with a
+  single-page-app fallback; no external asset directory is required at runtime.
+- **Store:** PostgreSQL — licenses, orders, activations, heartbeat history, and revocations. LS data
+  is kept in its own migration area, separate from any c3 store.
 - **Identity:** GitHub OAuth for both buyer login (self-service purchase/inspection) and the admin
   back-office (issue/revoke/inspect).
 - **Payment:** WeChat Pay; the **no-refund service-agreement acceptance** is recorded **before** the

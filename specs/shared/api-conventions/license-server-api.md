@@ -60,6 +60,26 @@ Confirms the installation is still entitled and refreshes the entitlement.
   any refreshed token (PL-R3/PL-R4). A `revoked`/`expired` status lapses the installation to gated
   (PL-R6/PL-R8).
 
+## Public LS surfaces (foundation)
+
+These endpoints require no credential and are part of the LS product's foundation. They are public
+because they carry no entitlement secret: the catalog is the same for every visitor and health is a
+redacted operational signal.
+
+### Plan catalog
+
+- **`GET /v1/plans`** — the public catalog of purchasable license terms. Returns a `plans` array;
+  each plan carries a **stable `id`**, a display `name`, a `durationMonths`, a `priceCents` (the
+  price in the currency's minor unit), and a `currency` (ISO-4217). Plan ids are stable once
+  published so orders and links can reference them. The MVP catalog is three plans: `1m` (1 month,
+  100 cents), `6m` (6 months, 590 cents), and `1y` (1 year, 1090 cents), denominated in `CNY`.
+
+### Health
+
+- **`GET /healthz`** — liveness for operators/load-balancers. Returns a status, the LS version, and
+  a **redacted** configuration view in which every secret (database DSN, signing key, OAuth secret,
+  payment key) is reduced to a presence indicator and **never** its value (PL-R12).
+
 ## LS web (buyer & admin) surface
 
 These endpoints are part of the LS product, not called by c3; documented here so the boundary is

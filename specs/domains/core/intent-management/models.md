@@ -1,9 +1,8 @@
 # intent-management — Models
 
-Entity definitions. Business-semantic types; physical wiring (SQLite driver, schema migrations)
-in [design.md](design.md). The wire shapes (`Intent`, `ProposedIntent`,
-`IntentPriority`, `IntentStatus`) are defined once in `shared/src/protocol.ts` and
-documented in the [shared protocol](../../../shared/api-conventions/websocket-protocol.md);
+Entity definitions in domain terms; physical wiring (SQLite driver, schema migrations)
+in [design.md](design.md). The intent, proposed-intent, priority, and status wire shapes are
+defined once in the [shared protocol](../../../shared/api-conventions/websocket-protocol.md);
 domain docs reference them rather than redefining message shapes.
 
 ## Intent
@@ -18,7 +17,7 @@ A ledger item scoped to one project.
 | `content`          | text                        | Full intent description                                                                                                                               |
 | `priority`         | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别; P0 highest                                                                                                                                  |
 | `module`           | text                        | 模块名称 — the intent's owning module, inferred by the communication agent from title/content; `''` when unidentified or for historical rows (RM-R14) |
-| `status`           | enum `IntentStatus`         | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                                             |
+| `status`           | enum                        | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                                             |
 | `dependsOn`        | `id[]`                      | Intra-project intent ids this item depends on (aggregated; RM-R1)                                                                                     |
 | `lastDevSessionId` | text \| null                | The session id the last development run produced; back-link target (RM-R8/13)                                                                         |
 | `automate`         | boolean                     | Whether the automation orchestrator may pick this item up; user-toggled, `false` by default (RM-A1)                                                   |
@@ -79,9 +78,9 @@ Sessions can be listed, renamed, and deleted.
 Relationships: every row for a project forms that project's **hidden set** (excluded from
 `list_sessions`, RM-R4); the `isCurrent` row is the session re-loaded on entering the
 intent view without a specific `sessionId`. On its first run the `pending:` id is rebound
-to the real SDK id while keeping `isCurrent` and hidden-set membership. Sessions may be
-renamed (`renameChatSession`) or physically deleted (`deleteChatSession` — row + runtime
-removal, with `isCurrent` fallback to the most recent remaining session).
+to the real vendor-native id while keeping `isCurrent` and hidden-set membership. Sessions may be
+renamed or physically deleted (row + runtime removal, with `isCurrent` fallback to the most
+recent remaining session).
 
 ## Automation Status
 
@@ -89,16 +88,16 @@ The live state of a project's automation orchestrator (RM-A1–RM-A9). In-memory
 project; not persisted — a server restart resets it to `idle`). Pushed to every connection as the
 `automation_status` wire event.
 
-| Attribute            | Type                   | Description                                                                                                                     |
-| -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `workspacePath`      | text (path)            | Resolved absolute workspace path (RM-R10)                                                                                       |
-| `state`              | enum `AutomationState` | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                                                                                |
-| `currentIntentId`    | id \| null             | The intent being developed now (null when not running)                                                                          |
-| `currentSessionId`   | text \| null           | The current intent's dev session, for a back-link                                                                               |
-| `awaitingPermission` | boolean                | True while the current dev turn is paused on a permission prompt awaiting a human answer (RM-A9); cleared when the turn settles |
-| `error`              | text \| null           | Why it stopped abnormally; null unless `state = error` (RM-A6/A7)                                                               |
-| `completedIds`       | `id[]`                 | Intent ids completed (committed + pushed) in this run                                                                           |
-| `startedAt`          | timestamp \| null      | When the orchestrator was started; null when never started                                                                      |
+| Attribute            | Type              | Description                                                                                                                     |
+| -------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `workspacePath`      | text (path)       | Resolved absolute workspace path (RM-R10)                                                                                       |
+| `state`              | enum              | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                                                                                |
+| `currentIntentId`    | id \| null        | The intent being developed now (null when not running)                                                                          |
+| `currentSessionId`   | text \| null      | The current intent's dev session, for a back-link                                                                               |
+| `awaitingPermission` | boolean           | True while the current dev turn is paused on a permission prompt awaiting a human answer (RM-A9); cleared when the turn settles |
+| `error`              | text \| null      | Why it stopped abnormally; null unless `state = error` (RM-A6/A7)                                                               |
+| `completedIds`       | `id[]`            | Intent ids completed (committed + pushed) in this run                                                                           |
+| `startedAt`          | timestamp \| null | When the orchestrator was started; null when never started                                                                      |
 
 ## Persisted store (c3.db)
 
@@ -110,8 +109,8 @@ NULL DEFAULT 0, v6 renamed legacy requirement- tables to intent-, v7 added the n
 `created_at`, v10 added the `intent_sessions` audit table, v11 renamed the workspace-key column
 `project_path` → `workspace_path` in place on `intents` + `intent_chats` and rebuilt the composite
 index as `idx_intent_workspace_status`. The rename deliberately diverges from the back-compat
-`projectConfigs` settings.json key, which keeps its legacy name — see migration record
-`database/migrate/2026/06/14/012`). Tables: `intents`, `intent_deps`, `intent_chats`
+`projectConfigs` settings.json key, which keeps its legacy name — see the 2026-06-14 workspace-path
+migration record). Tables: `intents`, `intent_deps`, `intent_chats`
 (session collection + hidden set in one table), and `tool_sessions`
 (`session_id` PRIMARY KEY + `created_at`) — the persisted set of tool-created sessions (completion
 judge, consensus advisor) so the session-registry's "show tool sessions" filter survives restarts.

@@ -42,7 +42,7 @@ flowchart TD
 1. **web-console → agent-session.** The browser sends `user_prompt`. The runtime starts a new
    Agent Run for the viewed session with that session's `cwd`, mode, and (for a real id) `resume`
    (`AS-R1`). The prompt is echoed as `user_text` so all viewers and switch-back replay see it.
-2. **agent-config → agent-session.** `resolveSessionLaunch` supplies the run's launch overrides —
+2. **agent-config → agent-session.** Session-launch resolution supplies the run's launch overrides —
    the bound agent's vendor + `model`/`baseUrl`/`apiKey`/`envOverrides`, else the default agent's
    driver (`AS-R*` vendor note, ADR-0011).
 3. **agent-session → SDK.** The run drives `query()` in **streaming-input mode** (`AS-R13`), keeping

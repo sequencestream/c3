@@ -664,14 +664,27 @@ export interface WorkspaceSetting {
 // ===========================================================================
 
 /**
- * Auth provider kinds — the extension point. `basic` (single admin) and `oauth`
- * (generic OIDC, contract-only — see {@link OAuthAuthProvider}) are defined;
- * `sso`/multi-user remain reserved (add a `kind` here + an arm to
- * {@link AuthProvider} + a server zod arm; nothing else changes — same shape as
- * the ADR-0011 vendor extension point).
+ * Auth provider kinds — the extension point. `none` (no auth — the C-SEC-5
+ * localhost-only default), `basic` (single admin) and `oauth` (generic OIDC,
+ * contract-only — see {@link OAuthAuthProvider}) are defined; `sso`/multi-user
+ * remain reserved (add a `kind` here + an arm to {@link AuthProvider} + a server
+ * zod arm; nothing else changes — same shape as the ADR-0011 vendor extension
+ * point).
  */
-export const AUTH_PROVIDER_KINDS = ['basic', 'oauth'] as const
+export const AUTH_PROVIDER_KINDS = ['none', 'basic', 'oauth'] as const
 export type AuthProviderKind = (typeof AUTH_PROVIDER_KINDS)[number]
+
+/**
+ * The `none` provider: no authentication — the first-class expression of the
+ * C-SEC-5 localhost-only default (sign-in not required, anyone reaching the
+ * server may drive it). Carries no config; `kind` alone is the whole shape.
+ * Invariant: `kind:'none' ⇔ AuthConfig.enabled === false` (enforced by
+ * `normalizeAuth`), so the dropdown's "no auth" choice and the master switch can
+ * never disagree.
+ */
+export interface NoneAuthProvider {
+  kind: 'none'
+}
 
 /**
  * The single-admin `basic` provider: a username + a password **hash** (a PHC
@@ -725,10 +738,11 @@ export interface OAuthAuthProvider {
 
 /**
  * The active auth provider — a `kind`-discriminated union. Narrow on `kind`
- * before reading provider-specific fields. `basic` is runtime-live; `oauth` is
- * contract-only (config persists, login awaits the OAuth-runtime task).
+ * before reading provider-specific fields. `none` is no-auth (the localhost-only
+ * default); `basic` is runtime-live; `oauth` is contract-only (config persists,
+ * login awaits the OAuth-runtime task).
  */
-export type AuthProvider = BasicAuthProvider | OAuthAuthProvider
+export type AuthProvider = NoneAuthProvider | BasicAuthProvider | OAuthAuthProvider
 
 /**
  * Session-token policy — provider-neutral. The signing secret itself is NEVER
@@ -763,9 +777,10 @@ export interface AuthExposureConfig {
  * provider-neutral.
  */
 export interface AuthConfig {
-  /** Master switch. `false` / absent block ⇒ no auth (C-SEC-5 default). */
+  /** Master switch. `false` / absent block ⇒ no auth (C-SEC-5 default). A
+   *  `none` provider pins this to `false` (see {@link NoneAuthProvider}). */
   enabled: boolean
-  /** The active auth provider (only `basic` this phase). */
+  /** The active auth provider (`none` ⇒ no auth; `basic` runtime-live; `oauth` contract-only). */
   provider: AuthProvider
   /** Session-token policy (TTL + signing-key reference). */
   session: AuthSessionPolicy

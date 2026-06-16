@@ -462,9 +462,12 @@
       "hint": "Require a sign-in to use this console. Set an admin account first, then turn authentication on.",
       "provider": {
         "label": "Provider",
+        "none": "No authentication",
         "basic": "Username & password",
-        "oauth": "OAuth / OIDC",
-        "sso": "SSO (coming soon)"
+        "oauth": "OAuth / OIDC"
+      },
+      "none": {
+        "hint": "Anyone who can reach this server may use it — no sign-in required. The default for a local, single-user setup on localhost."
       },
       "oauth": {
         "hint": "Delegate sign-in to an external OpenID Connect provider (Google, Keycloak, or any compliant issuer).",
@@ -500,8 +503,8 @@
         }
       },
       "enable": {
-        "label": "Require sign-in",
-        "needAdmin": "Set an admin account below before turning this on."
+        "needAdmin": "Set an admin account below before sign-in takes effect.",
+        "active": "Sign-in is required. Users must enter the admin credentials to access this console."
       },
       "username": {
         "label": "Admin username",

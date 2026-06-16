@@ -75,6 +75,44 @@ describe('auth-schema', () => {
     expect(normalizeAuth(badEnabled)).toBeNull()
   })
 
+  // ---- none provider arm — no auth (the C-SEC-5 localhost default) ----
+  describe('none provider arm', () => {
+    it('parses a valid none config', () => {
+      const none: AuthConfig = {
+        enabled: false,
+        provider: { kind: 'none' },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      expect(authConfigSchema.safeParse(none).success).toBe(true)
+      expect(normalizeAuth(none)).toEqual(none)
+    })
+
+    it('forces enabled to false for a none provider (single truth source)', () => {
+      // A stale `enabled: true` on disk must never contradict "no auth": the
+      // `kind:'none' ⇔ enabled:false` invariant is re-pinned by normalize.
+      const stale = {
+        enabled: true,
+        provider: { kind: 'none' },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      const normalized = normalizeAuth(stale)
+      expect(normalized?.provider.kind).toBe('none')
+      expect(normalized?.enabled).toBe(false)
+    })
+
+    it('rejects a none provider carrying extra config fields', () => {
+      // zod strips unknown keys, but the arm itself stays shape-pure: a `none`
+      // block round-trips to exactly `{ kind: 'none' }`.
+      const withExtra = {
+        enabled: false,
+        provider: { kind: 'none', username: 'admin' },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      const normalized = normalizeAuth(withExtra)
+      expect(normalized?.provider).toEqual({ kind: 'none' })
+    })
+  })
+
   // ---- oauth (generic OIDC) provider arm — contract-only (no runtime) ----
   describe('oauth provider arm', () => {
     // A complete, valid generic-OIDC config. `clientSecretRef` is a *reference*

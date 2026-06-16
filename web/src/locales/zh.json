@@ -462,9 +462,12 @@
       "hint": "要求登录后才能使用此控制台。请先设置管理员账号，再开启认证。",
       "provider": {
         "label": "认证方式",
+        "none": "无需认证",
         "basic": "用户名与密码",
-        "oauth": "OAuth / OIDC",
-        "sso": "SSO（即将支持）"
+        "oauth": "OAuth / OIDC"
+      },
+      "none": {
+        "hint": "任何能访问到本服务的人都可直接使用，无需登录。本地单人、localhost 场景下的默认选项。"
       },
       "oauth": {
         "hint": "把登录委托给外部 OpenID Connect 提供方（Google、Keycloak 或任何兼容的 issuer）。",
@@ -500,8 +503,8 @@
         }
       },
       "enable": {
-        "label": "要求登录",
-        "needAdmin": "开启前请先在下方设置管理员账号。"
+        "needAdmin": "请先在下方设置管理员账号，登录认证才会生效。",
+        "active": "已要求登录。用户须输入管理员账号密码才能访问本控制台。"
       },
       "username": {
         "label": "管理员用户名",

@@ -358,6 +358,11 @@ function save(): void {
   draft.value.agents.forEach((a, i) => {
     a.order_seq = i
   })
+  // Derive the auth master switch from the chosen provider: `none`/`oauth` ⇒ off,
+  // `basic` ⇒ on only once an admin is configured. The dropdown is the single
+  // source of intent; this is where it commits to `enabled` (the server's
+  // `normalizeAuth` re-pins `none ⇒ false` as a defence-in-depth second guard).
+  if (draft.value.auth) draft.value.auth.enabled = authActive.value
   emit('save', draft.value)
 }
 
@@ -395,15 +400,15 @@ function removeSandbox(index: number) {
 }
 
 // ---- Authentication (ADR-0023) ------------------------------------------
-// `basic` and `oauth` (generic OIDC, contract-only) ship a provider form; `sso`
-// stays a greyed-out placeholder mirroring the protocol extension point
-// (AUTH_PROVIDER_KINDS). Selecting `oauth` persists its config, but with no
-// OAuth runtime yet, enabling auth still only works with `basic` — the enable
-// toggle is locked under oauth and labelled "contract ready, login pending".
+// The provider dropdown is the single auth on/off control (the old standalone
+// "enable" checkbox is gone): `none` ⇒ no auth (sign-in disabled, the C-SEC-5
+// localhost default); `basic` ⇒ require sign-in (effective only once an admin is
+// configured); `oauth` (generic OIDC, contract-only) persists config but cannot
+// truly enable yet — with no OAuth runtime, sign-in still works only with basic.
 const AUTH_PROVIDERS: { value: string; disabled: boolean }[] = [
+  { value: 'none', disabled: false },
   { value: 'basic', disabled: false },
   { value: 'oauth', disabled: false },
-  { value: 'sso', disabled: true },
 ]
 const DEFAULT_OAUTH_SCOPES = ['openid', 'profile', 'email']
 // Signing key is a reference (an env name), never the key itself (ADR-0023).
@@ -416,7 +421,6 @@ const DEFAULT_AUTH_SESSION = { ttlSeconds: 30 * SECONDS_PER_DAY, signingKeyRef: 
 const newPassword = ref('')
 const currentPassword = ref('')
 
-const authEnabled = computed(() => draft.value.auth?.enabled ?? false)
 const authUsername = computed(() =>
   draft.value.auth?.provider.kind === 'basic' ? draft.value.auth.provider.username : '',
 )
@@ -428,24 +432,29 @@ const hasStoredPassword = computed(
 )
 // "Admin configured" gates enabling auth + network exposure (acceptance #5).
 const adminConfigured = computed(() => !!authUsername.value && hasStoredPassword.value)
+// Auth is effectively ON only under `basic` with a configured admin. `none` ⇒
+// always off; `oauth` ⇒ off (runtime pending, cannot truly enable yet). This is
+// the single derivation of `enabled` — the dropdown chooses intent, this gates
+// it, and `save()` writes it into the draft (server `normalizeAuth` re-pins
+// `none ⇒ enabled:false` as a second guard).
+const authActive = computed(() => authProviderKind.value === 'basic' && adminConfigured.value)
 const exposureOn = computed(() => {
   const addr = draft.value.auth?.exposure?.bindAddress
   return !!addr && addr !== '127.0.0.1' && addr !== 'localhost'
 })
 
-/** Lazily materialize an editable (disabled) auth block on first interaction. */
+/** Lazily materialize an auth block on first interaction. Defaults to the
+ *  no-auth `none` provider — the C-SEC-5 localhost default — so an untouched
+ *  panel never implies a half-configured `basic`. */
 function ensureAuth(): AuthConfig {
   if (!draft.value.auth) {
     draft.value.auth = {
       enabled: false,
-      provider: { kind: 'basic', username: '', passwordHash: '' },
+      provider: { kind: 'none' },
       session: { ...DEFAULT_AUTH_SESSION },
     }
   }
   return draft.value.auth
-}
-function setAuthEnabled(v: boolean) {
-  ensureAuth().enabled = v
 }
 function setAuthUsername(v: string) {
   const a = ensureAuth()
@@ -473,13 +482,19 @@ function setAuthTtlDays(v: number) {
 // ---- Provider kind switch + OAuth (generic OIDC) contract form -----------
 // Switching kind materializes a fresh default block of that kind (provider is a
 // single arm — the previous kind's draft is replaced; saved config round-trips
-// back on reopen). Only `basic`/`oauth` are selectable; `sso` stays disabled.
-const authProviderKind = computed(() => draft.value.auth?.provider.kind ?? 'basic')
+// back on reopen). An absent block reads as `none` (no auth, the default). The
+// dropdown is the only auth on/off control: `enabled` is derived (see
+// `authActive`) and written at save, so switching only sets the provider shape.
+const authProviderKind = computed(() => draft.value.auth?.provider.kind ?? 'none')
+const isNone = computed(() => authProviderKind.value === 'none')
 const isOAuth = computed(() => authProviderKind.value === 'oauth')
 function setAuthProviderKind(v: string) {
   const a = ensureAuth()
   if (v === a.provider.kind) return
-  if (v === 'oauth') {
+  if (v === 'none') {
+    a.provider = { kind: 'none' }
+    a.enabled = false
+  } else if (v === 'oauth') {
     a.provider = {
       kind: 'oauth',
       issuer: '',
@@ -490,8 +505,12 @@ function setAuthProviderKind(v: string) {
       usePkce: true,
       allowedEmails: [],
     }
+    // Cannot truly enable without the OAuth runtime; keep off (re-pinned at save).
+    a.enabled = false
   } else if (v === 'basic') {
     a.provider = { kind: 'basic', username: '', passwordHash: '' }
+    // Becomes effective once an admin is configured (authActive + save()).
+    a.enabled = false
   }
 }
 /** Mutate the oauth provider in place (no-op unless the active arm is oauth). */
@@ -866,24 +885,24 @@ function submitPassword() {
           </select>
         </label>
 
-        <label class="consensus-toggle">
-          <input
-            type="checkbox"
-            :checked="authEnabled"
-            :disabled="!adminConfigured || isOAuth"
-            data-testid="settings-auth-enable"
-            @change="setAuthEnabled(($event.target as HTMLInputElement).checked)"
-          />
-          {{ t('settings.auth.enable.label') }}
-        </label>
-        <p v-if="isOAuth" class="settings-hint" data-testid="settings-auth-oauth-pending">
+        <p v-if="isNone" class="settings-hint" data-testid="settings-auth-none-hint">
+          {{ t('settings.auth.none.hint') }}
+        </p>
+        <p v-else-if="isOAuth" class="settings-hint" data-testid="settings-auth-oauth-pending">
           {{ t('settings.auth.oauth.runtimePending') }}
         </p>
-        <p v-else-if="!adminConfigured" class="settings-hint">
+        <p
+          v-else-if="!adminConfigured"
+          class="settings-hint"
+          data-testid="settings-auth-need-admin"
+        >
           {{ t('settings.auth.enable.needAdmin') }}
         </p>
+        <p v-else class="settings-hint" data-testid="settings-auth-active">
+          {{ t('settings.auth.enable.active') }}
+        </p>
 
-        <label v-if="!isOAuth" class="auth-field">
+        <label v-if="authProviderKind === 'basic'" class="auth-field">
           <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
           <input
             class="agent-field"
@@ -895,7 +914,11 @@ function submitPassword() {
           />
         </label>
 
-        <div v-if="!isOAuth" class="auth-password" data-testid="settings-auth-password">
+        <div
+          v-if="authProviderKind === 'basic'"
+          class="auth-password"
+          data-testid="settings-auth-password"
+        >
           <p class="settings-hint">{{ t('settings.auth.password.hint') }}</p>
           <label v-if="adminConfigured" class="auth-field">
             <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>

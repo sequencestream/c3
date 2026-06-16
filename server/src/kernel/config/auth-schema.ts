@@ -19,6 +19,13 @@
 import { z } from 'zod'
 import type { AuthConfig, AuthProvider } from '@ccc/shared/protocol'
 
+/** The `none` provider arm: no auth, no config — `kind` alone is the shape. The
+ *  `kind:'none' ⇔ enabled:false` invariant is enforced in {@link normalizeAuth},
+ *  not here (this arm only validates the persisted shape). */
+export const noneAuthProviderSchema = z.object({
+  kind: z.literal('none'),
+})
+
 /** The single-admin `basic` provider arm: username + PHC password hash. */
 export const basicAuthProviderSchema = z.object({
   kind: z.literal('basic'),
@@ -55,6 +62,7 @@ export const oauthAuthProviderSchema = z.object({
  * {@link AuthProviderKind} on purpose: a kind without an entry has no shape yet.
  */
 export const AUTH_PROVIDER_SCHEMAS = {
+  none: noneAuthProviderSchema,
   basic: basicAuthProviderSchema,
   oauth: oauthAuthProviderSchema,
 } satisfies Partial<Record<AuthProvider['kind'], z.ZodTypeAny>>
@@ -62,10 +70,11 @@ export const AUTH_PROVIDER_SCHEMAS = {
 /**
  * The full {@link AuthProvider} schema, routed by the `kind` discriminant.
  * `safeParse` dispatches an object to its kind's arm and rejects an unknown
- * kind or a provider that fails its arm. `basic` + `oauth` arms this phase; new
- * providers append their arm.
+ * kind or a provider that fails its arm. `none` + `basic` + `oauth` arms this
+ * phase; new providers append their arm.
  */
 export const authProviderSchema = z.discriminatedUnion('kind', [
+  noneAuthProviderSchema,
   basicAuthProviderSchema,
   oauthAuthProviderSchema,
 ])
@@ -106,11 +115,18 @@ export const authConfigSchema = z.object({
  * Validate one persisted `auth` candidate. Returns the typed {@link AuthConfig}
  * on success, or `null` when it is absent or malformed (the normalize layer
  * treats `null` as "no auth" — the C-SEC-5 localhost-only default, fail-soft).
+ *
+ * Single truth source for the `none` provider: a `kind:'none'` block always
+ * normalizes to `enabled:false`, so a stale `enabled:true` on disk can never
+ * contradict "no auth". The UI reads `provider.kind`, never a second flag.
  */
 export function normalizeAuth(raw: unknown): AuthConfig | null {
   if (raw === undefined || raw === null) return null
   const result = authConfigSchema.safeParse(raw)
-  return result.success ? result.data : null
+  if (!result.success) return null
+  const auth = result.data
+  if (auth.provider.kind === 'none' && auth.enabled) return { ...auth, enabled: false }
+  return auth
 }
 
 /**

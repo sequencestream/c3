@@ -27,6 +27,11 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
 - **AuthConfig** — `{ enabled, provider, session, exposure? }`. Hung on `SystemSettings.auth?`.
   Absent block or `enabled: false` ⇒ no auth.
 - **AuthProvider** — a `kind`-discriminated union, the single extension point for OAuth/SSO/multi-user.
+  - `kind: 'none'` (**NoneAuthProvider** `{}`) — no auth, the first-class expression of the C-SEC-5
+    localhost-only default (sign-in disabled). Carries no config. Invariant: `kind:'none' ⇔
+enabled:false`, enforced by `normalizeAuth` (a stale `enabled:true` is re-pinned to `false`), so
+    the dropdown's "no auth" choice and the master switch can never disagree (the UI reads
+    `provider.kind`, never a second flag).
   - `kind: 'basic'` (**BasicAuthProvider** `{ username, passwordHash }`) — single-admin, runtime-live.
   - `kind: 'oauth'` (**OAuthAuthProvider** `{ issuer, clientId, clientSecretRef, redirectUri, scopes, usePkce, allowedEmails }`)
     — generic OIDC, **contract-only**: the config persists, but with no OAuth runtime yet (`/auth/callback`,
@@ -55,10 +60,12 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
 
 ## Business rules
 
-- **AUTH-R1 (default = disabled)** — `SystemSettings.auth` absent, `enabled: false`, or a provider
-  that fails validation ⇒ "no auth", the C-SEC-5 localhost-only default. `normalize()` fails soft:
-  a malformed `auth` block is dropped to `undefined`, never throwing, so an invalid config can
-  never accidentally lock the user out or break boot.
+- **AUTH-R1 (default = disabled)** — `SystemSettings.auth` absent, `enabled: false`, a `none`
+  provider, or a provider that fails validation ⇒ "no auth", the C-SEC-5 localhost-only default.
+  `normalize()` fails soft: a malformed `auth` block is dropped to `undefined`, never throwing, so an
+  invalid config can never accidentally lock the user out or break boot. A `none` provider is the
+  explicit, first-class form of "no auth": `normalizeAuth` pins its `enabled` to `false` so the
+  provider kind is the single truth source (no second flag to contradict it).
 - **AUTH-R2 (backward compatible)** — an existing `settings.json` with no `auth` field round-trips
   through load → normalize → save with identical behaviour (no auth). Adding this domain changes
   no existing config's meaning.
@@ -92,9 +99,10 @@ in `server/src/kernel/config/auth-schema.ts` with a bidirectional type-pin again
 2. **Partial** — password hashing ✅ + `basic` login verification ✅ + `set_admin_password` ✅ done;
    **still deferred:** token signing/verification, request-level auth middleware, and the
    "enabled auth ⇒ may bind non-loopback" enforcement (the actual C-SEC-5 relaxation).
-3. **Partial** — System Settings auth config panel ✅ (enable/username/change-password/exposure
-   toggle + the `oauth` provider config form ✅); login page already shipped (件①); **still deferred:**
-   full session-lifecycle UI.
+3. **Partial** — System Settings auth config panel ✅ (three-state provider dropdown
+   **none/basic/oauth** as the single auth on/off control — no separate enable checkbox —
+   - username/change-password/exposure toggle + the `oauth` provider config form ✅); login page
+     already shipped (件①); **still deferred:** full session-lifecycle UI.
 4. Harden the settings file: tighten permissions (it now carries a password hash) + log redaction.
 5. **OAuth runtime** (deferred) — the `oauth` provider is **contract-only**. Building the runtime means:
    `/auth/callback` endpoint, OIDC discovery fetch, PKCE + `state` generation/verification, the

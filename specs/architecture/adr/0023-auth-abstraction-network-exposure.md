@@ -30,8 +30,11 @@
   `currentPassword`，首次（localhost bootstrap）免验。
 - **save_settings 不碰口令**：`passwordHash` 由 `set_admin_password` 独占；`save_settings` 持久化时强制
   保留磁盘上的哈希（`preserveAdminPasswordHash`），杜绝陈旧/空哈希回写覆盖。
-- **配置面板**：`SettingsPanel.vue` 认证区——provider 下拉（basic 可选、oauth/sso 置灰）、启用开关、
-  用户名、改密子表单（write-only，不回显哈希）、网络暴露开关；**未配管理员**时启用/暴露开关置灰。
+- **配置面板**：`SettingsPanel.vue` 认证区——provider 三态下拉（**无需认证 / basic / oauth**，均可选）、
+  用户名、改密子表单（write-only，不回显哈希）、网络暴露开关；**未配管理员**时暴露开关置灰。下拉即认证
+  总开关（已无独立「启用认证」复选框）：选「无需认证」⇒ `provider.kind='none'`、`enabled=false`、隐藏
+  basic/oauth 表单、免登录；选 `basic` ⇒ 配好管理员后保存时 `enabled` 派生为 `true`；选 `oauth` ⇒ 契约
+  落盘但运行时缺位故 `enabled` 恒 `false`。
 
 **仍延后**（第 2、3、4 件未尽部分）：token 签名/验签；WS 握手与请求级**认证中间件强制**（含
 「enabled 认证 ⇒ 才允许非回环绑定」的运行时强制——故 server 仍 localhost-only，本切片**不**改变实际绑定）；
@@ -90,9 +93,17 @@ _Con:_ 仍把 basic 的字段（username/passwordHash）焊在顶层；加 OAuth
 ### 类型结构（落 `shared/src/protocol.ts`，零运行时）
 
 ```typescript
-// 认证 provider 种类——扩展点。'basic'(运行时已上线) + 'oauth'(通用 OIDC,契约 only);sso/多用户后续追加。
-export const AUTH_PROVIDER_KINDS = ['basic', 'oauth'] as const
+// 认证 provider 种类——扩展点。'none'(无认证,C-SEC-5 localhost 默认) + 'basic'(运行时已上线)
+// + 'oauth'(通用 OIDC,契约 only);sso/多用户后续追加。
+export const AUTH_PROVIDER_KINDS = ['none', 'basic', 'oauth'] as const
 export type AuthProviderKind = (typeof AUTH_PROVIDER_KINDS)[number]
+
+// none provider——无认证(免登录),是 C-SEC-5 localhost-only 默认的一等表达。无任何配置字段,
+// kind 即全部形状。不变量:kind:'none' ⇔ AuthConfig.enabled === false(由 normalizeAuth 强制),
+// 故下拉「无需认证」与 enabled 主开关永不打架(单一真相源,UI 只读 provider.kind)。
+export interface NoneAuthProvider {
+  kind: 'none'
+}
 
 // 单管理员 basic provider:用户名 + 口令哈希(PHC 串,永不明文)。
 export interface BasicAuthProvider {
@@ -116,7 +127,7 @@ export interface OAuthAuthProvider {
 }
 
 // provider 抽象——按 kind 的 discriminated union。
-export type AuthProvider = BasicAuthProvider | OAuthAuthProvider
+export type AuthProvider = NoneAuthProvider | BasicAuthProvider | OAuthAuthProvider
 
 // 会话令牌策略——TTL + 签名密钥*引用*(env 名/keystore id),密钥本体绝不入设置文件。
 export interface AuthSessionPolicy {
@@ -167,10 +178,11 @@ export type AuthLoginResult =
 ### 不变量
 
 1. **缺省即未启用**：`SystemSettings.auth` 缺失，或 `auth.enabled === false`，或 provider 校验失败 ⇒ 等价于「无认证」（保持 C-SEC-5 localhost-only 默认）。`normalize()` fail-soft：非法 `auth` 被丢弃为 `undefined`，而非抛错。
-2. **永不明文**：类型与示例中绝不出现口令明文。`BasicAuthProvider.passwordHash` 是 PHC 串；`AuthLoginRequest.password` 是仅存在于「传输期」的明文，校验后即弃、绝不持久化。
-3. **引用而非本体**：`signingKeyRef` 是签名密钥的**引用**（env 名/keystore id），`clientSecretRef` 是 OAuth client secret 的**引用**，两者本体均绝不进 `settings.json`。zod `z.object` 默认剥离未声明键，客户端误带的明文 `clientSecret` 不会被持久化。
-4. **provider 无关的中立层**：`AuthSessionToken`、`AuthLoginRequest/Result`、login/logout/unauthenticated 消息都不含 provider 专有字段，新增 provider 不改动它们。
-5. **扩展点单点**：新增认证方式 = 给 `AUTH_PROVIDER_KINDS` 加一个值 + 给 `AuthProvider` union 追加一个臂 + 给服务端 zod registry 追加一个臂；既有臂、会话令牌模型、消息契约均不动（与 ADR-0011 vendor 扩展、ADR-0021 双层配置同构）。
+2. **`none` ⇔ `enabled:false`（单一真相源）**：`provider.kind === 'none'` 与 `enabled === false` 语义重叠，约定二者等价，由 `normalizeAuth` 强制（`none` provider 携带 `enabled:true` 会被规整回 `false`）。UI 只读 `provider.kind`、不另设第二开关，故「无需认证」下拉项与主开关永不打架。
+3. **永不明文**：类型与示例中绝不出现口令明文。`BasicAuthProvider.passwordHash` 是 PHC 串；`AuthLoginRequest.password` 是仅存在于「传输期」的明文，校验后即弃、绝不持久化。
+4. **引用而非本体**：`signingKeyRef` 是签名密钥的**引用**（env 名/keystore id），`clientSecretRef` 是 OAuth client secret 的**引用**，两者本体均绝不进 `settings.json`。zod `z.object` 默认剥离未声明键，客户端误带的明文 `clientSecret` 不会被持久化。
+5. **provider 无关的中立层**：`AuthSessionToken`、`AuthLoginRequest/Result`、login/logout/unauthenticated 消息都不含 provider 专有字段，新增 provider 不改动它们。
+6. **扩展点单点**：新增认证方式 = 给 `AUTH_PROVIDER_KINDS` 加一个值 + 给 `AuthProvider` union 追加一个臂 + 给服务端 zod registry 追加一个臂；既有臂、会话令牌模型、消息契约均不动（与 ADR-0011 vendor 扩展、ADR-0021 双层配置同构）。
 
 ### 运行时校验位置
 

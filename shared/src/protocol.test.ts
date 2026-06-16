@@ -4,8 +4,15 @@ import {
   isImageMediaType,
   IMAGE_MEDIA_TYPES,
   SYSTEM_AGENT_ID,
+  AUTH_PROVIDER_KINDS,
 } from './protocol.js'
-import type { AgentConfig, ClientToServer, ServerToClient } from './protocol.js'
+import type {
+  AgentConfig,
+  AuthConfig,
+  AuthProvider,
+  ClientToServer,
+  ServerToClient,
+} from './protocol.js'
 
 /**
  * The protocol module is types-only, so there is no runtime behavior to test.
@@ -244,5 +251,23 @@ describe('resolveDefaultAgentId — fall through to next enabled (AC-R2/AC-R10, 
   it('treats a missing `enabled` flag as enabled (back-compat)', () => {
     const agents = [agent('a'), agent('b')]
     expect(resolveDefaultAgentId(agents, 'a')).toBe('a')
+  })
+})
+
+describe('auth provider kinds (ADR-0023)', () => {
+  it('exposes none, basic, and oauth as the provider kinds', () => {
+    expect(AUTH_PROVIDER_KINDS).toEqual(['none', 'basic', 'oauth'])
+  })
+
+  it('accepts a none provider (no-auth) in an AuthConfig and survives JSON round-trip', () => {
+    // The `none` arm carries no config — `kind` alone is the whole shape, and
+    // `enabled` is pinned false (the C-SEC-5 localhost-only default).
+    const provider: AuthProvider = { kind: 'none' }
+    const auth: AuthConfig = {
+      enabled: false,
+      provider,
+      session: { ttlSeconds: 900, signingKeyRef: 'C3_AUTH_KEY' },
+    }
+    expect(JSON.parse(JSON.stringify(auth))).toEqual(auth)
   })
 })

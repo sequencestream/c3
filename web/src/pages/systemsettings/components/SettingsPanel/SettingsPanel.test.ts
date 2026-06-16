@@ -384,33 +384,78 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
     },
   }
 
-  it('renders the auth section with basic selectable and oauth/sso greyed out', () => {
+  it('renders three selectable provider options: none, basic, oauth', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const opts = w.findAll('[data-testid="settings-auth-provider"] option')
     expect(opts.map((o) => (o.element as HTMLOptionElement).value)).toEqual([
+      'none',
       'basic',
       'oauth',
-      'sso',
     ])
-    expect((opts[0].element as HTMLOptionElement).disabled).toBe(false)
-    expect((opts[1].element as HTMLOptionElement).disabled).toBe(true)
-    expect((opts[2].element as HTMLOptionElement).disabled).toBe(true)
+    expect(opts.every((o) => !(o.element as HTMLOptionElement).disabled)).toBe(true)
   })
 
-  it('disables the enable + exposure toggles until an admin is configured', () => {
+  it('defaults the provider dropdown to "none" when no auth block exists', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const enable = w.find('[data-testid="settings-auth-enable"]').element as HTMLInputElement
+    const sel = w.find('[data-testid="settings-auth-provider"]').element as HTMLSelectElement
+    expect(sel.value).toBe('none')
+    // No-auth ⇒ neither the basic credentials form nor the OAuth form renders.
+    expect(w.find('[data-testid="settings-auth-password"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-auth-oauth"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-auth-none-hint"]').exists()).toBe(true)
+  })
+
+  it('disables the exposure toggle until an admin is configured', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const exposure = w.find('[data-testid="settings-auth-exposure"]').element as HTMLInputElement
-    expect(enable.disabled).toBe(true)
     expect(exposure.disabled).toBe(true)
   })
 
-  it('enables the toggles once an admin (username + stored hash) exists', () => {
+  it('enables the exposure toggle once an admin (username + stored hash) exists', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
-    const enable = w.find('[data-testid="settings-auth-enable"]').element as HTMLInputElement
     const exposure = w.find('[data-testid="settings-auth-exposure"]').element as HTMLInputElement
-    expect(enable.disabled).toBe(false)
     expect(exposure.disabled).toBe(false)
+  })
+
+  it('reveals the basic credentials form only after selecting the basic provider', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    expect(w.find('[data-testid="settings-auth-password"]').exists()).toBe(false)
+    await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
+    expect(w.find('[data-testid="settings-auth-username"]').exists()).toBe(true)
+    expect(w.find('[data-testid="settings-auth-password"]').exists()).toBe(true)
+    // Basic chosen but no admin yet ⇒ the "set an admin first" hint, not "active".
+    expect(w.find('[data-testid="settings-auth-need-admin"]').exists()).toBe(true)
+    expect(w.find('[data-testid="settings-auth-active"]').exists()).toBe(false)
+  })
+
+  it('saves enabled:false + provider.kind "none" when no authentication is selected', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-provider"]').setValue('none')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.auth?.enabled).toBe(false)
+    expect(saved.auth?.provider.kind).toBe('none')
+  })
+
+  it('saves enabled:true for basic once an admin is configured', async () => {
+    // withAdmin is basic + admin-configured but persisted enabled:false; the
+    // dropdown is the on-switch, so saving derives enabled:true from authActive.
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.auth?.enabled).toBe(true)
+    expect(saved.auth?.provider.kind).toBe('basic')
+    expect(w.find('[data-testid="settings-auth-active"]').exists()).toBe(true)
+  })
+
+  it('keeps oauth disabled (runtime pending) — saves enabled:false', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-provider"]').setValue('oauth')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.auth?.enabled).toBe(false)
+    expect(saved.auth?.provider.kind).toBe('oauth')
+    expect(w.find('[data-testid="settings-auth-oauth-pending"]').exists()).toBe(true)
   })
 
   it('never pre-fills the password input from the stored hash (write-only)', () => {
@@ -422,6 +467,8 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
 
   it('bootstrap: emits set-password without a current password and clears the field', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    // No auth block yet ⇒ pick the basic provider to reveal the credentials form.
+    await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
     await w.find('[data-testid="settings-auth-username"]').setValue('root')
     const newPw = w.find('[data-testid="settings-auth-new-password"]')
     await newPw.setValue('s3cret!')

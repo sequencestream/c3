@@ -463,9 +463,12 @@
       "hint": "이 콘솔을 사용하려면 로그인을 요구합니다. 먼저 관리자 계정을 설정한 후 인증을 켜세요.",
       "provider": {
         "label": "제공자",
+        "none": "인증 없음",
         "basic": "사용자 이름 및 비밀번호",
-        "oauth": "OAuth / OIDC",
-        "sso": "SSO(준비 중)"
+        "oauth": "OAuth / OIDC"
+      },
+      "none": {
+        "hint": "이 서버에 접근할 수 있는 사람은 누구나 로그인 없이 사용할 수 있습니다. localhost의 로컬 단일 사용자 환경에 대한 기본값입니다."
       },
       "oauth": {
         "hint": "로그인을 외부 OpenID Connect 제공자(Google, Keycloak 또는 호환되는 issuer)에 위임합니다.",
@@ -501,8 +504,8 @@
         }
       },
       "enable": {
-        "label": "로그인 요구",
-        "needAdmin": "켜기 전에 아래에서 관리자 계정을 설정하세요."
+        "needAdmin": "로그인을 적용하려면 먼저 아래에서 관리자 계정을 설정하세요.",
+        "active": "로그인이 필요합니다. 이 콘솔에 접근하려면 관리자 자격 증명을 입력해야 합니다."
       },
       "username": {
         "label": "관리자 사용자 이름",

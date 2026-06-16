@@ -47,3 +47,4 @@ References. See `../../.claude/skills/project-spec/references/adr.md` for the te
 | [0023](0023-auth-abstraction-network-exposure.md)                 | 认证抽象边界：网络暴露的强制前提（basic 运行时 + oauth/OIDC 契约就绪、登录待运行时）                                                 | proposed   |
 | [0024](0024-sandbox-worktree-only-random-agent-hard-isolation.md) | Sandbox 仅 worktree intent-dev + custom agent 随机选取 + 启用即硬隔离                                                                | accepted   |
 | [0025](0025-sandbox-network-readonly-workspace-policy.md)         | Sandbox `networkDisabled`/`readonlyRootfs` 下沉为工作区级 deny-by-default 安全策略（readonlyRootfs 默认改 true）                     | accepted   |
+| [0026](0026-product-licensing-separate-license-server.md)         | Product licensing as a separate license-server (Go std-http, PostgreSQL, GitHub OAuth, WeChat Pay, Ed25519; c3-side gating)          | proposed   |

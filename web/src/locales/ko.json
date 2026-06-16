@@ -1408,11 +1408,12 @@
       },
       "participants": {
         "label": "참여자",
-        "hint": "선택한 에이전트가 발언에 초대됩니다. 진행자는 항상 참여합니다.",
+        "hint": "선택한 에이전트가 발언에 초대됩니다. 라디오 버튼으로 진행자를 지정하세요.",
         "empty": "활성화된 에이전트가 없습니다.",
         "organizer": {
           "label": "진행자"
-        }
+        },
+        "validationError": "진행자를 선택하고 다른 에이전트를 1개 이상 선택해야 합니다."
       },
       "title": {
         "label": "새 토론"
@@ -1781,6 +1782,10 @@
     },
     "search": {
       "placeholder": "파일 검색…",
+      "pattern": {
+        "placeholder": "필터, 예: *.ts(기본 * = 전체)",
+        "tooltip": "파일 이름 glob 필터 — *는 전체 일치. 예: *.ts 또는 *.ts,*.tsx"
+      },
       "mode": {
         "filename": "파일 이름",
         "content": "내용"

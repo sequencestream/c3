@@ -14,6 +14,7 @@ vi.mock('../../state.js', () => ({
 }))
 
 import {
+  compilePatterns,
   listDirHandler,
   readFileHandler,
   resolveCodePath,
@@ -198,6 +199,47 @@ describe('codes handlers', () => {
       timedOut: false,
     })
     expect(JSON.stringify(sent)).not.toContain('.git')
+  })
+
+  it('scopes search to a glob file pattern in both modes', async () => {
+    await mkdir(join(workspace, 'src'))
+    await writeFile(join(workspace, 'src', 'target.ts'), 'needle here\n')
+    await writeFile(join(workspace, 'src', 'target.js'), 'needle there\n')
+    await writeFile(join(workspace, 'notes.md'), 'needle docs\n')
+    const { conn, sent } = capture()
+
+    // filename mode: *.ts keeps only the .ts file
+    await searchCodesHandler(KCTX, conn, {
+      type: 'search_codes',
+      workspaceId: 'ws-1',
+      query: 'target',
+      mode: 'filename',
+      pattern: '*.ts',
+    })
+    // content mode: multiple globs union (.ts + .js), markdown excluded
+    await searchCodesHandler(KCTX, conn, {
+      type: 'search_codes',
+      workspaceId: 'ws-1',
+      query: 'needle',
+      mode: 'content',
+      pattern: '*.ts,*.js',
+    })
+
+    const filenameHit = sent[0] as Extract<ServerToClient, { type: 'codes_searched' }>
+    expect(filenameHit.hits.map((hh) => hh.path)).toEqual(['src/target.ts'])
+
+    const contentHit = sent[1] as Extract<ServerToClient, { type: 'codes_searched' }>
+    expect(contentHit.hits.map((hh) => hh.path).sort()).toEqual(['src/target.js', 'src/target.ts'])
+  })
+
+  it('treats * / absent pattern as match-all', () => {
+    expect(compilePatterns('*')).toBeNull()
+    expect(compilePatterns('')).toBeNull()
+    expect(compilePatterns('  ')).toBeNull()
+    const ts = compilePatterns('*.ts')
+    expect(ts).not.toBeNull()
+    expect(ts?.some((re) => re.test('a.ts'))).toBe(true)
+    expect(ts?.some((re) => re.test('a.js'))).toBe(false)
   })
 
   it('caps search results', async () => {

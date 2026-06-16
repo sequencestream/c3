@@ -29,6 +29,7 @@ function disc(id: string, title: string, over: Partial<Discussion> = {}): Discus
     agenda: [],
     agendaIndex: 0,
     participantAgentIds: [],
+    organizerAgentId: null,
     conclusion: null,
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
@@ -190,7 +191,7 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.findAll('.disc-item').length).toBe(0)
   })
 
-  it('点击顶部「+」打开弹窗,填写后提交 → emit create(含 participantAgentIds)', async () => {
+  it('点击顶部「+」打开弹窗,填写后提交 → emit create(含 participantAgentIds + organizerAgentId)', async () => {
     const w = mountList({
       discussions: [disc('d1', 'Alpha')],
       agents: [ag('system', 'System'), ag('gpt', 'GPT')],
@@ -208,9 +209,17 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     await w.findAll('.disc-modal textarea')[0].setValue('Decide cache TTL')
     await w.findAll('.disc-modal textarea')[1].setValue('Redis today')
     await w.find('.disc-modal').trigger('submit')
-    // 默认全选(system + gpt),participantAgentIds 含两者(顺序无关)。
+    // 默认全选(system + gpt),participantAgentIds 含两者(顺序无关),organizerAgentId 默认为 defaultAgentId。
     const events = w.emitted('create') as Array<
-      [{ type: string; goal: string; context: string; participantAgentIds: string[] }]
+      [
+        {
+          type: string
+          goal: string
+          context: string
+          participantAgentIds: string[]
+          organizerAgentId: string
+        },
+      ]
     >
     expect(events).toHaveLength(1)
     const payload = events[0][0]
@@ -218,30 +227,136 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
       type: firstValue,
       goal: 'Decide cache TTL',
       context: 'Redis today',
+      organizerAgentId: 'system',
     })
     expect([...payload.participantAgentIds].sort()).toEqual(['gpt', 'system'])
     // 提交后弹窗关闭
     expect(w.find('.disc-modal-overlay').exists()).toBe(false)
   })
 
-  it('参与者面板:默认全选,组织者项恒选且禁用,取消勾选未选 agent 不进集合', async () => {
+  it('参与者面板:默认全选,组织者可取消勾选', async () => {
     const w = mountList({
       discussions: [disc('d1', 'Alpha')],
       agents: [ag('system', 'System'), ag('gpt', 'GPT'), ag('claude', 'Claude')],
       defaultAgentId: 'system',
     })
     await w.find('.disc-new-btn').trigger('click')
-    // 组织者(system)复选框选中且禁用。
-    const orgBox = w.find('[data-testid="disc-participant-system"] input')
-    expect((orgBox.element as HTMLInputElement).checked).toBe(true)
-    expect((orgBox.element as HTMLInputElement).disabled).toBe(true)
+    // 组织者(system)复选框选中但不再禁用;radio 默认选中且 badge 显示。
+    const orgCheckbox = w.find('[data-testid="disc-participant-system"] input[type="checkbox"]')
+    expect((orgCheckbox.element as HTMLInputElement).checked).toBe(true)
+    expect((orgCheckbox.element as HTMLInputElement).disabled).toBe(false)
+    const orgRadio = w.find('[data-testid="disc-organizer-system"]')
+    expect((orgRadio.element as HTMLInputElement).checked).toBe(true)
     // 取消勾选 gpt 与 claude,只剩组织者。
-    await w.find('[data-testid="disc-participant-gpt"] input').trigger('change')
-    await w.find('[data-testid="disc-participant-claude"] input').trigger('change')
+    await w.find('[data-testid="disc-participant-gpt"] input[type="checkbox"]').trigger('change')
+    await w.find('[data-testid="disc-participant-claude"] input[type="checkbox"]').trigger('change')
+    // 组织者仍在选中集合,加上 goal → 可提交。
     await w.findAll('.disc-modal textarea')[0].setValue('Goal')
     await w.find('.disc-modal').trigger('submit')
-    const events = w.emitted('create') as Array<[{ participantAgentIds: string[] }]>
+    const events = w.emitted('create') as Array<
+      [{ participantAgentIds: string[]; organizerAgentId: string }]
+    >
     expect(events[0][0].participantAgentIds).toEqual(['system'])
+    expect(events[0][0].organizerAgentId).toEqual('system')
+  })
+
+  it('取消 organizer → 按钮禁用 + 错误提示出现', async () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      agents: [ag('system', 'System'), ag('gpt', 'GPT')],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    // 默认全选,填 goal → 可提交。
+    await w.findAll('.disc-modal textarea')[0].setValue('Goal')
+    const submitBtn = w.find('.disc-modal button[type="submit"]')
+    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(false)
+    // 取消 organizer → 按钮禁用 + 错误提示。
+    await w.find('[data-testid="disc-participant-system"] input[type="checkbox"]').trigger('change')
+    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.find('.disc-form-error').exists()).toBe(true)
+  })
+
+  it('重新勾上 organizer + 任一其他 agent → 按钮恢复', async () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      agents: [ag('system', 'System'), ag('gpt', 'GPT')],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    await w.findAll('.disc-modal textarea')[0].setValue('Goal')
+    const submitBtn = w.find('.disc-modal button[type="submit"]')
+    // 取消 organizer → 禁用。
+    await w.find('[data-testid="disc-participant-system"] input[type="checkbox"]').trigger('change')
+    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(true)
+    // 重新勾上 organizer → 恢复(至少还有一个其他 agent gpt 在选中态)。
+    await w.find('[data-testid="disc-participant-system"] input[type="checkbox"]').trigger('change')
+    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(false)
+    expect(w.find('.disc-form-error').exists()).toBe(false)
+  })
+
+  it('取消全部 → 按钮禁用', async () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      agents: [ag('system', 'System'), ag('gpt', 'GPT')],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    await w.findAll('.disc-modal textarea')[0].setValue('Goal')
+    const submitBtn = w.find('.disc-modal button[type="submit"]')
+    // 取消全部 agent。
+    await w.find('[data-testid="disc-participant-system"] input[type="checkbox"]').trigger('change')
+    await w.find('[data-testid="disc-participant-gpt"] input[type="checkbox"]').trigger('change')
+    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('切换 organizer radio:选中不同 agent 为组织者', async () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      agents: [ag('system', 'System'), ag('gpt', 'GPT'), ag('claude', 'Claude')],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    // 默认 radio 选中 system。
+    expect(
+      (w.find('[data-testid="disc-organizer-system"]').element as HTMLInputElement).checked,
+    ).toBe(true)
+    // 切换到 gpt。
+    await w.find('[data-testid="disc-organizer-gpt"]').trigger('change')
+    expect((w.find('[data-testid="disc-organizer-gpt"]').element as HTMLInputElement).checked).toBe(
+      true,
+    )
+    expect(
+      (w.find('[data-testid="disc-organizer-system"]').element as HTMLInputElement).checked,
+    ).toBe(false)
+    // badge 现在显示在 gpt 上。
+    expect(w.find('[data-testid="disc-participant-gpt"] .disc-participant-badge').exists()).toBe(
+      true,
+    )
+    expect(w.find('[data-testid="disc-participant-system"] .disc-participant-badge').exists()).toBe(
+      false,
+    )
+  })
+
+  it('取消 organizer agent → radio 自动回退到下一个被选中的 agent', async () => {
+    const w = mountList({
+      discussions: [disc('d1', 'Alpha')],
+      agents: [ag('system', 'System'), ag('gpt', 'GPT'), ag('claude', 'Claude')],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    // 默认 organizer 是 system。
+    expect(
+      (w.find('[data-testid="disc-organizer-system"]').element as HTMLInputElement).checked,
+    ).toBe(true)
+    // 取消勾选 system → radio 自动回退到 gpt(第一个剩余选中项)。
+    await w.find('[data-testid="disc-participant-system"] input[type="checkbox"]').trigger('change')
+    expect((w.find('[data-testid="disc-organizer-gpt"]').element as HTMLInputElement).checked).toBe(
+      true,
+    )
+    expect(
+      (w.find('[data-testid="disc-organizer-system"]').element as HTMLInputElement).disabled,
+    ).toBe(true)
   })
 
   it('目标为空时不提交,「+」可再次点击关闭弹窗', async () => {

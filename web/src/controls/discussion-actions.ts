@@ -59,6 +59,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
     goal: string
     context: string
     participantAgentIds: string[]
+    organizerAgentId: string
   }): void => {
     if (!discussionsProject.value) return
     send({
@@ -68,6 +69,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
       goal: payload.goal,
       context: payload.context,
       participantAgentIds: payload.participantAgentIds,
+      organizerAgentId: payload.organizerAgentId,
     })
   }
 

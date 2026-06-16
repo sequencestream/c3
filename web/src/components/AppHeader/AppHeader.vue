@@ -10,9 +10,13 @@
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { useAuth } from '@/composables/useAuth'
 import { onBeforeUnmount, ref } from 'vue'
 
 const { t } = useTypedI18n()
+// 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
+// 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
+const { isAdmin } = useAuth()
 
 // 移动端「⋯」操作菜单:受控 <details>,选任一项或点页面其它位置即关闭。
 // 原生 details 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet 之上。
@@ -175,6 +179,7 @@ function selectTab(tab: HeaderTab): void {
         </div>
 
         <button
+          v-if="isAdmin"
           class="icon-btn settings-btn"
           :title="t('nav.settings.tooltip')"
           @click="emit('open-settings')"
@@ -216,7 +221,7 @@ function selectTab(tab: HeaderTab): void {
           >
             {{ t('workspaceSetting.entry.tooltip') }}
           </button>
-          <button class="mobile-action-item" @click="chooseSettings">
+          <button v-if="isAdmin" class="mobile-action-item" @click="chooseSettings">
             {{ t('nav.settings.tooltip') }}
           </button>
           <button v-if="showLogout" class="mobile-action-item" @click="chooseLogout">

@@ -38,10 +38,10 @@ browser.
 
 ## Compliance
 
-- `settingSources: []` is set in `server/src/claude.ts` and asserted by review.
+- `settingSources: []` is set in the Claude run path and asserted by review.
 - Any change to that option requires amending the constitution.
 
 ## References
 
-- `specs/constitution.md` § C-SEC-1
-- `specs/domains/core/permission-gateway/spec.md`
+- [constitution](../../../constitution.md) § C-SEC-1
+- [permission-gateway domain spec](../../../domains/core/permission-gateway/spec.md)

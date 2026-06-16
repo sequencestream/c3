@@ -31,6 +31,15 @@ Vue 3 + Vite (frontend), `@anthropic-ai/claude-agent-sdk`, pnpm workspaces, Vite
 to a non-loopback interface by default; any auth/identity provider; any second agent
 runtime besides the Claude Agent SDK.
 
+_Annotation (2026-06-16, ADR-0026):_ this forbidden list governs the **c3 process**. Commercial
+product **entitlement** is owned by a **separate product, the license-server (LS)**, deliberately
+outside the c3 process — so LS's PostgreSQL, GitHub OAuth (identity provider), and WeChat payment
+are accepted **there**, not in c3. The single concession **inside** c3 is one small on-disk
+**entitlement cache** (an LS-signed token + a heartbeat bearer token) accepted to make a 30-minute
+offline grace work; c3 keeps no general database and no second agent runtime. ADR-0026 is the
+required exception record. See [ADR-0026](architecture/adr/0026-product-licensing-separate-license-server.md)
+and the [product-license domain](domains/commerce/product-license/product-license-overview.md).
+
 **Exception process:** introducing a forbidden technology requires a new ADR in
 `architecture/adr/` with options considered, accepted by the maintainer.
 
@@ -91,6 +100,27 @@ runtime besides the Claude Agent SDK.
 - Single binary must run with only `bun` and a logged-in `claude` on PATH.
 - Failure to find the `claude` executable, or an SDK error, surfaces to the user as a
   `turn_end` with `reason: 'error'` — never a silent hang.
+
+## Spec authoring discipline
+
+- **C-DOC-1 — No code references.** Specs describe behaviour, contracts, and decisions in
+  domain language. They must not point at the implementation. Forbidden everywhere under
+  `specs/` (including ADRs and integration guides):
+  - source or config **file / directory paths** (anything naming a real tree location);
+  - **source-tree listings** (module-structure / file-tree blocks, "file responsibilities"
+    tables that enumerate files);
+  - **source symbol names** — class / interface / type / function / method / variable /
+    field identifiers as they appear in code — and JSDoc `{@link …}`.
+
+  Describe _what_ a capability does and _why_ it was decided that way, not _where_ the code
+  lives or _what it is called_. When code and spec drift, reconcile by re-describing the
+  behaviour — never by pasting symbols back in.
+
+  **Allowed contract vocabulary** (these name the contract, not c3's code): cross-links to
+  other spec documents (`*.md`), wire-protocol message names and user-facing configuration
+  keys (the external contract documented once and cited by ID), business-rule IDs, ADR IDs,
+  phase names, and external tool / OS / standard identifiers (container flags, env-var
+  conventions, daemon sockets).
 
 ## Amendment procedure
 

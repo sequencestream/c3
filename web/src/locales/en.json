@@ -1407,11 +1407,12 @@
       },
       "participants": {
         "label": "Participants",
-        "hint": "Selected agents are invited to speak; the organizer always joins.",
+        "hint": "Selected agents are invited to speak. Use the radio to designate the organizer.",
         "empty": "No enabled agents.",
         "organizer": {
           "label": "Organizer"
-        }
+        },
+        "validationError": "Organizer must be selected, and at least one other agent."
       },
       "title": {
         "label": "New discussion"
@@ -1699,6 +1700,10 @@
     },
     "search": {
       "placeholder": "Search files…",
+      "pattern": {
+        "placeholder": "Filter, e.g. *.ts (default * = all)",
+        "tooltip": "Glob filter on file names — * matches all; e.g. *.ts or *.ts,*.tsx"
+      },
       "mode": {
         "filename": "Filename",
         "content": "Content"

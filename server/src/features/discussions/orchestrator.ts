@@ -239,7 +239,11 @@ export async function runDiscussion(
 
   const cwd = resolveWorkspaceRoot(initial.workspaceId)!
   const def = getDiscussionType(initial.type)
-  const organizerCfg = deps.organizer()
+  // Per-discussion organizer override: if the discussion specifies one, resolve
+  // it from the enabled pool; fall back to the global default agent.
+  const organizerCfg = initial.organizerAgentId
+    ? (deps.participants().find((a) => a.id === initial.organizerAgentId) ?? deps.organizer())
+    : deps.organizer()
   // The participant roster is the discussion's selected subset, resolved against
   // the live enabled pool. `participantAgentIds` empty ⇒ legacy/unset, so fall back
   // to the whole roster (old behaviour = everyone). The organizer is always folded

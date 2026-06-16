@@ -67,10 +67,11 @@ describe('schema', () => {
     expect(indexes).toContain('idx_disc_workspace_status')
     expect(indexes).toContain('idx_disc_msg_discussion')
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(4)
-    // v3 added the participant selection column.
+    expect(version?.user_version).toBe(5)
+    // v3 added the participant selection column; v5 added the organizer column.
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((r) => r.name)
     expect(cols).toContain('participant_agent_ids')
+    expect(cols).toContain('organizer_agent_id')
   })
 })
 

@@ -97,6 +97,7 @@ export interface AppMethods {
     goal: string
     context: string
     participantAgentIds: string[]
+    organizerAgentId: string
   }): void
   startDiscussion(): void
   pauseDiscussion(): void
@@ -125,7 +126,6 @@ export interface AppMethods {
   closeCodeTab(path: string): void
   setCodesActiveTab(path: string): void
   setCodesSearchMode(mode: 'filename' | 'content'): void
-  setCodesSearchPattern(pattern: string): void
   runCodeSearch(): void
   openCodeSearchHit(hit: CodeSearchHit): void
 

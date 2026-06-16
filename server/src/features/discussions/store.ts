@@ -28,7 +28,7 @@ import { pathToId } from '../../state.js'
  * value is informational only: migrations key off `PRAGMA table_info` /
  * `CREATE TABLE IF NOT EXISTS`, never off the version number.
  */
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS discussions (
@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   agenda        TEXT NOT NULL DEFAULT '[]',
   agenda_index  INTEGER NOT NULL DEFAULT 0,
   participant_agent_ids TEXT NOT NULL DEFAULT '[]',
+  organizer_agent_id TEXT,
   conclusion    TEXT,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL,
@@ -138,6 +139,7 @@ function db(): Db | null {
     ensureColumn(d, 'discussions', 'participant_agent_ids', "TEXT NOT NULL DEFAULT '[]'")
     ensureColumn(d, 'discussions', 'conclusion', 'TEXT')
     ensureColumn(d, 'discussions', 'completed_at', 'INTEGER')
+    ensureColumn(d, 'discussions', 'organizer_agent_id', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -190,6 +192,7 @@ interface DiscussionRow {
   agenda: string | null
   agenda_index: number | null
   participant_agent_ids: string | null
+  organizer_agent_id: string | null
   conclusion: string | null
   created_at: number
   updated_at: number
@@ -223,6 +226,7 @@ function toDiscussion(r: DiscussionRow): Discussion {
     agenda: parseStringList(r.agenda),
     agendaIndex: r.agenda_index ?? 0,
     participantAgentIds: parseStringList(r.participant_agent_ids),
+    organizerAgentId: r.organizer_agent_id ?? null,
     conclusion: r.conclusion,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -242,6 +246,8 @@ export interface CreateDiscussionInput {
    * means the legacy whole-roster fallback at orchestration time.
    */
   participantAgentIds?: string[]
+  /** The agent designated as the organizer; `null`/omitted ⇒ use the global default. */
+  organizerAgentId?: string | null
   /** Defaults to `draft`. */
   status?: DiscussionStatus
 }
@@ -312,8 +318,8 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
   const completedAt = status === 'completed' ? now : null
   d.run(
     `INSERT INTO discussions
-       (id, workspace_path, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, conclusion, created_at, updated_at, completed_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, workspace_path, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, organizer_agent_id, conclusion, created_at, updated_at, completed_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     resolve(input.workspacePath),
     input.title,
@@ -324,6 +330,7 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
     '[]',
     0,
     JSON.stringify(input.participantAgentIds ?? []),
+    input.organizerAgentId ?? null,
     null,
     now,
     now,

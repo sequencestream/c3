@@ -20,27 +20,27 @@ server-initiated pushes, not just request/response.
   Cons: two channels to keep in sync; no single ordered stream; more moving parts.
 - **A single WebSocket at `/ws`.** Pros: one ordered, bidirectional channel for prompts,
   streamed activity, permission requests, decisions, and mode changes; naturally models the
-  block-and-resume flow via a `requestId` correlation. Cons: connection lifecycle and
+  block-and-resume flow via a request-id correlation. Cons: connection lifecycle and
   reconnect must be handled.
 
 ## Decision
 
-Use one WebSocket at `/ws`. All traffic is JSON envelopes typed by the `ClientToServer` /
-`ServerToClient` discriminated unions in `shared/src/protocol.ts`. A permission request
-carries a `requestId`; the browser's `permission_response` echoes it to correlate.
+Use one WebSocket at `/ws`. All traffic is JSON envelopes typed by the client-to-server and
+server-to-client message unions defined once as the wire contract. A permission request
+carries a correlation id; the browser's `permission_response` echoes it to correlate.
 
 ## Consequences
 
-- **Easier:** a single ordered stream; the gateway can `await` a promise keyed by
-  `requestId` and resolve it when the matching response arrives.
+- **Easier:** a single ordered stream; the gateway can await a resolution keyed by the
+  correlation id and complete it when the matching response arrives.
 - **Harder:** the connection is session state. The client mitigates drops with a heartbeat +
   exponential-backoff auto-reconnect that re-selects the active session on reopen (AVAIL-6);
   background runs survive the drop regardless (AVAIL-3).
-- Vite proxies `/ws` to the server in development so the browser connects transparently.
+- The dev server proxies `/ws` to the backend so the browser connects transparently.
 
 ## Compliance
 
-- The protocol is defined once in `shared/src/protocol.ts` and imported by both ends.
+- The protocol is defined once as the shared wire contract and imported by both ends.
 - Wire shapes are validated at the edge; unparseable messages are ignored, never approved.
 
 ## References

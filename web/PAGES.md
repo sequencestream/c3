@@ -61,7 +61,7 @@ web/src/
 │   ├── discussions/                                 # 讨论页
 │   │   ├── Discussions.vue                          # 讨论容器页:桌面两栏(讨论列表 + 只读历史),移动端 MobileStack 两级 drill-down(列表→只读历史);点击讨论 drill 进历史,返回回列表;透传 agents/defaultAgentId 给列表的创建弹窗
 │   │   └── components/
-│   │       ├── DiscussionList/DiscussionList.vue    # 左栏讨论列表:列表、创建弹窗(类型/目标/上下文 + 参与 agent 多选,默认全选、组织者恒选禁用)、打开讨论;移动端列表填满 pane、弹窗全屏 sheet
+│   │       ├── DiscussionList/DiscussionList.vue    # 左栏讨论列表:列表、创建弹窗(类型/目标/上下文 + 参与 agent 多选 + radio 选组织者,默认全选)、提交校验(必须选组织者+至少一个其他 agent)、打开讨论;移动端列表填满 pane、弹窗全屏 sheet
 │   │       └── AgendaProgress/AgendaProgress.vue    # 讨论议程进度:展示议程、当前进展、完成度百分比;窄屏收紧横向 padding
 │   │
 │   ├── schedules/                                   # 定时任务页
@@ -76,7 +76,7 @@ web/src/
 │   ├── codes/                                       # 代码浏览页
 │   │   ├── Codes.vue                                # 代码浏览容器页:桌面双栏(左 CodeTree + 右 CodeTabs);移动端经 MobileStack 退化为 树→文件 两级 drill-down;仅持有/透传 workspace 相对路径,越界判断全在服务端 guard
 │   │   └── components/
-│   │       ├── CodeTree/CodeTree.vue                # 左栏:顶部 Files 标题 + 左侧 ⇤/⇥ 切换(展开后宽度 560px,localStorage 持久化)+ 搜索框(filename/content 切换,Enter 触发 search_codes)+ 懒加载文件树/搜索结果(点结果打开文件,content 命中带行号定位)
+│   │       ├── CodeTree/CodeTree.vue                # 左栏:顶部 Files 标题 + 左侧 ⇤/⇥ 切换(展开后宽度 560px,localStorage 持久化)+ 搜索框(filename/content 切换 + 文件模式 glob 过滤框 *.ts,默认 * 全部,Enter/防抖触发 search_codes)+ 懒加载文件树/搜索结果(点结果打开文件,content 命中带行号定位)
 │   │       ├── CodeTree/CodeTreeNode.vue            # 文件树单节点(递归):目录点击展开/折叠(懒加载 list_dir),文件点击打开 tab,激活态高亮
 │   │       ├── CodeTabs/CodeTabs.vue                # 右栏多 tab 容器:tab 条(可手动关闭,关闭后聚焦相邻)+ 渲染激活 tab 内容,空态
 │   │       └── CodeFileView/CodeFileView.vue        # 单文件内容渲染:复用 Shiki 高亮管线(后缀推断语言,白名单外/二进制/超限降级)+ 行号 gutter 逐行对齐 + 搜索命中滚动并高亮目标行

@@ -84,6 +84,7 @@ const seedDiscussion = (): Discussion => ({
   agenda: [],
   agendaIndex: 0,
   participantAgentIds: [],
+  organizerAgentId: null,
   conclusion: null,
   createdAt: 1,
   updatedAt: 1,

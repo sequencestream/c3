@@ -5,8 +5,8 @@
 
 ## Context
 
-ADR-0011 introduced the vendor-neutral `CanonicalMessage` model, but it lived only inside
-`server/src/kernel/agent/adapters/types.ts`. Two follow-on questions were left open:
+ADR-0011 introduced the vendor-neutral canonical message model, but it lived only inside
+the kernel adapter layer. Two follow-on questions were left open:
 
 1. **Where does the neutral envelope belong?** If each vendor's messages map to their own wire
    shape, the wire grows a second schema per vendor and the front-end learns three message
@@ -18,7 +18,7 @@ ADR-0011 introduced the vendor-neutral `CanonicalMessage` model, but it lived on
    must not become a second copy of every transcript.
 
 A third, smaller question: the two vendor message _forms_ differ. Claude emits a whole message
-per frame; Codex emits incremental `ItemUpdated` frames that revise an earlier item in place. A
+per frame; Codex emits incremental update frames that revise an earlier item in place. A
 naive append-only consumer would duplicate blocks for the incremental form.
 
 ## Options considered
@@ -30,48 +30,49 @@ naive append-only consumer would duplicate blocks for the incremental form.
    _Con:_ a persisted registry is a second store that must be kept in sync with every vendor's
    native store — double-write, drift, and a migration surface, exactly what "native store is SoT"
    was meant to avoid.
-3. **Promote the envelope to `shared/protocol.ts` (kernel re-exports); make the c3 id a
+3. **Promote the envelope to the shared protocol definitions (kernel re-exports); make the c3 id a
    deterministic vendor-free digest resolved by a read-only lazy accessor.** The envelope is
    defined once on the wire (SDK-free); the kernel re-exports it so existing consumers are
-   unchanged. The c3 session id is `hash(vendor \0 vendorSessionId)` — stable across restarts
-   (no persistence) and containing neither the vendor name nor the raw id as a substring (URL/
-   storage safe). A `SessionAccessor` wraps the per-vendor `SessionStore`s read-only, normalizing
-   listings on demand and building the `c3 → ref` index lazily from those listings. Block updates
-   upsert by `(sessionId, block.id)`, so both vendor forms collapse to one rule.
+   unchanged. The c3 session id is a hash over the vendor and the vendor's session id — stable
+   across restarts (no persistence) and containing neither the vendor name nor the raw id as a
+   substring (URL/ storage safe). A read-only accessor wraps the per-vendor session stores,
+   normalizing listings on demand and building the c3-id → vendor-ref index lazily from those
+   listings. Block updates upsert by (session id, block id), so both vendor forms collapse to one
+   rule.
 
 ## Decision
 
 Adopt option 3.
 
-- **Canonical envelope on the wire.** `VendorId`, `AdapterCapability` (the capability enum),
-  `CanonicalRole`, `CanonicalToolResult`, `CanonicalBlock`, and `CanonicalMessage` are defined in
-  `shared/src/protocol.ts` — zero-runtime, SDK-free (ADR-0009). The kernel's `adapters/types.ts`
-  re-exports them (single SoT); `adapters/index.ts` surfaces them. The wire gains a `vendor`
-  dimension on one envelope; it does **not** start a per-vendor schema.
+- **Canonical envelope on the wire.** The vendor id, the adapter-capability set, the canonical
+  role, the canonical tool result, the canonical block, and the canonical message are defined once
+  in the shared protocol definitions — zero-runtime, SDK-free (ADR-0009). The kernel adapter layer
+  re-exports them (single SoT). The wire gains a `vendor` dimension on one envelope; it does **not**
+  start a per-vendor schema.
 - **D-A — embedded tool result preserved.** 011's D3 ruling stands: there is **no standalone
-  `tool_result` block**; a tool's return is folded into `tool_use.result` by id-upsert. The
-  three-vendor common block set is `text` / `thinking` / `tool_use`.
-  NOT promoted to their own block variant (no adapter produces them yet — 宁丢勿强塞). A future
-  `vendorTag`-discriminated escape variant is the extension point.
-- **Two-form upsert.** `CanonicalAccumulator` / `upsertBlock` (`adapters/canonical-accumulator.ts`)
-  key blocks by `(sessionId, block.id)` and upsert: a same-id block revises in place, an anonymous
-  (id-less) block appends, a tool result back-fills its `tool_use` monotonically (a later
-  input-only revision never erases an arrived result). Claude's whole-message form and Codex's
-  incremental form converge to the same normalized view.
-- **D-C — c3 session namespace internalization.** `C3SessionId` is opaque
-  (`mintC3SessionId(ref) = "c3s_" + sha256(vendor \0 vendorSessionId)[:32]`), deterministic, and
-  vendor-free — the only id that crosses out of the kernel. `SessionRef = { vendor, vendorSessionId }`
-  stays inside. `SessionAccessor` (`agent/session/accessor.ts`) is a **read-only** union over the
-  available vendors' `SessionStore`s: `list` merges across vendors (native id hidden in
-  `vendorExtra`, never the top level), `read` routes to the owning store via a lazily-built
-  `c3 → ref` index. **No double-write:** native stores are SoT; the index is a derived runtime
-  cache rebuilt by listing, not a second copy of session content ("存储形态归一、位置不归一").
-- **Approval stays off the message model.** Approval/permission events are NOT `CanonicalMessage`s
-  — they ride the `ApprovalBridge` stream, so the envelope never becomes a god type.
+  standalone tool-result block**; a tool's return is folded into the tool-use block's result field
+  by id-upsert. The three-vendor common block set is text / thinking / tool-use.
+  Other vendor-specific shapes are NOT promoted to their own block variant (no adapter produces
+  them yet — 宁丢勿强塞). A future vendor-tag-discriminated escape variant is the extension point.
+- **Two-form upsert.** The canonical accumulator keys blocks by (session id, block id) and upserts:
+  a same-id block revises in place, an anonymous (id-less) block appends, a tool result back-fills
+  its owning tool-use block monotonically (a later input-only revision never erases an arrived
+  result). Claude's whole-message form and Codex's incremental form converge to the same normalized
+  view.
+- **D-C — c3 session namespace internalization.** The c3 session id is opaque
+  (an opaque prefix plus a hash over the vendor and the vendor's session id), deterministic, and
+  vendor-free — the only id that crosses out of the kernel. The vendor session reference (vendor +
+  vendor session id) stays inside. The session accessor is a **read-only** union over the
+  available vendors' session stores: listing merges across vendors (native id hidden in a vendor-
+  extra field, never the top level), reading routes to the owning store via a lazily-built
+  c3-id → vendor-ref index. **No double-write:** native stores are SoT; the index is a derived
+  runtime cache rebuilt by listing, not a second copy of session content ("存储形态归一、位置不归一").
+- **Approval stays off the message model.** Approval/permission events are NOT canonical messages
+  — they ride the approval-bridge stream, so the envelope never becomes a god type.
 
 This phase stops at the kernel + shared types and the read-only accessor; it does **not** rewire
-the live wire frames, `runClaude`, or the web URL/storage layer (web currently holds `sessionId`
-in memory only, so there is no migration debt).
+the live wire frames, the Claude run path, or the web URL/storage layer (web currently holds the
+session id in memory only, so there is no migration debt).
 
 ## Consequences
 
@@ -82,129 +83,121 @@ in memory only, so there is no migration debt).
   rebuildable index — no sync/migration surface, no double-write.
 - **URL/storage safety:** a vendor id can never leak into a URL or storage key because the only
   exposed handle is an opaque digest.
-- **Boundary:** `shared/protocol.ts` and `adapters/` stay SDK-free (ADR-0009); the accessor depends
-  only on the neutral `SessionStore`.
+- **Boundary:** the shared protocol definitions and the adapter layer stay SDK-free (ADR-0009); the
+  accessor depends only on the neutral session-store abstraction.
 - **Deferred:** wiring the envelope/c3 id through the live wire frames, the front-end, and the URL/
   synthetic frames against the neutral reducer); explicit `reasoning`/`diff` blocks.
 
 ## Compliance
 
-- `shared/src/protocol.ts` and `server/src/kernel/agent/{adapters,session}/` (excluding `claude/`)
-  MUST NOT import any vendor SDK type (`git grep '@anthropic'` shows only comments).
-- `mintC3SessionId` MUST be deterministic and its output MUST contain neither the vendor name nor
-  the raw vendor id as a substring; pinned by `session/accessor.test.ts`.
-- `upsertBlock` MUST revise a same-id block in place (no array growth) and MUST NOT erase an
-  arrived `tool_use.result` on a later input-only revision; pinned by `canonical-accumulator.test.ts`.
-- `SessionAccessor` MUST be read-only and route `read` to the owning vendor store with the NATIVE
-  id (never the c3 id); pinned by `session/accessor.test.ts`.
-- The kernel re-export MUST keep existing consumers behavior-equivalent: `types.test.ts` /
-  `claude.test.ts` stay green.
-- `pnpm typecheck` + `pnpm lint` + `pnpm vitest run server` MUST be green.
+- The shared protocol definitions and the kernel adapter + session layers (excluding the Claude-
+  specific adapter) MUST NOT import any vendor SDK type.
+- Minting a c3 session id MUST be deterministic and its output MUST contain neither the vendor name
+  nor the raw vendor id as a substring; pinned by an accessor test.
+- The block upsert MUST revise a same-id block in place (no array growth) and MUST NOT erase an
+  arrived tool result on a later input-only revision; pinned by an accumulator test.
+- The session accessor MUST be read-only and route a read to the owning vendor store with the
+  NATIVE id (never the c3 id); pinned by an accessor test.
+- The kernel re-export MUST keep existing consumers behavior-equivalent: the existing adapter and
+  Claude-adapter tests stay green.
+- Typecheck, lint, and the server test suite MUST be green.
 
 ## References
 
-- [ADR 0011](0011-vendor-neutral-agent-abstraction.md) — the `CanonicalMessage` model + D3
+- [ADR 0011](0011-vendor-neutral-agent-abstraction.md) — the canonical message model + D3
   embedded-result ruling this ADR promotes to the wire.
-- [ADR 0012](0012-host-binary-probe-first-capability-gate.md) — `resolveAvailableAdapters().available`
-  is the vendor list `SessionAccessor` wraps.
-- [ADR 0009](0009-unidirectional-boundaries.md) — the SDK-free boundary `shared/` and `adapters/` honor.
+- [ADR 0012](0012-host-binary-probe-first-capability-gate.md) — the available-adapter resolution
+  produces the vendor list the session accessor wraps.
+- [ADR 0009](0009-unidirectional-boundaries.md) — the SDK-free boundary the shared layer and the
+  adapter layer honor.
 - [ADR 0004](0004-persist-workspace-session-registry.md) — the workspace/session registry the c3
   namespace will eventually front (deferred).
 - [agent-session domain spec](../../domains/core/agent-session/spec.md) — the envelope/namespace rules.
-- This phase's spec:
-  `changes/2026/06/06/2026-06-06-001-protocol-vendor-tag-canonical-envelope/spec.md`.
 
 ---
 
 ## Amendment: `work_session_metadata` projection table (2026-06-07; renamed from `session_metadata` 2026-06-08)
 
 The cross-vendor `list_sessions` path was rewired from a per-request fan-out
-to the accessor union (above) to a direct read of a `work_session_metadata`
-projection table in `c3.db`. This amendment records the contract.
+to the accessor union (above) to a direct read of a work-session-metadata
+projection table in the c3 runtime database. This amendment records the contract.
 
 ### Projection table contract
 
-The `work_session_metadata` table is a **rebuildable cache**, not a second copy of
+The work-session-metadata projection is a **rebuildable cache**, not a second copy of
 session content. The only source of truth for session _content_ (transcript,
-prompt, tool_use, tool_result, blocks) is the vendor's native store (Claude
-metadata:
+prompt, tool calls, tool results, blocks) is the vendor's native store; this
+projection holds only addressing/lifecycle metadata:
 
-| Column              | Purpose                                                                                                                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `c3_id`             | Opaque c3 session id (the `C3SessionId` from `mintC3SessionId`). PK.                                                                                                       |
-| `workspace_path`    | The workspace this row belongs to; drives the daily read path's SQL filter.                                                                                                |
-| `vendor_session_id` | The native vendor id (nullable for pending rows).                                                                                                                          |
-| `agent_id`          | The agent the session runs on (binding fact or pending intent).                                                                                                            |
-| `title`             | Display title; rewritten by lazy validation / run-end.                                                                                                                     |
-| `last_modified`     | UTC ms; stamped to the bind time on a real row (all vendors, incl. Codex — SR-R13), refined to the native transcript mtime by lazy validation; null only for pending rows. |
-| `state`             | Lifecycle state (`born` / `alive` / `stale` / `orphaned` / `ghost`).                                                                                                       |
-| `state_updated_at`  | UTC ms; drives the STALE window and warmup policy.                                                                                                                         |
-| `kind`              | `'real'` for post-bind rows, `'pending'` for pre-bind rows.                                                                                                                |
+| Field             | Purpose                                                                                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| c3 session id     | Opaque c3 session id (the deterministic vendor-free digest). Primary key.                                                                                                  |
+| workspace         | The workspace this row belongs to; drives the daily read path's filter.                                                                                                    |
+| vendor session id | The native vendor id (nullable for pending rows).                                                                                                                          |
+| agent             | The agent the session runs on (binding fact or pending intent).                                                                                                            |
+| title             | Display title; rewritten by lazy validation / run-end.                                                                                                                     |
+| last modified     | UTC ms; stamped to the bind time on a real row (all vendors, incl. Codex — SR-R13), refined to the native transcript mtime by lazy validation; null only for pending rows. |
+| state             | Lifecycle state (born / alive / stale / orphaned / ghost).                                                                                                                 |
+| state updated at  | UTC ms; drives the STALE window and warmup policy.                                                                                                                         |
+| kind              | Real for post-bind rows, pending for pre-bind rows.                                                                                                                        |
 
-**No transcript, prompt, tool_use, tool_result, or block content is ever
-written to this table.** Pinned by the column-whitelist positive assertion
-test in `features/works/work-session-store.test.ts`.
+**No transcript, prompt, tool-call, tool-result, or block content is ever
+written to this projection.** Pinned by a field-whitelist positive assertion
+test.
 
 ### Lifecycle states
 
-| State      | Meaning                                                                                 |
-| ---------- | --------------------------------------------------------------------------------------- |
-| `born`     | Just inserted; not yet seen by a native list.                                           |
-| `alive`    | Written from a recent native list or validated by one in the last STALE window.         |
-| `stale`    | Not validated in > STALE_MS (24h). Rendered with an "Unvalidated" tag.                  |
-| `orphaned` | Confirmed absent from the native store (warmup: 2 janitor passes). Rendered grayed-out. |
-| `ghost`    | Native store errored (REST down, JSONL unreadable). Rendered with a "Retry" affordance. |
+| State    | Meaning                                                                                      |
+| -------- | -------------------------------------------------------------------------------------------- |
+| born     | Just inserted; not yet seen by a native list.                                                |
+| alive    | Written from a recent native list or validated by one in the last STALE window.              |
+| stale    | Not validated in > STALE window (24h). Rendered with an "Unvalidated" tag.                   |
+| orphaned | Confirmed absent from the native store (warmup: 2 janitor passes). Rendered grayed-out.      |
+| ghost    | Native store errored (REST down, transcript unreadable). Rendered with a "Retry" affordance. |
 
 ### Read path
 
-The daily `list_sessions` reads the projection at the SQL level (one query per
-workspace). The `isHiddenSession` / `isToolSession` filters are applied
-downstream, not denormalized into the row. Pending rows (`kind='pending'`) are
+The daily `list_sessions` reads the projection in a single query per
+workspace. The hidden-session / tool-session filters are applied
+downstream, not denormalized into the row. Pending rows are
 excluded from the wire list — the per-connection "viewed session" badge is the
 pending entry, not a list item.
 
-The env flag `C3_LIST_FROM_PROJECTION` (default ON) rolls the read path back
-to the legacy `listWorkspaceSessions` (claude-only) path.
+An environment flag (default ON) rolls the read path back to the legacy
+claude-only listing path.
 
 ### Write triggers
 
-| Trigger                              | Effect                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createSession` (UI)                 | Insert a pending row (the new home for the ADR-0015 intent).                                                                                                                                                                                                                                                            |
-| `freezeSessionAgent` (bind)          | Drop pending row, insert real row (single entry point for both run paths).                                                                                                                                                                                                                                              |
-| `setSessionAgent` (same-vendor swap) | Update real row's `agent_id`.                                                                                                                                                                                                                                                                                           |
-| `renameWorkspaceSession`             | Update real row's `title`.                                                                                                                                                                                                                                                                                              |
-| `finalizeRun` (run end)              | Update real row's `title` (resolved from the native store — the SAME source as the title bar / janitor, not `baseline` which is empty on the first run; first user prompt is the fallback) / `last_modified` / `agent_id`, then re-broadcast the list (the async native read lands after `run:settled → sendSessions`). |
-| `removeSession` (delete)             | Delete the row.                                                                                                                                                                                                                                                                                                         |
+| Trigger                     | Effect                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create session (UI)         | Insert a pending row (the new home for the ADR-0015 intent).                                                                                                                                                                                                                                              |
+| Freeze session agent (bind) | Drop pending row, insert real row (single entry point for both run paths).                                                                                                                                                                                                                                |
+| Same-vendor agent swap      | Update the real row's agent.                                                                                                                                                                                                                                                                              |
+| Rename session              | Update the real row's title.                                                                                                                                                                                                                                                                              |
+| Finalize run (run end)      | Update the real row's title (resolved from the native store — the SAME source as the title bar / janitor, not the baseline which is empty on the first run; first user prompt is the fallback), last-modified, and agent, then re-broadcast the list (the async native read lands after the run settles). |
+| Remove session (delete)     | Delete the row.                                                                                                                                                                                                                                                                                           |
 
 ### Freshness & janitor
 
-A lazy `validateLazy` re-checks rows older than `LAZY_VALIDATE_MS` (24h)
+A lazy validation re-checks rows older than the validation window (24h)
 against the native stores; Codex rows are explicitly skipped. A daily janitor
-(`JANITOR_INTERVAL_MS = STALE_MS/2 = 12h`) transitions `born/alive → stale`
-and, after a warmup (2 passes), `stale → orphaned`.
+(half the STALE window = 12h) transitions born/alive → stale
+and, after a warmup (2 passes), stale → orphaned.
 
-### `user_version` rule
+### Schema-version rule
 
-The projection store does NOT write `PRAGMA user_version` — the three domain
-stores (`intents`, `discussions`, `work_session_metadata`) would clobber each
-other (see `discussions/store.ts:25-30`). All domain stores should follow this
-posture going forward; migrations key off `PRAGMA table_info` +
-`ensureColumn`, never off `user_version`.
+The projection store does NOT write a global schema-version pragma — the three
+domain stores (intents, discussions, work-session-metadata) would clobber each
+other. All domain stores should follow this posture going forward; migrations
+key off per-table column introspection plus an additive ensure-column step,
+never off a global schema-version pragma.
 
 ### Native-is-SoT invariant
 
 When the projection disagrees with the native store (title mismatch, session
 gone, store errored), the native store wins. The projection is refreshed, not
 preferred. When the projection is empty (a fresh install or a deleted table),
-the read path transparently rebuilds from the accessor + `sessionAgents`
-facts and re-reads; enumerable vendors such as Claude and Codex both
-participate in this one-shot rebuild. The projection is a cache, not a gate —
+the read path transparently rebuilds from the accessor plus the recorded
+session-agent facts and re-reads; enumerable vendors such as Claude and Codex
+both participate in this one-shot rebuild. The projection is a cache, not a gate —
 it never blocks the wire.
-
-### References
-
-- `server/src/features/works/work-session-store.ts` — the projection store.
-- `server/src/kernel/agent/session/list-sessions.ts` — the read path.
-- `changes/2026/06/07/2026-06-07-001-session-metadata-projection/spec.md` — the
-  functional spec for this amendment.

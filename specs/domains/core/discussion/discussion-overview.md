@@ -81,11 +81,16 @@ Conclusion → Details` so the read-order follows the right-pane's two-phase tim
     the transcript + orchestration view in the right pane \_and\* toggles that row's inline detail
     accordion in one gesture (re-clicking the same row collapses the detail; `open` stays idempotent).
     There is no chevron and no per-row "Open chat" button. All list copy is English (web/CLAUDE.md).
-- **Targeted participants (2026-06-12)**: a discussion's roster is **chosen at creation** — the create
-  modal lists the enabled agents (default all selected; the organizer row is force-selected and disabled)
-  and persists the picks to `Discussion.participantAgentIds`. The orchestrator nominates **only** from
-  that set (∪ the always-included organizer), so unrelated agents no longer add noise. An empty/unset set
-  (legacy rows) falls back to the whole `enabledAgents()` pool. See design.md §Roles.
+- **Targeted participants (2026-06-12, updated 2026-06-16)**: a discussion's roster is **chosen at
+  creation** — the create modal lists the enabled agents (default all selected; each agent has a
+  radio button to designate the organizer). The organizer is persisted per-discussion via
+  `Discussion.organizerAgentId` (overrides the global `defaultAgentId`). When the current organizer
+  agent is deselected, the radio auto-fallbacks to the next selected agent. Submit validation
+  requires the organizer to be selected and at least one non-organizer agent; the submit button is
+  disabled with an inline error when this constraint is not met. The orchestrator nominates
+  **only** from the participant set (∪ the designated organizer), so unrelated agents no longer
+  add noise. An empty/unset set (legacy rows) falls back to the whole `enabledAgents()` pool.
+  See design.md §Roles.
 - **Heterogeneous roundtable (multi-vendor, 2026-06-06-004)**: a discussion is **vendor-agnostic
   by construction** — the organizer nominates among the **selected** participants (a subset of
   `enabledAgents()`; see Targeted participants above), which may mix

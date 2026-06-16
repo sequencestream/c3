@@ -55,11 +55,6 @@ const enabledAgents = computed(() =>
     .sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0)),
 )
 
-// Is this agent the organizer (default agent)? Its row is locked on (always joins).
-function isOrganizer(id: string): boolean {
-  return id === props.defaultAgentId
-}
-
 // The live run-state for a row, or undefined when it has no active run.
 function liveState(d: Discussion): 'running' | 'paused' | undefined {
   return props.runState[d.id]
@@ -88,7 +83,15 @@ const rowStatuses = computed(
 
 const emit = defineEmits<{
   open: [discussionId: string]
-  create: [payload: { type: string; goal: string; context: string; participantAgentIds: string[] }]
+  create: [
+    payload: {
+      type: string
+      goal: string
+      context: string
+      participantAgentIds: string[]
+      organizerAgentId: string
+    },
+  ]
 }>()
 
 const TYPES = listDiscussionTypes()
@@ -98,17 +101,39 @@ const showForm = ref(false)
 const formType = ref(TYPES[0]?.id ?? '')
 const formGoal = ref('')
 const formContext = ref('')
-// Selected participant ids. Defaults to all enabled on open; the organizer is always
-// in (its row is locked). Reassigned (not mutated) so the template stays reactive.
+// Selected participant ids. Defaults to all enabled on open; the organizer is selectable
+// (not locked). Reassigned (not mutated) so the template stays reactive.
 const selectedIds = ref<Set<string>>(new Set())
+// The locally-selected organizer agent id — defaults to the global defaultAgentId
+// but can be overridden via the radio button per agent.
+const localOrganizerId = ref<string | null>(null)
 
 function toggleAgent(id: string): void {
-  if (isOrganizer(id)) return // organizer is locked on — always joins
   const next = new Set(selectedIds.value)
-  if (next.has(id)) next.delete(id)
+  const wasSelected = next.has(id)
+  if (wasSelected) next.delete(id)
   else next.add(id)
   selectedIds.value = next
+  // Auto-fallback: if the deselected agent was the organizer, pick the first
+  // remaining selected agent as the new organizer.
+  if (wasSelected && localOrganizerId.value === id) {
+    const remaining = [...next]
+    localOrganizerId.value = remaining.length > 0 ? remaining[0] : null
+  }
 }
+
+function setOrganizer(id: string): void {
+  localOrganizerId.value = id
+}
+
+// Submit validation: must have a goal, organizer selected, and at least one non-organizer.
+const canSubmit = computed(() => {
+  if (!formType.value || !formGoal.value.trim()) return false
+  const orgId = localOrganizerId.value
+  if (!orgId || !selectedIds.value.has(orgId)) return false
+  const nonOrgCount = [...selectedIds.value].filter((id) => id !== orgId).length
+  return nonOrgCount >= 1
+})
 
 // Auto-grow: the Goal/Context textareas grow with their content up to this cap,
 // then scroll internally. Closing the form (v-if) destroys the elements, so a
@@ -124,8 +149,9 @@ function autoGrow(e: Event): void {
 
 function openForm(): void {
   showForm.value = true
-  // Default-select every enabled agent (organizer included — its row is locked).
+  // Default-select every enabled agent (organizer included — selectable, not locked).
   selectedIds.value = new Set(enabledAgents.value.map((a) => a.id))
+  localOrganizerId.value = props.defaultAgentId
 }
 
 function closeForm(): void {
@@ -134,20 +160,22 @@ function closeForm(): void {
   formGoal.value = ''
   formContext.value = ''
   selectedIds.value = new Set()
+  localOrganizerId.value = null
 }
 
 function submitForm(): void {
   const goal = formGoal.value.trim()
-  if (!formType.value || !goal) return
-  // Always fold the organizer in even if it isn't an enabled/listed agent, so the
-  // persisted set matches the orchestrator's organizer-union rule.
+  const orgId = localOrganizerId.value
+  if (!formType.value || !goal || !orgId) return
+  // Fold the organizer into the participant set as a safety net.
   const ids = new Set(selectedIds.value)
-  if (props.defaultAgentId) ids.add(props.defaultAgentId)
+  ids.add(orgId)
   emit('create', {
     type: formType.value,
     goal,
     context: formContext.value.trim(),
     participantAgentIds: [...ids],
+    organizerAgentId: orgId,
   })
   closeForm()
 }
@@ -267,6 +295,7 @@ function togglePanel(): void {
             <textarea
               v-model="formGoal"
               class="disc-input disc-textarea"
+              data-testid="disc-goal-textarea"
               rows="2"
               :placeholder="t('discussion.form.goal.placeholder')"
               @input="autoGrow"
@@ -277,13 +306,14 @@ function togglePanel(): void {
             <textarea
               v-model="formContext"
               class="disc-input disc-textarea"
+              data-testid="disc-context-textarea"
               rows="3"
               :placeholder="t('discussion.form.context.placeholder')"
               @input="autoGrow"
             />
           </label>
-          <!-- Participant picker: lists enabled agents (default all selected). The
-               organizer row is locked on — it always joins the discussion. -->
+          <!-- Participant picker: lists enabled agents (default all selected). Each
+               selected agent has a radio to designate the organizer. -->
           <fieldset class="disc-field disc-participants">
             <legend class="disc-field-label">{{ t('discussion.form.participants.label') }}</legend>
             <p class="disc-participants-hint">{{ t('discussion.form.participants.hint') }}</p>
@@ -293,14 +323,18 @@ function togglePanel(): void {
               class="disc-participant"
               :data-testid="`disc-participant-${a.id}`"
             >
-              <input
-                type="checkbox"
-                :checked="selectedIds.has(a.id) || isOrganizer(a.id)"
-                :disabled="isOrganizer(a.id)"
-                @change="toggleAgent(a.id)"
-              />
+              <input type="checkbox" :checked="selectedIds.has(a.id)" @change="toggleAgent(a.id)" />
               <span class="disc-participant-name">{{ a.displayName }}</span>
-              <span v-if="isOrganizer(a.id)" class="disc-participant-badge">
+              <input
+                type="radio"
+                name="discussion-organizer"
+                :checked="localOrganizerId === a.id"
+                :disabled="!selectedIds.has(a.id)"
+                :data-testid="`disc-organizer-${a.id}`"
+                class="disc-organizer-radio"
+                @change="setOrganizer(a.id)"
+              />
+              <span v-if="localOrganizerId === a.id" class="disc-participant-badge">
                 {{ t('discussion.form.participants.organizer.label') }}
               </span>
             </label>
@@ -313,7 +347,10 @@ function togglePanel(): void {
           <button type="button" class="disc-btn" @click="closeForm">
             {{ t('common.action.cancel.label') }}
           </button>
-          <button type="submit" class="disc-btn primary" :disabled="!formGoal.trim()">
+          <p v-if="showForm && formGoal.trim() && !canSubmit" class="disc-form-error">
+            {{ t('discussion.form.participants.validationError') }}
+          </p>
+          <button type="submit" class="disc-btn primary" :disabled="!canSubmit">
             {{ t('discussion.form.create.label') }}
           </button>
         </div>
@@ -516,7 +553,7 @@ function togglePanel(): void {
 }
 .disc-modal {
   width: 100%;
-  max-width: 480px;
+  max-width: 720px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -609,6 +646,16 @@ function togglePanel(): void {
   color: var(--c-text-muted);
   border: 1px solid var(--c-border);
 }
+/* Organizer radio: small, trailing the name; disabled when agent not selected. */
+.disc-organizer-radio {
+  flex-shrink: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.disc-organizer-radio:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
 .disc-field-label {
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
@@ -633,13 +680,24 @@ function togglePanel(): void {
    past it (resize disabled — height is content-driven). */
 .disc-textarea {
   max-height: 200px;
+  min-height: 120px;
   resize: none;
   overflow-y: hidden;
 }
+.disc-textarea[data-testid='disc-context-textarea'] {
+  min-height: 100px;
+}
 .disc-form-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--sp-2);
+}
+.disc-form-error {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--c-error, #d32f2f);
+  flex: 1;
 }
 .disc-btn {
   padding: var(--sp-1) var(--sp-3);

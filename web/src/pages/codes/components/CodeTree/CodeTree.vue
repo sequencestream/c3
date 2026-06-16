@@ -117,6 +117,15 @@ function runNow(): void {
         @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)"
         @keydown.enter="runNow"
       />
+      <input
+        :value="searchPattern"
+        class="search-input search-pattern"
+        type="search"
+        :title="t('codes.search.pattern.tooltip')"
+        :placeholder="t('codes.search.pattern.placeholder')"
+        @input="emit('update:searchPattern', ($event.target as HTMLInputElement).value)"
+        @keydown.enter="runNow"
+      />
     </div>
 
     <div class="tree-scroll">
@@ -277,6 +286,11 @@ function runNow(): void {
   background: var(--c-input);
   color: var(--c-text);
   font-size: var(--fs-caption);
+}
+/* Glob filter sits below the query box: monospace + smaller, reads as a "code" field */
+.search-pattern {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro, 11px);
 }
 
 .tree-scroll {

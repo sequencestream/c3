@@ -5,15 +5,15 @@
 
 ## Context
 
-c3 originally bound to one project directory (`--project`) and held all state per WebSocket
+c3 originally bound to one project directory and held all state per WebSocket
 connection, in memory — "closing the socket discards state". The multi-workspace / multi-session
 feature requires the sidebar to survive restarts: the set of workspaces the user added, their
 recent-access order, each session's permission mode, and which session was last active.
 
-The Agent SDK already persists the sessions themselves (transcripts under
-`~/.claude/projects/<encoded-cwd>/<id>.jsonl`) and exposes `listSessions` / `getSessionMessages`
-/ `renameSession` / `deleteSession`. What the SDK does **not** track is c3-specific metadata:
-the workspace registry, per-session permission mode, and recent-access ordering.
+The Agent SDK already persists the sessions themselves (transcripts under the SDK's
+per-project transcript store) and exposes session listing, message reading, renaming, and
+deletion. What the SDK does **not** track is c3-specific metadata: the workspace registry,
+per-session permission mode, and recent-access ordering.
 
 ## Options considered
 
@@ -30,28 +30,28 @@ the workspace registry, per-session permission mode, and recent-access ordering.
 
 ## Decision
 
-Persist a c3-owned registry at `${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json` holding: the
-workspace list (path, name, `lastAccessed`), `sessionModes` keyed by SDK session id, and
-`activeSessionId`. The SDK remains the source of truth for session existence, history, and
-titles. The file is written atomically (temp + rename) and any read/parse error falls back to
-empty state so c3 still boots.
+Persist a c3-owned registry under `${CLAUDE_CONFIG_DIR:-~/.claude}/c3/` holding: the
+workspace list (path, name, last-accessed timestamp), the per-session permission mode keyed
+by SDK session id, and the last-active session id. The SDK remains the source of truth for
+session existence, history, and titles. The file is written atomically (temp + rename) and
+any read/parse error falls back to empty state so c3 still boots.
 
 ## Consequences
 
 - **Easier:** the sidebar, recent-access order, and per-session mode survive restarts; the SDK
   is not duplicated.
-- **Harder:** there are now two stores; c3 must tolerate session ids in `state.json` that no
-  longer exist on disk (stale mode entries are harmless and lazily ignored).
+- **Harder:** there are now two stores; c3 must tolerate session ids in the persisted registry
+  that no longer exist on disk (stale mode entries are harmless and lazily ignored).
 - The architecture's "state is per-connection and in-memory; no persistence" rule is amended:
   **permission decisions remain in-memory and per-connection** (unchanged, ADR 0001/0002), but
   the **workspace/session registry is persisted** (this ADR).
-- `settingSources` (now `['user', 'project']`, ADR 0005) is unaffected — transcript storage
+- `settingSources` (now inheriting user + project, ADR 0005) is unaffected — transcript storage
   and session APIs work regardless (see [`claude-agent-sdk-guide.md`](../claude-agent-sdk-guide.md) §4).
 
 ## Compliance
 
-- The registry lives only in `server/src/state.ts`; session reads go through
-  `server/src/sessions.ts`. No permission state is persisted.
+- The persisted registry and the session reads are kept distinct; no permission state is
+  persisted.
 - Reviewers reject any persistence of permission decisions or approvals.
 
 ## References

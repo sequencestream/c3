@@ -1879,6 +1879,12 @@ export interface Discussion {
    * orchestrator falls back to the whole `enabledAgents()` roster for back-compat.
    */
   participantAgentIds: string[]
+  /**
+   * The agent id designated as the organizer for this discussion. When set, the
+   * orchestrator uses this agent instead of the global default. Falls back to
+   * the default agent when unset or when the referenced agent no longer exists.
+   */
+  organizerAgentId: string | null
   /** The concluded outcome; `null` until set. */
   conclusion: string | null
   createdAt: number
@@ -2427,6 +2433,12 @@ export type ClientToServer =
        * "whole roster" fallback.
        */
       participantAgentIds?: string[]
+      /**
+       * The agent designated as the organizer. When set, the orchestrator uses
+       * this agent instead of the global default. Falls back to the default when
+       * absent.
+       */
+      organizerAgentId?: string
     }
   /**
    * Open a discussion: enter the discussion view for one discussion and return

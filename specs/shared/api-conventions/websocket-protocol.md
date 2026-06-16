@@ -73,10 +73,11 @@
 ### `search_codes`
 
 在已注册工作区内搜索代码。`mode: 'filename'` 匹配相对路径/文件名；`mode: 'content'`
-返回命中文件和行。搜索有结果上限和超时,并排除 `.git`。服务器回复 `codes_searched`
-或 `error`。
+返回命中文件和行。可选 `pattern` 为文件名 glob 过滤器(如 `*.ts`,逗号/空格分隔取并集),
+缩小被搜索的文件范围;目录恒被遍历,空/`*` 表示全部。搜索有结果上限和超时,并排除 `.git`。
+服务器回复 `codes_searched` 或 `error`。
 
-**字段：** `workspaceId: string`, `query: string`, `mode: 'filename' | 'content'`
+**字段：** `workspaceId: string`, `query: string`, `mode: 'filename' | 'content'`, `pattern?: string`
 
 ### `create_session`
 

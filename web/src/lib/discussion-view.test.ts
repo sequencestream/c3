@@ -38,6 +38,7 @@ function disc(over: Partial<Discussion> = {}): Discussion {
     agenda: [],
     agendaIndex: 0,
     participantAgentIds: [],
+    organizerAgentId: null,
     conclusion: null,
     createdAt: 0,
     updatedAt: 0,

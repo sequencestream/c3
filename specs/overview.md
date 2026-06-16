@@ -16,13 +16,15 @@ ignore.
 | Why a key decision was made                   | [`architecture/adr/`](architecture/adr/)                                                       |
 | The end-to-end path through a scenario        | [`flows/flows.md`](flows/flows.md)                                                             |
 | The WebSocket wire contract                   | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
+| The c3 ↔ license-server API contract          | [`shared/api-conventions/license-server-api.md`](shared/api-conventions/license-server-api.md) |
 | The frontend visual style guide               | [`style/style-spec.md`](style/style-spec.md)                                                   |
 | Performance / security / availability targets | [`non-functional/`](non-functional/)                                                           |
 | A specific capability's behavior              | [`domains/core/`](domains/core/)                                                               |
 
 ## Domains
 
-c3 has two business groups: `core` (the agent loop) and `system-config` (user configuration).
+c3 has three business groups: `core` (the agent loop), `system-config` (user configuration), and
+`commerce` (product entitlement / licensing).
 
 ### Group `core`
 
@@ -40,17 +42,27 @@ c3 has two business groups: `core` (the agent loop) and `system-config` (user co
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | [`agent-config`](domains/system-config/agent-config/) | Manage agent profiles (url/key/model + name), the default agent, per-session binding |
 
+### Group `commerce`
+
+| Domain                                                 | Responsibility                                                                                                                                                                                                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`product-license`](domains/commerce/product-license/) | Govern whether a c3 install is commercially **entitled** to create new work; activation, heartbeat + 30-min offline grace, offline Ed25519 verification, new-session gating. Authority lives in the separate **license-server** (ADR-0026). |
+
 ## Usage rules
 
 1. **Spec before code.** New behavior is described here first, then implemented.
 2. **WHAT vs HOW.** `spec.md` files state business behavior; `design.md` files state
    technical implementation. Keep them apart.
-3. **Single source of truth for the wire format.** The protocol is defined in
-   `shared/src/protocol.ts` (code) and documented in
-   `shared/api-conventions/websocket-protocol.md`. Domain docs reference it; they do not
-   redefine message shapes.
+3. **Single source of truth for the wire format.** The WebSocket protocol is documented
+   once in [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md).
+   Domain docs reference that document; they do not redefine message shapes.
 4. **Reference, don't duplicate.** Shared rules live once and are cited by ID.
 5. **Dates are `YYYY-MM-DD`.** Business-semantic types over technical types.
+6. **No code references (C-DOC-1).** Specs describe behaviour in domain language — no source
+   file/directory paths, no source-tree listings, no class/type/function/field names, no
+   JSDoc `{@link}`. Cross-links to other `.md` specs, wire-message names, user-facing config
+   keys, rule/ADR IDs, and external tool identifiers are the allowed contract vocabulary. See
+   [`constitution.md`](constitution.md) C-DOC-1.
 
 ## Maintenance
 

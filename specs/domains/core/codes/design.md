@@ -15,11 +15,11 @@ uses the shared WebSocket protocol as its only API.
 
 All requests carry `workspaceId`, never a root path.
 
-| Request        | Response         | Behavior                                                              |
-| -------------- | ---------------- | --------------------------------------------------------------------- |
-| `list_dir`     | `dir_listed`     | Lists one directory's immediate children, excluding `.git`.           |
-| `read_file`    | `file_read`      | Reads metadata and, when safe, text content for one file.             |
-| `search_codes` | `codes_searched` | Searches by filename or text content with a result limit and timeout. |
+| Request        | Response         | Behavior                                                                                                                                    |
+| -------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_dir`     | `dir_listed`     | Lists one directory's immediate children, excluding `.git`.                                                                                 |
+| `read_file`    | `file_read`      | Reads metadata and, when safe, text content for one file.                                                                                   |
+| `search_codes` | `codes_searched` | Searches by filename or text content with a result limit and timeout. An optional `pattern` glob filters which file basenames are searched. |
 
 Failures use the existing `error` wire message. Path and workspace rejection errors are safe to
 display and must not echo absolute filesystem paths.
@@ -45,6 +45,9 @@ This prevents symlink escape and sibling-prefix confusion (`/workspace` versus
 - Search result limit: 100 hits per request.
 - Search runtime limit: 1500 ms per request.
 - Content search reads only files that pass the same read eligibility rules.
+- Glob filter: `pattern` is compiled to case-insensitive basename matchers (`*` → any run, `?` → one
+  char); comma/space-separated globs union. `*`/empty disables the filter. Directories are always
+  traversed regardless of the filter; only file basenames are tested against it.
 
 ## Non-Functional Considerations
 

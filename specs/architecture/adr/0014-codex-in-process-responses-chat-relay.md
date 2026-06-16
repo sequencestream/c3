@@ -5,8 +5,8 @@
 
 ## Context
 
-ADR-0011 made codex a first-class driver-path vendor; AC-R5 maps a `custom` codex agent's
-`baseUrl`/`apiKey` onto the codex SDK so a user can point codex at a third-party provider
+ADR-0011 made codex a first-class driver-path vendor; AC-R5 maps a custom codex agent's
+base URL and API key onto the codex SDK so a user can point codex at a third-party provider
 (DeepSeek, Kimi, MiMo, MiniMax, …). In practice that mapping no longer works for those providers.
 
 Two facts collide:
@@ -36,35 +36,36 @@ hop through a configured `HTTP(S)_PROXY` unless `NO_PROXY` excludes `127.0.0.1`.
 ## Options considered
 
 to install a second runtime (pip/cargo/Python), and bundling a per-platform binary breaks the
-single-binary distribution (ADR-0003). Contradicts "c3 starts it, no extra install." 2. **In-process TS translation mounted on c3's own Hono server.** c3 hosts a loopback endpoint; the codex
+single-binary distribution (ADR-0003). Contradicts "c3 starts it, no extra install." 2. **In-process translation mounted on c3's own HTTP server.** c3 hosts a loopback endpoint; the codex
 driver points the CLI at it via a custom `model_provider` (`supports_websockets = false`) and the
 relay rewrites Responses⇄Chat both ways. _Pro:_ no external dependency, survives single-binary
-packaging, full control. _Con:_ c3 owns the protocol-translation logic and its correctness. 3. **Per-agent `wireApi` toggle.** Add config so the user declares chat-vs-responses. _Con:_ pushes a
+packaging, full control. _Con:_ c3 owns the protocol-translation logic and its correctness. 3. **Per-agent wire-API toggle.** Add config so the user declares chat-vs-responses. _Con:_ pushes a
 protocol detail onto the user; against the "just configure the URL" requirement. Deferred — every
-`custom` codex provider is routed today (first-party OpenAI uses `configMode: system`, which bypasses
+custom codex provider is routed today (first-party OpenAI uses the system config mode, which bypasses
 the relay entirely).
 
 ## Decision
 
-Adopt option 2. **For a `custom` codex agent with a provider URL, c3 drives codex through an in-process
+Adopt option 2. **For a custom codex agent with a provider URL, c3 drives codex through an in-process
 Responses→Chat relay; the user's configuration is unchanged (the real upstream URL).**
 
-- **Translation core (`transport/codex-relay/translate.ts`)** — pure, SDK-free, unit-tested against the
-  captured request + codex's parser contract: `responsesRequestToChat` (instructions→system,
-  developer→system, adjacent `function_call`s merged into one assistant turn, `function_call_output`→tool
-  message, codex `namespace` tools flattened, Responses-only fields dropped, `stream` + usage forced on);
-  `ChatToResponsesConverter` (streams `output_text`/reasoning deltas live, materializes each output as a
-  full `ResponseItem` in `output_item.done`, always closes with `response.completed` carrying id + usage).
-- **Relay (`transport/codex-relay/index.ts`)** — a per-run token registry + Hono handler. The driver
-  `register()`s the real `{baseUrl, apiKey}` and gets an opaque UUID token; the handler resolves the
-  binding by `Authorization: Bearer <token>`, fetches the upstream `/chat/completions`, and streams the
+- **Translation core** — a pure, SDK-free, unit-tested translation layer grounded in the
+  captured request + codex's parser contract. Request side: instructions→system, developer→system,
+  adjacent function calls merged into one assistant turn, function-call output → tool
+  message, codex namespace tools flattened, Responses-only fields dropped, streaming + usage forced on.
+  Response side: streams output-text/reasoning deltas live, materializes each output as a
+  full Responses output item on completion, always closes with the Responses completion event carrying
+  id + usage.
+- **Relay** — a per-run token registry plus an HTTP handler. The driver registers the real base URL +
+  API key and gets back an opaque token; the handler resolves the binding by the
+  `Authorization: Bearer <token>` header, fetches the upstream `/chat/completions`, and streams the
   translated Responses SSE back. Unknown tokens are rejected; the binding is evicted on run end.
-- **Driver wiring (`adapters/codex/driver.ts`)** — when the relay is present and the run has a custom URL,
-  codex is launched with a custom `model_provider` (`base_url = relay.baseUrl`, `wire_api = "responses"`,
-  `supports_websockets = false`), the token as `CODEX_API_KEY`, and `NO_PROXY` augmented with the loopback
-  hosts. The real key never reaches the codex subprocess. Absent relay / no custom URL ⇒ the original
-  direct path is unchanged.
-- **Mount (`server.ts`)** — the relay is built at the composition root over c3's own port and its route is
+- **Driver wiring** — when the relay is present and the run has a custom URL,
+  codex is launched with a custom `model_provider` (its `base_url` pointed at the relay,
+  `wire_api = "responses"`, `supports_websockets = false`), the token passed as `CODEX_API_KEY`, and
+  `NO_PROXY` augmented with the loopback hosts. The real key never reaches the codex subprocess. Absent
+  relay / no custom URL ⇒ the original direct path is unchanged.
+- **Mount** — the relay is built at the composition root over c3's own port and its route is
   registered **before** the static catch-all.
 
 ## Consequences
@@ -84,17 +85,16 @@ Responses→Chat relay; the user's configuration is unchanged (the real upstream
 ## Compliance
 
 - **ADR-0009 R2** — the relay is HTTP transport + wire serialization, so its implementation lives in
-  `transport/codex-relay/`, not `kernel/`. The kernel keeps only an inert handle
-  (`kernel/.../relay-contract.ts`: `baseUrl` + `register`/`unregister` + the provider-name constant),
-  injected into the driver at the composition root; the driver never sees the Hono handler. `git grep`
-  for `hono`/`JSON.stringify` under `kernel/` stays empty.
+  the transport layer, not the kernel. The kernel keeps only an inert handle (the relay's base URL +
+  register/unregister hooks + the provider-name constant), injected into the driver at the composition
+  root; the driver never sees the HTTP handler. The kernel stays free of HTTP-server and wire-
+  serialization concerns.
 - **ADR-0003** — no new bundled binary; the relay is in-process and survives `bun build --compile`.
 - **ADR-0011 / ADR-0009 SDK boundary** — no vendor SDK type enters the relay; only JSON shapes cross it.
 
 ## References
 
 - ADR-0003 (single binary), ADR-0009 (boundaries), ADR-0011 (vendor-neutral agents).
-- `specs/domains/system-config/agent-config/spec.md` AC-R5.
-- openai/codex discussion #7782 (chat wire-api removal); `codex-rs/codex-api/src/sse/responses.rs`
+- [agent-config domain spec](../../domains/system-config/agent-config/spec.md) AC-R5.
+- openai/codex discussion #7782 (chat wire-api removal); the codex Rust SSE parser
   (rust-v0.137.0) — the event contract.
-- `transport/codex-relay/` (translate + relay), `kernel/agent/adapters/codex/{driver,relay-contract}.ts`.

@@ -39,6 +39,7 @@ function mountTree() {
       activePath: null,
       searchMode: 'filename',
       searchQuery: '',
+      searchPattern: '*',
       searchResult: null,
       searchLoading: false,
     },
@@ -100,5 +101,21 @@ describe('CodeTree.vue — Files 侧栏头 + 展开/收缩切换', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe('true')
     await btn.trigger('click')
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false')
+  })
+})
+
+describe('CodeTree.vue — 文件模式 glob 过滤框', () => {
+  it('渲染独立的 pattern 输入框,初值取 searchPattern', () => {
+    const w = mountTree()
+    const pattern = w.find('input.search-pattern')
+    expect(pattern.exists()).toBe(true)
+    expect((pattern.element as HTMLInputElement).value).toBe('*')
+  })
+
+  it('输入 pattern → 抛 update:searchPattern', async () => {
+    const w = mountTree()
+    const pattern = w.find('input.search-pattern')
+    await pattern.setValue('*.ts')
+    expect(w.emitted('update:searchPattern')?.at(-1)).toEqual(['*.ts'])
   })
 })

@@ -54,7 +54,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   open: [discussionId: string]
-  create: [payload: { type: string; goal: string; context: string; participantAgentIds: string[] }]
+  create: [
+    payload: {
+      type: string
+      goal: string
+      context: string
+      participantAgentIds: string[]
+      organizerAgentId: string
+    },
+  ]
   start: []
   pause: []
   resume: []

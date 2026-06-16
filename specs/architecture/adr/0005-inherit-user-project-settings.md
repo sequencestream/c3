@@ -49,7 +49,7 @@ this is accepted and intended, mirroring the `claude` CLI.
 
 ## Compliance
 
-- `settingSources: ['user', 'project']` is set in `server/src/claude.ts`.
+- `settingSources: ['user', 'project']` is the configured value passed to the SDK.
 - Any future change to that option requires a new ADR and a constitution amendment.
 
 ## References

@@ -1407,11 +1407,12 @@
       },
       "participants": {
         "label": "参与者",
-        "hint": "所选智能体会被邀请发言;组织者始终参与。",
+        "hint": "所选智能体会被邀请发言。使用单选按钮指定组织者。",
         "empty": "没有已启用的智能体。",
         "organizer": {
           "label": "组织者"
-        }
+        },
+        "validationError": "必须勾选组织者,且至少勾选一个其他智能体。"
       },
       "title": {
         "label": "新建讨论"
@@ -1780,6 +1781,10 @@
     },
     "search": {
       "placeholder": "搜索文件…",
+      "pattern": {
+        "placeholder": "文件模式,如 *.ts(默认 * 全部)",
+        "tooltip": "按文件名 glob 过滤 — * 匹配全部;如 *.ts 或 *.ts,*.tsx"
+      },
       "mode": {
         "filename": "文件名",
         "content": "内容"

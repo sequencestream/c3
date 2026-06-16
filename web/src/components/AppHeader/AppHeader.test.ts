@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AppHeader from './AppHeader.vue'
+import { useAuth } from '@/composables/useAuth'
 
 const TABS = [
   { key: 'console', label: 'Works' },
@@ -19,6 +20,12 @@ const baseProps = {
   viewMode: 'workspace' as const,
   workcenterBadgeCount: 2,
 }
+
+// `isAdmin` is a module-singleton (defaults true). Restore it after each test so
+// the admin-gated cases don't leak into the others.
+afterEach(() => {
+  useAuth().setIsAdmin(true)
+})
 
 describe('AppHeader.vue — top-bar tabs', () => {
   it('按 tabs 数据渲染全部 tab,标记当前 tab', () => {
@@ -85,6 +92,18 @@ describe('AppHeader.vue — top-bar tabs', () => {
     await w.findAll('.mobile-bottom-tab')[1].trigger('click')
     expect(w.emitted('update:viewMode')).toEqual([['workspace']])
     expect(w.emitted('select-tab')).toEqual([['intents']])
+  })
+
+  it('管理员显示系统设置入口(桌面 ⚙ + 移动端菜单项)', () => {
+    useAuth().setIsAdmin(true)
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.settings-btn').exists()).toBe(true)
+  })
+
+  it('非管理员隐藏系统设置入口(ADR-0023 authz)', () => {
+    useAuth().setIsAdmin(false)
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.settings-btn').exists()).toBe(false)
   })
 
   it('无当前工作区时移动端工作区 tab 禁用,工作台 tab 仍可进入', async () => {

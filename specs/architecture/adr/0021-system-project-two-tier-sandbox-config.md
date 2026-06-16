@@ -47,21 +47,10 @@ _Con:_ 未来可以扩展而不破坏现有双层模型。
 
 系统级定义沙箱"模板"，项目级引用并覆盖。
 
-```
-System settings (~/.c3/settings.json):
-  sandboxes: [
-    { name: "default", type: "docker", image: "node:20-alpine", memoryLimit: "512m", ... }
-    { name: "python", type: "docker", image: "python:3.12-slim", ... }
-  ]
+配置形态如下：
 
-Project config (.c3/config.json):
-  sandbox: {
-    enabled: true,
-    sandbox: "python",          // 引用系统定义
-    imageOverride: "python:3.13", // 覆盖镜像版本
-    memoryLimitOverride: "1g"
-  }
-```
+- 系统配置（`~/.c3/settings.json`）维护一个沙箱定义列表，每个定义包含名称、类型（如 docker）、镜像、资源限制（如 `memoryLimit`）等完整规格。例如一个名为 `default` 的 docker 定义指向某基础镜像并设置内存限制，另一个名为 `python` 的定义指向 python 镜像。
+- 项目配置（`.c3/config.json`）通过 `sandbox` 字段声明：以 `enabled` 主开关启用，用 `sandbox` 键引用系统定义名称（如 `python`），并可选以 `imageOverride`、`memoryLimitOverride` 等键覆盖个别字段（如覆盖镜像版本或内存限制）。
 
 _Pro:_ 模板复用——多个项目共享相同系统定义。
 _Pro:_ 职责分离——管理员管理系统定义，项目用户选择并覆盖。
@@ -81,73 +70,60 @@ _Con:_ 与 c3 现有的"项目可覆盖系统设置"的授权模型不一致。
 
 **采纳选项 3（双层配置）**，具体方案如下：
 
-### 类型结构
+### 配置结构
 
-```typescript
-// 系统级沙箱定义（管理员管理）
-interface SystemSandboxDef {
-  name: string // 唯一名称
-  type: 'docker' | 'gvisor' | 'kata' | 'firecracker'
-  image: string // 容器镜像
-  seccomp?: string // seccomp 配置名称
-  memoryLimit?: string // 内存限制（如 "512m"）
-  cpuLimit?: number // CPU 限制（如 1）
-  resourceLimits?: ResourceLimits // 结构化资源限制（优先级高于扁平字段）
-  networkDisabled?: boolean // 禁用网络（默认 true）
-  networkAllowlist?: string[] // 网络允许列表（Phase 2）
-  readonlyRootfs?: boolean // 只读根文件系统（默认 false）
-  envVars?: Record<string, string> // 环境变量
-  workingDir?: string // 工作目录
-  entrypoint?: string[] // 入口点覆盖
-  dockerOptions?: Record<string, unknown> // Docker 特定选项
-}
+**系统级沙箱定义（管理员管理）** 包含以下字段：
 
-// 项目级沙箱配置（项目开发者管理）
-interface WorkspaceSandboxConfig {
-  enabled: boolean // 主开关
-  sandbox?: string // 引用的系统定义名称
-  agentIds?: string[] // 容器内可运行的 custom agent id（worktree-only + custom-only）
-  imageOverride?: string // 覆盖镜像
-  memoryLimitOverride?: string // 覆盖内存限制
-  cpuLimitOverride?: number // 覆盖 CPU 限制
-  envVarsOverride?: Record<string, string> // 附加环境变量
-}
-```
+| 字段               | 含义                                             |
+| ------------------ | ------------------------------------------------ |
+| `name`             | 唯一名称                                         |
+| `type`             | 隔离类型（docker / gVisor / Kata / Firecracker） |
+| `image`            | 容器镜像                                         |
+| `seccomp`          | seccomp 配置名称                                 |
+| `memoryLimit`      | 内存限制（如 `"512m"`）                          |
+| `cpuLimit`         | CPU 限制（如 1）                                 |
+| `resourceLimits`   | 结构化资源限制（优先级高于扁平字段）             |
+| `networkDisabled`  | 禁用网络（默认 true）                            |
+| `networkAllowlist` | 网络允许列表（Phase 2）                          |
+| `readonlyRootfs`   | 只读根文件系统（默认 false）                     |
+| `envVars`          | 环境变量                                         |
+| `workingDir`       | 工作目录                                         |
+| `entrypoint`       | 入口点覆盖                                       |
+| `dockerOptions`    | Docker 特定选项                                  |
 
-> **改名说明（2026-06-12）**：原 `ProjectSandboxConfig` 统一改名为
-> `WorkspaceSandboxConfig`，与 `WorkspaceSetting` 对齐。仅改类型标识符，磁盘键
-> （`WorkspaceSetting.sandbox` 及其内部键）不变，无 wire/磁盘迁移。
+**项目级沙箱配置（项目开发者管理）** 包含以下字段：
+
+| 字段                  | 含义                                                          |
+| --------------------- | ------------------------------------------------------------- |
+| `enabled`             | 主开关                                                        |
+| `sandbox`             | 引用的系统定义名称                                            |
+| `agentIds`            | 容器内可运行的 custom agent id（worktree-only + custom-only） |
+| `imageOverride`       | 覆盖镜像                                                      |
+| `memoryLimitOverride` | 覆盖内存限制                                                  |
+| `cpuLimitOverride`    | 覆盖 CPU 限制                                                 |
+| `envVarsOverride`     | 附加环境变量                                                  |
+
+> **改名说明（2026-06-12）**：原项目级沙箱配置统一改名为工作区沙箱配置，与工作区设置对齐。仅改概念标识符，磁盘键（工作区设置的 `sandbox` 字段及其内部键）不变，无 wire/磁盘迁移。
 >
 > **字段下沉修订（2026-06-16，见 [ADR-0025](0025-sandbox-network-readonly-workspace-policy.md)）**：
-> `networkDisabled`、`readonlyRootfs` 从 `SystemSandboxDef` 移除，仅由
-> `WorkspaceSandboxConfig` 承载（deny-by-default，缺省 `true`/`true`）。上文
-> `SystemSandboxDef` 中的这两项、以及合并规则 7 的 `readonlyRootfs: false` 均以
-> ADR-0025 为准；`networkAllowlist` 仍留在系统定义。
+> `networkDisabled`、`readonlyRootfs` 从系统级沙箱定义移除，仅由工作区沙箱配置承载（deny-by-default，缺省 `true`/`true`）。上文系统级定义中的这两项、以及合并规则 7 的 `readonlyRootfs: false` 均以 ADR-0025 为准；`networkAllowlist` 仍留在系统定义。
 
 ### 合并规则
 
-0. **worktree-only**：仅当工作区 `gitBranchMode === 'worktree'` 时项目沙箱配置才生效；`current-branch` 模式下容器挂的是主工作区检出，隔离形同虚设，故 normalize 直接丢弃整块配置。
-1. **custom-only**：`agentIds` 仅保留 `enabled && configMode === 'custom'` 的 agent id，失效/system/disabled 静默剔除。
+0. **worktree-only**：仅当工作区采用 worktree 的 git 分支模式时项目沙箱配置才生效；current-branch 模式下容器挂的是主工作区检出，隔离形同虚设，故规整阶段直接丢弃整块配置。
+1. **custom-only**：`agentIds` 仅保留已启用且为 custom 配置模式的 agent id，失效/system/disabled 静默剔除。
 2. 如果项目配置缺失、`enabled` 为 `false`、或者未指定 `sandbox` 名称 → **不使用沙箱**。
-3. 如果项目配置引用了一个不存在的系统定义名称 → **运行时抛错**（`SandboxRegistry.resolve()` 抛 `Unknown sandbox definition: "name"`）。
+3. 如果项目配置引用了一个不存在的系统定义名称 → **运行时抛错**（沙箱注册表解析时抛出未知沙箱定义错误）。
 4. 合并优先级（从高到低）：项目覆盖 > 系统定义 > 默认值。
 5. 环境变量是**合并**（不是替换）的，项目值在冲突时取胜。
 6. 结构化 `resourceLimits` 中的 `memory` 和 `cpu` 优先于扁平 `memoryLimit`/`cpuLimit`（同一层级内，不是跨层覆盖）。
 7. 未指定的可选字段使用合理默认值：`memoryLimit: "512m"`、`cpuLimit: 1`、`networkDisabled: true`、`readonlyRootfs: false`、`envVars: {}`。
 
-### 验证逻辑
+### 解析与合并行为
 
-```typescript
-export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig | undefined {
-  // loadWorkspaceSetting 已在 normalize 阶段应用 worktree-only + custom-only 不变量。
-  return loadWorkspaceSetting(workspacePath).sandbox // undefined → 等价于 disabled
-}
-
-// 在 launchRun 中使用：
-const projectCfg = getProjectSandbox(workspacePath)
-if (!projectCfg?.enabled || !projectCfg.sandbox) return null // 不使用沙箱
-const resolved = registry.resolve(projectCfg.sandbox, projectCfg) // 合并
-```
+- 读取工作区设置即可得到其项目沙箱配置；工作区设置在加载/规整阶段已应用 worktree-only 与 custom-only 不变量，配置缺省时等价于 disabled。
+- 启动 run 时：若项目沙箱配置缺失、未启用、或未指定引用名称，则不使用沙箱。
+- 否则以引用名称在沙箱注册表中解析对应的系统定义，并按合并规则将项目覆盖合并到系统定义之上，得到最终沙箱规格。
 
 ## Consequences
 
@@ -162,26 +138,26 @@ const resolved = registry.resolve(projectCfg.sandbox, projectCfg) // 合并
 ### 负面
 
 - 项目级只能覆盖镜像/内存/CPU/环境变量，不能覆盖网络策略、seccomp 等安全相关字段——这是有意为之（安全策略由管理员管控）。
-- 系统定义名称被删除而项目仍引用时，运行时才能发现错误（启动时 fail-fast 已在 `launchRun` 中实现，但因 sandbox 优雅降级，实际上是一个警告）。
+- 系统定义名称被删除而项目仍引用时，运行时才能发现错误（启动 run 时已实现 fail-fast，但因 sandbox 优雅降级，实际上是一个警告）。
 
 ### 健壮性保证
 
-1. **启动时验证**: `getProjectSandbox()` 在 session 创建时触发（不是启动时）——因此引用了已删除系统定义的 session 会在 launch 时报错而非静默失败。非 sandbox session 完全不受影响。
-2. **空配置安全性**: 整个 `settings.sandboxes` 字段缺失或为空数组时，系统没有任何沙箱定义。项目配置中的 `sandbox` 字段无法引用任何名称。`SandboxRegistry` 为空，`resolve()` 会对任何名称抛错。
+1. **启动时验证**: 项目沙箱配置的读取在 session 创建时触发（不是启动时）——因此引用了已删除系统定义的 session 会在 launch 时报错而非静默失败。非 sandbox session 完全不受影响。
+2. **空配置安全性**: 整个系统配置的沙箱定义列表（`sandboxes`）缺失或为空数组时，系统没有任何沙箱定义。项目配置中的 `sandbox` 字段无法引用任何名称。沙箱注册表为空，解析任何名称都会抛错。
 3. **降级路径**: 即使 sandbox 启动失败（Docker 不可用、配置错误、镜像拉取失败），非 sandbox 路径完全不受影响。sandbox session 降级为警告并继续。
 
 ## Compliance
 
-- `mergeSandboxConfig()` 必须有单元测试覆盖：无项目覆盖、部分覆盖、全覆盖、环境变量合并。
-- `SandboxRegistry.resolve()` 必须在引用未知名称时抛错。
-- `getProjectSandbox()` 返回 `undefined` 时，`launchSandbox()` 必须返回 `null`（而非抛错）。
-- 所有配置模式已在 `SandboxConfig.ts` 中用 Zod schema 定义，`_AssertEqual` 类型 pin 确保 schema 与 TypeScript 接口同步。
-- `pnpm test` 必须覆盖 `SandboxConfig` 的合并逻辑和 `SandboxRegistry` 的注册/解析路径。
+- 沙箱配置的合并逻辑必须有单元测试覆盖：无项目覆盖、部分覆盖、全覆盖、环境变量合并。
+- 沙箱注册表的解析必须在引用未知名称时抛错。
+- 项目沙箱配置缺失（解析为空）时，沙箱启动必须返回空（而非抛错）。
+- 所有配置形态必须用验证 schema 定义，并以类型断言确保 schema 与配置类型同步。
+- 测试必须覆盖沙箱配置的合并逻辑和沙箱注册表的注册/解析路径。
 
 ## References
 
-- [config index](../../server/src/kernel/config/index.ts) — `getSystemSandboxes()` 和 `getProjectSandbox()` 实现
-- [SandboxConfig.ts](../../server/src/kernel/sandbox/SandboxConfig.ts) — Zod schema + merge 函数
-- [SandboxRegistry.ts](../../server/src/kernel/sandbox/SandboxRegistry.ts) — 注册/解析实现
+- 配置层 — 系统沙箱定义列表与项目沙箱配置的读取
+- 沙箱配置 — 验证 schema 与合并函数
+- 沙箱注册表 — 注册/解析行为
 - [sandbox domain spec](../domains/core/sandbox/spec.md) — 业务规则 SND-R3, SND-R4, SND-R5
 - [ADR-0020](0020-sandbox-driver-independent-kernel-module.md) — SandboxDriver 独立 kernel 模块

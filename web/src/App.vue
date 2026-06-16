@@ -161,6 +161,7 @@ const {
   codesActiveTab,
   codesSearchMode,
   codesSearchQuery,
+  codesSearchPattern,
   codesSearchResult,
   codesSearchLoading,
   toggleCodesDir,
@@ -406,6 +407,7 @@ const {
           :active-tab="codesActiveTab"
           :search-mode="codesSearchMode"
           :search-query="codesSearchQuery"
+          :search-pattern="codesSearchPattern"
           :search-result="codesSearchResult"
           :search-loading="codesSearchLoading"
           @toggle-dir="toggleCodesDir"
@@ -415,6 +417,7 @@ const {
           @select-tab="setCodesActiveTab"
           @set-search-mode="setCodesSearchMode"
           @update:search-query="codesSearchQuery = $event"
+          @update:search-pattern="codesSearchPattern = $event"
           @run-search="runCodeSearch"
         />
       </template>

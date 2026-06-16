@@ -26,8 +26,6 @@ const DOCKER_DEFAULT: SystemSandboxDef = {
   image: 'node:20-alpine',
   memoryLimit: '256m',
   cpuLimit: 1,
-  networkDisabled: false,
-  readonlyRootfs: false,
   envVars: { NODE_ENV: 'development' },
 }
 
@@ -116,8 +114,10 @@ describe('SandboxRegistry', () => {
       expect(resolved.image).toBe('node:20-alpine')
       expect(resolved.memoryLimit).toBe('256m')
       expect(resolved.cpuLimit).toBe(1)
-      expect(resolved.networkDisabled).toBe(false)
-      expect(resolved.readonlyRootfs).toBe(false)
+      // Security policies are deny-by-default and live on the workspace config,
+      // not the system def — without an override they resolve to true/true.
+      expect(resolved.networkDisabled).toBe(true)
+      expect(resolved.readonlyRootfs).toBe(true)
       expect(resolved.envVars).toEqual({ NODE_ENV: 'development' })
     })
 
@@ -128,7 +128,7 @@ describe('SandboxRegistry', () => {
       expect(resolved.memoryLimit).toBe('1g')
       expect(resolved.cpuLimit).toBe(2)
       expect(resolved.networkDisabled).toBe(true)
-      expect(resolved.readonlyRootfs).toBe(false)
+      expect(resolved.readonlyRootfs).toBe(true)
       expect(resolved.envVars).toEqual({})
     })
   })
@@ -187,6 +187,42 @@ describe('SandboxRegistry', () => {
       reg.register(DOCKER_DEFAULT)
       const resolved = reg.resolve('default', {})
       expect(resolved.image).toBe(DOCKER_DEFAULT.image)
+    })
+
+    it('applies the workspace networkDisabled / readonlyRootfs overrides', () => {
+      const reg = new SandboxRegistry()
+      reg.register(DOCKER_DEFAULT)
+      // Loosen both deny-by-default policies from the workspace config.
+      const resolved = reg.resolve('default', { networkDisabled: false, readonlyRootfs: false })
+      expect(resolved.networkDisabled).toBe(false)
+      expect(resolved.readonlyRootfs).toBe(false)
+    })
+
+    it('falls back to deny-by-default when the policies are unset', () => {
+      const reg = new SandboxRegistry()
+      reg.register(DOCKER_DEFAULT)
+      const resolved = reg.resolve('default', { imageOverride: 'custom:latest' })
+      expect(resolved.networkDisabled).toBe(true)
+      expect(resolved.readonlyRootfs).toBe(true)
+    })
+  })
+
+  describe('resolve — legacy system-def security fields are culled', () => {
+    it('ignores networkDisabled / readonlyRootfs left on a system def', () => {
+      const reg = new SandboxRegistry()
+      // A def persisted before the fields moved to the workspace config. The
+      // parse layer strips them; even if one sneaks through, merge ignores them.
+      reg.register({
+        name: 'legacy',
+        type: 'docker',
+        image: 'node:20-alpine',
+        networkDisabled: false,
+        readonlyRootfs: false,
+      } as unknown as SystemSandboxDef)
+      const resolved = reg.resolve('legacy')
+      // Resolved values come from the deny-by-default merge, not the stale def.
+      expect(resolved.networkDisabled).toBe(true)
+      expect(resolved.readonlyRootfs).toBe(true)
     })
   })
 })

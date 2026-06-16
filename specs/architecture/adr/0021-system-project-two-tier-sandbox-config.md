@@ -117,6 +117,12 @@ interface WorkspaceSandboxConfig {
 > **改名说明（2026-06-12）**：原 `ProjectSandboxConfig` 统一改名为
 > `WorkspaceSandboxConfig`，与 `WorkspaceSetting` 对齐。仅改类型标识符，磁盘键
 > （`WorkspaceSetting.sandbox` 及其内部键）不变，无 wire/磁盘迁移。
+>
+> **字段下沉修订（2026-06-16，见 [ADR-0025](0025-sandbox-network-readonly-workspace-policy.md)）**：
+> `networkDisabled`、`readonlyRootfs` 从 `SystemSandboxDef` 移除，仅由
+> `WorkspaceSandboxConfig` 承载（deny-by-default，缺省 `true`/`true`）。上文
+> `SystemSandboxDef` 中的这两项、以及合并规则 7 的 `readonlyRootfs: false` 均以
+> ADR-0025 为准；`networkAllowlist` 仍留在系统定义。
 
 ### 合并规则
 

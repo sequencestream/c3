@@ -803,14 +803,6 @@ function submitPassword() {
             :placeholder="t('settings.sandboxes.cpuLimit.placeholder')"
             data-testid="sandbox-cpu"
           />
-          <label class="sandbox-toggle">
-            <input v-model="sb.networkDisabled" type="checkbox" />
-            {{ t('settings.sandboxes.networkDisabled.label') }}
-          </label>
-          <label class="sandbox-toggle">
-            <input v-model="sb.readonlyRootfs" type="checkbox" />
-            {{ t('settings.sandboxes.readonlyRootfs.label') }}
-          </label>
           <button
             class="icon-btn"
             :title="t('settings.sandboxes.remove.tooltip')"

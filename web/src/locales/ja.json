@@ -447,12 +447,6 @@
       "cpuLimit": {
         "label": "CPU limit (cores)",
         "placeholder": "e.g. 1, 2, 0.5"
-      },
-      "networkDisabled": {
-        "label": "Disable network"
-      },
-      "readonlyRootfs": {
-        "label": "Read-only root filesystem"
       }
     },
     "auth": {
@@ -1627,6 +1621,9 @@
       },
       "networkDisabled": {
         "label": "Disable network"
+      },
+      "readonlyRootfs": {
+        "label": "Read-only root filesystem"
       },
       "imageOverride": {
         "label": "Image override",

@@ -405,12 +405,6 @@
       "cpuLimit": {
         "label": "CPU 限制（核心数）",
         "placeholder": "例如 1、2、0.5"
-      },
-      "networkDisabled": {
-        "label": "禁用网络"
-      },
-      "readonlyRootfs": {
-        "label": "只读根文件系统"
       }
     },
     "skillRepos": {
@@ -1626,6 +1620,9 @@
       },
       "networkDisabled": {
         "label": "禁用网络"
+      },
+      "readonlyRootfs": {
+        "label": "只读根文件系统"
       },
       "imageOverride": {
         "label": "镜像覆盖",

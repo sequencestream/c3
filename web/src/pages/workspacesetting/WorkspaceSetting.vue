@@ -157,13 +157,20 @@ watch(
       config.sandbox.sandbox &&
       sandboxes.some((sb) => sb.name === config.sandbox!.sandbox)
     ) {
-      draft.value.sandbox = { ...config.sandbox }
+      // Seed the deny-by-default security policies so the checkboxes reflect the
+      // server-side merge defaults (absent ⇒ network off, read-only rootfs on).
+      draft.value.sandbox = {
+        ...config.sandbox,
+        networkDisabled: config.sandbox.networkDisabled ?? true,
+        readonlyRootfs: config.sandbox.readonlyRootfs ?? true,
+      }
     } else {
-      // Keep a reactive empty object so the sandboxDraft computed's v-model
-      // bindings (e.g. `sandboxDraft.enabled`) propagate through Vue reactivity
-      // instead of being lost on the non-reactive `?? {}` fallback (which breaks
-      // the "enable" checkbox and hides the sandbox name dropdown).
-      draft.value.sandbox = {}
+      // Keep a reactive object so the sandboxDraft computed's v-model bindings
+      // (e.g. `sandboxDraft.enabled`) propagate through Vue reactivity instead of
+      // being lost on the non-reactive `?? {}` fallback (which breaks the "enable"
+      // checkbox and hides the sandbox name dropdown). Seed the deny-by-default
+      // security policies so a freshly-enabled sandbox shows them checked.
+      draft.value.sandbox = { networkDisabled: true, readonlyRootfs: true }
     }
     // Seed codex policy from config: CodexPolicy object or translate legacy token.
     const codexVal = config?.defaultMode?.['codex']
@@ -552,6 +559,13 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
               t('workspaceSetting.sandbox.networkDisabled.label')
             }}</span>
             <input v-model="sandboxDraft.networkDisabled" type="checkbox" />
+          </div>
+
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sandbox.readonlyRootfs.label')
+            }}</span>
+            <input v-model="sandboxDraft.readonlyRootfs" type="checkbox" />
           </div>
 
           <div class="project-config-row">

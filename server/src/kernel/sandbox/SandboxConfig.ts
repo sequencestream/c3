@@ -51,9 +51,7 @@ export const systemSandboxDefSchema = z.object({
   cpuLimit: z.number().positive().optional(),
   resourceLimits: resourceLimitsSchema.optional(),
   envVars: z.record(z.string(), z.string()).optional(),
-  networkDisabled: z.boolean().optional(),
   networkAllowlist: z.array(z.string()).optional(),
-  readonlyRootfs: z.boolean().optional(),
   workingDir: z.string().optional(),
   entrypoint: z.array(z.string()).optional(),
   dockerOptions: z.record(z.string(), z.unknown()).optional(),
@@ -69,6 +67,7 @@ export const workspaceSandboxConfigSchema = z.object({
   enabled: z.boolean().optional(),
   sandbox: z.string().optional(),
   networkDisabled: z.boolean().optional(),
+  readonlyRootfs: z.boolean().optional(),
   imageOverride: z.string().optional(),
   memoryLimitOverride: z
     .string()
@@ -83,13 +82,17 @@ export const workspaceSandboxConfigSchema = z.object({
 // ─── Default Values ──────────────────────────────────────────────────────────
 
 /**
- * Default values applied when the system def does not specify optional fields.
+ * Default values applied when neither the system def nor the workspace config
+ * specifies an optional field.
+ *
+ * `networkDisabled` / `readonlyRootfs` are deny-by-default per-workspace
+ * security policies: absent ⇒ no network, read-only root filesystem.
  */
 const DEFAULTS = {
   memoryLimit: '512m',
   cpuLimit: 1,
   networkDisabled: true,
-  readonlyRootfs: false,
+  readonlyRootfs: true,
   envVars: {},
 } as const satisfies Partial<ResolvedSandboxConfig>
 
@@ -117,9 +120,9 @@ export function mergeSandboxConfig(
     memoryLimit: projectCfg?.memoryLimitOverride ?? systemDef.memoryLimit ?? DEFAULTS.memoryLimit,
     cpuLimit: projectCfg?.cpuLimitOverride ?? systemDef.cpuLimit ?? DEFAULTS.cpuLimit,
     resourceLimits: systemDef.resourceLimits,
-    networkDisabled: systemDef.networkDisabled ?? DEFAULTS.networkDisabled,
+    networkDisabled: projectCfg?.networkDisabled ?? DEFAULTS.networkDisabled,
     networkAllowlist: systemDef.networkAllowlist,
-    readonlyRootfs: systemDef.readonlyRootfs ?? DEFAULTS.readonlyRootfs,
+    readonlyRootfs: projectCfg?.readonlyRootfs ?? DEFAULTS.readonlyRootfs,
     envVars: {
       ...DEFAULTS.envVars,
       ...systemDef.envVars,

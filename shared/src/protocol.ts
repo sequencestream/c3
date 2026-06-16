@@ -515,17 +515,17 @@ export interface SystemSandboxDef {
   description?: string
   /** Environment variables injected into the container. */
   envVars?: Record<string, string>
-  /** When true, the container has no network access. */
-  networkDisabled?: boolean
   /**
    * Network egress allowlist — CIDR or hostname patterns allowed through.
-   * When non-empty, overrides networkDisabled (enables limited network).
+   * When non-empty, enables limited network egress (overrides the workspace
+   * {@link WorkspaceSandboxConfig.networkDisabled} flag).
    *
    * Phase 2 (planned) — MVP throws unsupported if configured.
+   *
+   * Note: network on/off and read-only rootfs are per-workspace security
+   * policies and live on {@link WorkspaceSandboxConfig}, not here.
    */
   networkAllowlist?: string[]
-  /** When true, the container root filesystem is read-only. */
-  readonlyRootfs?: boolean
   /** Working directory inside the container. */
   workingDir?: string
   /** Entrypoint override (replaces CMD). */
@@ -563,11 +563,17 @@ export interface WorkspaceSandboxConfig {
    */
   agentIds?: string[]
   /**
-   * Override the system def's networkDisabled setting.
-   * When true, the container has no network, regardless of the system def.
-   * When false or unset, defers to the system def's value.
+   * Per-workspace network policy (deny-by-default).
+   * When true or unset, the container has no network access. Set to false to
+   * grant network egress (subject to the system def's {@link SystemSandboxDef.networkAllowlist}).
    */
   networkDisabled?: boolean
+  /**
+   * Per-workspace read-only root filesystem policy (deny-by-default).
+   * When true or unset, the container root filesystem is read-only. Set to
+   * false when a build/cache needs a writable root.
+   */
+  readonlyRootfs?: boolean
   /** Override memory limit (Docker format). */
   memoryLimitOverride?: string
   /** Override CPU limit (fractional cores). */

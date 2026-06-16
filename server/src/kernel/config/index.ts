@@ -514,7 +514,10 @@ function normalizeSandboxConfig(
   const sb: WorkspaceSandboxConfig = {}
   if (typeof rec.sandbox === 'string' && rec.sandbox.trim()) sb.sandbox = rec.sandbox.trim()
   if (rec.enabled === true) sb.enabled = true
-  if (rec.networkDisabled === true) sb.networkDisabled = true
+  // Per-workspace security policies (deny-by-default at merge time). Persist the
+  // explicit boolean either way so a `false` (loosen) survives — not just `true`.
+  if (typeof rec.networkDisabled === 'boolean') sb.networkDisabled = rec.networkDisabled
+  if (typeof rec.readonlyRootfs === 'boolean') sb.readonlyRootfs = rec.readonlyRootfs
   if (typeof rec.memoryLimitOverride === 'string' && rec.memoryLimitOverride.trim())
     sb.memoryLimitOverride = rec.memoryLimitOverride.trim()
   if (

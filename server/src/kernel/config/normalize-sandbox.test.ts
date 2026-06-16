@@ -82,4 +82,36 @@ describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', ()
     )
     expect(result.sandbox?.agentIds).toEqual(['b', 'a'])
   })
+
+  it('persists explicit networkDisabled / readonlyRootfs (true and false survive)', () => {
+    const loosened = normalizeWorkspaceSetting(
+      {
+        gitBranchMode: 'worktree',
+        sandbox: { ...ENABLED_SANDBOX, networkDisabled: false, readonlyRootfs: false },
+      },
+      [],
+    )
+    // A `false` (loosen the deny-by-default policy) must round-trip, not be dropped.
+    expect(loosened.sandbox?.networkDisabled).toBe(false)
+    expect(loosened.sandbox?.readonlyRootfs).toBe(false)
+
+    const tightened = normalizeWorkspaceSetting(
+      {
+        gitBranchMode: 'worktree',
+        sandbox: { ...ENABLED_SANDBOX, networkDisabled: true, readonlyRootfs: true },
+      },
+      [],
+    )
+    expect(tightened.sandbox?.networkDisabled).toBe(true)
+    expect(tightened.sandbox?.readonlyRootfs).toBe(true)
+  })
+
+  it('omits the security policies when unset (deny-by-default applies at merge)', () => {
+    const result = normalizeWorkspaceSetting(
+      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX } },
+      [],
+    )
+    expect(result.sandbox?.networkDisabled).toBeUndefined()
+    expect(result.sandbox?.readonlyRootfs).toBeUndefined()
+  })
 })

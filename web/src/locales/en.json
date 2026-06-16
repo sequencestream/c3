@@ -200,6 +200,13 @@
         "label": "Tool agent",
         "followDefault": "Follow default agent"
       },
+      "intent": {
+        "tooltip": "Agent that runs intent-communication sessions (requirement breakdown)"
+      },
+      "intentPicker": {
+        "label": "Intent agent",
+        "followDefault": "Follow default agent"
+      },
       "remove": {
         "tooltip": "Remove agent"
       },

@@ -110,7 +110,12 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
   it('anti-clobber: saveSettings WITHOUT projectConfigs preserves existing project configs', () => {
     saveWorkspaceSetting('/proj/a', { devSkill: '/a' } as WorkspaceSetting)
     // The old bug: a save_settings carrying no projectConfigs wiped them from disk.
-    saveSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID, toolAgentId: '' } as SystemSettings)
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      toolAgentId: '',
+      intentAgentId: '',
+    } as SystemSettings)
     expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
     expect(getDevSkill('/proj/a')).toBe('/a')
   })
@@ -241,12 +246,70 @@ describe('toolAgentId rewrite-on-store — empty=follow-default, set=fall-throug
   })
 })
 
+describe('intentAgentId rewrite-on-store — empty=follow-default, set=fall-through (AC-R23)', () => {
+  /** A minimal custom-claude agent at an explicit `order_seq`. */
+  const agent = (id: string, order: number, enabled?: boolean): unknown => ({
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: id,
+    order_seq: order,
+    ...(enabled === undefined ? {} : { enabled }),
+    config: { baseUrl: `https://${id}`, apiKey: 'k', model: '' },
+  })
+
+  it('keeps an empty intentAgentId empty (follow the default agent, never auto-filled)', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1)],
+      defaultAgentId: 'a1',
+      intentAgentId: '',
+    } as unknown as SystemSettings)
+    expect(loadSettings().intentAgentId).toBe('')
+  })
+
+  it('keeps an empty intentAgentId empty even when a missing field defaults it', () => {
+    saveSettings({
+      agents: [agent('a1', 0)],
+      defaultAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().intentAgentId).toBe('')
+  })
+
+  it('keeps an enabled, explicitly-set intentAgentId untouched', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      intentAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().intentAgentId).toBe('a2')
+  })
+
+  it('rewrites a now-disabled intentAgentId to the next enabled agent by order_seq', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      intentAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().intentAgentId).toBe('a3')
+  })
+
+  it('falls back to SYSTEM_AGENT_ID when a set intentAgentId has no enabled agent left', () => {
+    saveSettings({
+      agents: [agent('a1', 0, false), agent('a2', 1, false)],
+      defaultAgentId: 'a1',
+      intentAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().intentAgentId).toBe(SYSTEM_AGENT_ID)
+  })
+})
+
 describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
   const save = (socketAutoResume: boolean | undefined): void => {
     saveSettings({
       agents: [],
       defaultAgentId: SYSTEM_AGENT_ID,
       toolAgentId: '',
+      intentAgentId: '',
       socketAutoResume,
     } as SystemSettings)
   }
@@ -883,6 +946,7 @@ function saveWithUiLang(uiLang: unknown): void {
     agents: [],
     defaultAgentId: SYSTEM_AGENT_ID,
     toolAgentId: '',
+    intentAgentId: '',
     uiLang,
   } as SystemSettings)
 }
@@ -914,6 +978,7 @@ describe('getUiLang normalization', () => {
       agents: [],
       defaultAgentId: SYSTEM_AGENT_ID,
       toolAgentId: '',
+      intentAgentId: '',
       uiLang: 'zh',
       voiceLang: 'en-US',
     } as SystemSettings)
@@ -955,6 +1020,7 @@ function saveWithTimezone(timezone: unknown): void {
     agents: [],
     defaultAgentId: SYSTEM_AGENT_ID,
     toolAgentId: '',
+    intentAgentId: '',
     timezone,
   } as SystemSettings)
 }

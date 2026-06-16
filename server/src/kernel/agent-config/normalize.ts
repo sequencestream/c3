@@ -105,7 +105,12 @@ export function canonicalizeAgentOrder(entries: AgentOrderEntry[]): AgentConfig[
 }
 
 export function defaultSettings(): SystemSettings {
-  return { agents: [systemAgent()], defaultAgentId: SYSTEM_AGENT_ID, toolAgentId: '' }
+  return {
+    agents: [systemAgent()],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    toolAgentId: '',
+    intentAgentId: '',
+  }
 }
 
 /**

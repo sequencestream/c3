@@ -88,6 +88,7 @@ export function installSettingsActions(ctx: AppCtx): void {
         agents: [],
         defaultAgentId: SYSTEM_AGENT_ID,
         toolAgentId: '',
+        intentAgentId: '',
       }
       const settings: SystemSettings = { ...base, uiLang: next }
       send({ type: 'save_settings', settings })

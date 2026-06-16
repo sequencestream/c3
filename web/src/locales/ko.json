@@ -201,6 +201,13 @@
         "label": "도구 에이전트",
         "followDefault": "기본 에이전트 따르기"
       },
+      "intent": {
+        "tooltip": "의도 커뮤니케이션 세션(요구사항 분해)을 실행하는 에이전트"
+      },
+      "intentPicker": {
+        "label": "의도 에이전트",
+        "followDefault": "기본 에이전트 따르기"
+      },
       "remove": {
         "tooltip": "에이전트 제거"
       },

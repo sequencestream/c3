@@ -138,9 +138,9 @@ look like a quota/session/rate-limit exhaustion and must contain a `reset`/`rese
 to the next local day.
 
 When parsing succeeds, `setAgentEnabled(agentId, false)` persists the disabled flag through the
-normal `saveSettings(normalize(...))` path. This means default/tool fall-through is not special-cased:
-if the disabled agent was the default or a non-empty tool agent, normalize rewrites those ids to the
-next enabled agent by `order_seq`. The recovery subscriber then creates an internal one-shot schedule
+normal `saveSettings(normalize(...))` path. This means default/tool/intent fall-through is not
+special-cased: if the disabled agent was the default, a non-empty tool agent, or a non-empty intent
+agent, normalize rewrites those ids to the next enabled agent by `order_seq`. The recovery subscriber then creates an internal one-shot schedule
 through the schedules store; when it fires, the schedule dispatcher calls
 `setAgentEnabled(agentId, true)`, and the scheduler pauses that one-shot row and clears
 `next_run_at`.
@@ -194,6 +194,28 @@ CLAUDE.md/memory, Skills, hooks, and the working-directory context all still wor
 - **REMOVE when:** the third-party providers support the adaptive-thinking message format —
   then drop this env injection. (A request-rewriting proxy that hoists inline `system` messages
   into the top-level `system` field is the other long-term option.)
+
+### Tool & intent agent routing (AC-R21 / AC-R23)
+
+Two settings let specific session classes run on a different agent than "default for new sessions",
+both decoupled from `defaultAgentId` and from each other:
+
+- **`toolAgentId`** (AC-R21) — background tool sessions (completion judge, schedule/session-name
+  derivation). Resolved by `resolveToolAgent` / `resolveToolSessionLaunch`.
+- **`intentAgentId`** (AC-R23) — intent-communication sessions (the intent analyst's
+  requirement-breakdown conversation). Resolved by `resolveIntentAgent`; `features/intents`'
+  `bindIntentAgent` binds it onto each newly-created intent comm session (`newIntentChat`,
+  `openIntentChat`, `refineIntent`, `discussionToIntent`) right after `ensureRuntime`.
+
+Both share the **same sentinel + fall-through** as the default but with the "follow default"
+exception: an **empty string** means "follow the default agent" and is kept empty on store (never
+auto-filled); a **non-empty** id pointing at a removed/disabled agent is rewritten to the next
+enabled agent by `order_seq`. The runtime resolves either through `resolveAgent`, so the chain is
+`<setting> → defaultAgentId → SYSTEM_AGENT_ID → synthesized`. The web console renders them as the
+second (tool) and third (intent) dropdowns under the default-agent picker; `onToggleEnabled` applies
+the same fall-through the instant an agent is disabled, but only when the id is non-empty. Intent
+routing only changes the **initial** binding — the title-bar same-vendor switcher still lets the user
+re-target an open intent comm session manually.
 
 ## Binding mechanics — two-key space + frozen vendor (ADR-0015)
 

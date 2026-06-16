@@ -320,6 +320,12 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // order_seq fall-through the default uses (rewrite-on-store, AC-R2/AC-R10).
   const wantedTool = typeof raw?.toolAgentId === 'string' ? raw.toolAgentId : ''
   const toolAgentId = wantedTool === '' ? '' : resolveDefaultAgentId(agents, wantedTool)
+  // intentAgentId: intent-communication sessions' executor. Identical semantics to
+  // toolAgentId — empty string ⇒ "follow the default agent" (kept empty, never
+  // auto-filled), and a *set* value pointing at a removed/disabled agent is rewritten
+  // by the same order_seq fall-through (rewrite-on-store, AC-R2/AC-R10/AC-R23).
+  const wantedIntent = typeof raw?.intentAgentId === 'string' ? raw.intentAgentId : ''
+  const intentAgentId = wantedIntent === '' ? '' : resolveDefaultAgentId(agents, wantedIntent)
   // ---- Legacy migration (one-shot): capture old global top-level fields ----
   // The 5 workspace-level knobs used to live at the SystemSettings top level.
   // Capture them once for the project-level migration; they no longer survive in
@@ -358,6 +364,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     agents,
     defaultAgentId,
     toolAgentId,
+    intentAgentId,
     voiceLang,
     uiLang,
     timezone,

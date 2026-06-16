@@ -40,6 +40,8 @@ const mockSettings: SystemSettings = {
   defaultAgentId: 'claude-pro',
   // '' ⇒ tool sessions follow the default agent; tests mutate this per-case.
   toolAgentId: '',
+  // '' ⇒ intent comm sessions follow the default agent; tests mutate this per-case.
+  intentAgentId: '',
   degradationChain: [],
 }
 
@@ -52,7 +54,12 @@ vi.mock('../config/index.js', () => ({
 }))
 
 // Import AFTER the mock is set up.
-import { launchForAgent, resolveFirstAgentOfVendor, resolveToolAgent } from './index.js'
+import {
+  launchForAgent,
+  resolveFirstAgentOfVendor,
+  resolveIntentAgent,
+  resolveToolAgent,
+} from './index.js'
 
 describe('resolveFirstAgentOfVendor', () => {
   beforeEach(() => {
@@ -109,6 +116,39 @@ describe('resolveToolAgent — toolAgentId → defaultAgentId → system fall-th
     // itself does not filter on `enabled`, mirroring resolveAgent (AC-R10).
     mockSettings.toolAgentId = 'disabled-claude'
     expect(resolveToolAgent().id).toBe('disabled-claude')
+  })
+})
+
+describe('resolveIntentAgent — intentAgentId → defaultAgentId → system fall-through (AC-R23)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('follows the default agent when intentAgentId is empty', () => {
+    mockSettings.intentAgentId = ''
+    expect(resolveIntentAgent().id).toBe('claude-pro')
+  })
+
+  it('resolves an explicitly set, enabled intentAgentId', () => {
+    mockSettings.intentAgentId = 'claude-sonnet'
+    expect(resolveIntentAgent().id).toBe('claude-sonnet')
+  })
+
+  it('resolves a cross-vendor intent agent (codex) when set', () => {
+    mockSettings.intentAgentId = 'codex-agent'
+    expect(resolveIntentAgent().vendor).toBe('codex')
+  })
+
+  it('falls back to the default agent when intentAgentId is unknown', () => {
+    mockSettings.intentAgentId = 'gone'
+    expect(resolveIntentAgent().id).toBe('claude-pro')
+  })
+
+  it('still resolves a disabled intent agent by id (launch is never locked out)', () => {
+    // normalize rewrites a disabled intentAgentId before persist; the runtime resolver
+    // itself does not filter on `enabled`, mirroring resolveAgent (AC-R10).
+    mockSettings.intentAgentId = 'disabled-claude'
+    expect(resolveIntentAgent().id).toBe('disabled-claude')
   })
 })
 

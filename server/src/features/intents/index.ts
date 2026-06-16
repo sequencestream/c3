@@ -30,7 +30,7 @@ import {
   getGitBranchMode,
 } from '../../kernel/config/index.js'
 import {
-  getDefaultAgentId,
+  resolveIntentAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
   setSessionAgent,
@@ -98,12 +98,15 @@ function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
 }
 
 /**
- * Bind the default agent to a newly-created intent comm session (pending id).
+ * Bind the **intent agent** to a newly-created intent comm session (pending id).
+ * Resolves `intentAgentId` through {@link resolveIntentAgent} (empty ⇒ follow the
+ * default agent: `intentAgentId → defaultAgentId → system`), so intent-communication
+ * sessions can run on a stronger/decoupled agent than "default for new sessions".
  * Must be called after `ensureRuntime` so `resolveSessionLaunch`/agent switcher
  * find the pending intent in later lookups.
  */
-function bindDefaultAgent(sessionId: string): void {
-  setSessionAgent(sessionId, getDefaultAgentId())
+function bindIntentAgent(sessionId: string): void {
+  setSessionAgent(sessionId, resolveIntentAgent().id)
 }
 
 // ---- Handlers ----
@@ -156,7 +159,7 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
       const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
       const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
       ensureRuntime(chatId, proj, 'default', baseline, 'intent')
-      bindDefaultAgent(chatId)
+      bindIntentAgent(chatId)
     }
   } else {
     // Resume the project's persisted comm session (is_current), or open a new one.
@@ -167,12 +170,12 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
         const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
         const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
         ensureRuntime(chatId, proj, 'default', baseline, 'intent')
-        bindDefaultAgent(chatId)
+        bindIntentAgent(chatId)
       }
     } else {
       chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
       ensureRuntime(chatId, proj, 'default', [], 'intent')
-      bindDefaultAgent(chatId)
+      bindIntentAgent(chatId)
       setChatSession(proj, chatId)
     }
   }
@@ -279,7 +282,7 @@ export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  bindDefaultAgent(chatId)
+  bindIntentAgent(chatId)
   setChatSession(proj, chatId)
   conn.viewing = chatId
   touchWorkspace(proj, Date.now())
@@ -318,7 +321,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  bindDefaultAgent(chatId)
+  bindIntentAgent(chatId)
   setChatSession(proj, chatId, req.title)
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)
@@ -357,7 +360,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  bindDefaultAgent(chatId)
+  bindIntentAgent(chatId)
   setChatSession(proj, chatId, discussion.title)
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)

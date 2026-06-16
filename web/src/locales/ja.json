@@ -201,6 +201,13 @@
         "label": "ツールエージェント",
         "followDefault": "デフォルトエージェントに従う"
       },
+      "intent": {
+        "tooltip": "意図コミュニケーションセッション(要件分解)を実行するエージェント"
+      },
+      "intentPicker": {
+        "label": "意図エージェント",
+        "followDefault": "デフォルトエージェントに従う"
+      },
       "remove": {
         "tooltip": "エージェントを削除"
       },

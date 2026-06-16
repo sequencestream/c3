@@ -20,6 +20,7 @@ import {
 import {
   freezeSessionAgent,
   getDefaultAgentId,
+  resolveIntentAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
   sameVendorEnabledAgents,
@@ -242,6 +243,89 @@ describe('intent session agent binding (pending→agent + freezeVendor)', () => 
     expect(resolveSessionVendor(pending)).toBe('codex')
     // Default agent is still claude, but the intent overrides.
     expect(getDefaultAgentId()).toBe(SYSTEM_AGENT_ID)
+  })
+})
+
+describe('intent comm session binding via intentAgentId (bindIntentAgent, AC-R23)', () => {
+  beforeEach(seedAgents)
+
+  /** What `bindIntentAgent` does: setSessionAgent with the resolved intent agent. */
+  const bindIntentAgent = (sessionId: string): void => {
+    setSessionAgent(sessionId, resolveIntentAgent().id)
+  }
+
+  it('an empty intentAgentId follows the default agent (system)', () => {
+    // seedAgents leaves intentAgentId unset ⇒ normalize keeps it '' ⇒ follow default.
+    expect(resolveIntentAgent().id).toBe(SYSTEM_AGENT_ID)
+    const pending = 'pending:intent-empty'
+    bindIntentAgent(pending)
+    expect(getSessionAgentId(pending)).toBe(SYSTEM_AGENT_ID)
+    expect(resolveSessionVendor(pending)).toBe('claude')
+  })
+
+  it('an explicitly-set intentAgentId routes intent comm sessions to that agent', () => {
+    saveSettings({
+      agents: [
+        {
+          id: SYSTEM_AGENT_ID,
+          vendor: 'claude',
+          configMode: 'system',
+          displayName: 'System',
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+        {
+          id: 'cx',
+          vendor: 'codex',
+          configMode: 'system',
+          displayName: 'CX',
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+      ],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      intentAgentId: 'cx',
+    } as unknown as SystemSettings)
+    resetSettingsCacheForTests()
+
+    // Intent comm runs on 'cx' even though the default-for-new-sessions is system.
+    expect(resolveIntentAgent().id).toBe('cx')
+    expect(getDefaultAgentId()).toBe(SYSTEM_AGENT_ID)
+
+    const pending = 'pending:intent-cx'
+    bindIntentAgent(pending)
+    expect(getSessionAgentId(pending)).toBe('cx')
+    expect(resolveSessionVendor(pending)).toBe('codex')
+  })
+
+  it('all four entry points (new/open/refine/discussion) bind the intent agent', () => {
+    // Route intent comm to claude-b; assert every startup point lands there.
+    saveSettings({
+      agents: [
+        {
+          id: SYSTEM_AGENT_ID,
+          vendor: 'claude',
+          configMode: 'system',
+          displayName: 'System',
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+        {
+          id: 'claude-b',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'Claude B',
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+      ],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      intentAgentId: 'claude-b',
+    } as unknown as SystemSettings)
+    resetSettingsCacheForTests()
+
+    const ids = ['pending:new', 'pending:open', 'pending:refine', 'pending:discuss']
+    for (const id of ids) bindIntentAgent(id)
+    for (const id of ids) {
+      expect(getSessionAgentId(id)).toBe('claude-b')
+      expect(resolveSessionVendor(id)).toBe('claude')
+    }
   })
 })
 

@@ -854,6 +854,21 @@ export interface SystemSettings {
    * is left empty (never auto-filled), so "follow the default" survives a save.
    */
   toolAgentId: string
+  /**
+   * Id of the agent that runs **intent-communication sessions** (the intent
+   * analyst's requirement-breakdown conversation: `startIntentComm` / `refineIntent`
+   * / `discussionToIntent` / opening an intent comm session) so this high-value,
+   * reasoning-heavy task can be steered to a stronger/more suitable agent decoupled
+   * from the "default agent for new sessions". Semantics are **identical to
+   * {@link toolAgentId}**: an **empty string is "follow the default agent"** (the
+   * runtime resolves it through `resolveAgent`, falling back `intentAgentId →
+   * defaultAgentId → system`). A *non-empty* value that points at a removed/now-disabled
+   * agent is **rewritten** on store to the next enabled agent in `order_seq` order —
+   * the same `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20);
+   * when every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
+   * is left empty (never auto-filled), so "follow the default" survives a save.
+   */
+  intentAgentId: string
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
   /** UI display language for the web console. `en` when unset. Decoupled from

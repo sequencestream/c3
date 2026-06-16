@@ -101,6 +101,8 @@ const draft = ref<SystemSettings>({
   defaultAgentId: SYSTEM_AGENT_ID,
   // '' ⇒ background tool sessions follow the default agent.
   toolAgentId: '',
+  // '' ⇒ intent-communication sessions follow the default agent.
+  intentAgentId: '',
   voiceLang: 'zh-CN',
   uiLang: 'en',
   timezone: BROWSER_TZ,
@@ -150,6 +152,8 @@ watch(
       defaultAgentId: settings.defaultAgentId,
       // '' ⇒ background tool sessions follow the default agent (AC-R21).
       toolAgentId: settings.toolAgentId ?? '',
+      // '' ⇒ intent-communication sessions follow the default agent (AC-R23).
+      intentAgentId: settings.intentAgentId ?? '',
       voiceLang: settings.voiceLang ?? 'zh-CN',
       uiLang: settings.uiLang ?? 'en',
       timezone: settings.timezone ?? BROWSER_TZ,
@@ -244,12 +248,16 @@ const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.fil
 // rewrite (mirrors the server `normalize`, AC-R2/AC-R10). Recompute against the
 // live array order so the choice tracks order_seq. The tool agent follows the
 // same fall-through, but ONLY when it's explicitly set: an empty toolAgentId
-// ("follow the default") stays empty.
+// ("follow the default") stays empty. The intent agent (AC-R23) follows the same
+// rule as the tool agent.
 function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   a.enabled = checked
   draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
   if (draft.value.toolAgentId) {
     draft.value.toolAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.toolAgentId)
+  }
+  if (draft.value.intentAgentId) {
+    draft.value.intentAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.intentAgentId)
   }
 }
 
@@ -711,6 +719,23 @@ function submitPassword() {
             :title="t('settings.agents.tool.tooltip')"
           >
             <option value="">{{ t('settings.agents.toolPicker.followDefault') }}</option>
+            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+              {{ a.displayName || a.id }}
+            </option>
+          </select>
+        </div>
+        <div class="agent-default-picker">
+          <label class="agent-default-label" for="intent-agent-select">
+            {{ t('settings.agents.intentPicker.label') }}
+          </label>
+          <select
+            id="intent-agent-select"
+            v-model="draft.intentAgentId"
+            class="agent-field"
+            data-testid="intent-agent-select"
+            :title="t('settings.agents.intent.tooltip')"
+          >
+            <option value="">{{ t('settings.agents.intentPicker.followDefault') }}</option>
             <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
               {{ a.displayName || a.id }}
             </option>

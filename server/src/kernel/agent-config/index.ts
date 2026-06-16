@@ -77,6 +77,14 @@ export function getToolAgentId(): string {
 }
 
 /**
+ * The configured intent-agent id (intent-communication sessions' executor). An
+ * empty string means "follow the default agent" — see {@link resolveIntentAgent}.
+ */
+export function getIntentAgentId(): string {
+  return loadSettings().intentAgentId
+}
+
+/**
  * The enabled agents only — the canonical "list of agents" every consumer pool
  * draws from (discussion participants, consensus voters, default-agent picker),
  * returned in the user-controlled global order (`order_seq` ascending — the
@@ -149,6 +157,18 @@ export function resolveToolAgent(): AgentConfig {
 export function resolveToolSessionLaunch(): { agentId: string } & LaunchOverrides {
   const agent = resolveToolAgent()
   return { agentId: agent.id, ...launchForAgent(agent) }
+}
+
+/**
+ * The agent that runs **intent-communication sessions** (the intent analyst's
+ * requirement-breakdown conversation). Reads `intentAgentId` and resolves it
+ * through {@link resolveAgent}, so the fall-through is `intentAgentId →
+ * defaultAgentId → system → synthesized fallback`: an empty/unknown `intentAgentId`
+ * (the "follow the default" sentinel) lands on the default agent, never locking an
+ * intent comm session out. Mirrors {@link resolveToolAgent} exactly.
+ */
+export function resolveIntentAgent(): AgentConfig {
+  return resolveAgent(loadSettings().intentAgentId)
 }
 
 /**

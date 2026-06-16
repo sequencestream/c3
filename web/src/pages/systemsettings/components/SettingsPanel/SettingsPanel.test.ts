@@ -16,6 +16,7 @@ const baseSettings: SystemSettings = {
   ],
   defaultAgentId: SYSTEM_AGENT_ID,
   toolAgentId: '',
+  intentAgentId: '',
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
@@ -145,6 +146,75 @@ describe('SettingsPanel.vue — default-agent dropdown + fall-through (2026-06-1
     await w.find('[data-testid="settings-save"]').trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].defaultAgentId).toBe(SYSTEM_AGENT_ID)
+  })
+})
+
+describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', () => {
+  const mk = (id: string, enabled?: boolean): SystemSettings['agents'][number] => ({
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: id,
+    ...(enabled === undefined ? {} : { enabled }),
+    config: { baseUrl: `https://${id}`, apiKey: 'k', model: '' },
+  })
+  const threeAgents: SystemSettings = {
+    ...baseSettings,
+    agents: [mk('a1'), mk('a2'), mk('a3')],
+    defaultAgentId: 'a1',
+  }
+
+  it('offers a leading "follow default" option plus enabled agents by order', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: { ...threeAgents, agents: [mk('a1'), mk('a2', false), mk('a3')] },
+      },
+    })
+    const opts = w
+      .findAll('[data-testid="intent-agent-select"] option')
+      .map((o) => (o.element as HTMLOptionElement).value)
+    // '' (follow default) + a1 + a3; a2 (disabled) excluded.
+    expect(opts).toEqual(['', 'a1', 'a3'])
+  })
+
+  it('seeds the dropdown from settings.intentAgentId and carries it through on save', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, intentAgentId: 'a2' } },
+    })
+    const sel = w.find('[data-testid="intent-agent-select"]')
+    expect((sel.element as HTMLSelectElement).value).toBe('a2')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].intentAgentId).toBe('a2')
+  })
+
+  it('keeps an empty intentAgentId empty (follow default) when an agent is disabled', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, intentAgentId: '' } },
+    })
+    // Disable a2 — an empty ("follow default") intent agent must stay empty.
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+    await checks[1].setValue(false)
+    const sel = w.find('[data-testid="intent-agent-select"]')
+    expect((sel.element as HTMLSelectElement).value).toBe('')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].intentAgentId).toBe('')
+  })
+
+  it('rewrites a non-empty intentAgentId to the next enabled agent when disabled', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, intentAgentId: 'a2' } },
+    })
+    // Disable a2 (the current intent agent) → fall through to a3.
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+    await checks[1].setValue(false)
+    const sel = w.find('[data-testid="intent-agent-select"]')
+    expect((sel.element as HTMLSelectElement).value).toBe('a3')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].intentAgentId).toBe('a3')
   })
 })
 

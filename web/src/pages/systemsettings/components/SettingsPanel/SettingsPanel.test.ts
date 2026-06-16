@@ -373,13 +373,34 @@ describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003
   })
 })
 
-describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
-  // Settings with a fully-configured basic admin (username + a non-empty hash).
+describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () => {
+  const H = '$scrypt$ln=15,r=8,p=1$s$h'
+  // Settings with one configured account, designated admin (effectively enabled).
   const withAdmin: SystemSettings = {
     ...baseSettings,
     auth: {
-      enabled: false,
-      provider: { kind: 'basic', username: 'admin', passwordHash: '$scrypt$ln=15,r=8,p=1$s$h' },
+      enabled: true,
+      provider: {
+        kind: 'basic',
+        accounts: [{ username: 'admin', passwordHash: H }],
+        adminUsername: 'admin',
+      },
+      session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
+    },
+  }
+  // Two accounts, admin = alice.
+  const withTwo: SystemSettings = {
+    ...baseSettings,
+    auth: {
+      enabled: true,
+      provider: {
+        kind: 'basic',
+        accounts: [
+          { username: 'alice', passwordHash: H },
+          { username: 'bob', passwordHash: H },
+        ],
+        adminUsername: 'alice',
+      },
       session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
     },
   }
@@ -399,8 +420,7 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const sel = w.find('[data-testid="settings-auth-provider"]').element as HTMLSelectElement
     expect(sel.value).toBe('none')
-    // No-auth ⇒ neither the basic credentials form nor the OAuth form renders.
-    expect(w.find('[data-testid="settings-auth-password"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-auth-accounts"]').exists()).toBe(false)
     expect(w.find('[data-testid="settings-auth-oauth"]').exists()).toBe(false)
     expect(w.find('[data-testid="settings-auth-none-hint"]').exists()).toBe(true)
   })
@@ -411,21 +431,30 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
     expect(exposure.disabled).toBe(true)
   })
 
-  it('enables the exposure toggle once an admin (username + stored hash) exists', () => {
+  it('enables the exposure toggle once an admin account exists', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
     const exposure = w.find('[data-testid="settings-auth-exposure"]').element as HTMLInputElement
     expect(exposure.disabled).toBe(false)
   })
 
-  it('reveals the basic credentials form only after selecting the basic provider', async () => {
+  it('reveals the account editor only after selecting the basic provider', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    expect(w.find('[data-testid="settings-auth-password"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-auth-accounts"]').exists()).toBe(false)
     await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
-    expect(w.find('[data-testid="settings-auth-username"]').exists()).toBe(true)
-    expect(w.find('[data-testid="settings-auth-password"]').exists()).toBe(true)
-    // Basic chosen but no admin yet ⇒ the "set an admin first" hint, not "active".
+    expect(w.find('[data-testid="settings-auth-accounts"]').exists()).toBe(true)
+    expect(w.find('[data-testid="settings-auth-add-username"]').exists()).toBe(true)
+    // Basic chosen but no accounts yet ⇒ the "set an admin first" hint, not "active".
     expect(w.find('[data-testid="settings-auth-need-admin"]').exists()).toBe(true)
     expect(w.find('[data-testid="settings-auth-active"]').exists()).toBe(false)
+  })
+
+  it('renders one row per account with the admin radio reflecting the designation', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
+    const rows = w.findAll('[data-testid="settings-auth-account-row"]')
+    expect(rows).toHaveLength(2)
+    const radios = w.findAll('[data-testid="settings-auth-admin-radio"]')
+    expect((radios[0].element as HTMLInputElement).checked).toBe(true) // alice
+    expect((radios[1].element as HTMLInputElement).checked).toBe(false) // bob
   })
 
   it('saves enabled:false + provider.kind "none" when no authentication is selected', async () => {
@@ -438,8 +467,6 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
   })
 
   it('saves enabled:true for basic once an admin is configured', async () => {
-    // withAdmin is basic + admin-configured but persisted enabled:false; the
-    // dropdown is the on-switch, so saving derives enabled:true from authActive.
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
     await w.find('[data-testid="settings-save"]').trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
@@ -458,35 +485,53 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
     expect(w.find('[data-testid="settings-auth-oauth-pending"]').exists()).toBe(true)
   })
 
-  it('never pre-fills the password input from the stored hash (write-only)', () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
-    const newPw = w.find('[data-testid="settings-auth-new-password"]').element as HTMLInputElement
-    expect(newPw.value).toBe('')
-    expect(newPw.type).toBe('password')
+  it('renders the oauth adminEmail input and patches it', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-auth-provider"]').setValue('oauth')
+    const input = w.find('[data-testid="settings-auth-oauth-admin-email"]')
+    expect(input.exists()).toBe(true)
+    await input.setValue('alice@example.com')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    if (saved.auth?.provider.kind !== 'oauth') throw new Error('expected oauth')
+    expect(saved.auth.provider.adminEmail).toBe('alice@example.com')
   })
 
-  it('bootstrap: emits set-password without a current password and clears the field', async () => {
+  it('never pre-fills the add-password input (write-only)', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    const pw = w.find('[data-testid="settings-auth-add-password"]').element as HTMLInputElement
+    expect(pw.value).toBe('')
+    expect(pw.type).toBe('password')
+  })
+
+  it('add account: emits set-password without a current password and clears the fields', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    // No auth block yet ⇒ pick the basic provider to reveal the credentials form.
     await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
-    await w.find('[data-testid="settings-auth-username"]').setValue('root')
-    const newPw = w.find('[data-testid="settings-auth-new-password"]')
-    await newPw.setValue('s3cret!')
-    await w.find('[data-testid="settings-auth-set-password"]').trigger('click')
+    await w.find('[data-testid="settings-auth-add-username"]').setValue('root')
+    const pw = w.find('[data-testid="settings-auth-add-password"]')
+    await pw.setValue('s3cret!')
+    await w.find('[data-testid="settings-auth-add-account"]').trigger('click')
     const emitted = w.emitted('set-password') as [
       { username: string; password: string; currentPassword?: string },
     ][]
-    expect(emitted[0][0]).toEqual({
-      username: 'root',
-      password: 's3cret!',
-      currentPassword: undefined,
-    })
-    // Plaintext is wiped from the input after submit.
-    expect((newPw.element as HTMLInputElement).value).toBe('')
+    expect(emitted[0][0]).toEqual({ username: 'root', password: 's3cret!' })
+    expect((pw.element as HTMLInputElement).value).toBe('')
   })
 
-  it('change: includes the current password once an admin exists', async () => {
+  it('blocks adding an account whose username already exists (AC2.1)', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
+    await w.find('[data-testid="settings-auth-add-username"]').setValue('alice')
+    await w.find('[data-testid="settings-auth-add-password"]').setValue('whatever')
+    expect(w.find('[data-testid="settings-auth-add-duplicate"]').exists()).toBe(true)
+    const btn = w.find('[data-testid="settings-auth-add-account"]').element as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+    await w.find('[data-testid="settings-auth-add-account"]').trigger('click')
+    expect(w.emitted('set-password')).toBeUndefined()
+  })
+
+  it('change password: opens the row form and includes the current password', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-account-change"]').trigger('click')
     await w.find('[data-testid="settings-auth-current-password"]').setValue('oldpass')
     await w.find('[data-testid="settings-auth-new-password"]').setValue('newpass1')
     await w.find('[data-testid="settings-auth-set-password"]').trigger('click')
@@ -498,6 +543,22 @@ describe('SettingsPanel.vue — authentication (ADR-0023)', () => {
       password: 'newpass1',
       currentPassword: 'oldpass',
     })
+  })
+
+  it('remove button emits remove-account for that row', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
+    const removes = w.findAll('[data-testid="settings-auth-account-remove"]')
+    await removes[1].trigger('click') // bob
+    const emitted = w.emitted('remove-account') as [{ username: string }][]
+    expect(emitted[0][0]).toEqual({ username: 'bob' })
+  })
+
+  it('admin radio emits set-admin-account when picking another account', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
+    const radios = w.findAll('[data-testid="settings-auth-admin-radio"]')
+    await radios[1].trigger('change') // pick bob as admin
+    const emitted = w.emitted('set-admin-account') as [{ username: string }][]
+    expect(emitted[0][0]).toEqual({ username: 'bob' })
   })
 
   it('carries an edited exposure bindAddress through on save', async () => {

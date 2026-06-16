@@ -8,8 +8,8 @@
  *
  *   $scrypt$ln=15,r=8,p=1$<saltB64>$<digestB64>
  *
- * Plaintext is NEVER persisted (AUTH-R3): only this string lands in
- * `auth.provider.passwordHash`. Verification is constant-time (`timingSafeEqual`).
+ * Plaintext is NEVER persisted (AUTH-R3): only this string lands in a basic
+ * account's `passwordHash`. Verification is constant-time (`timingSafeEqual`).
  */
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 

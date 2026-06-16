@@ -23,18 +23,24 @@
 
 - **口令哈希**：`server/src/features/auth/password.ts`，基于 `node:crypto.scrypt` 的零依赖 PHC 串
   `$scrypt$…`（兼容 `bun build --compile`）；明文永不落盘，校验为常数时间。
-- **login 真实校验**：`login` 按持久化 `basic` provider 校验用户名/口令，成功签发**不透明随机** token +
-  TTL 派生 expiry（token **签名/验签**仍延后）。
-- **改密消息**：新增 `set_admin_password{username,password,currentPassword?}`（协议）+ handler。明文仅
-  传输期存在、服务端哈希后写入 `auth.provider`。敏感操作门闩 = 「证明当前口令」：已配管理员须带
-  `currentPassword`，首次（localhost bootstrap）免验。
-- **save_settings 不碰口令**：`passwordHash` 由 `set_admin_password` 独占；`save_settings` 持久化时强制
-  保留磁盘上的哈希（`preserveAdminPasswordHash`），杜绝陈旧/空哈希回写覆盖。
+- **login 真实校验**：`login` 在持久化 `basic` provider 的 `accounts` 内按用户名查找并验口令（**任一账号**
+  皆可登录——管理员是改配置的权限来源，非登录特权，本期无 RBAC），成功签发**不透明随机** token + TTL 派生
+  expiry（token **签名/验签**仍延后）。
+- **账号管理消息（2026-06-16 多账号演进）**：`set_admin_password{username,password,currentPassword?}` 升级为
+  **upsert 账号口令**（新用户名 ⇒ 新增账号，首账号自动成为管理员；已存在 ⇒ 改密）；新增 `remove_account{username}`
+  与 `set_admin_account{username}` 管理账号集与唯一管理员指派。明文仅传输期存在、服务端哈希后写入。敏感操作门闩
+  =「证明当前口令」：改已存在账号须带其 `currentPassword`，新增账号免验（localhost bootstrap-trust）。删管理员
+  且尚有其它账号 ⇒ 拒（`admin_must_reassign`，须先改管理员）；删唯一账号 ⇒ 清空回未配置态。
+- **save_settings 不碰 basic 凭据**：basic 账号集（用户名/哈希/管理员指派）由上述三消息独占；`save_settings`
+  持久化时强制用磁盘 basic provider **整体覆盖**（`preserveBasicProvider`），杜绝陈旧/空草稿回写覆盖、改管理员或
+  抹账号。oauth 配置（含 `adminEmail`）仍走 `save_settings`，保存层校验 `adminEmail` 非空且 ∈ `allowedEmails`
+  （否则回 `auth.oauthAdminInvalid`，不落盘）。`basic.enabled` 派生：accounts 非空且 adminUsername 有效 ⇔ true。
 - **配置面板**：`SettingsPanel.vue` 认证区——provider 三态下拉（**无需认证 / basic / oauth**，均可选）、
-  用户名、改密子表单（write-only，不回显哈希）、网络暴露开关；**未配管理员**时暴露开关置灰。下拉即认证
-  总开关（已无独立「启用认证」复选框）：选「无需认证」⇒ `provider.kind='none'`、`enabled=false`、隐藏
-  basic/oauth 表单、免登录；选 `basic` ⇒ 配好管理员后保存时 `enabled` 派生为 `true`；选 `oauth` ⇒ 契约
-  落盘但运行时缺位故 `enabled` 恒 `false`。
+  basic **账号列表编辑器**（每行：管理员单选 radio + 改密入口 + 删除；底部新增账号行，均 write-only 不回显哈希）、
+  oauth 表单（含 `adminEmail` 输入）、网络暴露开关；**未配管理员**时暴露开关置灰。下拉即认证总开关（已无独立
+  「启用认证」复选框）：选「无需认证」⇒ `provider.kind='none'`、`enabled=false`、免登录；选 `basic` ⇒ 配好管理员
+  后 `enabled` 派生为 `true`；选 `oauth` ⇒ 契约落盘但运行时缺位故 `enabled` 恒 `false`。账号增删改/设管理员各走
+  专用消息即时持久化（结果 toast + 刷新设置），不依赖保存按钮。
 
 **仍延后**（第 2、3、4 件未尽部分）：token 签名/验签；WS 握手与请求级**认证中间件强制**（含
 「enabled 认证 ⇒ 才允许非回环绑定」的运行时强制——故 server 仍 localhost-only，本切片**不**改变实际绑定）；
@@ -105,11 +111,17 @@ export interface NoneAuthProvider {
   kind: 'none'
 }
 
-// 单管理员 basic provider:用户名 + 口令哈希(PHC 串,永不明文)。
+// 多账号 basic provider:账号集 + 唯一管理员(2026-06-16 由单账号演进)。每个账号都可登录;
+// adminUsername 指向其中之一(空集时为 '' = 未配置态),是改系统配置的权限来源(无 RBAC)。账号凭据
+// 仅由 set_admin_password(upsert)/remove_account/set_admin_account 三消息变更,save_settings 不碰。
+export interface BasicAuthAccount {
+  username: string // trim 后大小写敏感唯一
+  passwordHash: string // PHC 串(算法+参数+盐+摘要),如 $scrypt$...;绝不存明文
+}
 export interface BasicAuthProvider {
   kind: 'basic'
-  username: string
-  passwordHash: string // PHC 串(算法+参数+盐+摘要),如 $argon2id$...;绝不存明文
+  accounts: BasicAuthAccount[] // 0..n;空 ⇒ 未配置(enabled 派生为 false)
+  adminUsername: string // 唯一管理员,必指向 accounts 之一;空集时为 ''
 }
 
 // 通用 OIDC oauth provider——契约 only(零运行时本期)。配置可填可持久化,但 /auth/callback、
@@ -124,6 +136,7 @@ export interface OAuthAuthProvider {
   scopes: string[] // 默认 ['openid','profile','email'](zod .default)
   usePkce: boolean // 默认 true(zod .default)
   allowedEmails: string[] // 授权白名单;空 ⇒ 无人可登录(运行时判定)。zod 层允许空(契约合法)
+  adminEmail: string // 唯一管理员邮箱(basic adminUsername 的 OAuth 对应物);非空且 ∈ allowedEmails(保存层校验)
 }
 
 // provider 抽象——按 kind 的 discriminated union。
@@ -169,7 +182,11 @@ export type AuthLoginResult =
 
 // WS 协议增补
 // ClientToServer += { type:'login'; request: AuthLoginRequest } | { type:'logout' }
+//                += { type:'set_admin_password'; username; password; currentPassword? }  // upsert 账号口令
+//                += { type:'remove_account'; username } | { type:'set_admin_account'; username }
 // ServerToClient += { type:'login_result'; result: AuthLoginResult }
+//                += { type:'admin_password_result'; result: AdminPasswordResult }
+//                += { type:'account_op_result'; result: AccountOpResult }  // ok | not_found|admin_must_reassign|invalid
 //                += { type:'unauthenticated'; reason:'missing'|'expired'|'invalid' }  // 401 语义
 
 // SystemSettings += { auth?: AuthConfig }  // 缺省=未启用,向后兼容
@@ -183,6 +200,7 @@ export type AuthLoginResult =
 4. **引用而非本体**：`signingKeyRef` 是签名密钥的**引用**（env 名/keystore id），`clientSecretRef` 是 OAuth client secret 的**引用**，两者本体均绝不进 `settings.json`。zod `z.object` 默认剥离未声明键，客户端误带的明文 `clientSecret` 不会被持久化。
 5. **provider 无关的中立层**：`AuthSessionToken`、`AuthLoginRequest/Result`、login/logout/unauthenticated 消息都不含 provider 专有字段，新增 provider 不改动它们。
 6. **扩展点单点**：新增认证方式 = 给 `AUTH_PROVIDER_KINDS` 加一个值 + 给 `AuthProvider` union 追加一个臂 + 给服务端 zod registry 追加一个臂；既有臂、会话令牌模型、消息契约均不动（与 ADR-0011 vendor 扩展、ADR-0021 双层配置同构）。
+7. **方法互斥 + 唯一管理员引用完整（2026-06-16）**：单 `provider` union 天然保证 basic 与 oauth 不能同时启用。basic 下 `accounts` 用户名唯一、非空时 `adminUsername` 必指向其一；oauth 下 `adminEmail` 非空且 ∈ `allowedEmails`。两层守：**保存层**对 UI 操作回结构化码（`account_op_result` / `auth.oauthAdminInvalid`），`normalizeAuth` 对手改磁盘 fail-soft 兜底——basic 悬空/重名管理员 ⇒ 整块丢弃为「无认证」；oauth 非法 `adminEmail` **保留**（`enabled` 恒 false 无运行时后果，丢弃会连累其余配置）。`basic.enabled` 派生 ⇔ accounts 非空且 adminUsername 有效。旧单账号 `{username,passwordHash}` 一次性迁移为 `{accounts,adminUsername}`（判据=无 `accounts` 字段，幂等）。
 
 ### 运行时校验位置
 

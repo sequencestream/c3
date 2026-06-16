@@ -121,6 +121,23 @@ export function installMessageHandler(ctx: AppCtx): void {
           )
         }
         break
+      case 'account_op_result':
+        if (msg.result.ok) {
+          ctx.showToast(t('settings.auth.account.result.ok'))
+          // Refresh settings so the panel reflects the mutated account set / admin.
+          send({ type: 'get_settings' })
+        } else {
+          ctx.showToast(
+            t(
+              msg.result.code === 'admin_must_reassign'
+                ? 'settings.auth.account.error.admin_must_reassign'
+                : msg.result.code === 'not_found'
+                  ? 'settings.auth.account.error.not_found'
+                  : 'settings.auth.account.error.invalid',
+            ),
+          )
+        }
+        break
       case 'unauthenticated': {
         // The WS analogue of HTTP 401 — drop the local session, show the login
         // gate, and surface why (session expired / invalid / sign-in required).

@@ -90,9 +90,15 @@ const emit = defineEmits<{
   save: [settings: SystemSettings]
   // Live, no-reload UI-language switch (fires on select change, before Save).
   'set-ui-lang': [lang: UiLang]
-  // Set/change the admin password (ADR-0023). The plaintext is sent to the
-  // server which hashes it; the panel never computes or persists a hash.
+  // Upsert a basic account's password (ADR-0023). The plaintext is sent to the
+  // server which hashes it; the panel never computes or persists a hash. A new
+  // username adds an account (no currentPassword); an existing one changes it
+  // (currentPassword required).
   'set-password': [payload: { username: string; password: string; currentPassword?: string }]
+  // Remove a basic account.
+  'remove-account': [payload: { username: string }]
+  // Designate which basic account is the single admin.
+  'set-admin-account': [payload: { username: string }]
 }>()
 
 // A local, editable copy of the server settings; committed on Save.
@@ -416,22 +422,33 @@ const DEFAULT_OAUTH_SCOPES = ['openid', 'profile', 'email']
 const SECONDS_PER_DAY = 24 * 60 * 60
 const DEFAULT_AUTH_SESSION = { ttlSeconds: 30 * SECONDS_PER_DAY, signingKeyRef: 'C3_AUTH_KEY' }
 
-// Write-only password inputs. The hash is NEVER echoed here; these hold the
-// plaintext only until `submitPassword` ships it to the server, then clear.
-const newPassword = ref('')
-const currentPassword = ref('')
+// The basic account set + the single admin username (empty arrays/'' when not
+// basic or unconfigured). Accounts are owned by the server (dedicated messages);
+// the panel reflects the loaded draft and acts via emits.
+const basicAccounts = computed(() =>
+  draft.value.auth?.provider.kind === 'basic' ? draft.value.auth.provider.accounts : [],
+)
+const basicAdminUsername = computed(() =>
+  draft.value.auth?.provider.kind === 'basic' ? draft.value.auth.provider.adminUsername : '',
+)
+// "Admin configured" = at least one account AND a valid admin reference; gates
+// enabling auth + network exposure (acceptance #5). Mirrors the server's
+// `deriveBasicEnabled`.
+const adminConfigured = computed(
+  () =>
+    basicAccounts.value.length > 0 &&
+    !!basicAdminUsername.value &&
+    basicAccounts.value.some((a) => a.username === basicAdminUsername.value),
+)
 
-const authUsername = computed(() =>
-  draft.value.auth?.provider.kind === 'basic' ? draft.value.auth.provider.username : '',
-)
-// The browser holds the opaque PHC hash (its own admin's machine — same trust as
-// the session token); it is used ONLY as a "password is set" signal, shown in no
-// input, and ignored by the server on save (set_admin_password owns it).
-const hasStoredPassword = computed(
-  () => !!(draft.value.auth?.provider.kind === 'basic' && draft.value.auth.provider.passwordHash),
-)
-// "Admin configured" gates enabling auth + network exposure (acceptance #5).
-const adminConfigured = computed(() => !!authUsername.value && hasStoredPassword.value)
+// Write-only inputs for adding an account (username + initial password). The hash
+// is NEVER echoed here; these clear after the emit.
+const addUsername = ref('')
+const addPassword = ref('')
+// Per-account password change: which account is being edited + its proof inputs.
+const pwTarget = ref<string | null>(null)
+const pwCurrent = ref('')
+const pwNew = ref('')
 // Auth is effectively ON only under `basic` with a configured admin. `none` ⇒
 // always off; `oauth` ⇒ off (runtime pending, cannot truly enable yet). This is
 // the single derivation of `enabled` — the dropdown chooses intent, this gates
@@ -455,10 +472,6 @@ function ensureAuth(): AuthConfig {
     }
   }
   return draft.value.auth
-}
-function setAuthUsername(v: string) {
-  const a = ensureAuth()
-  if (a.provider.kind === 'basic') a.provider.username = v
 }
 function setExposure(v: boolean) {
   ensureAuth().exposure = { bindAddress: v ? '0.0.0.0' : '127.0.0.1' }
@@ -504,11 +517,12 @@ function setAuthProviderKind(v: string) {
       scopes: [...DEFAULT_OAUTH_SCOPES],
       usePkce: true,
       allowedEmails: [],
+      adminEmail: '',
     }
     // Cannot truly enable without the OAuth runtime; keep off (re-pinned at save).
     a.enabled = false
   } else if (v === 'basic') {
-    a.provider = { kind: 'basic', username: '', passwordHash: '' }
+    a.provider = { kind: 'basic', accounts: [], adminUsername: '' }
     // Becomes effective once an admin is configured (authActive + save()).
     a.enabled = false
   }
@@ -558,18 +572,50 @@ function setOAuthAllowedEmails(v: string) {
       .filter(Boolean),
   })
 }
+const oauthAdminEmail = computed(() =>
+  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.adminEmail : '',
+)
 
-/** Ship the new credentials to the server (it hashes + persists). Bootstrap (no
- *  admin yet) omits the current-password proof; a change requires it. */
-function submitPassword() {
-  if (newPassword.value.length < 4) return
+// ---- basic account management (emits → dedicated server messages) --------
+// A new account's username must not collide with an existing one (AC2.1). Caught
+// here so "add" never falls through to the change-password path (which would
+// confusingly demand the current password for a username the user means to add).
+const addUsernameTaken = computed(() => {
+  const u = addUsername.value.trim()
+  return !!u && basicAccounts.value.some((a) => a.username === u)
+})
+/** Add a new account: ship username + initial password (server hashes + adds;
+ *  the first account also becomes the admin). No current-password proof. */
+function submitAddAccount() {
+  const username = addUsername.value.trim()
+  if (!username || addUsernameTaken.value || addPassword.value.length < 4) return
+  emit('set-password', { username, password: addPassword.value })
+  addUsername.value = ''
+  addPassword.value = ''
+}
+/** Open the change-password form for an existing account. */
+function startChangePassword(username: string) {
+  pwTarget.value = username
+  pwCurrent.value = ''
+  pwNew.value = ''
+}
+/** Ship a password change for `pwTarget` (proves the current password). */
+function submitChangePassword() {
+  if (!pwTarget.value || pwNew.value.length < 4) return
   emit('set-password', {
-    username: authUsername.value,
-    password: newPassword.value,
-    currentPassword: adminConfigured.value ? currentPassword.value : undefined,
+    username: pwTarget.value,
+    password: pwNew.value,
+    currentPassword: pwCurrent.value,
   })
-  newPassword.value = ''
-  currentPassword.value = ''
+  pwTarget.value = null
+  pwCurrent.value = ''
+  pwNew.value = ''
+}
+function removeAccount(username: string) {
+  emit('remove-account', { username })
+}
+function selectAdmin(username: string) {
+  emit('set-admin-account', { username })
 }
 </script>
 
@@ -902,58 +948,126 @@ function submitPassword() {
           {{ t('settings.auth.enable.active') }}
         </p>
 
-        <label v-if="authProviderKind === 'basic'" class="auth-field">
-          <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
-          <input
-            class="agent-field"
-            :value="authUsername"
-            autocomplete="username"
-            :placeholder="t('settings.auth.username.placeholder')"
-            data-testid="settings-auth-username"
-            @input="setAuthUsername(($event.target as HTMLInputElement).value)"
-          />
-        </label>
-
         <div
           v-if="authProviderKind === 'basic'"
-          class="auth-password"
-          data-testid="settings-auth-password"
+          class="auth-accounts"
+          data-testid="settings-auth-accounts"
         >
-          <p class="settings-hint">{{ t('settings.auth.password.hint') }}</p>
-          <label v-if="adminConfigured" class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>
-            <input
-              v-model="currentPassword"
-              class="agent-field"
-              type="password"
-              autocomplete="current-password"
-              :placeholder="t('settings.auth.password.current.placeholder')"
-              data-testid="settings-auth-current-password"
-            />
-          </label>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
-            <input
-              v-model="newPassword"
-              class="agent-field"
-              type="password"
-              autocomplete="new-password"
-              :placeholder="t('settings.auth.password.new.placeholder')"
-              data-testid="settings-auth-new-password"
-            />
-          </label>
-          <button
-            class="agent-add"
-            :disabled="newPassword.length < 4"
-            data-testid="settings-auth-set-password"
-            @click="submitPassword"
+          <p class="settings-hint">{{ t('settings.auth.account.hint') }}</p>
+          <!-- Existing accounts: admin radio + change-password + delete. -->
+          <div
+            v-for="acc in basicAccounts"
+            :key="acc.username"
+            class="auth-account-row"
+            data-testid="settings-auth-account-row"
           >
-            {{
-              adminConfigured
-                ? t('settings.auth.password.change.label')
-                : t('settings.auth.password.set.label')
-            }}
-          </button>
+            <label class="auth-admin-pick">
+              <input
+                type="radio"
+                name="auth-admin"
+                :checked="acc.username === basicAdminUsername"
+                data-testid="settings-auth-admin-radio"
+                @change="selectAdmin(acc.username)"
+              />
+              <span class="auth-account-name">{{ acc.username }}</span>
+              <span v-if="acc.username === basicAdminUsername" class="auth-admin-badge">{{
+                t('settings.auth.admin.badge')
+              }}</span>
+            </label>
+            <div class="auth-account-actions">
+              <button
+                class="icon-btn"
+                data-testid="settings-auth-account-change"
+                @click="startChangePassword(acc.username)"
+              >
+                {{ t('settings.auth.password.change.label') }}
+              </button>
+              <button
+                class="icon-btn"
+                data-testid="settings-auth-account-remove"
+                @click="removeAccount(acc.username)"
+              >
+                {{ t('settings.auth.account.remove.label') }}
+              </button>
+            </div>
+            <!-- Inline change-password form for this row. -->
+            <div
+              v-if="pwTarget === acc.username"
+              class="auth-password"
+              data-testid="settings-auth-change-password"
+            >
+              <label class="auth-field">
+                <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>
+                <input
+                  v-model="pwCurrent"
+                  class="agent-field"
+                  type="password"
+                  autocomplete="current-password"
+                  :placeholder="t('settings.auth.password.current.placeholder')"
+                  data-testid="settings-auth-current-password"
+                />
+              </label>
+              <label class="auth-field">
+                <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
+                <input
+                  v-model="pwNew"
+                  class="agent-field"
+                  type="password"
+                  autocomplete="new-password"
+                  :placeholder="t('settings.auth.password.new.placeholder')"
+                  data-testid="settings-auth-new-password"
+                />
+              </label>
+              <button
+                class="agent-add"
+                :disabled="pwNew.length < 4"
+                data-testid="settings-auth-set-password"
+                @click="submitChangePassword"
+              >
+                {{ t('settings.auth.password.change.label') }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Add a new account. -->
+          <div class="auth-account-add" data-testid="settings-auth-account-add">
+            <label class="auth-field">
+              <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
+              <input
+                v-model="addUsername"
+                class="agent-field"
+                autocomplete="username"
+                :placeholder="t('settings.auth.username.placeholder')"
+                data-testid="settings-auth-add-username"
+              />
+            </label>
+            <label class="auth-field">
+              <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
+              <input
+                v-model="addPassword"
+                class="agent-field"
+                type="password"
+                autocomplete="new-password"
+                :placeholder="t('settings.auth.password.new.placeholder')"
+                data-testid="settings-auth-add-password"
+              />
+            </label>
+            <button
+              class="agent-add"
+              :disabled="!addUsername.trim() || addUsernameTaken || addPassword.length < 4"
+              data-testid="settings-auth-add-account"
+              @click="submitAddAccount"
+            >
+              {{ t('settings.auth.account.add.label') }}
+            </button>
+            <p
+              v-if="addUsernameTaken"
+              class="settings-hint"
+              data-testid="settings-auth-add-duplicate"
+            >
+              {{ t('settings.auth.account.duplicate') }}
+            </p>
+          </div>
         </div>
 
         <div v-if="isOAuth" class="auth-oauth" data-testid="settings-auth-oauth">
@@ -1030,6 +1144,17 @@ function submitPassword() {
             ></textarea>
           </label>
           <p class="settings-hint">{{ t('settings.auth.oauth.allowedEmails.hint') }}</p>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.oauth.adminEmail.label') }}</span>
+            <input
+              class="agent-field"
+              :value="oauthAdminEmail"
+              :placeholder="t('settings.auth.oauth.adminEmail.placeholder')"
+              data-testid="settings-auth-oauth-admin-email"
+              @input="patchOAuth({ adminEmail: ($event.target as HTMLInputElement).value })"
+            />
+          </label>
+          <p class="settings-hint">{{ t('settings.auth.oauth.adminEmail.hint') }}</p>
         </div>
 
         <label class="consensus-toggle">

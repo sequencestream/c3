@@ -503,6 +503,11 @@
           "label": "授权邮箱白名单",
           "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
           "hint": "仅这些已验证邮箱可登录。留空则无人可登录。"
+        },
+        "adminEmail": {
+          "label": "管理员邮箱",
+          "placeholder": "alice{'@'}example.com",
+          "hint": "唯一管理员的邮箱——必须是上方允许邮箱之一。"
         }
       },
       "enable": {
@@ -545,6 +550,27 @@
       "ttl": {
         "label": "登录有效期（天）",
         "hint": "登录后多少天内无需重新登录，默认 30 天。注意：服务端重启仍会要求重新登录。"
+      },
+      "account": {
+        "hint": "添加一个或多个账号，并指定其中一个为管理员——修改系统设置的权限来源。",
+        "add": {
+          "label": "添加账号"
+        },
+        "remove": {
+          "label": "删除"
+        },
+        "result": {
+          "ok": "账号已更新。"
+        },
+        "error": {
+          "admin_must_reassign": "请先指定其他管理员，再删除当前管理员账号。",
+          "not_found": "该账号已不存在。",
+          "invalid": "账号请求无效。"
+        },
+        "duplicate": "该用户名已被占用。"
+      },
+      "admin": {
+        "badge": "管理员"
       }
     }
   },
@@ -1298,6 +1324,9 @@
     },
     "workspaceSetting": {
       "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"
+    },
+    "auth": {
+      "oauthAdminInvalid": "必须设置管理员邮箱，且它需在允许邮箱列表中。"
     }
   },
   "statusIndicator": {

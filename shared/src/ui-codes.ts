@@ -108,6 +108,8 @@ export const UI_ERROR_CODES = {
     key: 'error.workspaceSetting.invalidDefaultMode',
     params: ['vendor', 'mode'],
   },
+  // auth (ADR-0023)
+  'auth.oauthAdminInvalid': { key: 'error.auth.oauthAdminInvalid' },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

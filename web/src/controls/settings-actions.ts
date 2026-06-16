@@ -72,6 +72,17 @@ export function installSettingsActions(ctx: AppCtx): void {
     send({ type: 'set_admin_password', ...payload })
   }
 
+  /** Remove a basic account (ADR-0023). The panel stays open so the result toast
+   *  (including the admin-must-reassign guard) lands in context. */
+  ctx.removeAccount = (payload: { username: string }): void => {
+    send({ type: 'remove_account', ...payload })
+  }
+
+  /** Designate which basic account is the single admin (ADR-0023). */
+  ctx.setAdminAccount = (payload: { username: string }): void => {
+    send({ type: 'set_admin_account', ...payload })
+  }
+
   /**
    * Switch the UI language at runtime (no page reload): flip vue-i18n locale +
    * <html lang>, persist to localStorage, then push the change to the server.

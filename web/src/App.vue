@@ -184,6 +184,8 @@ const {
   saveSettings,
   setLocale,
   setAdminPassword,
+  removeAccount,
+  setAdminAccount,
   workspaceSettingOpen,
   currentWorkspaceSetting,
   detectedMainBranch,
@@ -446,6 +448,8 @@ const {
       @save="saveSettings"
       @set-ui-lang="setLocale"
       @set-password="setAdminPassword"
+      @remove-account="removeAccount"
+      @set-admin-account="setAdminAccount"
     />
 
     <WorkspaceSettingPage

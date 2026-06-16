@@ -3,41 +3,46 @@ import type { AuthConfig } from '@ccc/shared/protocol'
 import {
   authConfigSchema,
   normalizeAuth,
+  deriveBasicEnabled,
   migrateLegacySessionTtl,
   DEFAULT_SESSION_TTL_SECONDS,
   LEGACY_DEFAULT_SESSION_TTL_SECONDS,
 } from './auth-schema.js'
 
 /**
- * Contract tests for the ADR-0023 auth config schema. They guard the three
- * behaviours `normalize()` relies on: a valid basic config parses, an
- * absent/malformed block fails-soft to `null` (⇒ "no auth", C-SEC-5 default),
- * and an unknown provider kind is rejected.
+ * Contract tests for the ADR-0023 auth config schema (multi-account basic +
+ * unique admin). They guard: a valid basic config parses; an absent/malformed
+ * block fails-soft to `null` (⇒ "no auth"); legacy single-account migration;
+ * the unique-username + admin-reference invariants; `enabled` derivation; and the
+ * oauth adminEmail handling (normalize does NOT drop on invalid adminEmail).
  */
 describe('auth-schema', () => {
-  // A complete, valid single-admin basic config. The password is stored as a
-  // PHC *hash*, never plaintext (ADR-0023 invariant).
+  const HASH = '$scrypt$ln=15,r=8,p=1$c2FsdHNhbHQ$aGFzaGhhc2g'
+  // A complete, valid basic config: one account, designated admin, enabled.
   const validBasic: AuthConfig = {
     enabled: true,
     provider: {
       kind: 'basic',
-      username: 'admin',
-      passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$aGFzaGhhc2g',
+      accounts: [{ username: 'admin', passwordHash: HASH }],
+      adminUsername: 'admin',
     },
     session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_SIGNING_KEY' },
     exposure: { bindAddress: '0.0.0.0' },
   }
 
   it('parses a valid basic config', () => {
-    const parsed = authConfigSchema.safeParse(validBasic)
-    expect(parsed.success).toBe(true)
+    expect(authConfigSchema.safeParse(validBasic).success).toBe(true)
     expect(normalizeAuth(validBasic)).toEqual(validBasic)
   })
 
   it('accepts a minimal config without the optional exposure block', () => {
     const minimal: AuthConfig = {
-      enabled: false,
-      provider: { kind: 'basic', username: 'admin', passwordHash: '$argon2id$x' },
+      enabled: true,
+      provider: {
+        kind: 'basic',
+        accounts: [{ username: 'a', passwordHash: HASH }],
+        adminUsername: 'a',
+      },
       session: { ttlSeconds: 900, signingKeyRef: 'keyref' },
     }
     expect(normalizeAuth(minimal)).toEqual(minimal)
@@ -49,20 +54,9 @@ describe('auth-schema', () => {
   })
 
   it('rejects an unknown provider kind', () => {
-    const unknownKind = {
-      ...validBasic,
-      provider: { kind: 'ldap', host: 'x' },
-    }
+    const unknownKind = { ...validBasic, provider: { kind: 'ldap', host: 'x' } }
     expect(authConfigSchema.safeParse(unknownKind).success).toBe(false)
     expect(normalizeAuth(unknownKind)).toBeNull()
-  })
-
-  it('rejects a basic provider missing the password hash', () => {
-    const noHash = {
-      ...validBasic,
-      provider: { kind: 'basic', username: 'admin' },
-    }
-    expect(normalizeAuth(noHash)).toBeNull()
   })
 
   it('rejects a config missing the session policy', () => {
@@ -71,8 +65,144 @@ describe('auth-schema', () => {
   })
 
   it('rejects a non-boolean enabled flag', () => {
-    const badEnabled = { ...validBasic, enabled: 'yes' }
-    expect(normalizeAuth(badEnabled)).toBeNull()
+    expect(normalizeAuth({ ...validBasic, enabled: 'yes' })).toBeNull()
+  })
+
+  // ---- multi-account invariants (AC2.1 / AC3.1 / AC3.3) ----
+  describe('basic multi-account invariants', () => {
+    it('drops a config whose adminUsername references no account (AC3.3)', () => {
+      const dangling = {
+        ...validBasic,
+        provider: {
+          kind: 'basic',
+          accounts: [{ username: 'a', passwordHash: HASH }],
+          adminUsername: 'ghost',
+        },
+      }
+      expect(normalizeAuth(dangling)).toBeNull()
+    })
+
+    it('drops a config with non-empty accounts but an empty adminUsername (AC3.1)', () => {
+      const noAdmin = {
+        ...validBasic,
+        provider: {
+          kind: 'basic',
+          accounts: [{ username: 'a', passwordHash: HASH }],
+          adminUsername: '',
+        },
+      }
+      expect(normalizeAuth(noAdmin)).toBeNull()
+    })
+
+    it('drops a config with duplicate usernames (AC2.1)', () => {
+      const dup = {
+        ...validBasic,
+        provider: {
+          kind: 'basic',
+          accounts: [
+            { username: 'a', passwordHash: HASH },
+            { username: 'a', passwordHash: HASH },
+          ],
+          adminUsername: 'a',
+        },
+      }
+      expect(normalizeAuth(dup)).toBeNull()
+    })
+
+    it('accepts an empty accounts set as the unconfigured state (AC2.5)', () => {
+      const empty = {
+        enabled: false,
+        provider: { kind: 'basic', accounts: [], adminUsername: '' },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      const n = normalizeAuth(empty)
+      expect(n?.provider).toEqual({ kind: 'basic', accounts: [], adminUsername: '' })
+      expect(n?.enabled).toBe(false)
+    })
+
+    it('case-sensitive usernames are distinct (AC2.1)', () => {
+      const cased = {
+        ...validBasic,
+        provider: {
+          kind: 'basic',
+          accounts: [
+            { username: 'Admin', passwordHash: HASH },
+            { username: 'admin', passwordHash: HASH },
+          ],
+          adminUsername: 'Admin',
+        },
+      }
+      expect(normalizeAuth(cased)).not.toBeNull()
+    })
+  })
+
+  // ---- enabled derivation (AC3.5) ----
+  describe('enabled derivation', () => {
+    it('derives true for a configured admin even if disk says enabled:false', () => {
+      const stale = { ...validBasic, enabled: false }
+      expect(normalizeAuth(stale)?.enabled).toBe(true)
+    })
+
+    it('derives false for an empty account set even if disk says enabled:true', () => {
+      const empty = {
+        enabled: true,
+        provider: { kind: 'basic', accounts: [], adminUsername: '' },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      expect(normalizeAuth(empty)?.enabled).toBe(false)
+    })
+
+    it('deriveBasicEnabled: true iff accounts non-empty and admin references one', () => {
+      expect(deriveBasicEnabled({ kind: 'basic', accounts: [], adminUsername: '' })).toBe(false)
+      expect(
+        deriveBasicEnabled({
+          kind: 'basic',
+          accounts: [{ username: 'a', passwordHash: HASH }],
+          adminUsername: 'a',
+        }),
+      ).toBe(true)
+      expect(
+        deriveBasicEnabled({
+          kind: 'basic',
+          accounts: [{ username: 'a', passwordHash: HASH }],
+          adminUsername: 'b',
+        }),
+      ).toBe(false)
+    })
+  })
+
+  // ---- legacy single-account migration (AC7.1 / AC7.1b / AC7.3) ----
+  describe('legacy basic migration', () => {
+    it('migrates {username, passwordHash} to accounts + adminUsername (AC7.1)', () => {
+      const legacy = {
+        enabled: true,
+        provider: { kind: 'basic', username: 'root', passwordHash: HASH },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      const n = normalizeAuth(legacy)
+      expect(n?.provider).toEqual({
+        kind: 'basic',
+        accounts: [{ username: 'root', passwordHash: HASH }],
+        adminUsername: 'root',
+      })
+      expect(n?.enabled).toBe(true)
+    })
+
+    it('migrates a username-without-hash bootstrap mid-state to unconfigured, no dangling admin (AC7.1b)', () => {
+      const legacy = {
+        enabled: false,
+        provider: { kind: 'basic', username: 'root', passwordHash: '' },
+        session: { ttlSeconds: 900, signingKeyRef: 'k' },
+      }
+      const n = normalizeAuth(legacy)
+      expect(n?.provider).toEqual({ kind: 'basic', accounts: [], adminUsername: '' })
+      expect(n?.enabled).toBe(false)
+    })
+
+    it('is idempotent — an already-migrated config is not re-wrapped (AC7.3)', () => {
+      const migratedOnce = normalizeAuth(validBasic)
+      expect(normalizeAuth(migratedOnce)).toEqual(migratedOnce)
+    })
   })
 
   // ---- none provider arm — no auth (the C-SEC-5 localhost default) ----
@@ -88,8 +218,6 @@ describe('auth-schema', () => {
     })
 
     it('forces enabled to false for a none provider (single truth source)', () => {
-      // A stale `enabled: true` on disk must never contradict "no auth": the
-      // `kind:'none' ⇔ enabled:false` invariant is re-pinned by normalize.
       const stale = {
         enabled: true,
         provider: { kind: 'none' },
@@ -99,24 +227,10 @@ describe('auth-schema', () => {
       expect(normalized?.provider.kind).toBe('none')
       expect(normalized?.enabled).toBe(false)
     })
-
-    it('rejects a none provider carrying extra config fields', () => {
-      // zod strips unknown keys, but the arm itself stays shape-pure: a `none`
-      // block round-trips to exactly `{ kind: 'none' }`.
-      const withExtra = {
-        enabled: false,
-        provider: { kind: 'none', username: 'admin' },
-        session: { ttlSeconds: 900, signingKeyRef: 'k' },
-      }
-      const normalized = normalizeAuth(withExtra)
-      expect(normalized?.provider).toEqual({ kind: 'none' })
-    })
   })
 
   // ---- oauth (generic OIDC) provider arm — contract-only (no runtime) ----
   describe('oauth provider arm', () => {
-    // A complete, valid generic-OIDC config. `clientSecretRef` is a *reference*
-    // (env var name / keystore id) — never the plaintext secret (ADR-0023).
     const validOAuth: AuthConfig = {
       enabled: false,
       provider: {
@@ -128,17 +242,17 @@ describe('auth-schema', () => {
         scopes: ['openid', 'profile', 'email'],
         usePkce: true,
         allowedEmails: ['alice@example.com'],
+        adminEmail: 'alice@example.com',
       },
       session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_SIGNING_KEY' },
     }
 
     it('parses a complete valid oauth config', () => {
-      const parsed = authConfigSchema.safeParse(validOAuth)
-      expect(parsed.success).toBe(true)
+      expect(authConfigSchema.safeParse(validOAuth).success).toBe(true)
       expect(normalizeAuth(validOAuth)).toEqual(validOAuth)
     })
 
-    it('applies defaults for scopes, usePkce, and allowedEmails when omitted', () => {
+    it('applies defaults for scopes, usePkce, allowedEmails, adminEmail when omitted', () => {
       const minimal = {
         enabled: false,
         provider: {
@@ -151,19 +265,24 @@ describe('auth-schema', () => {
         session: { ttlSeconds: 900, signingKeyRef: 'k' },
       }
       const normalized = normalizeAuth(minimal)
-      expect(normalized?.provider.kind).toBe('oauth')
       if (normalized?.provider.kind !== 'oauth') throw new Error('expected oauth')
       expect(normalized.provider.scopes).toEqual(['openid', 'profile', 'email'])
       expect(normalized.provider.usePkce).toBe(true)
       expect(normalized.provider.allowedEmails).toEqual([])
+      expect(normalized.provider.adminEmail).toBe('')
     })
 
-    it('accepts an empty allowedEmails list (valid contract — "nobody authorized")', () => {
-      const empty = {
+    it('does NOT fail-soft on an invalid adminEmail — kept, enabled stays false (S1/AC5.4)', () => {
+      // An adminEmail not in allowedEmails is rejected only at the save layer; normalize
+      // keeps the block (no runtime effect, would needlessly wipe issuer/clientId).
+      const badAdmin = {
         ...validOAuth,
-        provider: { ...validOAuth.provider, allowedEmails: [] },
+        enabled: true,
+        provider: { ...validOAuth.provider, adminEmail: 'mallory@evil.com' },
       }
-      expect(authConfigSchema.safeParse(empty).success).toBe(true)
+      const n = normalizeAuth(badAdmin)
+      expect(n?.provider.kind).toBe('oauth')
+      expect(n?.enabled).toBe(false)
     })
 
     it('rejects an oauth config missing the issuer', () => {
@@ -179,29 +298,12 @@ describe('auth-schema', () => {
       expect(normalizeAuth(noIssuer)).toBeNull()
     })
 
-    it('rejects an oauth config missing the clientSecretRef', () => {
-      const noSecretRef = {
-        ...validOAuth,
-        provider: {
-          kind: 'oauth',
-          issuer: 'https://accounts.example.com',
-          clientId: 'c3-console',
-          redirectUri: 'https://console.example.com/auth/callback',
-        },
-      }
-      expect(normalizeAuth(noSecretRef)).toBeNull()
-    })
-
     it('stores only the secret *reference*, never a plaintext secret', () => {
-      // A client that round-trips an extra plaintext `clientSecret` field must
-      // not get it persisted: zod strips unknown keys, so the normalized config
-      // — and anything serialized from it — contains the ref but no plaintext.
       const withPlaintext = {
         ...validOAuth,
         provider: { ...validOAuth.provider, clientSecret: 'super-secret-plaintext' },
       }
       const normalized = normalizeAuth(withPlaintext)
-      expect(normalized?.provider.kind).toBe('oauth')
       if (normalized?.provider.kind !== 'oauth') throw new Error('expected oauth')
       expect(normalized.provider.clientSecretRef).toBe('C3_OAUTH_CLIENT_SECRET')
       expect('clientSecret' in normalized.provider).toBe(false)

@@ -503,6 +503,11 @@
           "label": "Allowed emails",
           "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
           "hint": "Only these verified emails may sign in. An empty list authorizes nobody."
+        },
+        "adminEmail": {
+          "label": "Admin email",
+          "placeholder": "alice{'@'}example.com",
+          "hint": "The single admin's email — must be one of the allowed emails above."
         }
       },
       "enable": {
@@ -545,6 +550,27 @@
       "ttl": {
         "label": "Session lifetime (days)",
         "hint": "How long a sign-in stays valid before re-prompting. Default is 30 days. A server restart still signs everyone out."
+      },
+      "account": {
+        "hint": "Add one or more accounts, then pick exactly one as the admin — the authority for changing system settings.",
+        "add": {
+          "label": "Add account"
+        },
+        "remove": {
+          "label": "Remove"
+        },
+        "result": {
+          "ok": "Accounts updated."
+        },
+        "error": {
+          "admin_must_reassign": "Pick another admin before removing the current admin account.",
+          "not_found": "That account no longer exists.",
+          "invalid": "Invalid account request."
+        },
+        "duplicate": "That username is already taken."
+      },
+      "admin": {
+        "badge": "Admin"
       }
     }
   },
@@ -1298,6 +1324,9 @@
     },
     "workspaceSetting": {
       "invalidDefaultMode": "Invalid default mode \"{mode}\" for vendor \"{vendor}\"."
+    },
+    "auth": {
+      "oauthAdminInvalid": "The admin email must be set and listed in the allowed emails."
     }
   },
   "statusIndicator": {

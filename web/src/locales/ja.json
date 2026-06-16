@@ -504,6 +504,11 @@
           "label": "許可するメールアドレス",
           "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
           "hint": "これらの確認済みメールアドレスのみサインインできます。空のリストでは誰も許可されません。"
+        },
+        "adminEmail": {
+          "label": "管理者メール",
+          "placeholder": "alice{'@'}example.com",
+          "hint": "唯一の管理者のメール。上記の許可メールのいずれかである必要があります。"
         }
       },
       "enable": {
@@ -546,6 +551,27 @@
       "ttl": {
         "label": "セッション有効期間（日）",
         "hint": "サインインが再認証を求められるまで有効な日数。既定は 30 日。サーバーを再起動すると全員がサインアウトされます。"
+      },
+      "account": {
+        "hint": "アカウントを1つ以上追加し、そのうち1つを管理者（システム設定を変更する権限の所在）に指定します。",
+        "add": {
+          "label": "アカウントを追加"
+        },
+        "remove": {
+          "label": "削除"
+        },
+        "result": {
+          "ok": "アカウントを更新しました。"
+        },
+        "error": {
+          "admin_must_reassign": "現在の管理者アカウントを削除する前に、別の管理者を指定してください。",
+          "not_found": "そのアカウントは存在しません。",
+          "invalid": "アカウントのリクエストが無効です。"
+        },
+        "duplicate": "そのユーザー名はすでに使われています。"
+      },
+      "admin": {
+        "badge": "管理者"
       }
     }
   },
@@ -1299,6 +1325,9 @@
     },
     "workspaceSetting": {
       "invalidDefaultMode": "ベンダー \"{vendor}\" のデフォルトモード \"{mode}\" が無効です。"
+    },
+    "auth": {
+      "oauthAdminInvalid": "管理者メールを設定し、許可メールに含める必要があります。"
     }
   },
   "statusIndicator": {

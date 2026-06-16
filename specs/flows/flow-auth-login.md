@@ -5,8 +5,8 @@ precondition for exposing c3 beyond localhost (constitution C-SEC-5, ADR-0023).
 
 **Domains.** auth · web-console · system-config.
 
-> **Status: partial runtime (2026-06-11).** The boundary + contracts and a **minimal `basic`
-> provider** are live (real scrypt-PHC hashing, real `login` verification, `set_admin_password`).
+> **Status: partial runtime (2026-06-16).** The boundary + contracts and a **`basic` provider** are
+> live (real scrypt-PHC hashing, real `login` verification, multi-account + unique-admin management).
 > **Still deferred:** token signing/verification, request-level auth middleware, and the
 > "enabled auth ⇒ may bind non-loopback" enforcement — so the server's bind address is **unchanged,
 > still localhost-only**. See [auth-overview](../domains/core/auth/auth-overview.md) _Roadmap_. This
@@ -16,8 +16,9 @@ precondition for exposing c3 beyond localhost (constitution C-SEC-5, ADR-0023).
 
 ```mermaid
 flowchart TD
-    CFG[set_admin_password] --> HASH[scrypt PHC hash persisted]
-    HASH --> LOGIN[login — verify plaintext in transit]
+    CFG[set_admin_password — upsert account] --> HASH[scrypt PHC hash persisted]
+    HASH --> ADM[remove_account / set_admin_account<br/>unique-admin integrity]
+    ADM --> LOGIN[login — any account, verify plaintext in transit]
     LOGIN -- ok --> TOK[issue session token<br/>signing deferred]
     LOGIN -- fail --> UA[unauthenticated · 401 analogue]
     TOK --> EXP{non-loopback exposure?}
@@ -25,25 +26,34 @@ flowchart TD
     EXP -- no --> LOOP[localhost-only default]
 ```
 
-## Configure the admin (bootstrap)
+## Configure accounts + the single admin (bootstrap)
 
-1. **web-console → auth.** In the System Settings auth panel the operator enables auth, sets a
-   username, and sets a password via `set_admin_password { username, password, currentPassword? }`.
-   The plaintext is hashed **server-side** (scrypt PHC) and only the hash is persisted
-   (`AUTH-R3`/`AUTH-R7`).
-2. **Change-password gate.** Changing an existing admin's password requires proving the current
-   password (`currentPassword` verified against the stored hash) ⇒ `not_authenticated` on mismatch
-   (`AUTH-R8`). The first bootstrap set is exempt — the localhost-only default trusts the local
-   operator before any credential exists.
-3. **Hash ownership.** `passwordHash` is mutated **only** by `set_admin_password`; a generic
-   `save_settings` never writes it — the server forces it back to the on-disk value
-   (`preserveAdminPasswordHash`), so a stale/empty client draft cannot wipe it (`AUTH-R7`).
+1. **web-console → auth.** In the System Settings auth panel the operator picks the `basic` provider
+   and adds one or more accounts via `set_admin_password { username, password, currentPassword? }`
+   (it **upserts**: a new username adds an account, the first one becoming the admin; an existing one
+   changes its password). The plaintext is hashed **server-side** (scrypt PHC) and only the hash is
+   persisted (`AUTH-R3`/`AUTH-R7`). Every account may sign in; the admin is the config authority, not
+   a login privilege (no RBAC).
+2. **Change-password gate.** Changing an existing account's password requires proving that account's
+   current password (`currentPassword` verified against its stored hash) ⇒ `not_authenticated` on
+   mismatch (`AUTH-R8`). Adding a new account is exempt — the localhost-only default trusts the local
+   operator (request-level authz deferred).
+3. **Unique-admin integrity.** `set_admin_account { username }` designates the single admin;
+   `remove_account { username }` deletes an account but refuses to orphan the admin reference —
+   removing the admin while other accounts remain returns `admin_must_reassign` (designate a new admin
+   first); removing the only account empties the store back to the unconfigured state (`AUTH-R9`).
+   `basic.enabled` is derived: true ⇔ accounts non-empty and `adminUsername` references one.
+4. **Account-store ownership.** The whole `basic` account set is mutated **only** by these dedicated
+   messages; a generic `save_settings` never touches it — the server forces the entire basic provider
+   back to the on-disk value (`preserveBasicProvider`), so a stale/empty client draft cannot wipe,
+   reassign, or overwrite accounts (`AUTH-R7`). OAuth's `adminEmail` (which flows through `save_settings`)
+   must be non-empty and a member of `allowedEmails`, else the save is rejected (`auth.oauthAdminInvalid`).
 
 ## Login
 
-1. **web-console → auth.** The login page sends `login` (`AuthLoginRequest`). The server verifies
-   the plaintext against the stored hash; the plaintext exists in transit only, never persisted
-   (`AUTH-R3`).
+1. **web-console → auth.** The login page sends `login` (`AuthLoginRequest`). The server looks up the
+   account by username in `accounts` and verifies the plaintext against that account's stored hash;
+   the plaintext exists in transit only, never persisted (`AUTH-R3`).
 2. **Result.** `login_result` (`AuthLoginResult`) — success issues a provider-neutral
    `AuthSessionToken` (`{ tokenId, subject, issuedAt, expiresAt }`); the token signing secret is
    referenced by `signingKeyRef`, never persisted in `settings.json` (`AUTH-R4`). **Token

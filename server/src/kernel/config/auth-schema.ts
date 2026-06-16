@@ -17,7 +17,7 @@
  * (ADR-0023). This module only validates the persisted shape.
  */
 import { z } from 'zod'
-import type { AuthConfig, AuthProvider } from '@ccc/shared/protocol'
+import type { AuthConfig, AuthProvider, BasicAuthProvider } from '@ccc/shared/protocol'
 
 /** The `none` provider arm: no auth, no config — `kind` alone is the shape. The
  *  `kind:'none' ⇔ enabled:false` invariant is enforced in {@link normalizeAuth},
@@ -26,11 +26,24 @@ export const noneAuthProviderSchema = z.object({
   kind: z.literal('none'),
 })
 
-/** The single-admin `basic` provider arm: username + PHC password hash. */
-export const basicAuthProviderSchema = z.object({
-  kind: z.literal('basic'),
+/** One `basic` account: username + PHC password hash. */
+export const basicAuthAccountSchema = z.object({
   username: z.string(),
   passwordHash: z.string(),
+})
+
+/**
+ * The `basic` provider arm: **multiple accounts + one admin**. Kept a plain
+ * `z.object` (no preprocess/transform) so it stays a valid `discriminatedUnion`
+ * member and the bottom type-pin holds. Legacy single-account migration runs in
+ * {@link normalizeAuth} BEFORE parse (zod v4 cannot extract the `kind` discriminant
+ * from a `z.preprocess`-wrapped arm). `accounts`/`adminUsername` default so an
+ * absent/partial block normalizes to the unconfigured state.
+ */
+export const basicAuthProviderSchema = z.object({
+  kind: z.literal('basic'),
+  accounts: z.array(basicAuthAccountSchema).default([]),
+  adminUsername: z.string().default(''),
 })
 
 /** Default OAuth scopes — OIDC core identity + verified email. */
@@ -54,6 +67,11 @@ export const oauthAuthProviderSchema = z.object({
   scopes: z.array(z.string()).default(DEFAULT_OAUTH_SCOPES),
   usePkce: z.boolean().default(true),
   allowedEmails: z.array(z.string()).default([]),
+  // The single admin email (OAuth analogue of basic's adminUsername). Defaults to
+  // '' so a freshly-switched/legacy oauth block normalizes; the save layer enforces
+  // non-empty + ∈ allowedEmails. oauth is contract-only (enabled always false), so
+  // an invalid adminEmail has no runtime effect and is NOT a normalize fail-soft trigger.
+  adminEmail: z.string().default(''),
 })
 
 /**
@@ -112,21 +130,77 @@ export const authConfigSchema = z.object({
 })
 
 /**
+ * Whether a `basic` provider is effectively enabled: at least one account AND a
+ * non-empty `adminUsername` that references one of them. The single derivation of
+ * basic's `enabled` (AUTH-R: enabled ⇔ configured admin), mirrored by the auth
+ * handlers when they persist and re-applied here on load. Empty accounts ⇒ the
+ * unconfigured state ⇒ false (parallels `kind:'none' ⇔ enabled:false`).
+ */
+export function deriveBasicEnabled(provider: BasicAuthProvider): boolean {
+  if (provider.accounts.length === 0 || !provider.adminUsername) return false
+  return provider.accounts.some((a) => a.username === provider.adminUsername)
+}
+
+/** True iff `accounts` has no two entries sharing a (trim'd, case-sensitive) username. */
+function usernamesUnique(provider: BasicAuthProvider): boolean {
+  const names = provider.accounts.map((a) => a.username)
+  return new Set(names).size === names.length
+}
+
+/**
+ * One-shot legacy migration (pre-parse): the former single-account `basic` shape
+ * `{ kind:'basic', username, passwordHash }` (no `accounts` field) → the
+ * multi-account shape. Discriminant = `accounts` ABSENT (so an already-migrated
+ * block is left untouched — idempotent). An empty `passwordHash` (a bootstrap
+ * mid-state) migrates to NO account + empty admin, so no dangling admin is created.
+ * Runs before zod parse because zod v4 cannot extract the `kind` discriminant from
+ * a `z.preprocess`-wrapped union arm.
+ */
+function migrateLegacyBasicProvider(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw
+  const candidate = raw as { provider?: unknown }
+  const provider = candidate.provider
+  if (typeof provider !== 'object' || provider === null) return raw
+  const p = provider as Record<string, unknown>
+  if (p.kind !== 'basic' || 'accounts' in p) return raw
+  const username = typeof p.username === 'string' ? p.username : ''
+  const passwordHash = typeof p.passwordHash === 'string' ? p.passwordHash : ''
+  const migrated =
+    username && passwordHash
+      ? { kind: 'basic', accounts: [{ username, passwordHash }], adminUsername: username }
+      : { kind: 'basic', accounts: [], adminUsername: '' }
+  return { ...candidate, provider: migrated }
+}
+
+/**
  * Validate one persisted `auth` candidate. Returns the typed {@link AuthConfig}
  * on success, or `null` when it is absent or malformed (the normalize layer
  * treats `null` as "no auth" — the C-SEC-5 localhost-only default, fail-soft).
  *
- * Single truth source for the `none` provider: a `kind:'none'` block always
- * normalizes to `enabled:false`, so a stale `enabled:true` on disk can never
- * contradict "no auth". The UI reads `provider.kind`, never a second flag.
+ * Invariants enforced here (the fail-soft backstop for hand-edited settings.json;
+ * the UI path is gated earlier by the save-layer handlers):
+ * - `none` ⇒ `enabled:false` (a stale `enabled:true` on disk can never contradict "no auth").
+ * - `basic` ⇒ usernames unique AND `adminUsername` references an account when accounts
+ *   are non-empty; a violation has a runtime login consequence (a dangling admin), so the
+ *   whole block is dropped to `null` (no auth). `enabled` is then re-derived (AC3.5).
+ * - `oauth` ⇒ `enabled` forced false (contract-only, AC5.4). An invalid `adminEmail` is
+ *   NOT a fail-soft trigger (no runtime effect; would needlessly wipe issuer/clientId) —
+ *   it is rejected only at the save layer.
  */
 export function normalizeAuth(raw: unknown): AuthConfig | null {
   if (raw === undefined || raw === null) return null
-  const result = authConfigSchema.safeParse(raw)
+  const migrated = migrateLegacyBasicProvider(raw)
+  const result = authConfigSchema.safeParse(migrated)
   if (!result.success) return null
   const auth = result.data
-  if (auth.provider.kind === 'none' && auth.enabled) return { ...auth, enabled: false }
-  return auth
+  if (auth.provider.kind === 'none') return auth.enabled ? { ...auth, enabled: false } : auth
+  if (auth.provider.kind === 'oauth') return auth.enabled ? { ...auth, enabled: false } : auth
+  // basic: enforce the unique-username + admin-reference invariants, fail-soft on violation.
+  const provider = auth.provider
+  if (!usernamesUnique(provider)) return null
+  if (provider.accounts.length > 0 && !deriveBasicEnabled(provider)) return null
+  const enabled = deriveBasicEnabled(provider)
+  return enabled === auth.enabled ? auth : { ...auth, enabled }
 }
 
 /**

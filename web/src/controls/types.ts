@@ -152,6 +152,8 @@ export interface AppMethods {
   installSkill(skillId: string): void
   saveSettings(settings: SystemSettings): void
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
+  removeAccount(payload: { username: string }): void
+  setAdminAccount(payload: { username: string }): void
   setLocale(next: UiLang): void
   setViewMode(mode: 'workspace' | 'workcenter'): void
   approveSkillLoad(requestId: string): void

@@ -504,6 +504,11 @@
           "label": "허용된 이메일",
           "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
           "hint": "이 확인된 이메일만 로그인할 수 있습니다. 목록이 비어 있으면 아무도 허용되지 않습니다."
+        },
+        "adminEmail": {
+          "label": "관리자 이메일",
+          "placeholder": "alice{'@'}example.com",
+          "hint": "유일한 관리자의 이메일입니다. 위의 허용된 이메일 중 하나여야 합니다."
         }
       },
       "enable": {
@@ -546,6 +551,27 @@
       "ttl": {
         "label": "세션 유효 기간(일)",
         "hint": "로그인이 다시 인증을 요구하기 전까지 유효한 기간(일). 기본값은 30일입니다. 서버를 재시작하면 모두 로그아웃됩니다."
+      },
+      "account": {
+        "hint": "계정을 하나 이상 추가하고 그중 하나를 관리자(시스템 설정 변경 권한의 출처)로 지정하세요.",
+        "add": {
+          "label": "계정 추가"
+        },
+        "remove": {
+          "label": "삭제"
+        },
+        "result": {
+          "ok": "계정이 업데이트되었습니다."
+        },
+        "error": {
+          "admin_must_reassign": "현재 관리자 계정을 삭제하기 전에 다른 관리자를 지정하세요.",
+          "not_found": "해당 계정이 더 이상 존재하지 않습니다.",
+          "invalid": "계정 요청이 잘못되었습니다."
+        },
+        "duplicate": "이미 사용 중인 사용자 이름입니다."
+      },
+      "admin": {
+        "badge": "관리자"
       }
     }
   },
@@ -1299,6 +1325,9 @@
     },
     "workspaceSetting": {
       "invalidDefaultMode": "벤더 \"{vendor}\" 의 기본 모드 \"{mode}\" 가 유효하지 않습니다."
+    },
+    "auth": {
+      "oauthAdminInvalid": "관리자 이메일을 설정하고 허용된 이메일 목록에 포함해야 합니다."
     }
   },
   "statusIndicator": {

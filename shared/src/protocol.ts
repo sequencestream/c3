@@ -691,17 +691,35 @@ export interface NoneAuthProvider {
 }
 
 /**
- * The single-admin `basic` provider: a username + a password **hash** (a PHC
- * string such as `$argon2id$...`, encoding its own algorithm/params/salt).
- * The plaintext password is NEVER stored here — only the hash. Multi-user is a
- * deferred capability (this provider models exactly one admin account).
+ * One `basic` account: a login name + a password **hash** (a PHC string such as
+ * `$scrypt$...`, encoding its own algorithm/params/salt). The plaintext password
+ * is NEVER stored here — only the hash.
  */
-export interface BasicAuthProvider {
-  kind: 'basic'
-  /** The single admin account's login name. */
+export interface BasicAuthAccount {
+  /** The account's login name. `trim`med, case-sensitive, unique within {@link BasicAuthProvider.accounts}. */
   username: string
   /** PHC-format password hash. Never plaintext. */
   passwordHash: string
+}
+
+/**
+ * The `basic` provider: **multiple accounts, exactly one admin**. `accounts` may
+ * hold 0..n entries — every account can sign in; `adminUsername` designates the
+ * single account whose holder is the authority source for system-config changes
+ * (no RBAC / multiple admins this phase). Invariants (enforced by `normalizeAuth`
+ * + the save-layer handlers): usernames are unique; when `accounts` is non-empty
+ * `adminUsername` MUST reference exactly one of them; an empty `accounts` is the
+ * "unconfigured" state (`adminUsername` is `''`, auth is not effectively enabled).
+ * Account credentials are mutated ONLY by the dedicated auth messages
+ * (`set_admin_password` upsert / `remove_account` / `set_admin_account`), never by
+ * a generic `save_settings` (AUTH-R7).
+ */
+export interface BasicAuthProvider {
+  kind: 'basic'
+  /** The account set. `0..n`; empty ⇒ unconfigured (auth not effectively enabled). */
+  accounts: BasicAuthAccount[]
+  /** The single admin account's username. Must reference an entry in `accounts`; `''` when `accounts` is empty. */
+  adminUsername: string
 }
 
 /**
@@ -738,6 +756,13 @@ export interface OAuthAuthProvider {
    * list means nobody is authorized (the future runtime enforces this).
    */
   allowedEmails: string[]
+  /**
+   * The single admin's email — the authority source for system-config changes
+   * (the OAuth analogue of {@link BasicAuthProvider.adminUsername}). Exactly one,
+   * and MUST be a member of {@link allowedEmails} (exact string match). Validated
+   * at the save layer (`auth.oauthAdminInvalid` on violation). `''` ⇒ unconfigured.
+   */
+  adminEmail: string
 }
 
 /**
@@ -800,7 +825,7 @@ export interface AuthConfig {
 export interface AuthSessionToken {
   /** Opaque token id (jti). */
   tokenId: string
-  /** Subject — the authenticated principal (the admin username under `basic`). */
+  /** Subject — the authenticated principal (the signed-in account's username under `basic`; not necessarily the admin). */
   subject: string
   /** Issued-at instant (Unix ms). */
   issuedAt: number
@@ -850,6 +875,25 @@ export type AdminPasswordFailureCode = (typeof ADMIN_PASSWORD_FAILURE_CODES)[num
  * (the plaintext never lands on disk); on failure a structured code the UI localizes.
  */
 export type AdminPasswordResult = { ok: true } | { ok: false; code: AdminPasswordFailureCode }
+
+/**
+ * Account-operation failure codes for the dedicated `basic` account messages
+ * (`remove_account` / `set_admin_account`). `not_found` ⇒ the target username is
+ * not in `accounts`; `admin_must_reassign` ⇒ refused to remove the admin account
+ * while other accounts remain (designate a new admin first — the "block + prompt"
+ * form of the delete-admin guard); `invalid` ⇒ a malformed request (e.g. empty
+ * username). Removing the admin when it is the ONLY account is allowed (it empties
+ * the store back to the unconfigured state), so it is NOT an error.
+ */
+export const ACCOUNT_OP_FAILURE_CODES = ['not_found', 'admin_must_reassign', 'invalid'] as const
+export type AccountOpFailureCode = (typeof ACCOUNT_OP_FAILURE_CODES)[number]
+
+/**
+ * Result of a `remove_account` / `set_admin_account` attempt. `ok` discriminates:
+ * on success the basic provider has been mutated + persisted (a fresh `settings`
+ * frame follows); on failure a structured {@link AccountOpFailureCode} the UI localizes.
+ */
+export type AccountOpResult = { ok: true } | { ok: false; code: AccountOpFailureCode }
 
 /**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
@@ -2222,14 +2266,33 @@ export type ClientToServer =
   /** Invalidate this connection's session token (ADR-0023). No reply required. */
   | { type: 'logout' }
   /**
-   * Set (or change) the single admin's `basic` credentials (ADR-0023). The
-   * plaintext `password` exists ONLY in transit — the server hashes it and
-   * persists the hash; plaintext never lands on disk. `currentPassword` is the
-   * sensitive-operation gate: required (and verified against the stored hash)
-   * when an admin already exists, omitted on the first (bootstrap) set. Server
-   * replies `admin_password_result`, then echoes a fresh `settings` on success.
+   * Upsert a `basic` account's password (ADR-0023). When `username` is not yet in
+   * `accounts` it ADDS the account (the first account also becomes the admin);
+   * when it exists it CHANGES that account's password. The plaintext `password`
+   * exists ONLY in transit — the server hashes it and persists the hash; plaintext
+   * never lands on disk. `currentPassword` is the sensitive-operation gate: required
+   * (verified against THAT account's stored hash) when changing an existing account,
+   * omitted when adding a new account (localhost bootstrap-trust). Server replies
+   * `admin_password_result`, then echoes a fresh `settings` on success.
+   *
+   * (Name kept for wire/back-compat; it now sets ANY account's password, not only
+   * the admin's. Account removal / admin designation use the messages below.)
    */
   | { type: 'set_admin_password'; username: string; password: string; currentPassword?: string }
+  /**
+   * Remove a `basic` account (ADR-0023). Reply: `account_op_result`. Removing a
+   * non-admin account succeeds; removing the admin while other accounts remain is
+   * refused (`admin_must_reassign` — designate a new admin first); removing the
+   * admin when it is the only account empties the store (allowed, ⇒ unconfigured).
+   * On success a fresh `settings` frame follows.
+   */
+  | { type: 'remove_account'; username: string }
+  /**
+   * Designate which `basic` account is the single admin (ADR-0023). Reply:
+   * `account_op_result` (`not_found` if `username` is not in `accounts`). On
+   * success a fresh `settings` frame follows.
+   */
+  | { type: 'set_admin_account'; username: string }
   /** Load a workspace's setting (reply: `workspace_setting`). */
   | { type: 'load_workspace_setting'; workspaceId: string }
   /** Save a workspace's setting. */
@@ -2632,6 +2695,12 @@ export type ServerToClient =
    * follows); on failure carries a structured {@link AdminPasswordFailureCode}.
    */
   | { type: 'admin_password_result'; result: AdminPasswordResult }
+  /**
+   * Result of a `remove_account` / `set_admin_account` attempt (ADR-0023). On
+   * success the basic provider was mutated + persisted (a fresh `settings` frame
+   * follows); on failure carries a structured {@link AccountOpFailureCode}.
+   */
+  | { type: 'account_op_result'; result: AccountOpResult }
   /**
    * The connection is not authenticated (ADR-0023) — the WS analogue of HTTP
    * 401. Emitted when an action requires auth but the connection presents no

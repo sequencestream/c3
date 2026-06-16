@@ -18,6 +18,7 @@ import type {
   VendorId,
   VendorModeCatalog,
 } from '@ccc/shared/protocol'
+import type { UiErrorCode } from '@ccc/shared/ui-codes'
 import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import {
@@ -110,20 +111,36 @@ function vendorModes(): Record<VendorId, VendorModeCatalog> {
 }
 
 /**
- * The `basic` admin password hash is owned SOLELY by `set_admin_password`
- * (ADR-0023 runtime slice): a generic settings save must never overwrite — or
- * worse, wipe — it, even if the client round-trips a stale/empty hash. Force the
- * persisted hash back to the on-disk value so the password survives any
- * `save_settings` (enabled/username/exposure toggles flow through unchanged).
+ * The `basic` account store (usernames, password hashes, admin designation) is
+ * owned SOLELY by the dedicated auth messages (`set_admin_password` upsert /
+ * `remove_account` / `set_admin_account`) — never by a generic `save_settings`
+ * (AUTH-R7). So when the saved draft is `basic`, force the ENTIRE basic provider
+ * back to the on-disk value: a stale/empty client draft can neither wipe accounts
+ * nor change the admin. When disk is not basic (the user just switched none/oauth
+ * → basic via the dropdown), the saved draft keeps its fresh empty-shell basic
+ * provider (accounts: [], adminUsername: '') — accounts are then filled only via
+ * the dedicated messages. `enabled` is re-derived on load by `normalizeAuth`.
  */
-function preserveAdminPasswordHash(next: SystemSettings): SystemSettings {
+export function preserveBasicProvider(next: SystemSettings): SystemSettings {
   if (next.auth?.provider.kind !== 'basic') return next
   const diskProvider = loadSettings().auth?.provider
-  const diskHash = diskProvider?.kind === 'basic' ? diskProvider.passwordHash : ''
-  return {
-    ...next,
-    auth: { ...next.auth, provider: { ...next.auth.provider, passwordHash: diskHash } },
-  }
+  if (diskProvider?.kind !== 'basic') return next
+  return { ...next, auth: { ...next.auth, provider: { ...diskProvider } } }
+}
+
+/**
+ * Cross-field validation for an auth block flowing through the generic save
+ * (AC5.3). Only `oauth` is checked here — `basic` accounts are owned by the
+ * dedicated messages (and restored by {@link preserveBasicProvider}), never set
+ * via save. Returns the {@link UiErrorCode} to reject with, or `null` if valid:
+ * the OAuth admin must be set AND be a member of the login allowlist.
+ */
+export function validateAuthForSave(next: SystemSettings): UiErrorCode | null {
+  const provider = next.auth?.provider
+  if (provider?.kind !== 'oauth') return null
+  if (!provider.adminEmail || !provider.allowedEmails.includes(provider.adminEmail))
+    return 'auth.oauthAdminInvalid'
+  return null
 }
 
 export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
@@ -140,9 +157,14 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
 }
 
 export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) => {
+  const authError = validateAuthForSave(msg.settings)
+  if (authError) {
+    conn.send({ type: 'error', error: { code: authError } })
+    return
+  }
   conn.send({
     type: 'settings',
-    settings: saveSettings(preserveAdminPasswordHash(msg.settings)),
+    settings: saveSettings(preserveBasicProvider(msg.settings)),
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),

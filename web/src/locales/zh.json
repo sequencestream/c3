@@ -1235,6 +1235,9 @@
       "turnRunning": "该会话已有一轮正在运行。",
       "invalidMode": "vendor \"{vendor}\" 的权限模式 \"{mode}\" 不合法"
     },
+    "prompt": {
+      "unsupportedFile": "消息只能附带图片（收到 \"{mediaType}\"）。"
+    },
     "intent": {
       "notFound": "意图不存在。",
       "dbUnavailable": "意图功能不可用 (c3.db)。",

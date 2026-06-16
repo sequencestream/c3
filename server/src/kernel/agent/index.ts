@@ -1,6 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { McpServerConfig, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { PermissionMode, ServerToClient } from '@ccc/shared/protocol'
+import type { PermissionMode, PromptImage, ServerToClient } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
 import { stringifyToolResult } from '../../format.js'
 import { addToolSession } from '../../sessions.js'
@@ -49,11 +49,25 @@ class InputStream {
   private waiters: Array<(r: IteratorResult<SDKUserMessage>) => void> = []
   private closed = false
 
-  push(text: string): void {
+  push(text: string, images?: PromptImage[]): void {
     if (this.closed) return
+    // With images, the SDK user message carries a content-block array (a leading
+    // text block + one base64 `image` block per attachment) — the Anthropic
+    // Messages content shape the underlying CLI forwards verbatim. Without images
+    // it stays a plain string (the original team-turn path is untouched).
+    const content =
+      images && images.length > 0
+        ? [
+            { type: 'text', text },
+            ...images.map((img) => ({
+              type: 'image',
+              source: { type: 'base64', media_type: img.mediaType, data: img.data },
+            })),
+          ]
+        : text
     const msg = {
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
     } as SDKUserMessage
     const waiter = this.waiters.shift()
@@ -115,6 +129,13 @@ export interface RunHandle {
 
 export interface RunOptions {
   prompt: string
+  /**
+   * Images attached to this turn's prompt (2026-06-16). Inlined as base64
+   * `image` content blocks on the first streaming-input user message (see
+   * {@link InputStream.push}). Omit / empty ⇒ a text-only turn. Subsequent
+   * team-lead `pushInput` turns stay text-only.
+   */
+  images?: PromptImage[]
   /** Working directory for this run — the active workspace's path. */
   cwd: string
   signal: AbortSignal
@@ -445,6 +466,7 @@ export async function runTaskTool(opts: {
 export async function runClaude(opts: RunOptions): Promise<void> {
   const {
     prompt,
+    images,
     cwd,
     signal,
     permissionMode,
@@ -499,7 +521,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   // `interrupt` (SDK control requests work only in streaming-input mode). The
   // first user turn is the original prompt; close() ends the session.
   const input = new InputStream()
-  input.push(prompt)
+  input.push(prompt, images)
 
   // When sandbox is active, wrap the vendor binary to run inside the container
   const claudePath = opts.sandboxHandle

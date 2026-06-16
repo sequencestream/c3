@@ -107,6 +107,7 @@ export class ClaudeDriver implements AgentDriver {
 
     void runClaude({
       prompt: opts.prompt,
+      ...(opts.images ? { images: opts.images } : {}),
       cwd: opts.cwd,
       signal: controller.signal,
       permissionMode: toPermissionMode(opts.actionMode, opts.toolGate),

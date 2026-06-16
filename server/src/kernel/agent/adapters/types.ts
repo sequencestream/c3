@@ -59,6 +59,10 @@ export type {
   VendorModeDescriptor,
   VendorModeCatalog,
   ToolManifestEntry,
+  // A user-attached prompt image (base64 + media type). Threaded neutrally to
+  // both vendor drivers via {@link DriverStartOptions.images}; each adapter does
+  // its own encoding (Claude → base64 image block, Codex → local_image path).
+  PromptImage,
 } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
@@ -206,6 +210,16 @@ export interface RemoteMcpServer {
 /** Caller-resolved inputs to start one run, neutral across vendors. */
 export interface DriverStartOptions {
   prompt: string
+  /**
+   * Images attached to this turn's prompt (2026-06-16). Vendor-neutral — each
+   * driver encodes them its own way: Claude inlines a base64 `image` content
+   * block on the user message; Codex writes each to a temp file and passes the
+   * path as a `local_image` (`codex exec --image <path>`), cleaning the temp
+   * files when the turn ends. Omit / empty ⇒ a text-only turn. Non-image media
+   * types are rejected upstream (the server boundary), so a driver may assume
+   * every entry is a supported image.
+   */
+  images?: import('@ccc/shared/protocol').PromptImage[]
   /** Working directory for the run. */
   cwd: string
   /** Aborts the run (the universal, all-vendor control). */

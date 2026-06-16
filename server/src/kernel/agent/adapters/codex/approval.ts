@@ -1,7 +1,7 @@
 /**
  * Codex's {@link ApprovalBridge} — a structural no-op (008 NO-GO, 2026-06-06-005).
- * Codex has NO in-the-loop, per-tool approval point: the SDK runs `codex exec`
- * non-interactively, closes the child's stdin after dispatch, and exposes only a
+ * Codex has NO in-the-loop, per-tool approval point: c3 runs `codex exec`
+ * non-interactively, closes the child's stdin after dispatch, and reads only a
  * read-only event stream. So `onRequest` honours the required contract (registers
  * a handler, returns a working disposer — `assertNeutralAdapterShape` checks this)
  * but the handler **never fires**: there is no event that would call it. Approval

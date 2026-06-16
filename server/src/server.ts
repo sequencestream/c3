@@ -465,7 +465,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const ctx: KernelContext = {
     eventBus,
     launchDeps,
-    launchRun: (rt, prompt) => launchRun(rt, prompt, launchDeps),
+    launchRun: (rt, prompt, images) => launchRun(rt, prompt, launchDeps, images),
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,
     broadcastIntentSessions: broadcasts.broadcastIntentSessions,

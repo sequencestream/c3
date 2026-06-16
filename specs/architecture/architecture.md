@@ -50,21 +50,22 @@ c3 is a single local process with two halves connected by one WebSocket:
   `server/src/runs.ts`) that owns each session's run: its abort/handle, an in-memory
   `baseline + buffer` of wire events for replay, the current viewers, and live status. Shared
   across connections so runs survive switching, refresh, and disconnect (ADR 0006).
-- **session-registry** — manages the workspace registry and sessions (via the SDK), owns
+- **session-registry** — manages the workspace registry and sessions, owns
   per-session mode and recent-access order, and persists that metadata to disk.
 - **agent-session** — wraps the vendor-neutral adapter layer, drives `AgentDriver.start()`,
   maps canonical messages onto the wire protocol, and exposes mid-run controls (mode switch, interrupt).
-  Each vendor's SDK is sealed behind its adapter — the run loop never imports SDK types directly.
+  Each vendor's SDK/CLI details are sealed behind its adapter — the run loop never imports SDK
+  types directly.
   - **Claude** uses `@anthropic-ai/claude-agent-sdk`'s `query()` loop via subprocess JSON stdio
     (see [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)).
-  - **Codex** uses `@openai/codex-sdk` via subprocess HTTP/SSE, with an in-process
+  - **Codex** uses c3's `codex exec --experimental-json` CLI wrapper, with an in-process
     Responses→Chat relay for third-party providers (ADR-0014).
 - **permission-gateway** — the `ApprovalBridge` callback plus a request→resolver registry. For
   answers; for Codex it degrades to launch-time policy (per-tool approval is structurally absent,
   ADR-0011 008 probe).
 - **Agent host CLIs** — each vendor's CLI is a hard runtime dependency:
   - `claude` CLI — spawned by `@anthropic-ai/claude-agent-sdk` as a subprocess.
-  - `codex` CLI — spawned by `@openai/codex-sdk` as a subprocess.
+  - `codex` CLI — spawned by c3 as a subprocess.
 
 ## Module map
 

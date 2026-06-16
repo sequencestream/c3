@@ -1236,6 +1236,9 @@
       "turnRunning": "このセッションではすでにターンが実行中です。",
       "invalidMode": "ベンダー \"{vendor}\" の権限モード \"{mode}\" は無効です"
     },
+    "prompt": {
+      "unsupportedFile": "メッセージには画像のみ添付できます(受信: \"{mediaType}\")。"
+    },
     "intent": {
       "notFound": "意図が見つかりません。",
       "dbUnavailable": "意図機能は利用できません(c3.db)。",

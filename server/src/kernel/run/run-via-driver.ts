@@ -19,6 +19,7 @@
  */
 import {
   PENDING_SESSION_PREFIX,
+  type PromptImage,
   type RunEndReason,
   type ServerToClient,
   type WaitUserInvolveSource,
@@ -241,6 +242,9 @@ export async function runViaDriver(
   eventBus: EventBus<EventBusEvents>,
   intentProfile?: IntentProfile,
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void,
+  /** Images attached to this turn — the codex driver writes them to temp files
+   *  and passes each as a `--image` path (2026-06-16). Omit ⇒ a text-only turn. */
+  images?: PromptImage[],
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -354,6 +358,7 @@ export async function runViaDriver(
   try {
     const run = await adapter.driver.start({
       prompt: effectivePrompt,
+      ...(images && images.length > 0 ? { images } : {}),
       cwd: driverCwd,
       signal: cycleAbort.signal,
       actionMode,

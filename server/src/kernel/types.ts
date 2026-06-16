@@ -79,7 +79,11 @@ export interface KernelContext {
    * As of ADR-0018 the launcher no longer accepts an `onEvent` callback —
    * subscribe to `eventBus` topics `'run:bound'` / `'run:settled` instead.
    */
-  readonly launchRun: (rt: SessionRuntime, prompt: string) => Promise<void>
+  readonly launchRun: (
+    rt: SessionRuntime,
+    prompt: string,
+    images?: import('@ccc/shared/protocol').PromptImage[],
+  ) => Promise<void>
 
   // ── broadcasts (transport-owned in spirit; slice 2/3b folds them into a single
   //    transport/Broadcaster — for now they are closure refs reached via ctx) ──

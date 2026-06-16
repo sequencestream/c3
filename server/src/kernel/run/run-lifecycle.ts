@@ -14,7 +14,7 @@
  * The control flow is still the original nested loop (3c-2a is a verbatim move);
  * 3c-2b refactors it onto the pure `decideResume` state machine.
  */
-import type { PermissionMode } from '@ccc/shared/protocol'
+import type { PermissionMode, PromptImage } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
@@ -145,6 +145,12 @@ export async function launchRun(
   rt: SessionRuntime,
   prompt: string,
   deps: LaunchRunDeps,
+  /**
+   * Images attached to this user turn (2026-06-16). Threaded to whichever vendor
+   * path this run forks to (codex driver or the claude loop); each encodes them
+   * its own way. Internal callers (intent/dev prompts) omit it ⇒ a text-only turn.
+   */
+  images?: PromptImage[],
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -283,6 +289,7 @@ export async function launchRun(
           deps.eventBus,
           resolvedIntentProfile,
           deps.onPermissionRequest,
+          images,
         )
       const unavailable =
         'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
@@ -392,6 +399,11 @@ export async function launchRun(
       try {
         await runClaude({
           prompt,
+          // Images accompany the prompt on every fresh-session attempt (the first
+          // try AND each degradation fallback, which re-sends `prompt` into a new
+          // SDK session). A socket-reconnect pass resumes the SAME session, whose
+          // history already holds the images, so it must NOT resend them.
+          ...(images && !reconnecting ? { images } : {}),
           cwd: rt.effectiveCwd ?? workspacePath,
           signal: attemptAbort.signal,
           // Intent chats are pinned to `default` so the gateway always runs.

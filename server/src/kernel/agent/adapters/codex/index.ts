@@ -7,7 +7,7 @@
  * faces only.
  *
  * Like Claude (per-run CLI), Codex needs no
- * supervisor — it spawns `codex exec` per run via the SDK — so it registers as a
+ * supervisor — c3 spawns `codex exec` per run — so it registers as a
  * no-arg factory in `adapters/registry.ts`.
  */
 import type { VendorAdapter } from '../types.js'
@@ -29,7 +29,7 @@ export { itemToBlock, itemToCanonical } from './translate.js'
 export { CODEX_RELAY_PROVIDER, type CodexRelay, type RelayUpstream } from './relay-contract.js'
 
 // ---------------------------------------------------------------------------
-// Codex SDK native tool surface — these are the tool names Codex's SDK
+// Codex native tool surface — these are the tool names Codex
 // actually emits in its thread event items (translate.ts):
 //   shell                  ← command_execution items
 //   apply_patch            ← file_change items
@@ -66,7 +66,7 @@ export function createCodexAdapter(
       const entries: ToolManifestEntry[] = []
       for (const t of SDK_READ_TOOLS) entries.push({ name: t, isWrite: false })
       for (const t of SDK_WRITE_TOOLS) entries.push({ name: t, isWrite: true })
-      // Codex SDK supports mcp_tool_call items in thread events, so expose
+      // Codex emits mcp_tool_call items in thread events, so expose
       // MCP namespace prefixes when workspace MCP servers are configured.
       if (mcpServers) {
         for (const serverName of Object.keys(mcpServers)) {

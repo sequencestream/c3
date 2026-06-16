@@ -2,35 +2,30 @@
  * Codex's {@link AgentDriver} (2026-06-06-005) — the read-only advisor seat
  * Phase 0 (008 NO-GO) pinned. Unlike Claude (per-run CLI with a blocking
  * `canUseTool`), Codex
- * is a one-shot non-interactive exec: `startThread` fixes the launch-time policy
- * (`sandboxMode` + `approvalPolicy`), `runStreamed` dispatches the prompt and
- * yields a **read-only** `AsyncGenerator<ThreadEvent>`, and the ONLY runtime
- * control is the whole-turn `AbortSignal`. There is no per-tool approval point
- * (stdin closes after dispatch), so the {@link CodexApprovalBridge} handler never
- * fires and `capabilities.perToolApproval` is false.
+ * is a one-shot non-interactive exec: c3 spawns `codex exec --experimental-json`,
+ * fixes the launch-time policy (`sandboxMode` + `approvalPolicy`), dispatches the
+ * prompt on stdin, and yields a **read-only** `AsyncGenerator<ThreadEvent>`. The
+ * ONLY runtime control is the whole-turn `AbortSignal`. There is no per-tool
+ * approval point (stdin closes after dispatch), so the {@link CodexApprovalBridge}
+ * handler never fires and `capabilities.perToolApproval` is false.
  *
- * A "run" here is: build a `Codex` over the neutral options → start (or resume) a
- * thread → translate the streamed items into the canonical stream → close when the
- * turn ends. Tool items are auto-allowed by the launch-time gate, so the
+ * A "run" here is: build a Codex CLI client over the neutral options → start (or
+ * resume) a thread → translate the streamed items into the canonical stream →
+ * close when the turn ends. Tool items are auto-allowed by the launch-time gate, so the
  * translator stamps them `preApproved: true` (the audit reconstruction).
  *
- * SDK boundary (testability): the `Codex` construction is injected via
- * {@link CodexFactory}, defaulting to the real `@openai/codex-sdk`. Tests inject a
- * fake that yields a scripted event stream — no Codex auth/binary needed (Phase 0
- * ran L1-only; live L2 is a later, authenticated step).
+ * Process boundary (testability): the Codex client construction is injected via
+ * {@link CodexFactory}, defaulting to c3's minimal CLI wrapper. Tests inject a
+ * fake that yields a scripted event stream — no Codex auth/binary needed for the
+ * main L1 suite.
  *
- * ADR-0009: imports `@openai/codex-sdk` (inside `adapters/codex/`); only canonical
- * shapes leave via {@link AgentRun.messages}.
+ * ADR-0009: imports `@openai/codex-sdk` types (inside `adapters/codex/`); only
+ * canonical shapes leave via {@link AgentRun.messages}.
  */
 import { appendFileSync } from 'node:fs'
-import { Codex } from '@openai/codex-sdk'
-import type {
-  ApprovalMode,
-  CodexOptions,
-  SandboxMode,
-  ThreadEvent,
-  ThreadOptions,
-} from '@openai/codex-sdk'
+import { spawn } from 'node:child_process'
+import readline from 'node:readline'
+import type { ApprovalMode, SandboxMode, ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
 import type {
   ActionMode,
   AgentDriver,
@@ -44,20 +39,32 @@ import type { CodexPolicy } from '@ccc/shared/protocol'
 import { codexCapabilities } from './capabilities.js'
 import { itemToCanonical } from './translate.js'
 import { CODEX_RELAY_PROVIDER, type CodexRelay } from './relay-contract.js'
+import { writeImageTempFiles, cleanupImageTempFiles, type ImageTempFiles } from './image-files.js'
 import { resolve } from '../../process/launcher.js'
 
 const INTENT_MCP_TOOL_NAMES = ['find_intents', 'view_intent', 'save_intents'] as const
 
-/** The minimal structural face of a Codex thread the driver consumes (real `Thread` satisfies it). */
+/**
+ * One input item for a codex turn (2026-06-16). Mirrors the codex SDK's
+ * `UserInput` union: a text segment, or a `local_image` referencing an
+ * on-disk path (the CLI's `--image <FILE>`). c3 builds these from the neutral
+ * prompt + {@link writeImageTempFiles}.
+ */
+export type CodexUserInput = { type: 'text'; text: string } | { type: 'local_image'; path: string }
+
+/** A codex turn input: a plain prompt string, or a mixed text/image item list. */
+export type CodexInput = string | CodexUserInput[]
+
+/** The minimal structural face of a Codex thread the driver consumes. */
 export interface CodexThread {
   readonly id: string | null
   runStreamed(
-    input: string,
+    input: CodexInput,
     turnOptions?: { signal?: AbortSignal },
   ): Promise<{ events: AsyncGenerator<ThreadEvent> }>
 }
 
-/** The minimal structural face of the `Codex` class (real `Codex` satisfies it). */
+/** The minimal structural face of the Codex client. */
 export interface CodexClient {
   startThread(options?: ThreadOptions): CodexThread
   resumeThread(id: string, options?: ThreadOptions): CodexThread
@@ -85,8 +92,263 @@ interface CodexMcpServerConfig {
   bearer_token_env_var?: string
 }
 
-const defaultFactory: CodexFactory = (options) =>
-  new Codex(options as CodexOptions) as unknown as CodexClient
+type CodexConfigValue =
+  | string
+  | number
+  | boolean
+  | CodexConfigValue[]
+  | { [key: string]: CodexConfigValue | undefined }
+
+const defaultFactory: CodexFactory = (options) => new CliCodexClient(options)
+
+class CliCodexClient implements CodexClient {
+  constructor(private readonly options: CodexFactoryOptions) {}
+
+  startThread(options?: ThreadOptions): CodexThread {
+    return new CliCodexThread(this.options, options)
+  }
+
+  resumeThread(id: string, options?: ThreadOptions): CodexThread {
+    return new CliCodexThread(this.options, options, id)
+  }
+}
+
+class CliCodexThread implements CodexThread {
+  private threadId: string | null
+
+  constructor(
+    private readonly options: CodexFactoryOptions,
+    private readonly threadOptions?: ThreadOptions,
+    id: string | null = null,
+  ) {
+    this.threadId = id
+  }
+
+  get id(): string | null {
+    return this.threadId
+  }
+
+  async runStreamed(
+    input: CodexInput,
+    turnOptions?: { signal?: AbortSignal },
+  ): Promise<{ events: AsyncGenerator<ThreadEvent> }> {
+    return { events: this.run(input, turnOptions?.signal) }
+  }
+
+  private async *run(input: CodexInput, signal?: AbortSignal): AsyncGenerator<ThreadEvent> {
+    // Split the neutral input into the stdin prompt text and the `--image` paths.
+    // codex exec reads the prompt on stdin and takes each image as a CLI path
+    // (`-i/--image <FILE>`), so the two travel different channels.
+    const { text, imagePaths } = normalizeCodexInput(input)
+    const args = codexExecArgs(this.options, this.threadOptions, this.threadId, imagePaths)
+    const child = spawn(this.options.codexPathOverride ?? 'codex', args, {
+      env: codexExecEnv(this.options),
+      signal,
+    })
+    let spawnError: Error | null = null
+    child.once('error', (err) => {
+      spawnError = err
+    })
+    if (!child.stdin) {
+      child.kill()
+      throw new Error('Codex child process has no stdin')
+    }
+    child.stdin.write(text)
+    child.stdin.end()
+    if (!child.stdout) {
+      child.kill()
+      throw new Error('Codex child process has no stdout')
+    }
+
+    const stderrChunks: Buffer[] = []
+    child.stderr?.on('data', (data: Buffer) => {
+      stderrChunks.push(data)
+    })
+    const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+      (resolveExit) => {
+        child.once('exit', (code, exitSignal) => resolveExit({ code, signal: exitSignal }))
+      },
+    )
+    const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity })
+
+    try {
+      for await (const line of rl) {
+        let parsed: ThreadEvent
+        try {
+          parsed = JSON.parse(line) as ThreadEvent
+        } catch (err) {
+          throw new Error(`Failed to parse codex JSON event: ${line}`, { cause: err })
+        }
+        if (parsed.type === 'thread.started') this.threadId = parsed.thread_id
+        yield parsed
+      }
+      if (spawnError) throw spawnError
+      const exit = await exitPromise
+      if (exit.code !== 0 || exit.signal) {
+        const detail = exit.signal ? `signal ${exit.signal}` : `code ${exit.code ?? 1}`
+        throw new Error(
+          `Codex Exec exited with ${detail}: ${Buffer.concat(stderrChunks).toString('utf8')}`,
+        )
+      }
+    } finally {
+      rl.close()
+      child.removeAllListeners()
+      try {
+        if (!child.killed) child.kill()
+      } catch {
+        // Best-effort cleanup only.
+      }
+    }
+  }
+}
+
+/**
+ * Fold a {@link CodexInput} into the two channels codex exec uses: the prompt
+ * `text` (sent on stdin) and the `imagePaths` (each becomes `--image <path>`).
+ * A bare string is all-text, no images. Multiple text items are newline-joined.
+ */
+function normalizeCodexInput(input: CodexInput): { text: string; imagePaths: string[] } {
+  if (typeof input === 'string') return { text: input, imagePaths: [] }
+  const texts: string[] = []
+  const imagePaths: string[] = []
+  for (const item of input) {
+    if (item.type === 'text') texts.push(item.text)
+    else imagePaths.push(item.path)
+  }
+  return { text: texts.join('\n'), imagePaths }
+}
+
+function codexExecArgs(
+  options: CodexFactoryOptions,
+  threadOptions: ThreadOptions | undefined,
+  threadId: string | null,
+  imagePaths: string[] = [],
+): string[] {
+  const args = ['exec', '--experimental-json']
+  for (const override of serializeConfigOverrides(options.config)) {
+    args.push('--config', override)
+  }
+  // Attached images: each rides as a `--image <FILE>` exec option. Paths point at
+  // the per-turn temp files the driver wrote (cleaned up when the turn ends).
+  for (const path of imagePaths) args.push('--image', path)
+  if (options.baseUrl) args.push('--config', `openai_base_url=${toTomlValue(options.baseUrl)}`)
+  if (threadOptions?.model) args.push('--model', threadOptions.model)
+  if (threadOptions?.sandboxMode) args.push('--sandbox', threadOptions.sandboxMode)
+  if (threadOptions?.workingDirectory) args.push('--cd', threadOptions.workingDirectory)
+  for (const dir of threadOptions?.additionalDirectories ?? []) args.push('--add-dir', dir)
+  if (threadOptions?.skipGitRepoCheck) args.push('--skip-git-repo-check')
+  if (threadOptions?.modelReasoningEffort) {
+    args.push(
+      '--config',
+      `model_reasoning_effort=${toTomlValue(threadOptions.modelReasoningEffort)}`,
+    )
+  }
+  if (threadOptions?.networkAccessEnabled !== undefined) {
+    args.push(
+      '--config',
+      `sandbox_workspace_write.network_access=${threadOptions.networkAccessEnabled}`,
+    )
+  }
+  if (threadOptions?.webSearchMode) {
+    args.push('--config', `web_search=${toTomlValue(threadOptions.webSearchMode)}`)
+  } else if (threadOptions?.webSearchEnabled === true) {
+    args.push('--config', 'web_search="live"')
+  } else if (threadOptions?.webSearchEnabled === false) {
+    args.push('--config', 'web_search="disabled"')
+  }
+  if (threadOptions?.approvalPolicy) {
+    args.push('--config', `approval_policy=${toTomlValue(threadOptions.approvalPolicy)}`)
+  }
+  if (threadId) args.push('resume', threadId)
+  return args
+}
+
+function codexExecEnv(options: CodexFactoryOptions): Record<string, string> {
+  const env: Record<string, string> = {}
+  if (options.env) Object.assign(env, options.env)
+  else
+    for (const [key, value] of Object.entries(process.env))
+      if (value !== undefined) env[key] = value
+  if (!env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE) env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE = 'c3'
+  if (options.apiKey) env.CODEX_API_KEY = options.apiKey
+  return env
+}
+
+function serializeConfigOverrides(config: Record<string, unknown> | undefined): string[] {
+  if (!config) return []
+  const out: string[] = []
+  flattenConfig(config, '', out)
+  return out
+}
+
+function flattenConfig(value: unknown, prefix: string, out: string[]): void {
+  if (!isConfigObject(value)) {
+    if (!prefix) throw new Error('Codex config overrides must be a plain object')
+    out.push(`${prefix}=${toTomlValue(asConfigValue(value), prefix)}`)
+    return
+  }
+  const entries = Object.entries(value)
+  if (!prefix && entries.length === 0) return
+  if (prefix && entries.length === 0) {
+    out.push(`${prefix}={}`)
+    return
+  }
+  for (const [key, child] of entries) {
+    if (!key) throw new Error('Codex config override keys must be non-empty strings')
+    if (child === undefined) continue
+    const path = prefix ? `${prefix}.${key}` : key
+    if (isConfigObject(child)) flattenConfig(child, path, out)
+    else out.push(`${path}=${toTomlValue(asConfigValue(child), path)}`)
+  }
+}
+
+function toTomlValue(value: CodexConfigValue, path = 'config'): string {
+  if (typeof value === 'string') return quoteTomlString(value)
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Codex config override at ${path} must be finite`)
+    return String(value)
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (Array.isArray(value)) return `[${value.map((item) => toTomlValue(item, path)).join(', ')}]`
+  const parts: string[] = []
+  for (const [key, child] of Object.entries(value)) {
+    if (!key) throw new Error('Codex config override keys must be non-empty strings')
+    if (child === undefined) continue
+    parts.push(`${formatTomlKey(key)} = ${toTomlValue(child, `${path}.${key}`)}`)
+  }
+  return `{${parts.join(', ')}}`
+}
+
+function asConfigValue(value: unknown): CodexConfigValue {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    Array.isArray(value) ||
+    isConfigObject(value)
+  ) {
+    return value as CodexConfigValue
+  }
+  if (value === null) throw new Error('Codex config override cannot be null')
+  throw new Error(`Unsupported Codex config override value: ${typeof value}`)
+}
+
+function isConfigObject(value: unknown): value is { [key: string]: CodexConfigValue | undefined } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function formatTomlKey(key: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(key) ? key : quoteTomlString(key)
+}
+
+function quoteTomlString(value: string): string {
+  return `"${value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')}"`
+}
 
 /**
  * Translate the neutral {@link ActionMode} × {@link ToolGate} grid into Codex's
@@ -363,17 +625,16 @@ export class CodexDriver implements AgentDriver {
       codexOptions.env = relayEnv(opts.envOverrides)
     }
     // Binary resolution. In a sandbox run a wrapper script is supplied
-    // (`opts.sandboxWrapperPath`) — it becomes the codex executable, so the SDK
+    // (`opts.sandboxWrapperPath`) — it becomes the codex executable, so c3
     // spawns `docker exec … codex "$@"` and the run executes INSIDE the container
-    // (ADR-0024). The wrapper forwards every SDK-built argv via `"$@"`, so
+    // (ADR-0024). The wrapper forwards every c3-built argv via `"$@"`, so
     // `baseUrl` (→ `--config openai_base_url`) and `model` (→ `--model`) cross into
-    // the container natively; only the SDK's host-process `CODEX_API_KEY` env does
+    // the container natively; only the host-process `CODEX_API_KEY` env does
     // not cross `docker exec --env-file`, which the caller mirrors into the
-    // env-file via {@link codexDirectSandboxEnv}. Without a wrapper, bypass the
-    // SDK's internal npm-based binary resolution (findCodexPath) in favor of c3's
-    // own ProcessLauncher PATH probe (cached; a no-op after the first health
-    // check). When the binary is not on PATH, higher layers handle the absence
-    // before the adapter is constructed — by this point it is always present.
+    // env-file via {@link codexDirectSandboxEnv}. Without a wrapper, use c3's own
+    // ProcessLauncher PATH probe (cached; a no-op after the first health check).
+    // When the binary is not on PATH, higher layers handle the absence before the
+    // adapter is constructed — by this point it is always present.
     codexOptions.codexPathOverride = opts.sandboxWrapperPath ?? resolve('codex') ?? undefined
     const codex = this.createCodex(codexOptions)
     // Codex's launch-time policy IS the per-tool-approval substitute (008). It is
@@ -433,9 +694,35 @@ export class CodexDriver implements AgentDriver {
       }
     }
 
+    // Prompt images (2026-06-16): codex takes images as on-disk paths
+    // (`--image <FILE>`), so decode each attachment to a per-turn temp file and
+    // build the mixed text/image input. SANDBOX EXCEPTION: a sandboxed run executes
+    // inside a container that only bind-mounts the worktree at /workspace, so a host
+    // temp path is unreachable — pointing codex at it would fail the whole turn.
+    // Until images cross the container boundary (a follow-up), drop them for
+    // sandboxed runs rather than break the turn.
+    let imageFiles: ImageTempFiles | null = null
+    let codexInput: CodexInput = opts.prompt
+    if (opts.images && opts.images.length > 0) {
+      if (opts.sandboxWrapperPath) {
+        console.warn(
+          '[c3] codex sandbox run: prompt images are not supported inside the container ' +
+            '(host temp path is not bind-mounted) — dropping images for this turn.',
+        )
+      } else {
+        imageFiles = writeImageTempFiles(opts.images)
+        if (imageFiles) {
+          codexInput = [
+            { type: 'text', text: opts.prompt },
+            ...imageFiles.paths.map((path) => ({ type: 'local_image' as const, path })),
+          ]
+        }
+      }
+    }
+
     const pump = async (): Promise<void> => {
       try {
-        const { events } = await thread.runStreamed(opts.prompt, { signal: controller.signal })
+        const { events } = await thread.runStreamed(codexInput, { signal: controller.signal })
         for await (const ev of events) {
           if (controller.signal.aborted) break
           dispatch(ev)
@@ -446,6 +733,7 @@ export class CodexDriver implements AgentDriver {
       } finally {
         resolveSid(sid) // never leave sessionId() hanging if the turn never started.
         if (relayToken) this.relay?.unregister(relayToken) // evict the per-run binding.
+        cleanupImageTempFiles(imageFiles) // remove the per-turn image temp files.
       }
     }
     void pump()

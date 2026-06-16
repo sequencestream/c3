@@ -137,6 +137,32 @@ export type TranscriptItem =
 export const EMPTY_TURN_NOTICE = '— No response this turn (the model only thought) —'
 
 /**
+ * The media types c3 accepts for prompt images — the ONLY file kind a user
+ * message may carry to an agent (2026-06-16). Both vendor adapters can ingest
+ * these: Claude as a base64 `image` content block, Codex as a `local_image`
+ * path. Any other `mediaType` is rejected at the server boundary (the non-goal
+ * is generic file/attachment support).
+ */
+export const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
+export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number]
+
+/**
+ * An image attached to a {@link ClientToServer} `user_prompt`. `data` is the
+ * raw base64-encoded image bytes WITHOUT a `data:` URI prefix (the caller strips
+ * it); `mediaType` is one of {@link IMAGE_MEDIA_TYPES}. The neutral shape both
+ * adapters consume — see {@link isImageMediaType} for the boundary guard.
+ */
+export interface PromptImage {
+  mediaType: string
+  data: string
+}
+
+/** Narrow an arbitrary media type to an accepted {@link ImageMediaType}. */
+export function isImageMediaType(mediaType: string): mediaType is ImageMediaType {
+  return (IMAGE_MEDIA_TYPES as readonly string[]).includes(mediaType)
+}
+
+/**
  * A not-yet-started session. The browser invents the `clientId`; the server
  * binds it to a real SDK `sessionId` (via `session_started`) once the first
  * prompt's `query()` reports one.
@@ -2046,7 +2072,13 @@ export interface TimeRangeProjectStats {
 
 // Client → Server
 export type ClientToServer =
-  | { type: 'user_prompt'; text: string }
+  /**
+   * A user turn. `images` (optional) carries attached images alongside the
+   * text — multiple allowed, each a {@link PromptImage} (base64 + media type).
+   * The server validates every `mediaType` against {@link IMAGE_MEDIA_TYPES}
+   * and rejects the whole turn on any non-image type (`prompt.unsupportedFile`).
+   */
+  | { type: 'user_prompt'; text: string; images?: PromptImage[] }
   /**
    * Answer a pending permission request. For `AskUserQuestion`, an `allow` may
    * carry `answers` (question text → selected option label(s) / custom reply,

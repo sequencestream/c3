@@ -1,13 +1,13 @@
 /**
  * Codex's {@link SessionStore} (2026-06-08). Reads session metadata directly from
  * the on-disk JSONL files under `~/.codex/sessions/YYYY/MM/DD/`. The
- * `@openai/codex-sdk` exposes **no listing or reading API**, but c3 writes session
- * transcripts to the filesystem via the SDK's `startThread`/`resumeThread` path,
- * so this store reads them back for listing and title derivation.
+ * `@openai/codex-sdk` exposes **no listing or reading API**, but the Codex CLI writes
+ * session transcripts to the filesystem when c3 runs `codex exec`, so this store reads
+ * them back for listing and title derivation.
  *
  * Title is derived from the first user `input_text` in the transcript (matching
  * how the CLI sidebar derives it from the first prompt). `rename`/`delete` are
- * absent (the SDK supports neither).
+ * absent (Codex exposes neither operation).
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import path from 'node:path'

@@ -1,16 +1,16 @@
 /**
  * Codex's probed capability ledger (ADR-0011, Phase 0 probe 008 NO-GO,
  * 2026-06-06-005). **Every flag is FALSE** — and the load-bearing one is
- * `perToolApproval: false`: the `@openai/codex-sdk` drives `codex exec
- * --experimental-json`, writes the prompt to the child's stdin and immediately
+ * `perToolApproval: false`: c3 drives `codex exec --experimental-json`,
+ * writes the prompt to the child's stdin and immediately
  * `stdin.end()`s it, so the event stream is read-only and single-directional —
  * there is no write-back half-channel, no "approval request" event, and the only
  * runtime intervention is a whole-turn `AbortSignal`. A tool can therefore only
  * be allowed/denied for the *entire* turn, never per-call.
  *
- * The sole `true` flag is `taskStore` — the `@openai/codex-sdk` task tools
- * (TaskCreate / TaskList / TaskUpdate / TaskGet) work identically to Claude's
- * SDK task surface. This is orthogonal to the 008 per-tool-approval NO-GO: task
+ * The sole `true` flag is `taskStore` — Codex todo-list items are translated into
+ * the same neutral task model as Claude's SDK task surface. This is orthogonal to
+ * the 008 per-tool-approval NO-GO: task
  * tools are declarative data operations, not live-interception points.
  *
  * The rest are FALSE for the same structural reason (no in-the-loop point exists):
@@ -32,7 +32,7 @@
  * scanning — the filesystem under `~/.codex/sessions/` is enumerable even though
  * the SDK has no listing API. `read` was upgraded to `'full'` in 2026-06-15 when
  * the same on-disk JSONL store gained history translation. `resume` is `full` — the
- * SDK's `resumeThread(id)` continues a known thread end-to-end. `rename`/`delete`
+ * CLI resume continues a known thread end-to-end. `rename`/`delete`
  * are `none` (the SDK supports neither). This is the matrix that proves a boolean
  * could not have expressed the staged `list/read/resume` support.
  */

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { resolveDefaultAgentId, SYSTEM_AGENT_ID } from './protocol.js'
+import {
+  resolveDefaultAgentId,
+  isImageMediaType,
+  IMAGE_MEDIA_TYPES,
+  SYSTEM_AGENT_ID,
+} from './protocol.js'
 import type { AgentConfig, ClientToServer, ServerToClient } from './protocol.js'
 
 /**
@@ -11,6 +16,12 @@ import type { AgentConfig, ClientToServer, ServerToClient } from './protocol.js'
 describe('protocol wire format', () => {
   const clientMessages: ClientToServer[] = [
     { type: 'user_prompt', text: 'hello' },
+    // A prompt carrying images (2026-06-16): base64 + media type per attachment.
+    {
+      type: 'user_prompt',
+      text: 'look',
+      images: [{ mediaType: 'image/png', data: 'AAAA' }],
+    },
     { type: 'permission_response', requestId: 'r1', decision: 'allow' },
     { type: 'permission_response', requestId: 'r2', decision: 'deny' },
     { type: 'set_mode', mode: 'plan' },
@@ -171,6 +182,19 @@ describe('protocol wire format', () => {
       )
       .map((m) => m.decision)
     expect(decisions).toEqual(['allow', 'deny'])
+  })
+})
+
+describe('isImageMediaType — prompt-image boundary guard (2026-06-16)', () => {
+  it('accepts every declared image media type', () => {
+    for (const t of IMAGE_MEDIA_TYPES) expect(isImageMediaType(t)).toBe(true)
+  })
+
+  it('rejects non-image media types (the server refuses these attachments)', () => {
+    expect(isImageMediaType('application/pdf')).toBe(false)
+    expect(isImageMediaType('text/plain')).toBe(false)
+    expect(isImageMediaType('image/svg+xml')).toBe(false) // not in the allowlist
+    expect(isImageMediaType('')).toBe(false)
   })
 })
 

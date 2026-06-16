@@ -1235,6 +1235,9 @@
       "turnRunning": "A turn is already running in this session.",
       "invalidMode": "Invalid permission mode \"{mode}\" for vendor \"{vendor}\"."
     },
+    "prompt": {
+      "unsupportedFile": "Only images can be attached to a message (received \"{mediaType}\")."
+    },
     "intent": {
       "notFound": "Intent not found.",
       "dbUnavailable": "Intents feature unavailable (c3.db).",

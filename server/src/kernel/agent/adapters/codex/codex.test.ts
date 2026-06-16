@@ -7,7 +7,7 @@
  * no-op approval bridge (no per-tool point exists — 008 NO-GO).
  */
 import { describe, it, expect, vi } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
@@ -25,6 +25,15 @@ import {
 } from './driver.js'
 import { CodexApprovalBridge } from './approval.js'
 import { createCodexAdapter } from './index.js'
+
+// Host-binary resolver shim: lets the image test point a NON-sandbox run at a fake
+// `codex` (the only DriverStartOptions binary knob — sandboxWrapperPath — would
+// intentionally drop images). Default returns the name so every other test's real
+// `resolve('codex')` is unchanged; fake-factory tests ignore codexPathOverride anyway.
+const launcherShim = vi.hoisted(() => ({ codexPath: '' as string }))
+vi.mock('../../process/launcher.js', () => ({
+  resolve: (name: string) => launcherShim.codexPath || name,
+}))
 
 /** An async generator over a fixed script of events. */
 async function* scriptEvents(events: ThreadEvent[]): AsyncGenerator<ThreadEvent> {
@@ -66,6 +75,10 @@ async function collect(stream: AsyncIterable<CanonicalMessage>): Promise<Canonic
   const out: CanonicalMessage[] = []
   for await (const m of stream) out.push(m)
   return out
+}
+
+function shQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 describe('CodexDriver', () => {
@@ -189,6 +202,116 @@ describe('CodexDriver', () => {
     await driver.start(startOpts({ networkAccess: false }))
     expect(calls[0].options).toMatchObject({ networkAccessEnabled: false })
     expect(calls[0].options).not.toHaveProperty('webSearchEnabled')
+  })
+
+  it('default CLI wrapper spawns codex exec and parses JSONL events', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'c3-codex-cli-'))
+    const fakeCodex = join(dir, 'codex')
+    const argsFile = join(dir, 'args.txt')
+    writeFileSync(
+      fakeCodex,
+      [
+        '#!/bin/sh',
+        `printf '%s\\n' "$@" > ${shQuote(argsFile)}`,
+        'cat >/dev/null',
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"thread_cli"}\'',
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"ok"}}\'',
+        'printf \'%s\\n\' \'{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}\'',
+      ].join('\n'),
+    )
+    chmodSync(fakeCodex, 0o755)
+    try {
+      const driver = new CodexDriver()
+      const run = await driver.start(
+        startOpts({
+          sandboxWrapperPath: fakeCodex,
+          mcpServers: {
+            c3: { type: 'http', url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=t' },
+          },
+        }),
+      )
+      expect(await run.sessionId()).toBe('thread_cli')
+      expect(await collect(run.messages())).toHaveLength(1)
+      const argv = readFileSync(argsFile, 'utf-8').split('\n').filter(Boolean)
+      expect(argv).toContain('exec')
+      expect(argv).toContain('--experimental-json')
+      expect(argv).toContain(
+        'mcp_servers.c3.url="http://127.0.0.1:3000/internal/intent-mcp/v1?token=t"',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('writes prompt images to temp files, passes them as --image paths, and cleans up after the turn', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'c3-codex-img-cli-'))
+    const fakeCodex = join(dir, 'codex')
+    const argsFile = join(dir, 'args.txt')
+    writeFileSync(
+      fakeCodex,
+      [
+        '#!/bin/sh',
+        `printf '%s\\n' "$@" > ${shQuote(argsFile)}`,
+        'cat >/dev/null',
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"thread_img"}\'',
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"saw it"}}\'',
+        'printf \'%s\\n\' \'{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}\'',
+      ].join('\n'),
+    )
+    chmodSync(fakeCodex, 0o755)
+    // Point the host-binary resolver at the fake codex (a NON-sandbox run, so images
+    // are attached — sandboxWrapperPath would drop them).
+    launcherShim.codexPath = fakeCodex
+    try {
+      const driver = new CodexDriver()
+      const run = await driver.start(
+        startOpts({
+          images: [
+            { mediaType: 'image/png', data: Buffer.from('PNGBYTES').toString('base64') },
+            { mediaType: 'image/jpeg', data: Buffer.from('JPGBYTES').toString('base64') },
+          ],
+        }),
+      )
+      expect(await run.sessionId()).toBe('thread_img')
+      await collect(run.messages())
+
+      const argv = readFileSync(argsFile, 'utf-8').split('\n').filter(Boolean)
+      // Two --image flags, each followed by a temp path under c3-codex-img-*.
+      const imageFlagIdx = argv.flatMap((a, i) => (a === '--image' ? [i] : []))
+      expect(imageFlagIdx).toHaveLength(2)
+      const imagePaths = imageFlagIdx.map((i) => argv[i + 1])
+      expect(imagePaths[0]).toMatch(/c3-codex-img-.*image-0\.png$/)
+      expect(imagePaths[1]).toMatch(/c3-codex-img-.*image-1\.jpg$/)
+      // The temp files were removed when the turn ended (no residue).
+      for (const p of imagePaths) expect(existsSync(p)).toBe(false)
+    } finally {
+      launcherShim.codexPath = ''
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('does NOT attach images on a sandboxed run (host temp path is unreachable in the container)', async () => {
+    let capturedInput: unknown
+    const thread: CodexThread = {
+      id: 't',
+      runStreamed: async (input) => {
+        capturedInput = input
+        return { events: scriptEvents([{ type: 'thread.started', thread_id: 't' }]) }
+      },
+    }
+    const driver = new CodexDriver(() => ({
+      startThread: () => thread,
+      resumeThread: () => thread,
+    }))
+    const run = await driver.start(
+      startOpts({
+        sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh',
+        images: [{ mediaType: 'image/png', data: Buffer.from('x').toString('base64') }],
+      }),
+    )
+    await collect(run.messages())
+    // Sandbox exception: the input stays a plain prompt string, no image items.
+    expect(capturedInput).toBe('do the thing')
   })
 })
 

@@ -40,6 +40,9 @@ each driver translates to its native config — the codex driver → `config.mcp
 { url }` (the streamable-HTTP form `codex mcp add --url` writes). c3's only producer today is the
 intent comm-agent: `runViaDriver` binds a per-run localhost HTTP MCP route carrying the three intent
 [intent-management design § Intent tools over localhost HTTP MCP](../intent-management/design.md).
+Codex is launched by c3's own minimal `codex exec --experimental-json` wrapper, not the
+`@openai/codex-sdk` runtime wrapper; the SDK package remains only the event/type reference inside
+the Codex adapter.
 
 ### InputStream — the streaming-input prompt
 
@@ -48,10 +51,18 @@ intent comm-agent: `runViaDriver` binds a per-run localhost HTTP MCP route carry
 `result` arrives — it keeps the query (and the underlying Claude Code process) alive until
 `close()`:
 
-- `push(text)` enqueues another user turn into the **same** live session (no `resume`, no new
-  process); a parked iterator is resolved immediately, else it queues.
+- `push(text, images?)` enqueues another user turn into the **same** live session (no `resume`, no
+  new process); a parked iterator is resolved immediately, else it queues.
 - `close()` ends the stream so the `for await` returns and the query terminates normally.
-- The constructor flow `push`es the original prompt, then the loop runs.
+- The constructor flow `push`es the original prompt (with its `images`, if any), then the loop runs.
+
+**Prompt images (2026-06-16):** when the first turn carries images, `push` builds the
+`SDKUserMessage` `content` as a block array — a leading `{ type: 'text' }` plus one
+`{ type: 'image', source: { type: 'base64', media_type, data } }` per attachment — instead of a
+plain string (the Anthropic Messages content shape the CLI forwards verbatim). A text-only turn
+stays a string (unchanged). Team-lead `pushInput` turns remain text-only. Images arrive on the
+neutral `DriverStartOptions.images` / `RunOptions.images` field; the Codex path encodes the same
+field differently (temp-file `--image` paths — see [codex-sdk-guide](../../../architecture/codex-sdk-guide.md)).
 
 Two payoffs beyond teams: SDK control requests (`setPermissionMode` / `interrupt`) take effect
 **only** in streaming-input mode — under a string prompt they were silently swallowed (ADR 0008).
@@ -84,8 +95,12 @@ The connection is a **view**, not a run owner:
 The module-level `connections: Set<deliver>` holds every live connection for `session_status`
 broadcasts; `setOnStatusChange(broadcastStatuses)` wires runtime status changes to it.
 
-On `user_prompt`: resolve `viewing`'s runtime (else `error`). If the runtime is `team` and has a
-live `run.handle`, do **not** launch a second run — `emit` the `user_text` echo, `setStatus('running')`,
+On `user_prompt`: resolve `viewing`'s runtime (else `error`). **Attachment guard (2026-06-16):**
+the message may carry `images: PromptImage[]` (base64 + media type); the handler rejects the whole
+turn with `error { code: 'prompt.unsupportedFile' }` on the first non-image `mediaType`
+(`isImageMediaType`) — c3 forwards images only, no generic files. Validated images flow as the
+optional 3rd `launchRun` arg to whichever vendor path the run forks to. If the runtime is `team` and
+has a live `run.handle`, do **not** launch a second run — `emit` the `user_text` echo, `setStatus('running')`,
 and `handle.pushInput(text)` (AS-R17). Otherwise, if it already has a `run`, reject with `error`
 (serial, AS-R2). The server stays strictly single-turn here; the web console hides this rejection
 from the user by **client-side queuing** — for an ordinary running session it withholds the

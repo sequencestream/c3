@@ -8,7 +8,10 @@
 > - **官方文档**：<https://developers.openai.com/codex/sdk>
 > - **源码仓库**：<https://github.com/openai/codex/tree/main/sdk/typescript>
 > - **Python 对应**：`pip install openai-codex`，控制 app-server 二进制；本文档仅覆盖 TypeScript SDK。
-> - 与 c3 的关系见 [`architecture.md`](architecture.md)（`adapters/codex/` 封装 `runStreamed()`）。
+> - **2026-06-15 runtime note**：c3 的 Codex adapter 现在直接 spawn
+>   `codex exec --experimental-json`，不再运行 `@openai/codex-sdk` 的 JS wrapper；本文件仍作为
+>   Codex JSONL event/type 与历史集成决策的参考。
+> - 与 c3 的关系见 [`architecture.md`](architecture.md)（`adapters/codex/` 封装 Codex CLI JSONL）。
 
 > **关于本指南的定位**：c3 使用 `@openai/codex-sdk`（OpenAI Codex）、`@anthropic-ai/claude-agent-sdk`（Claude）
 > 与 Claude SDK 的关键差异，以及 c3 如何通过这些差异构建中性驱动层。
@@ -64,6 +67,28 @@ const { events } = await thread.runStreamed('your prompt', { signal })
 - `events` 是 `AsyncGenerator<ThreadEvent>`（`for await` 消费）。
 - 另有 `thread.run(prompt)` 原子模式（返回 `Turn`，缓冲所有事件直到 turn 结束）。
 - **无查询级别的 `interrupt()` 方法**（与 Claude 不同）。全局 `AbortSignal` 是唯一的运行时中断。
+
+### 图片输入（local_image，2026-06-16）
+
+`runStreamed` 的入参不止是字符串：`Input = string | UserInput[]`，其中 `UserInput` 是
+`{ type: 'text'; text } | { type: 'local_image'; path }` 的判别联合。CLI 侧 `codex exec`
+通过 `-i/--image <FILE>` 接收**磁盘路径**（非内联字节）。
+
+c3 的处理（`adapters/codex/driver.ts` + `image-files.ts`）：
+
+1. 接口层 `user_prompt` 携带 `images: PromptImage[]`（base64 + mediaType），服务端边界用
+   `isImageMediaType` 拒绝非图片类型（`prompt.unsupportedFile`）。
+2. `CodexDriver.start` 把每张图片用 `writeImageTempFiles` 解码落到 `os.tmpdir()` 的 per-turn
+   临时目录，构造 `[{type:'text'}, {type:'local_image', path}…]` 作为 `runStreamed` 入参；
+   `CliCodexThread` 把 text 走 stdin、每个 path 追加为 `--image <path>` exec 参数。
+3. turn 结束（成功/失败/abort）在 pump 的 `finally` 调 `cleanupImageTempFiles` 删临时目录，**无残留**。
+4. **沙箱例外**：沙箱运行（`sandboxWrapperPath` 存在）只 bind-mount worktree 到 `/workspace`，
+   host 临时路径在容器内不可达——此时**丢弃图片**（避免 `--image` 指向不存在路径而整轮失败），
+   跨容器传图是后续工作。
+
+> 对照 Claude 路径：Claude 不落盘，而是把图片转成 base64 `image` 内容块内联进 streaming-input
+> 的首条 user 消息（`kernel/agent/index.ts` 的 `InputStream.push`）。同一中性 `DriverStartOptions.images`
+> 字段，两 vendor 各自编码。
 
 ### c3 的封装
 

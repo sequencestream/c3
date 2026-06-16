@@ -43,6 +43,8 @@ export const UI_ERROR_CODES = {
   'session.renameFailed': { key: 'error.session.renameFailed', params: ['detail'] },
   'session.notSelected': { key: 'error.session.notSelected' },
   'session.turnRunning': { key: 'error.session.turnRunning' },
+  // prompt input
+  'prompt.unsupportedFile': { key: 'error.prompt.unsupportedFile', params: ['mediaType'] },
   // intent
   'intent.notFound': { key: 'error.intent.notFound' },
   'intent.dbUnavailable': { key: 'error.intent.dbUnavailable' },

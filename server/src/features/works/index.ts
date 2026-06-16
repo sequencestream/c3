@@ -14,7 +14,7 @@ import type {
   PermissionMode,
   TranscriptItem,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, isImageMediaType } from '@ccc/shared/protocol'
 import {
   addViewer,
   emit,
@@ -400,9 +400,22 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'session.notSelected' } })
     return
   }
+  // Attachment guard (2026-06-16): c3 forwards images only. Reject the whole turn
+  // on the first non-image media type — both vendor adapters assume every entry
+  // is a supported image (the non-goal is generic file support).
+  const badImage = msg.images?.find((img) => !isImageMediaType(img.mediaType))
+  if (badImage) {
+    conn.send({
+      type: 'error',
+      error: { code: 'prompt.unsupportedFile', params: { mediaType: badImage.mediaType } },
+    })
+    return
+  }
+  const images = msg.images && msg.images.length > 0 ? msg.images : undefined
   // Team session: the lead process is alive across turns, so feed the prompt
   // into the *same* run (no resume launch). The user may send even while the
-  // lead is mid-turn — the SDK queues it.
+  // lead is mid-turn — the SDK queues it. Streaming push is text-only, so images
+  // are not carried on team turns (a known limitation of the resident-lead path).
   if (rt.team && rt.run?.handle) {
     emit(rt.sessionId, { type: 'user_text', text: msg.text })
     setStatus(rt.sessionId, 'running')
@@ -413,5 +426,5 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'session.turnRunning' } })
     return
   }
-  await ctx.launchRun(rt, msg.text)
+  await ctx.launchRun(rt, msg.text, images)
 }

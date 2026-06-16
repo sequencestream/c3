@@ -6,6 +6,7 @@ import {
   DISC_PROJECT_KEY,
   DISC_ID_KEY,
   SCHED_PROJECT_KEY,
+  CODES_PROJECT_KEY,
   CURRENT_WS_KEY,
 } from './state'
 
@@ -21,6 +22,7 @@ export function installPersistence(ctx: AppCtx): void {
     activeDiscussionId,
     schedulesProject,
     selectedScheduleId,
+    codesProject,
   } = ctx
   const send = ctx.send
 
@@ -54,6 +56,8 @@ export function installPersistence(ctx: AppCtx): void {
       else localStorage.removeItem(DISC_ID_KEY)
       if (schedulesProject.value) localStorage.setItem(SCHED_PROJECT_KEY, schedulesProject.value)
       else localStorage.removeItem(SCHED_PROJECT_KEY)
+      if (codesProject.value) localStorage.setItem(CODES_PROJECT_KEY, codesProject.value)
+      else localStorage.removeItem(CODES_PROJECT_KEY)
     } catch {
       /* localStorage unavailable — non-fatal */
     }
@@ -119,6 +123,23 @@ export function installPersistence(ctx: AppCtx): void {
       schedulesProject.value = saved.proj
       selectedScheduleId.value = null
       send({ type: 'list_schedules', workspaceId: saved.proj })
+    }
+  }
+
+  // After `ready`, re-enter the Codes view if a hard refresh left us there,
+  // re-loading the root listing (open tabs are intentionally not persisted).
+  ctx.maybeRestoreCodes = (list: WorkspaceInfo[]): void => {
+    let saved: { mode: string | null; proj: string | null }
+    try {
+      saved = {
+        mode: localStorage.getItem(VIEW_MODE_KEY),
+        proj: localStorage.getItem(CODES_PROJECT_KEY),
+      }
+    } catch {
+      return
+    }
+    if (saved.mode === 'codes' && saved.proj && list.some((w) => w.id === saved.proj)) {
+      ctx.openCodes(saved.proj)
     }
   }
 }

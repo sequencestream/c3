@@ -39,6 +39,9 @@
       "schedules": {
         "label": "Schedules"
       },
+      "codes": {
+        "label": "Codes"
+      },
       "workcenter": {
         "label": "Workcenter"
       }
@@ -1650,6 +1653,36 @@
         "hint": "Pick which custom agents may run inside the sandbox container.",
         "empty": "No eligible agents. Only enabled custom agents can run in the sandbox."
       }
+    }
+  },
+  "codes": {
+    "tab": {
+      "close": "Close tab"
+    },
+    "search": {
+      "placeholder": "Search files…",
+      "mode": {
+        "filename": "Filename",
+        "content": "Content"
+      },
+      "searching": "Searching…",
+      "empty": "No matches.",
+      "truncated": "Showing the first {count} results.",
+      "timedOut": "Search timed out; results may be incomplete."
+    },
+    "tree": {
+      "loading": "Loading…",
+      "empty": "This workspace is empty.",
+      "emptyDir": "Empty folder"
+    },
+    "tabs": {
+      "empty": "Select a file to view its contents."
+    },
+    "file": {
+      "loading": "Loading file…",
+      "binary": "Binary file — preview not available.",
+      "tooLarge": "File too large to preview ({size}).",
+      "empty": "This file is empty."
     }
   },
   "codex": {

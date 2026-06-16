@@ -41,6 +41,9 @@
       },
       "workcenter": {
         "label": "工作台"
+      },
+      "codes": {
+        "label": "代码"
       }
     },
     "mode": {
@@ -1731,6 +1734,36 @@
       "missing": "请登录后继续。",
       "expired": "会话已过期，请重新登录。",
       "invalid": "会话已失效，请重新登录。"
+    }
+  },
+  "codes": {
+    "tab": {
+      "close": "关闭标签"
+    },
+    "search": {
+      "placeholder": "搜索文件…",
+      "mode": {
+        "filename": "文件名",
+        "content": "内容"
+      },
+      "searching": "搜索中…",
+      "empty": "无匹配结果。",
+      "truncated": "仅显示前 {count} 条结果。",
+      "timedOut": "搜索超时,结果可能不完整。"
+    },
+    "tree": {
+      "loading": "加载中…",
+      "empty": "此工作区为空。",
+      "emptyDir": "空文件夹"
+    },
+    "tabs": {
+      "empty": "选择一个文件以查看内容。"
+    },
+    "file": {
+      "loading": "加载文件中…",
+      "binary": "二进制文件——无法预览。",
+      "tooLarge": "文件过大,无法预览({size})。",
+      "empty": "此文件为空。"
     }
   }
 }

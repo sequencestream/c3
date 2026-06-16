@@ -386,7 +386,7 @@ function selectTab(tab: HeaderTab): void {
     height: calc(56px + var(--safe-area-bottom));
     padding: 0 var(--sp-1) var(--safe-area-bottom);
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     background: var(--c-panel);
     border-top: 1px solid var(--c-border);
   }

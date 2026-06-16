@@ -9,6 +9,7 @@ import Works from './pages/works/Works.vue'
 import Intents from './pages/intents/Intents.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Schedules from './pages/schedules/Schedules.vue'
+import Codes from './pages/codes/Codes.vue'
 import WorkCenter from './pages/workcenter/WorkCenter.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
 import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
@@ -150,6 +151,25 @@ const {
   createSchedule,
   updateSchedule,
   onLoadScheduleToolManifest,
+  // ---- codes ----
+  codesProject,
+  codesDirs,
+  codesExpanded,
+  codesLoadingDirs,
+  codesTabs,
+  codesActivePath,
+  codesActiveTab,
+  codesSearchMode,
+  codesSearchQuery,
+  codesSearchResult,
+  codesSearchLoading,
+  toggleCodesDir,
+  openCodeFile,
+  openCodeSearchHit,
+  closeCodeTab,
+  setCodesActiveTab,
+  setCodesSearchMode,
+  runCodeSearch,
   // ---- workcenter ----
   workcenterEvents,
   respondWorkcenter,
@@ -372,6 +392,28 @@ const {
           @create="createSchedule"
           @update="updateSchedule"
           @load-tool-manifest="onLoadScheduleToolManifest"
+        />
+
+        <Codes
+          v-else-if="activeTab === 'codes' && codesProject"
+          :dirs="codesDirs"
+          :expanded="codesExpanded"
+          :loading-dirs="codesLoadingDirs"
+          :tabs="codesTabs"
+          :active-path="codesActivePath"
+          :active-tab="codesActiveTab"
+          :search-mode="codesSearchMode"
+          :search-query="codesSearchQuery"
+          :search-result="codesSearchResult"
+          :search-loading="codesSearchLoading"
+          @toggle-dir="toggleCodesDir"
+          @open-file="openCodeFile"
+          @open-hit="openCodeSearchHit"
+          @close-tab="closeCodeTab"
+          @select-tab="setCodesActiveTab"
+          @set-search-mode="setCodesSearchMode"
+          @update:search-query="codesSearchQuery = $event"
+          @run-search="runCodeSearch"
         />
       </template>
 

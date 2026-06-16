@@ -116,6 +116,10 @@ export function installSessionActions(ctx: AppCtx): void {
       if (currentWorkspace.value) ctx.openSchedules(currentWorkspace.value)
       return
     }
+    if (key === 'codes') {
+      if (currentWorkspace.value) ctx.openCodes(currentWorkspace.value)
+      return
+    }
     ctx.switchToConsoleTab()
   }
 

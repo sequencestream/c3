@@ -9,10 +9,13 @@ import {
 } from '@/lib/discussion-view'
 import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
 import { type SessionRef } from '@/lib/tab-view'
+import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
 import { agentNameAt } from '@/lib/agent-prefix'
 import type {
   AutomationStatus,
+  CodeDirEntry,
+  CodeSearchMode,
   CodexPolicy,
   DepType,
   Discussion,
@@ -63,9 +66,10 @@ export const REQ_PROJECT_KEY = 'c3.intentsProject'
 export const DISC_PROJECT_KEY = 'c3.discussionsProject'
 export const DISC_ID_KEY = 'c3.discussionId'
 export const SCHED_PROJECT_KEY = 'c3.schedulesProject'
+export const CODES_PROJECT_KEY = 'c3.codesProject'
 export const CURRENT_WS_KEY = 'c3.currentWorkspace'
 
-export type TabKey = 'console' | 'intents' | 'discussion' | 'schedules'
+export type TabKey = 'console' | 'intents' | 'discussion' | 'schedules' | 'codes'
 
 /**
  * Create the full reactive state surface of the app controller: every ref,
@@ -216,6 +220,7 @@ export function createState(deps: StateDeps) {
     { key: 'intents', label: t('nav.tab.intents.label') },
     { key: 'discussion', label: t('nav.tab.discussion.label') },
     { key: 'schedules', label: t('nav.tab.schedules.label') },
+    { key: 'codes', label: t('nav.tab.codes.label') },
   ])
   const activeTab = ref<TabKey>('console')
   const intentsProject = ref<string | null>(null)
@@ -315,6 +320,29 @@ export function createState(deps: StateDeps) {
   // The modal serves both create (target = null) and edit (target = a schedule).
   const scheduleFormOpen = ref(false)
   const scheduleFormTarget = ref<Schedule | null>(null)
+
+  // ---- Codes view (read-only file browser) ----
+  // The workspace id whose tree/tabs are loaded. Reset when it changes.
+  const codesProject = ref<string | null>(null)
+  // Lazy directory cache: rel path ('' = root) → immediate children. Absent = not loaded yet.
+  const codesDirs = ref<Record<string, CodeDirEntry[]>>({})
+  // Expanded directory rel paths (reassigned on mutation so Vue tracks the Set).
+  const codesExpanded = ref<Set<string>>(new Set())
+  // Directories with an in-flight `list_dir`.
+  const codesLoadingDirs = ref<Set<string>>(new Set())
+  // Open file tabs, in tab order. Refresh clears them (no persistence by design).
+  const codesTabs = ref<CodeTab[]>([])
+  // The focused tab's path, or null when none are open.
+  const codesActivePath = ref<string | null>(null)
+  // Search box: mode toggle + query + bounded result set (null = no search yet).
+  const codesSearchMode = ref<CodeSearchMode>('filename')
+  const codesSearchQuery = ref('')
+  const codesSearchResult = ref<CodesSearchResultView | null>(null)
+  const codesSearchLoading = ref(false)
+
+  const codesActiveTab = computed<CodeTab | null>(
+    () => codesTabs.value.find((tab) => tab.path === codesActivePath.value) ?? null,
+  )
 
   // ---- System settings (agent config) ----
   const settingsOpen = ref(false)
@@ -450,6 +478,16 @@ export function createState(deps: StateDeps) {
     scheduleToolManifestError,
     scheduleFormOpen,
     scheduleFormTarget,
+    codesProject,
+    codesDirs,
+    codesExpanded,
+    codesLoadingDirs,
+    codesTabs,
+    codesActivePath,
+    codesSearchMode,
+    codesSearchQuery,
+    codesSearchResult,
+    codesSearchLoading,
     settingsOpen,
     serverSettings,
     hostStatus,
@@ -496,6 +534,7 @@ export function createState(deps: StateDeps) {
     selectedSchedule,
     selectedScheduleLogs,
     selectedExecution,
+    codesActiveTab,
     taskStoreAvailable,
     modeOptions,
     scheduleTimezone,

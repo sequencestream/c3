@@ -3,6 +3,7 @@ import type { PermissionMsg } from '@/lib/chat-types'
 import type { PendingItem } from '@/lib/pending-queue'
 import type {
   ClientToServer,
+  CodeSearchHit,
   CodexPolicy,
   CreateScheduleInput,
   IntentStatus,
@@ -45,6 +46,7 @@ export interface AppMethods {
   maybeRestoreIntents(list: WorkspaceInfo[]): void
   maybeRestoreDiscussions(list: WorkspaceInfo[]): void
   maybeRestoreSchedules(list: WorkspaceInfo[]): void
+  maybeRestoreCodes(list: WorkspaceInfo[]): void
 
   // message handler
   handleMessage(msg: ServerToClient): void
@@ -114,6 +116,17 @@ export interface AppMethods {
   createSchedule(input: CreateScheduleInput): void
   updateSchedule(id: string, input: UpdateScheduleInput): void
   onLoadScheduleToolManifest(vendor: string): void
+
+  // codes (read-only file browser)
+  openCodes(workspaceId: string): void
+  loadCodesDir(rel: string): void
+  toggleCodesDir(rel: string): void
+  openCodeFile(path: string, line?: number): void
+  closeCodeTab(path: string): void
+  setCodesActiveTab(path: string): void
+  setCodesSearchMode(mode: 'filename' | 'content'): void
+  runCodeSearch(): void
+  openCodeSearchHit(hit: CodeSearchHit): void
 
   // chat / queue
   onSubmit(text: string, images?: PromptImage[]): void

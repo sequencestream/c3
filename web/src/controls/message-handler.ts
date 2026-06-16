@@ -84,6 +84,13 @@ export function installMessageHandler(ctx: AppCtx): void {
     scheduleToolManifestLoading,
     scheduleToolManifestError,
     executionTranscripts,
+    codesProject,
+    codesDirs,
+    codesLoadingDirs,
+    codesTabs,
+    codesSearchMode,
+    codesSearchResult,
+    codesSearchLoading,
     activeTab,
     workcenterEvents,
     intentActionErrorSeq,
@@ -146,6 +153,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         ctx.maybeRestoreIntents(msg.workspaces)
         ctx.maybeRestoreDiscussions(msg.workspaces)
         ctx.maybeRestoreSchedules(msg.workspaces)
+        ctx.maybeRestoreCodes(msg.workspaces)
         break
       case 'workspaces': {
         workspaces.value = msg.workspaces
@@ -624,6 +632,39 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'wait_user_events':
         workcenterEvents.value = msg.items
         break
+      case 'dir_listed': {
+        // Adopt the listing only for the workspace currently being browsed.
+        if (msg.workspaceId !== codesProject.value) break
+        codesDirs.value = { ...codesDirs.value, [msg.rel]: msg.entries }
+        if (codesLoadingDirs.value.has(msg.rel)) {
+          const next = new Set(codesLoadingDirs.value)
+          next.delete(msg.rel)
+          codesLoadingDirs.value = next
+        }
+        break
+      }
+      case 'file_read': {
+        if (msg.workspaceId !== codesProject.value) break
+        // Fill the matching tab's content (the tab was opened optimistically).
+        codesTabs.value = codesTabs.value.map((tab) =>
+          tab.path === msg.file.path ? { ...tab, file: msg.file, loading: false } : tab,
+        )
+        break
+      }
+      case 'codes_searched': {
+        if (msg.workspaceId !== codesProject.value) break
+        // Ignore a stale reply if the user switched modes mid-flight.
+        if (msg.mode !== codesSearchMode.value) break
+        codesSearchResult.value = {
+          query: msg.query,
+          mode: msg.mode,
+          hits: msg.hits,
+          truncated: msg.truncated,
+          timedOut: msg.timedOut,
+        }
+        codesSearchLoading.value = false
+        break
+      }
     }
   }
 

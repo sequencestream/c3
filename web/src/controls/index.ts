@@ -10,6 +10,7 @@ import { installSessionActions } from './session-actions'
 import { installIntentActions } from './intent-actions'
 import { installDiscussionActions } from './discussion-actions'
 import { installScheduleActions } from './schedule-actions'
+import { installCodesActions } from './codes-actions'
 import { installChatActions } from './chat-actions'
 import { installSettingsActions } from './settings-actions'
 import { installWorkcenterActions } from './workcenter-actions'
@@ -53,6 +54,7 @@ export function useAppController(): AppCtx {
   installIntentActions(ctx)
   installDiscussionActions(ctx)
   installScheduleActions(ctx)
+  installCodesActions(ctx)
   installChatActions(ctx)
   installSettingsActions(ctx)
   installWorkcenterActions(ctx)
@@ -79,6 +81,9 @@ export function useAppController(): AppCtx {
           // Re-fetch the schedule list (read path) + settings (timezone preview).
           ctx.send({ type: 'list_schedules', workspaceId: ctx.schedulesProject.value })
           ctx.send({ type: 'get_settings' })
+        } else if (ctx.activeTab.value === 'codes') {
+          // Codes is a stateless read path; the in-memory tree/tabs survive the
+          // reconnect, and any expanded dir / open file re-fetches on demand.
         } else if (ctx.viewMode.value === 'workcenter') {
           // Re-fetch the pending event list (read path).
           if (ctx.currentWorkspace.value)

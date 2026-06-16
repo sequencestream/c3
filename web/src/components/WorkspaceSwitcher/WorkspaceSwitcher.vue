@@ -10,8 +10,13 @@
 import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { useAuth } from '@/composables/useAuth'
 
 const { t } = useTypedI18n()
+// Adding / removing a workspace establishes or tears down a trust root — an
+// admin-only action server-side (WS-R*). Hide those entries for non-admins; the
+// server stays the real gate. Viewing / switching workspaces is unaffected.
+const { isAdmin } = useAuth()
 
 const props = defineProps<{
   workspaces: WorkspaceInfo[]
@@ -94,6 +99,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       <span class="ws-switcher-arrow" aria-hidden="true">▾</span>
     </button>
     <button
+      v-if="isAdmin"
       class="icon-btn ws-switcher-add"
       :title="t('nav.workspace.add.tooltip')"
       @click="addWorkspace"
@@ -121,6 +127,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
           >✓</span
         >
         <button
+          v-if="isAdmin"
           class="icon-btn ws-switcher-remove"
           :title="t('nav.workspace.remove.tooltip')"
           @click.stop="removeWorkspace(w)"

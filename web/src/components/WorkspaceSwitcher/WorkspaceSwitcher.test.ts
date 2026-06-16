@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
+import { useAuth } from '@/composables/useAuth'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 
 const ws = (id: string, name: string): WorkspaceInfo => ({ id, name, lastAccessed: 0 })
 const workspaces = [ws('ws-a', 'proj-a'), ws('ws-b', 'proj-b')]
 
-afterEach(() => vi.unstubAllGlobals())
+// `isAdmin` is a module-singleton (defaults true). Restore it after each test so
+// the admin-gated cases don't leak into the others.
+afterEach(() => {
+  vi.unstubAllGlobals()
+  useAuth().setIsAdmin(true)
+})
 
 describe('WorkspaceSwitcher.vue', () => {
   it('触发区显示当前工作区名', () => {
@@ -83,5 +89,18 @@ describe('WorkspaceSwitcher.vue', () => {
     confirm.mockReturnValue(false)
     await w.findAll('.ws-switcher-remove')[0].trigger('click')
     expect(w.emitted('remove-workspace')).toEqual([['ws-b']]) // 未新增
+  })
+
+  it('非管理员 → 隐藏「+ 新增」与「✕ 移除」入口(增删仅管理员)', async () => {
+    useAuth().setIsAdmin(false)
+    const w = mount(WorkspaceSwitcher, {
+      props: { workspaces, currentWorkspaceId: 'ws-a' },
+    })
+    // 新增入口消失
+    expect(w.find('.ws-switcher-add').exists()).toBe(false)
+    // 展开下拉仍可查看/切换,但每行的移除按钮消失
+    await w.find('.ws-switcher-trigger').trigger('click')
+    expect(w.findAll('.ws-switcher-item')).toHaveLength(2)
+    expect(w.findAll('.ws-switcher-remove')).toHaveLength(0)
   })
 })

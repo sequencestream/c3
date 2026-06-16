@@ -127,7 +127,11 @@ enabled:false`, enforced by `normalizeAuth` (a stale `enabled:true` is re-pinned
   `remove_account`, `set_admin_account`, `save_workspace_setting`, `save_workspace_mcp_config`) passes a
   provider-neutral admin gate (`isAdminConn`, `server/src/features/auth/authz.ts`) before mutating;
   a non-admin or unauthenticated connection is rejected with the `auth.adminOnly` error and nothing
-  changes. The gate compares the connection's authenticated **subject** (bound at the handshake / on
+  changes. **Adding / removing a workspace is admin-only too** (`add_workspace` / `remove_workspace`):
+  establishing or tearing down a trust root passes the same `requireAdmin` gate, so a non-admin is
+  rejected with `auth.adminOnly` and an unauthenticated connection with `unauthenticated`; viewing,
+  entering, and editing a workspace stay open to any authenticated user (the gate narrows the registry
+  mutations only). The gate compares the connection's authenticated **subject** (bound at the handshake / on
   `login`, see `Conn.subject`) to the active provider's admin (`basic.adminUsername` /
   `oauth.adminEmail`). It is **inert — every local connection trusted — whenever no admin can apply**:
   auth disabled / `none` / an unconfigured `basic` shell (the bootstrap window, AUTH-R2 loopback

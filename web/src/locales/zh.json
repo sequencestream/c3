@@ -154,6 +154,9 @@
     "title": {
       "label": "系统设置"
     },
+    "readOnlyNotice": {
+      "text": "你不是管理员，系统设置为只读。"
+    },
     "agents": {
       "title": {
         "label": "智能体"
@@ -1326,7 +1329,8 @@
       "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"
     },
     "auth": {
-      "oauthAdminInvalid": "必须设置管理员邮箱，且它需在允许邮箱列表中。"
+      "oauthAdminInvalid": "必须设置管理员邮箱，且它需在允许邮箱列表中。",
+      "adminOnly": "只有管理员可以修改系统配置。"
     }
   },
   "statusIndicator": {

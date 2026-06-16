@@ -37,6 +37,7 @@ function capture(authed: boolean): { conn: Conn; sent: ServerToClient[] } {
     sendSessions: async () => {},
     authed,
     authToken: authed ? 'tok' : null,
+    subject: null,
   }
   return { conn, sent }
 }

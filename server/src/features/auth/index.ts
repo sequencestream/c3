@@ -24,6 +24,7 @@ import { loadSettings, saveSettings } from '../../kernel/config/index.js'
 import { DEFAULT_SESSION_TTL_SECONDS, deriveBasicEnabled } from '../../kernel/config/auth-schema.js'
 import { hashPassword, verifyPassword } from './password.js'
 import { mintSession, revokeSession } from './session-store.js'
+import { requireAdmin } from './authz.js'
 
 /** Minimum new-password length. Deliberately light (ADR-0023 non-goal: no
  *  complex strength policy) — just non-empty username + a floor on length. */
@@ -59,6 +60,9 @@ export const login: Handler<'login'> = (_ctx, conn, msg) => {
   const { token, expiresAt } = mintSession(account.username, auth.session.ttlSeconds)
   conn.authed = true
   conn.authToken = token
+  // Bind the subject so the admin gate (ADR-0023 authz) recognizes this connection
+  // before its post-login reconnect re-derives it from the handshake token.
+  conn.subject = account.username
   conn.send({ type: 'login_result', result: { ok: true, token, expiresAt } })
 }
 
@@ -69,6 +73,7 @@ export const logout: Handler<'logout'> = (_ctx, conn) => {
   // is disabled the connection was never gated (AUTH-R2) so we leave it admitted.
   revokeSession(conn.authToken)
   conn.authToken = null
+  conn.subject = null
   const auth = loadSettings().auth
   if (auth?.enabled && auth.provider.kind === 'basic') conn.authed = false
 }
@@ -87,6 +92,11 @@ function persistBasicProvider(
 }
 
 export const setAdminPassword: Handler<'set_admin_password'> = (_ctx, conn, msg) => {
+  // The account roster IS system configuration — only the admin may mutate it
+  // (ADR-0023 authz). Inert in the bootstrap window (no admin configured yet:
+  // `isAdminConn` is true), so the first account can still be created; once an
+  // admin exists, only that admin adds/changes accounts.
+  if (!requireAdmin(conn)) return
   const settings = loadSettings()
   const existing = settings.auth?.provider.kind === 'basic' ? settings.auth.provider : null
 
@@ -122,6 +132,7 @@ export const setAdminPassword: Handler<'set_admin_password'> = (_ctx, conn, msg)
 }
 
 export const removeAccount: Handler<'remove_account'> = (_ctx, conn, msg) => {
+  if (!requireAdmin(conn)) return
   const settings = loadSettings()
   const existing = settings.auth?.provider.kind === 'basic' ? settings.auth.provider : null
   if (!existing || !existing.accounts.some((a) => a.username === msg.username)) {
@@ -144,6 +155,7 @@ export const removeAccount: Handler<'remove_account'> = (_ctx, conn, msg) => {
 }
 
 export const setAdminAccount: Handler<'set_admin_account'> = (_ctx, conn, msg) => {
+  if (!requireAdmin(conn)) return
   const settings = loadSettings()
   const existing = settings.auth?.provider.kind === 'basic' ? settings.auth.provider : null
   if (!existing || !existing.accounts.some((a) => a.username === msg.username)) {

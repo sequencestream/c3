@@ -51,6 +51,7 @@ function capture(): { conn: Conn; sent: ServerToClient[] } {
       viewing: null,
       authed: true,
       authToken: 'tok',
+      subject: null,
     },
   }
 }

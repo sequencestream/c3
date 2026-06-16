@@ -155,6 +155,9 @@
     "title": {
       "label": "システム設定"
     },
+    "readOnlyNotice": {
+      "text": "管理者ではないため、システム設定は読み取り専用です。"
+    },
     "agents": {
       "title": {
         "label": "エージェント"
@@ -1327,7 +1330,8 @@
       "invalidDefaultMode": "ベンダー \"{vendor}\" のデフォルトモード \"{mode}\" が無効です。"
     },
     "auth": {
-      "oauthAdminInvalid": "管理者メールを設定し、許可メールに含める必要があります。"
+      "oauthAdminInvalid": "管理者メールを設定し、許可メールに含める必要があります。",
+      "adminOnly": "システム設定を変更できるのは管理者のみです。"
     }
   },
   "statusIndicator": {

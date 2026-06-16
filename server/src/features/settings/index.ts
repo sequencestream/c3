@@ -33,6 +33,7 @@ import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import { getSkillSupport } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
+import { requireAdmin } from '../auth/authz.js'
 
 /** Map the ProcessLauncher probe into the wire shape (carrying the resolved path). */
 function hostStatus(): VendorHostStatus[] {
@@ -157,6 +158,9 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
 }
 
 export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) => {
+  // Only the admin may mutate system configuration (ADR-0023 authz). Inert when no
+  // admin gate applies (auth disabled / unconfigured) — loopback bootstrap-trust.
+  if (!requireAdmin(conn)) return
   const authError = validateAuthForSave(msg.settings)
   if (authError) {
     conn.send({ type: 'error', error: { code: authError } })
@@ -196,6 +200,8 @@ export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_
 }
 
 export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_ctx, conn, msg) => {
+  // Workspace configuration is admin-only too (ADR-0023 authz; full coverage).
+  if (!requireAdmin(conn)) return
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
     conn.send({

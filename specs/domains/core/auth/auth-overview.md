@@ -7,8 +7,10 @@ mandatory precondition for exposing the server beyond localhost (constitution C-
 > shape, wire messages) are joined by a **`basic`-provider runtime** powering the System Settings
 > auth panel: real password hashing (scrypt PHC), real `login` credential verification, and
 > **multiple accounts with exactly one admin** (add/change-password/remove account + designate the
-> single admin), plus an `oauth` `adminEmail` (contract-only). **Still deferred:** token signing/verification,
-> request-level auth middleware + the "enabled auth ⇒ may bind non-loopback" enforcement (so the
+> single admin), plus an `oauth` `adminEmail` (contract-only). A first **request-level authorization**
+> slice has also landed: **only the admin may change system configuration** (AUTH-R10) — enforced for
+> `basic`, encoded-but-inert for the deferred `oauth` runtime. **Still deferred:** token signing/verification,
+> the general auth middleware + the "enabled auth ⇒ may bind non-loopback" enforcement (so the
 > server's bind address is **unchanged** — still localhost-only), full session-lifecycle UI, and
 > settings-file hardening. See _Roadmap_ for what each remaining task fills in.
 
@@ -103,9 +105,10 @@ enabled:false`, enforced by `normalizeAuth` (a stale `enabled:true` is re-pinned
   via the dedicated messages.)
 - **AUTH-R8 (change-password gate)** — changing an existing account's password requires proving that
   account's current password (`currentPassword` verified against its stored hash) ⇒ `not_authenticated`
-  on mismatch. Adding a new account is exempt (the localhost-only default trusts the local operator;
-  request-level authz is deferred). Validation is deliberately light (non-empty username + min length)
-  per the ADR non-goal; failures return `invalid`.
+  on mismatch. Validation is deliberately light (non-empty username + min length) per the ADR non-goal;
+  failures return `invalid`. (Roster mutations are additionally gated by AUTH-R10 — only the admin may
+  add/remove accounts or reassign the admin once one is configured; during the bootstrap window — no
+  admin yet — that gate is inert, so the first account can be created.)
 - **AUTH-R9 (single-admin reference integrity + method exclusivity)** — exactly one auth method is
   active at a time (the single `provider` union — `basic` and `oauth` can never both be enabled).
   Under `basic`, when `accounts` is non-empty `adminUsername` MUST reference exactly one account and
@@ -119,13 +122,30 @@ enabled:false`, enforced by `normalizeAuth` (a stale `enabled:true` is re-pinned
   Removing the admin account is refused while other accounts remain (`admin_must_reassign`); removing it
   when it is the only account empties the store back to the unconfigured state. A legacy single-account
   `{ username, passwordHash }` config migrates one-shot to `{ accounts: [...], adminUsername }`.
+- **AUTH-R10 (admin-only system-config mutations)** — **only the unique admin may change system
+  configuration.** Every config-mutating handler (`save_settings`, `set_admin_password`,
+  `remove_account`, `set_admin_account`, `save_workspace_setting`, `save_workspace_mcp_config`) passes a
+  provider-neutral admin gate (`isAdminConn`, `server/src/features/auth/authz.ts`) before mutating;
+  a non-admin or unauthenticated connection is rejected with the `auth.adminOnly` error and nothing
+  changes. The gate compares the connection's authenticated **subject** (bound at the handshake / on
+  `login`, see `Conn.subject`) to the active provider's admin (`basic.adminUsername` /
+  `oauth.adminEmail`). It is **inert — every local connection trusted — whenever no admin can apply**:
+  auth disabled / `none` / an unconfigured `basic` shell (the bootstrap window, AUTH-R2 loopback
+  trust). **`basic` is fully enforced.** **`oauth` is deferred** (contract-only): with no OAuth login
+  runtime, no subject is resolvable, so the gate stays inert for `oauth`; the `adminEmail` comparison
+  branch is already wired, so enforcement activates automatically once the OAuth runtime binds a
+  subject. The gate is **never the sole defense** — it composes with the handshake/dispatch auth gate
+  (an unauthenticated connection cannot reach these handlers when auth is enabled). The server enforces
+  this regardless of the client: the console additionally hides/disables the controls for a non-admin
+  (driven by `ready.isAdmin`), but that is UX only — never the authority.
 
 ## Roadmap (deferred to later tasks)
 
 1. **Done** — abstraction boundary + contracts.
-2. **Partial** — password hashing ✅ + `basic` login verification ✅ + `set_admin_password` ✅ done;
-   **still deferred:** token signing/verification, request-level auth middleware, and the
-   "enabled auth ⇒ may bind non-loopback" enforcement (the actual C-SEC-5 relaxation).
+2. **Partial** — password hashing ✅ + `basic` login verification ✅ + `set_admin_password` ✅ +
+   the **admin-only system-config gate** (AUTH-R10, `basic`) ✅ done; **still deferred:** token
+   signing/verification, the general auth middleware (the per-frame token check beyond the handshake),
+   and the "enabled auth ⇒ may bind non-loopback" enforcement (the actual C-SEC-5 relaxation).
 3. **Partial** — System Settings auth config panel ✅ (three-state provider dropdown
    **none/basic/oauth** as the single auth on/off control — no separate enable checkbox —
    - username/change-password/exposure toggle + the `oauth` provider config form ✅); login page
@@ -145,10 +165,13 @@ enabled:false`, enforced by `normalizeAuth` (a stale `enabled:true` is re-pinned
   `AuthLoginRequest`, `AuthLoginResult`, `AdminPasswordResult`, `AccountOpResult`).
 - Runtime handlers: `server/src/features/auth/index.ts` (`login`, `logout`, `setAdminPassword`,
   `removeAccount`, `setAdminAccount`) + `server/src/features/auth/password.ts` (scrypt PHC
-  `hashPassword` / `verifyPassword`). The basic-provider preservation + oauth save validation
-  (`preserveBasicProvider` / `validateAuthForSave`) live in `server/src/features/settings/index.ts`.
-  `deriveBasicEnabled` + the legacy migration + cross-field invariants live in
-  `server/src/kernel/config/auth-schema.ts`.
+  `hashPassword` / `verifyPassword`). The admin gate (AUTH-R10) is `server/src/features/auth/authz.ts`
+  (`configuredAdmin` / `isAdminConn` / `requireAdmin`), consulted by every config-mutating handler;
+  the connection's `subject` is bound in `server/src/wiring/ws-upgrade.ts` (handshake) and `login`,
+  and `ready.isAdmin` carries the UX flag to the console. The basic-provider preservation + oauth save
+  validation (`preserveBasicProvider` / `validateAuthForSave`) live in
+  `server/src/features/settings/index.ts`. `deriveBasicEnabled` + the legacy migration + cross-field
+  invariants live in `server/src/kernel/config/auth-schema.ts`.
 - Config panel: `web/src/pages/systemsettings/components/SettingsPanel/SettingsPanel.vue` (auth
   section); `web/src/App.vue` routes `set_admin_password` + `admin_password_result`.
 - Persists inside `~/.c3/settings.json` as `SystemSettings.auth`, through the same single

@@ -22,6 +22,7 @@ import { readExecutionTranscript } from './transcript.js'
 import { clampName, generateScheduleName } from './naming.js'
 import type { ScheduleNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
+import { requireAdmin } from '../auth/authz.js'
 import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
 // Static tool listing (no I/O needed) — the only adapter path that can create
@@ -188,6 +189,8 @@ export const getWorkspaceMcpConfig: Handler<'get_workspace_mcp_config'> = (_ctx,
 }
 
 export const saveWorkspaceMcpConfig: Handler<'save_workspace_mcp_config'> = (_ctx, conn, msg) => {
+  // Workspace MCP config is admin-only too (ADR-0023 authz; full coverage).
+  if (!requireAdmin(conn)) return
   if (!isScheduleStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
     return

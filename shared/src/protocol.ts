@@ -2542,6 +2542,16 @@ export type ServerToClient =
       workspaces: WorkspaceInfo[]
       activeSessionId: string | null
       statuses: SessionRunStatus[]
+      /**
+       * Whether THIS connection is the unique admin under the active auth provider
+       * (ADR-0023 authz slice). `true` whenever no admin gate applies — auth
+       * disabled / `none` / an unconfigured `basic` shell (loopback bootstrap-trust,
+       * AUTH-R2) — or when the signed-in subject equals the provider's admin
+       * (`basic.adminUsername` / `oauth.adminEmail`). Drives the console hiding /
+       * disabling system-config controls for non-admins; the server enforces the
+       * same gate regardless (the wire flag is UX only, never the authority).
+       */
+      isAdmin: boolean
     }
   /** Live run statuses for all sessions with a runtime; drives sidebar badges. */
   | { type: 'session_status'; statuses: SessionRunStatus[] }

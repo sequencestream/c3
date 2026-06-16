@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { SystemSettings } from '@ccc/shared/protocol'
+import type { ServerToClient, SystemSettings } from '@ccc/shared/protocol'
+import type { Conn } from '../../transport/handler-registry.js'
 
 // Stub the disk layer: preserveBasicProvider reads the on-disk auth provider.
 const h = vi.hoisted(() => ({ disk: null as unknown as SystemSettings }))
@@ -11,7 +12,7 @@ vi.mock('../../kernel/config/index.js', () => ({
   saveWorkspaceSetting: (_p: string, c: unknown) => c,
 }))
 
-import { preserveBasicProvider, validateAuthForSave } from './index.js'
+import { preserveBasicProvider, validateAuthForSave, saveSettingsHandler } from './index.js'
 
 const H = '$scrypt$ln=15,r=8,p=1$s$h'
 const base = {
@@ -135,5 +136,53 @@ describe('validateAuthForSave (oauth admin ∈ allowedEmails — AC5.3)', () => 
       },
     }
     expect(validateAuthForSave(basic)).toBeNull()
+  })
+})
+
+describe('save_settings admin gate (ADR-0023 authz)', () => {
+  const KCTX = {} as never
+
+  function connFor(subject: string | null): { conn: Conn; sent: ServerToClient[] } {
+    const sent: ServerToClient[] = []
+    const conn: Conn = {
+      send: (m) => sent.push(m),
+      viewing: null,
+      deliver: () => {},
+      sendWorkspaces: () => {},
+      sendSessions: async () => {},
+      authed: subject !== null,
+      authToken: subject ? 'tok' : null,
+      subject,
+    }
+    return { conn, sent }
+  }
+
+  beforeEach(() => {
+    // A live, enabled basic provider with admin 'alice' ⇒ the gate is active.
+    h.disk = {
+      ...base,
+      auth: {
+        enabled: true,
+        provider: {
+          kind: 'basic',
+          accounts: [{ username: 'alice', passwordHash: H }],
+          adminUsername: 'alice',
+        },
+        session: { ttlSeconds: 3600, signingKeyRef: 'k' },
+      },
+    }
+  })
+
+  it('rejects a non-admin save with auth.adminOnly (no settings frame)', () => {
+    const { conn, sent } = connFor('bob')
+    saveSettingsHandler(KCTX, conn, { type: 'save_settings', settings: { ...base } })
+    expect(sent[0]).toEqual({ type: 'error', error: { code: 'auth.adminOnly' } })
+    expect(sent.some((m) => m.type === 'settings')).toBe(false)
+  })
+
+  it('rejects an unauthenticated save with auth.adminOnly', () => {
+    const { conn, sent } = connFor(null)
+    saveSettingsHandler(KCTX, conn, { type: 'save_settings', settings: { ...base } })
+    expect(sent[0]).toEqual({ type: 'error', error: { code: 'auth.adminOnly' } })
   })
 })

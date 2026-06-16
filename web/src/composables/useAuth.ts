@@ -34,6 +34,11 @@ const token = ref<string | null>(readStoredToken())
 const loginError = ref<AuthFailureCode | null>(null)
 const pending = ref(false)
 const lastReason = ref<UnauthenticatedReason | null>(null)
+// Whether THIS connection is the unique admin (ADR-0023 authz). Server-authoritative,
+// refreshed from every `ready`. Defaults `true` so the no-auth / pre-handshake case
+// renders config controls normally (the server is the real gate either way — when
+// auth is on and we are not the admin, `ready.isAdmin` flips this to false).
+const isAdmin = ref(true)
 
 let send: Sender | null = null
 
@@ -68,6 +73,11 @@ function handleLoginResult(result: AuthLoginResult): void {
   }
 }
 
+/** Server told us (via `ready`) whether this connection is the unique admin. */
+function setIsAdmin(value: boolean): void {
+  isAdmin.value = value
+}
+
 /** Server signalled the connection is unauthenticated (the WS analogue of HTTP 401). */
 function handleUnauthenticated(reason: UnauthenticatedReason): void {
   token.value = null
@@ -93,11 +103,13 @@ export function useAuth() {
     loginError: readonly(loginError),
     pending: readonly(pending),
     lastReason: readonly(lastReason),
+    isAdmin: readonly(isAdmin),
     bindSender,
     currentToken,
     submitLogin,
     handleLoginResult,
     handleUnauthenticated,
+    setIsAdmin,
     logout,
   }
 }

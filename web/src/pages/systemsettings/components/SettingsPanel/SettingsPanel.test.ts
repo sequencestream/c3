@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SettingsPanel from './SettingsPanel.vue'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import type { SystemSettings } from '@ccc/shared/protocol'
+import { useAuth } from '@/composables/useAuth'
 
 const baseSettings: SystemSettings = {
   agents: [
@@ -661,5 +662,32 @@ describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {
     await w.find('[data-testid="settings-save"]').trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
+  })
+})
+
+describe('SettingsPanel.vue — non-admin is read-only (ADR-0023 authz)', () => {
+  const auth = useAuth()
+  // useAuth is a module singleton; restore the default (admin) after each case so
+  // the flag never leaks into other suites.
+  afterEach(() => auth.setIsAdmin(true))
+
+  it('admin (default): no read-only notice and Save is enabled', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    expect(w.find('[data-testid="settings-readonly-notice"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-save"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('non-admin: shows the read-only notice and disables Save', () => {
+    auth.setIsAdmin(false)
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    expect(w.find('[data-testid="settings-readonly-notice"]').exists()).toBe(true)
+    expect(w.find('[data-testid="settings-save"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('non-admin: clicking Save emits nothing (the handler is guarded too)', async () => {
+    auth.setIsAdmin(false)
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    expect(w.emitted('save')).toBeUndefined()
   })
 })

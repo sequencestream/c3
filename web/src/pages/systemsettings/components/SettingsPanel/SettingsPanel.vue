@@ -20,9 +20,15 @@ import type {
 } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
+import { useAuth } from '@/composables/useAuth'
 import EmojiPicker from './EmojiPicker.vue'
 
 const { t } = useTypedI18n()
+
+// Whether this connection is the unique admin (ADR-0023 authz). Non-admins get a
+// read-only panel: Save + the account-management controls are disabled and a notice
+// explains why. The server enforces the same gate regardless — this is UX only.
+const { isAdmin } = useAuth()
 
 // 浏览器本地时区，作为 timezone 草稿的默认值与 timezone 列表不可用时的兜底项。
 const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -361,6 +367,9 @@ function onAgentDragEnd(): void {
 // pins the system agent. Single point, so the structural ops above need not each
 // maintain `order_seq` themselves.
 function save(): void {
+  // Non-admins cannot mutate system config (ADR-0023 authz). The Save button is
+  // disabled, but guard the handler too so no path emits a doomed save.
+  if (!isAdmin.value) return
   draft.value.agents.forEach((a, i) => {
     a.order_seq = i
   })
@@ -587,6 +596,7 @@ const addUsernameTaken = computed(() => {
 /** Add a new account: ship username + initial password (server hashes + adds;
  *  the first account also becomes the admin). No current-password proof. */
 function submitAddAccount() {
+  if (!isAdmin.value) return
   const username = addUsername.value.trim()
   if (!username || addUsernameTaken.value || addPassword.value.length < 4) return
   emit('set-password', { username, password: addPassword.value })
@@ -601,7 +611,7 @@ function startChangePassword(username: string) {
 }
 /** Ship a password change for `pwTarget` (proves the current password). */
 function submitChangePassword() {
-  if (!pwTarget.value || pwNew.value.length < 4) return
+  if (!isAdmin.value || !pwTarget.value || pwNew.value.length < 4) return
   emit('set-password', {
     username: pwTarget.value,
     password: pwNew.value,
@@ -612,9 +622,11 @@ function submitChangePassword() {
   pwNew.value = ''
 }
 function removeAccount(username: string) {
+  if (!isAdmin.value) return
   emit('remove-account', { username })
 }
 function selectAdmin(username: string) {
+  if (!isAdmin.value) return
   emit('set-admin-account', { username })
 }
 </script>
@@ -627,6 +639,9 @@ function selectAdmin(username: string) {
         ✕
       </button>
     </div>
+    <p v-if="!isAdmin" class="settings-readonly-notice" data-testid="settings-readonly-notice">
+      {{ t('settings.readOnlyNotice.text') }}
+    </p>
     <div class="settings-body">
       <section class="settings-section">
         <p class="settings-section-title">{{ t('settings.agents.title.label') }}</p>
@@ -966,6 +981,7 @@ function selectAdmin(username: string) {
                 type="radio"
                 name="auth-admin"
                 :checked="acc.username === basicAdminUsername"
+                :disabled="!isAdmin"
                 data-testid="settings-auth-admin-radio"
                 @change="selectAdmin(acc.username)"
               />
@@ -977,6 +993,7 @@ function selectAdmin(username: string) {
             <div class="auth-account-actions">
               <button
                 class="icon-btn"
+                :disabled="!isAdmin"
                 data-testid="settings-auth-account-change"
                 @click="startChangePassword(acc.username)"
               >
@@ -984,6 +1001,7 @@ function selectAdmin(username: string) {
               </button>
               <button
                 class="icon-btn"
+                :disabled="!isAdmin"
                 data-testid="settings-auth-account-remove"
                 @click="removeAccount(acc.username)"
               >
@@ -1054,7 +1072,9 @@ function selectAdmin(username: string) {
             </label>
             <button
               class="agent-add"
-              :disabled="!addUsername.trim() || addUsernameTaken || addPassword.length < 4"
+              :disabled="
+                !isAdmin || !addUsername.trim() || addUsernameTaken || addPassword.length < 4
+              "
               data-testid="settings-auth-add-account"
               @click="submitAddAccount"
             >
@@ -1229,7 +1249,7 @@ function selectAdmin(username: string) {
     </div>
     <div class="settings-foot">
       <button class="ghost" @click="emit('close')">{{ t('common.action.cancel.label') }}</button>
-      <button data-testid="settings-save" @click="save">
+      <button data-testid="settings-save" :disabled="!isAdmin" @click="save">
         {{ t('common.action.save.label') }}
       </button>
     </div>

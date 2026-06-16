@@ -154,6 +154,9 @@
     "title": {
       "label": "System Settings"
     },
+    "readOnlyNotice": {
+      "text": "You are not the administrator. System settings are read-only."
+    },
     "agents": {
       "title": {
         "label": "Agents"
@@ -1326,7 +1329,8 @@
       "invalidDefaultMode": "Invalid default mode \"{mode}\" for vendor \"{vendor}\"."
     },
     "auth": {
-      "oauthAdminInvalid": "The admin email must be set and listed in the allowed emails."
+      "oauthAdminInvalid": "The admin email must be set and listed in the allowed emails.",
+      "adminOnly": "Only the administrator can change system settings."
     }
   },
   "statusIndicator": {

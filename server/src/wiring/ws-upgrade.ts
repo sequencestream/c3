@@ -28,6 +28,7 @@ import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listStatuses, removeViewer } from '../runs.js'
 import { loadSettings } from '../kernel/config/index.js'
 import { verifySession } from '../features/auth/session-store.js'
+import { isAdminConn } from '../features/auth/authz.js'
 
 /**
  * Rollback escape hatch for the cross-vendor `list_sessions` swap (ADR-0013).
@@ -84,6 +85,7 @@ export function createWsHandler(deps: {
       // Default unauthenticated; `onOpen` resolves the handshake gate below.
       authed: false,
       authToken: null,
+      subject: null,
       viewing: null,
       deliver: (msg) => {
         if (sock) send(sock, msg)
@@ -128,11 +130,16 @@ export function createWsHandler(deps: {
           if (!result.ok) {
             conn.authed = false
             conn.authToken = null
+            conn.subject = null
             send(ws, { type: 'unauthenticated', reason: result.reason })
             return
           }
           conn.authed = true
           conn.authToken = token
+          // Bind the verified subject so the admin gate (ADR-0023 authz) can
+          // authorize this connection's config mutations without re-reading the
+          // session store on every frame.
+          conn.subject = result.subject
         } else {
           conn.authed = true
         }
@@ -142,6 +149,9 @@ export function createWsHandler(deps: {
           workspaces: listWorkspaces(),
           activeSessionId: getActiveSessionId(),
           statuses: listStatuses(),
+          // Whether this connection is the unique admin (UX hint only; the server
+          // re-checks on every config mutation — the wire flag is never authority).
+          isAdmin: isAdminConn(conn),
         })
       },
       // The 40+ case switch collapsed to a single registry dispatch (ADR-0009):

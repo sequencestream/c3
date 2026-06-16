@@ -152,6 +152,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'ready':
+        // Refresh admin authorization for this connection (ADR-0023 authz) — drives
+        // the console disabling system-config controls for non-admins.
+        auth.setIsAdmin(msg.isAdmin)
         workspaces.value = msg.workspaces
         // Close workspace setting on reconnect — workspace may have changed.
         workspaceSettingOpen.value = false

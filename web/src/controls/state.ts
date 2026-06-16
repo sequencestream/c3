@@ -334,9 +334,11 @@ export function createState(deps: StateDeps) {
   const codesTabs = ref<CodeTab[]>([])
   // The focused tab's path, or null when none are open.
   const codesActivePath = ref<string | null>(null)
-  // Search box: mode toggle + query + bounded result set (null = no search yet).
+  // Search box: mode toggle + query + glob filter + bounded result set
+  // (null = no search yet). `pattern` defaults to `*` (all files).
   const codesSearchMode = ref<CodeSearchMode>('filename')
   const codesSearchQuery = ref('')
+  const codesSearchPattern = ref('*')
   const codesSearchResult = ref<CodesSearchResultView | null>(null)
   const codesSearchLoading = ref(false)
 
@@ -486,6 +488,7 @@ export function createState(deps: StateDeps) {
     codesActivePath,
     codesSearchMode,
     codesSearchQuery,
+    codesSearchPattern,
     codesSearchResult,
     codesSearchLoading,
     settingsOpen,

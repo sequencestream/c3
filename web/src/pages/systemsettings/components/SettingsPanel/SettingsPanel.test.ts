@@ -443,7 +443,9 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     expect(w.find('[data-testid="settings-auth-accounts"]').exists()).toBe(false)
     await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
     expect(w.find('[data-testid="settings-auth-accounts"]').exists()).toBe(true)
-    expect(w.find('[data-testid="settings-auth-add-username"]').exists()).toBe(true)
+    // The add form lives in a modal — only its trigger shows until opened.
+    expect(w.find('[data-testid="settings-auth-add-account-open"]').exists()).toBe(true)
+    expect(w.find('[data-testid="settings-auth-add-username"]').exists()).toBe(false)
     // Basic chosen but no accounts yet ⇒ the "set an admin first" hint, not "active".
     expect(w.find('[data-testid="settings-auth-need-admin"]').exists()).toBe(true)
     expect(w.find('[data-testid="settings-auth-active"]').exists()).toBe(false)
@@ -498,29 +500,32 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     expect(saved.auth.provider.adminEmail).toBe('alice@example.com')
   })
 
-  it('never pre-fills the add-password input (write-only)', () => {
+  it('never pre-fills the add-password input (write-only)', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-add-account-open"]').trigger('click')
     const pw = w.find('[data-testid="settings-auth-add-password"]').element as HTMLInputElement
     expect(pw.value).toBe('')
     expect(pw.type).toBe('password')
   })
 
-  it('add account: emits set-password without a current password and clears the fields', async () => {
+  it('add account: emits set-password without a current password and closes the modal', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
+    await w.find('[data-testid="settings-auth-add-account-open"]').trigger('click')
     await w.find('[data-testid="settings-auth-add-username"]').setValue('root')
-    const pw = w.find('[data-testid="settings-auth-add-password"]')
-    await pw.setValue('s3cret!')
+    await w.find('[data-testid="settings-auth-add-password"]').setValue('s3cret!')
     await w.find('[data-testid="settings-auth-add-account"]').trigger('click')
     const emitted = w.emitted('set-password') as [
       { username: string; password: string; currentPassword?: string },
     ][]
     expect(emitted[0][0]).toEqual({ username: 'root', password: 's3cret!' })
-    expect((pw.element as HTMLInputElement).value).toBe('')
+    // The modal closes after a successful add.
+    expect(w.find('[data-testid="settings-auth-add-modal"]').exists()).toBe(false)
   })
 
   it('blocks adding an account whose username already exists (AC2.1)', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
+    await w.find('[data-testid="settings-auth-add-account-open"]').trigger('click')
     await w.find('[data-testid="settings-auth-add-username"]').setValue('alice')
     await w.find('[data-testid="settings-auth-add-password"]').setValue('whatever')
     expect(w.find('[data-testid="settings-auth-add-duplicate"]').exists()).toBe(true)
@@ -530,9 +535,10 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     expect(w.emitted('set-password')).toBeUndefined()
   })
 
-  it('change password: opens the row form and includes the current password', async () => {
+  it('change password: opens the modal and includes the current password', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
     await w.find('[data-testid="settings-auth-account-change"]').trigger('click')
+    expect(w.find('[data-testid="settings-auth-change-password"]').exists()).toBe(true)
     await w.find('[data-testid="settings-auth-current-password"]').setValue('oldpass')
     await w.find('[data-testid="settings-auth-new-password"]').setValue('newpass1')
     await w.find('[data-testid="settings-auth-set-password"]').trigger('click')
@@ -544,14 +550,30 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
       password: 'newpass1',
       currentPassword: 'oldpass',
     })
+    // The modal closes after submitting.
+    expect(w.find('[data-testid="settings-auth-change-password"]').exists()).toBe(false)
   })
 
-  it('remove button emits remove-account for that row', async () => {
+  it('remove button opens a confirm modal; only the confirm emits remove-account', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
     const removes = w.findAll('[data-testid="settings-auth-account-remove"]')
     await removes[1].trigger('click') // bob
+    // Clicking Remove only opens the confirmation — nothing emitted yet.
+    expect(w.emitted('remove-account')).toBeUndefined()
+    expect(w.find('[data-testid="settings-auth-remove-confirm"]').exists()).toBe(true)
+    await w.find('[data-testid="settings-auth-remove-confirm-btn"]').trigger('click')
     const emitted = w.emitted('remove-account') as [{ username: string }][]
     expect(emitted[0][0]).toEqual({ username: 'bob' })
+    expect(w.find('[data-testid="settings-auth-remove-confirm"]').exists()).toBe(false)
+  })
+
+  it('remove confirm modal: cancel dismisses without emitting', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
+    const removes = w.findAll('[data-testid="settings-auth-account-remove"]')
+    await removes[1].trigger('click') // bob
+    await w.find('[data-testid="settings-auth-remove-cancel"]').trigger('click')
+    expect(w.emitted('remove-account')).toBeUndefined()
+    expect(w.find('[data-testid="settings-auth-remove-confirm"]').exists()).toBe(false)
   })
 
   it('admin radio emits set-admin-account when picking another account', async () => {
@@ -582,6 +604,35 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     await w.find('[data-testid="settings-save"]').trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.auth?.session.ttlSeconds).toBe(45 * 24 * 60 * 60)
+  })
+})
+
+describe('SettingsPanel.vue — sandbox column header', () => {
+  const withSandbox: SystemSettings = {
+    ...baseSettings,
+    sandboxes: [{ name: 'default', type: 'docker', image: 'node:20', seccomp: '', cpuLimit: 1 }],
+  }
+
+  it('renders a column-title header with six localized labels when a sandbox exists', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withSandbox } })
+    const header = w.find('[data-testid="sandbox-row-header"]')
+    expect(header.exists()).toBe(true)
+    const labels = header.findAll('.agent-field')
+    expect(labels).toHaveLength(6)
+    // Default locale is en in tests: Name / Type / Image / Seccomp profile / Memory limit / CPU limit.
+    expect(labels.map((l) => l.text())).toEqual([
+      'Name',
+      'Type',
+      'Image',
+      'Seccomp profile',
+      'Memory limit',
+      'CPU limit (cores)',
+    ])
+  })
+
+  it('omits the header when there are no sandbox definitions', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    expect(w.find('[data-testid="sandbox-row-header"]').exists()).toBe(false)
   })
 })
 

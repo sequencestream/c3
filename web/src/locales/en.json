@@ -397,6 +397,7 @@
         "tooltip": "Remove this sandbox definition"
       },
       "name": {
+        "label": "Name",
         "placeholder": "e.g. default, nodejs, python"
       },
       "type": {
@@ -560,7 +561,11 @@
           "label": "Add account"
         },
         "remove": {
-          "label": "Remove"
+          "label": "Remove",
+          "confirm": {
+            "title": "Remove account?",
+            "body": "Remove the account \"{username}\"? This can't be undone."
+          }
         },
         "result": {
           "ok": "Accounts updated."

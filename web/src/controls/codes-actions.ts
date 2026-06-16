@@ -18,6 +18,7 @@ export function installCodesActions(ctx: AppCtx): void {
     codesActivePath,
     codesSearchMode,
     codesSearchQuery,
+    codesSearchPattern,
     codesSearchResult,
     codesSearchLoading,
   } = ctx
@@ -32,6 +33,7 @@ export function installCodesActions(ctx: AppCtx): void {
     codesActivePath.value = null
     codesSearchMode.value = 'filename'
     codesSearchQuery.value = ''
+    codesSearchPattern.value = '*'
     codesSearchResult.value = null
     codesSearchLoading.value = false
   }
@@ -114,7 +116,8 @@ export function installCodesActions(ctx: AppCtx): void {
       return
     }
     codesSearchLoading.value = true
-    send({ type: 'search_codes', workspaceId: ws, query, mode: codesSearchMode.value })
+    const pattern = codesSearchPattern.value.trim() || '*'
+    send({ type: 'search_codes', workspaceId: ws, query, mode: codesSearchMode.value, pattern })
   }
 
   // Open a search hit: jump to the matched line for content hits.

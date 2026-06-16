@@ -439,6 +439,7 @@
         "tooltip": "Remove this sandbox definition"
       },
       "name": {
+        "label": "Name",
         "placeholder": "e.g. default, nodejs, python"
       },
       "type": {
@@ -561,7 +562,11 @@
           "label": "계정 추가"
         },
         "remove": {
-          "label": "삭제"
+          "label": "삭제",
+          "confirm": {
+            "title": "계정을 삭제할까요?",
+            "body": "계정 \"{username}\"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+          }
         },
         "result": {
           "ok": "계정이 업데이트되었습니다."

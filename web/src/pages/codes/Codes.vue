@@ -25,6 +25,7 @@ const props = defineProps<{
   activeTab: CodeTab | null
   searchMode: CodeSearchMode
   searchQuery: string
+  searchPattern: string
   searchResult: CodesSearchResultView | null
   searchLoading: boolean
 }>()
@@ -37,6 +38,7 @@ const emit = defineEmits<{
   'select-tab': [path: string]
   'set-search-mode': [mode: CodeSearchMode]
   'update:searchQuery': [value: string]
+  'update:searchPattern': [value: string]
   'run-search': []
 }>()
 
@@ -81,6 +83,7 @@ function handleMobileBack(targetKey: string): void {
         :active-path="activePath"
         :search-mode="searchMode"
         :search-query="searchQuery"
+        :search-pattern="searchPattern"
         :search-result="searchResult"
         :search-loading="searchLoading"
         @toggle-dir="(rel: string) => emit('toggle-dir', rel)"
@@ -88,6 +91,7 @@ function handleMobileBack(targetKey: string): void {
         @open-hit="openHit"
         @set-search-mode="(m: CodeSearchMode) => emit('set-search-mode', m)"
         @update:search-query="(v: string) => emit('update:searchQuery', v)"
+        @update:search-pattern="(v: string) => emit('update:searchPattern', v)"
         @run-search="emit('run-search')"
       />
     </template>

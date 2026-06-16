@@ -451,13 +451,18 @@ const adminConfigured = computed(
 )
 
 // Write-only inputs for adding an account (username + initial password). The hash
-// is NEVER echoed here; these clear after the emit.
+// is NEVER echoed here; these clear after the emit. Editing happens in a modal —
+// `showAddModal` drives its visibility.
+const showAddModal = ref(false)
 const addUsername = ref('')
 const addPassword = ref('')
-// Per-account password change: which account is being edited + its proof inputs.
+// Per-account password change: which account is being edited (also drives the
+// change-password modal) + its proof inputs.
 const pwTarget = ref<string | null>(null)
 const pwCurrent = ref('')
 const pwNew = ref('')
+// Which account a pending Remove confirmation targets (drives the confirm modal).
+const removeTarget = ref<string | null>(null)
 // Auth is effectively ON only under `basic` with a configured admin. `none` ⇒
 // always off; `oauth` ⇒ off (runtime pending, cannot truly enable yet). This is
 // the single derivation of `enabled` — the dropdown chooses intent, this gates
@@ -593,6 +598,19 @@ const addUsernameTaken = computed(() => {
   const u = addUsername.value.trim()
   return !!u && basicAccounts.value.some((a) => a.username === u)
 })
+/** Open the add-account modal with a clean (write-only) form. */
+function startAddAccount() {
+  if (!isAdmin.value) return
+  addUsername.value = ''
+  addPassword.value = ''
+  showAddModal.value = true
+}
+/** Close the add-account modal, discarding any typed (unsent) inputs. */
+function cancelAddAccount() {
+  showAddModal.value = false
+  addUsername.value = ''
+  addPassword.value = ''
+}
 /** Add a new account: ship username + initial password (server hashes + adds;
  *  the first account also becomes the admin). No current-password proof. */
 function submitAddAccount() {
@@ -602,10 +620,18 @@ function submitAddAccount() {
   emit('set-password', { username, password: addPassword.value })
   addUsername.value = ''
   addPassword.value = ''
+  showAddModal.value = false
 }
-/** Open the change-password form for an existing account. */
+/** Open the change-password modal for an existing account. */
 function startChangePassword(username: string) {
+  if (!isAdmin.value) return
   pwTarget.value = username
+  pwCurrent.value = ''
+  pwNew.value = ''
+}
+/** Close the change-password modal, discarding the typed proof/new password. */
+function cancelChangePassword() {
+  pwTarget.value = null
   pwCurrent.value = ''
   pwNew.value = ''
 }
@@ -621,9 +647,20 @@ function submitChangePassword() {
   pwCurrent.value = ''
   pwNew.value = ''
 }
-function removeAccount(username: string) {
+/** Open the Remove confirmation modal for an account. */
+function startRemoveAccount(username: string) {
   if (!isAdmin.value) return
-  emit('remove-account', { username })
+  removeTarget.value = username
+}
+/** Dismiss the Remove confirmation without deleting. */
+function cancelRemoveAccount() {
+  removeTarget.value = null
+}
+/** Confirm + ship the account removal for `removeTarget`. */
+function confirmRemoveAccount() {
+  if (!isAdmin.value || !removeTarget.value) return
+  emit('remove-account', { username: removeTarget.value })
+  removeTarget.value = null
 }
 function selectAdmin(username: string) {
   if (!isAdmin.value) return
@@ -867,6 +904,23 @@ function selectAdmin(username: string) {
           {{ t('settings.sandboxes.empty') }}
         </div>
         <div
+          v-if="draft.sandboxes && draft.sandboxes.length > 0"
+          class="sandbox-row sandbox-row-header"
+          data-testid="sandbox-row-header"
+        >
+          <div class="agent-field">{{ t('settings.sandboxes.name.label') }}</div>
+          <div class="agent-field">{{ t('settings.sandboxes.type.label') }}</div>
+          <div class="agent-field">{{ t('settings.sandboxes.image.label') }}</div>
+          <div class="agent-field">{{ t('settings.sandboxes.seccomp.label') }}</div>
+          <div class="agent-field sandbox-small">
+            {{ t('settings.sandboxes.memoryLimit.label') }}
+          </div>
+          <div class="agent-field sandbox-small">
+            {{ t('settings.sandboxes.cpuLimit.label') }}
+          </div>
+          <div class="sandbox-row-header-actions" aria-hidden="true"></div>
+        </div>
+        <div
           v-for="(sb, idx) in draft.sandboxes ?? []"
           :key="idx"
           class="sandbox-row"
@@ -969,7 +1023,9 @@ function selectAdmin(username: string) {
           data-testid="settings-auth-accounts"
         >
           <p class="settings-hint">{{ t('settings.auth.account.hint') }}</p>
-          <!-- Existing accounts: admin radio + change-password + delete. -->
+          <!-- Existing accounts: admin radio + name on one line, change-password +
+               remove actions trailing on the same row. Password edit / removal both
+               happen in modals (below) so the row stays a single compact line. -->
           <div
             v-for="acc in basicAccounts"
             :key="acc.username"
@@ -1003,90 +1059,23 @@ function selectAdmin(username: string) {
                 class="icon-btn"
                 :disabled="!isAdmin"
                 data-testid="settings-auth-account-remove"
-                @click="removeAccount(acc.username)"
+                @click="startRemoveAccount(acc.username)"
               >
                 {{ t('settings.auth.account.remove.label') }}
               </button>
             </div>
-            <!-- Inline change-password form for this row. -->
-            <div
-              v-if="pwTarget === acc.username"
-              class="auth-password"
-              data-testid="settings-auth-change-password"
-            >
-              <label class="auth-field">
-                <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>
-                <input
-                  v-model="pwCurrent"
-                  class="agent-field"
-                  type="password"
-                  autocomplete="current-password"
-                  :placeholder="t('settings.auth.password.current.placeholder')"
-                  data-testid="settings-auth-current-password"
-                />
-              </label>
-              <label class="auth-field">
-                <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
-                <input
-                  v-model="pwNew"
-                  class="agent-field"
-                  type="password"
-                  autocomplete="new-password"
-                  :placeholder="t('settings.auth.password.new.placeholder')"
-                  data-testid="settings-auth-new-password"
-                />
-              </label>
-              <button
-                class="agent-add"
-                :disabled="pwNew.length < 4"
-                data-testid="settings-auth-set-password"
-                @click="submitChangePassword"
-              >
-                {{ t('settings.auth.password.change.label') }}
-              </button>
-            </div>
           </div>
 
-          <!-- Add a new account. -->
-          <div class="auth-account-add" data-testid="settings-auth-account-add">
-            <label class="auth-field">
-              <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
-              <input
-                v-model="addUsername"
-                class="agent-field"
-                autocomplete="username"
-                :placeholder="t('settings.auth.username.placeholder')"
-                data-testid="settings-auth-add-username"
-              />
-            </label>
-            <label class="auth-field">
-              <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
-              <input
-                v-model="addPassword"
-                class="agent-field"
-                type="password"
-                autocomplete="new-password"
-                :placeholder="t('settings.auth.password.new.placeholder')"
-                data-testid="settings-auth-add-password"
-              />
-            </label>
+          <!-- Add a new account — opens a modal. -->
+          <div class="auth-account-add-bar">
             <button
               class="agent-add"
-              :disabled="
-                !isAdmin || !addUsername.trim() || addUsernameTaken || addPassword.length < 4
-              "
-              data-testid="settings-auth-add-account"
-              @click="submitAddAccount"
+              :disabled="!isAdmin"
+              data-testid="settings-auth-add-account-open"
+              @click="startAddAccount"
             >
               {{ t('settings.auth.account.add.label') }}
             </button>
-            <p
-              v-if="addUsernameTaken"
-              class="settings-hint"
-              data-testid="settings-auth-add-duplicate"
-            >
-              {{ t('settings.auth.account.duplicate') }}
-            </p>
           </div>
         </div>
 
@@ -1252,6 +1241,163 @@ function selectAdmin(username: string) {
       <button data-testid="settings-save" :disabled="!isAdmin" @click="save">
         {{ t('common.action.save.label') }}
       </button>
+    </div>
+
+    <!-- Add-account modal. -->
+    <div
+      v-if="showAddModal"
+      class="settings-modal-overlay"
+      data-testid="settings-auth-add-modal"
+      @click.self="cancelAddAccount"
+    >
+      <div class="settings-modal" role="dialog" aria-modal="true">
+        <div class="settings-modal-head">
+          <h3>{{ t('settings.auth.account.add.label') }}</h3>
+          <button
+            class="icon-btn"
+            :title="t('common.action.close.tooltip')"
+            @click="cancelAddAccount"
+          >
+            ✕
+          </button>
+        </div>
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
+          <input
+            v-model="addUsername"
+            class="agent-field"
+            autocomplete="username"
+            :placeholder="t('settings.auth.username.placeholder')"
+            data-testid="settings-auth-add-username"
+          />
+        </label>
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
+          <input
+            v-model="addPassword"
+            class="agent-field"
+            type="password"
+            autocomplete="new-password"
+            :placeholder="t('settings.auth.password.new.placeholder')"
+            data-testid="settings-auth-add-password"
+          />
+        </label>
+        <p v-if="addUsernameTaken" class="settings-hint" data-testid="settings-auth-add-duplicate">
+          {{ t('settings.auth.account.duplicate') }}
+        </p>
+        <div class="settings-modal-foot">
+          <button class="ghost" @click="cancelAddAccount">
+            {{ t('common.action.cancel.label') }}
+          </button>
+          <button
+            class="agent-add"
+            :disabled="
+              !isAdmin || !addUsername.trim() || addUsernameTaken || addPassword.length < 4
+            "
+            data-testid="settings-auth-add-account"
+            @click="submitAddAccount"
+          >
+            {{ t('settings.auth.account.add.label') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Change-password modal (driven by pwTarget). -->
+    <div
+      v-if="pwTarget"
+      class="settings-modal-overlay"
+      data-testid="settings-auth-change-password"
+      @click.self="cancelChangePassword"
+    >
+      <div class="settings-modal" role="dialog" aria-modal="true">
+        <div class="settings-modal-head">
+          <h3>{{ t('settings.auth.password.change.label') }}</h3>
+          <button
+            class="icon-btn"
+            :title="t('common.action.close.tooltip')"
+            @click="cancelChangePassword"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="settings-hint auth-modal-target">{{ pwTarget }}</p>
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>
+          <input
+            v-model="pwCurrent"
+            class="agent-field"
+            type="password"
+            autocomplete="current-password"
+            :placeholder="t('settings.auth.password.current.placeholder')"
+            data-testid="settings-auth-current-password"
+          />
+        </label>
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
+          <input
+            v-model="pwNew"
+            class="agent-field"
+            type="password"
+            autocomplete="new-password"
+            :placeholder="t('settings.auth.password.new.placeholder')"
+            data-testid="settings-auth-new-password"
+          />
+        </label>
+        <div class="settings-modal-foot">
+          <button class="ghost" @click="cancelChangePassword">
+            {{ t('common.action.cancel.label') }}
+          </button>
+          <button
+            class="agent-add"
+            :disabled="pwNew.length < 4"
+            data-testid="settings-auth-set-password"
+            @click="submitChangePassword"
+          >
+            {{ t('settings.auth.password.change.label') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Remove-account confirmation modal (driven by removeTarget). -->
+    <div
+      v-if="removeTarget"
+      class="settings-modal-overlay"
+      data-testid="settings-auth-remove-confirm"
+      @click.self="cancelRemoveAccount"
+    >
+      <div class="settings-modal" role="dialog" aria-modal="true">
+        <div class="settings-modal-head">
+          <h3>{{ t('settings.auth.account.remove.confirm.title') }}</h3>
+          <button
+            class="icon-btn"
+            :title="t('common.action.close.tooltip')"
+            @click="cancelRemoveAccount"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="settings-hint">
+          {{ t('settings.auth.account.remove.confirm.body', { username: removeTarget }) }}
+        </p>
+        <div class="settings-modal-foot">
+          <button
+            class="ghost"
+            data-testid="settings-auth-remove-cancel"
+            @click="cancelRemoveAccount"
+          >
+            {{ t('common.action.cancel.label') }}
+          </button>
+          <button
+            class="agent-remove"
+            data-testid="settings-auth-remove-confirm-btn"
+            @click="confirmRemoveAccount"
+          >
+            {{ t('settings.auth.account.remove.label') }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>

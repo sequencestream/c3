@@ -44,10 +44,34 @@ type GuardResult =
 interface SearchState {
   query: string
   mode: 'filename' | 'content'
+  /** Compiled basename glob filters; null ⇒ match every file (`*`/empty). */
+  patterns: RegExp[] | null
   startedAt: number
   hits: CodeSearchHit[]
   truncated: boolean
   timedOut: boolean
+}
+
+// Compile a user glob filter ("*.ts", "*.ts,*.tsx", "*") into basename matchers.
+// `*` matches any run of chars, `?` one char; everything else is literal and
+// case-insensitive. A bare `*` / empty input returns null (match every file).
+export function compilePatterns(input: string): RegExp[] | null {
+  const globs = input
+    .split(/[,\s]+/)
+    .map((g) => g.trim())
+    .filter((g) => g.length > 0)
+  if (globs.length === 0 || globs.every((g) => g === '*')) return null
+  return globs.map((g) => {
+    const body = g
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.')
+    return new RegExp(`^${body}$`, 'i')
+  })
+}
+
+function matchesPattern(name: string, patterns: RegExp[] | null): boolean {
+  return patterns === null || patterns.some((re) => re.test(name))
 }
 
 function errorFrame(error: CodesError): ServerToClient {
@@ -228,15 +252,21 @@ async function walkSearch(root: string, dirAbs: string, state: SearchState): Pro
     const type = await entryType(abs)
     if (!type) continue
 
+    // The glob filter scopes which entries are matched/searched by basename;
+    // directories are always *traversed* so a `*.ts` filter still reaches files
+    // nested deep, but a non-default filter excludes directory name hits.
+    const nameMatchesPattern = matchesPattern(dirent.name, state.patterns)
+
     if (
       state.mode === 'filename' &&
+      nameMatchesPattern &&
       dirent.name.toLocaleLowerCase().includes(state.query.toLocaleLowerCase())
     ) {
       addHit(state, { path: rel, type, match: dirent.name })
     }
     if (type === 'directory') {
       await walkSearch(root, abs, state)
-    } else if (state.mode === 'content') {
+    } else if (state.mode === 'content' && nameMatchesPattern) {
       await searchFileContent(abs, rel, state)
     }
   }
@@ -246,6 +276,7 @@ async function searchCodes(
   workspaceId: string,
   query: string,
   mode: 'filename' | 'content',
+  pattern: string,
 ): Promise<ServerToClient> {
   const guarded = await resolveCodePath(workspaceId, '')
   if (!guarded.ok) return errorFrame(guarded.error)
@@ -264,6 +295,7 @@ async function searchCodes(
   const state: SearchState = {
     query: trimmed,
     mode,
+    patterns: compilePatterns(pattern),
     startedAt: Date.now(),
     hits: [],
     truncated: false,
@@ -299,7 +331,7 @@ export const readFileHandler: Handler<'read_file'> = async (_ctx, conn, msg) => 
 
 export const searchCodesHandler: Handler<'search_codes'> = async (_ctx, conn, msg) => {
   try {
-    conn.send(await searchCodes(msg.workspaceId, msg.query, msg.mode))
+    conn.send(await searchCodes(msg.workspaceId, msg.query, msg.mode, msg.pattern ?? '*'))
   } catch {
     conn.send(errorFrame({ code: 'codes.searchFailed' }))
   }

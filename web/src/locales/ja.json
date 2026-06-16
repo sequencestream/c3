@@ -439,6 +439,7 @@
         "tooltip": "Remove this sandbox definition"
       },
       "name": {
+        "label": "Name",
         "placeholder": "e.g. default, nodejs, python"
       },
       "type": {
@@ -561,7 +562,11 @@
           "label": "アカウントを追加"
         },
         "remove": {
-          "label": "削除"
+          "label": "削除",
+          "confirm": {
+            "title": "アカウントを削除しますか？",
+            "body": "アカウント「{username}」を削除しますか？この操作は取り消せません。"
+          }
         },
         "result": {
           "ok": "アカウントを更新しました。"

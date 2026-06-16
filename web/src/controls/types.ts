@@ -125,6 +125,7 @@ export interface AppMethods {
   closeCodeTab(path: string): void
   setCodesActiveTab(path: string): void
   setCodesSearchMode(mode: 'filename' | 'content'): void
+  setCodesSearchPattern(pattern: string): void
   runCodeSearch(): void
   openCodeSearchHit(hit: CodeSearchHit): void
 

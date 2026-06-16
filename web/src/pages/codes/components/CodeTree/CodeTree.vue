@@ -20,6 +20,7 @@ const props = defineProps<{
   activePath: string | null
   searchMode: CodeSearchMode
   searchQuery: string
+  searchPattern: string
   searchResult: CodesSearchResultView | null
   searchLoading: boolean
 }>()
@@ -30,6 +31,7 @@ const emit = defineEmits<{
   'open-hit': [hit: CodeSearchHit]
   'set-search-mode': [mode: CodeSearchMode]
   'update:searchQuery': [value: string]
+  'update:searchPattern': [value: string]
   'run-search': []
 }>()
 
@@ -52,7 +54,7 @@ const SEARCH_MODES: CodeSearchMode[] = ['filename', 'content']
 // result count + timeout, so a per-pause request is safe.
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 watch(
-  () => props.searchQuery,
+  () => [props.searchQuery, props.searchPattern],
   () => {
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => emit('run-search'), 250)

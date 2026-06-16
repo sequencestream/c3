@@ -397,6 +397,7 @@
         "tooltip": "移除此沙箱定义"
       },
       "name": {
+        "label": "名称",
         "placeholder": "例如 default、nodejs、python"
       },
       "type": {
@@ -560,7 +561,11 @@
           "label": "添加账号"
         },
         "remove": {
-          "label": "删除"
+          "label": "删除",
+          "confirm": {
+            "title": "删除账号？",
+            "body": "确定删除账号「{username}」吗？此操作不可撤销。"
+          }
         },
         "result": {
           "ok": "账号已更新。"

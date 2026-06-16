@@ -439,6 +439,7 @@
         "tooltip": "Remove this sandbox definition"
       },
       "name": {
+        "label": "Name",
         "placeholder": "e.g. default, nodejs, python"
       },
       "type": {
@@ -561,7 +562,11 @@
           "label": "Добавить учётную запись"
         },
         "remove": {
-          "label": "Удалить"
+          "label": "Удалить",
+          "confirm": {
+            "title": "Удалить учётную запись?",
+            "body": "Удалить учётную запись «{username}»? Это действие нельзя отменить."
+          }
         },
         "result": {
           "ok": "Учётные записи обновлены."

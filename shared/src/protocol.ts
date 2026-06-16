@@ -2244,8 +2244,19 @@ export type ClientToServer =
   | { type: 'list_dir'; workspaceId: string; rel: string }
   /** Read one workspace-relative file. Server replies with `file_read`. */
   | { type: 'read_file'; workspaceId: string; rel: string }
-  /** Search code by filename or content. Server replies with `codes_searched`. */
-  | { type: 'search_codes'; workspaceId: string; query: string; mode: CodeSearchMode }
+  /**
+   * Search code by filename or content. Server replies with `codes_searched`.
+   * `pattern` is an optional glob filter on file *basenames* (e.g. `*.ts`,
+   * `*.ts,*.tsx`); `*`/empty/absent ⇒ all files. It scopes which files are
+   * searched in both modes — directories are always traversed regardless.
+   */
+  | {
+      type: 'search_codes'
+      workspaceId: string
+      query: string
+      mode: CodeSearchMode
+      pattern?: string
+    }
   /** Stop the in-flight run of the currently-viewed session (if any). */
   | { type: 'stop_run' }
   /** Rebinding `${conn.viewing}` from a pending id to the real SDK id (ADR-0018 resident subs model). */

@@ -2213,6 +2213,132 @@ button.deny:hover:not(:disabled) {
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
 }
+/* One account per line: radio + name (+ admin badge) on the left, the
+   change-password / remove actions trailing on the right. */
+.auth-account-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--c-border);
+}
+.auth-admin-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
+  cursor: pointer;
+}
+.auth-account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auth-admin-badge {
+  flex: 0 0 auto;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--sp-2);
+}
+.auth-account-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+}
+.auth-account-add-bar {
+  margin-top: var(--sp-3);
+}
+.auth-modal-target {
+  font-weight: 600;
+  color: var(--c-text);
+}
+/* Destructive confirm button — shares the agent-add footprint, danger colors. */
+.agent-remove {
+  height: 36px;
+  padding: 0 var(--sp-4);
+  background: var(--c-danger, #e53e3e);
+  color: #fff;
+  border: 1px solid var(--c-danger, #e53e3e);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-code);
+  font-weight: 500;
+}
+.agent-remove:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+/* ---- Settings modals (add account / change password / remove confirm) ---- */
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+.settings-modal {
+  width: 90vw;
+  max-width: 460px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.25));
+}
+.settings-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+}
+.settings-modal-head h3 {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.settings-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+.settings-modal-foot .agent-add,
+.settings-modal-foot .agent-remove {
+  margin-top: 0;
+}
+
+@media (max-width: 767px) {
+  .settings-modal-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    background: var(--c-bg);
+  }
+  .settings-modal {
+    width: 100vw;
+    max-width: none;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: calc(var(--sp-4) + env(safe-area-inset-top)) var(--sp-4)
+      calc(var(--sp-4) + env(safe-area-inset-bottom));
+  }
+  .settings-modal-foot {
+    margin-top: auto;
+    padding-top: var(--sp-4);
+  }
+  .auth-account-row {
+    flex-wrap: wrap;
+  }
+}
 
 /* ---- AskUserQuestion answer panel ---- */
 .ask-summary {
@@ -2728,6 +2854,22 @@ button.deny:hover:not(:disabled) {
   margin-bottom: var(--sp-2);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
+}
+
+/* Column-title row above the sandbox inputs: same flex columns, but text-only —
+ * no border/background/padding box, just muted labels aligned to the inputs. */
+.sandbox-row.sandbox-row-header {
+  background: transparent;
+  border: none;
+  padding: 0 calc(var(--sp-2) + 1px);
+  margin-bottom: var(--sp-1);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+}
+
+.sandbox-row.sandbox-row-header .sandbox-row-header-actions {
+  flex: 0 0 auto;
+  min-width: 22px;
 }
 
 .sandbox-row .agent-field {

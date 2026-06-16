@@ -33,8 +33,9 @@ const PROMPT =
  * 4 = done
  */
 let phase = 0
-let seedWorkspace = ''
-let sandboxProject = ''
+let seedWorkspace = '' // seed workspace's opaque id (from `ready`)
+let sandboxProject = '' // sandbox project's absolute path (only for add_workspace + cleanup)
+let sandboxProjectId = '' // sandbox project's opaque id (from `workspaces` after add)
 let sandboxDefName = ''
 let phase1Passed = false
 let phase2Passed = null
@@ -113,7 +114,7 @@ function onMessage(evt) {
 
   // ── Phase 0: init ─────────────────────────────────────────────────
   if (msg.type === 'ready') {
-    seedWorkspace = msg.workspaces?.[0]?.path
+    seedWorkspace = msg.workspaces?.[0]?.id
     if (!seedWorkspace) {
       console.error('[e2e-sandbox] no seed workspace — start with --workspace <dir>')
       finish(5)
@@ -144,11 +145,20 @@ function onMessage(evt) {
     // add_workspace response — project now registered
     // Guard: only handle this once during sandbox setup (phase 1).
     if (phase !== 1) return
+    // Capture the just-added project's opaque id (sorts first after add).
+    const added =
+      msg.workspaces?.find((w) => w.name === sandboxProject.split('/').pop()) ?? msg.workspaces?.[0]
+    sandboxProjectId = added?.id ?? ''
+    if (!sandboxProjectId) {
+      console.error('[e2e-sandbox] no workspaceId after add_workspace')
+      finish(5)
+      return
+    }
     console.log('[e2e-sandbox] sandbox workspace added')
     // Now save the workspace setting with sandbox enabled
     send({
       type: 'save_workspace_setting',
-      workspacePath: sandboxProject,
+      workspaceId: sandboxProjectId,
       config: { sandbox: { enabled: true, sandbox: sandboxDefName } },
     })
     return
@@ -259,7 +269,7 @@ function startNonSandboxedRun() {
   phase = 2
   resetFlags()
   console.log('\n[e2e-sandbox] === Phase 1: Non-sandboxed run ===')
-  send({ type: 'create_session', workspacePath: seedWorkspace })
+  send({ type: 'create_session', workspaceId: seedWorkspace })
 }
 
 function onTurnEnd() {
@@ -276,7 +286,7 @@ function onTurnEnd() {
       phase = 3
       resetFlags()
       console.log('\n[e2e-sandbox] === Phase 2: Sandboxed run ===')
-      send({ type: 'create_session', workspacePath: sandboxProject })
+      send({ type: 'create_session', workspaceId: sandboxProjectId })
     } else {
       finishReport()
     }

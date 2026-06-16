@@ -4,10 +4,16 @@
  * v3 db (project_path column, idx_disc_project_status) must converge on the
  * workspace_path terminal state with NO data loss and NO DROP TABLE, idempotently.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+// Identity-stub the registry id↔path mapping (the synthetic path is unregistered).
+vi.mock('../../state.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../state.js')>()),
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
+}))
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
 import { getDiscussion, listDiscussions, resetStoreForTests } from './store.js'
 
@@ -83,7 +89,7 @@ describe('discussion v3 → v4 rename: legacy project_path db migrates in place'
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('d1')
     expect(list[0].title).toBe('Legacy discussion')
-    expect(list[0].workspacePath).toBe(proj)
+    expect(list[0].workspaceId).toBe(proj)
     expect(getDiscussion('d1')?.status).toBe('active')
   })
 

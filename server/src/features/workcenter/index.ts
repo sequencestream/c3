@@ -18,7 +18,7 @@
  */
 import type { TimeRangeProjectStats } from '@ccc/shared/protocol'
 import type { Handler } from '../../transport/handler-registry.js'
-import { listWorkspaces } from '../../state.js'
+import { listWorkspaces, pathToId, resolveWorkspaceRoot } from '../../state.js'
 import { runningCountForWorkspace } from '../../runs.js'
 import { countByStatusInRange as countIntentsByStatus } from '../intents/store.js'
 import { countByStatusInRange as countDiscussionsByStatus } from '../discussions/store.js'
@@ -36,7 +36,7 @@ function projectStats(
   const discussions = countDiscussionsByStatus(workspacePath, startTime, endTime)
   const schedules = countSchedulesInRange(workspacePath, startTime, endTime)
   return {
-    workspacePath,
+    workspaceId: pathToId(workspacePath)!,
     projectName,
     workSessions: {
       total: countRealInRange(workspacePath, startTime, endTime),
@@ -61,7 +61,7 @@ function projectStats(
 
 export const getTimeRangeStatsHandler: Handler<'get_timerange_stats'> = (_ctx, conn, msg) => {
   const stats = listWorkspaces().map((ws) =>
-    projectStats(ws.path, ws.name, msg.startTime, msg.endTime),
+    projectStats(resolveWorkspaceRoot(ws.id)!, ws.name, msg.startTime, msg.endTime),
   )
   conn.send({ type: 'timerange_stats', stats })
 }

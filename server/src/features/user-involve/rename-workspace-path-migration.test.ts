@@ -4,10 +4,12 @@
  * v1 db (project_path column, idx_wui_project_status) must converge on the
  * workspace_path terminal state with NO data loss and NO DROP TABLE, idempotently.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+// Identity-stub the workspace registry mapping (see store.test.ts).
+vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
 import { getEvent, listEvents, resetStoreForTests } from './store.js'
 
@@ -88,7 +90,7 @@ describe('user-involve v1 → v2 rename: legacy project_path db migrates in plac
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('e1')
     expect(list[0].title).toBe('Approve write')
-    expect(list[0].workspacePath).toBe(resolve(proj))
+    expect(list[0].workspaceId).toBe(resolve(proj))
     expect(getEvent('e1')?.toolName).toBe('Write')
   })
 

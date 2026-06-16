@@ -380,7 +380,7 @@ function save(): void {
     emit('create', {
       type: type.value,
       config,
-      workspacePath: props.workspacePath,
+      workspaceId: props.workspacePath,
       mode: serializeMode(),
       vendor: vendor.value,
       triggerType: triggerType.value,

@@ -9,7 +9,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     id: 's1',
     type: 'command',
     config: { command: 'pnpm build', name: 'Build' },
-    workspacePath: '/home/proj',
+    workspaceId: '/home/proj',
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,

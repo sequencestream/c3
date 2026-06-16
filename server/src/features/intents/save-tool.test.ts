@@ -13,6 +13,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+// Stub only the registry id↔path mapping (identity): synthetic test workspaces
+// are unregistered, so resolve/pathToId would otherwise return null.
+vi.mock('../../state.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../state.js')>()),
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
+}))
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { Intent } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'

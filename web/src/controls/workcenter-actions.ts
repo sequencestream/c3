@@ -30,20 +30,20 @@ export function installWorkcenterActions(ctx: AppCtx): void {
 
   // Jump from a WorkCenter event to its source tab + item.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
-    const path = event.workspacePath || currentWorkspace.value
+    const path = event.workspaceId || currentWorkspace.value
     if (!path || !ctx.client) return
     switch (event.source) {
       case 'session':
         ctx.enterConsole()
         if (event.sourceId)
-          send({ type: 'select_session', workspacePath: path, sessionId: event.sourceId })
+          send({ type: 'select_session', workspaceId: path, sessionId: event.sourceId })
         break
       case 'intent':
         activeTab.value = 'intents'
         intentsProject.value = path
         ctx.persistViewMode()
-        send({ type: 'open_intent_chat', workspacePath: path })
-        send({ type: 'list_intent_sessions', workspacePath: path })
+        send({ type: 'open_intent_chat', workspaceId: path })
+        send({ type: 'list_intent_sessions', workspaceId: path })
         break
       case 'discussion':
         ctx.openDiscussions(path)

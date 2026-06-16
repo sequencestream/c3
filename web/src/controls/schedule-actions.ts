@@ -27,7 +27,7 @@ export function installScheduleActions(ctx: AppCtx): void {
     schedulesProject.value = path
     selectedScheduleId.value = null
     ctx.persistViewMode()
-    send({ type: 'list_schedules', workspacePath: path })
+    send({ type: 'list_schedules', workspaceId: path })
     // Pull settings so the next-run preview uses the configured `timezone`.
     send({ type: 'get_settings' })
   }
@@ -91,7 +91,7 @@ export function installScheduleActions(ctx: AppCtx): void {
   })
 
   ctx.createSchedule = (input: CreateScheduleInput): void => {
-    send({ type: 'create_schedule', workspacePath: input.workspacePath, input })
+    send({ type: 'create_schedule', workspaceId: input.workspaceId, input })
   }
 
   ctx.updateSchedule = (id: string, input: UpdateScheduleInput): void => {
@@ -111,7 +111,7 @@ export function installScheduleActions(ctx: AppCtx): void {
     send({
       type: 'get_schedule_tool_manifest',
       vendor: vendor as VendorId,
-      workspacePath: schedulesProject.value,
+      workspaceId: schedulesProject.value,
     })
   }
 }

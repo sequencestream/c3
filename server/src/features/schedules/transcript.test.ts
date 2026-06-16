@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// as identity — fixtures use the path itself as the id and round-trip cleanly.
+vi.mock('../../state.js', () => ({
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
+}))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -34,7 +41,7 @@ function makeLlmSchedule() {
   return createSchedule({
     type: 'llm',
     config: { prompt: 'hi' },
-    workspacePath: proj,
+    workspaceId: proj,
     cronExpression: '* * * * *',
     mode: 'read-only',
     vendor: 'claude',
@@ -64,7 +71,7 @@ describe('readExecutionTranscript', () => {
 
     expect(result).toEqual({ sessionId: 'sess-1', items })
     // resolves to the owning schedule's workspace, resolved path.
-    expect(loadHistory).toHaveBeenCalledWith(sch.workspacePath, 'sess-1')
+    expect(loadHistory).toHaveBeenCalledWith(sch.workspaceId, 'sess-1')
   })
 
   it('returns empty items without loading history when the execution has no sessionId', async () => {

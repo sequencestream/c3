@@ -7,10 +7,15 @@
  * cancelBySourceId batch cancel). Runs under Node's `node:sqlite` branch via
  * real temp files.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+// Stub the workspace registry: the store maps its `workspace_path` column to an
+// opaque `workspaceId` via `pathToId`. In isolation these synthetic paths are
+// unregistered, so mock `pathToId` as identity — the round-trip assertions then
+// hold against the resolved path the rows store.
+vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import {
   cancelBySourceId,
@@ -71,7 +76,7 @@ describe('events CRUD', () => {
 
     const got = getEvent(ev.id)
     expect(got?.id).toBe(ev.id)
-    expect(got?.workspacePath).toBe(resolve(proj))
+    expect(got?.workspaceId).toBe(resolve(proj))
   })
 
   it('honors all explicit fields and persists toolInput as JSON', () => {

@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// as identity — fixtures use the path itself as the id and round-trip cleanly.
+vi.mock('../../state.js', () => ({
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
+}))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -153,7 +160,7 @@ describe('schedule store v5 (event-trigger) migration', () => {
     const ev = createSchedule({
       type: 'command',
       config: { command: 'echo done' },
-      workspacePath: '/abs/ws',
+      workspaceId: '/abs/ws',
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:settled',

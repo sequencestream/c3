@@ -164,25 +164,25 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'sessions':
         sessionsByWorkspace.value = {
           ...sessionsByWorkspace.value,
-          [msg.workspacePath]: msg.sessions,
+          [msg.workspaceId]: msg.sessions,
         }
         activeTitle.value =
           activeSessionTitleFromSessions({
             activeWorkspace: activeWorkspace.value,
             activeSession: activeSession.value,
-            workspacePath: msg.workspacePath,
+            workspacePath: msg.workspaceId,
             sessions: msg.sessions,
           }) ?? activeTitle.value
         // A workspace switch cleared the chat column and flagged a pending re-bind.
         // Now that the new workspace's session list has landed, bind its first
         // session (or stay empty when it has none).
-        if (ctx.flags.pendingConsoleBind && msg.workspacePath === currentWorkspace.value) {
+        if (ctx.flags.pendingConsoleBind && msg.workspaceId === currentWorkspace.value) {
           ctx.flags.pendingConsoleBind = false
           if (activeTab.value === 'console') ctx.bindConsoleSession()
         }
         break
       case 'session_selected':
-        activeWorkspace.value = msg.workspacePath
+        activeWorkspace.value = msg.workspaceId
         activeSession.value = msg.sessionId
         activeTitle.value = msg.title
         // The resolved agent vendor for the title dot (absent on comm sessions).
@@ -194,7 +194,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Remember this as the console tab's own session ONLY when the selection
         // originated on the console tab.
         if (activeTab.value === 'console') {
-          ctx.consoleSession.value = { workspacePath: msg.workspacePath, sessionId: msg.sessionId }
+          ctx.consoleSession.value = { workspacePath: msg.workspaceId, sessionId: msg.sessionId }
         }
         messages.value = []
         counters.nextId = 1
@@ -300,14 +300,14 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'skill_link_status':
         // Only adopt statuses for the workspace currently being edited.
-        if (msg.workspacePath === currentWorkspace.value) {
+        if (msg.workspaceId === currentWorkspace.value) {
           skillLinkStatuses.value = msg.statuses
         }
         break
       case 'skill_install_result':
         // Clear the row's busy flag, then re-fetch link status.
         installingSkillIds.value = installingSkillIds.value.filter((id) => id !== msg.skillId)
-        if (msg.workspacePath === currentWorkspace.value) ctx.querySkillLinkStatus()
+        if (msg.workspaceId === currentWorkspace.value) ctx.querySkillLinkStatus()
         break
       case 'skill_load_approval_request':
         skillApprovalRequest.value = {
@@ -321,16 +321,16 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'intents':
-        intents.value = { ...intents.value, [msg.workspacePath]: msg.items }
+        intents.value = { ...intents.value, [msg.workspaceId]: msg.items }
         break
       case 'intent_sessions':
-        intentSessions.value = { ...intentSessions.value, [msg.workspacePath]: msg.items }
+        intentSessions.value = { ...intentSessions.value, [msg.workspaceId]: msg.items }
         // Authoritatively reconcile the live run-state from the snapshot.
         if (msg.runStates) {
           intentSessionRunStates.value = msg.runStates
         }
         // Update the selected session id when the list changes.
-        if (msg.workspacePath === intentsProject.value && msg.items.length > 0) {
+        if (msg.workspaceId === intentsProject.value && msg.items.length > 0) {
           const active = msg.items.find((s) => s.sessionId === activeSession.value)
           if (active) {
             selectedIntentSessionId.value = active.sessionId
@@ -346,10 +346,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'automation_status':
-        automation.value = { ...automation.value, [msg.status.workspacePath]: msg.status }
+        automation.value = { ...automation.value, [msg.status.workspaceId]: msg.status }
         break
       case 'discussions': {
-        discussions.value = { ...discussions.value, [msg.workspacePath]: msg.items }
+        discussions.value = { ...discussions.value, [msg.workspaceId]: msg.items }
         // Authoritatively reconcile the live run-state for THIS list's discussions.
         discussionRunState.value = reconcileRunState(
           discussionRunState.value,
@@ -370,12 +370,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'schedules':
-        schedules.value = { ...schedules.value, [msg.workspacePath]: msg.items }
+        schedules.value = { ...schedules.value, [msg.workspaceId]: msg.items }
         // After a run completes the server re-broadcasts the list; refresh the open
         // schedule's execution logs so history stays current.
         if (
           activeTab.value === 'schedules' &&
-          schedulesProject.value === msg.workspacePath &&
+          schedulesProject.value === msg.workspaceId &&
           selectedScheduleId.value
         ) {
           send({ type: 'get_schedule_detail', scheduleId: selectedScheduleId.value })

@@ -74,7 +74,7 @@ function makeStore(seed: Discussion): {
 
 const seedDiscussion = (): Discussion => ({
   id: 'd1',
-  workspacePath: '/abs/proj',
+  workspaceId: '/abs/proj',
   title: 'Pick a cache',
   type: 'decision',
   goal: 'Choose a caching layer',

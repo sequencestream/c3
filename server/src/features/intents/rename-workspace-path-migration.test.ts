@@ -11,7 +11,11 @@
  * Deliberately diverges from the back-compat `projectConfigs` settings.json key (which
  * keeps its legacy name) — here the DB columns are renamed through. See migration 012.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../state.js', () => ({
+  pathToId: vi.fn(() => 'ws-mig-id'),
+}))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -148,7 +152,7 @@ describe('v10 → v11 rename: a legacy project_path db migrates in place (no dat
     expect(list[0].id).toBe('i1')
     expect(list[0].title).toBe('Legacy intent')
     expect(list[0].module).toBe('认证')
-    expect(list[0].workspacePath).toBe(proj)
+    expect(list[0].workspaceId).toBe('ws-mig-id')
     expect(list[0].branchName).toBe('feat/x')
     expect(list[0].dependsOn).toEqual(['i0'])
     // intent_chats carried over (current pointer + hidden set both key on workspace_path).

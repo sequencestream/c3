@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// as identity — fixtures use the path itself as the id and round-trip cleanly.
+vi.mock('../../state.js', () => ({
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
+}))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -38,7 +45,7 @@ describe('createSchedule next_run_at backfill', () => {
     const sch = createSchedule({
       type: 'command',
       config: { command: 'echo hi' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -55,7 +62,7 @@ describe('createSchedule next_run_at backfill', () => {
     const sch = createSchedule({
       type: 'command',
       config: {},
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: 'not a cron',
       mode: 'read-only',
       vendor: 'claude',
@@ -68,7 +75,7 @@ describe('createSchedule next_run_at backfill', () => {
       {
         type: 'command',
         config: { command: 'echo hi', name: 'client name', description: 'should be dropped' },
-        workspacePath: proj,
+        workspaceId: proj,
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
         vendor: 'claude',
@@ -85,7 +92,7 @@ describe('createSchedule next_run_at backfill', () => {
     const sch = createSchedule({
       type: 'command',
       config: { command: 'pnpm build' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -97,7 +104,7 @@ describe('createSchedule next_run_at backfill', () => {
     const sch = createSchedule({
       type: 'command',
       config: {},
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '0 0 1 1 *', // yearly, far away
       mode: 'read-only',
       vendor: 'claude',
@@ -116,7 +123,7 @@ describe('vendor field', () => {
     const sch = createSchedule({
       type: 'command',
       config: { command: 'echo hi' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'codex',
@@ -132,7 +139,7 @@ describe('vendor field', () => {
       const sch = createSchedule({
         type: 'command',
         config: {},
-        workspacePath: proj,
+        workspaceId: proj,
         cronExpression: '* * * * *',
         mode: 'read-only',
         vendor: v,
@@ -145,7 +152,7 @@ describe('vendor field', () => {
     const sch = createSchedule({
       type: 'command',
       config: { command: 'echo hi' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -163,7 +170,7 @@ describe('updateSchedule — display name management', () => {
       {
         type: 'command',
         config: { command: 'echo hi' },
-        workspacePath: proj,
+        workspaceId: proj,
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
         vendor: 'claude',
@@ -248,7 +255,7 @@ describe('listExecutionLogs', () => {
     return createSchedule({
       type: 'command',
       config: { command: 'echo hi' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',

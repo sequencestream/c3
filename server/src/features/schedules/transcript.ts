@@ -9,6 +9,7 @@
  * Read-only: it loads what is already persisted on disk; it does not stream.
  */
 import type { TranscriptItem } from '@ccc/shared/protocol'
+import { resolveWorkspaceRoot } from '../../state.js'
 import { getExecutionLog, getSchedule } from './store.js'
 import { loadHistory } from '../../sessions.js'
 
@@ -39,7 +40,7 @@ export async function readExecutionTranscript(
   if (!schedule) return { sessionId, items: [] }
 
   try {
-    const items = await loadHistory(schedule.workspacePath, sessionId)
+    const items = await loadHistory(resolveWorkspaceRoot(schedule.workspaceId)!, sessionId)
     return { sessionId, items }
   } catch {
     // Transcript missing / unreadable on disk — degrade to an empty replay

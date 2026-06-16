@@ -6,6 +6,13 @@
  * never spawns an LLM.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// as identity — fixtures use the path itself as the id and round-trip cleanly.
+vi.mock('../../state.js', () => ({
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
+}))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -48,7 +55,7 @@ function makeSchedule() {
     {
       type: 'command',
       config: { command: 'echo hi' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',

@@ -21,7 +21,7 @@ import type { ServerToClient } from '@ccc/shared/protocol'
 import type WebSocket from 'ws'
 import { dispatch, type Broadcaster, type Conn, type HandlerRegistry } from '../transport/index.js'
 import type { KernelContext } from '../kernel/types.js'
-import { getActiveSessionId, listWorkspaces } from '../state.js'
+import { getActiveSessionId, listWorkspaces, pathToId } from '../state.js'
 import { listWorkspaceSessions } from '../sessions.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
@@ -100,7 +100,7 @@ export function createWsHandler(deps: {
           const sessions = USE_SESSION_ACCESSOR
             ? await listSessionsVia(sessionAccessor, workspacePath)
             : await listWorkspaceSessions(workspacePath)
-          send(sock, { type: 'sessions', workspacePath, sessions })
+          send(sock, { type: 'sessions', workspaceId: pathToId(workspacePath)!, sessions })
         } catch (err) {
           send(sock, {
             type: 'error',

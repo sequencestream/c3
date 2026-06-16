@@ -19,6 +19,7 @@ import type {
   VendorModeCatalog,
 } from '@ccc/shared/protocol'
 import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
+import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import {
   getSessionBindingStats,
   loadSettings,
@@ -152,19 +153,35 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
 }
 
 export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_ctx, conn, msg) => {
-  const config = loadWorkspaceSetting(msg.workspacePath)
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  const config = loadWorkspaceSetting(proj)
   // Probe the repo's default branch so the form can pre-fill `defaultMainBranch`
   // (origin/HEAD → current HEAD; undefined when unresolvable).
-  const detectedMainBranch = detectDefaultBranch(msg.workspacePath)
+  const detectedMainBranch = detectDefaultBranch(proj)
   conn.send({
     type: 'workspace_setting',
-    workspacePath: msg.workspacePath,
+    workspaceId: pathToId(proj)!,
     config,
     detectedMainBranch,
   })
 }
 
 export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
   // Validate per-vendor defaultModes against their catalogs (2026-06-07-017).
   const defaultModes = msg.config.defaultMode
   if (defaultModes && typeof defaultModes === 'object') {
@@ -186,6 +203,6 @@ export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_
     }
   }
 
-  const config = saveWorkspaceSetting(msg.workspacePath, msg.config)
-  conn.send({ type: 'workspace_setting', workspacePath: msg.workspacePath, config })
+  const config = saveWorkspaceSetting(proj, msg.config)
+  conn.send({ type: 'workspace_setting', workspaceId: pathToId(proj)!, config })
 }

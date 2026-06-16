@@ -20,6 +20,7 @@
 
 import { resolve } from 'node:path'
 import type { RunEndReason, RunKind, RunLifecycleTopic, Schedule } from '@ccc/shared/protocol'
+import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
 
@@ -182,7 +183,7 @@ export function dispatchEventSchedules(
   for (const schedule of candidates) {
     if (schedule.status !== 'active') continue
     // Workspace filter: both sides are resolved to compare canonical paths.
-    if (resolve(schedule.workspacePath) !== eventWorkspace) continue
+    if (resolveWorkspaceRoot(schedule.workspaceId)! !== eventWorkspace) continue
     // Reason filter (run:settled only — run:started carries no reason).
     const filter = schedule.eventReasonFilter
     if (filter && filter.length && payload.reason && !filter.includes(payload.reason)) continue
@@ -208,7 +209,7 @@ export function cancelInFlight(scheduleId: string): void {
 export function cancelAllForWorkspace(workspacePath: string): void {
   for (const [sid] of inFlight) {
     const s = store?.getSchedule(sid)
-    if (s && s.workspacePath === workspacePath) {
+    if (s && resolveWorkspaceRoot(s.workspaceId)! === workspacePath) {
       inFlight.delete(sid)
     }
   }
@@ -303,13 +304,13 @@ function dispatchAndTrack(schedule: Schedule): void {
   // Publish schedule run lifecycle events (2026-06-08-010).
   eventBus?.publish('run:started', {
     sessionId: logId,
-    workspacePath: schedule.workspacePath,
+    workspacePath: resolveWorkspaceRoot(schedule.workspaceId)!,
     kind: 'schedule',
   })
   eventBus?.publish('run:bound', {
     prevId: logId,
     realId: logId,
-    workspacePath: schedule.workspacePath,
+    workspacePath: resolveWorkspaceRoot(schedule.workspaceId)!,
   })
 
   // Track execution outcome via the updateLog wrapper so we can set the
@@ -323,7 +324,7 @@ function dispatchAndTrack(schedule: Schedule): void {
   const exec = execute(schedule, logId, trackingUpdateLog)
     .finally(() => {
       inFlight.delete(schedule.id)
-      const workspacePath = schedule.workspacePath
+      const workspacePath = resolveWorkspaceRoot(schedule.workspaceId)!
       // After execution, update next_run_at
       try {
         const updated = store.getSchedule(schedule.id)

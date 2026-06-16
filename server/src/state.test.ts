@@ -8,9 +8,12 @@ import {
   getActiveSessionId,
   getSessionMode,
   hasWorkspace,
+  hasWorkspaceId,
   listWorkspaces,
   removeWorkspace,
   resetStateCacheForTests,
+  resolveWorkspaceRoot,
+  pathToId,
   setActiveSessionId,
   setSessionMode,
   touchWorkspace,
@@ -38,16 +41,39 @@ describe('workspace registry', () => {
     expect(listWorkspaces()[0].name).toBe(dir.split('/').pop())
   })
 
+  it('rejects forged workspace ids', () => {
+    expect(resolveWorkspaceRoot('does-not-exist')).toBeNull()
+    expect(hasWorkspaceId('does-not-exist')).toBe(false)
+  })
+
+  it('assigns and persists opaque ids', () => {
+    addWorkspace(dir, 1)
+    const ws = listWorkspaces()
+    expect(ws).toHaveLength(1)
+    expect(ws[0].id).toBeDefined()
+    expect(typeof ws[0].id).toBe('string')
+    expect(ws[0].id.length).toBeGreaterThan(10)
+    // path↔id round-trip
+    expect(pathToId(dir)).toBe(ws[0].id)
+    expect(resolveWorkspaceRoot(ws[0].id)).toBe(dir)
+    // no path on wire type
+    expect((ws[0] as unknown as Record<string, unknown>).path).toBeUndefined()
+  })
+
   it('is idempotent and orders by most-recent access', () => {
     const a = mkdtempSync(join(tmpdir(), 'c3-a-'))
     const b = mkdtempSync(join(tmpdir(), 'c3-b-'))
-    addWorkspace(a, 10)
+    const aId = addWorkspace(a, 10) && pathToId(a)!
     addWorkspace(b, 20)
-    expect(listWorkspaces().map((w) => w.path)).toEqual([b, a])
+    expect(resolveWorkspaceRoot(listWorkspaces()[0].id)).toBe(b)
+    expect(resolveWorkspaceRoot(listWorkspaces()[1].id)).toBe(a)
     touchWorkspace(a, 30)
-    expect(listWorkspaces().map((w) => w.path)).toEqual([a, b])
+    expect(resolveWorkspaceRoot(listWorkspaces()[0].id)).toBe(a)
+    expect(resolveWorkspaceRoot(listWorkspaces()[1].id)).toBe(b)
     addWorkspace(a, 40) // re-add bumps, does not duplicate
     expect(listWorkspaces()).toHaveLength(2)
+    // re-add does not change id
+    expect(pathToId(a)).toBe(aId)
     rmSync(a, { recursive: true, force: true })
     rmSync(b, { recursive: true, force: true })
   })

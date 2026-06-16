@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
+import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import type {
   CodexPolicy,
   CreateScheduleInput,
@@ -299,7 +300,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     id: r.id,
     type: r.type as ScheduleType,
     config,
-    workspacePath: r.workspace_path,
+    workspaceId: pathToId(r.workspace_path)!,
     triggerType: (r.trigger_type as ScheduleTriggerType | null) ?? 'cron',
     cronExpression: r.cron_expression,
     nextRunAt: r.next_run_at,
@@ -461,7 +462,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     id,
     input.type,
     JSON.stringify(config),
-    resolve(input.workspacePath),
+    resolveWorkspaceRoot(input.workspaceId)!,
     triggerType,
     cronExpression,
     nextRunAt,
@@ -503,7 +504,7 @@ export function createAgentQuotaRecoverySchedule(input: {
         agentId: input.agentId,
         resetAt: input.resetAt,
       } satisfies AgentQuotaRecoveryConfig,
-      workspacePath: input.workspacePath,
+      workspaceId: pathToId(input.workspacePath)!,
       cronExpression: `${byType.minute} ${byType.hour} ${byType.day} ${byType.month} *`,
       mode: 'read-only',
       vendor: 'claude',

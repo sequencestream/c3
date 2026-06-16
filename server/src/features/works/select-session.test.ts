@@ -29,6 +29,10 @@ vi.mock('../../state.js', () => ({
   getSessionMode: vi.fn(() => 'default'),
   getSessionCodexPolicy: vi.fn(() => null),
   hasWorkspace: vi.fn(() => true),
+  // Identity stubs: the test passes a path as the workspaceId, so resolve/pathToId
+  // round-trip it back to the same value (the workspace is "registered").
+  resolveWorkspaceRoot: vi.fn((id: string) => id),
+  pathToId: vi.fn((p: string) => p),
   setActiveSessionId: vi.fn(),
   setSessionMode: vi.fn(),
   touchWorkspace: vi.fn(),
@@ -79,7 +83,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspacePath: '/abs/proj',
+      workspaceId: '/abs/proj',
       sessionId: 'claude-1',
     })
     expect(loadHistory).toHaveBeenCalledWith('/abs/proj', 'claude-1')
@@ -99,7 +103,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspacePath: '/abs/proj',
+      workspaceId: '/abs/proj',
       sessionId: 'codex-thread-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
@@ -141,7 +145,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspacePath: '/abs/proj',
+      workspaceId: '/abs/proj',
       sessionId: 'codex-thread-history',
     })
 
@@ -162,7 +166,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspacePath: '/abs/proj',
+      workspaceId: '/abs/proj',
       sessionId: 'codex-thread-2',
     })
     // Placeholder is not adopted ⇒ legacy lookup runs (returns its own value).

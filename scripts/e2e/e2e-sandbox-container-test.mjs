@@ -293,11 +293,18 @@ async function main() {
 
   // ── Part A.2: register the workspace + enable sandbox in worktree mode ────────
   send({ type: 'add_workspace', path: workspace })
-  await waitFor((m) => m.type === 'workspaces', 'workspaces (after add)')
+  const wsAdded = await waitFor((m) => m.type === 'workspaces', 'workspaces (after add)')
+  // Capture the just-added project's opaque id — paths never go back on the wire.
+  const workspaceId =
+    (
+      wsAdded.workspaces?.find((w) => w.name === workspace.split('/').pop()) ??
+      wsAdded.workspaces?.[0]
+    )?.id ?? ''
+  if (!workspaceId) throw new Error('no workspaceId after add_workspace')
 
   send({
     type: 'save_workspace_setting',
-    workspacePath: workspace,
+    workspaceId,
     config: {
       gitBranchMode: 'worktree',
       sandbox: { enabled: true, sandbox: DEF_NAME, agentIds: [] },

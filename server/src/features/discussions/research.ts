@@ -7,6 +7,7 @@
  * (the user's original `context` is left untouched).
  */
 import type { Discussion, ResearchMessage, RunKind } from '@ccc/shared/protocol'
+import { resolveWorkspaceRoot } from '../../state.js'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude } from '../../kernel/agent/index.js'
 import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
@@ -109,7 +110,11 @@ export async function researchDiscussionContext(
   )
   const def = getDiscussionType(discussion.type)
   const prompt = buildResearchPrompt(
-    { goal: discussion.goal, context: discussion.context, workspacePath: discussion.workspacePath },
+    {
+      goal: discussion.goal,
+      context: discussion.context,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+    },
     def,
     getUiLangName(),
   )
@@ -120,7 +125,7 @@ export async function researchDiscussionContext(
   try {
     await runClaude({
       prompt,
-      cwd: discussion.workspacePath,
+      cwd: resolveWorkspaceRoot(discussion.workspaceId)!,
       signal: abort.signal,
       // Pinned to `default` so the gateway's canUseTool always fires.
       permissionMode: 'default',

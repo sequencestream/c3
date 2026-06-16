@@ -23,6 +23,7 @@
  * organizer and sole participant), mirroring consensus with no voters.
  */
 
+import { resolveWorkspaceRoot } from '../../state.js'
 import type {
   AgentConfig,
   Discussion,
@@ -236,7 +237,7 @@ export async function runDiscussion(
   if (!initial) return
   console.log(`[c3:discussion] (${RUN_KIND}) start「${initial.goal.slice(0, 60)}」(${id})`)
 
-  const cwd = initial.workspacePath
+  const cwd = resolveWorkspaceRoot(initial.workspaceId)!
   const def = getDiscussionType(initial.type)
   const organizerCfg = deps.organizer()
   // The participant roster is the discussion's selected subset, resolved against

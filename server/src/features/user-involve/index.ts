@@ -12,6 +12,6 @@ export const listWaitUserEvents: Handler<'list_wait_user_events'> = (_ctx, conn,
     conn.send({ type: 'error', error: { code: 'waitUserInvolve.dbUnavailable' } })
     return
   }
-  const items = listEvents(msg.workspacePath, msg.status)
+  const items = listEvents(msg.workspaceId, msg.status)
   conn.send({ type: 'wait_user_events', items })
 }

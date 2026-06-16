@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { resolveCurrentWorkspace } from './current-workspace'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 
-const ws = (path: string): WorkspaceInfo => ({
-  path,
-  name: path.split('/').pop() ?? path,
+const ws = (id: string): WorkspaceInfo => ({
+  id,
+  name: id.split('/').pop() ?? id,
   lastAccessed: 0,
 })
 

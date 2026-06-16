@@ -6,6 +6,7 @@
  * the refreshed todo list so the pending-items panel updates in real time.
  */
 import { resolvePending } from '../../runs.js'
+import { resolveWorkspaceRoot } from '../../state.js'
 import { registerPermissionResolver } from '../../kernel/permission/index.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { getEventByRequestId, updateStatus } from '../user-involve/store.js'
@@ -25,5 +26,5 @@ export const permissionResponse: Handler<'permission_response'> = (ctx, _conn, m
 
   // Broadcast the refreshed 'todo' list so every connection's pending-items
   // panel updates in real time (WorkCenter tab, session tab, sidebar badge).
-  ctx.broadcastWaitUserEvents(event.workspacePath)
+  ctx.broadcastWaitUserEvents(resolveWorkspaceRoot(event.workspaceId)!)
 }

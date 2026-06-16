@@ -18,6 +18,7 @@ import type {
   WaitUserInvolveStatus,
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import { pathToId } from '../../state.js'
 
 /**
  * Schema version — informational only, see discussion store comment.
@@ -161,7 +162,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent {
   }
   return {
     id: r.id,
-    workspacePath: r.workspace_path,
+    workspaceId: pathToId(r.workspace_path)!,
     source: r.source as WaitUserInvolveSource,
     sourceId: r.source_id,
     title: r.title,

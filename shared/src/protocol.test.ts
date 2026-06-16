@@ -34,13 +34,13 @@ describe('protocol wire format', () => {
     { type: 'set_mode', mode: 'plan' },
     { type: 'add_workspace', path: '/abs/proj' },
     { type: 'remove_workspace', path: '/abs/proj' },
-    { type: 'list_sessions', workspacePath: '/abs/proj' },
-    { type: 'create_session', workspacePath: '/abs/proj' },
+    { type: 'list_sessions', workspaceId: 'ws-1' },
+    { type: 'create_session', workspaceId: 'ws-1' },
     // With an explicit agent (recorded as the pending session's intent, ADR-0015).
-    { type: 'create_session', workspacePath: '/abs/proj', agentId: 'claude-b' },
-    { type: 'delete_session', workspacePath: '/abs/proj', sessionId: 's1' },
-    { type: 'select_session', workspacePath: '/abs/proj', sessionId: 's1' },
-    { type: 'rename_session', workspacePath: '/abs/proj', sessionId: 's1', title: 'New' },
+    { type: 'create_session', workspaceId: 'ws-1', agentId: 'claude-b' },
+    { type: 'delete_session', workspaceId: 'ws-1', sessionId: 's1' },
+    { type: 'select_session', workspaceId: 'ws-1', sessionId: 's1' },
+    { type: 'rename_session', workspaceId: 'ws-1', sessionId: 's1', title: 'New' },
     { type: 'stop_run' },
     { type: 'request_session_status' },
     { type: 'ping' },
@@ -57,11 +57,11 @@ describe('protocol wire format', () => {
     },
     {
       type: 'workspaces',
-      workspaces: [{ path: '/abs/proj', name: 'proj', lastAccessed: 1 }],
+      workspaces: [{ id: 'ws-1', name: 'proj', lastAccessed: 1 }],
     },
     {
       type: 'sessions',
-      workspacePath: '/abs/proj',
+      workspaceId: 'ws-1',
       sessions: [
         {
           sessionId: 's1',
@@ -75,7 +75,7 @@ describe('protocol wire format', () => {
     },
     {
       type: 'session_selected',
-      workspacePath: '/abs/proj',
+      workspaceId: 'ws-1',
       sessionId: 's1',
       title: 't',
       mode: 'plan',

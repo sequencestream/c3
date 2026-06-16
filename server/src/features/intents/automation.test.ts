@@ -64,6 +64,8 @@ vi.mock('../../sessions.js', () => ({
 vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   touchWorkspace: vi.fn(),
+  resolveWorkspaceRoot: vi.fn(() => '/test/proj'),
+  pathToId: vi.fn(() => 'test-proj'),
 }))
 
 vi.mock('../../git.js', () => ({
@@ -99,14 +101,14 @@ import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-
 
 interface StartDevMsg {
   type: 'start_development'
-  workspacePath: string
+  workspaceId: string
   intentId: string
 }
 
 // ---- Factory ----
 
 const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
-  workspacePath: '/test/proj',
+  workspaceId: 'test-proj',
   title: 'Test',
   content: '',
   priority: 'P1',
@@ -242,7 +244,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspacePath: '/test/proj',
+      workspaceId: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -277,7 +279,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg1: StartDevMsg = {
       type: 'start_development',
-      workspacePath: '/test/proj',
+      workspaceId: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -308,7 +310,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg2: StartDevMsg = {
       type: 'start_development',
-      workspacePath: '/test/proj',
+      workspaceId: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -338,7 +340,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspacePath: '/test/proj',
+      workspaceId: 'test-proj',
       intentId: 'B',
     }
 
@@ -373,7 +375,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspacePath: '/test/proj',
+      workspaceId: 'test-proj',
       intentId: 'B',
     }
 
@@ -406,7 +408,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspacePath: '/test/proj',
+      workspaceId: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -441,7 +443,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspacePath: '/test/proj',
+      workspaceId: 'test-proj',
       intentId: 'B',
     }
     const failed = makeConn()

@@ -317,7 +317,7 @@ describe('formatDependsOn', () => {
   function makeReq(overrides: Partial<Intent>): Intent {
     return {
       id: 'r-default',
-      workspacePath: '/test',
+      workspaceId: '/test',
       title: '默认需求',
       content: '',
       priority: 'P2',

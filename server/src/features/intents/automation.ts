@@ -45,6 +45,7 @@ import { registerPendingDevLink } from './dev-link.js'
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
+import { pathToId } from '../../state.js'
 import {
   getDevSkill,
   getDefaultMode,
@@ -125,7 +126,7 @@ const MAX_CONTINUATIONS = 10
 
 function idleStatus(workspacePath: string): AutomationStatus {
   return {
-    workspacePath,
+    workspaceId: pathToId(workspacePath)!,
     state: 'idle',
     currentIntentId: null,
     currentSessionId: null,

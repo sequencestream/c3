@@ -5,6 +5,13 @@
  * execution log is appended) via the same path a cron run takes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// as identity — fixtures use the path itself as the id and round-trip cleanly.
+vi.mock('../../state.js', () => ({
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
+}))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -54,7 +61,7 @@ describe('store — event-trigger schedule CRUD', () => {
     const s = createSchedule({
       type: 'command',
       config: { command: 'echo hi' },
-      workspacePath: proj,
+      workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:settled',
@@ -73,7 +80,7 @@ describe('store — event-trigger schedule CRUD', () => {
     const settled = createSchedule({
       type: 'command',
       config: { command: 'a' },
-      workspacePath: proj,
+      workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:settled',
@@ -83,7 +90,7 @@ describe('store — event-trigger schedule CRUD', () => {
     createSchedule({
       type: 'command',
       config: { command: 'b' },
-      workspacePath: proj,
+      workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:started',
@@ -94,7 +101,7 @@ describe('store — event-trigger schedule CRUD', () => {
     const cron = createSchedule({
       type: 'command',
       config: { command: 'c' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '0 8 * * *',
       mode: 'sandboxed',
       vendor: 'claude',
@@ -115,7 +122,7 @@ describe('store — event-trigger schedule CRUD', () => {
     const s = createSchedule({
       type: 'command',
       config: { command: 'a' },
-      workspacePath: proj,
+      workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:settled',
@@ -130,7 +137,7 @@ describe('store — event-trigger schedule CRUD', () => {
     const s = createSchedule({
       type: 'command',
       config: { command: 'a' },
-      workspacePath: proj,
+      workspaceId: proj,
       cronExpression: '0 8 * * *',
       mode: 'sandboxed',
       vendor: 'claude',
@@ -150,7 +157,7 @@ describe('store — event-trigger schedule CRUD', () => {
     const s = createSchedule({
       type: 'command',
       config: { command: 'a' },
-      workspacePath: proj,
+      workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
       eventTopic: 'run:settled',
@@ -178,7 +185,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       id: 'e1',
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
-      workspacePath: '/abs/ws-a',
+      workspaceId: '/abs/ws-a',
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,

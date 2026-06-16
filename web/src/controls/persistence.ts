@@ -70,11 +70,11 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'intents' && saved.proj && list.some((w) => w.path === saved.proj)) {
+    if (saved.mode === 'intents' && saved.proj && list.some((w) => w.id === saved.proj)) {
       activeTab.value = 'intents'
       intentsProject.value = saved.proj
-      send({ type: 'open_intent_chat', workspacePath: saved.proj })
-      send({ type: 'list_intent_sessions', workspacePath: saved.proj })
+      send({ type: 'open_intent_chat', workspaceId: saved.proj })
+      send({ type: 'list_intent_sessions', workspaceId: saved.proj })
     }
   }
 
@@ -91,10 +91,10 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'discussion' && saved.proj && list.some((w) => w.path === saved.proj)) {
+    if (saved.mode === 'discussion' && saved.proj && list.some((w) => w.id === saved.proj)) {
       activeTab.value = 'discussion'
       discussionsProject.value = saved.proj
-      send({ type: 'list_discussions', workspacePath: saved.proj })
+      send({ type: 'list_discussions', workspaceId: saved.proj })
       if (saved.id) {
         activeDiscussionId.value = saved.id
         send({ type: 'open_discussion', discussionId: saved.id })
@@ -114,11 +114,11 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'schedules' && saved.proj && list.some((w) => w.path === saved.proj)) {
+    if (saved.mode === 'schedules' && saved.proj && list.some((w) => w.id === saved.proj)) {
       activeTab.value = 'schedules'
       schedulesProject.value = saved.proj
       selectedScheduleId.value = null
-      send({ type: 'list_schedules', workspacePath: saved.proj })
+      send({ type: 'list_schedules', workspaceId: saved.proj })
     }
   }
 }

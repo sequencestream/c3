@@ -15,7 +15,7 @@ import { DockerDriver } from './kernel/sandbox/docker/DockerDriver.js'
 import { SandboxRegistry } from './kernel/sandbox/SandboxRegistry.js'
 import { getSystemSandboxes } from './kernel/config/index.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
-import { addWorkspace, listWorkspaces } from './state.js'
+import { addWorkspace, listWorkspaces, resolveWorkspaceRoot } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
   reconcileLiveness,
@@ -187,7 +187,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // projection is unavailable.
   setInterval(() => {
     try {
-      const workspaces = listWorkspaces().map((w) => w.path)
+      const workspaces = listWorkspaces().map((w) => resolveWorkspaceRoot(w.id)!)
       void janitor({
         nativeList: async (vendor, ws) => {
           // Use the SessionAccessor to query native stores. The accessor

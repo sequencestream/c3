@@ -24,6 +24,9 @@ vi.mock('../../runs.js', () => ({
 }))
 vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
+  // Identity stubs: the test passes a path as the workspaceId (registered).
+  resolveWorkspaceRoot: vi.fn((id: string) => id),
+  pathToId: vi.fn((p: string) => p),
   touchWorkspace: vi.fn(),
 }))
 
@@ -78,7 +81,7 @@ describe('create_session agent intent (projection-backed)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
       type: 'create_session',
-      workspacePath: '/abs/proj',
+      workspaceId: '/abs/proj',
       agentId: 'claude-b',
     })
     const pendingId = pendingIdOf(conn)
@@ -95,7 +98,7 @@ describe('create_session agent intent (projection-backed)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
       type: 'create_session',
-      workspacePath: '/abs/proj',
+      workspaceId: '/abs/proj',
     })
     const pendingId = pendingIdOf(conn)
     const intent = getPendingIntent(pendingId)
@@ -109,7 +112,7 @@ describe('create_session agent intent (projection-backed)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
       type: 'create_session',
-      workspacePath: '/abs/proj',
+      workspaceId: '/abs/proj',
       agentId: '',
     })
     const pendingId = pendingIdOf(conn)

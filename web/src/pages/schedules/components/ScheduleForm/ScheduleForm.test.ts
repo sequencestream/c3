@@ -35,7 +35,7 @@ function mountForm(
   props: Partial<{
     open: boolean
     schedule: Schedule | null
-    workspacePath: string
+    workspaceId: string
     timezone: string
     toolManifest: Record<string, ToolManifestEntry[] | null>
     toolManifestLoading: boolean
@@ -47,7 +47,7 @@ function mountForm(
     props: {
       open: true,
       schedule: null,
-      workspacePath: '/home/proj',
+      workspacePath: 'ws-proj',
       timezone: 'UTC',
       toolManifest: {},
       toolManifestLoading: false,
@@ -63,7 +63,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     id: 's1',
     type: 'command',
     config: { command: 'pnpm build', name: 'legacy name' },
-    workspacePath: '/home/proj',
+    workspaceId: '/home/proj',
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,
@@ -114,7 +114,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect(created).toBeTruthy()
     const input = created![0][0] as Record<string, unknown>
     expect(input.type).toBe('command')
-    expect(input.workspacePath).toBe('/home/proj')
+    expect(input.workspaceId).toBe('ws-proj')
     expect(input.mode).toBe('default')
     expect(isValidCron(input.cronExpression as string)).toBe(true)
     expect(input.config).toEqual({ command: 'pnpm build' })

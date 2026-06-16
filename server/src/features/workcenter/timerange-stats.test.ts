@@ -30,11 +30,15 @@ import {
 } from '../../runs.js'
 
 // `state.js` is mocked so the handler walks exactly the workspaces we set here.
+// `resolveWorkspaceRoot`/`pathToId` are identity stubs: the test uses the path as
+// the opaque id, so the handler resolves each id straight back to the same path.
 const hoisted = vi.hoisted(() => ({
-  workspaces: [] as { path: string; name: string; lastAccessed: number }[],
+  workspaces: [] as { id: string; name: string; lastAccessed: number }[],
 }))
 vi.mock('../../state.js', () => ({
   listWorkspaces: () => hoisted.workspaces,
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToId: (p: string) => p,
 }))
 
 import { getTimeRangeStatsHandler } from './index.js'
@@ -322,8 +326,8 @@ describe('getTimeRangeStatsHandler', () => {
     ensureRuntime('s-a-idle', A, 'default', [])
     // Project B: empty.
     hoisted.workspaces = [
-      { path: A, name: 'proj-a', lastAccessed: 2 },
-      { path: B, name: 'proj-b', lastAccessed: 1 },
+      { id: A, name: 'proj-a', lastAccessed: 2 },
+      { id: B, name: 'proj-b', lastAccessed: 1 },
     ]
 
     const conn = fakeConn()
@@ -331,7 +335,7 @@ describe('getTimeRangeStatsHandler', () => {
     const stats = sentStats(conn as never)
 
     expect(stats).toHaveLength(2)
-    const a = stats.find((s) => s.workspacePath === A)!
+    const a = stats.find((s) => s.workspaceId === A)!
     expect(a).toMatchObject({
       projectName: 'proj-a',
       workSessions: { total: 2, running: 1 },
@@ -339,7 +343,7 @@ describe('getTimeRangeStatsHandler', () => {
       discussions: { in_progress: 1, completed: 1 },
       schedules: { total: 2, active: 1, running: 1 },
     })
-    const b = stats.find((s) => s.workspacePath === B)!
+    const b = stats.find((s) => s.workspaceId === B)!
     expect(b).toMatchObject({
       projectName: 'proj-b',
       workSessions: { total: 0, running: 0 },
@@ -357,7 +361,7 @@ describe('getTimeRangeStatsHandler', () => {
     seedSchedule(A, 'active', T)
     seedSession(A, T)
     seedSession(A, T - 10_000) // out of window
-    hoisted.workspaces = [{ path: A, name: 'proj-a', lastAccessed: 1 }]
+    hoisted.workspaces = [{ id: A, name: 'proj-a', lastAccessed: 1 }]
 
     const conn = fakeConn()
     getTimeRangeStatsHandler(fakeCtx(), conn, {
@@ -379,7 +383,7 @@ describe('getTimeRangeStatsHandler', () => {
     // A live runtime still counts even with no db.
     ensureRuntime('s-a', A, 'default', [])
     setStatus('s-a', 'running')
-    hoisted.workspaces = [{ path: A, name: 'proj-a', lastAccessed: 1 }]
+    hoisted.workspaces = [{ id: A, name: 'proj-a', lastAccessed: 1 }]
 
     const conn = fakeConn()
     getTimeRangeStatsHandler(fakeCtx(), conn, { type: 'get_timerange_stats' })

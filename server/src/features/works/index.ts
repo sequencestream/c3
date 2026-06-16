@@ -5,7 +5,6 @@
  * the user prompt launch. `(ctx, conn, msg)` signature; per-connection `viewing`
  * + delivery live on `conn`, shared services on `ctx`.
  */
-import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
   CanonicalMessage,
@@ -30,7 +29,8 @@ import {
   deleteSessionCodexPolicy,
   getSessionCodexPolicy,
   getSessionMode,
-  hasWorkspace,
+  pathToId,
+  resolveWorkspaceRoot,
   setActiveSessionId,
   setSessionMode,
   setSessionCodexPolicy,
@@ -138,7 +138,15 @@ function canonicalToTranscript(messages: readonly CanonicalMessage[]): Transcrip
 }
 
 export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) => {
-  await conn.sendSessions(resolve(msg.workspacePath))
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  await conn.sendSessions(abs)
 }
 
 export const listCommandsHandler: Handler<'list_commands'> = async (_ctx, conn) => {
@@ -159,11 +167,11 @@ export const listCommandsHandler: Handler<'list_commands'> = async (_ctx, conn) 
 }
 
 export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
-  const abs = resolve(msg.workspacePath)
-  if (!hasWorkspace(abs)) {
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { path: msg.workspacePath } },
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
     })
     return
   }
@@ -196,7 +204,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   touchWorkspace(abs, Date.now())
   conn.send({
     type: 'session_selected',
-    workspacePath: abs,
+    workspaceId: pathToId(abs)!,
     sessionId: pendingId,
     title: 'New session',
     mode: defaultMode,
@@ -211,7 +219,14 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
 }
 
 export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) => {
-  const abs = resolve(msg.workspacePath)
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   try {
     const existing = getRuntime(msg.sessionId)
@@ -239,7 +254,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     setActiveSessionId(msg.sessionId)
     conn.send({
       type: 'session_selected',
-      workspacePath: abs,
+      workspaceId: pathToId(abs)!,
       sessionId: msg.sessionId,
       title,
       mode: rt.mode,
@@ -274,7 +289,14 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
 }
 
 export const deleteSession: Handler<'delete_session'> = async (ctx, conn, msg) => {
-  const abs = resolve(msg.workspacePath)
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
   try {
     deleteSessionCodexPolicy(msg.sessionId)
     removeRuntime(msg.sessionId)
@@ -292,7 +314,14 @@ export const deleteSession: Handler<'delete_session'> = async (ctx, conn, msg) =
 }
 
 export const renameSession: Handler<'rename_session'> = async (_ctx, conn, msg) => {
-  const abs = resolve(msg.workspacePath)
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
   try {
     await renameWorkspaceSession(abs, msg.sessionId, msg.title)
     await conn.sendSessions(abs)

@@ -7,14 +7,14 @@
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 
 /**
- * 解析当前工作区路径。
- * @param stored 上次持久化的工作区路径(localStorage),无则传 null。
+ * 解析当前工作区 id。
+ * @param stored 上次持久化的工作区 id(localStorage),无则传 null。
  * @param workspaces 服务端给出的工作区列表(recent-access 排序)。
  */
 export function resolveCurrentWorkspace(
   stored: string | null,
   workspaces: WorkspaceInfo[],
 ): string | null {
-  if (stored && workspaces.some((w) => w.path === stored)) return stored
-  return workspaces[0]?.path ?? null
+  if (stored && workspaces.some((w) => w.id === stored)) return stored
+  return workspaces[0]?.id ?? null
 }

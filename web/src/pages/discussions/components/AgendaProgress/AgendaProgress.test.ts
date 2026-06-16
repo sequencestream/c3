@@ -6,7 +6,7 @@ import AgendaProgress from './AgendaProgress.vue'
 function disc(over: Partial<Discussion> = {}): Discussion {
   return {
     id: 'd1',
-    workspacePath: '/proj',
+    workspaceId: '/proj',
     title: 'T',
     type: 'design',
     goal: '',

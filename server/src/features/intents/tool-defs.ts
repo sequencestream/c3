@@ -15,6 +15,7 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { IntentStatus } from '@ccc/shared/protocol'
+import { resolveWorkspaceRoot } from '../../state.js'
 import { findIntents, getIntent, isStoreAvailable, upsertIntents } from './store.js'
 
 const INTENT_STATUSES = [
@@ -131,7 +132,7 @@ export function runFind(workspacePath: string, args: FindArgs): IntentToolResult
 export function runView(workspacePath: string, args: ViewArgs): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,无法查看。'), isError: true }
   const req = getIntent(args.id)
-  if (!req || req.workspacePath !== resolve(workspacePath)) {
+  if (!req || resolveWorkspaceRoot(req.workspaceId) !== resolve(workspacePath)) {
     return { content: text(`未找到 id 为 ${args.id} 的意图(本项目)。`) }
   }
   return { content: text(JSON.stringify(req, null, 2)) }

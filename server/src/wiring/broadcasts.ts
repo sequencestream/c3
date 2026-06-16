@@ -17,6 +17,7 @@
  */
 import type { AutomationStatus, DiscussionMessage, ResearchMessage } from '@ccc/shared/protocol'
 import { resolve } from 'node:path'
+import { pathToId } from '../state.js'
 import type { Broadcaster } from '../transport/index.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
@@ -119,7 +120,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     if (!isStoreAvailable()) return
     const proj = resolve(workspacePath)
     const items = enrichRunStatus(listIntents(proj))
-    broadcaster.toAll({ type: 'intents', workspacePath: proj, items })
+    broadcaster.toAll({ type: 'intents', workspaceId: pathToId(proj)!, items })
   }
 
   // Snapshot helper: which listed intent sessions have a live agent run.
@@ -146,7 +147,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const proj = resolve(workspacePath)
     const items = listChatSessions(proj)
     const runStates = intentSessionRunSnapshot(items)
-    broadcaster.toAll({ type: 'intent_sessions', workspacePath: proj, items, runStates })
+    broadcaster.toAll({ type: 'intent_sessions', workspaceId: pathToId(proj)!, items, runStates })
   }
 
   // Push a workspace's refreshed session list to every connection. Mirrors the
@@ -158,7 +159,9 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   const broadcastSessions = (workspacePath: string): void => {
     const proj = resolve(workspacePath)
     void listSessionsVia(sessionAccessor, proj)
-      .then((sessions) => broadcaster.toAll({ type: 'sessions', workspacePath: proj, sessions }))
+      .then((sessions) =>
+        broadcaster.toAll({ type: 'sessions', workspaceId: pathToId(proj)!, sessions }),
+      )
       .catch((err) => console.error('[c3] broadcastSessions failed:', err))
   }
 
@@ -173,7 +176,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const researchStates = researchRunSnapshot(items)
     broadcaster.toAll({
       type: 'discussions',
-      workspacePath: proj,
+      workspaceId: pathToId(proj)!,
       items,
       runStates,
       researchStates,
@@ -186,7 +189,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     if (!isScheduleStoreAvailable()) return
     const proj = resolve(workspacePath)
     const items = listSchedules(proj)
-    broadcaster.toAll({ type: 'schedules', workspacePath: proj, items })
+    broadcaster.toAll({ type: 'schedules', workspaceId: pathToId(proj)!, items })
   }
 
   // Stream one freshly-appended discussion message to every connection (the

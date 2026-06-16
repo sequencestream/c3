@@ -114,7 +114,7 @@ function selectTab(tab: HeaderTab): void {
       <template v-if="viewMode === 'workspace'">
         <WorkspaceSwitcher
           :workspaces="workspaces"
-          :current-workspace="currentWorkspace"
+          :current-workspace-id="currentWorkspace"
           @add-workspace="emit('add-workspace', $event)"
           @select-workspace="emit('select-workspace', $event)"
           @remove-workspace="emit('remove-workspace', $event)"
@@ -199,7 +199,7 @@ function selectTab(tab: HeaderTab): void {
       <div class="mobile-workspace">
         <WorkspaceSwitcher
           :workspaces="workspaces"
-          :current-workspace="currentWorkspace"
+          :current-workspace-id="currentWorkspace"
           @add-workspace="emit('add-workspace', $event)"
           @select-workspace="emit('select-workspace', $event)"
           @remove-workspace="emit('remove-workspace', $event)"

@@ -11,6 +11,7 @@
  * On any read/parse error we fall back to empty state — c3 must still boot.
  */
 
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -44,9 +45,22 @@ export interface SkillAckRecord {
   gitignore?: boolean
 }
 
+/**
+ * Internal workspace record stored in state.json.
+ * Carries both the opaque `id` (wire identity) and the absolute `path`
+ * (filesystem location). The wire-facing {@link WorkspaceInfo} exposes
+ * only `id` / `name` / `lastAccessed`.
+ */
+interface PersistedWorkspaceRecord {
+  id: string
+  path: string
+  name: string
+  lastAccessed: number
+}
+
 interface PersistedState {
-  version: 1
-  workspaces: WorkspaceInfo[]
+  version: 2
+  workspaces: PersistedWorkspaceRecord[]
   sessionModes: Record<string, ModeToken>
   /** Codex dual-policy config per session (2026-06-08). */
   sessionCodexPolicies: Record<string, CodexPolicy>
@@ -73,7 +87,7 @@ function stateFile(): string {
 
 function emptyState(): PersistedState {
   return {
-    version: 1,
+    version: 2,
     workspaces: [],
     sessionModes: {},
     sessionCodexPolicies: {},
@@ -90,10 +104,24 @@ function load(): PersistedState {
   if (cache) return cache
   try {
     const raw = readFileSync(stateFile(), 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<PersistedState>
+    const parsed = JSON.parse(raw) as Partial<PersistedState> & { version?: number }
+    const rawWorkspaces = Array.isArray(parsed.workspaces) ? parsed.workspaces : []
+
+    // v1→v2 migration: assign a random id to any workspace that lacks one
+    // while keeping the internal `path` field for lookups.
+    const workspaces: PersistedWorkspaceRecord[] = rawWorkspaces.map((w) => {
+      const rec = w as unknown as Partial<PersistedWorkspaceRecord>
+      return {
+        id: rec.id ?? randomUUID(),
+        path: rec.path as string,
+        name: rec.name as string,
+        lastAccessed: rec.lastAccessed as number,
+      }
+    })
+
     cache = {
-      version: 1,
-      workspaces: Array.isArray(parsed.workspaces) ? parsed.workspaces : [],
+      version: 2,
+      workspaces,
       sessionModes:
         parsed.sessionModes && typeof parsed.sessionModes === 'object' ? parsed.sessionModes : {},
       sessionCodexPolicies:
@@ -141,16 +169,44 @@ export function isDirectory(path: string): boolean {
 
 /** Workspaces sorted by most-recently-accessed first. */
 export function listWorkspaces(): WorkspaceInfo[] {
-  return [...load().workspaces].sort((a, b) => b.lastAccessed - a.lastAccessed)
+  return [...load().workspaces]
+    .sort((a, b) => b.lastAccessed - a.lastAccessed)
+    .map((w) => ({ id: w.id, name: w.name, lastAccessed: w.lastAccessed }))
 }
 
 export function hasWorkspace(path: string): boolean {
   return load().workspaces.some((w) => w.path === resolve(path))
 }
 
+export function hasWorkspaceId(id: string): boolean {
+  return load().workspaces.some((w) => w.id === id)
+}
+
 /**
- * Register a directory as a workspace (idempotent). Returns the absolute path,
- * or null if it is not an existing directory.
+ * Resolve an opaque workspace id to its resolved absolute path on disk.
+ * Returns null when the id is unknown (not registered or forged).
+ * This is the SINGLE entry point for all feature handlers to get the
+ * filesystem root from a wire-level workspaceId.
+ */
+export function resolveWorkspaceRoot(id: string): string | null {
+  const w = load().workspaces.find((x) => x.id === id)
+  return w ? w.path : null
+}
+
+/**
+ * Reverse lookup: given an absolute path, return its opaque workspace id.
+ * Returns null when the path is not a registered workspace.
+ */
+export function pathToId(path: string): string | null {
+  const abs = resolve(path)
+  const w = load().workspaces.find((x) => x.path === abs)
+  return w ? w.id : null
+}
+
+/**
+ * Register a directory as a workspace (idempotent). Assigns a random opaque
+ * id on first registration. Returns the absolute path, or null if it is
+ * not an existing directory.
  */
 export function addWorkspace(path: string, now: number): string | null {
   const abs = resolve(path)
@@ -160,7 +216,12 @@ export function addWorkspace(path: string, now: number): string | null {
   if (existing) {
     existing.lastAccessed = now
   } else {
-    state.workspaces.push({ path: abs, name: basename(abs) || abs, lastAccessed: now })
+    state.workspaces.push({
+      id: randomUUID(),
+      path: abs,
+      name: basename(abs) || abs,
+      lastAccessed: now,
+    })
   }
   persist()
   return abs

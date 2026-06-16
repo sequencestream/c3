@@ -2,9 +2,10 @@
 /*
  * WorkspaceSwitcher.vue — 顶部栏最左侧的「当前工作区」切换器。
  *
- * 触发区:[当前工作区名] [+ 新增] [▾ 下拉]。下拉列出全部工作区(名称 + 路径),
- * 点选切换当前工作区;每行可移除(二次确认)。所有动作经事件上抛,由 App 发往服务端。
- * 自带 popover(点击外部 / Esc 关闭),因 BaseDropdown 不支持每行动作按钮与两行文本。
+ * 触发区:[当前工作区名] [+ 新增] [▾ 下拉]。下拉列出全部工作区(仅名称,服务端不再
+ * 下发绝对路径),点选切换当前工作区;每行可移除(二次确认)。所有动作经事件上抛,
+ * 由 App 发往服务端。工作区身份是服务端分配的不透明 id,前端只持有 id + 展示名,
+ * 既拿不到也构造不出绝对路径。自带 popover(点击外部 / Esc 关闭)。
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
@@ -14,20 +15,22 @@ const { t } = useTypedI18n()
 
 const props = defineProps<{
   workspaces: WorkspaceInfo[]
-  currentWorkspace: string | null
+  currentWorkspaceId: string | null
 }>()
 
 const emit = defineEmits<{
+  // `add-workspace` carries the absolute path the user typed — the ONLY entry
+  // where a path legitimately enters the system. The others carry opaque ids.
   'add-workspace': [path: string]
-  'select-workspace': [path: string]
-  'remove-workspace': [path: string]
+  'select-workspace': [id: string]
+  'remove-workspace': [id: string]
 }>()
 
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
 
 const currentName = computed(
-  () => props.workspaces.find((w) => w.path === props.currentWorkspace)?.name ?? '',
+  () => props.workspaces.find((w) => w.id === props.currentWorkspaceId)?.name ?? '',
 )
 
 function toggle() {
@@ -61,13 +64,15 @@ function addWorkspace() {
   if (path) emit('add-workspace', path)
 }
 
-function selectWorkspace(path: string) {
-  if (path !== props.currentWorkspace) emit('select-workspace', path)
+function selectWorkspace(id: string) {
+  if (id !== props.currentWorkspaceId) emit('select-workspace', id)
   close()
 }
 
-function removeWorkspace(path: string) {
-  if (window.confirm(t('nav.workspace.remove.confirm', { path }))) emit('remove-workspace', path)
+function removeWorkspace(w: WorkspaceInfo) {
+  if (window.confirm(t('nav.workspace.remove.confirm', { path: w.name }))) {
+    emit('remove-workspace', w.id)
+  }
 }
 
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, true))
@@ -77,12 +82,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
   <div ref="rootEl" class="ws-switcher" :class="{ open }" @keydown="onKeydown">
     <button
       class="ws-switcher-trigger"
-      :title="currentWorkspace ?? t('nav.workspace.trigger.empty.tooltip')"
+      :title="currentName || t('nav.workspace.trigger.empty.tooltip')"
       aria-haspopup="listbox"
       :aria-expanded="open"
       @click="toggle"
     >
-      <span v-if="currentWorkspace" class="ws-switcher-name">{{ currentName }}</span>
+      <span v-if="currentWorkspaceId" class="ws-switcher-name">{{ currentName }}</span>
       <span v-else class="ws-switcher-name empty">{{
         t('nav.workspace.trigger.empty.label')
       }}</span>
@@ -102,24 +107,23 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       </li>
       <li
         v-for="w in workspaces"
-        :key="w.path"
+        :key="w.id"
         class="ws-switcher-item"
-        :class="{ current: w.path === currentWorkspace }"
+        :class="{ current: w.id === currentWorkspaceId }"
         role="option"
-        :aria-selected="w.path === currentWorkspace"
-        @click="selectWorkspace(w.path)"
+        :aria-selected="w.id === currentWorkspaceId"
+        @click="selectWorkspace(w.id)"
       >
         <span class="ws-switcher-item-text">
           <span class="ws-switcher-item-name">{{ w.name }}</span>
-          <span class="ws-switcher-item-path">{{ w.path }}</span>
         </span>
-        <span v-if="w.path === currentWorkspace" class="ws-switcher-check" aria-hidden="true"
+        <span v-if="w.id === currentWorkspaceId" class="ws-switcher-check" aria-hidden="true"
           >✓</span
         >
         <button
           class="icon-btn ws-switcher-remove"
           :title="t('nav.workspace.remove.tooltip')"
-          @click.stop="removeWorkspace(w.path)"
+          @click.stop="removeWorkspace(w)"
         >
           ✕
         </button>

@@ -20,6 +20,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { CodexPolicy, ModeToken, RunKind, Schedule, VendorId } from '@ccc/shared/protocol'
+import { resolveWorkspaceRoot } from '../../state.js'
 import {
   resolveFirstAgentOfVendor,
   launchForAgent,
@@ -214,7 +215,11 @@ async function executeCommand(
       )
     }
     try {
-      const result = await spawnWithTimeout(command, schedule.workspacePath, timeout)
+      const result = await spawnWithTimeout(
+        command,
+        resolveWorkspaceRoot(schedule.workspaceId)!,
+        timeout,
+      )
       lastExitCode = result.exitCode
       lastOutput = result.output
 
@@ -396,7 +401,9 @@ async function executeLlmPrompt(
     return
   }
 
-  console.log(`[c3:schedules] (${RUN_KIND}) llm run ${schedule.id} @ ${schedule.workspacePath}`)
+  console.log(
+    `[c3:schedules] (${RUN_KIND}) llm run ${schedule.id} @ ${resolveWorkspaceRoot(schedule.workspaceId)!}`,
+  )
 
   const maxWallClockMs =
     typeof config.maxWallClockMs === 'number' && config.maxWallClockMs > 0
@@ -431,7 +438,7 @@ async function executeLlmPrompt(
   const { model, envOverrides } = launchForAgent(launchAgent)
 
   // Resolve workspace-level MCP configuration and freeze the tool list.
-  const workspaceMcpConfig = getWorkspaceMcpConfig(schedule.workspacePath)
+  const workspaceMcpConfig = getWorkspaceMcpConfig(resolveWorkspaceRoot(schedule.workspaceId)!)
   const frozenTools = freezeTools(
     schedule.toolAllowlist ?? [],
     schedule.toolDenylist ?? [],
@@ -439,7 +446,7 @@ async function executeLlmPrompt(
   )
   const permissionHandler = createPermissionHandler(
     schedule.id,
-    schedule.workspacePath,
+    resolveWorkspaceRoot(schedule.workspaceId)!,
     frozenTools,
     schedule.vendor,
     schedule.mode,
@@ -455,7 +462,7 @@ async function executeLlmPrompt(
     const q = query({
       prompt,
       options: {
-        cwd: schedule.workspacePath,
+        cwd: resolveWorkspaceRoot(schedule.workspaceId)!,
         settingSources: ['user', 'project'],
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         disallowedTools: [],

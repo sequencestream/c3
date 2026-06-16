@@ -68,25 +68,25 @@ export function useAppController(): AppCtx {
       onReopen: () => {
         // In the intent view, resume the comm session; otherwise re-select normally.
         if (ctx.activeTab.value === 'intents' && ctx.intentsProject.value) {
-          ctx.send({ type: 'open_intent_chat', workspacePath: ctx.intentsProject.value })
-          ctx.send({ type: 'list_intent_sessions', workspacePath: ctx.intentsProject.value })
+          ctx.send({ type: 'open_intent_chat', workspaceId: ctx.intentsProject.value })
+          ctx.send({ type: 'list_intent_sessions', workspaceId: ctx.intentsProject.value })
         } else if (ctx.activeTab.value === 'discussion' && ctx.discussionsProject.value) {
           // Re-fetch the list and re-open the viewed discussion (read path).
-          ctx.send({ type: 'list_discussions', workspacePath: ctx.discussionsProject.value })
+          ctx.send({ type: 'list_discussions', workspaceId: ctx.discussionsProject.value })
           if (ctx.activeDiscussionId.value)
             ctx.send({ type: 'open_discussion', discussionId: ctx.activeDiscussionId.value })
         } else if (ctx.activeTab.value === 'schedules' && ctx.schedulesProject.value) {
           // Re-fetch the schedule list (read path) + settings (timezone preview).
-          ctx.send({ type: 'list_schedules', workspacePath: ctx.schedulesProject.value })
+          ctx.send({ type: 'list_schedules', workspaceId: ctx.schedulesProject.value })
           ctx.send({ type: 'get_settings' })
         } else if (ctx.viewMode.value === 'workcenter') {
           // Re-fetch the pending event list (read path).
           if (ctx.currentWorkspace.value)
-            ctx.send({ type: 'list_wait_user_events', workspacePath: ctx.currentWorkspace.value })
+            ctx.send({ type: 'list_wait_user_events', workspaceId: ctx.currentWorkspace.value })
         } else if (ctx.activeWorkspace.value && ctx.activeSession.value) {
           ctx.send({
             type: 'select_session',
-            workspacePath: ctx.activeWorkspace.value,
+            workspaceId: ctx.activeWorkspace.value,
             sessionId: ctx.activeSession.value,
           })
         }

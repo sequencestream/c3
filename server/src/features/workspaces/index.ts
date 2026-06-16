@@ -9,6 +9,15 @@ import { onWorkspaceRemoved } from '../schedules/archiver.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const addWorkspaceHandler: Handler<'add_workspace'> = async (_ctx, conn, msg) => {
+  // `add_workspace` is the ONLY entry where an absolute path legitimately enters
+  // the system — it establishes a new trust root. Gate it behind an authenticated
+  // session (defense-in-depth: the dispatch gate already refuses non-exempt
+  // frames when auth is enabled, but this explicit check documents the contract
+  // and is the hook for future per-role authorization).
+  if (!conn.authed) {
+    conn.send({ type: 'unauthenticated', reason: 'missing' })
+    return
+  }
   const abs = addWorkspace(msg.path, Date.now())
   if (!abs) {
     conn.send({
@@ -22,6 +31,11 @@ export const addWorkspaceHandler: Handler<'add_workspace'> = async (_ctx, conn, 
 }
 
 export const removeWorkspaceHandler: Handler<'remove_workspace'> = (ctx, conn, msg) => {
+  // Removing a workspace tears down a trust root — same auth gate as add.
+  if (!conn.authed) {
+    conn.send({ type: 'unauthenticated', reason: 'missing' })
+    return
+  }
   const abs = resolve(msg.path)
   // Tear down any background runs under this workspace.
   removeRuntimesForWorkspace(abs)

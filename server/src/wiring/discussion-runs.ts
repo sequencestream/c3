@@ -23,6 +23,7 @@
  *   and does NOT touch the kernel registry directly.
  */
 import type { Discussion, RunEndReason, VendorId } from '@ccc/shared/protocol'
+import { resolveWorkspaceRoot } from '../state.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import type { VendorAdapter } from '../kernel/agent/adapters/types.js'
 import {
@@ -131,13 +132,13 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // Publish discussion run lifecycle events (2026-06-08-010).
     eventBus.publish('run:started', {
       sessionId: discussion.id,
-      workspacePath: discussion.workspacePath,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
       kind: 'discussion',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
       realId: discussion.id,
-      workspacePath: discussion.workspacePath,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
     })
 
     const sessionManager = new AgentSessionManager({
@@ -154,7 +155,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       sessionManager,
       onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
       // Status/conclusion changes ride the refreshed list broadcast.
-      onStatusChange: () => broadcastDiscussions(discussion.workspacePath),
+      onStatusChange: () => broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceId)!),
       onDispatchStatus: (s) => broadcastDiscussionDispatchStatus(discussion.id, s),
       gate: makeDiscussionGate(ctrl),
     })
@@ -170,7 +171,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         if (abort.signal.aborted) settledReason = 'aborted'
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: discussion.workspacePath,
+          workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
           reason: settledReason,
           kind: 'discussion',
         })
@@ -197,13 +198,13 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // Publish research run lifecycle events (2026-06-08-010).
     eventBus.publish('run:started', {
       sessionId: discussion.id,
-      workspacePath: discussion.workspacePath,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
       kind: 'discussion',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
       realId: discussion.id,
-      workspacePath: discussion.workspacePath,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
     })
 
     void researchDiscussionContext(discussion, {
@@ -215,7 +216,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         const reason: RunEndReason = abort.signal.aborted ? 'aborted' : ok ? 'complete' : 'error'
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: discussion.workspacePath,
+          workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
           reason,
           kind: 'discussion',
         })
@@ -241,7 +242,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         // so this only fires on a wiring fault. Ensure settled fires for liveness.
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: discussion.workspacePath,
+          workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
           reason: 'error',
           kind: 'discussion',
         })

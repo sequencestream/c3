@@ -29,6 +29,7 @@ const PROMPT =
 const ws = new WebSocket(URL)
 
 let originalSettings = null
+let workspaceId = null // server-assigned opaque id, captured from `workspaces`
 let workspaceAdded = false
 let sessionCreated = false
 let promptSent = false
@@ -91,8 +92,17 @@ ws.addEventListener('message', (evt) => {
 
     case 'workspaces':
       if (workspaceAdded && !sessionCreated) {
+        const added =
+          msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ??
+          msg.workspaces?.[0]
+        workspaceId = added?.id ?? null
+        if (!workspaceId) {
+          console.error('[e2e] no workspaceId after add_workspace — aborting')
+          finish(5)
+          return
+        }
         sessionCreated = true
-        send({ type: 'create_session', workspacePath: PROJECT_DIR })
+        send({ type: 'create_session', workspaceId })
       }
       break
 

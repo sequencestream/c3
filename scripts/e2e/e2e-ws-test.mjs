@@ -49,7 +49,7 @@ ws.addEventListener('message', (evt) => {
 
   if (msg.type === 'ready') {
     sawReady = true
-    const ws0 = msg.workspaces?.[0]?.path
+    const ws0 = msg.workspaces?.[0]?.id
     if (!ws0) {
       console.error('[e2e] no seed workspace in ready — start with --workspace <dir>')
       finish(5)
@@ -57,7 +57,7 @@ ws.addEventListener('message', (evt) => {
     }
     console.log(`[e2e] ready → creating session in ${ws0}`)
     sessionCreated = true
-    ws.send(JSON.stringify({ type: 'create_session', workspacePath: ws0 }))
+    ws.send(JSON.stringify({ type: 'create_session', workspaceId: ws0 }))
   } else if (msg.type === 'session_selected') {
     if (!promptSent) {
       promptSent = true

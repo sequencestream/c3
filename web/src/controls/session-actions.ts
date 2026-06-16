@@ -32,7 +32,7 @@ export function installSessionActions(ctx: AppCtx): void {
 
   // Force a fresh `list_sessions` for a workspace, bypassing `ensureSessions`.
   ctx.refreshSessions = (path: string | null): void => {
-    if (path) send({ type: 'list_sessions', workspacePath: path })
+    if (path) send({ type: 'list_sessions', workspaceId: path })
   }
 
   // Lazily fetch a workspace's session list (once) for the sidebar.
@@ -83,7 +83,7 @@ export function installSessionActions(ctx: AppCtx): void {
     ctx.enterConsole()
     send({
       type: 'create_session',
-      workspacePath: path,
+      workspaceId: path,
       ...(agentId ? { agentId } : {}),
     })
   }
@@ -99,7 +99,7 @@ export function installSessionActions(ctx: AppCtx): void {
     // Pin the console tab's pointer up front.
     consoleSession.value = { workspacePath: path, sessionId }
     if (sessionId === activeSession.value) return
-    send({ type: 'select_session', workspacePath: path, sessionId })
+    send({ type: 'select_session', workspaceId: path, sessionId })
   }
 
   // Top-bar tab click.
@@ -151,7 +151,7 @@ export function installSessionActions(ctx: AppCtx): void {
     if (activeSession.value === ref.sessionId && activeWorkspace.value === ref.workspacePath) return
     send({
       type: 'select_session',
-      workspacePath: ref.workspacePath,
+      workspaceId: ref.workspacePath,
       sessionId: ref.sessionId,
     })
   }
@@ -174,17 +174,17 @@ export function installSessionActions(ctx: AppCtx): void {
   ctx.deleteSession = (path: string, sessionId: string): void => {
     // Drop the console pointer if it referenced the deleted session.
     if (consoleSession.value?.sessionId === sessionId) consoleSession.value = null
-    send({ type: 'delete_session', workspacePath: path, sessionId })
+    send({ type: 'delete_session', workspaceId: path, sessionId })
   }
 
   ctx.renameSession = (path: string, sessionId: string, title: string): void => {
-    send({ type: 'rename_session', workspacePath: path, sessionId, title })
+    send({ type: 'rename_session', workspaceId: path, sessionId, title })
   }
 
   ctx.openDevSession = (sessionId: string): void => {
     if (!intentsProject.value) return
     ctx.enterConsole()
     consoleSession.value = { workspacePath: intentsProject.value, sessionId }
-    send({ type: 'select_session', workspacePath: intentsProject.value, sessionId })
+    send({ type: 'select_session', workspaceId: intentsProject.value, sessionId })
   }
 }

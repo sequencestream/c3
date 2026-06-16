@@ -90,6 +90,7 @@ console.log(`[e2e] connecting ${URL}`)
 const ws = new WebSocket(URL)
 
 // ---- State ----
+let workspaceId = null // server-assigned opaque id, captured from `workspaces`
 let workspaceAdded = false
 let chatOpened = false
 let promptSent = false
@@ -162,9 +163,18 @@ ws.addEventListener('message', (evt) => {
 
     case 'workspaces':
       if (workspaceAdded && !chatOpened) {
+        const added =
+          msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ??
+          msg.workspaces?.[0]
+        workspaceId = added?.id ?? null
+        if (!workspaceId) {
+          console.error('[e2e] no workspaceId after add_workspace — aborting')
+          finish(5)
+          return
+        }
         chatOpened = true
         console.log('[e2e] entering intent view (open_intent_chat)')
-        send({ type: 'open_intent_chat', workspacePath: PROJECT_DIR })
+        send({ type: 'open_intent_chat', workspaceId })
       }
       break
 
@@ -184,7 +194,7 @@ ws.addEventListener('message', (evt) => {
           console.log(`[e2e] delete_intent_session ${sessionIds[0]}`)
           send({
             type: 'delete_intent_session',
-            workspacePath: PROJECT_DIR,
+            workspaceId,
             sessionId: sessionIds[0],
           })
         } else {
@@ -291,7 +301,7 @@ ws.addEventListener('message', (evt) => {
         if (sessionIds.length >= 2) {
           switchRequested = true
           console.log(`[e2e] open_intent_chat → session ${sessionIds[1]}`)
-          send({ type: 'open_intent_chat', workspacePath: PROJECT_DIR, sessionId: sessionIds[1] })
+          send({ type: 'open_intent_chat', workspaceId, sessionId: sessionIds[1] })
         } else {
           finish(judge())
         }
@@ -445,7 +455,7 @@ function maybeStartSessionListTest() {
   if (sessionListRequested || finished) return
   sessionListRequested = true
   console.log('[e2e] sending list_intent_sessions')
-  send({ type: 'list_intent_sessions', workspacePath: PROJECT_DIR })
+  send({ type: 'list_intent_sessions', workspaceId })
 }
 
 // Final flow: open a brand-new comm session via "+". The response is handled in
@@ -454,7 +464,7 @@ function maybeStartNewChat() {
   if (newChatSent || finished) return
   newChatSent = true
   console.log('[e2e] sending new_intent_chat (the "+" button)')
-  send({ type: 'new_intent_chat', workspacePath: PROJECT_DIR })
+  send({ type: 'new_intent_chat', workspaceId })
 }
 
 function judge() {

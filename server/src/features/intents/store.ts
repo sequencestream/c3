@@ -24,6 +24,7 @@ import type {
   IntentRunStatus,
   IntentStatus,
 } from '@ccc/shared/protocol'
+import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
 const SCHEMA_VERSION = 11
@@ -290,7 +291,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
   }
   return rows.map((r) => ({
     id: r.id,
-    workspacePath: r.workspace_path,
+    workspaceId: pathToId(r.workspace_path)!,
     title: r.title,
     content: r.content,
     priority: r.priority as Intent['priority'],

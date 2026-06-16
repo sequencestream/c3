@@ -5,7 +5,6 @@
  * speak/continue). Live run controls live in `discussions/run-controls` (feature-
  * private); the run starters live on `ctx`; per-connection delivery on `conn`.
  */
-import { resolve } from 'node:path'
 import {
   appendMessage as appendDiscussionMessage,
   createDiscussion,
@@ -18,17 +17,26 @@ import {
 import { isDiscussionType } from '@ccc/shared/discussion-types'
 import { discussionRunSnapshot, getDiscussionRun, hasDiscussionRun } from './run-controls.js'
 import type { Handler } from '../../transport/handler-registry.js'
+import { pathToId, resolveWorkspaceRoot } from '../../state.js'
 
 export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, msg) => {
-  const proj = resolve(msg.workspacePath)
   if (!isDiscussionStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'discussion.dbUnavailable' } })
     return
   }
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+    })
+    return
+  }
+  const proj = abs
   const discItems = listDiscussions(proj, msg.status)
   conn.send({
     type: 'discussions',
-    workspacePath: proj,
+    workspaceId: pathToId(proj)!,
     items: discItems,
     runStates: discussionRunSnapshot(discItems),
   })
@@ -46,7 +54,15 @@ export const createDiscussionHandler: Handler<'create_discussion'> = (ctx, conn,
     })
     return
   }
-  const proj = resolve(msg.workspacePath)
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+    })
+    return
+  }
+  const proj = abs
   // Title is derived from the goal (the form has no title field): first
   // non-empty line, trimmed and capped.
   const firstLine =
@@ -207,6 +223,6 @@ export const continueDiscussion: Handler<'continue_discussion'> = (ctx, conn, ms
   })
   ctx.broadcastDiscussionMessage(discussion.id, message)
   updateDiscussionStatus(discussion.id, 'in_progress')
-  ctx.broadcastDiscussions(discussion.workspacePath)
+  ctx.broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceId)!)
   ctx.startDiscussionRun({ ...discussion, status: 'in_progress' })
 }

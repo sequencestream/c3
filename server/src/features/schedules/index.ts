@@ -5,7 +5,7 @@
  * the write-approval queue. Broadcasts route through `ctx`; per-connection
  * replies through `conn`.
  */
-import { resolve } from 'node:path'
+import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import {
   createSchedule,
   deleteSchedule as deleteScheduleStore,
@@ -57,7 +57,7 @@ export const createScheduleHandler: Handler<'create_schedule'> = async (ctx, con
   // client-supplied name in config is ignored (stripped by the store).
   const generatedName = await generateScheduleName(msg.input)
   const created = createSchedule(msg.input, generatedName)
-  ctx.broadcastSchedules(created.workspacePath)
+  ctx.broadcastSchedules(resolveWorkspaceRoot(created.workspaceId)!)
 }
 
 export const listSchedulesHandler: Handler<'list_schedules'> = (_ctx, conn, msg) => {
@@ -65,9 +65,9 @@ export const listSchedulesHandler: Handler<'list_schedules'> = (_ctx, conn, msg)
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
     return
   }
-  const proj = resolve(msg.workspacePath)
+  const proj = resolveWorkspaceRoot(msg.workspaceId)!
   const items = listSchedules(proj)
-  conn.send({ type: 'schedules', workspacePath: proj, items })
+  conn.send({ type: 'schedules', workspaceId: pathToId(proj)!, items })
 }
 
 export const updateScheduleHandler: Handler<'update_schedule'> = async (ctx, conn, msg) => {
@@ -110,7 +110,7 @@ export const updateScheduleHandler: Handler<'update_schedule'> = async (ctx, con
     }
   }
   updateScheduleStore(msg.scheduleId, msg.input, nameOverride)
-  ctx.broadcastSchedules(existing.workspacePath)
+  ctx.broadcastSchedules(resolveWorkspaceRoot(existing.workspaceId)!)
 }
 
 export const deleteScheduleHandler: Handler<'delete_schedule'> = (ctx, conn, msg) => {
@@ -124,7 +124,7 @@ export const deleteScheduleHandler: Handler<'delete_schedule'> = (ctx, conn, msg
     return
   }
   deleteScheduleStore(msg.scheduleId)
-  ctx.broadcastSchedules(existing.workspacePath)
+  ctx.broadcastSchedules(resolveWorkspaceRoot(existing.workspaceId)!)
 }
 
 export const getScheduleDetailHandler: Handler<'get_schedule_detail'> = (_ctx, conn, msg) => {
@@ -173,7 +173,7 @@ export const scheduleRunNow: Handler<'schedule_run_now'> = (ctx, conn, msg) => {
   }
   void triggerRunNow(msg.scheduleId).then(() => {
     const s = getSchedule(msg.scheduleId)
-    if (s) ctx.broadcastSchedules(s.workspacePath)
+    if (s) ctx.broadcastSchedules(resolveWorkspaceRoot(s.workspaceId)!)
   })
 }
 
@@ -182,8 +182,9 @@ export const getWorkspaceMcpConfig: Handler<'get_workspace_mcp_config'> = (_ctx,
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
     return
   }
-  const config = storeGetWorkspaceMcpConfig(msg.workspacePath)
-  conn.send({ type: 'workspace_mcp_config', workspacePath: msg.workspacePath, config })
+  const proj = resolveWorkspaceRoot(msg.workspaceId)!
+  const config = storeGetWorkspaceMcpConfig(proj)
+  conn.send({ type: 'workspace_mcp_config', workspaceId: msg.workspaceId, config })
 }
 
 export const saveWorkspaceMcpConfig: Handler<'save_workspace_mcp_config'> = (_ctx, conn, msg) => {
@@ -191,11 +192,12 @@ export const saveWorkspaceMcpConfig: Handler<'save_workspace_mcp_config'> = (_ct
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
     return
   }
-  storeSaveWorkspaceMcpConfig(msg.workspacePath, msg.config)
+  const proj2 = resolveWorkspaceRoot(msg.workspaceId)!
+  storeSaveWorkspaceMcpConfig(proj2, msg.config)
   conn.send({
     type: 'workspace_mcp_config',
-    workspacePath: msg.workspacePath,
-    config: storeGetWorkspaceMcpConfig(msg.workspacePath),
+    workspaceId: msg.workspaceId,
+    config: storeGetWorkspaceMcpConfig(proj2),
   })
 }
 
@@ -214,21 +216,22 @@ export const getScheduleToolManifest: Handler<'get_schedule_tool_manifest'> = (_
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
     return
   }
-  const mcpConfig = storeGetWorkspaceMcpConfig(msg.workspacePath)
+  const proj3 = resolveWorkspaceRoot(msg.workspaceId)!
+  const mcpConfig = storeGetWorkspaceMcpConfig(proj3)
   const hasMcp = Object.keys(mcpConfig.mcpServers).length > 0
   const mcpServers = hasMcp ? mcpConfig.mcpServers : undefined
 
   let tools: ToolManifestEntry[]
   switch (msg.vendor) {
     case 'claude':
-      tools = createClaudeAdapter().listTools(msg.workspacePath, mcpServers)
+      tools = createClaudeAdapter().listTools(msg.workspaceId, mcpServers)
       break
     case 'codex':
-      tools = createCodexAdapter().listTools(msg.workspacePath, mcpServers)
+      tools = createCodexAdapter().listTools(msg.workspaceId, mcpServers)
       break
     default:
       // Unknown vendor — fallback to a minimal SDK set
-      tools = createClaudeAdapter().listTools(msg.workspacePath)
+      tools = createClaudeAdapter().listTools(msg.workspaceId)
   }
 
   // Always append in-process c3 MCP tools so the user can select them

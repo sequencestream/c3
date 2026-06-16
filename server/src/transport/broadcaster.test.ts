@@ -42,9 +42,9 @@ function withConnections(n: number): {
 // protocol breaks compilation here (the per-type wire contract is pinned).
 const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   { type: 'session_status', statuses: [{ sessionId: 's1', status: 'running' }] },
-  { type: 'intents', workspacePath: '/p', items: [] },
-  { type: 'discussions', workspacePath: '/p', items: [], runStates: {}, researchStates: {} },
-  { type: 'schedules', workspacePath: '/p', items: [] },
+  { type: 'intents', workspaceId: '/p', items: [] },
+  { type: 'discussions', workspaceId: '/p', items: [], runStates: {}, researchStates: {} },
+  { type: 'schedules', workspaceId: '/p', items: [] },
   {
     type: 'discussion_message',
     discussionId: 'd1',
@@ -85,7 +85,7 @@ const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   {
     type: 'automation_status',
     status: {
-      workspacePath: '/p',
+      workspaceId: '/p',
       state: 'idle',
       currentIntentId: null,
       currentSessionId: null,
@@ -122,7 +122,7 @@ describe('Broadcaster — transparent fan-out (2/3b byte guarantee)', () => {
     const { broadcaster, logs } = withConnections(1)
     const frame: ServerToClient = {
       type: 'discussions',
-      workspacePath: '/p',
+      workspaceId: '/p',
       items: [],
       runStates: { d1: 'running' },
       researchStates: { d1: 'running' },
@@ -172,23 +172,23 @@ describe('Broadcaster — golden wire shapes (high-frequency frames)', () => {
     expect(
       JSON.stringify({
         type: 'intents',
-        workspacePath: '/p',
+        workspaceId: '/p',
         items: [],
       } satisfies ServerToClient),
-    ).toBe('{"type":"intents","workspacePath":"/p","items":[]}')
+    ).toBe('{"type":"intents","workspaceId":"/p","items":[]}')
   })
 
   it('discussions (carries runStates + researchStates snapshots)', () => {
     expect(
       JSON.stringify({
         type: 'discussions',
-        workspacePath: '/p',
+        workspaceId: '/p',
         items: [],
         runStates: {},
         researchStates: {},
       } satisfies ServerToClient),
     ).toBe(
-      '{"type":"discussions","workspacePath":"/p","items":[],"runStates":{},"researchStates":{}}',
+      '{"type":"discussions","workspaceId":"/p","items":[],"runStates":{},"researchStates":{}}',
     )
   })
 })

@@ -54,7 +54,7 @@ describe('buildResearchPrompt', () => {
 describe('canAutoStartDiscussion', () => {
   const draft: Discussion = {
     id: 'd1',
-    workspacePath: '/p',
+    workspaceId: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',
@@ -111,7 +111,7 @@ describe('DISCUSSION_RESEARCH_PROMPT', () => {
 describe('researchDiscussionContext', () => {
   const disc: Discussion = {
     id: 'd1',
-    workspacePath: '/p',
+    workspaceId: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',

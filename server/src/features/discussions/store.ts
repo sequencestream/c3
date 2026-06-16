@@ -20,6 +20,7 @@ import type {
   DiscussionStatus,
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import { pathToId } from '../../state.js'
 
 /**
  * Discussion schema version. Independent of the intent store's version —
@@ -212,7 +213,7 @@ function parseStringList(raw: string | null): string[] {
 function toDiscussion(r: DiscussionRow): Discussion {
   return {
     id: r.id,
-    workspacePath: r.workspace_path,
+    workspaceId: pathToId(r.workspace_path)!,
     title: r.title,
     type: r.type,
     goal: r.goal,

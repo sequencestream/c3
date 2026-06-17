@@ -102,6 +102,12 @@ license-server/
 | GET    | `/checkout` | Choose a plan + target license and accept the service agreement (redirects to `/activate` if signed out) |
 | POST   | `/checkout` | Create a `pending` order — amount derived server-side from the plan; refused without agreement acceptance. With WeChat Pay configured, places a Native unified order and renders the scan-to-pay QR |
 
+### Buyer self-service (signed-in)
+
+| Method | Path        | Purpose                                                                                 |
+| ------ | ----------- | --------------------------------------------------------------------------------------- |
+| GET    | `/account`  | Self-service dashboard: list the signed-in buyer's licenses (with binding status), orders (with status); redirects to `/activate` if signed out |
+
 ### Payment (WeChat Pay Native)
 
 | Method | Path                          | Purpose                                                                                                          |

@@ -148,6 +148,19 @@ A user may hold **multiple licenses**; extending a license's term and status req
 | GET    | `/checkout` | Renewal page: choose a plan + the target license and accept the service agreement (sign-in required)      |
 | POST   | `/checkout` | Create a `pending` order — amount derived server-side from the plan; refused without agreement acceptance |
 
+### Buyer self-service
+
+A signed-in buyer may view their own licenses (license key, plan, term, status, current binding device and last-active time), orders (plan, amount, status, timestamps), and the binding status of each license — all returned filtered to the authenticated user only.
+
+- **`GET /account`** — the self-service dashboard. Requires a valid sign-in session cookie; an unauthenticated visitor is redirected to `GET /activate`. Renders HTML.
+- **License data returned:** each license carries `license_key`, `plan_key`, `term_end`, `status`, `alive_install_id` (the currently bound installation, or unbound), and `alive_time` (the last heartbeat timestamp).
+- **Order data returned:** each order carries `order id`, `plan_key`, `amount_cents`, `currency`, `status`, `payment_ref` (when paid), `created_at`.
+- **Non-leak (PL-R2):** no page or LS response ever exposes the plaintext `alive_token` or the signed `entitlement_token` in the browser. Only the shareable license key and binding metadata (install id, alive time) are visible.
+
+| Method | Path       | Purpose                                                                                                                                        |
+| ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/account` | Self-service dashboard: list the signed-in buyer's licenses (with binding info) and orders (with status); redirects to `/activate` if unsigned |
+
 There is **no refund endpoint** in the MVP (PL-R10) — the product is a virtual/digital good and the
 service agreement does not support refunds.
 

@@ -203,6 +203,22 @@ func (s *Store) FirstTrialPlan(ctx context.Context) (Plan, bool, error) {
 	return r.toPlan(), true, nil
 }
 
+// LicenseBinding is a license with its current binding info (alive_install_id and
+// alive_time). It is the shape used for the buyer self-service account page. The
+// alive_token is intentionally excluded: it is stored only as a one-way hash and
+// must never be returned to a page (PL-R2).
+type LicenseBinding struct {
+	ID             int64
+	UserID         int64
+	PlanKey        string
+	LicenseKey     string
+	Status         string
+	TermStart      time.Time
+	TermEnd        time.Time
+	AliveInstallID *string    // nil when no installation is bound
+	AliveTime      *time.Time // nil when no binding has ever heartbeaten
+}
+
 // License is the entitlement row (the subset the bind/heartbeat flow needs).
 // PlanKey references the granted plan (c3_ls_plan.plan_key).
 type License struct {
@@ -278,6 +294,50 @@ func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planKe
 		lastErr = res.Error // unique collision on license_key: retry with a new key
 	}
 	return License{}, false, fmt.Errorf("store: issue license: %w", lastErr)
+}
+
+// LicenseBindingsByUser returns every license a buyer owns (newest first) with
+// their current binding info (alive_install_id, alive_time), for the buyer
+// self-service account page. It never exposes the alive_token hash (PL-R2).
+func (s *Store) LicenseBindingsByUser(ctx context.Context, userID int64) ([]LicenseBinding, error) {
+	if !s.Available() {
+		return nil, errors.New("store: database not configured")
+	}
+	var rows []struct {
+		ID             int64
+		UserID         int64
+		PlanKey        string
+		LicenseKey     string
+		Status         string
+		TermStart      time.Time
+		TermEnd        time.Time
+		AliveInstallID *string
+		AliveTime      *time.Time
+	}
+	res := s.db.WithContext(ctx).Raw(`
+		SELECT id, user_id, plan_key, license_key, status, term_start, term_end,
+		       alive_install_id, alive_time
+		FROM c3_ls_license
+		WHERE user_id = $1
+		ORDER BY created_at DESC`, userID).Scan(&rows)
+	if res.Error != nil {
+		return nil, fmt.Errorf("store: license bindings by user: %w", res.Error)
+	}
+	out := make([]LicenseBinding, len(rows))
+	for i, r := range rows {
+		out[i] = LicenseBinding{
+			ID:             r.ID,
+			UserID:         r.UserID,
+			PlanKey:        r.PlanKey,
+			LicenseKey:     r.LicenseKey,
+			Status:         r.Status,
+			TermStart:      r.TermStart,
+			TermEnd:        r.TermEnd,
+			AliveInstallID: r.AliveInstallID,
+			AliveTime:      r.AliveTime,
+		}
+	}
+	return out, nil
 }
 
 // ListLicensesByBuyer returns every license a buyer owns, newest first, for the

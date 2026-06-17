@@ -574,3 +574,58 @@ func TestMarkOrderPaidUnknownOrder(t *testing.T) {
 		t.Errorf("unknown order err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestLicenseBindingsByUserReturnsOnlyOwnData(t *testing.T) {
+	s, ctx := liveStore(t)
+	now := time.Now()
+
+	buyerA, licA := seedLicense(t, s, ctx, now)
+	buyerB, licB := seedLicense(t, s, ctx, now)
+
+	// Bind buyer A's license so it has a non-nil binding.
+	res, err := s.BindInstallation(ctx, licA.LicenseKey, "inst-A", now, func() string { return "tok-A" })
+	if err != nil {
+		t.Fatalf("bind A: %v", err)
+	}
+	if res.AliveToken == "" {
+		t.Fatal("bind should return an alive token")
+	}
+
+	// Buyer A sees one license with binding info.
+	bindingsA, err := s.LicenseBindingsByUser(ctx, buyerA)
+	if err != nil {
+		t.Fatalf("bindings A: %v", err)
+	}
+	if len(bindingsA) != 1 {
+		t.Fatalf("buyer A: want 1 license, got %d", len(bindingsA))
+	}
+	if bindingsA[0].ID != licA.ID {
+		t.Errorf("buyer A: license id = %d, want %d", bindingsA[0].ID, licA.ID)
+	}
+	if bindingsA[0].AliveInstallID == nil {
+		t.Error("buyer A: AliveInstallID should be set (bound to inst-A)")
+	} else if *bindingsA[0].AliveInstallID != "inst-A" {
+		t.Errorf("buyer A: AliveInstallID = %q, want inst-A", *bindingsA[0].AliveInstallID)
+	}
+	if bindingsA[0].AliveTime == nil {
+		t.Error("buyer A: AliveTime should be set")
+	}
+
+	// Buyer B sees one license with no binding (unbound).
+	bindingsB, err := s.LicenseBindingsByUser(ctx, buyerB)
+	if err != nil {
+		t.Fatalf("bindings B: %v", err)
+	}
+	if len(bindingsB) != 1 {
+		t.Fatalf("buyer B: want 1 license, got %d", len(bindingsB))
+	}
+	if bindingsB[0].ID != licB.ID {
+		t.Errorf("buyer B: license id = %d, want %d", bindingsB[0].ID, licB.ID)
+	}
+	if bindingsB[0].AliveInstallID != nil {
+		t.Error("buyer B: unbound license should have nil AliveInstallID")
+	}
+	if bindingsB[0].AliveTime != nil {
+		t.Error("buyer B: unbound license should have nil AliveTime")
+	}
+}

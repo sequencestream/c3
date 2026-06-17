@@ -80,7 +80,7 @@ func loadSchemaFiles(fsys fs.FS) ([]schemaFile, error) {
 // character so that semicolons and "--" sequences appearing INSIDE single-quoted
 // string literals (e.g. table/column COMMENT text) are treated as literal text,
 // not as statement terminators or comments. A SQL literal escapes a quote by
-// doubling it (''); the simple in-string toggle handles that, since the second
+// doubling it (”); the simple in-string toggle handles that, since the second
 // quote of the pair flips the state straight back to "inside the string".
 func splitStatements(sqlText string) []string {
 	var stmts []string
@@ -122,9 +122,15 @@ func splitStatements(sqlText string) []string {
 	return stmts
 }
 
-// EnsureSchema applies every embedded DDL file, each in its own transaction, in
-// name order. It is safe to call on every startup: the DDL is idempotent
-// (IF NOT EXISTS), so an already-current database is left unchanged.
+// schemaAdvisoryLockKey is an arbitrary, stable 64-bit key for the
+// transaction-level advisory lock that serializes schema application (see
+// ensureSchemaFS).
+const schemaAdvisoryLockKey int64 = 0x6333_6c73_5f64_6462 // "c3ls_db" packed
+
+// EnsureSchema applies every embedded DDL file in name order, in a single
+// advisory-locked transaction (see ensureSchemaFS). It is safe to call on every
+// startup and concurrently: the DDL is idempotent (IF NOT EXISTS), so an
+// already-current database is left unchanged.
 func EnsureSchema(ctx context.Context, db *gorm.DB) error {
 	return ensureSchemaFS(ctx, db, schemaFS)
 }
@@ -134,19 +140,23 @@ func ensureSchemaFS(ctx context.Context, db *gorm.DB, fsys fs.FS) error {
 	if err != nil {
 		return err
 	}
-	for _, f := range files {
-		if err := applySchemaFile(ctx, db, f); err != nil {
-			return fmt.Errorf("lsdb: apply %s: %w", f.name, err)
-		}
-	}
-	return nil
-}
-
-func applySchemaFile(ctx context.Context, db *gorm.DB, f schemaFile) error {
+	// Apply the whole schema in one transaction guarded by a transaction-level
+	// advisory lock. The lock serializes concurrent callers (parallel test
+	// binaries against one database, or several instances booting at once):
+	// applying the idempotent DDL in parallel otherwise deadlocks on the catalog
+	// locks `COMMENT ON` takes. A transaction-level lock runs on the transaction's
+	// own connection and auto-releases at commit/rollback, so nothing leaks back
+	// into the pool. The DDL stays idempotent (IF NOT EXISTS), so an
+	// already-current database commits an empty no-op.
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, stmt := range splitStatements(f.body) {
-			if err := tx.Exec(stmt).Error; err != nil {
-				return err
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, schemaAdvisoryLockKey).Error; err != nil {
+			return fmt.Errorf("lsdb: acquire schema lock: %w", err)
+		}
+		for _, f := range files {
+			for _, stmt := range splitStatements(f.body) {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return fmt.Errorf("lsdb: apply %s: %w", f.name, err)
+				}
 			}
 		}
 		return nil

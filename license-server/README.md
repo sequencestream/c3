@@ -23,9 +23,20 @@ accepts the 《软件使用授权与服务协议(含无退款条款)》 on `GET 
 `POST /checkout` records a `pending` `c3_ls_order` linked to the license being
 renewed. The order's amount is **derived server-side from the plan** (the
 client-supplied amount is ignored), and acceptance of the service agreement is
-required before the order is created (PL-R9). Payment capture (WeChat Pay) — which
-marks the order paid and extends the license term — and the admin back-office are
-later milestones.
+required before the order is created (PL-R9).
+
+**Payment capture (WeChat Pay Native) is now live.** When WeChat Pay is
+configured, `POST /checkout` immediately places a **Native unified order** and
+shows a scan-to-pay **QR** (`code_url`), suited to PC web. WeChat then POSTs the
+asynchronous result to `POST /v1/payment/wechat/notify`; the handler **verifies
+the signature against WeChat's platform certificate and decrypts** the payload
+(a forged callback can never pass, PL-R12), then advances the order
+`pending → paid` (recording the transaction id as `payment_ref`) and **extends
+the linked license's term and status**. Processing is **idempotent** — a
+redelivered callback is acknowledged without re-extending the license. Payment
+credentials live only here, never persisted and never logged (PL-R12). The MVP
+is Native only (no JSAPI/H5/mini-program), with no reconciliation and no refunds.
+The admin back-office is a later milestone.
 
 ## Stack
 
@@ -55,8 +66,9 @@ license-server/
   internal/agreement/      service-usage agreement copy (agreement.md, embedded) + version (single source, PL-R9)
   internal/oauth/          GitHub OAuth client for account sign-in
   internal/token/          Ed25519 entitlement token signing (PL-R5)
-  internal/store/          PostgreSQL data access (users, plans, licenses + live binding, orders)
-  internal/httpapi/        ServeMux, /healthz, /v1/plans, sign-in + bind/heartbeat, renewal checkout, static + SPA fallback
+  internal/store/          PostgreSQL data access (users, plans, licenses + live binding, orders + state machine)
+  internal/wechatpay/      WeChat Pay Native gateway: unified order + callback verify/decrypt (PL-R12)
+  internal/httpapi/        ServeMux, /healthz, /v1/plans, sign-in + bind/heartbeat, renewal checkout, payment callback, static + SPA fallback
   internal/version/        build version
   scripts/gen-keypair/     Dev Ed25519 keypair generator
   database/                PostgreSQL schema — one idempotent DDL file per table (embedded) + index
@@ -88,7 +100,13 @@ license-server/
 | Method | Path        | Purpose                                                                                                |
 | ------ | ----------- | ------------------------------------------------------------------------------------------------------ |
 | GET    | `/checkout` | Choose a plan + target license and accept the service agreement (redirects to `/activate` if signed out) |
-| POST   | `/checkout` | Create a `pending` order — amount derived server-side from the plan; refused without agreement acceptance |
+| POST   | `/checkout` | Create a `pending` order — amount derived server-side from the plan; refused without agreement acceptance. With WeChat Pay configured, places a Native unified order and renders the scan-to-pay QR |
+
+### Payment (WeChat Pay Native)
+
+| Method | Path                          | Purpose                                                                                                          |
+| ------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/payment/wechat/notify`   | WeChat Pay async result callback: verify signature + decrypt, then advance the order `pending→paid/failed` and extend the license. Idempotent; replies WeChat's `SUCCESS`/`FAIL` envelope |
 
 The sign-in and bind/heartbeat endpoints are only available when the database,
 OAuth credentials, and signing key are all configured; otherwise they return a
@@ -111,8 +129,12 @@ never written to logs or `/healthz` (PL-R12).
 | `C3_LS_ED25519_PUBLIC_KEY`         | activation | —     | Verification key (published for c3 embedding; use the output above) |
 | `C3_LS_GITHUB_OAUTH_CLIENT_ID`     | activation | —     | GitHub OAuth app id (create a GitHub OAuth App in Settings → Developer settings) |
 | `C3_LS_GITHUB_OAUTH_CLIENT_SECRET` | activation | —     | GitHub OAuth app secret (secret)               |
-| `C3_LS_WECHAT_PAY_MCH_ID`          | later    | —        | WeChat Pay merchant id                         |
-| `C3_LS_WECHAT_PAY_API_KEY`         | later    | —        | WeChat Pay API key (secret)                    |
+| `C3_LS_WECHAT_PAY_MCH_ID`          | payment  | —        | WeChat Pay merchant id (直连商户号)            |
+| `C3_LS_WECHAT_PAY_APP_ID`          | payment  | —        | App id (公众号/应用 AppID) bound to the merchant |
+| `C3_LS_WECHAT_PAY_CERT_SERIAL_NO`  | payment  | —        | Merchant certificate serial number (商户证书序列号) |
+| `C3_LS_WECHAT_PAY_API_KEY`         | payment  | —        | WeChat Pay **APIv3 key** (signs requests, decrypts callbacks) (secret) |
+| `C3_LS_WECHAT_PAY_PRIVATE_KEY`     | payment  | —        | Merchant private key (apiclient_key.pem), **base64-encoded** (secret) |
+| `C3_LS_WECHAT_PAY_CERT`            | payment  | —        | Merchant certificate (apiclient_cert.pem), **base64-encoded** |
 | `C3_LS_LRU_SIZE`                   | no       | `1024`   | Per-cache capacity                             |
 | `C3_LS_GRACE_MINUTES`              | no       | `30`     | Offline-grace window (PL-R4)                   |
 | `C3_LS_ADMIN_ALLOWLIST`            | no       | —        | Comma-separated admin GitHub logins (PL-R11)   |

@@ -12,6 +12,7 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
 	"github.com/sequencestream/code-creative-center/license-server/internal/oauth"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"github.com/sequencestream/code-creative-center/license-server/internal/wechatpay"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +30,10 @@ type Deps struct {
 	OAuth  *oauth.Client
 	Store  *store.Store
 	Signer Signer // Ed25519 private key; nil when C3_LS_ED25519_PRIVATE_KEY is unset
+	// Pay is the WeChat Pay gateway; nil when WeChat Pay is unconfigured, in
+	// which case the renewal checkout records the pending order but reports that
+	// payment is unavailable rather than half-working.
+	Pay wechatpay.Gateway
 }
 
 // NewServer builds the HTTP handler with every route mounted. API routes are
@@ -44,6 +49,7 @@ func NewServer(d Deps) http.Handler {
 	mux.HandleFunc("/v1/plans", allowGET(handlePlans(d)))
 	mountActivation(mux, d)
 	mountCheckout(mux, d)
+	mountPayment(mux, d)
 	mux.Handle("/", staticHandler(d.Static))
 	return mux
 }

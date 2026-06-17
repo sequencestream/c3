@@ -26,7 +26,7 @@ release: web build
 web:
 	cd web && npm install && npm run build
 
-## test: run unit/build checks (set LS_TEST_DATABASE_URL to include live DB tests)
+## test: run unit/build checks (set C3_LS_TEST_DATABASE_URL to include live DB tests)
 test:
 	go test ./...
 

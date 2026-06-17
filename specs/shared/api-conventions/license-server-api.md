@@ -134,9 +134,12 @@ A user may hold **multiple licenses**; extending a license's term and status req
    timestamp) is recorded **on the order**; a checkout without acceptance is **refused** (400). The
    order's `amountCents`/`currency` are **derived server-side from the plan** — any client-supplied
    amount is **ignored** — so a buyer can never dictate the charge (PL-R9).
-3. **Pay** — WeChat Pay. On a confirmed payment, LS marks the **order** paid and **extends the linked
-   license's `termEnd` and status**. (Payment capture is a later milestone; the order → license
-   extension relationship is fixed now.)
+3. **Pay** — WeChat Pay **Native** (a scan-to-pay QR, suited to PC web). `POST /checkout` places a
+   **unified order** and returns a QR (`codeUrl`) the buyer scans with WeChat. WeChat then delivers
+   the result **asynchronously** to the payment callback (below); on a verified success LS marks the
+   **order** paid — recording the transaction reference as `paymentRef` — and **extends the linked
+   license's `termEnd` and status**. The MVP is **Native only** (no JSAPI/H5/mini-program), with no
+   reconciliation and no refunds.
 4. **Inspect** — a signed-in user may view their licenses (and their license keys), orders, and
    binding status.
 
@@ -147,6 +150,28 @@ A user may hold **multiple licenses**; extending a license's term and status req
 
 There is **no refund endpoint** in the MVP (PL-R10) — the product is a virtual/digital good and the
 service agreement does not support refunds.
+
+#### Payment callback
+
+`POST /v1/payment/wechat/notify` — the WeChat Pay **asynchronous** payment-result callback.
+
+- **Request:** WeChat POSTs a signed envelope carrying an APIv3-encrypted resource, with the
+  signature material in `Wechatpay-*` headers.
+- **LS verification (the security boundary):** LS verifies the callback signature against WeChat's
+  **platform certificate** and decrypts the resource with its **APIv3 key**. A callback that fails to
+  verify or decrypt — a **forged or tampered** "payment success" — is **refused** and **no order is
+  advanced** (PL-R12). The timestamp is checked against a short window to reject replays.
+- **Effect:** a verified success transitions the named order `pending → paid` (recording the WeChat
+  transaction reference as `paymentRef`) and **extends the linked license's `termEnd` and status**; any
+  other trade state marks the order `failed`. An order already paid is left unchanged.
+- **Idempotency:** WeChat redelivers until acknowledged, so the callback is **idempotent** — a
+  redelivered success does not re-extend the license.
+- **Acknowledgement:** LS replies with WeChat's `SUCCESS`/`FAIL` envelope; a non-success
+  acknowledgement (or any non-2xx) prompts WeChat to retry.
+
+| Method | Path                        | Purpose                                                                                                              |
+| ------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/payment/wechat/notify` | WeChat Pay async result callback: verify + decrypt, advance the order state machine, extend the license (idempotent) |
 
 ### Admin back-office
 

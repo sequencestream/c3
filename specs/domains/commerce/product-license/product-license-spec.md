@@ -152,6 +152,30 @@ MVP deliberately ships **no refund workflow** (PL-R10) — a non-goal, not an om
 chargebacks, and abuse are handled out-of-band by an admin **force-expiring** the license (PL-R11),
 which propagates to c3 via heartbeat as `expired` (PL-R8).
 
+## Renewal payment (WeChat Pay Native)
+
+Renewal payment is taken via **WeChat Pay Native** — a scan-to-pay QR, the mode suited to a PC web
+buyer (PL-R9). A `pending` order drives a **unified order** that yields a QR; the buyer scans it with
+WeChat, and WeChat reports the result **asynchronously** to LS's payment callback.
+
+- **Verification is the security boundary.** LS honors a payment result only after **verifying its
+  signature** against WeChat's platform certificate and **decrypting** it with the merchant APIv3 key.
+  A result that does not verify or decrypt — a forged or tampered "payment success" — is **refused**,
+  and **no order is advanced** (PL-R12). This mirrors the entitlement-token discipline (PL-R5): trust
+  comes from the cryptographic check, not from the fact that a request arrived.
+- **A paid order extends the license.** A verified success transitions the order `pending → paid`,
+  records the WeChat transaction reference on the order, and **extends the linked license's term end
+  and status**; any other trade state marks the order `failed`.
+- **Idempotent.** WeChat redelivers the callback until acknowledged, so applying it is **idempotent** —
+  a redelivered success does not re-extend the license.
+- **Credentials are LS-only.** The merchant key, APIv3 key, and certificate live exclusively in LS;
+  they are never persisted on the order, returned in a response, or written to a log (PL-R12). The only
+  payment artifact retained is the **transaction reference** on the order.
+
+The MVP is **Native only** (no JSAPI/H5/mini-program), with **no reconciliation** and **no refunds**
+(PL-R10). The contract shapes (endpoints, headers, acknowledgement envelope) live in the
+[license-server API contract](../../../shared/api-conventions/license-server-api.md).
+
 ## Admin operations (license-server)
 
 Admins authenticate on the LS back-office via GitHub OAuth (PL-R11) and may:
@@ -212,6 +236,9 @@ c3 exposes **no** license-admin surface.
   rest in its config/cache (PL-R12).
 - A user must **never** proceed to sign-in (trial) or payment (renewal) without recording acceptance
   of the service agreement (incl. no-refund terms) (PL-R9).
+- A payment callback that does **not** verify (bad signature) or decrypt (wrong APIv3 key) must
+  **never** mark an order paid or extend a license — a forged "payment success" cannot be honored
+  (PL-R12).
 
 ## Non-goals
 

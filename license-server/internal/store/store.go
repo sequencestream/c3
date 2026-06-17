@@ -475,11 +475,14 @@ type Order struct {
 	AgreementVersion    string
 	AgreementAcceptedAt time.Time
 	Status              string
-	CreatedAt           time.Time
+	// PaymentRef is the external payment provider reference (the WeChat Pay
+	// transaction id) recorded when the order is paid; empty until then.
+	PaymentRef string
+	CreatedAt  time.Time
 }
 
-// orderRow is the raw select shape; license_id is nullable so it maps to a
-// pointer and is normalized to 0 when absent.
+// orderRow is the raw select shape; license_id and payment_ref are nullable so
+// they map to pointers and are normalized to 0/"" when absent.
 type orderRow struct {
 	ID                  int64
 	UserID              int64
@@ -490,6 +493,7 @@ type orderRow struct {
 	AgreementVersion    string
 	AgreementAcceptedAt time.Time
 	Status              string
+	PaymentRef          *string
 	CreatedAt           time.Time
 }
 
@@ -497,6 +501,10 @@ func (r orderRow) toOrder() Order {
 	var lic int64
 	if r.LicenseID != nil {
 		lic = *r.LicenseID
+	}
+	var ref string
+	if r.PaymentRef != nil {
+		ref = *r.PaymentRef
 	}
 	return Order{
 		ID:                  r.ID,
@@ -508,6 +516,7 @@ func (r orderRow) toOrder() Order {
 		AgreementVersion:    r.AgreementVersion,
 		AgreementAcceptedAt: r.AgreementAcceptedAt,
 		Status:              r.Status,
+		PaymentRef:          ref,
 		CreatedAt:           r.CreatedAt,
 	}
 }
@@ -583,4 +592,133 @@ func (s *Store) OrdersByUser(ctx context.Context, userID int64) ([]Order, error)
 		out[i] = r.toOrder()
 	}
 	return out, nil
+}
+
+// OrderByID returns one order by its internal id, or ErrNotFound. The payment
+// callback uses it to resolve the order an out_trade_no names.
+func (s *Store) OrderByID(ctx context.Context, id int64) (Order, error) {
+	if !s.Available() {
+		return Order{}, errors.New("store: database not configured")
+	}
+	var row orderRow
+	res := s.db.WithContext(ctx).Raw(`SELECT `+orderSelectCols+` FROM c3_ls_order WHERE id = $1`, id).Scan(&row)
+	if res.Error != nil {
+		return Order{}, fmt.Errorf("store: get order: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return Order{}, ErrNotFound
+	}
+	return row.toOrder(), nil
+}
+
+// orderSelectCols is the column list shared by every order read, kept in one
+// place so a SELECT and a RETURNING stay in lockstep with orderRow.
+const orderSelectCols = `id, user_id, license_id, plan_key, amount_cents, currency,
+	agreement_version, agreement_accepted_at, status, payment_ref, created_at`
+
+// MarkOrderPaid advances a pending order to paid, records the external payment
+// reference, and extends the linked license's term and status (PL-R9). It is
+// idempotent: a callback delivered more than once finds the order already paid
+// and returns (order, false, nil) without re-extending the license. A terminal
+// failed order is left untouched. The payment reference is the only payment
+// artifact persisted — no credentials ever reach the store (PL-R12). Reports
+// whether this call performed the pending→paid transition.
+func (s *Store) MarkOrderPaid(ctx context.Context, orderID int64, paymentRef string, now time.Time) (Order, bool, error) {
+	if !s.Available() {
+		return Order{}, false, errors.New("store: database not configured")
+	}
+	var out Order
+	advanced := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row orderRow
+		res := tx.Raw(`SELECT `+orderSelectCols+` FROM c3_ls_order WHERE id = $1 FOR UPDATE`, orderID).Scan(&row)
+		if res.Error != nil {
+			return fmt.Errorf("store: lock order: %w", res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		if row.Status != "pending" {
+			// Already paid (idempotent replay) or a terminal failed order — never mutate.
+			out = row.toOrder()
+			return nil
+		}
+		var updated orderRow
+		res = tx.Raw(`
+			UPDATE c3_ls_order SET status = 'paid', payment_ref = $2
+			WHERE id = $1 AND status = 'pending'
+			RETURNING `+orderSelectCols, orderID, paymentRef).Scan(&updated)
+		if res.Error != nil {
+			return fmt.Errorf("store: mark order paid: %w", res.Error)
+		}
+		out = updated.toOrder()
+		// Extend the renewal target, if linked: push term_end out by the plan's
+		// whole-month duration from whichever is later — now or the current
+		// term_end — and reactivate the license.
+		if out.LicenseID != 0 {
+			var months int
+			res = tx.Raw(`SELECT duration_months FROM c3_ls_plan WHERE plan_key = $1`, out.PlanKey).Scan(&months)
+			if res.Error != nil {
+				return fmt.Errorf("store: plan duration: %w", res.Error)
+			}
+			if res.RowsAffected == 0 {
+				return ErrNotFound
+			}
+			if err := tx.Exec(`
+				UPDATE c3_ls_license
+				SET term_end = GREATEST(term_end, $2) + make_interval(months => $3),
+				    status = 'active',
+				    updated_at = $2
+				WHERE id = $1`, out.LicenseID, now, months).Error; err != nil {
+				return fmt.Errorf("store: extend license: %w", err)
+			}
+		}
+		advanced = true
+		return nil
+	})
+	if err != nil {
+		return Order{}, false, err
+	}
+	return out, advanced, nil
+}
+
+// MarkOrderFailed records a pending order as failed with the external payment
+// reference. It never downgrades a paid order and is idempotent on an
+// already-failed one; only a pending order transitions. Reports whether this
+// call performed the pending→failed transition.
+func (s *Store) MarkOrderFailed(ctx context.Context, orderID int64, paymentRef string) (Order, bool, error) {
+	if !s.Available() {
+		return Order{}, false, errors.New("store: database not configured")
+	}
+	var out Order
+	advanced := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row orderRow
+		res := tx.Raw(`SELECT `+orderSelectCols+` FROM c3_ls_order WHERE id = $1 FOR UPDATE`, orderID).Scan(&row)
+		if res.Error != nil {
+			return fmt.Errorf("store: lock order: %w", res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		if row.Status != "pending" {
+			out = row.toOrder()
+			return nil
+		}
+		var updated orderRow
+		res = tx.Raw(`
+			UPDATE c3_ls_order SET status = 'failed', payment_ref = $2
+			WHERE id = $1 AND status = 'pending'
+			RETURNING `+orderSelectCols, orderID, paymentRef).Scan(&updated)
+		if res.Error != nil {
+			return fmt.Errorf("store: mark order failed: %w", res.Error)
+		}
+		out = updated.toOrder()
+		advanced = true
+		return nil
+	})
+	if err != nil {
+		return Order{}, false, err
+	}
+	return out, advanced, nil
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 	"github.com/sequencestream/code-creative-center/license-server/internal/version"
+	"github.com/sequencestream/code-creative-center/license-server/internal/wechatpay"
 	"github.com/sequencestream/code-creative-center/license-server/web"
 	"gorm.io/gorm"
 )
@@ -65,6 +66,8 @@ func run() error {
 	st := store.New(db)
 	seedPlans(ctx, st)
 
+	pay := loadGateway(cfg)
+
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,
 		Handler: httpapi.NewServer(httpapi.Deps{
@@ -75,6 +78,7 @@ func run() error {
 			OAuth:  oauth.New(cfg.GitHubOAuthClientID, cfg.GitHubOAuthClientSecret),
 			Store:  st,
 			Signer: signer,
+			Pay:    pay,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -135,6 +139,33 @@ func loadSigner(cfg *config.Config) httpapi.Signer {
 	}
 	log.Printf("license-server: entitlement signing key loaded (kid %s)", kid)
 	return priv
+}
+
+// loadGateway builds the WeChat Pay gateway when the full credential set is
+// configured. It is best-effort: missing credentials yield a nil gateway (the
+// renewal checkout records the pending order but reports payment unavailable),
+// and a construction failure (bad key/cert, or WeChat unreachable while the
+// client fetches platform certs) is logged and tolerated rather than crashing
+// the service.
+func loadGateway(cfg *config.Config) wechatpay.Gateway {
+	gw, err := wechatpay.New(wechatpay.Settings{
+		MerchantID:    cfg.WeChatPayMchID,
+		AppID:         cfg.WeChatPayAppID,
+		CertSerialNo:  cfg.WeChatPayCertSerialNo,
+		APIv3Key:      cfg.WeChatPayAPIKey,
+		PrivateKeyB64: cfg.WeChatPayPrivateKey,
+		CertB64:       cfg.WeChatPayCert,
+	})
+	if err != nil {
+		log.Printf("license-server: WeChat Pay gateway disabled (%v); renewal payment unavailable", err)
+		return nil
+	}
+	if gw == nil {
+		log.Printf("license-server: no WeChat Pay credentials; renewal payment unavailable")
+		return nil
+	}
+	log.Printf("license-server: WeChat Pay gateway ready (Native)")
+	return gw
 }
 
 // openDatabase connects and ensures the schema when a DSN is configured. A

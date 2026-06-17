@@ -2,16 +2,21 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/sequencestream/code-creative-center/license-server/internal/agreement"
 	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"github.com/sequencestream/code-creative-center/license-server/internal/wechatpay"
 )
 
 // mountCheckout registers the buyer-facing renewal checkout. Both methods live
@@ -123,6 +128,26 @@ func handleCheckoutCreate(d Deps) http.HandlerFunc {
 			default:
 				renderError(w, http.StatusInternalServerError, "Checkout error", "Could not create your order.")
 			}
+			return
+		}
+
+		// With WeChat Pay configured, place a Native unified order and show the
+		// scan-to-pay QR; otherwise the order is recorded and payment is deferred.
+		if d.Pay != nil {
+			res, perr := d.Pay.Prepay(r.Context(), wechatpay.PrepayInput{
+				OutTradeNo:  wechatpay.OutTradeNo(order.ID),
+				AmountCents: order.AmountCents,
+				Description: "c3 license renewal · " + order.PlanKey,
+				NotifyURL:   strings.TrimRight(d.Config.PublicURL, "/") + "/v1/payment/wechat/notify",
+			})
+			if perr != nil {
+				// The order is already recorded as pending; the buyer can retry from
+				// the order page rather than losing the checkout.
+				renderError(w, http.StatusBadGateway, "Payment unavailable",
+					"Your order was created but the payment QR could not be generated. Please try again.")
+				return
+			}
+			renderPaymentQR(w, order, res.CodeURL)
 			return
 		}
 		renderOrderCreated(w, order)
@@ -280,5 +305,42 @@ func renderOrderCreated(w http.ResponseWriter, o store.Order) {
 		"Amount":           formatPrice(o.AmountCents, o.Currency),
 		"Status":           o.Status,
 		"AgreementVersion": o.AgreementVersion,
+	})
+}
+
+var paymentQRTmpl = template.Must(template.New("pay").Parse(`<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>微信支付 — c3 license</title>
+<style>
+ body{font:16px/1.7 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#1a1a1a;text-align:center}
+ h1{font-size:1.4rem} .meta{color:#666;font-size:.95rem}
+ .qr{margin:1.4rem auto;width:256px;height:256px;border:1px solid #ddd;border-radius:.5rem;padding:.6rem;background:#fff}
+ .amount{font-size:1.2rem;font-weight:600;margin:.4rem 0}
+ @media(prefers-color-scheme:dark){body{background:#111;color:#eee}.meta{color:#aaa}}
+</style></head><body>
+<h1>微信扫码支付 / Scan to pay</h1>
+<p class="amount">{{.Amount}} · {{.PlanKey}}</p>
+<p class="meta">订单号 / Order #{{.ID}}</p>
+<img class="qr" src="data:image/png;base64,{{.QR}}" alt="WeChat Pay QR" width="256" height="256">
+<p class="meta">用微信「扫一扫」扫描上方二维码完成支付。支付确认后将延长所选 license 的有效期。</p>
+<p class="meta">二维码 15 分钟内有效。<a href="/checkout">返回续费</a></p>
+</body></html>`))
+
+// renderPaymentQR shows the WeChat Pay Native scan code for a pending order. The
+// code_url is encoded to a QR PNG server-side and inlined as a data URI so the
+// pay link never leaves the page to a third-party renderer.
+func renderPaymentQR(w http.ResponseWriter, o store.Order, codeURL string) {
+	png, err := qrcode.Encode(codeURL, qrcode.Medium, 256)
+	if err != nil {
+		renderError(w, http.StatusInternalServerError, "Payment error", "Could not render the payment QR.")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = paymentQRTmpl.Execute(w, map[string]any{
+		"ID":      o.ID,
+		"PlanKey": o.PlanKey,
+		"Amount":  formatPrice(o.AmountCents, o.Currency),
+		"QR":      base64.StdEncoding.EncodeToString(png),
 	})
 }

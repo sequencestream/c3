@@ -386,3 +386,124 @@ func TestSeedAndListPlans(t *testing.T) {
 		t.Errorf("re-seed clobbered existing row: price = %d, want 100", got[0].PriceCents)
 	}
 }
+
+// licenseByID is a small test helper: the buyer's license matching id.
+func licenseByID(t *testing.T, s *Store, ctx context.Context, buyerID, id int64) License {
+	t.Helper()
+	licenses, err := s.ListLicensesByBuyer(ctx, buyerID)
+	if err != nil {
+		t.Fatalf("list licenses: %v", err)
+	}
+	for _, l := range licenses {
+		if l.ID == id {
+			return l
+		}
+	}
+	t.Fatalf("license %d not found for buyer %d", id, buyerID)
+	return License{}
+}
+
+func TestMarkOrderPaidExtendsLicenseAndIsIdempotent(t *testing.T) {
+	s, ctx := liveStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := s.SeedPlans(ctx, []Plan{
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
+	}); err != nil {
+		t.Fatalf("seed plan: %v", err)
+	}
+	buyerID, lic := seedLicense(t, s, ctx, now)
+
+	order, err := s.CreateOrder(ctx, CreateOrderInput{
+		UserID: buyerID, LicenseID: lic.ID, PlanKey: "6m",
+		AgreementVersion: "v1", AgreementAcceptedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+	if order.Status != "pending" {
+		t.Fatalf("new order status = %q, want pending", order.Status)
+	}
+
+	// Pay it: pending → paid, payment_ref recorded, license term extended by 6 months.
+	paid, advanced, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-1", now)
+	if err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	if !advanced {
+		t.Error("first MarkOrderPaid should report the pending→paid transition")
+	}
+	if paid.Status != "paid" || paid.PaymentRef != "wx-tx-1" {
+		t.Errorf("paid order = %+v, want status paid + payment_ref wx-tx-1", paid)
+	}
+
+	wantEnd := lic.TermEnd
+	if now.After(wantEnd) {
+		wantEnd = now
+	}
+	wantEnd = wantEnd.AddDate(0, 6, 0)
+	got := licenseByID(t, s, ctx, buyerID, lic.ID)
+	if d := got.TermEnd.Sub(wantEnd); d > time.Second || d < -time.Second {
+		t.Errorf("term_end = %v, want ~%v (extended by 6 months)", got.TermEnd, wantEnd)
+	}
+	if got.Status != "active" {
+		t.Errorf("license status = %q, want active", got.Status)
+	}
+	endAfterFirst := got.TermEnd
+
+	// Replay the same callback: idempotent — no second transition, no re-extension.
+	again, advanced2, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-1", now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("mark paid again: %v", err)
+	}
+	if advanced2 {
+		t.Error("replayed MarkOrderPaid must not report a transition")
+	}
+	if again.Status != "paid" {
+		t.Errorf("replayed order status = %q, want paid", again.Status)
+	}
+	got2 := licenseByID(t, s, ctx, buyerID, lic.ID)
+	if !got2.TermEnd.Equal(endAfterFirst) {
+		t.Errorf("term_end moved on replay: %v != %v (license re-extended)", got2.TermEnd, endAfterFirst)
+	}
+}
+
+func TestMarkOrderFailedThenPaidDoesNotMutate(t *testing.T) {
+	s, ctx := liveStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := s.SeedPlans(ctx, []Plan{
+		{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0},
+	}); err != nil {
+		t.Fatalf("seed plan: %v", err)
+	}
+	buyerID, lic := seedLicense(t, s, ctx, now)
+	order, err := s.CreateOrder(ctx, CreateOrderInput{
+		UserID: buyerID, LicenseID: lic.ID, PlanKey: "1m",
+		AgreementVersion: "v1", AgreementAcceptedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+
+	failed, advanced, err := s.MarkOrderFailed(ctx, order.ID, "wx-fail-1")
+	if err != nil || !advanced || failed.Status != "failed" {
+		t.Fatalf("mark failed = (%+v, %v, %v), want failed + advanced", failed, advanced, err)
+	}
+	// A terminal failed order is never flipped to paid by a later callback.
+	after, advanced2, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-late", now)
+	if err != nil {
+		t.Fatalf("mark paid on failed: %v", err)
+	}
+	if advanced2 {
+		t.Error("a failed order must not transition to paid")
+	}
+	if after.Status != "failed" {
+		t.Errorf("order status = %q, want failed (unchanged)", after.Status)
+	}
+}
+
+func TestMarkOrderPaidUnknownOrder(t *testing.T) {
+	s, ctx := liveStore(t)
+	if _, _, err := s.MarkOrderPaid(ctx, 999999, "x", time.Now()); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown order err = %v, want ErrNotFound", err)
+	}
+}

@@ -76,6 +76,7 @@ func TestRedactedHidesSecrets(t *testing.T) {
 		EnvEd25519PublicKey:        "PUBLIC-KEY",
 		EnvGitHubOAuthClientSecret: "GH-SECRET",
 		EnvWeChatPayAPIKey:         "WX-SECRET",
+		EnvWeChatPayPrivateKey:     "WX-PRIVATE-KEY-MATERIAL",
 		EnvPublicURL:               "https://ls.example.com",
 	}))
 	if err != nil {
@@ -85,13 +86,13 @@ func TestRedactedHidesSecrets(t *testing.T) {
 
 	// No secret value may appear anywhere in the redacted view.
 	flat := strings.ToLower(joinValues(r))
-	for _, secret := range []string{"supersecret", "private-key-material", "gh-secret", "wx-secret"} {
+	for _, secret := range []string{"supersecret", "private-key-material", "gh-secret", "wx-secret", "wx-private-key-material"} {
 		if strings.Contains(flat, secret) {
 			t.Errorf("redacted view leaked secret %q: %v", secret, r)
 		}
 	}
 	// Secrets present as "set".
-	for _, k := range []string{"databaseUrl", "ed25519PrivateKey", "githubOauthClientSecret", "wechatPayApiKey"} {
+	for _, k := range []string{"databaseUrl", "ed25519PrivateKey", "githubOauthClientSecret", "wechatPayApiKey", "wechatPayPrivateKey"} {
 		if r[k] != "set" {
 			t.Errorf("redacted[%q] = %v, want \"set\"", k, r[k])
 		}

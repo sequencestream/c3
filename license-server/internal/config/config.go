@@ -55,10 +55,30 @@ type Config struct {
 	// GitHubOAuthClientSecret is the GitHub OAuth app secret. Secret.
 	GitHubOAuthClientSecret string
 
-	// WeChatPayMchID is the WeChat Pay merchant id. Not secret on its own.
+	// WeChat Pay (APIv3) credentials. The MVP takes renewal payment via WeChat
+	// Pay Native (a PC-web scan-to-pay QR). APIv3 needs more than a merchant id +
+	// key: a certificate serial number identifies which merchant key signed each
+	// request, the merchant private key signs outbound calls, and the merchant
+	// certificate is loaded at client construction. All live only in LS (PL-R12).
+
+	// WeChatPayMchID is the WeChat Pay merchant id (直连商户号). Not secret on its own.
 	WeChatPayMchID string
-	// WeChatPayAPIKey is the WeChat Pay API key. Secret.
+	// WeChatPayAppID is the app id (公众号/应用 AppID) the merchant is bound to. Not secret.
+	WeChatPayAppID string
+	// WeChatPayCertSerialNo is the merchant certificate serial number (商户证书序列号).
+	// Not secret — it only names which key signed a request.
+	WeChatPayCertSerialNo string
+	// WeChatPayAPIKey is the WeChat Pay APIv3 key (商户 APIv3 密钥), used to sign
+	// requests and to decrypt callback payloads. Secret.
 	WeChatPayAPIKey string
+	// WeChatPayPrivateKey is the merchant private key (apiclient_key.pem), supplied
+	// base64-encoded so a PEM with newlines survives an environment variable.
+	// Secret; LS-only.
+	WeChatPayPrivateKey string
+	// WeChatPayCert is the merchant certificate (apiclient_cert.pem), base64-encoded.
+	// Required to construct the WeChat Pay client; a certificate is not itself a
+	// secret but is presence-redacted for uniformity.
+	WeChatPayCert string
 
 	// LRUSize bounds every in-process LRU cache (entries per cache).
 	LRUSize int
@@ -80,7 +100,11 @@ const (
 	EnvGitHubOAuthClientID     = "C3_LS_GITHUB_OAUTH_CLIENT_ID"
 	EnvGitHubOAuthClientSecret = "C3_LS_GITHUB_OAUTH_CLIENT_SECRET"
 	EnvWeChatPayMchID          = "C3_LS_WECHAT_PAY_MCH_ID"
+	EnvWeChatPayAppID          = "C3_LS_WECHAT_PAY_APP_ID"
+	EnvWeChatPayCertSerialNo   = "C3_LS_WECHAT_PAY_CERT_SERIAL_NO"
 	EnvWeChatPayAPIKey         = "C3_LS_WECHAT_PAY_API_KEY"
+	EnvWeChatPayPrivateKey     = "C3_LS_WECHAT_PAY_PRIVATE_KEY"
+	EnvWeChatPayCert           = "C3_LS_WECHAT_PAY_CERT"
 	EnvLRUSize                 = "C3_LS_LRU_SIZE"
 	EnvGraceMinutes            = "C3_LS_GRACE_MINUTES"
 	EnvAdminAllowlist          = "C3_LS_ADMIN_ALLOWLIST"
@@ -109,7 +133,11 @@ func LoadFrom(get Getenv) (*Config, error) {
 		GitHubOAuthClientID:     get(EnvGitHubOAuthClientID),
 		GitHubOAuthClientSecret: get(EnvGitHubOAuthClientSecret),
 		WeChatPayMchID:          get(EnvWeChatPayMchID),
+		WeChatPayAppID:          get(EnvWeChatPayAppID),
+		WeChatPayCertSerialNo:   get(EnvWeChatPayCertSerialNo),
 		WeChatPayAPIKey:         get(EnvWeChatPayAPIKey),
+		WeChatPayPrivateKey:     get(EnvWeChatPayPrivateKey),
+		WeChatPayCert:           get(EnvWeChatPayCert),
 		AdminAllowlist:          parseList(get(EnvAdminAllowlist)),
 	}
 
@@ -139,20 +167,37 @@ func LoadFrom(get Getenv) (*Config, error) {
 // shape that may reach the health endpoint or a log line (PL-R12).
 func (c *Config) Redacted() map[string]any {
 	return map[string]any{
-		"listenAddr":          c.ListenAddr,
-		"publicUrl":           c.PublicURL,
-		"lruSize":             c.LRUSize,
-		"graceMinutes":        c.GraceMinutes,
-		"adminAllowlistCount": len(c.AdminAllowlist),
-		"ed25519PublicKey":    presence(c.Ed25519PublicKey),
-		"githubOauthClientId": presence(c.GitHubOAuthClientID),
-		"wechatPayMchId":      presence(c.WeChatPayMchID),
+		"listenAddr":            c.ListenAddr,
+		"publicUrl":             c.PublicURL,
+		"lruSize":               c.LRUSize,
+		"graceMinutes":          c.GraceMinutes,
+		"adminAllowlistCount":   len(c.AdminAllowlist),
+		"ed25519PublicKey":      presence(c.Ed25519PublicKey),
+		"githubOauthClientId":   presence(c.GitHubOAuthClientID),
+		"wechatPayMchId":        presence(c.WeChatPayMchID),
+		"wechatPayAppId":        presence(c.WeChatPayAppID),
+		"wechatPayCertSerialNo": presence(c.WeChatPayCertSerialNo),
+		"wechatPayCert":         presence(c.WeChatPayCert),
 		// Secrets — presence only, never the value.
 		"databaseUrl":             presence(c.DatabaseURL),
 		"ed25519PrivateKey":       presence(c.Ed25519PrivateKey),
 		"githubOauthClientSecret": presence(c.GitHubOAuthClientSecret),
 		"wechatPayApiKey":         presence(c.WeChatPayAPIKey),
+		"wechatPayPrivateKey":     presence(c.WeChatPayPrivateKey),
 	}
+}
+
+// WeChatPayConfigured reports whether every credential a WeChat Pay APIv3
+// client needs is present. The renewal payment surface degrades to a clear
+// "unavailable" (rather than half-working) when any is missing.
+func (c *Config) WeChatPayConfigured() bool {
+	return c != nil &&
+		strings.TrimSpace(c.WeChatPayMchID) != "" &&
+		strings.TrimSpace(c.WeChatPayAppID) != "" &&
+		strings.TrimSpace(c.WeChatPayCertSerialNo) != "" &&
+		strings.TrimSpace(c.WeChatPayAPIKey) != "" &&
+		strings.TrimSpace(c.WeChatPayPrivateKey) != "" &&
+		strings.TrimSpace(c.WeChatPayCert) != ""
 }
 
 func presence(v string) string {

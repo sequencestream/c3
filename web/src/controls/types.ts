@@ -48,9 +48,8 @@ export interface AppMethods {
   maybeRestoreSchedules(list: WorkspaceInfo[]): void
   maybeRestoreCodes(list: WorkspaceInfo[]): void
 
-  // product license (ADR-0026): open LS sign-in to get a key; bind a key
+  // product license (ADR-0026): open LS sign-in to get a key
   activateLicense(): void
-  bindLicense(licenseKey: string): void
 
   // message handler
   handleMessage(msg: ServerToClient): void

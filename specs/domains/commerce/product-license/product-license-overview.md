@@ -1,15 +1,16 @@
 # Domain: product-license
 
-| Field          | Value                                                                                                                                                                                                                                                             |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Responsibility | Govern whether a c3 installation is **commercially entitled** to create new work, and surface that state to the user. Enforced in c3; the authoritative record lives in the separate **license-server (LS)**.                                                     |
-| API            | Outbound to LS over the [license-server API contract](../../../shared/api-conventions/license-server-api.md); inbound surfacing over the c3 WebSocket (see [shared protocol](../../../shared/api-conventions/websocket-protocol.md))                              |
-| Status         | in progress — LS foundation built (config, caches, PostgreSQL schema, health, public plan catalog, embedded web, single binary); GitHub sign-in + trial issuance + license-key binding + heartbeat live; renewal payment (WeChat Pay) + admin back-office pending |
+| Field          | Value                                                                                                                                                                                                                                                                                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Responsibility | Govern whether a c3 installation is **commercially entitled** to create new work, and surface that state to the user. Enforced in c3; the authoritative record lives in the separate **license-server (LS)**.                                                                                                                |
+| API            | Outbound to LS over the [license-server API contract](../../../shared/api-conventions/license-server-api.md); inbound surfacing over the c3 WebSocket (see [shared protocol](../../../shared/api-conventions/websocket-protocol.md))                                                                                         |
+| Status         | in progress — LS foundation built (config, caches, PostgreSQL schema, health, public plan catalog, embedded web, single binary); browser-mediated GitHub sign-in + default-license provisioning + activate/bind/checkbind + heartbeat; renewal payment (WeChat Pay Native) + order reconcile live; admin back-office pending |
 
 The product-license domain answers one question authoritatively: **is this installation paid-for?**
-A user obtains a **license key** from the license-server and pastes it into a c3 installation to
-**bind** that installation to the license, then **heartbeats** periodically to confirm the
-entitlement is still valid and not expired or displaced. Between heartbeats — and through transient
+Binding is **browser-mediated**: c3 generates an `installId` + `requestId`, opens the browser to the
+license-server where the user signs in and **selects a license to bind**, then c3 server collects the
+binding via **checkbind** and **heartbeats** periodically (with `installId` + alive token) to confirm
+the entitlement is still valid and not expired or displaced. Between heartbeats — and through transient
 network or LS outages — c3 trusts an **LS-signed entitlement token** that it verifies **offline**
 (Ed25519), within a **30-minute offline grace** of the last successful heartbeat. When entitlement
 is not `active`, c3 **gates creation of new sessions** while leaving existing sessions and in-flight

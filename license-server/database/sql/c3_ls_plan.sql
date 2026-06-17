@@ -2,7 +2,7 @@
 -- Source of truth: license-server schema (database/sql/<table>.sql, applied idempotently).
 -- Business rules: PL-R9 (orders reference a plan_key from this catalog).
 --
--- The catalog is small, stable, and identical for every buyer. It is bootstrapped
+-- The catalog is small, stable, and identical for every user. It is bootstrapped
 -- from the code catalog (internal/plans) on startup with INSERT ... ON CONFLICT
 -- DO NOTHING, so the database becomes the live store after the first seed and any
 -- operator edit is never clobbered on restart. The public GET /v1/plans reads this
@@ -33,6 +33,6 @@ COMMENT ON COLUMN c3_ls_plan.duration_months IS 'License term length in whole mo
 COMMENT ON COLUMN c3_ls_plan.price_cents IS 'Price in the currency minor unit (cents).';
 COMMENT ON COLUMN c3_ls_plan.currency IS 'ISO-4217 currency code the price is denominated in.';
 COMMENT ON COLUMN c3_ls_plan.sort_order IS 'Display order for the served catalog (shortest term first).';
-COMMENT ON COLUMN c3_ls_plan.is_trial IS 'Whether this plan is the free trial granted at sign-in; the first such plan (if any) is issued, otherwise the buyer must purchase.';
+COMMENT ON COLUMN c3_ls_plan.is_trial IS 'Whether this plan is the free trial granted at sign-in; the first such plan (if any) is issued, otherwise the user must purchase.';
 COMMENT ON COLUMN c3_ls_plan.created_at IS 'Record creation time.';
 COMMENT ON COLUMN c3_ls_plan.updated_at IS 'Last update time.';

@@ -92,18 +92,7 @@ const emit = defineEmits<{
   'update:viewMode': [mode: 'workspace' | 'workcenter']
   logout: []
   'activate-license': []
-  'bind-license': [licenseKey: string]
 }>()
-
-// License-key entry (shown when not entitled): the user pastes the key obtained
-// from the LS sign-in page and binds this installation (ADR-0026, PL-R1).
-const licenseKeyInput = ref('')
-function submitBindLicense(): void {
-  const key = licenseKeyInput.value.trim()
-  if (!key) return
-  emit('bind-license', key)
-  licenseKeyInput.value = ''
-}
 
 function licenseBadgeKey(state: string): LocaleKey {
   if (state === 'active') return 'license.badge.active' as LocaleKey
@@ -212,9 +201,10 @@ function selectTab(tab: HeaderTab): void {
           </button>
         </div>
 
-        <!-- Product-license badge (PL-R7): clickable to open LS sign-in if not entitled -->
+        <!-- Product-license badge (PL-R7): clickable to open LS sign-in if not entitled;
+             unactivated 态改用右侧连接状态旁的红色小字,不渲染按钮。 -->
         <button
-          v-if="license"
+          v-if="license && license.state !== 'unactivated'"
           class="license-badge"
           :class="license.state"
           :title="t('license.activate.button')"
@@ -225,25 +215,6 @@ function selectTab(tab: HeaderTab): void {
 
         <!-- 有效期/到期日(PL-R7):entitled 且 termEnd>0 时展示 -->
         <span v-if="licenseTermText" class="license-term">{{ licenseTermText }}</span>
-
-        <!-- License-key entry (PL-R1): paste the key from the LS sign-in page -->
-        <form
-          v-if="license && !license.entitled"
-          class="license-bind"
-          @submit.prevent="submitBindLicense"
-        >
-          <input
-            v-model="licenseKeyInput"
-            class="license-bind-input"
-            type="text"
-            autocomplete="off"
-            spellcheck="false"
-            :placeholder="t('license.bind.placeholder')"
-          />
-          <button class="license-bind-btn" type="submit" :disabled="!licenseKeyInput.trim()">
-            {{ t('license.bind.button') }}
-          </button>
-        </form>
 
         <button
           v-if="isAdmin"
@@ -263,6 +234,10 @@ function selectTab(tab: HeaderTab): void {
         </button>
         <span class="status" :class="status === 'open' ? 'ok' : 'err'">
           {{ status }}
+        </span>
+        <!-- unactivated 态红色小字,显示在连接状态右侧(PL-R7) -->
+        <span v-if="license && license.state === 'unactivated'" class="license-unactivated">
+          {{ t(licenseBadgeKey(license.state)) }}
         </span>
       </div>
     </div>
@@ -368,6 +343,13 @@ function selectTab(tab: HeaderTab): void {
 .vm-toggle-btn.active {
   color: var(--c-text);
   background: var(--c-card);
+}
+
+/* unactivated 红色小字(PL-R7):紧随连接状态,非按钮 */
+.license-unactivated {
+  font-size: var(--fs-caption);
+  color: var(--c-red);
+  white-space: nowrap;
 }
 
 /* license 有效期/到期日(PL-R7):紧随 badge 的弱化文案 */
@@ -534,36 +516,6 @@ function selectTab(tab: HeaderTab): void {
   .license-badge.unactivated {
     color: var(--c-text-dim);
     border-color: var(--c-border);
-  }
-
-  .license-bind {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-1);
-  }
-  .license-bind-input {
-    font-size: var(--fs-caption);
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius-sm);
-    padding: var(--sp-1) var(--sp-2);
-    background: var(--c-bg);
-    color: var(--c-text);
-    width: 12rem;
-    max-width: 32vw;
-  }
-  .license-bind-btn {
-    font-size: var(--fs-caption);
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius-sm);
-    padding: var(--sp-1) var(--sp-2);
-    background: transparent;
-    color: var(--c-text);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .license-bind-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 }
 </style>

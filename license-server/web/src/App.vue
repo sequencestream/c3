@@ -1,37 +1,29 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed } from 'vue'
+import { query } from './lib/api'
+import LoginView from './views/LoginView.vue'
+import ActivateView from './views/ActivateView.vue'
+import CheckoutView from './views/CheckoutView.vue'
+import AccountView from './views/AccountView.vue'
 
-interface Plan {
-  id: string
-  name: string
-  durationMonths: number
-  priceCents: number
-  currency: string
-}
-
-const plans = ref<Plan[]>([])
-
-onMounted(async () => {
-  try {
-    const res = await fetch('/v1/plans')
-    const data = (await res.json()) as { plans: Plan[] }
-    plans.value = data.plans ?? []
-  } catch {
-    /* foundation: tolerate an unreachable API */
-  }
+// Minimal path-based router (all pages are this SPA, served at /). The flows are
+// full-page (OAuth redirect, form POST), so reading the path at load is enough;
+// no client-side history navigation is needed.
+const view = computed(() => {
+  const path = window.location.pathname
+  if (path.startsWith('/login')) return 'login'
+  if (path.startsWith('/checkout')) return 'checkout'
+  if (path.startsWith('/account')) return 'account'
+  // Root: the binding round (installId+requestId) means c3 opened the activation
+  // landing; otherwise show the account dashboard.
+  if (query('installId') && query('requestId')) return 'activate'
+  return 'account'
 })
-
-function formatPrice(p: Plan): string {
-  return `${(p.priceCents / 100).toFixed(2)} ${p.currency}`
-}
 </script>
 
 <template>
-  <main class="ls-shell">
-    <h1>c3 license-server</h1>
-    <p>License authority foundation is running.</p>
-    <ul v-if="plans.length" class="ls-plans">
-      <li v-for="p in plans" :key="p.id">{{ p.name }}: {{ formatPrice(p) }}</li>
-    </ul>
-  </main>
+  <LoginView v-if="view === 'login'" />
+  <ActivateView v-else-if="view === 'activate'" />
+  <CheckoutView v-else-if="view === 'checkout'" />
+  <AccountView v-else />
 </template>

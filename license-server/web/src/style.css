@@ -1,9 +1,137 @@
 :root {
   color-scheme: light dark;
   font-family: system-ui, -apple-system, sans-serif;
+  --border: #ddd;
+  --muted: #666;
 }
-.ls-shell {
+@media (prefers-color-scheme: dark) {
+  :root {
+    --border: #333;
+    --muted: #aaa;
+  }
+}
+
+body {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.ls-card {
   max-width: 40rem;
-  margin: 4rem auto;
+  margin: 3rem auto;
   padding: 0 1rem;
+}
+.ls-card.wide {
+  max-width: 52rem;
+}
+
+h1 {
+  font-size: 1.45rem;
+}
+h2 {
+  font-size: 1.05rem;
+  margin: 1.6rem 0 0.4rem;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.error {
+  color: #b00020;
+}
+.ok {
+  color: #1b7e1b;
+  font-weight: 600;
+}
+
+button {
+  font: inherit;
+  padding: 0.55rem 1.1rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: #1a1a1a;
+  color: #fff;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (prefers-color-scheme: dark) {
+  button {
+    background: #eee;
+    color: #111;
+  }
+}
+
+.key {
+  font: 0.85rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(127, 127, 127, 0.12);
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  word-break: break-all;
+}
+.meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ls-list {
+  list-style: none;
+  padding: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.opt {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0.4rem 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+.price {
+  margin-left: auto;
+  font-weight: 600;
+}
+.agree {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 1.4rem 0;
+}
+
+.qr {
+  display: block;
+  margin: 1.2rem 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  background: #fff;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6rem 0 1.2rem;
+}
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+th {
+  color: var(--muted);
+  font-weight: 600;
 }

@@ -133,7 +133,8 @@ This means default/tool/intent fall-through is not special-cased: if the disable
 default, a non-empty tool agent, or a non-empty intent agent, normalization rewrites those ids to the
 next enabled agent by order sequence. The recovery subscriber then creates an internal one-shot
 schedule through the schedules store; when it fires, the schedule dispatcher re-enables the agent, and
-the scheduler pauses that one-shot row and clears its next-run time.
+the scheduler deletes that one-shot row (cascading its execution logs) so no paused zombie is left
+behind.
 
 If parsing fails, or the schedule store is unavailable, the existing agent error/degradation flow is
 left intact. A store outage can still leave the agent disabled without a timed recovery; the warning

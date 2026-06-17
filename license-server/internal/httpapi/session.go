@@ -11,17 +11,17 @@ import (
 	"time"
 )
 
-// sessionCookieName is the buyer's signed sign-in cookie. It is the only browser
+// sessionCookieName is the user's signed sign-in cookie. It is the only browser
 // session state LS keeps: there is no server-side session table — the cookie is
 // self-verifying, HMAC-keyed on the Ed25519 signing seed (the same keying as the
-// OAuth CSRF state), so a tampered or forged cookie never authenticates a buyer.
+// OAuth CSRF state), so a tampered or forged cookie never authenticates a user.
 const sessionCookieName = "c3ls_session"
 
 // sessionTTL bounds how long a sign-in cookie is honored. It mirrors the c3
-// login token lifetime; past it, the buyer signs in again.
+// login token lifetime; past it, the user signs in again.
 const sessionTTL = 30 * 24 * time.Hour
 
-// session is the buyer identity carried by the signed cookie. UserID is the
+// session is the user identity carried by the signed cookie. UserID is the
 // authoritative reference (c3_ls_user.id); Login is for display only.
 type session struct {
 	UserID   int64  `json:"uid"`

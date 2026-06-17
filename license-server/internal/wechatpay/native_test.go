@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
 )
 
 // testAPIv3Key is a 32-byte AES-256 key (the APIv3 key length).
@@ -93,16 +95,35 @@ func TestParseNotifyRejectsTamperedCiphertext(t *testing.T) {
 	}
 }
 
-func TestOutTradeNoRoundTrip(t *testing.T) {
-	no := OutTradeNo(42)
-	id, ok := ParseOrderID(no)
-	if !ok || id != 42 {
-		t.Fatalf("round trip %q = (%d,%v), want (42,true)", no, id, ok)
+func TestTransactionToNotifyMapsFields(t *testing.T) {
+	otn := "C320260617120000123456"
+	txn := "wx-tx-9"
+	state := TradeStateSuccess
+	total := int64(590)
+	tx := &payments.Transaction{
+		OutTradeNo:    &otn,
+		TransactionId: &txn,
+		TradeState:    &state,
+		Amount:        &payments.TransactionAmount{Total: &total},
 	}
-	if _, ok := ParseOrderID("not-ours-123"); ok {
-		t.Error("foreign out_trade_no must not parse")
+	res := transactionToNotify(tx)
+	if res.OutTradeNo != otn || res.TransactionID != txn || res.AmountCents != 590 || !res.Paid() {
+		t.Fatalf("mapping = %+v, want out_trade_no %s, txn %s, 590, paid", res, otn, txn)
 	}
-	if _, ok := ParseOrderID("c3lsx"); ok {
-		t.Error("non-numeric suffix must not parse")
+}
+
+func TestNotifyResultStateClassification(t *testing.T) {
+	if !(NotifyResult{TradeState: TradeStateSuccess}).Paid() {
+		t.Error("SUCCESS must be paid")
+	}
+	for _, s := range []string{TradeStateClosed, TradeStateRevoked, TradeStatePayError} {
+		if !(NotifyResult{TradeState: s}).Closed() {
+			t.Errorf("%s must be closed", s)
+		}
+	}
+	for _, s := range []string{TradeStateNotPay, TradeStateUserPay} {
+		if (NotifyResult{TradeState: s}).Closed() || (NotifyResult{TradeState: s}).Paid() {
+			t.Errorf("%s must be neither paid nor closed", s)
+		}
 	}
 }

@@ -1,5 +1,5 @@
 // Package oauth implements the GitHub OAuth web flow LS uses to identify the
-// buyer during activation (PL-R9) and the admin in the back-office (PL-R11).
+// user during activation (PL-R9) and the admin in the back-office (PL-R11).
 // GitHub is the only login provider for the MVP (ADR-0026). The OAuth client
 // secret lives only in LS (PL-R12); c3 never sees it.
 //
@@ -30,7 +30,7 @@ const (
 // not request repo or write scopes — identity is all activation needs.
 var DefaultScopes = []string{"read:user", "user:email"}
 
-// User is the subset of the GitHub user we persist as a buyer identity.
+// User is the subset of the GitHub user we persist as a user identity.
 type User struct {
 	ID    int64  `json:"id"`
 	Login string `json:"login"`
@@ -69,7 +69,7 @@ func (c *Client) Configured() bool {
 	return c != nil && strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
 }
 
-// AuthorizeURLFor builds the GitHub authorize URL to redirect the buyer's
+// AuthorizeURLFor builds the GitHub authorize URL to redirect the user's
 // browser to. state binds the redirect back to a specific activation request
 // (CSRF protection); redirectURI is the LS callback.
 func (c *Client) AuthorizeURLFor(redirectURI, state string, scopes []string) string {

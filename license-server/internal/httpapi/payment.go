@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
-	"github.com/sequencestream/code-creative-center/license-server/internal/wechatpay"
 )
 
 // maxNotifyBody bounds the callback body we read — a WeChat Pay notification is
@@ -55,19 +54,20 @@ func handleWechatNotify(d Deps) http.HandlerFunc {
 			writeNotifyAck(w, http.StatusUnauthorized, false, "signature verification failed")
 			return
 		}
-		orderID, ok := wechatpay.ParseOrderID(notif.OutTradeNo)
-		if !ok {
-			writeNotifyAck(w, http.StatusBadRequest, false, "unrecognized out_trade_no")
+		if notif.OutTradeNo == "" {
+			writeNotifyAck(w, http.StatusBadRequest, false, "missing out_trade_no")
 			return
 		}
 
+		// out_trade_no is the order_no. A success on an already-expired/paid order
+		// is idempotently ignored by the store (it never re-extends a license, §11).
 		if notif.Paid() {
-			if _, _, err := d.Store.MarkOrderPaid(r.Context(), orderID, notif.TransactionID, time.Now()); err != nil {
+			if _, _, err := d.Store.MarkOrderPaid(r.Context(), notif.OutTradeNo, notif.TransactionID, time.Now()); err != nil {
 				ackStoreError(w, err)
 				return
 			}
 		} else {
-			if _, _, err := d.Store.MarkOrderFailed(r.Context(), orderID, notif.TransactionID); err != nil {
+			if _, _, err := d.Store.MarkOrderFailed(r.Context(), notif.OutTradeNo, notif.TransactionID); err != nil {
 				ackStoreError(w, err)
 				return
 			}

@@ -1,5 +1,5 @@
 // Package web embeds the built license-server frontend (the Vue build output in
-// dist/) so the single binary serves the buyer/admin web without any external
+// dist/) so the single binary serves the user/admin web without any external
 // asset directory. The committed dist/ is a minimal placeholder that proves the
 // embed + SPA-fallback path; `npm run build` regenerates it from src/.
 package web

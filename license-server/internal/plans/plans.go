@@ -1,6 +1,6 @@
 // Package plans is the license-server plan catalog — the public, fixed set of
 // purchasable license terms. The catalog is code-owned (not database-driven) at
-// the MVP stage: it is small, stable, and the same for every buyer, so it ships
+// the MVP stage: it is small, stable, and the same for every user, so it ships
 // in the binary and is served from /v1/plans.
 package plans
 

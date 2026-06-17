@@ -52,15 +52,21 @@ func liveStore(t *testing.T) (*Store, context.Context) {
 	return New(db), ctx
 }
 
-// seedLicense registers a buyer and issues them a license, returning its key.
+// seedUserSeq gives each seedLicense call a distinct GitHub identity, so a test
+// that seeds two "users" gets two real accounts (not one collapsed by a shared
+// github_id).
+var seedUserSeq int64
+
+// seedLicense registers a fresh user and issues them a license, returning its key.
 func seedLicense(t *testing.T, s *Store, ctx context.Context, now time.Time) (int64, License) {
 	t.Helper()
-	buyerID, err := s.UpsertBuyer(ctx, 777, "octocat", "octo@example.com")
+	seedUserSeq++
+	userID, err := s.UpsertUser(ctx, 700+seedUserSeq, "octocat-"+itoa(int(seedUserSeq)), "octo@example.com")
 	if err != nil {
-		t.Fatalf("upsert buyer: %v", err)
+		t.Fatalf("upsert user: %v", err)
 	}
 	keys := keyGen("lk")
-	lic, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, "1m", 30, now, keys)
+	lic, issued, err := s.EnsureLicenseForUser(ctx, userID, "1m", 30, now, keys)
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
@@ -70,7 +76,7 @@ func seedLicense(t *testing.T, s *Store, ctx context.Context, now time.Time) (in
 	if lic.LicenseKey == "" {
 		t.Fatal("issued license must carry a key")
 	}
-	return buyerID, lic
+	return userID, lic
 }
 
 // keyGen returns a deterministic-but-unique generator for tests.
@@ -97,9 +103,9 @@ func itoa(n int) string {
 func TestEnsureLicenseReusesActiveLicense(t *testing.T) {
 	s, ctx := liveStore(t)
 	now := time.Now()
-	buyerID, lic := seedLicense(t, s, ctx, now)
+	userID, lic := seedLicense(t, s, ctx, now)
 
-	again, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, "1m", 30, now, keyGen("lk2"))
+	again, issued, err := s.EnsureLicenseForUser(ctx, userID, "1m", 30, now, keyGen("lk2"))
 	if err != nil {
 		t.Fatalf("ensure again: %v", err)
 	}
@@ -134,7 +140,7 @@ func TestBindThenHeartbeatActive(t *testing.T) {
 		t.Errorf("alive token must be stored hashed, got %q", stored)
 	}
 
-	hb, err := s.Heartbeat(ctx, lic.LicenseKey, "inst-1", "alive-plain", now.Add(time.Minute))
+	hb, err := s.HeartbeatByInstall(ctx, "inst-1", "alive-plain", now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
@@ -158,7 +164,7 @@ func TestBindIsExclusiveAndDisablesPrevious(t *testing.T) {
 	}
 
 	// inst-A's heartbeat now reports disabled (license moved).
-	hbA, err := s.Heartbeat(ctx, lic.LicenseKey, "inst-A", a.AliveToken, now.Add(time.Minute))
+	hbA, err := s.HeartbeatByInstall(ctx, "inst-A", a.AliveToken, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("heartbeat A: %v", err)
 	}
@@ -167,7 +173,7 @@ func TestBindIsExclusiveAndDisablesPrevious(t *testing.T) {
 	}
 
 	// inst-B's heartbeat is active.
-	hbB, err := s.Heartbeat(ctx, lic.LicenseKey, "inst-B", "alive-B", now.Add(time.Minute))
+	hbB, err := s.HeartbeatByInstall(ctx, "inst-B", "alive-B", now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("heartbeat B: %v", err)
 	}
@@ -184,7 +190,7 @@ func TestHeartbeatRejectsStaleAliveToken(t *testing.T) {
 		t.Fatalf("bind: %v", err)
 	}
 	// Same install, but a superseded/forged alive token ⇒ disabled.
-	hb, err := s.Heartbeat(ctx, lic.LicenseKey, "inst-1", "wrong-token", now)
+	hb, err := s.HeartbeatByInstall(ctx, "inst-1", "wrong-token", now)
 	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
@@ -198,8 +204,14 @@ func TestBindRejectsUnknownKey(t *testing.T) {
 	if _, err := s.BindInstallation(ctx, "no-such-key", "inst-1", time.Now(), func() string { return "x" }); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("bind unknown key err = %v, want ErrNotFound", err)
 	}
-	if _, err := s.Heartbeat(ctx, "no-such-key", "inst-1", "x", time.Now()); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("heartbeat unknown key err = %v, want ErrNotFound", err)
+	// Heartbeat carries no license key: an alive token matching no live binding
+	// gates the installation (disabled), it does not error.
+	hb, err := s.HeartbeatByInstall(ctx, "inst-1", "no-such-token", time.Now())
+	if err != nil {
+		t.Fatalf("heartbeat unknown token err = %v, want nil", err)
+	}
+	if hb.Status != HeartbeatDisabled {
+		t.Fatalf("heartbeat unknown token status = %q, want disabled", hb.Status)
 	}
 }
 
@@ -216,7 +228,7 @@ func TestHeartbeatReportsExpired(t *testing.T) {
 	if err := s.db.WithContext(ctx).Exec(`UPDATE c3_ls_license SET status='expired' WHERE id=$1`, lic.ID).Error; err != nil {
 		t.Fatalf("force-expire: %v", err)
 	}
-	hb, _ := s.Heartbeat(ctx, lic.LicenseKey, "inst-1", "alive", now)
+	hb, _ := s.HeartbeatByInstall(ctx, "inst-1", "alive", now)
 	if hb.Status != HeartbeatExpired {
 		t.Errorf("force-expired heartbeat status = %q", hb.Status)
 	}
@@ -229,7 +241,7 @@ func TestHeartbeatReportsExpired(t *testing.T) {
 		`UPDATE c3_ls_license SET status='active', term_end=$2 WHERE id=$1`, lic.ID, now.Add(-time.Hour)).Error; err != nil {
 		t.Fatalf("expire term: %v", err)
 	}
-	hb, _ = s.Heartbeat(ctx, lic.LicenseKey, "inst-1", "alive", now)
+	hb, _ = s.HeartbeatByInstall(ctx, "inst-1", "alive", now)
 	if hb.Status != HeartbeatExpired {
 		t.Errorf("expired heartbeat status = %q", hb.Status)
 	}
@@ -246,16 +258,16 @@ func TestCreateOrderDerivesAmountAndRecordsAcceptance(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
-	buyerID, lic := seedLicense(t, s, ctx, now)
+	userID, lic := seedLicense(t, s, ctx, now)
 
 	acceptedAt := now.Add(-time.Minute)
 	order, err := s.CreateOrder(ctx, CreateOrderInput{
-		UserID:              buyerID,
+		UserID:              userID,
 		LicenseID:           lic.ID,
 		PlanKey:             "6m",
 		AgreementVersion:    "v-test",
 		AgreementAcceptedAt: acceptedAt,
-	})
+	}, func() string { return NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order: %v", err)
 	}
@@ -288,8 +300,8 @@ func TestCreateOrderDerivesAmountAndRecordsAcceptance(t *testing.T) {
 		t.Errorf("persisted amount = %d, want 590", row.AmountCents)
 	}
 
-	// The order shows up in the buyer's history.
-	orders, err := s.OrdersByUser(ctx, buyerID)
+	// The order shows up in the user's history.
+	orders, err := s.OrdersByUser(ctx, userID)
 	if err != nil {
 		t.Fatalf("orders by user: %v", err)
 	}
@@ -306,22 +318,22 @@ func TestCreateOrderRejectsWithoutAgreement(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
-	buyerID, lic := seedLicense(t, s, ctx, now)
+	userID, lic := seedLicense(t, s, ctx, now)
 
 	// Missing version.
 	if _, err := s.CreateOrder(ctx, CreateOrderInput{
-		UserID: buyerID, LicenseID: lic.ID, PlanKey: "1m", AgreementAcceptedAt: now,
-	}); !errors.Is(err, ErrAgreementRequired) {
+		UserID: userID, LicenseID: lic.ID, PlanKey: "1m", AgreementAcceptedAt: now,
+	}, func() string { return NewOrderNo(time.Now()) }); !errors.Is(err, ErrAgreementRequired) {
 		t.Errorf("missing version err = %v, want ErrAgreementRequired", err)
 	}
 	// Missing accepted-at.
 	if _, err := s.CreateOrder(ctx, CreateOrderInput{
-		UserID: buyerID, LicenseID: lic.ID, PlanKey: "1m", AgreementVersion: "v",
-	}); !errors.Is(err, ErrAgreementRequired) {
+		UserID: userID, LicenseID: lic.ID, PlanKey: "1m", AgreementVersion: "v",
+	}, func() string { return NewOrderNo(time.Now()) }); !errors.Is(err, ErrAgreementRequired) {
 		t.Errorf("missing accepted-at err = %v, want ErrAgreementRequired", err)
 	}
 	// Nothing was written.
-	orders, err := s.OrdersByUser(ctx, buyerID)
+	orders, err := s.OrdersByUser(ctx, userID)
 	if err != nil {
 		t.Fatalf("orders by user: %v", err)
 	}
@@ -333,11 +345,11 @@ func TestCreateOrderRejectsWithoutAgreement(t *testing.T) {
 func TestCreateOrderRejectsUnknownPlan(t *testing.T) {
 	s, ctx := liveStore(t)
 	now := time.Now()
-	buyerID, lic := seedLicense(t, s, ctx, now)
+	userID, lic := seedLicense(t, s, ctx, now)
 	if _, err := s.CreateOrder(ctx, CreateOrderInput{
-		UserID: buyerID, LicenseID: lic.ID, PlanKey: "no-such-plan",
+		UserID: userID, LicenseID: lic.ID, PlanKey: "no-such-plan",
 		AgreementVersion: "v", AgreementAcceptedAt: now,
-	}); !errors.Is(err, ErrNotFound) {
+	}, func() string { return NewOrderNo(time.Now()) }); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown plan err = %v, want ErrNotFound", err)
 	}
 }
@@ -387,10 +399,10 @@ func TestSeedAndListPlans(t *testing.T) {
 	}
 }
 
-// licenseByID is a small test helper: the buyer's license matching id.
-func licenseByID(t *testing.T, s *Store, ctx context.Context, buyerID, id int64) License {
+// licenseByID is a small test helper: the user's license matching id.
+func licenseByID(t *testing.T, s *Store, ctx context.Context, userID, id int64) License {
 	t.Helper()
-	licenses, err := s.ListLicensesByBuyer(ctx, buyerID)
+	licenses, err := s.ListLicensesByUser(ctx, userID)
 	if err != nil {
 		t.Fatalf("list licenses: %v", err)
 	}
@@ -399,7 +411,7 @@ func licenseByID(t *testing.T, s *Store, ctx context.Context, buyerID, id int64)
 			return l
 		}
 	}
-	t.Fatalf("license %d not found for buyer %d", id, buyerID)
+	t.Fatalf("license %d not found for user %d", id, userID)
 	return License{}
 }
 
@@ -411,12 +423,12 @@ func TestMarkOrderPaidExtendsLicenseAndIsIdempotent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
-	buyerID, lic := seedLicense(t, s, ctx, now)
+	userID, lic := seedLicense(t, s, ctx, now)
 
 	order, err := s.CreateOrder(ctx, CreateOrderInput{
-		UserID: buyerID, LicenseID: lic.ID, PlanKey: "6m",
+		UserID: userID, LicenseID: lic.ID, PlanKey: "6m",
 		AgreementVersion: "v1", AgreementAcceptedAt: now,
-	})
+	}, func() string { return NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order: %v", err)
 	}
@@ -425,7 +437,7 @@ func TestMarkOrderPaidExtendsLicenseAndIsIdempotent(t *testing.T) {
 	}
 
 	// Pay it: pending → paid, payment_ref recorded, license term extended by 6 months.
-	paid, advanced, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-1", now)
+	paid, advanced, err := s.MarkOrderPaid(ctx, order.OrderNo, "wx-tx-1", now)
 	if err != nil {
 		t.Fatalf("mark paid: %v", err)
 	}
@@ -441,7 +453,7 @@ func TestMarkOrderPaidExtendsLicenseAndIsIdempotent(t *testing.T) {
 		wantEnd = now
 	}
 	wantEnd = wantEnd.AddDate(0, 6, 0)
-	got := licenseByID(t, s, ctx, buyerID, lic.ID)
+	got := licenseByID(t, s, ctx, userID, lic.ID)
 	if d := got.TermEnd.Sub(wantEnd); d > time.Second || d < -time.Second {
 		t.Errorf("term_end = %v, want ~%v (extended by 6 months)", got.TermEnd, wantEnd)
 	}
@@ -451,7 +463,7 @@ func TestMarkOrderPaidExtendsLicenseAndIsIdempotent(t *testing.T) {
 	endAfterFirst := got.TermEnd
 
 	// Replay the same callback: idempotent — no second transition, no re-extension.
-	again, advanced2, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-1", now.Add(time.Hour))
+	again, advanced2, err := s.MarkOrderPaid(ctx, order.OrderNo, "wx-tx-1", now.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("mark paid again: %v", err)
 	}
@@ -461,7 +473,7 @@ func TestMarkOrderPaidExtendsLicenseAndIsIdempotent(t *testing.T) {
 	if again.Status != "paid" {
 		t.Errorf("replayed order status = %q, want paid", again.Status)
 	}
-	got2 := licenseByID(t, s, ctx, buyerID, lic.ID)
+	got2 := licenseByID(t, s, ctx, userID, lic.ID)
 	if !got2.TermEnd.Equal(endAfterFirst) {
 		t.Errorf("term_end moved on replay: %v != %v (license re-extended)", got2.TermEnd, endAfterFirst)
 	}
@@ -476,7 +488,7 @@ func TestMarkOrderPaidReactivatesExpiredLicense(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
-	buyerID, lic := seedLicense(t, s, ctx, now)
+	userID, lic := seedLicense(t, s, ctx, now)
 
 	// Force the license into expired state — past term_end, status = expired.
 	past := now.Add(-24 * time.Hour)
@@ -487,16 +499,16 @@ func TestMarkOrderPaidReactivatesExpiredLicense(t *testing.T) {
 	}
 
 	order, err := s.CreateOrder(ctx, CreateOrderInput{
-		UserID: buyerID, LicenseID: lic.ID, PlanKey: "6m",
+		UserID: userID, LicenseID: lic.ID, PlanKey: "6m",
 		AgreementVersion: "v1", AgreementAcceptedAt: now,
-	})
+	}, func() string { return NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order: %v", err)
 	}
 
 	// Pay it: pending → paid. Since term_end is in the past, GREATEST(term_end,
 	// now) picks now as the base, then adds 6 months.
-	paid, advanced, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-expired", now)
+	paid, advanced, err := s.MarkOrderPaid(ctx, order.OrderNo, "wx-tx-expired", now)
 	if err != nil {
 		t.Fatalf("mark paid: %v", err)
 	}
@@ -508,7 +520,7 @@ func TestMarkOrderPaidReactivatesExpiredLicense(t *testing.T) {
 	}
 
 	wantEnd := now.AddDate(0, 6, 0)
-	got := licenseByID(t, s, ctx, buyerID, lic.ID)
+	got := licenseByID(t, s, ctx, userID, lic.ID)
 	if got.Status != "active" {
 		t.Errorf("license status = %q, want active (was expired)", got.Status)
 	}
@@ -518,7 +530,7 @@ func TestMarkOrderPaidReactivatesExpiredLicense(t *testing.T) {
 	endAfterFirst := got.TermEnd
 
 	// Replay: idempotent — no second extension.
-	again, advanced2, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-expired", now.Add(time.Hour))
+	again, advanced2, err := s.MarkOrderPaid(ctx, order.OrderNo, "wx-tx-expired", now.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("mark paid again: %v", err)
 	}
@@ -528,7 +540,7 @@ func TestMarkOrderPaidReactivatesExpiredLicense(t *testing.T) {
 	if again.Status != "paid" {
 		t.Errorf("replayed order status = %q, want paid", again.Status)
 	}
-	got2 := licenseByID(t, s, ctx, buyerID, lic.ID)
+	got2 := licenseByID(t, s, ctx, userID, lic.ID)
 	if !got2.TermEnd.Equal(endAfterFirst) {
 		t.Errorf("term_end moved on replay: %v != %v (license re-extended)", got2.TermEnd, endAfterFirst)
 	}
@@ -542,21 +554,21 @@ func TestMarkOrderFailedThenPaidDoesNotMutate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
-	buyerID, lic := seedLicense(t, s, ctx, now)
+	userID, lic := seedLicense(t, s, ctx, now)
 	order, err := s.CreateOrder(ctx, CreateOrderInput{
-		UserID: buyerID, LicenseID: lic.ID, PlanKey: "1m",
+		UserID: userID, LicenseID: lic.ID, PlanKey: "1m",
 		AgreementVersion: "v1", AgreementAcceptedAt: now,
-	})
+	}, func() string { return NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order: %v", err)
 	}
 
-	failed, advanced, err := s.MarkOrderFailed(ctx, order.ID, "wx-fail-1")
+	failed, advanced, err := s.MarkOrderFailed(ctx, order.OrderNo, "wx-fail-1")
 	if err != nil || !advanced || failed.Status != "failed" {
 		t.Fatalf("mark failed = (%+v, %v, %v), want failed + advanced", failed, advanced, err)
 	}
 	// A terminal failed order is never flipped to paid by a later callback.
-	after, advanced2, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-late", now)
+	after, advanced2, err := s.MarkOrderPaid(ctx, order.OrderNo, "wx-tx-late", now)
 	if err != nil {
 		t.Fatalf("mark paid on failed: %v", err)
 	}
@@ -570,7 +582,7 @@ func TestMarkOrderFailedThenPaidDoesNotMutate(t *testing.T) {
 
 func TestMarkOrderPaidUnknownOrder(t *testing.T) {
 	s, ctx := liveStore(t)
-	if _, _, err := s.MarkOrderPaid(ctx, 999999, "x", time.Now()); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.MarkOrderPaid(ctx, "no-such-order-no", "x", time.Now()); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown order err = %v, want ErrNotFound", err)
 	}
 }
@@ -579,10 +591,10 @@ func TestLicenseBindingsByUserReturnsOnlyOwnData(t *testing.T) {
 	s, ctx := liveStore(t)
 	now := time.Now()
 
-	buyerA, licA := seedLicense(t, s, ctx, now)
-	buyerB, licB := seedLicense(t, s, ctx, now)
+	userA, licA := seedLicense(t, s, ctx, now)
+	userB, licB := seedLicense(t, s, ctx, now)
 
-	// Bind buyer A's license so it has a non-nil binding.
+	// Bind user A's license so it has a non-nil binding.
 	res, err := s.BindInstallation(ctx, licA.LicenseKey, "inst-A", now, func() string { return "tok-A" })
 	if err != nil {
 		t.Fatalf("bind A: %v", err)
@@ -591,41 +603,41 @@ func TestLicenseBindingsByUserReturnsOnlyOwnData(t *testing.T) {
 		t.Fatal("bind should return an alive token")
 	}
 
-	// Buyer A sees one license with binding info.
-	bindingsA, err := s.LicenseBindingsByUser(ctx, buyerA)
+	// User A sees one license with binding info.
+	bindingsA, err := s.LicenseBindingsByUser(ctx, userA)
 	if err != nil {
 		t.Fatalf("bindings A: %v", err)
 	}
 	if len(bindingsA) != 1 {
-		t.Fatalf("buyer A: want 1 license, got %d", len(bindingsA))
+		t.Fatalf("user A: want 1 license, got %d", len(bindingsA))
 	}
 	if bindingsA[0].ID != licA.ID {
-		t.Errorf("buyer A: license id = %d, want %d", bindingsA[0].ID, licA.ID)
+		t.Errorf("user A: license id = %d, want %d", bindingsA[0].ID, licA.ID)
 	}
 	if bindingsA[0].AliveInstallID == nil {
-		t.Error("buyer A: AliveInstallID should be set (bound to inst-A)")
+		t.Error("user A: AliveInstallID should be set (bound to inst-A)")
 	} else if *bindingsA[0].AliveInstallID != "inst-A" {
-		t.Errorf("buyer A: AliveInstallID = %q, want inst-A", *bindingsA[0].AliveInstallID)
+		t.Errorf("user A: AliveInstallID = %q, want inst-A", *bindingsA[0].AliveInstallID)
 	}
 	if bindingsA[0].AliveTime == nil {
-		t.Error("buyer A: AliveTime should be set")
+		t.Error("user A: AliveTime should be set")
 	}
 
-	// Buyer B sees one license with no binding (unbound).
-	bindingsB, err := s.LicenseBindingsByUser(ctx, buyerB)
+	// User B sees one license with no binding (unbound).
+	bindingsB, err := s.LicenseBindingsByUser(ctx, userB)
 	if err != nil {
 		t.Fatalf("bindings B: %v", err)
 	}
 	if len(bindingsB) != 1 {
-		t.Fatalf("buyer B: want 1 license, got %d", len(bindingsB))
+		t.Fatalf("user B: want 1 license, got %d", len(bindingsB))
 	}
 	if bindingsB[0].ID != licB.ID {
-		t.Errorf("buyer B: license id = %d, want %d", bindingsB[0].ID, licB.ID)
+		t.Errorf("user B: license id = %d, want %d", bindingsB[0].ID, licB.ID)
 	}
 	if bindingsB[0].AliveInstallID != nil {
-		t.Error("buyer B: unbound license should have nil AliveInstallID")
+		t.Error("user B: unbound license should have nil AliveInstallID")
 	}
 	if bindingsB[0].AliveTime != nil {
-		t.Error("buyer B: unbound license should have nil AliveTime")
+		t.Error("user B: unbound license should have nil AliveTime")
 	}
 }

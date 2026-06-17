@@ -24,6 +24,9 @@ import (
 
 const devSeed = "K4laQ0bwfnbm7ftsyQ8OseoV2xNkF5QvUTS30KbGPS0="
 
+// testRequestID is a valid 32-char request id (the c3-generated per-round id).
+const testRequestID = "rq000000000000000000000000000001"
+
 func TestLicenseBindRejectsNonPOST(t *testing.T) {
 	res := do(t, testServer(t), "GET", "/v1/license/bind")
 	if res.StatusCode != http.StatusMethodNotAllowed {
@@ -33,17 +36,24 @@ func TestLicenseBindRejectsNonPOST(t *testing.T) {
 
 func TestLicenseAPIUnavailableWhenUnconfigured(t *testing.T) {
 	h := testServer(t) // no OAuth/Store/Signer wired
-	bind := postJSON(t, h, "/v1/license/bind", `{"licenseKey":"k","installationId":"i"}`)
-	if bind.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("bind unconfigured = %d, want 503", bind.StatusCode)
-	}
-	hb := postJSON(t, h, "/v1/license/heartbeat", `{"licenseKey":"k","installationId":"i","aliveToken":"a"}`)
+	// The S2S endpoints report unavailable when the license service is unconfigured.
+	hb := postJSON(t, h, "/v1/license/heartbeat", `{"installId":"i","aliveToken":"a"}`)
 	if hb.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("heartbeat unconfigured = %d, want 503", hb.StatusCode)
 	}
-	page := do(t, h, "GET", "/activate")
-	if page.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("GET /activate unconfigured = %d, want 503", page.StatusCode)
+	cb := do(t, h, "GET", "/v1/license/checkbind?installId=i&requestId="+testRequestID)
+	if cb.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("checkbind unconfigured = %d, want 503", cb.StatusCode)
+	}
+	// The browser endpoints are session-gated, so without a sign-in cookie they
+	// report unauthenticated (the cookie check runs before the config check).
+	bind := postJSON(t, h, "/v1/license/bind", `{"installId":"i","requestId":"`+testRequestID+`","licenseKey":"k"}`)
+	if bind.StatusCode != http.StatusUnauthorized {
+		t.Errorf("bind unauthenticated = %d, want 401", bind.StatusCode)
+	}
+	act := do(t, h, "GET", "/v1/license/activate?installId=i&requestId="+testRequestID)
+	if act.StatusCode != http.StatusUnauthorized {
+		t.Errorf("activate unauthenticated = %d, want 401", act.StatusCode)
 	}
 }
 
@@ -96,8 +106,7 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 	cfg.PublicURL = "http://ls.test"
 
 	st := store.New(db)
-	// Seed a trial plan so GitHub sign-in issues a trial license and bind tests
-	// have a plan id to reference.
+	// Seed a trial plan so the default license is granted on a known plan.
 	if err := st.SeedPlans(ctx, []store.Plan{
 		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
 	}); err != nil {
@@ -143,7 +152,7 @@ func postForm(t *testing.T, h http.Handler, target string, form url.Values) *htt
 }
 
 // stateFromAuthorizeRedirect pulls the OAuth state out of the GitHub authorize
-// URL the accept step redirects to.
+// URL the login step redirects to.
 func stateFromAuthorizeRedirect(t *testing.T, location string) string {
 	t.Helper()
 	u, err := url.Parse(location)
@@ -157,130 +166,137 @@ func stateFromAuthorizeRedirect(t *testing.T, location string) string {
 	return state
 }
 
-func TestGitHubLoginIssuesLicenseKey(t *testing.T) {
+func TestGitHubLoginProvisionsDefaultLicense(t *testing.T) {
 	env := liveServer(t, githubOK())
 
-	// 1) Landing page shows the agreement.
-	if page := do(t, env.h, "GET", "/activate"); page.StatusCode != http.StatusOK {
-		t.Fatalf("GET /activate = %d", page.StatusCode)
-	}
-
-	// 2) Accept → redirect to GitHub authorize with a signed state.
-	acc := postForm(t, env.h, "/activate/accept", url.Values{"accept": {"on"}})
+	// 1) Login (no agreement) → redirect to GitHub authorize with a signed state.
+	acc := postForm(t, env.h, "/v1/auth/login", url.Values{"installId": {"inst-1"}, "requestId": {testRequestID}})
 	if acc.StatusCode != http.StatusSeeOther {
-		t.Fatalf("accept = %d, want 303", acc.StatusCode)
+		t.Fatalf("login = %d, want 303", acc.StatusCode)
 	}
 	state := stateFromAuthorizeRedirect(t, acc.Header.Get("Location"))
 
-	// 3) GitHub redirects back → upsert buyer, issue a trial license, show keys.
-	cb := do(t, env.h, "GET", "/auth/github/callback?code=the-code&state="+url.QueryEscape(state))
-	if cb.StatusCode != http.StatusOK {
-		t.Fatalf("callback = %d, want 200", cb.StatusCode)
+	// 2) GitHub redirects back → upsert user, ensure a default license, set
+	// session, redirect to the SPA carrying the binding round.
+	cb := do(t, env.h, "GET", "/v1/auth/github/callback?code=the-code&state="+url.QueryEscape(state))
+	if cb.StatusCode != http.StatusSeeOther {
+		t.Fatalf("callback = %d, want 303", cb.StatusCode)
+	}
+	if loc := cb.Header.Get("Location"); !strings.Contains(loc, "installId=inst-1") || !strings.Contains(loc, "requestId="+testRequestID) {
+		t.Errorf("callback redirect = %q, want the binding round preserved", loc)
 	}
 
-	// The buyer now owns exactly one license with a non-empty key.
-	buyerID, err := env.store.UpsertBuyer(env.ctx, 4242, "octocat", "octo@example.com")
+	// The user now owns exactly one default license.
+	userID, err := env.store.UpsertUser(env.ctx, 4242, "octocat", "octo@example.com")
 	if err != nil {
-		t.Fatalf("upsert buyer: %v", err)
+		t.Fatalf("upsert user: %v", err)
 	}
-	licenses, err := env.store.ListLicensesByBuyer(env.ctx, buyerID)
+	licenses, err := env.store.ListLicensesByUser(env.ctx, userID)
 	if err != nil {
 		t.Fatalf("list licenses: %v", err)
 	}
 	if len(licenses) != 1 || licenses[0].LicenseKey == "" {
-		t.Fatalf("expected one keyed license, got %+v", licenses)
+		t.Fatalf("expected one keyed default license, got %+v", licenses)
 	}
 }
 
 func TestCallbackRejectsForgedState(t *testing.T) {
 	env := liveServer(t, githubOK())
-	cb := do(t, env.h, "GET", "/auth/github/callback?code=x&state=forged.nonce")
-	if cb.StatusCode != http.StatusBadRequest {
-		t.Errorf("forged state = %d, want 400", cb.StatusCode)
+	cb := do(t, env.h, "GET", "/v1/auth/github/callback?code=x&state=forged.nonce")
+	// A bad state is bounced back to the SPA with an error, not completed.
+	if cb.StatusCode != http.StatusSeeOther {
+		t.Fatalf("forged state = %d, want 303", cb.StatusCode)
+	}
+	if loc := cb.Header.Get("Location"); !strings.Contains(loc, "error=") {
+		t.Errorf("forged-state redirect = %q, want an error", loc)
 	}
 }
 
-func TestAcceptRequiresExplicitAgreement(t *testing.T) {
-	env := liveServer(t, githubOK())
-	res := postForm(t, env.h, "/activate/accept", url.Values{})
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("accept without agreement = %d, want 400", res.StatusCode)
-	}
-}
-
-func TestBindAndHeartbeatHappyPath(t *testing.T) {
+func TestBindCheckbindAndHeartbeatHappyPath(t *testing.T) {
 	env := liveServer(t, githubOK())
 	const installID = "inst-happy"
 
-	// Seed a buyer + license directly (the GitHub flow is covered above).
-	buyerID, err := env.store.UpsertBuyer(env.ctx, 99, "buyer", "b@example.com")
+	userID, err := env.store.UpsertUser(env.ctx, 99, "user", "b@example.com")
 	if err != nil {
-		t.Fatalf("upsert buyer: %v", err)
+		t.Fatalf("upsert user: %v", err)
 	}
-	lic, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyerID, env.trialKey, 30, time.Now(), func() string { return "license-key-xyz" })
+	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, env.trialKey, 30, time.Now(), func() string { return "license-key-xyz" })
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
+	cookie := accountCookie(t, userID)
 
-	// Bind this installation to the key.
-	bind := postJSON(t, env.h, "/v1/license/bind",
-		`{"licenseKey":"`+lic.LicenseKey+`","installationId":"`+installID+`"}`)
-	if bind.StatusCode != http.StatusOK {
-		t.Fatalf("bind = %d", bind.StatusCode)
+	// Bind (browser/session): returns only {status, termEnd} — no alive token.
+	bindBody := postJSONCookie(t, env.h, "/v1/license/bind",
+		`{"installId":"`+installID+`","requestId":"`+testRequestID+`","licenseKey":"`+lic.LicenseKey+`"}`, cookie)
+	var bindGot struct {
+		Status     string `json:"status"`
+		TermEnd    int64  `json:"termEnd"`
+		AliveToken string `json:"aliveToken"`
 	}
-	bindBody, _ := io.ReadAll(bind.Body)
-	var got struct {
-		EntitlementToken string `json:"entitlementToken"`
-		AliveToken       string `json:"aliveToken"`
-		TermEnd          int64  `json:"termEnd"`
-		Status           string `json:"status"`
-	}
-	if err := json.Unmarshal(bindBody, &got); err != nil {
+	if err := json.Unmarshal(bindBody, &bindGot); err != nil {
 		t.Fatalf("decode bind: %v", err)
 	}
-	if got.AliveToken == "" || got.Status != "active" {
-		t.Fatalf("bind payload = %+v", got)
+	if bindGot.Status != "active" || bindGot.TermEnd <= 0 {
+		t.Fatalf("bind payload = %+v", bindGot)
 	}
-	if got.TermEnd <= 0 {
-		t.Errorf("bind termEnd = %d, want > 0", got.TermEnd)
+	if bindGot.AliveToken != "" {
+		t.Error("bind response must NOT carry the alive token (PL-R2)")
 	}
-	// The bind response carries no plan — plan is purchase-catalog data c3 neither
-	// consumes nor displays (PL-R1, license-server-api § Bind).
 	assertNoPlanField(t, "bind", bindBody)
-	payload, err := token.Verify(env.pub, got.EntitlementToken, time.Now())
+
+	// Checkbind (c3 server S2S): collects the alive token + signed entitlement.
+	cbRes := do(t, env.h, "GET", "/v1/license/checkbind?installId="+installID+"&requestId="+testRequestID)
+	cbBody, _ := io.ReadAll(cbRes.Body)
+	var cbGot struct {
+		Status           string `json:"status"`
+		AliveToken       string `json:"aliveToken"`
+		EntitlementToken string `json:"entitlementToken"`
+		TermEnd          int64  `json:"termEnd"`
+	}
+	if err := json.Unmarshal(cbBody, &cbGot); err != nil {
+		t.Fatalf("decode checkbind: %v", err)
+	}
+	if cbGot.Status != "active" || cbGot.AliveToken == "" || cbGot.EntitlementToken == "" {
+		t.Fatalf("checkbind payload = %+v", cbGot)
+	}
+	payload, err := token.Verify(env.pub, cbGot.EntitlementToken, time.Now())
 	if err != nil {
 		t.Fatalf("entitlement token does not verify: %v", err)
 	}
 	if payload.InstallationID != installID {
 		t.Errorf("token installation = %q", payload.InstallationID)
 	}
-	if d := time.Unix(payload.TermEnd, 0).Sub(time.Unix(payload.TermStart, 0)); d < 29*24*time.Hour || d > 31*24*time.Hour {
-		t.Errorf("term = %v, want ~30 days", d)
+
+	// A second checkbind for the same round is consumed → pending.
+	again := do(t, env.h, "GET", "/v1/license/checkbind?installId="+installID+"&requestId="+testRequestID)
+	var againGot struct {
+		Status string `json:"status"`
+	}
+	_ = json.NewDecoder(again.Body).Decode(&againGot)
+	if againGot.Status != "pending" {
+		t.Errorf("re-checkbind status = %q, want pending (consumed once)", againGot.Status)
 	}
 
-	// Heartbeat with the alive token returns active + a refreshed token.
-	hb := postJSON(t, env.h, "/v1/license/heartbeat",
-		`{"licenseKey":"`+lic.LicenseKey+`","installationId":"`+installID+`","aliveToken":"`+got.AliveToken+`"}`)
-	if hb.StatusCode != http.StatusOK {
-		t.Fatalf("heartbeat = %d", hb.StatusCode)
-	}
-	hbBody, _ := io.ReadAll(hb.Body)
+	// Heartbeat (S2S) with the collected alive token → active + a refreshed token.
+	hbBody := postJSON(t, env.h, "/v1/license/heartbeat",
+		`{"installId":"`+installID+`","aliveToken":"`+cbGot.AliveToken+`"}`)
+	hb, _ := io.ReadAll(hbBody.Body)
 	var hbGot struct {
 		Status           string `json:"status"`
 		EntitlementToken string `json:"entitlementToken"`
 	}
-	if err := json.Unmarshal(hbBody, &hbGot); err != nil {
+	if err := json.Unmarshal(hb, &hbGot); err != nil {
 		t.Fatalf("decode heartbeat: %v", err)
 	}
 	if hbGot.Status != "active" || hbGot.EntitlementToken == "" {
 		t.Fatalf("heartbeat payload = %+v", hbGot)
 	}
-	// The active-heartbeat response likewise carries no plan (PL-R1).
-	assertNoPlanField(t, "heartbeat", hbBody)
+	assertNoPlanField(t, "heartbeat", hb)
 
-	// A heartbeat from a different installation is disabled (exclusive binding).
+	// A heartbeat from a different installation (same token) is disabled.
 	other := postJSON(t, env.h, "/v1/license/heartbeat",
-		`{"licenseKey":"`+lic.LicenseKey+`","installationId":"other","aliveToken":"`+got.AliveToken+`"}`)
+		`{"installId":"other","aliveToken":"`+cbGot.AliveToken+`"}`)
 	var otherGot struct {
 		Status string `json:"status"`
 	}
@@ -292,15 +308,24 @@ func TestBindAndHeartbeatHappyPath(t *testing.T) {
 
 func TestBindRejectsUnknownKey(t *testing.T) {
 	env := liveServer(t, githubOK())
-	res := postJSON(t, env.h, "/v1/license/bind", `{"licenseKey":"nope","installationId":"i"}`)
+	userID, err := env.store.UpsertUser(env.ctx, 7, "user", "b@example.com")
+	if err != nil {
+		t.Fatalf("upsert user: %v", err)
+	}
+	if _, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, env.trialKey, 30, time.Now(), func() string { return "owned-key" }); err != nil {
+		t.Fatalf("ensure license: %v", err)
+	}
+	cookie := accountCookie(t, userID)
+	// A licenseKey the user does not own is rejected as not found.
+	res := postJSONCookieRes(t, env.h, "/v1/license/bind",
+		`{"installId":"i","requestId":"`+testRequestID+`","licenseKey":"not-mine"}`, cookie)
 	if res.StatusCode != http.StatusNotFound {
 		t.Errorf("bind unknown key = %d, want 404", res.StatusCode)
 	}
 }
 
-// assertNoPlanField fails if the JSON body carries a top-level "plan" key. The
-// bind/active-heartbeat contract is plan-free (PL-R1): plan is purchase-catalog
-// data (GET /v1/plans) that c3 neither consumes nor displays.
+// assertNoPlanField fails if the JSON body carries a top-level "plan" key (the
+// bind/active-heartbeat contract is plan-free, PL-R1).
 func assertNoPlanField(t *testing.T, what string, body []byte) {
 	t.Helper()
 	var m map[string]json.RawMessage
@@ -317,6 +342,27 @@ func postJSON(t *testing.T, h http.Handler, target, body string) *http.Response 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", target, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+	return rec.Result()
+}
+
+// postJSONCookie posts JSON with a session cookie and returns the body bytes.
+func postJSONCookie(t *testing.T, h http.Handler, target, body string, cookie *http.Cookie) []byte {
+	t.Helper()
+	res := postJSONCookieRes(t, h, target, body, cookie)
+	b, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("POST %s = %d; body=%s", target, res.StatusCode, b)
+	}
+	return b
+}
+
+func postJSONCookieRes(t *testing.T, h http.Handler, target, body string, cookie *http.Cookie) *http.Response {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
 	h.ServeHTTP(rec, req)
 	return rec.Result()
 }

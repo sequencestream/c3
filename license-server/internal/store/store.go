@@ -1,5 +1,5 @@
 // Package store is the LS persistence layer over PostgreSQL (GORM) for the
-// simplified license model (ADR-0026): buyers, licenses, and the inline live
+// simplified license model (ADR-0026): users, licenses, and the inline live
 // binding (alive_install_id / alive_token / alive_time). It deliberately holds
 // no HTTP or domain policy — handlers compose these primitives.
 //
@@ -12,6 +12,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -53,9 +54,31 @@ func HashCode(plaintext string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// UpsertBuyer inserts or updates a GitHub buyer identity and returns its id.
+// NewOrderNo builds a business order number: "C3" + YYYYMMDDHHmmssSSS (to the
+// millisecond) + 4 random digits (23 chars, ≤32 WeChat out_trade_no limit). It is
+// the payment-association handle; a rare collision is retried by CreateOrder.
+func NewOrderNo(now time.Time) string {
+	stamp := now.Format("20060102150405") + fmt.Sprintf("%03d", now.Nanosecond()/1_000_000)
+	return "C3" + stamp + randomDigits(4)
+}
+
+// randomDigits returns n cryptographically-random decimal digits. A crypto/rand
+// failure is fatal-by-panic since a non-random order number must never be issued.
+func randomDigits(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic("store: crypto/rand failed: " + err.Error())
+	}
+	var sb strings.Builder
+	for _, x := range b {
+		sb.WriteByte('0' + x%10)
+	}
+	return sb.String()
+}
+
+// UpsertUser inserts or updates a GitHub user identity and returns its id.
 // GitHub OAuth is used only to log in / register the account here.
-func (s *Store) UpsertBuyer(ctx context.Context, githubID int64, login, email string) (int64, error) {
+func (s *Store) UpsertUser(ctx context.Context, githubID int64, login, email string) (int64, error) {
 	if !s.Available() {
 		return 0, errors.New("store: database not configured")
 	}
@@ -68,7 +91,7 @@ func (s *Store) UpsertBuyer(ctx context.Context, githubID int64, login, email st
 		    email = COALESCE(EXCLUDED.email, c3_ls_user.email)
 		RETURNING id`, githubID, login, email).Scan(&id).Error
 	if err != nil {
-		return 0, fmt.Errorf("store: upsert buyer: %w", err)
+		return 0, fmt.Errorf("store: upsert user: %w", err)
 	}
 	return id, nil
 }
@@ -182,7 +205,7 @@ func (s *Store) PlanByKey(ctx context.Context, planKey string) (Plan, bool, erro
 
 // FirstTrialPlan returns the first trial plan (is_trial = true), ordered by
 // sort_order then id, and whether one exists. With no trial plan configured the
-// caller issues no trial license and the buyer must purchase one.
+// caller issues no trial license and the user must purchase one.
 func (s *Store) FirstTrialPlan(ctx context.Context) (Plan, bool, error) {
 	if !s.Available() {
 		return Plan{}, false, errors.New("store: database not configured")
@@ -204,7 +227,7 @@ func (s *Store) FirstTrialPlan(ctx context.Context) (Plan, bool, error) {
 }
 
 // LicenseBinding is a license with its current binding info (alive_install_id and
-// alive_time). It is the shape used for the buyer self-service account page. The
+// alive_time). It is the shape used for the user self-service account page. The
 // alive_token is intentionally excluded: it is stored only as a one-way hash and
 // must never be returned to a page (PL-R2).
 type LicenseBinding struct {
@@ -254,12 +277,12 @@ func (r licenseRow) toLicense() License {
 	}
 }
 
-// EnsureLicenseForBuyer returns the buyer's most recent active, unexpired
+// EnsureLicenseForUser returns the user's most recent active, unexpired
 // license, or issues a fresh one (new unique license_key, default term) when the
-// buyer has none. GitHub login lands here so a newly-registered buyer leaves with
+// user has none. GitHub login lands here so a newly-registered user leaves with
 // a key to bind. newKey generates a random license_key; a unique collision is
 // retried. Returns the license and whether it was newly issued.
-func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planKey string, termDays int, now time.Time, newKey func() string) (License, bool, error) {
+func (s *Store) EnsureLicenseForUser(ctx context.Context, userID int64, planKey string, termDays int, now time.Time, newKey func() string) (License, bool, error) {
 	if !s.Available() {
 		return License{}, false, errors.New("store: database not configured")
 	}
@@ -270,9 +293,9 @@ func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planKe
 		FROM c3_ls_license
 		WHERE user_id = $1 AND status = 'active' AND term_end > $2
 		ORDER BY term_end DESC
-		LIMIT 1`, buyerID, now).Scan(&existing)
+		LIMIT 1`, userID, now).Scan(&existing)
 	if res.Error != nil {
-		return License{}, false, fmt.Errorf("store: find buyer license: %w", res.Error)
+		return License{}, false, fmt.Errorf("store: find user license: %w", res.Error)
 	}
 	if res.RowsAffected > 0 {
 		return existing.toLicense(), false, nil
@@ -287,7 +310,7 @@ func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planKe
 			INSERT INTO c3_ls_license (user_id, plan_key, license_key, status, term_start, term_end)
 			VALUES ($1, $2, $3, 'active', $4, $5)
 			RETURNING id, user_id, plan_key, license_key, status, term_start, term_end`,
-			buyerID, planKey, newKey(), termStart, termEnd).Scan(&inserted)
+			userID, planKey, newKey(), termStart, termEnd).Scan(&inserted)
 		if res.Error == nil && res.RowsAffected > 0 {
 			return inserted.toLicense(), true, nil
 		}
@@ -296,8 +319,55 @@ func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planKe
 	return License{}, false, fmt.Errorf("store: issue license: %w", lastErr)
 }
 
-// LicenseBindingsByUser returns every license a buyer owns (newest first) with
-// their current binding info (alive_install_id, alive_time), for the buyer
+// EnsureDefaultLicense guarantees the user owns at least one license: it returns
+// the user's newest license when any exists, otherwise issues a fresh default one
+// (new unique license_key, default term) on a default plan — the trial plan when
+// configured, else the first catalog plan. Called at sign-in so every account has
+// a license to bind without manual creation (§4/§5). Reports whether one was created.
+func (s *Store) EnsureDefaultLicense(ctx context.Context, userID int64, termDays int, now time.Time, newKey func() string) (License, bool, error) {
+	if !s.Available() {
+		return License{}, false, errors.New("store: database not configured")
+	}
+	var existing licenseRow
+	res := s.db.WithContext(ctx).Raw(`
+		SELECT id, user_id, plan_key, license_key, status, term_start, term_end
+		FROM c3_ls_license
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1`, userID).Scan(&existing)
+	if res.Error != nil {
+		return License{}, false, fmt.Errorf("store: find user license: %w", res.Error)
+	}
+	if res.RowsAffected > 0 {
+		return existing.toLicense(), false, nil
+	}
+	planKey, err := s.defaultPlanKey(ctx)
+	if err != nil {
+		return License{}, false, err
+	}
+	return s.EnsureLicenseForUser(ctx, userID, planKey, termDays, now, newKey)
+}
+
+// defaultPlanKey picks the plan a freshly-issued default license is granted: the
+// trial plan when configured, else the first catalog plan by sort order.
+func (s *Store) defaultPlanKey(ctx context.Context) (string, error) {
+	if trial, ok, err := s.FirstTrialPlan(ctx); err != nil {
+		return "", err
+	} else if ok {
+		return trial.PlanKey, nil
+	}
+	ps, err := s.ListPlans(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(ps) == 0 {
+		return "", ErrNotFound
+	}
+	return ps[0].PlanKey, nil
+}
+
+// LicenseBindingsByUser returns every license a user owns (newest first) with
+// their current binding info (alive_install_id, alive_time), for the user
 // self-service account page. It never exposes the alive_token hash (PL-R2).
 func (s *Store) LicenseBindingsByUser(ctx context.Context, userID int64) ([]LicenseBinding, error) {
 	if !s.Available() {
@@ -340,9 +410,9 @@ func (s *Store) LicenseBindingsByUser(ctx context.Context, userID int64) ([]Lice
 	return out, nil
 }
 
-// ListLicensesByBuyer returns every license a buyer owns, newest first, for the
-// post-login page that shows the buyer their license_key(s).
-func (s *Store) ListLicensesByBuyer(ctx context.Context, buyerID int64) ([]License, error) {
+// ListLicensesByUser returns every license a user owns, newest first, for the
+// post-login page that shows the user their license_key(s).
+func (s *Store) ListLicensesByUser(ctx context.Context, userID int64) ([]License, error) {
 	if !s.Available() {
 		return nil, errors.New("store: database not configured")
 	}
@@ -351,7 +421,7 @@ func (s *Store) ListLicensesByBuyer(ctx context.Context, buyerID int64) ([]Licen
 		SELECT id, user_id, plan_key, license_key, status, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1
-		ORDER BY created_at DESC`, buyerID).Scan(&rows)
+		ORDER BY created_at DESC`, userID).Scan(&rows)
 	if res.Error != nil {
 		return nil, fmt.Errorf("store: list licenses: %w", res.Error)
 	}
@@ -409,6 +479,15 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 		}
 
 		alive := newAlive()
+		// Release this installation from any other license it was bound to, so an
+		// installation maps to at most one license (heartbeat-by-install is then
+		// unambiguous): re-binding the same install to a new license displaces the old.
+		if err := tx.Exec(`
+			UPDATE c3_ls_license
+			SET alive_install_id = NULL, alive_token = NULL, updated_at = $2
+			WHERE alive_install_id = $1 AND id <> $3`, installID, now, locked.ID).Error; err != nil {
+			return fmt.Errorf("store: release prior binding: %w", err)
+		}
 		if err := tx.Exec(`
 			UPDATE c3_ls_license
 			SET alive_install_id = $2, alive_token = $3, alive_time = $4, updated_at = $4
@@ -451,13 +530,17 @@ type HeartbeatResult struct {
 	License License
 }
 
-// Heartbeat confirms the live binding for licenseKey. It is active only when the
-// presented install id AND alive token both match the current binding and the
-// license is active and unexpired; a successful heartbeat refreshes alive_time.
-// A different install/token ⇒ HeartbeatDisabled (the license moved to another
-// c3); a non-active status or a lapsed term ⇒ HeartbeatExpired. An unknown
-// license_key returns ErrNotFound.
-func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveTokenPlain string, now time.Time) (HeartbeatResult, error) {
+// HeartbeatByInstall confirms the live binding identified by the alive token,
+// presented together with the installation id (no license_key — the c3 heartbeat
+// carries only installId + aliveToken). The binding is found by the alive token's
+// hash (effectively unique per bind). Outcomes:
+//   - token matches no live binding (rotated away by a re-bind, or never valid)
+//     ⇒ HeartbeatDisabled — the c3 gates and cannot recover offline (PL-R8);
+//   - token bound to a different installation ⇒ HeartbeatDisabled;
+//   - non-active status or a lapsed term ⇒ HeartbeatExpired;
+//   - otherwise HeartbeatActive, refreshing alive_time and yielding the license
+//     so a fresh entitlement token is minted.
+func (s *Store) HeartbeatByInstall(ctx context.Context, installID, aliveTokenPlain string, now time.Time) (HeartbeatResult, error) {
 	if !s.Available() {
 		return HeartbeatResult{}, errors.New("store: database not configured")
 	}
@@ -468,33 +551,34 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 			ID             int64
 			UserID         int64
 			PlanKey        string
+			LicenseKey     string
 			Status         string
 			AliveInstallID *string
-			AliveToken     *string
 			TermStart      time.Time
 			TermEnd        time.Time
 		}
 		res := tx.Raw(`
-			SELECT id, user_id, plan_key, status, alive_install_id, alive_token, term_start, term_end
+			SELECT id, user_id, plan_key, license_key, status, alive_install_id, term_start, term_end
 			FROM c3_ls_license
-			WHERE license_key = $1
-			FOR UPDATE`, licenseKey).Scan(&locked)
+			WHERE alive_token = $1
+			FOR UPDATE`, HashCode(aliveTokenPlain)).Scan(&locked)
 		if res.Error != nil {
 			return fmt.Errorf("store: lock license: %w", res.Error)
 		}
 		if res.RowsAffected == 0 {
-			return ErrNotFound
+			// Token matches no live binding: superseded by a re-bind, or invalid.
+			out = HeartbeatResult{Status: HeartbeatDisabled}
+			return nil
 		}
 
 		switch {
+		case locked.AliveInstallID == nil || *locked.AliveInstallID != installID:
+			// Token used from an installation that does not hold this binding.
+			out = HeartbeatResult{Status: HeartbeatDisabled}
+			return nil
 		case locked.Status != "active" || !now.Before(locked.TermEnd):
 			// status != 'active' (e.g. an admin force-expired it) or a lapsed term.
 			out = HeartbeatResult{Status: HeartbeatExpired}
-			return nil
-		case locked.AliveInstallID == nil || *locked.AliveInstallID != installID ||
-			locked.AliveToken == nil || *locked.AliveToken != HashCode(aliveTokenPlain):
-			// Bound elsewhere, or this binding was superseded by a newer one.
-			out = HeartbeatResult{Status: HeartbeatDisabled}
 			return nil
 		}
 
@@ -507,7 +591,7 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 				ID:         locked.ID,
 				UserID:     locked.UserID,
 				PlanKey:    locked.PlanKey,
-				LicenseKey: licenseKey,
+				LicenseKey: locked.LicenseKey,
 				Status:     "active",
 				TermStart:  locked.TermStart,
 				TermEnd:    locked.TermEnd,
@@ -527,6 +611,7 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 // plan, never trusted from the client.
 type Order struct {
 	ID                  int64
+	OrderNo             string // business order number (C3+YYYYMMDDHHmmssSSS+random4); the WeChat out_trade_no
 	UserID              int64
 	LicenseID           int64
 	PlanKey             string
@@ -541,10 +626,11 @@ type Order struct {
 	CreatedAt  time.Time
 }
 
-// orderRow is the raw select shape; license_id and payment_ref are nullable so
-// they map to pointers and are normalized to 0/"" when absent.
+// orderRow is the raw select shape; license_id, payment_ref and order_no are
+// nullable so they map to pointers and are normalized to 0/"" when absent.
 type orderRow struct {
 	ID                  int64
+	OrderNo             *string
 	UserID              int64
 	LicenseID           *int64
 	PlanKey             string
@@ -566,8 +652,13 @@ func (r orderRow) toOrder() Order {
 	if r.PaymentRef != nil {
 		ref = *r.PaymentRef
 	}
+	var no string
+	if r.OrderNo != nil {
+		no = *r.OrderNo
+	}
 	return Order{
 		ID:                  r.ID,
+		OrderNo:             no,
 		UserID:              r.UserID,
 		LicenseID:           lic,
 		PlanKey:             r.PlanKey,
@@ -599,7 +690,7 @@ type CreateOrderInput struct {
 // row — the single source of truth for price — so any client-supplied amount is
 // ignored. The order is created with status 'pending'; payment capture (which
 // extends the linked license) is a later milestone.
-func (s *Store) CreateOrder(ctx context.Context, in CreateOrderInput) (Order, error) {
+func (s *Store) CreateOrder(ctx context.Context, in CreateOrderInput, newOrderNo func() string) (Order, error) {
 	if !s.Available() {
 		return Order{}, errors.New("store: database not configured")
 	}
@@ -613,24 +704,28 @@ func (s *Store) CreateOrder(ctx context.Context, in CreateOrderInput) (Order, er
 	if !ok {
 		return Order{}, ErrNotFound
 	}
+	// order_no is the business/payment-association number (the WeChat out_trade_no);
+	// it carries a millisecond timestamp + random suffix and is unique. A unique
+	// collision is retried with a freshly generated number (mirrors license_key).
 	var row orderRow
-	res := s.db.WithContext(ctx).Raw(`
-		INSERT INTO c3_ls_order
-			(user_id, license_id, plan_key, amount_cents, currency, agreement_version, agreement_accepted_at, status)
-		VALUES ($1, NULLIF($2, 0), $3, $4, $5, $6, $7, 'pending')
-		RETURNING `+orderSelectCols,
-		in.UserID, in.LicenseID, in.PlanKey, plan.PriceCents, plan.Currency,
-		in.AgreementVersion, in.AgreementAcceptedAt).Scan(&row)
-	if res.Error != nil {
-		return Order{}, fmt.Errorf("store: create order: %w", res.Error)
+	var lastErr error
+	for range 5 {
+		res := s.db.WithContext(ctx).Raw(`
+			INSERT INTO c3_ls_order
+				(order_no, user_id, license_id, plan_key, amount_cents, currency, agreement_version, agreement_accepted_at, status)
+			VALUES ($1, $2, NULLIF($3, 0), $4, $5, $6, $7, $8, 'pending')
+			RETURNING `+orderSelectCols,
+			newOrderNo(), in.UserID, in.LicenseID, in.PlanKey, plan.PriceCents, plan.Currency,
+			in.AgreementVersion, in.AgreementAcceptedAt).Scan(&row)
+		if res.Error == nil && res.RowsAffected > 0 {
+			return row.toOrder(), nil
+		}
+		lastErr = res.Error
 	}
-	if res.RowsAffected == 0 {
-		return Order{}, fmt.Errorf("store: create order: no row returned")
-	}
-	return row.toOrder(), nil
+	return Order{}, fmt.Errorf("store: create order: %w", lastErr)
 }
 
-// OrdersByUser returns every order a buyer placed, newest first, for the
+// OrdersByUser returns every order a user placed, newest first, for the
 // signed-in user's order history and tests.
 func (s *Store) OrdersByUser(ctx context.Context, userID int64) ([]Order, error) {
 	if !s.Available() {
@@ -670,7 +765,7 @@ func (s *Store) OrderByID(ctx context.Context, id int64) (Order, error) {
 
 // orderSelectCols is the column list shared by every order read, kept in one
 // place so a SELECT and a RETURNING stay in lockstep with orderRow.
-const orderSelectCols = `id, user_id, license_id, plan_key, amount_cents, currency,
+const orderSelectCols = `id, order_no, user_id, license_id, plan_key, amount_cents, currency,
 	agreement_version, agreement_accepted_at, status, payment_ref, created_at`
 
 // MarkOrderPaid advances a pending order to paid, records the external payment
@@ -680,7 +775,7 @@ const orderSelectCols = `id, user_id, license_id, plan_key, amount_cents, curren
 // failed order is left untouched. The payment reference is the only payment
 // artifact persisted — no credentials ever reach the store (PL-R12). Reports
 // whether this call performed the pending→paid transition.
-func (s *Store) MarkOrderPaid(ctx context.Context, orderID int64, paymentRef string, now time.Time) (Order, bool, error) {
+func (s *Store) MarkOrderPaid(ctx context.Context, orderNo, paymentRef string, now time.Time) (Order, bool, error) {
 	if !s.Available() {
 		return Order{}, false, errors.New("store: database not configured")
 	}
@@ -688,7 +783,7 @@ func (s *Store) MarkOrderPaid(ctx context.Context, orderID int64, paymentRef str
 	advanced := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row orderRow
-		res := tx.Raw(`SELECT `+orderSelectCols+` FROM c3_ls_order WHERE id = $1 FOR UPDATE`, orderID).Scan(&row)
+		res := tx.Raw(`SELECT `+orderSelectCols+` FROM c3_ls_order WHERE order_no = $1 FOR UPDATE`, orderNo).Scan(&row)
 		if res.Error != nil {
 			return fmt.Errorf("store: lock order: %w", res.Error)
 		}
@@ -696,22 +791,24 @@ func (s *Store) MarkOrderPaid(ctx context.Context, orderID int64, paymentRef str
 			return ErrNotFound
 		}
 		if row.Status != "pending" {
-			// Already paid (idempotent replay) or a terminal failed order — never mutate.
+			// Already paid (idempotent replay), or a terminal failed/expired order —
+			// never mutate and never (re-)extend the license (PL-R9, §11).
 			out = row.toOrder()
 			return nil
 		}
 		var updated orderRow
 		res = tx.Raw(`
 			UPDATE c3_ls_order SET status = 'paid', payment_ref = $2
-			WHERE id = $1 AND status = 'pending'
-			RETURNING `+orderSelectCols, orderID, paymentRef).Scan(&updated)
+			WHERE order_no = $1 AND status = 'pending'
+			RETURNING `+orderSelectCols, orderNo, paymentRef).Scan(&updated)
 		if res.Error != nil {
 			return fmt.Errorf("store: mark order paid: %w", res.Error)
 		}
 		out = updated.toOrder()
 		// Extend the renewal target, if linked: push term_end out by the plan's
 		// whole-month duration from whichever is later — now or the current
-		// term_end — and reactivate the license.
+		// term_end — and reactivate the license. This and the order transition
+		// commit atomically in one transaction (§5).
 		if out.LicenseID != 0 {
 			var months int
 			res = tx.Raw(`SELECT duration_months FROM c3_ls_plan WHERE plan_key = $1`, out.PlanKey).Scan(&months)
@@ -725,8 +822,9 @@ func (s *Store) MarkOrderPaid(ctx context.Context, orderID int64, paymentRef str
 				UPDATE c3_ls_license
 				SET term_end = GREATEST(term_end, $2) + make_interval(months => $3),
 				    status = 'active',
+				    order_id = $4,
 				    updated_at = $2
-				WHERE id = $1`, out.LicenseID, now, months).Error; err != nil {
+				WHERE id = $1`, out.LicenseID, now, months, out.ID).Error; err != nil {
 				return fmt.Errorf("store: extend license: %w", err)
 			}
 		}
@@ -743,7 +841,22 @@ func (s *Store) MarkOrderPaid(ctx context.Context, orderID int64, paymentRef str
 // reference. It never downgrades a paid order and is idempotent on an
 // already-failed one; only a pending order transitions. Reports whether this
 // call performed the pending→failed transition.
-func (s *Store) MarkOrderFailed(ctx context.Context, orderID int64, paymentRef string) (Order, bool, error) {
+func (s *Store) MarkOrderFailed(ctx context.Context, orderNo, paymentRef string) (Order, bool, error) {
+	return s.terminatePending(ctx, orderNo, "failed", paymentRef)
+}
+
+// MarkOrderExpired records a pending order as expired (its 15-minute payment
+// window lapsed without a successful payment, §11). It never downgrades a
+// paid/failed order and is idempotent on an already-expired one; only a pending
+// order transitions. Reports whether this call performed the transition.
+func (s *Store) MarkOrderExpired(ctx context.Context, orderNo string) (Order, bool, error) {
+	return s.terminatePending(ctx, orderNo, "expired", "")
+}
+
+// terminatePending transitions a single pending order to a terminal state
+// (failed/expired), recording paymentRef when present. Shared by MarkOrderFailed
+// and MarkOrderExpired so both stay idempotent and never touch a settled order.
+func (s *Store) terminatePending(ctx context.Context, orderNo, terminal, paymentRef string) (Order, bool, error) {
 	if !s.Available() {
 		return Order{}, false, errors.New("store: database not configured")
 	}
@@ -751,7 +864,7 @@ func (s *Store) MarkOrderFailed(ctx context.Context, orderID int64, paymentRef s
 	advanced := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row orderRow
-		res := tx.Raw(`SELECT `+orderSelectCols+` FROM c3_ls_order WHERE id = $1 FOR UPDATE`, orderID).Scan(&row)
+		res := tx.Raw(`SELECT `+orderSelectCols+` FROM c3_ls_order WHERE order_no = $1 FOR UPDATE`, orderNo).Scan(&row)
 		if res.Error != nil {
 			return fmt.Errorf("store: lock order: %w", res.Error)
 		}
@@ -764,11 +877,11 @@ func (s *Store) MarkOrderFailed(ctx context.Context, orderID int64, paymentRef s
 		}
 		var updated orderRow
 		res = tx.Raw(`
-			UPDATE c3_ls_order SET status = 'failed', payment_ref = $2
-			WHERE id = $1 AND status = 'pending'
-			RETURNING `+orderSelectCols, orderID, paymentRef).Scan(&updated)
+			UPDATE c3_ls_order SET status = $2, payment_ref = COALESCE(NULLIF($3, ''), payment_ref)
+			WHERE order_no = $1 AND status = 'pending'
+			RETURNING `+orderSelectCols, orderNo, terminal, paymentRef).Scan(&updated)
 		if res.Error != nil {
-			return fmt.Errorf("store: mark order failed: %w", res.Error)
+			return fmt.Errorf("store: mark order %s: %w", terminal, res.Error)
 		}
 		out = updated.toOrder()
 		advanced = true
@@ -778,4 +891,75 @@ func (s *Store) MarkOrderFailed(ctx context.Context, orderID int64, paymentRef s
 		return Order{}, false, err
 	}
 	return out, advanced, nil
+}
+
+// PendingOrder is the minimal projection the reconcile job needs: enough to call
+// WeChat order-query (OrderNo) and to apply the 15-minute window (CreatedAt).
+type PendingOrder struct {
+	OrderNo   string
+	CreatedAt time.Time
+}
+
+// ListPendingOrders returns every order still in 'pending', oldest first, for the
+// 20-minute reconcile job (§11) to query against WeChat and settle.
+func (s *Store) ListPendingOrders(ctx context.Context) ([]PendingOrder, error) {
+	if !s.Available() {
+		return nil, errors.New("store: database not configured")
+	}
+	var rows []struct {
+		OrderNo   *string
+		CreatedAt time.Time
+	}
+	res := s.db.WithContext(ctx).Raw(`
+		SELECT order_no, created_at FROM c3_ls_order
+		WHERE status = 'pending' AND order_no IS NOT NULL
+		ORDER BY created_at ASC`).Scan(&rows)
+	if res.Error != nil {
+		return nil, fmt.Errorf("store: list pending orders: %w", res.Error)
+	}
+	out := make([]PendingOrder, 0, len(rows))
+	for _, r := range rows {
+		no := ""
+		if r.OrderNo != nil {
+			no = *r.OrderNo
+		}
+		out = append(out, PendingOrder{OrderNo: no, CreatedAt: r.CreatedAt})
+	}
+	return out, nil
+}
+
+// ExpireStalePending bulk-transitions pending orders created before cutoff to
+// 'expired' (the lazy/sweep side of the 15-minute window, §11). Returns the count
+// expired. Idempotent: only 'pending' rows are touched.
+func (s *Store) ExpireStalePending(ctx context.Context, cutoff time.Time) (int64, error) {
+	if !s.Available() {
+		return 0, errors.New("store: database not configured")
+	}
+	res := s.db.WithContext(ctx).Exec(`
+		UPDATE c3_ls_order SET status = 'expired'
+		WHERE status = 'pending' AND created_at < $1`, cutoff)
+	if res.Error != nil {
+		return 0, fmt.Errorf("store: expire stale pending: %w", res.Error)
+	}
+	return res.RowsAffected, nil
+}
+
+// PaidOrdersByUser returns a user's paid orders, newest first, for GET /v1/orders.
+func (s *Store) PaidOrdersByUser(ctx context.Context, userID int64) ([]Order, error) {
+	if !s.Available() {
+		return nil, errors.New("store: database not configured")
+	}
+	var rows []orderRow
+	res := s.db.WithContext(ctx).Raw(`SELECT `+orderSelectCols+`
+		FROM c3_ls_order
+		WHERE user_id = $1 AND status = 'paid'
+		ORDER BY created_at DESC, id DESC`, userID).Scan(&rows)
+	if res.Error != nil {
+		return nil, fmt.Errorf("store: list paid orders: %w", res.Error)
+	}
+	out := make([]Order, len(rows))
+	for i, r := range rows {
+		out[i] = r.toOrder()
+	}
+	return out, nil
 }

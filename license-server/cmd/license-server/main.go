@@ -1,5 +1,5 @@
 // Command license-server is the c3 license authority (ADR-0026): a standalone
-// Go service that owns the entitlement record, the plan catalog, and the buyer/
+// Go service that owns the entitlement record, the plan catalog, and the user/
 // admin web. This entrypoint wires configuration, the in-process caches, the
 // PostgreSQL connection + schema, and the HTTP surface, then serves until
 // interrupted.
@@ -21,6 +21,7 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/httpapi"
 	"github.com/sequencestream/code-creative-center/license-server/internal/oauth"
 	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
+	"github.com/sequencestream/code-creative-center/license-server/internal/reconcile"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 	"github.com/sequencestream/code-creative-center/license-server/internal/version"
@@ -67,6 +68,16 @@ func run() error {
 	seedPlans(ctx, st)
 
 	pay := loadGateway(cfg)
+
+	// Order reconciliation: a process-internal ticker that settles pending orders
+	// against WeChat and enforces the payment window (§11). Only runs when both a
+	// store and a payment gateway are configured.
+	if st.Available() && pay != nil {
+		go reconcile.Run(ctx, st, pay,
+			time.Duration(config.OrderReconcileIntervalMinutes)*time.Minute,
+			time.Duration(config.DefaultOrderPaymentWindowMinutes)*time.Minute)
+		log.Printf("license-server: order reconcile loop started (every %dm)", config.OrderReconcileIntervalMinutes)
+	}
 
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,

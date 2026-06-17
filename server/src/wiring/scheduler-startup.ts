@@ -13,6 +13,7 @@
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
   appendExecutionLog,
+  deleteSchedule,
   getDueSchedules,
   getEventSchedules,
   getSchedule,
@@ -53,6 +54,7 @@ export function startSchedulerWiring(deps: {
         status: patch.status as import('@ccc/shared/protocol').ScheduleStatus | undefined,
       })
     },
+    deleteSchedule,
     appendExecutionLog: (input) => {
       return appendExecutionLog({
         scheduleId: input.scheduleId,

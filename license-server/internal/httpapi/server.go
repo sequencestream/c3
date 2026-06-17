@@ -34,12 +34,19 @@ type Deps struct {
 	// which case the renewal checkout records the pending order but reports that
 	// payment is unavailable rather than half-working.
 	Pay wechatpay.Gateway
+	// Binds is the process-wide pending-bind registry: bind writes a completed
+	// (installId, requestId) → secrets entry, checkbind collects it (§4). NewServer
+	// initializes it when nil so callers need not construct it.
+	Binds *bindRegistry
 }
 
 // NewServer builds the HTTP handler with every route mounted. API routes are
 // registered with method-specific patterns; the catch-all "/" serves static
 // assets and falls back to the SPA entry point.
 func NewServer(d Deps) http.Handler {
+	if d.Binds == nil {
+		d.Binds = newBindRegistry()
+	}
 	mux := http.NewServeMux()
 	// API routes are registered without a method constraint and enforce the
 	// method in-handler: the catch-all "/" (needed for SPA fallback) overlaps
@@ -47,7 +54,8 @@ func NewServer(d Deps) http.Handler {
 	// method as a static 404 instead of a clean 405.
 	mux.HandleFunc("/healthz", allowGET(handleHealth(d)))
 	mux.HandleFunc("/v1/plans", allowGET(handlePlans(d)))
-	mountActivation(mux, d)
+	mountAuth(mux, d)
+	mountLicense(mux, d)
 	mountCheckout(mux, d)
 	mountPayment(mux, d)
 	mountAccount(mux, d)

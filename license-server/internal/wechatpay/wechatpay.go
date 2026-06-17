@@ -19,8 +19,18 @@ import (
 	"errors"
 )
 
-// TradeStateSuccess is the WeChat `trade_state` that means the order was paid.
-const TradeStateSuccess = "SUCCESS"
+// WeChat `trade_state` values the reconcile/callback paths discriminate on.
+// SUCCESS settles the order paid; CLOSED/REVOKED/PAYERROR are terminal failures;
+// NOTPAY/USERPAYING mean still awaiting payment (left pending until the window
+// lapses). See §11.
+const (
+	TradeStateSuccess  = "SUCCESS"
+	TradeStateClosed   = "CLOSED"
+	TradeStateRevoked  = "REVOKED"
+	TradeStatePayError = "PAYERROR"
+	TradeStateNotPay   = "NOTPAY"
+	TradeStateUserPay  = "USERPAYING"
+)
 
 // ErrUnconfigured is returned when a gateway operation is attempted without the
 // full set of WeChat Pay credentials. The HTTP surface degrades to a clear
@@ -43,7 +53,7 @@ type PrepayInput struct {
 }
 
 // PrepayResult carries the QR payload of a Native order. CodeURL is the
-// `weixin://` string the buyer scans (rendered as a QR by the web).
+// `weixin://` string the user scans (rendered as a QR by the web).
 type PrepayResult struct {
 	CodeURL string
 }
@@ -59,8 +69,19 @@ type NotifyResult struct {
 	AmountCents   int
 }
 
-// Paid reports whether the callback represents a successful payment.
+// Paid reports whether the result represents a successful payment.
 func (r NotifyResult) Paid() bool { return r.TradeState == TradeStateSuccess }
+
+// Closed reports whether the trade state is terminal-without-payment (the order
+// can no longer be paid): the reconcile job expires/fails such orders (§11).
+func (r NotifyResult) Closed() bool {
+	switch r.TradeState {
+	case TradeStateClosed, TradeStateRevoked, TradeStatePayError:
+		return true
+	default:
+		return false
+	}
+}
 
 // Gateway is the WeChat Pay port the license-server depends on.
 type Gateway interface {
@@ -71,4 +92,8 @@ type Gateway interface {
 	// resource. It returns ErrSignatureInvalid when verification fails so the
 	// handler can refuse without touching any order.
 	ParseNotify(headerFetcher func(string) string, body []byte) (NotifyResult, error)
+	// QueryByOutTradeNo asks WeChat for the authoritative state of an order by its
+	// merchant order number (our order_no). The reconcile job uses it to settle
+	// pending orders whose async callback was missed or failed (§11).
+	QueryByOutTradeNo(ctx context.Context, outTradeNo string) (NotifyResult, error)
 }

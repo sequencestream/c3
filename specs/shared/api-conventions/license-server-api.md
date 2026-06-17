@@ -1,231 +1,145 @@
-# License-Server API Contract
+# License-Server API 契约
 
-The single source of truth for the **c3 ↔ license-server (LS)** public boundary. It defines the
-endpoints c3 calls to bind a license and heartbeat, the buyer-facing sign-in/renewal surface on the
-LS web, the credential and token lifecycle, and the error semantics. Behavior and rationale live in
-the [product-license domain](../../domains/commerce/product-license/product-license-spec.md) and
-[ADR-0026](../../architecture/adr/0026-product-licensing-separate-license-server.md); this document
-is the **contract** — cite it by reference, do not restate the shapes elsewhere.
+c3 ↔ license-server(LS)对外边界的**唯一真相源**。它定义 c3 调用的端点、面向买家的 LS Web 表面、
+凭证/令牌生命周期与错误语义。业务行为与依据见
+[product-license 领域规范](../../domains/commerce/product-license/product-license-spec.md)与
+[ADR-0026](../../architecture/adr/0026-product-licensing-separate-license-server.md);服务自身架构与**逐接口字段明细**见
+[license-server 架构规范 §10](../../architecture/license-server-architecture.md)。本文是**契约**——按引用,不在他处复述线缆形状。
 
-This is an **external HTTP contract** (a separate product, ADR-0026), not the c3 WebSocket wire
-protocol. Field and endpoint names below are the external contract vocabulary (C-DOC-1).
+这是一份**外部 HTTP 契约**(独立产品,ADR-0026),不是 c3 的 WebSocket 协议。下文字段/端点名是外部契约词汇(C-DOC-1)。
 
-## Transport & conventions
+## 传输与约定
 
-- **Transport:** HTTPS only. c3 never sends credentials or keys over plaintext HTTP.
-- **Encoding:** JSON request and response bodies; a string `status` discriminates results.
-- **Versioning:** endpoints are namespaced under a version prefix (e.g. `/v1/...`) so the contract
-  can evolve without breaking activated installations.
-- **Idempotency:** binding and heartbeat are safe to retry; re-binding the same license to the same
-  installation is idempotent, and re-binding to a **new** installation displaces the old one (the
-  old installation learns this on its next heartbeat, PL-R8).
-- **Trust:** the **entitlement token** returned by binding and heartbeat is **Ed25519-signed** by LS
-  and verified **offline** by c3 against an embedded public key. The HTTP channel is a transport; the
-  signature — not the channel — is the basis of trust (product-license PL-R5).
+- **传输:** 仅 HTTPS。c3 绝不在明文 HTTP 上发送凭证或密钥。
+- **路径:** 所有功能 API 以 `/v1` 前缀(`/healthz` 运维存活、`/` Vue SPA 为例外)。
+- **编码:** JSON 请求/响应体;字段一律 **camelCase**;时间为 UTC Unix 秒;金额 `*Cents` 为币种最小单位。
+- **错误信封:** `{"error":{"type":"<错误码>","message":"<说明>"}}`,以字符串 `type` 区分结果。
+- **会话:** 浏览器/Vue 调用的端点需登录会话 cookie(签名、HMAC keyed on 签名种子,无服务端会话表);未登录 → `401`。
+- **S2S:** `checkbind`/`heartbeat` 由 c3 server 直连调用,不需会话。
+- **信任:** `checkbind`/`heartbeat` 返回的**实体令牌**由 LS 用 Ed25519 **签名**,c3 用内嵌公钥**离线验签**。HTTP 通道只是传输,签名(而非通道)才是信任根(PL-R5)。
 
-## Credentials & tokens
+## 绑定模型:浏览器中介的设备式流程
 
-| Credential / token    | Issued by / when                          | Lifetime                | Presented as / used for                                                                                                                                  |
-| --------------------- | ----------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **License key**       | LS, when a license is created/issued      | lives with the license  | A **shareable handle** in the body of bind/heartbeat to identify the license. **Not a bearer credential** — never proves entitlement on its own (PL-R2). |
-| **Alive token**       | LS, returned by binding (and rotated)     | per-binding, revocable  | In the body of every heartbeat to authenticate the bound installation. Returned in **plaintext only once** at bind; LS stores only its **sha256 hash**.  |
-| **Entitlement token** | LS, signed, returned by binding/heartbeat | bounded validity window | Cached by c3; verified offline (Ed25519) to derive `active` (PL-R5).                                                                                     |
-| **Installation id**   | c3, stable per installation               | stable                  | In the body of bind/heartbeat to identify which installation the license is bound to. The license binds **exclusively** to one installation at a time.   |
+c3 是**浏览器外**的本地进程。绑定经浏览器中介完成:
 
-**Hard rule (PL-R2):** the license key and the alive token are distinct. The license key identifies
-the license and may be shared or displayed; the alive token is the per-binding bearer credential
-presented on every heartbeat. The license key alone can never complete a heartbeat.
+1. c3 server 生成 `installId`(安装级稳定,唯一、≤128 字符)与本轮 `requestId`(32 字符唯一)。
+2. c3 server 拉起系统浏览器打开 LS 的 Vue SPA(`/`,带 `installId`/`requestId`)。
+3. 用户在浏览器内用 GitHub 登录(仅账号登录,**不展示协议**),浏览器调用 `GET /v1/license/activate` 拿到本人 license 列表,选定一条后 `POST /v1/license/bind` 完成绑定。
+4. c3 server 带同一对 `(installId, requestId)` 轮询 `GET /v1/license/checkbind`,绑定完成后**经 S2S 通道**取回 `aliveToken` 与签名实体令牌(**绝不经浏览器**,PL-R2)。
+5. c3 server 周期 `POST /v1/license/heartbeat` 确认绑定并刷新实体令牌。
 
-## c3 → LS endpoints
+## 凭证与令牌
 
-### Bind
+| 凭证 / 令牌           | 由谁/何时签发                        | 生命周期         | 用途                                                                                      |
+| --------------------- | ------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------- |
+| **installId**         | c3,安装级稳定                        | 稳定             | 标识哪个安装。一个安装独占绑定一条 license。请求体/查询参数中携带,≤128 字符。             |
+| **requestId**         | c3,每轮绑定生成                      | 一轮绑定(带 TTL) | 32 字符唯一 id;配对 `installId` 在 `bind`/`checkbind` 间关联同一轮绑定。                  |
+| **license key**       | LS,创建/签发 license 时              | 随 license       | 可分享的稳定句柄,标识一条 license;用户在浏览器内选定后由 `bind` 引用。非心跳凭证(PL-R2)。 |
+| **alive token**       | LS,`bind` 时生成、轮换               | 每次绑定,可吊销  | 每次心跳鉴权该绑定。明文经 **`checkbind` S2S** 返回一次;库内只存 sha256 哈希。            |
+| **entitlement token** | LS,签名,`checkbind`/`heartbeat` 返回 | 有限有效期窗口   | c3 缓存、离线 Ed25519 验签以推导 `active`(PL-R5)。                                        |
 
-`POST /v1/license/bind` — binds an installation to a license and starts its live binding.
+**硬规则(PL-R2):** alive token 绝不经浏览器返回;它由 `bind` 生成、暂存进程内 `(installId, requestId)` 映射,仅由 c3 server 的 `checkbind` 取回一次。
 
-- **Request body:** `licenseKey` and `installationId`. No bearer credential — the license key plus a
-  successful bind is the authorization.
-- **LS checks:** the license **exists** and is **active** (status `active` and the term not lapsed).
-- **Effect:** LS records the binding **exclusively** — it sets the license's bound installation to
-  `installationId`, **rotates** the alive token (storing the new token's hash, overwriting any prior
-  binding), and stamps the last-success time. A previously-bound installation is thereby **displaced**
-  and will see `disabled` on its next heartbeat (PL-R8).
-- **Success response (`status: "active"`):** `entitlementToken` (Ed25519-signed, with its validity
-  window), `aliveToken` (plaintext, **once**), `termEnd`, and `heartbeatIntervalSeconds`. The
-  response carries **no plan**: plan is purchase-catalog data (`GET /v1/plans`) that c3 neither
-  consumes nor displays; the entitlement is the validity window only (product-license PL-R1).
+## c3 → LS 端点(S2S)
+
+### Checkbind
+
+`GET /v1/license/checkbind?installId&requestId` — c3 server 轮询本轮绑定是否完成。
+
+- **查询参数:** `installId`、`requestId`(须与 `bind` 一致)。
+- **返回 `200`:** 未完成 `{status:"pending"}`;完成 `{status:"active", aliveToken, entitlementToken, termEnd}`。命中即**消费**该映射(重复取回得 `pending`)。
+- **错误:** `400 invalid_request`、`503 unavailable`。
 
 ### Heartbeat
 
-`POST /v1/license/heartbeat` — confirms the installation still holds the binding and refreshes the
-entitlement.
+`POST /v1/license/heartbeat` — c3 server 周期确认活动绑定并刷新实体令牌。
 
-- **Request body:** `licenseKey`, `installationId`, and `aliveToken`.
-- **LS looks up by `licenseKey`** and returns a discriminating `status` (HTTP 200 unless the key is
-  unknown):
-  - **`active`** — the installation id **and** alive token match the live binding, and the license is
-    active and within term. LS refreshes the last-success time and returns a refreshed signed
-    `entitlementToken`, `termEnd`, and the next `heartbeatIntervalSeconds` (no `plan` — see Bind).
-  - **`disabled`** — the installation id or alive token does **not** match the live binding (the
-    license was rebound to another installation, PL-R8). This installation must gate; it **cannot be
-    recovered by going offline**.
-  - **`expired`** — the license is no longer `active` (an admin force-expired it, status `expired`)
-    or its term has ended.
-- **Unknown `licenseKey`:** `404`.
-- **Effect on c3:** a successful (`active`) heartbeat resets the **30-minute offline-grace** deadline
-  and caches the refreshed token (PL-R3/PL-R4). A `disabled` / `expired` status — returned
-  with **HTTP 200** so it is distinguishable from a network failure — lapses the installation to gated
-  (PL-R6/PL-R8).
+- **请求体:** `installId`、`aliveToken`(**不含 license key**)。
+- **返回 `200`(以 `status` 区分,非 active 也是 200,便于区别于网络故障):**
+  - `active` — alive token 命中活动绑定、`installId` 匹配、在期内:刷新最后成功时间,返回刷新的 `entitlementToken`、`termEnd`、下次 `heartbeatIntervalSeconds`。
+  - `disabled` — token 不匹配任何活动绑定(被改绑/轮换)或 `installId` 不符(PL-R8):c3 门禁,**离线无法挽回**。
+  - `expired` — license 非 `active`(被 admin 强制过期)或期限已结束。
+- **错误:** `400 invalid_request`、`500`、`503 unavailable`。**heartbeat 不返回 404**。
 
-## Public LS surfaces (foundation)
+## 公开端点(无需凭证)
 
-These endpoints require no credential and are part of the LS product's foundation. They are public
-because they carry no entitlement secret: the catalog is the same for every visitor and health is a
-redacted operational signal.
+- **`GET /v1/plans`** — 公开套餐目录。返回 `{plans: Plan[]}`,每个 `Plan` 含 `planKey`(稳定键)、`name`、`durationMonths`、`priceCents`、`currency`(ISO-4217)。MVP:`1m`/`6m`/`1y`,CNY。
+- **`GET /healthz`** — 存活 + **脱敏**配置视图(机密只显示 `set`/`unset`,绝不显示值,PL-R12)。
 
-### Plan catalog
+## 登录与会话(LS Web,面向买家)
 
-- **`GET /v1/plans`** — the public catalog of purchasable license terms. Returns a `plans` array;
-  each plan carries a **stable `id`**, a display `name`, a `durationMonths`, a `priceCents` (the
-  price in the currency's minor unit), and a `currency` (ISO-4217). Plan ids are stable once
-  published so orders and links can reference them. The MVP catalog is three plans: `1m` (1 month,
-  100 cents), `6m` (6 months, 590 cents), and `1y` (1 year, 1090 cents), denominated in `CNY`.
+GitHub 登录**仅用于账号登录/注册**,**不再展示协议**(协议在续费时展示)。
 
-### Health
+- **`POST /v1/auth/login`** — 发起 GitHub OAuth。请求体可携带 `installId`/`requestId`(透传)。`303` 重定向到 GitHub authorize URL(state 为无状态 HMAC 签名)。
+- **`GET /v1/auth/github/callback`** — OAuth 回调:校验 state → 取身份 → upsert 账户 → **确保一条默认 license(自动创建)** → 写会话 cookie → `303` 跳回 SPA(带回 `installId`/`requestId`)。
+- **`GET /v1/session`** — SPA 查询登录态:`{signedIn, login}`。
 
-- **`GET /healthz`** — liveness for operators/load-balancers. Returns a status, the LS version, and
-  a **redacted** configuration view in which every secret (database DSN, signing key, OAuth secret,
-  payment key) is reduced to a presence indicator and **never** its value (PL-R12).
+浏览器内**不暴露**任何签名令牌或 bearer 凭证:只展示可分享的 license key 与绑定元数据(PL-R2)。
 
-## Sign-in & license-key issuance (LS web — buyer-facing)
+## LS Web(买家)表面
 
-GitHub sign-in is used **only** to log in / register an account and obtain a license key. It no
-longer carries the activation action; activation is the separate license-key binding above.
+c3 不调用这些,记于此以保边界完整。
 
-- **`GET /activate`** — the account page: it renders the **service agreement (incl. no-refund terms)** for the
-  user to read and accept **before** signing in (PL-R9).
-- **`POST /activate/accept`** — records acceptance of the service agreement (incl. no-refund terms) (with version +
-  timestamp) and initiates **GitHub OAuth** sign-in. Without a recorded acceptance, sign-in is
-  refused.
-- **`GET /auth/github/callback`** — the OAuth callback. LS exchanges the authorization code for a
-  GitHub access token, fetches the GitHub identity, **creates or updates the account**, and — for a
-  new account — issues a **default trial license** with a fresh **license key**. It establishes the
-  buyer's browser **sign-in session** (a signed, HMAC-keyed cookie; no server-side session store) so
-  the renewal checkout can be reached without re-authenticating, then **displays the license key** for
-  the user to copy and paste into c3.
+### license 绑定(浏览器/会话)
 
-No signed token or bearer credential is exposed in the browser: the page shows only the
-shareable license key (PL-R2), and binding happens later when the user pastes that key into c3.
+- **`GET /v1/license/activate?installId&requestId`** — 确保账户有默认 license、登记本轮 `(installId, requestId)` 待绑请求,返回本人 license 列表(每项 `licenseId`/`licenseKey`/`planKey`/`status`/`termEnd`/`aliveInstallId`/`aliveTime`)。未登录 `401`。
+- **`POST /v1/license/bind`** — 请求体 `{installId, requestId, licenseKey}`(license 须属本人):独占绑定、轮换 alive token、签实体令牌,并把 `(installId, requestId) → {aliveToken, entitlementToken}` 暂存内存供 `checkbind` 取回。**响应只回 `{status:"active", termEnd}`**(不含 alive token/令牌,PL-R2)。错误:`400`、`404 invalid_key`、`410 expired`、`401`、`503`。
 
-## LS web (buyer & admin) surface
+### 续费购买流程
 
-These endpoints are part of the LS product, not called by c3; documented here so the boundary is
-complete.
+用户可持**多条 license**;延长 license 的期限/状态需一笔已支付订单(PL-R9):
 
-### Renewal purchase flow
+1. **登录**(GitHub)。checkout 端点需会话;未登录 `401`。
+2. **选套餐 + 接受协议**(协议在此展示,PL-R9):`GET /v1/plans`(可购买,排除试用)、`GET /v1/licenses`(续期目标)、`GET /v1/agreement`(协议正文)。
+3. **下单** `POST /v1/checkout` — 请求体 `{planKey, licenseId, accept}`。金额由服务端按 `planKey` 推导(客户端金额一律忽略)。创建唯一 `orderNo`(`C3+YYYYMMDDHHmmssSSS+random4`,作 WeChat `out_trade_no`)的 `pending` 订单;若目标 license 的 `termEnd` 已超过当前 +1 年则拒绝(`400`,续期上限)。配了微信支付则下 Native 统一下单(`time_expire`=创建+15min)并返回 `{orderId, orderNo, status, codeUrl, qrDataUri}`(扫码二维码)。
+4. **支付** WeChat Pay **Native**(扫码)。微信异步回调结算,详见下。
+5. **查看** `GET /v1/orders`(仅**已支付**订单)、`GET /v1/licenses`(license 与绑定状态)。
 
-A user may hold **multiple licenses**; extending a license's term and status requires a paid order
-(PL-R9). The flow:
+MVP **无退款端点**(PL-R10):虚拟商品,协议不支持退款。
 
-1. **Sign in** — GitHub OAuth account login (PL-R9). The checkout endpoints require the signed-in
-   session cookie; an unauthenticated visitor is redirected to `GET /activate`.
-2. **Choose a plan + accept the service agreement (incl. no-refund terms)** — `GET /checkout` renders
-   the purchasable plans (the `GET /v1/plans` catalog with the trial plan excluded) and the renewal
-   target license; `POST /checkout` creates a **`pending`** order. Acceptance (with version +
-   timestamp) is recorded **on the order**; a checkout without acceptance is **refused** (400). The
-   order's `amountCents`/`currency` are **derived server-side from the plan** — any client-supplied
-   amount is **ignored** — so a buyer can never dictate the charge (PL-R9).
-3. **Pay** — WeChat Pay **Native** (a scan-to-pay QR, suited to PC web). `POST /checkout` places a
-   **unified order** and returns a QR (`codeUrl`) the buyer scans with WeChat. WeChat then delivers
-   the result **asynchronously** to the payment callback (below); on a verified success LS marks the
-   **order** paid — recording the transaction reference as `paymentRef` — and **extends the linked
-   license's `termEnd` and status**. The MVP is **Native only** (no JSAPI/H5/mini-program), with no
-   reconciliation and no refunds.
-4. **Inspect** — a signed-in user may view their licenses (and their license keys), orders, and
-   binding status.
+### 支付回调
 
-| Method | Path        | Purpose                                                                                                   |
-| ------ | ----------- | --------------------------------------------------------------------------------------------------------- |
-| GET    | `/checkout` | Renewal page: choose a plan + the target license and accept the service agreement (sign-in required)      |
-| POST   | `/checkout` | Create a `pending` order — amount derived server-side from the plan; refused without agreement acceptance |
+`POST /v1/payment/wechat/notify` — WeChat Pay **异步**支付结果回调。
 
-### Buyer self-service
+- **请求:** 微信 POST 签名信封,body 为 APIv3 加密 resource,验签材料在 `Wechatpay-*` 头中。
+- **校验(安全边界):** LS 用微信**平台证书验签**并以 **APIv3 key 解密**;验签/解密失败的伪造或篡改回调被**拒绝**,不推进任何订单(PL-R12)。回调按解密出的 `out_trade_no`(= 订单 `orderNo`)定位订单。
+- **效果:** 验签通过的成功 → **单事务内**订单 `pending→paid`(记 `transaction_id` 为 `paymentRef`)并延长关联 license 的 `termEnd`/状态;其他交易态 → `failed`;已 `paid`/`expired` 幂等不变,迟到成功不重复延长。
+- **应答:** WeChat 的 `SUCCESS`/`FAIL` 信封;非 2xx 或 FAIL 促使微信重投。
 
-A signed-in buyer may view their own licenses (license key, plan, term, status, current binding device and last-active time), orders (plan, amount, status, timestamps), and the binding status of each license — all returned filtered to the authenticated user only.
+### 订单超时与对账
 
-- **`GET /account`** — the self-service dashboard. Requires a valid sign-in session cookie; an unauthenticated visitor is redirected to `GET /activate`. Renders HTML.
-- **License data returned:** each license carries `license_key`, `plan_key`, `term_end`, `status`, `alive_install_id` (the currently bound installation, or unbound), and `alive_time` (the last heartbeat timestamp).
-- **Order data returned:** each order carries `order id`, `plan_key`, `amount_cents`, `currency`, `status`, `payment_ref` (when paid), `created_at`.
-- **Non-leak (PL-R2):** no page or LS response ever exposes the plaintext `alive_token` or the signed `entitlement_token` in the browser. Only the shareable license key and binding metadata (install id, alive time) are visible.
+- **15 分钟支付窗口:** Native 统一下单设 `time_expire`=创建+15min,逾期微信自动关单。
+- **20 分钟定时对账:** LS 进程内每 20 分钟用 `orderNo` 调微信订单查询核对 `pending` 订单:SUCCESS→paid(延长 license)、CLOSED→`expired`、NOTPAY 未超窗→保持、其他→`failed`。是异步回调的安全网。
+- **续期上限:** 目标 license 的 `termEnd` 在当前 +1 年之后则拒绝下单。
 
-| Method | Path       | Purpose                                                                                                                                        |
-| ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/account` | Self-service dashboard: list the signed-in buyer's licenses (with binding info) and orders (with status); redirects to `/activate` if unsigned |
+### admin 后台
 
-There is **no refund endpoint** in the MVP (PL-R10) — the product is a virtual/digital good and the
-service agreement does not support refunds.
+经 GitHub OAuth + allowlist 鉴权的 admin(PL-R11)可签发、强制过期(置 `expired`)、审查 license/绑定/订单。Admin 改动改写权威记录,只在 c3 下次心跳到达(PL-R8)。
 
-#### Payment callback
+## 错误语义
 
-`POST /v1/payment/wechat/notify` — the WeChat Pay **asynchronous** payment-result callback.
+c3 对 LS 响应**fail-soft**——错误绝不崩溃 c3 或打断运行中的会话;只影响 grace 窗口耗尽后**新**会话能否创建(PL-R6/PL-R13)。
 
-- **Request:** WeChat POSTs a signed envelope carrying an APIv3-encrypted resource, with the
-  signature material in `Wechatpay-*` headers.
-- **LS verification (the security boundary):** LS verifies the callback signature against WeChat's
-  **platform certificate** and decrypts the resource with its **APIv3 key**. A callback that fails to
-  verify or decrypt — a **forged or tampered** "payment success" — is **refused** and **no order is
-  advanced** (PL-R12). The timestamp is checked against a short window to reject replays.
-- **Effect:** a verified success transitions the named order `pending → paid` (recording the WeChat
-  transaction reference as `paymentRef`) and **extends the linked license's `termEnd` and status**; any
-  other trade state marks the order `failed`. An order already paid is left unchanged.
-- **Idempotency:** WeChat redelivers until acknowledged, so the callback is **idempotent** — a
-  redelivered success does not re-extend the license.
-- **Acknowledgement:** LS replies with WeChat's `SUCCESS`/`FAIL` envelope; a non-success
-  acknowledgement (or any non-2xx) prompts WeChat to retry.
+| 条件                          | 对 c3 的含义                                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **checkbind `pending`**       | 本轮绑定尚未完成,继续轮询。                                                                          |
+| **heartbeat `disabled`(200)** | install/alive token 不再匹配活动绑定——被改绑他处(PL-R8)。门禁,离线无法挽回。                         |
+| **heartbeat `expired`(200)**  | license 非 active(admin 强制过期)或期限已结束。门禁。                                                |
+| **unavailable(503)**          | bind/checkbind/heartbeat 暂时禁用(LS 未完全配置或维护)。c3 提示重试并回退到 30 分钟离线 grace。      |
+| **network / unreachable**     | 非 LS 裁决;按一次失败心跳处理,依赖 30 分钟离线 grace(PL-R4)。与 `disabled`/`expired`(HTTP 200)区分。 |
+| **签名验签失败**              | c3 端,非 HTTP 状态:实体令牌 Ed25519 验签不过即按**不授权**处理(deny-by-default,PL-R5)。              |
 
-| Method | Path                        | Purpose                                                                                                              |
-| ------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/v1/payment/wechat/notify` | WeChat Pay async result callback: verify + decrypt, advance the order state machine, extend the license (idempotent) |
+## 不变量(交叉引用)
 
-### Admin back-office
+- alive token 与实体令牌**只走 S2S(checkbind/heartbeat),绝不经浏览器**(PL-R2)。
+- 绑定**独占**:一条 license 同时只绑一个安装;一个安装也只绑一条 license(改绑displaces 旧绑定,旧安装下次心跳得 `disabled`,无法 out-wait grace,PL-R8)。
+- 信任是 **Ed25519 签名**、**离线**验签;HTTP 通道绝非信任根(PL-R5)。
+- 错误对当前工作 **fail-soft**:只门禁**新**会话,绝不打断运行中的(PL-R6/PL-R13)。
+- 只有**公钥**活在 c3;签名私钥、OAuth secret、支付凭证只活在 LS(PL-R12)。
 
-An admin authenticated via GitHub OAuth (PL-R11) may **issue**, **force-expire** (set status
-`expired`), and **inspect** licenses, bindings, and orders. Admin changes mutate the authoritative
-record; they reach a c3 installation only on its next heartbeat (PL-R8).
+## 引用
 
-## Error semantics
-
-c3 interprets LS responses fail-soft — an error never crashes c3 or interrupts a running session; it
-only affects whether **new** sessions may be created once the grace window is exhausted (PL-R6/PL-R13).
-
-| Condition                          | Meaning to c3                                                                                                                                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **unknown license key (404)**      | The license key does not exist; binding/heartbeat rejected. Surface the reason; the user may re-check or paste a different key.                                                            |
-| **expired license (bind)**         | Binding rejected because the license is not `active` (status `expired` or the term ended); remain `Unactivated`.                                                                           |
-| **status `disabled` (heartbeat)**  | The installation id / alive token no longer match the live binding — the license was rebound elsewhere (PL-R8). Gate; cannot be recovered offline.                                         |
-| **status `expired` (heartbeat)**   | The license is not `active` (an admin force-expired it, or the term ended); lapse to gated.                                                                                                |
-| **rate-limited**                   | Too many bind/heartbeat attempts; back off and retry. Within grace, entitlement is unaffected.                                                                                             |
-| **unavailable**                    | The bind/heartbeat surface is temporarily disabled (LS not fully configured, or a maintenance window). c3 surfaces a retry hint and falls back to the 30-minute offline grace.             |
-| **network / unreachable**          | Not an LS verdict; treat as a failing heartbeat and rely on the 30-minute offline grace (PL-R4). Distinguished from the `disabled`/`expired` verdicts, which arrive as HTTP 200.           |
-| **signature verification failure** | c3-side, not an HTTP status: a returned entitlement token whose Ed25519 signature does not verify is treated as **not entitled** (deny-by-default, PL-R5), regardless of the HTTP success. |
-
-## Invariants (cross-referenced)
-
-- The **license key** is a shareable **handle**, **never** a heartbeat credential; the per-binding
-  **alive token** authenticates heartbeats (PL-R2).
-- Binding is **exclusive**: one installation per license; re-binding displaces the previous one,
-  which is reported `disabled` on its next heartbeat and cannot out-wait the grace window (PL-R8).
-- Trust is the **Ed25519 signature**, verified **offline**; the HTTP channel is never the basis of
-  trust (PL-R5).
-- Errors are **fail-soft for current work**: they gate only **new** sessions, never interrupt
-  running ones (PL-R6/PL-R13).
-- Only the **public** verification key lives in c3; signing keys, OAuth secrets, and payment
-  credentials live only in LS (PL-R12).
-
-## References
-
-- [product-license domain spec](../../domains/commerce/product-license/product-license-spec.md) — `PL-R*` rules and
-  the entitlement state machine.
-- [product-license design](../../domains/commerce/product-license/product-license-design.md) — c3-side mechanism and
-  LS technical shape.
-- [ADR-0026](../../architecture/adr/0026-product-licensing-separate-license-server.md) — why LS
-  exists and the accepted technologies.
+- [product-license 领域规范](../../domains/commerce/product-license/product-license-spec.md) — `PL-R*` 规则与授权状态机。
+- [product-license 设计](../../domains/commerce/product-license/product-license-design.md) — c3 侧机制与 LS 技术形态。
+- [license-server 架构规范 §10](../../architecture/license-server-architecture.md) — 逐接口字段明细。
+- [ADR-0026](../../architecture/adr/0026-product-licensing-separate-license-server.md) — 为何存在 LS 与所采技术。

@@ -48,6 +48,7 @@ export type ExecutionStore = {
   getSchedule: (id: string) => Schedule | null
   updateNextRunAt: (id: string, nextRunAt: number | null) => void
   updateSchedule: (id: string, patch: { status?: string }) => void
+  deleteSchedule: (id: string) => void
   appendExecutionLog: (input: {
     scheduleId: string
     startedAt: number
@@ -331,9 +332,15 @@ function dispatchAndTrack(schedule: Schedule): void {
         // Event-triggered schedules have no cron: they re-arm by waiting for the
         // next lifecycle event, so next_run_at stays null (never recompute it).
         if (updated && updated.status === 'active' && isAgentQuotaRecoverySchedule(updated)) {
-          store.updateSchedule(schedule.id, { status: 'paused' })
-          store.updateNextRunAt(schedule.id, null)
-          console.log('[scheduler] one-shot agent recovery schedule %s paused', schedule.id)
+          // One-shot agent recovery schedule: its sole job (re-enable the agent
+          // once its quota resets) is done the moment it fires. Delete it outright
+          // — along with its execution logs — instead of leaving a paused zombie
+          // behind; the next quota error simply creates a fresh recovery schedule.
+          store.deleteSchedule(schedule.id)
+          console.log(
+            '[scheduler] one-shot agent recovery schedule %s deleted after recovery',
+            schedule.id,
+          )
         } else if (updated && updated.status === 'active' && updated.triggerType !== 'event') {
           const next = computeNextRunAt(updated.cronExpression, Date.now(), getTimezone())
           store.updateNextRunAt(schedule.id, next)

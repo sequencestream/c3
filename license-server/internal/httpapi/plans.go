@@ -16,12 +16,33 @@ const plansCacheKey = "catalog"
 // license/auth/payment lookups will use. The underlying source is the persisted
 // c3_ls_plan table; when the database is unavailable it falls back to the
 // code-owned catalog so the endpoint stays up in degraded mode.
+// planView is the public wire shape of a plan. PlanKey (the stable identifier)
+// is named `planKey` on the wire (§10), distinct from plans.Plan's internal `id`.
+type planView struct {
+	PlanKey        string `json:"planKey"`
+	Name           string `json:"name"`
+	DurationMonths int    `json:"durationMonths"`
+	PriceCents     int    `json:"priceCents"`
+	Currency       string `json:"currency"`
+}
+
 func handlePlans(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		catalog, _ := d.Caches.Get(cache.NamePlans).GetOrLoad(plansCacheKey, func() (any, error) {
 			return loadCatalog(r.Context(), d), nil
 		})
-		writeJSON(w, http.StatusOK, map[string]any{"plans": catalog})
+		ps, _ := catalog.([]plans.Plan)
+		views := make([]planView, len(ps))
+		for i, p := range ps {
+			views[i] = planView{
+				PlanKey:        p.ID,
+				Name:           p.Name,
+				DurationMonths: p.DurationMonths,
+				PriceCents:     p.PriceCents,
+				Currency:       p.Currency,
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"plans": views})
 	}
 }
 

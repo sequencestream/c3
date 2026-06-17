@@ -24,11 +24,22 @@ const (
 
 // Activation/entitlement domain defaults (not env-driven; the same for every
 // installation). The license term is the default one-month trial entitlement a
-// buyer receives on GitHub registration; the heartbeat interval is what LS
+// user receives on GitHub registration; the heartbeat interval is what LS
 // dictates to c3 (returned on bind and each heartbeat).
 const (
 	DefaultLicenseTermDays          = 30
 	DefaultHeartbeatIntervalSeconds = 3600
+	// DefaultOrderPaymentWindowMinutes bounds how long a pending order stays
+	// payable before it is treated as expired (§11): the WeChat Native order's
+	// time_expire and the LS-side lazy/sweep expiry both use it.
+	DefaultOrderPaymentWindowMinutes = 15
+	// OrderReconcileIntervalMinutes is how often the LS reconcile job queries
+	// WeChat for the true state of pending orders and settles them (§11).
+	OrderReconcileIntervalMinutes = 20
+	// MaxLicenseTermAheadMonths caps how far into the future a license term may be
+	// stacked: checkout refuses a renewal whose target term_end already lies beyond
+	// now + this many months (§11).
+	MaxLicenseTermAheadMonths = 12
 )
 
 // Config is the fully-resolved LS configuration.

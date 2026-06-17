@@ -212,6 +212,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       getSchedule: (id) => schedules.find((s) => s.id === id) ?? null,
       updateNextRunAt: vi.fn(),
       updateSchedule: vi.fn(),
+      deleteSchedule: vi.fn(),
       appendExecutionLog: appendLog as unknown as ExecutionStore['appendExecutionLog'],
       updateExecutionLog: vi.fn(),
       broadcast: vi.fn(),

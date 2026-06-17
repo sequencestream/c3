@@ -34,22 +34,20 @@ func itoa(n int) string {
 
 // --- unit (no database) -----------------------------------------------------
 
-func TestAccountRedirectsToActivateWhenNotLoggedIn(t *testing.T) {
+func TestLicensesRequireLogin(t *testing.T) {
 	h, _ := signedServer(t)
-	res := do(t, h, "GET", "/account")
-	if res.StatusCode != http.StatusSeeOther {
-		t.Fatalf("GET /account unauthenticated = %d, want 303", res.StatusCode)
+	if res := do(t, h, "GET", "/v1/licenses"); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("GET /v1/licenses unauthenticated = %d, want 401", res.StatusCode)
 	}
-	if loc := res.Header.Get("Location"); loc != "/activate" {
-		t.Errorf("redirect = %q, want /activate", loc)
+	if res := do(t, h, "GET", "/v1/orders"); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("GET /v1/orders unauthenticated = %d, want 401", res.StatusCode)
 	}
 }
 
 // --- live (DB-gated) --------------------------------------------------------
 
-// accountCookie mints a signed session cookie for an arbitrary buyer during live
-// tests. The signer is reconstructed from devSeed (the same seed used by
-// liveServer), so the cookie is valid against the live server's session handler.
+// accountCookie mints a signed session cookie for an arbitrary user during live
+// tests, valid against the live server (same devSeed signer).
 func accountCookie(t *testing.T, userID int64) *http.Cookie {
 	t.Helper()
 	priv, _, err := token.ParsePrivateKey(devSeed)
@@ -59,100 +57,75 @@ func accountCookie(t *testing.T, userID int64) *http.Cookie {
 	return sessionCookie(priv, userID)
 }
 
+// getJSON GETs target as the given user and returns the response body.
+func getJSON(t *testing.T, h http.Handler, target string, userID int64) (int, string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", target, nil)
+	req.AddCookie(accountCookie(t, userID))
+	h.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
 func TestAccountLiveDataIsolation(t *testing.T) {
 	env := liveServer(t, githubOK())
 
-	seedPlans := []store.Plan{
+	if err := env.store.SeedPlans(env.ctx, []store.Plan{
 		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
 		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
-	}
-	if err := env.store.SeedPlans(env.ctx, seedPlans); err != nil {
+	}); err != nil {
 		t.Fatalf("seed plans: %v", err)
 	}
 
-	buyerA, err := env.store.UpsertBuyer(env.ctx, 1001, "alice", "alice@example.com")
-	if err != nil {
-		t.Fatalf("upsert buyer A: %v", err)
-	}
-	buyerB, err := env.store.UpsertBuyer(env.ctx, 1002, "bob", "bob@example.com")
-	if err != nil {
-		t.Fatalf("upsert buyer B: %v", err)
-	}
+	userA, _ := env.store.UpsertUser(env.ctx, 1001, "alice", "alice@example.com")
+	userB, _ := env.store.UpsertUser(env.ctx, 1002, "bob", "bob@example.com")
 
 	now := time.Now()
-	licA, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyerA, "trial-1m", 30, now, testKeyGen("lk"))
+	licA, _, err := env.store.EnsureLicenseForUser(env.ctx, userA, "trial-1m", 30, now, testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license A: %v", err)
 	}
-	licB, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyerB, "trial-1m", 30, now, testKeyGen("lk"))
+	licB, _, err := env.store.EnsureLicenseForUser(env.ctx, userB, "trial-1m", 30, now, testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license B: %v", err)
 	}
 
-	// Buyer A has an order; buyer B doesn't.
-	_, err = env.store.CreateOrder(env.ctx, store.CreateOrderInput{
-		UserID:              buyerA,
-		LicenseID:           licA.ID,
-		PlanKey:             "6m",
-		AgreementVersion:    "v1",
-		AgreementAcceptedAt: now,
-	})
+	// User A has a PAID order (paid orders are what /v1/orders lists); bob has none.
+	order, err := env.store.CreateOrder(env.ctx, store.CreateOrderInput{
+		UserID: userA, LicenseID: licA.ID, PlanKey: "6m",
+		AgreementVersion: "v1", AgreementAcceptedAt: now,
+	}, func() string { return store.NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order A: %v", err)
 	}
+	if _, _, err := env.store.MarkOrderPaid(env.ctx, order.OrderNo, "wx-tx-A", now); err != nil {
+		t.Fatalf("mark paid A: %v", err)
+	}
 
-	// Bind buyer A's license.
+	// Bind user A's license so it carries a binding install id.
 	if _, err := env.store.BindInstallation(env.ctx, licA.LicenseKey, "inst-alice", now, func() string { return "tok-alice" }); err != nil {
 		t.Fatalf("bind A: %v", err)
 	}
 
-	// Helper: GET /account as a buyer and return the HTML body.
-	accountHTML := func(t *testing.T, userID int64) string {
-		t.Helper()
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/account", nil)
-		req.AddCookie(accountCookie(t, userID))
-		env.h.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("GET /account user %d = %d, want 200; body=%s", userID, rec.Code, rec.Body.String())
+	t.Run("alice sees her own license, binding, and paid order", func(t *testing.T) {
+		code, lic := getJSON(t, env.h, "/v1/licenses", userA)
+		if code != http.StatusOK || !strings.Contains(lic, licA.LicenseKey) || !strings.Contains(lic, "inst-alice") {
+			t.Errorf("alice /v1/licenses = %d %s", code, lic)
 		}
-		return rec.Body.String()
-	}
-
-	t.Run("alice sees her own license, order, and binding", func(t *testing.T) {
-		body := accountHTML(t, buyerA)
-		if !strings.Contains(body, licA.LicenseKey) {
-			t.Error("alice should see her own license key")
-		}
-		if !strings.Contains(body, "6m") {
-			t.Error("alice should see her order plan")
-		}
-		if !strings.Contains(body, "inst-alice") {
-			t.Error("alice should see her binding install id")
+		_, ord := getJSON(t, env.h, "/v1/orders", userA)
+		if !strings.Contains(ord, "6m") || !strings.Contains(ord, order.OrderNo) {
+			t.Errorf("alice /v1/orders should list her paid order: %s", ord)
 		}
 	})
 
-	t.Run("bob sees his license but no order and no binding", func(t *testing.T) {
-		body := accountHTML(t, buyerB)
-		if !strings.Contains(body, licB.LicenseKey) {
-			t.Error("bob should see his own license key")
+	t.Run("bob sees his license but no order, and not alice's data", func(t *testing.T) {
+		_, lic := getJSON(t, env.h, "/v1/licenses", userB)
+		if !strings.Contains(lic, licB.LicenseKey) || strings.Contains(lic, licA.LicenseKey) {
+			t.Errorf("bob /v1/licenses leak/missing: %s", lic)
 		}
-		if !strings.Contains(body, "暂无订单") {
-			t.Error("bob should see 'no orders' placeholder since he has no orders")
-		}
-		if strings.Contains(body, licA.LicenseKey) {
-			t.Error("bob must NOT see alice's license key")
-		}
-	})
-
-	t.Run("buyers cannot see each other's data", func(t *testing.T) {
-		aliceHTML := accountHTML(t, buyerA)
-		bobHTML := accountHTML(t, buyerB)
-		if strings.Contains(aliceHTML, licB.LicenseKey) {
-			t.Error("alice must NOT see bob's license key")
-		}
-		if strings.Contains(bobHTML, licA.LicenseKey) {
-			t.Error("bob must NOT see alice's license key")
+		_, ord := getJSON(t, env.h, "/v1/orders", userB)
+		if strings.Contains(ord, order.OrderNo) {
+			t.Errorf("bob must not see alice's order: %s", ord)
 		}
 	})
 }
@@ -164,33 +137,25 @@ func TestAccountDoesNotLeakAliveToken(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed plans: %v", err)
 	}
-	buyer, err := env.store.UpsertBuyer(env.ctx, 2001, "test", "test@example.com")
-	if err != nil {
-		t.Fatalf("upsert buyer: %v", err)
-	}
-	lic, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyer, "trial-1m", 30, time.Now(), testKeyGen("lk"))
+	user, _ := env.store.UpsertUser(env.ctx, 2001, "test", "test@example.com")
+	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, user, "trial-1m", 30, time.Now(), testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
 
-	// Bind with a known plaintext token.
 	tokenPlain := "super-secret-alive-token"
 	if _, err := env.store.BindInstallation(env.ctx, lic.LicenseKey, "inst-test", time.Now(), func() string { return tokenPlain }); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/account", nil)
-	req.AddCookie(accountCookie(t, buyer))
-	env.h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /account = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	code, body := getJSON(t, env.h, "/v1/licenses", user)
+	if code != http.StatusOK {
+		t.Fatalf("GET /v1/licenses = %d; body=%s", code, body)
 	}
-	body := rec.Body.String()
 	if strings.Contains(body, tokenPlain) {
-		t.Error("account page must NOT leak the plaintext alive token")
+		t.Error("licenses response must NOT leak the plaintext alive token")
 	}
 	if strings.Contains(body, store.HashCode(tokenPlain)) {
-		t.Error("account page must NOT leak the alive token hash either")
+		t.Error("licenses response must NOT leak the alive token hash either")
 	}
 }

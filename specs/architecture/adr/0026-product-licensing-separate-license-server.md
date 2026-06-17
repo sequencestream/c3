@@ -17,7 +17,7 @@ entitlement therefore requires a **server-side source of truth**.
 The constitution's tech-stack baseline forbids — _in the c3 process_ — any database, any
 auth/identity provider, any second agent runtime, and any non-loopback bind, each "forbidden without
 an ADR". A licensing authority needs exactly those forbidden things (a database of orders and
-licenses, an identity provider for buyers, a payment integration, a public network listener). The
+licenses, an identity provider for users, a payment integration, a public network listener). The
 resolution is **not** to relax c3's constraints, but to place the authority in a **separate
 product** — the **license-server (LS)** — that lives entirely outside the c3 process. This ADR is
 the constitution's required exception record for introducing that service and for the one small
@@ -85,7 +85,7 @@ is a distinct product outside that process, so the following are accepted **for 
 
 - **Go standard-library HTTP** as the LS runtime (no heavy framework; a small, auditable surface).
 - **PostgreSQL** as the LS persistent store (licenses, orders, activations, heartbeats, revocations).
-- **GitHub OAuth** as the LS identity provider for **both buyer login and the admin back-office**
+- **GitHub OAuth** as the LS identity provider for **both user login and the admin back-office**
   (single identity source).
 - **WeChat Pay** as the LS payment integration.
 - **Ed25519** signatures on entitlement tokens — LS signs, c3 verifies with an **embedded public

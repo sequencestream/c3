@@ -9,33 +9,43 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/sequencestream/code-creative-center/license-server/internal/agreement"
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 )
 
-// mountActivation registers the simplified license surface. The browser-facing
-// routes (GitHub account login + the license-key page) render HTML; the c3-facing
-// bind/heartbeat routes are JSON.
-func mountActivation(mux *http.ServeMux, d Deps) {
-	mux.HandleFunc("/activate", allowGET(handleAgreementPage(d)))
-	mux.HandleFunc("/activate/accept", allowPOST(handleAcceptAndLogin(d)))
-	mux.HandleFunc("/auth/github/callback", allowGET(handleGitHubCallback(d)))
+// installID / requestID length bounds (§10). installId is a stable per-install
+// identifier; requestId is the c3-generated 32-char per-round id.
+const (
+	maxInstallIDLen = 128
+	requestIDLen    = 32
+)
+
+// mountAuth registers the GitHub sign-in surface (browser/Vue). Sign-in is
+// account login only — no agreement is shown here (the agreement appears at
+// checkout, §4). mountLicense registers the binding API (browser + c3 S2S).
+func mountAuth(mux *http.ServeMux, d Deps) {
+	mux.HandleFunc("/v1/auth/login", allowPOST(handleAuthLogin(d)))
+	mux.HandleFunc("/v1/auth/github/callback", allowGET(handleGitHubCallback(d)))
+	mux.HandleFunc("/v1/session", allowGET(handleSession(d)))
+}
+
+func mountLicense(mux *http.ServeMux, d Deps) {
+	mux.HandleFunc("/v1/license/activate", allowGET(handleLicenseActivate(d)))
 	mux.HandleFunc("/v1/license/bind", allowPOST(handleLicenseBind(d)))
+	mux.HandleFunc("/v1/license/checkbind", allowGET(handleLicenseCheckbind(d)))
 	mux.HandleFunc("/v1/license/heartbeat", allowPOST(handleLicenseHeartbeat(d)))
 }
 
 // loginReady reports whether the browser GitHub-login surface can operate: it
 // needs a database, OAuth credentials, a signing key (to derive the CSRF state
-// secret), and a public URL (the OAuth callback). When any is missing the surface
-// returns a clear error rather than a half-working flow.
+// secret and the session cookie), and a public URL (the OAuth callback).
 func (d Deps) loginReady() (string, bool) {
 	if !d.Store.Available() {
 		return "license database is not configured", false
@@ -52,122 +62,156 @@ func (d Deps) loginReady() (string, bool) {
 	return "", true
 }
 
-// licenseAPIReady reports whether the c3-facing bind/heartbeat API can operate:
-// it needs a database and a signing key (to mint entitlement tokens). It does not
+// licenseAPIReady reports whether the c3-facing checkbind/heartbeat API can
+// operate: a database and a signing key (to mint entitlement tokens). It does not
 // need OAuth or the public URL.
 func (d Deps) licenseAPIReady() bool {
 	return d.Store.Available() && d.Signer != nil
 }
 
-// --- GET /activate : the no-refund agreement page ---------------------------
+// --- POST /v1/auth/login : start GitHub OAuth (no agreement) -----------------
 
-func handleAgreementPage(d Deps) http.HandlerFunc {
+func handleAuthLogin(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if msg, ok := d.loginReady(); !ok {
-			renderError(w, http.StatusServiceUnavailable, "Sign-in unavailable", msg)
+			writeError(w, http.StatusServiceUnavailable, "unavailable", msg)
 			return
 		}
-		renderAgreement(w)
+		_ = r.ParseForm()
+		// The binding round identifiers are carried through OAuth in the signed
+		// state and handed back to the SPA on the callback, so the user lands back
+		// on the activation view with the same (installId, requestId).
+		st := statePayload{
+			Nonce:     randToken(),
+			InstallID: r.FormValue("installId"),
+			RequestID: r.FormValue("requestId"),
+		}
+		callback := strings.TrimRight(d.Config.PublicURL, "/") + "/v1/auth/github/callback"
+		http.Redirect(w, r, d.OAuth.AuthorizeURLFor(callback, d.signState(st), nil), http.StatusSeeOther)
 	}
 }
 
-// --- POST /activate/accept : record acceptance, go to GitHub ----------------
-
-func handleAcceptAndLogin(d Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if msg, ok := d.loginReady(); !ok {
-			renderError(w, http.StatusServiceUnavailable, "Sign-in unavailable", msg)
-			return
-		}
-		if err := r.ParseForm(); err != nil {
-			renderError(w, http.StatusBadRequest, "Invalid request", "Could not read the form.")
-			return
-		}
-		// Acceptance must be explicit: the only path to GitHub login is the accept
-		// button, which is also what mints a valid OAuth state (PL-R9).
-		if r.PostForm.Get("accept") != "on" && r.PostForm.Get("accept") != "true" {
-			renderError(w, http.StatusBadRequest, "Agreement required",
-				"You must accept the service agreement to continue. "+agreement.Summary)
-			return
-		}
-		state := d.signState(randToken())
-		callback := strings.TrimRight(d.Config.PublicURL, "/") + "/auth/github/callback"
-		http.Redirect(w, r, d.OAuth.AuthorizeURLFor(callback, state, nil), http.StatusSeeOther)
-	}
-}
-
-// --- GET /auth/github/callback : finish login, show the license key ---------
+// --- GET /v1/auth/github/callback : finish login, return to the SPA ----------
 
 func handleGitHubCallback(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if msg, ok := d.loginReady(); !ok {
-			renderError(w, http.StatusServiceUnavailable, "Sign-in unavailable", msg)
+			writeError(w, http.StatusServiceUnavailable, "unavailable", msg)
 			return
 		}
 		q := r.URL.Query()
 		if oauthErr := q.Get("error"); oauthErr != "" {
-			renderError(w, http.StatusBadRequest, "GitHub sign-in failed", q.Get("error_description"))
+			http.Redirect(w, r, "/?error="+url.QueryEscape(q.Get("error_description")), http.StatusSeeOther)
 			return
 		}
-		code := q.Get("code")
-		state := q.Get("state")
-		// CSRF: the state must be one this LS minted (stateless HMAC over the seed).
-		if code == "" || !d.verifyState(state) {
-			renderError(w, http.StatusBadRequest, "GitHub sign-in failed", "Missing or invalid authorization response.")
+		st, ok := d.verifyState(q.Get("state"))
+		if q.Get("code") == "" || !ok {
+			http.Redirect(w, r, "/?error="+url.QueryEscape("Missing or invalid authorization response."), http.StatusSeeOther)
 			return
 		}
 
-		callback := strings.TrimRight(d.Config.PublicURL, "/") + "/auth/github/callback"
-		accessToken, err := d.OAuth.Exchange(r.Context(), code, callback)
+		callback := strings.TrimRight(d.Config.PublicURL, "/") + "/v1/auth/github/callback"
+		accessToken, err := d.OAuth.Exchange(r.Context(), q.Get("code"), callback)
 		if err != nil {
-			renderError(w, http.StatusBadGateway, "GitHub sign-in failed", "Could not complete sign-in with GitHub.")
+			http.Redirect(w, r, "/?error="+url.QueryEscape("Could not complete sign-in with GitHub."), http.StatusSeeOther)
 			return
 		}
 		user, err := d.OAuth.FetchUser(r.Context(), accessToken)
 		if err != nil {
-			renderError(w, http.StatusBadGateway, "GitHub sign-in failed", "Could not read your GitHub identity.")
+			http.Redirect(w, r, "/?error="+url.QueryEscape("Could not read your GitHub identity."), http.StatusSeeOther)
 			return
 		}
-		buyerID, err := d.Store.UpsertBuyer(r.Context(), user.ID, user.Login, user.Email)
+		userID, err := d.Store.UpsertUser(r.Context(), user.ID, user.Login, user.Email)
 		if err != nil {
-			renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not record your account.")
+			http.Redirect(w, r, "/?error="+url.QueryEscape("Could not record your account."), http.StatusSeeOther)
 			return
 		}
-		// Registration issues a trial entitlement only when a trial plan is
-		// configured (c3_ls_plan.is_trial); with none, the buyer leaves without a
-		// license and must purchase one.
-		trial, hasTrial, err := d.Store.FirstTrialPlan(r.Context())
-		if err != nil {
-			renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not load plans.")
+		// Every account leaves with at least one license to bind, created on first
+		// sign-in when none exists (§4/§5).
+		if _, _, err := d.Store.EnsureDefaultLicense(r.Context(), userID, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
+			http.Redirect(w, r, "/?error="+url.QueryEscape("Could not provision your license."), http.StatusSeeOther)
 			return
 		}
-		if hasTrial {
-			if _, _, err := d.Store.EnsureLicenseForBuyer(r.Context(), buyerID, trial.PlanKey, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
-				renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not provision your license.")
-				return
+		d.setSession(w, session{UserID: userID, Login: user.Login, IssuedAt: time.Now().Unix()})
+
+		// Back to the SPA, preserving the binding round so the activation view can
+		// resume without re-entering installId/requestId.
+		dest := "/"
+		if st.InstallID != "" || st.RequestID != "" {
+			vals := url.Values{}
+			if st.InstallID != "" {
+				vals.Set("installId", st.InstallID)
 			}
+			if st.RequestID != "" {
+				vals.Set("requestId", st.RequestID)
+			}
+			dest = "/?" + vals.Encode()
 		}
-		licenses, err := d.Store.ListLicensesByBuyer(r.Context(), buyerID)
-		if err != nil {
-			renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not load your licenses.")
-			return
-		}
-		// Establish the browser sign-in so the buyer can reach the renewal
-		// checkout without re-authenticating on each page.
-		d.setSession(w, session{UserID: buyerID, Login: user.Login, IssuedAt: time.Now().Unix()})
-		renderLicenses(w, user.Login, licenses)
+		http.Redirect(w, r, dest, http.StatusSeeOther)
 	}
 }
 
-// --- POST /v1/license/bind : c3 binds an installation to a license_key ------
+// --- GET /v1/session : who am I (for the SPA) --------------------------------
+
+func handleSession(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if sess, ok := d.currentSession(r); ok {
+			writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "login": sess.Login})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"signedIn": false, "login": ""})
+	}
+}
+
+// --- GET /v1/license/activate : list licenses + register the binding round ---
+
+func handleLicenseActivate(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := d.currentSession(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthenticated", "sign-in required")
+			return
+		}
+		if !d.Store.Available() {
+			writeError(w, http.StatusServiceUnavailable, "unavailable", "license database is not configured")
+			return
+		}
+		installID := r.URL.Query().Get("installId")
+		requestID := r.URL.Query().Get("requestId")
+		if msg, ok := validateBindIDs(installID, requestID); !ok {
+			writeError(w, http.StatusBadRequest, "invalid_request", msg)
+			return
+		}
+		// Ensure the account has a license to bind, then register this round so
+		// checkbind recognizes it (the entry is filled in by bind).
+		if _, _, err := d.Store.EnsureDefaultLicense(r.Context(), sess.UserID, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
+			writeError(w, http.StatusInternalServerError, "activate_failed", "could not provision your license")
+			return
+		}
+		licenses, err := d.Store.LicenseBindingsByUser(r.Context(), sess.UserID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "activate_failed", "could not load your licenses")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"licenses": licenseViews(licenses)})
+	}
+}
+
+// --- POST /v1/license/bind : bind the chosen license to this installation ----
 
 type bindRequest struct {
-	LicenseKey     string `json:"licenseKey"`
-	InstallationID string `json:"installationId"`
+	InstallID  string `json:"installId"`
+	RequestID  string `json:"requestId"`
+	LicenseKey string `json:"licenseKey"`
 }
 
 func handleLicenseBind(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := d.currentSession(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthenticated", "sign-in required")
+			return
+		}
 		if !d.licenseAPIReady() {
 			writeError(w, http.StatusServiceUnavailable, "unavailable", "license service is not configured")
 			return
@@ -177,13 +221,22 @@ func handleLicenseBind(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid_request", "malformed JSON body")
 			return
 		}
-		if body.LicenseKey == "" || body.InstallationID == "" {
-			writeError(w, http.StatusBadRequest, "invalid_request", "licenseKey and installationId are required")
+		if msg, ok := validateBindIDs(body.InstallID, body.RequestID); !ok {
+			writeError(w, http.StatusBadRequest, "invalid_request", msg)
+			return
+		}
+		if body.LicenseKey == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "licenseKey is required")
+			return
+		}
+		// The chosen license must belong to the signed-in user.
+		if !d.userOwnsLicenseKey(r, sess.UserID, body.LicenseKey) {
+			writeError(w, http.StatusNotFound, "invalid_key", "license not found for this account")
 			return
 		}
 
 		now := time.Now()
-		res, err := d.Store.BindInstallation(r.Context(), body.LicenseKey, body.InstallationID, now, randToken)
+		res, err := d.Store.BindInstallation(r.Context(), body.LicenseKey, body.InstallID, now, randToken)
 		if err != nil {
 			switch {
 			case errors.Is(err, store.ErrNotFound):
@@ -195,29 +248,58 @@ func handleLicenseBind(d Deps) http.HandlerFunc {
 			}
 			return
 		}
-
-		entitlement, err := signEntitlement(d.Signer, body.InstallationID, res.License, now)
+		entitlement, err := signEntitlement(d.Signer, body.InstallID, res.License, now)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "bind_failed", "could not sign entitlement")
 			return
 		}
+		// Stash the secrets for c3 server to collect over S2S via checkbind; the
+		// browser response carries neither the alive token nor the token (PL-R2).
+		d.Binds.put(body.InstallID, body.RequestID, bindEntry{
+			aliveToken:       res.AliveToken,
+			entitlementToken: entitlement,
+			termEnd:          res.License.TermEnd.Unix(),
+		})
 		writeJSON(w, http.StatusOK, map[string]any{
-			"type":                     "activated",
-			"status":                   "active",
-			"entitlementToken":         entitlement,
-			"aliveToken":               res.AliveToken,
-			"heartbeatIntervalSeconds": config.DefaultHeartbeatIntervalSeconds,
-			"termEnd":                  res.License.TermEnd.Unix(),
+			"status":  "active",
+			"termEnd": res.License.TermEnd.Unix(),
 		})
 	}
 }
 
-// --- POST /v1/license/heartbeat : c3 confirms the live binding --------------
+// --- GET /v1/license/checkbind : c3 server collects the completed binding ----
+
+func handleLicenseCheckbind(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !d.licenseAPIReady() {
+			writeError(w, http.StatusServiceUnavailable, "unavailable", "license service is not configured")
+			return
+		}
+		installID := r.URL.Query().Get("installId")
+		requestID := r.URL.Query().Get("requestId")
+		if msg, ok := validateBindIDs(installID, requestID); !ok {
+			writeError(w, http.StatusBadRequest, "invalid_request", msg)
+			return
+		}
+		e, ok := d.Binds.take(installID, requestID)
+		if !ok {
+			writeJSON(w, http.StatusOK, map[string]any{"status": "pending"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":           "active",
+			"aliveToken":       e.aliveToken,
+			"entitlementToken": e.entitlementToken,
+			"termEnd":          e.termEnd,
+		})
+	}
+}
+
+// --- POST /v1/license/heartbeat : c3 server confirms the live binding --------
 
 type heartbeatRequest struct {
-	LicenseKey     string `json:"licenseKey"`
-	InstallationID string `json:"installationId"`
-	AliveToken     string `json:"aliveToken"`
+	InstallID  string `json:"installId"`
+	AliveToken string `json:"aliveToken"`
 }
 
 func handleLicenseHeartbeat(d Deps) http.HandlerFunc {
@@ -231,31 +313,23 @@ func handleLicenseHeartbeat(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid_request", "malformed JSON body")
 			return
 		}
-		if body.LicenseKey == "" || body.InstallationID == "" || body.AliveToken == "" {
-			writeError(w, http.StatusBadRequest, "invalid_request", "licenseKey, installationId and aliveToken are required")
+		if body.InstallID == "" || body.AliveToken == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "installId and aliveToken are required")
 			return
 		}
 
 		now := time.Now()
-		res, err := d.Store.Heartbeat(r.Context(), body.LicenseKey, body.InstallationID, body.AliveToken, now)
+		res, err := d.Store.HeartbeatByInstall(r.Context(), body.InstallID, body.AliveToken, now)
 		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "invalid_key", "unknown license key")
-				return
-			}
 			writeError(w, http.StatusInternalServerError, "heartbeat_failed", "could not process heartbeat")
 			return
 		}
-
-		// Non-active verdicts are a 200 with a discriminating status so c3 gates
-		// new sessions without treating it as a transient (grace-eligible) error.
 		out := map[string]any{
-			"type":                     "heartbeat",
 			"status":                   res.Status,
 			"heartbeatIntervalSeconds": config.DefaultHeartbeatIntervalSeconds,
 		}
 		if res.Status == store.HeartbeatActive {
-			entitlement, err := signEntitlement(d.Signer, body.InstallationID, res.License, now)
+			entitlement, err := signEntitlement(d.Signer, body.InstallID, res.License, now)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "heartbeat_failed", "could not sign entitlement")
 				return
@@ -269,11 +343,64 @@ func handleLicenseHeartbeat(d Deps) http.HandlerFunc {
 
 // --- helpers ----------------------------------------------------------------
 
+// validateBindIDs enforces the installId/requestId length bounds (§10).
+func validateBindIDs(installID, requestID string) (string, bool) {
+	switch {
+	case installID == "" || requestID == "":
+		return "installId and requestId are required", false
+	case len(installID) > maxInstallIDLen:
+		return "installId exceeds 128 characters", false
+	case len(requestID) != requestIDLen:
+		return "requestId must be 32 characters", false
+	}
+	return "", true
+}
+
+// userOwnsLicenseKey reports whether licenseKey is one the signed-in user owns.
+func (d Deps) userOwnsLicenseKey(r *http.Request, userID int64, licenseKey string) bool {
+	licenses, err := d.Store.ListLicensesByUser(r.Context(), userID)
+	if err != nil {
+		return false
+	}
+	for _, l := range licenses {
+		if l.LicenseKey == licenseKey {
+			return true
+		}
+	}
+	return false
+}
+
+// licenseViews projects license bindings to the JSON the activation/account
+// pages render. It never exposes the alive token or entitlement token (PL-R2).
+func licenseViews(ls []store.LicenseBinding) []map[string]any {
+	out := make([]map[string]any, len(ls))
+	for i, l := range ls {
+		var installID any
+		if l.AliveInstallID != nil {
+			installID = *l.AliveInstallID
+		}
+		var aliveTime any
+		if l.AliveTime != nil {
+			aliveTime = l.AliveTime.Unix()
+		}
+		out[i] = map[string]any{
+			"licenseId":      l.ID,
+			"licenseKey":     l.LicenseKey,
+			"planKey":        l.PlanKey,
+			"status":         l.Status,
+			"termEnd":        l.TermEnd.Unix(),
+			"aliveInstallId": installID,
+			"aliveTime":      aliveTime,
+		}
+	}
+	return out
+}
+
 // signEntitlement mints the offline-verifiable entitlement token for a license
-// bound to installationID (PL-R5).
-func signEntitlement(signer Signer, installationID string, lic store.License, now time.Time) (string, error) {
+// bound to installID (PL-R5).
+func signEntitlement(signer Signer, installID string, lic store.License, now time.Time) (string, error) {
 	return token.Sign(signer, token.Payload{
-		InstallationID: installationID,
+		InstallationID: installID,
 		LicenseID:      strconv.FormatInt(lic.ID, 10),
 		Status:         "active",
 		TermStart:      lic.TermStart.Unix(),
@@ -282,28 +409,51 @@ func signEntitlement(signer Signer, installationID string, lic store.License, no
 	})
 }
 
-// signState mints a stateless CSRF state: "<nonce>.<base64url(HMAC-SHA256(seed,
-// nonce))>". Keying the HMAC on the Ed25519 signing seed avoids a separate
-// secret and a server-side request table — the state is self-verifying.
-func (d Deps) signState(nonce string) string {
-	mac := hmac.New(sha256.New, d.Signer.Seed())
-	mac.Write([]byte(nonce))
-	return nonce + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+// statePayload is the CSRF-protected OAuth state. The nonce defeats CSRF; the
+// binding round ids ride along so the callback can return the user to the same
+// activation view.
+type statePayload struct {
+	Nonce     string `json:"n"`
+	InstallID string `json:"i,omitempty"`
+	RequestID string `json:"r,omitempty"`
 }
 
-// verifyState recomputes the HMAC over the nonce and constant-time compares it.
-func (d Deps) verifyState(state string) bool {
-	nonce, sig, ok := strings.Cut(state, ".")
-	if !ok || nonce == "" || sig == "" || d.Signer == nil {
-		return false
+// signState mints "<base64url(JSON)>.<base64url(HMAC-SHA256(seed, b64))>". Keying
+// the HMAC on the Ed25519 signing seed avoids a separate secret and a
+// server-side request table — the state is self-verifying.
+func (d Deps) signState(p statePayload) string {
+	raw, _ := json.Marshal(p)
+	b := base64.RawURLEncoding.EncodeToString(raw)
+	mac := hmac.New(sha256.New, d.Signer.Seed())
+	mac.Write([]byte(b))
+	return b + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// verifyState recomputes the HMAC and constant-time compares it, returning the
+// carried payload on success.
+func (d Deps) verifyState(state string) (statePayload, bool) {
+	b, sig, ok := strings.Cut(state, ".")
+	if !ok || b == "" || sig == "" || d.Signer == nil {
+		return statePayload{}, false
 	}
 	mac := hmac.New(sha256.New, d.Signer.Seed())
-	mac.Write([]byte(nonce))
+	mac.Write([]byte(b))
 	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return subtle.ConstantTimeCompare([]byte(sig), []byte(want)) == 1
+	if subtle.ConstantTimeCompare([]byte(sig), []byte(want)) != 1 {
+		return statePayload{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(b)
+	if err != nil {
+		return statePayload{}, false
+	}
+	var p statePayload
+	if err := json.Unmarshal(raw, &p); err != nil || p.Nonce == "" {
+		return statePayload{}, false
+	}
+	return p, true
 }
 
-// allowPOST mirrors allowGET for the JSON endpoints.
+// allowPOST mirrors allowGET for the JSON write endpoints.
 func allowPOST(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -328,157 +478,3 @@ func randToken() string {
 
 // Signer is the Ed25519 private key type alias kept for readable Deps.
 type Signer = ed25519.PrivateKey
-
-var agreementTmpl = template.Must(template.New("agreement").Parse(`<!doctype html>
-<html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} — c3 license</title>
-<style>
- body{font:16px/1.7 system-ui,sans-serif;max-width:42rem;margin:3rem auto;padding:0 1rem;color:#1a1a1a}
- h1{font-size:1.45rem} h2{font-size:1.1rem;margin:1.6rem 0 .4rem}
- p{margin:.7rem 0} ol{margin:.4rem 0;padding-left:1.4rem} li{margin:.3rem 0}
- .agree{margin:1.5rem 0;display:flex;gap:.5rem;align-items:flex-start}
- button{font:inherit;padding:.6rem 1.2rem;border:0;border-radius:.4rem;background:#1a1a1a;color:#fff;cursor:pointer}
- button:disabled{opacity:.5;cursor:not-allowed} .note{color:#666;font-size:.9rem}
- @media(prefers-color-scheme:dark){body{background:#111;color:#eee}button{background:#eee;color:#111}.note{color:#aaa}}
-</style></head><body>
-{{.Body}}
-<form method="post" action="/activate/accept">
- <label class="agree"><input type="checkbox" name="accept" id="accept" onchange="document.getElementById('go').disabled=!this.checked">
-  <span>我已阅读并同意本服务协议。</span></label>
- <button type="submit" id="go" disabled>同意并使用 GitHub 继续</button>
-</form>
-<p class="note">协议版本 {{.Version}}。不同意将取消登录。</p>
-</body></html>`))
-
-func renderAgreement(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = agreementTmpl.Execute(w, map[string]any{
-		"Title":   agreement.Title,
-		"Body":    markdownToHTML(agreement.Markdown),
-		"Version": agreement.Version,
-	})
-}
-
-// markdownToHTML renders the embedded agreement markdown into safe HTML. It
-// supports the minimal subset the agreement document uses — `#`/`##` headings,
-// `N.` ordered-list items, and blank-line-separated paragraphs — and escapes all
-// text so the agreement copy can never inject markup. Anything richer is out of
-// scope by design: the document is authored to this subset.
-func markdownToHTML(md string) template.HTML {
-	var b strings.Builder
-	inList := false
-	closeList := func() {
-		if inList {
-			b.WriteString("</ol>")
-			inList = false
-		}
-	}
-	wrap := func(tag, text string) {
-		b.WriteString("<")
-		b.WriteString(tag)
-		b.WriteString(">")
-		b.WriteString(template.HTMLEscapeString(text))
-		b.WriteString("</")
-		b.WriteString(tag)
-		b.WriteString(">")
-	}
-	for raw := range strings.SplitSeq(md, "\n") {
-		line := strings.TrimSpace(raw)
-		switch {
-		case line == "":
-			closeList()
-		case strings.HasPrefix(line, "## "):
-			closeList()
-			wrap("h2", line[3:])
-		case strings.HasPrefix(line, "# "):
-			closeList()
-			wrap("h1", line[2:])
-		case orderedItem(line) != "":
-			if !inList {
-				b.WriteString("<ol>")
-				inList = true
-			}
-			wrap("li", orderedItem(line))
-		default:
-			closeList()
-			wrap("p", line)
-		}
-	}
-	closeList()
-	return template.HTML(b.String())
-}
-
-// orderedItem returns the text of an "N. " ordered-list line, or "" if the line
-// is not one. It only treats a leading run of digits followed by ". " as a list
-// marker, so ordinary prose beginning with a number is left as a paragraph.
-func orderedItem(line string) string {
-	i := 0
-	for i < len(line) && line[i] >= '0' && line[i] <= '9' {
-		i++
-	}
-	if i == 0 || !strings.HasPrefix(line[i:], ". ") {
-		return ""
-	}
-	return strings.TrimSpace(line[i+2:])
-}
-
-var licensesTmpl = template.Must(template.New("licenses").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your c3 licenses</title>
-<style>
- body{font:16px/1.6 system-ui,sans-serif;max-width:42rem;margin:3rem auto;padding:0 1rem;color:#1a1a1a}
- h1{font-size:1.4rem} .note{color:#666;font-size:.95rem}
- .lic{margin:1.2rem 0;padding:1rem 1.2rem;border:1px solid #ddd;border-radius:.5rem}
- .key{font:0.95rem ui-monospace,SFMono-Regular,Menlo,monospace;background:#f4f4f4;padding:.4rem .6rem;border-radius:.3rem;word-break:break-all;display:block;margin:.4rem 0}
- .meta{color:#666;font-size:.9rem}
- @media(prefers-color-scheme:dark){body{background:#111;color:#eee}.lic{border-color:#333}.key{background:#1c1c1c}.note,.meta{color:#aaa}}
-</style></head><body>
-<h1>Signed in as {{.Login}}</h1>
-<p class="note">Copy a license key below and paste it into c3 to activate this installation. One license binds to a single installation at a time.</p>
-<p class="note"><a href="/checkout">续费 / Renew a license →</a></p>
-{{range .Licenses}}
-<div class="lic">
- <span class="key">{{.LicenseKey}}</span>
- <div class="meta">Plan {{.Plan}} · {{.Status}} · valid until {{.TermEndDisplay}}</div>
-</div>
-{{else}}
-<p>No licenses on this account yet.</p>
-{{end}}
-</body></html>`))
-
-// licenseView is the display shape for the license-key page.
-type licenseView struct {
-	LicenseKey     string
-	Plan           string
-	Status         string
-	TermEndDisplay string
-}
-
-func renderLicenses(w http.ResponseWriter, login string, licenses []store.License) {
-	views := make([]licenseView, len(licenses))
-	for i, l := range licenses {
-		views[i] = licenseView{
-			LicenseKey:     l.LicenseKey,
-			Plan:           l.PlanKey,
-			Status:         l.Status,
-			TermEndDisplay: l.TermEnd.UTC().Format("2006-01-02"),
-		}
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = licensesTmpl.Execute(w, map[string]any{"Login": login, "Licenses": views})
-}
-
-var errorTmpl = template.Must(template.New("error").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>{{.Heading}}</title>
-<style>body{font:16px/1.6 system-ui,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem}
- h1{font-size:1.3rem} p{color:#555}
- @media(prefers-color-scheme:dark){body{background:#111;color:#eee}p{color:#aaa}}</style>
-</head><body><h1>{{.Heading}}</h1><p>{{.Message}}</p></body></html>`))
-
-func renderError(w http.ResponseWriter, status int, heading, message string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	_ = errorTmpl.Execute(w, map[string]any{"Heading": heading, "Message": message})
-}

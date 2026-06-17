@@ -1,5 +1,5 @@
 // Package agreement is the single source of truth for the service-usage
-// authorization agreement the buyer must explicitly accept before
+// authorization agreement the user must explicitly accept before
 // activation/login completes (PL-R9/PL-R10). The agreement copy lives in the
 // embedded agreement.md and its version lives here, so the page shown to the
 // user and the acceptance recorded on the activation request can never drift —

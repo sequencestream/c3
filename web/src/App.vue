@@ -24,7 +24,6 @@ const {
   authStatus,
   license,
   activateLicense,
-  bindLicense,
   status,
   workspaces,
   currentWorkspace,
@@ -226,7 +225,6 @@ const {
       :show-logout="authStatus === 'authenticated'"
       :license="license"
       @activate-license="activateLicense"
-      @bind-license="bindLicense"
       @select-tab="onSelectTab"
       @update:view-mode="setViewMode"
       @open-settings="openSettings"

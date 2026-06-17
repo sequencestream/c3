@@ -12,12 +12,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	vwechatpay "github.com/vogo/vwechatpay"
 	"github.com/vogo/vwechatpay/vwxpayments/vwxnative"
+	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
 	"github.com/wechatpay-apiv3/wechatpay-go/utils"
 )
 
@@ -178,26 +178,35 @@ func (g *nativeGateway) ParseNotify(headerFetcher func(string) string, body []by
 	}, nil
 }
 
-// outTradeNoPrefix namespaces our merchant order numbers so a callback's
-// out_trade_no maps unambiguously back to a c3 order id.
-const outTradeNoPrefix = "c3ls"
-
-// OutTradeNo is the merchant order number for an order id (≤32 chars, the WeChat
-// limit). Deterministic so a callback maps back without persisting it.
-func OutTradeNo(orderID int64) string {
-	return outTradeNoPrefix + strconv.FormatInt(orderID, 10)
+// QueryByOutTradeNo asks WeChat for the authoritative state of an order by its
+// merchant order number (our order_no). Used by the reconcile job to settle
+// pending orders whose async callback was missed (§11).
+func (g *nativeGateway) QueryByOutTradeNo(ctx context.Context, outTradeNo string) (NotifyResult, error) {
+	tx, err := g.native.QueryOrderByOutTradeNo(ctx, outTradeNo)
+	if err != nil {
+		return NotifyResult{}, fmt.Errorf("wechatpay: query order %s: %w", outTradeNo, err)
+	}
+	if tx == nil {
+		return NotifyResult{}, fmt.Errorf("wechatpay: query order %s returned no transaction", outTradeNo)
+	}
+	return transactionToNotify(tx), nil
 }
 
-// ParseOrderID recovers the order id from a merchant order number, reporting
-// whether it was one we minted.
-func ParseOrderID(outTradeNo string) (int64, bool) {
-	rest, ok := strings.CutPrefix(outTradeNo, outTradeNoPrefix)
-	if !ok {
-		return 0, false
+// transactionToNotify projects a WeChat payments.Transaction (query response)
+// onto the vendor-neutral NotifyResult the order state machine consumes.
+func transactionToNotify(tx *payments.Transaction) NotifyResult {
+	out := NotifyResult{}
+	if tx.OutTradeNo != nil {
+		out.OutTradeNo = *tx.OutTradeNo
 	}
-	id, err := strconv.ParseInt(rest, 10, 64)
-	if err != nil || id <= 0 {
-		return 0, false
+	if tx.TransactionId != nil {
+		out.TransactionID = *tx.TransactionId
 	}
-	return id, true
+	if tx.TradeState != nil {
+		out.TradeState = *tx.TradeState
+	}
+	if tx.Amount != nil && tx.Amount.Total != nil {
+		out.AmountCents = int(*tx.Amount.Total)
+	}
+	return out
 }

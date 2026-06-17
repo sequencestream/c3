@@ -22,6 +22,7 @@ import (
 // wechatpay package.
 type fakeGateway struct {
 	parse func(headerFetcher func(string) string, body []byte) (wechatpay.NotifyResult, error)
+	query func(outTradeNo string) (wechatpay.NotifyResult, error)
 }
 
 func (f fakeGateway) Prepay(ctx context.Context, in wechatpay.PrepayInput) (wechatpay.PrepayResult, error) {
@@ -30,6 +31,13 @@ func (f fakeGateway) Prepay(ctx context.Context, in wechatpay.PrepayInput) (wech
 
 func (f fakeGateway) ParseNotify(headerFetcher func(string) string, body []byte) (wechatpay.NotifyResult, error) {
 	return f.parse(headerFetcher, body)
+}
+
+func (f fakeGateway) QueryByOutTradeNo(ctx context.Context, outTradeNo string) (wechatpay.NotifyResult, error) {
+	if f.query != nil {
+		return f.query(outTradeNo)
+	}
+	return wechatpay.NotifyResult{OutTradeNo: outTradeNo, TradeState: wechatpay.TradeStateNotPay}, nil
 }
 
 func TestNotifyRejectsNonPOST(t *testing.T) {
@@ -89,7 +97,7 @@ func livePayServer(t *testing.T, pay wechatpay.Gateway) (http.Handler, *store.St
 	return h, st, ctx
 }
 
-// seedPendingOrder seeds a buyer + license + plan and returns a pending order to
+// seedPendingOrder seeds a user + license + plan and returns a pending order to
 // drive through the callback.
 func seedPendingOrder(t *testing.T, st *store.Store, ctx context.Context) store.Order {
 	t.Helper()
@@ -98,18 +106,18 @@ func seedPendingOrder(t *testing.T, st *store.Store, ctx context.Context) store.
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
-	buyerID, err := st.UpsertBuyer(ctx, 4242, "octocat", "octo@example.com")
+	userID, err := st.UpsertUser(ctx, 4242, "octocat", "octo@example.com")
 	if err != nil {
-		t.Fatalf("upsert buyer: %v", err)
+		t.Fatalf("upsert user: %v", err)
 	}
-	lic, _, err := st.EnsureLicenseForBuyer(ctx, buyerID, "6m", 30, time.Now(), keyGenPay())
+	lic, _, err := st.EnsureLicenseForUser(ctx, userID, "6m", 30, time.Now(), keyGenPay())
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
 	order, err := st.CreateOrder(ctx, store.CreateOrderInput{
-		UserID: buyerID, LicenseID: lic.ID, PlanKey: "6m",
+		UserID: userID, LicenseID: lic.ID, PlanKey: "6m",
 		AgreementVersion: "v1", AgreementAcceptedAt: time.Now(),
-	})
+	}, func() string { return store.NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order: %v", err)
 	}
@@ -120,7 +128,7 @@ func TestNotifyMarksOrderPaidAndIsIdempotent(t *testing.T) {
 	var order store.Order
 	gw := fakeGateway{parse: func(func(string) string, []byte) (wechatpay.NotifyResult, error) {
 		return wechatpay.NotifyResult{
-			OutTradeNo:    wechatpay.OutTradeNo(order.ID),
+			OutTradeNo:    order.OrderNo,
 			TransactionID: "wx-tx-1",
 			TradeState:    wechatpay.TradeStateSuccess,
 			AmountCents:   590,
@@ -178,8 +186,9 @@ func TestNotifyRejectsUnknownOutTradeNo(t *testing.T) {
 	}}
 	h, _, _ := livePayServer(t, gw)
 	res := postJSON(t, h, "/v1/payment/wechat/notify", `{}`)
-	if res.StatusCode != http.StatusBadRequest {
-		t.Errorf("unknown out_trade_no = %d, want 400", res.StatusCode)
+	// An out_trade_no (order_no) that matches no order resolves to ErrNotFound → 404.
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown out_trade_no = %d, want 404", res.StatusCode)
 	}
 }
 

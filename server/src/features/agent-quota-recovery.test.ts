@@ -15,6 +15,7 @@ import { resetDbForTests } from '../kernel/infra/db.js'
 import { loadSettings, resetSettingsCacheForTests, saveSettings } from '../kernel/config/index.js'
 import {
   appendExecutionLog,
+  deleteSchedule,
   getDueSchedules,
   getEventSchedules,
   getSchedule,
@@ -93,6 +94,7 @@ function wireRealScheduleStore(): void {
         status: patch.status as import('@ccc/shared/protocol').ScheduleStatus | undefined,
       })
     },
+    deleteSchedule,
     appendExecutionLog: (input) =>
       appendExecutionLog({
         scheduleId: input.scheduleId,
@@ -107,10 +109,11 @@ function wireRealScheduleStore(): void {
   })
 }
 
-async function waitForScheduleIdle(scheduleId: string): Promise<void> {
+// One-shot recovery schedules delete themselves once they fire, so "idle" means
+// the row is gone from the store.
+async function waitForScheduleGone(scheduleId: string): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
-    const schedule = getSchedule(scheduleId)
-    if (schedule?.status === 'paused') return
+    if (getSchedule(scheduleId) === null) return
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
@@ -152,7 +155,7 @@ describe('agent quota recovery', () => {
     expect(listSchedules(workspacePath)).toHaveLength(0)
   })
 
-  it('re-enables the agent when the recovery schedule fires and then pauses itself', async () => {
+  it('re-enables the agent when the recovery schedule fires and then deletes itself', async () => {
     const now = Date.UTC(2026, 5, 15, 13, 0)
     const result = handleAgentQuotaError({
       agentId: quotaAgent.id,
@@ -166,12 +169,12 @@ describe('agent quota recovery', () => {
 
     wireRealScheduleStore()
     await triggerRunNow(scheduleId)
-    await waitForScheduleIdle(scheduleId)
+    await waitForScheduleGone(scheduleId)
 
     const settings = loadSettings()
     expect(settings.agents.find((agent) => agent.id === quotaAgent.id)?.enabled).toBe(true)
-    const schedule = getSchedule(scheduleId)!
-    expect(schedule.status).toBe('paused')
-    expect(schedule.nextRunAt).toBeNull()
+    // The one-shot recovery schedule deletes itself after firing.
+    expect(getSchedule(scheduleId)).toBeNull()
+    expect(listSchedules(workspacePath)).toHaveLength(0)
   })
 })

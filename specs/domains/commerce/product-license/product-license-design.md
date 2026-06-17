@@ -86,7 +86,7 @@ blocks the UI on its own — enforcement is the gating point above.
   ids are stable once published.
 - **Caching:** infrequently-changing read paths (the plan catalog today; license, auth, and payment
   lookups as those surfaces land) are served through bounded in-process LRU caches.
-- **Embedded web:** the buyer/admin frontend is built and embedded into the binary and served with a
+- **Embedded web:** the user/admin frontend is built and embedded into the binary and served with a
   single-page-app fallback; no external asset directory is required at runtime.
 - **Store:** PostgreSQL — four tables. The **account** record (GitHub identity), the **plan** record
   (the persisted public catalog, bootstrapped from code), the **license** record (the only entitlement
@@ -96,13 +96,13 @@ blocks the UI on its own — enforcement is the gating point above.
   stored — limiting exposure if the database is compromised. There are no separate one-time-code or
   heartbeat-history tables; binding/heartbeat state lives on the license row. LS data is kept in its
   own schema area, separate from any c3 store.
-- **Identity:** GitHub OAuth used **only** for account sign-in/registration — buyer login
+- **Identity:** GitHub OAuth used **only** for account sign-in/registration — user login
   (purchase/inspection) and the admin back-office (issue/force-expire/inspect). It no longer carries the
   activation action.
-- **Trial issuance:** on first sign-in (after the user accepts the service agreement (incl. no-refund terms)) LS creates
-  the account and, **when a trial plan is configured** (the first catalog plan flagged `is_trial`),
-  issues a **default trial license** with a fresh license key, then displays the key for the user to
-  copy and paste into c3. With no trial plan configured, no trial is issued and the buyer must purchase.
+- **Default license:** on first sign-in (no agreement shown — the agreement is at renewal) LS creates
+  the account and **auto-provisions a default license** (PL-R14) on a default plan — the trial plan
+  when configured (the catalog plan flagged `is_trial`), else the first catalog plan — so the account
+  always has a license. The user then **selects** it in the browser to bind; there is no key to paste.
 - **Payment (renewal):** WeChat Pay; the **no-refund service-agreement acceptance** is recorded on
   the **order before** the charge, and a paid order **extends the linked license's term and status**: `term_end = GREATEST(term_end, now) + duration_months`, `status = 'active'`.
   Payment capture is a later milestone — the order → license-extension relationship is defined now.

@@ -77,7 +77,7 @@ func TestPlansEndpoint(t *testing.T) {
 	}
 	var got struct {
 		Plans []struct {
-			ID         string `json:"id"`
+			PlanKey    string `json:"planKey"`
 			PriceCents int    `json:"priceCents"`
 			Currency   string `json:"currency"`
 		} `json:"plans"`
@@ -90,11 +90,11 @@ func TestPlansEndpoint(t *testing.T) {
 	}
 	wantPrice := map[string]int{"1m": 100, "6m": 590, "1y": 1090}
 	for _, p := range got.Plans {
-		if wantPrice[p.ID] != p.PriceCents {
-			t.Errorf("plan %q price = %d, want %d", p.ID, p.PriceCents, wantPrice[p.ID])
+		if wantPrice[p.PlanKey] != p.PriceCents {
+			t.Errorf("plan %q price = %d, want %d", p.PlanKey, p.PriceCents, wantPrice[p.PlanKey])
 		}
 		if p.Currency != "CNY" {
-			t.Errorf("plan %q currency = %q", p.ID, p.Currency)
+			t.Errorf("plan %q currency = %q", p.PlanKey, p.Currency)
 		}
 	}
 }

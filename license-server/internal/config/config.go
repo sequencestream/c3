@@ -72,18 +72,18 @@ type Config struct {
 
 // Environment variable names. Centralized so docs and tests reference one source.
 const (
-	EnvDatabaseURL             = "LS_DATABASE_URL"
-	EnvListenAddr              = "LS_LISTEN_ADDR"
-	EnvPublicURL               = "LS_PUBLIC_URL"
-	EnvEd25519PrivateKey       = "LS_ED25519_PRIVATE_KEY"
-	EnvEd25519PublicKey        = "LS_ED25519_PUBLIC_KEY"
-	EnvGitHubOAuthClientID     = "LS_GITHUB_OAUTH_CLIENT_ID"
-	EnvGitHubOAuthClientSecret = "LS_GITHUB_OAUTH_CLIENT_SECRET"
-	EnvWeChatPayMchID          = "LS_WECHAT_PAY_MCH_ID"
-	EnvWeChatPayAPIKey         = "LS_WECHAT_PAY_API_KEY"
-	EnvLRUSize                 = "LS_LRU_SIZE"
-	EnvGraceMinutes            = "LS_GRACE_MINUTES"
-	EnvAdminAllowlist          = "LS_ADMIN_ALLOWLIST"
+	EnvDatabaseURL             = "C3_LS_DATABASE_URL"
+	EnvListenAddr              = "C3_LS_LISTEN_ADDR"
+	EnvPublicURL               = "C3_LS_PUBLIC_URL"
+	EnvEd25519PrivateKey       = "C3_LS_ED25519_PRIVATE_KEY"
+	EnvEd25519PublicKey        = "C3_LS_ED25519_PUBLIC_KEY"
+	EnvGitHubOAuthClientID     = "C3_LS_GITHUB_OAUTH_CLIENT_ID"
+	EnvGitHubOAuthClientSecret = "C3_LS_GITHUB_OAUTH_CLIENT_SECRET"
+	EnvWeChatPayMchID          = "C3_LS_WECHAT_PAY_MCH_ID"
+	EnvWeChatPayAPIKey         = "C3_LS_WECHAT_PAY_API_KEY"
+	EnvLRUSize                 = "C3_LS_LRU_SIZE"
+	EnvGraceMinutes            = "C3_LS_GRACE_MINUTES"
+	EnvAdminAllowlist          = "C3_LS_ADMIN_ALLOWLIST"
 )
 
 // Getenv is the signature of an environment lookup, mirroring [os.Getenv].

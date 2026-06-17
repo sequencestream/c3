@@ -265,7 +265,7 @@ Server-side normalization in `server/src/kernel/config/index.ts`:
 
 ## References
 
-- [Sandbox domain spec](specs/domains/core/sandbox/spec.md) — full specification
+- [Sandbox domain spec](specs/domains/core/sandbox/sandbox-spec.md) — full specification
 - [ADR-0020](specs/architecture/adr/0020-sandbox-driver-independent-kernel-module.md) — SandboxDriver module decision
 - [ADR-0021](specs/architecture/adr/0021-system-project-two-tier-sandbox-config.md) — Two-tier config decision
 - [ADR-0022](specs/architecture/adr/0022-canonical-not-extended.md) — CanonicalMessage not extended for sandbox

@@ -752,7 +752,7 @@ schedule 的执行日志。
 - **`IntentSessionInfo`** — `{ sessionId, title: string | null, updatedAt }`。intent 通信会话列表响应中的一个会话。`title` 可为空——客户端在为空时回退到 `'New Intent'` 或首条 prompt / 时间戳派生。
 - **待处理会话 id** — 未启动会话的 id 带 `pending:` 前缀，直到 `session_started` 将其绑定到真实 SDK id。
 
-参见 [session-registry 规范](../../domains/core/session-registry/spec.md)。
+参见 [session-registry 规范](../../domains/core/session-registry/session-registry-spec.md)。
 
 ## 系统配置类型
 
@@ -766,7 +766,7 @@ schedule 的执行日志。
 - **`ModeToken`** — `string`。供应商原生权限模式 token。`PermissionMode`（`'default' | 'auto' | 'plan' | 'acceptEdits' | 'bypassPermissions'`）现在是 Claude 独有的 token 集合。
 - **`CodexPolicy`** — `{ sandboxMode: CodexSandboxMode, approvalPolicy: CodexApprovalPolicy }`。Codex 双策略配置（2026-06-08），替换 `codex` 供应商的单一 `ModeToken`。
 
-参见 [system-config 规范](../../domains/system-config/agent-config/spec.md)。
+参见 [system-config 规范](../../domains/system-config/agent-config/agent-config-spec.md)。
 
 ## 规范代理消息模型（供应商中立）——ADR-0013
 
@@ -796,7 +796,7 @@ schedule 的执行日志。
 
 通信 agent 的保存确认复用 `permission_request` / `permission_response`，其中 `toolName === 'mcp__c3__save_intents'`，`input.intents: ProposedIntent[]`。
 
-参见 [intent-management 规范](../../domains/core/intent-management/spec.md)。
+参见 [intent-management 规范](../../domains/core/intent-management/intent-management-spec.md)。
 
 ## Discussion 类型
 

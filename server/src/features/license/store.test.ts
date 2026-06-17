@@ -42,7 +42,6 @@ describe('license cache persistence', () => {
       licenseKey: 'lk-1',
       entitlementToken: 'tok',
       aliveToken: 'av',
-      plan: 'trial-1m',
       state: 'active',
       termEnd: 123,
       lastSuccessfulHeartbeat: null,
@@ -61,7 +60,6 @@ describe('license cache persistence', () => {
       licenseKey: 'lk-2',
       entitlementToken: 'e',
       aliveToken: 'a',
-      plan: 'trial-1m',
       state: 'active' as const,
       termEnd: 999,
       lastSuccessfulHeartbeat: 42,
@@ -87,7 +85,6 @@ describe('license cache persistence', () => {
       licenseKey: 'lk-secret',
       entitlementToken: GO_SIGNED_TOKEN,
       aliveToken: 'av-secret',
-      plan: 'trial-1m',
       termEnd: 1_702_592_000,
     })
     expect(cache.state).toBe('active')
@@ -107,7 +104,6 @@ describe('deriveEntitlement from the cached token (PL-R5)', () => {
       licenseKey: 'lk',
       entitlementToken: GO_SIGNED_TOKEN,
       aliveToken: 'av',
-      plan: 'trial-1m',
       termEnd: 1_702_592_000,
     })
   }
@@ -138,7 +134,6 @@ describe('heartbeat cache transitions (PL-R3/PL-R4/PL-R8)', () => {
       licenseKey: 'lk',
       entitlementToken: GO_SIGNED_TOKEN,
       aliveToken: 'av',
-      plan: 'trial-1m',
       termEnd: 1_702_592_000,
     })
   }
@@ -154,8 +149,8 @@ describe('heartbeat cache transitions (PL-R3/PL-R4/PL-R8)', () => {
 
   it('recordHeartbeatLapse marks a definitive non-active verdict', () => {
     seedActive()
-    expect(recordHeartbeatLapse('revoked')?.state).toBe('revoked')
-    expect(readLicenseCache()?.state).toBe('revoked')
+    expect(recordHeartbeatLapse('disabled')?.state).toBe('disabled')
+    expect(readLicenseCache()?.state).toBe('disabled')
   })
 
   it('recordHeartbeatFailure stays in grace within the window, then expires', () => {
@@ -168,9 +163,9 @@ describe('heartbeat cache transitions (PL-R3/PL-R4/PL-R8)', () => {
     expect(recordHeartbeatFailure(now + GRACE_WINDOW_MS + 1)?.state).toBe('expired')
   })
 
-  it('recordHeartbeatFailure does not resurrect a revoked license', () => {
+  it('recordHeartbeatFailure does not resurrect a disabled license', () => {
     seedActive()
-    recordHeartbeatLapse('revoked')
-    expect(recordHeartbeatFailure()?.state).toBe('revoked')
+    recordHeartbeatLapse('disabled')
+    expect(recordHeartbeatFailure()?.state).toBe('disabled')
   })
 })

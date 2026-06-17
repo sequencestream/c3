@@ -1,6 +1,6 @@
 # agent-config — Design
 
-Implements the [spec](spec.md). Spans four responsibilities: settings persistence + resolution, the
+Implements the [spec](agent-config-spec.md). Spans four responsibilities: settings persistence + resolution, the
 WebSocket event dispatch + per-run resolution, the SDK launch override application, and the full-page
 settings view in the web console.
 

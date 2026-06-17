@@ -166,8 +166,9 @@ c3 is a single local process with two halves connected by one WebSocket:
   **30-minute offline grace** from the last successful heartbeat bridges transient outages. This is
   **not** authentication (the auth domain controls access, not entitlement). The one accepted c3-side
   concession is a small on-disk **entitlement cache**. See the
-  [product-license domain](../domains/commerce/product-license/product-license-overview.md) and the
-  [license-server API contract](../shared/api-conventions/license-server-api.md).
+  [product-license domain](../domains/commerce/product-license/product-license-overview.md), the
+  [license-server API contract](../shared/api-conventions/license-server-api.md), and the
+  [license-server architecture](license-server-architecture.md) (LS 自身的服务架构).
 - **Build order:** `web` then `server` — the server embeds the web bundle.
 - **Web module structure.** The frontend is organized in three tiers:
   - Shared (cross-page) components, each with a colocated unit test. The mobile drill-down shell

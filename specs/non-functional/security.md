@@ -83,7 +83,7 @@ external obfuscator's configuration, not c3's code).
 Product **entitlement** is owned by a separate **license-server (LS)** and enforced client-side by
 c3. Its security posture reuses the existing signing anchor and the secret-by-reference discipline;
 it does **not** weaken any `C-SEC-*` rule. The invariants (full statement + `PL-R*` rules in the
-[product-license spec](../domains/commerce/product-license/spec.md)):
+[product-license spec](../domains/commerce/product-license/product-license-spec.md)):
 
 | ID      | Requirement                                                                                                                                                                                                                                                                                              |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

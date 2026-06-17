@@ -1,6 +1,6 @@
 # agent-session — Models
 
-Entity definitions. Business-semantic types; behavioral wiring in [design.md](design.md).
+Entity definitions. Business-semantic types; behavioral wiring in [agent-session-design.md](agent-session-design.md).
 
 ## Session Runtime
 
@@ -65,7 +65,7 @@ Relationships: exists only while a run is in flight; cleared to none when the ru
 ## Run Options
 
 The inputs to a run. Business-relevant additions beyond the SDK options listed in
-[design.md](design.md) § Run construction:
+[agent-session-design.md](agent-session-design.md) § Run construction:
 
 | Input                      | Kind     | Description                                                                                                                                                      |
 | -------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,4 +80,4 @@ The inputs to a run. Business-relevant additions beyond the SDK options listed i
 
 `default` · `auto` · `plan` · `acceptEdits` · `bypassPermissions`. Defined once in the
 [shared protocol](../../../shared/api-conventions/websocket-protocol.md); semantics for
-gating in [spec.md](spec.md) § Permission modes.
+gating in [agent-session-spec.md](agent-session-spec.md) § Permission modes.

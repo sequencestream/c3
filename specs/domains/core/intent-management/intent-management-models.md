@@ -1,7 +1,7 @@
 # intent-management — Models
 
 Entity definitions in domain terms; physical wiring (SQLite driver, schema migrations)
-in [design.md](design.md). The intent, proposed-intent, priority, and status wire shapes are
+in [intent-management-design.md](intent-management-design.md). The intent, proposed-intent, priority, and status wire shapes are
 defined once in the [shared protocol](../../../shared/api-conventions/websocket-protocol.md);
 domain docs reference them rather than redefining message shapes.
 
@@ -114,5 +114,5 @@ migration record). Tables: `intents`, `intent_deps`, `intent_chats`
 (session collection + hidden set in one table), and `tool_sessions`
 (`session_id` PRIMARY KEY + `created_at`) — the persisted set of tool-created sessions (completion
 judge, consensus advisor) so the session-registry's "show tool sessions" filter survives restarts.
-A session's row is dropped when the session is deleted. See [design.md](design.md) for the
+A session's row is dropped when the session is deleted. See [intent-management-design.md](intent-management-design.md) for the
 cross-runtime driver adapter and migration handling.

@@ -20,6 +20,7 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
 	"github.com/sequencestream/code-creative-center/license-server/internal/httpapi"
 	"github.com/sequencestream/code-creative-center/license-server/internal/oauth"
+	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 	"github.com/sequencestream/code-creative-center/license-server/internal/version"
@@ -59,6 +60,11 @@ func run() error {
 	// "unavailable" rather than crashing the foundation service.
 	signer := loadSigner(cfg)
 
+	// The plan catalog lives in c3_ls_plan; bootstrap it from the code-owned set
+	// so a fresh database serves plans, then GET /v1/plans reads the table.
+	st := store.New(db)
+	seedPlans(ctx, st)
+
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,
 		Handler: httpapi.NewServer(httpapi.Deps{
@@ -67,7 +73,7 @@ func run() error {
 			DB:     db,
 			Static: web.DistFS(),
 			OAuth:  oauth.New(cfg.GitHubOAuthClientID, cfg.GitHubOAuthClientSecret),
-			Store:  store.New(db),
+			Store:  st,
 			Signer: signer,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -85,6 +91,33 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// seedPlans bootstraps the persisted plan catalog (c3_ls_plan) from the
+// code-owned plan set. It is best-effort: without a database it is a no-op, and a
+// seed failure is logged and tolerated since GET /v1/plans falls back to the code
+// catalog. ON CONFLICT DO NOTHING means existing rows (operator edits) survive.
+func seedPlans(ctx context.Context, st *store.Store) {
+	if !st.Available() {
+		return
+	}
+	catalog := plans.All()
+	rows := make([]store.Plan, len(catalog))
+	for i, p := range catalog {
+		rows[i] = store.Plan{
+			PlanID:         p.ID,
+			Name:           p.Name,
+			DurationMonths: p.DurationMonths,
+			PriceCents:     p.PriceCents,
+			Currency:       p.Currency,
+			SortOrder:      i,
+		}
+	}
+	if err := st.SeedPlans(ctx, rows); err != nil {
+		log.Printf("license-server: plan catalog seed failed (%v); serving code catalog", err)
+		return
+	}
+	log.Printf("license-server: plan catalog ensured (%d plans)", len(rows))
 }
 
 // loadSigner parses the Ed25519 signing seed when configured. A malformed key

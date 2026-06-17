@@ -9,30 +9,30 @@
 
 CREATE TABLE IF NOT EXISTS c3_ls_order (
     id                          BIGSERIAL PRIMARY KEY,             -- Internal order identity.
-    buyer_id                    BIGINT      NOT NULL,              -- Buyer that placed the order.
+    user_id                     BIGINT      NOT NULL,              -- User that placed the order (references c3_ls_user.id).
     license_id                  BIGINT,                            -- License this order extends, once known.
-    plan_id                     TEXT        NOT NULL,              -- Purchased public catalog plan id.
+    plan_id                     BIGINT      NOT NULL,              -- Purchased plan (references c3_ls_plan.id).
     amount_cents                INTEGER     NOT NULL,              -- Charged amount in minor currency units.
     currency                    TEXT        NOT NULL DEFAULT 'CNY', -- ISO-like currency code for the charged amount.
     payment_ref                 TEXT,                              -- External payment provider reference.
-    no_refund_agreement_version TEXT        NOT NULL,              -- Service agreement version accepted before payment.
-    no_refund_accepted_at       TIMESTAMPTZ NOT NULL,              -- Time the buyer accepted the no-refund agreement.
+    agreement_version           TEXT        NOT NULL,              -- Service agreement version accepted before payment.
+    agreement_accepted_at       TIMESTAMPTZ NOT NULL,              -- Time the buyer accepted the service agreement.
     status                      TEXT        NOT NULL DEFAULT 'pending', -- Payment/order status.
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now() -- Record creation time.
 );
 
-CREATE INDEX IF NOT EXISTS idx_c3_ls_order_buyer ON c3_ls_order(buyer_id);
+CREATE INDEX IF NOT EXISTS idx_c3_ls_order_user ON c3_ls_order(user_id);
 CREATE INDEX IF NOT EXISTS idx_c3_ls_order_license ON c3_ls_order(license_id);
 
 COMMENT ON TABLE c3_ls_order IS 'Purchase record with no-refund acceptance; a paid order extends the linked license term and status.';
 COMMENT ON COLUMN c3_ls_order.id IS 'Internal order identity.';
-COMMENT ON COLUMN c3_ls_order.buyer_id IS 'Buyer that placed the order.';
+COMMENT ON COLUMN c3_ls_order.user_id IS 'User that placed the order (references c3_ls_user.id).';
 COMMENT ON COLUMN c3_ls_order.license_id IS 'License this order extends, once known.';
-COMMENT ON COLUMN c3_ls_order.plan_id IS 'Purchased public catalog plan id.';
+COMMENT ON COLUMN c3_ls_order.plan_id IS 'Purchased plan (references c3_ls_plan.id).';
 COMMENT ON COLUMN c3_ls_order.amount_cents IS 'Charged amount in minor currency units.';
 COMMENT ON COLUMN c3_ls_order.currency IS 'Currency code for the charged amount.';
 COMMENT ON COLUMN c3_ls_order.payment_ref IS 'External payment provider reference.';
-COMMENT ON COLUMN c3_ls_order.no_refund_agreement_version IS 'Service agreement version accepted before payment.';
-COMMENT ON COLUMN c3_ls_order.no_refund_accepted_at IS 'Time the buyer accepted the no-refund agreement.';
+COMMENT ON COLUMN c3_ls_order.agreement_version IS 'Service agreement version accepted before payment.';
+COMMENT ON COLUMN c3_ls_order.agreement_accepted_at IS 'Time the buyer accepted the service agreement.';
 COMMENT ON COLUMN c3_ls_order.status IS 'Payment/order status, for example pending or paid.';
 COMMENT ON COLUMN c3_ls_order.created_at IS 'Record creation time.';

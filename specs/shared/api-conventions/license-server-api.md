@@ -44,7 +44,7 @@ presented on every heartbeat. The license key alone can never complete a heartbe
 
 - **Request body:** `licenseKey` and `installationId`. No bearer credential — the license key plus a
   successful bind is the authorization.
-- **LS checks:** the license **exists**, is **not revoked**, and is **not expired**.
+- **LS checks:** the license **exists** and is **active** (status `active` and the term not lapsed).
 - **Effect:** LS records the binding **exclusively** — it sets the license's bound installation to
   `installationId`, **rotates** the alive token (storing the new token's hash, overwriting any prior
   binding), and stamps the last-success time. A previously-bound installation is thereby **displaced**
@@ -65,12 +65,12 @@ entitlement.
     `entitlementToken`, `plan`, `termEnd`, and the next `heartbeatIntervalSeconds`.
   - **`disabled`** — the installation id or alive token does **not** match the live binding (the
     license was rebound to another installation, PL-R8). This installation must gate; it **cannot be
-    recovered by going offline** (equivalent to a revocation for this installation).
-  - **`revoked`** — the license has been revoked.
-  - **`expired`** — the license term has ended.
+    recovered by going offline**.
+  - **`expired`** — the license is no longer `active` (an admin force-expired it, status `expired`)
+    or its term has ended.
 - **Unknown `licenseKey`:** `404`.
 - **Effect on c3:** a successful (`active`) heartbeat resets the **30-minute offline-grace** deadline
-  and caches the refreshed token (PL-R3/PL-R4). A `disabled` / `revoked` / `expired` status — returned
+  and caches the refreshed token (PL-R3/PL-R4). A `disabled` / `expired` status — returned
   with **HTTP 200** so it is distinguishable from a network failure — lapses the installation to gated
   (PL-R6/PL-R8).
 
@@ -136,9 +136,9 @@ service agreement does not support refunds.
 
 ### Admin back-office
 
-An admin authenticated via GitHub OAuth (PL-R11) may **issue**, **revoke**, and **inspect**
-licenses, bindings, and orders. Admin changes mutate the authoritative record; they reach a c3
-installation only on its next heartbeat (PL-R8).
+An admin authenticated via GitHub OAuth (PL-R11) may **issue**, **force-expire** (set status
+`expired`), and **inspect** licenses, bindings, and orders. Admin changes mutate the authoritative
+record; they reach a c3 installation only on its next heartbeat (PL-R8).
 
 ## Error semantics
 
@@ -148,14 +148,12 @@ only affects whether **new** sessions may be created once the grace window is ex
 | Condition                          | Meaning to c3                                                                                                                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **unknown license key (404)**      | The license key does not exist; binding/heartbeat rejected. Surface the reason; the user may re-check or paste a different key.                                                            |
-| **revoked license (bind)**         | Binding rejected because the license is revoked (PL-R8); remain `Unactivated`.                                                                                                             |
-| **expired license (bind)**         | Binding rejected because the license term has ended; remain `Unactivated`.                                                                                                                 |
+| **expired license (bind)**         | Binding rejected because the license is not `active` (status `expired` or the term ended); remain `Unactivated`.                                                                           |
 | **status `disabled` (heartbeat)**  | The installation id / alive token no longer match the live binding — the license was rebound elsewhere (PL-R8). Gate; cannot be recovered offline.                                         |
-| **status `revoked` (heartbeat)**   | Entitlement revoked (PL-R8); lapse to gated. Recovery needs admin re-issue or re-binding the license here.                                                                                 |
-| **status `expired` (heartbeat)**   | The license term ended; lapse to gated.                                                                                                                                                    |
+| **status `expired` (heartbeat)**   | The license is not `active` (an admin force-expired it, or the term ended); lapse to gated.                                                                                                |
 | **rate-limited**                   | Too many bind/heartbeat attempts; back off and retry. Within grace, entitlement is unaffected.                                                                                             |
 | **unavailable**                    | The bind/heartbeat surface is temporarily disabled (LS not fully configured, or a maintenance window). c3 surfaces a retry hint and falls back to the 30-minute offline grace.             |
-| **network / unreachable**          | Not an LS verdict; treat as a failing heartbeat and rely on the 30-minute offline grace (PL-R4). Distinguished from the `disabled`/`revoked`/`expired` verdicts, which arrive as HTTP 200. |
+| **network / unreachable**          | Not an LS verdict; treat as a failing heartbeat and rely on the 30-minute offline grace (PL-R4). Distinguished from the `disabled`/`expired` verdicts, which arrive as HTTP 200.           |
 | **signature verification failure** | c3-side, not an HTTP status: a returned entitlement token whose Ed25519 signature does not verify is treated as **not entitled** (deny-by-default, PL-R5), regardless of the HTTP success. |
 
 ## Invariants (cross-referenced)

@@ -1827,7 +1827,7 @@
       "grace": "猶予期間",
       "expired": "期限切れ",
       "unactivated": "未アクティベーション",
-      "revoked": "失効"
+      "disabled": "無効"
     },
     "activate": {
       "button": "ライセンスを有効化",

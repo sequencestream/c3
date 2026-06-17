@@ -46,7 +46,7 @@ the change is committed & pushed (RM-A5).
 | Communication Session   | The per-project hidden agent session used to refine intents; a real SDK session kept out of the normal list (the hidden set)                         |
 | Automation Orchestrator | A per-project background loop (one at a time) that develops `automate` intents, judges completion, commits/pushes, and sequences (RM-A1–RM-A9)       |
 
-See [models.md](models.md).
+See [intent-management-models.md](intent-management-models.md).
 
 ## Concepts
 

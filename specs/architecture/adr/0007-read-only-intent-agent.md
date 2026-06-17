@@ -136,9 +136,9 @@ Adopt options 2, 4, and 6 together.
 
 ## References
 
-- [intent-management spec](../../domains/core/intent-management/spec.md)
-- [intent-management design](../../domains/core/intent-management/design.md)
-- [permission-gateway spec](../../domains/core/permission-gateway/spec.md) — the reused
+- [intent-management spec](../../domains/core/intent-management/intent-management-spec.md)
+- [intent-management design](../../domains/core/intent-management/intent-management-design.md)
+- [permission-gateway spec](../../domains/core/permission-gateway/permission-gateway-spec.md) — the reused
   `canUseTool` flow.
 - [ADR 0006](0006-decouple-runs-from-connections.md) — the runtime registry the communication and
   development runs reuse.

@@ -50,6 +50,20 @@ CREATE TABLE b (id INT);
 	}
 }
 
+func TestSplitStatementsKeepsSemicolonsInLiterals(t *testing.T) {
+	// A semicolon inside a quoted COMMENT literal must not split the statement,
+	// and a doubled '' escape must keep us inside the string.
+	sql := `CREATE TABLE a (id INT);
+COMMENT ON COLUMN a.id IS 'bound (exclusive); it''s fine';`
+	stmts := splitStatements(sql)
+	if len(stmts) != 2 {
+		t.Fatalf("got %d statements, want 2: %#v", len(stmts), stmts)
+	}
+	if stmts[1] != "COMMENT ON COLUMN a.id IS 'bound (exclusive); it''s fine'" {
+		t.Errorf("stmt[1] = %q", stmts[1])
+	}
+}
+
 func TestSplitStatementsDropsCommentsAndBlanks(t *testing.T) {
 	if got := splitStatements("-- only a comment\n\n\n"); len(got) != 0 {
 		t.Errorf("comment/blank-only input yielded %#v", got)
@@ -69,11 +83,11 @@ func TestSchemaFilesParseIntoStatements(t *testing.T) {
 }
 
 // TestEnsureSchemaIdempotent runs against a real PostgreSQL only when
-// LS_TEST_DATABASE_URL is set, and proves a second EnsureSchema is a no-op.
+// C3_LS_TEST_DATABASE_URL is set, and proves a second EnsureSchema is a no-op.
 func TestEnsureSchemaIdempotent(t *testing.T) {
-	dsn := os.Getenv("LS_TEST_DATABASE_URL")
+	dsn := os.Getenv("C3_LS_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("LS_TEST_DATABASE_URL not set; skipping live schema test")
+		t.Skip("C3_LS_TEST_DATABASE_URL not set; skipping live schema test")
 	}
 	ctx := context.Background()
 	db, err := Open(ctx, dsn)

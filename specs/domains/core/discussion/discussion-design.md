@@ -1,7 +1,7 @@
 # discussion — Design
 
 The [discussion](discussion-overview.md) domain's server design: the **persistence layer**
-(the discussion store over the shared database adapter, implementing the [models](models.md)) and the
+(the discussion store over the shared database adapter, implementing the [models](discussion-models.md)) and the
 **organizer engine** (the orchestration loop + its pure decision/parsing logic) that drives a
 discussion through its workflow. The wire protocol
 (`create_discussion` / `start_discussion` / `discussion_message`) is in
@@ -17,7 +17,7 @@ discussion through its workflow. The wire protocol
 ## Database layer (shared adapter)
 
 The discussion store reuses the shared adapter unchanged (see
-[intent-management design §SQLite layer](../intent-management/design.md) and
+[intent-management design §SQLite layer](../intent-management/intent-management-design.md) and
 [ADR 0007](../../../architecture/adr/0007-read-only-intent-agent.md) for the full rationale):
 one minimal **synchronous** interface (exec / run / all / get) selected by the runtime,
 positional placeholders only, rows read by field, the shared on-disk database file, write-ahead
@@ -337,5 +337,5 @@ source of truth, and the organizer/agent ids resolve to the live agent roster on
 client draws a small 「icon + name」 line above every discussion message body and the resolution rules
 (organizer ⇒ designated organizer or default agent, agent ⇒ by id, fallbacks, blank-icon trim) live in
 the web-console design — see
-[Discussion speaker rendering](../web-console/design.md#discussion-speaker-rendering-multi-speaker-chat-header).
+[Discussion speaker rendering](../web-console/web-console-design.md#discussion-speaker-rendering-multi-speaker-chat-header).
 No server changes are required for that surface; the icon field is consumed read-only.

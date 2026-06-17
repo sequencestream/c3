@@ -34,7 +34,6 @@ const Version = "v1"
 type Payload struct {
 	InstallationID string `json:"installationId"`
 	LicenseID      string `json:"licenseId"`
-	Plan           string `json:"plan"`
 	Status         string `json:"status"`
 	TermStart      int64  `json:"termStart"`
 	TermEnd        int64  `json:"termEnd"`

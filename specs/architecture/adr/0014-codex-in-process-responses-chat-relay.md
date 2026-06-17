@@ -95,6 +95,6 @@ Responses→Chat relay; the user's configuration is unchanged (the real upstream
 ## References
 
 - ADR-0003 (single binary), ADR-0009 (boundaries), ADR-0011 (vendor-neutral agents).
-- [agent-config domain spec](../../domains/system-config/agent-config/spec.md) AC-R5.
+- [agent-config domain spec](../../domains/system-config/agent-config/agent-config-spec.md) AC-R5.
 - openai/codex discussion #7782 (chat wire-api removal); the codex Rust SSE parser
   (rust-v0.137.0) — the event contract.

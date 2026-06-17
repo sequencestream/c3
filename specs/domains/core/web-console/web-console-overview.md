@@ -14,6 +14,6 @@
 
 ## Index
 
-- [spec.md](spec.md) — UI behavior and rules
-- [design.md](design.md) — Vue components, WS client, state
-- [models.md](models.md) — Chat Message view model
+- [web-console-spec.md](web-console-spec.md) — UI behavior and rules
+- [web-console-design.md](web-console-design.md) — Vue components, WS client, state
+- [web-console-models.md](web-console-models.md) — Chat Message view model

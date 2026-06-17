@@ -100,4 +100,4 @@ The single binary is c3 only; agent types are opt-in by installing their host CL
 - [ADR 0009](0009-unidirectional-boundaries.md) — the kernel-purity boundary the process launcher honors.
 - [release non-functional spec](../../non-functional/release.md) — the distribution contract ("install the
   host CLI per agent type") this ADR makes explicit.
-- This phase's spec: `changes/2026/06/05/2026-06-05-012-process-launcher-host-binary-probe/spec.md`.
+- This phase's spec: `changes/2026/06/05/2026-06-05-012-process-launcher-host-binary-probe/2026-06-05-012-process-launcher-host-binary-probe-spec.md`.

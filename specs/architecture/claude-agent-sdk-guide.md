@@ -118,7 +118,7 @@ canUseTool: async (toolName, input) => {
 }
 ```
 
-详见 [permission-gateway 域](../domains/core/permission-gateway/spec.md) 与
+详见 [permission-gateway 域](../domains/core/permission-gateway/permission-gateway-spec.md) 与
 [ADR 0005](adr/0005-inherit-user-project-settings.md)（取代 [ADR 0001](adr/deprecated/0001-c3-sole-permission-authority.md)）。
 
 ## 4. 上下文与 Session 数据存储

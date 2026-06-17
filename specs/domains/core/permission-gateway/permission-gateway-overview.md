@@ -16,6 +16,6 @@
 
 ## Index
 
-- [spec.md](spec.md) — business rules and states
-- [design.md](design.md) — registry, abort wiring, callback wiring
-- [models.md](models.md) — Permission Request / Decision entities
+- [permission-gateway-spec.md](permission-gateway-spec.md) — business rules and states
+- [permission-gateway-design.md](permission-gateway-design.md) — registry, abort wiring, callback wiring
+- [permission-gateway-models.md](permission-gateway-models.md) — Permission Request / Decision entities

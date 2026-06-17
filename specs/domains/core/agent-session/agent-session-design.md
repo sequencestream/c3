@@ -1,6 +1,6 @@
 # agent-session — Design
 
-Implements the [spec](spec.md). The run loop drives the SDK; a process-wide session-runtime
+Implements the [spec](agent-session-spec.md). The run loop drives the SDK; a process-wide session-runtime
 registry owns runs across connections; the WebSocket handler holds the per-connection view.
 Inbound SDK messages are flattened into wire events.
 
@@ -26,7 +26,7 @@ A start callback hands a **Run Handle** (set permission mode, push input) back s
 `set_mode` can apply a new mode to the live query (AS-R4) and a team session's next turn can push
 the next user turn (AS-R17). A session-id callback reports the SDK session id from the `init` message;
 the server re-keys the runtime pending→real and persists the mode under that id (AS-R10, see
-[session-registry design](../session-registry/design.md)). A team callback fires once when the first
+[session-registry design](../session-registry/session-registry-design.md)). A team callback fires once when the first
 team tool is seen — the server marks the runtime `team` and emits `team_upgraded` (see § Team
 sessions). The run's send callback routes every event into the runtime's buffer + viewers, never
 straight to a socket (AS-R11).
@@ -39,7 +39,7 @@ identified by name, with a URL and optional bearer-token env var) that each driv
 native config — the codex driver writes the streamable-HTTP server entry the codex CLI's
 `codex mcp add --url` form produces. c3's only producer today is the intent comm-agent: the driver
 path binds a per-run localhost HTTP MCP route carrying the three intent tools (see
-[intent-management design § Intent tools over localhost HTTP MCP](../intent-management/design.md)).
+[intent-management design § Intent tools over localhost HTTP MCP](../intent-management/intent-management-design.md)).
 Codex is launched by c3's own minimal `codex exec --experimental-json` wrapper, not the
 `@openai/codex-sdk` runtime wrapper; the SDK package remains only the event/type reference inside
 the Codex adapter.
@@ -67,7 +67,7 @@ Two payoffs beyond teams: SDK control requests (`setPermissionMode` / `interrupt
 
 ## Session-runtime registry
 
-A module-level map from session id to session runtime (see [models](models.md)), shared across
+A module-level map from session id to session runtime (see [models](agent-session-models.md)), shared across
 connections. Key operations:
 
 | Operation                      | Role                                                                                       |
@@ -102,7 +102,7 @@ echo, set status running, and push the input (AS-R17). Otherwise, if it already 
 `error` (serial, AS-R2). The server stays strictly single-turn here; the web console hides this
 rejection from the user by **client-side queuing** — for an ordinary running session it withholds the
 `user_prompt`, queues the text locally, and only sends it (merged into one prompt) once the session
-returns to idle (see [web-console design](../web-console/design.md), WC-R17). The server sees just one
+returns to idle (see [web-console design](../web-console/web-console-design.md), WC-R17). The server sees just one
 ordinary turn at a time and is unaware of the queue. Otherwise create a fresh abort controller, set
 the run, emit the `user_text` echo, set status running, derive `resume`, and start the run with a send
 callback into the runtime and the team hook. The run id is mutable: binding pending→real updates it so
@@ -221,7 +221,7 @@ exactly once:
 2. On `result`, the team run keeps the input open (vs. a non-team run closing it); the lead process
    stays alive and the SDK re-wakes it on the next turn (a teammate notification or a pushed user
    prompt). The runtime stays `team` because the emitted `turn_end` would imply idle, but the team
-   override holds it (see [session-registry design](../session-registry/design.md)).
+   override holds it (see [session-registry design](../session-registry/session-registry-design.md)).
 3. Next user turn: the server pushes it into the live session — no second run, no `resume` — after
    echoing `user_text` and setting running (AS-R17).
 4. End: only on user stop. The abort listener closes the never-auto-closing stream (plus `interrupt`);
@@ -251,7 +251,7 @@ single-binary context are in ADR 0003.
 - **No persistence of run/permission state** — in-memory in the registry (SEC-2); buffers are not
   evicted (acceptable for a local single-user tool). Session continuity comes from the SDK transcript
   store via `resume`; the workspace/session registry is persisted by
-  [session-registry](../session-registry/design.md) (ADR 0004).
+  [session-registry](../session-registry/session-registry-design.md) (ADR 0004).
 
 ## Dependencies
 

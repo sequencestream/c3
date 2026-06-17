@@ -292,7 +292,7 @@ capability).
   rule this ADR extends to the neutral surface.
 - [ADR 0005](0005-inherit-user-project-settings.md) — c3 is the permission gateway (the role the neutral
   approval bridge generalizes across vendors).
-- [agent-session spec](../../domains/core/agent-session/spec.md) — the run lifecycle the agent driver
+- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — the run lifecycle the agent driver
   abstracts; the permission-mode table the neutral grid replaces.
 - Phase-0 probes: `changes/2026/06/05/2026-06-05-008-codex-approval-probe/` (NO-GO).
-- This phase's spec: `changes/2026/06/05/2026-06-05-011-vendor-neutral-agent-abstraction/spec.md`.
+- This phase's spec: `changes/2026/06/05/2026-06-05-011-vendor-neutral-agent-abstraction/2026-06-05-011-vendor-neutral-agent-abstraction-spec.md`.

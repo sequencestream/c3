@@ -24,7 +24,7 @@ interrupts an in-flight run or an existing session.
 
 | Entity              | Description                                                                                        | Key attributes                                                                            |
 | ------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| License             | The authoritative, LS-owned record that an installation is entitled, with a term and a status      | license identity, owner, plan, term (validity window), status (active/revoked/expired)    |
+| License             | The authoritative, LS-owned record that an installation is entitled, with a term and a status      | license identity, owner, plan, term (validity window), status (active/expired)            |
 | License key         | A **random, unique, shareable handle** that identifies a license on the c3 ↔ LS API; not a bearer  | opaque value, unique per license, presented on bind and heartbeat                         |
 | Live binding        | The **exclusive** link between a license and the single installation currently using it            | installation identifier, validity token (alive token), last-successful-heartbeat time     |
 | Alive token         | The **per-binding bearer credential** generated at bind, presented on every heartbeat; rotated     | opaque bearer value (LS stores only its hash; plaintext returned to c3 once at bind)      |
@@ -47,21 +47,21 @@ of entitlement).
 
 ## Business rules
 
-| ID     | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PL-R1  | **Activation binds a license key to an installation.** A user activates an installation by submitting a **license key** plus an installation identifier. On success LS records the binding **exclusively** (one installation per license), and returns a signed **entitlement token**, an **alive token** (plaintext, once), the plan, the term end, and the heartbeat interval. A revoked or expired license is rejected.                                                                                 |
-| PL-R2  | **The license key is a handle, not a heartbeat credential.** Heartbeats authenticate with the **alive token** (the per-binding bearer credential), never with the license key alone. The license key may be shared/displayed; it never proves entitlement and cannot, by itself, complete a heartbeat.                                                                                                                                                                                                     |
-| PL-R3  | **Heartbeat confirms and refreshes.** c3 heartbeats periodically with the license key, the installation identifier, and the alive token. When the binding still matches and the license is active and within term, LS refreshes the last-success time, returns a refreshed signed entitlement token, and dictates the next interval.                                                                                                                                                                       |
-| PL-R4  | **30-minute offline grace.** If heartbeats fail (network down, LS unreachable, or a transient error), c3 keeps treating entitlement as `active` for **30 minutes** from the **last successful heartbeat**. After 30 minutes without a successful heartbeat, entitlement lapses and gating applies.                                                                                                                                                                                                         |
-| PL-R5  | **Offline verification is authoritative for trust.** c3 honors `active` only after verifying the entitlement token's **Ed25519 signature** against the **embedded LS public key** and confirming the token is within its validity window. A missing, malformed, expired, or unverifiable token is treated as **not entitled** (deny-by-default). The network is never trusted for the "active" answer — only a valid signature is.                                                                         |
-| PL-R6  | **Gating blocks only new-session creation.** When entitlement is not `active`, c3 **refuses to create new sessions**. Existing sessions (including idle ones) remain fully usable and **in-flight runs are never interrupted** (consistent with ADR-0006: runs are decoupled from connections and survive). Gating stops _new_ work, never _current_ work.                                                                                                                                                 |
-| PL-R7  | **State is always surfaced.** The current entitlement state is shown to the user as a **license badge** and a **license menu** offering activation, status detail, a purchase/renew link, and (when unactivated/expired/disabled) guidance. The badge never blocks the UI by itself — gating is enforced at new-session creation (PL-R6), not by hiding the interface.                                                                                                                                     |
-| PL-R8  | **Displacement and revocation propagate via heartbeat.** A heartbeat whose installation id or alive token no longer matches the license's live binding returns `disabled` — the license was rebound to another installation, so this one is gated and **cannot be recovered by going offline** (it is treated like a revocation). When LS revokes or the term ends, the heartbeat returns `revoked` / `expired`. None of these can be out-waited because the heartbeats that _succeed_ report the verdict. |
-| PL-R9  | **No-refund acceptance is required.** Acceptance of the **no-refund service agreement** is recorded **before GitHub sign-in** on the trial path, and **on the order** before payment on the renewal path. Renewal payment is taken via **WeChat Pay**; a paid order extends the linked license's term and status.                                                                                                                                                                                          |
-| PL-R10 | **No refunds (MVP).** The product is a **virtual/digital good**; the service agreement states it does **not support refunds**. The MVP has **no refund workflow** — there is no automated or self-service refund path. (Chargebacks/abuse are handled out-of-band by admin revocation, PL-R8/PL-R11.)                                                                                                                                                                                                      |
-| PL-R11 | **Admin operations are authority-side.** A license admin (authenticated via **GitHub OAuth** on the LS back-office) may **issue**, **revoke**, and **inspect** licenses, bindings, and orders. Admin operations change the authoritative record; their effect reaches c3 only through subsequent heartbeats (PL-R8). c3 has no admin surface for licenses.                                                                                                                                                 |
-| PL-R12 | **Secret-by-reference; only the public key ships in c3.** The c3 binary embeds only the LS **public** verification key. Signing keys, OAuth client secrets, and payment credentials live exclusively in LS (never in the c3 binary, the entitlement cache, or any c3 config). Mirrors the auth domain's secret-by-reference discipline (AUTH-R4).                                                                                                                                                          |
-| PL-R13 | **Bind/heartbeat are idempotent and fail-soft for current work.** A failed bind or heartbeat never crashes c3 and never interrupts running work; it only affects whether _new_ sessions may be created once the grace window is exhausted. Binding may be retried; a transient heartbeat error is retried before the grace deadline.                                                                                                                                                                       |
+| ID     | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PL-R1  | **Activation binds a license key to an installation.** A user activates an installation by submitting a **license key** plus an installation identifier. On success LS records the binding **exclusively** (one installation per license), and returns a signed **entitlement token**, an **alive token** (plaintext, once), the term end, and the heartbeat interval. The entitlement is the validity window only — plan is not carried on the token or the bind/heartbeat response. A license that is not `active` (status `expired` or a lapsed term) is rejected. |
+| PL-R2  | **The license key is a handle, not a heartbeat credential.** Heartbeats authenticate with the **alive token** (the per-binding bearer credential), never with the license key alone. The license key may be shared/displayed; it never proves entitlement and cannot, by itself, complete a heartbeat.                                                                                                                                                                                                                                                                |
+| PL-R3  | **Heartbeat confirms and refreshes.** c3 heartbeats periodically with the license key, the installation identifier, and the alive token. When the binding still matches and the license is active and within term, LS refreshes the last-success time, returns a refreshed signed entitlement token, and dictates the next interval.                                                                                                                                                                                                                                  |
+| PL-R4  | **30-minute offline grace.** If heartbeats fail (network down, LS unreachable, or a transient error), c3 keeps treating entitlement as `active` for **30 minutes** from the **last successful heartbeat**. After 30 minutes without a successful heartbeat, entitlement lapses and gating applies.                                                                                                                                                                                                                                                                    |
+| PL-R5  | **Offline verification is authoritative for trust.** c3 honors `active` only after verifying the entitlement token's **Ed25519 signature** against the **embedded LS public key** and confirming the token is within its validity window. A missing, malformed, expired, or unverifiable token is treated as **not entitled** (deny-by-default). The network is never trusted for the "active" answer — only a valid signature is.                                                                                                                                    |
+| PL-R6  | **Gating blocks only new-session creation.** When entitlement is not `active`, c3 **refuses to create new sessions**. Existing sessions (including idle ones) remain fully usable and **in-flight runs are never interrupted** (consistent with ADR-0006: runs are decoupled from connections and survive). Gating stops _new_ work, never _current_ work.                                                                                                                                                                                                            |
+| PL-R7  | **State is always surfaced.** The current entitlement state is shown to the user as a **license badge** and a **license menu** offering activation, status detail, a purchase/renew link, and (when unactivated/expired/disabled) guidance. The badge never blocks the UI by itself — gating is enforced at new-session creation (PL-R6), not by hiding the interface.                                                                                                                                                                                                |
+| PL-R8  | **Displacement and expiry propagate via heartbeat.** A heartbeat whose installation id or alive token no longer matches the license's live binding returns `disabled` — the license was rebound to another installation, so this one is gated and **cannot be recovered by going offline**. When the license is no longer `active` (an admin force-expired it, status `expired`) or the term has ended, the heartbeat returns `expired`. Neither can be out-waited because the heartbeats that _succeed_ report the verdict.                                          |
+| PL-R9  | **No-refund acceptance is required.** Acceptance of the **no-refund service agreement** is recorded **before GitHub sign-in** on the trial path, and **on the order** before payment on the renewal path. Renewal payment is taken via **WeChat Pay**; a paid order extends the linked license's term and status.                                                                                                                                                                                                                                                     |
+| PL-R10 | **No refunds (MVP).** The product is a **virtual/digital good**; the service agreement states it does **not support refunds**. The MVP has **no refund workflow** — there is no automated or self-service refund path. (Chargebacks/abuse are handled out-of-band by an admin **force-expiring** the license, PL-R8/PL-R11.)                                                                                                                                                                                                                                          |
+| PL-R11 | **Admin operations are authority-side.** A license admin (authenticated via **GitHub OAuth** on the LS back-office) may **issue**, **force-expire** (set status `expired`), and **inspect** licenses, bindings, and orders. Admin operations change the authoritative record; their effect reaches c3 only through subsequent heartbeats (PL-R8). c3 has no admin surface for licenses.                                                                                                                                                                               |
+| PL-R12 | **Secret-by-reference; only the public key ships in c3.** The c3 binary embeds only the LS **public** verification key. Signing keys, OAuth client secrets, and payment credentials live exclusively in LS (never in the c3 binary, the entitlement cache, or any c3 config). Mirrors the auth domain's secret-by-reference discipline (AUTH-R4).                                                                                                                                                                                                                     |
+| PL-R13 | **Bind/heartbeat are idempotent and fail-soft for current work.** A failed bind or heartbeat never crashes c3 and never interrupts running work; it only affects whether _new_ sessions may be created once the grace window is exhausted. Binding may be retried; a transient heartbeat error is retried before the grace deadline.                                                                                                                                                                                                                                  |
 
 ## States & transitions
 
@@ -75,10 +75,12 @@ stateDiagram-v2
     Active --> Grace: heartbeat failing (PL-R4) — within 30 min of last success
     Grace --> Active: heartbeat success again (PL-R3)
     Grace --> Expired: 30 min elapsed with no successful heartbeat (PL-R4)
-    Active --> Revoked: heartbeat reports revoked/disabled (PL-R8)
-    Grace --> Revoked: heartbeat reports revoked/disabled (PL-R8)
+    Active --> Expired: heartbeat reports expired — force-expired or term ended (PL-R8)
+    Grace --> Expired: heartbeat reports expired — force-expired or term ended (PL-R8)
+    Active --> Disabled: heartbeat reports disabled — rebound elsewhere (PL-R8)
+    Grace --> Disabled: heartbeat reports disabled — rebound elsewhere (PL-R8)
     Expired --> Active: re-bind or heartbeat recovers (PL-R1/PL-R3)
-    Revoked --> Active: admin re-issues + re-bind (PL-R11)
+    Disabled --> Active: re-bind this installation (PL-R1)
 ```
 
 - **Unactivated** — no license key has been bound, or the entitlement cache is absent/unverifiable.
@@ -87,14 +89,15 @@ stateDiagram-v2
   successful heartbeat within the grace window. New sessions allowed.
 - **Grace** — heartbeats are currently failing but the last success is under 30 minutes old. Still
   treated as `active` for gating (new sessions allowed) — this state exists to bound the trust.
-- **Expired** — the grace window elapsed with no successful heartbeat, or the heartbeat reported the
-  license term ended. New-session creation gated.
-- **Revoked** — a successful heartbeat reported the license `revoked`, or `disabled` because the
-  license was rebound to another installation (PL-R8). New-session creation gated; recovery requires
-  admin re-issue or re-binding the license to this installation.
+- **Expired** — the grace window elapsed with no successful heartbeat, or the heartbeat reported
+  `expired` because the license is no longer `active` (an admin force-expired it) or the term ended.
+  New-session creation gated; recovery is a re-bind or a heartbeat that recovers (PL-R1/PL-R3).
+- **Disabled** — a successful heartbeat reported `disabled` because the license was rebound to
+  another installation (PL-R8). New-session creation gated; recovery requires re-binding the license
+  to this installation.
 
 For gating purposes, `Active` and `Grace` permit new sessions; `Unactivated`, `Expired`, and
-`Revoked` gate them. In **every** state, existing sessions and in-flight runs are untouched (PL-R6).
+`Disabled` gate them. In **every** state, existing sessions and in-flight runs are untouched (PL-R6).
 
 ## No-refund policy
 
@@ -102,15 +105,15 @@ The product is sold as a **virtual/digital good**. Acceptance of a **no-refund s
 is recorded before the user proceeds — at GitHub sign-in on the trial path, and on the order before
 payment on the renewal path (PL-R9); the agreement states the product does not support refunds. The
 MVP deliberately ships **no refund workflow** (PL-R10) — a non-goal, not an omission. Disputes,
-chargebacks, and abuse are handled out-of-band by an admin **revoking** the license (PL-R11), which
-propagates to c3 via heartbeat (PL-R8).
+chargebacks, and abuse are handled out-of-band by an admin **force-expiring** the license (PL-R11),
+which propagates to c3 via heartbeat as `expired` (PL-R8).
 
 ## Admin operations (license-server)
 
 Admins authenticate on the LS back-office via GitHub OAuth (PL-R11) and may:
 
 - **Issue** a license (e.g. for a manual or comped sale).
-- **Revoke** a license (chargeback, abuse, or refund-equivalent handling).
+- **Force-expire** a license — set its status to `expired` (chargeback, abuse, or refund-equivalent handling).
 - **Inspect** licenses, bindings, and orders.
 
 Admin changes mutate the authoritative LS record only; c3 observes the effect on its next heartbeat.
@@ -148,13 +151,14 @@ c3 exposes **no** license-admin surface.
 - **Displacement:** Given the same license key is bound on a second installation, When this
   installation's next heartbeat reports `disabled`, Then it lapses to gated and cannot be recovered
   offline (PL-R8); existing in-flight runs still finish (PL-R6).
-- **Revocation:** Given an admin revokes the license, When the next heartbeat reports `revoked`, Then
-  c3 lapses to gated; existing in-flight runs still finish (PL-R8/PL-R6).
+- **Force-expire:** Given an admin force-expires the license (status `expired`), When the next
+  heartbeat reports `expired`, Then c3 lapses to gated; existing in-flight runs still finish
+  (PL-R8/PL-R6).
 
 ### Anti-scenarios (must never happen)
 
 - A new session must **never** be created while entitlement is `Unactivated`, `Expired`, or
-  `Revoked` (PL-R6).
+  `Disabled` (PL-R6).
 - Gating must **never** interrupt an in-flight run or make an existing session unusable (PL-R6).
 - c3 must **never** honor `active` from an entitlement token whose Ed25519 signature does not verify
   against the embedded public key (PL-R5).
@@ -191,7 +195,7 @@ c3 exposes **no** license-admin surface.
 ## Data dictionary
 
 - **Entitled / Gated** — "entitled" = entitlement permits new-session creation (`Active`/`Grace`);
-  "gated" = new-session creation is refused (`Unactivated`/`Expired`/`Revoked`).
+  "gated" = new-session creation is refused (`Unactivated`/`Expired`/`Disabled`).
 - **Offline grace** — the 30-minute window after the last successful heartbeat during which c3
   treats entitlement as active despite failing heartbeats (PL-R4).
 - **Activation / binding** — pasting a license key into c3 to bind an installation, yielding the
@@ -203,6 +207,8 @@ c3 exposes **no** license-admin surface.
 - **Entitlement cache** — the small on-disk store holding the cached entitlement token, the license
   key, and the alive token; written with **0600** permissions to protect the bearer token from other
   users on the same machine.
-- **trial plan** — the plan id for the default trial term issued at first sign-in.
+- **trial plan** — a catalog plan flagged `is_trial`; the first such plan (if any) is issued as the
+  default trial term at first sign-in. With no trial plan configured, no trial is issued and the buyer
+  must purchase.
 - See [glossary](../../../glossary.md) for license-server, Entitlement, Entitlement token, License
   key, Alive token, License badge, Session gating, and No-refund agreement.

@@ -37,7 +37,7 @@ resolving a session's launch overrides for each run.
 | Pending intent  | A `pendingId → { agentId, createdAt }` entry: which agent a not-yet-run session wants. Mutable; copied to a fact at first bind, else reaped by the janitor (AC-R17)                                                                                                        |
 | Session fact    | A `realId → { agentId, vendor }` entry: the agent a real session ran on + its **frozen** vendor; absent ⇒ the session uses the default agent (AC-R6)                                                                                                                       |     |
 
-See [models.md](models.md).
+See [agent-config-models.md](agent-config-models.md).
 
 ## Business rules
 

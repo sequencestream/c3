@@ -1,6 +1,6 @@
 # permission-gateway — Multi-agent Consensus
 
-Implements rule [PG-R9](spec.md). An **optional** pre-step in front of the human
+Implements rule [PG-R9](../permission-gateway-spec.md). An **optional** pre-step in front of the human
 permission prompt: instead of asking the user immediately, c3 first asks the
 _other_ configured agents whether the tool call should be allowed, and only
 falls back to the human when they disagree.
@@ -48,7 +48,7 @@ the voters' answers. See [AskUserQuestion — per-question answering](#askuserqu
 ### Beyond tool permissions: checkpoint consensus
 
 The majority toggle also enables the **automation orchestrator**'s checkpoint consensus
-override (RM-A14, see [intent-management spec](../intent-management/spec.md)). When the loop
+override (RM-A14, see [intent-management spec](../../intent-management/intent-management-spec.md)). When the loop
 detects either a `stuck` judge verdict or an unanswered AskUserQuestion (the pending-question
 guard), and the majority toggle is ON, the orchestrator spawns a vote among peer agents — who
 decide whether the development process should `continue` past the checkpoint or `wait` for

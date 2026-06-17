@@ -28,7 +28,7 @@ type Deps struct {
 
 	OAuth  *oauth.Client
 	Store  *store.Store
-	Signer Signer // Ed25519 private key; nil when LS_ED25519_PRIVATE_KEY is unset
+	Signer Signer // Ed25519 private key; nil when C3_LS_ED25519_PRIVATE_KEY is unset
 }
 
 // NewServer builds the HTTP handler with every route mounted. API routes are

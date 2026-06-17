@@ -2190,17 +2190,16 @@ export interface CodeSearchHit {
  * The c3-side derived product-license state surfaced to the console as a license
  * badge + menu (product-license PL-R7). Vendor-neutral: it reflects the local
  * entitlement derived from the offline-verified token, not any LS-native shape.
- * `Active`/`grace` permit new sessions; `unactivated`/`expired`/`revoked` gate
- * them (the gating point itself is new-session creation, PL-R6).
+ * `Active`/`grace` permit new sessions; `unactivated`/`expired`/`disabled` gate
+ * them (the gating point itself is new-session creation, PL-R6). `disabled` is a
+ * license rebound to another installation ("one license, one installation").
  */
-export type LicenseState = 'unactivated' | 'active' | 'grace' | 'expired' | 'revoked'
+export type LicenseState = 'unactivated' | 'active' | 'grace' | 'expired' | 'disabled'
 
 export interface LicenseStatus {
   state: LicenseState
   /** Whether new sessions are permitted (`active`/`grace`). */
   entitled: boolean
-  /** Plan id on the current license (empty when unactivated). */
-  plan: string
   /** License term end, unix seconds (0 when unactivated). */
   termEnd: number
   /** Stable per-installation id bound to the entitlement. */
@@ -3133,7 +3132,7 @@ export type ServerToClient =
   /**
    * Result of {@link bind_license}. `ok:true` means the installation is bound and
    * activated (a {@link license_state} push follows). `ok:false` carries a
-   * `reason` (e.g. invalid_key, revoked, expired, or a verification failure).
+   * `reason` (e.g. invalid_key, expired, or a verification failure).
    */
   | { type: 'license_bind_result'; ok: boolean; reason?: string }
   | { type: 'pong' }

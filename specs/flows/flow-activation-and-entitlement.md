@@ -22,17 +22,18 @@ flowchart TD
     BIND -- active --> VERIFY[verify Ed25519 signature offline]
     VERIFY -- valid --> ACTIVE[Entitlement = Active<br/>cache token + license key + alive token]
     VERIFY -- invalid --> GATE[not entitled — gate new sessions]
-    BIND -- revoked/expired --> GATE
+    BIND -- expired --> GATE
     ACTIVE --> HB[heartbeat on interval — license key + install id + alive token]
     HB -- active --> ACTIVE2[refresh token · reset 30-min grace]
     HB -- failing/network --> GRACE[Grace — still active < 30 min]
     GRACE -- active again --> ACTIVE
     GRACE -- 30 min elapsed --> EXPIRED[Expired — gate new sessions]
-    HB -- disabled/revoked/expired --> REVOKED[gated — displaced or revoked]
+    HB -- disabled --> DISABLED[Disabled — displaced, gate new sessions]
+    HB -- expired --> EXPIRED
     ACTIVE2 --> HB
     GATE --> NEW{create new session?}
     EXPIRED --> NEW
-    REVOKED --> NEW
+    DISABLED --> NEW
     NEW -- yes --> REFUSE[refused — direct user to license menu]
     NEW -- existing/in-flight --> KEEP[untouched — runs never interrupted]
 ```
@@ -55,8 +56,8 @@ not carry the activation action.
 
 1. **web-console → product-license.** The user pastes the license key into c3's license menu; c3
    calls `POST /v1/license/bind` with `licenseKey` + the installation identifier (`PL-R1`).
-2. **product-license → LS.** LS checks the license exists, is not revoked, and not expired, then
-   records the binding **exclusively**: it sets the bound installation, **rotates** the alive token
+2. **product-license → LS.** LS checks the license exists and is `active` (status `active` and the
+   term not lapsed), then records the binding **exclusively**: it sets the bound installation, **rotates** the alive token
    (storing its hash, displacing any prior binding), and stamps the last-success time. It returns a
    **signed entitlement token**, the **alive token** (plaintext, once), `plan`, `termEnd`, and the
    heartbeat interval.
@@ -77,22 +78,22 @@ not carry the activation action.
    (`PL-R4`). A later `active` returns to `Active`.
 4. **Grace exhausted.** After **30 minutes** with no successful heartbeat, entitlement lapses to
    **Expired** (`PL-R4`).
-5. **Displacement / revocation / expiry.** A successful heartbeat reporting `disabled` (the license
-   was rebound to another installation), `revoked`, or `expired` (term ended) lapses entitlement to
-   gated (`PL-R8`). These verdicts arrive as **HTTP 200** with a `status` field, distinguishing them
-   from a network failure; a displaced or revoked installation cannot out-wait the grace window
-   because succeeding heartbeats report the verdict.
+5. **Displacement / expiry.** A successful heartbeat reporting `disabled` (the license was rebound
+   to another installation) or `expired` (status `expired` — an admin force-expired it — or the term
+   ended) lapses entitlement to gated (`PL-R8`). These verdicts arrive as **HTTP 200** with a
+   `status` field, distinguishing them from a network failure; a displaced or expired installation
+   cannot out-wait the grace window because succeeding heartbeats report the verdict.
 
 ## Gating (c3)
 
 1. **session-registry consult.** Entitlement is consulted at exactly one point — **new-session
-   creation**. When not entitled (`Unactivated` / `Expired` / `Revoked`, the last covering both a
-   revoked license and a `disabled` displaced binding), creation is **refused** and the user is
+   creation**. When not entitled (`Unactivated` / `Expired` / `Disabled`, the last being a license
+   rebound to another installation — a displaced binding), creation is **refused** and the user is
    directed to the license menu (`PL-R6`/`PL-R7`).
 2. **Existing work preserved.** Existing sessions (incl. idle) stay fully usable and **in-flight
    runs are never interrupted** (`PL-R6`, consistent with ADR-0006).
 3. **Surfacing.** Throughout, the **license badge** reflects state
-   (entitled / grace / expired / unactivated / revoked) and the **license menu** offers activation,
+   (entitled / grace / expired / unactivated / disabled) and the **license menu** offers activation,
    status, and the purchase/renew link (`PL-R7`).
 
 ## Renewal (license-server)
@@ -109,7 +110,7 @@ A user may hold multiple licenses; extending one's term and status requires a pa
 ## Branches & exceptions (anti-scenarios)
 
 - **No new session when gated.** A new session must **never** be created while `Unactivated`,
-  `Expired`, or `Revoked` (`PL-R6`).
+  `Expired`, or `Disabled` (`PL-R6`).
 - **Never interrupt current work.** Gating must **never** interrupt an in-flight run or make an
   existing session unusable (`PL-R6`).
 - **Trust the signature, not the channel.** c3 must **never** honor `active` from a token whose

@@ -1,6 +1,6 @@
 # session-registry — Design
 
-Implements the [spec](spec.md). It is built from a persistence concern (the registry on disk),
+Implements the [spec](session-registry-spec.md). It is built from a persistence concern (the registry on disk),
 a session enumeration/IO concern (the vendor session API plus transcript mapping), and the WS
 handler (per-connection active session plus event dispatch).
 

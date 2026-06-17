@@ -112,7 +112,7 @@ session id in memory only, so there is no migration debt).
   adapter layer honor.
 - [ADR 0004](0004-persist-workspace-session-registry.md) — the workspace/session registry the c3
   namespace will eventually front (deferred).
-- [agent-session domain spec](../../domains/core/agent-session/spec.md) — the envelope/namespace rules.
+- [agent-session domain spec](../../domains/core/agent-session/agent-session-spec.md) — the envelope/namespace rules.
 
 ---
 

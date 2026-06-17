@@ -114,5 +114,5 @@ registers it. The dispatcher never sees the move — that's the point.
 - [ADR 0006](0006-decouple-runs-from-connections.md) — runs decoupled from connections (the
   spiritual predecessor: one boundary, one rule, machine-checked at the runtime layer).
 - [architecture overview](../architecture.md) — module map, current shape.
-- [agent-session spec](../../domains/core/agent-session/spec.md) — the socket auto-resume decision
+- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — the socket auto-resume decision
   and run launch path (the "AS-R18 / AVAIL-7" the slice 1/3 contract test C2 pins).

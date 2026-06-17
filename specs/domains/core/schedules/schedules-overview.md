@@ -11,20 +11,20 @@ prompt — that fires either at a configured time (cron) or on a subscribed **ru
 (`run:started` / `run:settled`, 2026-06-08). Each execution produces an **ExecutionLog** for review.
 
 Schedules are **workspace-scoped**: every schedule is bound to one workspace (registrant directory, via
-[session-registry](../session-registry/spec.md)) and **vendor-scoped**: a schedule declares which vendor,
+[session-registry](../session-registry/session-registry-spec.md)) and **vendor-scoped**: a schedule declares which vendor,
 and execution resolves to the first enabled agent of that vendor. The vendor's tool manifest — the SDK
 built-in tools plus (for Claude) workspace MCP namespace prefixes — is listed at schedule creation time
 via `get_schedule_tool_manifest` so the user can select which tools the schedule may use.
 
 The scheduling engine runs inside the server process and drives execution via the same runtime
-infrastructure that [agent-session](../agent-session/spec.md) owns.
+infrastructure that [agent-session](../agent-session/agent-session-spec.md) owns.
 
 It does not gate individual tool calls within a schedule's run (that is
-[permission-gateway](../permission-gateway/spec.md)) and does not render the schedule list or log viewer
+[permission-gateway](../permission-gateway/permission-gateway-spec.md)) and does not render the schedule list or log viewer
 (that is [web-console](../web-console/web-console-overview.md)).
 
 ## Index
 
-- [spec.md](spec.md) — entities, state machine, task types, permissions, execution identity, write queue, v1 exclusions
-- [design.md](design.md) — database tables, CRUD store, scheduling engine, execution flow
-- [models.md](models.md) — Schedule and ExecutionLog entity field definitions
+- [schedules-spec.md](schedules-spec.md) — entities, state machine, task types, permissions, execution identity, write queue, v1 exclusions
+- [schedules-design.md](schedules-design.md) — database tables, CRUD store, scheduling engine, execution flow
+- [schedules-models.md](schedules-models.md) — Schedule and ExecutionLog entity field definitions

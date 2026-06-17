@@ -21,10 +21,6 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 )
 
-// TrialPlanID is the plan id recorded on the default one-month entitlement a new
-// buyer receives on GitHub registration (no payment for the MVP, ADR-0026).
-const TrialPlanID = "trial-1m"
-
 // mountActivation registers the simplified license surface. The browser-facing
 // routes (GitHub account login + the license-key page) render HTML; the c3-facing
 // bind/heartbeat routes are JSON.
@@ -137,11 +133,19 @@ func handleGitHubCallback(d Deps) http.HandlerFunc {
 			renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not record your account.")
 			return
 		}
-		// Registration includes a default trial entitlement so a new buyer leaves
-		// with a license_key to bind into c3.
-		if _, _, err := d.Store.EnsureLicenseForBuyer(r.Context(), buyerID, TrialPlanID, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
-			renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not provision your license.")
+		// Registration issues a trial entitlement only when a trial plan is
+		// configured (c3_ls_plan.is_trial); with none, the buyer leaves without a
+		// license and must purchase one.
+		trial, hasTrial, err := d.Store.FirstTrialPlan(r.Context())
+		if err != nil {
+			renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not load plans.")
 			return
+		}
+		if hasTrial {
+			if _, _, err := d.Store.EnsureLicenseForBuyer(r.Context(), buyerID, trial.ID, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
+				renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not provision your license.")
+				return
+			}
 		}
 		licenses, err := d.Store.ListLicensesByBuyer(r.Context(), buyerID)
 		if err != nil {
@@ -181,8 +185,6 @@ func handleLicenseBind(d Deps) http.HandlerFunc {
 			switch {
 			case errors.Is(err, store.ErrNotFound):
 				writeError(w, http.StatusNotFound, "invalid_key", "unknown license key")
-			case errors.Is(err, store.ErrRevoked):
-				writeError(w, http.StatusConflict, "revoked", "this license has been revoked")
 			case errors.Is(err, store.ErrExpired):
 				writeError(w, http.StatusGone, "expired", "this license term has ended")
 			default:
@@ -202,7 +204,6 @@ func handleLicenseBind(d Deps) http.HandlerFunc {
 			"entitlementToken":         entitlement,
 			"aliveToken":               res.AliveToken,
 			"heartbeatIntervalSeconds": config.DefaultHeartbeatIntervalSeconds,
-			"plan":                     res.License.Plan,
 			"termEnd":                  res.License.TermEnd.Unix(),
 		})
 	}
@@ -257,7 +258,6 @@ func handleLicenseHeartbeat(d Deps) http.HandlerFunc {
 				return
 			}
 			out["entitlementToken"] = entitlement
-			out["plan"] = res.License.Plan
 			out["termEnd"] = res.License.TermEnd.Unix()
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -272,7 +272,6 @@ func signEntitlement(signer Signer, installationID string, lic store.License, no
 	return token.Sign(signer, token.Payload{
 		InstallationID: installationID,
 		LicenseID:      strconv.FormatInt(lic.ID, 10),
-		Plan:           lic.Plan,
 		Status:         "active",
 		TermStart:      lic.TermStart.Unix(),
 		TermEnd:        lic.TermEnd.Unix(),
@@ -328,33 +327,97 @@ func randToken() string {
 type Signer = ed25519.PrivateKey
 
 var agreementTmpl = template.Must(template.New("agreement").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} — c3 license</title>
 <style>
- body{font:16px/1.6 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;color:#1a1a1a}
- h1{font-size:1.4rem} .p{margin:.8rem 0} .agree{margin:1.5rem 0;display:flex;gap:.5rem;align-items:flex-start}
+ body{font:16px/1.7 system-ui,sans-serif;max-width:42rem;margin:3rem auto;padding:0 1rem;color:#1a1a1a}
+ h1{font-size:1.45rem} h2{font-size:1.1rem;margin:1.6rem 0 .4rem}
+ p{margin:.7rem 0} ol{margin:.4rem 0;padding-left:1.4rem} li{margin:.3rem 0}
+ .agree{margin:1.5rem 0;display:flex;gap:.5rem;align-items:flex-start}
  button{font:inherit;padding:.6rem 1.2rem;border:0;border-radius:.4rem;background:#1a1a1a;color:#fff;cursor:pointer}
  button:disabled{opacity:.5;cursor:not-allowed} .note{color:#666;font-size:.9rem}
  @media(prefers-color-scheme:dark){body{background:#111;color:#eee}button{background:#eee;color:#111}.note{color:#aaa}}
 </style></head><body>
-<h1>{{.Title}}</h1>
-{{range .Paragraphs}}<p class="p">{{.}}</p>{{end}}
+{{.Body}}
 <form method="post" action="/activate/accept">
  <label class="agree"><input type="checkbox" name="accept" id="accept" onchange="document.getElementById('go').disabled=!this.checked">
-  <span>I have read and accept this service agreement.</span></label>
- <button type="submit" id="go" disabled>Accept &amp; continue with GitHub</button>
+  <span>我已阅读并同意本服务协议。</span></label>
+ <button type="submit" id="go" disabled>同意并使用 GitHub 继续</button>
 </form>
-<p class="note">Agreement version {{.Version}}. Declining cancels sign-in.</p>
+<p class="note">协议版本 {{.Version}}。不同意将取消登录。</p>
 </body></html>`))
 
 func renderAgreement(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = agreementTmpl.Execute(w, map[string]any{
-		"Title":      agreement.Title,
-		"Paragraphs": agreement.Paragraphs,
-		"Version":    agreement.Version,
+		"Title":   agreement.Title,
+		"Body":    markdownToHTML(agreement.Markdown),
+		"Version": agreement.Version,
 	})
+}
+
+// markdownToHTML renders the embedded agreement markdown into safe HTML. It
+// supports the minimal subset the agreement document uses — `#`/`##` headings,
+// `N.` ordered-list items, and blank-line-separated paragraphs — and escapes all
+// text so the agreement copy can never inject markup. Anything richer is out of
+// scope by design: the document is authored to this subset.
+func markdownToHTML(md string) template.HTML {
+	var b strings.Builder
+	inList := false
+	closeList := func() {
+		if inList {
+			b.WriteString("</ol>")
+			inList = false
+		}
+	}
+	wrap := func(tag, text string) {
+		b.WriteString("<")
+		b.WriteString(tag)
+		b.WriteString(">")
+		b.WriteString(template.HTMLEscapeString(text))
+		b.WriteString("</")
+		b.WriteString(tag)
+		b.WriteString(">")
+	}
+	for raw := range strings.SplitSeq(md, "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case line == "":
+			closeList()
+		case strings.HasPrefix(line, "## "):
+			closeList()
+			wrap("h2", line[3:])
+		case strings.HasPrefix(line, "# "):
+			closeList()
+			wrap("h1", line[2:])
+		case orderedItem(line) != "":
+			if !inList {
+				b.WriteString("<ol>")
+				inList = true
+			}
+			wrap("li", orderedItem(line))
+		default:
+			closeList()
+			wrap("p", line)
+		}
+	}
+	closeList()
+	return template.HTML(b.String())
+}
+
+// orderedItem returns the text of an "N. " ordered-list line, or "" if the line
+// is not one. It only treats a leading run of digits followed by ". " as a list
+// marker, so ordinary prose beginning with a number is left as a paragraph.
+func orderedItem(line string) string {
+	i := 0
+	for i < len(line) && line[i] >= '0' && line[i] <= '9' {
+		i++
+	}
+	if i == 0 || !strings.HasPrefix(line[i:], ". ") {
+		return ""
+	}
+	return strings.TrimSpace(line[i+2:])
 }
 
 var licensesTmpl = template.Must(template.New("licenses").Parse(`<!doctype html>
@@ -384,7 +447,7 @@ var licensesTmpl = template.Must(template.New("licenses").Parse(`<!doctype html>
 // licenseView is the display shape for the license-key page.
 type licenseView struct {
 	LicenseKey     string
-	Plan           string
+	Plan           int64
 	Status         string
 	TermEndDisplay string
 }
@@ -394,7 +457,7 @@ func renderLicenses(w http.ResponseWriter, login string, licenses []store.Licens
 	for i, l := range licenses {
 		views[i] = licenseView{
 			LicenseKey:     l.LicenseKey,
-			Plan:           l.Plan,
+			Plan:           l.PlanID,
 			Status:         l.Status,
 			TermEndDisplay: l.TermEnd.UTC().Format("2006-01-02"),
 		}

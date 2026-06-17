@@ -56,6 +56,6 @@ any read/parse error falls back to empty state so c3 still boots.
 
 ## References
 
-- `specs/domains/core/session-registry/spec.md`
+- `specs/domains/core/session-registry/session-registry-spec.md`
 - `specs/architecture/architecture.md` § cross-cutting conventions
 - [ADR 0001](deprecated/0001-c3-sole-permission-authority.md), [ADR 0003](0003-single-binary-via-bun-compile.md)

@@ -1,6 +1,6 @@
 # schedules — Design
 
-Implements the [spec](spec.md). A self-contained domain module with its own store, scheduler loop,
+Implements the [spec](schedules-spec.md). A self-contained domain module with its own store, scheduler loop,
 and execution dispatcher.
 
 ## Responsibility split
@@ -17,8 +17,8 @@ and execution dispatcher.
 ## Data model (SQLite)
 
 Two tables in the project-level SQLite database (same database as
-[intent-management](../intent-management/design.md) and
-[session-registry](../../core/session-registry/design.md)):
+[intent-management](../intent-management/intent-management-design.md) and
+[session-registry](../../core/session-registry/session-registry-design.md)):
 
 ### `schedules` (implemented schema)
 
@@ -183,7 +183,7 @@ The event-dispatch path is wired to the kernel event bus in the composition root
    three-tier MCP security + write-approval queue apply unchanged). The post-run re-arm skips the
    next-run recompute for `event` schedules (they have no cron).
 
-The publish points live in the run path; see spec.md § Triggers → Run lifecycle events.
+The publish points live in the run path; see schedules-spec.md § Triggers → Run lifecycle events.
 
 ## Execution dispatcher
 
@@ -239,7 +239,7 @@ cannot repeat.
 
 _(Planned — not implemented in v1)_
 
-See [spec.md](spec.md) § Write confirmation queue for the design. All schedule mutations in v1 are
+See [schedules-spec.md](schedules-spec.md) § Write confirmation queue for the design. All schedule mutations in v1 are
 immediate (direct store operations + broadcast).
 
 ## Workspace archiving

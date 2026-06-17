@@ -1,6 +1,6 @@
 # permission-gateway — Design
 
-Implements the [spec](spec.md). A registry of pending decisions, plus the sensitive-tool callback
+Implements the [spec](permission-gateway-spec.md). A registry of pending decisions, plus the sensitive-tool callback
 that raises requests and passes the run's cancellation signal.
 
 ## Data model

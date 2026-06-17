@@ -24,13 +24,13 @@ func TestHashCodeIsStableAndOneWay(t *testing.T) {
 	}
 }
 
-// liveStore connects to LS_TEST_DATABASE_URL, migrates, and truncates the LS
+// liveStore connects to C3_LS_TEST_DATABASE_URL, migrates, and truncates the LS
 // tables so each test starts clean. Skips when no DB is configured.
 func liveStore(t *testing.T) (*Store, context.Context) {
 	t.Helper()
-	dsn := os.Getenv("LS_TEST_DATABASE_URL")
+	dsn := os.Getenv("C3_LS_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("LS_TEST_DATABASE_URL not set; skipping live store test")
+		t.Skip("C3_LS_TEST_DATABASE_URL not set; skipping live store test")
 	}
 	ctx := context.Background()
 	db, err := lsdb.Open(ctx, dsn)
@@ -46,7 +46,7 @@ func liveStore(t *testing.T) (*Store, context.Context) {
 		}
 	})
 	if err := db.WithContext(ctx).Exec(
-		`TRUNCATE c3_ls_license, c3_ls_order, c3_ls_user RESTART IDENTITY CASCADE`).Error; err != nil {
+		`TRUNCATE c3_ls_license, c3_ls_order, c3_ls_user, c3_ls_plan RESTART IDENTITY CASCADE`).Error; err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	return New(db), ctx
@@ -60,7 +60,7 @@ func seedLicense(t *testing.T, s *Store, ctx context.Context, now time.Time) (in
 		t.Fatalf("upsert buyer: %v", err)
 	}
 	keys := keyGen("lk")
-	lic, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, "trial-1m", 30, now, keys)
+	lic, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, 1, 30, now, keys)
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestEnsureLicenseReusesActiveLicense(t *testing.T) {
 	now := time.Now()
 	buyerID, lic := seedLicense(t, s, ctx, now)
 
-	again, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, "trial-1m", 30, now, keyGen("lk2"))
+	again, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, 1, 30, now, keyGen("lk2"))
 	if err != nil {
 		t.Fatalf("ensure again: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestBindRejectsUnknownKey(t *testing.T) {
 	}
 }
 
-func TestHeartbeatReportsRevokedAndExpired(t *testing.T) {
+func TestHeartbeatReportsExpired(t *testing.T) {
 	s, ctx := liveStore(t)
 	now := time.Now()
 	_, lic := seedLicense(t, s, ctx, now)
@@ -211,22 +211,23 @@ func TestHeartbeatReportsRevokedAndExpired(t *testing.T) {
 		t.Fatalf("bind: %v", err)
 	}
 
-	// Revoke → heartbeat reports revoked, and a fresh bind is rejected.
-	if err := s.db.WithContext(ctx).Exec(`UPDATE c3_ls_license SET status='revoked' WHERE id=$1`, lic.ID).Error; err != nil {
-		t.Fatalf("revoke: %v", err)
+	// Admin force-expire (status='expired', term still in the future) → heartbeat
+	// reports expired, and a fresh bind is rejected.
+	if err := s.db.WithContext(ctx).Exec(`UPDATE c3_ls_license SET status='expired' WHERE id=$1`, lic.ID).Error; err != nil {
+		t.Fatalf("force-expire: %v", err)
 	}
 	hb, _ := s.Heartbeat(ctx, lic.LicenseKey, "inst-1", "alive", now)
-	if hb.Status != HeartbeatRevoked {
-		t.Errorf("revoked heartbeat status = %q", hb.Status)
+	if hb.Status != HeartbeatExpired {
+		t.Errorf("force-expired heartbeat status = %q", hb.Status)
 	}
-	if _, err := s.BindInstallation(ctx, lic.LicenseKey, "inst-1", now, func() string { return "x" }); !errors.Is(err, ErrRevoked) {
-		t.Errorf("bind of revoked license err = %v, want ErrRevoked", err)
+	if _, err := s.BindInstallation(ctx, lic.LicenseKey, "inst-1", now, func() string { return "x" }); !errors.Is(err, ErrExpired) {
+		t.Errorf("bind of force-expired license err = %v, want ErrExpired", err)
 	}
 
-	// Expire → heartbeat reports expired, and a fresh bind is rejected.
+	// Lapsed term (status active, term_end in the past) → heartbeat reports expired.
 	if err := s.db.WithContext(ctx).Exec(
 		`UPDATE c3_ls_license SET status='active', term_end=$2 WHERE id=$1`, lic.ID, now.Add(-time.Hour)).Error; err != nil {
-		t.Fatalf("expire: %v", err)
+		t.Fatalf("expire term: %v", err)
 	}
 	hb, _ = s.Heartbeat(ctx, lic.LicenseKey, "inst-1", "alive", now)
 	if hb.Status != HeartbeatExpired {
@@ -234,5 +235,50 @@ func TestHeartbeatReportsRevokedAndExpired(t *testing.T) {
 	}
 	if _, err := s.BindInstallation(ctx, lic.LicenseKey, "inst-1", now, func() string { return "x" }); !errors.Is(err, ErrExpired) {
 		t.Errorf("bind of expired license err = %v, want ErrExpired", err)
+	}
+}
+
+func TestSeedAndListPlans(t *testing.T) {
+	s, ctx := liveStore(t)
+
+	seed := []Plan{
+		{PlanID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0},
+		{PlanID: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
+		{PlanID: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: "CNY", SortOrder: 2},
+	}
+	if err := s.SeedPlans(ctx, seed); err != nil {
+		t.Fatalf("seed plans: %v", err)
+	}
+
+	got, err := s.ListPlans(ctx)
+	if err != nil {
+		t.Fatalf("list plans: %v", err)
+	}
+	if len(got) != len(seed) {
+		t.Fatalf("ListPlans len = %d, want %d", len(got), len(seed))
+	}
+	for i := range seed {
+		// id is auto-assigned by the database; compare the rest field-for-field.
+		if got[i].ID <= 0 {
+			t.Errorf("plan[%d] should carry an auto-assigned id, got %d", i, got[i].ID)
+		}
+		got[i].ID = 0
+		if got[i] != seed[i] {
+			t.Errorf("plan[%d] = %+v, want %+v", i, got[i], seed[i])
+		}
+	}
+
+	// Re-seeding with a changed price is a no-op (ON CONFLICT DO NOTHING): the
+	// database is the live store after the first seed; operator edits survive.
+	bumped := []Plan{{PlanID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 999, Currency: "CNY", SortOrder: 0}}
+	if err := s.SeedPlans(ctx, bumped); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+	got, err = s.ListPlans(ctx)
+	if err != nil {
+		t.Fatalf("list after re-seed: %v", err)
+	}
+	if got[0].PriceCents != 100 {
+		t.Errorf("re-seed clobbered existing row: price = %d, want 100", got[0].PriceCents)
 	}
 }

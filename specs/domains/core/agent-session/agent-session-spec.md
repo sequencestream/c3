@@ -3,7 +3,7 @@
 ## Overview
 
 An agent session turns a user prompt into a Claude Agent SDK `query()` run, streams the run's
-activity, gates sensitive tools through the [permission-gateway](../permission-gateway/spec.md),
+activity, gates sensitive tools through the [permission-gateway](../permission-gateway/permission-gateway-spec.md),
 and lets the user steer the run via permission mode and interruption.
 
 A run is **not** bound to the browser connection that started it. Each session has a
@@ -21,7 +21,7 @@ team session keeps the stream open so the lead process outlives the turn (ADR 00
 
 The run's context — working directory (`cwd`), starting permission mode, and the `resume`
 session id — comes from the runtime, seeded by the
-[session-registry](../session-registry/spec.md).
+[session-registry](../session-registry/session-registry-spec.md).
 
 **Scope:** run lifecycle (start, stream, end, stop), background execution & replay buffering,
 permission-mode policy, session continuity (`resume`), persistent agent-team sessions, live
@@ -38,7 +38,7 @@ does not manage the workspace/session registry (session-registry), and does not 
 | Run Handle      | Live controls over an in-flight run: set permission mode, and push the next user turn into a live team session      |
 | Connection View | One WebSocket connection's subscription to the session it currently watches (delivers live events; replays on join) |
 
-See [models.md](models.md).
+See [agent-session-models.md](agent-session-models.md).
 
 ## Business rules
 
@@ -197,7 +197,7 @@ Emits `mode_changed`, `user_text`, `assistant_text`, `tool_use`, `tool_result`, 
 broadcast). Consumes `user_prompt`, `set_mode`, `stop_run`, `ping`. Forwards `permission_request` on behalf of the gateway. Reports the run's SDK session id
 to session-registry (which emits `session_started`). Workspace/session events (`ready`,
 `workspaces`, `sessions`, `session_selected`) belong to
-[session-registry](../session-registry/spec.md). Shapes in the
+[session-registry](../session-registry/session-registry-spec.md). Shapes in the
 [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 
 ## User scenarios

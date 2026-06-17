@@ -87,7 +87,7 @@ tool-denied) on whether to pass the checkpoint. A majority `continue` overrides 
 auto-continues (same cap as `RM-A8`); a tie / `wait` majority stops (`RM-A6`). The outcome
 broadcasts via `AutomationStatus.checkpointConsensus`. It decides only _automation flow_, never the
 underlying `AskUserQuestion` answer. See
-[consensus.md](../domains/core/permission-gateway/consensus.md).
+[consensus](../domains/core/permission-gateway/features/permission-gateway-consensus.md).
 
 ## Branches & exceptions (anti-scenarios)
 

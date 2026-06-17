@@ -17,4 +17,4 @@ existing `claude` login) and cannot be removed. The user may add more agents and
 It does not run the agent (that is [agent-session](../../core/agent-session/agent-session-overview.md))
 and does not render the settings view (that is [web-console](../../core/web-console/web-console-overview.md)).
 
-See [spec.md](spec.md), [models.md](models.md), [design.md](design.md).
+See [agent-config-spec.md](agent-config-spec.md), [agent-config-models.md](agent-config-models.md), [agent-config-design.md](agent-config-design.md).

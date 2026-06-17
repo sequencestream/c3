@@ -51,7 +51,7 @@ c3 has three business groups: `core` (the agent loop), `system-config` (user con
 ## Usage rules
 
 1. **Spec before code.** New behavior is described here first, then implemented.
-2. **WHAT vs HOW.** `spec.md` files state business behavior; `design.md` files state
+2. **WHAT vs HOW.** `<domain>-spec.md` files state business behavior; `<domain>-design.md` files state
    technical implementation. Keep them apart.
 3. **Single source of truth for the wire format.** The WebSocket protocol is documented
    once in [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md).
@@ -67,5 +67,5 @@ c3 has three business groups: `core` (the agent loop), `system-config` (user con
 ## Maintenance
 
 - Initialized 2026-05-29.
-- Every domain has `<domain>-overview.md`, `spec.md`, `design.md`, `models.md`.
+- Every domain has `<domain>-overview.md`, `<domain>-spec.md`, `<domain>-design.md`, `<domain>-models.md`.
 - Deprecated content moves to `archived/`; ADRs are never deleted, only superseded.

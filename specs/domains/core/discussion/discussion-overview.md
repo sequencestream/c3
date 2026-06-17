@@ -13,12 +13,12 @@ background, the organizer nominating speakers among the configured agents and dr
 workflow, each turn a one-shot tool-disabled agent reply, every message streamed live as
 `discussion_message`), and **human-in-the-loop control**: pause/resume the running engine, the human
 interjecting a `human` message mid-run, and re-driving a _new round_ on a concluded discussion with a
-follow-up question (see [design §organizer-engine](design.md#organizer-engine)).
+follow-up question (see [design §organizer-engine](discussion-design.md#organizer-engine)).
 
 ## Scope (now)
 
-- Two tables (discussions and their messages) in the shared database (see [models](models.md)).
-- A store with discussion CRUD + message append/list (see [design](design.md)).
+- Two tables (discussions and their messages) in the shared database (see [models](discussion-models.md)).
+- A store with discussion CRUD + message append/list (see [design](discussion-design.md)).
 - **Data-driven type catalog + workflow**: brainstorm / decision / review / planning / retro, each
   carrying an ordered `discuss → summarize → confirm → conclude` workflow with organizer-facing stage
   prompts. Pure data + pure functions, unit tested.
@@ -82,7 +82,7 @@ follow-up question (see [design §organizer-engine](design.md#organizer-engine))
   non-organizer agent; the submit button is disabled with an inline error when this constraint is not
   met. The orchestrator nominates **only** from the participant set (∪ the designated organizer), so
   unrelated agents no longer add noise. An empty/unset set (legacy rows) falls back to the whole
-  enabled-agent pool. See design.md §Roles.
+  enabled-agent pool. See discussion-design.md §Roles.
 - **Heterogeneous roundtable (multi-vendor, 2026-06-06-004)**: a discussion is **vendor-agnostic
   by construction** — the organizer nominates among the **selected** participants (a subset of the
   enabled agents; see Targeted participants above), which may mix vendors, all normalized to the same
@@ -139,7 +139,7 @@ follow-up question (see [design §organizer-engine](design.md#organizer-engine))
   `refine_intent` variant) whose first prompt carries the discussion title + `conclusion`, and
   replies with `session_selected` + `intents`; the agent then splits it into verifiable items
   via the **unchanged** `save_intents` flow (see
-  [intent-management RM-R7](../intent-management/spec.md)). Rejected unless the discussion
+  [intent-management RM-R7](../intent-management/intent-management-spec.md)). Rejected unless the discussion
   is `completed` with a non-empty `conclusion`.
 
 ## Out of scope (now)
@@ -151,9 +151,9 @@ follow-up question (see [design §organizer-engine](design.md#organizer-engine))
 
 ## Index
 
-- [models.md](models.md) — entity definitions (Discussion, Discussion Message).
-- [design.md](design.md) — the persistence layer (schema, migration, store API) **and the
-  organizer engine state machine** ([§organizer-engine](design.md#organizer-engine)).
+- [discussion-models.md](discussion-models.md) — entity definitions (Discussion, Discussion Message).
+- [discussion-design.md](discussion-design.md) — the persistence layer (schema, migration, store API) **and the
+  organizer engine state machine** ([§organizer-engine](discussion-design.md#organizer-engine)).
 
 ## Dependencies
 

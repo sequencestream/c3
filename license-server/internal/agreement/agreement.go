@@ -1,33 +1,28 @@
-// Package agreement is the single source of truth for the no-refund service
-// agreement the buyer must explicitly accept before activation/login completes
-// (PL-R9/PL-R10). The agreement copy and its version live here so the page shown
-// to the user and the acceptance recorded on the activation request can never
-// drift — policy and behavior are captured together (the task's explicit goal).
+// Package agreement is the single source of truth for the service-usage
+// authorization agreement the buyer must explicitly accept before
+// activation/login completes (PL-R9/PL-R10). The agreement copy lives in the
+// embedded agreement.md and its version lives here, so the page shown to the
+// user and the acceptance recorded on the activation request can never drift —
+// policy and behavior are captured together (the task's explicit goal).
 package agreement
 
+import _ "embed"
+
 // Version is the agreement revision recorded with each acceptance. Bump it
-// whenever the Paragraphs below change so stored acceptances remain auditable.
-const Version = "2026-06-16"
+// whenever agreement.md changes so stored acceptances remain auditable.
+const Version = "2026-06-17"
 
-// Title is the heading shown above the agreement on the activation page.
-const Title = "Service Agreement"
+// Title is the heading shown above the agreement on the activation page and used
+// as the browser tab title. It mirrors the top-level heading in agreement.md.
+const Title = "c3 软件使用授权与服务协议"
 
-// Paragraphs is the agreement body. It states plainly that c3 is sold as a
-// virtual/digital product and that the service does not support refunds
-// (PL-R10). Rendered verbatim on the activation page and summarized in specs.
-var Paragraphs = []string{
-	"c3 is a virtual / digital product. Activation grants you a time-limited, " +
-		"revocable entitlement to run the software; it is not a sale of goods and " +
-		"transfers no physical item.",
-	"This product does NOT support refunds. By accepting, you acknowledge that " +
-		"all activations and purchases are final and that no refund — full or " +
-		"partial, automated or manual — is offered for this digital product.",
-	"Your entitlement may be revoked for abuse, chargeback, or violation of these " +
-		"terms. Revocation stops new sessions; work already in progress is not " +
-		"interrupted.",
-	"You must accept this agreement to continue with GitHub sign-in and activation. " +
-		"Declining cancels activation and grants no entitlement.",
-}
+// Markdown is the full agreement body, embedded from agreement.md so the copy is
+// edited as a document (Chinese) yet shipped inside the single binary. The
+// activation page renders it; specs summarize it.
+//
+//go:embed agreement.md
+var Markdown string
 
-// Summary is a one-line restatement for compact surfaces (e.g. logs, specs).
-const Summary = "Virtual/digital product; no refunds supported (acceptance required before activation)."
+// Summary is a one-line restatement for compact surfaces (e.g. the
+// agreement-required error and specs).
+const Summary = "本软件为虚拟数字产品，一经激活不支持退款；激活前须同意本协议。"

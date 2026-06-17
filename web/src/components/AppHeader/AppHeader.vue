@@ -110,7 +110,7 @@ function licenseBadgeKey(state: string): LocaleKey {
   if (state === 'grace') return 'license.badge.grace' as LocaleKey
   if (state === 'expired') return 'license.badge.expired' as LocaleKey
   if (state === 'unactivated') return 'license.badge.unactivated' as LocaleKey
-  if (state === 'revoked') return 'license.badge.revoked' as LocaleKey
+  if (state === 'disabled') return 'license.badge.disabled' as LocaleKey
   return 'license.badge.unactivated' as LocaleKey
 }
 
@@ -506,7 +506,7 @@ function selectTab(tab: HeaderTab): void {
     border-color: var(--c-yellow);
   }
   .license-badge.expired,
-  .license-badge.revoked {
+  .license-badge.disabled {
     color: var(--c-red);
     border-color: var(--c-red);
   }

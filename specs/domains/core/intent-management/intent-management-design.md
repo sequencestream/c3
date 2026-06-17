@@ -1,6 +1,6 @@
 # intent-management — Design
 
-Implements the [spec](spec.md). The capability is built from a SQLite ledger layer, a store over
+Implements the [spec](intent-management-spec.md). The capability is built from a SQLite ledger layer, a store over
 it, the read-only communication run variant plus the save tool, launch-development wiring, and the
 automation orchestrator (state machine + completion judge + git helper), with hooks into the agent
 run loop (a run variant), the runtime registry (a run `kind` + shared launcher), the WS dispatch

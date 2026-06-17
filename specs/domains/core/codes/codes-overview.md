@@ -21,6 +21,6 @@ can browse project code without leaving c3.
 
 ## Documents
 
-- [spec.md](spec.md) — domain behavior and invariants.
-- [design.md](design.md) — implementation contract and API shape.
-- [models.md](models.md) — workspace-relative code result shapes.
+- [codes-spec.md](codes-spec.md) — domain behavior and invariants.
+- [codes-design.md](codes-design.md) — implementation contract and API shape.
+- [codes-models.md](codes-models.md) — workspace-relative code result shapes.

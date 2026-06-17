@@ -22,10 +22,10 @@ export const LICENSE_FILE_MODE = 0o600
 /**
  * The derived c3-side Entitlement state (product-license spec § States).
  * `Active`/`Grace` permit new sessions; the rest gate them. Heartbeat-driven
- * Grace/Revoked transitions land in the heartbeat task; this module derives the
+ * Grace/Disabled transitions land in the heartbeat task; this module derives the
  * baseline from the cached token's signature + validity window.
  */
-export const ENTITLEMENT_STATES = ['unactivated', 'active', 'grace', 'expired', 'revoked'] as const
+export const ENTITLEMENT_STATES = ['unactivated', 'active', 'grace', 'expired', 'disabled'] as const
 export type EntitlementState = (typeof ENTITLEMENT_STATES)[number]
 
 /** What gets persisted to `~/.c3/license.json`. */
@@ -38,7 +38,6 @@ export interface LicenseCache {
   entitlementToken: string
   /** Per-binding bearer credential presented on each heartbeat (PL-R2). */
   aliveToken: string
-  plan: string
   state: EntitlementState
   /** License term end (unix seconds), surfaced for the badge/menu. */
   termEnd: number
@@ -97,7 +96,6 @@ export function getOrCreateInstallationId(): string {
     licenseKey: '',
     entitlementToken: '',
     aliveToken: '',
-    plan: '',
     state: 'unactivated',
     termEnd: 0,
     lastSuccessfulHeartbeat: null,
@@ -116,7 +114,6 @@ export function saveActivation(args: {
   licenseKey: string
   entitlementToken: string
   aliveToken: string
-  plan: string
   termEnd: number
 }): LicenseCache {
   const cache: LicenseCache = {
@@ -124,7 +121,6 @@ export function saveActivation(args: {
     licenseKey: args.licenseKey,
     entitlementToken: args.entitlementToken,
     aliveToken: args.aliveToken,
-    plan: args.plan,
     state: 'active',
     termEnd: args.termEnd,
     lastSuccessfulHeartbeat: Date.now(),
@@ -137,7 +133,7 @@ export function saveActivation(args: {
 /**
  * Derive the current entitlement from the cache by verifying the cached token
  * offline (PL-R5). Absent/unverifiable ⇒ `unactivated`; verified-but-expired ⇒
- * `expired`. The heartbeat-driven `grace`/`revoked` refinements are applied by
+ * `expired`. The heartbeat-driven `grace`/`disabled` refinements are applied by
  * the heartbeat scheduler (separate task); this is the offline baseline.
  */
 export function deriveEntitlement(
@@ -145,7 +141,7 @@ export function deriveEntitlement(
   nowSeconds: number = Math.floor(Date.now() / 1000),
 ): { state: EntitlementState; installationId?: string } {
   if (!cache) return { state: 'unactivated' }
-  if (cache.state === 'revoked') return { state: 'revoked', installationId: cache.installationId }
+  if (cache.state === 'disabled') return { state: 'disabled', installationId: cache.installationId }
   if (!cache.entitlementToken) {
     return { state: 'unactivated', installationId: cache.installationId }
   }
@@ -172,7 +168,6 @@ export function currentLicenseStatus(
   return {
     state,
     entitled: state === 'active' || state === 'grace',
-    plan: cache?.plan ?? '',
     termEnd: cache?.termEnd ?? 0,
     installationId: cache?.installationId ?? '',
     licenseKey: cache?.licenseKey ?? '',
@@ -185,13 +180,12 @@ export const GRACE_WINDOW_MS = 30 * 60 * 1000
 /** A refreshed entitlement a successful heartbeat may carry. */
 export interface HeartbeatRefresh {
   entitlementToken?: string
-  plan?: string
   termEnd?: number
 }
 
 /**
  * Record a successful heartbeat: reset the grace deadline and cache any refreshed
- * token/plan/term (PL-R3). No-op (returns `undefined`) when there is no cache.
+ * token/term (PL-R3). No-op (returns `undefined`) when there is no cache.
  */
 export function recordHeartbeatSuccess(refresh: HeartbeatRefresh = {}): LicenseCache | undefined {
   const cache = readLicenseCache()
@@ -199,7 +193,6 @@ export function recordHeartbeatSuccess(refresh: HeartbeatRefresh = {}): LicenseC
   const next: LicenseCache = {
     ...cache,
     entitlementToken: refresh.entitlementToken ?? cache.entitlementToken,
-    plan: refresh.plan ?? cache.plan,
     termEnd: refresh.termEnd ?? cache.termEnd,
     state: 'active',
     lastSuccessfulHeartbeat: Date.now(),
@@ -210,12 +203,12 @@ export function recordHeartbeatSuccess(refresh: HeartbeatRefresh = {}): LicenseC
 }
 
 /**
- * Record a definitive non-active heartbeat verdict (`revoked` covers both an
- * admin revocation and a license rebound to another installation — "disabled";
- * `expired` is a lapsed term, PL-R8). This is not grace-recoverable.
+ * Record a definitive non-active heartbeat verdict (`disabled` is a license
+ * rebound to another installation; `expired` is a lapsed term, PL-R8). This is
+ * not grace-recoverable.
  */
 export function recordHeartbeatLapse(
-  state: Extract<EntitlementState, 'revoked' | 'expired'>,
+  state: Extract<EntitlementState, 'disabled' | 'expired'>,
 ): LicenseCache | undefined {
   const cache = readLicenseCache()
   if (!cache) return undefined
@@ -233,7 +226,7 @@ export function recordHeartbeatLapse(
  */
 export function recordHeartbeatFailure(nowMs: number = Date.now()): LicenseCache | undefined {
   const cache = readLicenseCache()
-  if (!cache || !cache.entitlementToken || cache.state === 'revoked') return cache
+  if (!cache || !cache.entitlementToken || cache.state === 'disabled') return cache
   const within = nowMs - (cache.lastSuccessfulHeartbeat ?? 0) <= GRACE_WINDOW_MS
   const state: EntitlementState = within ? 'grace' : 'expired'
   if (cache.state === state) return cache

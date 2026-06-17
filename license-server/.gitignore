@@ -1,6 +1,11 @@
 # Makefile build output (the compiled binary).
 /dist/
 
+# Local-dev environment (secrets: signing seed, DB password). The .example
+# template is tracked so a fresh checkout can recreate it.
+/.env
+!/.env/*.example
+
 # The repo-root .gitignore ignores every `dist/` directory, but the embedded
 # frontend build output MUST be tracked (it is compiled into the binary via
 # //go:embed). Re-include the directory and its contents.

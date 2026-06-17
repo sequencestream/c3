@@ -1,6 +1,6 @@
 # codes — Design
 
-Implements the [spec](spec.md). The server feature uses the shared WebSocket protocol as its only
+Implements the [spec](codes-spec.md). The server feature uses the shared WebSocket protocol as its only
 API.
 
 ## Data Model

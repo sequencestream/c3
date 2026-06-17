@@ -9,7 +9,7 @@
 The product-license domain answers one question authoritatively: **is this installation paid-for?**
 A user obtains a **license key** from the license-server and pastes it into a c3 installation to
 **bind** that installation to the license, then **heartbeats** periodically to confirm the
-entitlement is still valid and not revoked or displaced. Between heartbeats — and through transient
+entitlement is still valid and not expired or displaced. Between heartbeats — and through transient
 network or LS outages — c3 trusts an **LS-signed entitlement token** that it verifies **offline**
 (Ed25519), within a **30-minute offline grace** of the last successful heartbeat. When entitlement
 is not `active`, c3 **gates creation of new sessions** while leaving existing sessions and in-flight
@@ -54,7 +54,7 @@ and admin license operations (LS side).
    catalog (`1m`/`6m`/`1y`), embeds its web as a single binary; **GitHub sign-in/registration** with
    **trial-license issuance** (random license key shown to the user); **license-key binding**
    (Ed25519-signed entitlement token + alive token, exclusive per installation); and **heartbeat**
-   (active / disabled / revoked / expired). _Pending_ — admin issue/revoke/inspect over the
+   (active / disabled / expired). _Pending_ — admin issue/force-expire/inspect over the
    GitHub-OAuth back-office.
 3. **Renewal payment flow (LS web).** GitHub-account checkout; WeChat Pay; mandatory **no-refund
    service-agreement acceptance on the order** before payment; a paid order → extension of the linked

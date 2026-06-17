@@ -11,7 +11,7 @@
 c3 is moving from a free local tool to a **paid product**. A paid product needs to answer one
 question authoritatively: _is this installation entitled to run?_ That answer cannot live only on
 the local machine — a purely-local license check is shareable between machines, forgeable by a
-determined user, and can never be **revoked** after a refund/chargeback/abuse. Commercial
+determined user, and can never be **deactivated** after a refund/chargeback/abuse. Commercial
 entitlement therefore requires a **server-side source of truth**.
 
 The constitution's tech-stack baseline forbids — _in the c3 process_ — any database, any

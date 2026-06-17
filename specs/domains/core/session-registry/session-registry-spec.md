@@ -26,7 +26,7 @@ holds no permission state.
 | Session         | A conversation in a workspace: native `sessionId`, `title`, `lastModified`, c3 `mode`, and `vendor` (the owning vendor's tag — ADR-0013 cross-vendor listing)                                            |
 | Pending Session | A session created in the UI but not yet started; a `pending:<uuid>` id until its first run binds it to a real vendor-native id. May hold a mutable agent **intent** (agent-config AC-R16) before it runs |
 
-See [models.md](models.md).
+See [session-registry-models.md](session-registry-models.md).
 
 ## Business rules
 
@@ -95,7 +95,7 @@ Consumes `add_workspace`, `remove_workspace`, `list_sessions`, `create_session`,
 `select_session`, `rename_session`, `delete_session`, `set_mode`. Emits `ready` (with the
 runtime `statuses`), `workspaces`, `sessions`, `session_selected` (with `status`),
 `session_started`, `mode_changed`, `error`. Run-status broadcasts (`session_status`) belong to
-[agent-session](../agent-session/spec.md). See the
+[agent-session](../agent-session/agent-session-spec.md). See the
 [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 
 ## Interactions

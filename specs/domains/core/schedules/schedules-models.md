@@ -1,6 +1,6 @@
 # schedules — Models
 
-Entity definitions. Business-semantic types; physical wiring in [design.md](design.md).
+Entity definitions. Business-semantic types; physical wiring in [schedules-design.md](schedules-design.md).
 Wire shapes are defined once in the [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 
 ## Schedule

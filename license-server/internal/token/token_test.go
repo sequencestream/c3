@@ -25,7 +25,6 @@ func samplePayload(now time.Time) Payload {
 	return Payload{
 		InstallationID: "inst-123",
 		LicenseID:      "42",
-		Plan:           "trial-1m",
 		Status:         "active",
 		TermStart:      now.Unix(),
 		TermEnd:        now.Add(30 * 24 * time.Hour).Unix(),
@@ -49,7 +48,7 @@ func TestSignVerifyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
-	if got.InstallationID != "inst-123" || got.Plan != "trial-1m" || got.Status != "active" {
+	if got.InstallationID != "inst-123" || got.Status != "active" {
 		t.Errorf("payload round-trip mismatch: %+v", got)
 	}
 	if got.KeyID != KeyID(pub) {

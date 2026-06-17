@@ -204,7 +204,7 @@ session 一联网即被拒。c3 通过两个中性驱动选项字段控制，由
   c3 的 Codex 审批桥是一个**结构性空操作**——其注册的请求 handler 永远不会被触发。
 - 审计重建：翻译器给所有工具 item 打"已预审"印章，因为这相当于"在启动时被一次性预审"。
 
-详见 [`permission-gateway` 域](../domains/core/permission-gateway/spec.md)与
+详见 [`permission-gateway` 域](../domains/core/permission-gateway/permission-gateway-spec.md)与
 [ADR 0005](adr/0005-inherit-user-project-settings.md)。
 
 ## 4. 上下文与 Session 数据存储

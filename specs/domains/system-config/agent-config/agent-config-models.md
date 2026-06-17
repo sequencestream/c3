@@ -1,6 +1,6 @@
 # agent-config — Models
 
-Entity definitions. Business-semantic field contracts; physical wiring in [design.md](design.md).
+Entity definitions. Business-semantic field contracts; physical wiring in [agent-config-design.md](agent-config-design.md).
 The wire shapes are defined once in the
 [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 
@@ -62,9 +62,9 @@ The whole configuration, persisted at `~/.c3/settings.json`.
 | `toolAgentId`       | text                   | Id of the agent that runs background tool sessions (completion judge, name derivation; exception-handling not yet agent-driven). Empty string ⇒ "follow the default agent" (kept empty on store); a set value falls through by order sequence like the default (AC-R21). |
 | `intentAgentId`     | text                   | Id of the agent that runs intent-communication sessions (the intent analyst's requirement-breakdown conversation). Empty string ⇒ "follow the default agent" (kept empty on store); a set value falls through by order sequence like the default (AC-R23).               |
 | `defaultMode`       | permission mode (opt.) | Permission mode new sessions start in; one of the five permission-mode values, falls back to `default` (AC-R8). Seeds a new session's mode in session-registry (SR-R6).                                                                                                  |
-| `consensus`         | `{ enabled }` (opt.)   | Multi-agent consensus voting on permission prompts; off by default. Consumed by the permission gateway — see [consensus.md](../../core/permission-gateway/consensus.md).                                                                                                 |
+| `consensus`         | `{ enabled }` (opt.)   | Multi-agent consensus voting on permission prompts; off by default. Consumed by the permission gateway — see [consensus](../../core/permission-gateway/features/permission-gateway-consensus.md).                                                                        |
 | `maxRoundsPerStage` | number (opt.)          | Per-stage round cap for multi-agent discussions; normalized to ≥ 8, default 12 (AC-R9). Consumed by the discussion engine.                                                                                                                                               |
-| `timezone`          | text (opt.)            | System-wide IANA time zone (e.g. `Asia/Shanghai`) used to interpret every schedule's cron fields; invalid/unset falls back to the server's local zone. Consumed by the [schedules](../../core/schedules/design.md) engine — see SCH-R3a.                                 |
+| `timezone`          | text (opt.)            | System-wide IANA time zone (e.g. `Asia/Shanghai`) used to interpret every schedule's cron fields; invalid/unset falls back to the server's local zone. Consumed by the [schedules](../../core/schedules/schedules-design.md) engine — see SCH-R3a.                       |
 
 ## Session binding (state.json, `~/.c3`)
 

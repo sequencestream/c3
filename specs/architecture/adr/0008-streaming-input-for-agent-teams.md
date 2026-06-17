@@ -85,11 +85,11 @@ Adopt option 3.
 
 ## References
 
-- [agent-session spec](../../domains/core/agent-session/spec.md) — AS-R13…R17 (streaming input,
+- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — AS-R13…R17 (streaming input,
   team detection, `result` fork, team end-on-stop, team next-turn push).
-- [agent-session design](../../domains/core/agent-session/design.md) — streaming input, team
+- [agent-session design](../../domains/core/agent-session/agent-session-design.md) — streaming input, team
   sessions, stop / interrupt, message mapping.
-- [session-registry design](../../domains/core/session-registry/design.md) — team-session status
+- [session-registry design](../../domains/core/session-registry/session-registry-design.md) — team-session status
   (the team flag and the emit override).
 - [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) — `team_upgraded`,
   `team` session status, `user_prompt` team semantics.

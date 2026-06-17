@@ -1826,7 +1826,7 @@
       "grace": "宽限期",
       "expired": "已过期",
       "unactivated": "未激活",
-      "revoked": "已吊销"
+      "disabled": "已停用"
     },
     "activate": {
       "button": "激活许可",

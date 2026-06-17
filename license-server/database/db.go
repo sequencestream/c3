@@ -75,25 +75,49 @@ func loadSchemaFiles(fsys fs.FS) ([]schemaFile, error) {
 	return out, nil
 }
 
-// splitStatements splits a SQL file into individual statements, dropping
-// "--" line comments and blank statements. The LS DDL is plain (no semicolons
-// inside string literals or function bodies), so a semicolon split is sufficient
-// and keeps the runner driver-agnostic.
+// splitStatements splits a SQL file into individual statements on semicolons,
+// dropping "--" line comments and blank statements. It scans character by
+// character so that semicolons and "--" sequences appearing INSIDE single-quoted
+// string literals (e.g. table/column COMMENT text) are treated as literal text,
+// not as statement terminators or comments. A SQL literal escapes a quote by
+// doubling it (''); the simple in-string toggle handles that, since the second
+// quote of the pair flips the state straight back to "inside the string".
 func splitStatements(sqlText string) []string {
-	var b strings.Builder
-	for _, line := range strings.Split(sqlText, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
 	var stmts []string
-	for _, part := range strings.Split(b.String(), ";") {
-		if s := strings.TrimSpace(part); s != "" {
-			stmts = append(stmts, s)
+	var cur strings.Builder
+	inString := false
+	inLineComment := false
+	runes := []rune(sqlText)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		switch {
+		case inLineComment:
+			if c == '\n' {
+				inLineComment = false
+				cur.WriteByte('\n')
+			}
+		case inString:
+			cur.WriteRune(c)
+			if c == '\'' {
+				inString = false
+			}
+		case c == '-' && i+1 < len(runes) && runes[i+1] == '-':
+			inLineComment = true
+			i++ // consume the second '-'
+		case c == '\'':
+			inString = true
+			cur.WriteRune(c)
+		case c == ';':
+			if s := strings.TrimSpace(cur.String()); s != "" {
+				stmts = append(stmts, s)
+			}
+			cur.Reset()
+		default:
+			cur.WriteRune(c)
 		}
+	}
+	if s := strings.TrimSpace(cur.String()); s != "" {
+		stmts = append(stmts, s)
 	}
 	return stmts
 }

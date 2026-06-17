@@ -46,20 +46,21 @@ func TestLicenseAPIUnavailableWhenUnconfigured(t *testing.T) {
 	}
 }
 
-// --- live end-to-end (skips without LS_TEST_DATABASE_URL) -------------------
+// --- live end-to-end (skips without C3_LS_TEST_DATABASE_URL) -------------------
 
 type liveEnv struct {
-	h     http.Handler
-	store *store.Store
-	pub   ed25519.PublicKey
-	ctx   context.Context
+	h       http.Handler
+	store   *store.Store
+	pub     ed25519.PublicKey
+	ctx     context.Context
+	trialID int64
 }
 
 func liveServer(t *testing.T, github http.Handler) liveEnv {
 	t.Helper()
-	dsn := os.Getenv("LS_TEST_DATABASE_URL")
+	dsn := os.Getenv("C3_LS_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("LS_TEST_DATABASE_URL not set; skipping live activation test")
+		t.Skip("C3_LS_TEST_DATABASE_URL not set; skipping live activation test")
 	}
 	ctx := context.Background()
 	db, err := lsdb.Open(ctx, dsn)
@@ -75,7 +76,7 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 		}
 	})
 	if err := db.WithContext(ctx).Exec(
-		`TRUNCATE c3_ls_license, c3_ls_order, c3_ls_user RESTART IDENTITY CASCADE`).Error; err != nil {
+		`TRUNCATE c3_ls_license, c3_ls_order, c3_ls_user, c3_ls_plan RESTART IDENTITY CASCADE`).Error; err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 
@@ -94,6 +95,17 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 	cfg.PublicURL = "http://ls.test"
 
 	st := store.New(db)
+	// Seed a trial plan so GitHub sign-in issues a trial license and bind tests
+	// have a plan id to reference.
+	if err := st.SeedPlans(ctx, []store.Plan{
+		{PlanID: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
+	}); err != nil {
+		t.Fatalf("seed trial plan: %v", err)
+	}
+	trial, ok, err := st.FirstTrialPlan(ctx)
+	if err != nil || !ok {
+		t.Fatalf("first trial plan: err=%v ok=%v", err, ok)
+	}
 	h := NewServer(Deps{
 		Config: cfg,
 		Caches: cache.NewRegistry(cfg.LRUSize),
@@ -103,7 +115,7 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 		Store:  st,
 		Signer: priv,
 	})
-	return liveEnv{h: h, store: st, pub: priv.Public().(ed25519.PublicKey), ctx: ctx}
+	return liveEnv{h: h, store: st, pub: priv.Public().(ed25519.PublicKey), ctx: ctx, trialID: trial.ID}
 }
 
 func githubOK() http.Handler {
@@ -204,7 +216,7 @@ func TestBindAndHeartbeatHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert buyer: %v", err)
 	}
-	lic, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyerID, TrialPlanID, 30, time.Now(), func() string { return "license-key-xyz" })
+	lic, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyerID, env.trialID, 30, time.Now(), func() string { return "license-key-xyz" })
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
@@ -218,14 +230,13 @@ func TestBindAndHeartbeatHappyPath(t *testing.T) {
 	var got struct {
 		EntitlementToken string `json:"entitlementToken"`
 		AliveToken       string `json:"aliveToken"`
-		Plan             string `json:"plan"`
 		TermEnd          int64  `json:"termEnd"`
 		Status           string `json:"status"`
 	}
 	if err := json.NewDecoder(bind.Body).Decode(&got); err != nil {
 		t.Fatalf("decode bind: %v", err)
 	}
-	if got.AliveToken == "" || got.Status != "active" || got.Plan != TrialPlanID {
+	if got.AliveToken == "" || got.Status != "active" {
 		t.Fatalf("bind payload = %+v", got)
 	}
 	payload, err := token.Verify(env.pub, got.EntitlementToken, time.Now())

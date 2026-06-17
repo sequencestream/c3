@@ -78,8 +78,8 @@ connection:
 
 ## References
 
-- [agent-session spec](../../domains/core/agent-session/spec.md) — run lifecycle & rules.
-- [session-registry spec](../../domains/core/session-registry/spec.md) — viewed session vs runtime.
+- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — run lifecycle & rules.
+- [session-registry spec](../../domains/core/session-registry/session-registry-spec.md) — viewed session vs runtime.
 - [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) — `stop_run`,
   `session_status`, `user_text`, `session_selected.status`, `ready.statuses`.
 - Supersedes the per-connection-abort aspect of [ADR 0002](0002-websocket-as-permission-transport.md)'s

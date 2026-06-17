@@ -28,5 +28,12 @@ the old `user`/`orders`/`licenses`) on every startup.
 | Table          | Purpose                                                                                   | Key columns                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | c3_ls_user     | GitHub identity for buyer + admin; GitHub is account login/registration only (PL-R9/R11)  | github_id (unique), github_login, email                                                      |
-| c3_ls_order    | Purchase record + no-refund acceptance; a paid order extends the linked license (PL-R9)   | buyer_id, license_id, plan_id, amount_cents, no_refund_accepted_at, status                   |
-| c3_ls_license  | Authoritative entitlement keyed by license_key, carrying its exclusive live binding       | license_key (unique), buyer_id, plan_id, status, alive_install_id, alive_token, alive_time, term_end |
+| c3_ls_plan     | Persisted public plan catalog (purchasable terms); bootstrapped from code, served at GET /v1/plans | id (PK, auto), plan_id (unique), name, duration_months, price_cents, currency, sort_order, is_trial |
+| c3_ls_order    | Purchase record + service-agreement acceptance; a paid order extends the linked license (PL-R9) | user_id, license_id, plan_id, amount_cents, agreement_version, agreement_accepted_at, status |
+| c3_ls_license  | Authoritative entitlement keyed by license_key, carrying its exclusive live binding       | license_key (unique), user_id, plan_id, status, alive_install_id, alive_token, alive_time, term_end |
+
+The plan catalog is bootstrapped from the code-owned set (`internal/plans`) into
+`c3_ls_plan` on every startup with `INSERT ... ON CONFLICT (plan_id) DO NOTHING`,
+so a fresh database is seeded while existing rows (operator edits) survive. The
+public `GET /v1/plans` reads `c3_ls_plan`, falling back to the code catalog only
+when the database is unavailable.

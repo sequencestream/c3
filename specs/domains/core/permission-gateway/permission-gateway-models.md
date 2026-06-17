@@ -1,7 +1,7 @@
 # permission-gateway — Models
 
 Entity definitions for the gateway. Types are business-semantic; physical representation
-is in [design.md](design.md).
+is in [permission-gateway-design.md](permission-gateway-design.md).
 
 ## Permission Request
 

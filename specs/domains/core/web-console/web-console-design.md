@@ -1,6 +1,6 @@
 # web-console — Design
 
-Implements the [spec](spec.md). A Vue 3 single-page app. One thin container holds all client
+Implements the [spec](web-console-spec.md). A Vue 3 single-page app. One thin container holds all client
 state and the WebSocket wiring and composes a set of presentational components; shared
 non-component helper modules (pure view logic, the WebSocket client) live alongside them. Built
 with Vite, whose dev server proxies the WebSocket to the running server.
@@ -112,7 +112,7 @@ Inbound dispatch switches on the message type:
 ## Intent runStatus indicator
 
 Each intent carries a derived run-status field — running / dangling / idle (see
-[intent-management design](../intent-management/design.md)). The server computes it during the
+[intent-management design](../intent-management/intent-management-design.md)). The server computes it during the
 in-progress reconcile on intent-chat entry, caches the result, and enriches every intent broadcast:
 
 - **running** — the dev session's process is alive in the runtime registry. The UI renders a green
@@ -238,7 +238,7 @@ The discussion detail (the discussion branch of the content area, between the se
 the chat messages) renders the organizer engine's **explicit agenda** for the open discussion: the
 ordered subtopic list, the current subtopic, and overall completion. It reads straight from the
 active discussion (its agenda list + agenda index); no new container state or wire handling — see the
-[discussion design](../discussion/design.md) for the agenda model.
+[discussion design](../discussion/discussion-design.md) for the agenda model.
 
 - **Pure selector.** A DOM-free, unit-tested selector folds the discussion into visibility, items,
   current, completed, total, percent, and complete. The 0-based agenda index is the single source of
@@ -263,7 +263,7 @@ The discussion chat tail (between the chat messages and the composer) renders th
 in-flight status** of the agents the organizer just dispatched, so a viewer sees who is replying
 before anything lands in the transcript — and any reply failure that would otherwise be invisible.
 Runtime-only: never persisted, never a chat message; the same transient paradigm as the discussion
-run status. See the [discussion design](../discussion/design.md) for the engine/wire side.
+run status. See the [discussion design](../discussion/discussion-design.md) for the engine/wire side.
 
 - **Pure reducers** (DOM-free, unit-tested): one folds a `discussion_dispatch_status` event into a
   per-discussion dispatch view (pending agents + errors) — pending appends the agents (de-duped by id,

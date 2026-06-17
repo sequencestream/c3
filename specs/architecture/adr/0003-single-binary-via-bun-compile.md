@@ -54,4 +54,4 @@ explicit-executable-path option (`pathToClaudeCodeExecutable`).
 ## References
 
 - `README.md` § Single binary
-- `specs/domains/core/agent-session/design.md`
+- `specs/domains/core/agent-session/agent-session-design.md`

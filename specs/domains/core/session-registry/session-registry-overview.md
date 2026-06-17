@@ -14,4 +14,4 @@ each workspace's recent-access order across restarts.
 It does not run the agent (that is [agent-session](../agent-session/agent-session-overview.md))
 and does not render the sidebar (that is [web-console](../web-console/web-console-overview.md)).
 
-See [spec.md](spec.md), [models.md](models.md), [design.md](design.md).
+See [session-registry-spec.md](session-registry-spec.md), [session-registry-models.md](session-registry-models.md), [session-registry-design.md](session-registry-design.md).

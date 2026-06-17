@@ -60,7 +60,7 @@ flowchart TD
    - **6a. Consensus pre-step (if enabled).** With `consensus.enabled` and ≥1 same-vendor peer,
      the request is first put to those peers; a unanimous (or, under the majority toggle, a strict
      majority) verdict auto-resolves via `consensus_auto` (`PG-R9`, `PG-R13`,
-     [consensus.md](../domains/core/permission-gateway/consensus.md)). A split/abstention falls back
+     [consensus](../domains/core/permission-gateway/features/permission-gateway-consensus.md)). A split/abstention falls back
      to the human prompt with the opinions attached.
    - **6b. Human prompt.** Otherwise `permission_request` reaches the browser; the human answers
      `permission_response` (allow → original input unchanged, `PG-R6`; deny → `PG-R7`). Default is

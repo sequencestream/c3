@@ -530,7 +530,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   startSchedulerWiring({ broadcasts, eventBus })
 
   // Start the product-license heartbeat loop (ADR-0026, PL-R3). Fail-soft; pushes
-  // the refreshed license state after each beat so the badge tracks revoke/expiry.
+  // the refreshed license state after each beat so the badge tracks displacement/expiry.
   startHeartbeatScheduler({ onChange: broadcasts.broadcastLicense })
 
   // Graceful shutdown: stop the scheduler on process termination.

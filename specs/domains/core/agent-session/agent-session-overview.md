@@ -15,6 +15,6 @@
 
 ## Index
 
-- [spec.md](spec.md) — run lifecycle, permission modes, message mapping rules
-- [design.md](design.md) — `query()` wiring, abort/interrupt, claude PATH lookup
-- [models.md](models.md) — Session, Agent Run, Run Handle entities
+- [agent-session-spec.md](agent-session-spec.md) — run lifecycle, permission modes, message mapping rules
+- [agent-session-design.md](agent-session-design.md) — `query()` wiring, abort/interrupt, claude PATH lookup
+- [agent-session-models.md](agent-session-models.md) — Session, Agent Run, Run Handle entities

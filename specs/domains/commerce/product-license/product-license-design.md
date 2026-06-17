@@ -54,8 +54,8 @@ untouched). This is the existing release-signing discipline (ADR-0010) reused fo
 ### Gating point
 
 Entitlement is consulted at exactly one decision point: **new-session creation**. When the derived
-state does not permit new sessions (`Unactivated` / `Expired` / `Revoked`, the last covering both a
-revoked license and a `disabled` displaced binding), creation is refused with a clear, surfaced
+state does not permit new sessions (`Unactivated` / `Expired` / `Disabled`, the last being a license
+rebound to another installation — a displaced binding), creation is refused with a clear, surfaced
 reason; the user is directed to the license menu. The run lifecycle, existing sessions, and the
 permission gateway are never consulted or altered by this domain (ADR-0006: runs survive
 independently of connections and, here, of entitlement lapse).
@@ -63,7 +63,7 @@ independently of connections and, here, of entitlement lapse).
 ### Surfacing
 
 The current derived entitlement state is pushed to the web-console, which renders a **license
-badge** (entitled / grace / expired / unactivated / revoked) and a **license menu** (activate, view
+badge** (entitled / grace / expired / unactivated / disabled) and a **license menu** (activate, view
 status, purchase link). The badge is informational; it never blocks the UI on its own — enforcement
 is the gating point above.
 
@@ -75,28 +75,32 @@ is the gating point above.
   redacted **health** signal plus the public **plan catalog**. All secrets (signing key, OAuth and
   payment credentials, database DSN) are presence-only in any health/log output (PL-R12). The whole
   service — including the embedded web — ships as a **single binary**.
-- **Plan catalog:** the public, fixed set of purchasable terms is **code-owned** (not database-driven)
-  at the MVP stage — small, stable, and identical for every buyer — and served over the LS API
-  contract's `GET /v1/plans`. Prices are integer minor units (cents) in CNY (WeChat Pay's settlement
-  currency); plan ids are stable once published.
+- **Plan catalog:** the public, fixed set of purchasable terms is **persisted** in its own table and
+  served over the LS API contract's `GET /v1/plans`. A code-owned set (`internal/plans`) is the
+  bootstrap source: it is seeded into the table on startup with `INSERT ... ON CONFLICT DO NOTHING`,
+  so a fresh database is populated while existing rows survive — the database is the live store after
+  the first seed, and `GET /v1/plans` falls back to the code catalog only when the database is
+  unavailable. Prices are integer minor units (cents) in CNY (WeChat Pay's settlement currency); plan
+  ids are stable once published.
 - **Caching:** infrequently-changing read paths (the plan catalog today; license, auth, and payment
   lookups as those surfaces land) are served through bounded in-process LRU caches.
 - **Embedded web:** the buyer/admin frontend is built and embedded into the binary and served with a
   single-page-app fallback; no external asset directory is required at runtime.
-- **Store:** PostgreSQL — three tables. The **account** record (GitHub identity), the **license**
-  record (the only entitlement row, identified by a random unique **license key** and carrying its
-  **live binding inline**: the bound installation id, the **sha256 hash** of the current alive token,
-  and the last-success time), and the **order** record (purchase + no-refund acceptance, linked to
-  the license it extends). The alive token's raw value is bearer-equivalent, so only its hash is
+- **Store:** PostgreSQL — four tables. The **account** record (GitHub identity), the **plan** record
+  (the persisted public catalog, bootstrapped from code), the **license** record (the only entitlement
+  row, identified by a random unique **license key** and carrying its **live binding inline**: the
+  bound installation id, the **sha256 hash** of the current alive token, and the last-success time),
+  and the **order** record (purchase + no-refund acceptance, linked to the license it extends). The alive token's raw value is bearer-equivalent, so only its hash is
   stored — limiting exposure if the database is compromised. There are no separate one-time-code or
   heartbeat-history tables; binding/heartbeat state lives on the license row. LS data is kept in its
   own schema area, separate from any c3 store.
 - **Identity:** GitHub OAuth used **only** for account sign-in/registration — buyer login
-  (purchase/inspection) and the admin back-office (issue/revoke/inspect). It no longer carries the
+  (purchase/inspection) and the admin back-office (issue/force-expire/inspect). It no longer carries the
   activation action.
 - **Trial issuance:** on first sign-in (after the user accepts the no-refund agreement) LS creates
-  the account and issues a **default trial license** with a fresh license key, then displays the key
-  for the user to copy and paste into c3.
+  the account and, **when a trial plan is configured** (the first catalog plan flagged `is_trial`),
+  issues a **default trial license** with a fresh license key, then displays the key for the user to
+  copy and paste into c3. With no trial plan configured, no trial is issued and the buyer must purchase.
 - **Payment (renewal):** WeChat Pay; the **no-refund service-agreement acceptance** is recorded on
   the **order before** the charge, and a paid order **extends the linked license's term and status**.
   Payment capture is a later milestone — the order → license-extension relationship is defined now.
@@ -111,7 +115,7 @@ is the gating point above.
 ## State machine
 
 See the [product-license-spec.md](product-license-spec.md) § States & transitions for the authoritative c3-side Entitlement state
-machine (`Unactivated → Active ⇄ Grace → Expired`, plus `Revoked`). The design adds no states; it
+machine (`Unactivated → Active ⇄ Grace → Expired`, plus `Disabled`). The design adds no states; it
 realizes those transitions via the heartbeat scheduler + grace timer + offline verification above.
 
 ## API design

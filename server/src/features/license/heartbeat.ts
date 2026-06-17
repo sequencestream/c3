@@ -4,10 +4,10 @@
 // entitled, a refreshed signed entitlement token.
 //
 // Fail-soft (PL-R13): a heartbeat error never throws into the run path. A network
-// failure runs the 30-minute offline grace (PL-R4); a definitive `revoked`/
-// `disabled`/`expired` verdict lapses the cache to gated (PL-R8). `disabled` —
-// the license was rebound to another installation — is treated as `revoked`
-// (gated, not grace-recoverable): "one license, one installation".
+// failure runs the 30-minute offline grace (PL-R4); a definitive `disabled`/
+// `expired` verdict lapses the cache to gated (PL-R8). `disabled` — the license
+// was rebound to another installation — is gated, not grace-recoverable: "one
+// license, one installation".
 import { licenseServerBaseUrl } from './activation.js'
 import {
   readLicenseCache,
@@ -23,7 +23,6 @@ const DEFAULT_INTERVAL_SECONDS = 3600
 interface HeartbeatResponse {
   status?: string
   entitlementToken?: string
-  plan?: string
   termEnd?: number
   heartbeatIntervalSeconds?: number
 }
@@ -119,15 +118,13 @@ export async function runHeartbeatOnce(
       }
       recordHeartbeatSuccess({
         entitlementToken: body.entitlementToken,
-        plan: body.plan,
         termEnd: body.termEnd,
       })
       return { changed: true, status: 'active', intervalSeconds: interval }
     }
-    case 'revoked':
     case 'disabled':
-      recordHeartbeatLapse('revoked')
-      return { changed: true, status: body.status, intervalSeconds: interval }
+      recordHeartbeatLapse('disabled')
+      return { changed: true, status: 'disabled', intervalSeconds: interval }
     case 'expired':
       recordHeartbeatLapse('expired')
       return { changed: true, status: 'expired', intervalSeconds: interval }

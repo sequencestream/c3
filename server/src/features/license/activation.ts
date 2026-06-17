@@ -99,7 +99,6 @@ export async function bindLicense(opts: {
   let body: {
     entitlementToken?: string
     aliveToken?: string
-    plan?: string
     termEnd?: number
   }
   try {
@@ -125,7 +124,6 @@ export async function bindLicense(opts: {
     licenseKey,
     entitlementToken: body.entitlementToken,
     aliveToken: body.aliveToken,
-    plan: body.plan ?? verified.payload.plan,
     termEnd: body.termEnd ?? verified.payload.termEnd,
   })
   return { ok: true, cache }

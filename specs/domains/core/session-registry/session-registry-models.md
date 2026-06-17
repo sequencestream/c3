@@ -1,6 +1,6 @@
 # session-registry — Models
 
-Entity definitions in domain terms; physical wiring in [design.md](design.md).
+Entity definitions in domain terms; physical wiring in [session-registry-design.md](session-registry-design.md).
 The workspace, session, and transcript-item wire shapes are defined once in the
 [shared protocol](../../../shared/api-conventions/websocket-protocol.md); this domain
 references them rather than redefining message shapes.
@@ -58,8 +58,8 @@ Never contains permission decisions or approvals (SR-R11).
 ## Session runtime (in-memory)
 
 The per-session run state is owned by agent-session — its full shape is the
-**Session Runtime** in the [agent-session models](../agent-session/models.md). The registry only
+**Session Runtime** in the [agent-session models](../agent-session/agent-session-models.md). The registry only
 seeds it (working directory / mode / baseline) and reads its run status. Note its team flag
 (set when a run upgrades to a persistent agent team, reset on teardown; ADR 0008): it overrides
-a `turn_end`'s implied idle to the team status (see [design.md](design.md) § Team-session
+a `turn_end`'s implied idle to the team status (see [session-registry-design.md](session-registry-design.md) § Team-session
 status). Never persisted.

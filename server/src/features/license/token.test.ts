@@ -18,7 +18,6 @@ describe('verifyEntitlementToken', () => {
     expect(res.ok).toBe(true)
     if (res.ok) {
       expect(res.payload.installationId).toBe('inst-fixture')
-      expect(res.payload.plan).toBe('trial-1m')
       expect(res.payload.status).toBe('active')
       expect(res.payload.kid).toBe('10db0d221c12573c')
     }
@@ -34,7 +33,6 @@ describe('verifyEntitlementToken', () => {
     const forged = Buffer.from(
       JSON.stringify({
         installationId: 'attacker',
-        plan: 'trial-1m',
         status: 'active',
         termStart: 0,
         termEnd: 9_999_999_999,

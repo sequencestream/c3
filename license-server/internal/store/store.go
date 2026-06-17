@@ -25,11 +25,8 @@ import (
 // license_key).
 var ErrNotFound = errors.New("store: not found")
 
-// ErrRevoked / ErrExpired are the terminal license states a bind rejects.
-var (
-	ErrRevoked = errors.New("store: license revoked")
-	ErrExpired = errors.New("store: license expired")
-)
+// ErrExpired is the terminal license state a bind rejects.
+var ErrExpired = errors.New("store: license expired")
 
 // Store wraps a database handle. A nil DB makes every method return an error,
 // so a handler can guard on Available rather than panicking.
@@ -70,11 +67,120 @@ func (s *Store) UpsertBuyer(ctx context.Context, githubID int64, login, email st
 	return id, nil
 }
 
+// Plan is one row of the persisted public plan catalog (a purchasable license
+// term). ID is the internal auto-increment identity (0 when not yet persisted);
+// PlanID is the stable public identifier; IsTrial marks the free trial plan.
+type Plan struct {
+	ID             int64
+	PlanID         string
+	Name           string
+	DurationMonths int
+	PriceCents     int
+	Currency       string
+	SortOrder      int
+	IsTrial        bool
+}
+
+// SeedPlans bootstraps the catalog from the code-owned plan set, inserting any
+// missing plan and leaving existing rows untouched (ON CONFLICT DO NOTHING). The
+// database thus becomes the live store after the first seed, and an operator edit
+// is never clobbered on the next startup. It is safe to call on every boot.
+func (s *Store) SeedPlans(ctx context.Context, ps []Plan) error {
+	if !s.Available() {
+		return errors.New("store: database not configured")
+	}
+	if len(ps) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, p := range ps {
+			if err := tx.Exec(`
+				INSERT INTO c3_ls_plan (plan_id, name, duration_months, price_cents, currency, sort_order, is_trial)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)
+				ON CONFLICT (plan_id) DO NOTHING`,
+				p.PlanID, p.Name, p.DurationMonths, p.PriceCents, p.Currency, p.SortOrder, p.IsTrial).Error; err != nil {
+				return fmt.Errorf("store: seed plan %q: %w", p.PlanID, err)
+			}
+		}
+		return nil
+	})
+}
+
+// planRow is the raw select shape for a catalog row; mapped to Plan.
+type planRow struct {
+	ID             int64
+	PlanID         string
+	Name           string
+	DurationMonths int
+	PriceCents     int
+	Currency       string
+	SortOrder      int
+	IsTrial        bool
+}
+
+func (r planRow) toPlan() Plan {
+	return Plan{
+		ID:             r.ID,
+		PlanID:         r.PlanID,
+		Name:           r.Name,
+		DurationMonths: r.DurationMonths,
+		PriceCents:     r.PriceCents,
+		Currency:       r.Currency,
+		SortOrder:      r.SortOrder,
+		IsTrial:        r.IsTrial,
+	}
+}
+
+// ListPlans returns the persisted catalog ordered for stable display (by
+// sort_order, then plan_id as a tiebreaker).
+func (s *Store) ListPlans(ctx context.Context) ([]Plan, error) {
+	if !s.Available() {
+		return nil, errors.New("store: database not configured")
+	}
+	var rows []planRow
+	res := s.db.WithContext(ctx).Raw(`
+		SELECT id, plan_id, name, duration_months, price_cents, currency, sort_order, is_trial
+		FROM c3_ls_plan
+		ORDER BY sort_order, plan_id`).Scan(&rows)
+	if res.Error != nil {
+		return nil, fmt.Errorf("store: list plans: %w", res.Error)
+	}
+	out := make([]Plan, len(rows))
+	for i, r := range rows {
+		out[i] = r.toPlan()
+	}
+	return out, nil
+}
+
+// FirstTrialPlan returns the first trial plan (is_trial = true), ordered by
+// sort_order then id, and whether one exists. With no trial plan configured the
+// caller issues no trial license and the buyer must purchase one.
+func (s *Store) FirstTrialPlan(ctx context.Context) (Plan, bool, error) {
+	if !s.Available() {
+		return Plan{}, false, errors.New("store: database not configured")
+	}
+	var r planRow
+	res := s.db.WithContext(ctx).Raw(`
+		SELECT id, plan_id, name, duration_months, price_cents, currency, sort_order, is_trial
+		FROM c3_ls_plan
+		WHERE is_trial = true
+		ORDER BY sort_order, id
+		LIMIT 1`).Scan(&r)
+	if res.Error != nil {
+		return Plan{}, false, fmt.Errorf("store: first trial plan: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return Plan{}, false, nil
+	}
+	return r.toPlan(), true, nil
+}
+
 // License is the entitlement row (the subset the bind/heartbeat flow needs).
+// PlanID references the granted plan (c3_ls_plan.id).
 type License struct {
 	ID         int64
-	BuyerID    int64
-	Plan       string
+	UserID     int64
+	PlanID     int64
 	LicenseKey string
 	Status     string
 	TermStart  time.Time
@@ -84,8 +190,8 @@ type License struct {
 // licenseRow is the raw select shape; mapped to License.
 type licenseRow struct {
 	ID         int64
-	BuyerID    int64
-	Plan       string
+	UserID     int64
+	PlanID     int64
 	LicenseKey string
 	Status     string
 	TermStart  time.Time
@@ -95,8 +201,8 @@ type licenseRow struct {
 func (r licenseRow) toLicense() License {
 	return License{
 		ID:         r.ID,
-		BuyerID:    r.BuyerID,
-		Plan:       r.Plan,
+		UserID:     r.UserID,
+		PlanID:     r.PlanID,
 		LicenseKey: r.LicenseKey,
 		Status:     r.Status,
 		TermStart:  r.TermStart,
@@ -109,16 +215,16 @@ func (r licenseRow) toLicense() License {
 // buyer has none. GitHub login lands here so a newly-registered buyer leaves with
 // a key to bind. newKey generates a random license_key; a unique collision is
 // retried. Returns the license and whether it was newly issued.
-func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, plan string, termDays int, now time.Time, newKey func() string) (License, bool, error) {
+func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planID int64, termDays int, now time.Time, newKey func() string) (License, bool, error) {
 	if !s.Available() {
 		return License{}, false, errors.New("store: database not configured")
 	}
 
 	var existing licenseRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, buyer_id, plan_id AS plan, license_key, status, term_start, term_end
+		SELECT id, user_id, plan_id, license_key, status, term_start, term_end
 		FROM c3_ls_license
-		WHERE buyer_id = $1 AND status = 'active' AND term_end > $2
+		WHERE user_id = $1 AND status = 'active' AND term_end > $2
 		ORDER BY term_end DESC
 		LIMIT 1`, buyerID, now).Scan(&existing)
 	if res.Error != nil {
@@ -134,10 +240,10 @@ func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, plan s
 	var lastErr error
 	for range 5 {
 		res := s.db.WithContext(ctx).Raw(`
-			INSERT INTO c3_ls_license (buyer_id, plan_id, license_key, status, term_start, term_end)
+			INSERT INTO c3_ls_license (user_id, plan_id, license_key, status, term_start, term_end)
 			VALUES ($1, $2, $3, 'active', $4, $5)
-			RETURNING id, buyer_id, plan_id AS plan, license_key, status, term_start, term_end`,
-			buyerID, plan, newKey(), termStart, termEnd).Scan(&inserted)
+			RETURNING id, user_id, plan_id, license_key, status, term_start, term_end`,
+			buyerID, planID, newKey(), termStart, termEnd).Scan(&inserted)
 		if res.Error == nil && res.RowsAffected > 0 {
 			return inserted.toLicense(), true, nil
 		}
@@ -154,9 +260,9 @@ func (s *Store) ListLicensesByBuyer(ctx context.Context, buyerID int64) ([]Licen
 	}
 	var rows []licenseRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, buyer_id, plan_id AS plan, license_key, status, term_start, term_end
+		SELECT id, user_id, plan_id, license_key, status, term_start, term_end
 		FROM c3_ls_license
-		WHERE buyer_id = $1
+		WHERE user_id = $1
 		ORDER BY created_at DESC`, buyerID).Scan(&rows)
 	if res.Error != nil {
 		return nil, fmt.Errorf("store: list licenses: %w", res.Error)
@@ -181,8 +287,9 @@ type BindResult struct {
 // recording the install as the exclusive live one. Rebinding to a different
 // installation overwrites the previous binding — the displaced c3 discovers it on
 // its next heartbeat ("one license, one installation"). Rejects an unknown key
-// (ErrNotFound), a revoked license (ErrRevoked), or an expired term (ErrExpired)
-// and changes nothing. newAlive returns a fresh random plaintext token.
+// (ErrNotFound) or a non-active/expired license (ErrExpired — status not 'active'
+// or term lapsed) and changes nothing. newAlive returns a fresh random plaintext
+// token.
 func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID string, now time.Time, newAlive func() string) (BindResult, error) {
 	if !s.Available() {
 		return BindResult{}, errors.New("store: database not configured")
@@ -192,13 +299,13 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var locked struct {
 			ID      int64
-			BuyerID int64
-			Plan    string
+			UserID  int64
+			PlanID  int64
 			Status  string
 			TermEnd time.Time
 		}
 		res := tx.Raw(`
-			SELECT id, buyer_id, plan_id AS plan, status, term_end
+			SELECT id, user_id, plan_id, status, term_end
 			FROM c3_ls_license
 			WHERE license_key = $1
 			FOR UPDATE`, licenseKey).Scan(&locked)
@@ -208,17 +315,15 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 		if res.RowsAffected == 0 {
 			return ErrNotFound
 		}
-		if locked.Status == "revoked" {
-			return ErrRevoked
-		}
-		if !now.Before(locked.TermEnd) {
+		// status != 'active' (e.g. an admin force-expired it) or a lapsed term ⇒ expired.
+		if locked.Status != "active" || !now.Before(locked.TermEnd) {
 			return ErrExpired
 		}
 
 		alive := newAlive()
 		if err := tx.Exec(`
 			UPDATE c3_ls_license
-			SET alive_install_id = $2, alive_token = $3, alive_time = $4
+			SET alive_install_id = $2, alive_token = $3, alive_time = $4, updated_at = $4
 			WHERE id = $1`, locked.ID, installID, HashCode(alive), now).Error; err != nil {
 			return fmt.Errorf("store: bind installation: %w", err)
 		}
@@ -226,8 +331,8 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 		out = BindResult{
 			License: License{
 				ID:         locked.ID,
-				BuyerID:    locked.BuyerID,
-				Plan:       locked.Plan,
+				UserID:     locked.UserID,
+				PlanID:     locked.PlanID,
 				LicenseKey: licenseKey,
 				Status:     "active",
 				TermStart:  now,
@@ -247,7 +352,6 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 // the rest gate it (PL-R6/PL-R8).
 const (
 	HeartbeatActive   = "active"
-	HeartbeatRevoked  = "revoked"
 	HeartbeatExpired  = "expired"
 	HeartbeatDisabled = "disabled" // the license was rebound to another installation
 )
@@ -263,8 +367,8 @@ type HeartbeatResult struct {
 // presented install id AND alive token both match the current binding and the
 // license is active and unexpired; a successful heartbeat refreshes alive_time.
 // A different install/token ⇒ HeartbeatDisabled (the license moved to another
-// c3); a revoked license ⇒ HeartbeatRevoked; a lapsed term ⇒ HeartbeatExpired.
-// An unknown license_key returns ErrNotFound.
+// c3); a non-active status or a lapsed term ⇒ HeartbeatExpired. An unknown
+// license_key returns ErrNotFound.
 func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveTokenPlain string, now time.Time) (HeartbeatResult, error) {
 	if !s.Available() {
 		return HeartbeatResult{}, errors.New("store: database not configured")
@@ -274,8 +378,8 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var locked struct {
 			ID             int64
-			BuyerID        int64
-			Plan           string
+			UserID         int64
+			PlanID         int64
 			Status         string
 			AliveInstallID *string
 			AliveToken     *string
@@ -283,7 +387,7 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 			TermEnd        time.Time
 		}
 		res := tx.Raw(`
-			SELECT id, buyer_id, plan_id AS plan, status, alive_install_id, alive_token, term_start, term_end
+			SELECT id, user_id, plan_id, status, alive_install_id, alive_token, term_start, term_end
 			FROM c3_ls_license
 			WHERE license_key = $1
 			FOR UPDATE`, licenseKey).Scan(&locked)
@@ -295,10 +399,8 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 		}
 
 		switch {
-		case locked.Status == "revoked":
-			out = HeartbeatResult{Status: HeartbeatRevoked}
-			return nil
-		case !now.Before(locked.TermEnd):
+		case locked.Status != "active" || !now.Before(locked.TermEnd):
+			// status != 'active' (e.g. an admin force-expired it) or a lapsed term.
 			out = HeartbeatResult{Status: HeartbeatExpired}
 			return nil
 		case locked.AliveInstallID == nil || *locked.AliveInstallID != installID ||
@@ -308,15 +410,15 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 			return nil
 		}
 
-		if err := tx.Exec(`UPDATE c3_ls_license SET alive_time = $2 WHERE id = $1`, locked.ID, now).Error; err != nil {
+		if err := tx.Exec(`UPDATE c3_ls_license SET alive_time = $2, updated_at = $2 WHERE id = $1`, locked.ID, now).Error; err != nil {
 			return fmt.Errorf("store: refresh alive_time: %w", err)
 		}
 		out = HeartbeatResult{
 			Status: HeartbeatActive,
 			License: License{
 				ID:         locked.ID,
-				BuyerID:    locked.BuyerID,
-				Plan:       locked.Plan,
+				UserID:     locked.UserID,
+				PlanID:     locked.PlanID,
 				LicenseKey: licenseKey,
 				Status:     "active",
 				TermStart:  locked.TermStart,

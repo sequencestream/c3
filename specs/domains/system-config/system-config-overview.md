@@ -24,7 +24,7 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
   Stored under the `projectConfigs` key (a per-workspace-path → workspace-setting map). **All writes
   go through the single, concurrency-safe write path:** in-process serialization + a cross-process
   file lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes
-  per-project config. See [persistence.md](persistence.md) (唯一写入路径 + 双层锁，2026-06-08-003).
+  per-project config. See [persistence](../../shared/data-conventions/persistence.md) (唯一写入路径 + 双层锁，2026-06-08-003).
 - Separate from the session-registry's `state.json` (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
 - **Migration (2026-06-07-017):** `defaultMode` is now a per-vendor map (vendor id → mode token)
   instead of a single mode token. The old single-string format is detected during workspace-setting

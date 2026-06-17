@@ -1,7 +1,7 @@
 # discussion — Models
 
 Entity definitions. Business-semantic types; physical wiring (schema, migrations) is in
-[design.md](design.md). The Discussion, Discussion Message, status, and speaker-kind shapes are
+[discussion-design.md](discussion-design.md). The Discussion, Discussion Message, status, and speaker-kind shapes are
 part of the single shared wire/persistence contract — the same home as the intent entity types —
 and referenced here rather than redefined.
 

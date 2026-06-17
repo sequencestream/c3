@@ -44,4 +44,4 @@ browser.
 ## References
 
 - [constitution](../../../constitution.md) § C-SEC-1
-- [permission-gateway domain spec](../../../domains/core/permission-gateway/spec.md)
+- [permission-gateway domain spec](../../../domains/core/permission-gateway/permission-gateway-spec.md)

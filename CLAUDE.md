@@ -34,7 +34,7 @@ do format/lint/typecheck at the end of an edit session.
 - shared: protocol definitions, common code
 - shared/src/protocol.ts: WebSocket 协议唯一定义源，包含所有 ClientToServer/ServerToClient 消息类型、数据模型、vendor 中立抽象，两端 import 同一个文件保证编译期类型一致
 - scripts/e2e/e2e-guide.md: E2E tests, make sure e2e pass if relative paths are changed.
-- specs/: specs is the source of truth, keep synchronized with code, without ask. Read spec first then code for logics.
+- specs/: specs is the source of truth, keep synchronized with code, without ask. Read spec first then code for logics. Write Chinese specs.
 - specs/overview.md: overview of the system
 - specs/constitution.md: constitution of the system
 - specs/glossary.md: glossary of the system

@@ -25,7 +25,6 @@ const SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 export interface EntitlementPayload {
   installationId: string
   licenseId: string
-  plan: string
   status: string
   termStart: number
   termEnd: number
@@ -51,7 +50,6 @@ function isPayload(v: unknown): v is EntitlementPayload {
   const p = v as Record<string, unknown>
   return (
     typeof p.installationId === 'string' &&
-    typeof p.plan === 'string' &&
     typeof p.status === 'string' &&
     typeof p.termStart === 'number' &&
     typeof p.termEnd === 'number' &&

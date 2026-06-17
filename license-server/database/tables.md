@@ -40,9 +40,13 @@ the old `user`/`orders`/`licenses`) on every startup.
 An order moves through `pending → paid` (or `pending → failed`) under the WeChat
 Pay callback: a verified payment success records the WeChat transaction id in
 `payment_ref`, flips `status` to `paid`, and extends the linked license's
-`term_end`/`status` in one transaction. The transition is idempotent (a
-redelivered callback finds the order already `paid` and does not re-extend), and
-`payment_ref` is the **only** payment artifact stored — no credentials (PL-R12).
+`term_end`/`status` in one transaction. The extension formula is
+`term_end = GREATEST(term_end, now) + duration_months`,
+`status = 'active'` — pushing from the later of now and the current term end
+(preserving remaining validity), and reactivating an expired license. The
+transition is idempotent (a redelivered callback finds the order already `paid`
+and does not re-extend), and `payment_ref` is the **only** payment artifact
+stored — no credentials (PL-R12).
 
 The plan catalog is bootstrapped from the code-owned set (`internal/plans`) into
 `c3_ls_plan` on every startup with `INSERT ... ON CONFLICT (plan_key) DO NOTHING`,

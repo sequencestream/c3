@@ -163,9 +163,7 @@ WeChat, and WeChat reports the result **asynchronously** to LS's payment callbac
   A result that does not verify or decrypt — a forged or tampered "payment success" — is **refused**,
   and **no order is advanced** (PL-R12). This mirrors the entitlement-token discipline (PL-R5): trust
   comes from the cryptographic check, not from the fact that a request arrived.
-- **A paid order extends the license.** A verified success transitions the order `pending → paid`,
-  records the WeChat transaction reference on the order, and **extends the linked license's term end
-  and status**; any other trade state marks the order `failed`.
+- **A paid order extends the license.** A verified success transitions the order `pending → paid`, records the WeChat transaction reference on the order, and **extends the linked license's term end and status**: `term_end = GREATEST(term_end, now) + duration_months` (pushing from whichever is later — preserving remaining active term or starting fresh from now), `status = 'active'` (reactivating if expired); any other trade state marks the order `failed`.
 - **Idempotent.** WeChat redelivers the callback until acknowledged, so applying it is **idempotent** —
   a redelivered success does not re-extend the license.
 - **Credentials are LS-only.** The merchant key, APIv3 key, and certificate live exclusively in LS;

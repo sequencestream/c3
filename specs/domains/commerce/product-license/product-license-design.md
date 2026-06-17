@@ -104,7 +104,7 @@ blocks the UI on its own — enforcement is the gating point above.
   issues a **default trial license** with a fresh license key, then displays the key for the user to
   copy and paste into c3. With no trial plan configured, no trial is issued and the buyer must purchase.
 - **Payment (renewal):** WeChat Pay; the **no-refund service-agreement acceptance** is recorded on
-  the **order before** the charge, and a paid order **extends the linked license's term and status**.
+  the **order before** the charge, and a paid order **extends the linked license's term and status**: `term_end = GREATEST(term_end, now) + duration_months`, `status = 'active'`.
   Payment capture is a later milestone — the order → license-extension relationship is defined now.
 - **Signing:** an Ed25519 private key held only by LS signs entitlement tokens; the matching public
   key is published for embedding in the c3 binary. Key custody, rotation, and the staging of public

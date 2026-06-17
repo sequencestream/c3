@@ -558,8 +558,7 @@ func (s *Store) CreateOrder(ctx context.Context, in CreateOrderInput) (Order, er
 		INSERT INTO c3_ls_order
 			(user_id, license_id, plan_key, amount_cents, currency, agreement_version, agreement_accepted_at, status)
 		VALUES ($1, NULLIF($2, 0), $3, $4, $5, $6, $7, 'pending')
-		RETURNING id, user_id, license_id, plan_key, amount_cents, currency,
-		          agreement_version, agreement_accepted_at, status, created_at`,
+		RETURNING `+orderSelectCols,
 		in.UserID, in.LicenseID, in.PlanKey, plan.PriceCents, plan.Currency,
 		in.AgreementVersion, in.AgreementAcceptedAt).Scan(&row)
 	if res.Error != nil {
@@ -578,9 +577,7 @@ func (s *Store) OrdersByUser(ctx context.Context, userID int64) ([]Order, error)
 		return nil, errors.New("store: database not configured")
 	}
 	var rows []orderRow
-	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, license_id, plan_key, amount_cents, currency,
-		       agreement_version, agreement_accepted_at, status, created_at
+	res := s.db.WithContext(ctx).Raw(`SELECT `+orderSelectCols+`
 		FROM c3_ls_order
 		WHERE user_id = $1
 		ORDER BY created_at DESC, id DESC`, userID).Scan(&rows)

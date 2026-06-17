@@ -467,6 +467,73 @@ func TestMarkOrderPaidExtendsLicenseAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMarkOrderPaidReactivatesExpiredLicense(t *testing.T) {
+	s, ctx := liveStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	if err := s.SeedPlans(ctx, []Plan{
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
+	}); err != nil {
+		t.Fatalf("seed plan: %v", err)
+	}
+	buyerID, lic := seedLicense(t, s, ctx, now)
+
+	// Force the license into expired state — past term_end, status = expired.
+	past := now.Add(-24 * time.Hour)
+	if err := s.db.WithContext(ctx).Exec(
+		`UPDATE c3_ls_license SET status='expired', term_end=$2 WHERE id=$1`,
+		lic.ID, past).Error; err != nil {
+		t.Fatalf("expire license: %v", err)
+	}
+
+	order, err := s.CreateOrder(ctx, CreateOrderInput{
+		UserID: buyerID, LicenseID: lic.ID, PlanKey: "6m",
+		AgreementVersion: "v1", AgreementAcceptedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+
+	// Pay it: pending → paid. Since term_end is in the past, GREATEST(term_end,
+	// now) picks now as the base, then adds 6 months.
+	paid, advanced, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-expired", now)
+	if err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	if !advanced {
+		t.Error("first MarkOrderPaid should report the pending→paid transition")
+	}
+	if paid.Status != "paid" || paid.PaymentRef != "wx-tx-expired" {
+		t.Errorf("paid order = %+v, want status paid + payment_ref wx-tx-expired", paid)
+	}
+
+	wantEnd := now.AddDate(0, 6, 0)
+	got := licenseByID(t, s, ctx, buyerID, lic.ID)
+	if got.Status != "active" {
+		t.Errorf("license status = %q, want active (was expired)", got.Status)
+	}
+	if d := got.TermEnd.Sub(wantEnd); d > time.Second || d < -time.Second {
+		t.Errorf("term_end = %v, want ~%v (extended from now, not old term_end %v)", got.TermEnd, wantEnd, past)
+	}
+	endAfterFirst := got.TermEnd
+
+	// Replay: idempotent — no second extension.
+	again, advanced2, err := s.MarkOrderPaid(ctx, order.ID, "wx-tx-expired", now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("mark paid again: %v", err)
+	}
+	if advanced2 {
+		t.Error("replayed MarkOrderPaid must not report a transition")
+	}
+	if again.Status != "paid" {
+		t.Errorf("replayed order status = %q, want paid", again.Status)
+	}
+	got2 := licenseByID(t, s, ctx, buyerID, lic.ID)
+	if !got2.TermEnd.Equal(endAfterFirst) {
+		t.Errorf("term_end moved on replay: %v != %v (license re-extended)", got2.TermEnd, endAfterFirst)
+	}
+}
+
 func TestMarkOrderFailedThenPaidDoesNotMutate(t *testing.T) {
 	s, ctx := liveStore(t)
 	now := time.Now().UTC().Truncate(time.Second)

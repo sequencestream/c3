@@ -1,11 +1,10 @@
 // native.go is the concrete [Gateway] adapter over WeChat Pay **Native**.
 //
-// The vendored github.com/vogo/vwechatpay wrapper exposes a JSAPI client (which
-// requires a per-user openid, unsuitable for PC web) but no Native client, so
-// this adapter builds a thin Native service on top of the wrapper's
-// already-constructed *core.Client — the underlying wechatpay-go SDK supports
-// Native. It reuses the wrapper's PlatManager for callback signature
-// verification and the SDK's APIv3-key AES-GCM helper for callback decryption.
+// It delegates prepay to the vendored vwechatpay library's NativeClient
+// (vwxpayments/vwxnative) — the library now provides first-class Native support.
+// For callback parsing it keeps its own verify seam (see parseNotify) so the
+// signature check is injectable and the full path is exercisable offline without
+// reaching WeChat's platform-certificate download endpoint.
 package wechatpay
 
 import (
@@ -17,9 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vogo/vwechatpay"
-	"github.com/wechatpay-apiv3/wechatpay-go/core"
-	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/native"
+	vwechatpay "github.com/vogo/vwechatpay"
+	"github.com/vogo/vwechatpay/vwxpayments/vwxnative"
 	"github.com/wechatpay-apiv3/wechatpay-go/utils"
 )
 
@@ -45,8 +43,8 @@ func (s Settings) configured() bool {
 		strings.TrimSpace(s.CertB64) != ""
 }
 
-// orderExpiry bounds how long a Native QR stays payable.
-const orderExpiry = 15 * time.Minute
+// prepayExpiry bounds how long a Native QR stays payable.
+const prepayExpiry = 15 * time.Minute
 
 // verifierFunc verifies a callback's signature against the platform certificate.
 // It is a field on the adapter so tests can substitute a stub instead of
@@ -57,10 +55,11 @@ type verifierFunc func(ctx context.Context, headerFetcher func(string) string, b
 // in tests.
 type nowFunc func() time.Time
 
-// nativeGateway is the concrete [Gateway] over WeChat Pay Native.
+// nativeGateway is the concrete [Gateway] over WeChat Pay Native, backed by the
+// vendored library's NativeClient.
 type nativeGateway struct {
 	mgr      *vwechatpay.Manager
-	native   *native.NativeApiService
+	native   *vwxnative.NativeClient
 	appID    string
 	mchID    string
 	apiV3Key string
@@ -98,7 +97,7 @@ func New(s Settings) (Gateway, error) {
 	}
 	return &nativeGateway{
 		mgr:      mgr,
-		native:   &native.NativeApiService{Client: mgr.Client},
+		native:   vwxnative.NewNativeClient(mgr),
 		appID:    s.AppID,
 		mchID:    s.MerchantID,
 		apiV3Key: s.APIv3Key,
@@ -107,27 +106,26 @@ func New(s Settings) (Gateway, error) {
 	}, nil
 }
 
-// Prepay places a Native unified order and returns the scan URL.
+// Prepay places a Native unified order and returns the scan URL. Delegates to
+// the vendored library's NativeClient.
 func (g *nativeGateway) Prepay(ctx context.Context, in PrepayInput) (PrepayResult, error) {
-	resp, _, err := g.native.Prepay(ctx, native.PrepayRequest{
-		Appid:       core.String(g.appID),
-		Mchid:       core.String(g.mchID),
-		Description: core.String(in.Description),
-		OutTradeNo:  core.String(in.OutTradeNo),
-		NotifyUrl:   core.String(in.NotifyURL),
-		TimeExpire:  core.Time(g.now().Add(orderExpiry)),
-		Amount: &native.Amount{
-			Total:    core.Int64(int64(in.AmountCents)),
-			Currency: core.String("CNY"),
-		},
-	})
+	res, err := g.native.Prepay(
+		ctx,
+		g.appID,
+		int64(in.AmountCents),
+		in.OutTradeNo,
+		in.Description,
+		"", // attach — unused in MVP
+		in.NotifyURL,
+		g.now().Add(prepayExpiry),
+	)
 	if err != nil {
 		return PrepayResult{}, fmt.Errorf("wechatpay: native prepay: %w", err)
 	}
-	if resp == nil || resp.CodeUrl == nil || *resp.CodeUrl == "" {
+	if res == nil || res.CodeURL == nil || *res.CodeURL == "" {
 		return PrepayResult{}, fmt.Errorf("wechatpay: native prepay returned no code_url")
 	}
-	return PrepayResult{CodeURL: *resp.CodeUrl}, nil
+	return PrepayResult{CodeURL: *res.CodeURL}, nil
 }
 
 // ParseNotify verifies the callback signature against the WeChat platform
@@ -156,7 +154,6 @@ func (g *nativeGateway) ParseNotify(headerFetcher func(string) string, body []by
 		envelope.Resource.Ciphertext,
 	)
 	if err != nil {
-		// A payload that does not decrypt with our APIv3 key is forged/tampered.
 		return NotifyResult{}, fmt.Errorf("%w: decrypt resource: %v", ErrSignatureInvalid, err)
 	}
 	var tx struct {

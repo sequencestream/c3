@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	github.com/vogo/vwechatpay v0.0.0-20251218095554-9c5034091320
+	github.com/vogo/vwechatpay v0.0.0-20260617080756-ed64454458aa
 	github.com/wechatpay-apiv3/wechatpay-go v0.2.21
 )
 

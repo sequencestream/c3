@@ -1,8 +1,8 @@
-// Package wechatpay is the license-server's WeChat Pay gateway port. It wraps
-// the vogo/vwechatpay SDK (which itself wraps the official wechatpay-apiv3 SDK)
-// behind a small [Gateway] interface so the HTTP surface depends on an
-// intent-revealing contract — "create a Native order", "parse a callback" —
-// rather than the vendor types, and so tests can substitute a fake.
+// Package wechatpay is the license-server's WeChat Pay gateway port. It adapts
+// the vogo/vwechatpay NativeClient (vwxpayments/vwxnative) behind a small
+// [Gateway] interface so the HTTP surface depends on an intent-revealing
+// contract — "create a Native order", "parse a callback" — rather than the
+// vendor types, and so tests can substitute a fake.
 //
 // The MVP takes renewal payment via WeChat Pay **Native** (a scan-to-pay QR
 // suited to PC web): a pending order drives a unified order that returns a

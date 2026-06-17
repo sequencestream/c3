@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   GRACE_WINDOW_MS,
+  currentLicenseStatus,
   deriveEntitlement,
   getOrCreateInstallationId,
   licenseFilePath,
@@ -167,5 +168,65 @@ describe('heartbeat cache transitions (PL-R3/PL-R4/PL-R8)', () => {
     seedActive()
     recordHeartbeatLapse('disabled')
     expect(recordHeartbeatFailure()?.state).toBe('disabled')
+  })
+})
+
+describe('derivation priority: cached verdict over token re-verification', () => {
+  function seedActive(): void {
+    saveActivation({
+      installationId: 'inst-prio',
+      licenseKey: 'lk',
+      entitlementToken: GO_SIGNED_TOKEN,
+      aliveToken: 'av',
+      termEnd: 1_702_592_000,
+    })
+  }
+
+  it('keeps a heartbeat-written `expired` even while the cached token is still in-window', () => {
+    seedActive()
+    recordHeartbeatLapse('expired')
+    // WITHIN is inside the token's validity window — a naive re-verify would flip
+    // this back to `active`, letting a force-expired license out-wait its term.
+    expect(deriveEntitlement(readLicenseCache(), WITHIN).state).toBe('expired')
+    expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'expired', entitled: false })
+  })
+
+  it('keeps `expired` after grace is exhausted, not flipped back by the valid token', () => {
+    seedActive()
+    const now = 1_000_000_000_000
+    writeLicenseCache({ ...readLicenseCache()!, lastSuccessfulHeartbeat: now })
+    // Grace window blown → recordHeartbeatFailure writes `expired`.
+    expect(recordHeartbeatFailure(now + GRACE_WINDOW_MS + 1)?.state).toBe('expired')
+    expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'expired', entitled: false })
+  })
+
+  it('reports `grace` (entitled) while the offline window still holds', () => {
+    seedActive()
+    // last success at WITHIN seconds → within grace at the same instant.
+    writeLicenseCache({
+      ...readLicenseCache()!,
+      state: 'grace',
+      lastSuccessfulHeartbeat: WITHIN * 1000,
+    })
+    expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'grace', entitled: true })
+  })
+
+  it('downgrades a stale `grace` to `expired` once its window has elapsed', () => {
+    seedActive()
+    writeLicenseCache({
+      ...readLicenseCache()!,
+      state: 'grace',
+      lastSuccessfulHeartbeat: WITHIN * 1000,
+    })
+    const afterWindow = WITHIN + GRACE_WINDOW_MS / 1000 + 1
+    expect(deriveEntitlement(readLicenseCache(), afterWindow).state).toBe('expired')
+  })
+
+  it('recovers to `active` after a successful heartbeat clears the verdict', () => {
+    seedActive()
+    recordHeartbeatLapse('expired')
+    expect(currentLicenseStatus(WITHIN).state).toBe('expired')
+    recordHeartbeatSuccess()
+    expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'active', entitled: true })
   })
 })

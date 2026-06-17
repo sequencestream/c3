@@ -99,6 +99,27 @@ stateDiagram-v2
 For gating purposes, `Active` and `Grace` permit new sessions; `Unactivated`, `Expired`, and
 `Disabled` gate them. In **every** state, existing sessions and in-flight runs are untouched (PL-R6).
 
+### State derivation priority — cached verdict over token re-verification
+
+The derived state is computed from the entitlement cache with a strict priority order, so a still-valid
+cached token can never resurrect a heartbeat verdict:
+
+1. **Terminal heartbeat verdicts are authoritative.** A cached `Disabled` or `Expired` — written by a
+   heartbeat from an authoritative LS verdict (PL-R8) or grace-window exhaustion (PL-R4) — is returned
+   as-is and is **never** re-verified back to `Active`. The cached token's validity window is irrelevant
+   here: an admin force-expire or a displacement must not be out-waited by going offline while the
+   token's term has not yet lapsed. Recovery from these states is a re-bind (PL-R1) or a recovering
+   heartbeat (PL-R3), each of which rewrites the cached state.
+2. **`Grace` is entitled only while its window holds.** A cached `Grace` stays entitled while the
+   30-minute offline window from the last successful heartbeat is unexpired; past it, derivation reports
+   `Expired` even before the next heartbeat writes the transition (e.g. across a restart before the
+   first beat lands).
+3. **Offline baseline (no heartbeat verdict).** Only when the cached state is `Active`/`Unactivated`
+   does derivation fall back to offline token verification (PL-R5): an absent/unverifiable token ⇒
+   `Unactivated`, a verified token past its window ⇒ `Expired`, a verified in-window token ⇒ `Active`.
+   This is what downgrades a stale `Active` cache after a term lapse over a restart, without ever
+   upgrading a terminal verdict.
+
 ## No-refund policy
 
 The product is sold as a **virtual/digital good**. Acceptance of a **no-refund service agreement**

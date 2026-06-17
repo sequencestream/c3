@@ -131,28 +131,55 @@ export function saveActivation(args: {
 }
 
 /**
- * Derive the current entitlement from the cache by verifying the cached token
- * offline (PL-R5). Absent/unverifiable ⇒ `unactivated`; verified-but-expired ⇒
- * `expired`. The heartbeat-driven `grace`/`disabled` refinements are applied by
- * the heartbeat scheduler (separate task); this is the offline baseline.
+ * Derive the current entitlement from the cache, with a strict priority order:
+ *
+ *   1. **Heartbeat-driven terminal verdicts win over offline re-verification.**
+ *      `disabled`/`expired` are written by the heartbeat scheduler from
+ *      authoritative LS verdicts (PL-R8) or grace-window exhaustion (PL-R4).
+ *      Re-verifying the still-valid cached token must NOT resurrect them to
+ *      `active` — otherwise a force-expired or displaced license could out-wait
+ *      its term by going offline (the cached token's window simply hasn't lapsed
+ *      yet). Recovery from these states is a re-bind or a recovering heartbeat,
+ *      both of which rewrite `cache.state` (saveActivation/recordHeartbeatSuccess).
+ *   2. **Heartbeat-driven `grace` stays entitled while its 30-min window holds.**
+ *      The grace→expired transition is the scheduler's job (recordHeartbeatFailure),
+ *      but we re-check the window here so a `grace` that outlived it between beats
+ *      (e.g. across a restart, before the first beat lands) is not honored as
+ *      entitled.
+ *   3. **Offline baseline (no heartbeat verdict): trust the signature + window**
+ *      (PL-R5). For an `active`/`unactivated` cache, verify the token offline:
+ *      absent/unverifiable ⇒ `unactivated`; verified-but-past-window ⇒ `expired`.
+ *      This is what downgrades a stale `active` cache after a term lapse over a
+ *      restart, without ever upgrading a heartbeat-written terminal verdict.
  */
 export function deriveEntitlement(
   cache: LicenseCache | undefined = readLicenseCache(),
   nowSeconds: number = Math.floor(Date.now() / 1000),
 ): { state: EntitlementState; installationId?: string } {
   if (!cache) return { state: 'unactivated' }
-  if (cache.state === 'disabled') return { state: 'disabled', installationId: cache.installationId }
-  if (!cache.entitlementToken) {
-    return { state: 'unactivated', installationId: cache.installationId }
+  const installationId = cache.installationId
+
+  // Priority 1 — terminal heartbeat verdicts are authoritative; never re-verify.
+  if (cache.state === 'disabled') return { state: 'disabled', installationId }
+  if (cache.state === 'expired') return { state: 'expired', installationId }
+
+  if (!cache.entitlementToken) return { state: 'unactivated', installationId }
+
+  // Priority 2 — grace is entitled only while the offline window still holds.
+  if (cache.state === 'grace') {
+    const withinGrace = nowSeconds * 1000 - (cache.lastSuccessfulHeartbeat ?? 0) <= GRACE_WINDOW_MS
+    return { state: withinGrace ? 'grace' : 'expired', installationId }
   }
+
+  // Priority 3 — offline baseline: verify the cached token's signature + window.
   const res = verifyEntitlementToken(cache.entitlementToken, nowSeconds)
   if (!res.ok) {
     // Within window but unverifiable ⇒ deny-by-default; past window ⇒ expired.
     const state: EntitlementState =
       res.reason === 'outside validity window' ? 'expired' : 'unactivated'
-    return { state, installationId: cache.installationId }
+    return { state, installationId }
   }
-  return { state: 'active', installationId: cache.installationId }
+  return { state: 'active', installationId }
 }
 
 /**

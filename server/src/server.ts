@@ -40,6 +40,7 @@ import {
 } from './transport/intent-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import { createPermissionRequestHandler } from './features/user-involve/hooks.js'
+import { startHeartbeatScheduler, stopHeartbeatScheduler } from './features/license/heartbeat.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
@@ -528,9 +529,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Start the schedule scheduler after the server is ready.
   startSchedulerWiring({ broadcasts, eventBus })
 
+  // Start the product-license heartbeat loop (ADR-0026, PL-R3). Fail-soft; pushes
+  // the refreshed license state after each beat so the badge tracks revoke/expiry.
+  startHeartbeatScheduler({ onChange: broadcasts.broadcastLicense })
+
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
+    stopHeartbeatScheduler()
     await stopSchedulerWiring(30_000)
     server.close()
     process.exit(0)

@@ -5,22 +5,30 @@
 package httpapi
 
 import (
-	"database/sql"
 	"io/fs"
 	"net/http"
 
 	"github.com/sequencestream/code-creative-center/license-server/internal/cache"
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
+	"github.com/sequencestream/code-creative-center/license-server/internal/oauth"
+	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"gorm.io/gorm"
 )
 
 // Deps are the runtime dependencies of the HTTP surface. DB may be nil when the
 // service runs without a configured database (the health endpoint degrades
-// rather than failing).
+// rather than failing). OAuth, Store, and Signer back the activation surface;
+// each is nil/empty when its configuration is absent, and the activation
+// endpoints report a clear "unavailable" rather than half-working.
 type Deps struct {
 	Config *config.Config
 	Caches *cache.Registry
-	DB     *sql.DB
+	DB     *gorm.DB
 	Static fs.FS // embedded frontend, rooted at the dist directory
+
+	OAuth  *oauth.Client
+	Store  *store.Store
+	Signer Signer // Ed25519 private key; nil when LS_ED25519_PRIVATE_KEY is unset
 }
 
 // NewServer builds the HTTP handler with every route mounted. API routes are
@@ -34,6 +42,7 @@ func NewServer(d Deps) http.Handler {
 	// method as a static 404 instead of a clean 405.
 	mux.HandleFunc("/healthz", allowGET(handleHealth(d)))
 	mux.HandleFunc("/v1/plans", allowGET(handlePlans(d)))
+	mountActivation(mux, d)
 	mux.Handle("/", staticHandler(d.Static))
 	return mux
 }

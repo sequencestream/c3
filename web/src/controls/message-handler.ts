@@ -169,6 +169,8 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Pull settings up front so the new-session agent picker has the agent list +
         // per-vendor host-CLI status ready before the user clicks "+".
         send({ type: 'get_settings' })
+        // Fetch the current product-license state for the badge/menu (PL-R7).
+        send({ type: 'get_license' })
         // Restore the intent / discussion / schedules view if a hard refresh left us in it.
         ctx.maybeRestoreIntents(msg.workspaces)
         ctx.maybeRestoreDiscussions(msg.workspaces)
@@ -685,6 +687,26 @@ export function installMessageHandler(ctx: AppCtx): void {
         codesSearchLoading.value = false
         break
       }
+      case 'license_state':
+        // Current entitlement, derived from the offline-verified token (PL-R7).
+        ctx.license.value = msg.license
+        break
+      case 'license_activation_started':
+        // The browser is being sent to the LS activation URL; keep it so the
+        // console can offer it as a manual fallback if the browser didn't open.
+        ctx.licenseActivationUrl.value = msg.ok ? (msg.activationUrl ?? null) : null
+        if (!msg.ok) add({ kind: 'system', text: t('license.startFailed') })
+        break
+      case 'license_bind_result':
+        // Result of binding a pasted license key. Success surfaces a confirmation
+        // (a `license_state` push follows); failure surfaces the reason (PL-R13).
+        add({
+          kind: 'system',
+          text: msg.ok
+            ? t('license.bind.success')
+            : t('license.bind.failed', { reason: msg.reason ?? '' }),
+        })
+        break
     }
   }
 

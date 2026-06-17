@@ -14,6 +14,7 @@ import { installCodesActions } from './codes-actions'
 import { installChatActions } from './chat-actions'
 import { installSettingsActions } from './settings-actions'
 import { installWorkcenterActions } from './workcenter-actions'
+import { installLicenseActions } from './license-actions'
 import type { AppCtx } from './types'
 
 export type { AppCtx } from './types'
@@ -58,6 +59,7 @@ export function useAppController(): AppCtx {
   installChatActions(ctx)
   installSettingsActions(ctx)
   installWorkcenterActions(ctx)
+  installLicenseActions(ctx)
 
   onMounted(() => {
     const client = createWsClient({

@@ -1,13 +1,12 @@
 // Command license-server is the c3 license authority (ADR-0026): a standalone
 // Go service that owns the entitlement record, the plan catalog, and the buyer/
 // admin web. This entrypoint wires configuration, the in-process caches, the
-// PostgreSQL connection + migrations, and the HTTP surface, then serves until
+// PostgreSQL connection + schema, and the HTTP surface, then serves until
 // interrupted.
 package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"log"
 	"net/http"
@@ -20,8 +19,12 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/cache"
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
 	"github.com/sequencestream/code-creative-center/license-server/internal/httpapi"
+	"github.com/sequencestream/code-creative-center/license-server/internal/oauth"
+	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 	"github.com/sequencestream/code-creative-center/license-server/internal/version"
 	"github.com/sequencestream/code-creative-center/license-server/web"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -46,8 +49,15 @@ func run() error {
 	// serves /healthz (degraded) and the static frontend.
 	var db = openDatabase(ctx, cfg)
 	if db != nil {
-		defer db.Close()
+		if sqlDB, err := db.DB(); err == nil {
+			defer sqlDB.Close()
+		}
 	}
+
+	// Activation dependencies. Each is best-effort: a missing OAuth credential,
+	// signing key, or database leaves the activation surface reporting
+	// "unavailable" rather than crashing the foundation service.
+	signer := loadSigner(cfg)
 
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,
@@ -56,6 +66,9 @@ func run() error {
 			Caches: caches,
 			DB:     db,
 			Static: web.DistFS(),
+			OAuth:  oauth.New(cfg.GitHubOAuthClientID, cfg.GitHubOAuthClientSecret),
+			Store:  store.New(db),
+			Signer: signer,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -74,10 +87,28 @@ func run() error {
 	return nil
 }
 
-// openDatabase connects and migrates when a DSN is configured. A connection
-// failure is logged and tolerated (returns nil); a migration failure is fatal,
-// since a reachable-but-unmigrated database is a real operational error.
-func openDatabase(ctx context.Context, cfg *config.Config) *sql.DB {
+// loadSigner parses the Ed25519 signing seed when configured. A malformed key
+// is an operator typo: it is logged and tolerated (returns nil), which makes the
+// activation surface report "unavailable" rather than crashing the service.
+func loadSigner(cfg *config.Config) httpapi.Signer {
+	if cfg.Ed25519PrivateKey == "" {
+		log.Printf("license-server: no %s configured; activation signing disabled", config.EnvEd25519PrivateKey)
+		return nil
+	}
+	priv, kid, err := token.ParsePrivateKey(cfg.Ed25519PrivateKey)
+	if err != nil {
+		log.Printf("license-server: invalid %s (%v); activation signing disabled", config.EnvEd25519PrivateKey, err)
+		return nil
+	}
+	log.Printf("license-server: entitlement signing key loaded (kid %s)", kid)
+	return priv
+}
+
+// openDatabase connects and ensures the schema when a DSN is configured. A
+// connection failure is logged and tolerated (returns nil); a schema-setup
+// failure is fatal, since a reachable-but-unschemaed database is a real
+// operational error.
+func openDatabase(ctx context.Context, cfg *config.Config) *gorm.DB {
 	if cfg.DatabaseURL == "" {
 		log.Printf("license-server: no %s configured; running without a database", config.EnvDatabaseURL)
 		return nil
@@ -90,9 +121,9 @@ func openDatabase(ctx context.Context, cfg *config.Config) *sql.DB {
 		log.Printf("license-server: database unreachable (%v); continuing degraded", err)
 		return nil
 	}
-	if err := lsdb.Migrate(ctx, db); err != nil {
-		log.Fatalf("license-server: migrate failed: %v", err)
+	if err := lsdb.EnsureSchema(ctx, db); err != nil {
+		log.Fatalf("license-server: schema setup failed: %v", err)
 	}
-	log.Printf("license-server: database connected and migrated")
+	log.Printf("license-server: database connected and schema ensured")
 	return db
 }

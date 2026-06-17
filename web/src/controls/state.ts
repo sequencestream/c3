@@ -23,6 +23,7 @@ import type {
   VendorModeCatalog,
   Intent,
   IntentSessionInfo,
+  LicenseStatus,
   PromptImage,
   WorkspaceSetting as WorkspaceSettingType,
   Schedule,
@@ -208,6 +209,13 @@ export function createState(deps: StateDeps) {
   // Available commands/skills for the active session's cwd (fetched lazily on the
   // first `/`). Cleared on session switch.
   const availableCommands = ref<SlashCommandInfo[]>([])
+
+  // ---- Product license (ADR-0026) ----
+  // Current entitlement state for the badge/menu (null until the first
+  // `license_state`); the activation URL is surfaced as a manual fallback when
+  // a browser could not be opened by the server.
+  const license = ref<LicenseStatus | null>(null)
+  const licenseActivationUrl = ref<string | null>(null)
 
   // ---- View mode (workspace / workcenter) ----
   const viewMode = ref<'workspace' | 'workcenter'>('workspace')
@@ -448,6 +456,8 @@ export function createState(deps: StateDeps) {
     sideEffectPendingBySession,
     currentAgentIndexBySession,
     availableCommands,
+    license,
+    licenseActivationUrl,
     viewMode,
     savedTab,
     activeTab,

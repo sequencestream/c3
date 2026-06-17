@@ -39,6 +39,7 @@ import {
   isStoreAvailable as isWaitUserEventsStoreAvailable,
   listEvents as listWaitUserEvents,
 } from '../features/user-involve/store.js'
+import { currentLicenseStatus } from '../features/license/store.js'
 
 /** The single fan-out reference; threaded in by the composition root. */
 export interface BroadcastsDeps {
@@ -95,6 +96,8 @@ export interface Broadcasts {
   broadcastResearchRunStatus: (discussionId: string, state: 'running' | 'ended') => void
   /** Push a project's refreshed wait-user-involve event list (todo status). */
   broadcastWaitUserEvents: (workspacePath: string) => void
+  /** Push the current product-license state to every connection (PL-R7). */
+  broadcastLicense: () => void
 }
 
 /**
@@ -260,6 +263,12 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcaster.toAll({ type: 'wait_user_events', items })
   }
 
+  // Push the current product-license state to every connection. The frontend
+  // renders it as the license badge/menu (PL-R7). Cheap, no store dependency.
+  const broadcastLicense = (): void => {
+    broadcaster.toAll({ type: 'license_state', license: currentLicenseStatus() })
+  }
+
   return {
     broadcastStatuses,
     broadcastIntents,
@@ -274,5 +283,6 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastResearchMessage,
     broadcastResearchRunStatus,
     broadcastWaitUserEvents,
+    broadcastLicense,
   }
 }

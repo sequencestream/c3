@@ -129,7 +129,7 @@ credential.
 - **No-refund policy for MVP** — the product is sold as a virtual/digital good; the service
   agreement states it does not support refunds, and **no refund workflow is built** for the MVP.
   This is a deliberate business non-goal, recorded in the
-  [product-license domain spec](../../domains/commerce/product-license/spec.md).
+  [product-license domain spec](../../domains/commerce/product-license/product-license-spec.md).
 - **Trust boundary** — because c3 verifies a signature with an embedded public key, a forged
   "active" cannot be injected by tampering with the network. A verification failure is treated as
   **not entitled** (deny-by-default), but — balancing the C-SEC deny-by-default value against
@@ -160,3 +160,34 @@ credential.
   business behavior this decision governs.
 - [license-server API contract](../../shared/api-conventions/license-server-api.md) — the c3 ↔ LS
   public boundary.
+- [license-server architecture](../license-server-architecture.md) — the LS service's own internal
+  architecture (process shape, layering, activation flow, data model, signing chain).
+
+## Revision — 2026-06-17 (activation model simplified)
+
+The original activation model (one-time auth code → browser loopback → server-to-server claim →
+separate heartbeat token, backed by dedicated activation-code/request/heartbeat tables) has been
+**simplified** to a license-key binding model. The ADR's core decision is unchanged — entitlement
+remains LS-authoritative, c3 verifies an Ed25519-signed token offline, and gating blocks only
+new-session creation. What changed:
+
+- **License-key binding replaces the one-time code.** A license is identified by a random, unique,
+  **shareable `licenseKey`** (a handle, not a bearer credential). The user obtains it from LS and
+  pastes it into c3, which **binds** the installation (`POST /v1/license/bind` with the key + an
+  installation id). There is no c3-generated auth code, no browser loopback, and no separate
+  server-to-server claim step.
+- **Binding state is inlined on the license row.** The license carries its **exclusive live
+  binding**: the bound installation, the **sha256 hash** of a per-binding **`aliveToken`** (the
+  heartbeat bearer credential, returned in plaintext once at bind and rotated on each re-bind), and
+  the last-success time. Re-binding to a new installation **displaces** the old one, which is reported
+  `disabled` on its next heartbeat (it cannot be recovered offline).
+- **GitHub OAuth is sign-in only.** GitHub now authenticates **account login/registration** and is
+  no longer the activation vehicle. On first sign-in (after the user accepts the no-refund agreement)
+  LS issues a **default trial license** and shows its license key to copy.
+- **Renewal is order-driven.** A user may hold multiple licenses; extending a license's term and
+  status requires a paid **order** linked to that license (WeChat Pay payment capture remains a later
+  milestone). The no-refund acceptance is recorded on the order for renewal, and at the sign-in gate
+  for the trial.
+- **Schema simplified.** Tables renamed to `c3_ls_user` / `c3_ls_order` / `c3_ls_license`; the
+  one-time-code and heartbeat-history helper tables are removed. The `PL-R*` rule numbers are
+  retained; their wording is updated to this model.

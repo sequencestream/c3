@@ -22,6 +22,9 @@ const {
   // ---- auth / connection / top bar ----
   auth,
   authStatus,
+  license,
+  activateLicense,
+  bindLicense,
   status,
   workspaces,
   currentWorkspace,
@@ -221,6 +224,9 @@ const {
       :view-mode="viewMode"
       :workcenter-badge-count="workcenterPendingCount"
       :show-logout="authStatus === 'authenticated'"
+      :license="license"
+      @activate-license="activateLicense"
+      @bind-license="bindLicense"
       @select-tab="onSelectTab"
       @update:view-mode="setViewMode"
       @open-settings="openSettings"

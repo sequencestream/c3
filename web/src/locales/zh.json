@@ -1819,5 +1819,25 @@
       "tooLarge": "文件过大,无法预览({size})。",
       "empty": "此文件为空。"
     }
+  },
+  "license": {
+    "badge": {
+      "active": "已授权",
+      "grace": "宽限期",
+      "expired": "已过期",
+      "unactivated": "未激活",
+      "revoked": "已吊销"
+    },
+    "activate": {
+      "button": "激活许可",
+      "urlFallback": "如果浏览器未自动打开，请手动粘贴此链接：{url}"
+    },
+    "startFailed": "许可激活启动失败。请检查网络连接和许可服务器是否可用。",
+    "bind": {
+      "placeholder": "粘贴许可密钥",
+      "button": "绑定",
+      "success": "许可已激活。",
+      "failed": "许可绑定失败：{reason}"
+    }
   }
 }

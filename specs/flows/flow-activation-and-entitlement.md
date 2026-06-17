@@ -1,32 +1,34 @@
 # Flow — Activation & Entitlement Lifecycle
 
-**Scenario.** A buyer purchases c3, activates an installation, and that installation stays entitled
-through periodic heartbeats — surviving transient outages within a 30-minute offline grace, and
-gating only **new-session creation** (never running work) when entitlement lapses.
+**Scenario.** A user signs in to the license-server, obtains a license key, binds an installation by
+pasting the key into c3, and that installation stays entitled through periodic heartbeats —
+surviving transient outages within a 30-minute offline grace, and gating only **new-session
+creation** (never running work) when entitlement lapses.
 
 **Domains.** product-license · web-console · session-registry · license-server (external).
 
-> **Status: planned (2026-06-16).** This flow documents the architecture/spec foundation
-> ([ADR-0026](../architecture/adr/0026-product-licensing-separate-license-server.md)); no runtime
-> yet. Steps reference `PL-R*` rules in
-> [product-license spec](../domains/commerce/product-license/spec.md) and the
+> **Status: binding flow live (2026-06-17).** GitHub sign-in + trial issuance, license-key binding,
+> and heartbeat are implemented on LS and c3. Steps reference `PL-R*` rules in
+> [product-license spec](../domains/commerce/product-license/product-license-spec.md) and the
 > [license-server API contract](../shared/api-conventions/license-server-api.md).
 
 ## Flow graph
 
 ```mermaid
 flowchart TD
-    BUY[buyer: GitHub login → accept no-refund agreement → WeChat Pay] --> CODE[LS issues one-time short-lived activation code]
-    CODE --> ACT[c3: activate — redeem code]
-    ACT -- ok --> VERIFY[verify Ed25519 signature offline]
-    VERIFY -- valid --> ACTIVE[Entitlement = Active<br/>cache token + heartbeat token]
+    SIGNIN[user on LS web: accept no-refund agreement → GitHub sign-in] --> ISSUE[LS creates account + issues trial license, shows license key]
+    ISSUE --> PASTE[c3: paste license key]
+    PASTE --> BIND[c3 → LS: bind license key + installation id]
+    BIND -- active --> VERIFY[verify Ed25519 signature offline]
+    VERIFY -- valid --> ACTIVE[Entitlement = Active<br/>cache token + license key + alive token]
     VERIFY -- invalid --> GATE[not entitled — gate new sessions]
-    ACTIVE --> HB[heartbeat on interval — bearer token]
-    HB -- success --> ACTIVE2[refresh token · reset 30-min grace]
-    HB -- failing --> GRACE[Grace — still active < 30 min]
-    GRACE -- success again --> ACTIVE
+    BIND -- revoked/expired --> GATE
+    ACTIVE --> HB[heartbeat on interval — license key + install id + alive token]
+    HB -- active --> ACTIVE2[refresh token · reset 30-min grace]
+    HB -- failing/network --> GRACE[Grace — still active < 30 min]
+    GRACE -- active again --> ACTIVE
     GRACE -- 30 min elapsed --> EXPIRED[Expired — gate new sessions]
-    HB -- revoked --> REVOKED[Revoked — gate new sessions]
+    HB -- disabled/revoked/expired --> REVOKED[gated — displaced or revoked]
     ACTIVE2 --> HB
     GATE --> NEW{create new session?}
     EXPIRED --> NEW
@@ -35,51 +37,74 @@ flowchart TD
     NEW -- existing/in-flight --> KEEP[untouched — runs never interrupted]
 ```
 
-## Purchase (license-server)
+## Sign-in & license-key issuance (license-server)
 
-1. **buyer → license-server.** The buyer logs in via **GitHub OAuth**, **explicitly accepts the
-   no-refund service agreement** (recorded with version + timestamp), then pays via **WeChat Pay**
-   (`PL-R9`). Reaching payment without a recorded acceptance is refused.
-2. **license-server → buyer.** A confirmed payment creates an **order** and issues a **one-time,
-   short-lived activation code** (`PL-R1`). The product is a virtual/digital good with **no refund
-   workflow** (`PL-R10`).
+GitHub sign-in is used **only** to log in / register an account and obtain a license key — it does
+not carry the activation action.
 
-## Activation (c3)
+1. **user → license-server.** On the LS account page (`GET /activate`) the user reads the no-refund
+   service agreement and **explicitly accepts** it (`POST /activate/accept`, version + timestamp
+   recorded) **before** sign-in (`PL-R9`). Acceptance is required before GitHub OAuth begins.
+2. **user → GitHub → LS.** LS initiates GitHub OAuth; on the callback (`GET /auth/github/callback`)
+   LS exchanges the code, fetches the GitHub identity, and **creates or updates the account**. For a
+   new account it issues a **default trial license** with a fresh **license key**.
+3. **license-server → user.** The page **displays the license key** for the user to copy. No signed
+   token or bearer credential appears in the browser — only the shareable license key (`PL-R2`).
 
-1. **web-console → product-license.** The buyer enters the activation code in c3's license menu;
-   c3 calls the LS **activate** endpoint with the code + an installation identifier (`PL-R1`).
-2. **product-license → LS.** On success LS returns a **signed entitlement token**, a long-lived
-   **heartbeat bearer token**, and a heartbeat interval. The activation code is **consumed**; c3
-   discards it and **never** reuses it as a heartbeat credential (`PL-R2`).
-3. **Offline verification.** c3 verifies the entitlement token's **Ed25519** signature against the
-   **embedded public key** and confirms its validity window before honoring `active` (`PL-R5`). The
-   verified token + heartbeat token are written to the small on-disk **entitlement cache**.
+## Binding (c3)
+
+1. **web-console → product-license.** The user pastes the license key into c3's license menu; c3
+   calls `POST /v1/license/bind` with `licenseKey` + the installation identifier (`PL-R1`).
+2. **product-license → LS.** LS checks the license exists, is not revoked, and not expired, then
+   records the binding **exclusively**: it sets the bound installation, **rotates** the alive token
+   (storing its hash, displacing any prior binding), and stamps the last-success time. It returns a
+   **signed entitlement token**, the **alive token** (plaintext, once), `plan`, `termEnd`, and the
+   heartbeat interval.
+3. **Offline verification & persistence.** c3 verifies the entitlement token's **Ed25519** signature
+   against the **embedded public key** and confirms its validity window before honoring `active`
+   (`PL-R5`). The verified token, the license key, and the alive token are written to the small
+   on-disk **entitlement cache** (written with **0600** permissions). Entitlement enters `Active`.
 
 ## Heartbeat & grace (c3)
 
-1. **product-license → LS.** c3 heartbeats on the LS-dictated interval, presenting the heartbeat
-   bearer token (`Authorization: Bearer …`) — never the activation code (`PL-R2`/`PL-R3`).
-2. **Success.** The response carries the current status and may refresh the signed token; c3 caches
-   it and **resets the 30-minute offline-grace deadline** (`PL-R3`).
-3. **Failing (transient).** While heartbeats fail but the last success is **under 30 minutes** old,
-   c3 stays in **Grace** and new sessions remain allowed (`PL-R4`). A later success returns to
-   `Active`.
+1. **product-license → LS.** c3 heartbeats on the LS-dictated interval, sending `licenseKey`,
+   `installationId`, and `aliveToken` (`PL-R3`).
+2. **Active.** When the binding still matches and the license is active and within term, LS returns
+   `status: active` with a refreshed signed token; c3 caches it and **resets the 30-minute
+   offline-grace deadline** (`PL-R3`).
+3. **Failing (transient).** While heartbeats fail (or the network is unreachable) but the last
+   success is **under 30 minutes** old, c3 stays in **Grace** and new sessions remain allowed
+   (`PL-R4`). A later `active` returns to `Active`.
 4. **Grace exhausted.** After **30 minutes** with no successful heartbeat, entitlement lapses to
    **Expired** (`PL-R4`).
-5. **Revocation.** A successful heartbeat reporting `revoked` lapses entitlement to **Revoked**
-   (`PL-R8`); a revoked installation cannot out-wait the grace window because succeeding heartbeats
-   report the revocation.
+5. **Displacement / revocation / expiry.** A successful heartbeat reporting `disabled` (the license
+   was rebound to another installation), `revoked`, or `expired` (term ended) lapses entitlement to
+   gated (`PL-R8`). These verdicts arrive as **HTTP 200** with a `status` field, distinguishing them
+   from a network failure; a displaced or revoked installation cannot out-wait the grace window
+   because succeeding heartbeats report the verdict.
 
 ## Gating (c3)
 
 1. **session-registry consult.** Entitlement is consulted at exactly one point — **new-session
-   creation**. When not entitled (`Unactivated` / `Expired` / `Revoked`), creation is **refused**
-   and the user is directed to the license menu (`PL-R6`/`PL-R7`).
+   creation**. When not entitled (`Unactivated` / `Expired` / `Revoked`, the last covering both a
+   revoked license and a `disabled` displaced binding), creation is **refused** and the user is
+   directed to the license menu (`PL-R6`/`PL-R7`).
 2. **Existing work preserved.** Existing sessions (incl. idle) stay fully usable and **in-flight
    runs are never interrupted** (`PL-R6`, consistent with ADR-0006).
 3. **Surfacing.** Throughout, the **license badge** reflects state
    (entitled / grace / expired / unactivated / revoked) and the **license menu** offers activation,
-   status, and the purchase link (`PL-R7`).
+   status, and the purchase/renew link (`PL-R7`).
+
+## Renewal (license-server)
+
+A user may hold multiple licenses; extending one's term and status requires a paid order.
+
+1. **user → license-server.** A signed-in user accepts the no-refund agreement **on the order**
+   (version + timestamp), then pays via **WeChat Pay** (`PL-R9`). Reaching payment without a recorded
+   acceptance is refused.
+2. **license-server.** A confirmed payment records the **order** and **extends the linked license's
+   `termEnd` and status**. The product is a virtual/digital good with **no refund workflow**
+   (`PL-R10`). (Payment capture is a later milestone.)
 
 ## Branches & exceptions (anti-scenarios)
 
@@ -90,11 +115,11 @@ flowchart TD
 - **Trust the signature, not the channel.** c3 must **never** honor `active` from a token whose
   Ed25519 signature does not verify against the embedded public key, regardless of HTTP success
   (`PL-R5`).
-- **Code is not a heartbeat credential.** An activation code must **never** be accepted as a
-  heartbeat credential or reused after consumption (`PL-R1`/`PL-R2`).
+- **License key is a handle, not a credential.** The license key alone must **never** be accepted as
+  a heartbeat credential; only the per-binding alive token authenticates a heartbeat (`PL-R2`).
 - **Secrets stay in LS.** No signing key, OAuth secret, or payment credential ever ships in the c3
   binary or rests in its config/cache — only the public verification key (`PL-R12`).
-- **No payment without agreement.** A buyer must **never** reach payment without recording
-  acceptance of the no-refund agreement (`PL-R9`).
-- **Fail-soft.** A failed activation/heartbeat must **never** crash c3 or interrupt running work; it
+- **No proceeding without agreement.** A user must **never** proceed to sign-in (trial) or payment
+  (renewal) without recording acceptance of the no-refund agreement (`PL-R9`).
+- **Fail-soft.** A failed bind/heartbeat must **never** crash c3 or interrupt running work; it
   affects only whether new sessions may be created once the grace window is exhausted (`PL-R13`).

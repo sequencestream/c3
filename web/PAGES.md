@@ -20,10 +20,11 @@ web/src/
 │   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch)
 │   ├── chat-actions.ts                             # 聊天/输入动作 + 客户端待发队列(enqueue/edit/delete/flush watch)、提交/继续/停止/刷新/模式/agent 切换/权限响应
 │   ├── settings-actions.ts                         # 系统/工作区设置、技能安装、运行时语言切换(回滚)、workspace↔workcenter 视图模式、技能加载审批
+│   ├── license-actions.ts                          # 产品许可(ADR-0026):打开 LS 登录页取 license_key(start_license_activation)、用 key 绑定本安装(bind_license),状态由 license_state/license_activation_started/license_bind_result 回流
 │   └── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + 跳转到来源 tab(会话/需求/讨论/定时任务)
 │
 ├── components/                                      # 跨页面通用组件
-│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态),移动端顶部精简栏 + 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态 badge(ADR-0026,PL-R7,点击打开 LS 登录页)+ 未授权时显示 license_key 输入框绑定本安装),移动端顶部精简栏 + 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定

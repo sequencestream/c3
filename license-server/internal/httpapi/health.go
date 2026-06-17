@@ -15,7 +15,10 @@ func handleHealth(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		checks := map[string]string{}
 		if d.DB != nil {
-			if err := d.DB.PingContext(r.Context()); err != nil {
+			sqlDB, err := d.DB.DB()
+			if err != nil {
+				checks["database"] = "unreachable"
+			} else if err := sqlDB.PingContext(r.Context()); err != nil {
 				checks["database"] = "unreachable"
 			} else {
 				checks["database"] = "ok"

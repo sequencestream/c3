@@ -1819,5 +1819,25 @@
       "expired": "Your session has expired. Please sign in again.",
       "invalid": "Your session is no longer valid. Please sign in again."
     }
+  },
+  "license": {
+    "badge": {
+      "active": "Licensed",
+      "grace": "Grace period",
+      "expired": "Expired",
+      "unactivated": "Not activated",
+      "revoked": "Revoked"
+    },
+    "activate": {
+      "button": "Activate license",
+      "urlFallback": "If the browser did not open, paste this URL: {url}"
+    },
+    "startFailed": "License activation failed to start. Check that internet connectivity and the license-server are available.",
+    "bind": {
+      "placeholder": "Paste license key",
+      "button": "Bind",
+      "success": "License activated.",
+      "failed": "License binding failed: {reason}"
+    }
   }
 }

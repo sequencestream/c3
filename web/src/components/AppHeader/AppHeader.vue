@@ -8,8 +8,8 @@
  * - workcenter 模式:左侧 workcenter 导航按钮,中间区域隐藏,右侧 viewMode 切换 + 设置
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
-import type { WorkspaceInfo } from '@ccc/shared/protocol'
-import { useTypedI18n } from '@/i18n'
+import type { LicenseStatus, WorkspaceInfo } from '@ccc/shared/protocol'
+import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
 import { onBeforeUnmount, ref } from 'vue'
 
@@ -78,6 +78,8 @@ const props = defineProps<{
   /** Show the logout button. Only true once authenticated (ADR-0023); when auth
    *  is disabled this stays false so the no-auth UI is unchanged. */
   showLogout?: boolean
+  /** Current product-license status for the badge/menu (PL-R7). Null when not yet known. */
+  license?: LicenseStatus | null
 }>()
 
 const emit = defineEmits<{
@@ -89,7 +91,28 @@ const emit = defineEmits<{
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
   logout: []
+  'activate-license': []
+  'bind-license': [licenseKey: string]
 }>()
+
+// License-key entry (shown when not entitled): the user pastes the key obtained
+// from the LS sign-in page and binds this installation (ADR-0026, PL-R1).
+const licenseKeyInput = ref('')
+function submitBindLicense(): void {
+  const key = licenseKeyInput.value.trim()
+  if (!key) return
+  emit('bind-license', key)
+  licenseKeyInput.value = ''
+}
+
+function licenseBadgeKey(state: string): LocaleKey {
+  if (state === 'active') return 'license.badge.active' as LocaleKey
+  if (state === 'grace') return 'license.badge.grace' as LocaleKey
+  if (state === 'expired') return 'license.badge.expired' as LocaleKey
+  if (state === 'unactivated') return 'license.badge.unactivated' as LocaleKey
+  if (state === 'revoked') return 'license.badge.revoked' as LocaleKey
+  return 'license.badge.unactivated' as LocaleKey
+}
 
 function isTabDisabled(tab: HeaderTab): boolean {
   return tab.key !== 'workcenter' && props.tabsEnabled === false
@@ -177,6 +200,36 @@ function selectTab(tab: HeaderTab): void {
             {{ t('nav.viewMode.workcenter') }}
           </button>
         </div>
+
+        <!-- Product-license badge (PL-R7): clickable to open LS sign-in if not entitled -->
+        <button
+          v-if="license"
+          class="license-badge"
+          :class="license.state"
+          :title="t('license.activate.button')"
+          @click="emit('activate-license')"
+        >
+          {{ t(licenseBadgeKey(license.state)) }}
+        </button>
+
+        <!-- License-key entry (PL-R1): paste the key from the LS sign-in page -->
+        <form
+          v-if="license && !license.entitled"
+          class="license-bind"
+          @submit.prevent="submitBindLicense"
+        >
+          <input
+            v-model="licenseKeyInput"
+            class="license-bind-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="t('license.bind.placeholder')"
+          />
+          <button class="license-bind-btn" type="submit" :disabled="!licenseKeyInput.trim()">
+            {{ t('license.bind.button') }}
+          </button>
+        </form>
 
         <button
           v-if="isAdmin"
@@ -433,6 +486,63 @@ function selectTab(tab: HeaderTab): void {
     top: 7px;
     right: max(8px, calc(50% - 28px));
     margin-left: 0;
+  }
+
+  .license-badge {
+    font-size: var(--fs-caption);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+    padding: var(--sp-1) var(--sp-2);
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .license-badge.active {
+    color: var(--c-green);
+    border-color: var(--c-green);
+  }
+  .license-badge.grace {
+    color: var(--c-yellow);
+    border-color: var(--c-yellow);
+  }
+  .license-badge.expired,
+  .license-badge.revoked {
+    color: var(--c-red);
+    border-color: var(--c-red);
+  }
+  .license-badge.unactivated {
+    color: var(--c-text-dim);
+    border-color: var(--c-border);
+  }
+
+  .license-bind {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+  }
+  .license-bind-input {
+    font-size: var(--fs-caption);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+    padding: var(--sp-1) var(--sp-2);
+    background: var(--c-bg);
+    color: var(--c-text);
+    width: 12rem;
+    max-width: 32vw;
+  }
+  .license-bind-btn {
+    font-size: var(--fs-caption);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+    padding: var(--sp-1) var(--sp-2);
+    background: transparent;
+    color: var(--c-text);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .license-bind-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 </style>

@@ -22,6 +22,15 @@ const (
 	DefaultGraceMinutes = 30
 )
 
+// Activation/entitlement domain defaults (not env-driven; the same for every
+// installation). The license term is the default one-month trial entitlement a
+// buyer receives on GitHub registration; the heartbeat interval is what LS
+// dictates to c3 (returned on bind and each heartbeat).
+const (
+	DefaultLicenseTermDays          = 30
+	DefaultHeartbeatIntervalSeconds = 3600
+)
+
 // Config is the fully-resolved LS configuration.
 //
 // Fields tagged "secret" in the comments are redacted by [Config.Redacted];

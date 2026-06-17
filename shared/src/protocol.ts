@@ -2186,6 +2186,29 @@ export interface CodeSearchHit {
   match?: string
 }
 
+/**
+ * The c3-side derived product-license state surfaced to the console as a license
+ * badge + menu (product-license PL-R7). Vendor-neutral: it reflects the local
+ * entitlement derived from the offline-verified token, not any LS-native shape.
+ * `Active`/`grace` permit new sessions; `unactivated`/`expired`/`revoked` gate
+ * them (the gating point itself is new-session creation, PL-R6).
+ */
+export type LicenseState = 'unactivated' | 'active' | 'grace' | 'expired' | 'revoked'
+
+export interface LicenseStatus {
+  state: LicenseState
+  /** Whether new sessions are permitted (`active`/`grace`). */
+  entitled: boolean
+  /** Plan id on the current license (empty when unactivated). */
+  plan: string
+  /** License term end, unix seconds (0 when unactivated). */
+  termEnd: number
+  /** Stable per-installation id bound to the entitlement. */
+  installationId: string
+  /** The bound license key (empty when unactivated); shown in the license menu. */
+  licenseKey: string
+}
+
 // Client → Server
 export type ClientToServer =
   /**
@@ -2555,6 +2578,27 @@ export type ClientToServer =
    * by `last_modified`; the `running` counts are a live "now" notion and ignore it.
    */
   | { type: 'get_timerange_stats'; startTime?: number; endTime?: number }
+  /**
+   * Fetch the current product-license state (reply: {@link license_state}).
+   * Read-only; drives the license badge/menu on connect (PL-R7).
+   */
+  | { type: 'get_license' }
+  /**
+   * Open the LS sign-in page in the browser so the user can log in with GitHub
+   * and obtain a license key (ADR-0026, PL-R1/PL-R9). GitHub is account
+   * login/registration only; it no longer carries the activation. Reply:
+   * {@link license_activation_started} (the URL, for manual fallback). The user
+   * then binds with {@link bind_license}.
+   */
+  | { type: 'start_license_activation' }
+  /**
+   * Bind this installation to a license by its key (ADR-0026, PL-R1). c3 calls
+   * the LS bind API with `{ licenseKey, installationId }`, verifies the returned
+   * signed entitlement token offline (PL-R5), and caches it. Binding is
+   * exclusive: it displaces any prior installation on the same license. Reply:
+   * {@link license_bind_result}; on success a {@link license_state} push follows.
+   */
+  | { type: 'bind_license'; licenseKey: string }
   | { type: 'ping' }
 
 // Server → Client
@@ -3076,4 +3120,20 @@ export type ServerToClient =
       reason?: 'not-configured' | 'repo-error' | 'gitignore-cancelled'
       detail?: string
     }
+  /** Current product-license state for the badge/menu (PL-R7). Pushed on connect,
+   *  on `get_license`, and whenever activation changes it. */
+  | { type: 'license_state'; license: LicenseStatus }
+  /**
+   * Acknowledges {@link start_license_activation}: the browser is being sent to
+   * `activationUrl` (the LS sign-in page). Returned so the console can offer the
+   * URL as a manual fallback if the browser could not be opened. `ok:false`
+   * carries a `reason`.
+   */
+  | { type: 'license_activation_started'; ok: boolean; activationUrl?: string; reason?: string }
+  /**
+   * Result of {@link bind_license}. `ok:true` means the installation is bound and
+   * activated (a {@link license_state} push follows). `ok:false` carries a
+   * `reason` (e.g. invalid_key, revoked, expired, or a verification failure).
+   */
+  | { type: 'license_bind_result'; ok: boolean; reason?: string }
   | { type: 'pong' }

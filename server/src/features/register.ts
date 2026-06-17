@@ -83,6 +83,7 @@ import { getTimeRangeStatsHandler } from './workcenter/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 import { getSkillLinkStatus, installSkillHandler } from './skills/index.js'
 import { listDirHandler, readFileHandler, searchCodesHandler } from './codes/index.js'
+import { bindLicenseHandler, getLicense, startLicenseActivation } from './license/index.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -172,6 +173,10 @@ export const handlerMap: HandlerMap = {
   // external skill install + link status (2026-06-12)
   get_skill_link_status: getSkillLinkStatus,
   install_skill: installSkillHandler,
+  // product-license (ADR-0026): surface state + sign-in + license-key bind
+  get_license: getLicense,
+  start_license_activation: startLicenseActivation,
+  bind_license: bindLicenseHandler,
 }
 
 /** Assemble the startup handler registry from the exhaustive map. */

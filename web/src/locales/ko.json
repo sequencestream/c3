@@ -1820,5 +1820,25 @@
       "tooLarge": "파일이 너무 커서 미리 볼 수 없습니다({size}).",
       "empty": "이 파일은 비어 있습니다."
     }
+  },
+  "license": {
+    "badge": {
+      "active": "라이선스 활성",
+      "grace": "유예 기간",
+      "expired": "만료됨",
+      "unactivated": "미활성화",
+      "revoked": "취소됨"
+    },
+    "activate": {
+      "button": "라이선스 활성화",
+      "urlFallback": "브라우저가 열리지 않으면 이 URL을 붙여넣으십시오: {url}"
+    },
+    "startFailed": "라이선스 활성화를 시작하지 못했습니다. 인터넷 연결 및 라이선스 서버를 확인하십시오.",
+    "bind": {
+      "placeholder": "라이선스 키 붙여넣기",
+      "button": "바인딩",
+      "success": "라이선스가 활성화되었습니다.",
+      "failed": "라이선스 바인딩에 실패했습니다: {reason}"
+    }
   }
 }

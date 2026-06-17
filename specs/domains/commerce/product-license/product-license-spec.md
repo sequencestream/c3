@@ -22,17 +22,17 @@ interrupts an in-flight run or an existing session.
 
 ## Core entities
 
-| Entity              | Description                                                                                        | Key attributes                                                                            |
-| ------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| License             | The authoritative, LS-owned record that an installation is entitled, with a term and a status      | license identity, owner, plan, term (validity window), status (active/expired)            |
-| License key         | A **random, unique, shareable handle** that identifies a license on the c3 ↔ LS API; not a bearer  | opaque value, unique per license, presented on bind and heartbeat                         |
-| Live binding        | The **exclusive** link between a license and the single installation currently using it            | installation identifier, validity token (alive token), last-successful-heartbeat time     |
-| Alive token         | The **per-binding bearer credential** generated at bind, presented on every heartbeat; rotated     | opaque bearer value (LS stores only its hash; plaintext returned to c3 once at bind)      |
-| Entitlement         | The c3-side derived answer "may this installation create new work right now?"                      | state (see § States), last-successful-heartbeat time, grace deadline                      |
-| Entitlement token   | The LS-signed, offline-verifiable assertion of entitlement that c3 caches and checks between beats | subject/installation binding, validity window, signature (Ed25519)                        |
-| Plan                | A purchasable license term in the LS-owned public catalog (the same for every buyer)               | stable id, name, duration, price (minor unit) + currency                                  |
-| Order               | The LS-owned purchase record that extends a license's term and status                              | buyer, plan, the license it extends, payment reference (WeChat Pay), no-refund acceptance |
-| No-refund agreement | The service-agreement acceptance recorded before sign-in (trial) or on the order (renewal)         | accepted flag, accepted-at, agreement version                                             |
+| Entity                                    | Description                                                                                                                                                             | Key attributes                                                                            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| License                                   | The authoritative, LS-owned record that an installation is entitled, with a term and a status                                                                           | license identity, owner, plan, term (validity window), status (active/expired)            |
+| License key                               | A **random, unique, shareable handle** that identifies a license on the c3 ↔ LS API; not a bearer                                                                       | opaque value, unique per license, presented on bind and heartbeat                         |
+| Live binding                              | The **exclusive** link between a license and the single installation currently using it                                                                                 | installation identifier, validity token (alive token), last-successful-heartbeat time     |
+| Alive token                               | The **per-binding bearer credential** generated at bind, presented on every heartbeat; rotated                                                                          | opaque bearer value (LS stores only its hash; plaintext returned to c3 once at bind)      |
+| Entitlement                               | The c3-side derived answer "may this installation create new work right now?"                                                                                           | state (see § States), last-successful-heartbeat time, grace deadline                      |
+| Entitlement token                         | The LS-signed, offline-verifiable assertion of entitlement that c3 caches and checks between beats                                                                      | subject/installation binding, validity window, signature (Ed25519)                        |
+| Plan                                      | A purchasable license term in the LS-owned public catalog (the same for every buyer)                                                                                    | stable id, name, duration, price (minor unit) + currency                                  |
+| Order                                     | The LS-owned purchase record that extends a license's term and status                                                                                                   | buyer, plan, the license it extends, payment reference (WeChat Pay), no-refund acceptance |
+| Service agreement (incl. no-refund terms) | 《软件使用授权与服务协议(含无退款条款)》; its acceptance is recorded before sign-in (trial) or on the order (renewal). No-refund is one clause, not the whole agreement | accepted flag, accepted-at, agreement version                                             |
 
 LS owns Plan, License, License key, the live binding (alive token / installation / alive time), and
 Order. c3 holds only the derived Entitlement and the cached Entitlement token (plus the license key
@@ -40,7 +40,7 @@ and alive token, used as a handle and a heartbeat credential respectively — ne
 of entitlement).
 
 > **Note — trial issuance.** GitHub sign-in is used **only to log in / register an account**. Before
-> sign-in the user must accept the no-refund service agreement; on first sign-in LS creates the
+> sign-in the user must accept the service agreement (incl. no-refund terms); on first sign-in LS creates the
 > account and issues a **default trial license** with a fresh license key, then shows the key for the
 > user to copy. PL-R9's "accept before proceeding" rule applies at this sign-in gate; the renewal
 > path records acceptance on the order instead.
@@ -57,7 +57,7 @@ of entitlement).
 | PL-R6  | **Gating blocks only new-session creation.** When entitlement is not `active`, c3 **refuses to create new sessions**. Existing sessions (including idle ones) remain fully usable and **in-flight runs are never interrupted** (consistent with ADR-0006: runs are decoupled from connections and survive). Gating stops _new_ work, never _current_ work.                                                                                                                                                                                                                                           |
 | PL-R7  | **State is always surfaced.** The current entitlement state is shown to the user as a **license badge** and a **license menu** offering activation, status detail, a purchase/renew link, and (when unactivated/expired/disabled) guidance. When entitled (`Active`/`Grace`) and a term end is known, the badge also shows the **validity/expiry date** (the term end), so the user can see how long the purchased service runs; an unknown term end (0) renders no date. The badge never blocks the UI by itself — gating is enforced at new-session creation (PL-R6), not by hiding the interface. |
 | PL-R8  | **Displacement and expiry propagate via heartbeat.** A heartbeat whose installation id or alive token no longer matches the license's live binding returns `disabled` — the license was rebound to another installation, so this one is gated and **cannot be recovered by going offline**. When the license is no longer `active` (an admin force-expired it, status `expired`) or the term has ended, the heartbeat returns `expired`. Neither can be out-waited because the heartbeats that _succeed_ report the verdict.                                                                         |
-| PL-R9  | **No-refund acceptance is required.** Acceptance of the **no-refund service agreement** is recorded **before GitHub sign-in** on the trial path, and **on the order** before payment on the renewal path. Renewal payment is taken via **WeChat Pay**; a paid order extends the linked license's term and status.                                                                                                                                                                                                                                                                                    |
+| PL-R9  | **No-refund acceptance is required.** Acceptance of the **service agreement (incl. no-refund terms)** is recorded **before GitHub sign-in** on the trial path, and **on the order** before payment on the renewal path. Renewal payment is taken via **WeChat Pay**; a paid order extends the linked license's term and status.                                                                                                                                                                                                                                                                      |
 | PL-R10 | **No refunds (MVP).** The product is a **virtual/digital good**; the service agreement states it does **not support refunds**. The MVP has **no refund workflow** — there is no automated or self-service refund path. (Chargebacks/abuse are handled out-of-band by an admin **force-expiring** the license, PL-R8/PL-R11.)                                                                                                                                                                                                                                                                         |
 | PL-R11 | **Admin operations are authority-side.** A license admin (authenticated via **GitHub OAuth** on the LS back-office) may **issue**, **force-expire** (set status `expired`), and **inspect** licenses, bindings, and orders. Admin operations change the authoritative record; their effect reaches c3 only through subsequent heartbeats (PL-R8). c3 has no admin surface for licenses.                                                                                                                                                                                                              |
 | PL-R12 | **Secret-by-reference; only the public key ships in c3.** The c3 binary embeds only the LS **public** verification key. Signing keys, OAuth client secrets, and payment credentials live exclusively in LS (never in the c3 binary, the entitlement cache, or any c3 config). Mirrors the auth domain's secret-by-reference discipline (AUTH-R4).                                                                                                                                                                                                                                                    |
@@ -145,7 +145,7 @@ gate by going offline.
 
 ## No-refund policy
 
-The product is sold as a **virtual/digital good**. Acceptance of a **no-refund service agreement**
+The product is sold as a **virtual/digital good**. Acceptance of a **service agreement (incl. no-refund terms)**
 is recorded before the user proceeds — at GitHub sign-in on the trial path, and on the order before
 payment on the renewal path (PL-R9); the agreement states the product does not support refunds. The
 MVP deliberately ships **no refund workflow** (PL-R10) — a non-goal, not an omission. Disputes,
@@ -181,7 +181,7 @@ c3 exposes **no** license-admin surface.
 ## User scenarios
 
 - **Trial sign-in + activation:** Given an unactivated installation, When the user accepts the
-  no-refund agreement and signs in to LS with GitHub, LS creates the account, issues a default trial
+  service agreement (incl. no-refund terms) and signs in to LS with GitHub, LS creates the account, issues a default trial
   license, and shows its **license key**; the user pastes the key into c3, which binds the
   installation (PL-R1), verifies the returned signed token (PL-R5), enters `Active`, and the badge
   shows entitled.
@@ -211,11 +211,11 @@ c3 exposes **no** license-admin surface.
 - A signing key, OAuth client secret, or payment credential must **never** ship in the c3 binary or
   rest in its config/cache (PL-R12).
 - A user must **never** proceed to sign-in (trial) or payment (renewal) without recording acceptance
-  of the no-refund agreement (PL-R9).
+  of the service agreement (incl. no-refund terms) (PL-R9).
 
 ## Non-goals
 
-- **No refund workflow (MVP)** — virtual product; no-refund agreement governs (PL-R10).
+- **No refund workflow (MVP)** — virtual product; service agreement (incl. no-refund terms) governs (PL-R10).
 - **No multi-tenant / organization accounts** — entitlement binds to an installation, not an org.
 - **No license admin surface in c3** — admin operations live only on LS (PL-R11).
 - **Not an auth provider** — product-license is never expressed as an `AuthProvider` arm or merged
@@ -258,4 +258,4 @@ c3 exposes **no** license-admin surface.
   default trial term at first sign-in. With no trial plan configured, no trial is issued and the buyer
   must purchase.
 - See [glossary](../../../glossary.md) for license-server, Entitlement, Entitlement token, License
-  key, Alive token, License badge, Session gating, and No-refund agreement.
+  key, Alive token, License badge, Session gating, and Service agreement (incl. no-refund terms).

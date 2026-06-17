@@ -238,6 +238,110 @@ func TestHeartbeatReportsExpired(t *testing.T) {
 	}
 }
 
+func TestCreateOrderDerivesAmountAndRecordsAcceptance(t *testing.T) {
+	s, ctx := liveStore(t)
+	now := time.Now()
+	if err := s.SeedPlans(ctx, []Plan{
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
+	}); err != nil {
+		t.Fatalf("seed plan: %v", err)
+	}
+	buyerID, lic := seedLicense(t, s, ctx, now)
+
+	acceptedAt := now.Add(-time.Minute)
+	order, err := s.CreateOrder(ctx, CreateOrderInput{
+		UserID:              buyerID,
+		LicenseID:           lic.ID,
+		PlanKey:             "6m",
+		AgreementVersion:    "v-test",
+		AgreementAcceptedAt: acceptedAt,
+	})
+	if err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+	// Amount is derived from the plan, not supplied by the caller (PL-R9).
+	if order.AmountCents != 590 || order.Currency != "CNY" {
+		t.Errorf("order amount = %d %s, want 590 CNY", order.AmountCents, order.Currency)
+	}
+	if order.Status != "pending" {
+		t.Errorf("order status = %q, want pending", order.Status)
+	}
+	if order.LicenseID != lic.ID || order.PlanKey != "6m" {
+		t.Errorf("order linkage = license %d plan %q, want %d 6m", order.LicenseID, order.PlanKey, lic.ID)
+	}
+
+	// Agreement acceptance is persisted on the row.
+	var row struct {
+		AgreementVersion    string
+		AgreementAcceptedAt time.Time
+		AmountCents         int
+	}
+	if err := s.db.WithContext(ctx).Raw(
+		`SELECT agreement_version, agreement_accepted_at, amount_cents FROM c3_ls_order WHERE id=$1`,
+		order.ID).Scan(&row).Error; err != nil {
+		t.Fatalf("read order: %v", err)
+	}
+	if row.AgreementVersion != "v-test" || row.AgreementAcceptedAt.IsZero() {
+		t.Errorf("agreement not persisted: %+v", row)
+	}
+	if row.AmountCents != 590 {
+		t.Errorf("persisted amount = %d, want 590", row.AmountCents)
+	}
+
+	// The order shows up in the buyer's history.
+	orders, err := s.OrdersByUser(ctx, buyerID)
+	if err != nil {
+		t.Fatalf("orders by user: %v", err)
+	}
+	if len(orders) != 1 || orders[0].ID != order.ID {
+		t.Errorf("OrdersByUser = %+v, want one order %d", orders, order.ID)
+	}
+}
+
+func TestCreateOrderRejectsWithoutAgreement(t *testing.T) {
+	s, ctx := liveStore(t)
+	now := time.Now()
+	if err := s.SeedPlans(ctx, []Plan{
+		{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0},
+	}); err != nil {
+		t.Fatalf("seed plan: %v", err)
+	}
+	buyerID, lic := seedLicense(t, s, ctx, now)
+
+	// Missing version.
+	if _, err := s.CreateOrder(ctx, CreateOrderInput{
+		UserID: buyerID, LicenseID: lic.ID, PlanKey: "1m", AgreementAcceptedAt: now,
+	}); !errors.Is(err, ErrAgreementRequired) {
+		t.Errorf("missing version err = %v, want ErrAgreementRequired", err)
+	}
+	// Missing accepted-at.
+	if _, err := s.CreateOrder(ctx, CreateOrderInput{
+		UserID: buyerID, LicenseID: lic.ID, PlanKey: "1m", AgreementVersion: "v",
+	}); !errors.Is(err, ErrAgreementRequired) {
+		t.Errorf("missing accepted-at err = %v, want ErrAgreementRequired", err)
+	}
+	// Nothing was written.
+	orders, err := s.OrdersByUser(ctx, buyerID)
+	if err != nil {
+		t.Fatalf("orders by user: %v", err)
+	}
+	if len(orders) != 0 {
+		t.Errorf("rejected order should not persist, got %+v", orders)
+	}
+}
+
+func TestCreateOrderRejectsUnknownPlan(t *testing.T) {
+	s, ctx := liveStore(t)
+	now := time.Now()
+	buyerID, lic := seedLicense(t, s, ctx, now)
+	if _, err := s.CreateOrder(ctx, CreateOrderInput{
+		UserID: buyerID, LicenseID: lic.ID, PlanKey: "no-such-plan",
+		AgreementVersion: "v", AgreementAcceptedAt: now,
+	}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown plan err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestSeedAndListPlans(t *testing.T) {
 	s, ctx := liveStore(t)
 

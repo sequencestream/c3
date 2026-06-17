@@ -43,6 +43,7 @@ func NewServer(d Deps) http.Handler {
 	mux.HandleFunc("/healthz", allowGET(handleHealth(d)))
 	mux.HandleFunc("/v1/plans", allowGET(handlePlans(d)))
 	mountActivation(mux, d)
+	mountCheckout(mux, d)
 	mux.Handle("/", staticHandler(d.Static))
 	return mux
 }

@@ -16,8 +16,16 @@ no longer the activation vehicle), LS creates the account and issues a default
 trial license with a random **license key** shown on the page; the user pastes
 that key into c3, which **binds** the installation (`POST /v1/license/bind`,
 returning an Ed25519-signed entitlement token + a per-binding `aliveToken`) and
-then **heartbeats** (`POST /v1/license/heartbeat`). Renewal payment (WeChat Pay)
-and the admin back-office are later milestones.
+then **heartbeats** (`POST /v1/license/heartbeat`).
+
+The **renewal checkout** is now live: a signed-in buyer chooses a plan and
+accepts the 《软件使用授权与服务协议(含无退款条款)》 on `GET /checkout`, and
+`POST /checkout` records a `pending` `c3_ls_order` linked to the license being
+renewed. The order's amount is **derived server-side from the plan** (the
+client-supplied amount is ignored), and acceptance of the service agreement is
+required before the order is created (PL-R9). Payment capture (WeChat Pay) — which
+marks the order paid and extends the license term — and the admin back-office are
+later milestones.
 
 ## Stack
 
@@ -48,7 +56,7 @@ license-server/
   internal/oauth/          GitHub OAuth client for account sign-in
   internal/token/          Ed25519 entitlement token signing (PL-R5)
   internal/store/          PostgreSQL data access (users, plans, licenses + live binding, orders)
-  internal/httpapi/        ServeMux, /healthz, /v1/plans, sign-in + bind/heartbeat, static + SPA fallback
+  internal/httpapi/        ServeMux, /healthz, /v1/plans, sign-in + bind/heartbeat, renewal checkout, static + SPA fallback
   internal/version/        build version
   scripts/gen-keypair/     Dev Ed25519 keypair generator
   database/                PostgreSQL schema — one idempotent DDL file per table (embedded) + index
@@ -74,6 +82,13 @@ license-server/
 | GET    | `/auth/github/callback`    | OAuth callback → create/update account → issue trial license → render `license_key` page |
 | POST   | `/v1/license/bind`         | c3: bind installation to a license — body `{licenseKey, installationId}` → signed entitlement token + `aliveToken` (once) + plan/termEnd/interval |
 | POST   | `/v1/license/heartbeat`    | c3: confirm/refresh — body `{licenseKey, installationId, aliveToken}` → status active/disabled/expired (200) or 404 unknown key |
+
+### Renewal checkout (buyer-facing)
+
+| Method | Path        | Purpose                                                                                                |
+| ------ | ----------- | ------------------------------------------------------------------------------------------------------ |
+| GET    | `/checkout` | Choose a plan + target license and accept the service agreement (redirects to `/activate` if signed out) |
+| POST   | `/checkout` | Create a `pending` order — amount derived server-side from the plan; refused without agreement acceptance |
 
 The sign-in and bind/heartbeat endpoints are only available when the database,
 OAuth credentials, and signing key are all configured; otherwise they return a

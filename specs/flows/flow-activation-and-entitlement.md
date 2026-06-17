@@ -16,7 +16,7 @@ creation** (never running work) when entitlement lapses.
 
 ```mermaid
 flowchart TD
-    SIGNIN[user on LS web: accept no-refund agreement → GitHub sign-in] --> ISSUE[LS creates account + issues trial license, shows license key]
+    SIGNIN[user on LS web: accept service agreement (incl. no-refund terms) → GitHub sign-in] --> ISSUE[LS creates account + issues trial license, shows license key]
     ISSUE --> PASTE[c3: paste license key]
     PASTE --> BIND[c3 → LS: bind license key + installation id]
     BIND -- active --> VERIFY[verify Ed25519 signature offline]
@@ -100,10 +100,13 @@ not carry the activation action.
 
 A user may hold multiple licenses; extending one's term and status requires a paid order.
 
-1. **user → license-server.** A signed-in user accepts the no-refund agreement **on the order**
-   (version + timestamp), then pays via **WeChat Pay** (`PL-R9`). Reaching payment without a recorded
-   acceptance is refused.
-2. **license-server.** A confirmed payment records the **order** and **extends the linked license's
+1. **user → license-server.** A signed-in user chooses a plan and the license to renew, and accepts
+   the service agreement (incl. no-refund terms); license-server creates a **`pending` order** that
+   records the acceptance (version + timestamp) **on the order** and derives the amount **server-side
+   from the plan** (the client-supplied amount is ignored). Reaching checkout without a recorded
+   acceptance is refused (`PL-R9`).
+2. **user → license-server.** The user pays the pending order via **WeChat Pay** (`PL-R9`).
+3. **license-server.** A confirmed payment marks the **order** paid and **extends the linked license's
    `termEnd` and status**. The product is a virtual/digital good with **no refund workflow**
    (`PL-R10`). (Payment capture is a later milestone.)
 
@@ -121,6 +124,6 @@ A user may hold multiple licenses; extending one's term and status requires a pa
 - **Secrets stay in LS.** No signing key, OAuth secret, or payment credential ever ships in the c3
   binary or rests in its config/cache — only the public verification key (`PL-R12`).
 - **No proceeding without agreement.** A user must **never** proceed to sign-in (trial) or payment
-  (renewal) without recording acceptance of the no-refund agreement (`PL-R9`).
+  (renewal) without recording acceptance of the service agreement (incl. no-refund terms) (`PL-R9`).
 - **Fail-soft.** A failed bind/heartbeat must **never** crash c3 or interrupt running work; it
   affects only whether new sessions may be created once the grace window is exhausted (`PL-R13`).

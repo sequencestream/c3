@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -27,6 +28,11 @@ var ErrNotFound = errors.New("store: not found")
 
 // ErrExpired is the terminal license state a bind rejects.
 var ErrExpired = errors.New("store: license expired")
+
+// ErrAgreementRequired is returned by CreateOrder when the service-usage
+// agreement acceptance (version + accepted-at) is absent. An order can never be
+// recorded without its acceptance (PL-R9).
+var ErrAgreementRequired = errors.New("store: service agreement not accepted")
 
 // Store wraps a database handle. A nil DB makes every method return an error,
 // so a handler can guard on Available rather than panicking.
@@ -150,6 +156,28 @@ func (s *Store) ListPlans(ctx context.Context) ([]Plan, error) {
 		out[i] = r.toPlan()
 	}
 	return out, nil
+}
+
+// PlanByKey returns the persisted catalog plan with the given plan_key and
+// whether it exists. It is the server-authoritative price source: the checkout
+// path derives an order's amount from the matched plan, never from a
+// client-supplied value (PL-R9).
+func (s *Store) PlanByKey(ctx context.Context, planKey string) (Plan, bool, error) {
+	if !s.Available() {
+		return Plan{}, false, errors.New("store: database not configured")
+	}
+	var r planRow
+	res := s.db.WithContext(ctx).Raw(`
+		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, is_trial
+		FROM c3_ls_plan
+		WHERE plan_key = $1`, planKey).Scan(&r)
+	if res.Error != nil {
+		return Plan{}, false, fmt.Errorf("store: plan by key: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return Plan{}, false, nil
+	}
+	return r.toPlan(), true, nil
 }
 
 // FirstTrialPlan returns the first trial plan (is_trial = true), ordered by
@@ -429,6 +457,130 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 	})
 	if err != nil {
 		return HeartbeatResult{}, err
+	}
+	return out, nil
+}
+
+// Order is a persisted purchase record: a renewal that, once paid, extends the
+// linked license's term and status (PL-R9). LicenseID is the renewal target (0
+// when none is linked yet). AmountCents/Currency are server-derived from the
+// plan, never trusted from the client.
+type Order struct {
+	ID                  int64
+	UserID              int64
+	LicenseID           int64
+	PlanKey             string
+	AmountCents         int
+	Currency            string
+	AgreementVersion    string
+	AgreementAcceptedAt time.Time
+	Status              string
+	CreatedAt           time.Time
+}
+
+// orderRow is the raw select shape; license_id is nullable so it maps to a
+// pointer and is normalized to 0 when absent.
+type orderRow struct {
+	ID                  int64
+	UserID              int64
+	LicenseID           *int64
+	PlanKey             string
+	AmountCents         int
+	Currency            string
+	AgreementVersion    string
+	AgreementAcceptedAt time.Time
+	Status              string
+	CreatedAt           time.Time
+}
+
+func (r orderRow) toOrder() Order {
+	var lic int64
+	if r.LicenseID != nil {
+		lic = *r.LicenseID
+	}
+	return Order{
+		ID:                  r.ID,
+		UserID:              r.UserID,
+		LicenseID:           lic,
+		PlanKey:             r.PlanKey,
+		AmountCents:         r.AmountCents,
+		Currency:            r.Currency,
+		AgreementVersion:    r.AgreementVersion,
+		AgreementAcceptedAt: r.AgreementAcceptedAt,
+		Status:              r.Status,
+		CreatedAt:           r.CreatedAt,
+	}
+}
+
+// CreateOrderInput is the checkout request. It deliberately carries no amount:
+// the amount is derived server-side from the plan so a client can never dictate
+// what it is charged (PL-R9). AgreementVersion and AgreementAcceptedAt record
+// the service-usage agreement acceptance taken before payment.
+type CreateOrderInput struct {
+	UserID              int64
+	LicenseID           int64 // renewal target; 0 stores NULL
+	PlanKey             string
+	AgreementVersion    string
+	AgreementAcceptedAt time.Time
+}
+
+// CreateOrder records a pending renewal order. It rejects an input without a
+// recorded agreement acceptance (ErrAgreementRequired) and an unknown plan
+// (ErrNotFound). The persisted amount_cents/currency are taken from the plan
+// row — the single source of truth for price — so any client-supplied amount is
+// ignored. The order is created with status 'pending'; payment capture (which
+// extends the linked license) is a later milestone.
+func (s *Store) CreateOrder(ctx context.Context, in CreateOrderInput) (Order, error) {
+	if !s.Available() {
+		return Order{}, errors.New("store: database not configured")
+	}
+	if strings.TrimSpace(in.AgreementVersion) == "" || in.AgreementAcceptedAt.IsZero() {
+		return Order{}, ErrAgreementRequired
+	}
+	plan, ok, err := s.PlanByKey(ctx, in.PlanKey)
+	if err != nil {
+		return Order{}, err
+	}
+	if !ok {
+		return Order{}, ErrNotFound
+	}
+	var row orderRow
+	res := s.db.WithContext(ctx).Raw(`
+		INSERT INTO c3_ls_order
+			(user_id, license_id, plan_key, amount_cents, currency, agreement_version, agreement_accepted_at, status)
+		VALUES ($1, NULLIF($2, 0), $3, $4, $5, $6, $7, 'pending')
+		RETURNING id, user_id, license_id, plan_key, amount_cents, currency,
+		          agreement_version, agreement_accepted_at, status, created_at`,
+		in.UserID, in.LicenseID, in.PlanKey, plan.PriceCents, plan.Currency,
+		in.AgreementVersion, in.AgreementAcceptedAt).Scan(&row)
+	if res.Error != nil {
+		return Order{}, fmt.Errorf("store: create order: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return Order{}, fmt.Errorf("store: create order: no row returned")
+	}
+	return row.toOrder(), nil
+}
+
+// OrdersByUser returns every order a buyer placed, newest first, for the
+// signed-in user's order history and tests.
+func (s *Store) OrdersByUser(ctx context.Context, userID int64) ([]Order, error) {
+	if !s.Available() {
+		return nil, errors.New("store: database not configured")
+	}
+	var rows []orderRow
+	res := s.db.WithContext(ctx).Raw(`
+		SELECT id, user_id, license_id, plan_key, amount_cents, currency,
+		       agreement_version, agreement_accepted_at, status, created_at
+		FROM c3_ls_order
+		WHERE user_id = $1
+		ORDER BY created_at DESC, id DESC`, userID).Scan(&rows)
+	if res.Error != nil {
+		return nil, fmt.Errorf("store: list orders: %w", res.Error)
+	}
+	out := make([]Order, len(rows))
+	for i, r := range rows {
+		out[i] = r.toOrder()
 	}
 	return out, nil
 }

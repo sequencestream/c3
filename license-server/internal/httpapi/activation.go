@@ -152,6 +152,9 @@ func handleGitHubCallback(d Deps) http.HandlerFunc {
 			renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not load your licenses.")
 			return
 		}
+		// Establish the browser sign-in so the buyer can reach the renewal
+		// checkout without re-authenticating on each page.
+		d.setSession(w, session{UserID: buyerID, Login: user.Login, IssuedAt: time.Now().Unix()})
 		renderLicenses(w, user.Login, licenses)
 	}
 }
@@ -434,6 +437,7 @@ var licensesTmpl = template.Must(template.New("licenses").Parse(`<!doctype html>
 </style></head><body>
 <h1>Signed in as {{.Login}}</h1>
 <p class="note">Copy a license key below and paste it into c3 to activate this installation. One license binds to a single installation at a time.</p>
+<p class="note"><a href="/checkout">续费 / Renew a license →</a></p>
 {{range .Licenses}}
 <div class="lic">
  <span class="key">{{.LicenseKey}}</span>

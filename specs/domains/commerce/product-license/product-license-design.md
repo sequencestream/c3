@@ -99,7 +99,7 @@ blocks the UI on its own — enforcement is the gating point above.
 - **Identity:** GitHub OAuth used **only** for account sign-in/registration — buyer login
   (purchase/inspection) and the admin back-office (issue/force-expire/inspect). It no longer carries the
   activation action.
-- **Trial issuance:** on first sign-in (after the user accepts the no-refund agreement) LS creates
+- **Trial issuance:** on first sign-in (after the user accepts the service agreement (incl. no-refund terms)) LS creates
   the account and, **when a trial plan is configured** (the first catalog plan flagged `is_trial`),
   issues a **default trial license** with a fresh license key, then displays the key for the user to
   copy and paste into c3. With no trial plan configured, no trial is issued and the buyer must purchase.

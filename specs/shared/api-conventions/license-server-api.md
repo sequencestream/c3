@@ -101,15 +101,17 @@ redacted operational signal.
 GitHub sign-in is used **only** to log in / register an account and obtain a license key. It no
 longer carries the activation action; activation is the separate license-key binding above.
 
-- **`GET /activate`** — the account page: it renders the **no-refund service agreement** for the
+- **`GET /activate`** — the account page: it renders the **service agreement (incl. no-refund terms)** for the
   user to read and accept **before** signing in (PL-R9).
-- **`POST /activate/accept`** — records acceptance of the no-refund agreement (with version +
+- **`POST /activate/accept`** — records acceptance of the service agreement (incl. no-refund terms) (with version +
   timestamp) and initiates **GitHub OAuth** sign-in. Without a recorded acceptance, sign-in is
   refused.
 - **`GET /auth/github/callback`** — the OAuth callback. LS exchanges the authorization code for a
   GitHub access token, fetches the GitHub identity, **creates or updates the account**, and — for a
-  new account — issues a **default trial license** with a fresh **license key**. The page then
-  **displays the license key** for the user to copy and paste into c3.
+  new account — issues a **default trial license** with a fresh **license key**. It establishes the
+  buyer's browser **sign-in session** (a signed, HMAC-keyed cookie; no server-side session store) so
+  the renewal checkout can be reached without re-authenticating, then **displays the license key** for
+  the user to copy and paste into c3.
 
 No signed token or bearer credential is exposed in the browser: the page shows only the
 shareable license key (PL-R2), and binding happens later when the user pastes that key into c3.
@@ -124,14 +126,24 @@ complete.
 A user may hold **multiple licenses**; extending a license's term and status requires a paid order
 (PL-R9). The flow:
 
-1. **Sign in** — GitHub OAuth account login (PL-R9).
-2. **Accept no-refund agreement** — acceptance (with version + timestamp) is recorded **on the
-   order** **before** payment (PL-R9). A payment attempt without a recorded acceptance is refused.
-3. **Pay** — WeChat Pay. On a confirmed payment, LS records the **order** and **extends the linked
+1. **Sign in** — GitHub OAuth account login (PL-R9). The checkout endpoints require the signed-in
+   session cookie; an unauthenticated visitor is redirected to `GET /activate`.
+2. **Choose a plan + accept the service agreement (incl. no-refund terms)** — `GET /checkout` renders
+   the purchasable plans (the `GET /v1/plans` catalog with the trial plan excluded) and the renewal
+   target license; `POST /checkout` creates a **`pending`** order. Acceptance (with version +
+   timestamp) is recorded **on the order**; a checkout without acceptance is **refused** (400). The
+   order's `amountCents`/`currency` are **derived server-side from the plan** — any client-supplied
+   amount is **ignored** — so a buyer can never dictate the charge (PL-R9).
+3. **Pay** — WeChat Pay. On a confirmed payment, LS marks the **order** paid and **extends the linked
    license's `termEnd` and status**. (Payment capture is a later milestone; the order → license
    extension relationship is fixed now.)
 4. **Inspect** — a signed-in user may view their licenses (and their license keys), orders, and
    binding status.
+
+| Method | Path        | Purpose                                                                                                   |
+| ------ | ----------- | --------------------------------------------------------------------------------------------------------- |
+| GET    | `/checkout` | Renewal page: choose a plan + the target license and accept the service agreement (sign-in required)      |
+| POST   | `/checkout` | Create a `pending` order — amount derived server-side from the plan; refused without agreement acceptance |
 
 There is **no refund endpoint** in the MVP (PL-R10) — the product is a virtual/digital good and the
 service agreement does not support refunds.

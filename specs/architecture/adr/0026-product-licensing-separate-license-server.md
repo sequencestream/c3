@@ -182,7 +182,7 @@ new-session creation. What changed:
   the last-success time. Re-binding to a new installation **displaces** the old one, which is reported
   `disabled` on its next heartbeat (it cannot be recovered offline).
 - **GitHub OAuth is sign-in only.** GitHub now authenticates **account login/registration** and is
-  no longer the activation vehicle. On first sign-in (after the user accepts the no-refund agreement)
+  no longer the activation vehicle. On first sign-in (after the user accepts the service agreement (incl. no-refund terms))
   LS issues a **default trial license** and shows its license key to copy.
 - **Renewal is order-driven.** A user may hold multiple licenses; extending a license's term and
   status requires a paid **order** linked to that license (WeChat Pay payment capture remains a later

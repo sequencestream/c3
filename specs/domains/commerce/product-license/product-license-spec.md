@@ -120,6 +120,29 @@ cached token can never resurrect a heartbeat verdict:
    This is what downgrades a stale `Active` cache after a term lapse over a restart, without ever
    upgrading a terminal verdict.
 
+## Gating enforcement boundary
+
+PL-R6 names new-session creation as the gate, but the runtime has several session-creation entry
+points. This intent enforces the gate at the **single user-driven console entry** and explicitly scopes
+out the automated/intent-internal ones (their gating is a separate decision, not made here).
+
+| Entry point                                                             | Kind      | Gated?          | Rationale                                                                                                                               |
+| ----------------------------------------------------------------------- | --------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_session` (works) — the user opens a new console chat            | `session` | **Yes**         | The user-driven creation of new work; this is the enforcement point. Refusal writes no pending row, mints no runtime, switches no view. |
+| `open_intent_chat` / `refine_intent` / `discussion_to_intent` (intents) | `intent`  | No (scoped out) | Intent-tool **communication** sessions; the intent workflow's own gating policy is deliberately undecided here.                         |
+| `start_intent_dev` dev session (intents)                                | `session` | No (scoped out) | Auto dev session launched from an intent; an automated, non-user-initiated entry.                                                       |
+| automation / discussion run sessions (intent automation)                | `session` | No (scoped out) | Scheduled / automated runs; non-user-initiated.                                                                                         |
+| `dev-turn` programmatic turn (wiring)                                   | `session` | No (scoped out) | Internal programmatic launch.                                                                                                           |
+
+**Refusal contract (`create_session`).** When `currentLicenseStatus().entitled` is false
+(`Unactivated`/`Expired`/`Disabled`), the handler sends a structured `license.notEntitled` error whose
+`reason` carries the entitlement **state** (so the web localizes the cause and points to the renewal
+entry — the license badge), and returns **before any side effect**: no `work_session_metadata` pending
+row, no `ensureRuntime`, no `removeViewer`/view switch. While entitled (`Active`/`Grace`) creation
+proceeds unchanged. Correctness depends on the state-derivation priority above: a terminal heartbeat
+verdict is never re-verified back to entitled, so a force-expired/displaced license cannot out-wait the
+gate by going offline.
+
 ## No-refund policy
 
 The product is sold as a **virtual/digital good**. Acceptance of a **no-refund service agreement**
@@ -204,8 +227,11 @@ c3 exposes **no** license-admin surface.
 - **web-console** — renders the license **badge** and **menu**, the activation entry (paste license
   key), status detail, and the purchase/renew link; receives entitlement-state surfacing over the c3
   WebSocket ([shared protocol](../../../shared/api-conventions/websocket-protocol.md)).
-- **session-registry** — consulted at **new-session creation**: a gated entitlement refuses
-  creation (PL-R6). The registry's existing sessions and the run lifecycle are otherwise untouched.
+- **session-registry** — consulted at **new-session creation** via the `create_session` handler
+  (works feature): a gated entitlement refuses creation before any pending row / runtime is written
+  (PL-R6, see § Gating enforcement boundary). The registry's existing sessions and the run lifecycle
+  are otherwise untouched; intent-internal and automated session-creation paths are out of this gate's
+  scope.
 - **license-server (external)** — the authoritative entitlement record; c3 calls it over the
   [license-server API contract](../../../shared/api-conventions/license-server-api.md) for
   binding and heartbeat, and the LS web hosts account sign-in, trial issuance, the renewal payment +

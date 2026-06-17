@@ -13,10 +13,18 @@ import {
 import { applyTaskEvent, emptyTaskModel } from '@/lib/task-list'
 import { advanceOnFailure, resolveAgentIndex } from '@/lib/agent-prefix'
 import { activeSessionTitleFromSessions } from '@/lib/session-title-sync'
-import { applyLocale, setStoredLocale, i18n } from '@/i18n'
+import { applyLocale, setStoredLocale, i18n, type LocaleKey } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
+
+// License-gate (PL-R6) reason → localized-phrase key. Maps the wire entitlement
+// state to a human reason; an unknown state falls back to the unactivated copy.
+function licenseGateReasonKey(state: string): LocaleKey {
+  if (state === 'expired') return 'error.license.reason.expired'
+  if (state === 'disabled') return 'error.license.reason.disabled'
+  return 'error.license.reason.unactivated'
+}
 
 // Install the WebSocket message router (`handleMessage`) plus its status helpers
 // onto the shared ctx. The router is the app's single inbound switch: it folds
@@ -649,6 +657,14 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'error':
         // Machine-readable code translated locally via the web i18n catalog (spec 003).
         if (msg.error.code.startsWith('intent.')) intentActionErrorSeq.value += 1
+        // License gate (PL-R6): upgrade the raw entitlement `reason` (the wire
+        // state) into a localized phrase before interpolating, so the cause +
+        // renewal pointer read naturally in every locale.
+        if (msg.error.code === 'license.notEntitled') {
+          const reason = t(licenseGateReasonKey(String(msg.error.params?.reason ?? '')))
+          add({ kind: 'system', text: `— ${t('error.license.notEntitled', { reason })} —` })
+          break
+        }
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break
       case 'wait_user_events':

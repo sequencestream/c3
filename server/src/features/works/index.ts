@@ -51,6 +51,7 @@ import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { getByC3Id, upsertPendingRow } from './work-session-store.js'
+import { currentLicenseStatus } from '../license/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -172,6 +173,21 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     conn.send({
       type: 'error',
       error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  // Product-license gate (PL-R6, ADR-0026): new-session creation is the single
+  // enforcement point. While not entitled (`unactivated`/`expired`/`disabled`)
+  // refuse to create — no pending row, no runtime, no view switch — and surface
+  // the entitlement state so the web can localize the cause + a renewal pointer.
+  // Existing sessions and in-flight runs are untouched (gating stops new work,
+  // never current work). Correctness rides on `deriveEntitlement` (commit-A): a
+  // terminal heartbeat verdict is never re-verified back to entitled.
+  const license = currentLicenseStatus()
+  if (!license.entitled) {
+    conn.send({
+      type: 'error',
+      error: { code: 'license.notEntitled', params: { reason: license.state } },
     })
     return
   }

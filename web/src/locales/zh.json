@@ -1336,6 +1336,14 @@
     "auth": {
       "oauthAdminInvalid": "必须设置管理员邮箱，且它需在允许邮箱列表中。",
       "adminOnly": "只有管理员可以修改系统配置。"
+    },
+    "license": {
+      "notEntitled": "无法新建会话——{reason}。请从顶部徽标激活或续期许可证。",
+      "reason": {
+        "expired": "许可证已到期",
+        "disabled": "许可证已绑定到另一台安装实例",
+        "unactivated": "尚未激活许可证"
+      }
     }
   },
   "statusIndicator": {

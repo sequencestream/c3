@@ -1336,6 +1336,14 @@
     "auth": {
       "oauthAdminInvalid": "The admin email must be set and listed in the allowed emails.",
       "adminOnly": "Only the administrator can change system settings."
+    },
+    "license": {
+      "notEntitled": "Can't start a new session — {reason}. Activate or renew your license from the badge at the top.",
+      "reason": {
+        "expired": "your license has expired",
+        "disabled": "your license is now bound to another installation",
+        "unactivated": "no license is activated"
+      }
     }
   },
   "statusIndicator": {

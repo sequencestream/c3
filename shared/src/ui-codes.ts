@@ -112,6 +112,12 @@ export const UI_ERROR_CODES = {
   'auth.oauthAdminInvalid': { key: 'error.auth.oauthAdminInvalid' },
   // Rejected a system-config mutation from a non-admin connection (ADR-0023 authz).
   'auth.adminOnly': { key: 'error.auth.adminOnly' },
+  // product-license (ADR-0026): new-session creation refused while not entitled
+  // (PL-R6). `reason` carries the entitlement state
+  // (`unactivated`/`expired`/`disabled`) so the web can localize the cause; the
+  // web special-cases this code to render a localized reason phrase + a renewal
+  // pointer to the license badge.
+  'license.notEntitled': { key: 'error.license.notEntitled', params: ['reason'] },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

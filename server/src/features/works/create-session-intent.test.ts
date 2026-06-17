@@ -29,6 +29,17 @@ vi.mock('../../state.js', () => ({
   pathToId: vi.fn((p: string) => p),
   touchWorkspace: vi.fn(),
 }))
+// Entitled by default — this suite exercises the intent-writing path, not the
+// product-license gate (PL-R6), which has its own suite.
+vi.mock('../license/store.js', () => ({
+  currentLicenseStatus: vi.fn(() => ({
+    state: 'active',
+    entitled: true,
+    termEnd: 0,
+    installationId: '',
+    licenseKey: '',
+  })),
+}))
 
 import { createSession } from './index.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'

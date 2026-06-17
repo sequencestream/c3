@@ -1834,7 +1834,8 @@
       "grace": "Grace period",
       "expired": "Expired",
       "unactivated": "Not activated",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "validUntil": "Valid until {date}"
     },
     "activate": {
       "button": "Activate license",

@@ -1835,7 +1835,8 @@
       "grace": "Льготный период",
       "expired": "Истекла",
       "unactivated": "Не активирована",
-      "disabled": "Отключена"
+      "disabled": "Отключена",
+      "validUntil": "Действует до {date}"
     },
     "activate": {
       "button": "Активировать лицензию",

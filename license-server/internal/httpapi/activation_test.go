@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -49,9 +50,9 @@ func TestLicenseAPIUnavailableWhenUnconfigured(t *testing.T) {
 // --- live end-to-end (skips without C3_LS_TEST_DATABASE_URL) -------------------
 
 type liveEnv struct {
-	h       http.Handler
-	store   *store.Store
-	pub     ed25519.PublicKey
+	h        http.Handler
+	store    *store.Store
+	pub      ed25519.PublicKey
 	ctx      context.Context
 	trialKey string
 }
@@ -227,18 +228,25 @@ func TestBindAndHeartbeatHappyPath(t *testing.T) {
 	if bind.StatusCode != http.StatusOK {
 		t.Fatalf("bind = %d", bind.StatusCode)
 	}
+	bindBody, _ := io.ReadAll(bind.Body)
 	var got struct {
 		EntitlementToken string `json:"entitlementToken"`
 		AliveToken       string `json:"aliveToken"`
 		TermEnd          int64  `json:"termEnd"`
 		Status           string `json:"status"`
 	}
-	if err := json.NewDecoder(bind.Body).Decode(&got); err != nil {
+	if err := json.Unmarshal(bindBody, &got); err != nil {
 		t.Fatalf("decode bind: %v", err)
 	}
 	if got.AliveToken == "" || got.Status != "active" {
 		t.Fatalf("bind payload = %+v", got)
 	}
+	if got.TermEnd <= 0 {
+		t.Errorf("bind termEnd = %d, want > 0", got.TermEnd)
+	}
+	// The bind response carries no plan — plan is purchase-catalog data c3 neither
+	// consumes nor displays (PL-R1, license-server-api § Bind).
+	assertNoPlanField(t, "bind", bindBody)
 	payload, err := token.Verify(env.pub, got.EntitlementToken, time.Now())
 	if err != nil {
 		t.Fatalf("entitlement token does not verify: %v", err)
@@ -256,16 +264,19 @@ func TestBindAndHeartbeatHappyPath(t *testing.T) {
 	if hb.StatusCode != http.StatusOK {
 		t.Fatalf("heartbeat = %d", hb.StatusCode)
 	}
+	hbBody, _ := io.ReadAll(hb.Body)
 	var hbGot struct {
 		Status           string `json:"status"`
 		EntitlementToken string `json:"entitlementToken"`
 	}
-	if err := json.NewDecoder(hb.Body).Decode(&hbGot); err != nil {
+	if err := json.Unmarshal(hbBody, &hbGot); err != nil {
 		t.Fatalf("decode heartbeat: %v", err)
 	}
 	if hbGot.Status != "active" || hbGot.EntitlementToken == "" {
 		t.Fatalf("heartbeat payload = %+v", hbGot)
 	}
+	// The active-heartbeat response likewise carries no plan (PL-R1).
+	assertNoPlanField(t, "heartbeat", hbBody)
 
 	// A heartbeat from a different installation is disabled (exclusive binding).
 	other := postJSON(t, env.h, "/v1/license/heartbeat",
@@ -284,6 +295,20 @@ func TestBindRejectsUnknownKey(t *testing.T) {
 	res := postJSON(t, env.h, "/v1/license/bind", `{"licenseKey":"nope","installationId":"i"}`)
 	if res.StatusCode != http.StatusNotFound {
 		t.Errorf("bind unknown key = %d, want 404", res.StatusCode)
+	}
+}
+
+// assertNoPlanField fails if the JSON body carries a top-level "plan" key. The
+// bind/active-heartbeat contract is plan-free (PL-R1): plan is purchase-catalog
+// data (GET /v1/plans) that c3 neither consumes nor displays.
+func assertNoPlanField(t *testing.T, what string, body []byte) {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("decode %s body as map: %v", what, err)
+	}
+	if _, ok := m["plan"]; ok {
+		t.Errorf("%s response carries a plan field; contract is plan-free (PL-R1): %s", what, body)
 	}
 }
 

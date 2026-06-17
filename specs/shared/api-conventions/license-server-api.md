@@ -50,7 +50,9 @@ presented on every heartbeat. The license key alone can never complete a heartbe
   binding), and stamps the last-success time. A previously-bound installation is thereby **displaced**
   and will see `disabled` on its next heartbeat (PL-R8).
 - **Success response (`status: "active"`):** `entitlementToken` (Ed25519-signed, with its validity
-  window), `aliveToken` (plaintext, **once**), `plan`, `termEnd`, and `heartbeatIntervalSeconds`.
+  window), `aliveToken` (plaintext, **once**), `termEnd`, and `heartbeatIntervalSeconds`. The
+  response carries **no plan**: plan is purchase-catalog data (`GET /v1/plans`) that c3 neither
+  consumes nor displays; the entitlement is the validity window only (product-license PL-R1).
 
 ### Heartbeat
 
@@ -62,7 +64,7 @@ entitlement.
   unknown):
   - **`active`** — the installation id **and** alive token match the live binding, and the license is
     active and within term. LS refreshes the last-success time and returns a refreshed signed
-    `entitlementToken`, `plan`, `termEnd`, and the next `heartbeatIntervalSeconds`.
+    `entitlementToken`, `termEnd`, and the next `heartbeatIntervalSeconds` (no `plan` — see Bind).
   - **`disabled`** — the installation id or alive token does **not** match the live binding (the
     license was rebound to another installation, PL-R8). This installation must gate; it **cannot be
     recovered by going offline**.

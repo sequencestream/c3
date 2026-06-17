@@ -11,9 +11,9 @@ import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { LicenseStatus, WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
-const { t } = useTypedI18n()
+const { t, d } = useTypedI18n()
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 const { isAdmin } = useAuth()
@@ -114,6 +114,17 @@ function licenseBadgeKey(state: string): LocaleKey {
   return 'license.badge.unactivated' as LocaleKey
 }
 
+// 有效期/到期日(PL-R7):仅 entitled(active/grace)且 termEnd 已知(>0)时展示;
+// 过期/未激活/被禁用态沿用 badge 状态文案,不渲染日期。termEnd 是 unix 秒。
+const licenseTermText = computed<string>(() => {
+  const lic = props.license
+  if (!lic) return ''
+  if (lic.state !== 'active' && lic.state !== 'grace') return ''
+  if (!lic.termEnd || lic.termEnd <= 0) return ''
+  const date = d(new Date(lic.termEnd * 1000), 'date')
+  return t('license.badge.validUntil' as LocaleKey, { date })
+})
+
 function isTabDisabled(tab: HeaderTab): boolean {
   return tab.key !== 'workcenter' && props.tabsEnabled === false
 }
@@ -211,6 +222,9 @@ function selectTab(tab: HeaderTab): void {
         >
           {{ t(licenseBadgeKey(license.state)) }}
         </button>
+
+        <!-- 有效期/到期日(PL-R7):entitled 且 termEnd>0 时展示 -->
+        <span v-if="licenseTermText" class="license-term">{{ licenseTermText }}</span>
 
         <!-- License-key entry (PL-R1): paste the key from the LS sign-in page -->
         <form
@@ -354,6 +368,13 @@ function selectTab(tab: HeaderTab): void {
 .vm-toggle-btn.active {
   color: var(--c-text);
   background: var(--c-card);
+}
+
+/* license 有效期/到期日(PL-R7):紧随 badge 的弱化文案 */
+.license-term {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  white-space: nowrap;
 }
 
 @media (max-width: 767px) {

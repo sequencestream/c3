@@ -119,3 +119,67 @@ describe('AppHeader.vue — top-bar tabs', () => {
     expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
   })
 })
+
+describe('AppHeader.vue — license badge 有效期(PL-R7)', () => {
+  // 2024-06-15T00:00:00Z(unix 秒);断言只 key 在年份等数据派生值上,不耦合本地化排布。
+  const TERM_END = 1_718_409_600
+  function licenseProps(license: object | null) {
+    return { ...baseProps, license }
+  }
+
+  it('active 且 termEnd>0 → badge 旁渲染有效期(含年份)', () => {
+    const w = mount(AppHeader, {
+      props: licenseProps({
+        state: 'active',
+        entitled: true,
+        termEnd: TERM_END,
+        installationId: 'i',
+        licenseKey: 'lk',
+      }),
+    } as never)
+    const term = w.find('.license-term')
+    expect(term.exists()).toBe(true)
+    expect(term.text()).toContain('2024')
+  })
+
+  it('grace 态同样渲染有效期', () => {
+    const w = mount(AppHeader, {
+      props: licenseProps({
+        state: 'grace',
+        entitled: true,
+        termEnd: TERM_END,
+        installationId: 'i',
+        licenseKey: 'lk',
+      }),
+    } as never)
+    expect(w.find('.license-term').exists()).toBe(true)
+  })
+
+  it('termEnd=0(缺省)→ 不渲染有效期', () => {
+    const w = mount(AppHeader, {
+      props: licenseProps({
+        state: 'active',
+        entitled: true,
+        termEnd: 0,
+        installationId: 'i',
+        licenseKey: 'lk',
+      }),
+    } as never)
+    expect(w.find('.license-term').exists()).toBe(false)
+  })
+
+  it('expired/unactivated 态沿用状态文案,不渲染有效期', () => {
+    for (const state of ['expired', 'unactivated', 'disabled'] as const) {
+      const w = mount(AppHeader, {
+        props: licenseProps({
+          state,
+          entitled: false,
+          termEnd: TERM_END,
+          installationId: 'i',
+          licenseKey: 'lk',
+        }),
+      } as never)
+      expect(w.find('.license-term').exists()).toBe(false)
+    }
+  })
+})

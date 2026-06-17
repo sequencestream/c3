@@ -96,6 +96,26 @@ describe('license cache persistence', () => {
   it('returns undefined cache as unactivated', () => {
     expect(deriveEntitlement(undefined, WITHIN)).toEqual({ state: 'unactivated' })
   })
+
+  it('surfaces the cached termEnd through LicenseStatus for the badge (PL-R7)', () => {
+    saveActivation({
+      installationId: 'inst-term',
+      licenseKey: 'lk',
+      entitlementToken: GO_SIGNED_TOKEN,
+      aliveToken: 'av',
+      termEnd: 1_702_592_000,
+    })
+    expect(currentLicenseStatus(WITHIN)).toMatchObject({
+      state: 'active',
+      entitled: true,
+      termEnd: 1_702_592_000,
+    })
+  })
+
+  it('surfaces termEnd 0 when unactivated (no term to display)', () => {
+    getOrCreateInstallationId()
+    expect(currentLicenseStatus(WITHIN).termEnd).toBe(0)
+  })
 })
 
 describe('deriveEntitlement from the cached token (PL-R5)', () => {

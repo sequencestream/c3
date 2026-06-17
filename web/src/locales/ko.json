@@ -1835,7 +1835,8 @@
       "grace": "유예 기간",
       "expired": "만료됨",
       "unactivated": "미활성화",
-      "disabled": "비활성화됨"
+      "disabled": "비활성화됨",
+      "validUntil": "{date}까지 유효"
     },
     "activate": {
       "button": "라이선스 활성화",

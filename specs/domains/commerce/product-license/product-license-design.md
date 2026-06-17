@@ -64,8 +64,10 @@ independently of connections and, here, of entitlement lapse).
 
 The current derived entitlement state is pushed to the web-console, which renders a **license
 badge** (entitled / grace / expired / unactivated / disabled) and a **license menu** (activate, view
-status, purchase link). The badge is informational; it never blocks the UI on its own — enforcement
-is the gating point above.
+status, purchase link). For an entitled badge (`active`/`grace`) the console also renders the
+**term-end date** carried in the pushed `LicenseStatus.termEnd` (unix seconds; `0` ⇒ no date), so
+the user sees the validity/expiry of the purchased service. The badge is informational; it never
+blocks the UI on its own — enforcement is the gating point above.
 
 ## License-server technical shape
 

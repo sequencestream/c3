@@ -60,7 +60,7 @@ func seedLicense(t *testing.T, s *Store, ctx context.Context, now time.Time) (in
 		t.Fatalf("upsert buyer: %v", err)
 	}
 	keys := keyGen("lk")
-	lic, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, 1, 30, now, keys)
+	lic, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, "1m", 30, now, keys)
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestEnsureLicenseReusesActiveLicense(t *testing.T) {
 	now := time.Now()
 	buyerID, lic := seedLicense(t, s, ctx, now)
 
-	again, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, 1, 30, now, keyGen("lk2"))
+	again, issued, err := s.EnsureLicenseForBuyer(ctx, buyerID, "1m", 30, now, keyGen("lk2"))
 	if err != nil {
 		t.Fatalf("ensure again: %v", err)
 	}
@@ -242,9 +242,9 @@ func TestSeedAndListPlans(t *testing.T) {
 	s, ctx := liveStore(t)
 
 	seed := []Plan{
-		{PlanID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0},
-		{PlanID: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
-		{PlanID: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: "CNY", SortOrder: 2},
+		{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0},
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
+		{PlanKey: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: "CNY", SortOrder: 2},
 	}
 	if err := s.SeedPlans(ctx, seed); err != nil {
 		t.Fatalf("seed plans: %v", err)
@@ -270,7 +270,7 @@ func TestSeedAndListPlans(t *testing.T) {
 
 	// Re-seeding with a changed price is a no-op (ON CONFLICT DO NOTHING): the
 	// database is the live store after the first seed; operator edits survive.
-	bumped := []Plan{{PlanID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 999, Currency: "CNY", SortOrder: 0}}
+	bumped := []Plan{{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 999, Currency: "CNY", SortOrder: 0}}
 	if err := s.SeedPlans(ctx, bumped); err != nil {
 		t.Fatalf("re-seed: %v", err)
 	}

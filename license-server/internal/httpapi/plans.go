@@ -35,7 +35,7 @@ func loadCatalog(ctx context.Context, d Deps) []plans.Plan {
 			out := make([]plans.Plan, len(rows))
 			for i, p := range rows {
 				out[i] = plans.Plan{
-					ID:             p.PlanID,
+					ID:             p.PlanKey,
 					Name:           p.Name,
 					DurationMonths: p.DurationMonths,
 					PriceCents:     p.PriceCents,

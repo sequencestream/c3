@@ -142,7 +142,7 @@ func handleGitHubCallback(d Deps) http.HandlerFunc {
 			return
 		}
 		if hasTrial {
-			if _, _, err := d.Store.EnsureLicenseForBuyer(r.Context(), buyerID, trial.ID, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
+			if _, _, err := d.Store.EnsureLicenseForBuyer(r.Context(), buyerID, trial.PlanKey, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
 				renderError(w, http.StatusInternalServerError, "Sign-in error", "Could not provision your license.")
 				return
 			}
@@ -447,7 +447,7 @@ var licensesTmpl = template.Must(template.New("licenses").Parse(`<!doctype html>
 // licenseView is the display shape for the license-key page.
 type licenseView struct {
 	LicenseKey     string
-	Plan           int64
+	Plan           string
 	Status         string
 	TermEndDisplay string
 }
@@ -457,7 +457,7 @@ func renderLicenses(w http.ResponseWriter, login string, licenses []store.Licens
 	for i, l := range licenses {
 		views[i] = licenseView{
 			LicenseKey:     l.LicenseKey,
-			Plan:           l.PlanID,
+			Plan:           l.PlanKey,
 			Status:         l.Status,
 			TermEndDisplay: l.TermEnd.UTC().Format("2006-01-02"),
 		}

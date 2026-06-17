@@ -6,14 +6,18 @@ BINARY    ?= dist/license-server
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS   := -s -w -X github.com/sequencestream/code-creative-center/license-server/internal/version.Version=$(VERSION)
 
+# Target a Linux server build by default (cross-compiled, static-ish).
+GOOS      ?= linux
+GOARCH    ?= amd64
+
 .PHONY: all build release web test vet fmt run clean
 
 all: build
 
-## build: compile the single binary (embeds the committed web/dist)
+## build: compile the single binary for Linux server (embeds the committed web/dist)
 build:
 	mkdir -p dist
-	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/license-server
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/license-server
 
 ## release: rebuild the embedded frontend, then compile the binary
 release: web build
@@ -32,8 +36,10 @@ vet:
 fmt:
 	gofmt -w .
 
-## run: build and start the server
-run: build
+## run: build for the host platform and start the server (local dev)
+run:
+	mkdir -p dist
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/license-server
 	$(BINARY)
 
 clean:

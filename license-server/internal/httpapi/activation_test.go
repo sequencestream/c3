@@ -52,8 +52,8 @@ type liveEnv struct {
 	h       http.Handler
 	store   *store.Store
 	pub     ed25519.PublicKey
-	ctx     context.Context
-	trialID int64
+	ctx      context.Context
+	trialKey string
 }
 
 func liveServer(t *testing.T, github http.Handler) liveEnv {
@@ -98,7 +98,7 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 	// Seed a trial plan so GitHub sign-in issues a trial license and bind tests
 	// have a plan id to reference.
 	if err := st.SeedPlans(ctx, []store.Plan{
-		{PlanID: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
+		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
 	}); err != nil {
 		t.Fatalf("seed trial plan: %v", err)
 	}
@@ -115,7 +115,7 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 		Store:  st,
 		Signer: priv,
 	})
-	return liveEnv{h: h, store: st, pub: priv.Public().(ed25519.PublicKey), ctx: ctx, trialID: trial.ID}
+	return liveEnv{h: h, store: st, pub: priv.Public().(ed25519.PublicKey), ctx: ctx, trialKey: trial.PlanKey}
 }
 
 func githubOK() http.Handler {
@@ -216,7 +216,7 @@ func TestBindAndHeartbeatHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert buyer: %v", err)
 	}
-	lic, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyerID, env.trialID, 30, time.Now(), func() string { return "license-key-xyz" })
+	lic, _, err := env.store.EnsureLicenseForBuyer(env.ctx, buyerID, env.trialKey, 30, time.Now(), func() string { return "license-key-xyz" })
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}

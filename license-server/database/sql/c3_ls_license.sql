@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS c3_ls_license (
     id               BIGSERIAL PRIMARY KEY,       -- Internal license identity.
     user_id          BIGINT      NOT NULL,         -- User that owns the license (references c3_ls_user.id).
     order_id         BIGINT,                       -- Purchase order that last extended this license, if any.
-    plan_id          BIGINT      NOT NULL,         -- Plan this license grants (references c3_ls_plan.id).
+    plan_key         VARCHAR(32) NOT NULL,         -- Plan this license grants (references c3_ls_plan.plan_key).
     license_key      TEXT        NOT NULL UNIQUE,  -- Random unique handle passed on the c3<->LS bind/heartbeat API.
-    status           TEXT        NOT NULL DEFAULT 'active', -- License status: active or expired.
+    status           VARCHAR(32) NOT NULL DEFAULT 'active', -- License status: active or expired.
     alive_install_id TEXT,                         -- The single c3 installation currently bound (exclusive).
     alive_token      TEXT,                         -- sha256 hash of the current binding's validity token (plaintext returned once at bind).
     alive_time       TIMESTAMPTZ,                  -- Last successful heartbeat time for the current binding.
@@ -38,7 +38,7 @@ COMMENT ON TABLE c3_ls_license IS 'Authoritative product entitlement record keye
 COMMENT ON COLUMN c3_ls_license.id IS 'Internal license identity.';
 COMMENT ON COLUMN c3_ls_license.user_id IS 'User that owns the license (references c3_ls_user.id).';
 COMMENT ON COLUMN c3_ls_license.order_id IS 'Purchase order that last extended this license, if any.';
-COMMENT ON COLUMN c3_ls_license.plan_id IS 'Plan this license grants (references c3_ls_plan.id).';
+COMMENT ON COLUMN c3_ls_license.plan_key IS 'Plan this license grants (references c3_ls_plan.plan_key).';
 COMMENT ON COLUMN c3_ls_license.license_key IS 'Random unique handle passed on the c3<->LS bind/heartbeat API.';
 COMMENT ON COLUMN c3_ls_license.status IS 'License status: active or expired.';
 COMMENT ON COLUMN c3_ls_license.alive_install_id IS 'The single c3 installation currently bound (exclusive); rebinding displaces the previous one.';

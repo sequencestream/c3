@@ -11,13 +11,13 @@ CREATE TABLE IF NOT EXISTS c3_ls_order (
     id                          BIGSERIAL PRIMARY KEY,             -- Internal order identity.
     user_id                     BIGINT      NOT NULL,              -- User that placed the order (references c3_ls_user.id).
     license_id                  BIGINT,                            -- License this order extends, once known.
-    plan_id                     BIGINT      NOT NULL,              -- Purchased plan (references c3_ls_plan.id).
+    plan_key                    VARCHAR(32) NOT NULL,              -- Purchased plan (references c3_ls_plan.plan_key).
     amount_cents                INTEGER     NOT NULL,              -- Charged amount in minor currency units.
-    currency                    TEXT        NOT NULL DEFAULT 'CNY', -- ISO-like currency code for the charged amount.
+    currency                    VARCHAR(32) NOT NULL DEFAULT 'CNY', -- ISO-like currency code for the charged amount.
     payment_ref                 TEXT,                              -- External payment provider reference.
-    agreement_version           TEXT        NOT NULL,              -- Service agreement version accepted before payment.
+    agreement_version           VARCHAR(32) NOT NULL,              -- Service agreement version accepted before payment.
     agreement_accepted_at       TIMESTAMPTZ NOT NULL,              -- Time the buyer accepted the service agreement.
-    status                      TEXT        NOT NULL DEFAULT 'pending', -- Payment/order status.
+    status                      VARCHAR(32) NOT NULL DEFAULT 'pending', -- Payment/order status.
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now() -- Record creation time.
 );
 
@@ -28,7 +28,7 @@ COMMENT ON TABLE c3_ls_order IS 'Purchase record with no-refund acceptance; a pa
 COMMENT ON COLUMN c3_ls_order.id IS 'Internal order identity.';
 COMMENT ON COLUMN c3_ls_order.user_id IS 'User that placed the order (references c3_ls_user.id).';
 COMMENT ON COLUMN c3_ls_order.license_id IS 'License this order extends, once known.';
-COMMENT ON COLUMN c3_ls_order.plan_id IS 'Purchased plan (references c3_ls_plan.id).';
+COMMENT ON COLUMN c3_ls_order.plan_key IS 'Purchased plan (references c3_ls_plan.plan_key).';
 COMMENT ON COLUMN c3_ls_order.amount_cents IS 'Charged amount in minor currency units.';
 COMMENT ON COLUMN c3_ls_order.currency IS 'Currency code for the charged amount.';
 COMMENT ON COLUMN c3_ls_order.payment_ref IS 'External payment provider reference.';

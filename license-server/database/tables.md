@@ -15,6 +15,11 @@ idempotently on startup by `lsdb.EnsureSchema`.
 - Table relationships are enforced in business logic; LS tables intentionally do
   not define database foreign-key constraints, so file apply order does not
   matter (the runner applies them in name order for stable logs).
+- Change records: `sql/<table>.sql` is the live schema, but column **renames /
+  type changes** cannot converge an existing database through `CREATE TABLE IF
+  NOT EXISTS` alone. Such changes are recorded as one-off, operator-run scripts
+  under `migrations/<YYYY>/<MM>/<DD>/<NNN>-<change>.sql` (idempotent ALTERs); a
+  fresh database gets the final shape straight from `sql/`.
 
 The schema was simplified: activation + heartbeat state now lives inline on the
 license row (no separate one-time-code, heartbeat-token, or heartbeat-history
@@ -28,12 +33,12 @@ the old `user`/`orders`/`licenses`) on every startup.
 | Table          | Purpose                                                                                   | Key columns                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | c3_ls_user     | GitHub identity for buyer + admin; GitHub is account login/registration only (PL-R9/R11)  | github_id (unique), github_login, email                                                      |
-| c3_ls_plan     | Persisted public plan catalog (purchasable terms); bootstrapped from code, served at GET /v1/plans | id (PK, auto), plan_id (unique), name, duration_months, price_cents, currency, sort_order, is_trial |
-| c3_ls_order    | Purchase record + service-agreement acceptance; a paid order extends the linked license (PL-R9) | user_id, license_id, plan_id, amount_cents, agreement_version, agreement_accepted_at, status |
-| c3_ls_license  | Authoritative entitlement keyed by license_key, carrying its exclusive live binding       | license_key (unique), user_id, plan_id, status, alive_install_id, alive_token, alive_time, term_end |
+| c3_ls_plan     | Persisted public plan catalog (purchasable terms); bootstrapped from code, served at GET /v1/plans | id (PK, auto), plan_key (unique), name, duration_months, price_cents, currency, sort_order, is_trial |
+| c3_ls_order    | Purchase record + service-agreement acceptance; a paid order extends the linked license (PL-R9) | user_id, license_id, plan_key, amount_cents, agreement_version, agreement_accepted_at, status |
+| c3_ls_license  | Authoritative entitlement keyed by license_key, carrying its exclusive live binding       | license_key (unique), user_id, plan_key, status, alive_install_id, alive_token, alive_time, term_end |
 
 The plan catalog is bootstrapped from the code-owned set (`internal/plans`) into
-`c3_ls_plan` on every startup with `INSERT ... ON CONFLICT (plan_id) DO NOTHING`,
+`c3_ls_plan` on every startup with `INSERT ... ON CONFLICT (plan_key) DO NOTHING`,
 so a fresh database is seeded while existing rows (operator edits) survive. The
 public `GET /v1/plans` reads `c3_ls_plan`, falling back to the code catalog only
 when the database is unavailable.

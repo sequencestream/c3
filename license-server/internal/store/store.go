@@ -69,10 +69,10 @@ func (s *Store) UpsertBuyer(ctx context.Context, githubID int64, login, email st
 
 // Plan is one row of the persisted public plan catalog (a purchasable license
 // term). ID is the internal auto-increment identity (0 when not yet persisted);
-// PlanID is the stable public identifier; IsTrial marks the free trial plan.
+// PlanKey is the stable public identifier; IsTrial marks the free trial plan.
 type Plan struct {
 	ID             int64
-	PlanID         string
+	PlanKey        string
 	Name           string
 	DurationMonths int
 	PriceCents     int
@@ -95,11 +95,11 @@ func (s *Store) SeedPlans(ctx context.Context, ps []Plan) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, p := range ps {
 			if err := tx.Exec(`
-				INSERT INTO c3_ls_plan (plan_id, name, duration_months, price_cents, currency, sort_order, is_trial)
+				INSERT INTO c3_ls_plan (plan_key, name, duration_months, price_cents, currency, sort_order, is_trial)
 				VALUES ($1, $2, $3, $4, $5, $6, $7)
-				ON CONFLICT (plan_id) DO NOTHING`,
-				p.PlanID, p.Name, p.DurationMonths, p.PriceCents, p.Currency, p.SortOrder, p.IsTrial).Error; err != nil {
-				return fmt.Errorf("store: seed plan %q: %w", p.PlanID, err)
+				ON CONFLICT (plan_key) DO NOTHING`,
+				p.PlanKey, p.Name, p.DurationMonths, p.PriceCents, p.Currency, p.SortOrder, p.IsTrial).Error; err != nil {
+				return fmt.Errorf("store: seed plan %q: %w", p.PlanKey, err)
 			}
 		}
 		return nil
@@ -109,7 +109,7 @@ func (s *Store) SeedPlans(ctx context.Context, ps []Plan) error {
 // planRow is the raw select shape for a catalog row; mapped to Plan.
 type planRow struct {
 	ID             int64
-	PlanID         string
+	PlanKey        string
 	Name           string
 	DurationMonths int
 	PriceCents     int
@@ -121,7 +121,7 @@ type planRow struct {
 func (r planRow) toPlan() Plan {
 	return Plan{
 		ID:             r.ID,
-		PlanID:         r.PlanID,
+		PlanKey:        r.PlanKey,
 		Name:           r.Name,
 		DurationMonths: r.DurationMonths,
 		PriceCents:     r.PriceCents,
@@ -132,16 +132,16 @@ func (r planRow) toPlan() Plan {
 }
 
 // ListPlans returns the persisted catalog ordered for stable display (by
-// sort_order, then plan_id as a tiebreaker).
+// sort_order, then plan_key as a tiebreaker).
 func (s *Store) ListPlans(ctx context.Context) ([]Plan, error) {
 	if !s.Available() {
 		return nil, errors.New("store: database not configured")
 	}
 	var rows []planRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, plan_id, name, duration_months, price_cents, currency, sort_order, is_trial
+		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, is_trial
 		FROM c3_ls_plan
-		ORDER BY sort_order, plan_id`).Scan(&rows)
+		ORDER BY sort_order, plan_key`).Scan(&rows)
 	if res.Error != nil {
 		return nil, fmt.Errorf("store: list plans: %w", res.Error)
 	}
@@ -161,7 +161,7 @@ func (s *Store) FirstTrialPlan(ctx context.Context) (Plan, bool, error) {
 	}
 	var r planRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, plan_id, name, duration_months, price_cents, currency, sort_order, is_trial
+		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, is_trial
 		FROM c3_ls_plan
 		WHERE is_trial = true
 		ORDER BY sort_order, id
@@ -176,11 +176,11 @@ func (s *Store) FirstTrialPlan(ctx context.Context) (Plan, bool, error) {
 }
 
 // License is the entitlement row (the subset the bind/heartbeat flow needs).
-// PlanID references the granted plan (c3_ls_plan.id).
+// PlanKey references the granted plan (c3_ls_plan.plan_key).
 type License struct {
 	ID         int64
 	UserID     int64
-	PlanID     int64
+	PlanKey    string
 	LicenseKey string
 	Status     string
 	TermStart  time.Time
@@ -191,7 +191,7 @@ type License struct {
 type licenseRow struct {
 	ID         int64
 	UserID     int64
-	PlanID     int64
+	PlanKey    string
 	LicenseKey string
 	Status     string
 	TermStart  time.Time
@@ -202,7 +202,7 @@ func (r licenseRow) toLicense() License {
 	return License{
 		ID:         r.ID,
 		UserID:     r.UserID,
-		PlanID:     r.PlanID,
+		PlanKey:    r.PlanKey,
 		LicenseKey: r.LicenseKey,
 		Status:     r.Status,
 		TermStart:  r.TermStart,
@@ -215,14 +215,14 @@ func (r licenseRow) toLicense() License {
 // buyer has none. GitHub login lands here so a newly-registered buyer leaves with
 // a key to bind. newKey generates a random license_key; a unique collision is
 // retried. Returns the license and whether it was newly issued.
-func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planID int64, termDays int, now time.Time, newKey func() string) (License, bool, error) {
+func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planKey string, termDays int, now time.Time, newKey func() string) (License, bool, error) {
 	if !s.Available() {
 		return License{}, false, errors.New("store: database not configured")
 	}
 
 	var existing licenseRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, plan_id, license_key, status, term_start, term_end
+		SELECT id, user_id, plan_key, license_key, status, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1 AND status = 'active' AND term_end > $2
 		ORDER BY term_end DESC
@@ -240,10 +240,10 @@ func (s *Store) EnsureLicenseForBuyer(ctx context.Context, buyerID int64, planID
 	var lastErr error
 	for range 5 {
 		res := s.db.WithContext(ctx).Raw(`
-			INSERT INTO c3_ls_license (user_id, plan_id, license_key, status, term_start, term_end)
+			INSERT INTO c3_ls_license (user_id, plan_key, license_key, status, term_start, term_end)
 			VALUES ($1, $2, $3, 'active', $4, $5)
-			RETURNING id, user_id, plan_id, license_key, status, term_start, term_end`,
-			buyerID, planID, newKey(), termStart, termEnd).Scan(&inserted)
+			RETURNING id, user_id, plan_key, license_key, status, term_start, term_end`,
+			buyerID, planKey, newKey(), termStart, termEnd).Scan(&inserted)
 		if res.Error == nil && res.RowsAffected > 0 {
 			return inserted.toLicense(), true, nil
 		}
@@ -260,7 +260,7 @@ func (s *Store) ListLicensesByBuyer(ctx context.Context, buyerID int64) ([]Licen
 	}
 	var rows []licenseRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, plan_id, license_key, status, term_start, term_end
+		SELECT id, user_id, plan_key, license_key, status, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1
 		ORDER BY created_at DESC`, buyerID).Scan(&rows)
@@ -300,12 +300,12 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 		var locked struct {
 			ID      int64
 			UserID  int64
-			PlanID  int64
+			PlanKey string
 			Status  string
 			TermEnd time.Time
 		}
 		res := tx.Raw(`
-			SELECT id, user_id, plan_id, status, term_end
+			SELECT id, user_id, plan_key, status, term_end
 			FROM c3_ls_license
 			WHERE license_key = $1
 			FOR UPDATE`, licenseKey).Scan(&locked)
@@ -332,7 +332,7 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 			License: License{
 				ID:         locked.ID,
 				UserID:     locked.UserID,
-				PlanID:     locked.PlanID,
+				PlanKey:    locked.PlanKey,
 				LicenseKey: licenseKey,
 				Status:     "active",
 				TermStart:  now,
@@ -379,7 +379,7 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 		var locked struct {
 			ID             int64
 			UserID         int64
-			PlanID         int64
+			PlanKey        string
 			Status         string
 			AliveInstallID *string
 			AliveToken     *string
@@ -387,7 +387,7 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 			TermEnd        time.Time
 		}
 		res := tx.Raw(`
-			SELECT id, user_id, plan_id, status, alive_install_id, alive_token, term_start, term_end
+			SELECT id, user_id, plan_key, status, alive_install_id, alive_token, term_start, term_end
 			FROM c3_ls_license
 			WHERE license_key = $1
 			FOR UPDATE`, licenseKey).Scan(&locked)
@@ -418,7 +418,7 @@ func (s *Store) Heartbeat(ctx context.Context, licenseKey, installID, aliveToken
 			License: License{
 				ID:         locked.ID,
 				UserID:     locked.UserID,
-				PlanID:     locked.PlanID,
+				PlanKey:    locked.PlanKey,
 				LicenseKey: licenseKey,
 				Status:     "active",
 				TermStart:  locked.TermStart,

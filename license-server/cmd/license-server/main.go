@@ -105,7 +105,7 @@ func seedPlans(ctx context.Context, st *store.Store) {
 	rows := make([]store.Plan, len(catalog))
 	for i, p := range catalog {
 		rows[i] = store.Plan{
-			PlanID:         p.ID,
+			PlanKey:        p.ID,
 			Name:           p.Name,
 			DurationMonths: p.DurationMonths,
 			PriceCents:     p.PriceCents,

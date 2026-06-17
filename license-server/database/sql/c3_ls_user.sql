@@ -9,8 +9,8 @@
 CREATE TABLE IF NOT EXISTS c3_ls_user (
     id           BIGSERIAL PRIMARY KEY,       -- Internal buyer identity.
     github_id    BIGINT      NOT NULL UNIQUE, -- Stable GitHub user id.
-    github_login TEXT        NOT NULL,        -- Current GitHub login name for display/admin lookup.
-    email        TEXT,                         -- Buyer email when GitHub provides it.
+    github_login VARCHAR(64)  NOT NULL,       -- Current GitHub login name for display/admin lookup.
+    email        VARCHAR(128),                 -- Buyer email when GitHub provides it.
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now() -- Record creation time.
 );
 

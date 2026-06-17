@@ -24,6 +24,10 @@ const props = defineProps<{
   selectedId: string | null
   /** Live run-state per session id (`'running'` present = active run). */
   runStates: Record<string, 'running'>
+  /** hideHeader: 嵌入合并列时抑制头部渲染. */
+  hideHeader?: boolean
+  /** collapsedOverride: hideHeader 模式下由外部控制折叠态. */
+  collapsedOverride?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,9 +38,14 @@ const emit = defineEmits<{
 }>()
 
 // ---- Panel collapse state (persistent) ----
-const collapsed = usePersistentToggle('c3.intentSessionListCollapsed')
+const localCollapsed = usePersistentToggle('c3.intentSessionListCollapsed')
+const effectiveCollapsed = computed(() =>
+  props.hideHeader && props.collapsedOverride !== undefined
+    ? props.collapsedOverride
+    : localCollapsed.value,
+)
 function togglePanel(): void {
-  collapsed.value = !collapsed.value
+  localCollapsed.value = !localCollapsed.value
 }
 
 // ---- Inline rename ----
@@ -122,21 +131,25 @@ const visibleSessions = computed<IntentSessionInfo[]>(() => [
 </script>
 
 <template>
-  <section class="int-sess-list" :class="{ collapsed }" data-testid="intent-session-list">
-    <div class="int-sess-list-head">
+  <section
+    class="int-sess-list"
+    :class="{ collapsed: effectiveCollapsed, 'int-sess-list--inner': hideHeader }"
+    data-testid="intent-session-list"
+  >
+    <div v-if="!hideHeader" class="int-sess-list-head">
       <div class="int-sess-list-head-left">
         <button
           type="button"
           class="int-sess-collapse-btn"
           :title="
-            collapsed
+            localCollapsed
               ? t('intent.sessionList.expand.tooltip')
               : t('intent.sessionList.collapse.tooltip')
           "
-          :aria-pressed="collapsed"
+          :aria-pressed="localCollapsed"
           @click="togglePanel"
         >
-          {{ collapsed ? '⇤' : '⇥' }}
+          {{ localCollapsed ? '⇤' : '⇥' }}
         </button>
         <span class="int-sess-list-title">{{ t('intent.sessionList.title.label') }}</span>
       </div>
@@ -202,7 +215,7 @@ const visibleSessions = computed<IntentSessionInfo[]>(() => [
             />
             <span class="int-sess-date">{{ datePrefix(s.updatedAt) }}</span>
           </div>
-          <span v-if="!collapsed" class="int-sess-actions">
+          <span v-if="!effectiveCollapsed" class="int-sess-actions">
             <button
               v-if="editingId !== s.sessionId"
               type="button"
@@ -263,7 +276,7 @@ const visibleSessions = computed<IntentSessionInfo[]>(() => [
             />
             <span class="int-sess-date">{{ datePrefix(s.updatedAt) }}</span>
           </div>
-          <span v-if="!collapsed" class="int-sess-actions">
+          <span v-if="!effectiveCollapsed" class="int-sess-actions">
             <button
               v-if="editingId !== s.sessionId"
               type="button"
@@ -522,5 +535,13 @@ const visibleSessions = computed<IntentSessionInfo[]>(() => [
 .int-sess-more:hover {
   color: var(--c-primary);
   background: var(--c-hover);
+}
+/* 嵌入合并列时:取消独立外框与宽度,只保留 flex 上下文 */
+.int-sess-list--inner {
+  width: auto;
+  flex-shrink: 1;
+  min-height: 0;
+  border-right: none;
+  background: transparent;
 }
 </style>

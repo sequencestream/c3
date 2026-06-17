@@ -3040,6 +3040,14 @@ button.deny:hover:not(:disabled) {
     border-right: 0;
   }
 }
+/* 嵌入合并列时(作为 .merged-list 的子元素),取消外框与独立宽度,只保留 flex 上下文 */
+.req-list--inner {
+  width: auto;
+  flex-shrink: 1;
+  min-height: 0;
+  border-right: none;
+  background: transparent;
+}
 .req-list-head {
   height: 36px;
   flex-shrink: 0;

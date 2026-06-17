@@ -2,8 +2,8 @@
 /*
  * Intents.vue — 需求页容器。
  *
- * 桌面三栏布局:左侧需求列表 + 中栏意图会话列表 + 右侧聊天列。
- * 移动端退化为三级 drill-down 栈:意图列表→sessions→聊天逐级滑入/返回。
+ * 桌面两栏布局:左侧合并列(分段控件切换需求列表/意图会话列表) + 右侧聊天列。
+ * 移动端退化为二级 drill-down 栈:合并列→聊天逐级滑入/返回。
  * 需求 comm session 即被查看的会话,故复用与会话页相同的聊天列(标题栏为需求变体,
  * 无权限模式下拉)。状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。
  * composer ref 经 defineExpose 转发。
@@ -11,8 +11,7 @@
 import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
-import IntentList from './components/IntentList/IntentList.vue'
-import IntentSessionList from './components/IntentSessionList/IntentSessionList.vue'
+import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
@@ -108,22 +107,30 @@ const emit = defineEmits<{
 const { t } = useTypedI18n()
 
 // ---- Mobile drill-down state ----
-const mobilePanes = [
-  { key: 'intents', title: t('intent.list.title.label') },
-  { key: 'sessions', title: t('intent.sessionList.title.label') },
-  { key: 'chat', title: t('intent.chat.title.label') },
-] as const
+// 桌面两栏(合并列+聊天),移动端两级 drill-down。
+const mergedListRef = ref<InstanceType<typeof IntentMergedList> | null>(null)
+const mergedActiveTab = computed(() => mergedListRef.value?.activeTab ?? 'intents')
 
-type MobilePaneKey = (typeof mobilePanes)[number]['key']
+const mobilePanes = computed(
+  () =>
+    [
+      {
+        key: 'intents',
+        title:
+          mergedActiveTab.value === 'sessions'
+            ? t('intent.sessionList.title.label')
+            : t('intent.list.title.label'),
+      },
+      { key: 'chat', title: t('intent.chat.title.label') },
+    ] as const,
+)
+
+type MobilePaneKey = (typeof mobilePanes.value)[number]['key']
 
 const mobileActiveKey = ref<MobilePaneKey>('intents')
 const mobileActiveToken = computed(
   () => props.selectedIntentSessionId ?? props.project ?? 'intents',
 )
-
-function handleSelectIntent(_intentId: string): void {
-  mobileActiveKey.value = 'sessions'
-}
 
 function handleSelectIntentSession(sessionId: string): void {
   mobileActiveKey.value = 'chat'
@@ -151,11 +158,15 @@ defineExpose({
     @back="handleMobileBack"
   >
     <template #intents>
-      <IntentList
+      <IntentMergedList
+        ref="mergedListRef"
         :project="project"
         :intents="intents"
         :automation="automation"
         :intent-action-error-seq="intentActionErrorSeq"
+        :intent-sessions="intentSessions"
+        :selected-intent-session-id="selectedIntentSessionId"
+        :intent-session-run-states="intentSessionRunStates"
         @filter="(status: IntentStatus | null) => emit('filter', status)"
         @refine="(id: string) => emit('refine', id)"
         @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
@@ -167,19 +178,12 @@ defineExpose({
         @new-intent="emit('new-intent')"
         @create-pr="(id: string) => emit('create-pr', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
-        @select-intent="handleSelectIntent"
-      />
-    </template>
-
-    <template #sessions>
-      <IntentSessionList
-        :sessions="intentSessions"
-        :selected-id="selectedIntentSessionId"
-        :run-states="intentSessionRunStates"
-        @select="handleSelectIntentSession"
-        @new="emit('new-intent-session')"
-        @rename="(id: string, title: string) => emit('rename-intent-session', id, title)"
-        @delete="(id: string) => emit('delete-intent-session', id)"
+        @select-intent-session="handleSelectIntentSession"
+        @new-intent-session="emit('new-intent-session')"
+        @rename-intent-session="
+          (id: string, title: string) => emit('rename-intent-session', id, title)
+        "
+        @delete-intent-session="(id: string) => emit('delete-intent-session', id)"
       />
     </template>
 

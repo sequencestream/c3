@@ -53,11 +53,12 @@ web/src/
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
-│   │   ├── Intents.vue                              # 需求容器页:桌面三栏(需求+session+聊天),移动端 MobileStack 三级 drill-down(意图列表→sessions→聊天)
+│   │   ├── Intents.vue                              # 需求容器页:桌面两栏(合并列表+聊天),移动端 MobileStack 二级 drill-down(合并列表→聊天)
 │   │   ├── components/
-│   │   │   ├── IntentList/IntentList.vue            # 左栏需求列表:按状态过滤、行内操作(完善/启动开发/标记状态)、折叠态 kebab(⋮)菜单暴露全部行内操作、自动化编排启停、新建需求;点击行 emit select-intent(mobile drill-down 导航)
+│   │   │   ├── IntentMergedList/IntentMergedList.vue # 合并左栏:带分段控件(Intents/Sessions)切换,接管两子组件的头区;可折叠(960px/480px)
+│   │   │   ├── IntentList/IntentList.vue            # 需求列表:接受 hideHeader prop 嵌入合并栏;按状态过滤、行内操作(完善/启动开发/标记状态)、折叠态 kebab(⋮)菜单、自动化编排启停
 │   │   │   └── IntentSessionList/
-│   │   │       └── IntentSessionList.vue            # 中栏意图通信会话列表:行内重命名/删除、展开/收起、活跃会话常驻
+│   │   │       └── IntentSessionList.vue            # 意图通信会话列表:接受 hideHeader prop 嵌入合并栏;行内重命名/删除、活跃/已完成分组、分页加载更多
 │   │
 │   ├── discussions/                                 # 讨论页
 │   │   ├── Discussions.vue                          # 讨论容器页:桌面两栏(讨论列表 + 只读历史),移动端 MobileStack 两级 drill-down(列表→只读历史);点击讨论 drill 进历史,返回回列表;透传 agents/defaultAgentId 给列表的创建弹窗

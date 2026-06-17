@@ -38,6 +38,10 @@ const props = defineProps<{
   intents: Intent[]
   automation: AutomationStatus | null
   intentActionErrorSeq?: number
+  /** hideHeader: 嵌入合并列时抑制头部渲染(无 section 外框/无 collapse-btn/无 title/无 auto-btn+filter)。 */
+  hideHeader?: boolean
+  /** collapsedOverride: hideHeader 模式下由外部控制折叠态。 */
+  collapsedOverride?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -273,12 +277,17 @@ function handleRowClick(id: string): void {
 }
 
 // 面板折叠态:持久化 UI 状态。收缩态收窄面板并隐藏模块名/操作区;跨页面切换后保持原状。
-const collapsed = usePersistentToggle('c3.intentListCollapsed')
-const toggleLabel = computed(() => panelToggleLabel(collapsed.value))
-const rowVis = computed(() => rowVisibility(collapsed.value))
+const localCollapsed = usePersistentToggle('c3.intentListCollapsed')
+const effectiveCollapsed = computed(() =>
+  props.hideHeader && props.collapsedOverride !== undefined
+    ? props.collapsedOverride
+    : localCollapsed.value,
+)
+const toggleLabel = computed(() => panelToggleLabel(effectiveCollapsed.value))
+const rowVis = computed(() => rowVisibility(effectiveCollapsed.value))
 
 function togglePanel(): void {
-  collapsed.value = !collapsed.value
+  localCollapsed.value = !localCollapsed.value
 }
 
 // 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt;月日补零两位。
@@ -376,14 +385,17 @@ function runRowAction(action: IntentRowAction, r: Intent): void {
 </script>
 
 <template>
-  <section class="req-list" :class="{ collapsed }">
-    <div class="req-list-head">
+  <section
+    class="req-list"
+    :class="{ collapsed: effectiveCollapsed, 'req-list--inner': hideHeader }"
+  >
+    <div v-if="!hideHeader" class="req-list-head">
       <div class="req-list-head-left">
         <button
           type="button"
           class="req-collapse-btn"
           :title="toggleLabel.title"
-          :aria-pressed="collapsed"
+          :aria-pressed="localCollapsed"
           @click="togglePanel"
         >
           {{ toggleLabel.icon }}
@@ -444,7 +456,7 @@ function runRowAction(action: IntentRowAction, r: Intent): void {
             <span v-if="showRunStatus(r.runStatus)" class="req-run-status" :class="r.runStatus">{{
               reqRunStatusLabel(r.runStatus)
             }}</span>
-            <div v-if="collapsed" class="req-row-menu" @click.stop>
+            <div v-if="effectiveCollapsed" class="req-row-menu" @click.stop>
               <button
                 type="button"
                 class="req-kebab"

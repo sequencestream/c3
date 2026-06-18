@@ -20,7 +20,7 @@ onMounted(async () => {
     loading.value = false
     return
   }
-  const res = await getJSON<{ licenses: License[] }>(
+  const res = await getJSON<{ licenses: License[]; autoBound?: boolean }>(
     `/v1/license/activate?installId=${encodeURIComponent(installId)}&requestId=${encodeURIComponent(requestId)}`,
   )
   if (res.status === 401) {
@@ -31,6 +31,10 @@ onMounted(async () => {
     error.value = res.error || '加载 license 失败。'
   } else {
     licenses.value = res.data.licenses
+    // A sole long-lived license is bound server-side (§4); skip the picker and go
+    // straight to success — c3 collects the result via checkbind. Re-binding here
+    // would rotate the alive token and break the just-activated c3 heartbeat.
+    if (res.data.autoBound) bound.value = true
   }
   loading.value = false
 })

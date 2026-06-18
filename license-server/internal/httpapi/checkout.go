@@ -123,7 +123,7 @@ func handleCheckoutCreate(d Deps) http.HandlerFunc {
 				OutTradeNo:  order.OrderNo,
 				AmountCents: order.AmountCents,
 				Description: "c3 license renewal · " + order.PlanKey,
-				NotifyURL:   strings.TrimRight(d.Config.PublicURL, "/") + "/v1/payment/wechat/notify",
+				NotifyURL:   strings.TrimRight(d.Config.ExternalBaseURL(), "/") + "/v1/payment/wechat/notify",
 			})
 			if perr != nil {
 				writeError(w, http.StatusBadGateway, "payment_unavailable",

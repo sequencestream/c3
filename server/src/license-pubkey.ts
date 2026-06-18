@@ -14,7 +14,7 @@
 // token payload so a token signed by an unknown key is rejected.
 
 /** Raw 32-byte Ed25519 public key, standard base64. Dev key — replace for prod. */
-export const C3_LICENSE_PUBLIC_KEY = 'Saa/Kp17MciRuedObcmQ4kreeJhF9wLh1fO3dgoHOYg='
+export const C3_LICENSE_PUBLIC_KEY = 'b+QPibImJMu5uUF8ZyQ9sfZRymlaZGVkkHHZi9kRSDY='
 
 /** Short key id (sha256(pub)[:16] hex) the signer stamps into each token. */
-export const C3_LICENSE_KEY_ID = '10db0d221c12573c'
+export const C3_LICENSE_KEY_ID = '8871ffe757ade2d0'

@@ -24,7 +24,7 @@ c3 是**浏览器外**的本地进程。绑定经浏览器中介完成:
 
 1. c3 server 生成 `installId`(安装级稳定,唯一、≤128 字符)与本轮 `requestId`(32 字符唯一)。
 2. c3 server 拉起系统浏览器打开 LS 的 Vue SPA(`/`,带 `installId`/`requestId`)。
-3. 用户在浏览器内用 GitHub 登录(仅账号登录,**不展示协议**),浏览器调用 `GET /v1/license/activate` 拿到本人 license 列表,选定一条后 `POST /v1/license/bind` 完成绑定。
+3. 用户在浏览器内用 GitHub 登录(仅账号登录,**不展示协议**),浏览器调用 `GET /v1/license/activate` 拿到本人 license 列表,选定一条后 `POST /v1/license/bind` 完成绑定。**自动绑定:** 当账户**只有一条** license 且其剩余有效期**超过 1 个月**(`termEnd > now + 1 月`、状态 `active`)时,`activate` 直接在服务端完成绑定并把密钥暂存进待绑映射(等价于一次 `bind`),响应带 `autoBound:true` 与 `termEnd`;SPA 据此直接进成功态、**不再调用 `bind`**(再次绑定会轮换 alive token、使刚激活的 c3 心跳失效)。默认一个月试用 license(剩余期恰在阈值上)不触发自动绑定。
 4. c3 server 带同一对 `(installId, requestId)` 轮询 `GET /v1/license/checkbind`,绑定完成后**经 S2S 通道**取回 `aliveToken` 与签名实体令牌(**绝不经浏览器**,PL-R2)。
 5. c3 server 周期 `POST /v1/license/heartbeat` 确认绑定并刷新实体令牌。
 
@@ -47,7 +47,7 @@ c3 是**浏览器外**的本地进程。绑定经浏览器中介完成:
 `GET /v1/license/checkbind?installId&requestId` — c3 server 轮询本轮绑定是否完成。
 
 - **查询参数:** `installId`、`requestId`(须与 `bind` 一致)。
-- **返回 `200`:** 未完成 `{status:"pending"}`;完成 `{status:"active", aliveToken, entitlementToken, termEnd}`。命中即**消费**该映射(重复取回得 `pending`)。
+- **返回 `200`:** 未完成 `{status:"pending"}`;完成 `{status:"active", licenseKey, aliveToken, entitlementToken, termEnd}`(`licenseKey` 供 c3 落盘以驱动徽标与心跳)。命中即**消费**该映射(重复取回得 `pending`)。
 - **错误:** `400 invalid_request`、`503 unavailable`。
 
 ### Heartbeat
@@ -82,7 +82,7 @@ c3 不调用这些,记于此以保边界完整。
 
 ### license 绑定(浏览器/会话)
 
-- **`GET /v1/license/activate?installId&requestId`** — 确保账户有默认 license、登记本轮 `(installId, requestId)` 待绑请求,返回本人 license 列表(每项 `licenseId`/`licenseKey`/`planKey`/`status`/`termEnd`/`aliveInstallId`/`aliveTime`)。未登录 `401`。
+- **`GET /v1/license/activate?installId&requestId`** — 确保账户有默认 license、登记本轮 `(installId, requestId)` 待绑请求,返回本人 license 列表(每项 `licenseId`/`licenseKey`/`planKey`/`status`/`termEnd`/`aliveInstallId`/`aliveTime`)。当且仅当满足自动绑定条件(唯一 license、`active`、剩余期 > 1 月)时,额外返回 `autoBound:true` 与 `termEnd`(已在服务端完成绑定并暂存待 `checkbind` 取回)。未登录 `401`。
 - **`POST /v1/license/bind`** — 请求体 `{installId, requestId, licenseKey}`(license 须属本人):独占绑定、轮换 alive token、签实体令牌,并把 `(installId, requestId) → {aliveToken, entitlementToken}` 暂存内存供 `checkbind` 取回。**响应只回 `{status:"active", termEnd}`**(不含 alive token/令牌,PL-R2)。错误:`400`、`404 invalid_key`、`410 expired`、`401`、`503`。
 
 ### 续费购买流程

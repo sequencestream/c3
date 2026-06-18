@@ -276,8 +276,8 @@ c3 exposes **no** license-admin surface.
   "gated" = new-session creation is refused (`Unactivated`/`Expired`/`Disabled`).
 - **Offline grace** — the 30-minute window after the last successful heartbeat during which c3
   treats entitlement as active despite failing heartbeats (PL-R4).
-- **Activation / binding** — pasting a license key into c3 to bind an installation, yielding the
-  first signed entitlement token + alive token (PL-R1).
+- **Activation / binding** — selecting a license in the browser to bind an installation (c3 collects
+  the result over `checkbind`), yielding the first signed entitlement token + alive token (PL-R1).
 - **License key** — the random, unique, shareable handle that identifies a license on the c3 ↔ LS
   API; not a bearer credential (PL-R2).
 - **Alive token** — the per-binding bearer credential, rotated on each (re)bind, presented on every

@@ -70,15 +70,15 @@ func parseSession(signer Signer, value string) (session, bool) {
 	return s, true
 }
 
-// setSession writes the signed sign-in cookie. Secure is set when the public URL
-// is HTTPS; HttpOnly + SameSite=Lax keep it off scripts and cross-site posts.
+// setSession writes the signed sign-in cookie. Secure is set when the external
+// base URL is HTTPS; HttpOnly + SameSite=Lax keep it off scripts and cross-site posts.
 func (d Deps) setSession(w http.ResponseWriter, s session) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    signSession(d.Signer, s),
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   strings.HasPrefix(strings.ToLower(strings.TrimSpace(d.Config.PublicURL)), "https://"),
+		Secure:   strings.HasPrefix(strings.ToLower(strings.TrimSpace(d.Config.ExternalBaseURL())), "https://"),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL / time.Second),
 	})

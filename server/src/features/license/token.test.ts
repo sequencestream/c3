@@ -7,7 +7,7 @@ import { verifyEntitlementToken } from './token.js'
 // wire format — they cannot drift without this test failing. Regenerate with
 // `go run ./scripts/gen-keypair` + the token package if the dev key rotates.
 const GO_SIGNED_TOKEN =
-  'v1.eyJpbnN0YWxsYXRpb25JZCI6Imluc3QtZml4dHVyZSIsImxpY2Vuc2VJZCI6IjciLCJwbGFuIjoidHJpYWwtMW0iLCJzdGF0dXMiOiJhY3RpdmUiLCJ0ZXJtU3RhcnQiOjE3MDAwMDAwMDAsInRlcm1FbmQiOjE3MDI1OTIwMDAsImlzc3VlZEF0IjoxNzAwMDAwMDAwLCJraWQiOiIxMGRiMGQyMjFjMTI1NzNjIn0.cNsvjU1NoYycw5ENEzCrjXtc5BH_IgQa9AfZhxfJj04pKo559NwfLT8pquQF2sp3G-Lim6hsrsRmg8m-jJGhBQ'
+  'v1.eyJpbnN0YWxsYXRpb25JZCI6Imluc3QtZml4dHVyZSIsImxpY2Vuc2VJZCI6IjciLCJzdGF0dXMiOiJhY3RpdmUiLCJ0ZXJtU3RhcnQiOjE3MDAwMDAwMDAsInRlcm1FbmQiOjE3MDI1OTIwMDAsImlzc3VlZEF0IjoxNzAwMDAwMDAwLCJraWQiOiI4ODcxZmZlNzU3YWRlMmQwIn0.1RSAyP0su56tLiuhScRAdt0yxSiNhNWEGTCoKgE6VoElmEdWDRojfrFbjn2Uac4gcekSaaKe_KVGyc3TMY1CBA'
 
 // Within the fixture's validity window [1700000000, 1702592000).
 const WITHIN = 1_700_500_000
@@ -19,7 +19,7 @@ describe('verifyEntitlementToken', () => {
     if (res.ok) {
       expect(res.payload.installationId).toBe('inst-fixture')
       expect(res.payload.status).toBe('active')
-      expect(res.payload.kid).toBe('10db0d221c12573c')
+      expect(res.payload.kid).toBe('8871ffe757ade2d0')
     }
   })
 
@@ -36,7 +36,7 @@ describe('verifyEntitlementToken', () => {
         status: 'active',
         termStart: 0,
         termEnd: 9_999_999_999,
-        kid: '10db0d221c12573c',
+        kid: '8871ffe757ade2d0',
       }),
     ).toString('base64url')
     const res = verifyEntitlementToken(`${v}.${forged}.${sig}`, WITHIN)

@@ -24,7 +24,7 @@ web/src/
 │   └── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + 跳转到来源 tab(会话/需求/讨论/定时任务)
 │
 ├── components/                                      # 跨页面通用组件
-│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态 badge(ADR-0026,PL-R7,点击打开 LS 登录页)+ 未授权时显示 license_key 输入框绑定本安装),移动端顶部精简栏 + 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏(许可项并入「⋯」操作菜单)+ 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定

@@ -41,6 +41,7 @@ import {
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import { createPermissionRequestHandler } from './features/user-involve/hooks.js'
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from './features/license/heartbeat.js'
+import { setActivationResultSink, stopCheckbindPolling } from './features/license/activation.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
@@ -533,10 +534,22 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // the refreshed license state after each beat so the badge tracks displacement/expiry.
   startHeartbeatScheduler({ onChange: broadcasts.broadcastLicense })
 
+  // When a browser-mediated binding round resolves (collected via checkbind),
+  // push the result + refreshed license state to every client (ADR-0026, PL-R7).
+  setActivationResultSink((result) => {
+    broadcaster.toAll({
+      type: 'license_bind_result',
+      ok: result.ok,
+      reason: result.ok ? undefined : result.reason,
+    })
+    if (result.ok) broadcasts.broadcastLicense()
+  })
+
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
     stopHeartbeatScheduler()
+    stopCheckbindPolling()
     await stopSchedulerWiring(30_000)
     server.close()
     process.exit(0)

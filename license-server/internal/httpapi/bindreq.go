@@ -15,6 +15,7 @@ const bindTTL = 15 * time.Minute
 // neither of which ever reaches the browser (PL-R2). It is consumed on first
 // read.
 type bindEntry struct {
+	licenseKey       string
 	aliveToken       string
 	entitlementToken string
 	termEnd          int64

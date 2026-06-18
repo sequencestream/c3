@@ -51,9 +51,19 @@ type Config struct {
 	DatabaseURL string
 	// ListenAddr is the HTTP listen address (host:port).
 	ListenAddr string
-	// PublicURL is the externally reachable base URL of the LS, used to build
-	// OAuth callback and payment-return URLs.
+	// PublicURL is the base URL the process itself is reachable at (typically the
+	// local listen address, e.g. http://localhost:8787). Kept distinct from
+	// BaseURL so a process behind a reverse proxy can still describe its own
+	// origin. When BaseURL is unset it is the fallback for outbound-visible URLs,
+	// which keeps local dev working without configuring BaseURL.
 	PublicURL string
+	// BaseURL is the externally reachable base URL clients and third parties see
+	// (e.g. https://c3.sequencestream.com). It is what every outbound-visible URL
+	// is built from — the GitHub OAuth callback, the WeChat Pay notify URL — and
+	// it drives the session cookie's Secure flag. Behind a reverse proxy this
+	// differs from PublicURL/ListenAddr; set it in production. Falls back to
+	// PublicURL when unset.
+	BaseURL string
 
 	// Ed25519PrivateKey signs entitlement tokens. Secret; LS-only (PL-R12).
 	Ed25519PrivateKey string
@@ -106,6 +116,7 @@ const (
 	EnvDatabaseURL             = "C3_LS_DATABASE_URL"
 	EnvListenAddr              = "C3_LS_LISTEN_ADDR"
 	EnvPublicURL               = "C3_LS_PUBLIC_URL"
+	EnvBaseURL                 = "C3_LS_BASE_URL"
 	EnvEd25519PrivateKey       = "C3_LS_ED25519_PRIVATE_KEY"
 	EnvEd25519PublicKey        = "C3_LS_ED25519_PUBLIC_KEY"
 	EnvGitHubOAuthClientID     = "C3_LS_GITHUB_OAUTH_CLIENT_ID"
@@ -139,6 +150,7 @@ func LoadFrom(get Getenv) (*Config, error) {
 		DatabaseURL:             get(EnvDatabaseURL),
 		ListenAddr:              firstNonEmpty(get(EnvListenAddr), DefaultListenAddr),
 		PublicURL:               get(EnvPublicURL),
+		BaseURL:                 get(EnvBaseURL),
 		Ed25519PrivateKey:       get(EnvEd25519PrivateKey),
 		Ed25519PublicKey:        get(EnvEd25519PublicKey),
 		GitHubOAuthClientID:     get(EnvGitHubOAuthClientID),
@@ -173,6 +185,13 @@ func LoadFrom(get Getenv) (*Config, error) {
 	return c, nil
 }
 
+// ExternalBaseURL resolves the base URL every outbound-visible URL is built from
+// (OAuth callback, payment notify, cookie Secure flag): BaseURL when set, else
+// PublicURL. The fallback keeps local dev working with only C3_LS_PUBLIC_URL set.
+func (c *Config) ExternalBaseURL() string {
+	return firstNonEmpty(c.BaseURL, c.PublicURL)
+}
+
 // Redacted returns a JSON-serializable view of the configuration with every
 // secret replaced by a presence indicator ("set"/"unset"). This is the only
 // shape that may reach the health endpoint or a log line (PL-R12).
@@ -180,6 +199,7 @@ func (c *Config) Redacted() map[string]any {
 	return map[string]any{
 		"listenAddr":            c.ListenAddr,
 		"publicUrl":             c.PublicURL,
+		"baseUrl":               c.BaseURL,
 		"lruSize":               c.LRUSize,
 		"graceMinutes":          c.GraceMinutes,
 		"adminAllowlistCount":   len(c.AdminAllowlist),

@@ -18,21 +18,28 @@ const { t, d } = useTypedI18n()
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 const { isAdmin } = useAuth()
 
-// 移动端「⋯」操作菜单:受控 <details>,选任一项或点页面其它位置即关闭。
-// 原生 details 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet 之上。
+// 受控 <details> 浮层(移动端「⋯」操作菜单 + 桌面许可状态下拉):原生 details
+// 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet/页面之上。
+// 两个浮层共用一个文档级 pointerdown 监听,任一打开即挂载、全部关闭即卸载。
 const actionsEl = ref<HTMLDetailsElement | null>(null)
+const licenseEl = ref<HTMLDetailsElement | null>(null)
 
 function closeActions(): void {
   if (actionsEl.value) actionsEl.value.open = false
 }
 
-function onDocumentPointerDown(event: PointerEvent): void {
-  if (!actionsEl.value?.open) return
-  if (!actionsEl.value.contains(event.target as Node)) closeActions()
+function closeLicense(): void {
+  if (licenseEl.value) licenseEl.value.open = false
 }
 
-function onActionsToggle(): void {
-  if (actionsEl.value?.open) {
+function onDocumentPointerDown(event: PointerEvent): void {
+  const target = event.target as Node
+  if (actionsEl.value?.open && !actionsEl.value.contains(target)) closeActions()
+  if (licenseEl.value?.open && !licenseEl.value.contains(target)) closeLicense()
+}
+
+function syncOutsideListener(): void {
+  if (actionsEl.value?.open || licenseEl.value?.open) {
     document.addEventListener('pointerdown', onDocumentPointerDown)
   } else {
     document.removeEventListener('pointerdown', onDocumentPointerDown)
@@ -53,6 +60,12 @@ function chooseSettings(): void {
 function chooseLogout(): void {
   closeActions()
   emit('logout')
+}
+// 触发激活流程:收起两个浮层(桌面许可下拉 / 移动操作菜单皆可承载该入口)再上抛。
+function chooseActivate(): void {
+  closeLicense()
+  closeActions()
+  emit('activate-license')
 }
 
 interface HeaderTab {
@@ -102,6 +115,13 @@ function licenseBadgeKey(state: string): LocaleKey {
   if (state === 'disabled') return 'license.badge.disabled' as LocaleKey
   return 'license.badge.unactivated' as LocaleKey
 }
+
+// 已激活态(entitled):active/grace。决定许可状态控件渲染哪一支——
+// 已激活 → 图标 + 信息下拉;未激活/过期/停用 → 红色带下划线文字 + 激活下拉。
+const licenseEntitled = computed<boolean>(() => {
+  const s = props.license?.state
+  return s === 'active' || s === 'grace'
+})
 
 // 有效期/到期日(PL-R7):仅 entitled(active/grace)且 termEnd 已知(>0)时展示;
 // 过期/未激活/被禁用态沿用 badge 状态文案,不渲染日期。termEnd 是 unix 秒。
@@ -201,20 +221,40 @@ function selectTab(tab: HeaderTab): void {
           </button>
         </div>
 
-        <!-- Product-license badge (PL-R7): clickable to open LS sign-in if not entitled;
-             unactivated 态改用右侧连接状态旁的红色小字,不渲染按钮。 -->
-        <button
-          v-if="license && license.state !== 'unactivated'"
-          class="license-badge"
-          :class="license.state"
-          :title="t('license.activate.button')"
-          @click="emit('activate-license')"
-        >
-          {{ t(licenseBadgeKey(license.state)) }}
-        </button>
-
-        <!-- 有效期/到期日(PL-R7):entitled 且 termEnd>0 时展示 -->
-        <span v-if="licenseTermText" class="license-term">{{ licenseTermText }}</span>
+        <!-- Product-license 状态控件(PL-R7),受控 <details> 下拉:
+             · 已激活(active/grace)→ ✓ 图标(按 state 着色),下拉显示许可密钥 + 有效期
+             · 未激活/过期/停用 → 红色带下划线状态文字,下拉内「激活许可」按钮触发激活流程 -->
+        <details v-if="license" ref="licenseEl" class="license-menu" @toggle="syncOutsideListener">
+          <summary
+            class="license-trigger"
+            :class="licenseEntitled ? 'entitled' : 'unentitled'"
+            :aria-label="t(licenseBadgeKey(license.state))"
+          >
+            <span
+              v-if="licenseEntitled"
+              class="license-icon"
+              :class="license.state"
+              :title="t(licenseBadgeKey(license.state))"
+              aria-hidden="true"
+              >✓</span
+            >
+            <span v-else class="license-needs" :title="t('license.activate.button')">
+              {{ t(licenseBadgeKey(license.state)) }}
+            </span>
+          </summary>
+          <div class="license-dropdown">
+            <template v-if="licenseEntitled">
+              <!-- 已激活:仅展示有效期(.license-term);term 未知(termEnd=0)时回退为状态文案 -->
+              <div v-if="licenseTermText" class="license-info-row license-term">
+                {{ licenseTermText }}
+              </div>
+              <div v-else class="license-info-row">{{ t(licenseBadgeKey(license.state)) }}</div>
+            </template>
+            <button v-else class="license-activate-btn" @click="chooseActivate">
+              {{ t('license.activate.button') }}
+            </button>
+          </div>
+        </details>
 
         <button
           v-if="isAdmin"
@@ -235,10 +275,6 @@ function selectTab(tab: HeaderTab): void {
         <span class="status" :class="status === 'open' ? 'ok' : 'err'">
           {{ status }}
         </span>
-        <!-- unactivated 态红色小字,显示在连接状态右侧(PL-R7) -->
-        <span v-if="license && license.state === 'unactivated'" class="license-unactivated">
-          {{ t(licenseBadgeKey(license.state)) }}
-        </span>
       </div>
     </div>
 
@@ -253,7 +289,7 @@ function selectTab(tab: HeaderTab): void {
         />
       </div>
 
-      <details ref="actionsEl" class="mobile-actions" @toggle="onActionsToggle">
+      <details ref="actionsEl" class="mobile-actions" @toggle="syncOutsideListener">
         <summary class="icon-btn mobile-actions-trigger" aria-label="Actions">⋯</summary>
         <div class="mobile-actions-menu">
           <button
@@ -269,6 +305,20 @@ function selectTab(tab: HeaderTab): void {
           <button v-if="showLogout" class="mobile-action-item" @click="chooseLogout">
             {{ t('auth.logout.label') }}
           </button>
+          <!-- 许可状态(PL-R7):移动端并入操作菜单——已激活展示密钥/有效期(只读),
+               未激活/过期/停用为红色「激活」项,点击触发激活流程并收起菜单。 -->
+          <template v-if="license">
+            <button
+              v-if="!licenseEntitled"
+              class="mobile-action-item license-needs"
+              @click="chooseActivate"
+            >
+              {{ t(licenseBadgeKey(license.state)) }} · {{ t('license.activate.button') }}
+            </button>
+            <span v-else class="mobile-action-item license-info-static">
+              ✓ {{ licenseTermText || t(licenseBadgeKey(license.state)) }}
+            </span>
+          </template>
           <span class="status mobile-status" :class="status === 'open' ? 'ok' : 'err'">
             {{ status }}
           </span>
@@ -345,18 +395,83 @@ function selectTab(tab: HeaderTab): void {
   background: var(--c-card);
 }
 
-/* unactivated 红色小字(PL-R7):紧随连接状态,非按钮 */
-.license-unactivated {
+/* Product-license 状态控件(PL-R7):受控 <details> 下拉 */
+.license-menu {
+  position: relative;
+}
+.license-trigger {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+.license-trigger::-webkit-details-marker {
+  display: none;
+}
+/* 未激活/过期/停用:红色带下划线文字 */
+.license-trigger .license-needs {
   font-size: var(--fs-caption);
   color: var(--c-red);
+  text-decoration: underline;
+  text-underline-offset: 2px;
   white-space: nowrap;
 }
+/* 已激活:体现"已激活"概念的 ✓ 图标,按 state 着色 */
+.license-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  line-height: 1;
+}
+.license-icon.active {
+  color: var(--c-green);
+}
+.license-icon.grace {
+  color: var(--c-yellow);
+}
 
-/* license 有效期/到期日(PL-R7):紧随 badge 的弱化文案 */
-.license-term {
+.license-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--sp-2));
+  z-index: 120;
+  min-width: 220px;
+  max-width: 320px;
+  padding: var(--sp-2);
+  display: grid;
+  gap: var(--sp-1);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.license-info-row {
   font-size: var(--fs-caption);
+  color: var(--c-text);
+}
+.license-term {
   color: var(--c-text-muted);
-  white-space: nowrap;
+}
+.license-activate-btn {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--c-red);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-red);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.license-activate-btn:hover {
+  background: var(--c-card);
 }
 
 @media (max-width: 767px) {
@@ -491,31 +606,17 @@ function selectTab(tab: HeaderTab): void {
     margin-left: 0;
   }
 
-  .license-badge {
-    font-size: var(--fs-caption);
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius-sm);
-    padding: var(--sp-1) var(--sp-2);
-    background: transparent;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .license-badge.active {
-    color: var(--c-green);
-    border-color: var(--c-green);
-  }
-  .license-badge.grace {
-    color: var(--c-yellow);
-    border-color: var(--c-yellow);
-  }
-  .license-badge.expired,
-  .license-badge.disabled {
+  /* 移动操作菜单内的许可项(PL-R7) */
+  .mobile-action-item.license-needs {
     color: var(--c-red);
-    border-color: var(--c-red);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
-  .license-badge.unactivated {
-    color: var(--c-text-dim);
-    border-color: var(--c-border);
+  .mobile-action-item.license-info-static {
+    color: var(--c-text-muted);
+    white-space: normal;
+    word-break: break-all;
+    cursor: default;
   }
 }
 </style>

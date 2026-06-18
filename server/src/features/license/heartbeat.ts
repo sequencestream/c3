@@ -55,9 +55,9 @@ export async function runHeartbeatOnce(
     resp = await doFetch(new URL('/v1/license/heartbeat', baseUrl).toString(), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      // installId + alive token only — never the license key (PL-R2/PL-R3).
       body: JSON.stringify({
-        licenseKey: cache.licenseKey,
-        installationId: cache.installationId,
+        installId: cache.installationId,
         aliveToken: cache.aliveToken,
       }),
     })

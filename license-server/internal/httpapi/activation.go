@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -56,7 +57,7 @@ func (d Deps) loginReady() (string, bool) {
 	if d.Signer == nil {
 		return "signing key is not configured", false
 	}
-	if strings.TrimSpace(d.Config.PublicURL) == "" {
+	if strings.TrimSpace(d.Config.ExternalBaseURL()) == "" {
 		return "public URL is not configured", false
 	}
 	return "", true
@@ -86,7 +87,7 @@ func handleAuthLogin(d Deps) http.HandlerFunc {
 			InstallID: r.FormValue("installId"),
 			RequestID: r.FormValue("requestId"),
 		}
-		callback := strings.TrimRight(d.Config.PublicURL, "/") + "/v1/auth/github/callback"
+		callback := strings.TrimRight(d.Config.ExternalBaseURL(), "/") + "/v1/auth/github/callback"
 		http.Redirect(w, r, d.OAuth.AuthorizeURLFor(callback, d.signState(st), nil), http.StatusSeeOther)
 	}
 }
@@ -110,7 +111,7 @@ func handleGitHubCallback(d Deps) http.HandlerFunc {
 			return
 		}
 
-		callback := strings.TrimRight(d.Config.PublicURL, "/") + "/v1/auth/github/callback"
+		callback := strings.TrimRight(d.Config.ExternalBaseURL(), "/") + "/v1/auth/github/callback"
 		accessToken, err := d.OAuth.Exchange(r.Context(), q.Get("code"), callback)
 		if err != nil {
 			http.Redirect(w, r, "/?error="+url.QueryEscape("Could not complete sign-in with GitHub."), http.StatusSeeOther)
@@ -182,6 +183,7 @@ func handleLicenseActivate(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid_request", msg)
 			return
 		}
+		slog.Info("license activate", "user", sess.UserID, "login", sess.Login, "install", installID, "request", requestID)
 		// Ensure the account has a license to bind, then register this round so
 		// checkbind recognizes it (the entry is filled in by bind).
 		if _, _, err := d.Store.EnsureDefaultLicense(r.Context(), sess.UserID, config.DefaultLicenseTermDays, time.Now(), randToken); err != nil {
@@ -193,8 +195,59 @@ func handleLicenseActivate(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "activate_failed", "could not load your licenses")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"licenses": licenseViews(licenses)})
+		out := map[string]any{"licenses": licenseViews(licenses)}
+		// Convenience (§4): a user whose only license is long-lived is bound to this
+		// installation automatically, so the browser need not show a picker and c3's
+		// checkbind collects the result directly.
+		if termEnd, ok := d.maybeAutoBind(r, licenses, installID, requestID); ok {
+			out["autoBound"] = true
+			out["termEnd"] = termEnd
+		}
+		writeJSON(w, http.StatusOK, out)
 	}
+}
+
+// autoBindThresholdMonths is the remaining-term floor for auto-binding: a user's
+// sole license is bound to the requesting installation automatically only when it
+// stays valid beyond now + this many months. The default one-month trial term
+// (exactly at the floor) is therefore not auto-bound — a returning user with a
+// renewed/long license is.
+const autoBindThresholdMonths = 1
+
+// maybeAutoBind binds the user's single license to (installID, requestID) when it
+// is active and valid beyond autoBindThresholdMonths, stashing the secrets for
+// checkbind exactly as handleLicenseBind would (the browser response never carries
+// them, PL-R2). Best-effort: with no signer, more than one license, an ineligible
+// term, or any store error it returns ok=false and the manual bind path stands.
+// Returns the bound term_end (unix seconds) on success.
+func (d Deps) maybeAutoBind(r *http.Request, licenses []store.LicenseBinding, installID, requestID string) (int64, bool) {
+	if d.Signer == nil || len(licenses) != 1 {
+		return 0, false
+	}
+	only := licenses[0]
+	now := time.Now()
+	if only.Status != "active" || !only.TermEnd.After(now.AddDate(0, autoBindThresholdMonths, 0)) {
+		slog.Info("license auto-bind skipped", "install", installID, "status", only.Status, "termEnd", only.TermEnd.Format(time.RFC3339))
+		return 0, false
+	}
+	res, err := d.Store.BindInstallation(r.Context(), only.LicenseKey, installID, now, randToken)
+	if err != nil {
+		slog.Warn("license auto-bind failed", "install", installID, "err", err)
+		return 0, false
+	}
+	entitlement, err := signEntitlement(d.Signer, installID, res.License, now)
+	if err != nil {
+		slog.Warn("license auto-bind sign failed", "install", installID, "err", err)
+		return 0, false
+	}
+	d.Binds.put(installID, requestID, bindEntry{
+		licenseKey:       only.LicenseKey,
+		aliveToken:       res.AliveToken,
+		entitlementToken: entitlement,
+		termEnd:          res.License.TermEnd.Unix(),
+	})
+	slog.Info("license auto-bound", "license", res.License.ID, "install", installID, "request", requestID, "termEnd", res.License.TermEnd.Format(time.RFC3339))
+	return res.License.TermEnd.Unix(), true
 }
 
 // --- POST /v1/license/bind : bind the chosen license to this installation ----
@@ -256,10 +309,12 @@ func handleLicenseBind(d Deps) http.HandlerFunc {
 		// Stash the secrets for c3 server to collect over S2S via checkbind; the
 		// browser response carries neither the alive token nor the token (PL-R2).
 		d.Binds.put(body.InstallID, body.RequestID, bindEntry{
+			licenseKey:       body.LicenseKey,
 			aliveToken:       res.AliveToken,
 			entitlementToken: entitlement,
 			termEnd:          res.License.TermEnd.Unix(),
 		})
+		slog.Info("license bound", "license", res.License.ID, "install", body.InstallID, "request", body.RequestID, "termEnd", res.License.TermEnd.Format(time.RFC3339))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "active",
 			"termEnd": res.License.TermEnd.Unix(),
@@ -283,11 +338,14 @@ func handleLicenseCheckbind(d Deps) http.HandlerFunc {
 		}
 		e, ok := d.Binds.take(installID, requestID)
 		if !ok {
+			slog.Info("license checkbind pending", "install", installID, "request", requestID)
 			writeJSON(w, http.StatusOK, map[string]any{"status": "pending"})
 			return
 		}
+		slog.Info("license checkbind collected", "install", installID, "request", requestID)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":           "active",
+			"licenseKey":       e.licenseKey,
 			"aliveToken":       e.aliveToken,
 			"entitlementToken": e.entitlementToken,
 			"termEnd":          e.termEnd,

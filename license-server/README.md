@@ -49,7 +49,8 @@ license-server/
 | ---------------------------------- | ---------- | -------- | ----------------------------------------------------------------- |
 | `C3_LS_DATABASE_URL`               | 启用库时   | —        | PostgreSQL DSN(机密)。省略则 dbless 运行。                        |
 | `C3_LS_LISTEN_ADDR`                | 否         | `:8787`  | HTTP 监听地址                                                     |
-| `C3_LS_PUBLIC_URL`                 | 登录时     | —        | 外部基址(OAuth 回调);开发用 http://localhost:8787                 |
+| `C3_LS_PUBLIC_URL`                 | 登录时     | —        | 进程自身基址(本地监听);开发用 http://localhost:8787;`C3_LS_BASE_URL` 留空时作对外 URL 的回退 |
+| `C3_LS_BASE_URL`                   | 反代后     | —        | 对外可见基址,用于构造 OAuth 回调 / 微信 notify / Cookie Secure;留空回退 `C3_LS_PUBLIC_URL`;生产填 https://c3.sequencestream.com |
 | `C3_LS_ED25519_PRIVATE_KEY`        | 登录时     | —        | 令牌签名私钥(机密,仅 LS 持有);`go run ./scripts/gen-keypair`     |
 | `C3_LS_ED25519_PUBLIC_KEY`         | 登录时     | —        | 校验公钥(发布给 c3 内嵌;用上面命令的输出)                         |
 | `C3_LS_GITHUB_OAUTH_CLIENT_ID`     | 登录时     | —        | GitHub OAuth 应用 id                                              |

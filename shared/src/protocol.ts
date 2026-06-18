@@ -2583,21 +2583,14 @@ export type ClientToServer =
    */
   | { type: 'get_license' }
   /**
-   * Open the LS sign-in page in the browser so the user can log in with GitHub
-   * and obtain a license key (ADR-0026, PL-R1/PL-R9). GitHub is account
-   * login/registration only; it no longer carries the activation. Reply:
-   * {@link license_activation_started} (the URL, for manual fallback). The user
-   * then binds with {@link bind_license}.
+   * Open the LS landing page in the browser so the user can log in with GitHub
+   * and **bind a license in the browser** (ADR-0026, PL-R1/PL-R9). GitHub is
+   * account login/registration only. c3 mints a binding round and starts polling
+   * `checkbind`; it does not bind itself. Reply: {@link license_activation_started}
+   * (the URL, for manual fallback). When the round resolves, a
+   * {@link license_bind_result} (and, on success, {@link license_state}) is pushed.
    */
   | { type: 'start_license_activation' }
-  /**
-   * Bind this installation to a license by its key (ADR-0026, PL-R1). c3 calls
-   * the LS bind API with `{ licenseKey, installationId }`, verifies the returned
-   * signed entitlement token offline (PL-R5), and caches it. Binding is
-   * exclusive: it displaces any prior installation on the same license. Reply:
-   * {@link license_bind_result}; on success a {@link license_state} push follows.
-   */
-  | { type: 'bind_license'; licenseKey: string }
   | { type: 'ping' }
 
 // Server → Client
@@ -3130,9 +3123,11 @@ export type ServerToClient =
    */
   | { type: 'license_activation_started'; ok: boolean; activationUrl?: string; reason?: string }
   /**
-   * Result of {@link bind_license}. `ok:true` means the installation is bound and
-   * activated (a {@link license_state} push follows). `ok:false` carries a
-   * `reason` (e.g. invalid_key, expired, or a verification failure).
+   * Result of a browser-mediated binding round, pushed when c3's `checkbind` poll
+   * resolves (ADR-0026). `ok:true` means the installation is bound and activated
+   * (a {@link license_state} push follows). `ok:false` carries a `reason` (e.g. a
+   * verification failure). Unsolicited — it follows {@link start_license_activation}
+   * asynchronously, since c3 cannot know when the user completes the browser bind.
    */
   | { type: 'license_bind_result'; ok: boolean; reason?: string }
   | { type: 'pong' }

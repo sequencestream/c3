@@ -667,6 +667,12 @@
       "startDev": {
         "label": "개발 시작"
       },
+      "writeSpec": {
+        "label": "spec 작성"
+      },
+      "approveSpec": {
+        "label": "spec 승인"
+      },
       "session": {
         "label": "세션"
       },
@@ -1327,7 +1333,8 @@
       "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。",
       "dependencyNotMerged": "종속성 \"{title}\"({id})이(가) 아직 메인 브랜치에 병합되지 않았습니다.",
       "specAgentUnsupported": "spec 작성에는 Claude 에이전트가 필요합니다. 구성된 spec 에이전트는 쓰기를 spec 디렉터리 내로 제한할 수 없습니다.",
-      "specWriteFailed": "spec 문서 생성에 실패했습니다: {message}。"
+      "specWriteFailed": "spec 문서 생성에 실패했습니다: {message}。",
+      "specNotWritten": "spec이 아직 작성되지 않았습니다. 승인하기 전에 먼저 작성하세요."
     },
     "discussion": {
       "dbUnavailable": "토론 기능을 사용할 수 없습니다 (c3.db).",

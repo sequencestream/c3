@@ -199,6 +199,18 @@
 
 **字段：** `workspacePath: string`, `intentId: string`
 
+### `write_spec`
+
+为 intent 撰写 spec 文档（质量闸输出步骤）：搭建按日期分层的 spec 目录、种子 `spec.md`、立即回填 intent 的 `specPath`，并在配置的 spec agent 上启动写入受限于 spec 目录的撰写会话；非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。
+
+**字段：** `workspaceId: string`, `intentId: string`
+
+### `approve_spec`
+
+人工审批检查点:批准 intent 的 spec，置 `spec_approved=true` 并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)。批准本身不启动开发，只让四态按钮推进到 `Start Dev`（intent-management RM-R22）。
+
+**字段：** `workspaceId: string`, `intentId: string`
+
 ### `update_intent_status`
 
 手动设置 intent 状态（如 `done` / `cancelled`）；服务器回复 `intents`（RM-R9）。
@@ -489,9 +501,9 @@
 
 ### `intents`
 
-项目的 intent 列表，回复 `list_intents` / `open_intent_chat`，或在确认 `save_intents` 后广播（intent-management）。
+项目的 intent 列表，回复 `list_intents` / `open_intent_chat`，或在确认 `save_intents` 后广播（intent-management）。`sddEnabled` 是该 workspace 的 SDD 总开关,随每次列表广播携带,供四态意图操作按钮无需单独拉取设置即可定态（RM-R22）。
 
-**字段：** `workspacePath: string`, `items: Intent[]`
+**字段：** `workspaceId: string`, `items: Intent[]`, `sddEnabled: boolean`
 
 ### `intent_sessions`
 

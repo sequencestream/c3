@@ -22,7 +22,7 @@ import { resolveWorkspaceRoot } from '../../state.js'
 import { getDefaultMode, getSpecPath } from '../../kernel/config/index.js'
 import { resolveSpecAgent, setSessionAgent } from '../../kernel/agent-config/index.js'
 import type { Handler } from '../../transport/handler-registry.js'
-import { getIntent, isStoreAvailable, setSpecPath } from './store.js'
+import { getIntent, isStoreAvailable, setSpecApproved, setSpecPath } from './store.js'
 import { computeSpecLayout } from './spec-path.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 
@@ -168,4 +168,41 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
     clearPendingSpecLink(specId)
     throw err
   }
+}
+
+/**
+ * `approve_spec` handler — the human approval checkpoint (the reason SDD exists):
+ * development may only proceed once a person approves the authored spec. Sets
+ * `spec_approved=true` and records the approving user (the current login subject)
+ * in `spec_approve_user`, then broadcasts so every console reflects the approval.
+ *
+ * Single-person confirmation: no multi-sign and no un-approve in this phase. A
+ * spec must exist first (`spec_path` non-null) — approving before authoring is
+ * rejected (the UI never offers it, this is the defensive server guard).
+ */
+export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (!intent.specPath) {
+    conn.send({ type: 'error', error: { code: 'intent.specNotWritten' } })
+    return
+  }
+
+  setSpecApproved(intent.id, true, conn.subject)
+  ctx.broadcastIntents(proj)
 }

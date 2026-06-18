@@ -42,6 +42,8 @@ const props = defineProps<{
   intents: Intent[]
   automation: AutomationStatus | null
   intentActionErrorSeq?: number
+  /** 当前 workspace SDD 总开关,透传给 IntentDetail 的四态主按钮。 */
+  sddEnabled?: boolean
   // middle: intent session list
   intentSessions: IntentSessionInfo[]
   selectedIntentSessionId: string | null
@@ -77,6 +79,8 @@ const emit = defineEmits<{
   // intent list events
   filter: [status: IntentStatus | null]
   refine: [intentId: string]
+  'write-spec': [intentId: string]
+  'approve-spec': [intentId: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
   'open-dev': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
@@ -231,7 +235,10 @@ defineExpose({
         :intent="selectedIntent"
         :intents="intents"
         :intent-action-error-seq="intentActionErrorSeq"
+        :sdd-enabled="sddEnabled"
         @refine="(id: string) => emit('refine', id)"
+        @write-spec="(id: string) => emit('write-spec', id)"
+        @approve-spec="(id: string) => emit('approve-spec', id)"
         @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
         @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"

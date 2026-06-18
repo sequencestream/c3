@@ -42,7 +42,7 @@ function withConnections(n: number): {
 // protocol breaks compilation here (the per-type wire contract is pinned).
 const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   { type: 'session_status', statuses: [{ sessionId: 's1', status: 'running' }] },
-  { type: 'intents', workspaceId: '/p', items: [] },
+  { type: 'intents', workspaceId: '/p', items: [], sddEnabled: false },
   { type: 'discussions', workspaceId: '/p', items: [], runStates: {}, researchStates: {} },
   { type: 'schedules', workspaceId: '/p', items: [] },
   {
@@ -174,8 +174,9 @@ describe('Broadcaster — golden wire shapes (high-frequency frames)', () => {
         type: 'intents',
         workspaceId: '/p',
         items: [],
+        sddEnabled: false,
       } satisfies ServerToClient),
-    ).toBe('{"type":"intents","workspaceId":"/p","items":[]}')
+    ).toBe('{"type":"intents","workspaceId":"/p","items":[],"sddEnabled":false}')
   })
 
   it('discussions (carries runStates + researchStates snapshots)', () => {

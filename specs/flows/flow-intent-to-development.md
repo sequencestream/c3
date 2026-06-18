@@ -21,6 +21,8 @@ flowchart TD
     SAVE -- deny --> X[nothing written]
     LEDGER -. optional .-> SPEC[write_spec — write-confined spec session]
     SPEC --> LEDGER
+    LEDGER -. SDD on .-> APPROVE[approve_spec — human checkpoint]
+    APPROVE --> LEDGER
     LEDGER --> LAUNCH[start_development]
     LAUNCH --> DEV[background dev session<br/>standard gated loop]
     DEV --> LINK[back-link · select_session]
@@ -68,6 +70,19 @@ flowchart TD
    **path** layer, not by prompt (`RM-R21`). On bind, the session id is linked back onto the intent.
    The path-level write lock is a Claude-path permission-gateway mechanism, so a non-Claude spec
    agent is **rejected** before launch (`RM-R21`).
+
+## Approve spec (human checkpoint)
+
+1. **Four-state action button.** When the workspace's SDD switch (`sddEnabled`) is on, the intent's
+   primary action button is SDD-aware: no spec ⇒ `Write Spec`; spec written but unapproved ⇒
+   `Approve Spec`; spec approved ⇒ `Start Dev` (SDD off ⇒ always `Start Dev`). `sddEnabled` rides
+   every intent-list broadcast so the button needs no separate settings fetch (`RM-R22`, `WC-R25`).
+2. **web-console → intent-management.** `Approve Spec` sends `approve_spec`. The server sets
+   `spec_approved=true` and records the approving user (the current login subject) in
+   `spec_approve_user`, then re-broadcasts the list — single-person confirmation, no multi-sign or
+   un-approve in this phase; approving before a spec exists is rejected (`RM-R22`). Approval is the
+   **human checkpoint that gates development**: it clears the gate so the button advances to
+   `Start Dev` but does **not** itself launch development.
 
 ## Launch development
 

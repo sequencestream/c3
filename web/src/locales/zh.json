@@ -666,6 +666,12 @@
       "startDev": {
         "label": "开始开发"
       },
+      "writeSpec": {
+        "label": "编写 spec"
+      },
+      "approveSpec": {
+        "label": "批准 spec"
+      },
       "session": {
         "label": "会话"
       },
@@ -1326,7 +1332,8 @@
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
       "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",
       "specAgentUnsupported": "撰写 spec 需要 Claude agent;当前配置的 spec agent 无法将写入限制在 spec 目录内。",
-      "specWriteFailed": "创建 spec 文档失败: {message}。"
+      "specWriteFailed": "创建 spec 文档失败: {message}。",
+      "specNotWritten": "spec 尚未编写,请先编写再批准。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",

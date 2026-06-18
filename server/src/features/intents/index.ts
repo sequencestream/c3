@@ -27,6 +27,7 @@ import {
   getDefaultMode,
   getDevSkill,
   getGitBranchMode,
+  getSddEnabled,
 } from '../../kernel/config/index.js'
 import {
   resolveIntentAgent,
@@ -127,6 +128,7 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
     type: 'intents',
     workspaceId: pathToId(proj)!,
     items: listIntents(proj, msg.status),
+    sddEnabled: getSddEnabled(proj),
   })
 }
 
@@ -226,6 +228,7 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
     type: 'intents',
     workspaceId: pathToId(proj)!,
     items: enrichRunStatus(listIntents(proj)),
+    sddEnabled: getSddEnabled(proj),
   })
   conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
 
@@ -315,6 +318,7 @@ export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
     type: 'intents',
     workspaceId: pathToId(proj)!,
     items: enrichRunStatus(listIntents(proj)),
+    sddEnabled: getSddEnabled(proj),
   })
   conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
 }
@@ -356,7 +360,12 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     vendor: resolveSessionVendor(chatId),
     agentSwitch: agentSwitchFor(chatId),
   })
-  conn.send({ type: 'intents', workspaceId: pathToId(proj)!, items: listIntents(proj) })
+  conn.send({
+    type: 'intents',
+    workspaceId: pathToId(proj)!,
+    items: listIntents(proj),
+    sddEnabled: getSddEnabled(proj),
+  })
   const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
   await ctx.launchRun(rt, firstPrompt)
 }
@@ -402,7 +411,12 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     vendor: resolveSessionVendor(chatId),
     agentSwitch: agentSwitchFor(chatId),
   })
-  conn.send({ type: 'intents', workspaceId: pathToId(proj)!, items: listIntents(proj) })
+  conn.send({
+    type: 'intents',
+    workspaceId: pathToId(proj)!,
+    items: listIntents(proj),
+    sddEnabled: getSddEnabled(proj),
+  })
   const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents。`
   await ctx.launchRun(rt, firstPrompt)
 }

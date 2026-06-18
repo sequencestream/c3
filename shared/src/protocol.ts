@@ -2466,6 +2466,13 @@ export type ClientToServer =
    * the spec directory, the project read-only) on the configured spec agent.
    */
   | { type: 'write_spec'; workspaceId: string; intentId: string }
+  /**
+   * Approve an intent's authored spec — the human approval checkpoint that gates
+   * entry into development. Sets `spec_approved=true` and records the approving
+   * user (the current login subject) in `spec_approve_user`. Single-person
+   * confirmation; no multi-sign or un-approve in this phase.
+   */
+  | { type: 'approve_spec'; workspaceId: string; intentId: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
@@ -2865,8 +2872,13 @@ export type ServerToClient =
    * invalid token so the client can decide whether to re-prompt for login.
    */
   | { type: 'unauthenticated'; reason: 'missing' | 'expired' | 'invalid' }
-  /** A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push after a change). */
-  | { type: 'intents'; workspaceId: string; items: Intent[] }
+  /**
+   * A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push
+   * after a change). `sddEnabled` is the workspace's SDD master switch, rebroadcast
+   * with every list so the intent action button can render its SDD-aware state
+   * (Write Spec / Approve Spec / Start Dev) without a separate settings fetch.
+   */
+  | { type: 'intents'; workspaceId: string; items: Intent[]; sddEnabled: boolean }
   /**
    * A project's intent-communication-session list (reply to `list_intent_sessions`
    * or push after a change). `runStates` is a live snapshot of which listed

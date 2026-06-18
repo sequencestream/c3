@@ -29,10 +29,14 @@ const props = defineProps<{
   intents: Intent[]
   /** 服务端动作错误序号自增时复位 start-dev in-flight 守卫。 */
   intentActionErrorSeq?: number
+  /** 当前 workspace 的 SDD 总开关,驱动主操作按钮四态(关→Start Dev)。 */
+  sddEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
   refine: [intentId: string]
+  'write-spec': [intentId: string]
+  'approve-spec': [intentId: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
   'open-dev': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
@@ -145,6 +149,41 @@ function startDev(): void {
   emit('start-dev', r.id, hasUnfinishedDeps)
 }
 
+// ── 主操作按钮四态机(只对 todo 意图渲染) ──────────────────────────────────
+// SDD 关 → Start Dev;SDD 开且无 spec → Write Spec;有 spec 未批准 → Approve Spec;
+// 有 spec 已批准 → Start Dev。是「人工审批检查点」的入口:开发须经人点 approve。
+type MainAction = 'startDev' | 'writeSpec' | 'approveSpec'
+const mainAction = computed<MainAction>(() => {
+  const r = props.intent
+  if (!r || !props.sddEnabled) return 'startDev'
+  if (!r.specPath) return 'writeSpec'
+  if (!r.specApproved) return 'approveSpec'
+  return 'startDev'
+})
+const mainActionLabel = computed<string>(() => {
+  switch (mainAction.value) {
+    case 'writeSpec':
+      return t('intent.action.writeSpec.label')
+    case 'approveSpec':
+      return t('intent.action.approveSpec.label')
+    default:
+      return t('intent.action.startDev.label')
+  }
+})
+function onMainAction(): void {
+  const r = props.intent
+  if (!r) return
+  if (mainAction.value === 'writeSpec') {
+    emit('write-spec', r.id)
+    return
+  }
+  if (mainAction.value === 'approveSpec') {
+    emit('approve-spec', r.id)
+    return
+  }
+  startDev()
+}
+
 // 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt。
 function datePrefix(r: Intent): string {
   return formatDate(r.completedAt ?? r.createdAt, locale.value, { style: 'short' })
@@ -248,10 +287,11 @@ function datePrefix(r: Intent): string {
         <button
           v-if="intent.status === 'todo'"
           class="req-btn primary"
-          :disabled="startDevInFlight"
-          @click="startDev"
+          :data-action="mainAction"
+          :disabled="mainAction === 'startDev' && startDevInFlight"
+          @click="onMainAction"
         >
-          {{ t('intent.action.startDev.label') }}
+          {{ mainActionLabel }}
         </button>
         <button
           v-if="intent.lastDevSessionId"

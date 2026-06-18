@@ -64,6 +64,24 @@ export function installIntentActions(ctx: AppCtx): void {
     })
   }
 
+  ctx.writeSpec = (intentId: string): void => {
+    if (!intentsProject.value) return
+    send({
+      type: 'write_spec',
+      workspaceId: intentsProject.value,
+      intentId,
+    })
+  }
+
+  ctx.approveSpec = (intentId: string): void => {
+    if (!intentsProject.value) return
+    send({
+      type: 'approve_spec',
+      workspaceId: intentsProject.value,
+      intentId,
+    })
+  }
+
   ctx.createPr = (intentId: string): void => {
     if (!intentsProject.value) return
     send({

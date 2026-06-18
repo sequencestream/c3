@@ -81,6 +81,8 @@ export interface AppMethods {
   openIntents(path: string): void
   setIntentFilter(status: IntentStatus | null): void
   refineIntent(intentId: string): void
+  writeSpec(intentId: string): void
+  approveSpec(intentId: string): void
   startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
   setIntentStatus(intentId: string, status: IntentStatus): void
   setIntentAutomate(intentId: string, automateOn: boolean): void

@@ -55,7 +55,7 @@ import {
   updateIntentDepsHandler,
   updateIntentStatus,
 } from './intents/index.js'
-import { writeSpecHandler } from './intents/spec.js'
+import { approveSpecHandler, writeSpecHandler } from './intents/spec.js'
 import {
   continueDiscussion,
   createDiscussionHandler,
@@ -131,6 +131,7 @@ export const handlerMap: HandlerMap = {
   delete_intent_session: deleteIntentSession,
   start_development: startDevelopment,
   write_spec: writeSpecHandler,
+  approve_spec: approveSpecHandler,
   update_intent_status: updateIntentStatus,
   set_intent_automate: setIntentAutomate,
   set_intent_git_info: setIntentGitInfo,

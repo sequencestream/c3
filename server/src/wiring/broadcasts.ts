@@ -18,6 +18,7 @@
 import type { AutomationStatus, DiscussionMessage, ResearchMessage } from '@ccc/shared/protocol'
 import { resolve } from 'node:path'
 import { pathToId } from '../state.js'
+import { getSddEnabled } from '../kernel/config/index.js'
 import type { Broadcaster } from '../transport/index.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
@@ -123,7 +124,12 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     if (!isStoreAvailable()) return
     const proj = resolve(workspacePath)
     const items = enrichRunStatus(listIntents(proj))
-    broadcaster.toAll({ type: 'intents', workspaceId: pathToId(proj)!, items })
+    broadcaster.toAll({
+      type: 'intents',
+      workspaceId: pathToId(proj)!,
+      items,
+      sddEnabled: getSddEnabled(proj),
+    })
   }
 
   // Snapshot helper: which listed intent sessions have a live agent run.

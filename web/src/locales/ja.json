@@ -667,6 +667,12 @@
       "startDev": {
         "label": "開発開始"
       },
+      "writeSpec": {
+        "label": "spec を作成"
+      },
+      "approveSpec": {
+        "label": "spec を承認"
+      },
       "session": {
         "label": "セッション"
       },
@@ -1327,7 +1333,8 @@
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
       "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。",
       "specAgentUnsupported": "spec の作成には Claude エージェントが必要です。設定された spec エージェントは書き込みを spec ディレクトリ内に制限できません。",
-      "specWriteFailed": "spec ドキュメントの作成に失敗しました: {message}。"
+      "specWriteFailed": "spec ドキュメントの作成に失敗しました: {message}。",
+      "specNotWritten": "spec がまだ作成されていません。承認する前に作成してください。"
     },
     "discussion": {
       "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",

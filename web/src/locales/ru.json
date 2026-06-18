@@ -667,6 +667,12 @@
       "startDev": {
         "label": "Начать разработку"
       },
+      "writeSpec": {
+        "label": "Написать spec"
+      },
+      "approveSpec": {
+        "label": "Утвердить spec"
+      },
       "session": {
         "label": "Сессия"
       },
@@ -1327,7 +1333,8 @@
       "worktreeCreateFailed": "Не удалось создать рабочее дерево: {message}.",
       "dependencyNotMerged": "Зависимость \"{title}\"({id}) ещё не слита в основную ветку.",
       "specAgentUnsupported": "Для создания spec требуется агент Claude; настроенный spec-агент не может ограничить запись каталогом spec.",
-      "specWriteFailed": "Не удалось создать документ spec: {message}."
+      "specWriteFailed": "Не удалось создать документ spec: {message}.",
+      "specNotWritten": "Документ spec ещё не написан; создайте его перед утверждением."
     },
     "discussion": {
       "dbUnavailable": "Функция обсуждений недоступна (c3.db).",

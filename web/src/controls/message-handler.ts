@@ -70,6 +70,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     installingSkillIds,
     skillApprovalRequest,
     intents,
+    intentsSdd,
     intentSessions,
     intentSessionRunStates,
     intentsProject,
@@ -360,6 +361,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'intents':
         intents.value = { ...intents.value, [msg.workspaceId]: msg.items }
+        intentsSdd.value = { ...intentsSdd.value, [msg.workspaceId]: msg.sddEnabled }
         break
       case 'intent_sessions':
         intentSessions.value = { ...intentSessions.value, [msg.workspaceId]: msg.items }

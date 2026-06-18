@@ -243,6 +243,14 @@ export function createState(deps: StateDeps) {
     intentsProject.value ? (intents.value[intentsProject.value] ?? []) : [],
   )
 
+  // Per-workspace SDD master switch, rebroadcast with every intent list. Drives
+  // the SDD-aware intent action button (Write Spec / Approve Spec / Start Dev)
+  // without a separate workspace-setting fetch.
+  const intentsSdd = ref<Record<string, boolean>>({})
+  const currentIntentsSdd = computed<boolean>(() =>
+    intentsProject.value ? (intentsSdd.value[intentsProject.value] ?? false) : false,
+  )
+
   // Per-project automation-orchestrator status (server pushes `automation_status`).
   const automation = ref<Record<string, AutomationStatus>>({})
   const currentAutomation = computed<AutomationStatus | null>(() =>
@@ -542,6 +550,8 @@ export function createState(deps: StateDeps) {
     currentAgentName,
     HEADER_TABS,
     currentIntents,
+    intentsSdd,
+    currentIntentsSdd,
     currentAutomation,
     currentIntentSessions,
     currentDiscussions,

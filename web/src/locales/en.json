@@ -666,6 +666,12 @@
       "startDev": {
         "label": "Start dev"
       },
+      "writeSpec": {
+        "label": "Write spec"
+      },
+      "approveSpec": {
+        "label": "Approve spec"
+      },
       "session": {
         "label": "Session"
       },
@@ -1326,7 +1332,8 @@
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
       "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",
       "specAgentUnsupported": "Spec authoring requires a Claude agent; the configured spec agent cannot confine writes to the spec directory.",
-      "specWriteFailed": "Failed to create the spec document: {message}."
+      "specWriteFailed": "Failed to create the spec document: {message}.",
+      "specNotWritten": "The spec has not been written yet; author it before approving."
     },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",

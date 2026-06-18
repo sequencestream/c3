@@ -15,7 +15,7 @@ web/src/
 │   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/定时任务
 │   ├── message-handler.ts                          # installMessageHandler():唯一入站 WS switch(handleMessage)折叠所有 ServerToClient 事件 + applyStatuses/notifyAwaitingPermission
 │   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:刷新/选择会话、新建会话弹窗、控制台 tab 进入与重绑、清空视图会话
-│   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
+│   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── discussion-actions.ts                       # 讨论页动作(只读路径 + 组织者引擎):打开/创建/开始/暂停/恢复/转需求/发言/移动返回
 │   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch)
 │   ├── chat-actions.ts                             # 聊天/输入动作 + 客户端待发队列(enqueue/edit/delete/flush watch)、提交/继续/停止/刷新/模式/agent 切换/权限响应
@@ -58,7 +58,7 @@ web/src/
 │   │   ├── components/
 │   │   │   ├── IntentMergedList/IntentMergedList.vue # 合并左栏:带分段控件(Intents/Sessions)切换,接管两子组件的头区;可折叠(960px/480px);透传 selectedIntentId 高亮与 select-intent 选中事件
 │   │   │   ├── IntentList/IntentList.vue            # 需求列表:接受 hideHeader prop 嵌入合并栏;按状态过滤、终止态分页、自动化编排启停;行点击=选中(emit select-intent,selectedId 高亮),不再行内展开/行内操作(详情与操作迁至右栏 IntentDetail)
-│   │   │   ├── IntentDetail/IntentDetail.vue        # 右栏意图详情面板:展示 selectedIntentId 意图的内容 markdown、Git/PR 扩展元信息、依赖编辑器(dep modal),行内操作(refine/start-dev/open-dev/set-status/set-automate/create-pr,含 start-dev in-flight 守卫),沿用原 emit 事件契约;无选中(列表空)时空态
+│   │   │   ├── IntentDetail/IntentDetail.vue        # 右栏意图详情面板:展示 selectedIntentId 意图的内容 markdown、Git/PR 扩展元信息、依赖编辑器(dep modal),行内操作(refine/open-dev/set-status/set-automate/create-pr);主操作按钮按 SDD 态四态(sddEnabled×specPath×specApproved):关→start-dev,开无spec→write-spec,有spec未批准→approve-spec,已批准→start-dev(含 start-dev in-flight 守卫);沿用原 emit 事件契约;无选中(列表空)时空态
 │   │   │   └── IntentSessionList/
 │   │   │       └── IntentSessionList.vue            # 意图通信会话列表:接受 hideHeader prop 嵌入合并栏;行内重命名/删除、活跃/已完成分组、分页加载更多
 │   │

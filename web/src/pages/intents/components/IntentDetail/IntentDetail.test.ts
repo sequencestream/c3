@@ -36,13 +36,14 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
 
 function mountDetail(
   current: Intent | null,
-  opts: { intents?: Intent[]; intentActionErrorSeq?: number } = {},
+  opts: { intents?: Intent[]; intentActionErrorSeq?: number; sddEnabled?: boolean } = {},
 ) {
   return mount(IntentDetail, {
     props: {
       intent: current,
       intents: opts.intents ?? (current ? [current] : []),
       intentActionErrorSeq: opts.intentActionErrorSeq ?? 0,
+      sddEnabled: opts.sddEnabled ?? false,
     },
   })
 }
@@ -95,6 +96,41 @@ describe('IntentDetail.vue — start dev in-flight guard', () => {
 
     expect(w.emitted('start-dev')).toBeUndefined()
     expect((w.find('.req-btn.primary').element as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('IntentDetail.vue — SDD four-state main action', () => {
+  it('SDD off → Start Dev (regardless of spec fields)', () => {
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: false })
+    const w = mountDetail(item, { sddEnabled: false })
+    expect(w.find('.req-btn.primary').attributes('data-action')).toBe('startDev')
+  })
+
+  it('SDD on + no spec → Write Spec, emits write-spec', async () => {
+    const item = intent({ id: 'i1', specPath: null })
+    const w = mountDetail(item, { sddEnabled: true })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('writeSpec')
+    await btn.trigger('click')
+    expect(w.emitted('write-spec')).toEqual([['i1']])
+  })
+
+  it('SDD on + spec written, not approved → Approve Spec, emits approve-spec', async () => {
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: false })
+    const w = mountDetail(item, { sddEnabled: true })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('approveSpec')
+    await btn.trigger('click')
+    expect(w.emitted('approve-spec')).toEqual([['i1']])
+  })
+
+  it('SDD on + spec approved → Start Dev, emits start-dev', async () => {
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: true })
+    const w = mountDetail(item, { sddEnabled: true })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('startDev')
+    await btn.trigger('click')
+    expect(w.emitted('start-dev')).toEqual([['i1', false]])
   })
 })
 

@@ -90,6 +90,7 @@ const {
   // ---- intents ----
   intentsProject,
   currentIntents,
+  currentIntentsSdd,
   currentAutomation,
   intentActionErrorSeq,
   currentIntentSessions,
@@ -97,6 +98,8 @@ const {
   intentSessionRunStates,
   setIntentFilter,
   refineIntent,
+  writeSpec,
+  approveSpec,
   startDevelopment,
   openDevSession,
   setIntentStatus,
@@ -300,6 +303,7 @@ const {
           ref="composer"
           :project="intentsProject"
           :intents="currentIntents"
+          :sdd-enabled="currentIntentsSdd"
           :automation="currentAutomation"
           :intent-action-error-seq="intentActionErrorSeq"
           :intent-sessions="currentIntentSessions"
@@ -325,6 +329,8 @@ const {
           :agent-switch="activeAgentSwitch"
           @filter="setIntentFilter"
           @refine="refineIntent"
+          @write-spec="writeSpec"
+          @approve-spec="approveSpec"
           @start-dev="startDevelopment"
           @open-dev="openDevSession"
           @set-status="setIntentStatus"

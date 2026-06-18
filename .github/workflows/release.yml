@@ -1,25 +1,21 @@
 # Release workflow (release 6/7) — GH Actions native matrix for the c3 release pipeline.
 #
-# Why a separate workflow: bytecodes + macOS ad-hoc codesign + SLSA provenance only
-# pay off when each target is built on its NATIVE OS runner. Cross-compile + bytecode
-# segfaults (oven-sh/bun#18416); macOS ad-hoc needs a darwin host; SLSA OIDC keyless
-# needs the runner's own OIDC token.
+# Why a separate workflow: bytecodes + macOS ad-hoc codesign only pay off when each target
+# is built on its NATIVE OS runner. Cross-compile + bytecode segfaults (oven-sh/bun#18416);
+# macOS ad-hoc needs a darwin host.
 #
 # Self-contained per-target jobs (no actions/upload-artifact): because cross-compile is
 # banned, every target must build on its own native OS runner. Rather than shuttle the
 # per-target outputs through GitHub's artifact store and re-gather them, each target runs
-# the WHOLE tail in ONE job — build → smoke → sign → verify(postgate) → SLSA attest →
-# upload to the self-hosted store → GitHub Release. The `needs:` chain enforces the gate
-# order: a red pregate skips every target; within a target a failed build/smoke/sign/verify
-# aborts that target's publish.
+# the WHOLE tail in ONE job — build → smoke → sign → verify(postgate) → upload to the
+# self-hosted store. The `needs:` chain enforces the gate order: a red pregate skips every
+# target; within a target a failed build/smoke/sign/verify aborts that target's upload.
 #
 # Consequences of the self-contained design (intentional):
 #   - The minisign secret is needed on all four OS runners (signing happens per target),
 #     not just one publish runner.
 #   - There is no cross-target unified manifest.json / SHA256SUMS: each target carries its
 #     OWN single-target sidecars. Consumers verify a download with its own .minisig.
-#   - The GitHub Release is assembled per target (create-or-upload --clobber); each job
-#     uploads only its own target's package + .sha256 + .minisig.
 #
 # Distribution: the signed artifacts are pushed to a self-hosted store via
 # `scripts/publish/upload-to-server.mjs` (POST /v1/artifact/upload on the license-server),
@@ -33,7 +29,7 @@
 # `contains(targets, '<target>')`; a DESELECTED target is SKIPPED (not red).
 #
 # Trigger: workflow_dispatch (manual release entry; runs the full chain).
-#          push tags: v* (re-build + re-sign + re-publish for the pushed tag).
+#          push tags: v* (re-build + re-sign + re-upload for the pushed tag).
 #
 # Local `pnpm release` still works — this workflow calls the same node scripts
 # (release:build, release:smoke, sign, postgate) so local and CI share one source of truth.
@@ -53,7 +49,7 @@ on:
         default: ''
         type: string
       skip_publish:
-        description: 'Skip publishing (build + smoke + sign + verify only; no upload, no gh).'
+        description: 'Skip publishing (build + smoke + sign + verify only; no upload).'
         required: false
         default: 'false'
         type: choice
@@ -64,9 +60,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write # for git tag + gh release
-  id-token: write # for SLSA OIDC keyless provenance
-  attestations: write # for actions/attest-build-provenance
+  contents: read # checkout only — no git tag / gh release in this workflow
 
 jobs:
   # ────────────────────────────────────────────────────────────────────
@@ -74,7 +68,7 @@ jobs:
   #     every per-target job shares one source of truth. `targets` gates which jobs
   #     run; `version` is the optional explicit release version (C3_RELEASE_VERSION);
   #     `batch` is the shared time subdirectory all targets upload under; `publish`
-  #     is false when workflow_dispatch sets skip_publish (no upload, no gh).
+  #     is false when workflow_dispatch sets skip_publish (no upload).
   # ────────────────────────────────────────────────────────────────────
   setup:
     name: 'setup (resolve targets + version + batch)'
@@ -154,9 +148,9 @@ jobs:
 
   # ────────────────────────────────────────────────────────────────────
   # 1. build-publish-<target> (one self-contained job per target)
-  #    build → smoke → sign → verify(postgate) → SLSA attest → upload-to-server → gh release.
+  #    build → smoke → sign → verify(postgate) → upload-to-server.
   #    Each runs on the target's NATIVE OS; the minisign secret + artifact-store secrets are
-  #    available to every job. Deselected/skip_publish steps are gated below.
+  #    available to every job. A deselected target / skip_publish gates the upload below.
   # ────────────────────────────────────────────────────────────────────
   build-publish-linux-x64:
     name: 'build+publish linux-x64'
@@ -216,32 +210,12 @@ jobs:
           C3_REQUIRED_TARGETS: linux-x64
         run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
 
-      - name: SLSA provenance (OIDC keyless)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist/c3-v*-linux-x64.tar.gz
-
       - name: Push artifacts to self-hosted store
         if: ${{ needs.setup.outputs.publish == 'true' }}
         env:
           C3_ARTIFACT_SERVER_URL: ${{ secrets.C3_ARTIFACT_SERVER_URL }}
           C3_ARTIFACT_UPLOAD_TOKEN: ${{ secrets.C3_ARTIFACT_UPLOAD_TOKEN }}
         run: node scripts/publish/upload-to-server.mjs --dist=dist --batch=${{ needs.setup.outputs.batch }}
-
-      - name: GitHub Release (create-or-upload)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release/notes.mjs --out=dist/RELEASE_NOTES.md
-          tag="v$(node -p "require('./dist/manifest.json').version")"
-          gh release create "$tag" --title "c3 $tag" --notes-file dist/RELEASE_NOTES.md 2>/dev/null || echo "release $tag exists — appending"
-          gh release upload "$tag" \
-            dist/c3-v*-linux-x64.tar.gz \
-            dist/c3-v*-linux-x64.tar.gz.sha256 \
-            dist/c3-v*-linux-x64.tar.gz.minisig \
-            --clobber
 
   build-publish-macos-arm64:
     name: 'build+publish macos-arm64'
@@ -301,32 +275,12 @@ jobs:
           C3_REQUIRED_TARGETS: macos-arm64
         run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
 
-      - name: SLSA provenance (OIDC keyless)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist/c3-v*-macos-arm64.tar.gz
-
       - name: Push artifacts to self-hosted store
         if: ${{ needs.setup.outputs.publish == 'true' }}
         env:
           C3_ARTIFACT_SERVER_URL: ${{ secrets.C3_ARTIFACT_SERVER_URL }}
           C3_ARTIFACT_UPLOAD_TOKEN: ${{ secrets.C3_ARTIFACT_UPLOAD_TOKEN }}
         run: node scripts/publish/upload-to-server.mjs --dist=dist --batch=${{ needs.setup.outputs.batch }}
-
-      - name: GitHub Release (create-or-upload)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release/notes.mjs --out=dist/RELEASE_NOTES.md
-          tag="v$(node -p "require('./dist/manifest.json').version")"
-          gh release create "$tag" --title "c3 $tag" --notes-file dist/RELEASE_NOTES.md 2>/dev/null || echo "release $tag exists — appending"
-          gh release upload "$tag" \
-            dist/c3-v*-macos-arm64.tar.gz \
-            dist/c3-v*-macos-arm64.tar.gz.sha256 \
-            dist/c3-v*-macos-arm64.tar.gz.minisig \
-            --clobber
 
   build-publish-macos-x64:
     name: 'build+publish macos-x64'
@@ -386,32 +340,12 @@ jobs:
           C3_REQUIRED_TARGETS: macos-x64
         run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
 
-      - name: SLSA provenance (OIDC keyless)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist/c3-v*-macos-x64.tar.gz
-
       - name: Push artifacts to self-hosted store
         if: ${{ needs.setup.outputs.publish == 'true' }}
         env:
           C3_ARTIFACT_SERVER_URL: ${{ secrets.C3_ARTIFACT_SERVER_URL }}
           C3_ARTIFACT_UPLOAD_TOKEN: ${{ secrets.C3_ARTIFACT_UPLOAD_TOKEN }}
         run: node scripts/publish/upload-to-server.mjs --dist=dist --batch=${{ needs.setup.outputs.batch }}
-
-      - name: GitHub Release (create-or-upload)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release/notes.mjs --out=dist/RELEASE_NOTES.md
-          tag="v$(node -p "require('./dist/manifest.json').version")"
-          gh release create "$tag" --title "c3 $tag" --notes-file dist/RELEASE_NOTES.md 2>/dev/null || echo "release $tag exists — appending"
-          gh release upload "$tag" \
-            dist/c3-v*-macos-x64.tar.gz \
-            dist/c3-v*-macos-x64.tar.gz.sha256 \
-            dist/c3-v*-macos-x64.tar.gz.minisig \
-            --clobber
 
   build-publish-windows-x64:
     name: 'build+publish windows-x64 (⚠️ experimental)'
@@ -473,31 +407,9 @@ jobs:
           C3_REQUIRED_TARGETS: windows-x64
         run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
 
-      - name: SLSA provenance (OIDC keyless)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist/c3-v*-windows-x64.zip
-
       - name: Push artifacts to self-hosted store
         if: ${{ needs.setup.outputs.publish == 'true' }}
         env:
           C3_ARTIFACT_SERVER_URL: ${{ secrets.C3_ARTIFACT_SERVER_URL }}
           C3_ARTIFACT_UPLOAD_TOKEN: ${{ secrets.C3_ARTIFACT_UPLOAD_TOKEN }}
         run: node scripts/publish/upload-to-server.mjs --dist=dist --batch=${{ needs.setup.outputs.batch }}
-
-      - name: GitHub Release (create-or-upload)
-        if: ${{ needs.setup.outputs.publish == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release/notes.mjs --out=dist/RELEASE_NOTES.md
-          $ver = node -p "require('./dist/manifest.json').version"
-          $tag = "v$ver"
-          gh release create "$tag" --title "c3 $tag" --notes-file dist/RELEASE_NOTES.md 2>$null
-          if ($LASTEXITCODE -ne 0) { Write-Host "release $tag exists — appending" }
-          gh release upload "$tag" `
-            (Get-ChildItem dist/c3-v*-windows-x64.zip).FullName `
-            (Get-ChildItem dist/c3-v*-windows-x64.zip.sha256).FullName `
-            (Get-ChildItem dist/c3-v*-windows-x64.zip.minisig).FullName `
-            --clobber

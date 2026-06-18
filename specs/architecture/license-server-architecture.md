@@ -307,11 +307,11 @@ c3 ↔ LS 的对外契约(激活、心跳、支付、错误语义)**只在**
 
 **`GET /v1/license/activate`** — 激活页拉取数据并登记本轮待绑请求(浏览器/会话)。
 
-| 方向 | 字段/参数   | 类型  | 说明                                                                                                |
-| ---- | ----------- | ----- | --------------------------------------------------------------------------------------------------- |
-| 请求 | `installId` | query | 必填;c3 安装标识                                                                                    |
-| 请求 | `requestId` | query | 必填;c3 本轮 32 位唯一 id                                                                           |
-| 返回 | `licenses`  | array | 当前用户的 license 列表,每项 `licenseKey`/`planKey`/`termEnd`/`status`/`aliveInstallId`/`aliveTime` |
+| 方向 | 字段/参数   | 类型  | 说明                                                                                                                             |
+| ---- | ----------- | ----- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 请求 | `installId` | query | 必填;c3 安装标识                                                                                                                 |
+| 请求 | `requestId` | query | 必填;c3 本轮 32 位唯一 id                                                                                                        |
+| 返回 | `licenses`  | array | 当前用户的 license 列表,每项 `licenseKey`/`termEnd`/`status`/`aliveInstallId`/`aliveTime`(license 不含套餐字段,套餐记录在订单上) |
 
 副作用:在内存登记 `(installId, requestId)` → pending(带 TTL)。未登录 → `401`;未就绪 → `503`。
 **不**返回 `aliveToken`/`entitlementToken`(PL-R2)。

@@ -29,6 +29,7 @@ const emit = defineEmits<{
   select: [id: string]
   'new-schedule': []
   'edit-schedule': [schedule: Schedule]
+  'delete-schedule': [id: string]
   'toggle-enabled': [id: string, enabled: boolean]
   'run-now': [id: string]
 }>()
@@ -134,6 +135,14 @@ function toggleEnabled(s: Schedule): void {
   emit('toggle-enabled', s.id, !isEnabled(s))
 }
 
+// 删除:硬删除且级联清除执行历史,不可撤销,故先弹原生二次确认(含任务名)。
+// 仅确认后才上抛 delete-schedule,由 App 发 delete_schedule;取消则无副作用。
+function requestDelete(s: Schedule): void {
+  if (window.confirm(t('schedule.list.delete.confirm', { name: scheduleLabel(s) }))) {
+    emit('delete-schedule', s.id)
+  }
+}
+
 // 手风琴展开状态:记录当前展开项的 id,null 表示全部收起;天然保证至多一项展开。
 // 展开时同时 emit select,使右栏 ScheduleDetail / Edit 联动(经用户确认)。
 const expandedId = ref<string | null>(null)
@@ -231,6 +240,16 @@ function toggleExpand(): void {
               @click.stop="emit('edit-schedule', s)"
             >
               ✎
+            </button>
+            <!-- 删除按钮:硬删除 + 级联执行历史,经 requestDelete 二次确认后才上抛。 -->
+            <button
+              type="button"
+              class="sched-delete-btn"
+              :title="t('schedule.list.delete.tooltip')"
+              :aria-label="t('schedule.list.delete.tooltip')"
+              @click.stop="requestDelete(s)"
+            >
+              🗑
             </button>
             <!-- enable/disable 开关:on=active。切换映射到 update_schedule 的 status。 -->
             <button
@@ -552,6 +571,32 @@ function toggleExpand(): void {
 .sched-edit-btn:hover {
   color: var(--c-text);
   border-color: var(--c-border);
+  background: var(--c-hover);
+}
+/* 删除按钮:与 edit 同尺寸 icon 按钮,悬停转危险色提示不可逆。 */
+.sched-delete-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 18px;
+  padding: 0;
+  font-size: var(--fs-badge);
+  line-height: 1;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.sched-delete-btn:hover {
+  color: var(--c-error);
+  border-color: var(--c-error);
   background: var(--c-hover);
 }
 /* enable/disable 开关:小型 pill 滑块,on=绿色 active。 */

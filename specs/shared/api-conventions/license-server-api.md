@@ -82,7 +82,7 @@ c3 不调用这些,记于此以保边界完整。
 
 ### license 绑定(浏览器/会话)
 
-- **`GET /v1/license/activate?installId&requestId`** — 确保账户有默认 license、登记本轮 `(installId, requestId)` 待绑请求,返回本人 license 列表(每项 `licenseId`/`licenseKey`/`planKey`/`status`/`termEnd`/`aliveInstallId`/`aliveTime`)。当且仅当满足自动绑定条件(唯一 license、`active`、剩余期 > 1 月)时,额外返回 `autoBound:true` 与 `termEnd`(已在服务端完成绑定并暂存待 `checkbind` 取回)。未登录 `401`。
+- **`GET /v1/license/activate?installId&requestId`** — 确保账户有默认 license、登记本轮 `(installId, requestId)` 待绑请求,返回本人 license 列表(每项 `licenseId`/`licenseKey`/`status`/`termEnd`/`aliveInstallId`/`aliveTime`;license 不含套餐字段——套餐记录在订单上)。当且仅当满足自动绑定条件(唯一 license、`active`、剩余期 > 1 月)时,额外返回 `autoBound:true` 与 `termEnd`(已在服务端完成绑定并暂存待 `checkbind` 取回)。未登录 `401`。
 - **`POST /v1/license/bind`** — 请求体 `{installId, requestId, licenseKey}`(license 须属本人):独占绑定、轮换 alive token、签实体令牌,并把 `(installId, requestId) → {aliveToken, entitlementToken}` 暂存内存供 `checkbind` 取回。**响应只回 `{status:"active", termEnd}`**(不含 alive token/令牌,PL-R2)。错误:`400`、`404 invalid_key`、`410 expired`、`401`、`503`。
 
 ### 续费购买流程

@@ -119,6 +119,7 @@ export interface AppMethods {
   openScheduleForm(target: Schedule | null): void
   createSchedule(input: CreateScheduleInput): void
   updateSchedule(id: string, input: UpdateScheduleInput): void
+  deleteSchedule(id: string): void
   onLoadScheduleToolManifest(vendor: string): void
 
   // codes (read-only file browser)

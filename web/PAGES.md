@@ -69,7 +69,7 @@ web/src/
 │   ├── schedules/                                   # 定时任务页
 │   │   ├── Schedules.vue                            # 定时任务容器页:桌面三栏(左栏列表 + 中栏执行历史 + 右栏 Tab 详情)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为三级 drill-down(任务列表→执行历史→Tab 执行详情逐级滑入/返回)
 │   │   └── components/
-│   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、enable/disable 开关、下次执行倒计时(30s 刷新)
+│   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、编辑、删除(window.confirm 二次确认)、enable/disable 开关、下次执行倒计时(30s 刷新)
 │   │       ├── ExecutionHistoryList/ExecutionHistoryList.vue  # 中栏执行历史列表:选中 schedule 的执行记录,点击选中某次执行
 │   │       ├── ScheduleDetail/ScheduleDetail.vue    # 右栏 schedule 详情(选中任务但未选执行时):vendor 品牌名+色点、mcpMode、toolAllowlist 读/写分类列表(借 toolManifest 缓存)
 │   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动

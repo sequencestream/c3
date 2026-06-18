@@ -194,7 +194,7 @@ function setFilter(value: string): void {
         <button
           v-show="activeTab === 'sessions'"
           type="button"
-          class="int-sess-new-btn"
+          class="req-new-btn"
           :aria-label="t('intent.sessionList.new.tooltip')"
           :title="t('intent.sessionList.new.tooltip')"
           data-testid="intent-session-new"

@@ -444,7 +444,6 @@ func licenseViews(ls []store.LicenseBinding) []map[string]any {
 		out[i] = map[string]any{
 			"licenseId":      l.ID,
 			"licenseKey":     l.LicenseKey,
-			"planKey":        l.PlanKey,
 			"status":         l.Status,
 			"termEnd":        l.TermEnd.Unix(),
 			"aliveInstallId": installID,

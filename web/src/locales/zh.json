@@ -992,6 +992,10 @@
       "edit": {
         "tooltip": "编辑定时任务"
       },
+      "delete": {
+        "tooltip": "删除定时任务",
+        "confirm": "确定删除「{name}」?其执行历史将一并永久清除,此操作无法撤销。"
+      },
       "runNow": {
         "tooltip": "立即执行一次",
         "disabledTooltip": "请先启用该任务再立即执行"

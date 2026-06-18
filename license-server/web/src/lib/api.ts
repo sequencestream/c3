@@ -12,7 +12,6 @@ export interface Plan {
 export interface License {
   licenseId: number
   licenseKey: string
-  planKey: string
   status: string
   termEnd: number
   aliveInstallId: string | null
@@ -57,7 +56,12 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     const parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {}
     if (!res.ok) {
       const err = parsed['error'] as { message?: string } | undefined
-      return { ok: false, status: res.status, data: null, error: err?.message ?? `HTTP ${res.status}` }
+      return {
+        ok: false,
+        status: res.status,
+        data: null,
+        error: err?.message ?? `HTTP ${res.status}`,
+      }
     }
     return { ok: true, status: res.status, data: parsed as T, error: '' }
   } catch (e) {
@@ -80,6 +84,22 @@ export function formatPrice(cents: number, currency: string): string {
 export function formatDate(unix: number): string {
   if (!unix) return '—'
   return new Date(unix * 1000).toISOString().slice(0, 10)
+}
+
+// statusBadgeClass maps a license/order status to a §3.8 badge variant class.
+// active/paid → success; pending → warning; failed → error; expired/other → muted.
+export function statusBadgeClass(status: string): string {
+  switch (status) {
+    case 'active':
+    case 'paid':
+      return 'badge badge-success'
+    case 'pending':
+      return 'badge badge-warning'
+    case 'failed':
+      return 'badge badge-error'
+    default:
+      return 'badge'
+  }
 }
 
 // loginHref builds the sign-in URL, preserving the binding round if present so

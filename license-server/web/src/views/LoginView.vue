@@ -10,14 +10,16 @@ const error = query('error')
 </script>
 
 <template>
-  <main class="ls-card">
-    <h1>登录 / Sign in</h1>
-    <p class="note">使用 GitHub 账号登录以管理你的 license。</p>
-    <p v-if="error" class="error">{{ error }}</p>
-    <form method="post" action="/v1/auth/login">
-      <input type="hidden" name="installId" :value="installId" />
-      <input type="hidden" name="requestId" :value="requestId" />
-      <button type="submit">使用 GitHub 登录</button>
-    </form>
+  <main class="ls-login">
+    <div class="ls-card login-card">
+      <h1>登录 / Sign in</h1>
+      <p class="note">使用 GitHub 账号登录以管理你的 license。</p>
+      <p v-if="error" class="error">{{ error }}</p>
+      <form method="post" action="/v1/auth/login">
+        <input type="hidden" name="installId" :value="installId" />
+        <input type="hidden" name="requestId" :value="requestId" />
+        <button type="submit">使用 GitHub 登录</button>
+      </form>
+    </div>
   </main>
 </template>

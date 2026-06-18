@@ -35,7 +35,7 @@ the old `user`/`orders`/`licenses`) on every startup.
 | c3_ls_user     | GitHub identity for user + admin; GitHub is account login/registration only (PL-R9/R11)  | github_id (unique), github_login, email                                                      |
 | c3_ls_plan     | Persisted public plan catalog (purchasable terms); bootstrapped from code, served at GET /v1/plans | id (PK, auto), plan_key (unique), name, duration_months, price_cents, currency, sort_order, is_trial |
 | c3_ls_order    | Purchase record + service-agreement acceptance; status machine `pending→paid/failed/expired`, a paid order extends the linked license (PL-R9) | order_no (unique; WeChat out_trade_no), user_id, license_id, plan_key, amount_cents, agreement_version, agreement_accepted_at, status, payment_ref |
-| c3_ls_license  | Authoritative entitlement keyed by license_key, carrying its exclusive live binding       | license_key (unique), user_id, plan_key, status, alive_install_id, alive_token, alive_time, term_end |
+| c3_ls_license  | Authoritative entitlement keyed by license_key, carrying its exclusive live binding       | license_key (unique), user_id, status, alive_install_id, alive_token, alive_time, term_end |
 
 Each order carries a business `order_no` (`C3+YYYYMMDDHHmmssSSS+random4`, unique),
 generated at creation and used as the WeChat **out_trade_no** — the payment

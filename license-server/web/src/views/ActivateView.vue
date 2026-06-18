@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { getJSON, postJSON, query, formatDate, loginHref, type License } from '../lib/api'
+import {
+  getJSON,
+  postJSON,
+  query,
+  formatDate,
+  loginHref,
+  statusBadgeClass,
+  type License,
+} from '../lib/api'
 
 // The browser-mediated binding landing (§4): c3 server opened this page with
 // installId + requestId. We list the signed-in user's licenses; selecting one
@@ -67,12 +75,18 @@ async function bind(licenseKey: string): Promise<void> {
     </template>
 
     <template v-else>
-      <p class="note">选择一条 license 绑定到本安装(installId <code>{{ installId }}</code>)。</p>
+      <p class="note">
+        选择一条 license 绑定到本安装(installId <code>{{ installId }}</code
+        >)。
+      </p>
       <ul class="ls-list">
         <li v-for="l in licenses" :key="l.licenseKey" class="row">
           <div>
             <code class="key">{{ l.licenseKey }}</code>
-            <div class="meta">{{ l.planKey }} · {{ l.status }} · 有效至 {{ formatDate(l.termEnd) }}</div>
+            <div class="meta">
+              <span :class="statusBadgeClass(l.status)">{{ l.status }}</span> · 有效至
+              {{ formatDate(l.termEnd) }}
+            </div>
           </div>
           <button :disabled="binding !== ''" @click="bind(l.licenseKey)">
             {{ binding === l.licenseKey ? '绑定中…' : '绑定' }}

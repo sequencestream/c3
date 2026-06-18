@@ -992,6 +992,10 @@
       "edit": {
         "tooltip": "Edit schedule"
       },
+      "delete": {
+        "tooltip": "Delete schedule",
+        "confirm": "Delete \"{name}\"? Its execution history is removed permanently — this can't be undone."
+      },
       "runNow": {
         "tooltip": "Run now",
         "disabledTooltip": "Enable the schedule to run it now"

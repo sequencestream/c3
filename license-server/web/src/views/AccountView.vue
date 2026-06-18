@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { getJSON, formatPrice, formatDate, loginHref, type License, type Order } from '../lib/api'
+import {
+  getJSON,
+  formatPrice,
+  formatDate,
+  loginHref,
+  statusBadgeClass,
+  type License,
+  type Order,
+} from '../lib/api'
 
 // User self-service (§10): the signed-in user's licenses (with binding info)
 // and paid orders. Never shows the alive token or entitlement token (PL-R2).
@@ -40,13 +48,19 @@ onMounted(async () => {
       <h2>我的 License</h2>
       <table v-if="licenses.length">
         <thead>
-          <tr><th>License Key</th><th>套餐</th><th>状态</th><th>有效至</th><th>当前绑定</th></tr>
+          <tr>
+            <th>License Key</th>
+            <th>状态</th>
+            <th>有效至</th>
+            <th>当前绑定</th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="l in licenses" :key="l.licenseKey">
-            <td><code class="key">{{ l.licenseKey }}</code></td>
-            <td>{{ l.planKey }}</td>
-            <td>{{ l.status }}</td>
+            <td>
+              <code class="key">{{ l.licenseKey }}</code>
+            </td>
+            <td><span :class="statusBadgeClass(l.status)">{{ l.status }}</span></td>
             <td>{{ formatDate(l.termEnd) }}</td>
             <td>{{ l.aliveInstallId || '未绑定' }}</td>
           </tr>
@@ -57,14 +71,22 @@ onMounted(async () => {
       <h2>已支付订单</h2>
       <table v-if="orders.length">
         <thead>
-          <tr><th>订单号</th><th>套餐</th><th>金额</th><th>状态</th><th>时间</th></tr>
+          <tr>
+            <th>订单号</th>
+            <th>套餐</th>
+            <th>金额</th>
+            <th>状态</th>
+            <th>时间</th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="o in orders" :key="o.orderNo">
-            <td><code class="key">{{ o.orderNo }}</code></td>
+            <td>
+              <code class="key">{{ o.orderNo }}</code>
+            </td>
             <td>{{ o.planKey }}</td>
             <td>{{ formatPrice(o.amountCents, o.currency) }}</td>
-            <td>{{ o.status }}</td>
+            <td><span :class="statusBadgeClass(o.status)">{{ o.status }}</span></td>
             <td>{{ formatDate(o.createdAt) }}</td>
           </tr>
         </tbody>

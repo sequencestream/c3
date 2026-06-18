@@ -221,7 +221,28 @@ function selectTab(tab: HeaderTab): void {
           </button>
         </div>
 
-        <!-- Product-license 状态控件(PL-R7),受控 <details> 下拉:
+        <button
+          v-if="isAdmin"
+          class="icon-btn settings-btn"
+          :title="t('nav.settings.tooltip')"
+          @click="emit('open-settings')"
+        >
+          ⚙
+        </button>
+        <button
+          v-if="showLogout"
+          class="icon-btn logout-btn"
+          :title="t('auth.logout.tooltip')"
+          @click="emit('logout')"
+        >
+          {{ t('auth.logout.label') }}
+        </button>
+        <span class="status" :class="status === 'open' ? 'ok' : 'err'">
+          {{ status }}
+        </span>
+
+        <!-- Product-license 状态控件(PL-R7),受控 <details> 下拉。位于连接状态右侧、
+             顶栏最右:
              · 已激活(active/grace)→ ✓ 图标(按 state 着色),下拉显示许可密钥 + 有效期
              · 未激活/过期/停用 → 红色带下划线状态文字,下拉内「激活许可」按钮触发激活流程 -->
         <details v-if="license" ref="licenseEl" class="license-menu" @toggle="syncOutsideListener">
@@ -255,26 +276,6 @@ function selectTab(tab: HeaderTab): void {
             </button>
           </div>
         </details>
-
-        <button
-          v-if="isAdmin"
-          class="icon-btn settings-btn"
-          :title="t('nav.settings.tooltip')"
-          @click="emit('open-settings')"
-        >
-          ⚙
-        </button>
-        <button
-          v-if="showLogout"
-          class="icon-btn logout-btn"
-          :title="t('auth.logout.tooltip')"
-          @click="emit('logout')"
-        >
-          {{ t('auth.logout.label') }}
-        </button>
-        <span class="status" :class="status === 'open' ? 'ok' : 'err'">
-          {{ status }}
-        </span>
       </div>
     </div>
 

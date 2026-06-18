@@ -81,11 +81,11 @@ func TestAccountLiveDataIsolation(t *testing.T) {
 	userB, _ := env.store.UpsertUser(env.ctx, 1002, "bob", "bob@example.com")
 
 	now := time.Now()
-	licA, _, err := env.store.EnsureLicenseForUser(env.ctx, userA, "trial-1m", 30, now, testKeyGen("lk"))
+	licA, _, err := env.store.EnsureLicenseForUser(env.ctx, userA, 30, now, testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license A: %v", err)
 	}
-	licB, _, err := env.store.EnsureLicenseForUser(env.ctx, userB, "trial-1m", 30, now, testKeyGen("lk"))
+	licB, _, err := env.store.EnsureLicenseForUser(env.ctx, userB, 30, now, testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license B: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestAccountDoesNotLeakAliveToken(t *testing.T) {
 		t.Fatalf("seed plans: %v", err)
 	}
 	user, _ := env.store.UpsertUser(env.ctx, 2001, "test", "test@example.com")
-	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, user, "trial-1m", 30, time.Now(), testKeyGen("lk"))
+	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, user, 30, time.Now(), testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}

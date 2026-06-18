@@ -18,8 +18,6 @@
 CREATE TABLE IF NOT EXISTS c3_ls_license (
     id               BIGSERIAL PRIMARY KEY,       -- Internal license identity.
     user_id          BIGINT      NOT NULL,         -- User that owns the license (references c3_ls_user.id).
-    order_id         BIGINT,                       -- Purchase order that last extended this license, if any.
-    plan_key         VARCHAR(32) NOT NULL,         -- Plan this license grants (references c3_ls_plan.plan_key).
     license_key      TEXT        NOT NULL UNIQUE,  -- Random unique handle passed on the c3<->LS bind/heartbeat API.
     status           VARCHAR(32) NOT NULL DEFAULT 'active', -- License status: active or expired.
     alive_install_id TEXT,                         -- The single c3 installation currently bound (exclusive).
@@ -37,8 +35,6 @@ CREATE INDEX IF NOT EXISTS idx_c3_ls_license_alive_install ON c3_ls_license(aliv
 COMMENT ON TABLE c3_ls_license IS 'Authoritative product entitlement record keyed by license_key, carrying its exclusive live installation binding (alive_install_id/alive_token/alive_time).';
 COMMENT ON COLUMN c3_ls_license.id IS 'Internal license identity.';
 COMMENT ON COLUMN c3_ls_license.user_id IS 'User that owns the license (references c3_ls_user.id).';
-COMMENT ON COLUMN c3_ls_license.order_id IS 'Purchase order that last extended this license, if any.';
-COMMENT ON COLUMN c3_ls_license.plan_key IS 'Plan this license grants (references c3_ls_plan.plan_key).';
 COMMENT ON COLUMN c3_ls_license.license_key IS 'Random unique handle passed on the c3<->LS bind/heartbeat API.';
 COMMENT ON COLUMN c3_ls_license.status IS 'License status: active or expired.';
 COMMENT ON COLUMN c3_ls_license.alive_install_id IS 'The single c3 installation currently bound (exclusive); rebinding displaces the previous one.';

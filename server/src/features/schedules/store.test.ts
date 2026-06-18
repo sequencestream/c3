@@ -22,6 +22,7 @@ import {
   listExecutionLogs,
   updateExecutionLog,
   getExecutionLog,
+  deleteSchedule,
 } from './store.js'
 
 let dir: string
@@ -368,5 +369,70 @@ describe('listExecutionLogs', () => {
 
   it('getExecutionLog returns null for an unknown id', () => {
     expect(getExecutionLog('nope')).toBeNull()
+  })
+})
+
+describe('deleteSchedule', () => {
+  function makeSchedule() {
+    return createSchedule({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId: proj,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+    })
+  }
+
+  it('removes the schedule and cascades its execution logs (hard delete)', () => {
+    const sch = makeSchedule()
+    appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 1_000,
+      finishedAt: 1_500,
+      exitCode: 0,
+      output: 'ran',
+      error: null,
+      status: 'success',
+    })
+    appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 2_000,
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: 'running',
+    })
+    expect(listExecutionLogs(sch.id)).toHaveLength(2)
+
+    deleteSchedule(sch.id)
+
+    expect(getSchedule(sch.id)).toBeNull()
+    expect(listExecutionLogs(sch.id)).toEqual([])
+  })
+
+  it('only deletes the target schedule — sibling schedules and their logs survive', () => {
+    const a = makeSchedule()
+    const b = makeSchedule()
+    appendExecutionLog({
+      scheduleId: b.id,
+      startedAt: 1_000,
+      finishedAt: 1_500,
+      exitCode: 0,
+      output: 'b',
+      error: null,
+      status: 'success',
+    })
+
+    deleteSchedule(a.id)
+
+    expect(getSchedule(a.id)).toBeNull()
+    expect(getSchedule(b.id)).not.toBeNull()
+    expect(listExecutionLogs(b.id)).toHaveLength(1)
+  })
+
+  it('is a no-op for an unknown id', () => {
+    expect(() => deleteSchedule('nope')).not.toThrow()
   })
 })

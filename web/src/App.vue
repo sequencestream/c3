@@ -152,6 +152,7 @@ const {
   onScheduleMobileBack,
   createSchedule,
   updateSchedule,
+  deleteSchedule,
   onLoadScheduleToolManifest,
   // ---- codes ----
   codesProject,
@@ -390,6 +391,7 @@ const {
           :host-status="hostStatus"
           @select="onSelectSchedule"
           @open-form="openScheduleForm"
+          @delete-schedule="deleteSchedule"
           @toggle-enabled="onToggleScheduleEnabled"
           @run-now="runNowSchedule"
           @load-session="onLoadExecutionSession"

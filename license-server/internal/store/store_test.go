@@ -66,7 +66,7 @@ func seedLicense(t *testing.T, s *Store, ctx context.Context, now time.Time) (in
 		t.Fatalf("upsert user: %v", err)
 	}
 	keys := keyGen("lk")
-	lic, issued, err := s.EnsureLicenseForUser(ctx, userID, "1m", 30, now, keys)
+	lic, issued, err := s.EnsureLicenseForUser(ctx, userID, 30, now, keys)
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestEnsureLicenseReusesActiveLicense(t *testing.T) {
 	now := time.Now()
 	userID, lic := seedLicense(t, s, ctx, now)
 
-	again, issued, err := s.EnsureLicenseForUser(ctx, userID, "1m", 30, now, keyGen("lk2"))
+	again, issued, err := s.EnsureLicenseForUser(ctx, userID, 30, now, keyGen("lk2"))
 	if err != nil {
 		t.Fatalf("ensure again: %v", err)
 	}

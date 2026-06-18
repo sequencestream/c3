@@ -60,11 +60,10 @@ func TestLicenseAPIUnavailableWhenUnconfigured(t *testing.T) {
 // --- live end-to-end (skips without C3_LS_TEST_DATABASE_URL) -------------------
 
 type liveEnv struct {
-	h        http.Handler
-	store    *store.Store
-	pub      ed25519.PublicKey
-	ctx      context.Context
-	trialKey string
+	h     http.Handler
+	store *store.Store
+	pub   ed25519.PublicKey
+	ctx   context.Context
 }
 
 func liveServer(t *testing.T, github http.Handler) liveEnv {
@@ -106,15 +105,12 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 	cfg.PublicURL = "http://ls.test"
 
 	st := store.New(db)
-	// Seed a trial plan so the default license is granted on a known plan.
+	// Seed a trial plan for the checkout/renewal flows; the default license issued
+	// at sign-in no longer references a plan (plan lives on the order).
 	if err := st.SeedPlans(ctx, []store.Plan{
 		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
 	}); err != nil {
 		t.Fatalf("seed trial plan: %v", err)
-	}
-	trial, ok, err := st.FirstTrialPlan(ctx)
-	if err != nil || !ok {
-		t.Fatalf("first trial plan: err=%v ok=%v", err, ok)
 	}
 	h := NewServer(Deps{
 		Config: cfg,
@@ -125,7 +121,7 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 		Store:  st,
 		Signer: priv,
 	})
-	return liveEnv{h: h, store: st, pub: priv.Public().(ed25519.PublicKey), ctx: ctx, trialKey: trial.PlanKey}
+	return liveEnv{h: h, store: st, pub: priv.Public().(ed25519.PublicKey), ctx: ctx}
 }
 
 func githubOK() http.Handler {
@@ -220,7 +216,7 @@ func TestBindCheckbindAndHeartbeatHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, env.trialKey, 30, time.Now(), func() string { return "license-key-xyz" })
+	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, 30, time.Now(), func() string { return "license-key-xyz" })
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
@@ -312,7 +308,7 @@ func TestBindRejectsUnknownKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	if _, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, env.trialKey, 30, time.Now(), func() string { return "owned-key" }); err != nil {
+	if _, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, 30, time.Now(), func() string { return "owned-key" }); err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
 	cookie := accountCookie(t, userID)

@@ -110,7 +110,7 @@ func seedPendingOrder(t *testing.T, st *store.Store, ctx context.Context) store.
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	lic, _, err := st.EnsureLicenseForUser(ctx, userID, "6m", 30, time.Now(), keyGenPay())
+	lic, _, err := st.EnsureLicenseForUser(ctx, userID, 30, time.Now(), keyGenPay())
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}

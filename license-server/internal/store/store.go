@@ -233,7 +233,6 @@ func (s *Store) FirstTrialPlan(ctx context.Context) (Plan, bool, error) {
 type LicenseBinding struct {
 	ID             int64
 	UserID         int64
-	PlanKey        string
 	LicenseKey     string
 	Status         string
 	TermStart      time.Time
@@ -242,12 +241,12 @@ type LicenseBinding struct {
 	AliveTime      *time.Time // nil when no binding has ever heartbeaten
 }
 
-// License is the entitlement row (the subset the bind/heartbeat flow needs).
-// PlanKey references the granted plan (c3_ls_plan.plan_key).
+// License is the entitlement row (the subset the bind/heartbeat flow needs). The
+// purchased plan is not carried here — it lives on the order (c3_ls_order.plan_key)
+// that funded the term, not on the license.
 type License struct {
 	ID         int64
 	UserID     int64
-	PlanKey    string
 	LicenseKey string
 	Status     string
 	TermStart  time.Time
@@ -258,7 +257,6 @@ type License struct {
 type licenseRow struct {
 	ID         int64
 	UserID     int64
-	PlanKey    string
 	LicenseKey string
 	Status     string
 	TermStart  time.Time
@@ -269,7 +267,6 @@ func (r licenseRow) toLicense() License {
 	return License{
 		ID:         r.ID,
 		UserID:     r.UserID,
-		PlanKey:    r.PlanKey,
 		LicenseKey: r.LicenseKey,
 		Status:     r.Status,
 		TermStart:  r.TermStart,
@@ -282,14 +279,14 @@ func (r licenseRow) toLicense() License {
 // user has none. GitHub login lands here so a newly-registered user leaves with
 // a key to bind. newKey generates a random license_key; a unique collision is
 // retried. Returns the license and whether it was newly issued.
-func (s *Store) EnsureLicenseForUser(ctx context.Context, userID int64, planKey string, termDays int, now time.Time, newKey func() string) (License, bool, error) {
+func (s *Store) EnsureLicenseForUser(ctx context.Context, userID int64, termDays int, now time.Time, newKey func() string) (License, bool, error) {
 	if !s.Available() {
 		return License{}, false, errors.New("store: database not configured")
 	}
 
 	var existing licenseRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, plan_key, license_key, status, term_start, term_end
+		SELECT id, user_id, license_key, status, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1 AND status = 'active' AND term_end > $2
 		ORDER BY term_end DESC
@@ -307,10 +304,10 @@ func (s *Store) EnsureLicenseForUser(ctx context.Context, userID int64, planKey 
 	var lastErr error
 	for range 5 {
 		res := s.db.WithContext(ctx).Raw(`
-			INSERT INTO c3_ls_license (user_id, plan_key, license_key, status, term_start, term_end)
-			VALUES ($1, $2, $3, 'active', $4, $5)
-			RETURNING id, user_id, plan_key, license_key, status, term_start, term_end`,
-			userID, planKey, newKey(), termStart, termEnd).Scan(&inserted)
+			INSERT INTO c3_ls_license (user_id, license_key, status, term_start, term_end)
+			VALUES ($1, $2, 'active', $3, $4)
+			RETURNING id, user_id, license_key, status, term_start, term_end`,
+			userID, newKey(), termStart, termEnd).Scan(&inserted)
 		if res.Error == nil && res.RowsAffected > 0 {
 			return inserted.toLicense(), true, nil
 		}
@@ -330,7 +327,7 @@ func (s *Store) EnsureDefaultLicense(ctx context.Context, userID int64, termDays
 	}
 	var existing licenseRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, plan_key, license_key, status, term_start, term_end
+		SELECT id, user_id, license_key, status, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -341,29 +338,7 @@ func (s *Store) EnsureDefaultLicense(ctx context.Context, userID int64, termDays
 	if res.RowsAffected > 0 {
 		return existing.toLicense(), false, nil
 	}
-	planKey, err := s.defaultPlanKey(ctx)
-	if err != nil {
-		return License{}, false, err
-	}
-	return s.EnsureLicenseForUser(ctx, userID, planKey, termDays, now, newKey)
-}
-
-// defaultPlanKey picks the plan a freshly-issued default license is granted: the
-// trial plan when configured, else the first catalog plan by sort order.
-func (s *Store) defaultPlanKey(ctx context.Context) (string, error) {
-	if trial, ok, err := s.FirstTrialPlan(ctx); err != nil {
-		return "", err
-	} else if ok {
-		return trial.PlanKey, nil
-	}
-	ps, err := s.ListPlans(ctx)
-	if err != nil {
-		return "", err
-	}
-	if len(ps) == 0 {
-		return "", ErrNotFound
-	}
-	return ps[0].PlanKey, nil
+	return s.EnsureLicenseForUser(ctx, userID, termDays, now, newKey)
 }
 
 // LicenseBindingsByUser returns every license a user owns (newest first) with
@@ -376,7 +351,6 @@ func (s *Store) LicenseBindingsByUser(ctx context.Context, userID int64) ([]Lice
 	var rows []struct {
 		ID             int64
 		UserID         int64
-		PlanKey        string
 		LicenseKey     string
 		Status         string
 		TermStart      time.Time
@@ -385,7 +359,7 @@ func (s *Store) LicenseBindingsByUser(ctx context.Context, userID int64) ([]Lice
 		AliveTime      *time.Time
 	}
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, plan_key, license_key, status, term_start, term_end,
+		SELECT id, user_id, license_key, status, term_start, term_end,
 		       alive_install_id, alive_time
 		FROM c3_ls_license
 		WHERE user_id = $1
@@ -398,7 +372,6 @@ func (s *Store) LicenseBindingsByUser(ctx context.Context, userID int64) ([]Lice
 		out[i] = LicenseBinding{
 			ID:             r.ID,
 			UserID:         r.UserID,
-			PlanKey:        r.PlanKey,
 			LicenseKey:     r.LicenseKey,
 			Status:         r.Status,
 			TermStart:      r.TermStart,
@@ -418,7 +391,7 @@ func (s *Store) ListLicensesByUser(ctx context.Context, userID int64) ([]License
 	}
 	var rows []licenseRow
 	res := s.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, plan_key, license_key, status, term_start, term_end
+		SELECT id, user_id, license_key, status, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1
 		ORDER BY created_at DESC`, userID).Scan(&rows)
@@ -458,12 +431,11 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 		var locked struct {
 			ID      int64
 			UserID  int64
-			PlanKey string
 			Status  string
 			TermEnd time.Time
 		}
 		res := tx.Raw(`
-			SELECT id, user_id, plan_key, status, term_end
+			SELECT id, user_id, status, term_end
 			FROM c3_ls_license
 			WHERE license_key = $1
 			FOR UPDATE`, licenseKey).Scan(&locked)
@@ -499,7 +471,6 @@ func (s *Store) BindInstallation(ctx context.Context, licenseKey, installID stri
 			License: License{
 				ID:         locked.ID,
 				UserID:     locked.UserID,
-				PlanKey:    locked.PlanKey,
 				LicenseKey: licenseKey,
 				Status:     "active",
 				TermStart:  now,
@@ -550,7 +521,6 @@ func (s *Store) HeartbeatByInstall(ctx context.Context, installID, aliveTokenPla
 		var locked struct {
 			ID             int64
 			UserID         int64
-			PlanKey        string
 			LicenseKey     string
 			Status         string
 			AliveInstallID *string
@@ -558,7 +528,7 @@ func (s *Store) HeartbeatByInstall(ctx context.Context, installID, aliveTokenPla
 			TermEnd        time.Time
 		}
 		res := tx.Raw(`
-			SELECT id, user_id, plan_key, license_key, status, alive_install_id, term_start, term_end
+			SELECT id, user_id, license_key, status, alive_install_id, term_start, term_end
 			FROM c3_ls_license
 			WHERE alive_token = $1
 			FOR UPDATE`, HashCode(aliveTokenPlain)).Scan(&locked)
@@ -590,7 +560,6 @@ func (s *Store) HeartbeatByInstall(ctx context.Context, installID, aliveTokenPla
 			License: License{
 				ID:         locked.ID,
 				UserID:     locked.UserID,
-				PlanKey:    locked.PlanKey,
 				LicenseKey: locked.LicenseKey,
 				Status:     "active",
 				TermStart:  locked.TermStart,
@@ -822,9 +791,8 @@ func (s *Store) MarkOrderPaid(ctx context.Context, orderNo, paymentRef string, n
 				UPDATE c3_ls_license
 				SET term_end = GREATEST(term_end, $2) + make_interval(months => $3),
 				    status = 'active',
-				    order_id = $4,
 				    updated_at = $2
-				WHERE id = $1`, out.LicenseID, now, months, out.ID).Error; err != nil {
+				WHERE id = $1`, out.LicenseID, now, months).Error; err != nil {
 				return fmt.Errorf("store: extend license: %w", err)
 			}
 		}

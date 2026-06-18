@@ -17,7 +17,7 @@ import {
   saveWorkspaceMcpConfig as storeSaveWorkspaceMcpConfig,
   updateSchedule as updateScheduleStore,
 } from './store.js'
-import { triggerRunNow } from './scheduler.js'
+import { triggerRunNow, cancelInFlight } from './scheduler.js'
 import { readExecutionTranscript } from './transcript.js'
 import { clampName, generateScheduleName } from './naming.js'
 import type { ScheduleNameOverride } from './store.js'
@@ -124,6 +124,12 @@ export const deleteScheduleHandler: Handler<'delete_schedule'> = (ctx, conn, msg
     conn.send({ type: 'error', error: { code: 'schedule.notFound' } })
     return
   }
+  // Stop any in-flight execution before the row vanishes (SCH-R7 / SCH-R14):
+  // a hard delete drops the schedule and its logs, so the running execution
+  // must be un-tracked first. Event-triggered schedules carry no per-schedule
+  // subscription to detach — the dispatcher re-queries the store on every
+  // lifecycle event, so removing the row is itself the unbind.
+  cancelInFlight(msg.scheduleId)
   deleteScheduleStore(msg.scheduleId)
   ctx.broadcastSchedules(resolveWorkspaceRoot(existing.workspaceId)!)
 }

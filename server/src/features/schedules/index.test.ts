@@ -17,14 +17,28 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { createSchedule, getSchedule, resetStoreForTests } from './store.js'
+import {
+  appendExecutionLog,
+  createSchedule,
+  getSchedule,
+  listExecutionLogs,
+  resetStoreForTests,
+} from './store.js'
 
 vi.mock('./naming.js', async (orig) => {
   const actual = await orig<typeof import('./naming.js')>()
   return { ...actual, generateScheduleName: vi.fn(async () => 'Regenerated Auto') }
 })
 
-import { updateScheduleHandler } from './index.js'
+// Stub the scheduler so the delete handler's in-flight cancellation is observable
+// without standing up the real tick loop / event-bus wiring.
+vi.mock('./scheduler.js', () => ({
+  triggerRunNow: vi.fn(),
+  cancelInFlight: vi.fn(),
+}))
+
+import { deleteScheduleHandler, updateScheduleHandler } from './index.js'
+import { cancelInFlight } from './scheduler.js'
 
 const proj = '/abs/ws-handler'
 let dir: string
@@ -96,5 +110,57 @@ describe('updateScheduleHandler — manual title', () => {
     const cfg = getSchedule(sch.id)!.config as Record<string, unknown>
     expect(cfg.name).toBe('Regenerated Auto')
     expect(cfg.nameSource).toBeUndefined()
+  })
+})
+
+function deleteMsg(scheduleId: string) {
+  return { type: 'delete_schedule', scheduleId } as never
+}
+
+describe('deleteScheduleHandler', () => {
+  beforeEach(() => {
+    vi.mocked(cancelInFlight).mockClear()
+  })
+
+  it('hard-deletes the schedule, cascades its logs, cancels in-flight, broadcasts', () => {
+    const sch = makeSchedule()
+    appendExecutionLog({
+      scheduleId: sch.id,
+      startedAt: 1_000,
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: 'running',
+    })
+    expect(listExecutionLogs(sch.id)).toHaveLength(1)
+
+    const ctx = fakeCtx()
+    deleteScheduleHandler(ctx, fakeConn(), deleteMsg(sch.id))
+
+    // Running execution is stopped before the row vanishes (SCH-R7 / SCH-R14).
+    expect(cancelInFlight).toHaveBeenCalledWith(sch.id)
+    // Schedule + its execution history are gone (hard delete, cascade).
+    expect(getSchedule(sch.id)).toBeNull()
+    expect(listExecutionLogs(sch.id)).toEqual([])
+    // List refresh broadcast fires.
+    expect(
+      (ctx as unknown as { broadcastSchedules: ReturnType<typeof vi.fn> }).broadcastSchedules,
+    ).toHaveBeenCalled()
+  })
+
+  it('replies schedule.notFound for an unknown id — no cancel, no broadcast', () => {
+    const ctx = fakeCtx()
+    const conn = fakeConn()
+    deleteScheduleHandler(ctx, conn, deleteMsg('nope'))
+
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith({
+      type: 'error',
+      error: { code: 'schedule.notFound' },
+    })
+    expect(cancelInFlight).not.toHaveBeenCalled()
+    expect(
+      (ctx as unknown as { broadcastSchedules: ReturnType<typeof vi.fn> }).broadcastSchedules,
+    ).not.toHaveBeenCalled()
   })
 })

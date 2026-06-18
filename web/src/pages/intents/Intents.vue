@@ -137,6 +137,13 @@ function handleSelectIntentSession(sessionId: string): void {
   emit('select-intent-session', sessionId)
 }
 
+function handleNewIntentSession(): void {
+  // 移动端:新建会话后服务端回 session_selected,需先切到 chat 面板,
+  // 否则停留在合并列(意图列表/会话列表)而看不到新会话。
+  mobileActiveKey.value = 'chat'
+  emit('new-intent-session')
+}
+
 function handleMobileBack(targetKey: string): void {
   mobileActiveKey.value = targetKey as MobilePaneKey
   emit('mobile-back', targetKey)
@@ -179,7 +186,7 @@ defineExpose({
         @create-pr="(id: string) => emit('create-pr', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-intent-session="handleSelectIntentSession"
-        @new-intent-session="emit('new-intent-session')"
+        @new-intent-session="handleNewIntentSession"
         @rename-intent-session="
           (id: string, title: string) => emit('rename-intent-session', id, title)
         "

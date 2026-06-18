@@ -993,6 +993,10 @@
       "edit": {
         "tooltip": "스케줄 편집"
       },
+      "delete": {
+        "tooltip": "스케줄 삭제",
+        "confirm": "\"{name}\"을(를) 삭제할까요? 실행 기록도 영구적으로 삭제되며 되돌릴 수 없습니다."
+      },
       "runNow": {
         "tooltip": "지금 실행",
         "disabledTooltip": "지금 실행하려면 스케줄을 활성화하세요"

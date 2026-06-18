@@ -98,6 +98,12 @@ export function installScheduleActions(ctx: AppCtx): void {
     send({ type: 'update_schedule', scheduleId: id, input })
   }
 
+  // 列表行的删除:二次确认在 ScheduleList 内完成,这里只负责发线协议消息。
+  // 服务端硬删除并级联清除执行历史,随后广播 schedules 刷新列表。
+  ctx.deleteSchedule = (id: string): void => {
+    send({ type: 'delete_schedule', scheduleId: id })
+  }
+
   ctx.onLoadScheduleToolManifest = (vendor: string): void => {
     if (!schedulesProject.value || !vendor) return
     // Return cached result immediately if we already have it.

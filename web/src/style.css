@@ -3214,6 +3214,15 @@ button.deny:hover:not(:disabled) {
 .req-item.cancelled {
   opacity: 0.6;
 }
+/* 选中行高亮:右栏 IntentDetail 展示该意图详情。 */
+.req-item.selected {
+  border-color: var(--c-primary);
+  background: var(--c-primary-soft);
+}
+.req-item.selected.done,
+.req-item.selected.cancelled {
+  opacity: 1;
+}
 /* 标题区 + 操作区同行;窄屏 wrap 时操作区整体换到下一行 */
 .req-item-main {
   display: flex;

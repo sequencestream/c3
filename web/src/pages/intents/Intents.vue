@@ -2,16 +2,19 @@
 /*
  * Intents.vue — 需求页容器。
  *
- * 桌面两栏布局:左侧合并列(分段控件切换需求列表/意图会话列表) + 右侧聊天列。
- * 移动端退化为二级 drill-down 栈:合并列→聊天逐级滑入/返回。
- * 需求 comm session 即被查看的会话,故复用与会话页相同的聊天列(标题栏为需求变体,
- * 无权限模式下拉)。状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。
- * composer ref 经 defineExpose 转发。
+ * 桌面两栏布局:左侧合并列(分段控件切换需求列表/意图会话列表) + 右侧上下文详情列。
+ * 右栏按合并列的 activeTab 切换:
+ *   - intents tab → IntentDetail(selectedIntentId 对应意图的完整详情)
+ *   - sessions tab → 聊天列(与会话页相同,标题栏为需求变体,无权限模式下拉)
+ * 首次进入(intents tab)默认选中列表首条意图,右栏直接展示其详情。
+ * 移动端退化为二级 drill-down 栈:列表 → 右栏(详情或聊天)逐级滑入/返回。
+ * 状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。composer ref 经 defineExpose 转发。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
+import IntentDetail from './components/IntentDetail/IntentDetail.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
@@ -106,41 +109,76 @@ const emit = defineEmits<{
 
 const { t } = useTypedI18n()
 
-// ---- Mobile drill-down state ----
-// 桌面两栏(合并列+聊天),移动端两级 drill-down。
+// ---- 选中意图(驱动右栏 IntentDetail) ----
+// 首次进入或列表变化时默认按列表顺序选中第一条;选中项被移除则回退首条;列表为空则清空。
+const selectedIntentId = ref<string | null>(null)
+watch(
+  () => props.intents,
+  (list) => {
+    if (list.length === 0) {
+      selectedIntentId.value = null
+      return
+    }
+    if (!selectedIntentId.value || !list.some((r) => r.id === selectedIntentId.value)) {
+      selectedIntentId.value = list[0].id
+    }
+  },
+  { immediate: true },
+)
+const selectedIntent = computed<Intent | null>(
+  () => props.intents.find((r) => r.id === selectedIntentId.value) ?? null,
+)
+
+// ---- 合并列当前 tab(驱动右栏上下文切换) ----
 const mergedListRef = ref<InstanceType<typeof IntentMergedList> | null>(null)
 const mergedActiveTab = computed(() => mergedListRef.value?.activeTab ?? 'intents')
 
+// ---- Mobile drill-down state ----
+// 桌面两栏(合并列 + 右栏),移动端两级 drill-down:列表 → 右栏(详情或聊天)。
 const mobilePanes = computed(
   () =>
     [
       {
-        key: 'intents',
+        key: 'list',
         title:
           mergedActiveTab.value === 'sessions'
             ? t('intent.sessionList.title.label')
             : t('intent.list.title.label'),
       },
-      { key: 'chat', title: t('intent.chat.title.label') },
+      {
+        key: 'right',
+        title:
+          mergedActiveTab.value === 'sessions'
+            ? t('intent.chat.title.label')
+            : (selectedIntent.value?.title ?? t('intent.list.title.label')),
+      },
     ] as const,
 )
 
 type MobilePaneKey = (typeof mobilePanes.value)[number]['key']
 
-const mobileActiveKey = ref<MobilePaneKey>('intents')
-const mobileActiveToken = computed(
-  () => props.selectedIntentSessionId ?? props.project ?? 'intents',
+const mobileActiveKey = ref<MobilePaneKey>('list')
+const mobileActiveToken = computed(() =>
+  mergedActiveTab.value === 'sessions'
+    ? (props.selectedIntentSessionId ?? props.project ?? 'list')
+    : (selectedIntentId.value ?? props.project ?? 'list'),
 )
 
+function handleSelectIntent(intentId: string): void {
+  selectedIntentId.value = intentId
+  // 移动端:点击意图行 drill 进右栏详情(桌面下右栏常驻,仅更新选中)。
+  mobileActiveKey.value = 'right'
+}
+
 function handleSelectIntentSession(sessionId: string): void {
-  mobileActiveKey.value = 'chat'
+  mobileActiveKey.value = 'right'
   emit('select-intent-session', sessionId)
 }
 
 function handleNewIntentSession(): void {
-  // 移动端:新建会话后服务端回 session_selected,需先切到 chat 面板,
+  // 移动端:新建会话后服务端回 session_selected,需先切到右栏(聊天),
   // 否则停留在合并列(意图列表/会话列表)而看不到新会话。
-  mobileActiveKey.value = 'chat'
+  mobileActiveKey.value = 'right'
   emit('new-intent-session')
 }
 
@@ -164,27 +202,20 @@ defineExpose({
     back-label="Intents"
     @back="handleMobileBack"
   >
-    <template #intents>
+    <template #list>
       <IntentMergedList
         ref="mergedListRef"
         :project="project"
         :intents="intents"
         :automation="automation"
-        :intent-action-error-seq="intentActionErrorSeq"
+        :selected-intent-id="selectedIntentId"
         :intent-sessions="intentSessions"
         :selected-intent-session-id="selectedIntentSessionId"
         :intent-session-run-states="intentSessionRunStates"
         @filter="(status: IntentStatus | null) => emit('filter', status)"
-        @refine="(id: string) => emit('refine', id)"
-        @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
-        @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
-        @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
-        @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @start-automation="emit('start-automation')"
         @stop-automation="emit('stop-automation')"
-        @new-intent="emit('new-intent')"
-        @create-pr="(id: string) => emit('create-pr', id)"
-        @update-deps="(id, deps) => emit('update-deps', id, deps)"
+        @select-intent="handleSelectIntent"
         @select-intent-session="handleSelectIntentSession"
         @new-intent-session="handleNewIntentSession"
         @rename-intent-session="
@@ -194,8 +225,21 @@ defineExpose({
       />
     </template>
 
-    <template #chat>
-      <div class="content">
+    <template #right>
+      <IntentDetail
+        v-if="mergedActiveTab === 'intents'"
+        :intent="selectedIntent"
+        :intents="intents"
+        :intent-action-error-seq="intentActionErrorSeq"
+        @refine="(id: string) => emit('refine', id)"
+        @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
+        @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
+        @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
+        @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
+        @create-pr="(id: string) => emit('create-pr', id)"
+        @update-deps="(id, deps) => emit('update-deps', id, deps)"
+      />
+      <div v-else class="content">
         <SessionTitleBar
           :active-title="activeTitle || t('intent.chat.title.label')"
           :vendor="vendor ?? null"

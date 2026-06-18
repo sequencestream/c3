@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Intent } from '@ccc/shared/protocol'
 import IntentList from './IntentList.vue'
@@ -28,57 +28,54 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
   }
 }
 
-function mountList(intents: Intent[], intentActionErrorSeq = 0) {
+function mountList(intents: Intent[], selectedId: string | null = null) {
   return mount(IntentList, {
     props: {
       project: '/proj',
       intents,
       automation: null,
-      intentActionErrorSeq,
+      selectedId,
     },
   })
 }
 
-describe('IntentList.vue — start dev in-flight guard', () => {
-  it('disables immediately and emits one start-dev on rapid double click', async () => {
+describe('IntentList.vue — selection model', () => {
+  it('emits select-intent with the row id when a row is clicked', async () => {
+    const w = mountList([intent({ id: 'intent-1' }), intent({ id: 'intent-2' })])
+    const rows = w.findAll('.req-item-main')
+
+    await rows[1].trigger('click')
+
+    expect(w.emitted('select-intent')).toEqual([['intent-2']])
+  })
+
+  it('emits select-intent on keyboard activation (enter)', async () => {
     const w = mountList([intent({ id: 'intent-1' })])
-    const start = w.find('.req-btn.primary')
 
-    await start.trigger('click')
-    await start.trigger('click')
+    await w.find('.req-item-main').trigger('keydown.enter')
 
-    expect(w.emitted('start-dev')).toEqual([['intent-1', false]])
-    expect((start.element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.emitted('select-intent')).toEqual([['intent-1']])
   })
 
-  it('restores the button when status changes or an intent error arrives', async () => {
-    const item = intent({ id: 'intent-1' })
-    const w = mountList([item])
+  it('marks the row matching selectedId as selected', () => {
+    const w = mountList([intent({ id: 'intent-1' }), intent({ id: 'intent-2' })], 'intent-2')
+    const items = w.findAll('.req-item')
 
-    await w.find('.req-btn.primary').trigger('click')
-    expect((w.find('.req-btn.primary').element as HTMLButtonElement).disabled).toBe(true)
-
-    await w.setProps({ intents: [{ ...item, status: 'in_progress' }] })
-    expect(w.find('.req-btn.primary').exists()).toBe(false)
-
-    await w.setProps({ intents: [item] })
-    await w.find('.req-btn.primary').trigger('click')
-    expect((w.find('.req-btn.primary').element as HTMLButtonElement).disabled).toBe(true)
-
-    await w.setProps({ intentActionErrorSeq: 1 })
-    expect((w.find('.req-btn.primary').element as HTMLButtonElement).disabled).toBe(false)
+    expect(items[0].classes()).not.toContain('selected')
+    expect(items[1].classes()).toContain('selected')
   })
 
-  it('does not enter in-flight when unfinished dependency confirmation is cancelled', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValueOnce(false)
-    const dep = intent({ id: 'dep', status: 'in_progress', title: 'Dependency' })
-    const child = intent({ id: 'child', dependsOn: ['dep'] })
-    const w = mountList([dep, child])
-    const startButtons = w.findAll('.req-btn.primary')
+  it('renders the empty state when there are no intents', () => {
+    const w = mountList([])
 
-    await startButtons[0].trigger('click')
+    expect(w.find('.req-empty').exists()).toBe(true)
+    expect(w.findAll('.req-item')).toHaveLength(0)
+  })
 
-    expect(w.emitted('start-dev')).toBeUndefined()
-    expect((startButtons[0].element as HTMLButtonElement).disabled).toBe(false)
+  it('does not render inline action buttons or chevron', () => {
+    const w = mountList([intent({ id: 'intent-1' })])
+
+    expect(w.find('.req-actions').exists()).toBe(false)
+    expect(w.find('.req-chevron').exists()).toBe(false)
   })
 })

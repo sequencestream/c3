@@ -54,10 +54,11 @@ web/src/
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
-│   │   ├── Intents.vue                              # 需求容器页:桌面两栏(合并列表+聊天),移动端 MobileStack 二级 drill-down(合并列表→聊天)
+│   │   ├── Intents.vue                              # 需求容器页:桌面两栏(左合并列表 + 右上下文详情列);右栏按合并列 activeTab 切换 —— intents tab→IntentDetail(selectedIntentId 意图详情,首次默认选首条),sessions tab→聊天列;移动端 MobileStack 二级 drill-down(列表→右栏:intents tab drill 详情/sessions tab drill 聊天)
 │   │   ├── components/
-│   │   │   ├── IntentMergedList/IntentMergedList.vue # 合并左栏:带分段控件(Intents/Sessions)切换,接管两子组件的头区;可折叠(960px/480px)
-│   │   │   ├── IntentList/IntentList.vue            # 需求列表:接受 hideHeader prop 嵌入合并栏;按状态过滤、行内操作(完善/启动开发/标记状态)、折叠态 kebab(⋮)菜单、自动化编排启停
+│   │   │   ├── IntentMergedList/IntentMergedList.vue # 合并左栏:带分段控件(Intents/Sessions)切换,接管两子组件的头区;可折叠(960px/480px);透传 selectedIntentId 高亮与 select-intent 选中事件
+│   │   │   ├── IntentList/IntentList.vue            # 需求列表:接受 hideHeader prop 嵌入合并栏;按状态过滤、终止态分页、自动化编排启停;行点击=选中(emit select-intent,selectedId 高亮),不再行内展开/行内操作(详情与操作迁至右栏 IntentDetail)
+│   │   │   ├── IntentDetail/IntentDetail.vue        # 右栏意图详情面板:展示 selectedIntentId 意图的内容 markdown、Git/PR 扩展元信息、依赖编辑器(dep modal),行内操作(refine/start-dev/open-dev/set-status/set-automate/create-pr,含 start-dev in-flight 守卫),沿用原 emit 事件契约;无选中(列表空)时空态
 │   │   │   └── IntentSessionList/
 │   │   │       └── IntentSessionList.vue            # 意图通信会话列表:接受 hideHeader prop 嵌入合并栏;行内重命名/删除、活跃/已完成分组、分页加载更多
 │   │

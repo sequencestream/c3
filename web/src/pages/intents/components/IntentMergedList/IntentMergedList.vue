@@ -14,7 +14,6 @@
 import { computed, ref } from 'vue'
 import type {
   AutomationStatus,
-  DepType,
   Intent,
   IntentSessionInfo,
   IntentStatus,
@@ -32,7 +31,8 @@ const props = defineProps<{
   project: string
   intents: Intent[]
   automation: AutomationStatus | null
-  intentActionErrorSeq?: number
+  /** 当前选中的意图 id,透传给 IntentList 做行高亮。 */
+  selectedIntentId?: string | null
 
   // IntentSessionList props
   intentSessions: IntentSessionInfo[]
@@ -43,16 +43,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   // IntentList events
   filter: [status: IntentStatus | null]
-  refine: [intentId: string]
-  'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
-  'open-dev': [sessionId: string]
-  'set-status': [intentId: string, status: IntentStatus]
-  'set-automate': [intentId: string, automate: boolean]
   'start-automation': []
   'stop-automation': []
-  'new-intent': []
-  'create-pr': [intentId: string]
-  'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
+  'select-intent': [intentId: string]
 
   // IntentSessionList events (name-mapped)
   'select-intent-session': [sessionId: string]
@@ -212,18 +205,11 @@ function setFilter(value: string): void {
         :project="project"
         :intents="intents"
         :automation="automation"
-        :intent-action-error-seq="intentActionErrorSeq"
+        :selected-id="selectedIntentId"
         @filter="(s: IntentStatus | null) => emit('filter', s)"
-        @refine="(id: string) => emit('refine', id)"
-        @start-dev="(id: string, d: boolean) => emit('start-dev', id, d)"
-        @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
-        @set-status="(id: string, s: IntentStatus) => emit('set-status', id, s)"
-        @set-automate="(id: string, a: boolean) => emit('set-automate', id, a)"
         @start-automation="emit('start-automation')"
         @stop-automation="emit('stop-automation')"
-        @new-intent="emit('new-intent')"
-        @create-pr="(id: string) => emit('create-pr', id)"
-        @update-deps="(id, deps) => emit('update-deps', id, deps)"
+        @select-intent="(id: string) => emit('select-intent', id)"
       />
     </div>
     <div v-show="activeTab === 'sessions'" class="merged-child-wrap">

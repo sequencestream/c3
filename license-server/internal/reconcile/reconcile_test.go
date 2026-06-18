@@ -5,27 +5,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"github.com/sequencestream/code-creative-center/license-server/internal/orders"
 	"github.com/sequencestream/code-creative-center/license-server/internal/wechatpay"
 )
 
 // fakeStore records the settlement calls runOnce makes.
 type fakeStore struct {
-	pending []store.PendingOrder
+	pending []orders.PendingOrder
 	paid    []string
 	expired []string
 }
 
-func (f *fakeStore) ListPendingOrders(context.Context) ([]store.PendingOrder, error) {
+func (f *fakeStore) ListPending(context.Context) ([]orders.PendingOrder, error) {
 	return f.pending, nil
 }
-func (f *fakeStore) MarkOrderPaid(_ context.Context, orderNo, _ string, _ time.Time) (store.Order, bool, error) {
+func (f *fakeStore) MarkPaid(_ context.Context, orderNo, _ string, _ time.Time) (orders.Order, bool, error) {
 	f.paid = append(f.paid, orderNo)
-	return store.Order{}, true, nil
+	return orders.Order{}, true, nil
 }
-func (f *fakeStore) MarkOrderExpired(_ context.Context, orderNo string) (store.Order, bool, error) {
+func (f *fakeStore) MarkExpired(_ context.Context, orderNo string) (orders.Order, bool, error) {
 	f.expired = append(f.expired, orderNo)
-	return store.Order{}, true, nil
+	return orders.Order{}, true, nil
 }
 
 // fakeGW answers QueryByOutTradeNo from a per-order_no table.
@@ -53,7 +53,7 @@ func TestRunOnceSettlesByTradeState(t *testing.T) {
 	fresh := now.Add(-1 * time.Minute)  // within window
 	stale := now.Add(-30 * time.Minute) // past window
 
-	st := &fakeStore{pending: []store.PendingOrder{
+	st := &fakeStore{pending: []orders.PendingOrder{
 		{OrderNo: "paid", CreatedAt: fresh},
 		{OrderNo: "closed", CreatedAt: fresh},
 		{OrderNo: "notpay-fresh", CreatedAt: fresh},

@@ -8,7 +8,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,7 +19,9 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/cache"
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
 	"github.com/sequencestream/code-creative-center/license-server/internal/httpapi"
+	"github.com/sequencestream/code-creative-center/license-server/internal/licenses"
 	"github.com/sequencestream/code-creative-center/license-server/internal/oauth"
+	"github.com/sequencestream/code-creative-center/license-server/internal/orders"
 	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
 	"github.com/sequencestream/code-creative-center/license-server/internal/reconcile"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
@@ -32,7 +34,8 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatalf("license-server: %v", err)
+		slog.Error("license-server failed", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -63,9 +66,13 @@ func run() error {
 	signer := loadSigner(cfg)
 
 	// The plan catalog lives in c3_ls_plan; bootstrap it from the code-owned set
-	// so a fresh database serves plans, then GET /v1/plans reads the table.
+	// so a fresh database serves plans, then GET /v1/plans reads the table. Each
+	// table's CRUD lives in its domain repository over the shared store handle.
 	st := store.New(db)
-	seedPlans(ctx, st)
+	plansRepo := plans.NewRepo(st)
+	licensesRepo := licenses.NewRepo(st)
+	ordersRepo := orders.NewRepo(st, plansRepo, licensesRepo)
+	seedPlans(ctx, plansRepo)
 
 	pay := loadGateway(cfg)
 
@@ -73,10 +80,10 @@ func run() error {
 	// against WeChat and enforces the payment window (§11). Only runs when both a
 	// store and a payment gateway are configured.
 	if st.Available() && pay != nil {
-		go reconcile.Run(ctx, st, pay,
-			time.Duration(config.OrderReconcileIntervalMinutes)*time.Minute,
+		go reconcile.Run(ctx, ordersRepo, pay,
+			time.Duration(config.OrderReconcileIntervalSeconds)*time.Second,
 			time.Duration(config.DefaultOrderPaymentWindowMinutes)*time.Minute)
-		log.Printf("license-server: order reconcile loop started (every %dm)", config.OrderReconcileIntervalMinutes)
+		slog.Info("order reconcile loop started", "everySeconds", config.OrderReconcileIntervalSeconds)
 	}
 
 	srv := &http.Server{
@@ -101,7 +108,7 @@ func run() error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("license-server %s listening on %s", version.Version, cfg.ListenAddr)
+	slog.Info("license-server listening", "version", version.Version, "addr", cfg.ListenAddr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -112,14 +119,14 @@ func run() error {
 // code-owned plan set. It is best-effort: without a database it is a no-op, and a
 // seed failure is logged and tolerated since GET /v1/plans falls back to the code
 // catalog. ON CONFLICT DO NOTHING means existing rows (operator edits) survive.
-func seedPlans(ctx context.Context, st *store.Store) {
-	if !st.Available() {
+func seedPlans(ctx context.Context, repo *plans.Repo) {
+	if !repo.Available() {
 		return
 	}
 	catalog := plans.All()
-	rows := make([]store.Plan, len(catalog))
+	rows := make([]plans.Record, len(catalog))
 	for i, p := range catalog {
-		rows[i] = store.Plan{
+		rows[i] = plans.Record{
 			PlanKey:        p.ID,
 			Name:           p.Name,
 			DurationMonths: p.DurationMonths,
@@ -128,11 +135,11 @@ func seedPlans(ctx context.Context, st *store.Store) {
 			SortOrder:      i,
 		}
 	}
-	if err := st.SeedPlans(ctx, rows); err != nil {
-		log.Printf("license-server: plan catalog seed failed (%v); serving code catalog", err)
+	if err := repo.Seed(ctx, rows); err != nil {
+		slog.Warn("plan catalog seed failed; serving code catalog", "err", err)
 		return
 	}
-	log.Printf("license-server: plan catalog ensured (%d plans)", len(rows))
+	slog.Info("plan catalog ensured", "plans", len(rows))
 }
 
 // loadSigner parses the Ed25519 signing seed when configured. A malformed key
@@ -140,15 +147,15 @@ func seedPlans(ctx context.Context, st *store.Store) {
 // activation surface report "unavailable" rather than crashing the service.
 func loadSigner(cfg *config.Config) httpapi.Signer {
 	if cfg.Ed25519PrivateKey == "" {
-		log.Printf("license-server: no %s configured; activation signing disabled", config.EnvEd25519PrivateKey)
+		slog.Info("no signing key configured; activation signing disabled", "env", config.EnvEd25519PrivateKey)
 		return nil
 	}
 	priv, kid, err := token.ParsePrivateKey(cfg.Ed25519PrivateKey)
 	if err != nil {
-		log.Printf("license-server: invalid %s (%v); activation signing disabled", config.EnvEd25519PrivateKey, err)
+		slog.Warn("invalid signing key; activation signing disabled", "env", config.EnvEd25519PrivateKey, "err", err)
 		return nil
 	}
-	log.Printf("license-server: entitlement signing key loaded (kid %s)", kid)
+	slog.Info("entitlement signing key loaded", "kid", kid)
 	return priv
 }
 
@@ -168,14 +175,14 @@ func loadGateway(cfg *config.Config) wechatpay.Gateway {
 		CertB64:       cfg.WeChatPayCert,
 	})
 	if err != nil {
-		log.Printf("license-server: WeChat Pay gateway disabled (%v); renewal payment unavailable", err)
+		slog.Warn("WeChat Pay gateway disabled; renewal payment unavailable", "err", err)
 		return nil
 	}
 	if gw == nil {
-		log.Printf("license-server: no WeChat Pay credentials; renewal payment unavailable")
+		slog.Info("no WeChat Pay credentials; renewal payment unavailable")
 		return nil
 	}
-	log.Printf("license-server: WeChat Pay gateway ready (Native)")
+	slog.Info("WeChat Pay gateway ready (Native)")
 	return gw
 }
 
@@ -185,7 +192,7 @@ func loadGateway(cfg *config.Config) wechatpay.Gateway {
 // operational error.
 func openDatabase(ctx context.Context, cfg *config.Config) *gorm.DB {
 	if cfg.DatabaseURL == "" {
-		log.Printf("license-server: no %s configured; running without a database", config.EnvDatabaseURL)
+		slog.Info("no database configured; running without a database", "env", config.EnvDatabaseURL)
 		return nil
 	}
 	connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -193,12 +200,13 @@ func openDatabase(ctx context.Context, cfg *config.Config) *gorm.DB {
 
 	db, err := lsdb.Open(connectCtx, cfg.DatabaseURL)
 	if err != nil {
-		log.Printf("license-server: database unreachable (%v); continuing degraded", err)
+		slog.Warn("database unreachable; continuing degraded", "err", err)
 		return nil
 	}
 	if err := lsdb.EnsureSchema(ctx, db); err != nil {
-		log.Fatalf("license-server: schema setup failed: %v", err)
+		slog.Error("schema setup failed", "err", err)
+		os.Exit(1)
 	}
-	log.Printf("license-server: database connected and schema ensured")
+	slog.Info("database connected and schema ensured")
 	return db
 }

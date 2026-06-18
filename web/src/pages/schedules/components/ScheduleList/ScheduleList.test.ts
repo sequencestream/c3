@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Schedule } from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
@@ -91,36 +91,44 @@ describe('ScheduleList.vue — 左栏列表交互', () => {
     expect(w.emitted('new-schedule')).toHaveLength(1)
   })
 
-  describe('删除二次确认', () => {
-    afterEach(() => {
-      vi.restoreAllMocks()
-    })
-
-    it('确认后 emit delete-schedule(携带 id),且确认文案含任务名', async () => {
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  describe('删除二次确认(组件弹窗)', () => {
+    it('点删除按钮弹出确认弹窗,正文含任务名(不再用 window.confirm)', async () => {
       const w = mountList([sched({ id: 'a', config: { command: 'x', name: 'Nightly Build' } })])
+      // 初始无弹窗。
+      expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
 
       await w.find('.sched-delete-btn').trigger('click')
 
-      expect(confirm).toHaveBeenCalledTimes(1)
-      // 二次确认提示包含任务名,便于用户确认删除对象。
-      expect(confirm.mock.calls[0][0]).toContain('Nightly Build')
-      expect(w.emitted('delete-schedule')?.[0]).toEqual(['a'])
-    })
-
-    it('取消则不 emit(无副作用)', async () => {
-      vi.spyOn(window, 'confirm').mockReturnValue(false)
-      const w = mountList([sched({ id: 'a' })])
-
-      await w.find('.sched-delete-btn').trigger('click')
-
+      const overlay = w.find('[data-testid="confirm-overlay"]')
+      expect(overlay.exists()).toBe(true)
+      // 二次确认正文包含任务名,便于用户确认删除对象。
+      expect(overlay.text()).toContain('Nightly Build')
+      // 尚未确认前不应 emit。
       expect(w.emitted('delete-schedule')).toBeUndefined()
     })
 
-    it('删除按钮点击不触发行展开/select(stop propagation)', async () => {
-      vi.spyOn(window, 'confirm').mockReturnValue(false)
+    it('点确认按钮 emit delete-schedule(携带 id)并关闭弹窗', async () => {
       const w = mountList([sched({ id: 'a' })])
+      await w.find('.sched-delete-btn').trigger('click')
 
+      await w.find('[data-testid="confirm-accept"]').trigger('click')
+
+      expect(w.emitted('delete-schedule')?.[0]).toEqual(['a'])
+      expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+    })
+
+    it('点取消按钮则不 emit 且关闭弹窗(无副作用)', async () => {
+      const w = mountList([sched({ id: 'a' })])
+      await w.find('.sched-delete-btn').trigger('click')
+
+      await w.find('[data-testid="confirm-cancel"]').trigger('click')
+
+      expect(w.emitted('delete-schedule')).toBeUndefined()
+      expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+    })
+
+    it('删除按钮点击不触发行展开/select(stop propagation)', async () => {
+      const w = mountList([sched({ id: 'a' })])
       await w.find('.sched-delete-btn').trigger('click')
 
       expect(w.find('.sched-detail-inline').exists()).toBe(false)

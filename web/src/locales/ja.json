@@ -11,6 +11,9 @@
       "cancel": {
         "label": "キャンセル"
       },
+      "delete": {
+        "label": "削除"
+      },
       "save": {
         "label": "保存"
       },
@@ -995,6 +998,7 @@
       },
       "delete": {
         "tooltip": "スケジュールを削除",
+        "title": "スケジュールを削除しますか?",
         "confirm": "「{name}」を削除しますか? 実行履歴も完全に削除され、この操作は取り消せません。"
       },
       "runNow": {
@@ -1840,7 +1844,8 @@
       "expired": "期限切れ",
       "unactivated": "未アクティベーション",
       "disabled": "無効",
-      "validUntil": "{date} まで有効"
+      "validUntil": "{date} まで有効",
+      "manageKey": "キーを表示・更新"
     },
     "activate": {
       "button": "ライセンスを有効化",

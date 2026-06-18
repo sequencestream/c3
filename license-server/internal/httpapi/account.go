@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"github.com/sequencestream/code-creative-center/license-server/internal/orders"
 )
 
 // mountAccount registers the user self-service data endpoints (JSON; the Vue
@@ -27,7 +27,7 @@ func handleLicenses(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, "unavailable", "license database is not configured")
 			return
 		}
-		licenses, err := d.Store.LicenseBindingsByUser(r.Context(), sess.UserID)
+		licenses, err := d.licenses.ListBindings(r.Context(), sess.UserID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "account_failed", "could not load your licenses")
 			return
@@ -49,17 +49,17 @@ func handleOrders(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, "unavailable", "license database is not configured")
 			return
 		}
-		orders, err := d.Store.PaidOrdersByUser(r.Context(), sess.UserID)
+		paid, err := d.orders.ListPaid(r.Context(), sess.UserID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "account_failed", "could not load your orders")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"orders": orderViews(orders)})
+		writeJSON(w, http.StatusOK, map[string]any{"orders": orderViews(paid)})
 	}
 }
 
 // orderViews projects paid orders to the JSON the account page renders.
-func orderViews(os []store.Order) []map[string]any {
+func orderViews(os []orders.Order) []map[string]any {
 	out := make([]map[string]any, len(os))
 	for i, o := range os {
 		out[i] = map[string]any{

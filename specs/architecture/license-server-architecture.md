@@ -67,27 +67,41 @@ LS 是一个**单 Go 二进制**,自带 `go.mod`,**不属于** c3 的 pnpm works
 LS 的内部按职责分包,入口 `cmd/license-server` 做接线:**config → caches → db/migrate → http**。
 各组件按角色划分(代码级路径见 README):
 
+分层自上而下:**HTTP 层(httpapi)→ 领域模块(users/licenses/orders/plans/payments)→ 数据连接(store)→ 数据库**。
+每个领域模块自包含三件套:`model`(领域类型)、`data`(该表 CRUD 的 Repo,建在 store 句柄之上)、`service`(业务编排)。
+httpapi **只做传输**:解析请求、鉴权会话、把关键动作转交对应领域服务、塑形 JSON 响应;它不直接触碰 store。
+
 ```
 入口(cmd)
-  └─ 加载配置 → 建缓存注册表 → 连库并迁移 → 启动订单对账 Ticker(20min,库+支付就绪时)→ 构造 HTTP Server → 监听到中断
+  └─ 加载配置 → 建缓存注册表 → 连库并迁移 → 建各领域 Repo → 启动订单对账 Ticker(15s,库+支付就绪时)
+     → 构造 HTTP Server(NewServer 由原始依赖组装领域服务层)→ 监听到中断
 
-HTTP 层(httpapi)
+HTTP 层(httpapi)——薄传输层
   · ServeMux:JSON API(均 /v1 前缀:/v1/plans、/v1/auth/*、/v1/license/*、/v1/checkout、/v1/orders、
     /v1/payment/wechat/notify;外加运维 /healthz)+ 内嵌 Vue 的静态/SPA 回退;所有页面是 Vue,经 / 访问
   · API 路由在 handler 内自行校验方法 → 返回干净的 405,而非落到 "/" 静态回退被掩成 404
   · 浏览器登录面由 loginReady() 守卫:库 + OAuth + 签名私钥 + 对外基址(BaseURL 或回退 PublicURL)四者齐备才放行;
-    c3 侧 checkbind/heartbeat 由 licenseAPIReady() 守卫:库 + 签名私钥即可(不需 OAuth/对外基址)
-  · bindreq:进程内 (installId, requestId) → {aliveToken, 实体令牌} 的待绑映射(带 TTL),
-    bind 写入、checkbind 读取后消费;不持久化(承袭 ADR-0006 的进程内状态纪律)
+    c3 侧 checkbind/heartbeat 由 licenses 服务 Ready() 守卫:库 + 签名私钥即可(不需 OAuth/对外基址)
+  · session(签名 Cookie)与 OAuth CSRF state 的签发/校验、视图投影(licenseViews/orderViews)留在本层(纯传输/表现关切)
 
-领域/支撑组件
+领域模块(每个 = model + data[Repo] + service)
+  · users     c3_ls_user 身份(Repo)+ 登录/注册编排(Service:upsert 后经 licenses provision 默认 license)
+  · licenses  c3_ls_license(Repo:绑定/心跳/续期 tx 方法)+ 激活/绑定/心跳业务(Service)+ Ed25519 实体令牌签发(PL-R5)
+              + 进程内 (installId, requestId) → {aliveToken, 实体令牌} 待绑注册表(带 TTL,bind 写、checkbind 消费;
+              不持久化,承袭 ADR-0006 进程内状态纪律)
+  · orders    c3_ls_order(Repo:订单状态机)+ 续费规则(Service:归属校验、1 年期上限);结算(MarkPaid)是跨表事务,
+              由 orders.Repo 在自身 tx 内调用 plans/licenses 的 tx 方法(读套餐时长 + 延长 license),保证原子(§5)
+  · plans     固定 plan 目录(代码内置 catalog,稳定 plan_key + 价格)+ c3_ls_plan 持久化 Repo + 目录读穿服务(库优先,回退内置)
+  · payments  桥接微信支付网关到订单状态机(Service:Prepay 下单 / ProcessNotify 验签+落单);无自有表,
+              支付结果落在 order 上,唯一持久化的支付物是交易号(PL-R12)
+
+支撑组件
   · config    环境变量驱动的配置 + 日志/healthz 脱敏(机密只显示 set/unset)
   · cache     泛型 LRU + 命名缓存注册表
-  · plans     固定 plan 目录(稳定 plan_key + 价格)
   · agreement 不退款服务协议(单一来源,PL-R9;仅在续费/支付时展示)
   · oauth     GitHub OAuth 客户端(账号登录/注册)
-  · token     Ed25519 实体令牌签发(PL-R5)
-  · store     PostgreSQL 数据访问(c3_ls_user / c3_ls_license / c3_ls_order)
+  · token     Ed25519 实体令牌签发原语(PL-R5)
+  · store     仅 PostgreSQL 连接句柄(Available()/DB());刻意不含任何 CRUD 或领域类型——CRUD 在各领域模块的 Repo 里
   · version   构建版本
 
 数据层(database)
@@ -96,7 +110,9 @@ HTTP 层(httpapi)
   · 关系由业务逻辑维护,表上不建外键约束(故文件应用顺序无关,按文件名排序仅为日志稳定)
 ```
 
-**依赖是单向的**:入口接线一切;httpapi 依赖各支撑组件;支撑组件之间互不反向依赖。
+**依赖是单向的(无环 DAG)**:入口接线一切;httpapi 依赖各领域服务;领域模块的 Repo 都建在 store 句柄上;
+跨领域依赖单向——`users → licenses`、`orders → licenses + plans`、`payments → orders`、`reconcile → orders`;
+`licenses` 不反依赖任何其他领域模块。
 
 ## 4. 登录与 license 绑定流程
 
@@ -255,7 +271,7 @@ c3 ↔ LS 的对外契约(激活、心跳、支付、错误语义)**只在**
   `POST /v1/license/bind`(`installId`+`requestId`)→ c3 server `GET /v1/license/checkbind` 轮询取回 `aliveToken` + 实体令牌。
 - 🔧 **心跳(本轮改版,待实现)**:`POST /v1/license/heartbeat`(仅 `installId`+`aliveToken`)→ `{status, entitlementToken, heartbeatIntervalSeconds, termEnd}`;
   绑定被取代返回 `disabled`,非 active 返回 `expired`。
-- 🔧 **支付/续期(本轮改名,待实现)**:`POST /v1/checkout`(`planKey`)创建订单(`order_no` 支付关联编号、**15 分钟支付超时**、**续期不超 1 年**)+ 微信支付 Native 扫码,回调延长 license 的 term/status;**20 分钟定时对账**收敛 pending 订单;MVP **无退款**(PL-R9/PL-R10)。`GET /v1/orders` 列已支付订单。
+- 🔧 **支付/续期(本轮改名,待实现)**:`POST /v1/checkout`(`planKey`)创建订单(`order_no` 支付关联编号、**15 分钟支付超时**、**续期不超 1 年**)+ 微信支付 Native 扫码,回调延长 license 的 term/status;**15 秒定时对账**收敛 pending 订单;`GET /v1/checkout/status?orderNo` 供前端轮询本单状态以自动收尾;MVP **无退款**(PL-R9/PL-R10)。`GET /v1/orders` 列已支付订单。
 - ⏳ **admin 后台**:GitHub OAuth + allowlist 鉴权下的许可证/订单审查与 issue/force-expire(置 status `expired`)。
 
 ## 10. 接口参数明细
@@ -399,8 +415,8 @@ c3 ↔ LS 的对外契约(激活、心跳、支付、错误语义)**只在**
 
 **(b) 异步回调(主路径)** — 见 §10.5:微信验签成功回调把订单 `pending→paid`、记 `payment_ref`、延长 license,幂等。
 
-**(c) 20 分钟定时对账(安全网)** — LS 进程内每 **20 分钟**跑一次对账任务(`time.Ticker`,仅库 + 微信支付都配置时启用),
-弥补漏收/失败的回调,使订单最终一致:
+**(c) 15 秒定时对账(安全网)** — LS 进程内每 **15 秒**跑一次对账任务(`time.Ticker`,仅库 + 微信支付都配置时启用),
+弥补漏收/失败的回调(典型如 notify URL 公网不可达时回调根本到不了),使订单**及时**最终一致——已付订单在数秒内被确认:
 
 - 取所有 `pending` 订单,逐个用 `order_no` 调微信支付**订单查询**(query order)核对真实交易态;
 - **SUCCESS** → 调与回调**同一条事务化履约函数**:在单事务内 `pending→paid`、记 `payment_ref`、延长 license(幂等,见 §5);
@@ -408,7 +424,8 @@ c3 ↔ LS 的对外契约(激活、心跳、支付、错误语义)**只在**
 - **NOTPAY 且未超窗** → 保持 `pending`,下轮再查;
 - 其他异常态 → 置 `failed`。
 
-20min > 15min 窗口,确保跑批时支付窗口已闭合、未付订单在微信侧已关单,状态可被终结地推进。
+对账周期(15s)远小于支付窗口(15min),但二者解耦:**过期与否由每笔订单的 `created_at` 与窗口逐单比较**判定
+(`now - created_at > 15min` 才置 `expired`),不依赖跑批周期,故高频对账不会误判窗口内订单为过期,只是更快地捕获支付成功。
 
 **惰性兜底**:checkout 列表/回调读取时,对 `created_at` 超 15 分钟仍 `pending` 的订单按 `expired` 呈现(即便对账尚未跑到),
 不据它延长 license;迟到的成功回调对已 `expired`/已 `paid` 订单一律幂等、不重复延长(§10.5)。
@@ -416,8 +433,8 @@ c3 ↔ LS 的对外契约(激活、心跳、支付、错误语义)**只在**
 **续期上限(1 年)**:若目标 license 的 `term_end` 已在 **当前时间 + 1 年** 之后,`POST /v1/checkout` **拒绝创建订单**(`400`),
 防止把有效期无限往前堆叠。上限为常量 `MaxLicenseTermAheadMonths = 12`。
 
-> 注:此处的 20 分钟 `time.Ticker` 是 **LS 进程内**调度,属 LS 产品自身(ADR-0026 允许 LS 具备 c3 内被禁的能力),与 c3 的"无持久后台调度"无关。
-> 窗口/对账周期为固定常量(`DefaultOrderPaymentWindowMinutes = 15`、`OrderReconcileIntervalMinutes = 20`);如需可调,后续再提升为 `C3_LS_*` 环境变量。
+> 注:此处的 15 秒 `time.Ticker` 是 **LS 进程内**调度,属 LS 产品自身(ADR-0026 允许 LS 具备 c3 内被禁的能力),与 c3 的"无持久后台调度"无关。
+> 窗口/对账周期为固定常量(`DefaultOrderPaymentWindowMinutes = 15`、`OrderReconcileIntervalSeconds = 15`);如需可调,后续再提升为 `C3_LS_*` 环境变量。
 
 ## 引用
 

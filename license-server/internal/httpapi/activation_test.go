@@ -18,6 +18,7 @@ import (
 	"github.com/sequencestream/code-creative-center/license-server/internal/cache"
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
 	"github.com/sequencestream/code-creative-center/license-server/internal/oauth"
+	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 )
@@ -62,6 +63,7 @@ func TestLicenseAPIUnavailableWhenUnconfigured(t *testing.T) {
 type liveEnv struct {
 	h     http.Handler
 	store *store.Store
+	seed  *seeder
 	pub   ed25519.PublicKey
 	ctx   context.Context
 }
@@ -105,9 +107,10 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 	cfg.PublicURL = "http://ls.test"
 
 	st := store.New(db)
+	sd := newSeeder(st)
 	// Seed a trial plan for the checkout/renewal flows; the default license issued
 	// at sign-in no longer references a plan (plan lives on the order).
-	if err := st.SeedPlans(ctx, []store.Plan{
+	if err := sd.SeedPlans(ctx, []plans.Record{
 		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
 	}); err != nil {
 		t.Fatalf("seed trial plan: %v", err)
@@ -121,7 +124,7 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 		Store:  st,
 		Signer: priv,
 	})
-	return liveEnv{h: h, store: st, pub: priv.Public().(ed25519.PublicKey), ctx: ctx}
+	return liveEnv{h: h, store: st, seed: sd, pub: priv.Public().(ed25519.PublicKey), ctx: ctx}
 }
 
 func githubOK() http.Handler {
@@ -183,11 +186,11 @@ func TestGitHubLoginProvisionsDefaultLicense(t *testing.T) {
 	}
 
 	// The user now owns exactly one default license.
-	userID, err := env.store.UpsertUser(env.ctx, 4242, "octocat", "octo@example.com")
+	userID, err := env.seed.UpsertUser(env.ctx, 4242, "octocat", "octo@example.com")
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	licenses, err := env.store.ListLicensesByUser(env.ctx, userID)
+	licenses, err := env.seed.ListLicensesByUser(env.ctx, userID)
 	if err != nil {
 		t.Fatalf("list licenses: %v", err)
 	}
@@ -212,11 +215,11 @@ func TestBindCheckbindAndHeartbeatHappyPath(t *testing.T) {
 	env := liveServer(t, githubOK())
 	const installID = "inst-happy"
 
-	userID, err := env.store.UpsertUser(env.ctx, 99, "user", "b@example.com")
+	userID, err := env.seed.UpsertUser(env.ctx, 99, "user", "b@example.com")
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, 30, time.Now(), func() string { return "license-key-xyz" })
+	lic, _, err := env.seed.EnsureLicenseForUser(env.ctx, userID, 30, time.Now(), func() string { return "license-key-xyz" })
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
@@ -304,11 +307,11 @@ func TestBindCheckbindAndHeartbeatHappyPath(t *testing.T) {
 
 func TestBindRejectsUnknownKey(t *testing.T) {
 	env := liveServer(t, githubOK())
-	userID, err := env.store.UpsertUser(env.ctx, 7, "user", "b@example.com")
+	userID, err := env.seed.UpsertUser(env.ctx, 7, "user", "b@example.com")
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	if _, _, err := env.store.EnsureLicenseForUser(env.ctx, userID, 30, time.Now(), func() string { return "owned-key" }); err != nil {
+	if _, _, err := env.seed.EnsureLicenseForUser(env.ctx, userID, 30, time.Now(), func() string { return "owned-key" }); err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
 	cookie := accountCookie(t, userID)

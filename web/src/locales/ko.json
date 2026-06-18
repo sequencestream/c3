@@ -11,6 +11,9 @@
       "cancel": {
         "label": "취소"
       },
+      "delete": {
+        "label": "삭제"
+      },
       "save": {
         "label": "저장"
       },
@@ -995,6 +998,7 @@
       },
       "delete": {
         "tooltip": "스케줄 삭제",
+        "title": "스케줄을 삭제할까요?",
         "confirm": "\"{name}\"을(를) 삭제할까요? 실행 기록도 영구적으로 삭제되며 되돌릴 수 없습니다."
       },
       "runNow": {
@@ -1840,7 +1844,8 @@
       "expired": "만료됨",
       "unactivated": "미활성화",
       "disabled": "비활성화됨",
-      "validUntil": "{date}까지 유효"
+      "validUntil": "{date}까지 유효",
+      "manageKey": "키 보기 및 갱신"
     },
     "activate": {
       "button": "라이선스 활성화",

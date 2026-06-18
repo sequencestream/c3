@@ -10,6 +10,9 @@
       "cancel": {
         "label": "取消"
       },
+      "delete": {
+        "label": "删除"
+      },
       "save": {
         "label": "保存"
       },
@@ -994,6 +997,7 @@
       },
       "delete": {
         "tooltip": "删除定时任务",
+        "title": "删除定时任务?",
         "confirm": "确定删除「{name}」?其执行历史将一并永久清除,此操作无法撤销。"
       },
       "runNow": {
@@ -1839,7 +1843,8 @@
       "expired": "已过期",
       "unactivated": "未激活",
       "disabled": "已停用",
-      "validUntil": "有效期至 {date}"
+      "validUntil": "有效期至 {date}",
+      "manageKey": "查看密钥与续期"
     },
     "activate": {
       "button": "激活许可",

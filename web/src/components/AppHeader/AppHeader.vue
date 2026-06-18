@@ -14,6 +14,9 @@ import { useAuth } from '@/composables/useAuth'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 const { t, d } = useTypedI18n()
+
+// c3 控制台:查看密钥信息 / 续期。密钥按钮在许可下拉内跳转此地址(新标签页)。
+const LICENSE_CONSOLE_URL = 'https://c3.sequencestream.com/'
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 const { isAdmin } = useAuth()
@@ -244,7 +247,7 @@ function selectTab(tab: HeaderTab): void {
         <!-- Product-license 状态控件(PL-R7),受控 <details> 下拉。位于连接状态右侧、
              顶栏最右:
              · 已激活(active/grace)→ ✓ 图标(按 state 着色),下拉显示许可密钥 + 有效期
-             · 未激活/过期/停用 → 红色带下划线状态文字,下拉内「激活许可」按钮触发激活流程 -->
+             · 未激活/过期/停用 → 圆圈内红色感叹号图标,下拉内「激活许可」按钮触发激活流程 -->
         <details v-if="license" ref="licenseEl" class="license-menu" @toggle="syncOutsideListener">
           <summary
             class="license-trigger"
@@ -259,15 +262,30 @@ function selectTab(tab: HeaderTab): void {
               aria-hidden="true"
               >✓</span
             >
-            <span v-else class="license-needs" :title="t('license.activate.button')">
-              {{ t(licenseBadgeKey(license.state)) }}
-            </span>
+            <span
+              v-else
+              class="license-icon license-warn"
+              :title="t(licenseBadgeKey(license.state))"
+              aria-hidden="true"
+              >!</span
+            >
           </summary>
           <div class="license-dropdown">
             <template v-if="licenseEntitled">
-              <!-- 已激活:仅展示有效期(.license-term);term 未知(termEnd=0)时回退为状态文案 -->
+              <!-- 已激活:展示有效期(.license-term)+ 右侧密钥按钮(跳转 c3 控制台查看/续期);
+                   term 未知(termEnd=0)时回退为状态文案。 -->
               <div v-if="licenseTermText" class="license-info-row license-term">
-                {{ licenseTermText }}
+                <span class="license-term-text">{{ licenseTermText }}</span>
+                <a
+                  class="license-key-btn"
+                  :href="LICENSE_CONSOLE_URL"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :title="t('license.badge.manageKey' as LocaleKey)"
+                  :aria-label="t('license.badge.manageKey' as LocaleKey)"
+                  @click="closeLicense"
+                  >🔑</a
+                >
               </div>
               <div v-else class="license-info-row">{{ t(licenseBadgeKey(license.state)) }}</div>
             </template>
@@ -436,6 +454,11 @@ function selectTab(tab: HeaderTab): void {
 .license-icon.grace {
   color: var(--c-yellow);
 }
+/* 未激活/过期/停用:圆圈内红色感叹号 */
+.license-icon.license-warn {
+  color: var(--c-red);
+  font-weight: 700;
+}
 
 .license-dropdown {
   position: absolute;
@@ -458,6 +481,33 @@ function selectTab(tab: HeaderTab): void {
 }
 .license-term {
   color: var(--c-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.license-term-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.license-key-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: var(--fs-caption);
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.license-key-btn:hover {
+  background: var(--c-card);
 }
 .license-activate-btn {
   width: 100%;

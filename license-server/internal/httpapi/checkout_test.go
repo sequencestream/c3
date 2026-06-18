@@ -12,6 +12,7 @@ import (
 
 	"github.com/sequencestream/code-creative-center/license-server/internal/cache"
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
+	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 )
@@ -99,18 +100,18 @@ func loginCookie(t *testing.T, env liveEnv) *http.Cookie {
 func TestCheckoutCreatesPendingOrderWithDerivedAmount(t *testing.T) {
 	env := liveServer(t, githubOK())
 	// A purchasable (non-trial) plan to renew into.
-	if err := env.store.SeedPlans(env.ctx, []store.Plan{
+	if err := env.seed.SeedPlans(env.ctx, []plans.Record{
 		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
 
 	cookie := loginCookie(t, env)
-	userID, err := env.store.UpsertUser(env.ctx, 4242, "octocat", "octo@example.com")
+	userID, err := env.seed.UpsertUser(env.ctx, 4242, "octocat", "octo@example.com")
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	licenses, err := env.store.ListLicensesByUser(env.ctx, userID)
+	licenses, err := env.seed.ListLicensesByUser(env.ctx, userID)
 	if err != nil || len(licenses) == 0 {
 		t.Fatalf("user should own a trial license: err=%v licenses=%+v", err, licenses)
 	}
@@ -128,7 +129,7 @@ func TestCheckoutCreatesPendingOrderWithDerivedAmount(t *testing.T) {
 		t.Fatalf("POST /v1/checkout = %d, want 200; body=%s", postRec.Code, postRec.Body.String())
 	}
 
-	orders, err := env.store.OrdersByUser(env.ctx, userID)
+	orders, err := env.seed.OrdersByUser(env.ctx, userID)
 	if err != nil {
 		t.Fatalf("orders by user: %v", err)
 	}
@@ -152,7 +153,7 @@ func TestCheckoutCreatesPendingOrderWithDerivedAmount(t *testing.T) {
 
 func TestCheckoutRejectsForeignLicense(t *testing.T) {
 	env := liveServer(t, githubOK())
-	if err := env.store.SeedPlans(env.ctx, []store.Plan{
+	if err := env.seed.SeedPlans(env.ctx, []plans.Record{
 		{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0},
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)

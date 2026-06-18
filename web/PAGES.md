@@ -27,6 +27,7 @@ web/src/
 │   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏(许可项并入「⋯」操作菜单)+ 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
+│   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定
 │   ├── ExitPlanModeDisplay/ExitPlanModeDisplay.vue # ExitPlanMode 计划独立渲染块:解析输入负载中的 plan markdown + 结构化元数据(标题/步骤索引),支持 tool-use/tool-result 双态
 │   ├── MarkdownText/MarkdownText.vue               # 单条文本消息渲染器:assistant 走 Markdown+DOMPurify 双防线、user/system 纯文本转义、Shiki 代码高亮,宽表格包局部横滚容器
@@ -69,7 +70,7 @@ web/src/
 │   ├── schedules/                                   # 定时任务页
 │   │   ├── Schedules.vue                            # 定时任务容器页:桌面三栏(左栏列表 + 中栏执行历史 + 右栏 Tab 详情)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为三级 drill-down(任务列表→执行历史→Tab 执行详情逐级滑入/返回)
 │   │   └── components/
-│   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、编辑、删除(window.confirm 二次确认)、enable/disable 开关、下次执行倒计时(30s 刷新)
+│   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、编辑、删除(ConfirmDialog 组件二次确认)、enable/disable 开关、下次执行倒计时(30s 刷新)
 │   │       ├── ExecutionHistoryList/ExecutionHistoryList.vue  # 中栏执行历史列表:选中 schedule 的执行记录,点击选中某次执行
 │   │       ├── ScheduleDetail/ScheduleDetail.vue    # 右栏 schedule 详情(选中任务但未选执行时):vendor 品牌名+色点、mcpMode、toolAllowlist 读/写分类列表(借 toolManifest 缓存)
 │   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动

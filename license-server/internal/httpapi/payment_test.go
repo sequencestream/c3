@@ -12,6 +12,8 @@ import (
 	lsdb "github.com/sequencestream/code-creative-center/license-server/database"
 	"github.com/sequencestream/code-creative-center/license-server/internal/cache"
 	"github.com/sequencestream/code-creative-center/license-server/internal/config"
+	"github.com/sequencestream/code-creative-center/license-server/internal/orders"
+	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
 	"github.com/sequencestream/code-creative-center/license-server/internal/store"
 	"github.com/sequencestream/code-creative-center/license-server/internal/wechatpay"
 )
@@ -61,7 +63,7 @@ func TestNotifyUnavailableWhenUnconfigured(t *testing.T) {
 // livePayServer builds a DB-backed server with the given gateway injected, so
 // the notify endpoint can drive the real order state machine. Skips without
 // C3_LS_TEST_DATABASE_URL.
-func livePayServer(t *testing.T, pay wechatpay.Gateway) (http.Handler, *store.Store, context.Context) {
+func livePayServer(t *testing.T, pay wechatpay.Gateway) (http.Handler, *seeder, context.Context) {
 	t.Helper()
 	dsn := os.Getenv("C3_LS_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -86,6 +88,7 @@ func livePayServer(t *testing.T, pay wechatpay.Gateway) (http.Handler, *store.St
 	}
 	cfg, _ := config.LoadFrom(func(string) string { return "" })
 	st := store.New(db)
+	sd := newSeeder(st)
 	h := NewServer(Deps{
 		Config: cfg,
 		Caches: cache.NewRegistry(cfg.LRUSize),
@@ -94,30 +97,30 @@ func livePayServer(t *testing.T, pay wechatpay.Gateway) (http.Handler, *store.St
 		Store:  st,
 		Pay:    pay,
 	})
-	return h, st, ctx
+	return h, sd, ctx
 }
 
 // seedPendingOrder seeds a user + license + plan and returns a pending order to
 // drive through the callback.
-func seedPendingOrder(t *testing.T, st *store.Store, ctx context.Context) store.Order {
+func seedPendingOrder(t *testing.T, sd *seeder, ctx context.Context) orders.Order {
 	t.Helper()
-	if err := st.SeedPlans(ctx, []store.Plan{
+	if err := sd.SeedPlans(ctx, []plans.Record{
 		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
-	userID, err := st.UpsertUser(ctx, 4242, "octocat", "octo@example.com")
+	userID, err := sd.UpsertUser(ctx, 4242, "octocat", "octo@example.com")
 	if err != nil {
 		t.Fatalf("upsert user: %v", err)
 	}
-	lic, _, err := st.EnsureLicenseForUser(ctx, userID, 30, time.Now(), keyGenPay())
+	lic, _, err := sd.EnsureLicenseForUser(ctx, userID, 30, time.Now(), keyGenPay())
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
-	order, err := st.CreateOrder(ctx, store.CreateOrderInput{
+	order, err := sd.CreateOrder(ctx, orders.CreateOrderInput{
 		UserID: userID, LicenseID: lic.ID, PlanKey: "6m",
 		AgreementVersion: "v1", AgreementAcceptedAt: time.Now(),
-	}, func() string { return store.NewOrderNo(time.Now()) })
+	}, func() string { return orders.NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order: %v", err)
 	}
@@ -125,7 +128,7 @@ func seedPendingOrder(t *testing.T, st *store.Store, ctx context.Context) store.
 }
 
 func TestNotifyMarksOrderPaidAndIsIdempotent(t *testing.T) {
-	var order store.Order
+	var order orders.Order
 	gw := fakeGateway{parse: func(func(string) string, []byte) (wechatpay.NotifyResult, error) {
 		return wechatpay.NotifyResult{
 			OutTradeNo:    order.OrderNo,
@@ -162,7 +165,7 @@ func TestNotifyMarksOrderPaidAndIsIdempotent(t *testing.T) {
 }
 
 func TestNotifyRejectsForgedSignature(t *testing.T) {
-	var order store.Order
+	var order orders.Order
 	gw := fakeGateway{parse: func(func(string) string, []byte) (wechatpay.NotifyResult, error) {
 		return wechatpay.NotifyResult{}, wechatpay.ErrSignatureInvalid
 	}}

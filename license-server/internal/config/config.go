@@ -33,9 +33,13 @@ const (
 	// payable before it is treated as expired (§11): the WeChat Native order's
 	// time_expire and the LS-side lazy/sweep expiry both use it.
 	DefaultOrderPaymentWindowMinutes = 15
-	// OrderReconcileIntervalMinutes is how often the LS reconcile job queries
-	// WeChat for the true state of pending orders and settles them (§11).
-	OrderReconcileIntervalMinutes = 20
+	// OrderReconcileIntervalSeconds is how often the LS reconcile job queries
+	// WeChat for the true state of pending orders and settles them (§11). It runs
+	// frequently (every 15s) so a paid order is confirmed promptly even when the
+	// async callback never arrives (e.g. the notify URL is not publicly reachable);
+	// the 15-minute payment window is still enforced per-order by comparing each
+	// order's created_at to the window, independent of this interval.
+	OrderReconcileIntervalSeconds = 15
 	// MaxLicenseTermAheadMonths caps how far into the future a license term may be
 	// stacked: checkout refuses a renewal whose target term_end already lies beyond
 	// now + this many months (§11).

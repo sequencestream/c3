@@ -1,4 +1,4 @@
-package httpapi
+package licenses
 
 import (
 	"sync"
@@ -12,8 +12,7 @@ const bindTTL = 15 * time.Minute
 
 // bindEntry is the secret material a completed bind makes available to c3 server
 // via checkbind: the plaintext alive token and the signed entitlement token,
-// neither of which ever reaches the browser (PL-R2). It is consumed on first
-// read.
+// neither of which ever reaches the browser (PL-R2). It is consumed on first read.
 type bindEntry struct {
 	licenseKey       string
 	aliveToken       string
@@ -22,11 +21,11 @@ type bindEntry struct {
 	createdAt        time.Time
 }
 
-// bindRegistry is the process-wide map from a binding round (installId,
-// requestId) to its completed secret material. It is deliberately in-memory and
-// not persisted (ADR-0006 process-internal state discipline): a binding round is
-// short-lived, and losing it on restart only forces the user to retry the
-// browser flow. Entries expire after bindTTL and are consumed on collection.
+// bindRegistry is the process-wide map from a binding round (installId, requestId)
+// to its completed secret material. It is deliberately in-memory and not persisted
+// (ADR-0006 process-internal state discipline): a binding round is short-lived, and
+// losing it on restart only forces the user to retry the browser flow. Entries
+// expire after bindTTL and are consumed on collection.
 type bindRegistry struct {
 	mu sync.Mutex
 	m  map[string]bindEntry
@@ -52,8 +51,8 @@ func (r *bindRegistry) put(installID, requestID string, e bindEntry) {
 	r.m[bindKey(installID, requestID)] = e
 }
 
-// take returns the completed binding for (installID, requestID) and removes it,
-// so a binding's secrets are collected exactly once. A missing or expired entry
+// take returns the completed binding for (installID, requestID) and removes it, so
+// a binding's secrets are collected exactly once. A missing or expired entry
 // returns ok=false (checkbind then reports "pending").
 func (r *bindRegistry) take(installID, requestID string) (bindEntry, bool) {
 	r.mu.Lock()

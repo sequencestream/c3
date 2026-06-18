@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { getJSON, postJSON, formatPrice, formatDate, loginHref, type Plan, type License } from '../lib/api'
 
 // Renewal checkout (§4): the agreement is shown HERE (not at sign-in). On submit
@@ -21,6 +21,36 @@ const accept = ref(false)
 const submitting = ref(false)
 const qrDataUri = ref('')
 const orderNo = ref('')
+// payStatus tracks the order once the QR is shown: '' before checkout, then
+// pending → paid/expired/failed as the status poll observes the settlement done
+// by the WeChat callback or the every-15s server reconcile job.
+const payStatus = ref('')
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function stopPolling(): void {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+// pollStatus checks the order's payment state. Once it leaves 'pending' the poll
+// stops; on success the page navigates to the account view so the renewed term
+// is visible without a manual refresh.
+async function pollStatus(): Promise<void> {
+  const res = await getJSON<{ status: string }>(`/v1/checkout/status?orderNo=${encodeURIComponent(orderNo.value)}`)
+  if (!res.ok || !res.data) return
+  payStatus.value = res.data.status
+  if (res.data.status === 'pending') return
+  stopPolling()
+  if (res.data.status === 'paid') {
+    setTimeout(() => {
+      window.location.href = '/account'
+    }, 1500)
+  }
+}
+
+onUnmounted(stopPolling)
 
 onMounted(async () => {
   const sess = await getJSON<{ signedIn: boolean }>('/v1/session')
@@ -60,6 +90,16 @@ async function submit(): Promise<void> {
   }
   orderNo.value = res.data.orderNo
   qrDataUri.value = res.data.qrDataUri ?? ''
+  // Begin polling for payment confirmation: the callback may never arrive (e.g.
+  // the notify URL is not publicly reachable), so the poll is what flips the UI
+  // once the server-side reconcile marks the order paid.
+  if (qrDataUri.value) {
+    payStatus.value = 'pending'
+    stopPolling()
+    pollTimer = setInterval(() => {
+      void pollStatus()
+    }, 5000)
+  }
 }
 </script>
 
@@ -70,9 +110,19 @@ async function submit(): Promise<void> {
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-if="!loading && qrDataUri">
-      <p class="ok">订单已创建(订单号 {{ orderNo }})。请用微信扫码支付:</p>
-      <img class="qr" :src="qrDataUri" alt="WeChat Pay QR" width="256" height="256" />
-      <p class="note">支付确认后将延长所选 license 的有效期。二维码 15 分钟内有效。</p>
+      <template v-if="payStatus === 'paid'">
+        <p class="ok">支付成功!正在跳转到账户页…</p>
+      </template>
+      <template v-else-if="payStatus === 'expired' || payStatus === 'failed'">
+        <p class="error">支付未完成({{ payStatus === 'expired' ? '订单已超时' : '支付失败' }})。请返回重新下单。</p>
+        <p class="note"><a href="/checkout">重新下单 / Place a new order →</a></p>
+      </template>
+      <template v-else>
+        <p class="ok">订单已创建(订单号 {{ orderNo }})。请用微信扫码支付:</p>
+        <img class="qr" :src="qrDataUri" alt="WeChat Pay QR" width="256" height="256" />
+        <p class="note">支付确认后将延长所选 license 的有效期。二维码 15 分钟内有效。</p>
+        <p class="note">正在等待支付确认,完成后将自动跳转…</p>
+      </template>
     </template>
 
     <template v-else-if="!loading">

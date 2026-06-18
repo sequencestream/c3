@@ -109,7 +109,8 @@ MVP **无退款端点**(PL-R10):虚拟商品,协议不支持退款。
 ### 订单超时与对账
 
 - **15 分钟支付窗口:** Native 统一下单设 `time_expire`=创建+15min,逾期微信自动关单。
-- **20 分钟定时对账:** LS 进程内每 20 分钟用 `orderNo` 调微信订单查询核对 `pending` 订单:SUCCESS→paid(延长 license)、CLOSED→`expired`、NOTPAY 未超窗→保持、其他→`failed`。是异步回调的安全网。
+- **15 秒定时对账:** LS 进程内每 15 秒用 `orderNo` 调微信订单查询核对 `pending` 订单:SUCCESS→paid(延长 license)、CLOSED→`expired`、NOTPAY 未超窗→保持、其他→`failed`。是异步回调的安全网,高频以便回调缺失时仍能数秒内确认支付;是否过期按每单 `created_at` 与 15min 窗口逐单判定,与对账周期解耦。
+- **`GET /v1/checkout/status?orderNo`:** 已登录买家轮询本人某订单当前状态(`pending`/`paid`/`expired`/`failed`),供续费页扫码后自动收尾(支付成功即跳账户页,无需手动刷新)。仅可查本人订单,他人订单返回 `404`。
 - **续期上限:** 目标 license 的 `termEnd` 在当前 +1 年之后则拒绝下单。
 
 ### admin 后台

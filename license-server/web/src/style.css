@@ -92,26 +92,26 @@
   --dur-modal: 200ms;
 }
 
-/* ---- 亮色模式(规范 §2.1 / §6) ---- */
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --c-bg: #ffffff;
-    --c-panel: #f8f8fc;
-    --c-card: #ffffff;
-    --c-input: #f1f1f5;
-    --c-code: #f4f4f7;
-    --c-border: #e2e2e8;
-    --c-text: #18181b;
-    --c-text-muted: #6b6b75;
-    --c-text-disabled: #a1a1aa;
-    --c-hover: rgba(0, 0, 0, 0.04);
-    --c-hover-strong: rgba(0, 0, 0, 0.06);
-    --c-hover-stronger: rgba(0, 0, 0, 0.1);
-    --shadow-low: 0 2px 8px rgba(0, 0, 0, 0.08);
-    --shadow-mid: 0 8px 24px rgba(0, 0, 0, 0.12);
-    --shadow-high: 0 12px 32px rgba(0, 0, 0, 0.16);
-  }
+/* ---- 亮色模式(规范 §2.1「暗色为主」/ §6「提供亮色切换」) ----
+ * 暗色是恒定的主基底,故页面主背景稳定为 #18181B,不随系统自动翻白;亮色为显式
+ * 开关(与 c3 standard.css 一致,用 data-theme 而非 prefers-color-scheme)。 */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --c-bg: #ffffff;
+  --c-panel: #f8f8fc;
+  --c-card: #ffffff;
+  --c-input: #f1f1f5;
+  --c-code: #f4f4f7;
+  --c-border: #e2e2e8;
+  --c-text: #18181b;
+  --c-text-muted: #6b6b75;
+  --c-text-disabled: #a1a1aa;
+  --c-hover: rgba(0, 0, 0, 0.04);
+  --c-hover-strong: rgba(0, 0, 0, 0.06);
+  --c-hover-stronger: rgba(0, 0, 0, 0.1);
+  --shadow-low: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-mid: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-high: 0 12px 32px rgba(0, 0, 0, 0.16);
 }
 
 *,

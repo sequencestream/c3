@@ -15,6 +15,7 @@ import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 
 const { t, d } = useTypedI18n()
 
@@ -135,12 +136,19 @@ function toggleEnabled(s: Schedule): void {
   emit('toggle-enabled', s.id, !isEnabled(s))
 }
 
-// 删除:硬删除且级联清除执行历史,不可撤销,故先弹原生二次确认(含任务名)。
-// 仅确认后才上抛 delete-schedule,由 App 发 delete_schedule;取消则无副作用。
+// 删除:硬删除且级联清除执行历史,不可撤销,故弹组件二次确认(含任务名)。
+// 点删除按钮只是把目标暂存进 pendingDelete 打开弹窗;确认后才上抛 delete-schedule
+// (由 App 发 delete_schedule),取消则清空、无副作用。
+const pendingDelete = ref<Schedule | null>(null)
 function requestDelete(s: Schedule): void {
-  if (window.confirm(t('schedule.list.delete.confirm', { name: scheduleLabel(s) }))) {
-    emit('delete-schedule', s.id)
-  }
+  pendingDelete.value = s
+}
+function confirmDelete(): void {
+  if (pendingDelete.value) emit('delete-schedule', pendingDelete.value.id)
+  pendingDelete.value = null
+}
+function cancelDelete(): void {
+  pendingDelete.value = null
 }
 
 // 手风琴展开状态:记录当前展开项的 id,null 表示全部收起;天然保证至多一项展开。
@@ -338,6 +346,22 @@ function toggleExpand(): void {
         </div>
       </div>
     </div>
+
+    <!-- 删除二次确认弹窗:任务名注入正文,危险色确认按钮强调不可逆。 -->
+    <ConfirmDialog
+      :open="pendingDelete !== null"
+      :title="t('schedule.list.delete.title')"
+      :message="
+        pendingDelete
+          ? t('schedule.list.delete.confirm', { name: scheduleLabel(pendingDelete) })
+          : ''
+      "
+      :confirm-label="t('common.action.delete.label')"
+      :cancel-label="t('common.action.cancel.label')"
+      danger
+      @confirm="confirmDelete"
+      @cancel="cancelDelete"
+    />
   </section>
 </template>
 

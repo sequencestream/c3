@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"github.com/sequencestream/code-creative-center/license-server/internal/licenses"
+	"github.com/sequencestream/code-creative-center/license-server/internal/orders"
+	"github.com/sequencestream/code-creative-center/license-server/internal/plans"
 	"github.com/sequencestream/code-creative-center/license-server/internal/token"
 )
 
@@ -70,40 +72,40 @@ func getJSON(t *testing.T, h http.Handler, target string, userID int64) (int, st
 func TestAccountLiveDataIsolation(t *testing.T) {
 	env := liveServer(t, githubOK())
 
-	if err := env.store.SeedPlans(env.ctx, []store.Plan{
+	if err := env.seed.SeedPlans(env.ctx, []plans.Record{
 		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
 		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
 	}); err != nil {
 		t.Fatalf("seed plans: %v", err)
 	}
 
-	userA, _ := env.store.UpsertUser(env.ctx, 1001, "alice", "alice@example.com")
-	userB, _ := env.store.UpsertUser(env.ctx, 1002, "bob", "bob@example.com")
+	userA, _ := env.seed.UpsertUser(env.ctx, 1001, "alice", "alice@example.com")
+	userB, _ := env.seed.UpsertUser(env.ctx, 1002, "bob", "bob@example.com")
 
 	now := time.Now()
-	licA, _, err := env.store.EnsureLicenseForUser(env.ctx, userA, 30, now, testKeyGen("lk"))
+	licA, _, err := env.seed.EnsureLicenseForUser(env.ctx, userA, 30, now, testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license A: %v", err)
 	}
-	licB, _, err := env.store.EnsureLicenseForUser(env.ctx, userB, 30, now, testKeyGen("lk"))
+	licB, _, err := env.seed.EnsureLicenseForUser(env.ctx, userB, 30, now, testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license B: %v", err)
 	}
 
 	// User A has a PAID order (paid orders are what /v1/orders lists); bob has none.
-	order, err := env.store.CreateOrder(env.ctx, store.CreateOrderInput{
+	order, err := env.seed.CreateOrder(env.ctx, orders.CreateOrderInput{
 		UserID: userA, LicenseID: licA.ID, PlanKey: "6m",
 		AgreementVersion: "v1", AgreementAcceptedAt: now,
-	}, func() string { return store.NewOrderNo(time.Now()) })
+	}, func() string { return orders.NewOrderNo(time.Now()) })
 	if err != nil {
 		t.Fatalf("create order A: %v", err)
 	}
-	if _, _, err := env.store.MarkOrderPaid(env.ctx, order.OrderNo, "wx-tx-A", now); err != nil {
+	if _, _, err := env.seed.MarkOrderPaid(env.ctx, order.OrderNo, "wx-tx-A", now); err != nil {
 		t.Fatalf("mark paid A: %v", err)
 	}
 
 	// Bind user A's license so it carries a binding install id.
-	if _, err := env.store.BindInstallation(env.ctx, licA.LicenseKey, "inst-alice", now, func() string { return "tok-alice" }); err != nil {
+	if _, err := env.seed.BindInstallation(env.ctx, licA.LicenseKey, "inst-alice", now, func() string { return "tok-alice" }); err != nil {
 		t.Fatalf("bind A: %v", err)
 	}
 
@@ -132,19 +134,19 @@ func TestAccountLiveDataIsolation(t *testing.T) {
 
 func TestAccountDoesNotLeakAliveToken(t *testing.T) {
 	env := liveServer(t, githubOK())
-	if err := env.store.SeedPlans(env.ctx, []store.Plan{
+	if err := env.seed.SeedPlans(env.ctx, []plans.Record{
 		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
 	}); err != nil {
 		t.Fatalf("seed plans: %v", err)
 	}
-	user, _ := env.store.UpsertUser(env.ctx, 2001, "test", "test@example.com")
-	lic, _, err := env.store.EnsureLicenseForUser(env.ctx, user, 30, time.Now(), testKeyGen("lk"))
+	user, _ := env.seed.UpsertUser(env.ctx, 2001, "test", "test@example.com")
+	lic, _, err := env.seed.EnsureLicenseForUser(env.ctx, user, 30, time.Now(), testKeyGen("lk"))
 	if err != nil {
 		t.Fatalf("ensure license: %v", err)
 	}
 
 	tokenPlain := "super-secret-alive-token"
-	if _, err := env.store.BindInstallation(env.ctx, lic.LicenseKey, "inst-test", time.Now(), func() string { return tokenPlain }); err != nil {
+	if _, err := env.seed.BindInstallation(env.ctx, lic.LicenseKey, "inst-test", time.Now(), func() string { return tokenPlain }); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 
@@ -155,7 +157,7 @@ func TestAccountDoesNotLeakAliveToken(t *testing.T) {
 	if strings.Contains(body, tokenPlain) {
 		t.Error("licenses response must NOT leak the plaintext alive token")
 	}
-	if strings.Contains(body, store.HashCode(tokenPlain)) {
+	if strings.Contains(body, licenses.HashCode(tokenPlain)) {
 		t.Error("licenses response must NOT leak the alive token hash either")
 	}
 }

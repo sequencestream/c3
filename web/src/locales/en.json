@@ -10,6 +10,9 @@
       "cancel": {
         "label": "Cancel"
       },
+      "delete": {
+        "label": "Delete"
+      },
       "save": {
         "label": "Save"
       },
@@ -994,6 +997,7 @@
       },
       "delete": {
         "tooltip": "Delete schedule",
+        "title": "Delete schedule?",
         "confirm": "Delete \"{name}\"? Its execution history is removed permanently — this can't be undone."
       },
       "runNow": {
@@ -1839,7 +1843,8 @@
       "expired": "Expired",
       "unactivated": "Not activated",
       "disabled": "Disabled",
-      "validUntil": "Valid until {date}"
+      "validUntil": "Valid until {date}",
+      "manageKey": "View key & renew"
     },
     "activate": {
       "button": "Activate license",

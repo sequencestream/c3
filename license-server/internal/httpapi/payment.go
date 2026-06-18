@@ -3,19 +3,20 @@ package httpapi
 import (
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
-	"time"
 
-	"github.com/sequencestream/code-creative-center/license-server/internal/store"
+	"github.com/sequencestream/code-creative-center/license-server/internal/orders"
+	"github.com/sequencestream/code-creative-center/license-server/internal/payments"
 )
 
-// maxNotifyBody bounds the callback body we read — a WeChat Pay notification is
-// a few hundred bytes; a larger body is rejected rather than buffered.
+// maxNotifyBody bounds the callback body we read — a WeChat Pay notification is a
+// few hundred bytes; a larger body is rejected rather than buffered.
 const maxNotifyBody = 1 << 20
 
-// mountPayment registers the WeChat Pay asynchronous result callback. WeChat
-// POSTs the (signed, encrypted) payment outcome here; the handler verifies it,
-// advances the order state machine, and acknowledges with WeChat's expected
+// mountPayment registers the WeChat Pay asynchronous result callback. WeChat POSTs
+// the (signed, encrypted) payment outcome here; the handler hands it to the
+// payment service to verify and settle, then acknowledges with WeChat's expected
 // SUCCESS/FAIL envelope.
 func mountPayment(mux *http.ServeMux, d Deps) {
 	mux.HandleFunc("/v1/payment/wechat/notify", func(w http.ResponseWriter, r *http.Request) {
@@ -28,63 +29,60 @@ func mountPayment(mux *http.ServeMux, d Deps) {
 	})
 }
 
-// handleWechatNotify verifies a WeChat Pay callback and applies it to the order.
-//
-// The signature/decrypt check is the security boundary: a forged or tampered
-// "payment success" never decrypts with our APIv3 key and is refused, so no
-// order is advanced (PL-R12). A verified SUCCESS marks the order paid and
-// extends the license; any other trade state marks it failed. Processing is
-// idempotent — WeChat redelivers until it gets a 200, and a replay of an
-// already-paid order acknowledges without side effects.
+// handleWechatNotify reads the callback body and delegates verification + order
+// settlement to the payment service, then maps the outcome to WeChat's expected
+// acknowledgement. The signature/decrypt check (in the service) is the security
+// boundary: a forged or tampered "payment success" is refused and no order is
+// advanced (PL-R12). Processing is idempotent — WeChat redelivers until it gets a
+// 200, and a replay of an already-settled order acknowledges without side effects.
 func handleWechatNotify(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if d.Pay == nil || !d.Store.Available() {
+		if !d.payments.Ready() {
 			writeNotifyAck(w, http.StatusServiceUnavailable, false, "payment is not configured")
 			return
 		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxNotifyBody))
 		if err != nil {
+			slog.Error("wechat callback read body failed", "err", err)
 			writeNotifyAck(w, http.StatusBadRequest, false, "could not read body")
 			return
 		}
+		// Receipt log: body length only — the raw envelope carries signature material
+		// and an encrypted resource that must never be logged (PL-R12).
+		slog.Info("wechat callback received", "bytes", len(body))
 
-		notif, err := d.Pay.ParseNotify(r.Header.Get, body)
+		res, err := d.payments.ProcessNotify(r.Context(), r.Header.Get, body)
 		if err != nil {
-			// A bad signature / undecryptable body is forged or tampered: refuse.
-			writeNotifyAck(w, http.StatusUnauthorized, false, "signature verification failed")
-			return
-		}
-		if notif.OutTradeNo == "" {
-			writeNotifyAck(w, http.StatusBadRequest, false, "missing out_trade_no")
+			switch {
+			case errors.Is(err, payments.ErrVerify):
+				// A bad signature / undecryptable body is forged or tampered: refuse.
+				slog.Warn("wechat callback rejected (verify/decrypt failed)", "err", err)
+				writeNotifyAck(w, http.StatusUnauthorized, false, "signature verification failed")
+			case errors.Is(err, payments.ErrMissingTradeNo):
+				slog.Warn("wechat callback missing out_trade_no")
+				writeNotifyAck(w, http.StatusBadRequest, false, "missing out_trade_no")
+			case errors.Is(err, orders.ErrNotFound):
+				slog.Warn("order not found for callback")
+				writeNotifyAck(w, http.StatusNotFound, false, "order not found")
+			default:
+				slog.Error("callback processing failed", "err", err)
+				writeNotifyAck(w, http.StatusInternalServerError, false, "could not record payment")
+			}
 			return
 		}
 
-		// out_trade_no is the order_no. A success on an already-expired/paid order
-		// is idempotently ignored by the store (it never re-extends a license, §11).
-		if notif.Paid() {
-			if _, _, err := d.Store.MarkOrderPaid(r.Context(), notif.OutTradeNo, notif.TransactionID, time.Now()); err != nil {
-				ackStoreError(w, err)
-				return
-			}
-		} else {
-			if _, _, err := d.Store.MarkOrderFailed(r.Context(), notif.OutTradeNo, notif.TransactionID); err != nil {
-				ackStoreError(w, err)
-				return
-			}
+		slog.Info("wechat callback verified",
+			"orderNo", res.OutTradeNo, "tradeState", res.TradeState, "txid", res.TransactionID, "amount", res.AmountCents)
+		switch {
+		case res.Paid && res.Advanced:
+			slog.Info("order settled paid via callback; license extended", "orderNo", res.OutTradeNo, "txid", res.TransactionID)
+		case !res.Paid && res.Advanced:
+			slog.Info("order marked failed via callback", "orderNo", res.OutTradeNo, "tradeState", res.TradeState)
+		default:
+			slog.Info("callback ignored, already settled (idempotent)", "orderNo", res.OutTradeNo, "status", res.Order.Status)
 		}
 		writeNotifyAck(w, http.StatusOK, true, "成功")
 	}
-}
-
-// ackStoreError maps a store failure to a callback acknowledgement. An unknown
-// order is a 4xx FAIL (an anomaly worth surfacing in WeChat's retry log); any
-// other error is a 5xx FAIL so WeChat retries after the transient fault clears.
-func ackStoreError(w http.ResponseWriter, err error) {
-	if errors.Is(err, store.ErrNotFound) {
-		writeNotifyAck(w, http.StatusNotFound, false, "order not found")
-		return
-	}
-	writeNotifyAck(w, http.StatusInternalServerError, false, "could not record payment")
 }
 
 // writeNotifyAck writes WeChat Pay's expected callback acknowledgement: a JSON

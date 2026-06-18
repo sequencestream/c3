@@ -126,6 +126,11 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   latestCommitHash: null,
   prId: null,
   prStatus: null,
+  specPath: null,
+  specApproved: false,
+  specApproveUser: null,
+  specSessionId: null,
+  intentSessionId: null,
   lastDevSessionId: null,
   ...overrides,
 })

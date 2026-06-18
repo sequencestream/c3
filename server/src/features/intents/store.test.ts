@@ -30,6 +30,10 @@ import {
   setLastDevSession,
   setLatestCommitHash,
   setPrInfo,
+  setSpecApproved,
+  setSpecPath,
+  setSpecSessionId,
+  setIntentSessionId,
   updateIntent,
   updateIntentSession,
   updateStatus,
@@ -214,7 +218,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(12)
+    expect(version?.user_version).toBe(13)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -284,7 +288,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(12)
+    expect(version?.user_version).toBe(13)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -390,6 +394,90 @@ describe('intents short_en_title', () => {
       { title: 'X', shortEnTitle: 'x'.repeat(150), content: '', priority: 'P0' },
     ])
     expect(r.shortEnTitle?.length).toBe(128)
+  })
+})
+
+describe('intents spec + session fields (v12→v13)', () => {
+  it('defaults all spec/session fields on a fresh insert (spec_approved=0 → false, rest null)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Spec', shortEnTitle: 'spec', content: '', priority: 'P0' },
+    ])
+    expect(r.specPath).toBeNull()
+    expect(r.specApproved).toBe(false)
+    expect(r.specApproveUser).toBeNull()
+    expect(r.specSessionId).toBeNull()
+    expect(r.intentSessionId).toBeNull()
+  })
+
+  it('round-trips the spec/session fields via their setters + read-back', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Spec', shortEnTitle: 'spec', content: '', priority: 'P1' },
+    ])
+
+    setSpecPath(r.id, 'specs/intents/spec.md')
+    expect(getIntent(r.id)?.specPath).toBe('specs/intents/spec.md')
+
+    setSpecApproved(r.id, true, 'alice')
+    let got = getIntent(r.id)
+    expect(got?.specApproved).toBe(true)
+    expect(got?.specApproveUser).toBe('alice')
+    expect(got?.specPath).toBe('specs/intents/spec.md') // earlier field preserved
+
+    // Un-approval clears the approver.
+    setSpecApproved(r.id, false, null)
+    got = getIntent(r.id)
+    expect(got?.specApproved).toBe(false)
+    expect(got?.specApproveUser).toBeNull()
+
+    setSpecSessionId(r.id, 'sess-spec')
+    setIntentSessionId(r.id, 'sess-refine')
+    got = getIntent(r.id)
+    expect(got?.specSessionId).toBe('sess-spec')
+    expect(got?.intentSessionId).toBe('sess-refine')
+    // Coexists with last_dev_session_id (different semantics): still null here.
+    expect(got?.lastDevSessionId).toBeNull()
+  })
+
+  it('reads a historic row (no v13 columns written) as defaults, and migrates idempotently', () => {
+    // Touch the store once so the schema (incl. the migrated columns) is created.
+    listIntents(proj)
+    // Simulate a historic row inserted without the v13 columns populated.
+    const raw = getDb()!
+    raw.run(
+      `INSERT INTO intents
+         (id, workspace_path, title, content, priority, status, module, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      'hist-v12',
+      proj,
+      'Historic',
+      'body',
+      'P0',
+      'todo',
+      '',
+      1,
+      1,
+    )
+    const got = getIntent('hist-v12')
+    expect(got?.title).toBe('Historic') // historic row survives
+    expect(got?.specPath).toBeNull()
+    expect(got?.specApproved).toBe(false) // DEFAULT 0 → false
+    expect(got?.specApproveUser).toBeNull()
+    expect(got?.specSessionId).toBeNull()
+    expect(got?.intentSessionId).toBeNull()
+
+    const cols = raw.all<{ name: string }>('PRAGMA table_info(intents)')
+    expect(cols.some((c) => c.name === 'spec_path')).toBe(true)
+    expect(cols.some((c) => c.name === 'spec_approved')).toBe(true)
+    expect(cols.some((c) => c.name === 'spec_approve_user')).toBe(true)
+    expect(cols.some((c) => c.name === 'spec_session_id')).toBe(true)
+    expect(cols.some((c) => c.name === 'intent_session_id')).toBe(true)
+    const version = raw.get<{ user_version: number }>('PRAGMA user_version')
+    expect(version?.user_version).toBe(13)
+
+    // Idempotent: re-running the schema-ensure path must not throw or lose data.
+    resetStoreForTests()
+    expect(() => listIntents(proj)).not.toThrow()
+    expect(getIntent('hist-v12')?.specApproved).toBe(false)
   })
 })
 

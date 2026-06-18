@@ -140,7 +140,7 @@ function expectTerminalSchema(raw: Db): void {
   const dc = cols(raw, 'intent_deps')
   expect(dc.has('dep_type')).toBe(true)
   expect(dc.has('created_at')).toBe(true)
-  expect(userVersion(raw)).toBe(12)
+  expect(userVersion(raw)).toBe(13)
 }
 
 describe('v5 → v6 rename: fresh db starts at the intents terminal state', () => {

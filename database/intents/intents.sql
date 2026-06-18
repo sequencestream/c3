@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS intents (
   latest_commit_hash  TEXT,                          -- 分支最新 commit hash (v7→v8 新增)
   pr_id               TEXT,                          -- PR / Merge Request 编号 (v7→v8 新增)
   pr_status           TEXT,                          -- PR 状态: 'reviewing' | 'rejected' | 'failed' | 'merged' (v7→v8 新增)
+  spec_path           TEXT,                          -- 已撰写的 spec 文档路径 (相对 workspace), spec 质量闸的存在性来源 (v12→v13 新增; 文档标注 VARCHAR(255), SQLite 实为 TEXT; 历史行为 NULL)
+  spec_approved       INTEGER NOT NULL DEFAULT 0,    -- spec 是否通过人工审批闸: 0=否, 1=是 (v12→v13 新增; 历史行为 0)
+  spec_approve_user   TEXT,                          -- spec 审批人 (用户标识); 未审批为 NULL (v12→v13 新增; 文档标注 VARCHAR(64))
+  spec_session_id     TEXT,                          -- 撰写/精炼 spec 的会话 c3SessionId; 与 last_dev_session_id 语义不同 (v12→v13 新增; 文档标注 VARCHAR(128))
+  intent_session_id   TEXT,                          -- 意图 refine/沟通会话 c3SessionId; 与 last_dev_session_id (开发会话) 并存且语义不同 (v12→v13 新增; 文档标注 VARCHAR(128))
   created_at          INTEGER NOT NULL,              -- 创建时间 (epoch ms)
   updated_at          INTEGER NOT NULL,              -- 最后更新时间 (epoch ms)
   completed_at        INTEGER                        -- 完成时间 (epoch ms), status='done' 时打戳

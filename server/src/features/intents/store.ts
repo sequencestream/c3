@@ -27,7 +27,7 @@ import type {
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 13
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS intents (
   latest_commit_hash TEXT,
   pr_id           TEXT,
   pr_status       TEXT,
+  spec_path         TEXT,
+  spec_approved     INTEGER NOT NULL DEFAULT 0,
+  spec_approve_user TEXT,
+  spec_session_id   TEXT,
+  intent_session_id TEXT,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL,
   completed_at    INTEGER
@@ -225,6 +230,14 @@ function db(): Db | null {
     // v11 → v12: add short_en_title (nullable — historic rows stay null until refined; used as the
     // stable ASCII source for deriving branch / worktree names).
     ensureColumn(d, 'intents', 'short_en_title', 'TEXT')
+    // v12 → v13: add spec quality-gate + session fields (nullable, except spec_approved which
+    // defaults 0). Persisted so approval state, spec path, and the spec/refine session ids
+    // survive reconnect / refresh. Historic rows: spec_approved=0, the rest null.
+    ensureColumn(d, 'intents', 'spec_path', 'TEXT')
+    ensureColumn(d, 'intents', 'spec_approved', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(d, 'intents', 'spec_approve_user', 'TEXT')
+    ensureColumn(d, 'intents', 'spec_session_id', 'TEXT')
+    ensureColumn(d, 'intents', 'intent_session_id', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -278,6 +291,11 @@ interface Row {
   latest_commit_hash: string | null
   pr_id: string | null
   pr_status: string | null
+  spec_path: string | null
+  spec_approved: number
+  spec_approve_user: string | null
+  spec_session_id: string | null
+  intent_session_id: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
@@ -319,6 +337,11 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     latestCommitHash: r.latest_commit_hash,
     prId: r.pr_id,
     prStatus: (r.pr_status ?? null) as IntentPrStatus | null,
+    specPath: r.spec_path,
+    specApproved: r.spec_approved === 1,
+    specApproveUser: r.spec_approve_user,
+    specSessionId: r.spec_session_id,
+    intentSessionId: r.intent_session_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
@@ -756,6 +779,45 @@ export function setPrInfo(id: string, prId: string, prStatus: IntentPrStatus): v
     'UPDATE intents SET pr_id=?, pr_status=?, updated_at=? WHERE id=?',
     prId,
     prStatus,
+    Date.now(),
+    id,
+  )
+}
+
+/** Set the written spec document path for an intent (relative to the workspace). */
+export function setSpecPath(id: string, specPath: string): void {
+  const d = requireDb()
+  d.run('UPDATE intents SET spec_path=?, updated_at=? WHERE id=?', specPath, Date.now(), id)
+}
+
+/**
+ * Set the spec approval checkpoint state. `approved` and `approveUser` move
+ * together (like `setPrInfo`): on approval pass the approving user; on un-approval
+ * pass `approved=false` and `approveUser=null` to clear the recorded approver.
+ */
+export function setSpecApproved(id: string, approved: boolean, approveUser: string | null): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intents SET spec_approved=?, spec_approve_user=?, updated_at=? WHERE id=?',
+    approved ? 1 : 0,
+    approveUser,
+    Date.now(),
+    id,
+  )
+}
+
+/** Set the spec-authoring session id (c3SessionId) for an intent. */
+export function setSpecSessionId(id: string, sessionId: string): void {
+  const d = requireDb()
+  d.run('UPDATE intents SET spec_session_id=?, updated_at=? WHERE id=?', sessionId, Date.now(), id)
+}
+
+/** Set the refine / communication session id (c3SessionId) for an intent. */
+export function setIntentSessionId(id: string, sessionId: string): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intents SET intent_session_id=?, updated_at=? WHERE id=?',
+    sessionId,
     Date.now(),
     id,
   )

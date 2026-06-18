@@ -1716,6 +1716,31 @@ export interface Intent {
   prId: string | null
   /** PR lifecycle status; `null` when no PR yet or status is unknown. */
   prStatus: IntentPrStatus | null
+  /**
+   * Path (relative to the workspace) of this intent's written spec document;
+   * `null` until a spec has been authored. The source of truth for the spec
+   * quality gate's "spec exists" check.
+   */
+  specPath: string | null
+  /**
+   * Whether the intent's spec has passed the human approval checkpoint. `false`
+   * by default (and for historic rows); set `true` only at explicit approval.
+   * Persisted so the quality-gate state survives reconnect / refresh.
+   */
+  specApproved: boolean
+  /** Who approved the spec (the approving user's id/handle); `null` until approved. */
+  specApproveUser: string | null
+  /**
+   * The c3SessionId of the session that authored / refined the spec; `null` when
+   * none. Distinct from `lastDevSessionId` (the development session).
+   */
+  specSessionId: string | null
+  /**
+   * The c3SessionId of the intent's refine / communication session; `null` when
+   * none. Distinct from `lastDevSessionId` (development) — this is the
+   * conversation that shapes the intent itself.
+   */
+  intentSessionId: string | null
 }
 
 /**

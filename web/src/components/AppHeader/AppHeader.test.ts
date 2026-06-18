@@ -183,3 +183,66 @@ describe('AppHeader.vue — license badge 有效期(PL-R7)', () => {
     }
   })
 })
+
+describe('AppHeader.vue — license 有效期手动刷新(PL-R7)', () => {
+  const TERM_END = 1_718_409_600
+  const entitledLicense = {
+    state: 'active',
+    entitled: true,
+    termEnd: TERM_END,
+    installationId: 'i',
+    licenseKey: 'lk',
+  }
+  function refreshProps(extra: object = {}) {
+    return { ...baseProps, license: entitledLicense, ...extra }
+  }
+
+  it('entitled 且展示有效期时,有效期行旁渲染刷新按钮', () => {
+    const w = mount(AppHeader, { props: refreshProps() } as never)
+    const term = w.find('.license-term')
+    expect(term.find('.license-refresh-btn').exists()).toBe(true)
+  })
+
+  it('点击刷新按钮 → emit refresh-license', async () => {
+    const w = mount(AppHeader, { props: refreshProps() } as never)
+    await w.find('.license-refresh-btn').trigger('click')
+    expect(w.emitted('refresh-license')).toHaveLength(1)
+  })
+
+  it('在途(licenseRefreshing)→ 按钮禁用 + 图标旋转', () => {
+    const w = mount(AppHeader, { props: refreshProps({ licenseRefreshing: true }) } as never)
+    const btn = w.find('.license-refresh-btn')
+    expect(btn.attributes('disabled')).toBeDefined()
+    expect(w.find('.license-refresh-icon').classes()).toContain('spinning')
+  })
+
+  it('在途期间点击不再 emit(防连点)', async () => {
+    const w = mount(AppHeader, { props: refreshProps({ licenseRefreshing: true }) } as never)
+    await w.find('.license-refresh-btn').trigger('click')
+    expect(w.emitted('refresh-license')).toBeUndefined()
+  })
+
+  it('点击后进入最小冷却 → 按钮即时禁用防连点', async () => {
+    const w = mount(AppHeader, { props: refreshProps() } as never)
+    const btn = w.find('.license-refresh-btn')
+    await btn.trigger('click')
+    expect(btn.attributes('disabled')).toBeDefined()
+    // 冷却期内再次点击不再 emit。
+    await btn.trigger('click')
+    expect(w.emitted('refresh-license')).toHaveLength(1)
+  })
+
+  it('刷新失败 → 按钮旁 inline 显示可读错误文案', () => {
+    const w = mount(AppHeader, {
+      props: refreshProps({ licenseRefreshError: '刷新失败,请重试' }),
+    } as never)
+    const err = w.find('.license-refresh-error')
+    expect(err.exists()).toBe(true)
+    expect(err.text()).toBe('刷新失败,请重试')
+  })
+
+  it('无错误时不渲染 inline 提示', () => {
+    const w = mount(AppHeader, { props: refreshProps() } as never)
+    expect(w.find('.license-refresh-error').exists()).toBe(false)
+  })
+})

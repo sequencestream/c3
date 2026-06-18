@@ -707,6 +707,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Current entitlement, derived from the offline-verified token (PL-R7).
         ctx.license.value = msg.license
         break
+      case 'license_refresh_result':
+        // Ack for a manual term refresh (PL-R7). A `license_state` push with the
+        // refreshed term precedes this. Clear the in-flight flag; on failure show
+        // a readable inline error beside the control (raw reason is not surfaced).
+        ctx.licenseRefreshing.value = false
+        ctx.licenseRefreshError.value = msg.ok ? null : t('license.refresh.failed')
+        break
       case 'license_activation_started':
         // The browser is being sent to the LS activation URL; keep it so the
         // console can offer it as a manual fallback if the browser didn't open.

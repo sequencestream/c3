@@ -1851,6 +1851,10 @@
       "urlFallback": "如果浏览器未自动打开，请手动粘贴此链接：{url}"
     },
     "startFailed": "许可激活启动失败。请检查网络连接和许可服务器是否可用。",
+    "refresh": {
+      "label": "刷新有效期",
+      "failed": "刷新有效期失败,请检查网络后重试。"
+    },
     "bind": {
       "placeholder": "粘贴许可密钥",
       "button": "绑定",

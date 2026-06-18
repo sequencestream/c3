@@ -8,11 +8,33 @@
  */
 import type { Handler } from '../../transport/handler-registry.js'
 import { startActivation } from './activation.js'
+import { runHeartbeatOnce } from './heartbeat.js'
 import { currentLicenseStatus } from './store.js'
 
 /** Reply with the current license state (drives the badge/menu, PL-R7). */
 export const getLicense: Handler<'get_license'> = (_ctx, conn) => {
   conn.send({ type: 'license_state', license: currentLicenseStatus() })
+}
+
+/**
+ * Actively sync the license term: run one heartbeat now (PL-R7), then push the
+ * refreshed {@link currentLicenseStatus} followed by a `license_refresh_result`
+ * ack. Lets a console renewal surface immediately instead of waiting for the
+ * next scheduled beat. Heartbeat is fail-soft (PL-R13) — it never throws, so a
+ * network / LS 5xx failure resolves to `ok:false` with the outcome reason; the
+ * cached term is left untouched. Reuses {@link runHeartbeatOnce}; no new sync
+ * path, scheduler/interval unchanged.
+ */
+export const refreshLicense: Handler<'refresh_license'> = async (_ctx, conn) => {
+  const outcome = await runHeartbeatOnce()
+  // Always reflect the latest cache (a successful beat refreshed the term).
+  conn.send({ type: 'license_state', license: currentLicenseStatus() })
+  const ok = outcome.status !== 'error'
+  conn.send({
+    type: 'license_refresh_result',
+    ok,
+    reason: ok || !('reason' in outcome) ? undefined : outcome.reason,
+  })
 }
 
 /**

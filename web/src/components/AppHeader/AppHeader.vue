@@ -96,6 +96,10 @@ const props = defineProps<{
   showLogout?: boolean
   /** Current product-license status for the badge/menu (PL-R7). Null when not yet known. */
   license?: LicenseStatus | null
+  /** A manual term refresh (`refresh-license`) is in flight; disables the control + shows loading (PL-R7). */
+  licenseRefreshing?: boolean
+  /** Inline error shown beside the refresh control when the last manual sync failed (PL-R7). */
+  licenseRefreshError?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -108,6 +112,7 @@ const emit = defineEmits<{
   'update:viewMode': [mode: 'workspace' | 'workcenter']
   logout: []
   'activate-license': []
+  'refresh-license': []
 }>()
 
 function licenseBadgeKey(state: string): LocaleKey {
@@ -135,6 +140,27 @@ const licenseTermText = computed<string>(() => {
   if (!lic.termEnd || lic.termEnd <= 0) return ''
   const date = d(new Date(lic.termEnd * 1000), 'date')
   return t('license.badge.validUntil' as LocaleKey, { date })
+})
+
+// 手动刷新有效期(PL-R7):点击触发一次到 LS 的即时 heartbeat 同步 termEnd。
+// 节流仅前端:在途(licenseRefreshing)期间禁用 + 最小冷却间隔防连点;失败由父级
+// 经 licenseRefreshError 下传,在按钮旁 inline 展示。
+const REFRESH_COOLDOWN_MS = 3000
+const refreshCooldown = ref(false)
+let refreshCooldownTimer: ReturnType<typeof setTimeout> | undefined
+const refreshDisabled = computed<boolean>(
+  () => props.licenseRefreshing === true || refreshCooldown.value,
+)
+function onRefreshLicense(): void {
+  if (refreshDisabled.value) return
+  emit('refresh-license')
+  refreshCooldown.value = true
+  refreshCooldownTimer = setTimeout(() => {
+    refreshCooldown.value = false
+  }, REFRESH_COOLDOWN_MS)
+}
+onBeforeUnmount(() => {
+  if (refreshCooldownTimer) clearTimeout(refreshCooldownTimer)
 })
 
 function isTabDisabled(tab: HeaderTab): boolean {
@@ -276,6 +302,18 @@ function selectTab(tab: HeaderTab): void {
                    term 未知(termEnd=0)时回退为状态文案。 -->
               <div v-if="licenseTermText" class="license-info-row license-term">
                 <span class="license-term-text">{{ licenseTermText }}</span>
+                <button
+                  type="button"
+                  class="license-refresh-btn"
+                  :disabled="refreshDisabled"
+                  :title="t('license.refresh.label' as LocaleKey)"
+                  :aria-label="t('license.refresh.label' as LocaleKey)"
+                  @click="onRefreshLicense"
+                >
+                  <span class="license-refresh-icon" :class="{ spinning: licenseRefreshing }"
+                    >⟳</span
+                  >
+                </button>
                 <a
                   class="license-key-btn"
                   :href="LICENSE_CONSOLE_URL"
@@ -288,6 +326,16 @@ function selectTab(tab: HeaderTab): void {
                 >
               </div>
               <div v-else class="license-info-row">{{ t(licenseBadgeKey(license.state)) }}</div>
+              <!-- 手动刷新失败(网络 / LS 5xx,heartbeat fail-soft 不抛)→ 按钮旁 inline 提示,
+                   不改变已缓存有效期(PL-R7)。 -->
+              <p
+                v-if="licenseRefreshError"
+                class="license-refresh-error"
+                role="alert"
+                :title="licenseRefreshError"
+              >
+                {{ licenseRefreshError }}
+              </p>
             </template>
             <button v-else class="license-activate-btn" @click="chooseActivate">
               {{ t('license.activate.button') }}
@@ -508,6 +556,45 @@ function selectTab(tab: HeaderTab): void {
 }
 .license-key-btn:hover {
   background: var(--c-card);
+}
+/* 手动刷新有效期按钮(PL-R7):与密钥按钮同尺寸,在途旋转、禁用降透明 */
+.license-refresh-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: var(--fs-caption);
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.license-refresh-btn:hover:not(:disabled) {
+  background: var(--c-card);
+}
+.license-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.license-refresh-icon {
+  display: inline-block;
+}
+.license-refresh-icon.spinning {
+  animation: license-refresh-spin 0.8s linear infinite;
+}
+@keyframes license-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.license-refresh-error {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--c-red);
 }
 .license-activate-btn {
   width: 100%;

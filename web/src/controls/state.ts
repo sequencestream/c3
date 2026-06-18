@@ -216,6 +216,11 @@ export function createState(deps: StateDeps) {
   // a browser could not be opened by the server.
   const license = ref<LicenseStatus | null>(null)
   const licenseActivationUrl = ref<string | null>(null)
+  // Manual term refresh (PL-R7): an in-flight flag (disables the control while a
+  // `refresh_license` round-trip is pending) and an inline error shown beside the
+  // refresh control when the heartbeat sync fails (cleared on the next attempt).
+  const licenseRefreshing = ref(false)
+  const licenseRefreshError = ref<string | null>(null)
 
   // ---- View mode (workspace / workcenter) ----
   const viewMode = ref<'workspace' | 'workcenter'>('workspace')
@@ -458,6 +463,8 @@ export function createState(deps: StateDeps) {
     availableCommands,
     license,
     licenseActivationUrl,
+    licenseRefreshing,
+    licenseRefreshError,
     viewMode,
     savedTab,
     activeTab,

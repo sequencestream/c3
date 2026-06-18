@@ -50,6 +50,8 @@ export interface AppMethods {
 
   // product license (ADR-0026): open LS sign-in to get a key
   activateLicense(): void
+  // product license (PL-R7): actively sync the term via one heartbeat now
+  refreshLicense(): void
 
   // message handler
   handleMessage(msg: ServerToClient): void

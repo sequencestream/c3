@@ -2591,6 +2591,17 @@ export type ClientToServer =
    * {@link license_bind_result} (and, on success, {@link license_state}) is pushed.
    */
   | { type: 'start_license_activation' }
+  /**
+   * Actively sync the product-license term with LS right now: c3 runs one
+   * heartbeat ({@link license_state} is pushed with the refreshed term, then a
+   * {@link license_refresh_result} ack). Distinct from the read-only
+   * {@link get_license} (which only re-reads the local cache) — used by the
+   * manual refresh control beside the validity date so a console renewal shows
+   * without waiting for the next scheduled heartbeat (PL-R7). Heartbeat stays
+   * fail-soft: a failure pushes `license_refresh_result {ok:false}` and never
+   * throws into the run path.
+   */
+  | { type: 'refresh_license' }
   | { type: 'ping' }
 
 // Server → Client
@@ -3130,4 +3141,12 @@ export type ServerToClient =
    * asynchronously, since c3 cannot know when the user completes the browser bind.
    */
   | { type: 'license_bind_result'; ok: boolean; reason?: string }
+  /**
+   * Ack for {@link refresh_license}: the manual heartbeat sync finished. `ok:true`
+   * means LS was reached (a {@link license_state} push with the refreshed term
+   * precedes this); `ok:false` carries a `reason` (network / LS 5xx) so the
+   * console can show an inline error beside the refresh control without
+   * disturbing the already-cached term (PL-R7, fail-soft per PL-R13).
+   */
+  | { type: 'license_refresh_result'; ok: boolean; reason?: string }
   | { type: 'pong' }

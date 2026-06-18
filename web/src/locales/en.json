@@ -1851,6 +1851,10 @@
       "urlFallback": "If the browser did not open, paste this URL: {url}"
     },
     "startFailed": "License activation failed to start. Check that internet connectivity and the license-server are available.",
+    "refresh": {
+      "label": "Refresh validity",
+      "failed": "Couldn't refresh the validity date. Check your connection and try again."
+    },
     "bind": {
       "placeholder": "Paste license key",
       "button": "Bind",

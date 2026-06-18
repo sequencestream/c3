@@ -23,7 +23,10 @@ const {
   auth,
   authStatus,
   license,
+  licenseRefreshing,
+  licenseRefreshError,
   activateLicense,
+  refreshLicense,
   status,
   workspaces,
   currentWorkspace,
@@ -225,7 +228,10 @@ const {
       :workcenter-badge-count="workcenterPendingCount"
       :show-logout="authStatus === 'authenticated'"
       :license="license"
+      :license-refreshing="licenseRefreshing"
+      :license-refresh-error="licenseRefreshError"
       @activate-license="activateLicense"
+      @refresh-license="refreshLicense"
       @select-tab="onSelectTab"
       @update:view-mode="setViewMode"
       @open-settings="openSettings"

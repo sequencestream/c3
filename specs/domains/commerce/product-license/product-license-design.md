@@ -66,8 +66,15 @@ The current derived entitlement state is pushed to the web-console, which render
 badge** (entitled / grace / expired / unactivated / disabled) and a **license menu** (activate, view
 status, purchase link). For an entitled badge (`active`/`grace`) the console also renders the
 **term-end date** carried in the pushed `LicenseStatus.termEnd` (unix seconds; `0` ⇒ no date), so
-the user sees the validity/expiry of the purchased service. The badge is informational; it never
-blocks the UI on its own — enforcement is the gating point above.
+the user sees the validity/expiry of the purchased service. Beside that date the console offers a
+**manual refresh** control: a dedicated client→server message (distinct from the read-only license
+fetch, which only re-reads the local cache) makes the server **run one heartbeat now** and push the
+refreshed state, so a console renewal lands immediately instead of after the next scheduled beat. It
+reuses the existing heartbeat — no separate sync path, and the scheduler/interval are unchanged. The
+heartbeat stays fail-soft (a network / LS failure neither gates nor mutates the cached term); the
+server acks the round-trip so the console can show an inline error on failure. Throttling is
+client-side only (disabled while in flight + a minimum cooldown); no server-side rate limit. The
+badge is informational; it never blocks the UI on its own — enforcement is the gating point above.
 
 ## License-server technical shape
 

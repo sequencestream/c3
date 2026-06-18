@@ -125,8 +125,29 @@ describe('visibleIntentActions', () => {
     ])
   })
 
-  it('done 且无 prId:Create PR + automate,无 Mark done/Cancel', () => {
-    expect(visibleIntentActions(make({ status: 'done' }))).toEqual(['createPr', 'automate'])
+  it('done 但无 branchName:不显示 Create PR', () => {
+    expect(visibleIntentActions(make({ status: 'done' }))).toEqual(['automate'])
+  })
+
+  it('有 dev session、无 prId 且 intent 分支不等于 workspace 主分支:显示 Create PR', () => {
+    expect(
+      visibleIntentActions(
+        make({
+          status: 'in_progress',
+          lastDevSessionId: 'dev-1',
+          branchName: 'feature/x',
+          workspaceMainBranch: 'main',
+        }),
+      ),
+    ).toEqual(['openSession', 'markDone', 'cancel', 'createPr', 'automate'])
+  })
+
+  it('无 dev session 时不显示 Create PR', () => {
+    expect(
+      visibleIntentActions(
+        make({ status: 'in_progress', branchName: 'feature/x', workspaceMainBranch: 'main' }),
+      ),
+    ).toEqual(['markDone', 'cancel', 'automate'])
   })
 
   it('done 且 intent 分支等于 workspace 主分支时不显示 Create PR', () => {
@@ -145,10 +166,9 @@ describe('visibleIntentActions', () => {
   })
 
   it('done 且有 prId:prLink 而非 Create PR', () => {
-    expect(visibleIntentActions(make({ status: 'done', prId: '42' }))).toEqual([
-      'prLink',
-      'automate',
-    ])
+    expect(
+      visibleIntentActions(make({ status: 'done', branchName: 'feature/x', prId: '42' })),
+    ).toEqual(['prLink', 'automate'])
   })
 
   it('cancelled:仅 automate(终止态无 markDone/cancel/createPr)', () => {

@@ -198,14 +198,19 @@ describe('IntentDetail.vue — SDD four-state main action', () => {
 
 describe('IntentDetail.vue — actions', () => {
   it('emits set-status done from the mark-done button', async () => {
-    const item = intent({ id: 'intent-1', status: 'in_progress' })
+    const item = intent({ id: 'intent-1', status: 'in_progress', lastDevSessionId: 'dev-1' })
     const w = mountDetail(item)
 
-    // status in_progress → action buttons are: mark-done, cancel (first is mark-done).
-    const buttons = w.findAll('.intent-detail-actions .req-btn')
-    await buttons[0].trigger('click')
+    await w.find('[data-action="markDone"]').trigger('click')
 
     expect(w.emitted('set-status')).toEqual([['intent-1', 'done']])
+  })
+
+  it('hides mark-done until a dev session exists', () => {
+    const item = intent({ id: 'intent-1', status: 'in_progress', lastDevSessionId: null })
+    const w = mountDetail(item)
+
+    expect(w.find('[data-action="markDone"]').exists()).toBe(false)
   })
 
   it('emits set-automate toggling the current flag', async () => {
@@ -217,13 +222,37 @@ describe('IntentDetail.vue — actions', () => {
     expect(w.emitted('set-automate')).toEqual([['intent-1', true]])
   })
 
-  it('emits create-pr for a done intent without a pr', async () => {
-    const item = intent({ id: 'intent-1', status: 'done', completedAt: 2 })
+  it('emits create-pr when the intent branch differs from the workspace main branch and no pr exists', async () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'in_progress',
+      branchName: 'feature/work',
+      lastDevSessionId: 'dev-1',
+    })
     const w = mountDetail(item)
 
     await w.find('[data-action="createPr"]').trigger('click')
 
     expect(w.emitted('create-pr')).toEqual([['intent-1']])
+  })
+
+  it('hides create-pr when the intent branch is empty', () => {
+    const item = intent({ id: 'intent-1', status: 'done', completedAt: 2, branchName: null })
+    const w = mountDetail(item)
+
+    expect(w.find('[data-action="createPr"]').exists()).toBe(false)
+  })
+
+  it('hides create-pr when no dev session exists', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'in_progress',
+      branchName: 'feature/work',
+      lastDevSessionId: null,
+    })
+    const w = mountDetail(item)
+
+    expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })
 
   it('hides create-pr when the intent branch matches the workspace main branch', () => {
@@ -332,6 +361,23 @@ describe('IntentDetail.vue — session reset', () => {
 
   it('spec session tab: no reset button when no spec has been written', async () => {
     const w = mountDetail(intent({ id: 'i1', specPath: null }))
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-reset-session"]').exists()).toBe(false)
+  })
+
+  it('hides session reset buttons once a dev session exists', async () => {
+    const item = intent({
+      id: 'i1',
+      intentSessionId: 'sess-refine',
+      specPath: '.specs/x/spec.md',
+      specSessionId: 'sess-spec',
+      lastDevSessionId: 'dev-1',
+    })
+    const w = mountDetail(item)
+
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-reset-session"]').exists()).toBe(false)
+
     await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
     expect(w.find('[data-testid="intent-detail-reset-session"]').exists()).toBe(false)
   })

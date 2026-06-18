@@ -132,17 +132,18 @@ export type IntentActionInput = Pick<
  * 条件沿用 IntentList 模板既有的 per-status 渲染规则:
  * - `refine`/`startDev` ← `todo`;`openSession` ← 有 `lastDevSessionId`;
  * - `markDone`/`cancel` ← 非终止态(非 done/cancelled);
- * - `createPr` ← `done` 且无 `prId` 且 intent 分支不是 workspace 主分支;
+ * - `createPr` ← 有 `lastDevSessionId`、无 `prId` 且 intent 分支存在并不是 workspace 主分支;
  * - `prLink` ← 有 `prId`;`automate` ← 恒显示。
  */
 export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
   const terminal = r.status === 'done' || r.status === 'cancelled'
+  const branchName = normalizeBranchName(r.branchName)
   const onMainBranch = isIntentOnWorkspaceMainBranch(r.branchName, r.workspaceMainBranch)
   const out: IntentRowAction[] = []
   if (r.status === 'todo') out.push('refine', 'startDev')
   if (r.lastDevSessionId) out.push('openSession')
   if (!terminal) out.push('markDone', 'cancel')
-  if (r.status === 'done' && !r.prId && !onMainBranch) out.push('createPr')
+  if (r.lastDevSessionId && !r.prId && branchName !== null && !onMainBranch) out.push('createPr')
   if (r.prId) out.push('prLink')
   out.push('automate')
   return out

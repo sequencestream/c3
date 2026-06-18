@@ -32,6 +32,7 @@ import {
   formatDate,
   formatDependsOn,
   isIntentOnWorkspaceMainBranch,
+  normalizeBranchName,
   statusLabel,
 } from '../../../../lib/intent-list-view'
 
@@ -224,9 +225,11 @@ const mainActionLabel = computed<string>(() => {
 
 const showCreatePr = computed<boolean>(() => {
   const r = props.intent
+  const branchName = normalizeBranchName(r?.branchName)
   return (
     !!r &&
-    r.status === 'done' &&
+    branchName !== null &&
+    !!r.lastDevSessionId &&
     !r.prId &&
     !isIntentOnWorkspaceMainBranch(r.branchName, props.workspaceMainBranch)
   )
@@ -295,9 +298,11 @@ const chatReady = computed<boolean>(
 // ── 会话重置弹框(intent session / spec session 共用,按当前 tab 分流) ──────────
 const resetDialogOpen = ref(false)
 
-// 当前 session tab 是否可重置:intent session 恒可(意图内容始终存在);
-// spec session 仅在已写过 spec(specPath 存在)时可重置(否则无 spec 内容可拼接)。
+// 当前 session tab 是否可重置:已有 dev session 后不再允许重置;
+// intent session 在此前恒可(意图内容始终存在);
+// spec session 在此前仅在已写过 spec(specPath 存在)时可重置(否则无 spec 内容可拼接)。
 const canResetSession = computed<boolean>(() => {
+  if (props.intent?.lastDevSessionId) return false
   if (activeTab.value === 'intentSession') return true
   if (activeTab.value === 'specSession') return !!props.intent?.specPath
   return false
@@ -378,8 +383,13 @@ defineExpose({
                 {{ t('intent.action.session.label') }}
               </button>
               <button
-                v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
+                v-if="
+                  intent.lastDevSessionId &&
+                  intent.status !== 'done' &&
+                  intent.status !== 'cancelled'
+                "
                 class="req-btn"
+                data-action="markDone"
                 @click="emit('set-status', intent.id, 'done')"
               >
                 {{ t('intent.action.markDone.label') }}

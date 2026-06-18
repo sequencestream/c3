@@ -159,6 +159,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
       contains(needs.setup.outputs.targets, 'linux-x64')
     runs-on: ubuntu-latest
+    environment: default
     timeout-minutes: 40
     env:
       BUN_INSTALL: ${{ github.workspace }}/.bun
@@ -224,6 +225,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
       contains(needs.setup.outputs.targets, 'macos-arm64')
     runs-on: macos-14
+    environment: default
     timeout-minutes: 40
     env:
       BUN_INSTALL: ${{ github.workspace }}/.bun
@@ -289,6 +291,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
       contains(needs.setup.outputs.targets, 'macos-x64')
     runs-on: macos-13
+    environment: default
     timeout-minutes: 40
     env:
       BUN_INSTALL: ${{ github.workspace }}/.bun
@@ -354,6 +357,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
       contains(needs.setup.outputs.targets, 'windows-x64')
     runs-on: windows-latest
+    environment: default
     timeout-minutes: 40
     defaults:
       run:

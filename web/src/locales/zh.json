@@ -1333,7 +1333,8 @@
       "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",
       "specAgentUnsupported": "撰写 spec 需要 Claude agent;当前配置的 spec agent 无法将写入限制在 spec 目录内。",
       "specWriteFailed": "创建 spec 文档失败: {message}。",
-      "specNotWritten": "spec 尚未编写,请先编写再批准。"
+      "specNotWritten": "spec 尚未编写,请先编写再批准。",
+      "specNotApproved": "spec 尚未批准,请先批准再启动开发。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",

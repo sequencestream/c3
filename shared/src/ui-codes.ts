@@ -85,6 +85,7 @@ export const UI_ERROR_CODES = {
   'intent.specAgentUnsupported': { key: 'error.intent.specAgentUnsupported' },
   'intent.specWriteFailed': { key: 'error.intent.specWriteFailed', params: ['message'] },
   'intent.specNotWritten': { key: 'error.intent.specNotWritten' },
+  'intent.specNotApproved': { key: 'error.intent.specNotApproved' },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

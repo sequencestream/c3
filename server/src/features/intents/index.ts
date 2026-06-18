@@ -61,6 +61,7 @@ import {
   tryClaimDevLaunch,
 } from './dev-link.js'
 import { reconcileInProgress } from './reconcile.js'
+import { buildDevPrompt } from './dev-prompt.js'
 import { judgeCompletion } from './judge.js'
 import {
   cacheRunStatus,
@@ -542,6 +543,15 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     releaseClaim()
     return
   }
+  // ── SDD quality gate (server-side, forced) ─────────────────────────────
+  // When SDD is on, development may only start once the spec has passed the
+  // human approval checkpoint (RM-R22). Hiding the button on the client is not
+  // enough — reject here so no path can bypass the gate.
+  if (getSddEnabled(proj) && !req.specApproved) {
+    conn.send({ type: 'error', error: { code: 'intent.specNotApproved' } })
+    releaseClaim()
+    return
+  }
   // ── Dependency validation (2026-06-10) ─────────────────────────────────
   // In worktree mode, depended-on intents must have their code merged to the
   // main branch (prStatus === 'merged') before a downstream intent can safely
@@ -609,10 +619,14 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // itself in current-branch mode).
   const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'session')
   devRt.effectiveCwd = effectiveCwd
-  const depNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
-  const skill = getDevSkill(proj)
-  const skillPrefix = skill ? `${skill} ` : ''
-  const devPrompt = `${skillPrefix}${req.title}\n\n${req.content}${depNote}`
+  const devPrompt = buildDevPrompt({
+    title: req.title,
+    content: req.content,
+    dependsOn: req.dependsOn,
+    devSkill: getDevSkill(proj),
+    sddEnabled: getSddEnabled(proj),
+    specPath: req.specPath,
+  })
   // Register the pending→intent link so the resident `run:bound` subscription
   // flips the intent to `in_progress` and links the real dev session id
   // (ADR-0018 resident subs model).

@@ -56,6 +56,14 @@ on:
         options:
           - 'false'
           - 'true'
+      verify_only:
+        description: 'Only run setup + preflight (validate artifact-store secrets via a no-file probe), then stop. Skips pregate/build/publish.'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
   push:
     tags: ['v*']
 
@@ -106,12 +114,83 @@ jobs:
           echo "[setup] targets=$targets version='${{ inputs.version }}' batch=$batch publish=$publish"
 
   # ────────────────────────────────────────────────────────────────────
+  # -0.5 preflight — validate the artifact-store secrets BEFORE any expensive work.
+  #    A no-file POST to the upload endpoint distinguishes (handler order: auth is
+  #    checked before query-param validation):
+  #      400 invalid_request → URL reachable + token ACCEPTED (params intentionally empty) ✅
+  #      401 unauthenticated → token wrong/missing ❌
+  #      503 unavailable     → server's own C3_LS_ARTIFACT_UPLOAD_TOKEN/DIR unset ❌
+  #      000 / connect error → URL unreachable or malformed ❌
+  #    Also prints SAFE prefixes (URL scheme+host, token length + first chars) — GitHub
+  #    masks the full secret, but a proper prefix substring is not masked, so it surfaces
+  #    enough to eyeball without leaking the whole value. Runs in the `default` environment
+  #    so the env-scoped secrets resolve. pregate + every build job `needs:` this, so a red
+  #    preflight skips the entire downstream chain (no 40-min builds on a bad upload config).
+  #    The probe HARD-FAILS only when this run would publish (publish==true) or when
+  #    verify_only==true; a skip_publish build-only run treats it as informational.
+  # ────────────────────────────────────────────────────────────────────
+  preflight:
+    name: 'preflight (validate artifact-store secrets)'
+    needs: [setup]
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: default
+    timeout-minutes: 5
+    steps:
+      - name: Probe upload endpoint + print safe prefixes
+        shell: bash
+        env:
+          C3_ARTIFACT_SERVER_URL: ${{ secrets.C3_ARTIFACT_SERVER_URL }}
+          C3_ARTIFACT_UPLOAD_TOKEN: ${{ secrets.C3_ARTIFACT_UPLOAD_TOKEN }}
+          PUBLISH: ${{ needs.setup.outputs.publish }}
+          VERIFY_ONLY: ${{ github.event.inputs.verify_only }}
+        run: |
+          set +x  # never trace — keep the token out of the log
+          server="${C3_ARTIFACT_SERVER_URL%/}"
+          token="$C3_ARTIFACT_UPLOAD_TOKEN"
+
+          if [ -z "$server" ] || [ -z "$token" ]; then
+            echo "::error::C3_ARTIFACT_SERVER_URL / C3_ARTIFACT_UPLOAD_TOKEN is empty/unset in the default environment."
+            exit 1
+          fi
+
+          # Safe prefixes (a proper prefix substring is not masked by GitHub).
+          host="$(printf '%s' "$server" | sed -E 's#^(https?://[^/]+).*#\1#')"
+          echo "[preflight] URL    : host=${host}  length=${#server}"
+          echo "[preflight] TOKEN  : length=${#token}  prefix=${token:0:6}…"
+
+          # No-file POST: auth is checked before params, so empty params yield 400 iff the token is good.
+          code="$(curl -sS -o /tmp/probe-body --max-time 20 -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer ${token}" \
+            "${server}/v1/artifact/upload?version=&batch=&filename=" || echo 000)"
+          echo "[preflight] probe HTTP ${code} — body: $(cat /tmp/probe-body 2>/dev/null)"
+
+          hard_fail="false"
+          if [ "$PUBLISH" = "true" ] || [ "$VERIFY_ONLY" = "true" ]; then
+            hard_fail="true"
+          fi
+
+          case "$code" in
+            400) echo "[preflight] ✅ URL reachable + token accepted (empty params → 400 as expected)";;
+            401) echo "::error::token REJECTED (401). C3_ARTIFACT_UPLOAD_TOKEN does not match the server.";  [ "$hard_fail" = "true" ] && exit 1;;
+            503) echo "::error::server upload not configured (503). Set C3_LS_ARTIFACT_UPLOAD_TOKEN/DIR on the license-server."; [ "$hard_fail" = "true" ] && exit 1;;
+            000) echo "::error::URL unreachable / connection failed (000). Check C3_ARTIFACT_SERVER_URL.";   [ "$hard_fail" = "true" ] && exit 1;;
+            *)   echo "::error::unexpected HTTP ${code} from the upload endpoint.";                          [ "$hard_fail" = "true" ] && exit 1;;
+          esac
+
+          if [ "$hard_fail" != "true" ]; then
+            echo "[preflight] (informational only — this run does not publish, so a bad config does not block the build)"
+          fi
+
+  # ────────────────────────────────────────────────────────────────────
   # 0. pregate (source-level blocking gate; release 5/7)
   #    typecheck → lint → test → i18n:check → i18n:check-freeze
   #    Red here = NO compile attempted (cross-compile is the most expensive stage).
   # ────────────────────────────────────────────────────────────────────
   pregate:
     name: 'pregate (typecheck → lint → test → i18n:check → check-freeze)'
+    needs: [setup, preflight]
+    if: github.event.inputs.verify_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -154,9 +233,10 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   build-publish-linux-x64:
     name: 'build+publish linux-x64'
-    needs: [pregate, setup]
+    needs: [pregate, setup, preflight]
     if: >-
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
+      github.event.inputs.verify_only != 'true' &&
       contains(needs.setup.outputs.targets, 'linux-x64')
     runs-on: ubuntu-latest
     environment: default
@@ -220,9 +300,10 @@ jobs:
 
   build-publish-macos-arm64:
     name: 'build+publish macos-arm64'
-    needs: [pregate, setup]
+    needs: [pregate, setup, preflight]
     if: >-
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
+      github.event.inputs.verify_only != 'true' &&
       contains(needs.setup.outputs.targets, 'macos-arm64')
     runs-on: macos-14
     environment: default
@@ -286,9 +367,10 @@ jobs:
 
   build-publish-macos-x64:
     name: 'build+publish macos-x64'
-    needs: [pregate, setup]
+    needs: [pregate, setup, preflight]
     if: >-
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
+      github.event.inputs.verify_only != 'true' &&
       contains(needs.setup.outputs.targets, 'macos-x64')
     runs-on: macos-13
     environment: default
@@ -352,9 +434,10 @@ jobs:
 
   build-publish-windows-x64:
     name: 'build+publish windows-x64 (⚠️ experimental)'
-    needs: [pregate, setup]
+    needs: [pregate, setup, preflight]
     if: >-
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
+      github.event.inputs.verify_only != 'true' &&
       contains(needs.setup.outputs.targets, 'windows-x64')
     runs-on: windows-latest
     environment: default

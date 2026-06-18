@@ -127,6 +127,7 @@
     },
     "save": {
       "label": "💾 保存意图 ·",
+      "shortTitle": "短标题:",
       "dependsOn": "依赖:",
       "dependsOnBatch": "依赖(本批次):"
     },

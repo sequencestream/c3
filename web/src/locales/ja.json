@@ -128,6 +128,7 @@
     },
     "save": {
       "label": "💾 意図を保存 ·",
+      "shortTitle": "短いタイトル:",
       "dependsOn": "依存:",
       "dependsOnBatch": "依存(このバッチ):"
     },

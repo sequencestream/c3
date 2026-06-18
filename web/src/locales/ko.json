@@ -128,6 +128,7 @@
     },
     "save": {
       "label": "💾 의도 저장 ·",
+      "shortTitle": "짧은 제목:",
       "dependsOn": "의존:",
       "dependsOnBatch": "의존 (이번 배치):"
     },

@@ -290,6 +290,9 @@ function submitAsk() {
           <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
           <span class="req-confirm-title">{{ r.title }}</span>
         </div>
+        <div class="req-confirm-short">
+          {{ t('permission.save.shortTitle') }} <code>{{ r.shortEnTitle }}</code>
+        </div>
         <div class="req-confirm-content">{{ r.content }}</div>
         <div v-if="r.dependsOn && r.dependsOn.length" class="req-confirm-deps">
           {{ t('permission.save.dependsOn') }}{{ r.dependsOn.join(', ') }}

@@ -127,6 +127,7 @@
     },
     "save": {
       "label": "💾 Save intents ·",
+      "shortTitle": "Short title:",
       "dependsOn": "Depends on:",
       "dependsOnBatch": "Depends on (this batch):"
     },

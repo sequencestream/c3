@@ -3658,6 +3658,10 @@ button.deny:hover:not(:disabled) {
 .req-confirm-title {
   font-weight: 600;
 }
+.req-confirm-short {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
 .req-confirm-content {
   font-size: var(--fs-caption);
   color: var(--c-text-muted);

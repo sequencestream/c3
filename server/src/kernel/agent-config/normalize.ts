@@ -110,6 +110,7 @@ export function defaultSettings(): SystemSettings {
     defaultAgentId: SYSTEM_AGENT_ID,
     toolAgentId: '',
     intentAgentId: '',
+    specAgentId: '',
   }
 }
 

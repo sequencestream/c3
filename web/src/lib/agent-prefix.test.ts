@@ -20,6 +20,7 @@ function settings(over: Partial<SystemSettings> = {}): SystemSettings {
     defaultAgentId: 'a',
     toolAgentId: '',
     intentAgentId: '',
+    specAgentId: '',
     ...over,
   }
 }

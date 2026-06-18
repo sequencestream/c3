@@ -943,6 +943,20 @@ export interface SystemSettings {
    * is left empty (never auto-filled), so "follow the default" survives a save.
    */
   intentAgentId: string
+  /**
+   * Id of the agent that runs **spec-authoring sessions** (writing/refining the
+   * project specification: a high-value, read-only reasoning task that benefits
+   * from being routed to a stronger/more suitable agent decoupled from the "default
+   * agent for new sessions"). Semantics are **identical to {@link intentAgentId}**:
+   * an **empty string is "follow the default agent"** (the runtime resolves it
+   * through `resolveAgent`, falling back `specAgentId → defaultAgentId → system`).
+   * A *non-empty* value that points at a removed/now-disabled agent is **rewritten**
+   * on store to the next enabled agent in `order_seq` order — the same
+   * `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20); when
+   * every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
+   * is left empty (never auto-filled), so "follow the default" survives a save.
+   */
+  specAgentId: string
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
   /** UI display language for the web console. `en` when unset. Decoupled from

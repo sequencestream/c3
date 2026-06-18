@@ -20,6 +20,7 @@ const base = {
   defaultAgentId: 'x',
   toolAgentId: '',
   intentAgentId: '',
+  specAgentId: '',
 } as SystemSettings
 
 beforeEach(() => {

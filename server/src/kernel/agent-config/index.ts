@@ -85,6 +85,14 @@ export function getIntentAgentId(): string {
 }
 
 /**
+ * The configured spec-agent id (spec-authoring sessions' executor). An empty
+ * string means "follow the default agent" — see {@link resolveSpecAgent}.
+ */
+export function getSpecAgentId(): string {
+  return loadSettings().specAgentId
+}
+
+/**
  * The enabled agents only — the canonical "list of agents" every consumer pool
  * draws from (discussion participants, consensus voters, default-agent picker),
  * returned in the user-controlled global order (`order_seq` ascending — the
@@ -169,6 +177,18 @@ export function resolveToolSessionLaunch(): { agentId: string } & LaunchOverride
  */
 export function resolveIntentAgent(): AgentConfig {
   return resolveAgent(loadSettings().intentAgentId)
+}
+
+/**
+ * The agent that runs **spec-authoring sessions** (writing/refining the project
+ * specification). Reads `specAgentId` and resolves it through {@link resolveAgent},
+ * so the fall-through is `specAgentId → defaultAgentId → system → synthesized
+ * fallback`: an empty/unknown `specAgentId` (the "follow the default" sentinel)
+ * lands on the default agent, never locking a spec session out. Mirrors
+ * {@link resolveIntentAgent} exactly.
+ */
+export function resolveSpecAgent(): AgentConfig {
+  return resolveAgent(loadSettings().specAgentId)
 }
 
 /**

@@ -217,6 +217,13 @@
         "label": "意図エージェント",
         "followDefault": "デフォルトエージェントに従う"
       },
+      "spec": {
+        "tooltip": "仕様作成セッション(プロジェクト仕様の作成)を実行するエージェント"
+      },
+      "specPicker": {
+        "label": "仕様エージェント",
+        "followDefault": "デフォルトエージェントに従う"
+      },
       "remove": {
         "tooltip": "エージェントを削除"
       },

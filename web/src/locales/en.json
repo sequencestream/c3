@@ -216,6 +216,13 @@
         "label": "Intent agent",
         "followDefault": "Follow default agent"
       },
+      "spec": {
+        "tooltip": "Agent that runs spec-authoring sessions (writing project specs)"
+      },
+      "specPicker": {
+        "label": "Spec agent",
+        "followDefault": "Follow default agent"
+      },
       "remove": {
         "tooltip": "Remove agent"
       },

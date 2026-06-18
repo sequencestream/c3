@@ -217,6 +217,13 @@
         "label": "의도 에이전트",
         "followDefault": "기본 에이전트 따르기"
       },
+      "spec": {
+        "tooltip": "사양 작성 세션(프로젝트 사양 작성)을 실행하는 에이전트"
+      },
+      "specPicker": {
+        "label": "사양 에이전트",
+        "followDefault": "기본 에이전트 따르기"
+      },
       "remove": {
         "tooltip": "에이전트 제거"
       },

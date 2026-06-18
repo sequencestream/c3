@@ -155,7 +155,13 @@ describe('protocol wire format', () => {
     // presence (ADR-0012) and the session→agent binding counts (ADR-0015).
     {
       type: 'settings',
-      settings: { agents: [], defaultAgentId: 'system', toolAgentId: '', intentAgentId: '' },
+      settings: {
+        agents: [],
+        defaultAgentId: 'system',
+        toolAgentId: '',
+        intentAgentId: '',
+        specAgentId: '',
+      },
       hostStatus: [
         {
           vendor: 'claude',

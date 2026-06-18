@@ -42,6 +42,8 @@ const mockSettings: SystemSettings = {
   toolAgentId: '',
   // '' ⇒ intent comm sessions follow the default agent; tests mutate this per-case.
   intentAgentId: '',
+  // '' ⇒ spec sessions follow the default agent; tests mutate this per-case.
+  specAgentId: '',
   degradationChain: [],
 }
 
@@ -58,6 +60,7 @@ import {
   launchForAgent,
   resolveFirstAgentOfVendor,
   resolveIntentAgent,
+  resolveSpecAgent,
   resolveToolAgent,
 } from './index.js'
 
@@ -149,6 +152,39 @@ describe('resolveIntentAgent — intentAgentId → defaultAgentId → system fal
     // itself does not filter on `enabled`, mirroring resolveAgent (AC-R10).
     mockSettings.intentAgentId = 'disabled-claude'
     expect(resolveIntentAgent().id).toBe('disabled-claude')
+  })
+})
+
+describe('resolveSpecAgent — specAgentId → defaultAgentId → system fall-through (AC-R24)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('follows the default agent when specAgentId is empty', () => {
+    mockSettings.specAgentId = ''
+    expect(resolveSpecAgent().id).toBe('claude-pro')
+  })
+
+  it('resolves an explicitly set, enabled specAgentId', () => {
+    mockSettings.specAgentId = 'claude-sonnet'
+    expect(resolveSpecAgent().id).toBe('claude-sonnet')
+  })
+
+  it('resolves a cross-vendor spec agent (codex) when set', () => {
+    mockSettings.specAgentId = 'codex-agent'
+    expect(resolveSpecAgent().vendor).toBe('codex')
+  })
+
+  it('falls back to the default agent when specAgentId is unknown', () => {
+    mockSettings.specAgentId = 'gone'
+    expect(resolveSpecAgent().id).toBe('claude-pro')
+  })
+
+  it('still resolves a disabled spec agent by id (launch is never locked out)', () => {
+    // normalize rewrites a disabled specAgentId before persist; the runtime resolver
+    // itself does not filter on `enabled`, mirroring resolveAgent (AC-R10).
+    mockSettings.specAgentId = 'disabled-claude'
+    expect(resolveSpecAgent().id).toBe('disabled-claude')
   })
 })
 

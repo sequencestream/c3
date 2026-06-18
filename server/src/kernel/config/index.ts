@@ -326,6 +326,12 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // by the same order_seq fall-through (rewrite-on-store, AC-R2/AC-R10/AC-R23).
   const wantedIntent = typeof raw?.intentAgentId === 'string' ? raw.intentAgentId : ''
   const intentAgentId = wantedIntent === '' ? '' : resolveDefaultAgentId(agents, wantedIntent)
+  // specAgentId: spec-authoring sessions' executor. Identical semantics to
+  // intentAgentId — empty string ⇒ "follow the default agent" (kept empty, never
+  // auto-filled), and a *set* value pointing at a removed/disabled agent is rewritten
+  // by the same order_seq fall-through (rewrite-on-store, AC-R2/AC-R10/AC-R24).
+  const wantedSpec = typeof raw?.specAgentId === 'string' ? raw.specAgentId : ''
+  const specAgentId = wantedSpec === '' ? '' : resolveDefaultAgentId(agents, wantedSpec)
   // ---- Legacy migration (one-shot): capture old global top-level fields ----
   // The 5 workspace-level knobs used to live at the SystemSettings top level.
   // Capture them once for the project-level migration; they no longer survive in
@@ -365,6 +371,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     defaultAgentId,
     toolAgentId,
     intentAgentId,
+    specAgentId,
     voiceLang,
     uiLang,
     timezone,

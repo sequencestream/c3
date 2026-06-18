@@ -216,6 +216,13 @@
         "label": "意图智能体",
         "followDefault": "跟随默认智能体"
       },
+      "spec": {
+        "tooltip": "执行规格编写会话的智能体(撰写项目规格)"
+      },
+      "specPicker": {
+        "label": "规格智能体",
+        "followDefault": "跟随默认智能体"
+      },
       "remove": {
         "tooltip": "移除智能体"
       },

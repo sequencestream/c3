@@ -154,10 +154,15 @@ jobs:
             exit 1
           fi
 
-          # Safe prefixes (a proper prefix substring is not masked by GitHub).
+          # Safe prefixes (a proper prefix substring is not masked by GitHub). The token
+          # prefix is only revealed in verify_only mode — never on a normal publish run.
           host="$(printf '%s' "$server" | sed -E 's#^(https?://[^/]+).*#\1#')"
           echo "[preflight] URL    : host=${host}  length=${#server}"
-          echo "[preflight] TOKEN  : length=${#token}  prefix=${token:0:6}…"
+          if [ "$VERIFY_ONLY" = "true" ]; then
+            echo "[preflight] TOKEN  : length=${#token}  prefix=${token:0:6}…"
+          else
+            echo "[preflight] TOKEN  : length=${#token}  (prefix hidden — run with verify_only=true to reveal)"
+          fi
 
           # No-file POST: auth is checked before params, so empty params yield 400 iff the token is good.
           code="$(curl -sS -o /tmp/probe-body --max-time 20 -w '%{http_code}' \

@@ -310,6 +310,13 @@ const {
           :project="intentsProject"
           :intents="currentIntents"
           :sdd-enabled="currentIntentsSdd"
+          :workspace-main-branch="
+            currentWorkspaceSetting?.defaultMainBranch ??
+            (intentsProject
+              ? serverSettings?.projectConfigs?.[intentsProject]?.defaultMainBranch
+              : null) ??
+            detectedMainBranch
+          "
           :automation="currentAutomation"
           :intent-action-error-seq="intentActionErrorSeq"
           :intent-sessions="currentIntentSessions"

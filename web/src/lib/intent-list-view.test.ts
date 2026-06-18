@@ -6,6 +6,7 @@ import {
   compareByCompletion,
   formatDate,
   formatDependsOn,
+  isIntentOnWorkspaceMainBranch,
   panelToggleLabel,
   reqRunStatusLabel,
   rowVisibility,
@@ -91,6 +92,7 @@ describe('visibleIntentActions', () => {
     status: 'todo',
     lastDevSessionId: null,
     prId: null,
+    branchName: null,
     ...o,
   })
 
@@ -125,6 +127,21 @@ describe('visibleIntentActions', () => {
 
   it('done 且无 prId:Create PR + automate,无 Mark done/Cancel', () => {
     expect(visibleIntentActions(make({ status: 'done' }))).toEqual(['createPr', 'automate'])
+  })
+
+  it('done 且 intent 分支等于 workspace 主分支时不显示 Create PR', () => {
+    expect(
+      visibleIntentActions(
+        make({ status: 'done', branchName: 'feature/main', workspaceMainBranch: 'feature/main' }),
+      ),
+    ).toEqual(['automate'])
+  })
+
+  it('比较主分支时归一化 origin/ 与 refs/heads/ 前缀', () => {
+    expect(isIntentOnWorkspaceMainBranch('origin/main', 'refs/heads/main')).toBe(true)
+    expect(isIntentOnWorkspaceMainBranch('refs/remotes/origin/develop', 'develop')).toBe(true)
+    expect(isIntentOnWorkspaceMainBranch('feature/x', 'main')).toBe(false)
+    expect(isIntentOnWorkspaceMainBranch(null, 'main')).toBe(false)
   })
 
   it('done 且有 prId:prLink 而非 Create PR', () => {

@@ -46,6 +46,7 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'select-intent': [intentId: string]
+  'ordered-change': [ids: string[]]
 
   // IntentSessionList events (name-mapped)
   'select-intent-session': [sessionId: string]
@@ -210,6 +211,7 @@ function setFilter(value: string): void {
         @start-automation="emit('start-automation')"
         @stop-automation="emit('stop-automation')"
         @select-intent="(id: string) => emit('select-intent', id)"
+        @ordered-change="(ids: string[]) => emit('ordered-change', ids)"
       />
     </div>
     <div v-show="activeTab === 'sessions'" class="merged-child-wrap">

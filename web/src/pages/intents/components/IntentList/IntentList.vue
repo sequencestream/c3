@@ -6,7 +6,7 @@
  * 行点击 = 选中(上抛 `select-intent`,由父组件驱动右栏 IntentDetail);不再行内展开,
  * 详情/操作均迁至右栏 IntentDetail 组件。
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
@@ -41,6 +41,8 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'select-intent': [intentId: string]
+  /** 重排后实际渲染顺序的意图 id 列表;父组件据此选默认选中项,避免与服务端原序脱节。 */
+  'ordered-change': [ids: string[]]
 }>()
 
 // Automation orchestrator UI state derived from the pushed status.
@@ -129,6 +131,12 @@ const displayIntents = computed<Intent[]>(() => {
   const { visible } = sliceTerminated(terminatedIntents.value, visibleTerminated.value)
   return [...pending, ...visible]
 })
+
+// 将重排后的实际渲染顺序上抛父组件,使右栏默认选中与左侧列表首条对齐(而非服务端原序首条)。
+// 首次在 onMounted 触发(setup 阶段 emit 会被丢弃),后续随 displayIntents 变化跟踪。
+const orderedIds = computed<string[]>(() => displayIntents.value.map((r) => r.id))
+onMounted(() => emit('ordered-change', orderedIds.value))
+watch(orderedIds, (ids) => emit('ordered-change', ids))
 
 // 终止态分页页脚:仅「全部」视图且存在终止态项时渲染。
 // hasMore → 「加载更多 ↓」按钮;否则 → 「已加载完」文案(AC3/AC4)。

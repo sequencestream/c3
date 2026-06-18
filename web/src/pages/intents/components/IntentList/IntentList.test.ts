@@ -84,4 +84,17 @@ describe('IntentList.vue — selection model', () => {
     expect(w.find('.req-actions').exists()).toBe(false)
     expect(w.find('.req-chevron').exists()).toBe(false)
   })
+
+  it('emits ordered-change reflecting the rendered (active-first) order, not server order', () => {
+    // 服务端原序按 priority ASC：高优先级的 done 项排在原序首位，活跃项在后。
+    const w = mountList([
+      intent({ id: 'done-p0', status: 'done', priority: 'P0', completedAt: 100 }),
+      intent({ id: 'todo-p1', status: 'todo', priority: 'P1' }),
+    ])
+
+    const ordered = w.emitted('ordered-change')
+    expect(ordered).toBeTruthy()
+    // 左侧实际渲染:活跃项 todo-p1 置顶,done-p0 沉底。首条应为活跃项。
+    expect((ordered!.at(-1)![0] as string[])[0]).toBe('todo-p1')
+  })
 })

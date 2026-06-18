@@ -2,9 +2,9 @@
 /*
  * IntentDetail.vue — 需求页右栏:选中意图的详情面板(常驻头部 + 四 tab)。
  *
- * 顶部常驻头部拆为标题栏与操作栏:标题栏左为意图标题 + 模块,右为优先级 + 状态;
- * 操作栏承载全部操作(四态主按钮 + refine / open dev session / mark done / cancel /
- * create PR / copy PR / automate 切换)——无论在哪个 tab 都可见。其下为 tab 条 + tab 内容,四 tab:
+ * 顶部常驻头部为单行标题栏:左为意图标题 + 模块 + 优先级 + 状态,右为全部操作
+ * (四态主按钮 + refine / open dev session / mark done / cancel / create PR / copy PR /
+ * automate 切换)——无论在哪个 tab 都可见。其下为 tab 条 + tab 内容,四 tab:
  *   - intent       意图正文 markdown + Git/PR 元信息 + 依赖编辑器
  *   - intent session 该意图的 refine/沟通会话(intentSessionId),复用 ChatColumn
  *   - spec         渲染 specPath 指向的 spec.md(经 read-spec 拉取)
@@ -28,7 +28,12 @@ import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import ChatColumn from '../../../../components/ChatColumn/ChatColumn.vue'
 import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
-import { formatDate, formatDependsOn, statusLabel } from '../../../../lib/intent-list-view'
+import {
+  formatDate,
+  formatDependsOn,
+  isIntentOnWorkspaceMainBranch,
+  statusLabel,
+} from '../../../../lib/intent-list-view'
 
 const { t, locale } = useTypedI18n()
 
@@ -41,6 +46,8 @@ const props = defineProps<{
   intentActionErrorSeq?: number
   /** 当前 workspace 的 SDD 总开关,驱动主操作按钮四态(关→Start Dev)。 */
   sddEnabled?: boolean
+  /** 当前 workspace 配置的主分支;intent 分支与其相同时不显示 Create PR。 */
+  workspaceMainBranch?: string | null
   // ── chat column passthrough(intent session / spec session 两 tab 共用)──
   /** 全局活动会话 id;与期望会话 id 一致时聊天列才渲染(防串台)。 */
   activeSession: string | null
@@ -214,6 +221,17 @@ const mainActionLabel = computed<string>(() => {
       return t('intent.action.startDev.label')
   }
 })
+
+const showCreatePr = computed<boolean>(() => {
+  const r = props.intent
+  return (
+    !!r &&
+    r.status === 'done' &&
+    !r.prId &&
+    !isIntentOnWorkspaceMainBranch(r.branchName, props.workspaceMainBranch)
+  )
+})
+
 function onMainAction(): void {
   const r = props.intent
   if (!r) return
@@ -323,7 +341,7 @@ defineExpose({
       {{ t('intent.list.empty') }}
     </p>
     <template v-else>
-      <!-- 常驻头部:标题栏 + 独立操作栏 -->
+      <!-- 常驻头部:标题信息 + 右侧操作 -->
       <header class="intent-detail-head">
         <div class="intent-detail-titlebar">
           <div class="intent-detail-title-main">
@@ -331,96 +349,110 @@ defineExpose({
             <span v-if="intent.module" class="req-module" :title="intent.module">{{
               intent.module
             }}</span>
-          </div>
-          <div class="intent-detail-title-meta">
             <span class="req-priority" :class="intent.priority">{{ intent.priority }}</span>
             <span class="req-status" :class="intent.status">{{ statusLabel(intent.status) }}</span>
           </div>
-        </div>
-        <div class="intent-detail-actions" data-testid="intent-detail-actions">
-          <button
-            v-if="intent.status === 'todo'"
-            class="req-btn"
-            @click="emit('refine', intent.id)"
-          >
-            {{ t('intent.action.refine.label') }}
-          </button>
-          <button
-            v-if="intent.status === 'todo'"
-            class="req-btn primary"
-            :data-action="mainAction"
-            :disabled="mainAction === 'startDev' && startDevInFlight"
-            @click="onMainAction"
-          >
-            {{ mainActionLabel }}
-          </button>
-          <button
-            v-if="intent.lastDevSessionId"
-            class="req-btn"
-            @click="emit('open-dev', intent.lastDevSessionId as string)"
-          >
-            {{ t('intent.action.session.label') }}
-          </button>
-          <button
-            v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
-            class="req-btn"
-            @click="emit('set-status', intent.id, 'done')"
-          >
-            {{ t('intent.action.markDone.label') }}
-          </button>
-          <button
-            v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
-            class="req-btn"
-            @click="emit('set-status', intent.id, 'cancelled')"
-          >
-            {{ t('common.action.cancel.label') }}
-          </button>
-          <button
-            v-if="intent.status === 'done' && !intent.prId"
-            class="req-btn primary"
-            @click="emit('create-pr', intent.id)"
-          >
-            {{ t('intent.action.createPr.label') }}
-          </button>
-          <button
-            v-if="intent.prId"
-            class="req-btn pr-link"
-            :title="t('intent.action.pr.tooltip')"
-            @click="copyPrId(intent.prId as string)"
-          >
-            {{ t('intent.action.pr.label', { id: intent.prId }) }}
-          </button>
-          <button
-            type="button"
-            class="req-automate"
-            :class="{ active: intent.automate }"
-            :title="
-              intent.automate
-                ? t('intent.automate.queued.tooltip')
-                : t('intent.automate.manual.tooltip')
-            "
-            :aria-pressed="intent.automate"
-            @click="emit('set-automate', intent.id, !intent.automate)"
-          >
-            {{ intent.automate ? '⏳' : '✋' }}
-          </button>
+          <div class="intent-detail-title-meta">
+            <div class="intent-detail-actions" data-testid="intent-detail-actions">
+              <button
+                v-if="intent.status === 'todo'"
+                class="req-btn"
+                @click="emit('refine', intent.id)"
+              >
+                {{ t('intent.action.refine.label') }}
+              </button>
+              <button
+                v-if="intent.status === 'todo'"
+                class="req-btn primary"
+                :data-action="mainAction"
+                :disabled="mainAction === 'startDev' && startDevInFlight"
+                @click="onMainAction"
+              >
+                {{ mainActionLabel }}
+              </button>
+              <button
+                v-if="intent.lastDevSessionId"
+                class="req-btn"
+                @click="emit('open-dev', intent.lastDevSessionId as string)"
+              >
+                {{ t('intent.action.session.label') }}
+              </button>
+              <button
+                v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
+                class="req-btn"
+                @click="emit('set-status', intent.id, 'done')"
+              >
+                {{ t('intent.action.markDone.label') }}
+              </button>
+              <button
+                v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
+                class="req-btn"
+                @click="emit('set-status', intent.id, 'cancelled')"
+              >
+                {{ t('common.action.cancel.label') }}
+              </button>
+              <button
+                v-if="showCreatePr"
+                class="req-btn primary"
+                data-action="createPr"
+                @click="emit('create-pr', intent.id)"
+              >
+                {{ t('intent.action.createPr.label') }}
+              </button>
+              <button
+                v-if="intent.prId"
+                class="req-btn pr-link"
+                :title="t('intent.action.pr.tooltip')"
+                @click="copyPrId(intent.prId as string)"
+              >
+                {{ t('intent.action.pr.label', { id: intent.prId }) }}
+              </button>
+              <button
+                type="button"
+                class="req-automate"
+                :class="{ active: intent.automate }"
+                :title="
+                  intent.automate
+                    ? t('intent.automate.queued.tooltip')
+                    : t('intent.automate.manual.tooltip')
+                "
+                :aria-pressed="intent.automate"
+                @click="emit('set-automate', intent.id, !intent.automate)"
+              >
+                {{ intent.automate ? '⏳' : '✋' }}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
       <!-- Tab 条 -->
       <nav class="intent-detail-tabs" data-testid="intent-detail-tabs">
-        <button
-          v-for="tab in TABS"
-          :key="tab.key"
-          type="button"
-          class="intent-detail-tab"
-          :class="{ active: activeTab === tab.key }"
-          :data-tab="tab.key"
-          :aria-pressed="activeTab === tab.key"
-          @click="selectTab(tab.key)"
-        >
-          {{ tab.label }}
-        </button>
+        <div v-for="tab in TABS" :key="tab.key" class="intent-detail-tab-item">
+          <button
+            type="button"
+            class="intent-detail-tab"
+            :class="{ active: activeTab === tab.key }"
+            :data-tab="tab.key"
+            :aria-pressed="activeTab === tab.key"
+            @click="selectTab(tab.key)"
+          >
+            {{ tab.label }}
+          </button>
+          <button
+            v-if="
+              (tab.key === 'intentSession' || tab.key === 'specSession') &&
+              activeTab === tab.key &&
+              canResetSession
+            "
+            type="button"
+            class="req-btn intent-detail-tab-reset"
+            data-testid="intent-detail-reset-session"
+            @click="openResetDialog"
+          >
+            {{ t('intent.action.resetSession.label') }}
+          </button>
+        </div>
       </nav>
 
       <!-- intent tab:正文 + 元信息 -->
@@ -509,20 +541,6 @@ defineExpose({
 
       <!-- intent session / spec session tab:复用聊天列 -->
       <template v-else>
-        <div
-          v-if="canResetSession"
-          class="intent-detail-session-tools"
-          data-testid="intent-detail-session-tools"
-        >
-          <button
-            type="button"
-            class="req-btn"
-            data-testid="intent-detail-reset-session"
-            @click="openResetDialog"
-          >
-            {{ t('intent.action.resetSession.label') }}
-          </button>
-        </div>
         <p
           v-if="!expectedSessionId"
           class="intent-detail-empty"
@@ -643,33 +661,39 @@ defineExpose({
   text-align: center;
 }
 .intent-detail-head {
+  height: auto;
   flex-shrink: 0;
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  padding: var(--sp-3);
   border-bottom: 1px solid var(--c-border);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  align-items: stretch;
+  box-sizing: border-box;
 }
 .intent-detail-titlebar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: var(--sp-3);
 }
 .intent-detail-title-main {
   display: flex;
   align-items: baseline;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: var(--sp-2);
   min-width: 0;
+  text-align: left;
 }
 .intent-detail-title-meta {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: var(--sp-2);
+  min-width: 0;
+  text-align: right;
 }
 .intent-detail-title {
   margin: 0;
@@ -680,11 +704,21 @@ defineExpose({
   word-break: break-word;
 }
 .intent-detail-actions {
-  width: 100%;
+  width: auto;
+  max-width: min(58vw, 720px);
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
   gap: var(--sp-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1px;
+}
+.intent-detail-actions .req-btn,
+.intent-detail-actions .req-automate {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .intent-detail-tabs {
   flex-shrink: 0;
@@ -694,6 +728,12 @@ defineExpose({
   padding: 0 var(--sp-3);
   border-bottom: 1px solid var(--c-border);
   overflow-x: auto;
+}
+.intent-detail-tab-item {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--sp-1);
 }
 .intent-detail-tab {
   appearance: none;
@@ -714,10 +754,14 @@ defineExpose({
   border-bottom-color: var(--c-accent, var(--c-text));
   font-weight: 600;
 }
+.intent-detail-tab-reset {
+  flex: 0 0 auto;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-caption);
+}
 @media (max-width: 640px) {
   .intent-detail-titlebar {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--sp-2);
   }
   .intent-detail-title-main {
@@ -728,18 +772,16 @@ defineExpose({
   .intent-detail-title-meta {
     justify-content: flex-start;
   }
+  .intent-detail-actions {
+    width: 100%;
+    max-width: 100%;
+    justify-content: flex-start;
+  }
 }
 .intent-detail-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: var(--sp-3);
-}
-.intent-detail-session-tools {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--c-border);
 }
 </style>

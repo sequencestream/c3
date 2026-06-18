@@ -10,7 +10,7 @@
  * 移动端退化为二级 drill-down 栈:列表 → 右栏(详情或聊天)逐级滑入/返回。
  * 状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。composer ref 经 defineExpose 转发。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
@@ -39,6 +39,8 @@ const props = defineProps<{
   intentActionErrorSeq?: number
   /** 当前 workspace SDD 总开关,透传给 IntentDetail 的四态主按钮。 */
   sddEnabled?: boolean
+  /** 当前 workspace 配置的主分支;用于隐藏主分支上的 Create PR 动作。 */
+  workspaceMainBranch?: string | null
   // middle: intent session list
   intentSessions: IntentSessionInfo[]
   selectedIntentSessionId: string | null
@@ -119,21 +121,25 @@ const emit = defineEmits<{
 const { t } = useTypedI18n()
 
 // ---- 选中意图(驱动右栏 IntentDetail) ----
-// 首次进入或列表变化时默认按列表顺序选中第一条;选中项被移除则回退首条;列表为空则清空。
+// 默认选中项必须对齐左侧列表「实际渲染顺序」的首条(IntentList 把未完成项置顶、终止态沉底),
+// 而非服务端原序(priority ASC)首条;故由 IntentList 上抛 ordered-change(有序 id 列表),据此选首条。
 const selectedIntentId = ref<string | null>(null)
-watch(
-  () => props.intents,
-  (list) => {
-    if (list.length === 0) {
-      selectedIntentId.value = null
-      return
-    }
-    if (!selectedIntentId.value || !list.some((r) => r.id === selectedIntentId.value)) {
-      selectedIntentId.value = list[0].id
-    }
-  },
-  { immediate: true },
-)
+const userSelectedIntent = ref(false)
+function handleOrderedChange(ids: string[]): void {
+  if (ids.length === 0) {
+    selectedIntentId.value = null
+    userSelectedIntent.value = false
+    return
+  }
+  if (!selectedIntentId.value || !ids.includes(selectedIntentId.value)) {
+    userSelectedIntent.value = false
+    selectedIntentId.value = ids[0]
+    return
+  }
+  if (!userSelectedIntent.value && selectedIntentId.value !== ids[0]) {
+    selectedIntentId.value = ids[0]
+  }
+}
 const selectedIntent = computed<Intent | null>(
   () => props.intents.find((r) => r.id === selectedIntentId.value) ?? null,
 )
@@ -174,6 +180,7 @@ const mobileActiveToken = computed(() =>
 )
 
 function handleSelectIntent(intentId: string): void {
+  userSelectedIntent.value = true
   selectedIntentId.value = intentId
   // 移动端:点击意图行 drill 进右栏详情(桌面下右栏常驻,仅更新选中)。
   mobileActiveKey.value = 'right'
@@ -231,6 +238,7 @@ defineExpose({
         @start-automation="emit('start-automation')"
         @stop-automation="emit('stop-automation')"
         @select-intent="handleSelectIntent"
+        @ordered-change="handleOrderedChange"
         @select-intent-session="handleSelectIntentSession"
         @new-intent-session="handleNewIntentSession"
         @rename-intent-session="
@@ -248,6 +256,7 @@ defineExpose({
         :intents="intents"
         :intent-action-error-seq="intentActionErrorSeq"
         :sdd-enabled="sddEnabled"
+        :workspace-main-branch="workspaceMainBranch"
         :active-session="activeSession"
         :active-title="activeTitle"
         :vendor="vendor ?? null"

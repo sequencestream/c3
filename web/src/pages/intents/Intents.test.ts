@@ -1,0 +1,133 @@
+// @vitest-environment happy-dom
+/* eslint-disable vue/one-component-per-file */
+
+import { mount } from '@vue/test-utils'
+import { defineComponent, nextTick } from 'vue'
+import { describe, expect, it } from 'vitest'
+import type { Intent } from '@ccc/shared/protocol'
+import Intents from './Intents.vue'
+
+function intent(overrides: Partial<Intent> & { id: string }): Intent {
+  return {
+    workspaceId: '/proj',
+    title: 'Intent',
+    shortEnTitle: null,
+    content: 'Do work',
+    priority: 'P1',
+    module: '',
+    status: 'todo',
+    dependsOn: [],
+    dependsOnTypes: {},
+    lastDevSessionId: null,
+    automate: false,
+    createdAt: 1,
+    updatedAt: 1,
+    completedAt: null,
+    runStatus: 'idle',
+    branchName: null,
+    latestCommitHash: null,
+    prId: null,
+    prStatus: null,
+    specPath: null,
+    specApproved: false,
+    specApproveUser: null,
+    specSessionId: null,
+    intentSessionId: null,
+    ...overrides,
+    id: overrides.id,
+  }
+}
+
+const MobileStackStub = defineComponent({
+  name: 'MobileStack',
+  template: '<div><slot name="list" /><slot name="right" /></div>',
+})
+
+const IntentDetailStub = defineComponent({
+  name: 'IntentDetail',
+  props: {
+    intent: { type: Object, default: null },
+  },
+  template: '<div data-testid="intent-detail">{{ intent?.id ?? "" }}</div>',
+})
+
+function mountIntents(intents: Intent[]) {
+  return mount(Intents, {
+    props: {
+      project: '/proj',
+      intents,
+      automation: null,
+      intentSessions: [],
+      selectedIntentSessionId: null,
+      intentSessionRunStates: {},
+      intentSpecContent: null,
+      intentSpecLoading: false,
+      activeSession: null,
+      activeTitle: '',
+      hasActiveSession: false,
+      messages: [],
+      actionablePermissionId: null,
+      taskModel: { tasks: [] },
+      running: false,
+      teamActive: false,
+      connection: 'open',
+      activity: { phase: 'idle' },
+      queue: [],
+      availableCommands: [],
+      voiceLang: 'en-US',
+    },
+    global: {
+      stubs: {
+        MobileStack: MobileStackStub,
+        IntentDetail: IntentDetailStub,
+        ChatColumn: { template: '<div />' },
+        IntentSessionList: { template: '<div />' },
+      },
+    },
+  })
+}
+
+describe('Intents.vue — default selected intent', () => {
+  it('shows the left list first rendered intent in the right detail, not server order first', async () => {
+    const wrapper = mountIntents([
+      intent({ id: 'done-p0', status: 'done', priority: 'P0', completedAt: 100 }),
+      intent({ id: 'todo-p1', status: 'todo', priority: 'P1' }),
+    ])
+
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('todo-p1')
+  })
+
+  it('continues tracking the rendered first intent until the user manually selects a row', async () => {
+    const wrapper = mountIntents([
+      intent({ id: 'todo-old', status: 'todo', priority: 'P1' }),
+      intent({ id: 'done-p0', status: 'done', priority: 'P0', completedAt: 100 }),
+    ])
+    await nextTick()
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('todo-old')
+
+    await wrapper.setProps({
+      intents: [
+        intent({ id: 'done-p0', status: 'done', priority: 'P0', completedAt: 100 }),
+        intent({ id: 'todo-new', status: 'todo', priority: 'P1' }),
+      ],
+    })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('todo-new')
+
+    await wrapper.findAll('.req-item-main')[1].trigger('click')
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('done-p0')
+
+    await wrapper.setProps({
+      intents: [
+        intent({ id: 'done-p0', status: 'done', priority: 'P0', completedAt: 100 }),
+        intent({ id: 'todo-newer', status: 'todo', priority: 'P1' }),
+      ],
+    })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('done-p0')
+  })
+})

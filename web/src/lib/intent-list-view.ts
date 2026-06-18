@@ -96,23 +96,53 @@ export const INTENT_ROW_ACTIONS = [
 
 export type IntentRowAction = (typeof INTENT_ROW_ACTIONS)[number]
 
+/**
+ * Normalize a branch ref for display-policy comparisons.
+ * `origin/main`, `refs/heads/main`, and `main` all compare as `main`.
+ */
+export function normalizeBranchName(branch: string | null | undefined): string | null {
+  const trimmed = branch?.trim()
+  if (!trimmed) return null
+  return trimmed
+    .replace(/^refs\/heads\//, '')
+    .replace(/^refs\/remotes\//, '')
+    .replace(/^origin\//, '')
+}
+
+/** True when PR creation should be hidden because the intent already sits on the main branch. */
+export function isIntentOnWorkspaceMainBranch(
+  branchName: string | null | undefined,
+  workspaceMainBranch: string | null | undefined,
+): boolean {
+  const intentBranch = normalizeBranchName(branchName)
+  const mainBranch = normalizeBranchName(workspaceMainBranch)
+  return intentBranch !== null && mainBranch !== null && intentBranch === mainBranch
+}
+
 /** 裁决行内操作可见性所需的最小字段集(便于测试轻量构造)。 */
-export type IntentActionInput = Pick<Intent, 'status' | 'lastDevSessionId' | 'prId'>
+export type IntentActionInput = Pick<
+  Intent,
+  'status' | 'lastDevSessionId' | 'prId' | 'branchName'
+> & {
+  workspaceMainBranch?: string | null
+}
 
 /**
  * 单个意图行在当前状态下应显示哪些行内操作,按渲染顺序返回。
  * 条件沿用 IntentList 模板既有的 per-status 渲染规则:
  * - `refine`/`startDev` ← `todo`;`openSession` ← 有 `lastDevSessionId`;
  * - `markDone`/`cancel` ← 非终止态(非 done/cancelled);
- * - `createPr` ← `done` 且无 `prId`;`prLink` ← 有 `prId`;`automate` ← 恒显示。
+ * - `createPr` ← `done` 且无 `prId` 且 intent 分支不是 workspace 主分支;
+ * - `prLink` ← 有 `prId`;`automate` ← 恒显示。
  */
 export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
   const terminal = r.status === 'done' || r.status === 'cancelled'
+  const onMainBranch = isIntentOnWorkspaceMainBranch(r.branchName, r.workspaceMainBranch)
   const out: IntentRowAction[] = []
   if (r.status === 'todo') out.push('refine', 'startDev')
   if (r.lastDevSessionId) out.push('openSession')
   if (!terminal) out.push('markDone', 'cancel')
-  if (r.status === 'done' && !r.prId) out.push('createPr')
+  if (r.status === 'done' && !r.prId && !onMainBranch) out.push('createPr')
   if (r.prId) out.push('prLink')
   out.push('automate')
   return out

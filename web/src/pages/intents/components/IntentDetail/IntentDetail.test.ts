@@ -41,6 +41,7 @@ function mountDetail(
     intents?: Intent[]
     intentActionErrorSeq?: number
     sddEnabled?: boolean
+    workspaceMainBranch?: string | null
     activeSession?: string | null
     intentSpecContent?: string | null
     intentSpecLoading?: boolean
@@ -52,6 +53,7 @@ function mountDetail(
       intents: opts.intents ?? (current ? [current] : []),
       intentActionErrorSeq: opts.intentActionErrorSeq ?? 0,
       sddEnabled: opts.sddEnabled ?? false,
+      workspaceMainBranch: opts.workspaceMainBranch ?? null,
       activeSession: opts.activeSession ?? null,
       activeTitle: 'Title',
       vendor: null,
@@ -86,7 +88,7 @@ describe('IntentDetail.vue — empty state', () => {
 })
 
 describe('IntentDetail.vue — persistent header', () => {
-  it('shows title metadata and the independent actions bar on every tab', async () => {
+  it('shows title metadata and right-side actions on every tab', async () => {
     const item = intent({
       id: 'i1',
       title: 'My intent',
@@ -98,16 +100,20 @@ describe('IntentDetail.vue — persistent header', () => {
     const w = mountDetail(item)
     expect(w.find('.intent-detail-title').text()).toBe('My intent')
     expect(w.find('.intent-detail-title-main .req-module').text()).toBe('billing')
-    expect(w.find('.intent-detail-title-meta .req-priority').text()).toBe('P0')
-    expect(w.find('.intent-detail-title-meta .req-status').text()).toBeTruthy()
-    expect(w.find('[data-testid="intent-detail-actions"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-title-main .req-priority').text()).toBe('P0')
+    expect(w.find('.intent-detail-title-main .req-status').text()).toBeTruthy()
+    expect(w.find('.intent-detail-title-meta [data-testid="intent-detail-actions"]').exists()).toBe(
+      true,
+    )
     expect(w.find('.intent-detail-head .req-date').exists()).toBe(false)
     expect(w.find('.intent-detail-head .req-run-status').exists()).toBe(false)
 
     // Switch to the spec tab — header (title + actions) stays put.
     await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
     expect(w.find('.intent-detail-title').text()).toBe('My intent')
-    expect(w.find('[data-testid="intent-detail-actions"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-title-meta [data-testid="intent-detail-actions"]').exists()).toBe(
+      true,
+    )
   })
 })
 
@@ -215,9 +221,21 @@ describe('IntentDetail.vue — actions', () => {
     const item = intent({ id: 'intent-1', status: 'done', completedAt: 2 })
     const w = mountDetail(item)
 
-    await w.find('.req-btn.primary').trigger('click')
+    await w.find('[data-action="createPr"]').trigger('click')
 
     expect(w.emitted('create-pr')).toEqual([['intent-1']])
+  })
+
+  it('hides create-pr when the intent branch matches the workspace main branch', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'done',
+      completedAt: 2,
+      branchName: 'origin/main',
+    })
+    const w = mountDetail(item, { workspaceMainBranch: 'refs/heads/main' })
+
+    expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })
 })
 

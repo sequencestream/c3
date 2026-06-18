@@ -22,7 +22,11 @@ export {
   INTENT_QUERY_TOOLS,
   INTENT_DISALLOWED_TOOLS,
   INTENT_READ_TOOLS,
+  SPEC_DISALLOWED_TOOLS,
+  WRITE_TOOLS,
   classifyIntentTool,
+  extractWriteTargets,
+  isInside,
   withAnswers,
   type IntentToolDecision,
 } from './tools.js'

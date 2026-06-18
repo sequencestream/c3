@@ -1324,7 +1324,9 @@
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
-      "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。"
+      "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",
+      "specAgentUnsupported": "撰写 spec 需要 Claude agent;当前配置的 spec agent 无法将写入限制在 spec 目录内。",
+      "specWriteFailed": "创建 spec 文档失败: {message}。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",

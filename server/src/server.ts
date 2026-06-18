@@ -9,7 +9,11 @@
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
-import { INTENT_DISALLOWED_TOOLS, waitForDecision } from './kernel/permission/index.js'
+import {
+  INTENT_DISALLOWED_TOOLS,
+  SPEC_DISALLOWED_TOOLS,
+  waitForDecision,
+} from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { DockerDriver } from './kernel/sandbox/docker/DockerDriver.js'
 import { SandboxRegistry } from './kernel/sandbox/SandboxRegistry.js'
@@ -30,6 +34,7 @@ import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, getUiLang, setOnPendingIntentLookup } from './kernel/config/index.js'
 import { setAutomationHooks } from './features/intents/automation.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
+import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
@@ -420,6 +425,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // runViaDriver binds this per-run and injects the descriptors; claude ignores
       // it (it uses the in-process `mcpServers` above).
       bindDriverMcp: (binding) => intentMcp.bind(binding),
+    }),
+    // Spec-authoring profile (write-confined gate + disallowed-tools lock + spec
+    // prompt). `specDir` is per-run and rides on the runtime, not this static
+    // profile. Spec sessions are claude-only (the handler rejects a codex spec
+    // agent), so there is no driver-path MCP here.
+    specProfile: () => ({
+      appendSystemPrompt: buildSpecAgentPrompt(getUiLang()),
+      disallowedTools: SPEC_DISALLOWED_TOOLS,
+      gate: 'spec' as const,
     }),
     // The neutral Codex adapter, or null when its host CLI is missing (launchRun
     // forks to the driver path for codex sessions; 2026-06-06-007).

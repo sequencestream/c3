@@ -30,6 +30,7 @@ vi.mock('../features/intents/store.js', () => ({
   insertIntentSession: vi.fn(),
   rebindChatSession: vi.fn(),
   setLastDevSession: vi.fn(),
+  setSpecSessionId: vi.fn(),
   updateIntentSession: vi.fn(),
   updateStatus: vi.fn(),
   listIntents: vi.fn(() => []),
@@ -38,6 +39,10 @@ vi.mock('../features/intents/dev-link.js', () => ({
   clearPendingDevLink: vi.fn(() => undefined),
   releaseDevLaunch: vi.fn(),
   takePendingDevLink: vi.fn(() => null),
+}))
+vi.mock('../features/intents/spec-link.js', () => ({
+  clearPendingSpecLink: vi.fn(() => undefined),
+  takePendingSpecLink: vi.fn(() => null),
 }))
 vi.mock('../features/intents/automation.js', () => ({ notifyTurnSettled: vi.fn() }))
 vi.mock('../features/user-involve/store.js', () => ({
@@ -324,6 +329,42 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     install()
     eb.publish('run:bound', { prevId: 'prev-x', realId: 'real-x', workspacePath: '/proj' })
     expect(insertIntentSession).not.toHaveBeenCalled()
+  })
+
+  // ── Spec-sessions: backfill spec_session_id at run:bound ───────────────
+
+  it('run:bound on a spec runtime links the real spec session id onto the intent', async () => {
+    const { getRuntime } = await import('../runs.js')
+    const { takePendingSpecLink } = await import('../features/intents/spec-link.js')
+    const { setSpecSessionId } = await import('../features/intents/store.js')
+
+    vi.mocked(getRuntime).mockReturnValueOnce({
+      workspacePath: '/proj',
+      kind: 'spec',
+      mode: 'default',
+      buffer: [],
+      viewers: new Set(),
+    } as unknown as SessionRuntime)
+    vi.mocked(takePendingSpecLink).mockReturnValueOnce('intent-9')
+
+    install()
+    eb.publish('run:bound', { prevId: 'pending-9', realId: 'real-9', workspacePath: '/proj' })
+
+    expect(takePendingSpecLink).toHaveBeenCalledWith('pending-9')
+    expect(setSpecSessionId).toHaveBeenCalledWith('intent-9', 'real-9')
+    expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
+  })
+
+  it('run:settled kind=spec sweeps the pending spec link', async () => {
+    const { clearPendingSpecLink } = await import('../features/intents/spec-link.js')
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'spec-x',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'spec',
+    })
+    expect(clearPendingSpecLink).toHaveBeenCalledWith('spec-x')
   })
 
   // ── Intent-sessions: write conclusion at run:settled ───────────────────

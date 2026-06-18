@@ -1324,7 +1324,9 @@
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
-      "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet."
+      "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",
+      "specAgentUnsupported": "Spec authoring requires a Claude agent; the configured spec agent cannot confine writes to the spec directory.",
+      "specWriteFailed": "Failed to create the spec document: {message}."
     },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",

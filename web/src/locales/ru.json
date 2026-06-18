@@ -1325,7 +1325,9 @@
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "prCreateFailed": "Не удалось создать PR: {detail}.",
       "worktreeCreateFailed": "Не удалось создать рабочее дерево: {message}.",
-      "dependencyNotMerged": "Зависимость \"{title}\"({id}) ещё не слита в основную ветку."
+      "dependencyNotMerged": "Зависимость \"{title}\"({id}) ещё не слита в основную ветку.",
+      "specAgentUnsupported": "Для создания spec требуется агент Claude; настроенный spec-агент не может ограничить запись каталогом spec.",
+      "specWriteFailed": "Не удалось создать документ spec: {message}."
     },
     "discussion": {
       "dbUnavailable": "Функция обсуждений недоступна (c3.db).",

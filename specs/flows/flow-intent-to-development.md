@@ -19,6 +19,8 @@ flowchart TD
     COMM --> SAVE[save_intents — human confirm]
     SAVE -- allow --> LEDGER[(intent ledger · todo)]
     SAVE -- deny --> X[nothing written]
+    LEDGER -. optional .-> SPEC[write_spec — write-confined spec session]
+    SPEC --> LEDGER
     LEDGER --> LAUNCH[start_development]
     LAUNCH --> DEV[background dev session<br/>standard gated loop]
     DEV --> LINK[back-link · select_session]
@@ -49,6 +51,23 @@ flowchart TD
    `in_progress`/`done`, `RM-R20`). Intra-batch `dependsOnIndexes` resolve to sibling ids in one
    atomic transaction; an out-of-range/self/cycle index or a bad update id rejects the **whole**
    batch (`RM-R17`, `RM-R20`). **Deny ⇒** nothing written, agent told it was rejected (`RM-R5`).
+
+## Write spec (optional quality gate)
+
+1. **web-console → intent-management.** For a saved intent, `write_spec` produces a constrained,
+   reviewable spec document before development — the quality-gate output step (`RM-R21`). The server
+   scaffolds a dated directory under the workspace's `specPath` setting (default `.specs`),
+   `<specPath>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`, where `<slug>` derives from the intent's
+   `shortEnTitle` (falling back to the intent id prefix) and `<NNN>` is a per-day sequence. It seeds
+   `spec.md` and backfills the intent's spec path immediately, so the spec exists even if the run
+   fails.
+2. **intent-management → agent-session.** A **write-confined spec session** is launched on the
+   configured spec agent (`specAgentId`). Its sole job is to **write the spec, not change code**:
+   writes are limited to the spec directory (any other project path is denied; the rest is
+   read-only), and shell / sub-agent / slash-command tools are blocked — enforced at the tool +
+   **path** layer, not by prompt (`RM-R21`). On bind, the session id is linked back onto the intent.
+   The path-level write lock is a Claude-path permission-gateway mechanism, so a non-Claude spec
+   agent is **rejected** before launch (`RM-R21`).
 
 ## Launch development
 
@@ -92,6 +111,10 @@ then funnels into the **unchanged** `save_intents` path (`RM-R7`). See
   (`RM-R2`, ADR-0007).
 - **No silent save.** `save_intents` must never persist without the user's allow — even under a
   `bypassPermissions` system default (`RM-R3`/`RM-R5`).
+- **Spec session writes only the spec.** A `write_spec` session must never write outside its spec
+  directory — a write to project source is denied at the path level, and a non-Claude spec agent
+  (which cannot path-confine writes) is rejected before launch rather than authoring without the
+  lock (`RM-R21`).
 - **Manual launch never auto-completes.** The dev run finishing does not change status; the user
   marks `done`/`cancelled` (`RM-R9`). The only exceptions are the entry reconcile (`RM-R18`) and the
   automation orchestrator (`RM-A5`).

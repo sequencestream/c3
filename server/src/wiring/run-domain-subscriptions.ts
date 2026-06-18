@@ -64,6 +64,7 @@ import {
   insertIntentSession,
   rebindChatSession,
   setLastDevSession,
+  setSpecSessionId,
   updateIntentSession,
   updateStatus,
   listIntents,
@@ -73,6 +74,7 @@ import {
   releaseDevLaunch,
   takePendingDevLink,
 } from '../features/intents/dev-link.js'
+import { clearPendingSpecLink, takePendingSpecLink } from '../features/intents/spec-link.js'
 import { notifyTurnSettled } from '../features/intents/automation.js'
 import {
   cancelBySourceId,
@@ -136,6 +138,16 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // would wrongly re-key the chat row to an ephemeral retry sid; skip.
       if (prevId !== realId) rebindChatSession(prevId, realId)
       broadcastIntentSessions(rt.workspacePath)
+    } else if (rt.kind === 'spec') {
+      // ── Spec-authoring session ──
+      // Link the real spec session id back onto the originating intent so the
+      // ledger's spec_session_id reflects the live session. takePendingSpecLink
+      // consumes the pending→intent entry registered by the write_spec handler.
+      const intentId = takePendingSpecLink(prevId)
+      if (intentId) {
+        setSpecSessionId(intentId, realId)
+        broadcastIntents(rt.workspacePath)
+      }
     } else {
       // ── Normal dev session ──
       setSessionMode(realId, rt.mode)
@@ -226,6 +238,16 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   eventBus.subscribe('run:settled', ({ workspacePath, kind }) => {
     if (kind !== 'schedule') return
     broadcastSchedules(workspacePath)
+  })
+
+  // ── run:settled (kind=spec) — spec-link safety-net sweep ───────────────
+  // If a spec run settles without ever binding (an error-before-bind edge),
+  // clear its pending spec-link entry so the in-memory map never leaks. The
+  // happy path already consumed the entry via takePendingSpecLink on bind, so
+  // this is an idempotent no-op there.
+  eventBus.subscribe('run:settled', ({ sessionId, kind }) => {
+    if (kind !== 'spec') return
+    clearPendingSpecLink(sessionId)
   })
 
   // ── run:settled (kind=session) — wait-user-involve event cancel ──

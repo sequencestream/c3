@@ -83,6 +83,20 @@ export interface IntentProfile {
   }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
 }
 
+/**
+ * The spec-authoring launch profile (write-confined gate + disallowed-tools lock
+ * + spec system prompt), resolved before the vendor fork in `launchRun`. Only
+ * present for `rt.kind === 'spec'` runtimes. The confining directory itself
+ * (`specDir`) rides on the runtime, not this static profile (it is per-run). Spec
+ * sessions are claude-only (the path-level write gate is a claude `canUseTool`
+ * mechanism), so — unlike {@link IntentProfile} — there is no driver-path MCP.
+ */
+export interface SpecProfile {
+  appendSystemPrompt: string
+  disallowedTools: string[]
+  gate: 'spec'
+}
+
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }

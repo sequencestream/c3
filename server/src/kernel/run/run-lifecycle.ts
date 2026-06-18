@@ -19,7 +19,7 @@ import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
 import { canFormTeam } from '../agent/adapters/capabilities.js'
-import { runViaDriver, type IntentProfile } from './run-via-driver.js'
+import { runViaDriver, type IntentProfile, type SpecProfile } from './run-via-driver.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
@@ -98,6 +98,14 @@ export interface LaunchRunDeps {
    */
   intentProfile?: (workspacePath: string) => IntentProfile
   /**
+   * Spec-authoring launch profile (write-confined gate + disallowed-tools lock +
+   * spec system prompt), injected at the composition root so the kernel launcher
+   * never imports `features/` (ADR-0009 R1). Only consulted for `rt.kind ===
+   * 'spec'` runtimes. A spec runtime launched without it throws (a missing
+   * composition-root wiring is a bug, never a silent drop of the write lock).
+   */
+  specProfile?: (workspacePath: string) => SpecProfile
+  /**
    * The Codex {@link VendorAdapter} (built at the composition root via the no-arg
    * factory, host-binary gated), or null/absent when Codex's host CLI is missing.
    * `launchRun` forks to {@link runViaDriver} when the session's vendor is `codex`
@@ -155,12 +163,21 @@ export async function launchRun(
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
   const isIntent = rt.kind === 'intent'
+  const isSpec = rt.kind === 'spec'
   // A intent runtime MUST carry the injected read-only profile (its security
   // lock). A missing wiring is a composition-root bug — fail loud, never silently
   // launch a intent agent without its gate / disallowed-tools lock (C-SEC).
   if (isIntent && !deps.intentProfile) {
     throw new Error(
       '[c3] launchRun: a intent runtime requires deps.intentProfile (composition-root wiring missing)',
+    )
+  }
+  // Same loud-throw for a spec runtime: it MUST carry the write-confined profile
+  // (its security lock). Never launch a spec agent without its path-level write
+  // gate / disallowed-tools lock (C-SEC).
+  if (isSpec && !deps.specProfile) {
+    throw new Error(
+      '[c3] launchRun: a spec runtime requires deps.specProfile (composition-root wiring missing)',
     )
   }
 
@@ -279,6 +296,24 @@ export async function launchRun(
   // `system`/`claude` vendors fall through to the claude path.
   {
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
+    // A spec run's write confinement is a claude `canUseTool` mechanism — the
+    // codex driver has no path-level write gate. The handler already rejects a
+    // non-claude spec agent, so reaching here means a config raced after the
+    // check; fail hard rather than author the spec without the write lock (C-SEC).
+    if (isSpec && vendor === 'codex') {
+      const msg =
+        '[c3] spec authoring requires a Claude agent (the codex driver cannot path-confine writes).'
+      emit(runId, { type: 'user_text', text: prompt })
+      emit(runId, { type: 'turn_end', reason: 'error', error: msg })
+      finalizeRun(runId)
+      deps.eventBus.publish('run:settled', {
+        sessionId: runId,
+        workspacePath,
+        reason: 'error',
+        kind: rt.kind,
+      })
+      return
+    }
     if (vendor === 'codex') {
       const adapter = deps.getCodexAdapter?.()
       if (adapter)
@@ -406,10 +441,11 @@ export async function launchRun(
           ...(images && !reconnecting ? { images } : {}),
           cwd: rt.effectiveCwd ?? workspacePath,
           signal: attemptAbort.signal,
-          // Intent chats are pinned to `default` so the gateway always runs.
-          // This is the claude-hardwired path (vendor === 'claude'), so the
-          // session's ModeToken is always a Claude `PermissionMode` (2026-06-07-012).
-          permissionMode: isIntent ? 'default' : (rt.mode as PermissionMode),
+          // Intent chats (and spec sessions) are pinned to `default` so the
+          // gateway always runs. This is the claude-hardwired path (vendor ===
+          // 'claude'), so the session's ModeToken is always a Claude
+          // `PermissionMode` (2026-06-07-012).
+          permissionMode: isIntent || isSpec ? 'default' : (rt.mode as PermissionMode),
           // Reconnect forces `resume: runId` (same SDK session, full context —
           // AS-R18). First attempt resumes an existing session; degradation
           // retries never resume (each gets a fresh SDK session).
@@ -433,13 +469,18 @@ export async function launchRun(
               // comm prompt + save_intents tool) is injected at the
               // composition root so the kernel launcher never imports features/.
               deps.intentProfile!(workspacePath)
-            : // Socket auto-resume is for ordinary user sessions only — the
-              // intent comm agent is excluded (different lifecycle).
-              {
-                onSocketDisconnect: (info) => {
-                  socketInfo = info
-                },
-              }),
+            : isSpec
+              ? // The spec write-confined profile (gate + disallowed-tools lock +
+                // spec prompt); `specDir` rides on the runtime (per-run). Like
+                // intent, excluded from socket auto-resume (one-shot lifecycle).
+                { ...deps.specProfile!(workspacePath), specDir: rt.specDir }
+              : // Socket auto-resume is for ordinary user sessions only — the
+                // intent comm agent is excluded (different lifecycle).
+                {
+                  onSocketDisconnect: (info) => {
+                    socketInfo = info
+                  },
+                }),
           send: (m) => emit(runId, m),
           // Permission-event hook: the session id is a getter because `runId`
           // changes on pending→real bind (onSessionId reassigns it).

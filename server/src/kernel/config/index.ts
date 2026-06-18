@@ -1146,6 +1146,19 @@ export function getDevSkill(workspacePath: string): string {
 }
 
 /**
+ * The workspace's spec directory (relative to the workspace root) for
+ * `write_spec`. Absent/blank ⇒ {@link DEFAULT_SPEC_PATH} (`.specs`).
+ */
+export function getSpecPath(workspacePath: string): string {
+  return normalizeSpecPath(loadWorkspaceSetting(workspacePath).specPath)
+}
+
+/** Whether spec-driven development is enabled for the workspace (default false). */
+export function getSddEnabled(workspacePath: string): boolean {
+  return normalizeSddEnabled(loadWorkspaceSetting(workspacePath).sddEnabled)
+}
+
+/**
  * The workspace's git branch mode for `start_development`. Absent/unknown ⇒
  * `current-branch` (the backward-compatible in-place path).
  */

@@ -24,7 +24,14 @@ import type {
   WaitUserInvolveSource,
 } from '@ccc/shared/protocol'
 import { allow, deny, type PermissionDecision } from './decision.js'
-import { classifyIntentTool, INTENT_READ_TOOLS, withAnswers } from './tools.js'
+import {
+  classifyIntentTool,
+  extractWriteTargets,
+  INTENT_READ_TOOLS,
+  isInside,
+  withAnswers,
+  WRITE_TOOLS,
+} from './tools.js'
 import { waitForDecision } from './registry.js'
 import { runAskConsensus, runConsensusVote } from '../../consensus.js'
 import { askQuestions } from '../../consensus-tally.js'
@@ -51,7 +58,14 @@ export interface PermissionRequestCtx {
 /** Everything the gateway needs from the run it guards (all caller-resolved). */
 export interface GatewaySpec {
   /** Which gate policy applies (default `standard`). */
-  gate: 'standard' | 'intent' | 'discussion-research'
+  gate: 'standard' | 'intent' | 'discussion-research' | 'spec'
+  /**
+   * Only set when `gate === 'spec'`: the absolute directory writes are confined
+   * to. Write-class tools targeting a path outside it are denied; reads pass
+   * through anywhere. Resolved per-run by the composition root from the spec
+   * runtime's `specDir`.
+   */
+  specDir?: string
   /** Push a wire frame to the viewer (the permission_request / consensus_auto). */
   send: (msg: ServerToClient) => void
   /** The run's abort signal — a teardown resolves a pending prompt to deny. */
@@ -156,6 +170,49 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       }
       console.warn(`[c3] intent gate denied tool: ${toolName}`)
       return deny('Intent chat is read-only; this tool is blocked.')
+    }
+
+    // Spec (write-confined) gate: the spec-authoring agent may read the whole
+    // project freely (reuses the intent read set) but may WRITE only inside the
+    // run's `specDir`. Write-class tools are path-checked here (they are NOT in
+    // the SDK-level disallowed lock for this run, precisely so they reach this
+    // branch); a target outside the spec dir — or with no resolvable path — is
+    // denied (fail-closed). AskUserQuestion routes via the same answer-injection
+    // flow as the intent gate. Everything else is denied by default.
+    if (gate === 'spec') {
+      if (classifyIntentTool(toolName) === 'allow') {
+        return allow(input)
+      }
+      if (WRITE_TOOLS.has(toolName)) {
+        const targets = extractWriteTargets(input)
+        if (
+          targets.length > 0 &&
+          spec.specDir &&
+          targets.every((t) => isInside(spec.specDir!, t))
+        ) {
+          return allow(input)
+        }
+        console.warn(`[c3] spec gate denied out-of-bounds write: ${toolName}`)
+        return deny('Spec session may only write inside the spec directory.')
+      }
+      if (toolName === 'AskUserQuestion' && askQuestions(input)) {
+        spec.onPermissionRequest?.({
+          requestId,
+          toolName,
+          input,
+          sessionId: spec.sessionId(),
+          workspacePath: spec.cwd,
+          source: spec.source,
+        })
+        send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
+        const { decision, answers } = await waitForDecision(requestId, signal)
+        if (decision === 'allow') {
+          return allow(withAnswers(input, answers ?? {}))
+        }
+        return deny('User denied in c3 UI')
+      }
+      console.warn(`[c3] spec gate denied tool: ${toolName}`)
+      return deny('Spec session is spec-only; this tool is blocked.')
     }
 
     // Discussion-research (read-only) gate: a one-shot research agent that

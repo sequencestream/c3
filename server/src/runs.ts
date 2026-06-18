@@ -126,6 +126,13 @@ export interface SessionRuntime {
    * worktree while c3 still broadcasts via the original project path.
    */
   effectiveCwd?: string
+  /**
+   * Only set for `kind === 'spec'` runs: the absolute spec directory this
+   * session's writes are confined to. Threaded into the permission gateway's
+   * `specDir` so the spec gate denies any write outside it (the project stays
+   * read-only). Set by the `write_spec` handler after computing the layout.
+   */
+  specDir?: string
   viewers: Set<Viewer>
 }
 

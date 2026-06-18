@@ -2023,10 +2023,19 @@ export type RunEndReason = 'complete' | 'error' | 'aborted'
  * - `consensus`   — a consensus vote (each voter is a tool-free one-shot).
  * - `tool`        — an internal tool call: completion judging (judge) and title
  *   derivation.
+ * - `spec`        — a spec-authoring session: writes confined to the intent's
+ *   spec directory (path-level write gate), the project read-only elsewhere.
  *
  * Migration from the old `SessionKind`: `'normal' → 'session'`, `'intent' → 'intent'`.
  */
-export type RunKind = 'session' | 'intent' | 'discussion' | 'schedule' | 'consensus' | 'tool'
+export type RunKind =
+  | 'session'
+  | 'intent'
+  | 'discussion'
+  | 'schedule'
+  | 'consensus'
+  | 'tool'
+  | 'spec'
 
 export interface Schedule {
   id: string
@@ -2451,6 +2460,12 @@ export type ClientToServer =
   | { type: 'discussion_to_intent'; discussionId: string }
   /** Launch a background dev session for a `todo` intent via the configurable development skill. */
   | { type: 'start_development'; workspaceId: string; intentId: string }
+  /**
+   * Author a spec document for an intent: scaffold the dated spec directory,
+   * seed `spec.md`, and launch a write-confined spec session (writes limited to
+   * the spec directory, the project read-only) on the configured spec agent.
+   */
+  | { type: 'write_spec'; workspaceId: string; intentId: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */

@@ -90,6 +90,54 @@ describe('discussion-research gate — read-only, deny-by-default', () => {
   })
 })
 
+describe('spec gate — write-confined, deny-by-default', () => {
+  const specDir = '/proj/.specs/2026/06/18/2026-06-18-001-add-login'
+  const g = () => createCanUseTool(spec({ gate: 'spec', specDir, cwd: '/proj' }))
+
+  it('allows a read tool at any path (no prompt)', async () => {
+    expect(await g()('Read', { file_path: '/proj/src/secret.ts' }, {} as never)).toMatchObject({
+      behavior: 'allow',
+    })
+    expect(await g()('Grep', { pattern: 'x' }, {} as never)).toMatchObject({ behavior: 'allow' })
+  })
+
+  it('ALLOWS a write inside the spec directory', async () => {
+    const out = await g()('Write', { file_path: `${specDir}/spec.md` }, {} as never)
+    expect(out).toMatchObject({ behavior: 'allow' })
+  })
+
+  it('DENIES a write to a project path outside the spec directory', async () => {
+    const out = await g()('Write', { file_path: '/proj/src/index.ts' }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+    expect((out as { message: string }).message).toMatch(/spec directory/)
+  })
+
+  it('DENIES a prefix-confusion sibling dir (.specsEVIL vs .specs/...)', async () => {
+    const out = await g()(
+      'Write',
+      { file_path: '/proj/.specs/2026/06/18/2026-06-18-001-add-loginEVIL/x.md' },
+      {} as never,
+    )
+    expect(out).toMatchObject({ behavior: 'deny' })
+  })
+
+  it('DENIES a ../ traversal escaping the spec directory', async () => {
+    const out = await g()('Write', { file_path: `${specDir}/../../../../etc/passwd` }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+  })
+
+  it('DENIES a write tool with no resolvable target path (fail-closed)', async () => {
+    const out = await g()('Write', { content: 'no path' }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+  })
+
+  it('DENIES Bash (exec is blocked on the spec gate)', async () => {
+    const out = await g()('Bash', { command: 'echo hi > /proj/src/x.ts' }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+    expect((out as { message: string }).message).toMatch(/spec-only/)
+  })
+})
+
 describe('C-SEC — permission verdicts are NOT persisted (no-persist)', () => {
   it('a full allow + deny + save flow never writes to disk', async () => {
     const writeFile = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {})

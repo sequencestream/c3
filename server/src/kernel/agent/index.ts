@@ -190,7 +190,13 @@ export interface RunOptions {
    * everything else is denied by default (a second line of defence behind
    * `disallowedTools`).
    */
-  gate?: 'standard' | 'intent' | 'discussion-research'
+  gate?: 'standard' | 'intent' | 'discussion-research' | 'spec'
+  /**
+   * Only with `gate === 'spec'`: the absolute spec directory this run's writes
+   * are confined to. Forwarded to {@link createCanUseTool}; write-class tools
+   * targeting a path outside it are denied (the project stays read-only).
+   */
+  specDir?: string
   /**
    * Sandbox container handle. When present, the vendor CLI binary is wrapped
    * to run inside the sandbox container via `docker exec`.
@@ -478,6 +484,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     disallowedTools,
     mcpServers,
     gate = 'standard',
+    specDir,
     skillWriteGuard,
     send,
     onStart,
@@ -587,9 +594,11 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // appending to the rolling context the consensus voters read.
       canUseTool: createCanUseTool({
         gate,
+        // Only meaningful for the spec gate: confines write-class tools to this dir.
+        specDir,
         // WorkCenter event source: the read-only comm agent's prompts are `intent`,
-        // every other gate (standard work session) is `session`. discussion-research
-        // never raises a human prompt, so its source value is inert.
+        // every other gate (standard work session, spec) is `session`.
+        // discussion-research never raises a human prompt, so its source is inert.
         source: gate === 'intent' ? 'intent' : 'session',
         send,
         signal,

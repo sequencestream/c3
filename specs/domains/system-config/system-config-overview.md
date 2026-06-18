@@ -6,10 +6,10 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
 
 ## Domains
 
-| Domain                                                | Responsibility                                                                                   | API                                   | Status |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------- | ------ |
-| [agent-config](agent-config/agent-config-overview.md) | Manage agent profiles (url/key/model + name), the default agent, and per-session agent binding   | WebSocket `/ws` (see shared protocol) | active |
-| project-config                                        | Per-workspace config knobs (defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars) | WebSocket `/ws` (see shared protocol) | active |
+| Domain                                                | Responsibility                                                                                                                                | API                                   | Status |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------ |
+| [agent-config](agent-config/agent-config-overview.md) | Manage agent profiles (url/key/model + name), the default agent, and per-session agent binding                                                | WebSocket `/ws` (see shared protocol) | active |
+| project-config                                        | Per-workspace config knobs (defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars, gitBranchMode, sandbox, sddEnabled/specPath) | WebSocket `/ws` (see shared protocol) | active |
 
 ## Shared context
 
@@ -32,6 +32,20 @@ bookkeeping. Today it has two domains — **agent-config** (agent profiles) and
   vendor; each vendor's catalog validation happens at the per-vendor save handler). The read-layer
   one-shot migration of legacy global `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars`
   into per-project config is unchanged.
+
+## Workspace-setting fields (SDD)
+
+- **`sddEnabled`** — master switch for spec-driven development (SDD) in the workspace.
+  Off by default. When on, the SDD spec quality gate and human approval checkpoints
+  apply to development tasks before coding starts. Only an explicit boolean `true`
+  enables it; absent / non-boolean values normalize to `false`.
+- **`specPath`** — directory (relative to the workspace root) where SDD specs are
+  stored. Trimmed on read; absent / blank / non-string normalizes to the default
+  `.specs`. Path existence and writability are **not** validated at config layer
+  (creation is the responsibility of the SDD session-start flow, not config storage).
+
+Both fields are stored under the per-workspace `projectConfigs` map alongside the
+other knobs and are always back-filled to their defaults by `normalizeWorkspaceSetting`.
 
 ## Dependency direction
 

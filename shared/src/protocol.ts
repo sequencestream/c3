@@ -653,6 +653,17 @@ export interface WorkspaceSetting {
    * The settings form auto-detects it (origin/HEAD → current HEAD) on open.
    */
   defaultMainBranch?: string
+  /**
+   * Master switch for spec-driven development (SDD) in this workspace. When off
+   * (default), the SDD spec quality gate and approval checkpoints are inactive.
+   * Absent ⇒ `false` (normalized on read).
+   */
+  sddEnabled?: boolean
+  /**
+   * Directory (relative to the workspace root) where SDD specs are stored when
+   * {@link sddEnabled} is on. Absent / blank ⇒ `.specs` (normalized on read).
+   */
+  specPath?: string
 }
 
 // ===========================================================================

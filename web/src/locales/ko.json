@@ -1586,6 +1586,22 @@
       "hint": "Worktree 모드에서 새 worktree의 기준이 되는 브랜치. 이 페이지를 열 때 자동으로 감지됩니다(origin/HEAD, 그다음 현재 HEAD).",
       "placeholder": "main"
     },
+    "sdd": {
+      "title": {
+        "label": "사양 주도 개발"
+      },
+      "hint": "활성화하면 이 워크스페이스의 개발 작업은 코딩을 시작하기 전에 사양 품질 게이트를 거치며 사람의 승인 체크포인트가 적용됩니다.",
+      "toggle": {
+        "label": "사양 주도 개발 활성화"
+      },
+      "specPath": {
+        "title": {
+          "label": "사양 디렉터리"
+        },
+        "hint": "사양 파일을 저장하는 디렉터리(워크스페이스 루트 기준 상대 경로). 비워 두면 기본값을 사용합니다.",
+        "placeholder": ".specs"
+      }
+    },
     "consensus": {
       "title": {
         "label": "컨센서스"

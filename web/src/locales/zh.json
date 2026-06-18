@@ -1585,6 +1585,22 @@
       "hint": "Worktree 模式下新建 worktree 所基于的分支。打开本页时自动探测(origin/HEAD,再回退当前 HEAD)。",
       "placeholder": "main"
     },
+    "sdd": {
+      "title": {
+        "label": "规格驱动开发"
+      },
+      "hint": "启用后,本工作区的开发任务在开始编码前会经过规格质量闸,并设有人工审批检查点。",
+      "toggle": {
+        "label": "启用规格驱动开发"
+      },
+      "specPath": {
+        "title": {
+          "label": "规格目录"
+        },
+        "hint": "规格文件存放目录(相对工作区根目录)。留空则使用默认值。",
+        "placeholder": ".specs"
+      }
+    },
     "consensus": {
       "title": {
         "label": "共识投票"

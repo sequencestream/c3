@@ -441,6 +441,8 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  * - `gitBranchMode` falls back to `current-branch` for any absent/unknown value;
  *   the legacy on-disk key `gitCommitMode` is read as a fallback when absent.
  * - `defaultMainBranch` is trimmed; empty ⇒ omitted.
+ * - `sddEnabled` defaults to `false` (only an explicit boolean `true` enables SDD).
+ * - `specPath` is trimmed; absent / blank / non-string ⇒ `.specs`.
  */
 export function normalizeWorkspaceSetting(
   raw: unknown,
@@ -465,6 +467,8 @@ export function normalizeWorkspaceSetting(
   )
   const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode, validCustomAgentIds)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
+  const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
+  const specPath = normalizeSpecPath(rec.specPath)
   return {
     defaultMode,
     consensus,
@@ -472,10 +476,36 @@ export function normalizeWorkspaceSetting(
     maxRoundsPerStage,
     maxSpeechChars,
     gitBranchMode,
+    sddEnabled,
+    specPath,
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
   }
+}
+
+/** Default SDD spec directory (relative to the workspace root). */
+export const DEFAULT_SPEC_PATH = '.specs'
+
+/**
+ * Normalize the SDD master switch — only an explicit boolean `true` enables it;
+ * any other value (absent, non-boolean, the string "true") falls back to
+ * `false`. This keeps SDD opt-in and rejects illegal types by defaulting off.
+ */
+function normalizeSddEnabled(raw: unknown): boolean {
+  return raw === true
+}
+
+/**
+ * Normalize the SDD spec directory — trims a string value and falls back to
+ * {@link DEFAULT_SPEC_PATH} for absent / blank / non-string input. The path is
+ * stored verbatim (relative to the workspace root); existence / writability is
+ * not checked here.
+ */
+function normalizeSpecPath(raw: unknown): string {
+  if (typeof raw !== 'string') return DEFAULT_SPEC_PATH
+  const trimmed = raw.trim()
+  return trimmed.length > 0 ? trimmed : DEFAULT_SPEC_PATH
 }
 
 /**

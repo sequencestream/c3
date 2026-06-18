@@ -1585,6 +1585,22 @@
       "hint": "The base branch new worktrees branch from in worktree mode. Auto-detected (origin/HEAD, then current HEAD) when this page opens.",
       "placeholder": "main"
     },
+    "sdd": {
+      "title": {
+        "label": "Spec-driven development"
+      },
+      "hint": "When enabled, development tasks in this workspace go through a spec quality gate with human approval checkpoints before coding starts.",
+      "toggle": {
+        "label": "Enable spec-driven development"
+      },
+      "specPath": {
+        "title": {
+          "label": "Spec directory"
+        },
+        "hint": "Directory (relative to the workspace root) where specs are stored. Leave empty to use the default.",
+        "placeholder": ".specs"
+      }
+    },
     "consensus": {
       "title": {
         "label": "Consensus"

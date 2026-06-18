@@ -879,6 +879,91 @@ describe('WorkspaceSetting.vue — git branch mode + default main branch', () =>
   })
 })
 
+describe('WorkspaceSetting.vue — spec-driven development (SDD)', () => {
+  it('hides the spec path input when SDD is disabled (default)', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: null,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    expect((w.find('[data-testid="sdd-enabled"]').element as HTMLInputElement).checked).toBe(false)
+    expect(w.find('[data-testid="sdd-spec-path"]').exists()).toBe(false)
+  })
+
+  it('reveals the spec path input when SDD is toggled on', async () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: null,
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    expect(w.find('[data-testid="sdd-spec-path"]').exists()).toBe(false)
+    await w.find('[data-testid="sdd-enabled"]').setValue(true)
+    expect(w.find('[data-testid="sdd-spec-path"]').exists()).toBe(true)
+  })
+
+  it('seeds the toggle and spec path from config', () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg({ sddEnabled: true, specPath: 'docs/specs' }),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    expect((w.find('[data-testid="sdd-enabled"]').element as HTMLInputElement).checked).toBe(true)
+    expect((w.find('[data-testid="sdd-spec-path"]').element as HTMLInputElement).value).toBe(
+      'docs/specs',
+    )
+  })
+
+  it('emits the toggled SDD config on save', async () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg(),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    await w.find('[data-testid="sdd-enabled"]').setValue(true)
+    await w.find('[data-testid="sdd-spec-path"]').setValue('my-specs')
+    await w.find('[data-testid="project-config-save"]').trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.sddEnabled).toBe(true)
+    expect(payload.specPath).toBe('my-specs')
+  })
+
+  it('omits a blank spec path on save (server defaults to .specs)', async () => {
+    const w = mount(WorkspaceSetting, {
+      props: {
+        open: true,
+        workspaceSetting: cfg({ sddEnabled: true, specPath: '   ' }),
+        detectedMainBranch: null,
+        currentWorkspace: '/test',
+        vendorModes: MOCK_VENDOR_MODES,
+        systemSandboxes: [],
+      },
+    })
+    await w.find('[data-testid="project-config-save"]').trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.specPath).toBeUndefined()
+  })
+})
+
 describe('WorkspaceSetting.vue — sandbox worktree gating + agent multi-select', () => {
   const SANDBOXES: SystemSandboxDef[] = [
     { name: 'default', type: 'docker', image: 'node:22-alpine' },

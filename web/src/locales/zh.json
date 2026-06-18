@@ -1853,6 +1853,9 @@
         "unknown": "登录失败，请重试。"
       }
     },
+    "account": {
+      "tooltip": "账户"
+    },
     "logout": {
       "label": "登出",
       "tooltip": "登出"

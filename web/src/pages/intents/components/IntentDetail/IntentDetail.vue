@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /*
- * IntentDetail.vue — 需求页右栏:选中意图的详情面板(常驻标题栏 + 四 tab)。
+ * IntentDetail.vue — 需求页右栏:选中意图的详情面板(常驻头部 + 四 tab)。
  *
- * 顶部常驻标题栏:左为意图标题,右为全部操作(四态主按钮 + refine / open dev session /
- * mark done / cancel / create PR / copy PR / automate 切换)——无论在哪个 tab 都可见。
- * 其下为 tab 条 + tab 内容,四 tab:
+ * 顶部常驻头部拆为标题栏与操作栏:标题栏左为意图标题 + 模块,右为优先级 + 状态;
+ * 操作栏承载全部操作(四态主按钮 + refine / open dev session / mark done / cancel /
+ * create PR / copy PR / automate 切换)——无论在哪个 tab 都可见。其下为 tab 条 + tab 内容,四 tab:
  *   - intent       意图正文 markdown + Git/PR 元信息 + 依赖编辑器
  *   - intent session 该意图的 refine/沟通会话(intentSessionId),复用 ChatColumn
  *   - spec         渲染 specPath 指向的 spec.md(经 read-spec 拉取)
@@ -28,13 +28,7 @@ import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import ChatColumn from '../../../../components/ChatColumn/ChatColumn.vue'
 import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
-import {
-  formatDate,
-  formatDependsOn,
-  reqRunStatusLabel,
-  showRunStatus,
-  statusLabel,
-} from '../../../../lib/intent-list-view'
+import { formatDate, formatDependsOn, statusLabel } from '../../../../lib/intent-list-view'
 
 const { t, locale } = useTypedI18n()
 
@@ -234,11 +228,6 @@ function onMainAction(): void {
   startDev()
 }
 
-// 标题前的 MM/DD 日期前缀:已完成项取 completedAt,否则取 createdAt。
-function datePrefix(r: Intent): string {
-  return formatDate(r.completedAt ?? r.createdAt, locale.value, { style: 'short' })
-}
-
 // ── Tab 状态 ────────────────────────────────────────────────────────────────
 type DetailTab = 'intent' | 'intentSession' | 'spec' | 'specSession'
 const activeTab = ref<DetailTab>('intent')
@@ -334,24 +323,19 @@ defineExpose({
       {{ t('intent.list.empty') }}
     </p>
     <template v-else>
-      <!-- 常驻标题栏:意图标题 + 全部操作 -->
+      <!-- 常驻头部:标题栏 + 独立操作栏 -->
       <header class="intent-detail-head">
-        <div class="intent-detail-head-main">
-          <div class="intent-detail-head-row">
-            <span class="req-priority" :class="intent.priority">{{ intent.priority }}</span>
-            <span class="req-date">{{ datePrefix(intent) }}</span>
+        <div class="intent-detail-titlebar">
+          <div class="intent-detail-title-main">
+            <h2 class="intent-detail-title" :title="intent.content">{{ intent.title }}</h2>
             <span v-if="intent.module" class="req-module" :title="intent.module">{{
               intent.module
             }}</span>
-            <span class="req-status" :class="intent.status">{{ statusLabel(intent.status) }}</span>
-            <span
-              v-if="showRunStatus(intent.runStatus)"
-              class="req-run-status"
-              :class="intent.runStatus"
-              >{{ reqRunStatusLabel(intent.runStatus) }}</span
-            >
           </div>
-          <h2 class="intent-detail-title" :title="intent.content">{{ intent.title }}</h2>
+          <div class="intent-detail-title-meta">
+            <span class="req-priority" :class="intent.priority">{{ intent.priority }}</span>
+            <span class="req-status" :class="intent.status">{{ statusLabel(intent.status) }}</span>
+          </div>
         </div>
         <div class="intent-detail-actions" data-testid="intent-detail-actions">
           <button
@@ -663,21 +647,27 @@ defineExpose({
   padding: var(--sp-3) var(--sp-3) var(--sp-2);
   border-bottom: 1px solid var(--c-border);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-}
-.intent-detail-head-main {
-  display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  min-width: 0;
-  flex: 1 1 auto;
 }
-.intent-detail-head-row {
+.intent-detail-titlebar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.intent-detail-title-main {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.intent-detail-title-meta {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
@@ -690,7 +680,7 @@ defineExpose({
   word-break: break-word;
 }
 .intent-detail-actions {
-  flex-shrink: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -723,6 +713,21 @@ defineExpose({
   color: var(--c-text);
   border-bottom-color: var(--c-accent, var(--c-text));
   font-weight: 600;
+}
+@media (max-width: 640px) {
+  .intent-detail-titlebar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-2);
+  }
+  .intent-detail-title-main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .intent-detail-title-meta {
+    justify-content: flex-start;
+  }
 }
 .intent-detail-body {
   flex: 1;

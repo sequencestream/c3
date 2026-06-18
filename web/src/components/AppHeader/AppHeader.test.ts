@@ -21,10 +21,11 @@ const baseProps = {
   workcenterBadgeCount: 2,
 }
 
-// `isAdmin` is a module-singleton (defaults true). Restore it after each test so
-// the admin-gated cases don't leak into the others.
+// `isAdmin` / `subject` are module-singletons (default true / null). Restore them
+// after each test so the auth-gated cases don't leak into the others.
 afterEach(() => {
   useAuth().setIsAdmin(true)
+  useAuth().setSubject(null)
 })
 
 describe('AppHeader.vue — top-bar tabs', () => {
@@ -117,6 +118,41 @@ describe('AppHeader.vue — top-bar tabs', () => {
     await tabs[4].trigger('click')
     expect(w.emitted('select-tab')).toBeUndefined()
     expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
+  })
+})
+
+describe('AppHeader.vue — 账户菜单(ADR-0023)', () => {
+  it('未认证(showLogout 缺省)→ 桌面不渲染账户菜单触发器', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.account-trigger').exists()).toBe(false)
+  })
+
+  it('已认证 → 桌面渲染人形图标触发器', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, showLogout: true } })
+    const trigger = w.find('.account-trigger')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.find('.account-icon').exists()).toBe(true)
+  })
+
+  it('展开下拉展示登录名', () => {
+    useAuth().setSubject('alice')
+    const w = mount(AppHeader, { props: { ...baseProps, showLogout: true } })
+    expect(w.find('.account-name').text()).toBe('alice')
+  })
+
+  it('点击下拉内登出按钮 → emit logout', async () => {
+    useAuth().setSubject('alice')
+    const w = mount(AppHeader, { props: { ...baseProps, showLogout: true } })
+    await w.find('.account-logout-btn').trigger('click')
+    expect(w.emitted('logout')).toHaveLength(1)
+  })
+
+  it('移动端溢出菜单同样展示登录名与登出项', () => {
+    useAuth().setSubject('alice')
+    const w = mount(AppHeader, { props: { ...baseProps, showLogout: true } })
+    expect(w.find('.account-name-static').text()).toBe('alice')
+    const logoutItems = w.findAll('.mobile-action-item').filter((b) => b.text() === 'Sign out')
+    expect(logoutItems).toHaveLength(1)
   })
 })
 

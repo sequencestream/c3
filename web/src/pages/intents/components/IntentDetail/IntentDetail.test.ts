@@ -86,11 +86,23 @@ describe('IntentDetail.vue — empty state', () => {
 })
 
 describe('IntentDetail.vue — persistent header', () => {
-  it('shows the intent title and actions in the header on every tab', async () => {
-    const item = intent({ id: 'i1', title: 'My intent' })
+  it('shows title metadata and the independent actions bar on every tab', async () => {
+    const item = intent({
+      id: 'i1',
+      title: 'My intent',
+      module: 'billing',
+      priority: 'P0',
+      status: 'todo',
+      runStatus: 'running',
+    })
     const w = mountDetail(item)
     expect(w.find('.intent-detail-title').text()).toBe('My intent')
+    expect(w.find('.intent-detail-title-main .req-module').text()).toBe('billing')
+    expect(w.find('.intent-detail-title-meta .req-priority').text()).toBe('P0')
+    expect(w.find('.intent-detail-title-meta .req-status').text()).toBeTruthy()
     expect(w.find('[data-testid="intent-detail-actions"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-head .req-date').exists()).toBe(false)
+    expect(w.find('.intent-detail-head .req-run-status').exists()).toBe(false)
 
     // Switch to the spec tab — header (title + actions) stays put.
     await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')

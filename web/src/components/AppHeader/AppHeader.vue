@@ -19,13 +19,16 @@ const { t, d } = useTypedI18n()
 const LICENSE_CONSOLE_URL = 'https://c3.sequencestream.com/'
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
-const { isAdmin } = useAuth()
+// 登录身份(basic 用户名 / oauth 邮箱),响应式来自每个 `ready`。供桌面账户菜单与
+// 移动操作菜单展示「当前登录的是谁」;未登录时为 null(此时 showLogout 亦为 false)。
+const { isAdmin, subject } = useAuth()
 
-// 受控 <details> 浮层(移动端「⋯」操作菜单 + 桌面许可状态下拉):原生 details
-// 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet/页面之上。
-// 两个浮层共用一个文档级 pointerdown 监听,任一打开即挂载、全部关闭即卸载。
+// 受控 <details> 浮层(移动端「⋯」操作菜单 + 桌面许可状态下拉 + 桌面账户下拉):原生
+// details 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet/页面之上。
+// 三个浮层共用一个文档级 pointerdown 监听,任一打开即挂载、全部关闭即卸载。
 const actionsEl = ref<HTMLDetailsElement | null>(null)
 const licenseEl = ref<HTMLDetailsElement | null>(null)
+const accountEl = ref<HTMLDetailsElement | null>(null)
 
 function closeActions(): void {
   if (actionsEl.value) actionsEl.value.open = false
@@ -35,14 +38,19 @@ function closeLicense(): void {
   if (licenseEl.value) licenseEl.value.open = false
 }
 
+function closeAccount(): void {
+  if (accountEl.value) accountEl.value.open = false
+}
+
 function onDocumentPointerDown(event: PointerEvent): void {
   const target = event.target as Node
   if (actionsEl.value?.open && !actionsEl.value.contains(target)) closeActions()
   if (licenseEl.value?.open && !licenseEl.value.contains(target)) closeLicense()
+  if (accountEl.value?.open && !accountEl.value.contains(target)) closeAccount()
 }
 
 function syncOutsideListener(): void {
-  if (actionsEl.value?.open || licenseEl.value?.open) {
+  if (actionsEl.value?.open || licenseEl.value?.open || accountEl.value?.open) {
     document.addEventListener('pointerdown', onDocumentPointerDown)
   } else {
     document.removeEventListener('pointerdown', onDocumentPointerDown)
@@ -62,6 +70,7 @@ function chooseSettings(): void {
 }
 function chooseLogout(): void {
   closeActions()
+  closeAccount()
   emit('logout')
 }
 // 触发激活流程:收起两个浮层(桌面许可下拉 / 移动操作菜单皆可承载该入口)再上抛。
@@ -258,14 +267,40 @@ function selectTab(tab: HeaderTab): void {
         >
           ⚙
         </button>
-        <button
+        <!-- 账户菜单(ADR-0023):受控 <details>,人形图标触发,展开显示登录名 + 登出。
+             仅已认证(showLogout)时渲染——无认证 / none / 未配置 basic 时整体隐藏。 -->
+        <details
           v-if="showLogout"
-          class="icon-btn logout-btn"
-          :title="t('auth.logout.tooltip')"
-          @click="emit('logout')"
+          ref="accountEl"
+          class="account-menu"
+          @toggle="syncOutsideListener"
         >
-          {{ t('auth.logout.label') }}
-        </button>
+          <summary
+            class="icon-btn account-trigger"
+            :title="t('auth.account.tooltip')"
+            :aria-label="t('auth.account.tooltip')"
+          >
+            <svg
+              class="account-icon"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                fill="currentColor"
+                d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.69-8 6v2h16v-2c0-3.31-3.58-6-8-6Z"
+              />
+            </svg>
+          </summary>
+          <div class="account-dropdown">
+            <div v-if="subject" class="account-name" :title="subject">{{ subject }}</div>
+            <button class="account-logout-btn" @click="chooseLogout">
+              {{ t('auth.logout.label') }}
+            </button>
+          </div>
+        </details>
         <span class="status" :class="status === 'open' ? 'ok' : 'err'">
           {{ status }}
         </span>
@@ -369,6 +404,10 @@ function selectTab(tab: HeaderTab): void {
           <button v-if="isAdmin" class="mobile-action-item" @click="chooseSettings">
             {{ t('nav.settings.tooltip') }}
           </button>
+          <!-- 账户区(ADR-0023):仅已认证时出现——展示登录名(静态)+ 登出项。 -->
+          <span v-if="showLogout && subject" class="mobile-action-item account-name-static">
+            {{ subject }}
+          </span>
           <button v-if="showLogout" class="mobile-action-item" @click="chooseLogout">
             {{ t('auth.logout.label') }}
           </button>
@@ -612,6 +651,64 @@ function selectTab(tab: HeaderTab): void {
   background: var(--c-card);
 }
 
+/* 账户菜单(ADR-0023):受控 <details> 下拉,人形图标触发 */
+.account-menu {
+  position: relative;
+}
+.account-trigger {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+.account-trigger::-webkit-details-marker {
+  display: none;
+}
+.account-icon {
+  display: block;
+}
+.account-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--sp-2));
+  z-index: 120;
+  min-width: 180px;
+  max-width: 280px;
+  padding: var(--sp-2);
+  display: grid;
+  gap: var(--sp-1);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.account-name {
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-logout-btn {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  text-align: left;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.account-logout-btn:hover {
+  background: var(--c-card);
+}
+
 @media (max-width: 767px) {
   .app-header {
     height: auto;
@@ -751,6 +848,13 @@ function selectTab(tab: HeaderTab): void {
     text-underline-offset: 2px;
   }
   .mobile-action-item.license-info-static {
+    color: var(--c-text-muted);
+    white-space: normal;
+    word-break: break-all;
+    cursor: default;
+  }
+  /* 移动操作菜单内的登录名(ADR-0023):静态只读,与登出项区分 */
+  .mobile-action-item.account-name-static {
     color: var(--c-text-muted);
     white-space: normal;
     word-break: break-all;

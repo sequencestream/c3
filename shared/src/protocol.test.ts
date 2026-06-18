@@ -53,7 +53,14 @@ describe('protocol wire format', () => {
   ]
 
   const serverMessages: ServerToClient[] = [
-    { type: 'ready', workspaces: [], activeSessionId: null, statuses: [], isAdmin: true },
+    {
+      type: 'ready',
+      workspaces: [],
+      activeSessionId: null,
+      statuses: [],
+      isAdmin: true,
+      subject: null,
+    },
     {
       type: 'session_status',
       statuses: [{ sessionId: 's1', status: 'awaiting_permission' }],

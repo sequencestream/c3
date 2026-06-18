@@ -152,6 +152,9 @@ export function createWsHandler(deps: {
           // Whether this connection is the unique admin (UX hint only; the server
           // re-checks on every config mutation — the wire flag is never authority).
           isAdmin: isAdminConn(conn),
+          // The signed-in subject for the top-bar account menu (null when no one is
+          // signed in: auth disabled / none / pre-login). Display hint only.
+          subject: conn.subject ?? null,
         })
       },
       // The 40+ case switch collapsed to a single registry dispatch (ADR-0009):

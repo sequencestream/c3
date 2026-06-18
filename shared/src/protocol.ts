@@ -2731,6 +2731,14 @@ export type ServerToClient =
        * same gate regardless (the wire flag is UX only, never the authority).
        */
       isAdmin: boolean
+      /**
+       * The signed-in subject for THIS connection — `basic.adminUsername`-eligible
+       * username, or (once the OAuth runtime lands) the OIDC email — used only to
+       * surface "who am I" in the top-bar account menu. `null` whenever no one is
+       * signed in: auth disabled / `none` / an unconfigured `basic` shell, or before
+       * a `login`. Purely a display hint; never an authority for any gate.
+       */
+      subject: string | null
     }
   /** Live run statuses for all sessions with a runtime; drives sidebar badges. */
   | { type: 'session_status'; statuses: SessionRunStatus[] }

@@ -39,6 +39,10 @@ const lastReason = ref<UnauthenticatedReason | null>(null)
 // renders config controls normally (the server is the real gate either way — when
 // auth is on and we are not the admin, `ready.isAdmin` flips this to false).
 const isAdmin = ref(true)
+// The signed-in subject (basic username / oauth email), server-authoritative from
+// every `ready`. `null` whenever no one is signed in (auth disabled / none / pre-login);
+// drives the top-bar account menu's "who am I" display. Cleared on logout / 401.
+const subject = ref<string | null>(null)
 
 let send: Sender | null = null
 
@@ -78,12 +82,18 @@ function setIsAdmin(value: boolean): void {
   isAdmin.value = value
 }
 
+/** Server told us (via `ready`) the signed-in subject for this connection. */
+function setSubject(value: string | null): void {
+  subject.value = value
+}
+
 /** Server signalled the connection is unauthenticated (the WS analogue of HTTP 401). */
 function handleUnauthenticated(reason: UnauthenticatedReason): void {
   token.value = null
   clearToken()
   lastReason.value = reason
   pending.value = false
+  subject.value = null
   status.value = 'login-required'
 }
 
@@ -94,6 +104,7 @@ function logout(): void {
   clearToken()
   loginError.value = null
   lastReason.value = null
+  subject.value = null
   status.value = 'login-required'
 }
 
@@ -104,12 +115,14 @@ export function useAuth() {
     pending: readonly(pending),
     lastReason: readonly(lastReason),
     isAdmin: readonly(isAdmin),
+    subject: readonly(subject),
     bindSender,
     currentToken,
     submitLogin,
     handleLoginResult,
     handleUnauthenticated,
     setIsAdmin,
+    setSubject,
     logout,
   }
 }

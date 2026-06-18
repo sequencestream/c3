@@ -29,7 +29,7 @@ import type { SkillApprovalAsk } from './approval.js'
 /** Create a local git repo with a skill; returns the HEAD sha. */
 async function initSkillRepo(dir: string, name: string): Promise<string> {
   await mkdir(dir, { recursive: true })
-  execFileSync('git', ['init'], { cwd: dir })
+  execFileSync('git', ['init', '-b', 'main'], { cwd: dir })
   execFileSync('git', ['config', 'user.email', 'test@test'], { cwd: dir })
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir })
   await writeFile(

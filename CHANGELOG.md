@@ -5,6 +5,17 @@ tag (`git describe --tags`); `package.json` is the fallback baseline.
 
 ## v0.2.0
 
+c3 (Code Creative Center) is a coding platform that fuses harness and loop engineering
+with AI software-engineering practice. Instead of throwing a raw prompt at a
+model and hoping, c3 turns vague, half-formed requirements into structured intents — each
+with a clear scope, dependencies, and a verifiable definition of done. From there it drives
+the work through automated flows: planning, implementation, and validation run as
+repeatable loops rather than one-shot guesses, so progress is steady and auditable. Multi-
+agent discussions let perspectives converge before code is written, while scheduled tasks
+keep long-running and recurring work moving without a human babysitting the loop.
+c3 spec mode is spec-first and constitution-governed: the specification is the source of truth,
+every decision is traceable, and the whole thing runs as a single local process you fully own.
+
 ## v0.1.0
 
 ### Distribution trust

@@ -26,6 +26,7 @@ vi.mock('../../kernel/config/index.js', () => ({
   getDevSkill: vi.fn(),
   getDefaultMode: vi.fn(),
   getGitBranchMode: vi.fn(),
+  getSddEnabled: vi.fn(() => false),
 }))
 
 vi.mock('./worktree.js', () => ({

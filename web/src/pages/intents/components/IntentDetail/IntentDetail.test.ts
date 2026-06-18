@@ -34,9 +34,17 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
   }
 }
 
+// All non-chat props default to an inert chat column; tests override per case.
 function mountDetail(
   current: Intent | null,
-  opts: { intents?: Intent[]; intentActionErrorSeq?: number; sddEnabled?: boolean } = {},
+  opts: {
+    intents?: Intent[]
+    intentActionErrorSeq?: number
+    sddEnabled?: boolean
+    activeSession?: string | null
+    intentSpecContent?: string | null
+    intentSpecLoading?: boolean
+  } = {},
 ) {
   return mount(IntentDetail, {
     props: {
@@ -44,6 +52,28 @@ function mountDetail(
       intents: opts.intents ?? (current ? [current] : []),
       intentActionErrorSeq: opts.intentActionErrorSeq ?? 0,
       sddEnabled: opts.sddEnabled ?? false,
+      activeSession: opts.activeSession ?? null,
+      activeTitle: 'Title',
+      vendor: null,
+      agentSwitch: null,
+      hasActiveSession: opts.activeSession != null,
+      messages: [],
+      actionablePermissionId: null,
+      taskModel: { tasks: [] },
+      hasTaskStore: true,
+      running: false,
+      teamActive: false,
+      connection: 'open' as const,
+      activity: { phase: 'idle' as const },
+      queue: [],
+      availableCommands: [],
+      voiceLang: 'en-US',
+      intentSpecContent: opts.intentSpecContent ?? null,
+      intentSpecLoading: opts.intentSpecLoading ?? false,
+    },
+    global: {
+      // Keep the chat column inert: we test IntentDetail's tab/gate logic, not it.
+      stubs: { ChatColumn: { template: '<div data-testid="intent-detail-chat" />' } },
     },
   })
 }
@@ -52,6 +82,20 @@ describe('IntentDetail.vue — empty state', () => {
   it('renders the empty placeholder when no intent is selected', () => {
     const w = mountDetail(null)
     expect(w.find('[data-testid="intent-detail-empty"]').exists()).toBe(true)
+  })
+})
+
+describe('IntentDetail.vue — persistent header', () => {
+  it('shows the intent title and actions in the header on every tab', async () => {
+    const item = intent({ id: 'i1', title: 'My intent' })
+    const w = mountDetail(item)
+    expect(w.find('.intent-detail-title').text()).toBe('My intent')
+    expect(w.find('[data-testid="intent-detail-actions"]').exists()).toBe(true)
+
+    // Switch to the spec tab — header (title + actions) stays put.
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(w.find('.intent-detail-title').text()).toBe('My intent')
+    expect(w.find('[data-testid="intent-detail-actions"]').exists()).toBe(true)
   })
 })
 
@@ -162,5 +206,64 @@ describe('IntentDetail.vue — actions', () => {
     await w.find('.req-btn.primary').trigger('click')
 
     expect(w.emitted('create-pr')).toEqual([['intent-1']])
+  })
+})
+
+describe('IntentDetail.vue — tabs', () => {
+  it('renders four tabs and defaults to the intent tab', () => {
+    const w = mountDetail(intent({ id: 'i1' }))
+    expect(w.findAll('.intent-detail-tab')).toHaveLength(4)
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+  })
+
+  it('intent session tab: empty state when no intent session, no open emit', async () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-intent-session-empty"]').exists()).toBe(true)
+    expect(w.emitted('open-intent-session')).toBeUndefined()
+  })
+
+  it('intent session tab: emits open-intent-session when a session exists', async () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: 'sess-refine' }))
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+    expect(w.emitted('open-intent-session')).toEqual([['sess-refine']])
+  })
+
+  it('intent session tab: renders the chat column once the active session aligns', async () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: 'sess-refine' }), {
+      activeSession: 'sess-refine',
+    })
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+  })
+
+  it('spec tab: empty state when no spec path, emits read-spec when present', async () => {
+    const noSpec = mountDetail(intent({ id: 'i1', specPath: null }))
+    await noSpec.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(noSpec.find('[data-testid="intent-detail-spec-empty"]').exists()).toBe(true)
+    expect(noSpec.emitted('read-spec')).toBeUndefined()
+
+    const withSpec = mountDetail(intent({ id: 'i2', specPath: '.specs/x/spec.md' }), {
+      intentSpecContent: '# Hello spec',
+    })
+    await withSpec.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(withSpec.emitted('read-spec')).toEqual([['.specs/x/spec.md']])
+  })
+
+  it('spec session tab: emits open-spec-session when a spec session exists', async () => {
+    const w = mountDetail(intent({ id: 'i1', specSessionId: 'sess-spec' }))
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+    expect(w.emitted('open-spec-session')).toEqual([['i1']])
+  })
+
+  it('resets to the intent tab when the selected intent changes', async () => {
+    const a = intent({ id: 'a', specPath: '.specs/a/spec.md' })
+    const b = intent({ id: 'b', specPath: '.specs/b/spec.md' })
+    const w = mountDetail(a, { intents: [a, b] })
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(w.find('[data-testid="tab-spec"]').exists()).toBe(true)
+
+    await w.setProps({ intent: b })
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
   })
 })

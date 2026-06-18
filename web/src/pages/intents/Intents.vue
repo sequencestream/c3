@@ -15,12 +15,7 @@ import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
 import IntentDetail from './components/IntentDetail/IntentDetail.vue'
-import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
-import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
-import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
-import SessionStatusBar from '../../components/SessionStatusBar/SessionStatusBar.vue'
-import PendingQueue from '../../components/PendingQueue/PendingQueue.vue'
-import MessageInput from '../../components/MessageInput/MessageInput.vue'
+import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
@@ -48,7 +43,12 @@ const props = defineProps<{
   intentSessions: IntentSessionInfo[]
   selectedIntentSessionId: string | null
   intentSessionRunStates: Record<string, 'running'>
+  /** Selected intent's spec.md content (intent detail `spec` tab); null=未加载/无。 */
+  intentSpecContent: string | null
+  intentSpecLoading: boolean
   // right: chat column (shared with sessions page)
+  /** The global active session id; passed to IntentDetail to gate its chat tabs. */
+  activeSession: string | null
   activeTitle: string
   /** The session's resolved agent vendor; present after agent binding. */
   vendor?: VendorId | null
@@ -81,6 +81,9 @@ const emit = defineEmits<{
   refine: [intentId: string]
   'write-spec': [intentId: string]
   'approve-spec': [intentId: string]
+  'open-spec-session': [intentId: string]
+  'open-intent-session': [sessionId: string]
+  'read-spec': [rel: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
   'open-dev': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
@@ -192,9 +195,15 @@ function handleMobileBack(targetKey: string): void {
 }
 
 // ---- Composer ref for prefill forwarding ----
-const composer = ref<InstanceType<typeof MessageInput> | null>(null)
+// Two composers can be mounted: the sessions-tab chat column (`composer`) and the
+// intent detail's chat tabs (`detailRef`). Route prefill to whichever is active.
+const composer = ref<InstanceType<typeof ChatColumn> | null>(null)
+const detailRef = ref<InstanceType<typeof IntentDetail> | null>(null)
 defineExpose({
-  prefill: (text: string, images?: PromptImage[]) => composer.value?.prefill(text, images),
+  prefill: (text: string, images?: PromptImage[]) => {
+    if (mergedActiveTab.value === 'intents') detailRef.value?.prefill(text, images)
+    else composer.value?.prefill(text, images)
+  },
 })
 </script>
 
@@ -232,66 +241,91 @@ defineExpose({
     <template #right>
       <IntentDetail
         v-if="mergedActiveTab === 'intents'"
+        ref="detailRef"
         :intent="selectedIntent"
         :intents="intents"
         :intent-action-error-seq="intentActionErrorSeq"
         :sdd-enabled="sddEnabled"
+        :active-session="activeSession"
+        :active-title="activeTitle"
+        :vendor="vendor ?? null"
+        :agent-switch="agentSwitch ?? null"
+        :has-active-session="hasActiveSession"
+        :messages="messages"
+        :actionable-permission-id="actionablePermissionId"
+        :task-model="taskModel"
+        :has-task-store="hasTaskStore"
+        :running="running"
+        :team-active="teamActive"
+        :connection="connection"
+        :activity="activity"
+        :current-agent-name="currentAgentName"
+        :reconnecting="reconnecting"
+        :side-effect-pending="sideEffectPending"
+        :queue="queue"
+        :available-commands="availableCommands"
+        :voice-lang="voiceLang"
+        :intent-spec-content="intentSpecContent"
+        :intent-spec-loading="intentSpecLoading"
         @refine="(id: string) => emit('refine', id)"
         @write-spec="(id: string) => emit('write-spec', id)"
         @approve-spec="(id: string) => emit('approve-spec', id)"
+        @open-spec-session="(id: string) => emit('open-spec-session', id)"
+        @open-intent-session="(sessionId: string) => emit('open-intent-session', sessionId)"
+        @read-spec="(rel: string) => emit('read-spec', rel)"
         @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
         @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @create-pr="(id: string) => emit('create-pr', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
+        @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
+        @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+        @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
+        @refresh="emit('refresh')"
+        @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
+        @delete-queued="(id: number) => emit('delete-queued', id)"
+        @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+        @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
+        @stop="emit('stop')"
+        @continue="emit('continue')"
+        @list-commands="emit('list-commands')"
       />
-      <div v-else class="content">
-        <SessionTitleBar
-          :active-title="activeTitle || t('intent.chat.title.label')"
-          :vendor="vendor ?? null"
-          :agent-switch="agentSwitch ?? null"
-          :show-mode="false"
-          @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
-        />
-        <ChatMessages
-          :messages="messages"
-          :has-active-session="hasActiveSession"
-          :actionable-permission-id="actionablePermissionId"
-          @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
-          @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
-        />
-        <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
-        <SessionStatusBar
-          :has-active-session="hasActiveSession"
-          :running="running"
-          :team-active="teamActive"
-          :connection="connection"
-          :activity="activity"
-          :current-agent-name="currentAgentName"
-          :reconnecting="reconnecting"
-          :side-effect-pending="sideEffectPending"
-          @refresh="emit('refresh')"
-          @stop="emit('stop')"
-          @continue="emit('continue')"
-        />
-        <PendingQueue
-          :items="queue"
-          @edit="(item: PendingItem) => emit('edit-queued', item)"
-          @delete="(id: number) => emit('delete-queued', id)"
-        />
-        <MessageInput
-          ref="composer"
-          :running="running"
-          :team-active="teamActive"
-          :has-active-session="hasActiveSession"
-          :available-commands="availableCommands"
-          :voice-lang="voiceLang"
-          @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
-          @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
-          @list-commands="emit('list-commands')"
-        />
-      </div>
+      <ChatColumn
+        v-else
+        ref="composer"
+        :active-title="activeTitle || t('intent.chat.title.label')"
+        :vendor="vendor ?? null"
+        :agent-switch="agentSwitch ?? null"
+        :show-mode="false"
+        :always-title="true"
+        :has-active-session="hasActiveSession"
+        :messages="messages"
+        :actionable-permission-id="actionablePermissionId"
+        :task-model="taskModel"
+        :has-task-store="hasTaskStore"
+        :running="running"
+        :team-active="teamActive"
+        :connection="connection"
+        :activity="activity"
+        :current-agent-name="currentAgentName"
+        :reconnecting="reconnecting"
+        :side-effect-pending="sideEffectPending"
+        :queue="queue"
+        :available-commands="availableCommands"
+        :voice-lang="voiceLang"
+        @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
+        @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+        @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
+        @refresh="emit('refresh')"
+        @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
+        @delete-queued="(id: number) => emit('delete-queued', id)"
+        @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+        @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
+        @stop="emit('stop')"
+        @continue="emit('continue')"
+        @list-commands="emit('list-commands')"
+      />
     </template>
   </MobileStack>
 </template>

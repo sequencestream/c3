@@ -599,7 +599,8 @@
     "chat": {
       "title": {
         "label": "Intent chat"
-      }
+      },
+      "loading": "Loading session…"
     },
     "list": {
       "title": {
@@ -791,6 +792,30 @@
           "softAfter": "Soft after"
         }
       }
+    },
+    "tab": {
+      "intent": {
+        "label": "Intent"
+      },
+      "intentSession": {
+        "label": "Intent session"
+      },
+      "spec": {
+        "label": "Spec"
+      },
+      "specSession": {
+        "label": "Spec session"
+      }
+    },
+    "spec": {
+      "empty": "No spec has been written for this intent yet.",
+      "loading": "Loading spec…"
+    },
+    "intentSession": {
+      "empty": "This intent has no refine session yet."
+    },
+    "specSession": {
+      "empty": "This intent has no spec session yet."
     }
   },
   "session": {

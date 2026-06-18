@@ -63,6 +63,7 @@ import {
   getIntentSessionBySessionId,
   insertIntentSession,
   rebindChatSession,
+  setIntentSessionId,
   setLastDevSession,
   setSpecSessionId,
   updateIntentSession,
@@ -75,6 +76,7 @@ import {
   takePendingDevLink,
 } from '../features/intents/dev-link.js'
 import { clearPendingSpecLink, takePendingSpecLink } from '../features/intents/spec-link.js'
+import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
 import { notifyTurnSettled } from '../features/intents/automation.js'
 import {
   cancelBySourceId,
@@ -137,6 +139,15 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // On the resume edge prevId is already real — `rebindChatSession`
       // would wrongly re-key the chat row to an ephemeral retry sid; skip.
       if (prevId !== realId) rebindChatSession(prevId, realId)
+      // Refine linkage: back-fill the originating intent's `intent_session_id`
+      // with the real comm session id so the detail's `intent session` tab can
+      // reopen it. takePendingIntentLink consumes the pending→intent entry
+      // registered by the refine_intent handler (absent for new_intent_chat).
+      const refiningIntentId = takePendingIntentLink(prevId)
+      if (refiningIntentId) {
+        setIntentSessionId(refiningIntentId, realId)
+        broadcastIntents(rt.workspacePath)
+      }
       broadcastIntentSessions(rt.workspacePath)
     } else if (rt.kind === 'spec') {
       // ── Spec-authoring session ──
@@ -248,6 +259,16 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   eventBus.subscribe('run:settled', ({ sessionId, kind }) => {
     if (kind !== 'spec') return
     clearPendingSpecLink(sessionId)
+  })
+
+  // ── run:settled (kind=intent) — intent-link safety-net sweep ───────────
+  // If a refine run settles without ever binding (error-before-bind), clear its
+  // pending intent-link entry so the in-memory map never leaks. The happy path
+  // already consumed the entry via takePendingIntentLink on bind, so this is an
+  // idempotent no-op there.
+  eventBus.subscribe('run:settled', ({ sessionId, kind }) => {
+    if (kind !== 'intent') return
+    clearPendingIntentLink(sessionId)
   })
 
   // ── run:settled (kind=session) — wait-user-involve event cancel ──

@@ -29,6 +29,7 @@ vi.mock('../features/intents/store.js', () => ({
   getIntentSessionBySessionId: vi.fn(() => null),
   insertIntentSession: vi.fn(),
   rebindChatSession: vi.fn(),
+  setIntentSessionId: vi.fn(),
   setLastDevSession: vi.fn(),
   setSpecSessionId: vi.fn(),
   updateIntentSession: vi.fn(),
@@ -43,6 +44,10 @@ vi.mock('../features/intents/dev-link.js', () => ({
 vi.mock('../features/intents/spec-link.js', () => ({
   clearPendingSpecLink: vi.fn(() => undefined),
   takePendingSpecLink: vi.fn(() => null),
+}))
+vi.mock('../features/intents/intent-link.js', () => ({
+  clearPendingIntentLink: vi.fn(() => undefined),
+  takePendingIntentLink: vi.fn(() => null),
 }))
 vi.mock('../features/intents/automation.js', () => ({ notifyTurnSettled: vi.fn() }))
 vi.mock('../features/user-involve/store.js', () => ({
@@ -365,6 +370,65 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       kind: 'spec',
     })
     expect(clearPendingSpecLink).toHaveBeenCalledWith('spec-x')
+  })
+
+  // ── Intent-sessions: backfill intent_session_id at run:bound (refine) ───
+
+  it('run:bound on a refining intent runtime backfills intent_session_id', async () => {
+    const { getRuntime } = await import('../runs.js')
+    const { takePendingIntentLink } = await import('../features/intents/intent-link.js')
+    const { setIntentSessionId } = await import('../features/intents/store.js')
+
+    vi.mocked(getRuntime).mockReturnValue({
+      workspacePath: '/proj',
+      kind: 'intent',
+      mode: 'default',
+      buffer: [],
+      viewers: new Set(),
+    } as unknown as SessionRuntime)
+    vi.mocked(takePendingIntentLink).mockReturnValueOnce('intent-7')
+
+    install()
+    eb.publish('run:bound', { prevId: 'pending-7', realId: 'real-7', workspacePath: '/proj' })
+
+    expect(takePendingIntentLink).toHaveBeenCalledWith('pending-7')
+    expect(setIntentSessionId).toHaveBeenCalledWith('intent-7', 'real-7')
+    expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
+
+    vi.mocked(getRuntime).mockReturnValue(undefined as unknown as SessionRuntime)
+  })
+
+  it('run:bound on a non-refine intent runtime does NOT backfill intent_session_id', async () => {
+    const { getRuntime } = await import('../runs.js')
+    const { setIntentSessionId } = await import('../features/intents/store.js')
+
+    vi.mocked(getRuntime).mockReturnValue({
+      workspacePath: '/proj',
+      kind: 'intent',
+      mode: 'default',
+      buffer: [],
+      viewers: new Set(),
+    } as unknown as SessionRuntime)
+    // takePendingIntentLink default returns null → no backfill.
+
+    install()
+    eb.publish('run:bound', { prevId: 'pending-n', realId: 'real-n', workspacePath: '/proj' })
+
+    expect(setIntentSessionId).not.toHaveBeenCalled()
+
+    vi.mocked(getRuntime).mockReturnValue(undefined as unknown as SessionRuntime)
+  })
+
+  it('run:settled kind=intent sweeps the pending intent link', async () => {
+    const { clearPendingIntentLink } = await import('../features/intents/intent-link.js')
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'intent-x',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'intent',
+    })
+    expect(clearPendingIntentLink).toHaveBeenCalledWith('intent-x')
   })
 
   // ── Intent-sessions: write conclusion at run:settled ───────────────────

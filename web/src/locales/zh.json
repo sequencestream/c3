@@ -599,7 +599,8 @@
     "chat": {
       "title": {
         "label": "意图对话"
-      }
+      },
+      "loading": "加载会话中…"
     },
     "list": {
       "title": {
@@ -791,6 +792,30 @@
           "softAfter": "弱顺序"
         }
       }
+    },
+    "tab": {
+      "intent": {
+        "label": "意图"
+      },
+      "intentSession": {
+        "label": "意图会话"
+      },
+      "spec": {
+        "label": "Spec"
+      },
+      "specSession": {
+        "label": "写 Spec 会话"
+      }
+    },
+    "spec": {
+      "empty": "该意图尚未编写 spec。",
+      "loading": "加载 Spec 中…"
+    },
+    "intentSession": {
+      "empty": "该意图还没有沟通会话。"
+    },
+    "specSession": {
+      "empty": "该意图还没有写 spec 会话。"
     }
   },
   "session": {

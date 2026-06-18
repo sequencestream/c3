@@ -211,6 +211,12 @@
 
 **字段：** `workspaceId: string`, `intentId: string`
 
+### `open_spec_session`
+
+打开 intent 的 spec 撰写会话(`specSessionId`)供意图详情的「spec session」tab 查看。服务器解析该 intent 存储的 spec 会话 id;若其写入受限的 `'spec'` 运行时已被回收则按 `specPath` 重建(写入仍受限于 spec 目录、重新绑定 spec agent),回复 `session_selected`(历史 + 状态)。区别于 `open_intent_chat`(打开的是另一类 `'intent'` 运行时的沟通/refine 会话);intent 的沟通会话 tab 仍走 `open_intent_chat`。无 `specSessionId` 时拒绝(`error`)。
+
+**字段：** `workspaceId: string`, `intentId: string`
+
 ### `update_intent_status`
 
 手动设置 intent 状态（如 `done` / `cancelled`）；服务器回复 `intents`（RM-R9）。

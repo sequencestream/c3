@@ -26,6 +26,7 @@ web/src/
 ├── components/                                      # 跨页面通用组件
 │   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏(许可项并入「⋯」操作菜单)+ 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
+│   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:标题栏+消息+任务面板+状态栏+待发队列+输入框 一体封装,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;prefill 经 defineExpose 透传
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定
@@ -48,17 +49,17 @@ web/src/
 │   │       ├── EventList.vue                        # 事件列表:状态徽标、标题、来源图标、时间与选中态,移动端行高触控优化
 │   │       └── EventDetail.vue                      # 事件详情:完整信息、Allow/Deny、AskUserQuestion 作答面板与跳转到源,移动端触控按钮优化
 │   ├── works/                                    # 工作页
-│   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列;移动端列表↔聊天 drill-down(返回到列表)
+│   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
 │   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区会话、新增、删除/改名、分页、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
-│   │   ├── Intents.vue                              # 需求容器页:桌面两栏(左合并列表 + 右上下文详情列);右栏按合并列 activeTab 切换 —— intents tab→IntentDetail(selectedIntentId 意图详情,首次默认选首条),sessions tab→聊天列;移动端 MobileStack 二级 drill-down(列表→右栏:intents tab drill 详情/sessions tab drill 聊天)
+│   │   ├── Intents.vue                              # 需求容器页:桌面两栏(左合并列表 + 右上下文详情列);右栏按合并列 activeTab 切换 —— intents tab→IntentDetail(selectedIntentId 意图详情,首次默认选首条,聊天列 props/活动会话经其透传给两会话 tab),sessions tab→ChatColumn 聊天列;prefill 按 activeTab 路由到 IntentDetail 或 sessions 聊天列;移动端 MobileStack 二级 drill-down(列表→右栏:intents tab drill 详情/sessions tab drill 聊天)
 │   │   ├── components/
 │   │   │   ├── IntentMergedList/IntentMergedList.vue # 合并左栏:带分段控件(Intents/Sessions)切换,接管两子组件的头区;可折叠(960px/480px);透传 selectedIntentId 高亮与 select-intent 选中事件
 │   │   │   ├── IntentList/IntentList.vue            # 需求列表:接受 hideHeader prop 嵌入合并栏;按状态过滤、终止态分页、自动化编排启停;行点击=选中(emit select-intent,selectedId 高亮),不再行内展开/行内操作(详情与操作迁至右栏 IntentDetail)
-│   │   │   ├── IntentDetail/IntentDetail.vue        # 右栏意图详情面板:展示 selectedIntentId 意图的内容 markdown、Git/PR 扩展元信息、依赖编辑器(dep modal),行内操作(refine/open-dev/set-status/set-automate/create-pr);主操作按钮按 SDD 态四态(sddEnabled×specPath×specApproved):关→start-dev,开无spec→write-spec,有spec未批准→approve-spec,已批准→start-dev(含 start-dev in-flight 守卫);沿用原 emit 事件契约;无选中(列表空)时空态
+│   │   │   ├── IntentDetail/IntentDetail.vue        # 右栏意图详情面板:常驻标题栏(左 intent title,右全部操作:四态主按钮+refine/open-dev/mark-done/cancel/create-pr/copy-pr/automate 切换)+ 其下四 tab —— intent(正文 markdown+Git/PR 元信息+依赖编辑 dep modal)/intent session(intentSessionId 沟通会话,复用 ChatColumn)/spec(渲染 specPath 指向 spec.md,经 read-spec 拉取 intentSpecContent)/spec session(specSessionId 写 spec 会话,复用 ChatColumn);主操作按钮按 SDD 态四态(sddEnabled×specPath×specApproved):关→start-dev,开无spec→write-spec,有spec未批准→approve-spec,已批准→start-dev(含 start-dev in-flight 守卫);两会话 tab 沿用单一活动会话模型——切到该 tab 即 emit open-intent-session/open-spec-session 请服务端打开,activeSession 与期望 id 对齐(chatReady)才渲染聊天列防串台;选中意图切换复位到 intent tab;无选中(列表空)时空态
 │   │   │   └── IntentSessionList/
 │   │   │       └── IntentSessionList.vue            # 意图通信会话列表:接受 hideHeader prop 嵌入合并栏;行内重命名/删除、活跃/已完成分组、分页加载更多
 │   │

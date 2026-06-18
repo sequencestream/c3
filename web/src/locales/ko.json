@@ -600,7 +600,8 @@
     "chat": {
       "title": {
         "label": "의도 채팅"
-      }
+      },
+      "loading": "세션 불러오는 중…"
     },
     "list": {
       "title": {
@@ -792,6 +793,30 @@
           "softAfter": "소프트 순서"
         }
       }
+    },
+    "tab": {
+      "intent": {
+        "label": "의도"
+      },
+      "intentSession": {
+        "label": "의도 세션"
+      },
+      "spec": {
+        "label": "Spec"
+      },
+      "specSession": {
+        "label": "Spec 작성 세션"
+      }
+    },
+    "spec": {
+      "empty": "이 의도에는 아직 spec이 작성되지 않았습니다.",
+      "loading": "spec 불러오는 중…"
+    },
+    "intentSession": {
+      "empty": "이 의도에는 아직 조율 세션이 없습니다."
+    },
+    "specSession": {
+      "empty": "이 의도에는 아직 spec 세션이 없습니다."
     }
   },
   "session": {

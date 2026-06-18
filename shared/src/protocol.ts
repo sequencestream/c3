@@ -2473,6 +2473,14 @@ export type ClientToServer =
    * confirmation; no multi-sign or un-approve in this phase.
    */
   | { type: 'approve_spec'; workspaceId: string; intentId: string }
+  /**
+   * Open an intent's spec-authoring session (`spec_session_id`) for viewing in
+   * the intent detail's `spec session` tab. The server resolves the stored spec
+   * session id, restores its write-confined `'spec'` runtime if dropped, and
+   * replies with a `session_selected` (history + status). Distinct from
+   * `open_intent_chat` (the comm/refine session, a different `'intent'` runtime).
+   */
+  | { type: 'open_spec_session'; workspaceId: string; intentId: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */

@@ -73,6 +73,9 @@ export function installMessageHandler(ctx: AppCtx): void {
     intentsSdd,
     intentSessions,
     intentSessionRunStates,
+    intentSpecContent,
+    intentSpecLoading,
+    pendingSpecRel,
     intentsProject,
     automation,
     discussions,
@@ -684,11 +687,23 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'file_read': {
-        if (msg.workspaceId !== codesProject.value) break
-        // Fill the matching tab's content (the tab was opened optimistically).
-        codesTabs.value = codesTabs.value.map((tab) =>
-          tab.path === msg.file.path ? { ...tab, file: msg.file, loading: false } : tab,
-        )
+        // Intent-detail `spec` tab: adopt the reply only for the rel we are
+        // awaiting, so a concurrent codes read never overwrites the spec view.
+        if (
+          msg.workspaceId === intentsProject.value &&
+          pendingSpecRel.value !== null &&
+          msg.file.path === pendingSpecRel.value
+        ) {
+          intentSpecContent.value = msg.file.content ?? ''
+          intentSpecLoading.value = false
+          pendingSpecRel.value = null
+        }
+        // Codes page: fill the matching tab's content (opened optimistically).
+        if (msg.workspaceId === codesProject.value) {
+          codesTabs.value = codesTabs.value.map((tab) =>
+            tab.path === msg.file.path ? { ...tab, file: msg.file, loading: false } : tab,
+          )
+        }
         break
       }
       case 'codes_searched': {

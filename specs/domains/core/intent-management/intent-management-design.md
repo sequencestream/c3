@@ -219,7 +219,12 @@ add-column through the shared adapter (RM-R14).
   call `save_intents` with that id so定稿 updates the original entry in place (upsert, RM-R20)
   — not a duplicate — and to tell the user it cannot be modified if the intent is already
   `in_progress`/`done`. ("开始完善已存在意图 <id>(当前状态:…) …, 定稿后调用 save_intents 并回填
-  id 以原地更新原意图")
+  id 以原地更新原意图") Refine also registers a **pending→intent link** before launch so the
+  resident `run:bound` subscription backfills the originating intent's `intentSessionId` with the
+  real comm session id on first bind — mirroring the spec-session link that backfills
+  `specSessionId` — making the refine conversation reopenable later from the intent detail's
+  「intent session」tab (`open_intent_chat` with that id). An error-before-bind edge is swept by a
+  `run:settled` (kind=intent) safety net.
 - **From discussion (`discussion_to_intent`):** the same refine machinery, but the seed is a
   completed discussion's `conclusion` rather than an existing intent. The server loads the
   discussion, rejects unless `completed` with a non-empty `conclusion`, resolves
@@ -516,6 +521,15 @@ Three new WS handlers round out the session-collection CRUD:
   `intent_sessions` and `session_status` to all connections.
 
 All three check store availability first and return `error` on db-unavailable.
+
+A fourth, read-only opener serves the intent detail's 「spec session」tab:
+
+- **`open_spec_session`**: resolves the intent's stored `specSessionId`; if that `'spec'` runtime
+  was dropped (process restart / GC) it is rebuilt from the transcript with writes re-confined to
+  the spec directory (derived from `specPath`) and the spec agent re-pinned, then replies
+  `session_selected` and registers the viewer. The intent's own comm/refine session
+  (`intentSessionId`) is opened by the existing `open_intent_chat` instead — the two sessions are
+  different runtime kinds. Rejected (`error`) when the intent has no `specSessionId`.
 
 ## Broadcast
 

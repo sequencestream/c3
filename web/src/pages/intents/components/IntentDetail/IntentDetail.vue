@@ -1,17 +1,32 @@
 <script setup lang="ts">
 /*
- * IntentDetail.vue — 需求页右栏:选中意图的完整详情面板。
+ * IntentDetail.vue — 需求页右栏:选中意图的详情面板(常驻标题栏 + 四 tab)。
  *
- * 由 Intents.vue 在 intents tab 下渲染,展示 selectedIntentId 对应意图的全部信息:
- * 标题/状态头、内容 markdown、Git/PR 扩展元信息、依赖编辑器,以及行内操作
- * (refine / start-dev / open-dev / set-status / set-automate / create-pr)。
- * 这些内容整体迁自原 IntentList 的行内展开区,emit 事件契约保持不变。
+ * 顶部常驻标题栏:左为意图标题,右为全部操作(四态主按钮 + refine / open dev session /
+ * mark done / cancel / create PR / copy PR / automate 切换)——无论在哪个 tab 都可见。
+ * 其下为 tab 条 + tab 内容,四 tab:
+ *   - intent       意图正文 markdown + Git/PR 元信息 + 依赖编辑器
+ *   - intent session 该意图的 refine/沟通会话(intentSessionId),复用 ChatColumn
+ *   - spec         渲染 specPath 指向的 spec.md(经 read-spec 拉取)
+ *   - spec session 写 spec 会话(specSessionId),复用 ChatColumn
+ * 两个会话 tab 沿用「单一活动会话」模型:切到该 tab 即请求服务端打开对应会话,
+ * 聊天列绑定到全局活动会话;activeSession 与期望 id 一致时才渲染,避免串台。
  * 列表为空(无选中意图)时渲染空态。
  */
 import { computed, ref, watch } from 'vue'
 import type { DepType, Intent, IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  PromptImage,
+  SessionAgentSwitch,
+  SlashCommandInfo,
+  VendorId,
+} from '@ccc/shared/protocol'
+import type { PendingItem } from '../../../../lib/pending-queue'
+import type { TaskListModel } from '../../../../lib/task-list'
+import type { ChatMsg, PermissionMsg, RunActivity } from '../../../../lib/chat-types'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
+import ChatColumn from '../../../../components/ChatColumn/ChatColumn.vue'
 import {
   formatDate,
   formatDependsOn,
@@ -31,6 +46,31 @@ const props = defineProps<{
   intentActionErrorSeq?: number
   /** 当前 workspace 的 SDD 总开关,驱动主操作按钮四态(关→Start Dev)。 */
   sddEnabled?: boolean
+  // ── chat column passthrough(intent session / spec session 两 tab 共用)──
+  /** 全局活动会话 id;与期望会话 id 一致时聊天列才渲染(防串台)。 */
+  activeSession: string | null
+  activeTitle: string
+  vendor?: VendorId | null
+  agentSwitch?: SessionAgentSwitch | null
+  hasActiveSession: boolean
+  messages: ChatMsg[]
+  actionablePermissionId: string | null
+  taskModel: TaskListModel
+  hasTaskStore?: boolean
+  running: boolean
+  teamActive: boolean
+  connection: 'connecting' | 'open' | 'closed'
+  activity: RunActivity
+  currentAgentName?: string
+  reconnecting?: boolean
+  sideEffectPending?: boolean
+  queue: PendingItem[]
+  availableCommands: SlashCommandInfo[]
+  voiceLang: string
+  // ── spec 文档(spec tab)──
+  /** 选中意图 spec.md 内容;null=未加载/无。 */
+  intentSpecContent: string | null
+  intentSpecLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -43,6 +83,22 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   'create-pr': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
+  // ── 会话/spec 打开 ──
+  'open-intent-session': [sessionId: string]
+  'open-spec-session': [intentId: string]
+  'read-spec': [rel: string]
+  // ── chat column passthrough ──
+  'set-session-agent': [agentId: string]
+  respond: [m: PermissionMsg, decision: 'allow' | 'deny']
+  'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
+  refresh: []
+  'edit-queued': [item: PendingItem]
+  'delete-queued': [id: number]
+  submit: [text: string, images: PromptImage[]]
+  enqueue: [text: string, images: PromptImage[]]
+  stop: []
+  continue: []
+  'list-commands': []
 }>()
 
 function copyPrId(prId: string): void {
@@ -117,16 +173,8 @@ const unfinishedDeps = computed<Intent[]>(() => {
 })
 
 // ── start-dev in-flight 守卫 ────────────────────────────────────────────────
-// 详情面板只承载单个意图,守卫退化为一个布尔;选中意图切换/状态离开 todo/
-// 服务端动作报错时复位。
 const startDevInFlight = ref(false)
 
-watch(
-  () => props.intent?.id,
-  () => {
-    startDevInFlight.value = false
-  },
-)
 watch(
   () => props.intent?.status,
   (s) => {
@@ -150,8 +198,6 @@ function startDev(): void {
 }
 
 // ── 主操作按钮四态机(只对 todo 意图渲染) ──────────────────────────────────
-// SDD 关 → Start Dev;SDD 开且无 spec → Write Spec;有 spec 未批准 → Approve Spec;
-// 有 spec 已批准 → Start Dev。是「人工审批检查点」的入口:开发须经人点 approve。
 type MainAction = 'startDev' | 'writeSpec' | 'approveSpec'
 const mainAction = computed<MainAction>(() => {
   const r = props.intent
@@ -188,6 +234,58 @@ function onMainAction(): void {
 function datePrefix(r: Intent): string {
   return formatDate(r.completedAt ?? r.createdAt, locale.value, { style: 'short' })
 }
+
+// ── Tab 状态 ────────────────────────────────────────────────────────────────
+type DetailTab = 'intent' | 'intentSession' | 'spec' | 'specSession'
+const activeTab = ref<DetailTab>('intent')
+
+const TABS: { key: DetailTab; label: string }[] = [
+  { key: 'intent', label: t('intent.tab.intent.label') },
+  { key: 'intentSession', label: t('intent.tab.intentSession.label') },
+  { key: 'spec', label: t('intent.tab.spec.label') },
+  { key: 'specSession', label: t('intent.tab.specSession.label') },
+]
+
+// 选中意图切换:复位到 intent tab 与 in-flight 守卫(不自动打开其他意图的会话)。
+watch(
+  () => props.intent?.id,
+  () => {
+    activeTab.value = 'intent'
+    startDevInFlight.value = false
+  },
+)
+
+// 切到会话/spec tab 时按需请求服务端打开会话 / 读取 spec。
+function selectTab(tab: DetailTab): void {
+  activeTab.value = tab
+  const r = props.intent
+  if (!r) return
+  if (tab === 'intentSession' && r.intentSessionId && props.activeSession !== r.intentSessionId) {
+    emit('open-intent-session', r.intentSessionId)
+  } else if (tab === 'specSession' && r.specSessionId && props.activeSession !== r.specSessionId) {
+    emit('open-spec-session', r.id)
+  } else if (tab === 'spec' && r.specPath) {
+    emit('read-spec', r.specPath)
+  }
+}
+
+// 当前会话 tab 期望的会话 id,以及活动会话是否已对齐(对齐才渲染聊天列)。
+const expectedSessionId = computed<string | null>(() => {
+  const r = props.intent
+  if (!r) return null
+  if (activeTab.value === 'intentSession') return r.intentSessionId
+  if (activeTab.value === 'specSession') return r.specSessionId
+  return null
+})
+const chatReady = computed<boolean>(
+  () => expectedSessionId.value !== null && props.activeSession === expectedSessionId.value,
+)
+
+// ── Composer 透传(供 App.vue 待发队列「编辑」回填) ──────────────────────────
+const chatColumn = ref<InstanceType<typeof ChatColumn> | null>(null)
+defineExpose({
+  prefill: (text: string, images?: PromptImage[]) => chatColumn.value?.prefill(text, images),
+})
 </script>
 
 <template>
@@ -196,25 +294,113 @@ function datePrefix(r: Intent): string {
       {{ t('intent.list.empty') }}
     </p>
     <template v-else>
+      <!-- 常驻标题栏:意图标题 + 全部操作 -->
       <header class="intent-detail-head">
-        <div class="intent-detail-head-row">
-          <span class="req-priority" :class="intent.priority">{{ intent.priority }}</span>
-          <span class="req-date">{{ datePrefix(intent) }}</span>
-          <span v-if="intent.module" class="req-module" :title="intent.module">{{
-            intent.module
-          }}</span>
-          <span class="req-status" :class="intent.status">{{ statusLabel(intent.status) }}</span>
-          <span
-            v-if="showRunStatus(intent.runStatus)"
-            class="req-run-status"
-            :class="intent.runStatus"
-            >{{ reqRunStatusLabel(intent.runStatus) }}</span
-          >
+        <div class="intent-detail-head-main">
+          <div class="intent-detail-head-row">
+            <span class="req-priority" :class="intent.priority">{{ intent.priority }}</span>
+            <span class="req-date">{{ datePrefix(intent) }}</span>
+            <span v-if="intent.module" class="req-module" :title="intent.module">{{
+              intent.module
+            }}</span>
+            <span class="req-status" :class="intent.status">{{ statusLabel(intent.status) }}</span>
+            <span
+              v-if="showRunStatus(intent.runStatus)"
+              class="req-run-status"
+              :class="intent.runStatus"
+              >{{ reqRunStatusLabel(intent.runStatus) }}</span
+            >
+          </div>
+          <h2 class="intent-detail-title" :title="intent.content">{{ intent.title }}</h2>
         </div>
-        <h2 class="intent-detail-title" :title="intent.content">{{ intent.title }}</h2>
+        <div class="intent-detail-actions" data-testid="intent-detail-actions">
+          <button
+            v-if="intent.status === 'todo'"
+            class="req-btn"
+            @click="emit('refine', intent.id)"
+          >
+            {{ t('intent.action.refine.label') }}
+          </button>
+          <button
+            v-if="intent.status === 'todo'"
+            class="req-btn primary"
+            :data-action="mainAction"
+            :disabled="mainAction === 'startDev' && startDevInFlight"
+            @click="onMainAction"
+          >
+            {{ mainActionLabel }}
+          </button>
+          <button
+            v-if="intent.lastDevSessionId"
+            class="req-btn"
+            @click="emit('open-dev', intent.lastDevSessionId as string)"
+          >
+            {{ t('intent.action.session.label') }}
+          </button>
+          <button
+            v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
+            class="req-btn"
+            @click="emit('set-status', intent.id, 'done')"
+          >
+            {{ t('intent.action.markDone.label') }}
+          </button>
+          <button
+            v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
+            class="req-btn"
+            @click="emit('set-status', intent.id, 'cancelled')"
+          >
+            {{ t('common.action.cancel.label') }}
+          </button>
+          <button
+            v-if="intent.status === 'done' && !intent.prId"
+            class="req-btn primary"
+            @click="emit('create-pr', intent.id)"
+          >
+            {{ t('intent.action.createPr.label') }}
+          </button>
+          <button
+            v-if="intent.prId"
+            class="req-btn pr-link"
+            :title="t('intent.action.pr.tooltip')"
+            @click="copyPrId(intent.prId as string)"
+          >
+            {{ t('intent.action.pr.label', { id: intent.prId }) }}
+          </button>
+          <button
+            type="button"
+            class="req-automate"
+            :class="{ active: intent.automate }"
+            :title="
+              intent.automate
+                ? t('intent.automate.queued.tooltip')
+                : t('intent.automate.manual.tooltip')
+            "
+            :aria-pressed="intent.automate"
+            @click="emit('set-automate', intent.id, !intent.automate)"
+          >
+            {{ intent.automate ? '⏳' : '✋' }}
+          </button>
+        </div>
       </header>
 
-      <div class="intent-detail-body">
+      <!-- Tab 条 -->
+      <nav class="intent-detail-tabs" data-testid="intent-detail-tabs">
+        <button
+          v-for="tab in TABS"
+          :key="tab.key"
+          type="button"
+          class="intent-detail-tab"
+          :class="{ active: activeTab === tab.key }"
+          :data-tab="tab.key"
+          :aria-pressed="activeTab === tab.key"
+          @click="selectTab(tab.key)"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
+
+      <!-- intent tab:正文 + 元信息 -->
+      <div v-if="activeTab === 'intent'" class="intent-detail-body" data-testid="tab-intent">
         <div class="req-detail">
           <MarkdownText :text="intent.content" markdown />
         </div>
@@ -280,70 +466,80 @@ function datePrefix(r: Intent): string {
         </div>
       </div>
 
-      <div class="intent-detail-actions">
-        <button v-if="intent.status === 'todo'" class="req-btn" @click="emit('refine', intent.id)">
-          {{ t('intent.action.refine.label') }}
-        </button>
-        <button
-          v-if="intent.status === 'todo'"
-          class="req-btn primary"
-          :data-action="mainAction"
-          :disabled="mainAction === 'startDev' && startDevInFlight"
-          @click="onMainAction"
+      <!-- spec tab:渲染 spec.md -->
+      <div v-else-if="activeTab === 'spec'" class="intent-detail-body" data-testid="tab-spec">
+        <p
+          v-if="!intent.specPath"
+          class="intent-detail-empty"
+          data-testid="intent-detail-spec-empty"
         >
-          {{ mainActionLabel }}
-        </button>
-        <button
-          v-if="intent.lastDevSessionId"
-          class="req-btn"
-          @click="emit('open-dev', intent.lastDevSessionId as string)"
-        >
-          {{ t('intent.action.session.label') }}
-        </button>
-        <button
-          v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
-          class="req-btn"
-          @click="emit('set-status', intent.id, 'done')"
-        >
-          {{ t('intent.action.markDone.label') }}
-        </button>
-        <button
-          v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
-          class="req-btn"
-          @click="emit('set-status', intent.id, 'cancelled')"
-        >
-          {{ t('common.action.cancel.label') }}
-        </button>
-        <button
-          v-if="intent.status === 'done' && !intent.prId"
-          class="req-btn primary"
-          @click="emit('create-pr', intent.id)"
-        >
-          {{ t('intent.action.createPr.label') }}
-        </button>
-        <button
-          v-if="intent.prId"
-          class="req-btn pr-link"
-          :title="t('intent.action.pr.tooltip')"
-          @click="copyPrId(intent.prId as string)"
-        >
-          {{ t('intent.action.pr.label', { id: intent.prId }) }}
-        </button>
-        <button
-          type="button"
-          class="req-automate"
-          :class="{ active: intent.automate }"
-          :title="
-            intent.automate
-              ? t('intent.automate.queued.tooltip')
-              : t('intent.automate.manual.tooltip')
-          "
-          :aria-pressed="intent.automate"
-          @click="emit('set-automate', intent.id, !intent.automate)"
-        >
-          {{ intent.automate ? '⏳' : '✋' }}
-        </button>
+          {{ t('intent.spec.empty') }}
+        </p>
+        <p v-else-if="intentSpecLoading" class="intent-detail-empty">
+          {{ t('intent.spec.loading') }}
+        </p>
+        <div v-else-if="intentSpecContent !== null" class="req-detail">
+          <MarkdownText :text="intentSpecContent" markdown />
+        </div>
       </div>
+
+      <!-- intent session / spec session tab:复用聊天列 -->
+      <template v-else>
+        <p
+          v-if="!expectedSessionId"
+          class="intent-detail-empty"
+          :data-testid="
+            activeTab === 'intentSession'
+              ? 'intent-detail-intent-session-empty'
+              : 'intent-detail-spec-session-empty'
+          "
+        >
+          {{
+            activeTab === 'intentSession'
+              ? t('intent.intentSession.empty')
+              : t('intent.specSession.empty')
+          }}
+        </p>
+        <p v-else-if="!chatReady" class="intent-detail-empty">
+          {{ t('intent.chat.loading') }}
+        </p>
+        <ChatColumn
+          v-else
+          ref="chatColumn"
+          data-testid="intent-detail-chat"
+          :active-title="activeTitle"
+          :vendor="vendor"
+          :agent-switch="agentSwitch"
+          :show-mode="false"
+          :always-title="true"
+          :has-active-session="hasActiveSession"
+          :messages="messages"
+          :actionable-permission-id="actionablePermissionId"
+          :task-model="taskModel"
+          :has-task-store="hasTaskStore"
+          :running="running"
+          :team-active="teamActive"
+          :connection="connection"
+          :activity="activity"
+          :current-agent-name="currentAgentName"
+          :reconnecting="reconnecting"
+          :side-effect-pending="sideEffectPending"
+          :queue="queue"
+          :available-commands="availableCommands"
+          :voice-lang="voiceLang"
+          @set-session-agent="(id: string) => emit('set-session-agent', id)"
+          @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+          @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
+          @refresh="emit('refresh')"
+          @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
+          @delete-queued="(id: number) => emit('delete-queued', id)"
+          @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+          @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
+          @stop="emit('stop')"
+          @continue="emit('continue')"
+          @list-commands="emit('list-commands')"
+        />
+      </template>
     </template>
 
     <!-- Dep edit modal -->
@@ -401,8 +597,17 @@ function datePrefix(r: Intent): string {
   padding: var(--sp-3) var(--sp-3) var(--sp-2);
   border-bottom: 1px solid var(--c-border);
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.intent-detail-head-main {
+  display: flex;
   flex-direction: column;
   gap: var(--sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .intent-detail-head-row {
   display: flex;
@@ -418,19 +623,45 @@ function datePrefix(r: Intent): string {
   color: var(--c-text);
   word-break: break-word;
 }
-.intent-detail-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--sp-3);
-}
 .intent-detail-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  border-top: 1px solid var(--c-border);
+}
+.intent-detail-tabs {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--c-border);
+  overflow-x: auto;
+}
+.intent-detail-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: var(--sp-2) var(--sp-2);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.intent-detail-tab:hover {
+  color: var(--c-text);
+}
+.intent-detail-tab.active {
+  color: var(--c-text);
+  border-bottom-color: var(--c-accent, var(--c-text));
+  font-weight: 600;
+}
+.intent-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-3);
 }
 </style>

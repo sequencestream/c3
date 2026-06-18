@@ -83,6 +83,10 @@ export interface AppMethods {
   refineIntent(intentId: string): void
   writeSpec(intentId: string): void
   approveSpec(intentId: string): void
+  /** Open an intent's spec-authoring session in the detail's `spec session` tab. */
+  openSpecSession(intentId: string): void
+  /** Fetch the intent's `spec.md` for the detail's `spec` tab (workspace-relative path). */
+  readIntentSpec(rel: string): void
   startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
   setIntentStatus(intentId: string, status: IntentStatus): void
   setIntentAutomate(intentId: string, automateOn: boolean): void

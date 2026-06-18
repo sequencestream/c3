@@ -265,6 +265,15 @@ export function createState(deps: StateDeps) {
   const intentSessionRunStates = ref<Record<string, 'running'>>({})
   const selectedIntentSessionId = ref<string | null>(null)
 
+  // ---- Intent-detail spec document (the `spec` tab content) ----
+  // Content of the selected intent's `spec.md`, fetched via `read_file` and
+  // routed by the matching `file_read` reply. `pendingSpecRel` tracks the
+  // workspace-relative path we are awaiting so a stale codes `file_read` for a
+  // different file never overwrites it.
+  const intentSpecContent = ref<string | null>(null)
+  const intentSpecLoading = ref(false)
+  const pendingSpecRel = ref<string | null>(null)
+
   // ---- Discussion view (read path) ----
   const discussionsProject = ref<string | null>(null)
   const discussions = ref<Record<string, Discussion[]>>({})
@@ -482,6 +491,9 @@ export function createState(deps: StateDeps) {
     intentSessions,
     intentSessionRunStates,
     selectedIntentSessionId,
+    intentSpecContent,
+    intentSpecLoading,
+    pendingSpecRel,
     discussionsProject,
     discussions,
     activeDiscussionId,

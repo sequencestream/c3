@@ -9,12 +9,7 @@
 import { computed, ref, watch } from 'vue'
 import WorkSessionList from './components/WorkSessionList/WorkSessionList.vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
-import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
-import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
-import TaskPanel from '../../components/TaskPanel/TaskPanel.vue'
-import SessionStatusBar from '../../components/SessionStatusBar/SessionStatusBar.vue'
-import PendingQueue from '../../components/PendingQueue/PendingQueue.vue'
-import MessageInput from '../../components/MessageInput/MessageInput.vue'
+import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
@@ -122,7 +117,7 @@ function handleMobileBack(targetKey: string): void {
 }
 
 // Forward the composer's prefill so App.vue's queue-edit can fold text+images back in.
-const composer = ref<InstanceType<typeof MessageInput> | null>(null)
+const composer = ref<InstanceType<typeof ChatColumn> | null>(null)
 defineExpose({
   prefill: (text: string, images?: PromptImage[]) => composer.value?.prefill(text, images),
 })
@@ -159,57 +154,44 @@ defineExpose({
     </template>
 
     <template #chat>
-      <div class="content">
-        <SessionTitleBar
-          v-if="hasActiveSession"
-          :active-title="activeTitle"
-          :vendor="vendor"
-          :agent-switch="agentSwitch"
-          :mode="mode"
-          :codex-policy="codexPolicy"
-          :mode-options="modeOptions"
-          @set-mode="(m: ModeToken) => emit('set-mode', m)"
-          @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
-          @set-session-agent="(id: string) => emit('set-session-agent', id)"
-        />
-        <ChatMessages
-          :messages="messages"
-          :has-active-session="hasActiveSession"
-          :actionable-permission-id="actionablePermissionId"
-          @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
-          @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
-        />
-        <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
-        <SessionStatusBar
-          :has-active-session="hasActiveSession"
-          :running="running"
-          :team-active="teamActive"
-          :connection="connection"
-          :activity="activity"
-          :current-agent-name="currentAgentName"
-          :reconnecting="reconnecting"
-          :side-effect-pending="sideEffectPending"
-          @refresh="emit('refresh')"
-          @stop="emit('stop')"
-          @continue="emit('continue')"
-        />
-        <PendingQueue
-          :items="queue"
-          @edit="(item: PendingItem) => emit('edit-queued', item)"
-          @delete="(id: number) => emit('delete-queued', id)"
-        />
-        <MessageInput
-          ref="composer"
-          :running="running"
-          :team-active="teamActive"
-          :has-active-session="hasActiveSession"
-          :available-commands="availableCommands"
-          :voice-lang="voiceLang"
-          @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
-          @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
-          @list-commands="emit('list-commands')"
-        />
-      </div>
+      <ChatColumn
+        ref="composer"
+        :active-title="activeTitle"
+        :vendor="vendor"
+        :agent-switch="agentSwitch"
+        :show-mode="true"
+        :mode="mode"
+        :codex-policy="codexPolicy"
+        :mode-options="modeOptions"
+        :has-active-session="hasActiveSession"
+        :messages="messages"
+        :actionable-permission-id="actionablePermissionId"
+        :task-model="taskModel"
+        :has-task-store="hasTaskStore"
+        :running="running"
+        :team-active="teamActive"
+        :connection="connection"
+        :activity="activity"
+        :current-agent-name="currentAgentName"
+        :reconnecting="reconnecting"
+        :side-effect-pending="sideEffectPending"
+        :queue="queue"
+        :available-commands="availableCommands"
+        :voice-lang="voiceLang"
+        @set-mode="(m: ModeToken) => emit('set-mode', m)"
+        @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
+        @set-session-agent="(id: string) => emit('set-session-agent', id)"
+        @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+        @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
+        @refresh="emit('refresh')"
+        @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
+        @delete-queued="(id: number) => emit('delete-queued', id)"
+        @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+        @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
+        @stop="emit('stop')"
+        @continue="emit('continue')"
+        @list-commands="emit('list-commands')"
+      />
     </template>
   </MobileStack>
 </template>

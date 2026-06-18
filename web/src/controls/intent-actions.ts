@@ -82,6 +82,24 @@ export function installIntentActions(ctx: AppCtx): void {
     })
   }
 
+  // Open an intent's spec-authoring session for the detail's `spec session` tab.
+  // The server restores the write-confined spec runtime and replies with a
+  // session_selected; the chat column rebinds to it like any other session.
+  ctx.openSpecSession = (intentId: string): void => {
+    if (!intentsProject.value) return
+    send({ type: 'open_spec_session', workspaceId: intentsProject.value, intentId })
+  }
+
+  // Fetch the selected intent's spec.md for the detail's `spec` tab. Tracks the
+  // awaited rel so the matching file_read reply fills `intentSpecContent`.
+  ctx.readIntentSpec = (rel: string): void => {
+    if (!intentsProject.value) return
+    ctx.pendingSpecRel.value = rel
+    ctx.intentSpecLoading.value = true
+    ctx.intentSpecContent.value = null
+    send({ type: 'read_file', workspaceId: intentsProject.value, rel })
+  }
+
   ctx.createPr = (intentId: string): void => {
     if (!intentsProject.value) return
     send({

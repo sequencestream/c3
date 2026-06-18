@@ -8,6 +8,7 @@
  * (launcher, broadcasts) are reached via `ctx`; per-connection delivery via `conn`.
  */
 import { randomUUID } from 'node:crypto'
+import { dirname, join } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
   type SessionAgentSwitch,
@@ -33,6 +34,7 @@ import {
   resolveIntentAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
+  resolveSpecAgent,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
@@ -60,6 +62,7 @@ import {
   releaseDevLaunch,
   tryClaimDevLaunch,
 } from './dev-link.js'
+import { clearPendingIntentLink, registerPendingIntentLink } from './intent-link.js'
 import { reconcileInProgress } from './reconcile.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { judgeCompletion } from './judge.js'
@@ -280,6 +283,73 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
   }
 }
 
+/**
+ * Open an intent's spec-authoring session (`spec_session_id`) for read-only
+ * viewing in the detail's `spec session` tab. Mirrors {@link openIntentChat}'s
+ * runtime-restore path but for the `'spec'` kind: if the runtime was dropped
+ * (process restart / GC), reload its transcript, re-confine writes to the spec
+ * directory, and re-pin the spec agent. No intents list / reconcile side-effects.
+ */
+export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  const chatId = intent.specSessionId
+  if (!chatId) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.chatSessionNotFound', params: { sessionId: '' } },
+    })
+    return
+  }
+  // Stop viewing whatever this connection had open.
+  if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+  if (!getRuntime(chatId)) {
+    const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
+    const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
+    const restored = ensureRuntime(chatId, proj, getDefaultMode(proj), baseline, 'spec')
+    // Restore the write-confinement gate (writes limited to the spec directory)
+    // and re-pin the spec agent so a reopened spec session keeps its identity.
+    if (intent.specPath) restored.specDir = dirname(join(proj, intent.specPath))
+    const specAgent = resolveSpecAgent()
+    if (specAgent.vendor !== 'codex') setSessionAgent(chatId, specAgent.id)
+  }
+  const rt = getRuntime(chatId)
+  if (!rt) {
+    conn.send({ type: 'error', error: { code: 'intent.chatOpenFailed' } })
+    return
+  }
+  conn.viewing = chatId
+  touchWorkspace(proj, Date.now())
+  conn.send({
+    type: 'session_selected',
+    workspaceId: pathToId(proj)!,
+    sessionId: chatId,
+    title: intent.title,
+    mode: rt.mode,
+    history: rt.baseline,
+    status: rt.status,
+    vendor: resolveSessionVendor(chatId),
+    agentSwitch: agentSwitchFor(chatId),
+  })
+  for (const e of rt.buffer) conn.send(e)
+  addViewer(chatId, conn.deliver)
+}
+
 export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
@@ -367,8 +437,17 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     items: listIntents(proj),
     sddEnabled: getSddEnabled(proj),
   })
+  // Link the pending refine session to this intent so the resident `run:bound`
+  // subscription backfills `intent_session_id` onto the intent on first bind,
+  // making the comm/refine conversation reopenable from the intent detail.
+  registerPendingIntentLink(chatId, req.id)
   const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
-  await ctx.launchRun(rt, firstPrompt)
+  try {
+    await ctx.launchRun(rt, firstPrompt)
+  } catch (err) {
+    clearPendingIntentLink(chatId)
+    throw err
+  }
 }
 
 export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, conn, msg) => {

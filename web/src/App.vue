@@ -96,10 +96,14 @@ const {
   currentIntentSessions,
   selectedIntentSessionId,
   intentSessionRunStates,
+  intentSpecContent,
+  intentSpecLoading,
   setIntentFilter,
   refineIntent,
   writeSpec,
   approveSpec,
+  openSpecSession,
+  readIntentSpec,
   startDevelopment,
   openDevSession,
   setIntentStatus,
@@ -309,6 +313,9 @@ const {
           :intent-sessions="currentIntentSessions"
           :selected-intent-session-id="selectedIntentSessionId"
           :intent-session-run-states="intentSessionRunStates"
+          :intent-spec-content="intentSpecContent"
+          :intent-spec-loading="intentSpecLoading"
+          :active-session="activeSession"
           :active-title="activeTitle"
           :has-active-session="hasActiveSession"
           :messages="messages"
@@ -331,6 +338,9 @@ const {
           @refine="refineIntent"
           @write-spec="writeSpec"
           @approve-spec="approveSpec"
+          @open-spec-session="openSpecSession"
+          @open-intent-session="selectIntentSession"
+          @read-spec="readIntentSpec"
           @start-dev="startDevelopment"
           @open-dev="openDevSession"
           @set-status="setIntentStatus"

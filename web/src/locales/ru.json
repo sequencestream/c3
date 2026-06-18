@@ -600,7 +600,8 @@
     "chat": {
       "title": {
         "label": "Чат намерения"
-      }
+      },
+      "loading": "Загрузка сессии…"
     },
     "list": {
       "title": {
@@ -792,6 +793,30 @@
           "softAfter": "Мягкий порядок"
         }
       }
+    },
+    "tab": {
+      "intent": {
+        "label": "Намерение"
+      },
+      "intentSession": {
+        "label": "Сессия намерения"
+      },
+      "spec": {
+        "label": "Spec"
+      },
+      "specSession": {
+        "label": "Сессия spec"
+      }
+    },
+    "spec": {
+      "empty": "Для этого намерения spec ещё не написан.",
+      "loading": "Загрузка spec…"
+    },
+    "intentSession": {
+      "empty": "У этого намерения пока нет сессии уточнения."
+    },
+    "specSession": {
+      "empty": "У этого намерения пока нет сессии spec."
     }
   },
   "session": {

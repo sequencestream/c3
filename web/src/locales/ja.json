@@ -600,7 +600,8 @@
     "chat": {
       "title": {
         "label": "意図チャット"
-      }
+      },
+      "loading": "セッションを読み込み中…"
     },
     "list": {
       "title": {
@@ -792,6 +793,30 @@
           "softAfter": "ソフト順序"
         }
       }
+    },
+    "tab": {
+      "intent": {
+        "label": "意図"
+      },
+      "intentSession": {
+        "label": "意図セッション"
+      },
+      "spec": {
+        "label": "Spec"
+      },
+      "specSession": {
+        "label": "Spec 作成セッション"
+      }
+    },
+    "spec": {
+      "empty": "この意図にはまだ spec が作成されていません。",
+      "loading": "spec を読み込み中…"
+    },
+    "intentSession": {
+      "empty": "この意図にはまだ調整セッションがありません。"
+    },
+    "specSession": {
+      "empty": "この意図にはまだ spec セッションがありません。"
     }
   },
   "session": {

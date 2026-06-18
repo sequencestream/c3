@@ -79,7 +79,7 @@ describe('module field — fresh-schema create (scenario 1)', () => {
     expect(moduleCol!.dflt_value).toBe("''")
     // Fresh db is already at the current schema version.
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(11)
+    expect(version?.user_version).toBe(12)
   })
 })
 
@@ -135,7 +135,7 @@ describe('module field — pre-v2 migration extensions (scenario 2)', () => {
     expect(list.every((r) => r.module === '')).toBe(true)
 
     const raw = getDb()!
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(11)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(12)
   })
 
   it('a row inserted AFTER migration coexists with legacy rows and carries its module', () => {
@@ -146,7 +146,7 @@ describe('module field — pre-v2 migration extensions (scenario 2)', () => {
     // Trigger migration, then insert a fresh intent with a module.
     resetStoreForTests()
     const [fresh] = insertIntents(proj, [
-      { title: 'New', content: '', priority: 'P0', module: '需求管理' },
+      { title: 'New', shortEnTitle: 'auto', content: '', priority: 'P0', module: '需求管理' },
     ])
 
     expect(getIntent('old-1')?.module).toBe('') // legacy backfilled
@@ -168,8 +168,20 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
     const res = await handler(
       {
         intents: [
-          { title: 'Login', content: 'auth flow', priority: 'P0', module: '认证' },
-          { title: 'Switch session', content: 'sess', priority: 'P1', module: '会话' },
+          {
+            title: 'Login',
+            shortEnTitle: 'auto',
+            content: 'auth flow',
+            priority: 'P0',
+            module: '认证',
+          },
+          {
+            title: 'Switch session',
+            shortEnTitle: 'auto',
+            content: 'sess',
+            priority: 'P1',
+            module: '会话',
+          },
         ],
       },
       {},
@@ -189,8 +201,8 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
     const res = await handler(
       {
         intents: [
-          { title: 'WithMod', content: '', priority: 'P0', module: '权限' },
-          { title: 'NoMod', content: '', priority: 'P1' }, // module omitted
+          { title: 'WithMod', shortEnTitle: 'auto', content: '', priority: 'P0', module: '权限' },
+          { title: 'NoMod', shortEnTitle: 'auto', content: '', priority: 'P1' }, // module omitted
         ],
       },
       {},
@@ -208,8 +220,8 @@ describe('module field — read-back carries module (scenario 5)', () => {
     // Scenario 5: hydrate must map module onto every read surface. Use two rows
     // with distinct modules so we also catch any per-row mix-up.
     const saved = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0', module: 'mod-a' },
-      { title: 'B', content: '', priority: 'P1', module: 'mod-b' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0', module: 'mod-a' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P1', module: 'mod-b' },
     ])
     // insertIntents return value carries module.
     expect(new Map(saved.map((r) => [r.title, r.module]))).toEqual(
@@ -240,7 +252,9 @@ describe('module field — degradation contract not regressed (constraint)', () 
     expect(listIntents(proj)).toEqual([])
     expect(getIntent('any')).toBeNull()
     expect(() =>
-      insertIntents(proj, [{ title: 'X', content: '', priority: 'P0', module: 'm' }]),
+      insertIntents(proj, [
+        { title: 'X', shortEnTitle: 'auto', content: '', priority: 'P0', module: 'm' },
+      ]),
     ).toThrow()
   })
 })

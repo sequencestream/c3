@@ -42,6 +42,7 @@ const req: Intent = {
   id: 'r1',
   workspaceId: 'p',
   title: '示例需求',
+  shortEnTitle: null,
   content: '做点事',
   priority: 'P0',
   module: '',

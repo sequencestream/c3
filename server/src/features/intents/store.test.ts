@@ -57,8 +57,8 @@ describe('intents CRUD', () => {
   it('inserts a batch as todo and lists with dependsOn, in insertion order', () => {
     expect(isStoreAvailable()).toBe(true)
     const saved = insertIntents(proj, [
-      { title: 'A', content: 'ca', priority: 'P1' },
-      { title: 'B', content: 'cb', priority: 'P0', dependsOn: ['x', 'y'] },
+      { title: 'A', shortEnTitle: 'auto', content: 'ca', priority: 'P1' },
+      { title: 'B', shortEnTitle: 'auto', content: 'cb', priority: 'P0', dependsOn: ['x', 'y'] },
     ])
     expect(saved).toHaveLength(2)
     expect(saved[0].title).toBe('A')
@@ -72,28 +72,36 @@ describe('intents CRUD', () => {
   })
 
   it('filters by status', () => {
-    const [a] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P2' }])
-    insertIntents(proj, [{ title: 'B', content: '', priority: 'P2' }])
+    const [a] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P2' },
+    ])
+    insertIntents(proj, [{ title: 'B', shortEnTitle: 'auto', content: '', priority: 'P2' }])
     updateStatus(a.id, 'in_progress')
     expect(listIntents(proj, 'todo').map((r) => r.title)).toEqual(['B'])
     expect(listIntents(proj, 'in_progress').map((r) => r.title)).toEqual(['A'])
   })
 
   it('scopes by project', () => {
-    insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
-    insertIntents('/abs/project-b', [{ title: 'B', content: '', priority: 'P0' }])
+    insertIntents(proj, [{ title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' }])
+    insertIntents('/abs/project-b', [
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     expect(listIntents(proj).map((r) => r.title)).toEqual(['A'])
     expect(listIntents('/abs/project-b').map((r) => r.title)).toEqual(['B'])
   })
 
   it('normalizes project paths (resolve)', () => {
-    insertIntents('/abs/project-a/', [{ title: 'A', content: '', priority: 'P0' }])
+    insertIntents('/abs/project-a/', [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     // trailing slash resolves to the same key
     expect(listIntents('/abs/project-a').map((r) => r.title)).toEqual(['A'])
   })
 
   it('records last dev session and updates status', () => {
-    const [r] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     setLastDevSession(r.id, 'sess-123')
     updateStatus(r.id, 'in_progress')
     const got = getIntent(r.id)
@@ -103,7 +111,7 @@ describe('intents CRUD', () => {
 
   it('patches fields and replaces dependencies', () => {
     const [r] = insertIntents(proj, [
-      { title: 'A', content: 'old', priority: 'P2', dependsOn: ['x'] },
+      { title: 'A', shortEnTitle: 'auto', content: 'old', priority: 'P2', dependsOn: ['x'] },
     ])
     updateIntent(r.id, { content: 'new', priority: 'P0', dependsOn: ['y', 'z'] })
     const got = getIntent(r.id)
@@ -114,7 +122,9 @@ describe('intents CRUD', () => {
   })
 
   it('stamps completedAt when marked done and clears it when reverted', () => {
-    const [r] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     expect(getIntent(r.id)?.completedAt).toBeNull() // todo → no completion time
 
     updateStatus(r.id, 'done')
@@ -127,7 +137,9 @@ describe('intents CRUD', () => {
   })
 
   it('keeps completedAt in sync when status is patched via updateIntent', () => {
-    const [r] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     updateIntent(r.id, { status: 'done' })
     expect(typeof getIntent(r.id)?.completedAt).toBe('number')
     updateIntent(r.id, { status: 'cancelled' })
@@ -136,8 +148,8 @@ describe('intents CRUD', () => {
 
   it('stores the inferred module and defaults to "" when omitted', () => {
     const saved = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0', module: '认证' },
-      { title: 'B', content: '', priority: 'P0' }, // module omitted → '' fallback
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0', module: '认证' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' }, // module omitted → '' fallback
     ])
     const byTitle = new Map(saved.map((r) => [r.title, r]))
     expect(byTitle.get('A')?.module).toBe('认证')
@@ -147,7 +159,9 @@ describe('intents CRUD', () => {
   })
 
   it('persists across a cache reset (real file)', () => {
-    const [r] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     resetDbForTests()
     resetStoreForTests()
     expect(getIntent(r.id)?.title).toBe('A')
@@ -200,7 +214,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(11)
+    expect(version?.user_version).toBe(12)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -270,7 +284,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(11)
+    expect(version?.user_version).toBe(12)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -279,7 +293,9 @@ describe('intents CRUD', () => {
   })
 
   it('round-trips git fields: setBranchName, setLatestCommitHash, setPrInfo + read-back', () => {
-    const [r] = insertIntents(proj, [{ title: 'GitFieldTest', content: '', priority: 'P1' }])
+    const [r] = insertIntents(proj, [
+      { title: 'GitFieldTest', shortEnTitle: 'auto', content: '', priority: 'P1' },
+    ])
     // New insertions default all git fields to null.
     expect(r.branchName).toBeNull()
     expect(r.latestCommitHash).toBeNull()
@@ -305,6 +321,75 @@ describe('intents CRUD', () => {
     expect(got?.prStatus).toBe('reviewing')
     expect(got?.branchName).toBe('feat/my-feature') // earlier fields preserved
     expect(got?.latestCommitHash).toBe('a1b2c3d')
+  })
+})
+
+describe('intents short_en_title', () => {
+  it('persists shortEnTitle on save and reads it back via getIntent / findIntents', () => {
+    const [r] = upsertIntents(proj, [
+      { title: '登录鉴权', shortEnTitle: 'login-auth', content: 'c', priority: 'P0' },
+    ])
+    expect(r.shortEnTitle).toBe('login-auth')
+    expect(getIntent(r.id)?.shortEnTitle).toBe('login-auth')
+    expect(findIntents(proj, { keyword: '鉴权' })[0].shortEnTitle).toBe('login-auth')
+  })
+
+  it('truncates a shortEnTitle longer than 128 chars to 128 on save', () => {
+    const long = 'a'.repeat(200)
+    const [r] = upsertIntents(proj, [
+      { title: 'Long', shortEnTitle: long, content: '', priority: 'P1' },
+    ])
+    expect(r.shortEnTitle).toBe('a'.repeat(128))
+    expect(r.shortEnTitle?.length).toBe(128)
+    expect(getIntent(r.id)?.shortEnTitle?.length).toBe(128)
+  })
+
+  it('keeps a 128-char shortEnTitle intact (boundary, no truncation)', () => {
+    const exact = 'b'.repeat(128)
+    const [r] = upsertIntents(proj, [
+      { title: 'Exact', shortEnTitle: exact, content: '', priority: 'P1' },
+    ])
+    expect(r.shortEnTitle).toBe(exact)
+  })
+
+  it('reads a historic row (no short_en_title written) as null, then backfills on update', () => {
+    // Touch the store once so the schema (incl. the migrated column) is created.
+    listIntents(proj)
+    // Simulate a historic row inserted directly without the column populated.
+    const raw = getDb()!
+    raw.run(
+      `INSERT INTO intents
+         (id, workspace_path, title, content, priority, status, module, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      'hist-1',
+      proj,
+      'Historic',
+      'body',
+      'P0',
+      'todo',
+      '',
+      1,
+      1,
+    )
+    expect(getIntent('hist-1')?.shortEnTitle).toBeNull()
+    // Updating it (carrying its id) backfills short_en_title.
+    upsertIntents(proj, [
+      {
+        id: 'hist-1',
+        title: 'Historic',
+        shortEnTitle: 'historic-slug',
+        content: 'body',
+        priority: 'P0',
+      },
+    ])
+    expect(getIntent('hist-1')?.shortEnTitle).toBe('historic-slug')
+  })
+
+  it('insertIntents also persists shortEnTitle (with truncation)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'X', shortEnTitle: 'x'.repeat(150), content: '', priority: 'P0' },
+    ])
+    expect(r.shortEnTitle?.length).toBe(128)
   })
 })
 
@@ -366,8 +451,8 @@ describe('resolveBatchDependencies (pure)', () => {
 describe('insertIntents — intra-batch dependencies', () => {
   it('resolves dependsOnIndexes to the sibling real id on save', () => {
     const [a, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] }, // depends on A
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [0] }, // depends on A
     ])
     expect(a.dependsOn).toEqual([])
     expect(b.dependsOn).toEqual([a.id])
@@ -375,8 +460,15 @@ describe('insertIntents — intra-batch dependencies', () => {
 
   it('merges existing-id deps with intra-batch index deps', () => {
     const [, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0', dependsOn: ['ext-id'], dependsOnIndexes: [0] },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      {
+        title: 'B',
+        shortEnTitle: 'auto',
+        content: '',
+        priority: 'P0',
+        dependsOn: ['ext-id'],
+        dependsOnIndexes: [0],
+      },
     ])
     const a = listIntents(proj).find((r) => r.title === 'A')!
     expect(b.dependsOn.sort()).toEqual(['ext-id', a.id].sort())
@@ -384,9 +476,9 @@ describe('insertIntents — intra-batch dependencies', () => {
 
   it('staggers created_at by batch index so submission order is stable', () => {
     const [a, b, c] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0' },
-      { title: 'C', content: '', priority: 'P0' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'C', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     expect(a.createdAt).toBeLessThan(b.createdAt)
     expect(b.createdAt).toBeLessThan(c.createdAt)
@@ -395,8 +487,8 @@ describe('insertIntents — intra-batch dependencies', () => {
   it('rejects the whole batch atomically on an out-of-range index (nothing persisted)', () => {
     expect(() =>
       insertIntents(proj, [
-        { title: 'A', content: '', priority: 'P0' },
-        { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [9] },
+        { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+        { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [9] },
       ]),
     ).toThrow(/越界/)
     expect(listIntents(proj)).toEqual([])
@@ -404,7 +496,9 @@ describe('insertIntents — intra-batch dependencies', () => {
 
   it('rejects the whole batch atomically on a self reference (nothing persisted)', () => {
     expect(() =>
-      insertIntents(proj, [{ title: 'A', content: '', priority: 'P0', dependsOnIndexes: [0] }]),
+      insertIntents(proj, [
+        { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [0] },
+      ]),
     ).toThrow(/自引用/)
     expect(listIntents(proj)).toEqual([])
   })
@@ -412,8 +506,8 @@ describe('insertIntents — intra-batch dependencies', () => {
   it('rejects the whole batch atomically on a cycle (nothing persisted)', () => {
     expect(() =>
       insertIntents(proj, [
-        { title: 'A', content: '', priority: 'P0', dependsOnIndexes: [1] },
-        { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+        { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [1] },
+        { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [0] },
       ]),
     ).toThrow(/成环/)
     expect(listIntents(proj)).toEqual([])
@@ -423,8 +517,8 @@ describe('insertIntents — intra-batch dependencies', () => {
 describe('intent_deps dep_type', () => {
   it('insertIntents inserts deps with dep_type blocks by default', () => {
     const [a, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [0] },
     ])
     const deps = listDependencies(b.id)
     expect(deps).toHaveLength(1)
@@ -434,8 +528,12 @@ describe('intent_deps dep_type', () => {
   })
 
   it('upsertIntents inserts deps with dep_type blocks', () => {
-    const [a] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
-    const [b] = insertIntents(proj, [{ title: 'B', content: '', priority: 'P0' }])
+    const [a] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
+    const [b] = insertIntents(proj, [
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     // Update B to depend on A (via updateIntent).
     updateIntent(b.id, { dependsOn: [a.id] })
     const deps = listDependencies(b.id)
@@ -446,8 +544,8 @@ describe('intent_deps dep_type', () => {
 
   it('upsertIntents in upsert path inserts deps with dep_type blocks', () => {
     const [a, b] = upsertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [0] },
     ])
     const bDeps = listDependencies(b.id)
     expect(bDeps).toHaveLength(1)
@@ -457,14 +555,22 @@ describe('intent_deps dep_type', () => {
   })
 
   it('listDependencies returns empty for intent with no deps', () => {
-    const [a] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [a] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     expect(listDependencies(a.id)).toEqual([])
   })
 
   it('listDependencies returns multiple deps sorted by created_at', () => {
-    const [a] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
-    const [b] = insertIntents(proj, [{ title: 'B', content: '', priority: 'P0' }])
-    const [c] = insertIntents(proj, [{ title: 'C', content: '', priority: 'P0' }])
+    const [a] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
+    const [b] = insertIntents(proj, [
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
+    const [c] = insertIntents(proj, [
+      { title: 'C', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     // Manually add deps via insertDependency.
     insertDependency(c.id, a.id)
     insertDependency(c.id, b.id)
@@ -476,8 +582,8 @@ describe('intent_deps dep_type', () => {
 
   it('insertDependency defaults dep_type to blocks', () => {
     const [a, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     insertDependency(b.id, a.id)
     const deps = listDependencies(b.id)
@@ -487,8 +593,8 @@ describe('intent_deps dep_type', () => {
 
   it('insertDependency accepts dep_type informs', () => {
     const [a, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     insertDependency(b.id, a.id, 'informs')
     const deps = listDependencies(b.id)
@@ -498,8 +604,8 @@ describe('intent_deps dep_type', () => {
 
   it('insertDependency accepts dep_type soft_after', () => {
     const [a, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     insertDependency(b.id, a.id, 'soft_after')
     const deps = listDependencies(b.id)
@@ -509,8 +615,8 @@ describe('intent_deps dep_type', () => {
 
   it('insertDependency is idempotent (INSERT OR IGNORE)', () => {
     const [a, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     insertDependency(b.id, a.id, 'blocks')
     insertDependency(b.id, a.id, 'blocks') // second insert is ignored
@@ -520,8 +626,8 @@ describe('intent_deps dep_type', () => {
 
   it('dep_type on existing deps has correct default after migration', () => {
     const [, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [0] },
     ])
     // Re-initialize store to simulate "re-migration" (idempotency check).
     resetStoreForTests()
@@ -839,9 +945,9 @@ describe('communication session mapping / hidden set', () => {
 describe('findIntents (read-only intent-agent query)', () => {
   it('matches keyword as a substring over BOTH title and content', () => {
     insertIntents(proj, [
-      { title: '登录鉴权', content: 'OAuth flow', priority: 'P0' },
-      { title: '会话管理', content: '处理 token 刷新', priority: 'P1' },
-      { title: '导出报表', content: 'CSV export', priority: 'P2' },
+      { title: '登录鉴权', shortEnTitle: 'auto', content: 'OAuth flow', priority: 'P0' },
+      { title: '会话管理', shortEnTitle: 'auto', content: '处理 token 刷新', priority: 'P1' },
+      { title: '导出报表', shortEnTitle: 'auto', content: 'CSV export', priority: 'P2' },
     ])
     // hits the title of the first item
     expect(findIntents(proj, { keyword: '鉴权' }).map((r) => r.title)).toEqual(['登录鉴权'])
@@ -853,17 +959,19 @@ describe('findIntents (read-only intent-agent query)', () => {
 
   it('returns the full project ledger when no filter is given (priority then recency order)', () => {
     insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P2' },
-      { title: 'B', content: '', priority: 'P0' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P2' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     expect(findIntents(proj).map((r) => r.title)).toEqual(['B', 'A'])
   })
 
   it('filters by module (exact) and by status, composing with AND', () => {
-    const [a] = insertIntents(proj, [{ title: 'A', content: 'x', priority: 'P0', module: '认证' }])
+    const [a] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: 'x', priority: 'P0', module: '认证' },
+    ])
     insertIntents(proj, [
-      { title: 'B', content: 'x', priority: 'P0', module: '会话' },
-      { title: 'C', content: 'x', priority: 'P0', module: '认证' },
+      { title: 'B', shortEnTitle: 'auto', content: 'x', priority: 'P0', module: '会话' },
+      { title: 'C', shortEnTitle: 'auto', content: 'x', priority: 'P0', module: '认证' },
     ])
     updateStatus(a.id, 'in_progress')
     // module filter
@@ -881,13 +989,19 @@ describe('findIntents (read-only intent-agent query)', () => {
   })
 
   it('hydrates dependsOn on the returned rows', () => {
-    insertIntents(proj, [{ title: 'Dep', content: '', priority: 'P0', dependsOn: ['ext-1'] }])
+    insertIntents(proj, [
+      { title: 'Dep', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOn: ['ext-1'] },
+    ])
     expect(findIntents(proj, { keyword: 'Dep' })[0].dependsOn).toEqual(['ext-1'])
   })
 
   it('never leaks another project (project-scoped, resolve-normalized)', () => {
-    insertIntents(proj, [{ title: 'Mine', content: 'secret', priority: 'P0' }])
-    insertIntents('/abs/project-b', [{ title: 'Theirs', content: 'secret', priority: 'P0' }])
+    insertIntents(proj, [
+      { title: 'Mine', shortEnTitle: 'auto', content: 'secret', priority: 'P0' },
+    ])
+    insertIntents('/abs/project-b', [
+      { title: 'Theirs', shortEnTitle: 'auto', content: 'secret', priority: 'P0' },
+    ])
     // a keyword common to both only returns this project's rows
     expect(findIntents(proj, { keyword: 'secret' }).map((r) => r.title)).toEqual(['Mine'])
     // trailing slash resolves to the same key
@@ -898,8 +1012,8 @@ describe('findIntents (read-only intent-agent query)', () => {
 
   it('treats LIKE wildcards in the keyword literally (escaped)', () => {
     insertIntents(proj, [
-      { title: '100% done', content: '', priority: 'P0' },
-      { title: 'anything', content: '', priority: 'P0' },
+      { title: '100% done', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'anything', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     // '%' must match literally, not as a wildcard (else it would match both)
     expect(findIntents(proj, { keyword: '100%' }).map((r) => r.title)).toEqual(['100% done'])

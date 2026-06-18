@@ -319,6 +319,7 @@ describe('formatDependsOn', () => {
       id: 'r-default',
       workspaceId: '/test',
       title: '默认需求',
+      shortEnTitle: null,
       content: '',
       priority: 'P2',
       module: '',

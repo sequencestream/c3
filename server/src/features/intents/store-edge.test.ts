@@ -63,7 +63,9 @@ describe('store degradation when db is unavailable', () => {
   it('writes throw (the save-tool turns this into isError)', () => {
     // A write against a missing db throws; the save_intents handler catches
     // it and returns isError so the agent learns the save did not happen.
-    expect(() => insertIntents(proj, [{ title: 'X', content: '', priority: 'P0' }])).toThrow()
+    expect(() =>
+      insertIntents(proj, [{ title: 'X', shortEnTitle: 'auto', content: '', priority: 'P0' }]),
+    ).toThrow()
   })
 })
 
@@ -71,8 +73,8 @@ describe('terminal status transitions (US-4 §6)', () => {
   it('moves a intent to done and to cancelled (never auto, only via update)', () => {
     // §6 / AC: dev completion does NOT auto-set status; the user marks done/cancelled.
     const [a, b] = insertIntents(proj, [
-      { title: 'A', content: '', priority: 'P0' },
-      { title: 'B', content: '', priority: 'P1' },
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P1' },
     ])
     updateStatus(a.id, 'done')
     updateStatus(b.id, 'cancelled')
@@ -88,7 +90,9 @@ describe('terminal status transitions (US-4 §6)', () => {
 describe('start_development eligibility data (US-6 §4.6)', () => {
   it('a fresh intent is todo with no dev session (eligible)', () => {
     // §4.6 step 1: `todo` is the eligible state; lastDevSessionId starts null.
-    const [r] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     const got = getIntent(r.id)!
     expect(got.status).toBe('todo')
     expect(got.lastDevSessionId).toBeNull()
@@ -99,7 +103,9 @@ describe('start_development eligibility data (US-6 §4.6)', () => {
     // the back-link reads lastDevSessionId even if that session was later deleted
     // (the dangling-restart rule then re-checks existence via sessionExists, which
     // is e2e territory). Here we assert the store side the rule reads.
-    const [r] = insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     setLastDevSession(r.id, 'dev-sess-1')
     updateStatus(r.id, 'in_progress')
     const got = getIntent(r.id)!
@@ -114,12 +120,18 @@ describe('unfinished-dependency detection (US-8 §4.6 step 2)', () => {
     // The store gives callers everything to compute that: dependsOn + each dep's
     // status. Reproduce the check the server/front-end performs.
     const [depDone, depOpen] = insertIntents(proj, [
-      { title: 'dep-done', content: '', priority: 'P0' },
-      { title: 'dep-open', content: '', priority: 'P0' },
+      { title: 'dep-done', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      { title: 'dep-open', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     updateStatus(depDone.id, 'done')
     const [target] = insertIntents(proj, [
-      { title: 'feature', content: '', priority: 'P1', dependsOn: [depDone.id, depOpen.id] },
+      {
+        title: 'feature',
+        shortEnTitle: 'auto',
+        content: '',
+        priority: 'P1',
+        dependsOn: [depDone.id, depOpen.id],
+      },
     ])
 
     const t = getIntent(target.id)!
@@ -137,7 +149,13 @@ describe('unfinished-dependency detection (US-8 §4.6 step 2)', () => {
     // Defensive: a dependsOn pointing at a non-existent intent (e.g. proposed
     // before its dep existed) is not `done`, so it surfaces in the warning set.
     const [target] = insertIntents(proj, [
-      { title: 'feature', content: '', priority: 'P0', dependsOn: ['ghost-id'] },
+      {
+        title: 'feature',
+        shortEnTitle: 'auto',
+        content: '',
+        priority: 'P0',
+        dependsOn: ['ghost-id'],
+      },
     ])
     const t = getIntent(target.id)!
     const byId = new Map(listIntents(proj).map((r) => [r.id, r]))
@@ -150,8 +168,12 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
   it('updates an existing draft/todo intent in place, keeping its status, no new row', () => {
     // AC-1: a batch item carrying a valid id (status todo) updates the original,
     // status unchanged, and inserts nothing new.
-    const [r] = insertIntents(proj, [{ title: 'old', content: 'before', priority: 'P2' }])
-    const out = upsertIntents(proj, [{ id: r.id, title: 'new', content: 'after', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'old', shortEnTitle: 'auto', content: 'before', priority: 'P2' },
+    ])
+    const out = upsertIntents(proj, [
+      { id: r.id, title: 'new', shortEnTitle: 'auto', content: 'after', priority: 'P0' },
+    ])
     expect(out).toHaveLength(1)
     expect(out[0].id).toBe(r.id)
     expect(listIntents(proj)).toHaveLength(1) // no new row
@@ -163,8 +185,10 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
   })
 
   it('still inserts when no id is supplied', () => {
-    const [r] = insertIntents(proj, [{ title: 'keep', content: '', priority: 'P1' }])
-    upsertIntents(proj, [{ title: 'fresh', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'keep', shortEnTitle: 'auto', content: '', priority: 'P1' },
+    ])
+    upsertIntents(proj, [{ title: 'fresh', shortEnTitle: 'auto', content: '', priority: 'P0' }])
     expect(
       listIntents(proj)
         .map((x) => x.title)
@@ -175,9 +199,13 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
 
   it('reactivates a cancelled intent to todo on update, completed_at stays null', () => {
     // AC-2: cancelled + id → content updated AND status flips to todo (completed_at null).
-    const [r] = insertIntents(proj, [{ title: 'c', content: 'x', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'c', shortEnTitle: 'auto', content: 'x', priority: 'P0' },
+    ])
     updateStatus(r.id, 'cancelled')
-    upsertIntents(proj, [{ id: r.id, title: 'c2', content: 'y', priority: 'P0' }])
+    upsertIntents(proj, [
+      { id: r.id, title: 'c2', shortEnTitle: 'auto', content: 'y', priority: 'P0' },
+    ])
     const got = getIntent(r.id)!
     expect(got.status).toBe('todo')
     expect(got.title).toBe('c2')
@@ -186,12 +214,14 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
 
   it('rejects the whole batch (no write) when a target is in_progress', () => {
     // AC-3: an in_progress / done target is immutable → throw, nothing persisted.
-    const [r] = insertIntents(proj, [{ title: 'locked', content: 'orig', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'locked', shortEnTitle: 'auto', content: 'orig', priority: 'P0' },
+    ])
     updateStatus(r.id, 'in_progress')
     expect(() =>
       upsertIntents(proj, [
-        { id: r.id, title: 'hacked', content: 'no', priority: 'P3' },
-        { title: 'sibling', content: '', priority: 'P0' },
+        { id: r.id, title: 'hacked', shortEnTitle: 'auto', content: 'no', priority: 'P3' },
+        { title: 'sibling', shortEnTitle: 'auto', content: '', priority: 'P0' },
       ]),
     ).toThrow(/不可修改/)
     expect(getIntent(r.id)!.title).toBe('locked') // untouched
@@ -199,10 +229,14 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
   })
 
   it('rejects the whole batch (no write) when a target is done', () => {
-    const [r] = insertIntents(proj, [{ title: 'finished', content: 'orig', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'finished', shortEnTitle: 'auto', content: 'orig', priority: 'P0' },
+    ])
     updateStatus(r.id, 'done')
     expect(() =>
-      upsertIntents(proj, [{ id: r.id, title: 'reopen', content: '', priority: 'P0' }]),
+      upsertIntents(proj, [
+        { id: r.id, title: 'reopen', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      ]),
     ).toThrow(/不可修改/)
     expect(getIntent(r.id)!.status).toBe('done')
     expect(getIntent(r.id)!.title).toBe('finished')
@@ -211,7 +245,9 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
   it('rejects an unknown id (no write)', () => {
     // AC-4: an id that resolves to nothing → throw, nothing persisted.
     expect(() =>
-      upsertIntents(proj, [{ id: 'ghost', title: 'x', content: '', priority: 'P0' }]),
+      upsertIntents(proj, [
+        { id: 'ghost', title: 'x', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      ]),
     ).toThrow(/不存在/)
     expect(listIntents(proj)).toEqual([])
   })
@@ -219,10 +255,12 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
   it('rejects a cross-project id (no write)', () => {
     // AC-4: an id belonging to ANOTHER project is treated as not-in-this-project.
     const [other] = insertIntents('/abs/other-proj', [
-      { title: 'theirs', content: '', priority: 'P0' },
+      { title: 'theirs', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     expect(() =>
-      upsertIntents(proj, [{ id: other.id, title: 'steal', content: '', priority: 'P0' }]),
+      upsertIntents(proj, [
+        { id: other.id, title: 'steal', shortEnTitle: 'auto', content: '', priority: 'P0' },
+      ]),
     ).toThrow(/不存在/)
     expect(getIntent(other.id)!.title).toBe('theirs') // foreign row untouched
     expect(listIntents(proj)).toEqual([])
@@ -230,10 +268,18 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
 
   it('applies a mixed update+insert batch atomically with intra-batch deps', () => {
     // AC-6: one transaction; an item updates while a new item depends on it by index.
-    const [r] = insertIntents(proj, [{ title: 'base', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'base', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     const out = upsertIntents(proj, [
-      { id: r.id, title: 'base2', content: '', priority: 'P0' }, // index 0 = updated row
-      { title: 'follower', content: '', priority: 'P1', dependsOnIndexes: [0] }, // new, depends on the update
+      { id: r.id, title: 'base2', shortEnTitle: 'auto', content: '', priority: 'P0' }, // index 0 = updated row
+      {
+        title: 'follower',
+        shortEnTitle: 'auto',
+        content: '',
+        priority: 'P1',
+        dependsOnIndexes: [0],
+      }, // new, depends on the update
     ])
     expect(out).toHaveLength(2)
     expect(listIntents(proj)).toHaveLength(2) // base updated (1) + follower inserted (1)
@@ -245,11 +291,13 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
   it('rolls the whole batch back when one item fails validation (insert dep cycle)', () => {
     // AC-6: a new item's invalid dependsOnIndexes makes the batch throw; the valid
     // update in the same batch must NOT have been applied.
-    const [r] = insertIntents(proj, [{ title: 'orig', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'orig', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     expect(() =>
       upsertIntents(proj, [
-        { id: r.id, title: 'updated', content: '', priority: 'P0' },
-        { title: 'a', content: '', priority: 'P0', dependsOnIndexes: [2] }, // out of range
+        { id: r.id, title: 'updated', shortEnTitle: 'auto', content: '', priority: 'P0' },
+        { title: 'a', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [2] }, // out of range
       ]),
     ).toThrow()
     expect(getIntent(r.id)!.title).toBe('orig') // update rolled back
@@ -260,21 +308,39 @@ describe('upsertIntents — id-keyed update vs insert (RM-R20)', () => {
     // "未传字段保持原值": omitting module keeps the prior module; omitting both
     // dependsOn/dependsOnIndexes keeps the prior dependency set.
     const [r] = insertIntents(proj, [
-      { title: 't', content: '', priority: 'P0', module: 'auth', dependsOn: ['ext'] },
+      {
+        title: 't',
+        shortEnTitle: 'auto',
+        content: '',
+        priority: 'P0',
+        module: 'auth',
+        dependsOn: ['ext'],
+      },
     ])
-    upsertIntents(proj, [{ id: r.id, title: 't2', content: 'body', priority: 'P1' }])
+    upsertIntents(proj, [
+      { id: r.id, title: 't2', shortEnTitle: 'auto', content: 'body', priority: 'P1' },
+    ])
     const got = getIntent(r.id)!
     expect(got.module).toBe('auth') // preserved
     expect(got.dependsOn).toEqual(['ext']) // preserved
   })
 
   it('replaces deps when dependsOn is supplied on update', () => {
-    const [dep] = insertIntents(proj, [{ title: 'dep', content: '', priority: 'P0' }])
+    const [dep] = insertIntents(proj, [
+      { title: 'dep', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     const [r] = insertIntents(proj, [
-      { title: 't', content: '', priority: 'P0', dependsOn: ['old-ext'] },
+      { title: 't', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOn: ['old-ext'] },
     ])
     upsertIntents(proj, [
-      { id: r.id, title: 't', content: '', priority: 'P0', dependsOn: [dep.id] },
+      {
+        id: r.id,
+        title: 't',
+        shortEnTitle: 'auto',
+        content: '',
+        priority: 'P0',
+        dependsOn: [dep.id],
+      },
     ])
     expect(getIntent(r.id)!.dependsOn).toEqual([dep.id]) // replaced, not merged
   })

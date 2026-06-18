@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS intents (
   id                  TEXT PRIMARY KEY,              -- 意图唯一标识 (UUID v4)
   workspace_path      TEXT NOT NULL,                 -- 所属工作区绝对路径 (resolve 后); v10→v11 由 project_path 改名
   title               TEXT NOT NULL,                 -- 意图标题
+  short_en_title      TEXT,                          -- 简短英文 ASCII 短标题, 派生分支/worktree 名的稳定来源 (v11→v12 新增; 文档标注 VARCHAR(128), SQLite 实为 TEXT, 写入侧截断到 128; 历史行为 NULL)
   content             TEXT NOT NULL,                 -- 意图详细描述
   priority            TEXT NOT NULL,                 -- 优先级: 'low' | 'medium' | 'high' | 'critical'
   status              TEXT NOT NULL,                 -- 状态: 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'

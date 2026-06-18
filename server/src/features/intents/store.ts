@@ -27,13 +27,22 @@ import type {
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 11
+const SCHEMA_VERSION = 12
+
+/** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
+const SHORT_EN_TITLE_MAX = 128
+
+/** Clamp a short English title to the persisted max length before writing. */
+function truncateShortEnTitle(s: string): string {
+  return s.length > SHORT_EN_TITLE_MAX ? s.slice(0, SHORT_EN_TITLE_MAX) : s
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS intents (
   id              TEXT PRIMARY KEY,
   workspace_path    TEXT NOT NULL,
   title           TEXT NOT NULL,
+  short_en_title  TEXT,
   content         TEXT NOT NULL,
   priority        TEXT NOT NULL,
   status          TEXT NOT NULL,
@@ -213,6 +222,9 @@ function db(): Db | null {
     // v8 → v9: add dep_type + created_at to intent_deps (historic rows get defaults 'blocks' / 0).
     ensureColumn(d, 'intent_deps', 'dep_type', "TEXT NOT NULL DEFAULT 'blocks'")
     ensureColumn(d, 'intent_deps', 'created_at', 'INTEGER NOT NULL DEFAULT 0')
+    // v11 → v12: add short_en_title (nullable — historic rows stay null until refined; used as the
+    // stable ASCII source for deriving branch / worktree names).
+    ensureColumn(d, 'intents', 'short_en_title', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -255,6 +267,7 @@ interface Row {
   id: string
   workspace_path: string
   title: string
+  short_en_title: string | null
   content: string
   priority: string
   status: string
@@ -293,6 +306,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     id: r.id,
     workspaceId: pathToId(r.workspace_path)!,
     title: r.title,
+    shortEnTitle: r.short_en_title,
     content: r.content,
     priority: r.priority as Intent['priority'],
     module: r.module,
@@ -493,11 +507,12 @@ export function insertIntents(workspacePath: string, items: ProposedIntent[]): I
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, workspace_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
         it.title,
+        truncateShortEnTitle(it.shortEnTitle),
         it.content,
         it.priority,
         'todo',
@@ -586,9 +601,10 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
         const module = it.module !== undefined ? it.module : prior.module
         d.run(
           `UPDATE intents
-             SET title=?, content=?, priority=?, module=?, status=?, updated_at=?, completed_at=?
+             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, updated_at=?, completed_at=?
            WHERE id=?`,
           it.title,
+          truncateShortEnTitle(it.shortEnTitle),
           it.content,
           it.priority,
           module,
@@ -614,11 +630,12 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
+          truncateShortEnTitle(it.shortEnTitle),
           it.content,
           it.priority,
           'todo',

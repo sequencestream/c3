@@ -50,6 +50,13 @@ export const saveSchema = {
             'in_progress/done 不可修改,会导致整批保存失败。留空则新建一条意图。',
         ),
       title: z.string(),
+      shortEnTitle: z
+        .string()
+        .describe(
+          '必填:简短英文 ASCII 短标题(≤64 字符),仅用 a-z/0-9/空格/连字符等 ASCII 字符,' +
+            '作为派生 Git 分支名 / worktree 目录名的稳定来源(勿用中文/非 ASCII);' +
+            '应是对 title 的简明英文概括。落库时超过 128 字符会被截断。',
+        ),
       content: z.string(),
       priority: z.enum(['P0', 'P1', 'P2', 'P3']),
       module: z.string().optional().describe('所属模块名(按标题/内容推断,可留空)'),

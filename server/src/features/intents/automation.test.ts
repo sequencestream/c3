@@ -110,6 +110,7 @@ interface StartDevMsg {
 const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   workspaceId: 'test-proj',
   title: 'Test',
+  shortEnTitle: null,
   content: '',
   priority: 'P1',
   module: '',

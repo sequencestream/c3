@@ -7,6 +7,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
     workspaceId: '/proj',
     title: 'Start me',
+    shortEnTitle: null,
     content: 'Do work',
     priority: 'P1',
     module: '',

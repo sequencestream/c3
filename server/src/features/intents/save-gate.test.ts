@@ -41,7 +41,9 @@ function binding(over: Partial<SaveGateBinding> = {}): SaveGateBinding {
 }
 
 const oneIntent = {
-  intents: [{ title: '加缓存', content: '给热点接口加缓存', priority: 'P1' as const }],
+  intents: [
+    { title: '加缓存', shortEnTitle: 'auto', content: '给热点接口加缓存', priority: 'P1' as const },
+  ],
 }
 
 describe('gatedSave', () => {

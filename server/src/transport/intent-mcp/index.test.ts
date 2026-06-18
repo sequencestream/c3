@@ -105,7 +105,9 @@ describe('intent MCP HTTP route', () => {
 
       const save = await client.callTool({
         name: 'save_intents',
-        arguments: { intents: [{ title: 't', content: 'c', priority: 'P1' }] },
+        arguments: {
+          intents: [{ title: 't', shortEnTitle: 'auto', content: 'c', priority: 'P1' }],
+        },
       })
       expect(JSON.stringify(save.content)).toContain('SAVED')
       expect(saved).toHaveLength(1)

@@ -20,10 +20,12 @@ vi.mock('../../state.js', async (importOriginal) => ({
   resolveWorkspaceRoot: (id: string) => id,
   pathToId: (p: string) => p,
 }))
+import { z } from 'zod'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { Intent } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { createIntentMcpServer } from './save-tool.js'
+import { saveSchema } from './tool-defs.js'
 import { getIntent, insertIntents, listIntents, resetStoreForTests, updateStatus } from './store.js'
 
 interface CallToolResult {
@@ -99,8 +101,14 @@ describe('save_intents tool handler', () => {
     const res = await handler(
       {
         intents: [
-          { title: 'Login', content: 'auth flow', priority: 'P0' },
-          { title: 'Logout', content: 'end session', priority: 'P1', dependsOn: ['x'] },
+          { title: 'Login', shortEnTitle: 'auto', content: 'auth flow', priority: 'P0' },
+          {
+            title: 'Logout',
+            shortEnTitle: 'auto',
+            content: 'end session',
+            priority: 'P1',
+            dependsOn: ['x'],
+          },
         ],
       },
       {},
@@ -128,8 +136,14 @@ describe('save_intents tool handler', () => {
     const res = await handler(
       {
         intents: [
-          { title: 'Schema', content: '', priority: 'P0' },
-          { title: 'Migration', content: '', priority: 'P0', dependsOnIndexes: [0] },
+          { title: 'Schema', shortEnTitle: 'auto', content: '', priority: 'P0' },
+          {
+            title: 'Migration',
+            shortEnTitle: 'auto',
+            content: '',
+            priority: 'P0',
+            dependsOnIndexes: [0],
+          },
         ],
       },
       {},
@@ -149,8 +163,8 @@ describe('save_intents tool handler', () => {
     const res = await handler(
       {
         intents: [
-          { title: 'A', content: '', priority: 'P0', dependsOnIndexes: [1] },
-          { title: 'B', content: '', priority: 'P0', dependsOnIndexes: [0] },
+          { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [1] },
+          { title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0', dependsOnIndexes: [0] },
         ],
       },
       {},
@@ -164,10 +178,16 @@ describe('save_intents tool handler', () => {
   it('upserts: a batch item with an id updates the original in place, no new row', async () => {
     // AC-1/5: refine's定稿 carries the original id → the entry is updated, not duplicated.
     const onSaved = vi.fn()
-    const [r] = insertIntents(proj, [{ title: 'old', content: 'before', priority: 'P2' }])
+    const [r] = insertIntents(proj, [
+      { title: 'old', shortEnTitle: 'auto', content: 'before', priority: 'P2' },
+    ])
     const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
     const res = await handler(
-      { intents: [{ id: r.id, title: 'new', content: 'after', priority: 'P0' }] },
+      {
+        intents: [
+          { id: r.id, title: 'new', shortEnTitle: 'auto', content: 'after', priority: 'P0' },
+        ],
+      },
       {},
     )
     expect(res.isError).toBeFalsy()
@@ -179,11 +199,13 @@ describe('save_intents tool handler', () => {
 
   it('upserts a cancelled intent and reactivates it to todo', async () => {
     // AC-2: cancelled + id → updated and status flips back to todo.
-    const [r] = insertIntents(proj, [{ title: 'c', content: 'x', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'c', shortEnTitle: 'auto', content: 'x', priority: 'P0' },
+    ])
     updateStatus(r.id, 'cancelled')
     const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
     const res = await handler(
-      { intents: [{ id: r.id, title: 'c2', content: 'y', priority: 'P0' }] },
+      { intents: [{ id: r.id, title: 'c2', shortEnTitle: 'auto', content: 'y', priority: 'P0' }] },
       {},
     )
     expect(res.isError).toBeFalsy()
@@ -195,14 +217,16 @@ describe('save_intents tool handler', () => {
   it('returns isError without persisting when a target is in_progress (locked)', async () => {
     // AC-3: an immutable target rejects the whole batch; the agent learns it cannot save.
     const onSaved = vi.fn()
-    const [r] = insertIntents(proj, [{ title: 'locked', content: 'orig', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'locked', shortEnTitle: 'auto', content: 'orig', priority: 'P0' },
+    ])
     updateStatus(r.id, 'in_progress')
     const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
     const res = await handler(
       {
         intents: [
-          { id: r.id, title: 'hacked', content: 'no', priority: 'P3' },
-          { title: 'sibling', content: '', priority: 'P0' },
+          { id: r.id, title: 'hacked', shortEnTitle: 'auto', content: 'no', priority: 'P3' },
+          { title: 'sibling', shortEnTitle: 'auto', content: '', priority: 'P0' },
         ],
       },
       {},
@@ -219,7 +243,7 @@ describe('save_intents tool handler', () => {
     const onSaved = vi.fn()
     const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
     const res = await handler(
-      { intents: [{ id: 'ghost', title: 'x', content: '', priority: 'P0' }] },
+      { intents: [{ id: 'ghost', title: 'x', shortEnTitle: 'auto', content: '', priority: 'P0' }] },
       {},
     )
     expect(res.isError).toBe(true)
@@ -230,13 +254,21 @@ describe('save_intents tool handler', () => {
 
   it('handles a mixed update+insert batch in one transaction', async () => {
     // AC-6: one item updates (id) while another inserts (no id), atomically.
-    const [r] = insertIntents(proj, [{ title: 'base', content: '', priority: 'P0' }])
+    const [r] = insertIntents(proj, [
+      { title: 'base', shortEnTitle: 'auto', content: '', priority: 'P0' },
+    ])
     const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
     const res = await handler(
       {
         intents: [
-          { id: r.id, title: 'base2', content: '', priority: 'P0' },
-          { title: 'fresh', content: '', priority: 'P1', dependsOnIndexes: [0] },
+          { id: r.id, title: 'base2', shortEnTitle: 'auto', content: '', priority: 'P0' },
+          {
+            title: 'fresh',
+            shortEnTitle: 'auto',
+            content: '',
+            priority: 'P1',
+            dependsOnIndexes: [0],
+          },
         ],
       },
       {},
@@ -253,8 +285,14 @@ describe('save_intents tool handler', () => {
     // redirect the save elsewhere. Two servers for two projects stay isolated.
     const handlerA = getSaveHandler(createIntentMcpServer('/abs/proj-a', () => {}))
     const handlerB = getSaveHandler(createIntentMcpServer('/abs/proj-b', () => {}))
-    await handlerA({ intents: [{ title: 'A', content: '', priority: 'P0' }] }, {})
-    await handlerB({ intents: [{ title: 'B', content: '', priority: 'P0' }] }, {})
+    await handlerA(
+      { intents: [{ title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' }] },
+      {},
+    )
+    await handlerB(
+      { intents: [{ title: 'B', shortEnTitle: 'auto', content: '', priority: 'P0' }] },
+      {},
+    )
     expect(listIntents('/abs/proj-a').map((r) => r.title)).toEqual(['A'])
     expect(listIntents('/abs/proj-b').map((r) => r.title)).toEqual(['B'])
   })
@@ -268,7 +306,10 @@ describe('save_intents tool handler', () => {
     process.env.C3_DB_PATH = '/dev/null/cannot/c3.db'
     const onSaved = vi.fn()
     const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
-    const res = await handler({ intents: [{ title: 'X', content: '', priority: 'P0' }] }, {})
+    const res = await handler(
+      { intents: [{ title: 'X', shortEnTitle: 'auto', content: '', priority: 'P0' }] },
+      {},
+    )
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain('不可用')
     expect(onSaved).not.toHaveBeenCalled()
@@ -297,8 +338,15 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
 
   it('find_intents returns a slim list (id/title/module/priority/status/dependsOn) filtered by keyword', async () => {
     insertIntents(proj, [
-      { title: '登录鉴权', content: 'oauth', priority: 'P0', module: '认证', dependsOn: ['ext'] },
-      { title: '导出报表', content: 'csv', priority: 'P2' },
+      {
+        title: '登录鉴权',
+        shortEnTitle: 'auto',
+        content: 'oauth',
+        priority: 'P0',
+        module: '认证',
+        dependsOn: ['ext'],
+      },
+      { title: '导出报表', shortEnTitle: 'auto', content: 'csv', priority: 'P2' },
     ])
     const find = getHandler(
       createIntentMcpServer(proj, () => {}),
@@ -323,7 +371,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
   })
 
   it('find_intents reports a friendly empty result when nothing matches', async () => {
-    insertIntents(proj, [{ title: 'A', content: '', priority: 'P0' }])
+    insertIntents(proj, [{ title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' }])
     const find = getHandler(
       createIntentMcpServer(proj, () => {}),
       'find_intents',
@@ -334,8 +382,12 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
   })
 
   it('find_intents binds to the closure project (no cross-project read)', async () => {
-    insertIntents('/abs/proj-a', [{ title: 'AOnly', content: 'shared', priority: 'P0' }])
-    insertIntents('/abs/proj-b', [{ title: 'BOnly', content: 'shared', priority: 'P0' }])
+    insertIntents('/abs/proj-a', [
+      { title: 'AOnly', shortEnTitle: 'auto', content: 'shared', priority: 'P0' },
+    ])
+    insertIntents('/abs/proj-b', [
+      { title: 'BOnly', shortEnTitle: 'auto', content: 'shared', priority: 'P0' },
+    ])
     const findA = getHandler(
       createIntentMcpServer('/abs/proj-a', () => {}),
       'find_intents',
@@ -347,7 +399,13 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
 
   it('view_intent returns one intent full detail by id (incl. content/dependsOn)', async () => {
     const [r] = insertIntents(proj, [
-      { title: 'Detail', content: 'long body', priority: 'P1', dependsOn: ['ext'] },
+      {
+        title: 'Detail',
+        shortEnTitle: 'auto',
+        content: 'long body',
+        priority: 'P1',
+        dependsOn: ['ext'],
+      },
     ])
     const view = getHandler(
       createIntentMcpServer(proj, () => {}),
@@ -374,7 +432,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
 
   it('view_intent refuses an id from another project (treated as not found)', async () => {
     const [other] = insertIntents('/abs/proj-b', [
-      { title: 'Secret', content: 's', priority: 'P0' },
+      { title: 'Secret', shortEnTitle: 'auto', content: 's', priority: 'P0' },
     ])
     const view = getHandler(
       createIntentMcpServer('/abs/proj-a', () => {}),
@@ -384,5 +442,23 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
     // exists in the ledger, but not in proj-a → not found (no cross-project leak)
     expect(res.content[0].text).toContain('未找到')
     expect(res.content[0].text).not.toContain('Secret')
+  })
+})
+
+describe('save_intents input validation (shortEnTitle required)', () => {
+  const schema = z.object(saveSchema)
+
+  it('rejects a batch when an item is missing shortEnTitle', () => {
+    const parsed = schema.safeParse({
+      intents: [{ title: 'A', content: 'c', priority: 'P0' }],
+    })
+    expect(parsed.success).toBe(false)
+  })
+
+  it('accepts a batch when shortEnTitle is present', () => {
+    const parsed = schema.safeParse({
+      intents: [{ title: 'A', shortEnTitle: 'a-slug', content: 'c', priority: 'P0' }],
+    })
+    expect(parsed.success).toBe(true)
   })
 })

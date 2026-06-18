@@ -18,6 +18,7 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
     id: 'r-default',
     workspaceId: 'abs-test-proj',
     title: '测试需求',
+    shortEnTitle: null,
     content: '实现某个功能',
     priority: 'P0',
     module: '',

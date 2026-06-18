@@ -1650,6 +1650,12 @@ export interface Intent {
   /** Owning project — the workspace absolute path (resolved). */
   workspaceId: string
   title: string
+  /**
+   * Short ASCII English title (≤128 chars persisted), the stable source for
+   * deriving the branch / worktree slug. `null` for historic rows created before
+   * this field existed (backfilled only when the intent is next refined).
+   */
+  shortEnTitle: string | null
   content: string
   priority: IntentPriority
   /** Owning module name, inferred by the comm agent from title/content. `''` when historic/unidentified. */
@@ -1804,6 +1810,12 @@ export interface ProposedIntent {
    */
   id?: string
   title: string
+  /**
+   * Required short ASCII English title — the stable source for the derived
+   * branch / worktree slug. The agent should produce ≤64 ASCII chars; the store
+   * truncates to 128 before persisting. Required on both insert and update.
+   */
+  shortEnTitle: string
   content: string
   priority: IntentPriority
   /** Module name the comm agent inferred from title/content; persisted as `''` when omitted. */

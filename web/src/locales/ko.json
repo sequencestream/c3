@@ -689,6 +689,9 @@
       },
       "more": {
         "label": "추가 작업"
+      },
+      "resetSession": {
+        "label": "재설정"
       }
     },
     "automate": {
@@ -817,6 +820,17 @@
     },
     "specSession": {
       "empty": "이 의도에는 아직 spec 세션이 없습니다."
+    },
+    "resetSession": {
+      "intentSession": {
+        "title": "의도 세션 재설정",
+        "message": "새 입력과 이 의도의 현재 내용을 결합하여 새 리파인 세션을 시작합니다. 이전 세션은 Works에 남아 있지만 더 이상 이 의도에 연결되지 않습니다."
+      },
+      "specSession": {
+        "title": "Spec 세션 재설정",
+        "message": "새 입력과 현재 spec 내용을 결합하여 새 spec 세션을 시작합니다. 이전 세션은 Works에 남아 있지만 더 이상 이 의도에 연결되지 않습니다."
+      },
+      "placeholder": "무엇을 변경할까요? 입력은 현재 내용과 결합되어 새 세션의 시작점이 됩니다."
     }
   },
   "session": {

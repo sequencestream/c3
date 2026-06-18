@@ -15,12 +15,17 @@
  * codex driver cannot path-confine writes).
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
-import { ensureRuntime } from '../../runs.js'
-import { resolveWorkspaceRoot } from '../../state.js'
+import { addViewer, ensureRuntime, removeViewer } from '../../runs.js'
+import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
 import { getDefaultMode, getSpecPath } from '../../kernel/config/index.js'
-import { resolveSpecAgent, setSessionAgent } from '../../kernel/agent-config/index.js'
+import {
+  resolveSessionVendor,
+  resolveSpecAgent,
+  setSessionAgent,
+} from '../../kernel/agent-config/index.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { getIntent, isStoreAvailable, setSpecApproved, setSpecPath } from './store.js'
 import { computeSpecLayout } from './spec-path.js'
@@ -87,6 +92,31 @@ Intent content:
 ${intent.content}
 
 Read the relevant project material first, then overwrite \`${fileRel}\` with the spec. When done, briefly summarise what you captured.`
+}
+
+/**
+ * The per-run prompt that kicks off a RESET spec session — a fresh, write-confined
+ * `'spec'` session seeded with the user's new steering input concatenated with the
+ * current spec document content. Pure (no I/O) so the concatenation is unit-testable.
+ */
+export function buildResetSpecPrompt(
+  intent: Intent,
+  fileRel: string,
+  specContent: string,
+  userInput: string,
+): string {
+  const steer = userInput.trim()
+  const steerBlock = steer ? `New input from the user:\n${steer}\n\n` : ''
+  return `Revise the spec document for intent \`${intent.id}\` based on fresh input.
+
+Your responsibility is strictly limited: **write the spec, do not change code.** Your only writable file is inside the spec directory: \`${fileRel}\` (and any companion files under that directory). Any write to another project path is denied.
+
+${steerBlock}Intent title: ${intent.title}
+
+Current spec content (\`${fileRel}\`):
+${specContent}
+
+Read the relevant project material first, then overwrite \`${fileRel}\` with the revised spec. When done, briefly summarise what changed.`
 }
 
 export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
@@ -205,4 +235,88 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
 
   setSpecApproved(intent.id, true, conn.subject)
   ctx.broadcastIntents(proj)
+}
+
+/**
+ * `reset_spec_session` handler — start a FRESH write-confined spec session seeded
+ * with the user's new input + the current spec content, replacing the prior
+ * `spec_session_id` (re-linked on first bind). The escape hatch for a
+ * context-rotted spec conversation: the old session stays queryable under Works
+ * but is no longer the intent's linked spec session.
+ *
+ * Mirrors {@link writeSpecHandler} but reuses the EXISTING spec directory / path
+ * (no scaffolding) and replies with a `session_selected` so the detail's `spec
+ * session` tab switches to the new session immediately. Rejected when no spec was
+ * ever written (`spec_path` null) — there is nothing to revise. Claude-only, same
+ * as authoring (the codex driver cannot path-confine writes).
+ */
+export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (!intent.specPath) {
+    conn.send({ type: 'error', error: { code: 'intent.specNotWritten' } })
+    return
+  }
+  const specAgent = resolveSpecAgent()
+  if (specAgent.vendor === 'codex') {
+    conn.send({ type: 'error', error: { code: 'intent.specAgentUnsupported' } })
+    return
+  }
+
+  // Read the current spec content to seed the revision prompt. A read failure is
+  // non-fatal: fall back to an empty body (the agent still has the new input).
+  const fileAbs = join(proj, intent.specPath)
+  let specContent = ''
+  try {
+    specContent = readFileSync(fileAbs, 'utf8')
+  } catch (err) {
+    console.warn(`[c3:intents] reset_spec_session spec read failed: ${errMsg(err)}`)
+  }
+
+  // Stop viewing whatever this connection had open, then start the fresh session.
+  if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const rt = ensureRuntime(specId, proj, getDefaultMode(proj), [], 'spec')
+  rt.specDir = dirname(fileAbs)
+  setSessionAgent(specId, specAgent.id)
+  registerPendingSpecLink(specId, intent.id)
+  conn.viewing = specId
+  touchWorkspace(proj, Date.now())
+  addViewer(specId, conn.deliver)
+  conn.send({
+    type: 'session_selected',
+    workspaceId: pathToId(proj)!,
+    sessionId: specId,
+    title: intent.title,
+    mode: rt.mode,
+    history: [],
+    status: rt.status,
+    vendor: resolveSessionVendor(specId),
+  })
+  try {
+    void ctx
+      .launchRun(rt, buildResetSpecPrompt(intent, intent.specPath, specContent, msg.userInput))
+      .catch((err: unknown) => {
+        clearPendingSpecLink(specId)
+        console.warn(`[c3:intents] reset_spec_session launch failed before bind: ${errMsg(err)}`)
+      })
+  } catch (err) {
+    clearPendingSpecLink(specId)
+    throw err
+  }
 }

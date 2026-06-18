@@ -267,3 +267,53 @@ describe('IntentDetail.vue — tabs', () => {
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
   })
 })
+
+describe('IntentDetail.vue — session reset', () => {
+  it('intent session tab: reset → input → emits reset-intent-session with the typed input', async () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+
+    // Reset button is always available on the intent-session tab (content exists).
+    const resetBtn = w.find('[data-testid="intent-detail-reset-session"]')
+    expect(resetBtn.exists()).toBe(true)
+    await resetBtn.trigger('click')
+
+    await w.find('[data-testid="reset-input"]').setValue('please narrow the scope')
+    await w.find('[data-testid="reset-accept"]').trigger('click')
+
+    expect(w.emitted('reset-intent-session')).toEqual([['i1', 'please narrow the scope']])
+    // Dialog closes after confirm.
+    expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(false)
+  })
+
+  it('spec session tab: reset emits reset-spec-session when a spec exists', async () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null }))
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+
+    const resetBtn = w.find('[data-testid="intent-detail-reset-session"]')
+    expect(resetBtn.exists()).toBe(true)
+    await resetBtn.trigger('click')
+
+    await w.find('[data-testid="reset-input"]').setValue('tighten acceptance')
+    await w.find('[data-testid="reset-accept"]').trigger('click')
+
+    expect(w.emitted('reset-spec-session')).toEqual([['i1', 'tighten acceptance']])
+  })
+
+  it('spec session tab: no reset button when no spec has been written', async () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: null }))
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-reset-session"]').exists()).toBe(false)
+  })
+
+  it('confirm is disabled until the user types input', async () => {
+    const w = mountDetail(intent({ id: 'i1' }))
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+    await w.find('[data-testid="intent-detail-reset-session"]').trigger('click')
+
+    const accept = w.find('[data-testid="reset-accept"]')
+    expect((accept.element as HTMLButtonElement).disabled).toBe(true)
+    await w.find('[data-testid="reset-input"]').setValue('hello')
+    expect((accept.element as HTMLButtonElement).disabled).toBe(false)
+  })
+})

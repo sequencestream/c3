@@ -90,6 +90,21 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'open_spec_session', workspaceId: intentsProject.value, intentId })
   }
 
+  // Reset the intent's refine session: the server starts a fresh comm session
+  // seeded with the new input + intent content, replacing intent_session_id.
+  ctx.resetIntentSession = (intentId: string, userInput: string): void => {
+    if (!intentsProject.value) return
+    send({ type: 'reset_intent_session', workspaceId: intentsProject.value, intentId, userInput })
+  }
+
+  // Reset the intent's spec session: the server starts a fresh write-confined
+  // spec session seeded with the new input + current spec content, replacing
+  // spec_session_id.
+  ctx.resetSpecSession = (intentId: string, userInput: string): void => {
+    if (!intentsProject.value) return
+    send({ type: 'reset_spec_session', workspaceId: intentsProject.value, intentId, userInput })
+  }
+
   // Fetch the selected intent's spec.md for the detail's `spec` tab. Tracks the
   // awaited rel so the matching file_read reply fills `intentSpecContent`.
   ctx.readIntentSpec = (rel: string): void => {

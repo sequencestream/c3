@@ -84,6 +84,8 @@ const emit = defineEmits<{
   'open-spec-session': [intentId: string]
   'open-intent-session': [sessionId: string]
   'read-spec': [rel: string]
+  'reset-intent-session': [intentId: string, userInput: string]
+  'reset-spec-session': [intentId: string, userInput: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
   'open-dev': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
@@ -273,6 +275,10 @@ defineExpose({
         @open-spec-session="(id: string) => emit('open-spec-session', id)"
         @open-intent-session="(sessionId: string) => emit('open-intent-session', sessionId)"
         @read-spec="(rel: string) => emit('read-spec', rel)"
+        @reset-intent-session="
+          (id: string, input: string) => emit('reset-intent-session', id, input)
+        "
+        @reset-spec-session="(id: string, input: string) => emit('reset-spec-session', id, input)"
         @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
         @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"

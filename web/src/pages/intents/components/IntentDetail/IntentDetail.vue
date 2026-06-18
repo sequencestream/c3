@@ -27,6 +27,7 @@ import type { ChatMsg, PermissionMsg, RunActivity } from '../../../../lib/chat-t
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import ChatColumn from '../../../../components/ChatColumn/ChatColumn.vue'
+import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
 import {
   formatDate,
   formatDependsOn,
@@ -87,6 +88,9 @@ const emit = defineEmits<{
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
   'read-spec': [rel: string]
+  // ── 会话重置(带新输入,拼接意图/spec 内容新起会话) ──
+  'reset-intent-session': [intentId: string, userInput: string]
+  'reset-spec-session': [intentId: string, userInput: string]
   // ── chat column passthrough ──
   'set-session-agent': [agentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
@@ -280,6 +284,42 @@ const expectedSessionId = computed<string | null>(() => {
 const chatReady = computed<boolean>(
   () => expectedSessionId.value !== null && props.activeSession === expectedSessionId.value,
 )
+
+// ── 会话重置弹框(intent session / spec session 共用,按当前 tab 分流) ──────────
+const resetDialogOpen = ref(false)
+
+// 当前 session tab 是否可重置:intent session 恒可(意图内容始终存在);
+// spec session 仅在已写过 spec(specPath 存在)时可重置(否则无 spec 内容可拼接)。
+const canResetSession = computed<boolean>(() => {
+  if (activeTab.value === 'intentSession') return true
+  if (activeTab.value === 'specSession') return !!props.intent?.specPath
+  return false
+})
+const resetDialogTitle = computed<string>(() =>
+  activeTab.value === 'specSession'
+    ? t('intent.resetSession.specSession.title')
+    : t('intent.resetSession.intentSession.title'),
+)
+const resetDialogMessage = computed<string>(() =>
+  activeTab.value === 'specSession'
+    ? t('intent.resetSession.specSession.message')
+    : t('intent.resetSession.intentSession.message'),
+)
+
+function openResetDialog(): void {
+  if (!canResetSession.value) return
+  resetDialogOpen.value = true
+}
+function onResetConfirm(text: string): void {
+  const r = props.intent
+  resetDialogOpen.value = false
+  if (!r) return
+  if (activeTab.value === 'specSession') {
+    emit('reset-spec-session', r.id, text)
+  } else {
+    emit('reset-intent-session', r.id, text)
+  }
+}
 
 // ── Composer 透传(供 App.vue 待发队列「编辑」回填) ──────────────────────────
 const chatColumn = ref<InstanceType<typeof ChatColumn> | null>(null)
@@ -485,6 +525,20 @@ defineExpose({
 
       <!-- intent session / spec session tab:复用聊天列 -->
       <template v-else>
+        <div
+          v-if="canResetSession"
+          class="intent-detail-session-tools"
+          data-testid="intent-detail-session-tools"
+        >
+          <button
+            type="button"
+            class="req-btn"
+            data-testid="intent-detail-reset-session"
+            @click="openResetDialog"
+          >
+            {{ t('intent.action.resetSession.label') }}
+          </button>
+        </div>
         <p
           v-if="!expectedSessionId"
           class="intent-detail-empty"
@@ -572,6 +626,18 @@ defineExpose({
         </div>
       </div>
     </div>
+
+    <!-- 会话重置输入弹框 -->
+    <ResetSessionDialog
+      :open="resetDialogOpen"
+      :title="resetDialogTitle"
+      :message="resetDialogMessage"
+      :placeholder="t('intent.resetSession.placeholder')"
+      :confirm-label="t('intent.action.resetSession.label')"
+      :cancel-label="t('common.action.cancel.label')"
+      @confirm="onResetConfirm"
+      @cancel="resetDialogOpen = false"
+    />
   </section>
 </template>
 
@@ -663,5 +729,12 @@ defineExpose({
   min-height: 0;
   overflow-y: auto;
   padding: var(--sp-3);
+}
+.intent-detail-session-tools {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--c-border);
 }
 </style>

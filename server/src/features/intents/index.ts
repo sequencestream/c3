@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
+  type Intent,
   type SessionAgentSwitch,
   type VendorId,
 } from '@ccc/shared/protocol'
@@ -444,6 +445,82 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
   try {
     await ctx.launchRun(rt, firstPrompt)
+  } catch (err) {
+    clearPendingIntentLink(chatId)
+    throw err
+  }
+}
+
+/**
+ * Build the first prompt for a RESET intent (refine/comm) session — a fresh
+ * session seeded with the user's new steering input concatenated with the
+ * intent's current content. Pure (no I/O) so the concatenation is unit-testable.
+ * Chinese skeleton, mirroring {@link refineIntent}'s seed.
+ */
+export function buildResetIntentPrompt(intent: Intent, userInput: string): string {
+  const steer = userInput.trim()
+  const steerBlock = steer ? `我的新输入:\n${steer}\n\n` : ''
+  return `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。\n\n${steerBlock}意图标题:${intent.title}\n当前意图内容:\n${intent.content}\n\n请结合上面的新输入与意图内容,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${intent.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
+}
+
+/**
+ * `reset_intent_session` handler — start a FRESH comm/refine session seeded with
+ * the user's new input + the intent's current content, replacing the prior
+ * `intent_session_id` (re-linked on first bind via the resident `run:bound`
+ * subscription). The escape hatch for a context-rotted refine conversation after
+ * the intent changed. Mirrors {@link refineIntent} but injects the user's steering
+ * input ahead of the intent content.
+ */
+export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  // Restart the comm session as a fresh one seeded with this intent + new input.
+  if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+  const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  bindIntentAgent(chatId)
+  setChatSession(proj, chatId, req.title)
+  conn.viewing = chatId
+  touchWorkspace(proj, Date.now())
+  addViewer(chatId, conn.deliver)
+  conn.send({
+    type: 'session_selected',
+    workspaceId: pathToId(proj)!,
+    sessionId: chatId,
+    title: req.title,
+    mode: 'default',
+    history: [],
+    status: 'idle',
+    vendor: resolveSessionVendor(chatId),
+    agentSwitch: agentSwitchFor(chatId),
+  })
+  conn.send({
+    type: 'intents',
+    workspaceId: pathToId(proj)!,
+    items: listIntents(proj),
+    sddEnabled: getSddEnabled(proj),
+  })
+  // Link the pending refine session to this intent so the resident `run:bound`
+  // subscription replaces `intent_session_id` with the real comm session id on
+  // first bind, making the new conversation reopenable from the intent detail.
+  registerPendingIntentLink(chatId, req.id)
+  try {
+    await ctx.launchRun(rt, buildResetIntentPrompt(req, msg.userInput))
   } catch (err) {
     clearPendingIntentLink(chatId)
     throw err

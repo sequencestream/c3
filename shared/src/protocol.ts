@@ -2481,6 +2481,23 @@ export type ClientToServer =
    * `open_intent_chat` (the comm/refine session, a different `'intent'` runtime).
    */
   | { type: 'open_spec_session'; workspaceId: string; intentId: string }
+  /**
+   * Reset an intent's refine / communication session: start a FRESH `'intent'`
+   * session seeded with the user's new input concatenated with the intent's
+   * current content, replacing the prior `intent_session_id` (re-linked onto the
+   * intent on first bind). Used to escape a context-rotted conversation after the
+   * intent changed — the old session stays queryable under Works but is no longer
+   * the intent's linked session.
+   */
+  | { type: 'reset_intent_session'; workspaceId: string; intentId: string; userInput: string }
+  /**
+   * Reset an intent's spec-authoring session: start a FRESH write-confined
+   * `'spec'` session seeded with the user's new input concatenated with the
+   * CURRENT spec document content (read from `spec_path`), replacing the prior
+   * `spec_session_id`. Rejected if no spec has been written yet. Mirrors
+   * `reset_intent_session` for the spec tab.
+   */
+  | { type: 'reset_spec_session'; workspaceId: string; intentId: string; userInput: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */

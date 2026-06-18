@@ -87,6 +87,10 @@ export interface AppMethods {
   openSpecSession(intentId: string): void
   /** Fetch the intent's `spec.md` for the detail's `spec` tab (workspace-relative path). */
   readIntentSpec(rel: string): void
+  /** Reset the intent's refine session: new input + intent content → fresh session. */
+  resetIntentSession(intentId: string, userInput: string): void
+  /** Reset the intent's spec session: new input + current spec content → fresh session. */
+  resetSpecSession(intentId: string, userInput: string): void
   startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
   setIntentStatus(intentId: string, status: IntentStatus): void
   setIntentAutomate(intentId: string, automateOn: boolean): void

@@ -688,6 +688,9 @@
       },
       "more": {
         "label": "More actions"
+      },
+      "resetSession": {
+        "label": "Reset"
       }
     },
     "automate": {
@@ -816,6 +819,17 @@
     },
     "specSession": {
       "empty": "This intent has no spec session yet."
+    },
+    "resetSession": {
+      "intentSession": {
+        "title": "Reset intent session",
+        "message": "Start a fresh refine session seeded with your new input and this intent's current content. The previous session stays available under Works but is no longer linked to this intent."
+      },
+      "specSession": {
+        "title": "Reset spec session",
+        "message": "Start a fresh spec session seeded with your new input and the current spec content. The previous session stays available under Works but is no longer linked to this intent."
+      },
+      "placeholder": "What should change? Your input is combined with the current content to seed the new session."
     }
   },
   "session": {

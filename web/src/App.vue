@@ -104,6 +104,8 @@ const {
   approveSpec,
   openSpecSession,
   readIntentSpec,
+  resetIntentSession,
+  resetSpecSession,
   startDevelopment,
   openDevSession,
   setIntentStatus,
@@ -341,6 +343,8 @@ const {
           @open-spec-session="openSpecSession"
           @open-intent-session="selectIntentSession"
           @read-spec="readIntentSpec"
+          @reset-intent-session="resetIntentSession"
+          @reset-spec-session="resetSpecSession"
           @start-dev="startDevelopment"
           @open-dev="openDevSession"
           @set-status="setIntentStatus"

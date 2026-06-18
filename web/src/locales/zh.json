@@ -688,6 +688,9 @@
       },
       "more": {
         "label": "更多操作"
+      },
+      "resetSession": {
+        "label": "重置"
       }
     },
     "automate": {
@@ -816,6 +819,17 @@
     },
     "specSession": {
       "empty": "该意图还没有写 spec 会话。"
+    },
+    "resetSession": {
+      "intentSession": {
+        "title": "重置意图会话",
+        "message": "以你的新输入与该意图的当前内容拼接,新起一个完善会话。旧会话仍可在 Works 中查看,但不再关联到此意图。"
+      },
+      "specSession": {
+        "title": "重置 Spec 会话",
+        "message": "以你的新输入与当前 spec 内容拼接,新起一个 spec 会话。旧会话仍可在 Works 中查看,但不再关联到此意图。"
+      },
+      "placeholder": "想调整什么?你的输入会与当前内容拼接,作为新会话的起点。"
     }
   },
   "session": {

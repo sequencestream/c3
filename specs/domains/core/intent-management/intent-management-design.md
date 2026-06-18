@@ -232,6 +232,23 @@ add-column through the shared adapter (RM-R14).
   flow with a first prompt carrying the discussion title + conclusion ("基于以下讨论结论拆分出可验证
   的需求条目 …, 定稿后调用 save_intents"). Triggered by the discussion view's **Convert to
   Intent** button (RM-R7).
+- **Reset intent session (`reset_intent_session`):** the escape hatch for a context-rotted refine
+  conversation after the intent changed (RM-R24). Identical machinery to **Refine**, but the seed
+  prompt prepends the user's **new steering input** (typed into a controlled input dialog) ahead of
+  the intent's current title + content, then instructs the agent to upsert the original id in place
+  ("继续完善已存在意图 <id>… 我的新输入:… 当前意图内容:…"). It registers the same pending→intent link, so
+  the resident `run:bound` subscription **replaces** the intent's `intentSessionId` with the new
+  comm session id on first bind. The prior session stays queryable under Works (Run center) but is
+  no longer the intent's linked session; no batch reset.
+- **Reset spec session (`reset_spec_session`):** the spec-tab counterpart, mirroring **Write spec**
+  but reusing the EXISTING spec directory / path (no scaffolding). Rejected (`error`
+  `intent.specNotWritten`) when no spec was ever written; claude-only, same as authoring (the codex
+  driver cannot path-confine writes — `intent.specAgentUnsupported`). The server reads the current
+  `spec_path` content off disk and launches a fresh write-confined `'spec'` session seeded with the
+  user's **new input** + that spec content, replies `session_selected` (so the detail's 「spec
+  session」tab switches to it), and registers the pending→intent link so `run:bound` replaces the
+  intent's `specSessionId` on first bind. A read failure on the current spec is non-fatal (the new
+  input still seeds the session).
 
 ## Communication system prompt
 

@@ -87,6 +87,7 @@ func NewServer(d Deps) http.Handler {
 	mountCheckout(mux, d)
 	mountPayment(mux, d)
 	mountAccount(mux, d)
+	mountArtifact(mux, d)
 	mux.Handle("/", staticHandler(d.Static))
 	return mux
 }

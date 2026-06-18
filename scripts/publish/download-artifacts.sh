@@ -3,7 +3,7 @@
 # download-artifacts.sh — 下载某次 GitHub Actions run 构建的所有产物
 #
 # 用法:
-#   scripts/download/download-artifacts.sh <github-run-id>
+#   scripts/publish/download-artifacts.sh <github-run-id>
 #
 # 产物会按版本号解压到仓库根的 dist/release-artifacts/<version>/<artifact-name>/ 下,
 # 版本号取自产物内的 manifest.json。

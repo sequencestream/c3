@@ -72,6 +72,21 @@ license-server/
 | `C3_LS_LRU_SIZE`                   | 否         | `1024`   | 每个缓存的容量                                                    |
 | `C3_LS_GRACE_MINUTES`              | 否         | `30`     | 离线 grace 窗口                                                   |
 | `C3_LS_ADMIN_ALLOWLIST`            | 否         | —        | 逗号分隔的 admin GitHub login                                     |
+| `C3_LS_ARTIFACT_UPLOAD_TOKEN`      | 上传时     | —        | 构建产物上传端点的固定 bearer token(机密);与 dir 同时设置才启用端点 |
+| `C3_LS_ARTIFACT_DIR`               | 上传时     | —        | 上传产物落盘根目录,布局 `<dir>/<version>/<batch>/<filename>`;留空则端点关闭 |
+| `C3_LS_ARTIFACT_MAX_BYTES`         | 否         | `209715200`(200MiB) | 单次上传体积上限                                       |
+
+## 产物上传端点
+
+`POST /v1/artifact/upload` —— c3 发布流水线把每个**已签名**产物逐文件推到自建存储(替代上传到 GitHub Actions artifact)。
+
+- **启用条件**:`C3_LS_ARTIFACT_UPLOAD_TOKEN` 与 `C3_LS_ARTIFACT_DIR` 同时设置;否则返回 `503 unavailable`。
+- **认证**:`Authorization: Bearer <token>`,常量时间比较;失败 `401`。
+- **请求**:`?version=<v>&batch=<ts>&filename=<name>`,body 为文件原始字节(`application/octet-stream`);可选 `X-Artifact-Sha256: <hex>` 由服务端比对。
+- **落盘**:`<C3_LS_ARTIFACT_DIR>/<version>/<batch>/<filename>`;`version`/`batch`/`filename` 经白名单字符校验 + basename 强制,杜绝目录穿越;先写临时文件再原子 rename。
+- **响应**:`200 {"path","size","sha256"}`。
+
+发布端脚本见 `scripts/publish/upload-to-server.mjs`(配 `C3_ARTIFACT_SERVER_URL` / `C3_ARTIFACT_UPLOAD_TOKEN`)。
 
 ## 构建与运行
 

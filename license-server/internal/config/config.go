@@ -20,6 +20,9 @@ const (
 	DefaultListenAddr   = ":8787"
 	DefaultLRUSize      = 1024
 	DefaultGraceMinutes = 30
+	// DefaultArtifactMaxBytes bounds a single build-artifact upload (200 MiB). A
+	// release tarball is tens of MiB; a larger body is refused rather than buffered.
+	DefaultArtifactMaxBytes int64 = 200 << 20
 )
 
 // Activation/entitlement domain defaults (not env-driven; the same for every
@@ -113,6 +116,20 @@ type Config struct {
 	// AdminAllowlist is the set of GitHub logins permitted on the admin
 	// back-office (PL-R11), parsed from a comma-separated env value.
 	AdminAllowlist []string
+
+	// Build-artifact upload (release pipeline → self-hosted store). The c3 release
+	// jobs POST each signed artifact to /v1/artifact/upload; the endpoint is
+	// disabled unless BOTH the token and the directory are set.
+
+	// ArtifactUploadToken is the fixed bearer token the upload endpoint requires.
+	// Secret; when empty the endpoint reports "unavailable" rather than accepting
+	// unauthenticated writes.
+	ArtifactUploadToken string
+	// ArtifactDir is the root directory uploaded artifacts are written under, laid
+	// out as <ArtifactDir>/<version>/<batch>/<filename>. Empty disables the endpoint.
+	ArtifactDir string
+	// ArtifactMaxBytes caps a single upload body (DefaultArtifactMaxBytes when unset).
+	ArtifactMaxBytes int64
 }
 
 // Environment variable names. Centralized so docs and tests reference one source.
@@ -134,6 +151,9 @@ const (
 	EnvLRUSize                 = "C3_LS_LRU_SIZE"
 	EnvGraceMinutes            = "C3_LS_GRACE_MINUTES"
 	EnvAdminAllowlist          = "C3_LS_ADMIN_ALLOWLIST"
+	EnvArtifactUploadToken     = "C3_LS_ARTIFACT_UPLOAD_TOKEN"
+	EnvArtifactDir             = "C3_LS_ARTIFACT_DIR"
+	EnvArtifactMaxBytes        = "C3_LS_ARTIFACT_MAX_BYTES"
 )
 
 // Getenv is the signature of an environment lookup, mirroring [os.Getenv].
@@ -166,6 +186,8 @@ func LoadFrom(get Getenv) (*Config, error) {
 		WeChatPayPrivateKey:     get(EnvWeChatPayPrivateKey),
 		WeChatPayCert:           get(EnvWeChatPayCert),
 		AdminAllowlist:          parseList(get(EnvAdminAllowlist)),
+		ArtifactUploadToken:     get(EnvArtifactUploadToken),
+		ArtifactDir:             get(EnvArtifactDir),
 	}
 
 	size, err := parseIntDefault(get(EnvLRUSize), DefaultLRUSize)
@@ -185,6 +207,15 @@ func LoadFrom(get Getenv) (*Config, error) {
 		return nil, fmt.Errorf("%s: must be a positive integer, got %d", EnvGraceMinutes, grace)
 	}
 	c.GraceMinutes = grace
+
+	maxBytes, err := parseInt64Default(get(EnvArtifactMaxBytes), DefaultArtifactMaxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", EnvArtifactMaxBytes, err)
+	}
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("%s: must be a positive integer, got %d", EnvArtifactMaxBytes, maxBytes)
+	}
+	c.ArtifactMaxBytes = maxBytes
 
 	return c, nil
 }
@@ -207,6 +238,9 @@ func (c *Config) Redacted() map[string]any {
 		"lruSize":               c.LRUSize,
 		"graceMinutes":          c.GraceMinutes,
 		"adminAllowlistCount":   len(c.AdminAllowlist),
+		"artifactDir":           c.ArtifactDir,
+		"artifactMaxBytes":      c.ArtifactMaxBytes,
+		"artifactUploadToken":   presence(c.ArtifactUploadToken),
 		"ed25519PublicKey":      presence(c.Ed25519PublicKey),
 		"githubOauthClientId":   presence(c.GitHubOAuthClientID),
 		"wechatPayMchId":        presence(c.WeChatPayMchID),
@@ -235,6 +269,15 @@ func (c *Config) WeChatPayConfigured() bool {
 		strings.TrimSpace(c.WeChatPayCert) != ""
 }
 
+// ArtifactUploadConfigured reports whether the build-artifact upload endpoint is
+// enabled: both the bearer token and the storage directory must be set, else the
+// endpoint degrades to a clear "unavailable" rather than accepting writes.
+func (c *Config) ArtifactUploadConfigured() bool {
+	return c != nil &&
+		strings.TrimSpace(c.ArtifactUploadToken) != "" &&
+		strings.TrimSpace(c.ArtifactDir) != ""
+}
+
 func presence(v string) string {
 	if v == "" {
 		return "unset"
@@ -254,6 +297,17 @@ func parseIntDefault(v string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return 0, fmt.Errorf("invalid integer %q", v)
+	}
+	return n, nil
+}
+
+func parseInt64Default(v string, fallback int64) (int64, error) {
+	if strings.TrimSpace(v) == "" {
+		return fallback, nil
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid integer %q", v)
 	}

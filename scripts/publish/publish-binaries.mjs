@@ -2,10 +2,14 @@
 // GitHub Release on the PUBLIC distribution repo (default: sequencestream/c3).
 //
 // Why this exists: the source repo (sequencestream/code-creative-center) is PRIVATE, but the
-// signed binaries are meant to be public. CI builds the artifacts there; `download-artifacts.sh`
-// pulls them into `dist/release-artifacts/<version>/<artifact>/…`. This script then, on a
-// trusted local machine that holds the minisign SECRET key:
-//   1. merge the per-target subdirs into one flat set (reuses release/merge-dist.mjs),
+// signed binaries are meant to be public. CI builds the artifacts there; they reach this script's
+// input dir `dist/release-artifacts/<version>/` in one of two layouts:
+//   - FLAT   — pulled from the self-hosted store: packages `c3-v<ver>-<target>.{tar.gz,zip}` sit
+//              directly in the dir (no manifest.json); this script synthesizes one to drive sign.
+//   - NESTED — legacy GH Actions artifact layout: per-target subdirs each with manifest.json
+//              (still accepted for a hand-assembled dir; the download helper has been retired).
+// This script then, on a trusted local machine that holds the minisign SECRET key:
+//   1. normalize the input into one flat set + manifest.json (merge subdirs, or index flat pkgs),
 //   2. sign every package (SHA256SUMS + per-artifact .sha256 + .minisig — release/sign.mjs),
 //   3. verify the set is internally consistent (release/postgate.mjs),
 //   4. bootstrap the public repo's default branch if it is still empty (one README commit),
@@ -34,11 +38,12 @@ import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPrivateKey, createPublicKey } from 'node:crypto'
 import { mergeDist } from '../release/merge-dist.mjs'
+import { buildManifest, writeManifest } from '../release/manifest.mjs'
 import { artifactsFromManifest, signArtifacts, secretFromEnv } from '../release/sign.mjs'
 import { verifyDist } from '../release/postgate.mjs'
 import { topChangelogSection } from '../release/notes.mjs'
 import { parseSecretBlob, formatPublicKey, verifyContent } from '../release/minisign.mjs'
-import { P0_TARGETS } from '../release/targets.mjs'
+import { P0_TARGETS, KNOWN_TARGETS, isExperimental } from '../release/targets.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
@@ -74,7 +79,7 @@ function gh(args, { capture = false } = {}) {
  *  the highest semver. */
 function resolveVersionDir(version) {
   if (!existsSync(ARTIFACTS_BASE))
-    fail(`${ARTIFACTS_BASE} not found — run scripts/publish/download-artifacts.sh first.`)
+    fail(`${ARTIFACTS_BASE} not found — place the release packages under <version>/ first.`)
   if (version) {
     const dir = resolve(ARTIFACTS_BASE, version)
     if (!existsSync(dir)) fail(`no artifacts for version ${version} at ${dir}`)
@@ -83,7 +88,8 @@ function resolveVersionDir(version) {
   const dirs = readdirSync(ARTIFACTS_BASE)
     .filter((n) => !n.startsWith('.') && statSync(join(ARTIFACTS_BASE, n)).isDirectory())
     .sort(compareSemver)
-  if (!dirs.length) fail(`no version dirs under ${ARTIFACTS_BASE} — download artifacts first.`)
+  if (!dirs.length)
+    fail(`no version dirs under ${ARTIFACTS_BASE} — place release packages under <version>/ first.`)
   const picked = dirs[dirs.length - 1]
   if (dirs.length > 1)
     console.warn(
@@ -119,6 +125,74 @@ function peekTargets(versionDir) {
     for (const a of m.artifacts) out.push({ target: a.target, file: a.file, version: m.version })
   }
   return out
+}
+
+/** Parse a flat store package name `c3-v<version>-<target>.{tar.gz|zip}`. Target is matched
+ *  against the KNOWN_TARGETS whitelist (a fixed literal) so the `<version>-<target>` split is
+ *  unambiguous even when the version carries a prerelease dash. Returns null for non-packages
+ *  (sidecars like `.sha256`/`.minisig`, `SHA256SUMS`, `manifest.json`, …). */
+function parseFlatPkg(name) {
+  if (!name.startsWith('c3-v')) return null
+  for (const ext of ['tar.gz', 'zip']) {
+    for (const target of KNOWN_TARGETS) {
+      const suffix = `-${target}.${ext}`
+      if (name.endsWith(suffix))
+        return { target, version: name.slice('c3-v'.length, name.length - suffix.length) }
+    }
+  }
+  return null
+}
+
+/** Flat store layout: signed packages sit directly in the version dir (no per-target subdir,
+ *  no manifest.json). Returns [{ target, file, version }] read-only. */
+function discoverFlat(versionDir) {
+  const out = []
+  for (const name of readdirSync(versionDir)) {
+    if (statSync(join(versionDir, name)).isDirectory()) continue
+    const p = parseFlatPkg(name)
+    if (p) out.push({ target: p.target, file: name, version: p.version })
+  }
+  const versions = [...new Set(out.map((a) => a.version))]
+  if (versions.length > 1)
+    fail(
+      `multiple versions in flat layout under ${versionDir}: ${versions.join(', ')} — keep one version per dir.`,
+    )
+  return out
+}
+
+/**
+ * Detect which layout the version dir holds, WITHOUT mutating anything:
+ *   - 'nested' — GH Actions download: per-target subdirs each with manifest.json.
+ *   - 'flat'   — self-hosted store: signed packages laid out flat (no manifest.json).
+ *   - 'none'   — neither; nothing to publish.
+ */
+function detectLayout(versionDir) {
+  const nested = peekTargets(versionDir)
+  if (nested.length) return { kind: 'nested', version: nested[0].version, present: nested }
+  const flat = discoverFlat(versionDir)
+  if (flat.length) return { kind: 'flat', version: flat[0].version, present: flat }
+  return { kind: 'none', version: null, present: [] }
+}
+
+/** Synthesize the working manifest.json for a FLAT layout (store packages already sit in `dir`).
+ *  buildManifest re-stats + re-hashes each package from disk. commit/buildTime are unknown for a
+ *  store-sourced download and are left empty — the manifest is internal scaffolding for sign +
+ *  verify and is NOT a published asset, so no provenance is fabricated into the release. */
+function materializeFlatManifest(dir, version, present, log) {
+  const manifest = buildManifest({
+    versionInfo: { version, commit: '', buildTime: '' },
+    harden: 'basic',
+    artifacts: present.map(({ target, file }) => ({
+      target,
+      file: resolve(dir, file), // buildManifest basenames it and reads bytes/sha256 from disk
+      ...(isExperimental(target) ? { experimental: true } : {}),
+    })),
+  })
+  const manifestPath = resolve(dir, 'manifest.json')
+  writeManifest(manifestPath, manifest)
+  for (const a of manifest.artifacts)
+    log(`  indexed ${a.target}  ${a.file}  ${a.sha256.slice(0, 12)}…`)
+  return manifestPath
 }
 
 /** Resolve the minisign secret blob: env first, then --key-file / the default dist file. */
@@ -247,9 +321,18 @@ export async function publishBinaries(opts = {}) {
     yes = false,
   } = opts
 
-  const { version, dir } = resolveVersionDir(versionArg)
+  const { dir } = resolveVersionDir(versionArg)
+  const layout = detectLayout(dir)
+  if (layout.kind === 'none')
+    fail(
+      `no artifacts under ${dir} — expected either per-target subdirs with manifest.json ` +
+        `(GH Actions download) or flat store packages c3-v<ver>-<target>.{tar.gz,zip}.`,
+    )
+  // Normalize: the dir / manifest may carry a leading `v`; strip it so `tag` is `vX.Y.Z`,
+  // never `vvX.Y.Z` (the old `tag = v${dirName}` doubled the v for a `v0.2.0` store dir).
+  const version = layout.version.replace(/^v/, '')
   const tag = `v${version}`
-  console.log(`[publish] version ${version} → repo ${repo} (tag ${tag})`)
+  console.log(`[publish] version ${version} → repo ${repo} (tag ${tag}) [${layout.kind} layout]`)
   console.log(`[publish] artifacts: ${dir}`)
 
   // Secret key — required unless explicitly opting into an unsigned public release.
@@ -263,8 +346,7 @@ export async function publishBinaries(opts = {}) {
   const pub = signing ? publicKeyTextFromSecret(secretKeyB64) : null
   if (signing) console.log(`[publish] signing key: ${source} (key id ${pub.keyId})`)
 
-  const present = peekTargets(dir)
-  const targets = [...new Set(present.map((a) => a.target))]
+  const targets = [...new Set(layout.present.map((a) => a.target))]
   const missingP0 = P0_TARGETS.filter((t) => !targets.includes(t))
   console.log(`[publish] targets: ${targets.join(', ')}`)
   if (missingP0.length)
@@ -276,7 +358,11 @@ export async function publishBinaries(opts = {}) {
   // Plan summary.
   const sidecars = signing ? ['.sha256', '.minisig'] : ['.sha256']
   console.log('[publish] plan:')
-  console.log(`  1. merge      → flatten ${targets.length} target(s) into ${dir}`)
+  console.log(
+    layout.kind === 'flat'
+      ? `  1. index      → synthesize manifest.json from ${targets.length} flat package(s) in ${dir}`
+      : `  1. merge      → flatten ${targets.length} target(s) into ${dir}`,
+  )
   console.log(
     `  2. sign       → SHA256SUMS + per-artifact ${sidecars.join('/')}${signing ? ' + SHA256SUMS.minisig + minisign.pub' : ' (UNSIGNED)'}`,
   )
@@ -295,9 +381,16 @@ export async function publishBinaries(opts = {}) {
   if (releaseExists(repo, tag) && !clobber)
     fail(`release ${tag} already exists on ${repo} — pass --clobber to re-upload assets.`)
 
-  // 1. merge per-target subdirs into one flat set + manifest.json + SHA256SUMS.
-  console.log('\n[publish] merging artifacts…')
-  const { manifestPath } = mergeDist({ distDir: dir, log: (m) => console.log(m) })
+  // 1. build the working manifest.json for the version dir.
+  //    nested → merge per-target subdirs into one flat set; flat → synthesize from the packages.
+  let manifestPath
+  if (layout.kind === 'flat') {
+    console.log('\n[publish] indexing flat packages…')
+    manifestPath = materializeFlatManifest(dir, version, layout.present, (m) => console.log(m))
+  } else {
+    console.log('\n[publish] merging artifacts…')
+    manifestPath = mergeDist({ distDir: dir, log: (m) => console.log(m) }).manifestPath
+  }
   const { artifacts } = artifactsFromManifest(manifestPath)
 
   // 2. sign.

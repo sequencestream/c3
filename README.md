@@ -115,7 +115,7 @@ P0 blocks the publish.
 
 ```
 untrusted comment: c3 release signing key (minisign)
-RWQGEiNpXN1t9VEX2lXZab7nHaR+gfjfPYcCYN6Bxyid5NkuQK/Gme+l
+RWQzBKv0lANWnVsOQNO6o7YjLi0MbFGbI0K0fUTIaXTWKM62tlosg306
 ```
 
 Verify a download — either with the bundled self-check (no extra tools):
@@ -128,7 +128,7 @@ Verify a download — either with the bundled self-check (no extra tools):
 …or with the official [`minisign`](https://jedisct1.github.io/minisign/) CLI:
 
 ```bash
-minisign -Vm c3-v0.2.0-macos-arm64 -P RWQGEiNpXN1t9VEX2lXZab7nHaR+gfjfPYcCYN6Bxyid5NkuQK/Gme+l
+minisign -Vm c3-v0.2.0-macos-arm64 -P RWQzBKv0lANWnVsOQNO6o7YjLi0MbFGbI0K0fUTIaXTWKM62tlosg306
 ```
 
 ## Hardening tiers (release 7/7)

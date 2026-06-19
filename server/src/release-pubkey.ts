@@ -4,7 +4,7 @@
 // `minisign` binary). The matching SECRET key is held offline / as the GH Secret
 // `C3_MINISIGN_SECRET_KEY` and is used only by `pnpm release:publish`. A public key is safe
 // to commit. To rotate: regenerate with `node scripts/release/keygen.mjs`, replace the text
-// here AND in README.md, re-publish. key id: 061223695cdd6df5
+// here AND in README.md, re-publish. key id: 3304abf49403569d
 export const C3_MINISIGN_PUBLIC_KEY = `untrusted comment: c3 release signing key (minisign)
-RWQGEiNpXN1t9VEX2lXZab7nHaR+gfjfPYcCYN6Bxyid5NkuQK/Gme+l
+RWQzBKv0lANWnVsOQNO6o7YjLi0MbFGbI0K0fUTIaXTWKM62tlosg306
 `

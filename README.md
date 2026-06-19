@@ -20,21 +20,39 @@ c3 drives Claude Code and Codex, so you need both installed:
 - **Claude Code** — `curl -fsSL https://claude.ai/install.sh | bash`, or see the [quickstart](https://code.claude.com/docs/en/quickstart).
 - **Codex** — `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, or see the [CLI docs](https://developers.openai.com/codex/cli).
 
-## Download
+## Install
 
-Grab the latest build from the [releases page](https://github.com/sequencestream/c3/releases/).
-
-## Usage
+### Homebrew (recommended)
 
 ```bash
-# Extract the release for your platform, e.g. c3-v0.2.0-macos-arm64.tar.gz
-tar -xzvf c3-v0.2.0-macos-arm64.tar.gz
+brew install sequencestream/tap/c3
 
-# Start c3 on port 9000
-./c3 --port 9000
+# upgrade c3
+brew upgrade c3
+```
+
+### Manual download
+
+Grab the latest build for your platform from the [releases page](https://github.com/sequencestream/c3/releases/) and extract it:
+
+```bash
+# e.g. c3-v0.2.0-macos-arm64.tar.gz
+tar -xzvf c3-v0.2.0-macos-arm64.tar.gz
 ```
 
 > **macOS note:** the first launch may trigger a security warning. Allow c3 to run in
 > *System Settings → Privacy & Security*.
+
+## Usage
+
+Start c3 on port 9000:
+
+```bash
+# Installed via Homebrew (c3 is on your PATH)
+c3 --port 9000
+
+# Or, from a manual download (run the extracted binary directly)
+./c3 --port 9000
+```
 
 Then open http://localhost:9000 in your browser.

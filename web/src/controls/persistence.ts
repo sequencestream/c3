@@ -1,3 +1,4 @@
+import { watch } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 import {
@@ -8,6 +9,7 @@ import {
   SCHED_PROJECT_KEY,
   CODES_PROJECT_KEY,
   CURRENT_WS_KEY,
+  WORK_SESSION_QUERY_START_TIME_KEY,
 } from './state'
 
 // Install localStorage view-restore persistence + the post-`ready` restore
@@ -25,6 +27,22 @@ export function installPersistence(ctx: AppCtx): void {
     codesProject,
   } = ctx
   const send = ctx.send
+
+  // A time-bounded work-session query must not carry a stale boundary into a
+  // different page. Flush synchronously because page-entry actions issue their
+  // first requests immediately after changing the active tab.
+  watch(
+    activeTab,
+    (next, previous) => {
+      if (next === previous) return
+      try {
+        localStorage.removeItem(WORK_SESSION_QUERY_START_TIME_KEY)
+      } catch {
+        /* localStorage unavailable — non-fatal */
+      }
+    },
+    { flush: 'sync' },
+  )
 
   // Read the persisted current-workspace path (null when unset/unavailable).
   ctx.readStoredWorkspace = (): string | null => {

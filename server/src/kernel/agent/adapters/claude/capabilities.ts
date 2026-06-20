@@ -23,6 +23,7 @@ export const claudeCapabilities: AdapterCapabilities = {
   forkSession: true,
   perToolApproval: true,
   taskStore: true,
+  nativeUserInput: true,
   sessions: {
     list: 'full',
     read: 'full',

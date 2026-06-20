@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   request_id    TEXT,                         -- 权限请求 ID (用于关联 permission-response 消息)
   tool_name     TEXT,                         -- 待审批的工具名称
   tool_input    TEXT NOT NULL DEFAULT '',     -- JSON, 工具输入参数
-  status        TEXT NOT NULL,                -- 状态: 'todo' | 'in_progress' | 'done' | 'canceled'
+  status        TEXT NOT NULL,                -- 状态: 'todo' | 'done' | 'canceled' | 'auto' (= WaitUserInvolveStatus); 'auto'=多 Agent 共识自动决议的非阻塞审计记录,不计待处理徽章
+  outcome       TEXT,                         -- v2→v3 新增; JSON, 仅 status='auto' 记录携带 (AnyConsensusOutcome: 投票/裁决/摘要),人类决策事件为 NULL
   created_at    INTEGER NOT NULL,             -- 创建时间 (epoch ms)
   updated_at    INTEGER NOT NULL              -- 最后更新时间 (epoch ms)
 );

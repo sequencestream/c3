@@ -18,6 +18,7 @@
 import { randomUUID } from 'node:crypto'
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type {
+  AnyConsensusOutcome,
   AskConsensusOutcome,
   ConsensusOutcome,
   ServerToClient,
@@ -53,6 +54,23 @@ export interface PermissionRequestCtx {
    * Never hard-coded downstream (the handler reads it verbatim).
    */
   source: WaitUserInvolveSource
+}
+
+/**
+ * Context passed to {@link GatewaySpec.onConsensusResolved} — the audit twin of
+ * {@link PermissionRequestCtx} for a tool the multi-agent consensus auto-resolved
+ * with NO human prompt. Carries the deciding {@link AnyConsensusOutcome} so the
+ * wiring layer can land a non-blocking `status: 'auto'` WaitUserInvolveEvent.
+ */
+export interface ConsensusAutoCtx {
+  requestId: string
+  toolName: string
+  input: unknown
+  sessionId: string
+  workspacePath: string
+  source: WaitUserInvolveSource
+  /** The consensus that decided it (votes + verdict + summary). */
+  outcome: AnyConsensusOutcome
 }
 
 /** Everything the gateway needs from the run it guards (all caller-resolved). */
@@ -108,6 +126,16 @@ export interface GatewaySpec {
    * AskUserQuestion auto-answer is excluded (it emits `consensus_auto`, no human).
    */
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
+  /**
+   * Optional callback invoked when the multi-agent consensus auto-resolves a tool
+   * (the `consensus_auto` path) — i.e. EXACTLY where {@link onPermissionRequest} is
+   * NOT called because no human is involved. Receives the full {@link ConsensusAutoCtx}
+   * with the deciding outcome so the wiring layer can record a non-blocking
+   * `status: 'auto'` WaitUserInvolveEvent (auto decisions stay auditable in
+   * WorkCenter without creating a todo). Fired for both the unanimous AskUserQuestion
+   * auto-answer and the allow/deny tool consensus auto-decision.
+   */
+  onConsensusResolved?: (ctx: ConsensusAutoCtx) => void
 }
 
 /**
@@ -261,6 +289,15 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       })
       if (ask && ask.fullyUnanimous) {
         send({ type: 'consensus_auto', toolName, input, outcome: ask })
+        spec.onConsensusResolved?.({
+          requestId,
+          toolName,
+          input,
+          sessionId: spec.sessionId(),
+          workspacePath: spec.cwd,
+          source: spec.source,
+          outcome: ask,
+        })
         return allow(withAnswers(input, ask.agreedAnswers))
       }
       // The run was torn down *while* consensus ran: do NOT emit a
@@ -351,6 +388,15 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
     // it null and falls through to the human.
     if (outcome && outcome.decision) {
       send({ type: 'consensus_auto', toolName, input, outcome })
+      spec.onConsensusResolved?.({
+        requestId,
+        toolName,
+        input,
+        sessionId: spec.sessionId(),
+        workspacePath: spec.cwd,
+        source: spec.source,
+        outcome,
+      })
       if (outcome.decision === 'allow') {
         return allow(input)
       }

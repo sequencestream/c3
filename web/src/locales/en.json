@@ -1849,12 +1849,30 @@
       "all": "All",
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "Auto"
     },
     "status": {
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "Auto"
+    },
+    "consensus": {
+      "title": "Consensus decision",
+      "lead": "Resolved automatically by multi-agent consensus — no action needed.",
+      "allowed": "Allowed",
+      "denied": "Denied",
+      "answered": "Answered on your behalf",
+      "unanimous": "Unanimous",
+      "majority": "Majority",
+      "vendorScope": "Scoped to {vendor}",
+      "noAgreement": "No agreement",
+      "verdict": {
+        "allow": "Allow",
+        "deny": "Deny",
+        "abstain": "Abstain"
+      }
     },
     "source": {
       "session": "Session",

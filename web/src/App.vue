@@ -191,6 +191,7 @@ const {
   respondWorkcenter,
   submitAskWorkcenter,
   jumpToSource,
+  reloadWorkcenter,
   // ---- modals ----
   newSessionOpen,
   confirmNewSession,
@@ -468,6 +469,7 @@ const {
         @respond="respondWorkcenter"
         @submit-ask="submitAskWorkcenter"
         @jump-to-source="jumpToSource"
+        @reload="reloadWorkcenter"
       />
     </div>
 

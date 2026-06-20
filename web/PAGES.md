@@ -21,7 +21,7 @@ web/src/
 │   ├── chat-actions.ts                             # 聊天/输入动作 + 客户端待发队列(enqueue/edit/delete/flush watch)、提交/继续/停止/刷新/模式/agent 切换/权限响应
 │   ├── settings-actions.ts                         # 系统/工作区设置、技能安装、运行时语言切换(回滚)、workspace↔workcenter 视图模式、技能加载审批
 │   ├── license-actions.ts                          # 产品许可(ADR-0026):打开 LS 登录页取 license_key(start_license_activation)、用 key 绑定本安装(bind_license),状态由 license_state/license_activation_started/license_bind_result 回流
-│   └── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + 跳转到来源 tab(会话/需求/讨论/定时任务)
+│   └── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + reloadWorkcenter(重拉全量,非 todo tab 用) + 跳转到来源 tab(会话/需求/讨论/定时任务)
 │
 ├── components/                                      # 跨页面通用组件
 │   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏(许可项并入「⋯」操作菜单)+ 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
@@ -45,10 +45,10 @@ web/src/
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
 │   ├── workcenter/                                  # 工作台页
-│   │   ├── WorkCenter.vue                           # 工作台容器页:桌面筛选/列表 + 详情两栏,移动端单列流式,集中查看/操作所有待处理事件
+│   │   ├── WorkCenter.vue                           # 工作台容器页:桌面筛选(all/todo/done/canceled/auto)/列表 + 详情两栏,切换筛选 emit reload 重拉全量,移动端单列流式
 │   │   └── components/
-│   │       ├── EventList.vue                        # 事件列表:状态徽标、标题、来源图标、时间与选中态,移动端行高触控优化
-│   │       └── EventDetail.vue                      # 事件详情:完整信息、Allow/Deny、AskUserQuestion 作答面板与跳转到源,移动端触控按钮优化
+│   │       ├── EventList.vue                        # 事件列表:状态徽标(含 auto)、标题、来源图标、时间与选中态,移动端行高触控优化
+│   │       └── EventDetail.vue                      # 事件详情:完整信息、Allow/Deny、AskUserQuestion 作答面板、共识决策留痕(auto 记录的投票/裁决,只读)与跳转到源
 │   ├── works/                                    # 工作页
 │   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/

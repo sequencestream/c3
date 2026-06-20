@@ -63,10 +63,27 @@ function statusClass(status: string): string {
       return 'wc-status-done'
     case 'canceled':
       return 'wc-status-canceled'
+    case 'auto':
+      return 'wc-status-auto'
     default:
       return ''
   }
 }
+
+// ---- Consensus outcome (auto-resolved records) ----
+
+/** The auto-decision's deciding consensus, present only on `status: 'auto'` records. */
+const outcome = computed(() => props.event?.outcome ?? null)
+
+/** A one-line label for how the consensus decided (allow / deny / answered on your behalf). */
+const autoDecisionLabel = computed<string>(() => {
+  const o = outcome.value
+  if (!o) return ''
+  if (o.kind === 'ask') return t('workcenter.consensus.answered')
+  return o.decision === 'deny'
+    ? t('workcenter.consensus.denied')
+    : t('workcenter.consensus.allowed')
+})
 
 // ---- AskUserQuestion inline state ----
 
@@ -284,6 +301,47 @@ watch(
         </div>
       </div>
 
+      <!-- Consensus outcome (auto-resolved audit records) -->
+      <div v-if="outcome" class="wc-detail-section wc-consensus">
+        <h3 class="wc-detail-section-title">{{ t('workcenter.consensus.title') }}</h3>
+        <p class="wc-consensus-lead">{{ t('workcenter.consensus.lead') }}</p>
+        <div class="wc-consensus-meta">
+          <span class="wc-consensus-decision">{{ autoDecisionLabel }}</span>
+          <span v-if="outcome.kind === 'tool'" class="wc-consensus-tag">
+            {{
+              outcome.unanimous
+                ? t('workcenter.consensus.unanimous')
+                : t('workcenter.consensus.majority')
+            }}
+          </span>
+          <span v-if="outcome.vendorScope" class="wc-consensus-tag">
+            {{ t('workcenter.consensus.vendorScope', { vendor: outcome.vendorScope }) }}
+          </span>
+        </div>
+        <p v-if="outcome.summary" class="wc-consensus-summary">{{ outcome.summary }}</p>
+
+        <!-- Tool consensus: per-voter allow/deny -->
+        <ul v-if="outcome.kind === 'tool'" class="wc-vote-list">
+          <li v-for="vote in outcome.votes" :key="vote.agentId" class="wc-vote">
+            <span class="wc-vote-verdict" :class="`wc-vote-${vote.decision}`">{{
+              t(`workcenter.consensus.verdict.${vote.decision}` as LocaleKey)
+            }}</span>
+            <span class="wc-vote-agent">{{ vote.agentName }}</span>
+            <span class="wc-vote-reason">{{ vote.reason }}</span>
+          </li>
+        </ul>
+
+        <!-- Ask consensus: agreed answer per question -->
+        <ul v-else class="wc-vote-list">
+          <li v-for="q in outcome.perQuestion" :key="q.index" class="wc-vote">
+            <span class="wc-vote-agent">{{ q.header || q.question }}</span>
+            <span class="wc-vote-reason">{{
+              q.agreed ?? t('workcenter.consensus.noAgreement')
+            }}</span>
+          </li>
+        </ul>
+      </div>
+
       <!-- Tool input section -->
       <div class="wc-detail-section">
         <h3 class="wc-detail-section-title">{{ t('workcenter.toolInput') }}</h3>
@@ -409,6 +467,79 @@ watch(
 .wc-status-canceled {
   background: #e5e7eb;
   color: #374151;
+}
+.wc-status-auto {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+/* Consensus outcome (auto records) */
+.wc-consensus-lead {
+  font-size: 12px;
+  color: var(--c-text-muted);
+  margin: 0 0 var(--sp-2);
+}
+.wc-consensus-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-1);
+}
+.wc-consensus-decision {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text);
+}
+.wc-consensus-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+}
+.wc-consensus-summary {
+  font-size: 12px;
+  color: var(--c-text);
+  margin: 0 0 var(--sp-2);
+}
+.wc-vote-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.wc-vote {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: 12px;
+}
+.wc-vote-verdict {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.wc-vote-allow {
+  color: #065f46;
+}
+.wc-vote-deny {
+  color: #991b1b;
+}
+.wc-vote-abstain {
+  color: var(--c-text-muted);
+}
+.wc-vote-agent {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--c-text);
+}
+.wc-vote-reason {
+  color: var(--c-text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Source icon */

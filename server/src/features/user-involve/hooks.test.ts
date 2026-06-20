@@ -8,11 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ServerToClient, WaitUserInvolveSource } from '@ccc/shared/protocol'
+import type {
+  AnyConsensusOutcome,
+  ServerToClient,
+  WaitUserInvolveSource,
+} from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { listEvents, resetStoreForTests } from './store.js'
-import { createPermissionRequestHandler } from './hooks.js'
-import type { PermissionRequestCtx } from '../../kernel/permission/index.js'
+import { createConsensusAutoHandler, createPermissionRequestHandler } from './hooks.js'
+import type { ConsensusAutoCtx, PermissionRequestCtx } from '../../kernel/permission/index.js'
 
 const proj = '/abs/hooks-proj'
 let dir: string
@@ -74,5 +78,70 @@ describe('createPermissionRequestHandler', () => {
     const events = listEvents(proj, 'todo')
     expect(events).toHaveLength(1)
     expect(events[0].source).toBe('session')
+  })
+})
+
+const toolOutcome: AnyConsensusOutcome = {
+  kind: 'tool',
+  votes: [{ agentId: 'a2', agentName: 'Reviewer', decision: 'allow', reason: 'safe edit' }],
+  summary: 'All voters allowed',
+  unanimous: true,
+  decision: 'allow',
+}
+
+function autoCtx(over: Partial<ConsensusAutoCtx> = {}): ConsensusAutoCtx {
+  return {
+    requestId: 'auto-1',
+    toolName: 'edit_file',
+    input: { path: 'a.ts' },
+    sessionId: 'sess-auto',
+    workspacePath: proj,
+    source: 'session',
+    outcome: toolOutcome,
+    ...over,
+  }
+}
+
+describe('createConsensusAutoHandler', () => {
+  it("records a non-blocking 'auto' event carrying the consensus outcome", () => {
+    const handler = createConsensusAutoHandler()
+    handler(autoCtx())
+
+    // It is NOT a todo (never bumps the badge) — it lands under the 'auto' status.
+    expect(listEvents(proj, 'todo')).toHaveLength(0)
+    const autos = listEvents(proj, 'auto')
+    expect(autos).toHaveLength(1)
+    expect(autos[0]).toMatchObject({
+      status: 'auto',
+      source: 'session',
+      sourceId: 'sess-auto',
+      toolName: 'edit_file',
+    })
+    expect(autos[0].outcome).toEqual(toolOutcome)
+  })
+
+  it('round-trips an ask-consensus outcome', () => {
+    const askOutcome: AnyConsensusOutcome = {
+      kind: 'ask',
+      perQuestion: [
+        {
+          index: 0,
+          question: 'Proceed?',
+          header: 'Proceed',
+          multiSelect: false,
+          answers: [],
+          unanimous: true,
+          agreed: 'Yes',
+        },
+      ],
+      fullyUnanimous: true,
+      agreedAnswers: { Proceed: 'Yes' },
+      summary: 'Agreed',
+    }
+    const handler = createConsensusAutoHandler()
+    handler(autoCtx({ toolName: 'AskUserQuestion', outcome: askOutcome }))
+    const autos = listEvents(proj, 'auto')
+    expect(autos).toHaveLength(1)
+    expect(autos[0].outcome).toEqual(askOutcome)
   })
 })

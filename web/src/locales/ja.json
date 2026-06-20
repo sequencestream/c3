@@ -1805,12 +1805,30 @@
       "all": "All",
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "自動"
     },
     "status": {
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "自動"
+    },
+    "consensus": {
+      "title": "合意による決定",
+      "lead": "複数エージェントの合意により自動的に解決されました — 操作は不要です。",
+      "allowed": "許可",
+      "denied": "拒否",
+      "answered": "代わりに回答しました",
+      "unanimous": "全会一致",
+      "majority": "多数決",
+      "vendorScope": "{vendor} 内に限定",
+      "noAgreement": "合意なし",
+      "verdict": {
+        "allow": "許可",
+        "deny": "拒否",
+        "abstain": "棄権"
+      }
     },
     "source": {
       "session": "Session",

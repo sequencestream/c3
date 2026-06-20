@@ -1805,12 +1805,30 @@
       "all": "All",
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "Авто"
     },
     "status": {
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "Авто"
+    },
+    "consensus": {
+      "title": "Решение консенсуса",
+      "lead": "Разрешено автоматически консенсусом нескольких агентов — действий не требуется.",
+      "allowed": "Разрешено",
+      "denied": "Отклонено",
+      "answered": "Отвечено за вас",
+      "unanimous": "Единогласно",
+      "majority": "Большинство",
+      "vendorScope": "В пределах {vendor}",
+      "noAgreement": "Нет согласия",
+      "verdict": {
+        "allow": "Разрешить",
+        "deny": "Отклонить",
+        "abstain": "Воздержаться"
+      }
     },
     "source": {
       "session": "Session",

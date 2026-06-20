@@ -29,6 +29,7 @@ describe('claude capabilities', () => {
       forkSession: true,
       perToolApproval: true,
       taskStore: true,
+      nativeUserInput: true,
       // The structured session-lifecycle sub-ledger (ADR-0011 addendum) — every
       // session op is `full` for the reference adapter (JSONL read, native
       // rename/delete, SDK resume, no caveat).

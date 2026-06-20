@@ -24,7 +24,7 @@ import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
-import type { PermissionRequestCtx } from '../permission/index.js'
+import type { ConsensusAutoCtx, PermissionRequestCtx } from '../permission/index.js'
 import {
   getDegradationChain,
   resolveSessionLaunch,
@@ -128,6 +128,14 @@ export interface LaunchRunDeps {
    * permission gateway. Wired at the composition root (`server.ts`).
    */
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
+  /**
+   * Optional callback for consensus auto-resolutions (the `consensus_auto` path).
+   * Forwarded to the permission gateway so an automatic decision lands a
+   * non-blocking `status: 'auto'` WaitUserInvolveEvent. Wired at the composition
+   * root (`server.ts`). Only the claude path raises consensus (codex runs through
+   * the driver, which has no gateway), so this only threads the claude branch.
+   */
+  onConsensusResolved?: (ctx: ConsensusAutoCtx) => void
   /**
    * Sandbox driver and registry for container-based run isolation.
    * When both are present, `launchRun` attempts to start a sandbox container
@@ -486,6 +494,7 @@ export async function launchRun(
           // changes on pending→real bind (onSessionId reassigns it).
           sessionId: () => runId,
           onPermissionRequest: deps.onPermissionRequest,
+          onConsensusResolved: deps.onConsensusResolved,
           onStart: (h) => {
             if (rt.run) rt.run.handle = h
           },

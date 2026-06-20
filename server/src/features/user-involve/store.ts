@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import type {
+  AnyConsensusOutcome,
   WaitUserInvolveEvent,
   WaitUserInvolveSource,
   WaitUserInvolveStatus,
@@ -24,7 +25,7 @@ import { pathToId } from '../../state.js'
  * Schema version — informational only, see discussion store comment.
  * Migrations key off `PRAGMA table_info`, never off the version number.
  */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   tool_name     TEXT,
   tool_input    TEXT NOT NULL DEFAULT '',
   status        TEXT NOT NULL,
+  outcome       TEXT,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
 );
@@ -97,6 +99,8 @@ function db(): Db | null {
     d.exec(SCHEMA)
     // Idempotent backfill for columns that may be missing on upgraded builds.
     ensureColumn(d, 'wait_user_involve_events', 'tool_input', "TEXT NOT NULL DEFAULT ''")
+    // v2 → v3: consensus outcome JSON for `status: 'auto'` audit records (nullable).
+    ensureColumn(d, 'wait_user_involve_events', 'outcome', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -147,6 +151,7 @@ interface EventRow {
   tool_name: string | null
   tool_input: string | null
   status: string
+  outcome: string | null
   created_at: number
   updated_at: number
 }
@@ -160,6 +165,14 @@ function toEvent(r: EventRow): WaitUserInvolveEvent {
       toolInput = r.tool_input
     }
   }
+  let outcome: AnyConsensusOutcome | null = null
+  if (r.outcome) {
+    try {
+      outcome = JSON.parse(r.outcome) as AnyConsensusOutcome
+    } catch {
+      outcome = null
+    }
+  }
   return {
     id: r.id,
     workspaceId: pathToId(r.workspace_path)!,
@@ -170,6 +183,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent {
     toolName: r.tool_name,
     toolInput,
     status: r.status as WaitUserInvolveStatus,
+    outcome,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -185,6 +199,8 @@ export interface CreateEventInput {
   toolName?: string | null
   toolInput?: unknown
   status?: WaitUserInvolveStatus
+  /** Consensus outcome JSON for `status: 'auto'` audit records (else null). */
+  outcome?: AnyConsensusOutcome | null
 }
 
 // ---- CRUD ----
@@ -196,10 +212,11 @@ export function createEvent(input: CreateEventInput): WaitUserInvolveEvent {
   const now = Date.now()
   const status: WaitUserInvolveStatus = input.status ?? 'todo'
   const toolInput = input.toolInput !== undefined ? JSON.stringify(input.toolInput) : ''
+  const outcome = input.outcome != null ? JSON.stringify(input.outcome) : null
   d.run(
     `INSERT INTO wait_user_involve_events
-       (id, workspace_path, source, source_id, title, request_id, tool_name, tool_input, status, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, workspace_path, source, source_id, title, request_id, tool_name, tool_input, status, outcome, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     resolve(input.workspacePath),
     input.source,
@@ -209,6 +226,7 @@ export function createEvent(input: CreateEventInput): WaitUserInvolveEvent {
     input.toolName ?? null,
     toolInput,
     status,
+    outcome,
     now,
     now,
   )

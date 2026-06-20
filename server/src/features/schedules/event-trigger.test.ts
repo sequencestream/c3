@@ -153,6 +153,58 @@ describe('store — event-trigger schedule CRUD', () => {
     expect(after.eventTopic).toBe('run:started')
   })
 
+  it('creates a pr:operation schedule with a PR filter that round-trips', () => {
+    const s = createSchedule({
+      type: 'command',
+      config: { command: 'echo pr' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'pr:operation',
+      eventPrFilter: { operations: ['merge', 'close'], results: ['success'] },
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    expect(s.eventTopic).toBe('pr:operation')
+    expect(s.eventPrFilter).toEqual({ operations: ['merge', 'close'], results: ['success'] })
+    expect(getEventSchedules('pr:operation').map((x) => x.id)).toEqual([s.id])
+    // A pr:operation schedule never surfaces under a run-lifecycle topic.
+    expect(getEventSchedules('run:settled')).toHaveLength(0)
+  })
+
+  it('drops empty PR filter dimensions to null (= any)', () => {
+    const s = createSchedule({
+      type: 'command',
+      config: { command: 'a' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'pr:operation',
+      eventPrFilter: { operations: [], results: [] },
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    expect(s.eventPrFilter).toBeNull()
+  })
+
+  it('switching a pr:operation schedule → cron clears the PR filter', () => {
+    const s = createSchedule({
+      type: 'command',
+      config: { command: 'a' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'pr:operation',
+      eventPrFilter: { operations: ['create'] },
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    updateSchedule(s.id, { triggerType: 'cron', cronExpression: '0 9 * * *' })
+    const after = getSchedule(s.id)!
+    expect(after.eventTopic).toBeNull()
+    expect(after.eventPrFilter).toBeNull()
+  })
+
   it('switching event → cron clears the event fields and re-arms nextRunAt', () => {
     const s = createSchedule({
       type: 'command',
@@ -192,6 +244,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       nextRunAt: null,
       eventTopic: 'run:settled',
       eventReasonFilter: null,
+      eventPrFilter: null,
       status: 'active',
       mode: 'sandboxed',
       toolAllowlist: [],
@@ -302,5 +355,125 @@ describe('scheduler — dispatchEventSchedules', () => {
     dispatchEventSchedules('run:settled', payload)
     expect(appendLog).toHaveBeenCalledTimes(1)
     cancelInFlight('dbnc') // clean up the never-resolving in-flight entry
+  })
+})
+
+// ---------------------------------------------------------------------------
+// scheduler: dispatchEventSchedules — pr:operation (2026-06-20)
+// ---------------------------------------------------------------------------
+describe('scheduler — dispatchEventSchedules (pr:operation)', () => {
+  let appendLog: ReturnType<typeof vi.fn>
+
+  function prSched(over: Partial<Schedule> = {}): Schedule {
+    return {
+      id: 'p1',
+      type: 'command',
+      config: { command: 'echo hi', name: 'x' },
+      maxWallClockMs: null,
+      workspaceId: '/abs/ws-a',
+      triggerType: 'event',
+      cronExpression: '',
+      nextRunAt: null,
+      eventTopic: 'pr:operation',
+      eventReasonFilter: null,
+      eventPrFilter: null,
+      status: 'active',
+      mode: 'sandboxed',
+      toolAllowlist: [],
+      toolDenylist: [],
+      vendor: 'claude',
+      createdAt: 1,
+      updatedAt: 1,
+      ...over,
+    }
+  }
+
+  function install(schedules: Schedule[]): void {
+    const store: ExecutionStore = {
+      getDueSchedules: () => [],
+      getEventSchedules: (topic) =>
+        schedules.filter(
+          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventTopic === topic,
+        ),
+      getSchedule: (id) => schedules.find((s) => s.id === id) ?? null,
+      updateNextRunAt: vi.fn(),
+      updateSchedule: vi.fn(),
+      deleteSchedule: vi.fn(),
+      appendExecutionLog: appendLog as unknown as ExecutionStore['appendExecutionLog'],
+      updateExecutionLog: vi.fn(),
+      broadcast: vi.fn(),
+    }
+    setExecutionStore(store)
+  }
+
+  beforeEach(() => {
+    vi.mocked(execute).mockReset()
+    vi.mocked(execute).mockResolvedValue(undefined)
+    appendLog = vi.fn(() => ({ id: 'log1' }))
+  })
+
+  const prEvent = (over: Record<string, unknown> = {}) => ({
+    sessionId: 's',
+    workspacePath: '/abs/ws-a',
+    operation: 'merge' as const,
+    result: 'success' as const,
+    ...over,
+  })
+
+  it('fires a matching pr:operation schedule (no filter = any) in the same workspace', () => {
+    install([prSched({ id: 'm1' })])
+    dispatchEventSchedules('pr:operation', prEvent())
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips a pr:operation schedule in a different workspace', () => {
+    install([prSched({ id: 'm2' })])
+    dispatchEventSchedules('pr:operation', prEvent({ workspacePath: '/abs/other' }))
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
+  it('honours the operation filter', () => {
+    install([prSched({ id: 'm3', eventPrFilter: { operations: ['close'] } })])
+    dispatchEventSchedules('pr:operation', prEvent({ operation: 'merge' }))
+    expect(appendLog).not.toHaveBeenCalled()
+    dispatchEventSchedules('pr:operation', prEvent({ operation: 'close' }))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('honours the result filter', () => {
+    install([prSched({ id: 'm4', eventPrFilter: { results: ['failure'] } })])
+    dispatchEventSchedules('pr:operation', prEvent({ result: 'success' }))
+    expect(appendLog).not.toHaveBeenCalled()
+    dispatchEventSchedules('pr:operation', prEvent({ result: 'failure' }))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires BOTH operation and result to match when both are filtered', () => {
+    install([prSched({ id: 'm5', eventPrFilter: { operations: ['merge'], results: ['success'] } })])
+    dispatchEventSchedules('pr:operation', prEvent({ operation: 'merge', result: 'failure' }))
+    expect(appendLog).not.toHaveBeenCalled()
+    dispatchEventSchedules('pr:operation', prEvent({ operation: 'merge', result: 'success' }))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire a run:settled schedule on a pr:operation event (topic isolation)', () => {
+    install([
+      {
+        ...prSched({ id: 'm6' }),
+        eventTopic: 'run:settled',
+        eventPrFilter: null,
+      },
+    ])
+    dispatchEventSchedules('pr:operation', prEvent())
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
+  it('debounces: a second pr:operation event does not double-fire while in flight', () => {
+    vi.mocked(execute).mockImplementation(() => new Promise<void>(() => {}))
+    install([prSched({ id: 'dbnc-pr' })])
+    dispatchEventSchedules('pr:operation', prEvent())
+    dispatchEventSchedules('pr:operation', prEvent())
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('dbnc-pr')
   })
 })

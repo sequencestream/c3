@@ -39,11 +39,18 @@ import { createIntentMcpServer } from './features/intents/save-tool.js'
 import { createSpecQueryMcpServer } from './features/intents/spec-query-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
+import { createPrEventMcpServer } from './features/pr-events/publish-tool.js'
+import { runPublishPrEvent } from './features/pr-events/tool-defs.js'
 import {
   createIntentMcp,
   INTENT_MCP_PATH,
   type IntentMcpTools,
 } from './transport/intent-mcp/index.js'
+import {
+  createPrEventMcp,
+  PR_EVENT_MCP_PATH,
+  type PrEventMcpTools,
+} from './transport/pr-event-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
   createConsensusAutoHandler,
@@ -402,6 +409,30 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   //    launcher stays features-free (ADR-0009 R1).
   const eventBus = new EventBus()
 
+  // Vendor-neutral PR operation events (2026-06-20). The model performs PR
+  // operations with its OWN tools, then calls `publish_pr_event` to publish ONE
+  // event onto the bus; event-triggered schedules subscribed to `pr:operation`
+  // react to it. ONE publish sink is shared by both MCP surfaces (Claude
+  // in-process below + the codex localhost HTTP route here) so they converge on
+  // the same event. The route is mounted before the SPA catch-all (like intent).
+  const publishPrEvent = (
+    payload: {
+      workspacePath: string
+      sessionId: string
+    } & import('@ccc/shared/protocol').PrOperationEvent,
+  ): void => eventBus.publish('pr:operation', payload)
+  const prEventMcpTools: PrEventMcpTools = {
+    publish: (binding, args) =>
+      runPublishPrEvent(args, (event) =>
+        publishPrEvent({
+          workspacePath: binding.workspacePath,
+          sessionId: binding.getRunId(),
+          ...event,
+        }),
+      ),
+  }
+  const prEventMcp = createPrEventMcp(`http://127.0.0.1:${opts.port}`, prEventMcpTools)
+
   // ── Sandbox wiring (ADR-0024) ──────────────────────────────────────────────
   // Build the system sandbox-def registry from settings and instantiate the
   // Docker driver, then thread both into the run lifecycle. The run-lifecycle
@@ -462,6 +493,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // same path runs on reset_spec_session, so a reset session gets the tools too.
       bindInProcessMcp: () => createSpecQueryMcpServer(workspacePath),
       gate: 'spec' as const,
+    }),
+    // Work-session base MCP profile (2026-06-20): every new and resumed work
+    // session gets `publish_pr_event` so the model can publish a vendor-neutral
+    // PR operation event after acting on a PR with its own tools. No gate
+    // override, no disallowed-tools lock — the run keeps its standard surface.
+    // Claude binds the in-process server; codex binds the localhost HTTP route.
+    sessionProfile: (workspacePath) => ({
+      bindInProcessMcp: (binding) =>
+        createPrEventMcpServer(
+          { workspacePath, getRunId: binding.getRunId, signal: binding.signal },
+          { publish: publishPrEvent },
+        ),
+      bindDriverMcp: (binding) => prEventMcp.bind(binding),
     }),
     // The neutral Codex adapter, or null when its host CLI is missing (launchRun
     // forks to the driver path for codex sessions; 2026-06-06-007).
@@ -558,6 +602,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // messages), GET (SSE stream), and DELETE (session end). Loopback-guarded +
   // per-run token inside the handler. Before the SPA catch-all, same as the relay.
   app.all(INTENT_MCP_PATH, (c) => intentMcp.handler(c))
+
+  // PR-event MCP loopback endpoint (2026-06-20). The codex twin of the
+  // work-session in-process publish tool. Loopback-guarded + per-run token inside
+  // the handler. Before the SPA catch-all, same as the intent/relay routes.
+  app.all(PR_EVENT_MCP_PATH, (c) => prEventMcp.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

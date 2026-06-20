@@ -72,6 +72,22 @@ describe('intent gate — read-only, deny-by-default', () => {
   })
 })
 
+describe('publish_pr_event — auto-allowed with no prompt (2026-06-20)', () => {
+  it('auto-allows in the standard gate and emits NO permission_request', async () => {
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(spec({ gate: 'standard', send: (m) => sent.push(m) }))
+    const out = await gate(
+      'mcp__c3__publish_pr_event',
+      { operation: 'merge', result: 'success' },
+      {} as never,
+    )
+    expect(out).toMatchObject({ behavior: 'allow' })
+    expect(sent.find((m) => m.type === 'permission_request')).toBeUndefined()
+    // The non-destructive publish never runs consensus either.
+    expect(vi.mocked(runConsensusVote)).not.toHaveBeenCalled()
+  })
+})
+
 describe('discussion-research gate — read-only, deny-by-default', () => {
   it('allows a read tool, denies everything else', async () => {
     const gate = createCanUseTool(spec({ gate: 'discussion-research' }))

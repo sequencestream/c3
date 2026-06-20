@@ -1227,6 +1227,9 @@
           },
           "settled": {
             "label": "Run finished"
+          },
+          "prOperation": {
+            "label": "PR operation"
           }
         },
         "reason": {
@@ -1241,6 +1244,23 @@
             "label": "Stopped"
           },
           "hint": "Leave empty to fire on any outcome."
+        },
+        "pr": {
+          "note": "The model performs PR operations (create, review, merge, close, comment) with its own tools and publishes an event when done — c3 never executes PR operations itself. This schedule fires when a matching PR event is published in this workspace.",
+          "op": {
+            "label": "Only on operation",
+            "create": { "label": "Create" },
+            "review": { "label": "Review" },
+            "merge": { "label": "Merge" },
+            "close": { "label": "Close" },
+            "comment": { "label": "Comment" }
+          },
+          "result": {
+            "label": "Only on result",
+            "success": { "label": "Success" },
+            "failure": { "label": "Failure" }
+          },
+          "hint": "Leave a row empty to match any operation / result."
         },
         "hint": "Fires when a run in this workspace reaches the selected event."
       },

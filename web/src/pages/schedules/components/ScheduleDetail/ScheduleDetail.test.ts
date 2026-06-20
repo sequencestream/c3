@@ -16,6 +16,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     nextRunAt: null,
     eventTopic: null,
     eventReasonFilter: null,
+    eventPrFilter: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],

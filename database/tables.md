@@ -44,9 +44,9 @@ Schema 版本: 5。v2→v3 新增 `discussions.participant_agent_ids` (创建时
 
 ### schedules
 
-定时任务调度域。`schedules` 支持 cron 和 event 两种触发类型；`schedule_execution_logs` 记录每次执行的结果和 agent session id；`workspace_mcp_configs` 存储 per-workspace 的 MCP 服务器配置。写操作权限通过 toolAllowlist/toolDenylist 预配置，不再使用运行时 human-in-the-loop 审批。
+定时任务调度域。`schedules` 支持 cron 和 event 两种触发类型 (event 含 run-lifecycle 与模型发布的 `pr:operation`)；`schedule_execution_logs` 记录每次执行的结果和 agent session id；`workspace_mcp_configs` 存储 per-workspace 的 MCP 服务器配置。写操作权限通过 toolAllowlist/toolDenylist 预配置，不再使用运行时 human-in-the-loop 审批。
 
-Schema 版本: 5。迁移历史: status 列、write_approvals/workspace_mcp_configs 表、session_id 列、trigger 列 (v5)、vendor 列 (v6)、mcp_mode→mode 改名 (v7)、agent_id 列 (v8，LLM 任务显式绑定执行 agent)。
+Schema 版本: 8。迁移历史: status 列、write_approvals/workspace_mcp_configs 表、session_id 列、trigger 列 (v5)、vendor 列 (v6)、mcp_mode→mode 改名 (v7)、max_wall_clock_ms + agent_id 列 (LLM 任务显式绑定执行 agent)、event_pr_filter 列 (v8，2026-06-20，承载 `pr:operation` 触发的操作/结果过滤 JSON；`event_topic` 取值同步扩展容纳 `'pr:operation'`，无需改列类型；历史行/cron/run-lifecycle 行保持 NULL=任意；详见迁移记录 `migrate/2026/06/20/018`)。
 
 ### user-involve
 

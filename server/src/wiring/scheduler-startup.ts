@@ -75,6 +75,9 @@ export function startSchedulerWiring(deps: {
   // the whole server run, so the handlers are intentionally never torn down.
   eventBus.subscribe('run:started', (e) => dispatchEventSchedules('run:started', e))
   eventBus.subscribe('run:settled', (e) => dispatchEventSchedules('run:settled', e))
+  // Bridge model-published PR operation events → event-triggered schedules
+  // (2026-06-20). Same resident, never-disposed subscription as the run topics.
+  eventBus.subscribe('pr:operation', (e) => dispatchEventSchedules('pr:operation', e))
   startScheduler()
 }
 

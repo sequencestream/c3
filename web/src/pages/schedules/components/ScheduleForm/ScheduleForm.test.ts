@@ -85,6 +85,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     nextRunAt: null,
     eventTopic: null,
     eventReasonFilter: null,
+    eventPrFilter: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],
@@ -249,6 +250,57 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.eventReasonFilter).toEqual(['error'])
+  })
+
+  it('create(event/pr:operation):切到 PR 事件 → 展示 MCP 集成说明,payload eventTopic=pr:operation', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    const segmenteds = w.findAll('.sf-segmented')
+    await segmenteds[1].findAll('.sf-seg')[1].trigger('click') // event
+    // event topic segmented 是第 3 个 segmented([2]);其第 3 个 seg = pr:operation。
+    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[2].trigger('click')
+    // 展示「模型自行执行 PR 操作、MCP 仅发布事件」边界说明。
+    expect(w.find('.sf-pr-note').exists()).toBe(true)
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.triggerType).toBe('event')
+    expect(input.cronExpression).toBe('')
+    expect(input.eventTopic).toBe('pr:operation')
+    expect(input.eventReasonFilter).toBeNull()
+    expect(input.eventPrFilter).toBeNull() // 未选 → 任意操作/结果
+  })
+
+  it('create(event/pr:operation):勾选 operation+result → payload 含 eventPrFilter', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[2].trigger('click') // pr:operation
+    // pr:operation 隐藏 reason 过滤;.sf-day 现为 5 个操作 + 2 个结果。
+    const days = w.findAll('.sf-day')
+    expect(days).toHaveLength(7)
+    await days[2].trigger('click') // operations: create,review,merge,close,comment → [2]=merge
+    await days[5].trigger('click') // results: success[5], failure[6] → success
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.eventPrFilter).toEqual({ operations: ['merge'], results: ['success'] })
+  })
+
+  it('edit(event/pr:operation):从 schedule.eventPrFilter 回读勾选', () => {
+    const w = mountForm({
+      schedule: sched({
+        triggerType: 'event',
+        cronExpression: '',
+        eventTopic: 'pr:operation',
+        eventPrFilter: { operations: ['close'], results: ['failure'] },
+      }),
+    })
+    const days = w.findAll('.sf-day')
+    // operations: close[3] active; results: failure[6] active.
+    expect(days[3].classes()).toContain('active')
+    expect(days[6].classes()).toContain('active')
+    expect(days[2].classes()).not.toContain('active') // merge not selected
   })
 
   // next-run 预览按配置时区(props.timezone)计算并格式化:配 Asia/Shanghai 时

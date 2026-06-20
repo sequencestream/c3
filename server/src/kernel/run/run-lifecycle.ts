@@ -19,7 +19,12 @@ import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
 import { canFormTeam } from '../agent/adapters/capabilities.js'
-import { runViaDriver, type IntentProfile, type SpecProfile } from './run-via-driver.js'
+import {
+  runViaDriver,
+  type IntentProfile,
+  type SessionMcpProfile,
+  type SpecProfile,
+} from './run-via-driver.js'
 import { claudeUserTurn, type RunInject } from './prompt-delivery.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
@@ -106,6 +111,16 @@ export interface LaunchRunDeps {
    * composition-root wiring is a bug, never a silent drop of the write lock).
    */
   specProfile?: (workspacePath: string) => SpecProfile
+  /**
+   * Work-session base MCP profile (`publish_pr_event`), injected at the
+   * composition root so the kernel launcher never imports `features/` (ADR-0009
+   * R1). Consulted ONLY for `rt.kind === 'session'` runs — every new and resumed
+   * work session gets the publish tool. Absent ⇒ no work-session MCP (a plain run
+   * with no PR-event tool, the pre-2026-06-20 behaviour). Unlike intent/spec, a
+   * missing profile is NOT a hard error: the publish tool is a non-security
+   * capability, so its absence degrades gracefully rather than blocking the run.
+   */
+  sessionProfile?: (workspacePath: string) => SessionMcpProfile
   /**
    * The Codex {@link VendorAdapter} (built at the composition root via the no-arg
    * factory, host-binary gated), or null/absent when Codex's host CLI is missing.
@@ -232,6 +247,11 @@ export async function launchRun(
   // claude path and the driver path can use it.
   const resolvedIntentProfile =
     isIntent && deps.intentProfile ? deps.intentProfile(workspacePath) : undefined
+  // Resolve the work-session base MCP profile once (publish_pr_event), for plain
+  // work sessions only — never for intent/spec runs (those carry their own
+  // profiles). Both the claude path and the driver path consume it (2026-06-20).
+  const resolvedSessionProfile =
+    !isIntent && !isSpec && deps.sessionProfile ? deps.sessionProfile(workspacePath) : undefined
 
   // Sandbox launch (ADR-0024): containers serve ONLY the worktree intent-dev run —
   // a run with an isolated `rt.effectiveCwd` (the worktree). A plain chat run has no
@@ -348,6 +368,7 @@ export async function launchRun(
           deps.onPermissionRequest,
           images,
           inject,
+          resolvedSessionProfile,
         )
       const unavailable =
         'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
@@ -501,9 +522,14 @@ export async function launchRun(
                 // intent comm agent is excluded (different lifecycle). A work run's
                 // internal instruction (SDD work contract) rides claude's preset
                 // system append here, so it reaches the model without being echoed.
+                // Work sessions also get the base MCP profile (publish_pr_event)
+                // via its in-process binder; the gate stays 'standard' (2026-06-20).
                 {
                   ...(inject?.systemInstruction
                     ? { appendSystemPrompt: inject.systemInstruction }
+                    : {}),
+                  ...(resolvedSessionProfile
+                    ? { bindInProcessMcp: resolvedSessionProfile.bindInProcessMcp }
                     : {}),
                   onSocketDisconnect: (info) => {
                     socketInfo = info

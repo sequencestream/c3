@@ -13,6 +13,7 @@ import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   ModeToken,
@@ -102,7 +103,14 @@ const mobileActiveToken = computed(
 watch(
   () => props.activeSession,
   (activeSession) => {
-    if (!activeSession) mobileActiveKey.value = 'sessions'
+    if (!activeSession) {
+      mobileActiveKey.value = 'sessions'
+    } else if (activeSession.startsWith(PENDING_SESSION_PREFIX)) {
+      // 新建会话:服务端回 session_selected 携带 pending id。创建走 NewSessionModal,
+      // 不经本组件的 select 路径,故无人切 pane;在此 drill 进聊天,否则停留在会话
+      // 列表看不到新会话。pending→real 的二次迁移不是 pending 值,不会再次触发。
+      mobileActiveKey.value = 'chat'
+    }
   },
 )
 

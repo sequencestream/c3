@@ -663,7 +663,17 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'error':
         // Machine-readable code translated locally via the web i18n catalog (spec 003).
-        if (msg.error.code.startsWith('intent.')) intentActionErrorSeq.value += 1
+        // Intent action errors (start_development gates, approve/write spec, deps, …)
+        // surface as a global TOAST so they are visible on the intents page. They used
+        // to be appended only to the (often not-open) chat stream, so a rejected action
+        // looked like "nothing happened". The seq bump still releases the start-dev
+        // in-flight guard. Not added to the chat stream — an action error is not session
+        // content.
+        if (msg.error.code.startsWith('intent.')) {
+          intentActionErrorSeq.value += 1
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
         // License gate (PL-R6): upgrade the raw entitlement `reason` (the wire
         // state) into a localized phrase before interpolating, so the cause +
         // renewal pointer read naturally in every locale.

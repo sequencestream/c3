@@ -709,20 +709,47 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     return
   }
   // ── Dependency validation (2026-06-10) ─────────────────────────────────
-  // In worktree mode, depended-on intents must have their code merged to the
-  // main branch (prStatus === 'merged') before a downstream intent can safely
-  // branch off. In current-branch mode, this check is skipped (status-only
-  // validation is done by the domain layer / pickNext for automation).
+  // In worktree mode, a depended-on intent's code must already be on the main
+  // branch before a downstream intent can safely branch off it. A `done`
+  // dependency counts as on-trunk UNLESS it was developed on its own isolated
+  // worktree branch whose PR is not yet merged. Concretely, a `done` dependency
+  // is treated as merged when ANY of:
+  //   - its PR is merged (`prStatus === 'merged'`); or
+  //   - it has no recorded branch (`branch_name` empty — developed in place /
+  //     historic rows predating the branch_name field; the code is on the
+  //     current checkout, i.e. the trunk); or
+  //   - its branch IS the workspace main branch (current-branch mode in-place dev).
+  // Only a `done` dependency that lives on a NON-main branch with an unmerged
+  // PR still blocks. In current-branch mode this whole check is skipped
+  // (status-only validation is done by the domain layer / pickNext for automation).
   if (req.dependsOn.length > 0 && getGitBranchMode(proj) === 'worktree') {
     const all = listIntents(proj)
     const byId = new Map(all.map((r) => [r.id, r]))
+    // Branch-ref normalization, same policy as the web `normalizeBranchName`
+    // (`origin/main` / `refs/heads/main` / `main` all compare as `main`).
+    const normBranch = (b: string | null | undefined): string | null => {
+      const s = b?.trim()
+      if (!s) return null
+      return s
+        .replace(/^refs\/heads\//, '')
+        .replace(/^refs\/remotes\//, '')
+        .replace(/^origin\//, '')
+    }
+    const mainBranch = normBranch(getDefaultMainBranch(proj))
     const unmerged = req.dependsOn
       .map((id) => byId.get(id))
       .filter((dep): dep is NonNullable<typeof dep> => {
         if (!dep) return false // non-existent dep treated as satisfied
-        if (dep.status !== 'done') return true
-        if (dep.prStatus !== 'merged') return true
-        return false
+        if (dep.status !== 'done') return true // unfinished ⇒ blocks the downstream branch
+        if (dep.prStatus === 'merged') return false // PR merged ⇒ on trunk
+        const depBranch = normBranch(dep.branchName)
+        // No recorded branch (in-place / historic) ⇒ code is on the current
+        // checkout (the trunk), there is no PR to merge ⇒ treat as merged.
+        if (depBranch === null) return false
+        // Developed in place on the workspace main branch ⇒ already on trunk.
+        if (mainBranch !== null && depBranch === mainBranch) return false
+        // Else: lives on an isolated branch with an unmerged PR ⇒ blocks.
+        return true
       })
     if (unmerged.length > 0) {
       conn.send({

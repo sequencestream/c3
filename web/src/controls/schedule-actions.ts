@@ -1,19 +1,27 @@
-import { watch } from 'vue'
+import { computed, getCurrentInstance, onUnmounted, watch } from 'vue'
 import type {
   CreateScheduleInput,
   Schedule,
   UpdateScheduleInput,
   VendorId,
 } from '@ccc/shared/protocol'
+import {
+  SCHEDULE_REFRESH_INTERVAL_MS,
+  decideScheduleRefresh,
+  isExecutionRunning,
+} from '@/lib/schedule-refresh'
 import type { AppCtx } from './types'
 
 // Install schedule-tab actions (read path + create/edit form) onto the ctx.
 export function installScheduleActions(ctx: AppCtx): void {
   const send = ctx.send
   const {
+    activeTab,
     schedulesProject,
     selectedScheduleId,
     selectedExecutionId,
+    selectedSchedule,
+    selectedExecution,
     scheduleFormOpen,
     scheduleFormTarget,
     scheduleToolManifest,
@@ -120,4 +128,74 @@ export function installScheduleActions(ctx: AppCtx): void {
       workspaceId: schedulesProject.value,
     })
   }
+
+  // ---- Live refresh of the selected, running execution ----
+  // A running llm execution's detail/transcript would otherwise stay frozen at
+  // the first fetch. While it runs (and the page is the active, visible view) we
+  // periodically re-fetch both; on completion we stop after one final transcript
+  // fetch so the last content lands. Reuses the existing read-only contracts —
+  // no protocol or server change.
+
+  // The selected execution is a refreshable, running llm session.
+  const refreshRunning = computed(
+    () => selectedSchedule.value?.type === 'llm' && isExecutionRunning(selectedExecution.value),
+  )
+
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+  function stopPolling(): void {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  // Re-fetch the running execution's detail (status/duration) + transcript.
+  function pollOnce(): void {
+    const scheduleId = selectedScheduleId.value
+    const executionId = selectedExecutionId.value
+    if (!scheduleId || !executionId) return
+    send({ type: 'get_schedule_detail', scheduleId })
+    send({ type: 'get_execution_transcript', scheduleId, executionId })
+  }
+
+  // One final transcript fetch after the run reaches a terminal state.
+  function finalFetch(): void {
+    const scheduleId = selectedScheduleId.value
+    const executionId = selectedExecutionId.value
+    if (!scheduleId || !executionId) return
+    send({ type: 'get_execution_transcript', scheduleId, executionId })
+  }
+
+  // Drive the interval's lifecycle off the running-window: start it when a
+  // running execution is selected on the active page, tear it down otherwise,
+  // and fire the final fetch on the running → terminal transition.
+  watch([refreshRunning, () => activeTab.value], ([running, tab], [prevRunning]) => {
+    const tabActive = tab === 'schedules'
+    const { finalFetch: doFinal } = decideScheduleRefresh({
+      running,
+      tabActive,
+      visible: true,
+      prevRunning: !!prevRunning,
+    })
+    if (doFinal) finalFetch()
+
+    if (running && tabActive) {
+      if (!pollTimer) {
+        pollTimer = setInterval(() => {
+          const { shouldPoll } = decideScheduleRefresh({
+            running: refreshRunning.value,
+            tabActive: activeTab.value === 'schedules',
+            visible: document.visibilityState === 'visible',
+            prevRunning: refreshRunning.value,
+          })
+          if (shouldPoll) pollOnce()
+        }, SCHEDULE_REFRESH_INTERVAL_MS)
+      }
+    } else {
+      stopPolling()
+    }
+  })
+
+  // Scope cleanup (no-op outside a component, e.g. unit tests).
+  if (getCurrentInstance()) onUnmounted(stopPolling)
 }

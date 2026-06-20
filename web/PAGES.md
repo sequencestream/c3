@@ -17,7 +17,7 @@ web/src/
 │   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:游标分页刷新(窗口/首页)/加载更多/选择会话、乐观删除改名、新建会话弹窗、控制台 tab 进入与重绑、清空视图会话
 │   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── discussion-actions.ts                       # 讨论页动作(只读路径 + 组织者引擎):打开/创建/开始/暂停/恢复/转需求/发言/移动返回
-│   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch)
+│   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch);选中且运行中的 llm 执行按周期自动刷新 detail+transcript(可见性闸/页内才刷),结束补拉一次后停止
 │   ├── chat-actions.ts                             # 聊天/输入动作 + 客户端待发队列(enqueue/edit/delete/flush watch)、提交/继续/停止/刷新/模式/agent 切换/权限响应
 │   ├── settings-actions.ts                         # 系统/工作区设置、技能安装、运行时语言切换(回滚)、workspace↔workcenter 视图模式、技能加载审批
 │   ├── license-actions.ts                          # 产品许可(ADR-0026):打开 LS 登录页取 license_key(start_license_activation)、用 key 绑定本安装(bind_license),状态由 license_state/license_activation_started/license_bind_result 回流
@@ -74,9 +74,9 @@ web/src/
 │   │   ├── Schedules.vue                            # 定时任务容器页:桌面三栏(左栏列表 + 中栏执行历史 + 右栏 Tab 详情)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为三级 drill-down(任务列表→执行历史→Tab 执行详情逐级滑入/返回)
 │   │   └── components/
 │   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、编辑、删除(ConfirmDialog 组件二次确认)、enable/disable 开关、下次执行倒计时(30s 刷新)
-│   │       ├── ExecutionHistoryList/ExecutionHistoryList.vue  # 中栏执行历史列表:选中 schedule 的执行记录,点击选中某次执行
+│   │       ├── ExecutionHistoryList/ExecutionHistoryList.vue  # 中栏执行历史列表:选中 schedule 的执行记录,点击选中某次执行;运行中行的状态/耗时随控制层自动刷新更新
 │   │       ├── ScheduleDetail/ScheduleDetail.vue    # 右栏 schedule 详情(选中任务但未选执行时):vendor 品牌名+色点、mcpMode、toolAllowlist 读/写分类列表(借 toolManifest 缓存)
-│   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动
+│   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动;运行中执行的 transcript 随控制层轮询覆盖更新(不闪 loading)
 │   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);移动端全屏 sheet 且紧凑表单单列堆叠
 │   │
 │   ├── codes/                                       # 代码浏览页
@@ -117,6 +117,7 @@ web/src/
 │   ├── datetime-formats.ts                          # 日期/数字格式化预设:为 vue-i18n 与纯展示 lib 提供单一数据源
 │   ├── discussion-view.ts                           # 讨论只读历史纯映射器:DiscussionMessage 正规化为 ChatBody,处理多说话人 icon/name/vendor
 │   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染
+│   ├── schedule-refresh.ts                           # 运行中执行实时刷新的纯决策:isExecutionRunning 推断 + decideScheduleRefresh(running/tab/可见/上次running → shouldPoll/finalFetch) + 轮询间隔常量
 │   ├── format.ts                                    # 简单值格式化:JSON 美化打印、多行折叠为单行
 │   ├── highlight.ts                                 # Shiki 按需代码高亮:白名单语言、语言别名、哨兵色转 CSS class、DOMPurify 过滤
 │   ├── intent-list-view.ts                          # 需求列表纯展示逻辑:状态/运行态标签、面板展开规则、行内字段可见性、日期格式化

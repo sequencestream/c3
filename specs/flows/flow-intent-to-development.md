@@ -65,13 +65,16 @@ flowchart TD
    and `<NNN>` is a per-day sequence. It seeds a **minimal** `spec.md` (frontmatter + title +
    a link back to the intent, no section skeleton) and backfills the intent's spec path
    (the **absolute** centralized location) immediately, so the spec exists even if the run fails.
-   Content positioning: the **intent already carries the requirements** (Why / What / Acceptance /
-   Non-goals), so the spec does **not** restate them — it is a **grounded design/solution document**.
-   Its value is the layer the intent cannot reach: it reads the real codebase and lays out the
-   solution approach, the affected surfaces / contracts, edge cases & error handling, the intent's
-   acceptance **sharpened into concrete testable criteria**, and the test strategy. The recommended
-   structure rides the spec agent's system prompt and is **adapted to the change's size** (not a
-   rigid template); a non-governance per-change spec may name concrete modules / files / contracts.
+   Content positioning: the **user is the first reader** and the development agent the second. The
+   intent already carries the requirements (Why / What / Acceptance / Non-goals), so the spec does
+   **not** restate them — it is a concise, **grounded design/solution document** that first states
+   the change, impact, and verification. Its structure follows the real codebase impact, not the
+   request length: a focused single-surface change without contract, data, migration, security, or
+   cross-domain impact is limited to change summary, implementation notes, and concrete verification
+   (normally 8–20 lines); normal changes add only relevant approach, surfaces, and boundaries;
+   contract/data/migration/security/cross-domain changes also record trade-offs, compatibility, and
+   failure handling. Empty headings and generic prose are forbidden. A non-governance per-change
+   spec may name concrete modules / files / contracts, and is written in the console display language.
 2. **intent-management → agent-session.** A **write-confined spec session** is launched on the
    configured spec agent (`specAgentId`). Its sole job is to **write the spec, not change code**:
    writes are limited to the spec directory (any other project path is denied; the rest is

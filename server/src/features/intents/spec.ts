@@ -59,8 +59,9 @@ created: ${nowIso}
 # Spec: ${intent.title}
 
 > The single source of truth for this change, derived from intent \`${intent.id}\`.
-> The intent already carries the requirements (Why / What / Acceptance / Non-goals);
-> this spec grounds them against the real codebase and lays out the solution.
+> Written for the user to review first and the development agent second. The intent already carries
+> the requirements (Why / What / Acceptance / Non-goals); this spec explains only the grounded
+> change, impact, and verification needed for this codebase.
 
 _(to be authored)_
 `

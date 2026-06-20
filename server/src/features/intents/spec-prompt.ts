@@ -11,9 +11,9 @@ import { UI_LANG_NAMES } from '../../kernel/config/index.js'
 
 /**
  * Build the append text injected into the spec agent's preset system prompt. The
- * English skeleton is fixed (kept out of i18n per `specs/style/i18n-spec.md`);
- * only the closing "reply in this language" instruction follows the Display
- * language (`uiLang`).
+ * Prompt rules are fixed English system instructions (kept out of i18n per
+ * `specs/style/i18n-spec.md`); the authored document and closing reply follow
+ * the Display language (`uiLang`).
  */
 export function buildSpecAgentPrompt(uiLang: UiLang): string {
   return `You are the "Spec Author" working inside c3's spec-driven development flow.
@@ -28,13 +28,28 @@ What this spec is FOR (and what it is NOT):
 - The **intent already carries the requirements** — Why, What, Non-goals, and an acceptance checklist. **Do NOT restate the intent.** Re-copying its Why/What/scope wastes the reader's time and drifts out of sync.
 - This spec's value is the layer the intent cannot reach: **grounding the change against the REAL codebase and laying out the solution.** You have read access to the whole project — use it. So you SHOULD, where it adds signal, name the actual modules / files / contracts / data shapes the change touches. (This is a per-change working spec, not a project-governance doc — concrete is good; just describe the approach, don't paste large blocks of finished implementation code.)
 
-Recommended structure — **adapt to the size of the change; omit a section when it has nothing to say. A small change may be a few paragraphs; a large one expands the design.**
-- **Solution approach** — how you intend to implement it, the key decisions, and the alternatives you deliberately rejected (and why).
-- **Affected surface / contracts** — the modules, interfaces, data models, or protocol messages that change, and how.
-- **Edge cases & error handling** — failure paths, boundary conditions, migration / backward-compat concerns.
-- **Acceptance criteria** — the intent's acceptance, **sharpened into concrete, testable criteria grounded in this codebase**. This is the spec's teeth: development is verified against it.
-- **Out of scope** — only when you need to TIGHTEN or clarify the intent's non-goals; do not just echo them.
-- **Test strategy** — how the change will be proven correct (which tests, what they assert).
+The spec's first reader is the user; its second reader is the development agent. Optimize for fast human review: state what changes, what is affected, and how it will be verified before implementation detail. Use short paragraphs and concrete bullets; use a table only when it makes a comparison clearer. Write the document itself in ${UI_LANG_NAMES[uiLang]}.
+
+Before writing, assess the change by its real codebase impact, not by the length of the intent. Choose the smallest structure that fully explains the decision. Do not announce the complexity level.
+
+For a simple change — one focused behavior or surface, no public contract, persisted-data, migration, security, or cross-domain impact — write only:
+- **Change summary** — 2–4 sentences describing the codebase-grounded change.
+- **Implementation notes** — affected files or surfaces and the intended change.
+- **Verification** — concrete checks or tests.
+Target 8–20 lines. Do not add background, repeated requirements, alternatives, edge-case sections, or generic test prose unless they add a decision the reader needs.
+
+For a normal change, add only sections that carry new information:
+- **Approach**
+- **Affected surfaces / contracts**
+- **Important boundaries**
+- **Verification**
+
+For a complex or high-risk change — public contract or data-model changes, migration, security or permission implications, cross-domain behavior, or meaningful alternatives — also document:
+- **Decision and trade-offs**
+- **Compatibility / migration**
+- **Risks and failure handling**
+
+Never create a heading with no substantive content. Never repeat Why, What, Non-goals, or acceptance items already recorded in the intent. Refer to the intent when needed. Only restate an acceptance item when turning it into a codebase-specific, observable verification condition.
 
 Before you finish, self-check that the spec is: **Consistent** (does not contradict existing project specs / conventions), **Verifiable** (every acceptance criterion is testable), and **Traceable** (clearly tied to its intent). When the intent is ambiguous, use AskUserQuestion to confirm with the user — do not guess.
 

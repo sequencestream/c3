@@ -1195,6 +1195,12 @@
         "label": "提示词",
         "placeholder": "运行一次安全审计并总结发现…"
       },
+      "maxWallClockMs": {
+        "label": "执行超时（毫秒）",
+        "placeholder": "使用任务默认值",
+        "hint": "留空使用任务默认值（命令：30 秒；LLM：60 秒）。",
+        "invalid": "请输入 1,000 到 86,400,000 之间的整数。"
+      },
       "schedule": {
         "label": "排期"
       },
@@ -1262,6 +1268,10 @@
       },
       "vendor": {
         "label": "品牌"
+      },
+      "agent": {
+        "label": "Agent",
+        "placeholder": "Select an agent"
       },
       "tools": {
         "label": "允许的工具",
@@ -1401,7 +1411,12 @@
       "notFound": "定时任务不存在。",
       "executionNotFound": "执行记录不存在。",
       "approvalNotFound": "审批条目不存在或已被处理。",
-      "invalidEventTrigger": "事件触发型定时任务需要订阅一个运行事件。"
+      "invalidEventTrigger": "事件触发型定时任务需要订阅一个运行事件。",
+      "invalidMaxWallClockMs": "执行超时必须是 1,000 到 86,400,000 毫秒之间的整数。",
+      "agentRequired": "Select an execution agent.",
+      "agentNotFound": "The selected execution agent no longer exists.",
+      "agentDisabled": "The selected execution agent is disabled.",
+      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "等待用户介入存储不可用 (c3.db)。"

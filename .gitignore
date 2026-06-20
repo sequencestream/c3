@@ -17,4 +17,5 @@ scripts/i18n/code-key.map.json
 .agents/skills/_c3_*/
 
 _zt_tmp
+.pnpm-store/
 

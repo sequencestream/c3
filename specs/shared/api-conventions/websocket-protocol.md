@@ -843,7 +843,7 @@ schedule 的执行日志。
 - **`RunKind`** — `'session' | 'intent' | 'discussion' | 'schedule' | 'consensus' | 'tool'`。运行/agent 调用的来源分类（2026-06-08），替代旧的 `SessionKind`。
 - **`ScheduleStatus`** — `'active' | 'paused' | 'error'`。
 - **`McpMode`** — `'read-only' | 'sandboxed' | 'full-access'`。
-- **`Schedule`** — `{ id, type, config, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventTopic, eventReasonFilter, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`mode` 是 `ModeToken | CodexPolicy`。
+- **`Schedule`** — `{ id, type, config, maxWallClockMs, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventTopic, eventReasonFilter, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。
 - **`ScheduleExecutionLog`** — `{ id, scheduleId, startedAt, finishedAt, exitCode, output, error, status, sessionId }`。
 - **`PendingWriteApproval`** — `{ id, scheduleId, workspacePath, toolName, toolInput, diffPreview, createdAt, expiresAt, status, resolvedBy, resolvedAt }`。沙箱化 schedule 执行的待处理写操作审批。
 - **`ToolManifestEntry`** — `{ name, isWrite }`。供应商工具清单中的条目。

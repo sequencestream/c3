@@ -42,6 +42,23 @@ afterEach(() => {
 })
 
 describe('createSchedule next_run_at backfill', () => {
+  it('persists maxWallClockMs independently of task config and supports clearing it', () => {
+    const sch = createSchedule({
+      type: 'command',
+      config: { command: 'echo hi' },
+      maxWallClockMs: 120_000,
+      workspaceId: proj,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+    })
+    expect(sch.maxWallClockMs).toBe(120_000)
+    expect((sch.config as Record<string, unknown>).maxWallClockMs).toBeUndefined()
+
+    updateSchedule(sch.id, { maxWallClockMs: null })
+    expect(getSchedule(sch.id)!.maxWallClockMs).toBeNull()
+  })
+
   it('backfills next_run_at on create so the first run is dispatchable', () => {
     const sch = createSchedule({
       type: 'command',

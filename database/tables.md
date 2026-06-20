@@ -46,7 +46,7 @@ Schema 版本: 5。v2→v3 新增 `discussions.participant_agent_ids` (创建时
 
 定时任务调度域。`schedules` 支持 cron 和 event 两种触发类型；`schedule_execution_logs` 记录每次执行的结果和 agent session id；`workspace_mcp_configs` 存储 per-workspace 的 MCP 服务器配置。写操作权限通过 toolAllowlist/toolDenylist 预配置，不再使用运行时 human-in-the-loop 审批。
 
-Schema 版本: 5。迁移历史: status 列、write_approvals/workspace_mcp_configs 表、session_id 列、trigger 列 (v5)、vendor 列 (v6)、mcp_mode→mode 改名 (v7)。
+Schema 版本: 5。迁移历史: status 列、write_approvals/workspace_mcp_configs 表、session_id 列、trigger 列 (v5)、vendor 列 (v6)、mcp_mode→mode 改名 (v7)、agent_id 列 (v8，LLM 任务显式绑定执行 agent)。
 
 ### user-involve
 

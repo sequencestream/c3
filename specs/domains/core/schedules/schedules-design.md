@@ -195,12 +195,12 @@ execution-log id, and a callback to update the log, and runs to a terminal state
 1. Read the command string from the schedule's JSON config.
 2. Spawn a headless shell process in the schedule's workspace directory.
 3. Accumulate stdout + stderr into the output buffer.
-4. Configurable hard timeout (a config timeout field, default 30 s):
+4. Configurable hard timeout through the schedule-level `maxWallClockMs` field (default 30 s):
    - On timeout → kill the process → record `failed` noting a timeout.
 5. On process exit: exit code 0 → `success`; non-zero → `failed` noting the non-zero exit code.
 6. On a process-creation failure → `failed` with the error message.
 7. Support a config max-retries field (default 0): on non-zero exit or timeout, retry up to N times.
-   All retries share the same log entry — only the final attempt's result is recorded.
+   All retries share the same log entry and the same `maxWallClockMs` deadline — only the final attempt's result is recorded.
 
 ### Internal agent recovery execution
 
@@ -226,7 +226,7 @@ cannot repeat.
      - `sandboxed`: only the read-only tool set (read/grep/glob/list/web-fetch/web-search) is allowed;
        write tools are denied.
      - `read-only`: all tools denied.
-   - Wall-clock timeout (a config wall-clock field, default 60 s).
+   - Wall-clock timeout through the schedule-level `maxWallClockMs` field (default 60 s).
 4. Accumulate assistant-text blocks into the output.
 5. If the config carries an output schema (JSON Schema), validate the output:
    - If validation passes → `success`.
@@ -317,7 +317,6 @@ On server close, stop the scheduler gracefully with a 30 s timeout for in-flight
 ```json
 {
   "command": "echo hello",
-  "timeout": 30000,
   "maxRetries": 0
 }
 ```
@@ -327,7 +326,6 @@ On server close, stop the scheduler gracefully with a 30 s timeout for in-flight
 ```json
 {
   "prompt": "分析当前目录结构并生成报告",
-  "maxWallClockMs": 60000,
   "outputSchema": {
     "type": "object",
     "properties": {

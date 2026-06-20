@@ -15,6 +15,7 @@ import ExecutionDetail from './components/ExecutionDetail/ExecutionDetail.vue'
 import ScheduleForm from './components/ScheduleForm/ScheduleForm.vue'
 import type {
   CreateScheduleInput,
+  AgentConfig,
   Schedule,
   ScheduleExecutionLog,
   ToolManifestEntry,
@@ -44,6 +45,7 @@ const props = defineProps<{
   toolManifestError: string | null
   /** Per-vendor host-CLI presence (for greying absent vendors). */
   hostStatus: VendorHostStatus[]
+  agents: AgentConfig[]
 }>()
 
 const emit = defineEmits<{
@@ -131,6 +133,7 @@ const mobileActiveToken = computed(() => props.executionId ?? props.activeId ?? 
     :tool-manifest-loading="toolManifestLoading"
     :tool-manifest-error="toolManifestError"
     :host-status="hostStatus"
+    :agents="agents"
     @close="emit('close-form')"
     @create="(input: CreateScheduleInput) => emit('create', input)"
     @update="(id: string, input: UpdateScheduleInput) => emit('update', id, input)"

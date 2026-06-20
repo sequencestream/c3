@@ -2022,6 +2022,23 @@ export interface ResearchMessage {
 
 export type ScheduleType = 'command' | 'llm'
 
+/** Smallest accepted schedule execution wall-clock limit (one second). */
+export const MIN_SCHEDULE_MAX_WALL_CLOCK_MS = 1_000
+
+/** Largest accepted schedule execution wall-clock limit (twenty-four hours). */
+export const MAX_SCHEDULE_MAX_WALL_CLOCK_MS = 24 * 60 * 60 * 1_000
+
+/** Whether a wire value is a valid explicit schedule execution time limit. */
+export function isValidScheduleMaxWallClockMs(value: unknown): value is number | null {
+  return (
+    value === null ||
+    (typeof value === 'number' &&
+      Number.isSafeInteger(value) &&
+      value >= MIN_SCHEDULE_MAX_WALL_CLOCK_MS &&
+      value <= MAX_SCHEDULE_MAX_WALL_CLOCK_MS)
+  )
+}
+
 export type McpMode = 'read-only' | 'sandboxed' | 'full-access'
 
 export type ScheduleStatus = 'active' | 'paused' | 'error'
@@ -2079,10 +2096,17 @@ export interface Schedule {
    * no `description` field; any in legacy rows is ignored.
    */
   config: unknown
+  /**
+   * Maximum wall-clock duration for one execution, in milliseconds. `null` uses
+   * the task-type default (30 seconds for command, 60 seconds for LLM).
+   */
+  maxWallClockMs: number | null
   /** Owning workspace absolute path (resolved). */
   workspaceId: string
   /** Vendor this schedule belongs to; determines which agent runs it. */
   vendor: VendorId
+  /** Explicit agent profile for an LLM schedule; null for commands and legacy rows. */
+  agentId?: string | null
   /**
    * How this schedule fires: `'cron'` (time-based) or `'event'` (run lifecycle).
    * Defaults to `'cron'` for legacy rows migrated before this field existed.
@@ -2118,9 +2142,13 @@ export interface Schedule {
 export interface CreateScheduleInput {
   type: ScheduleType
   config: unknown
+  /** Optional execution wall-clock limit; null selects the task-type default. */
+  maxWallClockMs?: number | null
   workspaceId: string
   /** Vendor this schedule belongs to; determines which agent runs it. */
   vendor: VendorId
+  /** Explicit LLM execution agent. Required by the server for new LLM schedules. */
+  agentId?: string | null
   /** Defaults to `'cron'` when omitted (backward-compatible with legacy clients). */
   triggerType?: ScheduleTriggerType
   /** Required for `'cron'` triggers; empty string for `'event'` triggers. */
@@ -2144,7 +2172,11 @@ export interface UpdateScheduleInput {
    * (and its provenance) untouched. `description` is always stripped.
    */
   config?: unknown
+  /** Optional execution wall-clock limit; null selects the task-type default. */
+  maxWallClockMs?: number | null
   vendor?: VendorId
+  /** Replace the explicit LLM execution agent. */
+  agentId?: string | null
   triggerType?: ScheduleTriggerType
   cronExpression?: string
   eventTopic?: RunLifecycleTopic | null

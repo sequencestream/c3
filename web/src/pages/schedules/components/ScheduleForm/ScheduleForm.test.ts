@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { Schedule, ToolManifestEntry, VendorHostStatus } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  Schedule,
+  ToolManifestEntry,
+  VendorHostStatus,
+} from '@ccc/shared/protocol'
 import { isValidCron } from '@ccc/shared/cron'
 import ScheduleForm from './ScheduleForm.vue'
 
@@ -30,6 +35,15 @@ const WRITE_TOOLS: ToolManifestEntry[] = [
   { name: 'Edit', isWrite: true },
 ]
 const ALL_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS]
+const AGENTS: AgentConfig[] = [
+  {
+    id: 'claude-default',
+    vendor: 'claude',
+    configMode: 'system',
+    displayName: 'Claude default',
+    config: { baseUrl: '', apiKey: '', model: '' },
+  },
+]
 
 function mountForm(
   props: Partial<{
@@ -53,6 +67,7 @@ function mountForm(
       toolManifestLoading: false,
       toolManifestError: null,
       hostStatus: HOST_PRESENT,
+      agents: AGENTS,
       ...props,
     },
   })
@@ -63,6 +78,7 @@ function sched(over: Partial<Schedule> = {}): Schedule {
     id: 's1',
     type: 'command',
     config: { command: 'pnpm build', name: 'legacy name' },
+    maxWallClockMs: null,
     workspaceId: '/home/proj',
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
@@ -118,6 +134,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     expect(input.mode).toBe('default')
     expect(isValidCron(input.cronExpression as string)).toBe(true)
     expect(input.config).toEqual({ command: 'pnpm build' })
+    expect(input.maxWallClockMs).toBeNull()
     expect(input.config).not.toHaveProperty('name')
     expect(input.config).not.toHaveProperty('description')
   })
@@ -126,12 +143,14 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     const w = mountForm()
     const segs = w.findAll('.sf-seg')
     await segs[1].trigger('click') // LLM prompt
+    await w.find('.sf-agent-select').setValue('claude-default')
     await w.find('textarea').setValue('Run a security audit')
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.type).toBe('llm')
     expect(input.config).toEqual({ prompt: 'Run a security audit' })
+    expect(input.maxWallClockMs).toBeNull()
     expect(input.config).not.toHaveProperty('name')
   })
 
@@ -185,6 +204,21 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
 
     const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
     expect((input.config as Record<string, unknown>).name).toBe('')
+  })
+
+  it('create/update:序列化并回填 maxWallClockMs', async () => {
+    const created = mountForm()
+    await created.find('textarea').setValue('pnpm build')
+    await created.find('.sf-timeout-input').setValue('120000')
+    await created.find('.sf-btn.primary').trigger('click')
+    expect((created.emitted('create')![0][0] as Record<string, unknown>).maxWallClockMs).toBe(
+      120000,
+    )
+
+    const edited = mountForm({ schedule: sched({ maxWallClockMs: 90000 }) })
+    expect((edited.find('.sf-timeout-input').element as HTMLInputElement).value).toBe('90000')
+    await edited.find('.sf-btn.primary').trigger('click')
+    expect((edited.emitted('update')![0][1] as Record<string, unknown>).maxWallClockMs).toBe(90000)
   })
 
   it('create(event):切到事件触发 → payload 含 triggerType/eventTopic,cron 为空', async () => {

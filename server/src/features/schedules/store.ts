@@ -14,6 +14,7 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
+import { isValidScheduleMaxWallClockMs } from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   CreateScheduleInput,
@@ -58,13 +59,14 @@ export interface ScheduleNameOverride {
 }
 
 const AGENT_RECOVERY_ACTION = 'agent_quota_recovery'
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 7
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schedules (
   id                  TEXT PRIMARY KEY,
   type                TEXT NOT NULL,
   config              TEXT NOT NULL DEFAULT '{}',
+  max_wall_clock_ms   INTEGER,
   workspace_path      TEXT NOT NULL,
   trigger_type        TEXT NOT NULL DEFAULT 'cron',
   cron_expression     TEXT NOT NULL,
@@ -76,6 +78,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',
   tool_denylist       TEXT NOT NULL DEFAULT '[]',
   vendor              TEXT NOT NULL DEFAULT 'claude',
+  agent_id            TEXT,
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL
 );
@@ -165,6 +168,29 @@ function runMigrations(d: Db): void {
   if (columnExists(d, 'schedules', 'mcp_mode')) {
     d.exec(`ALTER TABLE schedules DROP COLUMN mcp_mode`)
   }
+  // v8 (2026-06-20): execution timeout is a first-class schedule setting. Copy
+  // the historic type-specific JSON keys once, retaining the original defaults
+  // for rows that did not set either key.
+  if (!columnExists(d, 'schedules', 'max_wall_clock_ms')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN max_wall_clock_ms INTEGER`)
+    const rows = d.all<{ id: string; type: string; config: string }>(
+      `SELECT id, type, config FROM schedules`,
+    )
+    for (const row of rows) {
+      try {
+        const config = JSON.parse(row.config) as Record<string, unknown>
+        const legacy = row.type === 'command' ? config.timeout : config.maxWallClockMs
+        if (isValidScheduleMaxWallClockMs(legacy) && legacy !== null) {
+          d.run(`UPDATE schedules SET max_wall_clock_ms=? WHERE id=?`, legacy, row.id)
+        }
+      } catch {
+        /* A corrupt legacy config keeps its existing type-specific default. */
+      }
+    }
+  }
+  if (!columnExists(d, 'schedules', 'agent_id')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN agent_id TEXT`)
+  }
 }
 
 let schemaReady = false
@@ -220,6 +246,7 @@ interface ScheduleRow {
   id: string
   type: string
   config: string
+  max_wall_clock_ms: number | null
   workspace_path: string
   trigger_type: string | null
   cron_expression: string
@@ -231,6 +258,7 @@ interface ScheduleRow {
   tool_allowlist: string
   tool_denylist: string
   vendor: string
+  agent_id: string | null
   created_at: number
   updated_at: number
 }
@@ -300,6 +328,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     id: r.id,
     type: r.type as ScheduleType,
     config,
+    maxWallClockMs: isValidScheduleMaxWallClockMs(r.max_wall_clock_ms) ? r.max_wall_clock_ms : null,
     workspaceId: pathToId(r.workspace_path)!,
     triggerType: (r.trigger_type as ScheduleTriggerType | null) ?? 'cron',
     cronExpression: r.cron_expression,
@@ -311,6 +340,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     toolAllowlist: parseStringList(r.tool_allowlist),
     toolDenylist: parseStringList(r.tool_denylist),
     vendor: r.vendor as VendorId,
+    agentId: r.agent_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -437,6 +467,9 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
   const denylist = input.toolDenylist ?? []
   const vendor = input.vendor ?? 'claude'
   const config = sanitizeConfig(input.config)
+  const maxWallClockMs = isValidScheduleMaxWallClockMs(input.maxWallClockMs)
+    ? input.maxWallClockMs
+    : null
   config.name = (generatedName ?? '').trim() || fallbackName(input.type, input.config)
   // Event-triggered schedules carry no cron and never have a planned next_run_at:
   // they fire from the run lifecycle bus, not the tick loop. Cron schedules keep
@@ -457,11 +490,12 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
       : null
   d.run(
     `INSERT INTO schedules
-       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mode, tool_allowlist, tool_denylist, vendor, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
     JSON.stringify(config),
+    maxWallClockMs,
     resolveWorkspaceRoot(input.workspaceId)!,
     triggerType,
     cronExpression,
@@ -473,6 +507,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     JSON.stringify(allowlist),
     JSON.stringify(denylist),
     vendor,
+    input.type === 'llm' ? (input.agentId ?? null) : null,
     now,
     now,
   )
@@ -559,6 +594,10 @@ export function updateSchedule(
     sets.push('config=?')
     params.push(JSON.stringify(next))
   }
+  if (patch.maxWallClockMs !== undefined) {
+    sets.push('max_wall_clock_ms=?')
+    params.push(patch.maxWallClockMs)
+  }
   // Trigger-type switch: clear the fields that don't belong to the new type so a
   // schedule never carries stale cron AND event state. Switching to 'event' drops
   // cron + next_run_at; switching to 'cron' drops the event subscription fields.
@@ -609,6 +648,10 @@ export function updateSchedule(
   if (patch.vendor !== undefined) {
     sets.push('vendor=?')
     params.push(patch.vendor)
+  }
+  if (patch.agentId !== undefined) {
+    sets.push('agent_id=?')
+    params.push(patch.agentId)
   }
   if (patch.toolAllowlist !== undefined) {
     sets.push('tool_allowlist=?')

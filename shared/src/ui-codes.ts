@@ -118,6 +118,11 @@ export const UI_ERROR_CODES = {
   'schedule.executionNotFound': { key: 'error.schedule.executionNotFound' },
   'schedule.approvalNotFound': { key: 'error.schedule.approvalNotFound' },
   'schedule.invalidEventTrigger': { key: 'error.schedule.invalidEventTrigger' },
+  'schedule.invalidMaxWallClockMs': { key: 'error.schedule.invalidMaxWallClockMs' },
+  'schedule.agentRequired': { key: 'error.schedule.agentRequired' },
+  'schedule.agentNotFound': { key: 'error.schedule.agentNotFound' },
+  'schedule.agentDisabled': { key: 'error.schedule.agentDisabled' },
+  'schedule.agentVendorMismatch': { key: 'error.schedule.agentVendorMismatch' },
   // wait user involve
   'waitUserInvolve.dbUnavailable': { key: 'error.waitUserInvolve.dbUnavailable' },
   // permission mode

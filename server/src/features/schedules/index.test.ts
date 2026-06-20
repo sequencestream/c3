@@ -111,6 +111,22 @@ describe('updateScheduleHandler — manual title', () => {
     expect(cfg.name).toBe('Regenerated Auto')
     expect(cfg.nameSource).toBeUndefined()
   })
+
+  it('rejects an out-of-range maxWallClockMs without changing the schedule', async () => {
+    const sch = makeSchedule()
+    const conn = fakeConn()
+    await updateScheduleHandler(fakeCtx(), conn, {
+      type: 'update_schedule',
+      scheduleId: sch.id,
+      input: { maxWallClockMs: 999 },
+    } as never)
+
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith({
+      type: 'error',
+      error: { code: 'schedule.invalidMaxWallClockMs' },
+    })
+    expect(getSchedule(sch.id)!.maxWallClockMs).toBeNull()
+  })
 })
 
 function deleteMsg(scheduleId: string) {

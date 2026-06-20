@@ -18,10 +18,16 @@
  * so the previewed instant matches the one the server will schedule.
  */
 import { ref, computed, watch } from 'vue'
+import {
+  isValidScheduleMaxWallClockMs,
+  MAX_SCHEDULE_MAX_WALL_CLOCK_MS,
+  MIN_SCHEDULE_MAX_WALL_CLOCK_MS,
+} from '@ccc/shared/protocol'
 import type {
   CodexApprovalPolicy,
   CodexPolicy,
   CodexSandboxMode,
+  AgentConfig,
   CreateScheduleInput,
   ModeToken,
   RunEndReason,
@@ -55,6 +61,8 @@ const props = defineProps<{
   toolManifestError: string | null
   /** Per-vendor host-CLI presence for greying absent vendors. */
   hostStatus: VendorHostStatus[]
+  /** Enabled execution profiles; filtered by the selected vendor. */
+  agents?: AgentConfig[]
 }>()
 
 const emit = defineEmits<{
@@ -106,6 +114,7 @@ function vendorPresent(v: VendorId): boolean {
 }
 
 const vendor = ref<VendorId>('claude')
+const agentId = ref('')
 // Tracks whether the user has manually changed vendor (to avoid re-triggering the
 // manifest load during the initial re-seed from schedule props).
 const vendorInitialised = ref(false)
@@ -121,12 +130,17 @@ const codexSandboxMode = ref<CodexSandboxMode>('workspace-write')
 const codexApprovalPolicy = ref<CodexApprovalPolicy>('on-request')
 const command = ref('')
 const prompt = ref('')
+const maxWallClockMs = ref<number | null>(null)
 const cronExpression = ref('*/30 * * * *')
 const triggerType = ref<ScheduleTriggerType>('cron')
 const eventTopic = ref<RunLifecycleTopic>('run:settled')
 const eventReasonFilter = ref<RunEndReason[]>([])
 
 const toolAllowlist = ref<string[]>([])
+
+const vendorAgents = computed(() =>
+  (props.agents ?? []).filter((agent) => agent.vendor === vendor.value && agent.enabled !== false),
+)
 
 // The reason filter only applies to run:settled (run:started has no outcome).
 const showReasonFilter = computed(
@@ -183,11 +197,13 @@ watch(
       cronExpression.value = sched.cronExpression || '*/30 * * * *'
       command.value = readConfigField(sched.config, 'command')
       prompt.value = readConfigField(sched.config, 'prompt')
+      maxWallClockMs.value = sched.maxWallClockMs
       triggerType.value = sched.triggerType
       eventTopic.value = sched.eventTopic ?? 'run:settled'
       eventReasonFilter.value = sched.eventReasonFilter ? [...sched.eventReasonFilter] : []
       // Vendor: restore from schedule, then trigger manifest load.
       vendor.value = sched.vendor
+      agentId.value = sched.agentId ?? ''
       vendorInitialised.value = true
       // Restore tool allowlist from the schedule; empty means "all tools" (unrestricted).
       toolAllowlist.value = sched.toolAllowlist ? [...sched.toolAllowlist] : []
@@ -200,10 +216,12 @@ watch(
       cronExpression.value = '*/30 * * * *'
       command.value = ''
       prompt.value = ''
+      maxWallClockMs.value = null
       triggerType.value = 'cron'
       eventTopic.value = 'run:settled'
       eventReasonFilter.value = []
       vendor.value = 'claude'
+      agentId.value = ''
       vendorInitialised.value = true
       toolAllowlist.value = []
     }
@@ -217,7 +235,12 @@ watch(
 
 // Trigger tool manifest fetch on vendor change (only after initial seed).
 watch(vendor, (v) => {
-  if (vendorInitialised.value) {
+  // Re-seeding an existing schedule changes the ref from the default before its
+  // bound agent is restored. That is not a user vendor change and must preserve
+  // the persisted agent binding; every real vendor change clears it.
+  const isInitialExistingVendor = props.schedule !== null && v === props.schedule.vendor
+  if (vendorInitialised.value && !isInitialExistingVendor) {
+    agentId.value = ''
     toolAllowlist.value = []
     emit('load-tool-manifest', v)
   }
@@ -280,7 +303,19 @@ const taskFilled = computed(() =>
 const triggerValid = computed(() =>
   triggerType.value === 'cron' ? cronValid.value : !!eventTopic.value,
 )
-const canSave = computed(() => taskFilled.value && triggerValid.value)
+const maxWallClockMsValid = computed(() => isValidScheduleMaxWallClockMs(maxWallClockMs.value))
+const canSave = computed(
+  () =>
+    taskFilled.value &&
+    triggerValid.value &&
+    maxWallClockMsValid.value &&
+    (type.value === 'command' || agentId.value.length > 0),
+)
+
+function setMaxWallClockMs(event: Event): void {
+  const raw = (event.target as HTMLInputElement).value
+  maxWallClockMs.value = raw === '' ? null : Number(raw)
+}
 
 function toggleReason(r: RunEndReason): void {
   const i = eventReasonFilter.value.indexOf(r)
@@ -362,9 +397,11 @@ function save(): void {
     config.name = title.value.trim()
     const input: UpdateScheduleInput = {
       config,
+      maxWallClockMs: maxWallClockMs.value,
       mode: serializeMode(),
       triggerType: triggerType.value,
       vendor: vendor.value,
+      agentId: type.value === 'llm' ? agentId.value : null,
       toolAllowlist: [...toolAllowlist.value],
     }
     // The store clears the other trigger's fields on a triggerType switch, so we
@@ -380,9 +417,11 @@ function save(): void {
     emit('create', {
       type: type.value,
       config,
+      maxWallClockMs: maxWallClockMs.value,
       workspaceId: props.workspacePath,
       mode: serializeMode(),
       vendor: vendor.value,
+      agentId: type.value === 'llm' ? agentId.value : null,
       triggerType: triggerType.value,
       cronExpression: isEvent ? '' : cronExpression.value,
       eventTopic: isEvent ? eventTopic.value : null,
@@ -465,6 +504,24 @@ function save(): void {
             rows="6"
             :placeholder="t('schedule.form.prompt.placeholder')"
           />
+        </label>
+
+        <label class="sf-field sf-field--stacked">
+          <span class="sf-label">{{ t('schedule.form.maxWallClockMs.label') }}</span>
+          <input
+            class="sf-input sf-timeout-input"
+            type="number"
+            :min="MIN_SCHEDULE_MAX_WALL_CLOCK_MS"
+            :max="MAX_SCHEDULE_MAX_WALL_CLOCK_MS"
+            :step="1000"
+            :value="maxWallClockMs ?? ''"
+            :placeholder="t('schedule.form.maxWallClockMs.placeholder')"
+            @input="setMaxWallClockMs"
+          />
+          <span class="sf-hint">{{ t('schedule.form.maxWallClockMs.hint') }}</span>
+          <span v-if="!maxWallClockMsValid" class="sf-warn">{{
+            t('schedule.form.maxWallClockMs.invalid')
+          }}</span>
         </label>
 
         <!-- Trigger type: a cron schedule vs a run lifecycle event -->
@@ -612,13 +669,22 @@ function save(): void {
         </div>
 
         <!-- Vendor selector -->
-        <div class="sf-field">
+        <div class="sf-field sf-vendor-agent">
           <span class="sf-label">{{ t('schedule.form.vendor.label') }}</span>
           <select v-model="vendor" class="sf-input sf-select">
             <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
               {{ VENDOR_LABEL[v] }}
             </option>
           </select>
+          <template v-if="type === 'llm'">
+            <span class="sf-label sf-agent-label">{{ t('schedule.form.agent.label') }}</span>
+            <select v-model="agentId" class="sf-input sf-select sf-agent-select">
+              <option disabled value="">{{ t('schedule.form.agent.placeholder') }}</option>
+              <option v-for="agent in vendorAgents" :key="agent.id" :value="agent.id">
+                {{ agent.displayName }}
+              </option>
+            </select>
+          </template>
         </div>
 
         <!-- Permission mode: controls differ by vendor -->
@@ -875,6 +941,9 @@ function save(): void {
 }
 .sf-field:not(.sf-field--stacked) > select.sf-input {
   flex: 0 0 auto;
+}
+.sf-vendor-agent .sf-agent-label {
+  margin-left: var(--sp-2);
 }
 .sf-hint {
   font-size: var(--fs-caption);
@@ -1156,6 +1225,10 @@ function save(): void {
 
   .sf-adv-label {
     width: auto;
+  }
+
+  .sf-vendor-agent .sf-agent-label {
+    margin-left: 0;
   }
 
   .sf-adv-control,

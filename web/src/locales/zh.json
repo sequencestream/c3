@@ -1803,12 +1803,30 @@
       "all": "全部",
       "todo": "待处理",
       "done": "已完成",
-      "canceled": "已取消"
+      "canceled": "已取消",
+      "auto": "自动"
     },
     "status": {
       "todo": "待处理",
       "done": "已完成",
-      "canceled": "已取消"
+      "canceled": "已取消",
+      "auto": "自动"
+    },
+    "consensus": {
+      "title": "共识决策",
+      "lead": "由多 Agent 共识自动决定，无需人工处理。",
+      "allowed": "已允许",
+      "denied": "已拒绝",
+      "answered": "已代你回答",
+      "unanimous": "一致通过",
+      "majority": "多数通过",
+      "vendorScope": "限 {vendor} 内",
+      "noAgreement": "无共识",
+      "verdict": {
+        "allow": "允许",
+        "deny": "拒绝",
+        "abstain": "弃权"
+      }
     },
     "source": {
       "session": "会话",

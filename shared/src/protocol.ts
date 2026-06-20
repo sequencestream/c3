@@ -1438,6 +1438,7 @@ export type AdapterCapability =
   | 'forkSession'
   | 'perToolApproval'
   | 'taskStore'
+  | 'nativeUserInput'
 
 /**
  * A structured capability *state* — the honest grade of a degradable ability,
@@ -2157,8 +2158,17 @@ export interface ToolManifestEntry {
 /** Source category of a {@link WaitUserInvolveEvent}. */
 export type WaitUserInvolveSource = 'session' | 'intent' | 'discussion' | 'schedule'
 
-/** Lifecycle status of a wait-user-involve event. */
-export type WaitUserInvolveStatus = 'todo' | 'done' | 'canceled'
+/**
+ * Lifecycle status of a wait-user-involve event.
+ *  - `'todo'`     — awaiting a human decision (drives the pending-items badge).
+ *  - `'done'`     — the human allowed / answered the gated action.
+ *  - `'canceled'` — the human denied it, or the owning run ended unanswered.
+ *  - `'auto'`     — resolved by multi-agent consensus with NO human involved.
+ *                   A non-blocking, audit-only record (never counted in the
+ *                   badge); carries the {@link WaitUserInvolveEvent.outcome} that
+ *                   decided it so the automatic decision stays traceable.
+ */
+export type WaitUserInvolveStatus = 'todo' | 'done' | 'canceled' | 'auto'
 
 /**
  * An event requiring human attention — the server-side record of a tool call
@@ -2184,6 +2194,13 @@ export interface WaitUserInvolveEvent {
   toolInput: unknown
   /** Current lifecycle status — 'todo' while awaiting human decision. */
   status: WaitUserInvolveStatus
+  /**
+   * The multi-agent consensus that auto-resolved this event, present ONLY on
+   * `status: 'auto'` records (the gateway's `consensus_auto` outcome — votes,
+   * decision, summary). Absent / null for human-decided events. Stored so an
+   * automatic decision is auditable in WorkCenter without a blocking todo.
+   */
+  outcome?: AnyConsensusOutcome | null
   createdAt: number
   updatedAt: number
 }

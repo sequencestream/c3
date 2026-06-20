@@ -61,6 +61,8 @@ function statusClass(status: string): string {
       return 'wc-status-done'
     case 'canceled':
       return 'wc-status-canceled'
+    case 'auto':
+      return 'wc-status-auto'
     default:
       return ''
   }
@@ -149,6 +151,10 @@ function statusClass(status: string): string {
 .wc-status-canceled {
   background: #e5e7eb;
   color: #374151;
+}
+.wc-status-auto {
+  background: #e0e7ff;
+  color: #3730a3;
 }
 
 /* Source icon */

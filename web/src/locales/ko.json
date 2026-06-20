@@ -1804,12 +1804,30 @@
       "all": "All",
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "자동"
     },
     "status": {
       "todo": "Todo",
       "done": "Done",
-      "canceled": "Canceled"
+      "canceled": "Canceled",
+      "auto": "자동"
+    },
+    "consensus": {
+      "title": "합의 결정",
+      "lead": "다중 에이전트 합의로 자동 해결됨 — 별도 조치가 필요 없습니다.",
+      "allowed": "허용됨",
+      "denied": "거부됨",
+      "answered": "대신 답변함",
+      "unanimous": "만장일치",
+      "majority": "과반수",
+      "vendorScope": "{vendor} 내로 제한",
+      "noAgreement": "합의 없음",
+      "verdict": {
+        "allow": "허용",
+        "deny": "거부",
+        "abstain": "기권"
+      }
     },
     "source": {
       "session": "Session",

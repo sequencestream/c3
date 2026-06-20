@@ -44,7 +44,10 @@ import {
   type IntentMcpTools,
 } from './transport/intent-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
-import { createPermissionRequestHandler } from './features/user-involve/hooks.js'
+import {
+  createConsensusAutoHandler,
+  createPermissionRequestHandler,
+} from './features/user-involve/hooks.js'
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from './features/license/heartbeat.js'
 import { setActivationResultSink, stopCheckbindPolling } from './features/license/activation.js'
 import { EventBus } from './kernel/events/event-bus.js'
@@ -300,6 +303,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // run paths (via launchDeps.onPermissionRequest) AND the codex intent save gate
   // (via gatedSave below) — so multi-vendor prompts all land in the pending-items panel.
   const onPermissionRequest = createPermissionRequestHandler({ broadcaster })
+  // Consensus auto-resolution audit hook: records a non-blocking `status: 'auto'`
+  // WaitUserInvolveEvent whenever the gateway auto-decides via multi-agent consensus
+  // (no human prompt), so automatic decisions stay traceable in WorkCenter.
+  const onConsensusResolved = createConsensusAutoHandler()
 
   // Intent tools over localhost HTTP MCP (2026-06-12-005): the driver-path twin of
   // the in-process SDK MCP (`createIntentMcpServer`). codex's comm-agent reaches
@@ -451,6 +458,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // a WaitUserInvolveEvent in the store and broadcast the updated todo list.
     // Shared with the codex intent save gate (hoisted above).
     onPermissionRequest,
+    // Consensus auto-decision audit hook (non-blocking 'auto' WorkCenter record).
+    onConsensusResolved,
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).

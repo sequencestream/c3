@@ -792,7 +792,7 @@ schedule 的执行日志。
 
 - **`ToolGate`** — `'always-ask' | 'on-sensitive' | 'trusted-prefix' | 'never-ask'`。工具门控的**激进程度**维度，与 `ActionMode` 正交。替换 Claude 的五向 `PermissionMode` 作为内部权限真相。
 - **`NeutralMode`** — `{ actionMode: ActionMode, toolGate: ToolGate }`。一个模式 token 解析到的中立权限网格单元。
-- **`AdapterCapability`** — 六个二进制能力：`'interrupt' | 'setActionMode' | 'streamingPush' | 'inProcessMcp' | 'forkSession' | 'perToolApproval' | 'taskStore'`。内核的 `AdapterCapabilities` 布尔账本以此精确键名。
+- **`AdapterCapability`** — 八个二进制能力：`'interrupt' | 'setActionMode' | 'streamingPush' | 'inProcessMcp' | 'forkSession' | 'perToolApproval' | 'taskStore' | 'nativeUserInput'`。内核的 `AdapterCapabilities` 布尔账本以此精确键名。其中 `nativeUserInput` = 供应商能否在回合中暂停向用户提问并以其回答续跑（Claude 经阻塞式 `canUseTool` 写回 = `true`；Codex 因 `codex exec` 派发后即关 stdin 无反向通道 = `false`）。`false` 时用户输入类意图（如 `save_intents`）改走 c3 受控的 HTTP-MCP 网关，抬升为常规 `permission_request` 进入 WorkCenter（可见的降级路径）。
 - **`SessionCapability`** — 五个会话生命周期操作：`'list' | 'read' | 'resume' | 'rename' | 'delete'`。每个供应商通过 `SessionCapabilities` 按 `CapabilityState`（`'none' | 'partial' | 'full' | 'temporarily-unavailable'`）分级自我报告。
 - **`CanonicalRole`** — `'user' | 'assistant'`。模型承诺的唯一角色。Codex 从项类型合成。
 - **`CanonicalMessage`** — `{ vendor, sessionId, turnId?, role, blocks: CanonicalBlock[], ts, preApproved?, vendorExtra? }`。`vendor`/`sessionId` 是无条件的；`role`/`blocks`/`ts`/`turnId?` 携带折扣（合成/upsert/c3 时间戳/可丢弃）。无法在所有三种供应商中存活的任何内容落在 `vendorExtra` 中，永不放在顶层。
@@ -845,8 +845,8 @@ schedule 的执行日志。
 ## 等待用户处理事件
 
 - **`WaitUserInvolveSource`** — `'session' | 'intent' | 'discussion' | 'schedule'`。事件的来源类别。
-- **`WaitUserInvolveStatus`** — `'todo' | 'done' | 'canceled'`。
-- **`WaitUserInvolveEvent`** — `{ id, workspacePath, source, sourceId, title, requestId, toolName, toolInput, status, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。
+- **`WaitUserInvolveStatus`** — `'todo' | 'done' | 'canceled' | 'auto'`。`'auto'` = 多 Agent 共识自动决议、无人类参与的非阻塞审计记录（永不计入"待处理"徽章），其 `outcome` 携带做出该决议的共识结果，使自动决策可追溯。
+- **`WaitUserInvolveEvent`** — `{ id, workspaceId, source, sourceId, title, requestId, toolName, toolInput, status, outcome?, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。`outcome?: AnyConsensusOutcome | null` 仅在 `status: 'auto'` 记录上出现（网控的 `consensus_auto` 结果——投票、裁决、摘要），人类决策的事件上缺省/为 null。
 
 ## UI 错误码（`UiError`）
 

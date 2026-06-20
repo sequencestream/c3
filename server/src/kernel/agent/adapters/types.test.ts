@@ -13,7 +13,7 @@ import type { CapabilityState, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
 
-/** The seven boolean live-run capability flags — the complete, closed set. */
+/** The eight boolean live-run capability flags — the complete, closed set. */
 const BOOLEAN_CAPABILITY_KEYS = [
   'interrupt',
   'setActionMode',
@@ -22,6 +22,7 @@ const BOOLEAN_CAPABILITY_KEYS = [
   'forkSession',
   'perToolApproval',
   'taskStore',
+  'nativeUserInput',
 ] as const
 
 /** The five structured session-lifecycle operations — the complete, closed set. */
@@ -41,7 +42,7 @@ export function assertNeutralAdapterShape(adapter: VendorAdapter): void {
   expect(typeof adapter.vendor).toBe('string')
   expect(adapter.capabilities).toBeTruthy()
 
-  // The ledger carries EXACTLY the seven boolean flags plus the `sessions` sub-ledger.
+  // The ledger carries EXACTLY the eight boolean flags plus the `sessions` sub-ledger.
   expect(Object.keys(adapter.capabilities).sort()).toEqual(
     [...BOOLEAN_CAPABILITY_KEYS, 'sessions'].sort(),
   )

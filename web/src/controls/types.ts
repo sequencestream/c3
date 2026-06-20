@@ -181,6 +181,9 @@ export interface AppMethods {
   respondWorkcenter(event: WaitUserInvolveEvent, decision: 'allow' | 'deny'): void
   submitAskWorkcenter(event: WaitUserInvolveEvent, answers: Record<string, string>): void
   jumpToSource(event: WaitUserInvolveEvent): void
+  /** Re-fetch the full event list (all statuses) so non-todo tabs — done / canceled
+   * / auto — load reliably (the proactive broadcast carries only 'todo'). */
+  reloadWorkcenter(): void
 }
 
 // The shared controller context: reactive state + runtime plumbing + all the

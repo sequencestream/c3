@@ -25,6 +25,7 @@ const emit = defineEmits<{
   respond: [event: WaitUserInvolveEvent, decision: 'allow' | 'deny']
   'submit-ask': [event: WaitUserInvolveEvent, answers: Record<string, string>]
   'jump-to-source': [event: WaitUserInvolveEvent]
+  reload: []
 }>()
 
 // ---- Status filter ----
@@ -37,12 +38,20 @@ const FILTERS: { key: FilterValue; labelKey: string }[] = [
   { key: 'todo', labelKey: 'workcenter.filter.todo' },
   { key: 'done', labelKey: 'workcenter.filter.done' },
   { key: 'canceled', labelKey: 'workcenter.filter.canceled' },
+  { key: 'auto', labelKey: 'workcenter.filter.auto' },
 ]
 
 const filteredEvents = computed(() => {
   if (activeFilter.value === 'all') return props.events
   return props.events.filter((e) => e.status === activeFilter.value)
 })
+
+// Switching filter re-fetches the full list: the proactive broadcast carries only
+// 'todo', so non-todo tabs (done / canceled / auto) need a pull to be reliable.
+function selectFilter(key: FilterValue) {
+  activeFilter.value = key
+  emit('reload')
+}
 
 // ---- Selected event ----
 
@@ -69,7 +78,7 @@ function onSelect(event: WaitUserInvolveEvent) {
             :key="f.key"
             class="wc-filter-btn"
             :class="{ active: activeFilter === f.key }"
-            @click="activeFilter = f.key"
+            @click="selectFilter(f.key)"
           >
             {{ t(f.labelKey as any) }}
           </button>

@@ -296,13 +296,24 @@ describe('onPermissionRequest callback', () => {
       summary: 'all agree',
     } as never)
     const onPermissionRequest = vi.fn()
-    const gate = createCanUseTool(spec({ gate: 'standard', onPermissionRequest }))
+    const onConsensusResolved = vi.fn()
+    const gate = createCanUseTool(
+      spec({ gate: 'standard', onPermissionRequest, onConsensusResolved }),
+    )
     const askInput = {
       questions: [{ question: 'test?', header: 'h', options: [{ label: 'yes' }, { label: 'no' }] }],
     }
     const result = await gate('AskUserQuestion', askInput, {} as never)
     expect(result).toMatchObject({ behavior: 'allow' })
     expect(onPermissionRequest).not.toHaveBeenCalled()
+    // The auto-answer is recorded for audit (status 'auto'), with the ask outcome.
+    expect(onConsensusResolved).toHaveBeenCalledTimes(1)
+    expect(onConsensusResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'AskUserQuestion',
+        outcome: expect.objectContaining({ kind: 'ask', fullyUnanimous: true }),
+      }),
+    )
   })
 
   // ── Standard gate: write tool consensus ──
@@ -310,9 +321,15 @@ describe('onPermissionRequest callback', () => {
   it('calls callback on write tool when consensus returns null (#5)', async () => {
     // Default mock: runConsensusVote returns null → falls through to permission_request.
     const onPermissionRequest = vi.fn()
+    const onConsensusResolved = vi.fn()
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(
-      spec({ gate: 'standard', send: (m) => sent.push(m), onPermissionRequest }),
+      spec({
+        gate: 'standard',
+        send: (m) => sent.push(m),
+        onPermissionRequest,
+        onConsensusResolved,
+      }),
     )
     // Start the gate call; it suspends at `await runConsensusVote(...)`.
     const p = gate('Write', { file_path: '/x' }, {} as never)
@@ -324,6 +341,8 @@ describe('onPermissionRequest callback', () => {
     if (req?.type === 'permission_request') resolveDecision(req.requestId, 'allow')
     await p
     expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    // A human decided it — it is NOT a consensus auto-resolution.
+    expect(onConsensusResolved).not.toHaveBeenCalled()
   })
 
   it('does NOT call callback on write tool when consensus auto-resolves (#6)', async () => {
@@ -336,9 +355,21 @@ describe('onPermissionRequest callback', () => {
       decision: 'allow',
     } as never)
     const onPermissionRequest = vi.fn()
-    const gate = createCanUseTool(spec({ gate: 'standard', onPermissionRequest }))
+    const onConsensusResolved = vi.fn()
+    const gate = createCanUseTool(
+      spec({ gate: 'standard', onPermissionRequest, onConsensusResolved }),
+    )
     const result = await gate('Write', { file_path: '/x' }, {} as never)
     expect(result).toMatchObject({ behavior: 'allow' })
     expect(onPermissionRequest).not.toHaveBeenCalled()
+    // No human prompt, but the consensus auto-decision is recorded for audit.
+    expect(onConsensusResolved).toHaveBeenCalledTimes(1)
+    expect(onConsensusResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'Write',
+        source: 'session',
+        outcome: expect.objectContaining({ kind: 'tool', decision: 'allow' }),
+      }),
+    )
   })
 })

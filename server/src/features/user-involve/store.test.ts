@@ -97,6 +97,35 @@ describe('events CRUD', () => {
     expect(ev.toolInput).toEqual({ file: '/tmp/a.txt', content: 'data' })
   })
 
+  it("persists a 'auto' record with its consensus outcome and reads it back", () => {
+    const outcome = {
+      kind: 'tool' as const,
+      votes: [{ agentId: 'a2', agentName: 'Reviewer', decision: 'allow' as const, reason: 'ok' }],
+      summary: 'unanimous allow',
+      unanimous: true,
+      decision: 'allow' as const,
+    }
+    const ev = createEvent({
+      workspacePath: proj,
+      source: 'session',
+      toolName: 'edit_file',
+      status: 'auto',
+      outcome,
+    })
+    expect(ev.status).toBe('auto')
+    expect(ev.outcome).toEqual(outcome)
+    // Round-trips through a fresh read (JSON column parse).
+    expect(getEvent(ev.id)?.outcome).toEqual(outcome)
+    // 'auto' records never appear in the 'todo' badge list.
+    expect(listEvents(proj, 'todo')).toHaveLength(0)
+    expect(listEvents(proj, 'auto')).toHaveLength(1)
+  })
+
+  it('leaves outcome null for ordinary human-decided events', () => {
+    const ev = createEvent({ workspacePath: proj, source: 'session' })
+    expect(ev.outcome).toBeNull()
+  })
+
   it('lists events for a project, ordered by created_at descending', () => {
     createEvent({ workspacePath: proj, source: 'session' })
     createEvent({ workspacePath: proj, source: 'intent' })

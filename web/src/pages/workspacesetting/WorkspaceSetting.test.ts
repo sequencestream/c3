@@ -880,87 +880,76 @@ describe('WorkspaceSetting.vue — git branch mode + default main branch', () =>
 })
 
 describe('WorkspaceSetting.vue — spec-driven development (SDD)', () => {
-  it('hides the spec path input when SDD is disabled (default)', () => {
+  it('hides the spec root display when SDD is disabled (default)', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         workspaceSetting: null,
         detectedMainBranch: null,
+        resolvedSpecRoot: '/home/u/.c3/specs/test',
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
     expect((w.find('[data-testid="sdd-enabled"]').element as HTMLInputElement).checked).toBe(false)
-    expect(w.find('[data-testid="sdd-spec-path"]').exists()).toBe(false)
+    expect(w.find('[data-testid="sdd-spec-root"]').exists()).toBe(false)
   })
 
-  it('reveals the spec path input when SDD is toggled on', async () => {
+  it('reveals the read-only spec root when SDD is toggled on', async () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         workspaceSetting: null,
         detectedMainBranch: null,
+        resolvedSpecRoot: '/home/u/.c3/specs/test',
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
-    expect(w.find('[data-testid="sdd-spec-path"]').exists()).toBe(false)
+    expect(w.find('[data-testid="sdd-spec-root"]').exists()).toBe(false)
     await w.find('[data-testid="sdd-enabled"]').setValue(true)
-    expect(w.find('[data-testid="sdd-spec-path"]').exists()).toBe(true)
+    expect(w.find('[data-testid="sdd-spec-root"]').exists()).toBe(true)
   })
 
-  it('seeds the toggle and spec path from config', () => {
+  it('displays the resolved spec root and it is NOT an editable input (REQ-3)', () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
-        workspaceSetting: cfg({ sddEnabled: true, specPath: 'docs/specs' }),
+        workspaceSetting: cfg({ sddEnabled: true }),
         detectedMainBranch: null,
+        resolvedSpecRoot: '/home/u/.c3/specs/test',
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
-    expect((w.find('[data-testid="sdd-enabled"]').element as HTMLInputElement).checked).toBe(true)
-    expect((w.find('[data-testid="sdd-spec-path"]').element as HTMLInputElement).value).toBe(
-      'docs/specs',
-    )
+    const display = w.find('[data-testid="sdd-spec-root"]')
+    expect(display.exists()).toBe(true)
+    expect(display.text()).toBe('/home/u/.c3/specs/test')
+    // Read-only: a <code> display, never an <input> the user can edit/submit.
+    expect(display.element.tagName).toBe('CODE')
   })
 
-  it('emits the toggled SDD config on save', async () => {
+  it('emits the toggled SDD config on save with NO spec directory value (REQ-3)', async () => {
     const w = mount(WorkspaceSetting, {
       props: {
         open: true,
         workspaceSetting: cfg(),
         detectedMainBranch: null,
+        resolvedSpecRoot: '/home/u/.c3/specs/test',
         currentWorkspace: '/test',
         vendorModes: MOCK_VENDOR_MODES,
         systemSandboxes: [],
       },
     })
     await w.find('[data-testid="sdd-enabled"]').setValue(true)
-    await w.find('[data-testid="sdd-spec-path"]').setValue('my-specs')
     await w.find('[data-testid="project-config-save"]').trigger('click')
     const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
     expect(payload.sddEnabled).toBe(true)
-    expect(payload.specPath).toBe('my-specs')
-  })
-
-  it('omits a blank spec path on save (server defaults to .specs)', async () => {
-    const w = mount(WorkspaceSetting, {
-      props: {
-        open: true,
-        workspaceSetting: cfg({ sddEnabled: true, specPath: '   ' }),
-        detectedMainBranch: null,
-        currentWorkspace: '/test',
-        vendorModes: MOCK_VENDOR_MODES,
-        systemSandboxes: [],
-      },
-    })
-    await w.find('[data-testid="project-config-save"]').trigger('click')
-    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
-    expect(payload.specPath).toBeUndefined()
+    // The save payload carries no spec directory — the path is fixed/centralized.
+    expect((payload as Record<string, unknown>).specPath).toBeUndefined()
   })
 })
 

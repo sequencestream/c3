@@ -48,25 +48,24 @@ describe('nextSeq', () => {
 describe('computeSpecLayout', () => {
   const now = new Date(2026, 5, 18) // 2026-06-18 (month is 0-based)
 
-  it('assembles the dated dir + spec.md (abs + workspace-relative)', () => {
+  it('assembles the dated dir + spec.md under the centralized spec root', () => {
     const layout = computeSpecLayout({
-      workspacePath: '/proj',
-      specPath: '.specs',
+      specRoot: '/home/u/.c3/specs/proj',
       shortEnTitle: 'Add Login',
       intentId: 'id-1',
       now,
       listDay: () => [],
     })
     expect(layout.dirName).toBe('2026-06-18-001-add-login')
-    expect(layout.fileRel).toBe('.specs/2026/06/18/2026-06-18-001-add-login/spec.md')
-    expect(layout.fileAbs).toBe('/proj/.specs/2026/06/18/2026-06-18-001-add-login/spec.md')
-    expect(layout.dirAbs).toBe('/proj/.specs/2026/06/18/2026-06-18-001-add-login')
+    expect(layout.fileAbs).toBe(
+      '/home/u/.c3/specs/proj/2026/06/18/2026-06-18-001-add-login/spec.md',
+    )
+    expect(layout.dirAbs).toBe('/home/u/.c3/specs/proj/2026/06/18/2026-06-18-001-add-login')
   })
 
   it('increments NNN against existing same-day dirs', () => {
     const layout = computeSpecLayout({
-      workspacePath: '/proj',
-      specPath: '.specs',
+      specRoot: '/home/u/.c3/specs/proj',
       shortEnTitle: 'Second',
       intentId: 'id-2',
       now,
@@ -77,8 +76,7 @@ describe('computeSpecLayout', () => {
 
   it('falls back to the id prefix when shortEnTitle is empty (no throw)', () => {
     const layout = computeSpecLayout({
-      workspacePath: '/proj',
-      specPath: '.specs',
+      specRoot: '/home/u/.c3/specs/proj',
       shortEnTitle: null,
       intentId: 'deadbeef-cafe',
       now,

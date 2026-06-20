@@ -45,6 +45,12 @@ const props = defineProps<{
   workspaceSetting: WorkspaceSetting | null
   /** Server-probed default branch, used to pre-fill `defaultMainBranch`. */
   detectedMainBranch: string | null
+  /**
+   * The FIXED, centralized SDD spec root resolved server-side
+   * (`~/.c3/specs/<project-path-segment>`). Read-only display — never editable.
+   * Optional: absent until the `workspace_setting` reply lands.
+   */
+  resolvedSpecRoot?: string | null
   currentWorkspace: string | null
   vendorModes: Record<VendorId, VendorModeCatalog> | null
   /** System sandbox definitions — drives the sandbox name dropdown. */
@@ -113,7 +119,6 @@ const draft = ref<WorkspaceSetting>({
   gitBranchMode: 'current-branch',
   defaultMainBranch: '',
   sddEnabled: false,
-  specPath: '',
 })
 
 // Codex dual-policy draft (2026-06-08).
@@ -150,8 +155,6 @@ watch(
       // Pre-fill from the saved value, else the server-probed default branch.
       defaultMainBranch: config?.defaultMainBranch ?? detected ?? '',
       sddEnabled: config?.sddEnabled ?? false,
-      // Empty draft shows the `.specs` placeholder; server normalizes blank → `.specs`.
-      specPath: config?.specPath ?? '',
     }
     // Re-seed the sandbox draft from server config (sandboxDraft computed
     // wraps draft.value.sandbox, which starts undefined — the watch sets it).
@@ -351,14 +354,13 @@ function onSave() {
       : undefined
   // Trim the branch; empty ⇒ omit (server normalizes blank → undefined anyway).
   const defaultMainBranch = draft.value.defaultMainBranch?.trim() || undefined
-  // Trim the spec path; blank ⇒ omit (server normalizes blank → `.specs`).
-  const specPath = draft.value.specPath?.trim() || undefined
+  // No spec path: the SDD spec root is FIXED/centralized and never editable, so
+  // the save payload carries no spec directory value (the server ignores any).
   emit('save', {
     ...draft.value,
     defaultMode: defaultMode as WorkspaceSetting['defaultMode'],
     sandbox,
     defaultMainBranch,
-    specPath,
   })
 }
 
@@ -520,9 +522,9 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         <p class="project-config-hint">{{ t('workspaceSetting.defaultMainBranch.hint') }}</p>
       </section>
 
-      <!-- SDD section: master switch + spec directory. The path input is only
-           shown when SDD is enabled; the server normalizes a blank path to
-           `.specs`. -->
+      <!-- SDD section: master switch + the FIXED, centralized spec root. The spec
+           root is resolved server-side (`~/.c3/specs/<project-path-segment>`) and
+           is READ-ONLY — it cannot be edited here or via the protocol. -->
       <section class="project-config-section">
         <p class="project-config-section-title">{{ t('workspaceSetting.sdd.title.label') }}</p>
         <p class="project-config-hint">{{ t('workspaceSetting.sdd.hint') }}</p>
@@ -532,17 +534,14 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         </label>
         <div v-if="draft.sddEnabled" class="project-config-row">
           <span class="project-config-row-label">{{
-            t('workspaceSetting.sdd.specPath.title.label')
+            t('workspaceSetting.sdd.specRoot.title.label')
           }}</span>
-          <input
-            v-model="draft.specPath"
-            class="project-config-field"
-            :placeholder="t('workspaceSetting.sdd.specPath.placeholder')"
-            data-testid="sdd-spec-path"
-          />
+          <code class="project-config-readonly" data-testid="sdd-spec-root">{{
+            props.resolvedSpecRoot ?? '—'
+          }}</code>
         </div>
         <p v-if="draft.sddEnabled" class="project-config-hint">
-          {{ t('workspaceSetting.sdd.specPath.hint') }}
+          {{ t('workspaceSetting.sdd.specRoot.hint') }}
         </p>
       </section>
 
@@ -922,6 +921,20 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 
 .project-config-number {
   max-width: 120px;
+}
+
+/* Read-only resolved value (e.g. the fixed, centralized SDD spec root). */
+.project-config-readonly {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #313244);
+  border-radius: 6px;
+  background: var(--bg, #11111b);
+  color: var(--text-secondary, #a6adc8);
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
 }
 
 /* --- Compact row layout (label + control on same line) --- */

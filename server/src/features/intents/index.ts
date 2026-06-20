@@ -8,7 +8,7 @@
  * (launcher, broadcasts) are reached via `ctx`; per-connection delivery via `conn`.
  */
 import { randomUUID } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
   type Intent,
@@ -84,6 +84,7 @@ import {
 import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush, createGhPr } from '../../git.js'
 import { createWorktree, pullCurrentBranch, readBranch } from './worktree.js'
+import { resolveSpecFileAbs } from './specs-root.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -325,7 +326,8 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
     const restored = ensureRuntime(chatId, proj, getDefaultMode(proj), baseline, 'spec')
     // Restore the write-confinement gate (writes limited to the spec directory)
     // and re-pin the spec agent so a reopened spec session keeps its identity.
-    if (intent.specPath) restored.specDir = dirname(join(proj, intent.specPath))
+    // The stored spec path is absolute (centralized root, outside the workspace).
+    if (intent.specPath) restored.specDir = dirname(resolveSpecFileAbs(proj, intent.specPath))
     const specAgent = resolveSpecAgent()
     if (specAgent.vendor !== 'codex') setSessionAgent(chatId, specAgent.id)
   }

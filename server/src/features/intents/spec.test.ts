@@ -5,9 +5,9 @@
  * with no authored spec is rejected (the defensive server guard behind the UI).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
@@ -19,9 +19,11 @@ import {
   resolveWorkspaceRoot,
 } from '../../state.js'
 import { getIntent, insertIntents, resetStoreForTests, setSpecPath } from './store.js'
-import { approveSpecHandler } from './spec.js'
+import { approveSpecHandler, readSpecHandler } from './spec.js'
+import { getSpecsBase } from './specs-root.js'
 
 let dir: string
+let prevC3Dir: string | undefined
 let workspaceId: string
 let proj: string
 
@@ -29,6 +31,9 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-approve-spec-'))
   process.env.CLAUDE_CONFIG_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
+  // Anchor the centralized spec root under the temp dir for read_spec tests.
+  prevC3Dir = process.env.C3_DIR
+  process.env.C3_DIR = join(dir, 'c3home')
   resetDbForTests()
   resetStoreForTests()
   resetStateCacheForTests()
@@ -42,6 +47,8 @@ afterEach(() => {
   resetStateCacheForTests()
   delete process.env.CLAUDE_CONFIG_DIR
   delete process.env.C3_DB_PATH
+  if (prevC3Dir === undefined) delete process.env.C3_DIR
+  else process.env.C3_DIR = prevC3Dir
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -106,5 +113,65 @@ describe('approveSpecHandler', () => {
 
     expect(broadcastIntents).not.toHaveBeenCalled()
     expect(sent).toEqual([{ type: 'error', error: { code: 'intent.notFound' } }])
+  })
+})
+
+describe('readSpecHandler (REQ-5: read the centralized spec)', () => {
+  const ctx = {} as unknown as KernelContext
+
+  it('AC-5.1: reads spec.md from the centralized root and echoes the absolute path', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Cached endpoint', shortEnTitle: 'cache', content: '', priority: 'P1' },
+    ])
+    const fileAbs = join(getSpecsBase(proj), '2026/06/20/2026-06-20-001-cache/spec.md')
+    mkdirSync(dirname(fileAbs), { recursive: true })
+    writeFileSync(fileAbs, '# Centralized spec', 'utf8')
+    setSpecPath(r.id, fileAbs)
+
+    const { conn, sent } = fakeConn()
+    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceId, intentId: r.id })
+
+    expect(sent).toEqual([
+      {
+        type: 'file_read',
+        workspaceId,
+        file: {
+          path: fileAbs,
+          size: Buffer.byteLength('# Centralized spec'),
+          binary: false,
+          truncated: false,
+          content: '# Centralized spec',
+        },
+      },
+    ])
+  })
+
+  it('rejects when no spec has been written (no specPath)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'No spec', shortEnTitle: 'nospec', content: '', priority: 'P2' },
+    ])
+    const { conn, sent } = fakeConn()
+    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceId, intentId: r.id })
+    expect(sent).toEqual([{ type: 'error', error: { code: 'intent.specNotWritten' } }])
+  })
+
+  it('fail-closed: rejects a spec path outside the centralized root (no legacy .specs)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Legacy', shortEnTitle: 'legacy', content: '', priority: 'P2' },
+    ])
+    // A legacy in-workspace relative path resolves under the workspace, NOT the
+    // centralized root → rejected (Out-of-Scope: no migration / no recognition).
+    setSpecPath(r.id, '.specs/2026/06/20/2026-06-20-001-legacy/spec.md')
+    const { conn, sent } = fakeConn()
+    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceId, intentId: r.id })
+    expect(sent).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'codes.readFailed',
+          params: { path: '.specs/2026/06/20/2026-06-20-001-legacy/spec.md' },
+        },
+      },
+    ])
   })
 })

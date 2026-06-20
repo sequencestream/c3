@@ -15,12 +15,13 @@
  * codex driver cannot path-confine writes).
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
 import { addViewer, ensureRuntime, removeViewer } from '../../runs.js'
 import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
-import { getDefaultMode, getSpecPath } from '../../kernel/config/index.js'
+import { getDefaultMode } from '../../kernel/config/index.js'
+import { isInside } from '../../kernel/permission/tools.js'
 import {
   resolveSessionVendor,
   resolveSpecAgent,
@@ -29,6 +30,7 @@ import {
 import type { Handler } from '../../transport/handler-registry.js'
 import { getIntent, isStoreAvailable, setSpecApproved, setSpecPath } from './store.js'
 import { computeSpecLayout } from './spec-path.js'
+import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 
 function errMsg(err: unknown): string {
@@ -83,7 +85,7 @@ TODO
  * not restated here, so it never renders as a visible user message
  * (hide-session-system-instructions).
  */
-export function buildSpecInstructPrompt(intent: Intent, fileRel: string): string {
+export function buildSpecInstructPrompt(intent: Intent, fileAbs: string): string {
   return `Author the spec document for intent \`${intent.id}\`.
 
 Intent title: ${intent.title}
@@ -91,7 +93,7 @@ Intent title: ${intent.title}
 Intent content:
 ${intent.content}
 
-Read the relevant project material first, then write the spec to \`${fileRel}\` (overwrite the seeded template). When done, briefly summarise what you captured.`
+Read the relevant project material first, then overwrite \`${fileAbs}\` with the spec. When done, briefly summarise what you captured.`
 }
 
 /**
@@ -104,7 +106,7 @@ Read the relevant project material first, then write the spec to \`${fileRel}\` 
  */
 export function buildResetSpecPrompt(
   intent: Intent,
-  fileRel: string,
+  fileAbs: string,
   specContent: string,
   userInput: string,
 ): string {
@@ -114,10 +116,10 @@ export function buildResetSpecPrompt(
 
 ${steerBlock}Intent title: ${intent.title}
 
-Current spec content (\`${fileRel}\`):
+Current spec content (\`${fileAbs}\`):
 ${specContent}
 
-Read the relevant project material first, then write the revised spec to \`${fileRel}\` (overwrite it). When done, briefly summarise what changed.`
+Read the relevant project material first, then overwrite \`${fileAbs}\` with the revised spec. When done, briefly summarise what changed.`
 }
 
 export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
@@ -148,12 +150,12 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
     return
   }
 
-  // Compute the dated layout and scaffold the directory + seed spec.md. The
-  // directory must exist before the agent runs (its write lands inside it), and
-  // a durable seed means spec_path is backfillable even if the launch fails.
+  // Compute the dated layout under the FIXED centralized spec root and scaffold
+  // the directory + seed spec.md. The directory must exist before the agent runs
+  // (its write lands inside it), and a durable seed means spec_path is
+  // backfillable even if the launch fails.
   const layout = computeSpecLayout({
-    workspacePath: proj,
-    specPath: getSpecPath(proj),
+    specRoot: getSpecsBase(proj),
     shortEnTitle: intent.shortEnTitle,
     intentId: intent.id,
     now: new Date(),
@@ -177,8 +179,9 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
   }
 
   // Backfill spec_path immediately and broadcast, so the ledger reflects the spec
-  // even if the session below fails to launch.
-  setSpecPath(intent.id, layout.fileRel)
+  // even if the session below fails to launch. The stored path is ABSOLUTE (the
+  // spec lives outside the workspace under the centralized root).
+  setSpecPath(intent.id, layout.fileAbs)
   ctx.broadcastIntents(proj)
 
   // Launch the write-confined spec session: pin the spec agent, confine writes to
@@ -190,7 +193,7 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
   registerPendingSpecLink(specId, intent.id)
   try {
     void ctx
-      .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileRel))
+      .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
         console.warn(`[c3:intents] write_spec launch failed before bind: ${errMsg(err)}`)
@@ -281,7 +284,8 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
 
   // Read the current spec content to seed the revision prompt. A read failure is
   // non-fatal: fall back to an empty body (the agent still has the new input).
-  const fileAbs = join(proj, intent.specPath)
+  // The stored spec path is absolute (centralized root); resolve robustly.
+  const fileAbs = resolveSpecFileAbs(proj, intent.specPath)
   let specContent = ''
   try {
     specContent = readFileSync(fileAbs, 'utf8')
@@ -311,7 +315,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   })
   try {
     void ctx
-      .launchRun(rt, buildResetSpecPrompt(intent, intent.specPath, specContent, msg.userInput))
+      .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, specContent, msg.userInput))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
         console.warn(`[c3:intents] reset_spec_session launch failed before bind: ${errMsg(err)}`)
@@ -319,5 +323,62 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   } catch (err) {
     clearPendingSpecLink(specId)
     throw err
+  }
+}
+
+/**
+ * `read_spec` handler — read an intent's authored spec for the detail's `spec`
+ * tab. Specs live OUTSIDE the workspace under the centralized root, so the
+ * workspace-confined `read_file` cannot reach them; this handler resolves the
+ * intent's stored absolute `specPath` and confines the read to the centralized
+ * specs root (fail-closed — a path outside that root, e.g. a legacy in-workspace
+ * `.specs`, is rejected; no migration, see spec Out-of-Scope). Replies with a
+ * `file_read` whose `file.path` echoes the absolute spec path the client awaits.
+ */
+export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (!intent.specPath) {
+    conn.send({ type: 'error', error: { code: 'intent.specNotWritten' } })
+    return
+  }
+  const fileAbs = resolveSpecFileAbs(proj, intent.specPath)
+  // Fail-closed: only read inside the centralized specs root for this project.
+  if (!isInside(getSpecsBase(proj), fileAbs)) {
+    conn.send({
+      type: 'error',
+      error: { code: 'codes.readFailed', params: { path: intent.specPath } },
+    })
+    return
+  }
+  try {
+    const content = readFileSync(fileAbs, 'utf8')
+    const size = statSync(fileAbs).size
+    conn.send({
+      type: 'file_read',
+      workspaceId: msg.workspaceId,
+      file: { path: intent.specPath, size, binary: false, truncated: false, content },
+    })
+  } catch (err) {
+    console.warn(`[c3:intents] read_spec read failed: ${errMsg(err)}`)
+    conn.send({
+      type: 'error',
+      error: { code: 'codes.readFailed', params: { path: intent.specPath } },
+    })
   }
 }

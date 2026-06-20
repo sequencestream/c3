@@ -552,7 +552,8 @@ A fourth, read-only opener serves the intent detail's 「spec session」tab:
 
 - **`open_spec_session`**: resolves the intent's stored `specSessionId`; if that `'spec'` runtime
   was dropped (process restart / GC) it is rebuilt from the transcript with writes re-confined to
-  the spec directory (derived from `specPath`) and the spec agent re-pinned, then replies
+  the spec directory (the parent of the intent's **absolute** centralized `specPath`) and the spec
+  agent re-pinned, then replies
   `session_selected` and registers the viewer. The intent's own comm/refine session
   (`intentSessionId`) is opened by the existing `open_intent_chat` instead — the two sessions are
   different runtime kinds. Rejected (`error`) when the intent has no `specSessionId`.

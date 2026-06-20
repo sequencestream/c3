@@ -86,8 +86,12 @@ export interface AppMethods {
   approveSpec(intentId: string): void
   /** Open an intent's spec-authoring session in the detail's `spec session` tab. */
   openSpecSession(intentId: string): void
-  /** Fetch the intent's `spec.md` for the detail's `spec` tab (workspace-relative path). */
-  readIntentSpec(rel: string): void
+  /**
+   * Fetch the intent's `spec.md` for the detail's `spec` tab. Specs live OUTSIDE
+   * the workspace under the centralized root, so this sends `read_spec` (keyed by
+   * intent id); `specPath` is the awaited absolute reply path.
+   */
+  readIntentSpec(intentId: string, specPath: string): void
   /** Reset the intent's refine session: new input + intent content → fresh session. */
   resetIntentSession(intentId: string, userInput: string): void
   /** Reset the intent's spec session: new input + current spec content → fresh session. */

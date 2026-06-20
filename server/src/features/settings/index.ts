@@ -29,6 +29,7 @@ import {
   saveWorkspaceSetting,
 } from '../../kernel/config/index.js'
 import { detectDefaultBranch } from '../intents/worktree.js'
+import { getSpecsBase } from '../intents/specs-root.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import { getSkillSupport } from '../../state.js'
@@ -196,6 +197,8 @@ export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_
     workspaceId: pathToId(proj)!,
     config,
     detectedMainBranch,
+    // Read-only display of the FIXED, centralized SDD spec root (REQ-3).
+    resolvedSpecRoot: getSpecsBase(proj),
   })
 }
 
@@ -231,6 +234,14 @@ export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_
     }
   }
 
+  // The spec root is fixed/centralized and never user-configurable: any spec
+  // directory value the client may have sent in `msg.config` is dropped by
+  // `normalizeWorkspaceSetting` (no such field), so the save cannot change it.
   const config = saveWorkspaceSetting(proj, msg.config)
-  conn.send({ type: 'workspace_setting', workspaceId: pathToId(proj)!, config })
+  conn.send({
+    type: 'workspace_setting',
+    workspaceId: pathToId(proj)!,
+    config,
+    resolvedSpecRoot: getSpecsBase(proj),
+  })
 }

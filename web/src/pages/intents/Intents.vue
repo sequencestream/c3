@@ -85,7 +85,7 @@ const emit = defineEmits<{
   'approve-spec': [intentId: string]
   'open-spec-session': [intentId: string]
   'open-intent-session': [sessionId: string]
-  'read-spec': [rel: string]
+  'read-spec': [intentId: string, specPath: string]
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
@@ -283,7 +283,7 @@ defineExpose({
         @approve-spec="(id: string) => emit('approve-spec', id)"
         @open-spec-session="(id: string) => emit('open-spec-session', id)"
         @open-intent-session="(sessionId: string) => emit('open-intent-session', sessionId)"
-        @read-spec="(rel: string) => emit('read-spec', rel)"
+        @read-spec="(id: string, specPath: string) => emit('read-spec', id, specPath)"
         @reset-intent-session="
           (id: string, input: string) => emit('reset-intent-session', id, input)
         "

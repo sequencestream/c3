@@ -1,11 +1,13 @@
 /**
  * Dev-launch prompt construction + the SDD forced gate.
  *
- * `buildDevPrompt` has three branches: devSkill prefix, SDD work-session
- * instruct prefix (no devSkill), and the historic bare shape (SDD off). The
- * SDD-off branch must stay byte-for-byte identical to the pre-SDD prompt
- * (regression). The handler test covers the server-side gate: with SDD on and
- * the spec not yet approved, `start_development` is rejected and no run launches.
+ * `buildDevPrompt` splits a dev session's first turn into three delivery channels
+ * (hide-session-system-instructions): `systemInstruction` (the SDD work contract),
+ * `userTurnPrefix` (a slash-command dev skill), and `visible` (the client echo). An
+ * internal instruction must NEVER leak into `visible`; the visible body stays
+ * byte-for-byte the historic shape. The handler test covers the server-side gate AND
+ * pins the launch wiring: `start_development` echoes only the visible body while the
+ * SDD instruct / devSkill ride the non-visible inject channels.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -32,15 +34,17 @@ import {
 import { buildDevPrompt, buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
 import { startDevelopment } from './index.js'
 
-describe('buildDevPrompt', () => {
+describe('buildDevPrompt — channel split (hide-session-system-instructions)', () => {
   const base = { title: 'Cache the endpoint', content: 'Add an LRU cache.', dependsOn: [] }
 
-  it('SDD off, no devSkill: byte-for-byte the historic bare shape (regression)', () => {
+  it('SDD off, no devSkill: visible is the historic bare shape; no internal channels', () => {
     const p = buildDevPrompt({ ...base, devSkill: '', sddEnabled: false, specPath: null })
-    expect(p).toBe('Cache the endpoint\n\nAdd an LRU cache.')
+    expect(p.visible).toBe('Cache the endpoint\n\nAdd an LRU cache.')
+    expect(p.systemInstruction).toBe('')
+    expect(p.userTurnPrefix).toBe('')
   })
 
-  it('SDD off, no devSkill, with deps: appends the 依赖需求 note only (regression)', () => {
+  it('SDD off, no devSkill, with deps: visible appends the 依赖需求 note only (regression)', () => {
     const p = buildDevPrompt({
       ...base,
       dependsOn: ['a', 'b'],
@@ -48,41 +52,47 @@ describe('buildDevPrompt', () => {
       sddEnabled: false,
       specPath: null,
     })
-    expect(p).toBe('Cache the endpoint\n\nAdd an LRU cache.\n\n依赖需求:a, b')
+    expect(p.visible).toBe('Cache the endpoint\n\nAdd an LRU cache.\n\n依赖需求:a, b')
+    expect(p.systemInstruction).toBe('')
+    expect(p.userTurnPrefix).toBe('')
   })
 
-  it('devSkill configured: skill prefix, no SDD instruct stacked', () => {
+  it('devSkill configured: slash command rides userTurnPrefix, NOT the visible echo', () => {
     const p = buildDevPrompt({
       ...base,
       devSkill: '/dev',
       sddEnabled: true,
       specPath: '.specs/s.md',
     })
-    expect(p.startsWith('/dev Cache the endpoint\n\n')).toBe(true)
-    expect(p).not.toContain(SDD_WORK_SESSION_INSTRUCT)
-    // SDD on ⇒ the spec-path note is still appended even when devSkill wins.
-    expect(p.endsWith(`\n\n${buildDevSpecNote('.specs/s.md')}`)).toBe(true)
+    // The slash command is delivered out-of-band; it must never appear in the echo.
+    expect(p.userTurnPrefix).toBe('/dev ')
+    expect(p.visible).not.toContain('/dev')
+    // devSkill wins ⇒ the SDD instruct is not stacked on the system channel either.
+    expect(p.systemInstruction).toBe('')
+    expect(p.visible).not.toContain(SDD_WORK_SESSION_INSTRUCT)
+    // SDD on ⇒ the spec-path note is still part of the VISIBLE body even when devSkill wins.
+    expect(p.visible.startsWith('Cache the endpoint\n\n')).toBe(true)
+    expect(p.visible.endsWith(`\n\n${buildDevSpecNote('.specs/s.md')}`)).toBe(true)
   })
 
-  it('no devSkill, SDD on: instruct prefix + spec-path note', () => {
-    const p = buildDevPrompt({
-      ...base,
-      devSkill: '',
-      sddEnabled: true,
-      specPath: '.specs/2026/06/18/2026-06-18-001-cache/spec.md',
-    })
-    expect(p.startsWith(`${SDD_WORK_SESSION_INSTRUCT}\n\n`)).toBe(true)
-    expect(p).toContain('Cache the endpoint\n\nAdd an LRU cache.')
-    expect(p).toContain('.specs/2026/06/18/2026-06-18-001-cache/spec.md')
-    expect(p.endsWith(buildDevSpecNote('.specs/2026/06/18/2026-06-18-001-cache/spec.md'))).toBe(
-      true,
-    )
+  it('no devSkill, SDD on: the SDD instruct rides systemInstruction, NOT the visible echo', () => {
+    const specPath = '.specs/2026/06/18/2026-06-18-001-cache/spec.md'
+    const p = buildDevPrompt({ ...base, devSkill: '', sddEnabled: true, specPath })
+    // The work contract is the system channel; the echo must not carry it.
+    expect(p.systemInstruction).toBe(SDD_WORK_SESSION_INSTRUCT)
+    expect(p.visible).not.toContain(SDD_WORK_SESSION_INSTRUCT)
+    expect(p.visible).not.toContain('Hard constraints')
+    expect(p.userTurnPrefix).toBe('')
+    // The intent body + spec-path note are visible business context.
+    expect(p.visible).toContain('Cache the endpoint\n\nAdd an LRU cache.')
+    expect(p.visible).toContain(specPath)
+    expect(p.visible.endsWith(buildDevSpecNote(specPath))).toBe(true)
   })
 
-  it('SDD on but specPath null: instruct prefix, no spec-path note', () => {
+  it('SDD on but specPath null: instruct on system channel, visible has no spec-path note', () => {
     const p = buildDevPrompt({ ...base, devSkill: '', sddEnabled: true, specPath: null })
-    expect(p.startsWith(`${SDD_WORK_SESSION_INSTRUCT}\n\n`)).toBe(true)
-    expect(p.endsWith('Add an LRU cache.')).toBe(true)
+    expect(p.systemInstruction).toBe(SDD_WORK_SESSION_INSTRUCT)
+    expect(p.visible).toBe('Cache the endpoint\n\nAdd an LRU cache.')
   })
 })
 
@@ -144,9 +154,9 @@ describe('start_development SDD forced gate', () => {
     expect(getIntent(r.id)?.status).toBe('todo')
   })
 
-  it('SDD on + spec approved ⇒ passes the gate (launches a run)', async () => {
+  it('SDD on + spec approved ⇒ launches with the SDD instruct on the inject channel, not the echo', async () => {
     const [r] = insertIntents(proj, [
-      { title: 'Approved', shortEnTitle: 'appr', content: '', priority: 'P1' },
+      { title: 'Approved', shortEnTitle: 'appr', content: 'Body text.', priority: 'P1' },
     ])
     setSpecPath(r.id, '.specs/2026/06/18/2026-06-18-001-appr/spec.md')
     setSpecApproved(r.id, true, 'alice')
@@ -159,5 +169,14 @@ describe('start_development SDD forced gate', () => {
 
     expect(sent).toEqual([])
     expect(launchRun).toHaveBeenCalledTimes(1)
+    // Args: (runtime, visiblePrompt, images, inject).
+    const [, visiblePrompt, , inject] = launchRun.mock.calls[0]
+    // The visible echo carries the intent body but NEVER the internal SDD work contract.
+    expect(visiblePrompt).toContain('Approved\n\nBody text.')
+    expect(visiblePrompt).not.toContain(SDD_WORK_SESSION_INSTRUCT)
+    expect(visiblePrompt).not.toContain('Hard constraints')
+    // The internal instruction rides the non-visible system-instruction channel.
+    expect(inject?.systemInstruction).toBe(SDD_WORK_SESSION_INSTRUCT)
+    expect(inject?.userTurnPrefix).toBe('')
   })
 })

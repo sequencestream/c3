@@ -5,12 +5,15 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerToClient } from '@ccc/shared/protocol'
-import type { CanonicalBlock, CanonicalMessage } from '../agent/adapters/types.js'
+import type { CanonicalBlock, CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
+import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 import {
   WireEmitter,
   intentDriverModeForVendor,
   makeDriverApprovalHandler,
+  runViaDriver,
 } from './run-via-driver.js'
+import { addViewer, ensureRuntime, removeRuntime, type Viewer } from '../../runs.js'
 
 function frame(blocks: CanonicalBlock[], extra?: Partial<CanonicalMessage>): CanonicalMessage {
   return { vendor: 'codex', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
@@ -165,5 +168,67 @@ describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
     const decision = await handler({ requestId: 'r4', toolName: 'Read', input: {} })
     expect(decision).toEqual({ behavior: 'allow' })
     expect(d.emit).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('runViaDriver — codex delivery split (hide-session-system-instructions)', () => {
+  // A fake codex adapter that captures the driver prompt and yields no messages, so
+  // we can assert what reaches the MODEL vs what the client sees echoed.
+  function fakeCodexAdapter(): { adapter: VendorAdapter; started: { prompt?: string } } {
+    const started: { prompt?: string } = {}
+    const adapter = {
+      vendor: 'codex',
+      approval: { onRequest: () => () => {} },
+      driver: {
+        start: (opts: { prompt: string }) => {
+          started.prompt = opts.prompt
+          return Promise.resolve({
+            sessionId: () => Promise.resolve(sid),
+            // eslint-disable-next-line require-yield
+            messages: async function* () {
+              return
+            },
+          })
+        },
+      },
+    } as unknown as VendorAdapter
+    return { adapter, started }
+  }
+
+  // A real native id (not a pending prefix) so sessionId() === runId ⇒ no pending
+  // bind / agent freeze (keeps the test free of config/DB wiring).
+  const sid = 'codex-native-1'
+  const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+
+  it('folds the SDD instruct + slash-command dev skill into the model prompt; echoes the visible body alone', async () => {
+    const rt = ensureRuntime(sid, '/proj', 'default', [], 'session')
+    const frames: ServerToClient[] = []
+    const viewer: Viewer = (e) => frames.push(e)
+    addViewer(sid, viewer)
+
+    const SDD = 'You are a spec-driven development agent. Hard constraints: Spec is Truth.'
+    const VISIBLE = 'Cache the endpoint\n\nAdd an LRU cache.'
+    const { adapter, started } = fakeCodexAdapter()
+
+    await runViaDriver(rt, VISIBLE, adapter, eventBus, undefined, undefined, undefined, {
+      systemInstruction: SDD,
+      userTurnPrefix: '/dev ',
+    })
+
+    // The model prompt carries the internal instruction + the slash command ahead of
+    // the visible body (codex has no separate system role).
+    expect(started.prompt).toBe(`${SDD}\n\n/dev ${VISIBLE}`)
+
+    // The client echo (user_text) is the visible body ALONE — no instruction, no prefix.
+    const echoed = frames.filter((e) => e.type === 'user_text')
+    expect(echoed).toHaveLength(1)
+    const echo = echoed[0]
+    expect(echo).toEqual({ type: 'user_text', text: VISIBLE })
+    // The echoed text never carries the internal instruction or the slash command.
+    const text = echo.type === 'user_text' ? echo.text : ''
+    expect(text).not.toContain('Hard constraints')
+    expect(text).not.toContain('/dev')
+
+    removeRuntime(sid)
   })
 })

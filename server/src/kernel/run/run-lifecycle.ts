@@ -20,6 +20,7 @@ import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
 import { canFormTeam } from '../agent/adapters/capabilities.js'
 import { runViaDriver, type IntentProfile, type SpecProfile } from './run-via-driver.js'
+import { claudeUserTurn, type RunInject } from './prompt-delivery.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
@@ -167,11 +168,24 @@ export async function launchRun(
    * its own way. Internal callers (intent/dev prompts) omit it ⇒ a text-only turn.
    */
   images?: PromptImage[],
+  /**
+   * Non-visible delivery channels for this turn (hide-session-system-instructions):
+   * `systemInstruction` rides the vendor system channel, `userTurnPrefix` leads the
+   * model user turn (a slash-command dev skill). Both reach the model but are NEVER
+   * echoed — only `prompt` (the visible business context) is. Omitted by intent/spec
+   * (their internal role rides the injected profile) and by plain chat turns.
+   */
+  inject?: RunInject,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
   const isIntent = rt.kind === 'intent'
   const isSpec = rt.kind === 'spec'
+  // The model's user turn: a slash-command dev-skill prefix (when present) + the
+  // visible body. The system instruction is delivered separately (claude's preset
+  // system append for work runs), so it never appears in the user turn. The client
+  // echo below always carries `prompt` (visible) alone.
+  const modelPrompt = claudeUserTurn(prompt, inject)
   // A intent runtime MUST carry the injected read-only profile (its security
   // lock). A missing wiring is a composition-root bug — fail loud, never silently
   // launch a intent agent without its gate / disallowed-tools lock (C-SEC).
@@ -333,6 +347,7 @@ export async function launchRun(
           resolvedIntentProfile,
           deps.onPermissionRequest,
           images,
+          inject,
         )
       const unavailable =
         'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
@@ -441,7 +456,7 @@ export async function launchRun(
 
       try {
         await runClaude({
-          prompt,
+          prompt: modelPrompt,
           // Images accompany the prompt on every fresh-session attempt (the first
           // try AND each degradation fallback, which re-sends `prompt` into a new
           // SDK session). A socket-reconnect pass resumes the SAME session, whose
@@ -483,8 +498,13 @@ export async function launchRun(
                 // intent, excluded from socket auto-resume (one-shot lifecycle).
                 { ...deps.specProfile!(workspacePath), specDir: rt.specDir }
               : // Socket auto-resume is for ordinary user sessions only — the
-                // intent comm agent is excluded (different lifecycle).
+                // intent comm agent is excluded (different lifecycle). A work run's
+                // internal instruction (SDD work contract) rides claude's preset
+                // system append here, so it reaches the model without being echoed.
                 {
+                  ...(inject?.systemInstruction
+                    ? { appendSystemPrompt: inject.systemInstruction }
+                    : {}),
                   onSocketDisconnect: (info) => {
                     socketInfo = info
                   },

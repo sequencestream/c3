@@ -1,23 +1,25 @@
 /**
  * Dev-launch prompt construction — pure, feature-private (ADR-0009).
  *
- * `start_development` turns one intent into the first user prompt of a background
- * development session. The prompt has three shapes, decided by the workspace's
- * `devSkill` and `sddEnabled`:
+ * `start_development` turns one intent into the first turn of a background
+ * development session, split into the three delivery channels of
+ * {@link DevPromptParts} so internal instructions never render as a visible user
+ * message (hide-session-system-instructions):
  *
- *   1. `devSkill` configured → the dev skill slash-command is the prefix
- *      (SDD's work-session instruct is NOT stacked on top — devSkill wins).
- *   2. no `devSkill`, SDD on → the SDD work-session instruct is the prefix, so a
- *      plain dev session works in the spec-driven, checkpoint-governed way.
- *   3. SDD off, no `devSkill` → bare `title + content + deps` (the historic shape,
- *      kept byte-for-byte for backward compatibility).
+ *   1. `devSkill` configured → it rides `userTurnPrefix` (a slash command must lead
+ *      the model user turn to expand; SDD's work-session instruct is NOT stacked on
+ *      top — devSkill wins). It is delivered to the model but never echoed.
+ *   2. no `devSkill`, SDD on → the SDD work-session instruct rides
+ *      `systemInstruction` (the vendor system channel), so a plain dev session works
+ *      the spec-driven, checkpoint-governed way without showing the contract.
+ *   3. SDD off, no `devSkill` → no internal instruction; `visible` is the historic
+ *      `title + content + deps`.
  *
- * When SDD is on, a spec-path note is appended at the END pointing the agent at
- * the intent's approved `spec.md` (the single source of truth) — regardless of
- * which prefix applies (devSkill or instruct).
+ * The intent body (title + content), the dependency note, and — when SDD is on — the
+ * spec-path note are all VISIBLE business context: they make up `visible`, echoed to
+ * the client unchanged.
  *
- * This is a pure string builder so the three branches are unit-testable without
- * launching a run.
+ * This is a pure builder so the channel split is unit-testable without launching a run.
  */
 
 /**
@@ -67,22 +69,38 @@ export interface DevPromptArgs {
 }
 
 /**
- * Build the first user prompt for a development session from one intent. See the
- * module header for the three branches; SDD-off + no-devSkill is byte-for-byte
- * the historic `${title}\n\n${content}${depNote}`.
+ * A dev session's first turn split into its three delivery channels. The caller
+ * routes each one: `systemInstruction` → the vendor system channel,
+ * `userTurnPrefix` → the model user turn (not echoed), `visible` → the client echo
+ * and the user-turn body.
  */
-export function buildDevPrompt(args: DevPromptArgs): string {
+export interface DevPromptParts {
+  /** SDD work-session instruct when it applies; `''` otherwise. Goes to the system channel. */
+  systemInstruction: string
+  /** Slash-command dev skill (e.g. `/dev `) when configured; `''` otherwise. Leads the model user turn. */
+  userTurnPrefix: string
+  /** Visible business context: intent title + content + dependency note + spec-path note. */
+  visible: string
+}
+
+/**
+ * Build the first turn for a development session from one intent, split into the
+ * three delivery channels (see the module header). The visible body is
+ * byte-for-byte the historic `${title}\n\n${content}${depNote}${specNote}`; only the
+ * internal prefix is peeled off into `systemInstruction` / `userTurnPrefix`.
+ */
+export function buildDevPrompt(args: DevPromptArgs): DevPromptParts {
   const depNote = args.dependsOn.length ? `\n\n依赖需求:${args.dependsOn.join(', ')}` : ''
   // Prefix precedence: a configured devSkill wins; otherwise SDD's work-session
-  // instruct applies when SDD is on; otherwise no prefix. The two never stack.
-  let prefix = ''
-  if (args.devSkill) {
-    prefix = `${args.devSkill} `
-  } else if (args.sddEnabled) {
-    prefix = `${SDD_WORK_SESSION_INSTRUCT}\n\n`
-  }
-  // Spec-path note: appended at the end whenever SDD is on and a spec exists,
-  // regardless of which prefix applies.
+  // instruct applies when SDD is on; otherwise neither. The two never stack.
+  // devSkill is a slash command → the model user turn (it must lead to expand);
+  // the SDD instruct is natural language → the system channel.
+  const userTurnPrefix = args.devSkill ? `${args.devSkill} ` : ''
+  const systemInstruction = !args.devSkill && args.sddEnabled ? SDD_WORK_SESSION_INSTRUCT : ''
+  // Spec-path note: appended at the end of the VISIBLE body whenever SDD is on and a
+  // spec exists, regardless of which prefix applies. It is business context, not an
+  // internal instruction, so it stays visible.
   const specNote = args.sddEnabled && args.specPath ? `\n\n${buildDevSpecNote(args.specPath)}` : ''
-  return `${prefix}${args.title}\n\n${args.content}${depNote}${specNote}`
+  const visible = `${args.title}\n\n${args.content}${depNote}${specNote}`
+  return { systemInstruction, userTurnPrefix, visible }
 }

@@ -89,7 +89,7 @@ const emit = defineEmits<{
   // ── 会话/spec 打开 ──
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
-  'read-spec': [rel: string]
+  'read-spec': [intentId: string, specPath: string]
   // ── 会话重置(带新输入,拼接意图/spec 内容新起会话) ──
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
@@ -279,7 +279,7 @@ function selectTab(tab: DetailTab): void {
   } else if (tab === 'specSession' && r.specSessionId && props.activeSession !== r.specSessionId) {
     emit('open-spec-session', r.id)
   } else if (tab === 'spec' && r.specPath) {
-    emit('read-spec', r.specPath)
+    emit('read-spec', r.id, r.specPath)
   }
 }
 

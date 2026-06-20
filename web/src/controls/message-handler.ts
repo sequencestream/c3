@@ -41,6 +41,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     workspaceSettingOpen,
     currentWorkspaceSetting,
     detectedMainBranch,
+    resolvedSpecRoot,
     currentWorkspace,
     sessionsByWorkspace,
     sessionPagingByWorkspace,
@@ -176,6 +177,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         workspaceSettingOpen.value = false
         currentWorkspaceSetting.value = null
         detectedMainBranch.value = null
+        resolvedSpecRoot.value = null
         ctx.applyStatuses(msg.statuses)
         // Restore the persisted current workspace (or fall back to most-recent),
         // then load its sessions for the sidebar.
@@ -355,6 +357,7 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'workspace_setting':
         currentWorkspaceSetting.value = msg.config
         detectedMainBranch.value = msg.detectedMainBranch ?? null
+        resolvedSpecRoot.value = msg.resolvedSpecRoot ?? null
         break
       case 'settings':
         serverSettings.value = msg.settings

@@ -1654,12 +1654,11 @@
       "toggle": {
         "label": "启用规格驱动开发"
       },
-      "specPath": {
+      "specRoot": {
         "title": {
           "label": "规格目录"
         },
-        "hint": "规格文件存放目录(相对工作区根目录)。留空则使用默认值。",
-        "placeholder": ".specs"
+        "hint": "本项目规格文件的固定集中存放位置(~/.c3/specs/<项目>)。同一项目的所有 worktree 共享同一份规格,且为只读——无法在此或通过接口修改。不提交到 Git。"
       }
     },
     "consensus": {

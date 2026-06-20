@@ -1,8 +1,9 @@
 /**
  * Spec document path layout — pure, feature-private (ADR-0009).
  *
- * Computes where a spec document lands for an intent:
- *   <specPath>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md
+ * Computes where a spec document lands for an intent, under the centralized
+ * spec root (`<c3-home>/specs/<project-path-segment>`, see `specs-root.ts`):
+ *   <specRoot>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md
  *
  * `<slug>` is the intent's short English title slugged (falling back to the
  * intent id prefix when empty / non-ASCII), and `<NNN>` is a 3-digit
@@ -71,24 +72,24 @@ export function nextSeq(existingNames: readonly string[], datePrefix: string): s
 
 /** Resolved spec document layout for one intent. */
 export interface SpecLayout {
-  /** Absolute directory `<workspace>/<specPath>/yyyy/mm/dd/yyyy-mm-dd-NNN-slug`. */
+  /** Absolute directory `<specRoot>/yyyy/mm/dd/yyyy-mm-dd-NNN-slug`. */
   dirAbs: string
-  /** Absolute `spec.md` path. */
+  /** Absolute `spec.md` path (stored as `spec_path`). */
   fileAbs: string
-  /** `spec.md` path relative to the workspace root (stored as `spec_path`). */
-  fileRel: string
   /** The leaf directory name `yyyy-mm-dd-NNN-slug`. */
   dirName: string
 }
 
 /**
- * Compute the spec layout for an intent. `listDay(dayRootAbs)` returns the day
- * directory's existing entry names (must return `[]` rather than throw when the
- * directory is absent); everything else is pure.
+ * Compute the spec layout for an intent under the centralized spec root.
+ * `specRoot` is the absolute, fixed `<c3-home>/specs/<project-path-segment>`
+ * (see `specs-root.ts`). `listDay(dayRootAbs)` returns the day directory's
+ * existing entry names (must return `[]` rather than throw when the directory is
+ * absent); everything else is pure. The date layering / `<NNN>` sequence /
+ * `<slug>` rules are unchanged — only the root differs.
  */
 export function computeSpecLayout(args: {
-  workspacePath: string
-  specPath: string
+  specRoot: string
   shortEnTitle: string | null
   intentId: string
   now: Date
@@ -96,15 +97,13 @@ export function computeSpecLayout(args: {
 }): SpecLayout {
   const { yyyy, mm, dd } = dateParts(args.now)
   const datePrefix = `${yyyy}-${mm}-${dd}`
-  const dayRootRel = path.join(args.specPath, yyyy, mm, dd)
-  const dayRootAbs = path.join(args.workspacePath, dayRootRel)
+  const dayRootAbs = path.join(args.specRoot, yyyy, mm, dd)
   const seq = nextSeq(args.listDay(dayRootAbs), datePrefix)
   const slug = specSlug(args.shortEnTitle, args.intentId)
   const dirName = `${datePrefix}-${seq}-${slug}`
   return {
     dirAbs: path.join(dayRootAbs, dirName),
     fileAbs: path.join(dayRootAbs, dirName, 'spec.md'),
-    fileRel: path.join(dayRootRel, dirName, 'spec.md'),
     dirName,
   }
 }

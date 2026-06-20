@@ -58,11 +58,12 @@ flowchart TD
 
 1. **web-console → intent-management.** For a saved intent, `write_spec` produces a constrained,
    reviewable spec document before development — the quality-gate output step (`RM-R21`). The server
-   scaffolds a dated directory under the workspace's `specPath` setting (default `.specs`),
-   `<specPath>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`, where `<slug>` derives from the intent's
-   `shortEnTitle` (falling back to the intent id prefix) and `<NNN>` is a per-day sequence. It seeds
-   `spec.md` and backfills the intent's spec path immediately, so the spec exists even if the run
-   fails.
+   scaffolds a dated directory under the **fixed, centralized spec root**
+   `<c3 home>/specs/<project-path-segment>` (per project, shared by all the project's worktrees;
+   not user-configurable, not in Git), `<spec-root>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`,
+   where `<slug>` derives from the intent's `shortEnTitle` (falling back to the intent id prefix)
+   and `<NNN>` is a per-day sequence. It seeds `spec.md` and backfills the intent's spec path
+   (the **absolute** centralized location) immediately, so the spec exists even if the run fails.
 2. **intent-management → agent-session.** A **write-confined spec session** is launched on the
    configured spec agent (`specAgentId`). Its sole job is to **write the spec, not change code**:
    writes are limited to the spec directory (any other project path is denied; the rest is

@@ -302,11 +302,13 @@ describe('IntentDetail.vue — tabs', () => {
     expect(noSpec.find('[data-testid="intent-detail-spec-empty"]').exists()).toBe(true)
     expect(noSpec.emitted('read-spec')).toBeUndefined()
 
-    const withSpec = mountDetail(intent({ id: 'i2', specPath: '.specs/x/spec.md' }), {
+    const specAbs = '/home/u/.c3/specs/proj/2026/06/20/2026-06-20-001-x/spec.md'
+    const withSpec = mountDetail(intent({ id: 'i2', specPath: specAbs }), {
       intentSpecContent: '# Hello spec',
     })
     await withSpec.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
-    expect(withSpec.emitted('read-spec')).toEqual([['.specs/x/spec.md']])
+    // read-spec now carries (intentId, absolute specPath) — specs are centralized.
+    expect(withSpec.emitted('read-spec')).toEqual([['i2', specAbs]])
   })
 
   it('spec session tab: emits open-spec-session when a spec session exists', async () => {

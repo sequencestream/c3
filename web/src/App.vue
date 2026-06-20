@@ -208,6 +208,7 @@ const {
   workspaceSettingOpen,
   currentWorkspaceSetting,
   detectedMainBranch,
+  resolvedSpecRoot,
   vendorModes,
   skillLinkStatuses,
   installingSkillIds,
@@ -505,6 +506,7 @@ const {
       :open="workspaceSettingOpen"
       :workspace-setting="currentWorkspaceSetting"
       :detected-main-branch="detectedMainBranch"
+      :resolved-spec-root="resolvedSpecRoot"
       :current-workspace="currentWorkspace"
       :vendor-modes="vendorModes"
       :system-sandboxes="serverSettings?.sandboxes ?? []"

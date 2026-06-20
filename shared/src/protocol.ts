@@ -691,11 +691,6 @@ export interface WorkspaceSetting {
    * Absent ⇒ `false` (normalized on read).
    */
   sddEnabled?: boolean
-  /**
-   * Directory (relative to the workspace root) where SDD specs are stored when
-   * {@link sddEnabled} is on. Absent / blank ⇒ `.specs` (normalized on read).
-   */
-  specPath?: string
 }
 
 // ===========================================================================
@@ -2560,6 +2555,16 @@ export type ClientToServer =
    * `reset_intent_session` for the spec tab.
    */
   | { type: 'reset_spec_session'; workspaceId: string; intentId: string; userInput: string }
+  /**
+   * Read an intent's authored spec document for the intent detail's `spec` tab.
+   * Specs live OUTSIDE the workspace at the centralized, per-project root
+   * `~/.c3/specs/<project-path-segment>/…` (not under the workspace, so the
+   * workspace-confined `read_file` cannot reach them). The server resolves the
+   * intent's stored absolute `specPath`, confines the read to the centralized
+   * specs root (fail-closed), and replies with a `file_read` whose `file.path`
+   * is that absolute spec path.
+   */
+  | { type: 'read_spec'; workspaceId: string; intentId: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
@@ -2940,12 +2945,18 @@ export type ServerToClient =
    * `save_workspace_setting`). `detectedMainBranch` is the server-probed default
    * branch (origin/HEAD → current HEAD; undefined when unresolvable) the form
    * uses to pre-fill `defaultMainBranch` — present on the `load` reply only.
+   *
+   * `resolvedSpecRoot` is the FIXED, centralized SDD spec root for the workspace
+   * (`~/.c3/specs/<project-path-segment>`), resolved server-side from the owning
+   * workspace path. It is READ-ONLY display data: the form shows it but cannot
+   * edit it, and `save_workspace_setting` never accepts a spec directory value.
    */
   | {
       type: 'workspace_setting'
       workspaceId: string
       config: WorkspaceSetting
       detectedMainBranch?: string
+      resolvedSpecRoot?: string
     }
   /**
    * Result of a `login` attempt (ADR-0023). Carries an {@link AuthLoginResult}:

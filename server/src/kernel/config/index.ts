@@ -449,7 +449,9 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  *   the legacy on-disk key `gitCommitMode` is read as a fallback when absent.
  * - `defaultMainBranch` is trimmed; empty ⇒ omitted.
  * - `sddEnabled` defaults to `false` (only an explicit boolean `true` enables SDD).
- * - `specPath` is trimmed; absent / blank / non-string ⇒ `.specs`.
+ *   The SDD spec root is a FIXED, centralized, non-configurable location
+ *   (`~/.c3/specs/<project-path-segment>`, see `features/intents/specs-root.ts`),
+ *   so there is no `specPath` config field — any such input is ignored here.
  */
 export function normalizeWorkspaceSetting(
   raw: unknown,
@@ -475,7 +477,6 @@ export function normalizeWorkspaceSetting(
   const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode, validCustomAgentIds)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
-  const specPath = normalizeSpecPath(rec.specPath)
   return {
     defaultMode,
     consensus,
@@ -484,15 +485,11 @@ export function normalizeWorkspaceSetting(
     maxSpeechChars,
     gitBranchMode,
     sddEnabled,
-    specPath,
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
   }
 }
-
-/** Default SDD spec directory (relative to the workspace root). */
-export const DEFAULT_SPEC_PATH = '.specs'
 
 /**
  * Normalize the SDD master switch — only an explicit boolean `true` enables it;
@@ -501,18 +498,6 @@ export const DEFAULT_SPEC_PATH = '.specs'
  */
 function normalizeSddEnabled(raw: unknown): boolean {
   return raw === true
-}
-
-/**
- * Normalize the SDD spec directory — trims a string value and falls back to
- * {@link DEFAULT_SPEC_PATH} for absent / blank / non-string input. The path is
- * stored verbatim (relative to the workspace root); existence / writability is
- * not checked here.
- */
-function normalizeSpecPath(raw: unknown): string {
-  if (typeof raw !== 'string') return DEFAULT_SPEC_PATH
-  const trimmed = raw.trim()
-  return trimmed.length > 0 ? trimmed : DEFAULT_SPEC_PATH
 }
 
 /**
@@ -1143,14 +1128,6 @@ export function getTimezone(): string {
 /** The slash command prefixed to a intent when launching development; empty ⇒ no prefix. */
 export function getDevSkill(workspacePath: string): string {
   return normalizeDevSkill(loadWorkspaceSetting(workspacePath).devSkill)
-}
-
-/**
- * The workspace's spec directory (relative to the workspace root) for
- * `write_spec`. Absent/blank ⇒ {@link DEFAULT_SPEC_PATH} (`.specs`).
- */
-export function getSpecPath(workspacePath: string): string {
-  return normalizeSpecPath(loadWorkspaceSetting(workspacePath).specPath)
 }
 
 /** Whether spec-driven development is enabled for the workspace (default false). */

@@ -105,14 +105,17 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'reset_spec_session', workspaceId: intentsProject.value, intentId, userInput })
   }
 
-  // Fetch the selected intent's spec.md for the detail's `spec` tab. Tracks the
-  // awaited rel so the matching file_read reply fills `intentSpecContent`.
-  ctx.readIntentSpec = (rel: string): void => {
+  // Fetch the selected intent's spec.md for the detail's `spec` tab. Specs live
+  // OUTSIDE the workspace under the centralized root, so this uses `read_spec`
+  // (keyed by intent id, server-resolved) rather than the workspace-confined
+  // `read_file`. Tracks the awaited absolute spec path so the matching `file_read`
+  // reply fills `intentSpecContent`.
+  ctx.readIntentSpec = (intentId: string, specPath: string): void => {
     if (!intentsProject.value) return
-    ctx.pendingSpecRel.value = rel
+    ctx.pendingSpecRel.value = specPath
     ctx.intentSpecLoading.value = true
     ctx.intentSpecContent.value = null
-    send({ type: 'read_file', workspaceId: intentsProject.value, rel })
+    send({ type: 'read_spec', workspaceId: intentsProject.value, intentId })
   }
 
   ctx.createPr = (intentId: string): void => {

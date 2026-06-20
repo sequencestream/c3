@@ -410,6 +410,9 @@ export function createState(deps: StateDeps) {
   const workspaceSettingOpen = ref(false)
   const currentWorkspaceSetting = ref<WorkspaceSettingType | null>(null)
   const detectedMainBranch = ref<string | null>(null)
+  // Read-only: the FIXED, centralized SDD spec root the server resolved for the
+  // workspace (`~/.c3/specs/<project-path-segment>`). Displayed, never editable.
+  const resolvedSpecRoot = ref<string | null>(null)
 
   // ---- New-session agent picker (the "+" modal) ----
   const newSessionOpen = ref(false)
@@ -560,6 +563,7 @@ export function createState(deps: StateDeps) {
     workspaceSettingOpen,
     currentWorkspaceSetting,
     detectedMainBranch,
+    resolvedSpecRoot,
     newSessionOpen,
     newSessionWorkspace,
     activeVendor,

@@ -1654,12 +1654,11 @@
       "toggle": {
         "label": "Enable spec-driven development"
       },
-      "specPath": {
+      "specRoot": {
         "title": {
           "label": "Spec directory"
         },
-        "hint": "Directory (relative to the workspace root) where specs are stored. Leave empty to use the default.",
-        "placeholder": ".specs"
+        "hint": "Fixed, centralized location where this project's specs are stored (~/.c3/specs/<project>). Shared by every worktree of the project and read-only — it cannot be changed here or via the API. Not committed to Git."
       }
     },
     "consensus": {

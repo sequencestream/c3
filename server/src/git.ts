@@ -47,14 +47,31 @@ function git(
   cwd: string,
   args: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
+  return run('git', cwd, args)
+}
+
+/**
+ * Run an arbitrary binary in `cwd`; resolve with stdout/stderr/exit code (never
+ * rejects). `code` is the process exit code, or `-1` when the binary itself could
+ * not be spawned (ENOENT — not installed), so callers can tell "command missing"
+ * apart from "command ran and failed".
+ */
+function run(
+  bin: string,
+  cwd: string,
+  args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(bin, args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const errno = err as (NodeJS.ErrnoException & { code?: unknown }) | null
       const code =
-        err && typeof (err as { code?: unknown }).code === 'number'
-          ? (err as { code: number }).code
-          : err
-            ? 1
-            : 0
+        errno && errno.code === 'ENOENT'
+          ? -1
+          : errno && typeof errno.code === 'number'
+            ? (errno.code as number)
+            : err
+              ? 1
+              : 0
       resolve({ code, stdout: stdout.toString(), stderr: stderr.toString() })
     })
   })
@@ -338,6 +355,41 @@ export async function commitAndPush(workspacePath: string, message: string): Pro
   return { ok: true, committed: anyCommitted }
 }
 
+/** True if `repo`'s working tree is dirty (tracked edits or untracked files). */
+async function isDirty(repo: string): Promise<boolean> {
+  const status = await git(repo, ['-C', repo, 'status', '--porcelain'])
+  return status.code === 0 && status.stdout.trim() !== ''
+}
+
+/**
+ * Whether a workspace has anything the cleanup could commit or push: a dirty
+ * working tree OR local commits ahead of upstream, in the root repo (single-repo
+ * path) or in ANY sub-repo (multi-repo workspace root). Mirrors {@link commitAndPush}'s
+ * repo discovery so "no changes" here means "nothing for commitAndPush to do".
+ */
+export async function hasCommittableChanges(workspacePath: string): Promise<boolean> {
+  if (isGitRepo(workspacePath)) {
+    return (await isDirty(workspacePath)) || (await isAhead(workspacePath))
+  }
+  for (const repo of discoverSubRepos(workspacePath)) {
+    if ((await isDirty(repo)) || (await isAhead(repo))) return true
+  }
+  return false
+}
+
+/**
+ * The current HEAD commit hash of a workspace's repo, or `null` when it can't be
+ * resolved (not a repo / git error). For a multi-repo workspace root (root is not
+ * itself a repo), reports the first discovered sub-repo's HEAD — a best-effort
+ * single value for the intent's `latestCommitHash`.
+ */
+export async function getHeadCommit(workspacePath: string): Promise<string | null> {
+  const repo = isGitRepo(workspacePath) ? workspacePath : discoverSubRepos(workspacePath)[0]
+  if (!repo) return null
+  const r = await git(repo, ['-C', repo, 'rev-parse', 'HEAD'])
+  return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null
+}
+
 /** Collapse multi-line git output into a single trimmed line for the UI. */
 function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim().slice(0, 300)
@@ -352,7 +404,21 @@ export interface CreatePrResult {
   prId?: string
   prUrl?: string
   error?: string
+  /**
+   * True when the PR could not even be attempted because the `gh` CLI is missing
+   * or not authenticated. Lets callers surface a distinct "install / log in to gh"
+   * message versus a generic PR-create failure.
+   */
+  unavailable?: boolean
 }
+
+// `gh` prints these when no usable auth token is configured.
+const GH_NOT_LOGGED_IN_MARKERS = [
+  'gh auth login',
+  'not logged',
+  'no git remotes found',
+  'authentication',
+]
 
 /**
  * Create a GitHub Pull Request via the `gh` CLI.
@@ -360,8 +426,9 @@ export interface CreatePrResult {
  * Runs `gh pr create --title <title> --body <body>` in `cwd` (the project root).
  * On success, parses the output URL (e.g.
  * `https://github.com/owner/repo/pull/123`) and extracts the PR number.
- * Returns `{ ok, prId, prUrl }` on success, or `{ ok: false, error }` on failure
- * (gh not installed, auth failure, no upstream, etc.).
+ * Returns `{ ok, prId, prUrl }` on success, or `{ ok: false, error, unavailable? }`
+ * on failure. `unavailable` is set when `gh` is not installed (ENOENT) or not
+ * authenticated, so the caller can ask the user to install / log in.
  *
  * `headBranch` is optional — when omitted `gh` uses the current branch.
  * `baseBranch` defaults to `main`.
@@ -376,9 +443,18 @@ export async function createGhPr(
   const args = ['pr', 'create', '--title', title, '--body', body, '--base', baseBranch]
   if (headBranch) args.push('--head', headBranch)
 
-  const { code, stdout, stderr } = await git(cwd, args)
+  const { code, stdout, stderr } = await run('gh', cwd, args)
+  if (code === -1) {
+    return { ok: false, unavailable: true, error: 'gh CLI 未安装' }
+  }
   if (code !== 0) {
-    return { ok: false, error: oneLine(stderr || stdout) || 'gh pr create 失败' }
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = GH_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'gh pr create 失败',
+    }
   }
 
   // `gh pr create` prints the PR URL to stdout, e.g.

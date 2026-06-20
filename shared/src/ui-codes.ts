@@ -86,6 +86,20 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.dependencyNotMerged',
     params: ['title', 'id'],
   },
+  // Manual Start-Dev session-end Git/PR cleanup failures (workbench todo copy).
+  'intent.gitCleanupNoChanges': { key: 'error.intent.gitCleanupNoChanges' },
+  'intent.gitCleanupCommitPushFailed': {
+    key: 'error.intent.gitCleanupCommitPushFailed',
+    params: ['detail'],
+  },
+  'intent.gitCleanupGhUnavailable': {
+    key: 'error.intent.gitCleanupGhUnavailable',
+    params: ['detail'],
+  },
+  'intent.gitCleanupPrFailed': {
+    key: 'error.intent.gitCleanupPrFailed',
+    params: ['detail'],
+  },
   'intent.specAgentUnsupported': { key: 'error.intent.specAgentUnsupported' },
   'intent.specWriteFailed': { key: 'error.intent.specWriteFailed', params: ['message'] },
   'intent.specNotWritten': { key: 'error.intent.specNotWritten' },

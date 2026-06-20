@@ -685,7 +685,10 @@
       },
       "pr": {
         "label": "PR #{id}",
-        "tooltip": "复制 PR 编号"
+        "tooltip": "复制 PR 编号",
+        "open": {
+          "tooltip": "打开 PR"
+        }
       },
       "more": {
         "label": "更多操作"
@@ -1372,6 +1375,10 @@
       "devStartInFlight": "该意图正在启动开发,请稍候。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",
+      "gitCleanupNoChanges": "开发会话结束但没有可提交的改动。请手动提交、推送并创建 PR。",
+      "gitCleanupCommitPushFailed": "开发会话结束后自动提交/推送失败: {detail}。请手动处理。",
+      "gitCleanupGhUnavailable": "无法创建 PR: gh CLI 不可用或未登录: {detail}。请先安装/登录 gh 再手动创建 PR。",
+      "gitCleanupPrFailed": "自动创建 PR 失败: {detail}。请手动创建 PR。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
       "pullFailed": "当前分支已与远端分叉，无法快进合并。请先手动同步后再开始开发: {message}",
       "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",

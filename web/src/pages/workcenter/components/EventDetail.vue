@@ -12,6 +12,7 @@ import { ref, computed } from 'vue'
 import { askQuestionsOf, type AskQuestionView } from '../../../lib/ask'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import type { WaitUserInvolveEvent } from '@ccc/shared/protocol'
+import { eventDisplayTitle } from '@/lib/event-title'
 
 const { t } = useTypedI18n()
 
@@ -206,7 +207,7 @@ watch(
           </span>
           <!-- Title -->
           <h2 class="wc-detail-title">
-            {{ event.title || event.toolName || sourceIcon(event.source) }}
+            {{ eventDisplayTitle(event, sourceIcon(event.source)) }}
           </h2>
         </div>
         <div class="wc-detail-meta">

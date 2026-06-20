@@ -29,8 +29,11 @@ vi.mock('../features/intents/store.js', () => ({
   getIntentSessionBySessionId: vi.fn(() => null),
   insertIntentSession: vi.fn(),
   rebindChatSession: vi.fn(),
+  setBranchName: vi.fn(),
   setIntentSessionId: vi.fn(),
   setLastDevSession: vi.fn(),
+  setLatestCommitHash: vi.fn(),
+  setPrInfo: vi.fn(),
   setSpecSessionId: vi.fn(),
   updateIntentSession: vi.fn(),
   updateStatus: vi.fn(),
@@ -49,16 +52,37 @@ vi.mock('../features/intents/intent-link.js', () => ({
   clearPendingIntentLink: vi.fn(() => undefined),
   takePendingIntentLink: vi.fn(() => null),
 }))
-vi.mock('../features/intents/automation.js', () => ({ notifyTurnSettled: vi.fn() }))
+vi.mock('../features/intents/automation.js', () => ({
+  notifyTurnSettled: vi.fn(),
+  isIntentDrivenByAutomation: vi.fn(() => false),
+}))
+vi.mock('../features/intents/dev-cleanup.js', () => ({
+  runManualDevCleanup: vi.fn(async () => ({ kind: 'skipped' })),
+}))
+vi.mock('../features/intents/worktree.js', () => ({
+  getWorktreePath: vi.fn((ws: string, id: string) => `${ws}/.wt/${id}`),
+}))
+vi.mock('../kernel/config/index.js', () => ({
+  getGitBranchMode: vi.fn(() => 'current-branch'),
+  getDefaultMainBranch: vi.fn(() => 'main'),
+}))
 vi.mock('../features/user-involve/store.js', () => ({
   cancelBySourceId: vi.fn(),
+  createEvent: vi.fn(),
   isStoreAvailable: vi.fn(() => true),
 }))
 vi.mock('../kernel/agent-config/index.js', () => ({
   resolveSessionVendor: vi.fn(() => 'claude'),
   resolveSessionAgentSwitch: vi.fn(() => ({ agent: { vendor: 'claude' } })),
 }))
-vi.mock('../git.js', () => ({ gitDiffStat: vi.fn(async () => 'file.ts | 10 +++') }))
+vi.mock('../git.js', () => ({
+  gitDiffStat: vi.fn(async () => 'file.ts | 10 +++'),
+  hasCommittableChanges: vi.fn(async () => true),
+  getHeadCommit: vi.fn(async () => 'abc1234'),
+  getCurrentBranch: vi.fn(async () => 'feature/x'),
+  commitAndPush: vi.fn(async () => ({ ok: true, committed: true })),
+  createGhPr: vi.fn(async () => ({ ok: true, prId: '1', prUrl: 'http://x/pull/1' })),
+}))
 
 // Dynamic import so all vi.mocks are in place first.
 const { registerRunDomainSubscriptions } = await import('./run-domain-subscriptions.js')
@@ -473,6 +497,53 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     expect(patch.summary).toContain('exitCode')
     expect(patch.summary).toContain('success')
     expect(patch.summary).toContain('file.ts | 10 +++')
+  })
+
+  // ── Manual vs automation session-end cleanup dispatch (MSC-R1) ──
+  it('run:settled kind=session: a manual matched session triggers runManualDevCleanup', async () => {
+    const { listIntents } = await import('../features/intents/store.js')
+    const { isIntentDrivenByAutomation } = await import('../features/intents/automation.js')
+    const { runManualDevCleanup } = await import('../features/intents/dev-cleanup.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-man', lastDevSessionId: 'sess-man', title: 'M' } as Intent,
+    ])
+    vi.mocked(isIntentDrivenByAutomation).mockReturnValueOnce(false)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-man',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'session',
+    })
+
+    await vi.waitFor(() => {
+      expect(runManualDevCleanup).toHaveBeenCalledWith('intent-man', '/proj', expect.anything())
+    })
+  })
+
+  it('run:settled kind=session: an automation-owned session does NOT trigger cleanup', async () => {
+    const { listIntents } = await import('../features/intents/store.js')
+    const { isIntentDrivenByAutomation } = await import('../features/intents/automation.js')
+    const { runManualDevCleanup } = await import('../features/intents/dev-cleanup.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-auto', lastDevSessionId: 'sess-auto', title: 'A' } as Intent,
+    ])
+    vi.mocked(isIntentDrivenByAutomation).mockReturnValueOnce(true)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-auto',
+      workspacePath: '/proj',
+      reason: 'complete',
+      kind: 'session',
+    })
+
+    // Give the (not-expected) fire-and-forget a tick; it must never be called.
+    await new Promise((r) => setTimeout(r, 10))
+    expect(runManualDevCleanup).not.toHaveBeenCalled()
   })
 
   it('run:settled matched intent with error reason writes failure exit_code', async () => {

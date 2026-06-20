@@ -27,7 +27,7 @@ import type {
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 13
+const SCHEMA_VERSION = 14
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -238,6 +238,9 @@ function db(): Db | null {
     ensureColumn(d, 'intents', 'spec_approve_user', 'TEXT')
     ensureColumn(d, 'intents', 'spec_session_id', 'TEXT')
     ensureColumn(d, 'intents', 'intent_session_id', 'TEXT')
+    // v13 → v14: add pr_url (clickable PR link; nullable — historic rows stay null).
+    // Distinct from latest_commit_hash; carries the PR's web URL alongside pr_id.
+    ensureColumn(d, 'intents', 'pr_url', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -290,6 +293,7 @@ interface Row {
   branch_name: string | null
   latest_commit_hash: string | null
   pr_id: string | null
+  pr_url: string | null
   pr_status: string | null
   spec_path: string | null
   spec_approved: number
@@ -336,6 +340,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     branchName: r.branch_name,
     latestCommitHash: r.latest_commit_hash,
     prId: r.pr_id,
+    prUrl: r.pr_url,
     prStatus: (r.pr_status ?? null) as IntentPrStatus | null,
     specPath: r.spec_path,
     specApproved: r.spec_approved === 1,
@@ -772,13 +777,23 @@ export function setLatestCommitHash(id: string, commitHash: string): void {
   )
 }
 
-/** Set PR id and PR status for an intent (called after PR creation). Both or neither. */
-export function setPrInfo(id: string, prId: string, prStatus: IntentPrStatus): void {
+/**
+ * Set PR id, status, and clickable URL for an intent (called after PR creation).
+ * `prUrl` is optional so existing callers that only know the id keep working; when
+ * omitted the URL column is left null. The three move together (set on PR create).
+ */
+export function setPrInfo(
+  id: string,
+  prId: string,
+  prStatus: IntentPrStatus,
+  prUrl: string | null = null,
+): void {
   const d = requireDb()
   d.run(
-    'UPDATE intents SET pr_id=?, pr_status=?, updated_at=? WHERE id=?',
+    'UPDATE intents SET pr_id=?, pr_status=?, pr_url=?, updated_at=? WHERE id=?',
     prId,
     prStatus,
+    prUrl,
     Date.now(),
     id,
   )

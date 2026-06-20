@@ -685,7 +685,10 @@
       },
       "pr": {
         "label": "PR #{id}",
-        "tooltip": "Copy PR number"
+        "tooltip": "Copy PR number",
+        "open": {
+          "tooltip": "Open PR"
+        }
       },
       "more": {
         "label": "More actions"
@@ -1372,6 +1375,10 @@
       "devStartInFlight": "Development is already starting for this intent.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
+      "gitCleanupNoChanges": "The development session ended with no changes to commit. Commit, push, and open a PR manually.",
+      "gitCleanupCommitPushFailed": "Auto commit/push after the development session failed: {detail}. Resolve it manually.",
+      "gitCleanupGhUnavailable": "Cannot create the PR — the gh CLI is unavailable or not logged in: {detail}. Install/authenticate gh, then create the PR manually.",
+      "gitCleanupPrFailed": "Automatic PR creation failed: {detail}. Create the PR manually.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
       "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting development: {message}",
       "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",

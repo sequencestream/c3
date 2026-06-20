@@ -27,6 +27,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     branchName: null,
     latestCommitHash: null,
     prId: null,
+    prUrl: null,
     prStatus: null,
     specPath: null,
     specApproved: false,

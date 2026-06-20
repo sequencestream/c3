@@ -9,6 +9,7 @@
  */
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import type { WaitUserInvolveEvent } from '@ccc/shared/protocol'
+import { eventDisplayTitle } from '@/lib/event-title'
 
 const { t } = useTypedI18n()
 
@@ -93,9 +94,7 @@ function statusClass(status: string): string {
       </span>
 
       <!-- Title (or fallback) -->
-      <span class="wc-event-title">{{
-        event.title || event.toolName || sourceIcon(event.source)
-      }}</span>
+      <span class="wc-event-title">{{ eventDisplayTitle(event, sourceIcon(event.source)) }}</span>
 
       <!-- Timestamp -->
       <span class="wc-event-time">{{ formatTime(event.createdAt) }}</span>

@@ -940,6 +940,19 @@ export function startAutomation(
   return controller.status
 }
 
+/**
+ * Whether an intent's dev session is currently driven by this workspace's
+ * automation orchestrator. True iff a controller exists AND `intentId` is its
+ * `currentIntentId` — exactly the condition under which `onTurnSettled` claims a
+ * settled turn as its own (Case 1). The session-end manual Git/PR cleanup uses
+ * this to skip automation-owned sessions, giving manual vs automation a
+ * deterministic, mutually-exclusive split (MSC-R1).
+ */
+export function isIntentDrivenByAutomation(workspacePath: string, intentId: string): boolean {
+  const c = controllers.get(workspacePath)
+  return !!c && c.status.currentIntentId === intentId
+}
+
 /** Stop the orchestrator for a project (aborts the current dev run). */
 export function stopAutomation(workspacePath: string): AutomationStatus {
   const c = controllers.get(workspacePath)

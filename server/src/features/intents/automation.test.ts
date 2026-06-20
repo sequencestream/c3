@@ -87,7 +87,12 @@ vi.mock('./checkpoint-consensus.js', () => ({
 
 // ---- Imports ----
 
-import { pickNext, startAutomation, notifyTurnSettled } from './automation.js'
+import {
+  pickNext,
+  startAutomation,
+  notifyTurnSettled,
+  isIntentDrivenByAutomation,
+} from './automation.js'
 import type { AutomationHooks, DevTurnResult, RunDevTurnInput } from './automation.js'
 import { startDevelopment } from './index.js'
 import { listIntents, getIntent, setBranchName, setPrInfo, updateStatus } from './store.js'
@@ -127,6 +132,7 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   branchName: null,
   latestCommitHash: null,
   prId: null,
+  prUrl: null,
   prStatus: null,
   specPath: null,
   specApproved: false,
@@ -625,5 +631,27 @@ describe('automation controller — branch-mode git alignment', () => {
     expect(createGhPr).not.toHaveBeenCalled()
     expect(setPrInfo).not.toHaveBeenCalled()
     expect(updateStatus).toHaveBeenCalledWith('W', 'done')
+  })
+
+  // MSC-R1: the manual-vs-automation discriminator the session-end cleanup uses.
+  it('isIntentDrivenByAutomation: true only for the controller’s current intent', async () => {
+    const proj = '/test/disc'
+    const intent = makeIntent({ id: 'D', status: 'todo', branchName: 'intent/D' })
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-D', branchName: 'intent/D' })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+
+    // While automation drives 'D', the settled 'D' session is automation-owned…
+    expect(isIntentDrivenByAutomation(proj, 'D')).toBe(true)
+    // …but any other intent, or a workspace with no controller, is "manual".
+    expect(isIntentDrivenByAutomation(proj, 'other')).toBe(false)
+    expect(isIntentDrivenByAutomation('/no/controller', 'D')).toBe(false)
   })
 })

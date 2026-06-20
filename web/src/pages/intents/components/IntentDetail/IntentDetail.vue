@@ -409,8 +409,18 @@ defineExpose({
               >
                 {{ t('intent.action.createPr.label') }}
               </button>
+              <a
+                v-if="intent.prId && intent.prUrl"
+                class="req-btn pr-link"
+                :href="intent.prUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="t('intent.action.pr.open.tooltip')"
+              >
+                {{ t('intent.action.pr.label', { id: intent.prId }) }}
+              </a>
               <button
-                v-if="intent.prId"
+                v-else-if="intent.prId"
                 class="req-btn pr-link"
                 :title="t('intent.action.pr.tooltip')"
                 @click="copyPrId(intent.prId as string)"

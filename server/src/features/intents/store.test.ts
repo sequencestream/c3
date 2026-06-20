@@ -218,7 +218,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(13)
+    expect(version?.user_version).toBe(14)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -288,7 +288,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(13)
+    expect(version?.user_version).toBe(14)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -304,6 +304,7 @@ describe('intents CRUD', () => {
     expect(r.branchName).toBeNull()
     expect(r.latestCommitHash).toBeNull()
     expect(r.prId).toBeNull()
+    expect(r.prUrl).toBeNull()
     expect(r.prStatus).toBeNull()
 
     // Set branch name.
@@ -318,13 +319,24 @@ describe('intents CRUD', () => {
     expect(got?.latestCommitHash).toBe('a1b2c3d')
     expect(got?.branchName).toBe('feat/my-feature') // earlier field preserved
 
-    // Set PR info.
-    setPrInfo(r.id, '42', 'reviewing')
+    // Set PR info, including the clickable PR URL (v13→v14 pr_url column).
+    setPrInfo(r.id, '42', 'reviewing', 'https://github.com/o/r/pull/42')
     got = getIntent(r.id)
     expect(got?.prId).toBe('42')
     expect(got?.prStatus).toBe('reviewing')
+    expect(got?.prUrl).toBe('https://github.com/o/r/pull/42')
     expect(got?.branchName).toBe('feat/my-feature') // earlier fields preserved
     expect(got?.latestCommitHash).toBe('a1b2c3d')
+  })
+
+  it('setPrInfo without a url leaves pr_url null (back-compat default arg)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'NoUrlPr', shortEnTitle: 'auto', content: '', priority: 'P1' },
+    ])
+    setPrInfo(r.id, '7', 'reviewing')
+    const got = getIntent(r.id)
+    expect(got?.prId).toBe('7')
+    expect(got?.prUrl).toBeNull()
   })
 })
 
@@ -472,7 +484,7 @@ describe('intents spec + session fields (v12→v13)', () => {
     expect(cols.some((c) => c.name === 'spec_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'intent_session_id')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(13)
+    expect(version?.user_version).toBe(14)
 
     // Idempotent: re-running the schema-ensure path must not throw or lose data.
     resetStoreForTests()

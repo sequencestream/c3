@@ -426,11 +426,25 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // in the user's console language, not a hard-coded one (2026-06-08-005).
       appendSystemPrompt: buildIntentAgentPrompt(getUiLang()),
       disallowedTools: INTENT_DISALLOWED_TOOLS,
-      mcpServers: createIntentMcpServer(workspacePath, broadcasts.broadcastIntents),
+      // In-process MCP for the CLAUDE path, bound per-run (runClaude supplies the
+      // live run id + signal). The project path + the SAME save-gate deps the
+      // codex/driver path uses are captured here. `save_intents`'s confirmation
+      // lives in the handler (`gatedSave`), so a vendor allow-rule that skips
+      // `canUseTool` still raises a human prompt — claude/codex share one gate.
+      bindInProcessMcp: (binding) =>
+        createIntentMcpServer(
+          { workspacePath, getRunId: binding.getRunId, signal: binding.signal },
+          {
+            emit,
+            waitForDecision,
+            broadcastIntents: broadcasts.broadcastIntents,
+            onPermissionRequest,
+          },
+        ),
       gate: 'intent' as const,
       // Driver-path (codex) intent tools over localhost HTTP MCP (2026-06-12-005).
       // runViaDriver binds this per-run and injects the descriptors; claude ignores
-      // it (it uses the in-process `mcpServers` above).
+      // it (it uses the in-process binder above).
       bindDriverMcp: (binding) => intentMcp.bind(binding),
     }),
     // Spec-authoring profile (write-confined gate + disallowed-tools lock + spec

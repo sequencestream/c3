@@ -156,24 +156,12 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
     if (gate === 'intent') {
       const decisionClass = classifyIntentTool(toolName)
       // Read-class built-ins + read-only c3 query tools (find/view) pass through.
+      // `save_intents` also passes through HERE — its confirmation gate lives in
+      // the save handler (codex-parity), so the handler is the single prompt
+      // point and a vendor allow-rule that bypasses this `canUseTool` still
+      // raises a human confirmation. Prompting here too would double-prompt.
       if (decisionClass === 'allow') {
         return allow(input)
-      }
-      if (decisionClass === 'confirm-save') {
-        spec.onPermissionRequest?.({
-          requestId,
-          toolName,
-          input,
-          sessionId: spec.sessionId(),
-          workspacePath: spec.cwd,
-          source: spec.source,
-        })
-        send({ type: 'permission_request', requestId, toolName, input })
-        const { decision } = await waitForDecision(requestId, signal)
-        if (decision === 'allow') {
-          return allow(input)
-        }
-        return deny('User denied in c3 UI')
       }
       // AskUserQuestion is a clarifying-only tool (no write/exec side effects),
       // so the read-only intent agent may use it. It needs the standard

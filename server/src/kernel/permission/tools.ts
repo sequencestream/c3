@@ -67,16 +67,20 @@ export const INTENT_READ_TOOLS = new Set([
  * Pure classification of a tool for the intent (read-only) gate, so the
  * routing is unit-testable (the live `canUseTool` closure is otherwise only
  * reachable via live-LLM e2e). Deny-by-default:
- *  - `allow` — read-class built-ins + the read-only c3 query tools (no prompt).
- *  - `confirm-save` — `save_intents` (raises a human confirmation).
+ *  - `allow` — read-class built-ins + the read-only c3 query tools (no prompt)
+ *    AND `save_intents`. Save no longer prompts HERE: its confirmation gate is
+ *    sunk into the save handler itself (codex-parity), so the handler is the
+ *    single confirmation point and a vendor allow-rule that bypasses
+ *    `canUseTool` still raises a human prompt. The gate must therefore let save
+ *    through to the handler.
  *  - `ask` — `AskUserQuestion` (clarifying-only; gate still applies the
  *    `askQuestions` input guard and routes via answer-injection).
  *  - `deny` — everything else.
  */
-export type IntentToolDecision = 'allow' | 'confirm-save' | 'ask' | 'deny'
+export type IntentToolDecision = 'allow' | 'ask' | 'deny'
 export function classifyIntentTool(toolName: string): IntentToolDecision {
   if (INTENT_READ_TOOLS.has(toolName) || INTENT_QUERY_TOOLS.has(toolName)) return 'allow'
-  if (toolName === SAVE_INTENTS_TOOL) return 'confirm-save'
+  if (toolName === SAVE_INTENTS_TOOL) return 'allow'
   if (toolName === 'AskUserQuestion') return 'ask'
   return 'deny'
 }

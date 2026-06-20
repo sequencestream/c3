@@ -48,7 +48,8 @@ Adopt options 2, 4, and 6 together.
   `KillShell` — plus **`Task`** and **`SlashCommand`** — the last two are essential because a
   sub-agent's tool calls bypass the parent `canUseTool`, and slash commands could trigger
   file-writing skills. On top of that, the `canUseTool` gate for this run **denies by default**:
-  read-class tools auto-allow, the save-intents MCP tool raises a confirmation,
+  read-class tools auto-allow, the save-intents MCP tool is **allowed through to its handler**
+  (the handler raises the confirmation itself — see "Saving" below),
   `AskUserQuestion` is allowed (routed via answer-injection — see below), everything else is
   denied — so even a future SDK write tool not in the disallow list is still blocked. The
   read-class auto-allow set includes, besides the read built-ins (`Read`/`Grep`/`Glob`/`LS`/…),
@@ -56,7 +57,7 @@ Adopt options 2, 4, and 6 together.
   `mcp__c3__view_intent`) — they only read the agent's **own** project ledger
   (project-bound when the tool is constructed, like the save tool), so they carry no write/exec
   side effect and need no confirmation. The gate's tool routing is a pure, unit-tested
-  classifier mapping each tool to allow / confirm-save / ask / deny.
+  classifier mapping each tool to allow / ask / deny.
 - **`AskUserQuestion` is allowed as an _interactive_, not a _write_, tool.** It only poses
   clarifying questions to the human and carries no file/exec/orchestration side effects, so letting
   the read-only agent ask the user does not violate the read-only posture — it is the same
@@ -66,20 +67,29 @@ Adopt options 2, 4, and 6 together.
   `permission_request` and, on allow, returns the input with the answers injected (deny on
   cancel). It runs **without consensus** (single agent, no voting party), and an empty/invalid
   question set falls through to the default deny.
-- **The communication run is forced to `permissionMode: 'default'`,** never inheriting the system
-  default mode. Under `bypassPermissions` the SDK does not call `canUseTool`, which would let
-  the save persist silently — unacceptable. `set_mode` is ignored for this run and the
-  UI shows no mode selector.
-- **Saving reuses the permission gateway.** The save-intents action (an in-process MCP tool,
-  `mcp__c3__save_intents`) flows through the existing `canUseTool` → `permission_request` /
-  `permission_response` path; the tool handler writes to the ledger only after the user allows,
-  and reports an error result to the agent on deny/failure.
+- **The communication run is forced to `permissionMode: 'default'`** (an _auxiliary_ constraint,
+  no longer the primary defence against silent persistence — see "Saving" below). `set_mode` is
+  ignored for this run and the UI shows no mode selector.
+- **The save confirmation lives in the save handler, not `canUseTool`.** The save-intents action
+  (an in-process MCP tool, `mcp__c3__save_intents`) was originally gated by `canUseTool` — but a
+  vendor's own permission-rule engine can _pre-approve_ a tool and thereby **skip `canUseTool`
+  entirely** (e.g. a user/project allow-rule matching `mcp__c3__save_intents`, or a non-`default`
+  permission mode). That made the confirmation bypassable and let a save persist silently. So the
+  confirmation gate is **sunk into the save handler itself**: the handler emits the same
+  `permission_request` wire frame, blocks on the user's decision, and persists only on `allow`.
+  Because the gate is now the handler's _single execution point_ — reached whenever the tool is
+  called, and vendor rules only decide _whether_ to call it — it is immune to every pre-approval
+  vector. This also **converges both vendors on one gate**: the codex/driver path (which calls the
+  intent tools over HTTP MCP, outside any `canUseTool`) already gated inside the handler, and the
+  claude in-process path now matches it. The intent gate therefore _allows_ save through to the
+  handler (no `confirm-save` branch); on deny/failure the handler reports an error result to the
+  agent and the ledger is untouched.
 - **The save tool is pinned resident (`alwaysLoad`).** The c3 in-process MCP server is built with
   `createSdkMcpServer({ alwaysLoad: true })`, which stamps `_meta['anthropic/alwaysLoad']` on each
   tool (≡ API `defer_loading: false`). Otherwise the harness's tool search defers the MCP tool, and
   the agent must `ToolSearch` the save-tool schema back before every save — an extra
   round-trip and token cost on the hot path. `alwaysLoad` only keeps the **schema** resident; it
-  does **not** bypass the gate — `canUseTool` still raises the human confirmation. The
+  does **not** bypass the gate — the save handler still raises the human confirmation. The
   blocks-startup-until-connected side effect of `alwaysLoad` is moot here: an in-process MCP server
   connects instantly. Scope is the intent agent only, since the c3 MCP server is built solely on
   the intent-agent launch path. The same server carries the two read-only query tools, which
@@ -114,11 +124,14 @@ Adopt options 2, 4, and 6 together.
 ## Compliance
 
 - The communication run MUST disallow write/exec/orchestration tools (incl. `Task`/`SlashCommand`),
-  apply the intent gate's deny-by-default, and run under `permissionMode: 'default'`. Reviewers
-  reject any path that lets it write, spawn a sub-agent, run a slash command, or run under a
-  non-`default` mode.
-- A intent MUST be persisted only inside the save-intents tool handler, after a human
-  allow. No code path may write the ledger to bypass that confirmation.
+  apply the intent gate's deny-by-default, and run under `permissionMode: 'default'` (an auxiliary
+  constraint — the save confirmation no longer depends on it). Reviewers reject any path that lets it
+  write, spawn a sub-agent, or run a slash command.
+- A intent MUST be persisted only inside the save-intents tool handler, after a human allow, and the
+  save confirmation MUST be raised **by that handler** (not solely by `canUseTool`), so a vendor
+  pre-approval that skips `canUseTool` still prompts. No code path may write the ledger to bypass that
+  confirmation, and the intent gate MUST NOT additionally prompt for save (it allows save through to
+  the handler — double-prompting is a regression). Both vendors MUST share this one handler-owned gate.
 - The read-only query tools MUST be project-bound when constructed (never trust a wire-supplied
   project) and MUST be auto-allowed by the gate without a confirmation; they are read-only and may
   not write the ledger. Reviewers reject any path that lets them read another project, or that turns

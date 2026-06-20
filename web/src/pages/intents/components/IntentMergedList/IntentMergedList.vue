@@ -122,6 +122,14 @@ function setFilter(value: string): void {
   filter.value = status
   emit('filter', status)
 }
+
+// ---- 「意图列表」标题栏的新建会话入口 ----
+// 复用既有「新建会话」动作:点击后切到 sessions tab(右栏随之打开聊天列),
+// 再触发与原「+」入口完全相同的 new-intent-session 事件,不引入第二套创建路径。
+function newSessionFromIntents(): void {
+  activeTab.value = 'sessions'
+  emit('new-intent-session')
+}
 </script>
 
 <template>
@@ -185,6 +193,17 @@ function setFilter(value: string): void {
             {{ f.label }}
           </option>
         </select>
+        <button
+          v-show="activeTab === 'intents'"
+          type="button"
+          class="req-new-btn"
+          :aria-label="t('intent.sessionList.new.tooltip')"
+          :title="t('intent.sessionList.new.tooltip')"
+          data-testid="intent-list-new-session"
+          @click="newSessionFromIntents"
+        >
+          +
+        </button>
         <button
           v-show="activeTab === 'sessions'"
           type="button"

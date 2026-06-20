@@ -80,7 +80,7 @@ function mountIntents(intents: Intent[]) {
       stubs: {
         MobileStack: MobileStackStub,
         IntentDetail: IntentDetailStub,
-        ChatColumn: { template: '<div />' },
+        ChatColumn: { template: '<div data-testid="chat-column" />' },
         IntentSessionList: { template: '<div />' },
       },
     },
@@ -129,5 +129,24 @@ describe('Intents.vue — default selected intent', () => {
     await nextTick()
 
     expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('done-p0')
+  })
+})
+
+describe('Intents.vue — new-session entry from the intent list', () => {
+  it('switches the right column to the chat session view when the intent-list entry creates a session', async () => {
+    const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])
+    await nextTick()
+
+    // On the intents tab the right column shows the intent detail.
+    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="chat-column"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="intent-list-new-session"]').trigger('click')
+    await nextTick()
+
+    // Reuses the create action and the right column switches to the chat session view.
+    expect(wrapper.emitted('new-intent-session')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="chat-column"]').exists()).toBe(true)
   })
 })

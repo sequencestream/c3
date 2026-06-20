@@ -75,6 +75,31 @@ describe('IntentMergedList.vue — segmented control', () => {
     expect(btn().attributes('style')).toBeUndefined()
   })
 
+  it('shows new-session entry on intents tab, hides on sessions tab', async () => {
+    const w = mountMerged()
+    const btn = () => w.find('[data-testid="intent-list-new-session"]')
+    // On intents tab (default), the new-session button is visible (no inline display:none)
+    expect(btn().exists()).toBe(true)
+    expect(btn().attributes('style')).toBeUndefined()
+
+    // Switch to sessions tab → hidden (v-show inline style), the sessions-tab "+" takes over
+    await w.find('[data-testid="tab-sessions"]').trigger('click')
+    expect(btn().attributes('style')).toContain('display: none')
+  })
+
+  it('intents-tab new-session entry matches the sessions-tab entry (icon + a11y)', async () => {
+    const w = mountMerged()
+    const listBtn = w.find('[data-testid="intent-list-new-session"]')
+    await w.find('[data-testid="tab-sessions"]').trigger('click')
+    const sessionBtn = w.find('[data-testid="intent-session-new"]')
+
+    // Same affordance: identical visible icon, class, aria-label and title.
+    expect(listBtn.text()).toBe(sessionBtn.text())
+    expect(listBtn.classes()).toEqual(sessionBtn.classes())
+    expect(listBtn.attributes('aria-label')).toBe(sessionBtn.attributes('aria-label'))
+    expect(listBtn.attributes('title')).toBe(sessionBtn.attributes('title'))
+  })
+
   it('shows auto-btn and filter on intents tab', () => {
     const w = mountMerged()
     // Default intents tab: both visible (v-show=true → no inline style)
@@ -99,6 +124,20 @@ describe('IntentMergedList.vue — event passthrough', () => {
     await w.find('[data-testid="intent-session-new"]').trigger('click')
 
     expect(w.emitted('new-intent-session')).toHaveLength(1)
+  })
+
+  it('intents-tab new-session entry creates a session and switches to sessions tab', async () => {
+    const w = mountMerged()
+    // Start on intents tab.
+    expect(w.find('[data-testid="tab-intents"]').attributes('aria-selected')).toBe('true')
+
+    await w.find('[data-testid="intent-list-new-session"]').trigger('click')
+
+    // Reuses the existing create action exactly once.
+    expect(w.emitted('new-intent-session')).toHaveLength(1)
+    // Left segmented control switches to the sessions view.
+    expect(w.find('[data-testid="tab-sessions"]').attributes('aria-selected')).toBe('true')
+    expect(w.find('[data-testid="tab-intents"]').attributes('aria-selected')).toBe('false')
   })
 
   it('exposes activeTab via defineExpose', () => {

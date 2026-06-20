@@ -24,7 +24,6 @@ import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeVersionInfo, versionDefines } from '../../../scripts/release/version-info.mjs'
-import { isHostRunnable } from '../../../scripts/release/targets.mjs'
 import { obfuscateStage, isObfuscationEnabled, decideFallback } from './obfuscate.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -171,14 +170,13 @@ export async function buildTarget({
     },
   }
 
-  // --bytecode: enabled on NATIVE host builds only (release 6/7). Cross-compile + bytecode
-  // segfaults (oven-sh/bun#18416), so we MUST keep it off when the target's bun target is not
-  // the host's. `isHostRunnable(target)` is the single gate — release.yml's matrix puts every
-  // target on its native OS runner, so each job turns bytecode on automatically.
-  const nativeBuild = isHostRunnable(friendly)
+  // --bytecode is intentionally OFF: it requires a CommonJS bundle, but our staged bundle is
+  // ESM, so `bun --compile --bytecode` produces a binary that aborts at startup with
+  // "Expected CommonJS module to have a function wrapper". Bytecode is only a startup-time
+  // perf cache (not anti-tamper), so we skip it rather than convert the bundle to CJS.
   console.log(
     `[build-target] target=${friendly} (${bunTarget}) harden=${harden} → ${out} ` +
-      `[v${info.version} ${info.commit}] bytecode=${nativeBuild ? 'on (native)' : 'off (cross-compile)'}`,
+      `[v${info.version} ${info.commit}] bytecode=off`,
   )
 
   // ── Phase 1: Bundle (release 7/7 split — was a single Bun.build compile call).
@@ -223,7 +221,7 @@ export async function buildTarget({
   //    and the manifest records what actually shipped for audit.
   let obfuscated = false
   let obfDurationMs = 0
-  if (isObfuscationEnabled()) {
+  if (harden === 'standard' || isObfuscationEnabled()) {
     const mapPath = resolve(defaultMapsDir(), `${friendly}.js.map`)
     const r = obfuscateStage({ inPath: stagePath, outPath: stagePath, mapPath })
     obfDurationMs = r.durationMs
@@ -253,8 +251,6 @@ export async function buildTarget({
   //    extra process per target is negligible at the 4-target scale.
   const compileArgs = ['build', stagePath, '--compile', `--target=${bunTarget}`, `--outfile=${out}`]
   if (tier.minify) compileArgs.push('--minify')
-  // --bytecode only on native host builds (cross-compile + bytecode segfaults, oven-sh/bun#18416).
-  if (nativeBuild) compileArgs.push('--bytecode')
   const compileRes = spawnSync(process.execPath, compileArgs, { encoding: 'utf-8' })
   if (compileRes.status !== 0) {
     console.error(compileRes.stderr || compileRes.stdout || '')

@@ -7,8 +7,7 @@
 >   artifact-level headless smoke + publish final check (5/7), the **P1 platform wave +
 >   Windows branches** — macOS-x64 + Windows-x64 in the matrix, Windows platform code paths
 >   (4/7), the **GH Actions native matrix** — workflow with `needs:` chain physically enforcing
->   the five-layer gate order, bytecode auto-on for native host builds (cross-compile kept off,
->   oven-sh/bun#18416), macOS ad-hoc codesign runs on darwin runners for real, SLSA provenance
+>   the five-layer gate order, macOS ad-hoc codesign runs on darwin runners for real, SLSA provenance
 >   (P1) via OIDC keyless, `macos-x64` promoted from P1 to P0 (6/7), the **standard
 >   obfuscation tier (7/7)** — `javascript-obfuscator` with string-array + identifier rename,
 >   e2e/smoke as logic-regression hard evidence, graceful fallback to bare compile on failure,
@@ -107,10 +106,11 @@ release-only (too heavy for every commit).
 
 The GH Actions release workflow executes the five-layer gate order on real
 GH Actions runners and uses `needs:` to **physically** enforce phase sequencing — a red
-upstream job skips every downstream job. This is what unlocks the bytecodes + macOS
-ad-hoc + SLSA gains (see "Bytecode on native" and "SLSA provenance" below): each target
-is built on its **native OS runner** (`ubuntu-latest` / `macos-14` / `macos-13` /
-`windows-latest`), so cross-compile is a non-issue and bytecode auto-turns on.
+upstream job skips every downstream job. This is what unlocks the macOS ad-hoc + SLSA
+gains (see "SLSA provenance" below): each target is built on its **native OS runner**
+(`ubuntu-latest` / `macos-14` / `macos-13` / `windows-latest`), so cross-compile is a
+non-issue. (Bytecode would also have been a native-only gain, but it is disabled — see
+"Bytecode — disabled" below.)
 
 ```text
 setup (ubuntu-latest)
@@ -168,20 +168,23 @@ Local `pnpm release` and CI share the **same node scripts** (`release:build`,
 `release:smoke`, `release:verify-dist`, `release:publish`) — the matrix is just a fan-out
 carrier, not a second implementation.
 
-## Bytecode on native (release 6/7)
+## Bytecode — disabled (ESM/CJS incompatibility)
 
-Bun `--bytecode` (Bun.build `bytecode: true`) pre-compiles JS to bytecode, shaving a few
-hundred ms off cold start and dropping memory peak. **It segfaults under cross-compile**
-(oven-sh/bun#18416), so it has to be off whenever the bun target is not the host's. A
-single host-runnable check inside the per-target build primitive decides it:
+Bun `--bytecode` pre-compiles JS to bytecode, shaving a few hundred ms off cold start. It
+is **disabled** on every target. Bun's bytecode path only accepts a **CommonJS** bundle,
+but our staged bundle is **ESM**, so `bun --compile --bytecode` produces a binary that
+aborts at startup with `TypeError: Expected CommonJS module to have a function wrapper`.
 
-- `bytecode: true` when the target's host = the build host (native).
-- `bytecode: false` otherwise (cross-compile safety belt, never the default-on path).
+Bytecode is only a startup-time perf cache — it is **not** anti-tamper and gives no
+anti-decompile value (the obfuscation tier is the protection layer). Rather than convert
+the whole bundle to CJS (risking Zod method-dispatch breakage and obfuscation regressions),
+we keep `--bytecode` off and accept the small cold-start cost. The per-target build log
+prints `bytecode=off` to make this explicit.
 
-The GH Actions matrix puts each target on its native OS runner, so every CI build is
-native and bytecode turns on automatically. The local `pnpm binary` quickcut also enables
-it when the host matches the target. The `bytecode: true|false` line in the per-target
-build log makes the decision explicit per build.
+> Note (release 6/7 history): the spec previously claimed bytecode auto-on for native host
+> builds, but the flag was never actually injected into the compile command — a latent
+> no-op. When it was finally wired in, it surfaced the ESM/CJS incompatibility above, so it
+> was disabled deliberately.
 
 ## SLSA provenance — P1 (release 6/7)
 
@@ -206,19 +209,15 @@ tighten the gate by requiring attestation presence in `verify-dist`.
 
 | Wave   | Target               | bun target         | bytecode | minify | Status                    |
 | ------ | -------------------- | ------------------ | -------- | ------ | ------------------------- |
-| **P0** | macOS-arm64          | `bun-darwin-arm64` | native ✓ | ✓      | live                      |
-| **P0** | macOS-x64 (Intel)    | `bun-darwin-x64`   | native ✓ | ✓      | live (promoted in 6/7)    |
-| **P0** | Linux-x64-glibc      | `bun-linux-x64`    | native ✓ | ✓      | live                      |
-| **P1** | Windows-x64          | `bun-windows-x64`  | native ✓ | ✓      | live — **⚠️experimental** |
+| **P0** | macOS-arm64          | `bun-darwin-arm64` | off      | ✓      | live                      |
+| **P0** | macOS-x64 (Intel)    | `bun-darwin-x64`   | off      | ✓      | live (promoted in 6/7)    |
+| **P0** | Linux-x64-glibc      | `bun-linux-x64`    | off      | ✓      | live                      |
+| **P1** | Windows-x64          | `bun-windows-x64`  | off      | ✓      | live — **⚠️experimental** |
 | later  | Linux-arm64, musl, … | _tbd_              | _tbd_    | _tbd_  | placeholder               |
 
-**`--bytecode`** is **enabled on NATIVE host builds** (release 6/7). Cross-compile + bytecode
-segfaults (oven-sh/bun#18416), so the per-target build primitive keeps the single gate
-`bytecode = host-runnable` — native → on, cross-compile → off. The matrix puts
-every target on its native OS runner, so every job turns bytecode on automatically; the
-local single-host `pnpm binary` quickcut also enables it when the host matches the target.
-`minify`/`sourcemap` are governed by the harden tier (see below), not hard-coded. CI and
-local share the same scripts.
+**`--bytecode`** is **off on every target** (ESM/CJS incompatibility — see "Bytecode —
+disabled" above). `minify`/`sourcemap` are governed by the harden tier (see below), not
+hard-coded. CI and local share the same scripts.
 
 **P0 vs P1 (release 4/7, refined 6/7).** P0 is the **required** set — `release:build`
 defaults to the full P0 matrix, and **publish gates on the selected P0 subset** (the publish
@@ -493,11 +492,11 @@ distinct from CI's `release:publish`, which cuts the Release **in the private so
 ## Commands
 
 ```bash
-pnpm release:build                                  # P0 matrix, parallel, harden=basic, +manifest, +bytecode(native)
+pnpm release:build                                  # P0 matrix, parallel, harden=basic, +manifest (bytecode off)
 pnpm release:build --targets=linux-x64              # subset
 pnpm release:build --harden=none                    # no minify/manifest (debug)
-RELEASE_HARDEN=standard pnpm release:build          # standard tier (release 7/7): bundle → javascript-obfuscator → compile
-                                                    #   (string-array + identifier rename; fallback = bare compile on failure)
+pnpm release:build --harden=standard                # standard tier (release 7/7): bundle → javascript-obfuscator → compile
+RELEASE_HARDEN=standard pnpm release:build          #   (env form, equivalent); string-array + identifier rename; fallback = bare compile on failure
 pnpm release:build --dry-run                        # print the plan, execute nothing
 pnpm release:sign                                    # SHA256SUMS + .sha256 + .minisig (reads manifest)
 pnpm release:notes                                   # release notes (version + top CHANGELOG section)
@@ -512,7 +511,7 @@ RELEASE_HARDEN=standard pnpm release                  # additionally forces `pnp
 pnpm e2e --obfuscated                                 # e2e against the obfuscated server bundle (requires standard build first)
 pnpm release                                          # gate → build(+smoke) → notes → publish (full)
 pnpm release:keygen                                   # mint a minisign keypair
-pnpm binary                                          # native single binary (self-use quickcut, bytecode auto on host match)
+pnpm binary                                          # native single binary (self-use quickcut, bytecode off)
 # Public mirror (private source → public binaries):
 # (first download a CI run's per-target artifacts to the local machine)
 pnpm publish:binaries --dry-run                        # rehearse public-mirror publish: plan only, no merge/sign/commit/gh
@@ -538,8 +537,8 @@ C-DOC-1, not by where they live:
 - **Pregate** — the strict-ordered source gate.
 - **Artifact smoke** — the headless artifact gate plus its free-port / version-assertion helpers.
 - **Publish gate** — the final manifest ↔ `SHA256SUMS` ↔ disk + required-target check.
-- **Single-target build primitive** — bundle → (obfuscate) → compile, the harden tiers, the
-  bytecode native-only gate, and ad-hoc codesign.
+- **Single-target build primitive** — bundle → (obfuscate) → compile, the harden tiers
+  (bytecode disabled — ESM/CJS), and ad-hoc codesign.
 - **Standard-tier obfuscation** — the staged obfuscation pass, the enable check, the fallback
   decision, and the locked (no-aggressive-options) configuration.
 - **Version source of truth** — version/commit/build-time resolution and the build-define values.

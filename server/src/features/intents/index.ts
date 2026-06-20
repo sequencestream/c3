@@ -83,7 +83,7 @@ import {
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush, createGhPr } from '../../git.js'
-import { createWorktree, readBranch } from './worktree.js'
+import { createWorktree, pullCurrentBranch, readBranch } from './worktree.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -788,8 +788,18 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       return
     }
   } else {
-    // current-branch: develop directly in the project checkout. Record the
-    // current branch so the intent's branch_name reflects where dev happens.
+    // current-branch: develop directly in the project checkout. Pull latest
+    // first so dev builds on up-to-date code; a diverged branch is a hard stop
+    // (the user must reconcile before we touch it).
+    const pull = pullCurrentBranch(proj)
+    if (!pull.ok) {
+      conn.send({
+        type: 'error',
+        error: { code: 'intent.pullFailed', params: { message: pull.message ?? '' } },
+      })
+      releaseClaim()
+      return
+    }
     effectiveCwd = proj
     const branch = readBranch(proj)
     if (branch) setBranchName(req.id, branch)

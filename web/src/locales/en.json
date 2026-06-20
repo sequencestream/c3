@@ -1370,6 +1370,7 @@
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
+      "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting development: {message}",
       "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",
       "specAgentUnsupported": "Spec authoring requires a Claude agent; the configured spec agent cannot confine writes to the spec directory.",
       "specWriteFailed": "Failed to create the spec document: {message}.",

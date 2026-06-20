@@ -362,11 +362,20 @@ route**, mounted on c3's own server (before the SPA catch-all, like the codex re
    `lastDevSessionId` (allowing relaunch; other states → `error`) (RM-R8).
 3. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the frontend
    second-confirms before sending in the manual path (RM-R11).
-4. Start a **background normal runtime** (`pending:`) via the launcher with prompt
+4. **Pull latest before launch** (2026-06-20) so the work session builds on up-to-date code:
+   - `worktree` mode: `git fetch` the base branch from the remote and root the worktree at
+     `<remote>/<base>` (via `git worktree add --no-track`), falling back to the local base branch
+     when there is no remote / the fetch fails. Synchronous — preserves the automation controller's
+     microtask timing contract. Fetch never merges, so this branch never blocks.
+   - `current-branch` mode: `git pull --ff-only` on the project checkout. No remote / no upstream /
+     offline ⇒ best-effort skip; a **diverged** branch (non-fast-forward) ⇒ hard stop returning a
+     pull-failed error (manual path: send error + release claim; automation: surfaced as an
+     automation failure). Never auto-merges / auto-rebases.
+5. Start a **background normal runtime** (`pending:`) via the launcher with prompt
    `[<devSkill> ]<title + content + dependency summary>` (the configurable development
    skill from system settings; empty by default ⇒ no skill prefix); on session bind,
    set last-dev-session + status `in_progress` + broadcast `intents` + broadcast statuses.
-5. The run is backgrounded and survives disconnect; the development session is a **normal**
+6. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.
 
 ## Automation orchestrator

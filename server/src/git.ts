@@ -189,6 +189,39 @@ function discoverSubRepos(root: string, maxDepth = 6): string[] {
  * `label` prefixes error reasons (empty for the project-root repo). A push failure
  * is a hard stop (work is committed locally but not shared).
  */
+/**
+ * Resolve the remote to push to: prefer `origin`, else the first configured
+ * remote, else null (no remote at all — caller treats that as a hard failure).
+ */
+async function resolveRemote(repo: string): Promise<string | null> {
+  const r = await git(repo, ['-C', repo, 'remote'])
+  if (r.code !== 0) return null
+  const remotes = r.stdout
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (remotes.length === 0) return null
+  return remotes.includes('origin') ? 'origin' : remotes[0]
+}
+
+/**
+ * Push `repo`'s current branch. A fresh `intent/*` branch (worktree- or
+ * current-branch-mode) has no configured upstream, so a bare `git push` fails
+ * with "has no upstream branch". We don't rely on the user's global
+ * `push.autoSetupRemote`: on that specific failure we retry with
+ * `git push -u <remote> HEAD`, which both pushes and sets the upstream. The
+ * happy path (upstream already set) is unchanged — bare push, no extra git call.
+ */
+async function pushRepo(repo: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  const push = await git(repo, ['-C', repo, 'push'])
+  if (push.code === 0) return push
+  const out = push.stderr || push.stdout
+  if (!/no upstream branch|has no upstream/i.test(out)) return push
+  const remote = await resolveRemote(repo)
+  if (!remote) return push
+  return git(repo, ['-C', repo, 'push', '-u', remote, 'HEAD'])
+}
+
 async function commitAndPushRepo(
   repo: string,
   message: string,
@@ -225,9 +258,9 @@ async function commitAndPushRepo(
     committed = true
   }
 
-  const push = await git(repo, ['-C', repo, 'push'])
-  // "Everything up-to-date" exits 0. A real failure (no upstream, rejected, auth)
-  // is a hard stop.
+  const push = await pushRepo(repo)
+  // "Everything up-to-date" exits 0. A real failure (rejected, auth) is a hard
+  // stop. A missing upstream is NOT one: pushRepo self-heals it (see below).
   if (push.code !== 0) {
     return {
       ok: false,

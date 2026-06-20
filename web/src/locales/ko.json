@@ -1371,6 +1371,7 @@
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "prCreateFailed": "PR 생성에 실패했습니다: {detail}。",
       "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。",
+      "pullFailed": "현재 브랜치가 원격과 분기되어 빨리 감기를 할 수 없습니다. 개발을 시작하기 전에 수동으로 동기화하세요: {message}",
       "dependencyNotMerged": "종속성 \"{title}\"({id})이(가) 아직 메인 브랜치에 병합되지 않았습니다.",
       "specAgentUnsupported": "spec 작성에는 Claude 에이전트가 필요합니다. 구성된 spec 에이전트는 쓰기를 spec 디렉터리 내로 제한할 수 없습니다.",
       "specWriteFailed": "spec 문서 생성에 실패했습니다: {message}。",

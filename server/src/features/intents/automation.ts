@@ -53,7 +53,13 @@ import {
   getGitBranchMode,
 } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
-import { createWorktree, getWorktreePath, readBranch, worktreeExists } from './worktree.js'
+import {
+  createWorktree,
+  getWorktreePath,
+  pullCurrentBranch,
+  readBranch,
+  worktreeExists,
+} from './worktree.js'
 
 // ---------------------------------------------------------------------------
 // Public types (unchanged)
@@ -445,6 +451,14 @@ class AutomationController {
       // Persist branch name immediately so the UI can show it.
       setBranchName(req.id, wt.branchName)
     } else {
+      // Pull latest before developing in place. A diverged branch throws here
+      // and is caught by _launchDevelopment → fail() (the user must reconcile).
+      const pull = pullCurrentBranch(this.workspacePath)
+      if (!pull.ok) {
+        throw new Error(
+          `当前分支已与远端分叉，无法 fast-forward，请先手动同步:\n${pull.message ?? ''}`,
+        )
+      }
       effectiveCwd = this.workspacePath
       const branch = readBranch(this.workspacePath)
       if (branch) setBranchName(req.id, branch)

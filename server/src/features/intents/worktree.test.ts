@@ -9,6 +9,7 @@ import {
   generateBranchName,
   getWorktreePath,
   projectDirName,
+  pullCurrentBranch,
   worktreeExists,
 } from './worktree.js'
 
@@ -24,6 +25,41 @@ function createGitRepo(dir: string): void {
   writeFileSync(join(dir, 'README.md'), '# test')
   execFileSync('git', ['add', '-A'], { cwd: dir, stdio: 'ignore' })
   execFileSync('git', ['commit', '-m', 'initial'], { cwd: dir, stdio: 'ignore' })
+}
+
+function gitOut(cwd: string, args: string[]): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim()
+}
+
+/**
+ * Give `repoDir` a bare `origin` and push its current branch with upstream
+ * tracking. Returns the bare remote path so a test can advance it independently.
+ */
+function attachBareRemote(repoDir: string): string {
+  const bare = mkdtempSync(join(tmpdir(), 'c3-wt-remote-'))
+  execFileSync('git', ['init', '--bare'], { cwd: bare, stdio: 'ignore' })
+  const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: repoDir, stdio: 'ignore' })
+  execFileSync('git', ['push', '-u', 'origin', branch], { cwd: repoDir, stdio: 'ignore' })
+  return bare
+}
+
+/**
+ * Push a fresh commit to `bare`'s `branch` from a throwaway clone, simulating
+ * another contributor advancing the remote. Returns the new remote tip sha.
+ */
+function advanceRemote(bare: string, branch: string): string {
+  const clone = mkdtempSync(join(tmpdir(), 'c3-wt-clone-'))
+  execFileSync('git', ['clone', bare, clone], { stdio: 'ignore' })
+  execFileSync('git', ['config', 'user.email', 'other@test'], { cwd: clone, stdio: 'ignore' })
+  execFileSync('git', ['config', 'user.name', 'Other'], { cwd: clone, stdio: 'ignore' })
+  writeFileSync(join(clone, 'REMOTE_ONLY.md'), 'remote')
+  execFileSync('git', ['add', '-A'], { cwd: clone, stdio: 'ignore' })
+  execFileSync('git', ['commit', '-m', 'remote commit'], { cwd: clone, stdio: 'ignore' })
+  execFileSync('git', ['push', 'origin', branch], { cwd: clone, stdio: 'ignore' })
+  const sha = gitOut(clone, ['rev-parse', 'HEAD'])
+  rmSync(clone, { recursive: true, force: true })
+  return sha
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +270,76 @@ describe('createWorktree', () => {
     } catch {
       // ignore
     }
+  })
+
+  it('roots the worktree at the FETCHED remote tip, not the stale local base (2026-06-20)', () => {
+    // origin is ahead of the local base branch. createWorktree must fetch and
+    // root the new worktree at origin/<base>, so the agent starts on latest code.
+    const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    const bare = attachBareRemote(repoDir)
+    const staleLocal = gitOut(repoDir, ['rev-parse', 'HEAD'])
+    const remoteTip = advanceRemote(bare, branch)
+    expect(remoteTip).not.toBe(staleLocal) // remote really moved ahead
+
+    const result = createWorktree(repoDir, INTENT_ID, 'Test feature', branch)
+    const wtSha = gitOut(result.worktreePath, ['rev-parse', 'HEAD'])
+    expect(wtSha).toBe(remoteTip)
+    // --no-track: the intent branch must NOT adopt origin/<base> as upstream, or
+    // a later bare `git push` would target <base>. No upstream → rev-parse @{u}
+    // exits non-zero (throws here).
+    expect(() =>
+      execFileSync('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], {
+        cwd: result.worktreePath,
+        stdio: 'ignore',
+      }),
+    ).toThrow()
+    rmSync(bare, { recursive: true, force: true })
+  })
+})
+
+describe('pullCurrentBranch', () => {
+  let repoDir: string
+
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), 'c3-pull-'))
+    createGitRepo(repoDir)
+  })
+
+  afterEach(() => {
+    rmSync(repoDir, { recursive: true, force: true })
+  })
+
+  it('skips (best-effort) when there is no remote', () => {
+    const res = pullCurrentBranch(repoDir)
+    expect(res).toEqual({ ok: true, skipped: true })
+  })
+
+  it('fast-forwards the current branch when the remote is ahead', () => {
+    const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    const bare = attachBareRemote(repoDir)
+    const remoteTip = advanceRemote(bare, branch)
+
+    const res = pullCurrentBranch(repoDir)
+    expect(res.ok).toBe(true)
+    expect(res.skipped).toBe(false)
+    expect(gitOut(repoDir, ['rev-parse', 'HEAD'])).toBe(remoteTip)
+    rmSync(bare, { recursive: true, force: true })
+  })
+
+  it('hard-stops (ok=false) when the local branch has diverged from the remote', () => {
+    const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    const bare = attachBareRemote(repoDir)
+    advanceRemote(bare, branch) // remote gains a commit
+    // Local gains a DIFFERENT commit on top of the shared base → divergence.
+    writeFileSync(join(repoDir, 'LOCAL_ONLY.md'), 'local')
+    execFileSync('git', ['add', '-A'], { cwd: repoDir, stdio: 'ignore' })
+    execFileSync('git', ['commit', '-m', 'local commit'], { cwd: repoDir, stdio: 'ignore' })
+
+    const res = pullCurrentBranch(repoDir)
+    expect(res.ok).toBe(false)
+    expect(res.skipped).toBe(false)
+    expect(res.message).toBeTruthy()
+    rmSync(bare, { recursive: true, force: true })
   })
 })
 

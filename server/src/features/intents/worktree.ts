@@ -159,6 +159,88 @@ export function detectDefaultBranch(workspacePath: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Pull / fetch the latest before a work session starts (2026-06-20)
+//
+// Rule: a work session must build on up-to-date code, INCLUDING worktrees.
+//  - worktree mode: fetch the base branch and root the new worktree at the
+//    just-fetched remote tip (see createWorktree → fetchBaseForWorktree).
+//  - current-branch mode: fast-forward the project checkout's current branch
+//    (see pullCurrentBranch).
+//
+// Failure policy (区分对待):
+//  - no remote / no upstream / offline → silently skip (best-effort): a
+//    local-only or offline workspace must still be able to start work.
+//  - local branch DIVERGED from upstream (non fast-forward) → HARD STOP: we
+//    never auto-merge or auto-rebase the user's branch; the caller refuses to
+//    start and tells the user to reconcile first.
+// All synchronous (execFileSync), same rationale as createWorktree.
+// ---------------------------------------------------------------------------
+
+/** Prefer `origin`, else the first configured remote, else null (no remote). */
+function resolveRemoteSync(workspacePath: string): string | null {
+  const r = execGit(workspacePath, ['remote'])
+  if (r.code !== 0) return null
+  const remotes = r.stdout
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (remotes.length === 0) return null
+  return remotes.includes('origin') ? 'origin' : remotes[0]
+}
+
+// Divergence markers that make a `git pull --ff-only` a HARD STOP (local has
+// commits the remote doesn't — getting latest can't be done cleanly).
+const DIVERGED_MARKERS = [
+  'not possible to fast-forward',
+  'non-fast-forward',
+  'diverged',
+  'divergent branches',
+]
+
+export interface PullResult {
+  /** false ONLY on divergence — the caller must refuse to start the session. */
+  ok: boolean
+  /** true when pull was skipped best-effort (no remote / upstream / offline). */
+  skipped: boolean
+  /** git output, populated when `!ok` (divergence) for surfacing to the user. */
+  message?: string
+}
+
+/**
+ * Fast-forward the project checkout's CURRENT branch so current-branch-mode
+ * development starts on up-to-date code. See the failure policy above.
+ */
+export function pullCurrentBranch(workspacePath: string): PullResult {
+  // No remote (or not a git repo / multi-repo root) → nothing to pull.
+  if (!resolveRemoteSync(workspacePath)) return { ok: true, skipped: true }
+  const res = execGit(workspacePath, ['pull', '--ff-only'])
+  if (res.code === 0) return { ok: true, skipped: false }
+  const out = (res.stderr || res.stdout).trim()
+  const hay = out.toLowerCase()
+  if (DIVERGED_MARKERS.some((m) => hay.includes(m))) {
+    return { ok: false, skipped: false, message: out }
+  }
+  // no upstream / offline / auth / unknown → best-effort skip (don't block).
+  return { ok: true, skipped: true, message: out }
+}
+
+/**
+ * Fetch `baseBranch` from the repo's remote so a worktree created off it starts
+ * at the LATEST remote commit. Returns the ref to root the new worktree at —
+ * `<remote>/<baseBranch>` on success, or `null` when there is no remote or the
+ * fetch fails (offline / branch missing), in which case the caller falls back
+ * to the LOCAL `baseBranch`. Fetch never merges, so it cannot diverge: there is
+ * nothing to hard-stop on here.
+ */
+function fetchBaseForWorktree(workspacePath: string, baseBranch: string): string | null {
+  const remote = resolveRemoteSync(workspacePath)
+  if (!remote) return null
+  const res = execGit(workspacePath, ['fetch', remote, baseBranch])
+  if (res.code !== 0) return null
+  return `${remote}/${baseBranch}`
+}
+
+// ---------------------------------------------------------------------------
 // Result type
 // ---------------------------------------------------------------------------
 
@@ -217,9 +299,24 @@ export function createWorktree(
 
   // Try `git worktree add -b` to create the branch. Root it at `baseBranch`
   // when provided (the workspace's default main branch), else at current HEAD.
-  const addArgs = ['worktree', 'add', '-b', branchName, worktreePath]
+  // To keep the worktree on LATEST code, fetch the base branch first and root
+  // at the just-fetched remote tip when a remote is available.
+  const addArgs = ['worktree', 'add', '-b', branchName]
   const base = baseBranch?.trim()
-  if (base) addArgs.push(base)
+  if (base) {
+    const remoteRef = fetchBaseForWorktree(workspacePath, base)
+    if (remoteRef) {
+      // Root at the just-fetched remote tip. `--no-track`: the intent branch
+      // must NOT inherit `<remote>/<base>` as upstream, or a later `git push`
+      // would target `<base>` (push.default=simple refuses on the name mismatch
+      // → hard stop). The intent branch sets its own upstream on first push.
+      addArgs.push('--no-track', worktreePath, remoteRef)
+    } else {
+      addArgs.push(worktreePath, base) // no remote / offline → local base
+    }
+  } else {
+    addArgs.push(worktreePath) // no base → current HEAD
+  }
   const res = execGit(workspacePath, addArgs)
 
   if (res.code === 0) {

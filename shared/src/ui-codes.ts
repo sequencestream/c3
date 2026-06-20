@@ -78,6 +78,10 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.worktreeCreateFailed',
     params: ['message'],
   },
+  'intent.pullFailed': {
+    key: 'error.intent.pullFailed',
+    params: ['message'],
+  },
   'intent.dependencyNotMerged': {
     key: 'error.intent.dependencyNotMerged',
     params: ['title', 'id'],

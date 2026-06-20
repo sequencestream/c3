@@ -1371,6 +1371,7 @@
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
+      "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。開発を開始する前に手動で同期してください: {message}",
       "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。",
       "specAgentUnsupported": "spec の作成には Claude エージェントが必要です。設定された spec エージェントは書き込みを spec ディレクトリ内に制限できません。",
       "specWriteFailed": "spec ドキュメントの作成に失敗しました: {message}。",

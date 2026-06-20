@@ -151,6 +151,22 @@ describe('commitAndPush — repository discovery & per-repo commit', () => {
     expect(lastCommitMsg(broken)).toBe('feat: 需求标题')
   })
 
+  it('a fresh branch with no upstream self-heals: push sets upstream and succeeds', async () => {
+    // Repo HAS a remote, but the current branch is a fresh `intent/*` branch with
+    // no configured upstream — exactly what automation creates. A bare `git push`
+    // would fail "has no upstream branch"; commitAndPush must recover with -u.
+    initRepo(work, 'root')
+    run('git', ['-C', work, 'checkout', '-q', '-b', 'intent/0643a7aa-workcenter'], work)
+    writeFileSync(join(work, 'feature.ts'), 'export const f = 1\n')
+
+    const res = await commitAndPush(work, 'feat: 需求标题')
+
+    expect(res.ok).toBe(true)
+    expect(res.committed).toBe(true)
+    expect(lastCommitMsg(work)).toBe('feat: 需求标题')
+    expect(aheadCount(work)).toBe(0) // upstream now set, commit reached the remote
+  })
+
   it('a pre-commit hook lint failure is classified failure: commit-hook (self-heal eligible)', async () => {
     initRepo(work, 'root')
     // A pre-commit hook that fails like a lint hook would (eslint output, non-zero).

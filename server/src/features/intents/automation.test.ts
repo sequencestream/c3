@@ -34,6 +34,7 @@ vi.mock('./worktree.js', () => ({
   getWorktreePath: vi.fn(),
   worktreeExists: vi.fn(),
   readBranch: vi.fn(() => 'main'),
+  pullCurrentBranch: vi.fn(() => ({ ok: true, skipped: true })),
 }))
 
 vi.mock('../../runs.js', () => ({

@@ -44,6 +44,7 @@ import {
 import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper, sandboxEnvFilePath } from '../sandbox/SandboxLauncher.js'
 import { agentErrorEvent } from './agent-events.js'
+import { driverModelPrompt, type RunInject } from './prompt-delivery.js'
 import { buildChildEnv } from '../infra/child-env.js'
 import {
   bindPending,
@@ -259,15 +260,22 @@ export async function runViaDriver(
   /** Images attached to this turn — the codex driver writes them to temp files
    *  and passes each as a `--image` path (2026-06-16). Omit ⇒ a text-only turn. */
   images?: PromptImage[],
+  /**
+   * Non-visible delivery channels for this turn (hide-session-system-instructions):
+   * `systemInstruction` (a work run's SDD contract) and `userTurnPrefix` (a
+   * slash-command dev skill). Codex has no separate system role, so both are folded
+   * ahead of the user turn in the model prompt — yet the client echo below still
+   * carries `prompt` (visible) alone (HS-R6).
+   */
+  inject?: RunInject,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
 
-  // Prepend the intent system prompt to the driver prompt so the model
-  // receives the comm-agent instructions (read-only gate, intent task).
-  const effectivePrompt = intentProfile
-    ? `${intentProfile.appendSystemPrompt}\n\n${prompt}`
-    : prompt
+  // Fold the model-only text (the intent comm-agent role for an intent run, or a
+  // work run's SDD instruct + slash-command dev skill) ahead of the visible turn so
+  // the model receives it, while the client echo stays the visible body alone.
+  const effectivePrompt = driverModelPrompt(prompt, intentProfile?.appendSystemPrompt, inject)
 
   emit(runId, { type: 'user_text', text: prompt })
 

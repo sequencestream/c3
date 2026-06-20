@@ -812,7 +812,10 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // itself in current-branch mode).
   const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'session')
   devRt.effectiveCwd = effectiveCwd
-  const devPrompt = buildDevPrompt({
+  // Split the first turn into its delivery channels: the SDD work contract rides the
+  // system channel, a slash-command dev skill leads the (non-echoed) model user turn,
+  // and only the visible business context is echoed (hide-session-system-instructions).
+  const devParts = buildDevPrompt({
     title: req.title,
     content: req.content,
     dependsOn: req.dependsOn,
@@ -825,15 +828,20 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // (ADR-0018 resident subs model).
   registerPendingDevLink(devId, req.id)
   try {
-    void ctx.launchRun(devRt, devPrompt).catch((err: unknown) => {
-      clearPendingDevLink(devId)
-      releaseClaim()
-      console.warn(
-        `[c3:intents] start_development launch failed before bind: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      )
-    })
+    void ctx
+      .launchRun(devRt, devParts.visible, undefined, {
+        systemInstruction: devParts.systemInstruction,
+        userTurnPrefix: devParts.userTurnPrefix,
+      })
+      .catch((err: unknown) => {
+        clearPendingDevLink(devId)
+        releaseClaim()
+        console.warn(
+          `[c3:intents] start_development launch failed before bind: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      })
   } catch (err) {
     clearPendingDevLink(devId)
     releaseClaim()

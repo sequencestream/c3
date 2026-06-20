@@ -83,6 +83,7 @@ export interface KernelContext {
     rt: SessionRuntime,
     prompt: string,
     images?: import('@ccc/shared/protocol').PromptImage[],
+    inject?: import('./run/prompt-delivery.js').RunInject,
   ) => Promise<void>
 
   // ── broadcasts (transport-owned in spirit; slice 2/3b folds them into a single

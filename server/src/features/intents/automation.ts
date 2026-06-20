@@ -76,7 +76,14 @@ export interface DevTurnResult {
 export interface RunDevTurnInput {
   workspacePath: string
   sessionId: string | null
+  /** The visible turn text echoed to the client (intent body / `continue` / fix note). */
   prompt: string
+  /**
+   * A slash-command dev skill (e.g. `/dev `) to lead the MODEL user turn on the
+   * launch turn; never echoed (hide-session-system-instructions). Omitted on
+   * continuation / fix turns and when no devSkill is configured.
+   */
+  userTurnPrefix?: string
   intentId: string
   signal: AbortSignal
   attach?: boolean
@@ -403,6 +410,9 @@ class AutomationController {
     }
 
     // Resumable (existing dev session on disk) or fresh (todo or dangling).
+    // A configured devSkill is a slash command → it leads the (non-echoed) model
+    // user turn via `userTurnPrefix`, not the visible prompt
+    // (hide-session-system-instructions).
     const skill = getDevSkill(this.workspacePath)
     const skillPrefix = skill ? `${skill} ` : ''
     const dependencyNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
@@ -482,11 +492,12 @@ class AutomationController {
     rt.effectiveCwd = effectiveCwd
     registerPendingDevLink(pendingId, req.id)
 
-    const prompt = `${skillPrefix}${req.title}\n\n${req.content}${dependencyNote}`
+    const prompt = `${req.title}\n\n${req.content}${dependencyNote}`
     void this.hooks.runDevTurn({
       workspacePath: this.workspacePath,
       sessionId: pendingId,
       prompt,
+      ...(skillPrefix ? { userTurnPrefix: skillPrefix } : {}),
       intentId: req.id,
       signal: this.abort.signal,
       onAwaitingPermission: (a) => this.setAwaiting(a),

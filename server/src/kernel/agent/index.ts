@@ -188,8 +188,18 @@ export interface RunOptions {
    * record a non-blocking `status: 'auto'` WaitUserInvolveEvent for auditability.
    */
   onConsensusResolved?: (ctx: ConsensusAutoCtx) => void
-  /** In-process MCP servers to expose (e.g. the c3 `save_intents` tool). */
-  mcpServers?: Record<string, McpServerConfig>
+  /**
+   * Bind the in-process MCP server (the c3 intent tools) to THIS run. Called at
+   * query construction with the live run id getter + abort signal; the project
+   * path + gate deps are captured at the composition root. The `save_intents`
+   * handler runs its OWN confirmation gate (`gatedSave`), so a vendor allow-rule
+   * that pre-approves the tool — and therefore skips `canUseTool` — still raises a
+   * human prompt. Absent ⇒ no in-process MCP (non-intent runs).
+   */
+  bindInProcessMcp?: (binding: {
+    getRunId: () => string
+    signal: AbortSignal
+  }) => Record<string, McpServerConfig>
   /**
    * Permission gateway policy. `standard` (default) is the normal c3 flow
    * (consensus + human prompt). `intent` is the read-only communication
@@ -489,7 +499,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     currentAgentId,
     appendSystemPrompt,
     disallowedTools,
-    mcpServers,
+    bindInProcessMcp,
     gate = 'standard',
     specDir,
     skillWriteGuard,
@@ -537,6 +547,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   const input = new InputStream()
   input.push(prompt, images)
 
+  // Bind the in-process intent MCP server to THIS run (intent comm agent only).
+  // The binder is supplied by the composition root with the project path + gate
+  // deps; we supply the live run-id getter + abort signal at query-construction
+  // time. `save_intents`'s confirmation gate lives in its handler (`gatedSave`),
+  // not `canUseTool`, so it is immune to vendor pre-approval.
+  const inProcessMcpServers = bindInProcessMcp?.({
+    getRunId: opts.sessionId ?? (() => ''),
+    signal,
+  })
+
   // When sandbox is active, wrap the vendor binary to run inside the container
   const claudePath = opts.sandboxHandle
     ? createSandboxWrapper(
@@ -582,8 +602,13 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // Hard tool lock (the comm agent's read-only set). Disabling here also
       // blocks harness-internal invocations the gateway never sees.
       ...(disallowedTools ? { disallowedTools } : {}),
-      // In-process MCP servers (e.g. the c3 `save_intents` tool).
-      ...(mcpServers ? { mcpServers } : {}),
+      // In-process MCP servers (the c3 intent tools). Bound to THIS run here:
+      // `getRunId` reads the live id (`opts.sessionId`, the SAME getter the
+      // gateway routes permission frames through, so a pending→real rebind lands
+      // the save confirmation on the bound session); `signal` default-denies on
+      // user stop. The save handler runs its own confirmation gate, so a vendor
+      // allow-rule that skips `canUseTool` still raises a human prompt.
+      ...(inProcessMcpServers ? { mcpServers: inProcessMcpServers } : {}),
       permissionMode,
       // Required by the SDK to permit switching into 'bypassPermissions' at any
       // point (start or via setPermissionMode). c3 remains the permission UI.

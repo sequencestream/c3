@@ -21,7 +21,7 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 | SQLite driver adapter       | Shared cross-runtime adapter (Node vs Bun built-in SQLite); minimal synchronous API (also used by the discussion store)       |
 | Ledger operations           | Intent CRUD, dependency aggregation, communication-session map                                                                |
 | Communication system prompt | Read-only analyst prompt, injected as an appended system prompt                                                               |
-| `c3` MCP tools              | Exposes `save_intents` (confirmed-save) + read-only `find_intents` / `view_intent` (RM-R19)                                   |
+| `c3` MCP tools              | Exposes `save_intents` (handler-gated confirmation) + read-only `find_intents` / `view_intent` (RM-R19)                       |
 | Run variant                 | The run loop gains appended-system-prompt / disallowed-tools / MCP-servers / gate options; a tool-less one-shot for the judge |
 | Runtime kind + launcher     | A run kind (`session` or `intent`) on the runtime; a shared launcher                                                          |
 | WS branches + orchestration | Eight new message branches; communication-session viewer management; dev-turn helper + automation broadcast                   |
@@ -160,21 +160,25 @@ add-column through the shared adapter (RM-R14).
 
 ## Read-only communication session (ADR 0007)
 
-- **Forced `default` mode (RM-R3).** The communication runtime is started in
+- **Forced `default` mode (RM-R3, auxiliary).** The communication runtime is started in
   `default` permission mode and does **not** inherit the system default mode; `set_mode` is
-  ignored for the intent kind and the view renders no mode selector. Under
-  `bypassPermissions` the SDK skips the permission gate, which would silently save — forbidden.
+  ignored for the intent kind and the view renders no mode selector. This is now an _auxiliary_
+  constraint: it does **not** carry the silent-save defence on its own. A vendor allow-rule can
+  pre-approve `save_intents` and skip the permission gate even under `default` mode, so the save
+  confirmation is enforced **inside the save handler** instead (see "Save confirmation in the
+  handler" below) — immune to every pre-approval vector.
 - **Double-locked read-only (RM-R2).** The hard-disabled tool list blocks
   Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand.
   Task and SlashCommand are essential: a spawned sub-agent's tool calls bypass the parent
   permission gate, and slash commands could trigger writing skills. On top of that the
   intent gate **denies by default**, routed by a pure, exported tool classifier
-  → `allow` | `confirm-save` | `ask` | `deny` (unit-tested, since the live closure is otherwise
+  → `allow` | `ask` | `deny` (unit-tested, since the live closure is otherwise
   e2e-only): read-class tools
   (Read / Grep / Glob / LS / NotebookRead / WebFetch / WebSearch / TaskCreate / TaskList / TaskUpdate / TaskGet) **and**
   the two read-only c3 query tools (`find_intents` / `view_intent`, RM-R19) → `allow` (auto-allow,
-  no prompt — they only read the agent's own project ledger); `save_intents` → `confirm-save` (raises
-  a `permission_request`); `AskUserQuestion` → `ask`. `AskUserQuestion` is an **interactive
+  no prompt — they only read the agent's own project ledger); `save_intents` → `allow` **through to
+  its handler** (the handler raises the confirmation itself — see "Save confirmation in the handler";
+  the gate must not prompt for save, or it would double-prompt); `AskUserQuestion` → `ask`. `AskUserQuestion` is an **interactive
   (clarifying-only) tool, not a write tool** — it has no file/exec side effects, so the read-only
   agent may use it. It is therefore **kept out of the hard-disabled list** and **allowed but routed via
   user-answer injection** — send a `permission_request`, await the user decision, on allow return
@@ -306,13 +310,27 @@ in place — upsert, RM-R20; omit to insert) and an optional `module`
 the intra-batch dependency to fill when items have先后关系); both flow through to
 the upsert, which resolves the indexes against the full batch (RM-R17). The tool's top-level
 description tells the agent to use `id` for refine-in-place and `dependsOnIndexes` for intra-batch
-order so the orchestrator sequences correctly. The handler runs **only after** the human confirmation
-(the gateway already allowed); it writes via the store's upsert (insert or in-place update per
+order so the orchestrator sequences correctly. The handler **runs the confirmation gate itself**
+(emit `permission_request`, block on the decision, persist only on `allow` — see "Save confirmation
+in the handler"); on allow it writes via the store's upsert (insert or in-place update per
 item id) and broadcasts an `intents` refresh, returning a text result that notes the insert/update
 split (or an error text on db-unavailable / failure — incl. an immutable-status or unknown / cross-project
-update id rejecting the whole batch — so the agent learns it did not save). The workspace is
-closed over from the runtime's resolved workspace and re-bound each run, so the tool never
-crosses projects.
+update id rejecting the whole batch — so the agent learns it did not save). The handler binding —
+project path, **live** run-id getter, and abort signal — is supplied per run (the run-id getter and
+signal are constructed at query time, where they exist; the project path is closed over from the
+runtime's resolved workspace), so the tool never crosses projects and routes the confirmation to the
+bound session.
+
+**Save confirmation in the handler (immune to vendor pre-approval).** Originally the claude path
+gated save in `canUseTool`. But a vendor's permission-rule engine can _pre-approve_ a tool and skip
+`canUseTool` entirely (a user/project allow-rule matching `mcp__c3__save_intents`, or a non-`default`
+mode), which let a save persist silently. So the confirmation is **sunk into the save handler** — its
+single execution point, reached whenever the tool is called, which vendor rules cannot bypass (they
+only decide _whether_ to call it). This converges **both vendors on one gate**: the codex/driver path
+(calling the tools over HTTP MCP, outside any `canUseTool`) already gated in the handler, and the
+claude in-process path now matches it. The intent gate therefore allows save straight through (no
+`confirm-save` branch, no second prompt). On non-`default` modes / allow-rules the handler still
+prompts; on deny / cancel / abort it returns a「未落库」result and never touches the store.
 
 The three tools' shapes, descriptions, and core logic live in ONE source, consumed by both MCP
 surfaces (the in-process SDK MCP here and the HTTP MCP below) so they never drift.
@@ -341,15 +359,17 @@ route**, mounted on c3's own server (before the SPA catch-all, like the codex re
   neither read nor write another project's ledger. The binding is evicted at run end.
 - **Loopback-only.** A defence-in-depth guard rejects non-loopback peers (403) on top of c3's
   localhost bind; an unknown/expired token is 404 (Constitution localhost-only / deny-by-default).
-- **Save gate (driver path).** Codex calls the tool outside any c3 permission gate, so the gate lives
-  in the save handler: it emits the SAME `permission_request` frame the
-  claude path uses (the `save_intents` tool name plus the proposed intents), blocks on the decision,
-  and persists only on `allow`. `find_intents`/`view_intent` are auto-allowed (read-only). A deny /
-  aborted run never reaches the store.
+- **Save gate (shared by both vendors).** The save confirmation lives **in the save handler**, the
+  one gate both surfaces share: it emits the same `permission_request` frame (the `save_intents` tool
+  name plus the proposed intents), blocks on the decision, and persists only on `allow`.
+  `find_intents`/`view_intent` are auto-allowed (read-only). A deny / aborted run never reaches the
+  store. Codex must gate here because it calls the tool outside any c3 `canUseTool`; the claude
+  in-process path now gates here too, so a vendor pre-approval that skips `canUseTool` still prompts.
 - **Driver translation.** The neutral remote-MCP descriptor (type, url, optional bearer-token env
   var) is translated by the codex driver to the streamable-HTTP MCP form it writes.
-- **Claude unchanged.** The claude path still uses the in-process MCP servers and ignores
-  the token URL — a later intent must design its isolation, not relax the per-project guard.
+- **Claude isolation.** The claude path still uses the in-process MCP server (now bound per run with
+  the same gate deps) and ignores the token URL — a later intent must design its isolation, not relax
+  the per-project guard.
 
 ## Launch development (`start_development`)
 

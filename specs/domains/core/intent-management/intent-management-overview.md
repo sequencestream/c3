@@ -8,7 +8,8 @@
 - **Status:** active
 - **Depends on:** `agent-session` (runs the communication agent as a `intent`-kind
   runtime, launches development runs, and runs the one-shot completion judge); `permission-gateway`
-  (gates `save_intents` via the existing `canUseTool` flow); `session-registry` (hides
+  (reuses the `permission_request` transport for the save confirmation — raised by the save handler,
+  not `canUseTool`, so a vendor pre-approval can't bypass it); `session-registry` (hides
   communication sessions from the normal session list); a local SQLite store at `~/.c3/c3.db`; the
   local `git` CLI (the automation orchestrator commits & pushes on a verified completion).
 - **Depended on by:** `web-console` (renders the intent view: list + communication chat +

@@ -59,6 +59,22 @@ function getSaveHandler(servers: Record<string, McpServerConfig>): Handler {
   return c3.instance._registeredTools.save_intents.handler
 }
 
+/** Build the c3 server with a save gate that auto-allows (post-confirmation path). */
+function mkServer(
+  workspacePath: string,
+  onSaved: (p: string) => void = () => {},
+): Record<string, McpServerConfig> {
+  return createIntentMcpServer(
+    { workspacePath, getRunId: () => 'run-1', signal: new AbortController().signal },
+    {
+      emit: () => {},
+      waitForDecision: async () => ({ decision: 'allow' }),
+      broadcastIntents: onSaved,
+      onPermissionRequest: () => {},
+    },
+  )
+}
+
 describe('module field — fresh-schema create (scenario 1)', () => {
   it('a brand-new db gets a intents.module column declared NOT NULL DEFAULT ""', () => {
     // Scenario 1 / design §3.1: first store access on a fresh db runs SCHEMA, so
@@ -164,7 +180,7 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
     // Scenario 3: the agent (post-confirmation) submits modules; each saved row's
     // module must equal what was given, readable via listIntents.
     const onSaved = vi.fn()
-    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const handler = getSaveHandler(mkServer(proj, onSaved))
     const res = await handler(
       {
         intents: [
@@ -197,7 +213,7 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
   it('persists "" for items that OMIT module, while siblings keep theirs (mixed batch)', async () => {
     // Scenario 4: a mixed batch where one item omits module must not error; the
     // omitted one falls back to '' end-to-end through the registered handler.
-    const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
+    const handler = getSaveHandler(mkServer(proj))
     const res = await handler(
       {
         intents: [

@@ -59,24 +59,16 @@ describe('intent gate — read-only, deny-by-default', () => {
     expect((out as { message: string }).message).toMatch(/read-only/)
   })
 
-  it('routes save_intents to a human prompt, then honours the allow', async () => {
+  it('lets save_intents through without a gate prompt (the handler owns the confirmation)', async () => {
+    // The save confirmation is sunk into the save handler (`gatedSave`, codex-parity),
+    // so the gate ALLOWS save through to reach it — emitting NO permission_request of
+    // its own. A vendor allow-rule that bypasses this `canUseTool` therefore still hits
+    // the handler's prompt, and the gate can't double-prompt.
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(spec({ send: (m) => sent.push(m) }))
-    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never)
-    // The gateway emitted a permission_request — answer it from the "browser".
-    const req = sent.find((m) => m.type === 'permission_request')
-    expect(req).toBeDefined()
-    if (req && req.type === 'permission_request') resolveDecision(req.requestId, 'allow')
-    expect(await p).toMatchObject({ behavior: 'allow' })
-  })
-
-  it('denies save_intents when the human declines', async () => {
-    const sent: ServerToClient[] = []
-    const gate = createCanUseTool(spec({ send: (m) => sent.push(m) }))
-    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never)
-    const req = sent.find((m) => m.type === 'permission_request')
-    if (req && req.type === 'permission_request') resolveDecision(req.requestId, 'deny')
-    expect(await p).toMatchObject({ behavior: 'deny' })
+    const out = await gate('mcp__c3__save_intents', { items: [] }, {} as never)
+    expect(out).toMatchObject({ behavior: 'allow' })
+    expect(sent.find((m) => m.type === 'permission_request')).toBeUndefined()
   })
 })
 
@@ -141,15 +133,11 @@ describe('spec gate — write-confined, deny-by-default', () => {
 describe('C-SEC — permission verdicts are NOT persisted (no-persist)', () => {
   it('a full allow + deny + save flow never writes to disk', async () => {
     const writeFile = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {})
-    const sent: ServerToClient[] = []
-    const gate = createCanUseTool(spec({ send: (m) => sent.push(m) }))
+    const gate = createCanUseTool(spec())
 
     await gate('Read', { file_path: '/a' }, {} as never) // allow
     await gate('Bash', { command: 'x' }, {} as never) // deny
-    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never) // prompt
-    const req = sent.find((m) => m.type === 'permission_request')
-    if (req && req.type === 'permission_request') resolveDecision(req.requestId, 'allow')
-    await p
+    await gate('mcp__c3__save_intents', { items: [] }, {} as never) // allow through to handler
 
     // The verdict path is entirely in-memory: no settings-style fs write happened.
     expect(writeFile).not.toHaveBeenCalled()
@@ -159,26 +147,20 @@ describe('C-SEC — permission verdicts are NOT persisted (no-persist)', () => {
 describe('onPermissionRequest callback', () => {
   // ── Intent gate tests (no consensus dependency) ──
 
-  it('calls callback on intent-gate confirm-save (#1, #8)', async () => {
+  it('does NOT call callback on intent-gate save (the handler owns that prompt now)', async () => {
+    // Save's confirmation — and its WorkCenter `onPermissionRequest` registration —
+    // moved into the save handler (`gatedSave`). The gate now allows save straight
+    // through, so it must NOT emit a permission_request or fire the callback here
+    // (doing so would double-register the WaitUserInvolveEvent and double-prompt).
     const onPermissionRequest = vi.fn()
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(
       spec({ gate: 'intent', send: (m) => sent.push(m), onPermissionRequest }),
     )
-    const p = gate('mcp__c3__save_intents', { items: [] }, {} as never)
-    const req = sent.find((m) => m.type === 'permission_request')
-    expect(req).toBeDefined()
-    if (req?.type === 'permission_request') resolveDecision(req.requestId, 'allow')
-    await p
-    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
-    expect(onPermissionRequest).toHaveBeenCalledWith({
-      requestId: expect.any(String),
-      toolName: 'mcp__c3__save_intents',
-      input: { items: [] },
-      sessionId: '',
-      workspacePath: '/tmp',
-      source: 'intent',
-    })
+    const out = await gate('mcp__c3__save_intents', { items: [] }, {} as never)
+    expect(out).toMatchObject({ behavior: 'allow' })
+    expect(sent.find((m) => m.type === 'permission_request')).toBeUndefined()
+    expect(onPermissionRequest).not.toHaveBeenCalled()
   })
 
   it('calls callback on intent-gate AskUserQuestion with source intent (#3)', async () => {

@@ -64,8 +64,20 @@ import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 export interface IntentProfile {
   appendSystemPrompt: string
   disallowedTools: string[]
-  /** In-process SDK MCP servers — the CLAUDE path (`createSdkMcpServer`). */
-  mcpServers: Record<string, McpServerConfig>
+  /**
+   * Bind the in-process SDK MCP server — the CLAUDE path twin of
+   * {@link bindDriverMcp}. The three intent tools' run-level binding (live run id
+   * + abort signal) does not exist at profile-build time, so the composition root
+   * returns a binder instead of a pre-built server: `runClaude` calls it at query
+   * construction with `opts.sessionId` / `signal`. The project path + gate deps
+   * (emit / waitForDecision / broadcast / WorkCenter hook) are captured at the
+   * root. `save_intents`'s confirmation gate lives in its handler (`gatedSave`),
+   * so a vendor allow-rule that skips `canUseTool` still raises a human prompt.
+   */
+  bindInProcessMcp: (binding: {
+    getRunId: () => string
+    signal: AbortSignal
+  }) => Record<string, McpServerConfig>
   gate: 'intent'
   /**
    * Driver-path remote MCP (2026-06-12-005). Codex can't load in-process

@@ -2,9 +2,12 @@
  * The in-process MCP tools the `c3` server exposes to the intent-
  * communication agent:
  *  - `save_intents` (write): the agent submits a batch of proposed
- *    intents; the c3 permission gate (see `claude.ts`) intercepts and asks
- *    the user to confirm. Reaching the handler therefore means the user already
- *    allowed it — the handler just persists and broadcasts.
+ *    intents; the save handler runs its OWN confirmation gate (`gatedSave`):
+ *    it emits a `permission_request`, blocks on the user's decision, and only
+ *    persists on `allow`. This gate lives in the HANDLER — not the SDK's
+ *    `canUseTool` — so a vendor allow-rule that pre-approves the tool (and
+ *    therefore skips `canUseTool`) still raises the confirmation. This mirrors
+ *    the codex/driver path (`save-gate.ts`); both vendors converge on one gate.
  *  - `find_intents` / `view_intent` (read-only): let the agent search
  *    the project ledger and inspect one item so it can discover related work,
  *    avoid duplicates, and set `dependsOn` correctly. The gate auto-allows these
@@ -17,17 +20,19 @@
  */
 // C-SEC exception (annotated): this DEFINES an in-process MCP tool (the
 // `save_intents` server) handed to the kernel run loop — it does not run an
-// agent or mint a permission verdict. The tool's invocations still pass through
-// the intent gate in `kernel/permission` (classifyIntentTool ⇒ confirm-save).
+// agent or mint a permission verdict. `save_intents` invocations are gated by
+// the save handler's own `gatedSave` (emit permission_request + waitForDecision);
+// the intent gate in `kernel/permission` now lets save through (classifyIntentTool
+// ⇒ allow) so the handler is the single confirmation point.
 // eslint-disable-next-line no-restricted-imports
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import { gatedSave, type SaveGateBinding, type SaveGateDeps } from './save-gate.js'
 import {
   findDesc,
   findSchema,
   runFind,
-  runSaveConfirmed,
   runView,
   saveDesc,
   saveSchema,
@@ -39,25 +44,28 @@ import {
 } from './tool-defs.js'
 
 /**
- * Build the `c3` MCP server carrying `save_intents`, bound to one project.
+ * Build the `c3` MCP server carrying `save_intents`, bound to ONE run.
  *
- * `workspacePath` is captured in the closure so the agent can't redirect the save
- * to another project; `onSaved` lets the server broadcast the refreshed list
- * (the tool stays decoupled from connection state). Re-construct per run so the
- * binding always matches the current comm runtime's workspace.
+ * `binding.workspacePath` is captured so the agent can't redirect the save to
+ * another project; `binding.getRunId` reads the LIVE run id so a pending→real
+ * rebind routes the confirmation frame to the bound session; `binding.signal`
+ * default-denies on user stop. `deps` carries the confirmation gate's
+ * dependencies (emit / waitForDecision / broadcast / WorkCenter hook), injected
+ * at the composition root. Re-bind per run so the gate always targets the live
+ * comm runtime — the binding (run id + signal) does not exist at profile-build
+ * time, only once the run starts.
  */
 export function createIntentMcpServer(
-  workspacePath: string,
-  onSaved: (workspacePath: string) => void,
+  binding: SaveGateBinding,
+  deps: SaveGateDeps,
 ): Record<string, McpServerConfig> {
-  // The three tools delegate to the shared core (`tool-defs.ts`). The save gate on
-  // THIS (Claude) path is the SDK's `canUseTool` (classifyIntentTool ⇒ confirm-save),
-  // so reaching `saveHandler` means the user already confirmed — it just persists.
-  // Spread into a fresh literal: the SDK's `tool()` result type carries an index
-  // signature, which a named interface (`IntentToolResult`) is not assignable to.
-  const saveHandler = async (args: SaveArgs) => ({
-    ...runSaveConfirmed(workspacePath, args, onSaved),
-  })
+  const { workspacePath } = binding
+  // `save_intents` runs the shared confirmation gate (`gatedSave`) — the SAME one
+  // the codex/driver path uses — so reaching persistence requires the user's OK,
+  // and a vendor pre-approval that skips `canUseTool` cannot bypass it. find/view
+  // stay read-only. Spread into a fresh literal: the SDK's `tool()` result type
+  // carries an index signature, which a named interface is not assignable to.
+  const saveHandler = async (args: SaveArgs) => ({ ...(await gatedSave(deps, binding, args)) })
   const findHandler = async (args: FindArgs) => ({ ...runFind(workspacePath, args) })
   const viewHandler = async (args: ViewArgs) => ({ ...runView(workspacePath, args) })
 

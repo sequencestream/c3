@@ -1,10 +1,14 @@
 /**
  * Integration tests for the `save_intents` MCP tool handler (US-4).
  *
- * The handler is reached only AFTER the intent gate (claude.ts) has already
- * obtained the user's confirmation, so these tests exercise the post-confirmation
- * contract directly: persist via the store, notify via `onSaved`, and return a
- * `CallToolResult` (with `isError` on failure / db-unavailable).
+ * The handler now owns its confirmation gate (`gatedSave`): it emits a
+ * `permission_request`, blocks on the user's decision, and persists only on
+ * `allow`. The persistence tests use {@link mkServer} (an auto-allow gate) to
+ * exercise the post-confirmation contract — persist via the store, notify via
+ * `broadcastIntents`, return a `CallToolResult` (with `isError` on failure /
+ * db-unavailable). A separate block drives the gate itself (allow / deny /
+ * ordering), proving the handler is the single confirmation point and therefore
+ * immune to a vendor allow-rule that would skip `canUseTool`.
  *
  * We drive the real handler the SDK registered (`instance._registeredTools`),
  * not a re-implementation, so the test fails if the tool's wiring changes.
@@ -48,6 +52,29 @@ function getSaveHandler(servers: Record<string, McpServerConfig>): Handler {
   return getHandler(servers, 'save_intents')
 }
 
+/**
+ * Build the c3 server with a save gate that auto-ALLOWS — the post-confirmation
+ * path the persistence tests exercise. `onSaved` maps to the gate's
+ * `broadcastIntents` (the refresh callback), so the existing assertions about the
+ * broadcast firing with the project path stay valid. The save handler now runs
+ * `gatedSave` itself (codex-parity), so a confirmed save needs `waitForDecision`
+ * to resolve `allow`.
+ */
+function mkServer(
+  workspacePath: string,
+  onSaved: (p: string) => void = () => {},
+): Record<string, McpServerConfig> {
+  return createIntentMcpServer(
+    { workspacePath, getRunId: () => 'run-1', signal: new AbortController().signal },
+    {
+      emit: () => {},
+      waitForDecision: async () => ({ decision: 'allow' }),
+      broadcastIntents: onSaved,
+      onPermissionRequest: () => {},
+    },
+  )
+}
+
 const proj = '/abs/save-tool-proj'
 let dir: string
 
@@ -67,7 +94,7 @@ afterEach(() => {
 describe('save_intents tool handler', () => {
   it('exposes the tool on the c3 server (mcp__c3__save_intents)', () => {
     // AC-4.1: the agent submits via a tool named save_intents on server `c3`.
-    const servers = createIntentMcpServer(proj, () => {})
+    const servers = mkServer(proj)
     expect(Object.keys(servers)).toEqual(['c3'])
     const c3 = servers.c3 as unknown as {
       name: string
@@ -83,7 +110,7 @@ describe('save_intents tool handler', () => {
     // `_meta['anthropic/alwaysLoad'] = true` on each registered tool (≡ API
     // `defer_loading: false`), keeping the schema in the turn-1 prompt. Asserting
     // the meta — not just the tool's existence — guards the deferral behaviour.
-    const servers = createIntentMcpServer(proj, () => {})
+    const servers = mkServer(proj)
     const c3 = servers.c3 as unknown as {
       instance: { _registeredTools: Record<string, { _meta?: Record<string, unknown> }> }
     }
@@ -96,7 +123,7 @@ describe('save_intents tool handler', () => {
     // AC-4.3 / AC-4.4: reaching the handler == user allowed; rows land as `todo`,
     // scoped to the project; onSaved fires so the server can broadcast a refresh.
     const onSaved = vi.fn()
-    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const handler = getSaveHandler(mkServer(proj, onSaved))
 
     const res = await handler(
       {
@@ -132,7 +159,7 @@ describe('save_intents tool handler', () => {
   it('resolves intra-batch dependsOnIndexes to the sibling real id through the handler', async () => {
     // RM-R17: an item can reference a sibling in the same batch by 0-based index;
     // the handler (via insertIntents) resolves it to that sibling's minted id.
-    const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
+    const handler = getSaveHandler(mkServer(proj))
     const res = await handler(
       {
         intents: [
@@ -159,7 +186,7 @@ describe('save_intents tool handler', () => {
     // A cyclic / out-of-range index makes insertIntents throw; the handler catches
     // it and reports a保存失败 so the agent learns nothing was written (atomic reject).
     const onSaved = vi.fn()
-    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const handler = getSaveHandler(mkServer(proj, onSaved))
     const res = await handler(
       {
         intents: [
@@ -181,7 +208,7 @@ describe('save_intents tool handler', () => {
     const [r] = insertIntents(proj, [
       { title: 'old', shortEnTitle: 'auto', content: 'before', priority: 'P2' },
     ])
-    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const handler = getSaveHandler(mkServer(proj, onSaved))
     const res = await handler(
       {
         intents: [
@@ -203,7 +230,7 @@ describe('save_intents tool handler', () => {
       { title: 'c', shortEnTitle: 'auto', content: 'x', priority: 'P0' },
     ])
     updateStatus(r.id, 'cancelled')
-    const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
+    const handler = getSaveHandler(mkServer(proj))
     const res = await handler(
       { intents: [{ id: r.id, title: 'c2', shortEnTitle: 'auto', content: 'y', priority: 'P0' }] },
       {},
@@ -221,7 +248,7 @@ describe('save_intents tool handler', () => {
       { title: 'locked', shortEnTitle: 'auto', content: 'orig', priority: 'P0' },
     ])
     updateStatus(r.id, 'in_progress')
-    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const handler = getSaveHandler(mkServer(proj, onSaved))
     const res = await handler(
       {
         intents: [
@@ -241,7 +268,7 @@ describe('save_intents tool handler', () => {
   it('returns isError without persisting for an unknown / cross-project id', async () => {
     // AC-4: a foreign or non-existent id rejects the whole batch.
     const onSaved = vi.fn()
-    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const handler = getSaveHandler(mkServer(proj, onSaved))
     const res = await handler(
       { intents: [{ id: 'ghost', title: 'x', shortEnTitle: 'auto', content: '', priority: 'P0' }] },
       {},
@@ -257,7 +284,7 @@ describe('save_intents tool handler', () => {
     const [r] = insertIntents(proj, [
       { title: 'base', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
-    const handler = getSaveHandler(createIntentMcpServer(proj, () => {}))
+    const handler = getSaveHandler(mkServer(proj))
     const res = await handler(
       {
         intents: [
@@ -283,8 +310,8 @@ describe('save_intents tool handler', () => {
   it('binds to the closure project path, not a wire-supplied one (no cross-project save)', async () => {
     // Design R6 / §4.5: workspacePath is captured in the closure so the agent can't
     // redirect the save elsewhere. Two servers for two projects stay isolated.
-    const handlerA = getSaveHandler(createIntentMcpServer('/abs/proj-a', () => {}))
-    const handlerB = getSaveHandler(createIntentMcpServer('/abs/proj-b', () => {}))
+    const handlerA = getSaveHandler(mkServer('/abs/proj-a'))
+    const handlerB = getSaveHandler(mkServer('/abs/proj-b'))
     await handlerA(
       { intents: [{ title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' }] },
       {},
@@ -305,7 +332,7 @@ describe('save_intents tool handler', () => {
     // Point at a path under a non-directory so open/mkdir fails ⇒ db unavailable.
     process.env.C3_DB_PATH = '/dev/null/cannot/c3.db'
     const onSaved = vi.fn()
-    const handler = getSaveHandler(createIntentMcpServer(proj, onSaved))
+    const handler = getSaveHandler(mkServer(proj, onSaved))
     const res = await handler(
       { intents: [{ title: 'X', shortEnTitle: 'auto', content: '', priority: 'P0' }] },
       {},
@@ -316,9 +343,99 @@ describe('save_intents tool handler', () => {
   })
 })
 
+describe('save_intents confirmation gate (handler-owned, vendor-preApproval-immune)', () => {
+  /** Build the c3 server with explicit gate deps so the gate flow is observable. */
+  function gatedServer(deps: {
+    emit?: (runId: string, frame: { type: string }) => void
+    decision: 'allow' | 'deny'
+    broadcastIntents?: (p: string) => void
+    onPermissionRequest?: () => void
+    onDecide?: () => void
+  }): Record<string, McpServerConfig> {
+    return createIntentMcpServer(
+      { workspacePath: proj, getRunId: () => 'run-gate', signal: new AbortController().signal },
+      {
+        emit: (deps.emit ?? (() => {})) as never,
+        waitForDecision: async () => {
+          deps.onDecide?.()
+          return { decision: deps.decision }
+        },
+        broadcastIntents: deps.broadcastIntents ?? (() => {}),
+        onPermissionRequest: deps.onPermissionRequest,
+      },
+    )
+  }
+
+  const oneIntent = { intents: [{ title: 'X', shortEnTitle: 'auto', content: '', priority: 'P0' }] }
+
+  it('runs the gate inside the handler — proving the handler is the SINGLE gate (no canUseTool involved)', async () => {
+    // The handler is invoked DIRECTLY here (no SDK `canUseTool` in the loop), the
+    // exact shape of a vendor pre-approval that skips `canUseTool`. It must STILL
+    // raise the confirmation: a `permission_request` is emitted before persistence.
+    let emittedRequest = false
+    const broadcast = vi.fn()
+    const handler = getSaveHandler(
+      gatedServer({
+        decision: 'allow',
+        broadcastIntents: broadcast,
+        emit: (_runId, frame) => {
+          if (frame.type === 'permission_request') emittedRequest = true
+        },
+      }),
+    )
+    const res = await handler(oneIntent, {})
+    expect(emittedRequest).toBe(true)
+    expect(res.isError).toBeFalsy()
+    expect(broadcast).toHaveBeenCalledWith(proj)
+    expect(listIntents(proj)).toHaveLength(1)
+  })
+
+  it('a DENY decision persists nothing and tells the agent it was not saved', async () => {
+    // AC: cancel / close / reject all resolve to a non-allow decision ⇒ zero store
+    // writes, no broadcast, and a "not saved" result the agent can read.
+    const broadcast = vi.fn()
+    let emittedRequest = false
+    const handler = getSaveHandler(
+      gatedServer({
+        decision: 'deny',
+        broadcastIntents: broadcast,
+        emit: (_runId, frame) => {
+          if (frame.type === 'permission_request') emittedRequest = true
+        },
+      }),
+    )
+    const res = await handler(oneIntent, {})
+    expect(emittedRequest).toBe(true) // still confirmed — the gate ran
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0].text).toContain('未落库')
+    expect(broadcast).not.toHaveBeenCalled()
+    expect(listIntents(proj)).toEqual([])
+  })
+
+  it('fires the WorkCenter hook BEFORE the wire frame, and decides BEFORE persisting', async () => {
+    // Ordering invariant (claude-parity with the codex gate): onPermissionRequest →
+    // permission_request → waitForDecision → store, so the save lands in the
+    // pending-items panel and nothing persists until the user decides.
+    const seq: string[] = []
+    const handler = getSaveHandler(
+      gatedServer({
+        decision: 'allow',
+        onPermissionRequest: () => seq.push('onPermissionRequest'),
+        emit: (_runId, frame) => {
+          if (frame.type === 'permission_request') seq.push('emit')
+        },
+        onDecide: () => seq.push('decide'),
+        broadcastIntents: () => seq.push('store'),
+      }),
+    )
+    await handler(oneIntent, {})
+    expect(seq).toEqual(['onPermissionRequest', 'emit', 'decide', 'store'])
+  })
+})
+
 describe('read-only query tool handlers (find_intents / view_intent)', () => {
   it('registers both query tools on the c3 server, marked always-load', () => {
-    const servers = createIntentMcpServer(proj, () => {})
+    const servers = mkServer(proj)
     const c3 = servers.c3 as unknown as {
       instance: {
         _registeredTools: Record<string, { _meta?: Record<string, unknown> }>
@@ -348,10 +465,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
       },
       { title: '导出报表', shortEnTitle: 'auto', content: 'csv', priority: 'P2' },
     ])
-    const find = getHandler(
-      createIntentMcpServer(proj, () => {}),
-      'find_intents',
-    )
+    const find = getHandler(mkServer(proj), 'find_intents')
     const res = await find({ keyword: '鉴权' }, {})
     expect(res.isError).toBeFalsy()
     // the text carries a JSON array; parse the slim rows out of it
@@ -372,10 +486,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
 
   it('find_intents reports a friendly empty result when nothing matches', async () => {
     insertIntents(proj, [{ title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' }])
-    const find = getHandler(
-      createIntentMcpServer(proj, () => {}),
-      'find_intents',
-    )
+    const find = getHandler(mkServer(proj), 'find_intents')
     const res = await find({ keyword: 'zzz' }, {})
     expect(res.isError).toBeFalsy()
     expect(res.content[0].text).toContain('未找到')
@@ -388,10 +499,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
     insertIntents('/abs/proj-b', [
       { title: 'BOnly', shortEnTitle: 'auto', content: 'shared', priority: 'P0' },
     ])
-    const findA = getHandler(
-      createIntentMcpServer('/abs/proj-a', () => {}),
-      'find_intents',
-    )
+    const findA = getHandler(mkServer('/abs/proj-a'), 'find_intents')
     const res = await findA({ keyword: 'shared' }, {})
     expect(res.content[0].text).toContain('AOnly')
     expect(res.content[0].text).not.toContain('BOnly')
@@ -407,10 +515,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
         dependsOn: ['ext'],
       },
     ])
-    const view = getHandler(
-      createIntentMcpServer(proj, () => {}),
-      'view_intent',
-    )
+    const view = getHandler(mkServer(proj), 'view_intent')
     const res = await view({ id: r.id }, {})
     expect(res.isError).toBeFalsy()
     const detail = JSON.parse(res.content[0].text) as Record<string, unknown>
@@ -420,10 +525,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
   })
 
   it('view_intent gives a friendly (non-error) prompt for an unknown id', async () => {
-    const view = getHandler(
-      createIntentMcpServer(proj, () => {}),
-      'view_intent',
-    )
+    const view = getHandler(mkServer(proj), 'view_intent')
     const res = await view({ id: 'does-not-exist' }, {})
     expect(res.isError).toBeFalsy()
     expect(res.content[0].text).toContain('未找到')
@@ -434,10 +536,7 @@ describe('read-only query tool handlers (find_intents / view_intent)', () => {
     const [other] = insertIntents('/abs/proj-b', [
       { title: 'Secret', shortEnTitle: 'auto', content: 's', priority: 'P0' },
     ])
-    const view = getHandler(
-      createIntentMcpServer('/abs/proj-a', () => {}),
-      'view_intent',
-    )
+    const view = getHandler(mkServer('/abs/proj-a'), 'view_intent')
     const res = await view({ id: other.id }, {})
     // exists in the ledger, but not in proj-a → not found (no cross-project leak)
     expect(res.content[0].text).toContain('未找到')

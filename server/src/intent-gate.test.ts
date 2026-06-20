@@ -121,8 +121,12 @@ describe('intent gate — classifyIntentTool (deny-by-default routing)', () => {
     expect(classifyIntentTool(VIEW_INTENT_TOOL)).toBe('allow')
   })
 
-  it('routes save_intents to a human confirmation', () => {
-    expect(classifyIntentTool(SAVE_INTENTS_TOOL)).toBe('confirm-save')
+  it('lets save_intents through to its handler (the handler owns the confirmation gate)', () => {
+    // The save confirmation no longer lives in `canUseTool`: it is sunk into the
+    // save handler (`gatedSave`, codex-parity), so the gate must ALLOW save through
+    // to reach it. A vendor allow-rule that bypasses `canUseTool` therefore still
+    // hits the handler's prompt — and routing 'confirm-save' here would double-prompt.
+    expect(classifyIntentTool(SAVE_INTENTS_TOOL)).toBe('allow')
   })
 
   it('routes AskUserQuestion to the answer-injection (ask) path', () => {

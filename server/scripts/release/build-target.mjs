@@ -189,10 +189,17 @@ export async function buildTarget({
   const stagePath = resolve(stageDir, `${friendly}.js`)
   const resultPath = resolve(stageDir, `${friendly}.result.json`)
 
+  // The stage bundle is intentionally NOT minified here. Re-running `bun build
+  // --compile` (Phase 3) over an already-minified single file mangles Zod's
+  // method dispatch and produces a binary that throws `e5 is not a function` at
+  // startup. Minification is deferred to the compile step (Phase 3), which works
+  // correctly on readable input — and obfuscation (Phase 2) is more reliable on
+  // readable code too. tier.minify still governs whether the final binary is
+  // minified, just at compile time instead of bundle time.
   const bundleResult = await Bun.build({
     entrypoints: [entry],
     target: bunTarget,
-    minify: tier.minify,
+    minify: false,
     sourcemap: tier.sourcemap,
     define: versionDefines(info),
     plugins: [redirectStub],
@@ -245,6 +252,7 @@ export async function buildTarget({
   //    with no package.json context); the CLI is explicit, debuggable, and one
   //    extra process per target is negligible at the 4-target scale.
   const compileArgs = ['build', stagePath, '--compile', `--target=${bunTarget}`, `--outfile=${out}`]
+  if (tier.minify) compileArgs.push('--minify')
   const compileRes = spawnSync(process.execPath, compileArgs, { encoding: 'utf-8' })
   if (compileRes.status !== 0) {
     console.error(compileRes.stderr || compileRes.stdout || '')

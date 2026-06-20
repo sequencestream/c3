@@ -236,7 +236,13 @@ describe('startDevelopment — manual start dep merge validation', () => {
   }
 
   it('worktree: blocks manual start when dep is done but not merged', async () => {
-    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing', title: 'Dep A' })
+    const dep = makeIntent({
+      id: 'A',
+      status: 'done',
+      prStatus: 'reviewing',
+      branchName: 'intent/A',
+      title: 'Dep A',
+    })
     const req = makeIntent({ id: 'B', title: 'Child B', dependsOn: ['A'] })
     vi.mocked(hasWorkspace).mockReturnValue(true)
     vi.mocked(getIntent).mockImplementation((id: string) => {

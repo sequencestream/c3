@@ -62,8 +62,16 @@ flowchart TD
    `<c3 home>/specs/<project-path-segment>` (per project, shared by all the project's worktrees;
    not user-configurable, not in Git), `<spec-root>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`,
    where `<slug>` derives from the intent's `shortEnTitle` (falling back to the intent id prefix)
-   and `<NNN>` is a per-day sequence. It seeds `spec.md` and backfills the intent's spec path
+   and `<NNN>` is a per-day sequence. It seeds a **minimal** `spec.md` (frontmatter + title +
+   a link back to the intent, no section skeleton) and backfills the intent's spec path
    (the **absolute** centralized location) immediately, so the spec exists even if the run fails.
+   Content positioning: the **intent already carries the requirements** (Why / What / Acceptance /
+   Non-goals), so the spec does **not** restate them — it is a **grounded design/solution document**.
+   Its value is the layer the intent cannot reach: it reads the real codebase and lays out the
+   solution approach, the affected surfaces / contracts, edge cases & error handling, the intent's
+   acceptance **sharpened into concrete testable criteria**, and the test strategy. The recommended
+   structure rides the spec agent's system prompt and is **adapted to the change's size** (not a
+   rigid template); a non-governance per-change spec may name concrete modules / files / contracts.
 2. **intent-management → agent-session.** A **write-confined spec session** is launched on the
    configured spec agent (`specAgentId`). Its sole job is to **write the spec, not change code**:
    writes are limited to the spec directory (any other project path is denied; the rest is

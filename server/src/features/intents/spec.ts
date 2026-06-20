@@ -41,6 +41,12 @@ function errMsg(err: unknown): string {
  * The seed `spec.md` the server writes before launching the agent, so a spec
  * file (and the backfilled `spec_path`) exists even if the agent run errors
  * before producing output. The agent overwrites it with the real spec.
+ *
+ * Deliberately MINIMAL — frontmatter + title + a link back to the originating
+ * intent, no pre-baked section skeleton. The recommended spec structure lives in
+ * the spec agent's system prompt (`buildSpecAgentPrompt`) so the agent can tailor
+ * it to the change's size instead of forcing every intent into a fixed set of
+ * empty headings (which only invited verbatim restatement of the intent).
  */
 export function buildSeedSpec(intent: Intent, nowIso: string): string {
   return `---
@@ -52,36 +58,20 @@ created: ${nowIso}
 
 # Spec: ${intent.title}
 
-> Generated from intent \`${intent.id}\`. This document is the single source of
-> truth for this change. Describe WHAT and WHY — do not write implementation code.
+> The single source of truth for this change, derived from intent \`${intent.id}\`.
+> The intent already carries the requirements (Why / What / Acceptance / Non-goals);
+> this spec grounds them against the real codebase and lays out the solution.
 
-## Intent
-
-${intent.content}
-
-## Scope
-
-TODO
-
-## Requirements
-
-TODO
-
-## Acceptance Criteria
-
-TODO
-
-## Out of Scope
-
-TODO
+_(to be authored)_
 `
 }
 
 /**
  * The per-run VISIBLE prompt that kicks off the spec session — intent body +
- * deliverable file only. The spec-authoring contract (Spec is Truth, the five-
- * dimension self-check, the write-confinement, ask-via-tool) is an internal system
- * instruction delivered via the spec agent's system prompt (`buildSpecAgentPrompt`),
+ * deliverable file only. The spec-authoring contract (don't restate the intent,
+ * ground the solution against the codebase, the self-check, the write-confinement,
+ * ask-via-tool) is an internal system instruction delivered via the spec agent's
+ * system prompt (`buildSpecAgentPrompt`),
  * not restated here, so it never renders as a visible user message
  * (hide-session-system-instructions).
  */

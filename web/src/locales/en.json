@@ -1658,7 +1658,7 @@
         "title": {
           "label": "Spec directory"
         },
-        "hint": "Fixed, centralized location where this project's specs are stored (~/.c3/specs/<project>). Shared by every worktree of the project and read-only — it cannot be changed here or via the API. Not committed to Git."
+        "hint": "Fixed, centralized location where this project's specs are stored (~/.c3/specs/[project]). Shared by every worktree of the project and read-only — it cannot be changed here or via the API. Not committed to Git."
       }
     },
     "consensus": {

@@ -13,6 +13,7 @@ import {
 import { applyTaskEvent, emptyTaskModel } from '@/lib/task-list'
 import { advanceOnFailure, resolveAgentIndex } from '@/lib/agent-prefix'
 import { activeSessionTitleFromSessions } from '@/lib/session-title-sync'
+import { mergeSessionPage, type SessionWindow } from '@/lib/session-page'
 import { applyLocale, setStoredLocale, i18n, type LocaleKey } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
@@ -42,6 +43,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     detectedMainBranch,
     currentWorkspace,
     sessionsByWorkspace,
+    sessionPagingByWorkspace,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -205,26 +207,53 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'session_status':
         ctx.applyStatuses(msg.statuses)
         break
-      case 'sessions':
-        sessionsByWorkspace.value = {
-          ...sessionsByWorkspace.value,
-          [msg.workspaceId]: msg.sessions,
+      case 'sessions': {
+        const path = msg.workspaceId
+        const kind = msg.page?.kind ?? 'first'
+        const hasMore = msg.page?.hasMore ?? false
+        const prevPaging = sessionPagingByWorkspace.value[path]
+        const prevList = sessionsByWorkspace.value[path]
+        const prevWindow: SessionWindow | undefined = prevList
+          ? {
+              sessions: prevList,
+              hasMore: prevPaging?.hasMore ?? false,
+              exhausted: prevPaging?.exhausted ?? false,
+            }
+          : undefined
+        // For a `window` refresh, the boundary to keep loaded-more rows below is
+        // the `since` we recorded when sending it (SR-R14).
+        const since = kind === 'window' ? prevPaging?.pendingSince : undefined
+        const merged = mergeSessionPage(prevWindow, msg.sessions, { kind, hasMore, since })
+        // `merged` is undefined only for a `live` push into a not-yet-loaded
+        // workspace — ignore it (the list loads on demand).
+        if (merged) {
+          sessionsByWorkspace.value = { ...sessionsByWorkspace.value, [path]: merged.sessions }
+          sessionPagingByWorkspace.value = {
+            ...sessionPagingByWorkspace.value,
+            [path]: {
+              hasMore: merged.hasMore,
+              exhausted: merged.exhausted,
+              loadingMore: false,
+              pendingSince: undefined,
+            },
+          }
+          activeTitle.value =
+            activeSessionTitleFromSessions({
+              activeWorkspace: activeWorkspace.value,
+              activeSession: activeSession.value,
+              workspacePath: path,
+              sessions: merged.sessions,
+            }) ?? activeTitle.value
         }
-        activeTitle.value =
-          activeSessionTitleFromSessions({
-            activeWorkspace: activeWorkspace.value,
-            activeSession: activeSession.value,
-            workspacePath: msg.workspaceId,
-            sessions: msg.sessions,
-          }) ?? activeTitle.value
         // A workspace switch cleared the chat column and flagged a pending re-bind.
-        // Now that the new workspace's session list has landed, bind its first
-        // session (or stay empty when it has none).
-        if (ctx.flags.pendingConsoleBind && msg.workspaceId === currentWorkspace.value) {
+        // Bind the first session once the new workspace's list has landed — but
+        // not on a `live` fan-out push (it may precede the full first page).
+        if (kind !== 'live' && ctx.flags.pendingConsoleBind && path === currentWorkspace.value) {
           ctx.flags.pendingConsoleBind = false
           if (activeTab.value === 'console') ctx.bindConsoleSession()
         }
         break
+      }
       case 'session_selected':
         activeWorkspace.value = msg.workspaceId
         activeSession.value = msg.sessionId

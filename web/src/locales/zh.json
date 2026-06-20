@@ -874,6 +874,9 @@
         "label": "▾ 更多",
         "tooltip": "显示更多会话"
       },
+      "exhausted": {
+        "label": "已加载完"
+      },
       "deleteConfirm": "删除该会话及其转录记录?此操作无法撤销。",
       "renamePrompt": "重命名会话:",
       "stale": {

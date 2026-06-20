@@ -21,12 +21,16 @@ function mountList(
     currentWorkspace?: string | null
     activeSession?: string | null
     vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
+    hasMore?: boolean
+    exhausted?: boolean
   } = {},
 ) {
   return mount(WorkSessionList, {
     props: {
       currentWorkspace: opts.currentWorkspace === undefined ? WS : opts.currentWorkspace,
       sessions: opts.sessions ?? [],
+      hasMore: opts.hasMore ?? false,
+      exhausted: opts.exhausted ?? false,
       sessionStatus: opts.status ?? {},
       activeWorkspace: WS,
       activeSession: opts.activeSession ?? null,
@@ -90,15 +94,36 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(rows[1].find('.session-status').exists()).toBe(false)
   })
 
-  it('分页:超过 10 条显示 ▾ more,点击后展开下一页', async () => {
+  it('分页(服务端驱动):渲染全部已加载会话,不再客户端截断', () => {
     const many = Array.from({ length: 12 }, (_, i) => session(`s${i}`, `S${i}`))
-    const w = mountList({ sessions: many })
-    expect(w.findAll('.session').length).toBe(10)
-    const more = w.find('.session-more')
+    const w = mountList({ sessions: many, hasMore: false })
+    expect(w.findAll('.session').length).toBe(12)
+  })
+
+  it('hasMore=true → 显示「加载更多」,点击 emit load-more-sessions', async () => {
+    const w = mountList({ sessions: [session('s1', 'Alpha')], hasMore: true })
+    const more = w.find('[data-testid="session-list-more"]')
     expect(more.exists()).toBe(true)
     await more.trigger('click')
-    expect(w.findAll('.session').length).toBe(12)
-    expect(w.find('.session-more').exists()).toBe(false)
+    expect(w.emitted('load-more-sessions')).toEqual([[]])
+  })
+
+  it('exhausted=true(且有会话)→ 显示「已加载完」,不显示加载更多', () => {
+    const w = mountList({
+      sessions: [session('s1', 'Alpha')],
+      hasMore: false,
+      exhausted: true,
+    })
+    expect(w.find('[data-testid="session-list-more"]').exists()).toBe(false)
+    const done = w.find('[data-testid="session-list-exhausted"]')
+    expect(done.exists()).toBe(true)
+    expect(done.text()).toBe('Fully loaded')
+  })
+
+  it('首批短列表(未触发加载更多)→ 既无加载更多也无「已加载完」', () => {
+    const w = mountList({ sessions: [session('s1', 'Alpha')], hasMore: false, exhausted: false })
+    expect(w.find('[data-testid="session-list-more"]').exists()).toBe(false)
+    expect(w.find('[data-testid="session-list-exhausted"]').exists()).toBe(false)
   })
 
   it('新建 ＋ → emit create-session(path)', async () => {

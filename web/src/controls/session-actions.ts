@@ -1,5 +1,6 @@
 import { consoleEntryTarget, consoleTabEntryEffects, workspaceSwitchEffects } from '@/lib/tab-view'
 import { emptyTaskModel } from '@/lib/task-list'
+import { SESSION_PAGE_SIZE } from '@/lib/session-page'
 import type { AppCtx } from './types'
 
 // Install workspace / session / top-bar-tab navigation actions onto the ctx.
@@ -8,6 +9,7 @@ export function installSessionActions(ctx: AppCtx): void {
   const {
     currentWorkspace,
     sessionsByWorkspace,
+    sessionPagingByWorkspace,
     workspaceSettingOpen,
     currentWorkspaceSetting,
     detectedMainBranch,
@@ -30,14 +32,66 @@ export function installSessionActions(ctx: AppCtx): void {
     intentsProject,
   } = ctx
 
-  // Force a fresh `list_sessions` for a workspace, bypassing `ensureSessions`.
-  ctx.refreshSessions = (path: string | null): void => {
-    if (path) send({ type: 'list_sessions', workspaceId: path })
+  // Merge-patch a workspace's pagination state (SR-R14).
+  const patchPaging = (
+    path: string,
+    patch: Partial<{
+      hasMore: boolean
+      exhausted: boolean
+      loadingMore: boolean
+      pendingSince: number | undefined
+    }>,
+  ): void => {
+    const cur = sessionPagingByWorkspace.value[path] ?? {
+      hasMore: false,
+      exhausted: false,
+      loadingMore: false,
+    }
+    sessionPagingByWorkspace.value = {
+      ...sessionPagingByWorkspace.value,
+      [path]: { ...cur, ...patch },
+    }
   }
 
-  // Lazily fetch a workspace's session list (once) for the sidebar.
+  // Refresh a workspace's session list (SR-R14): when a window is already
+  // loaded, ask only for the displayed range (`since` = oldest loaded), so the
+  // reply updates what's shown without re-pulling earlier, unloaded sessions;
+  // otherwise pull the first (newest) page.
+  ctx.refreshSessions = (path: string | null): void => {
+    if (!path) return
+    const list = sessionsByWorkspace.value[path]
+    if (list && list.length) {
+      const since = list[list.length - 1].lastModified
+      patchPaging(path, { pendingSince: since })
+      send({ type: 'list_sessions', workspaceId: path, since })
+    } else {
+      send({ type: 'list_sessions', workspaceId: path, limit: SESSION_PAGE_SIZE })
+    }
+  }
+
+  // Lazily fetch a workspace's first session page (once) for the sidebar.
   ctx.ensureSessions = (path: string | null): void => {
-    if (path && !sessionsByWorkspace.value[path]) ctx.refreshSessions(path)
+    if (path && !sessionsByWorkspace.value[path]) {
+      send({ type: 'list_sessions', workspaceId: path, limit: SESSION_PAGE_SIZE })
+    }
+  }
+
+  // "Load more": fetch the next page strictly older than the oldest loaded
+  // session, keyed on `(lastModified, sessionId)` so same-timestamp rows are
+  // never skipped or duplicated (SR-R14).
+  ctx.loadMoreSessions = (path: string | null): void => {
+    if (!path) return
+    const list = sessionsByWorkspace.value[path]
+    const paging = sessionPagingByWorkspace.value[path]
+    if (!list || !list.length || !paging?.hasMore || paging.loadingMore) return
+    const oldest = list[list.length - 1]
+    patchPaging(path, { loadingMore: true })
+    send({
+      type: 'list_sessions',
+      workspaceId: path,
+      before: { lastModified: oldest.lastModified, sessionId: oldest.sessionId },
+      limit: SESSION_PAGE_SIZE,
+    })
   }
 
   // Switch the global current workspace. The view always lands on the console tab.
@@ -178,10 +232,28 @@ export function installSessionActions(ctx: AppCtx): void {
   ctx.deleteSession = (path: string, sessionId: string): void => {
     // Drop the console pointer if it referenced the deleted session.
     if (consoleSession.value?.sessionId === sessionId) consoleSession.value = null
+    // Optimistically drop the row (SR-R14): the server no longer pushes a fresh
+    // list after delete (a `first`-page push would clobber a loaded-more window).
+    const list = sessionsByWorkspace.value[path]
+    if (list) {
+      sessionsByWorkspace.value = {
+        ...sessionsByWorkspace.value,
+        [path]: list.filter((s) => s.sessionId !== sessionId),
+      }
+    }
     send({ type: 'delete_session', workspaceId: path, sessionId })
   }
 
   ctx.renameSession = (path: string, sessionId: string, title: string): void => {
+    // Optimistically update the title in place (SR-R14); the server pushes no
+    // list after rename. Other clients reconcile on their next window refresh.
+    const list = sessionsByWorkspace.value[path]
+    if (list) {
+      sessionsByWorkspace.value = {
+        ...sessionsByWorkspace.value,
+        [path]: list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
+      }
+    }
     send({ type: 'rename_session', workspaceId: path, sessionId, title })
   }
 

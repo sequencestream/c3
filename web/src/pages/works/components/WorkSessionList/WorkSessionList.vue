@@ -25,6 +25,10 @@ const { t, d } = useTypedI18n()
 const props = defineProps<{
   currentWorkspace: string | null
   sessions: SessionInfo[]
+  /** Older sessions remain beyond the loaded window (SR-R14) — show "load more". */
+  hasMore?: boolean
+  /** A "load more" returned nothing — show "Fully loaded" instead of the button. */
+  exhausted?: boolean
   sessionStatus: Record<string, SessionStatus>
   activeWorkspace: string | null
   activeSession: string | null
@@ -40,6 +44,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'create-session': [path: string]
   'refresh-sessions': []
+  'load-more-sessions': []
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -47,10 +52,6 @@ const emit = defineEmits<{
 
 // Stable vendor order for both the dots and the filter chips.
 const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex']
-
-// How many sessions are visible; grows by SESSION_PAGE on demand.
-const SESSION_PAGE = 10
-const sessionLimit = ref(SESSION_PAGE)
 
 // 面板展开态:持久化 UI 状态(同 IntentList 的折叠范式)。展开态把侧栏宽度翻倍,
 // 便于阅读较长的会话标题;收缩态回到默认窄宽。跨页面切换后保持原状。
@@ -123,17 +124,11 @@ function titleSource(vendor: VendorId): string {
   return t('session.list.titleSource', { vendor: VENDOR_LABEL[vendor] })
 }
 
-// Sessions actually rendered, capped to the current limit.
-function visibleSessions(): SessionInfo[] {
-  return filteredSessions().slice(0, sessionLimit.value)
-}
-
-function hasMoreSessions(): boolean {
-  return filteredSessions().length > sessionLimit.value
-}
-
-function showMoreSessions() {
-  sessionLimit.value += SESSION_PAGE
+// Pagination is server-driven (SR-R14): the loaded window arrives via props.
+// "Load more" asks the server for the next page; "Fully loaded" shows when a
+// load-more came back empty.
+function loadMoreSessions() {
+  if (props.currentWorkspace) emit('load-more-sessions')
 }
 
 function createSession() {
@@ -255,7 +250,7 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           {{ t('session.list.empty') }}
         </p>
         <div
-          v-for="s in visibleSessions()"
+          v-for="s in filteredSessions()"
           :key="s.sessionId"
           class="session"
           :class="{
@@ -328,13 +323,21 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           </span>
         </div>
         <button
-          v-if="hasMoreSessions()"
+          v-if="hasMore"
           class="session-more"
+          data-testid="session-list-more"
           :title="t('session.list.more.tooltip')"
-          @click="showMoreSessions"
+          @click="loadMoreSessions"
         >
           {{ t('session.list.more.label') }}
         </button>
+        <p
+          v-else-if="exhausted && filteredSessions().length > 0"
+          class="session-exhausted"
+          data-testid="session-list-exhausted"
+        >
+          {{ t('session.list.exhausted.label') }}
+        </p>
       </div>
     </div>
   </aside>

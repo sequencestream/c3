@@ -104,6 +104,38 @@ export interface SessionInfo {
 }
 
 /**
+ * Keyset cursor for the work-session list (SR-R14). The `sessionId` is the
+ * stable tiebreaker within one `lastModified` so that sessions sharing a
+ * timestamp are never skipped or duplicated across a page boundary — the
+ * server locates this exact row in its sorted list and pages from there.
+ */
+export interface SessionListCursor {
+  lastModified: number
+  sessionId: string
+}
+
+/** How a `sessions` reply should be merged into the client's window (SR-R14). */
+export const SESSION_PAGE_KINDS = ['first', 'older', 'window', 'live'] as const
+export type SessionPageKind = (typeof SESSION_PAGE_KINDS)[number]
+
+/**
+ * Pagination descriptor on a `sessions` reply (SR-R14). Absent only for
+ * backward compatibility; the current server always sets it.
+ *  - `first`  : top page — client REPLACES the list and resets the window.
+ *  - `older`  : next-older page (load-more) — client APPENDS (dedup by id).
+ *  - `window` : refresh of the displayed range (`lastModified >= cursor`) —
+ *               client reconciles that range (new-at-top in, in-range deletes out).
+ *  - `live`   : bounded fan-out push (SR-R13) — client UPSERTs by id without
+ *               touching the window (ignored when the workspace isn't loaded).
+ * `hasMore` is true when older rows exist beyond a `first`/`older` page;
+ * `window`/`live` do not use it.
+ */
+export interface SessionPageMeta {
+  kind: SessionPageKind
+  hasMore: boolean
+}
+
+/**
  * Title-bar same-vendor agent-switcher payload (ADR-0015 / AS-R22). The console
  * lets the user re-target a stuck session (token-exhausted / rate-limited /
  * host-binary blip) to another agent of the **same** vendor and `resume` it —
@@ -2339,8 +2371,21 @@ export type ClientToServer =
   | { type: 'add_workspace'; path: string }
   /** Remove a workspace from the sidebar (does not delete its sessions on disk). */
   | { type: 'remove_workspace'; path: string }
-  /** List sessions for a workspace (server replies with `sessions`). */
-  | { type: 'list_sessions'; workspaceId: string }
+  /**
+   * List sessions for a workspace (server replies with `sessions`). Cursor
+   * paginated by `lastModified` (SR-R14): the three cases are mutually
+   * exclusive, all-absent ⇒ the first (newest) page.
+   *  - `before` — load-more: the page strictly older than this keyset cursor.
+   *  - `since`  — refresh: the displayed range, every row `lastModified >= since`.
+   *  - `limit`  — page size for the `first`/`older` cases (server defaults it).
+   */
+  | {
+      type: 'list_sessions'
+      workspaceId: string
+      before?: SessionListCursor
+      since?: number
+      limit?: number
+    }
   /**
    * Create a new (pending) session in a workspace and make it active. The
    * optional `agentId` is the agent the new session should run on (ADR-0015): it
@@ -2761,8 +2806,13 @@ export type ServerToClient =
   | { type: 'session_status'; statuses: SessionRunStatus[] }
   /** Full workspace list, sorted by recent access (desc). */
   | { type: 'workspaces'; workspaces: WorkspaceInfo[] }
-  /** Session list for one workspace, sorted by last-modified (desc). */
-  | { type: 'sessions'; workspaceId: string; sessions: SessionInfo[] }
+  /**
+   * Session list page for one workspace, sorted by last-modified (desc). The
+   * `page` descriptor (SR-R14) tells the client how to merge this batch into
+   * its window (replace / append / refresh-range / live-upsert); absent only
+   * for backward compatibility.
+   */
+  | { type: 'sessions'; workspaceId: string; sessions: SessionInfo[]; page?: SessionPageMeta }
   /** Directory listing for one workspace-relative path. */
   | { type: 'dir_listed'; workspaceId: string; rel: string; entries: CodeDirEntry[] }
   /** File metadata and optional text content for one workspace-relative path. */

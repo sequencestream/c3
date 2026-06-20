@@ -823,6 +823,16 @@ header h1 {
   background: var(--c-hover);
   color: var(--c-text);
 }
+.session-exhausted {
+  margin: 1px 0 0;
+  padding: 0 var(--sp-2);
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+}
 .session-actions {
   display: none;
   flex-shrink: 0;

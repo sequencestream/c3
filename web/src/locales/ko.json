@@ -875,6 +875,9 @@
         "label": "▾ 더 보기",
         "tooltip": "더 많은 세션 표시"
       },
+      "exhausted": {
+        "label": "모두 불러옴"
+      },
       "deleteConfirm": "이 세션과 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
       "renamePrompt": "세션 이름 변경:",
       "stale": {

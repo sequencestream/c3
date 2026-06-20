@@ -93,6 +93,33 @@ describe('spec gate — write-confined, deny-by-default', () => {
     expect(await g()('Grep', { pattern: 'x' }, {} as never)).toMatchObject({ behavior: 'allow' })
   })
 
+  it('ALLOWS the read-only ledger query tools find_intents / view_intent (no prompt)', async () => {
+    // The spec author may search/inspect THIS project's intents to ground the spec.
+    // Both are read-only + project-bound in the MCP tool closure, so the gate passes
+    // them like a read built-in (no confirmation).
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({ gate: 'spec', specDir, cwd: '/proj', send: (m) => sent.push(m) }),
+    )
+    expect(await gate('mcp__c3__find_intents', { keyword: 'x' }, {} as never)).toMatchObject({
+      behavior: 'allow',
+    })
+    expect(await gate('mcp__c3__view_intent', { id: 'abc' }, {} as never)).toMatchObject({
+      behavior: 'allow',
+    })
+    expect(sent.find((m) => m.type === 'permission_request')).toBeUndefined()
+  })
+
+  it('DENIES mcp__c3__save_intents (the spec session must never write the ledger)', async () => {
+    // The spec MCP server doesn't register save (main defence); the gate is the
+    // second line — its read-pass set is an explicit read-only union, so save is NOT
+    // allowed-through (unlike the intent gate) and falls to deny-by-default. This
+    // holds even if save were ever mis-registered or vendor-preapproved.
+    const out = await g()('mcp__c3__save_intents', { intents: [] }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+    expect((out as { message: string }).message).toMatch(/spec-only/)
+  })
+
   it('ALLOWS a write inside the spec directory', async () => {
     const out = await g()('Write', { file_path: `${specDir}/spec.md` }, {} as never)
     expect(out).toMatchObject({ behavior: 'allow' })

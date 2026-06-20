@@ -28,6 +28,7 @@ import { allow, deny, type PermissionDecision } from './decision.js'
 import {
   classifyIntentTool,
   extractWriteTargets,
+  INTENT_QUERY_TOOLS,
   INTENT_READ_TOOLS,
   isInside,
   withAnswers,
@@ -189,14 +190,19 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
     }
 
     // Spec (write-confined) gate: the spec-authoring agent may read the whole
-    // project freely (reuses the intent read set) but may WRITE only inside the
-    // run's `specDir`. Write-class tools are path-checked here (they are NOT in
-    // the SDK-level disallowed lock for this run, precisely so they reach this
-    // branch); a target outside the spec dir — or with no resolvable path — is
-    // denied (fail-closed). AskUserQuestion routes via the same answer-injection
-    // flow as the intent gate. Everything else is denied by default.
+    // project freely (reuses the intent read set) PLUS the two read-only ledger
+    // query tools (find/view) so it can ground the spec against existing intents,
+    // but may WRITE only inside the run's `specDir`. The read-pass set is an
+    // EXPLICIT read-only union — NOT `classifyIntentTool(...) === 'allow'`, which
+    // also passes `save_intents`: a spec session must never write the ledger, so
+    // save falls through to deny-by-default below (defence-in-depth — the spec MCP
+    // server does not register save in the first place). Write-class tools are
+    // path-checked here (they are NOT in the SDK-level disallowed lock for this run,
+    // precisely so they reach this branch); a target outside the spec dir — or with
+    // no resolvable path — is denied (fail-closed). AskUserQuestion routes via the
+    // same answer-injection flow as the intent gate. Everything else is denied.
     if (gate === 'spec') {
-      if (classifyIntentTool(toolName) === 'allow') {
+      if (INTENT_READ_TOOLS.has(toolName) || INTENT_QUERY_TOOLS.has(toolName)) {
         return allow(input)
       }
       if (WRITE_TOOLS.has(toolName)) {

@@ -153,6 +153,18 @@ export interface AdapterCapabilities {
    */
   readonly taskStore: boolean
   /**
+   * Native in-run user-input ability: the vendor can pause mid-turn to ask the
+   * human a question and resume with their answer (Claude's `AskUserQuestion`
+   * over the blocking `canUseTool` write-back). **Claude = true; Codex = false**
+   * (008 NO-GO: `codex exec` closes stdin after dispatch — no event ever requests
+   * input, no channel writes one back). When false, c3 cannot intercept a native
+   * prompt; user-input intents (e.g. `save_intents`) instead route through the
+   * c3-controlled HTTP-MCP gate, which raises a normal WorkCenter `permission_request`
+   * the human answers (the visible degradation path). Surfaced to the console via
+   * `settings.vendorCapabilities` so a Codex session can label the gap honestly.
+   */
+  readonly nativeUserInput: boolean
+  /**
    * Structured session-lifecycle capability states (ADR-0011 amendment). The
    * vendor's honest self-report for list/read/resume/rename/delete — each a
    * 4-state {@link import('@ccc/shared/protocol').CapabilityState}, the upper

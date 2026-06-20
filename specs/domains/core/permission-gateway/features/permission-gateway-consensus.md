@@ -138,7 +138,8 @@ sequenceDiagram
         CO-->>GW: outcome {votes, summary, unanimous, decision}
         alt decision set (unanimous, or majority when the toggle is on)
             GW->>WS: consensus_auto{toolName, input, outcome}
-            Note over GW: auto allow/deny — no human needed
+            GW->>GW: onConsensusResolved → 记录 status:'auto' 的 WaitUserInvolveEvent(携带 outcome)
+            Note over GW: auto allow/deny — no human needed; 非阻塞审计记录入 WorkCenter
         else split / tie / abstention
             GW->>WS: permission_request{..., consensus: outcome}
             Note over GW: human decides, sees opinions
@@ -314,6 +315,19 @@ original input plus the chosen `answers`. This is the documented PG-R6 exception
 | Tally a question         | Unanimous/agreed on a literal all-answer agreement. With majority on, a still-split question resolves to its strict-plurality answer (abstain excluded; tie / no leader / no cast vote ⇒ split), flagged `decidedByMajority`.                 |
 | Build the decider prompt | Builds the combined judge+summary prompt; lists option labels only for the split questions. The Display-language name (default English) sets the summary sentence's language.                                                                 |
 | Parse the decider reply  | Yields a summary plus overrides; an override is emitted only for consensus rulings whose answer re-validates to a label/custom — else dropped (stays split).                                                                                  |
+
+## 审计留痕（自动决策可追溯）
+
+每次共识自动决议（`consensus_auto`，无人类参与）除发出 wire 帧外，网控还经 `onConsensusResolved`
+回调记录一条 `status: 'auto'` 的 `WaitUserInvolveEvent`，其 `outcome` 携带做出决议的共识结果
+（投票、裁决、摘要）。该记录是**非阻塞、仅审计**的：永不计入"待处理"徽章，也不阻塞续跑；
+它使自动决策在 WorkCenter 的"自动"筛选下可追溯。这覆盖 allow/deny 工具共识与 `AskUserQuestion`
+全一致自动作答两条自动路径。人类参与的 `permission_request` 走另一条回调
+（`onPermissionRequest` → `status: 'todo'`），二者互斥。持久化失败（如库不可用）被吞并记日志，
+绝不打断刚被共识放行的实时运行。
+
+> 注：automation 编排的 checkpoint 共识（continue/wait）不镜像进 WorkCenter，仍仅经
+> `AutomationStatus.checkpointConsensus` 广播（有意决策，避免重复留痕）。
 
 ## Wire protocol
 

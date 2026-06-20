@@ -13,6 +13,7 @@ import {
   createCanUseTool,
   deny,
   INTENT_DISALLOWED_TOOLS,
+  type ConsensusAutoCtx,
   type PermissionRequestCtx,
 } from '../permission/index.js'
 
@@ -181,6 +182,12 @@ export interface RunOptions {
    * and workspacePath. Forwarded to {@link createCanUseTool}.
    */
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
+  /**
+   * Optional callback for consensus auto-resolutions (the `consensus_auto` path —
+   * no human prompt). Forwarded to {@link createCanUseTool} so the wiring layer can
+   * record a non-blocking `status: 'auto'` WaitUserInvolveEvent for auditability.
+   */
+  onConsensusResolved?: (ctx: ConsensusAutoCtx) => void
   /** In-process MCP servers to expose (e.g. the c3 `save_intents` tool). */
   mcpServers?: Record<string, McpServerConfig>
   /**
@@ -608,6 +615,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         skillWriteGuard,
         sessionId: opts.sessionId ?? (() => ''),
         onPermissionRequest: opts.onPermissionRequest,
+        onConsensusResolved: opts.onConsensusResolved,
       }),
     },
   })

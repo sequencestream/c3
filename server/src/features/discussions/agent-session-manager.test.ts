@@ -69,6 +69,7 @@ class FakeDriver implements AgentDriver {
     forkSession: false,
     perToolApproval: false,
     taskStore: false,
+    nativeUserInput: false,
     sessions: {
       list: 'full' as const,
       read: 'full' as const,

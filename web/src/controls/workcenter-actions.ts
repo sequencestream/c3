@@ -28,6 +28,15 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     event.status = 'done'
   }
 
+  // Re-fetch the full event list (no status filter ⇒ all statuses, incl. 'auto'
+  // audit records and 'done'/'canceled' history). The live broadcast only pushes
+  // 'todo'; the WorkCenter filter bar calls this so non-todo tabs are reliable.
+  ctx.reloadWorkcenter = (): void => {
+    const path = currentWorkspace.value
+    if (!path || !ctx.client) return
+    send({ type: 'list_wait_user_events', workspaceId: path })
+  }
+
   // Jump from a WorkCenter event to its source tab + item.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
     const path = event.workspaceId || currentWorkspace.value

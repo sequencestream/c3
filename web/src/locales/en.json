@@ -1201,6 +1201,12 @@
         "label": "Prompt",
         "placeholder": "Run a security audit and summarize findings…"
       },
+      "maxWallClockMs": {
+        "label": "Execution timeout (ms)",
+        "placeholder": "Use task default",
+        "hint": "Leave empty for the task default (command: 30 seconds; LLM: 60 seconds).",
+        "invalid": "Enter a whole number between 1,000 and 86,400,000."
+      },
       "schedule": {
         "label": "Schedule"
       },
@@ -1303,6 +1309,10 @@
       "vendor": {
         "label": "Vendor"
       },
+      "agent": {
+        "label": "Agent",
+        "placeholder": "Select an agent"
+      },
       "tools": {
         "label": "Allowed tools",
         "readOnly": {
@@ -1401,7 +1411,12 @@
       "notFound": "Schedule not found.",
       "executionNotFound": "Execution record not found.",
       "approvalNotFound": "Approval entry not found or already handled.",
-      "invalidEventTrigger": "An event-triggered schedule needs a run event to subscribe to."
+      "invalidEventTrigger": "An event-triggered schedule needs a run event to subscribe to.",
+      "invalidMaxWallClockMs": "The execution timeout must be a whole number between 1,000 and 86,400,000 milliseconds.",
+      "agentRequired": "Select an execution agent.",
+      "agentNotFound": "The selected execution agent no longer exists.",
+      "agentDisabled": "The selected execution agent is disabled.",
+      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve store unavailable (c3.db)."

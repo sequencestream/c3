@@ -429,6 +429,7 @@ const {
           :tool-manifest-loading="scheduleToolManifestLoading"
           :tool-manifest-error="scheduleToolManifestError"
           :host-status="hostStatus"
+          :agents="serverSettings?.agents ?? []"
           @select="onSelectSchedule"
           @open-form="openScheduleForm"
           @delete-schedule="deleteSchedule"

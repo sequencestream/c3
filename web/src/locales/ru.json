@@ -1196,6 +1196,12 @@
         "label": "Запрос",
         "placeholder": "Провести аудит безопасности и обобщить результаты…"
       },
+      "maxWallClockMs": {
+        "label": "Тайм-аут выполнения (мс)",
+        "placeholder": "Использовать значение по умолчанию",
+        "hint": "Оставьте пустым для значения по умолчанию (команда: 30 секунд; LLM: 60 секунд).",
+        "invalid": "Введите целое число от 1 000 до 86 400 000."
+      },
       "schedule": {
         "label": "Расписание"
       },
@@ -1263,6 +1269,10 @@
       },
       "vendor": {
         "label": "Вендор"
+      },
+      "agent": {
+        "label": "Agent",
+        "placeholder": "Select an agent"
       },
       "tools": {
         "label": "Разрешённые инструменты",
@@ -1402,7 +1412,12 @@
       "notFound": "Расписание не найдено.",
       "executionNotFound": "Запись о выполнении не найдена.",
       "approvalNotFound": "Запись на одобрение не найдена или уже обработана.",
-      "invalidEventTrigger": "Для расписания по событию нужно выбрать событие запуска."
+      "invalidEventTrigger": "Для расписания по событию нужно выбрать событие запуска.",
+      "invalidMaxWallClockMs": "Тайм-аут выполнения должен быть целым числом от 1 000 до 86 400 000 миллисекунд.",
+      "agentRequired": "Select an execution agent.",
+      "agentNotFound": "The selected execution agent no longer exists.",
+      "agentDisabled": "The selected execution agent is disabled.",
+      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Хранилище Wait-User-Involve недоступно (c3.db)."

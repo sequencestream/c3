@@ -23,8 +23,10 @@ import { clampName, generateScheduleName } from './naming.js'
 import type { ScheduleNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
-import type { ToolManifestEntry } from '@ccc/shared/protocol'
+import { isValidScheduleMaxWallClockMs, type ToolManifestEntry } from '@ccc/shared/protocol'
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
+import { loadSettings } from '../../kernel/config/index.js'
+import type { UiErrorCode } from '@ccc/shared/ui-codes'
 // Static tool listing (no I/O needed) — the only adapter path that can create
 // lightweight instances without a supervisor or registry probe.
 import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
@@ -43,6 +45,21 @@ function readConfigName(config: unknown): string | undefined {
   return undefined
 }
 
+/** An LLM schedule must bind a real enabled agent of its persisted vendor. */
+function scheduleAgentError(
+  type: 'command' | 'llm',
+  vendor: string,
+  agentId: string | null | undefined,
+): UiErrorCode | null {
+  if (type !== 'llm') return null
+  if (!agentId) return 'schedule.agentRequired'
+  const agent = loadSettings().agents.find((candidate) => candidate.id === agentId)
+  if (!agent) return 'schedule.agentNotFound'
+  if (agent.enabled === false) return 'schedule.agentDisabled'
+  if (agent.vendor !== vendor) return 'schedule.agentVendorMismatch'
+  return null
+}
+
 export const createScheduleHandler: Handler<'create_schedule'> = async (ctx, conn, msg) => {
   if (!isScheduleStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'schedule.dbUnavailable' } })
@@ -52,6 +69,18 @@ export const createScheduleHandler: Handler<'create_schedule'> = async (ctx, con
   // a lifecycle event), so reject it up front rather than persisting a no-op.
   if ((msg.input.triggerType ?? 'cron') === 'event' && !msg.input.eventTopic) {
     conn.send({ type: 'error', error: { code: 'schedule.invalidEventTrigger' } })
+    return
+  }
+  if (
+    msg.input.maxWallClockMs !== undefined &&
+    !isValidScheduleMaxWallClockMs(msg.input.maxWallClockMs)
+  ) {
+    conn.send({ type: 'error', error: { code: 'schedule.invalidMaxWallClockMs' } })
+    return
+  }
+  const agentError = scheduleAgentError(msg.input.type, msg.input.vendor, msg.input.agentId)
+  if (agentError) {
+    conn.send({ type: 'error', error: { code: agentError } })
     return
   }
   // Name is auto-generated server-side from the task content; any
@@ -81,12 +110,26 @@ export const updateScheduleHandler: Handler<'update_schedule'> = async (ctx, con
     conn.send({ type: 'error', error: { code: 'schedule.notFound' } })
     return
   }
+  const nextVendor = msg.input.vendor ?? existing.vendor
+  const nextAgentId = msg.input.agentId !== undefined ? msg.input.agentId : existing.agentId
+  const agentError = scheduleAgentError(existing.type, nextVendor, nextAgentId)
+  if (agentError) {
+    conn.send({ type: 'error', error: { code: agentError } })
+    return
+  }
   // Reject an update that would leave an event-triggered schedule without a topic
   // (either switching to 'event' without a topic, or clearing an existing one).
   const nextTrigger = msg.input.triggerType ?? existing.triggerType
   const nextTopic = msg.input.eventTopic !== undefined ? msg.input.eventTopic : existing.eventTopic
   if (nextTrigger === 'event' && !nextTopic) {
     conn.send({ type: 'error', error: { code: 'schedule.invalidEventTrigger' } })
+    return
+  }
+  if (
+    msg.input.maxWallClockMs !== undefined &&
+    !isValidScheduleMaxWallClockMs(msg.input.maxWallClockMs)
+  ) {
+    conn.send({ type: 'error', error: { code: 'schedule.invalidMaxWallClockMs' } })
     return
   }
   // Unlike create, update accepts a client-supplied `config.name`: a non-empty

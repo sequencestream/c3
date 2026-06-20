@@ -117,7 +117,7 @@ function seedOldSchedulesTable(d: Db): void {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     'legacy-cron',
     'command',
-    JSON.stringify({ command: 'echo hi', name: 'Legacy' }),
+    JSON.stringify({ command: 'echo hi', name: 'Legacy', timeout: 120_000 }),
     '/abs/ws',
     '0 8 * * *',
     null,
@@ -146,12 +146,14 @@ describe('schedule store v5 (event-trigger) migration', () => {
     expect(legacy!.eventTopic).toBeNull()
     expect(legacy!.eventReasonFilter).toBeNull()
     expect(legacy!.cronExpression).toBe('0 8 * * *')
+    expect(legacy!.maxWallClockMs).toBe(120_000)
 
     const cols = raw!.all<{ name: string }>('PRAGMA table_info(schedules)')
     const names = cols.map((c) => c.name)
     expect(names).toContain('trigger_type')
     expect(names).toContain('event_topic')
     expect(names).toContain('event_reason_filter')
+    expect(names).toContain('max_wall_clock_ms')
 
     // The legacy cron row is NOT picked up by the event-schedule query.
     expect(getEventSchedules('run:settled')).toHaveLength(0)

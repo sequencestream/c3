@@ -1196,6 +1196,12 @@
         "label": "プロンプト",
         "placeholder": "セキュリティ監査を実行し、検出結果を要約…"
       },
+      "maxWallClockMs": {
+        "label": "実行タイムアウト（ms）",
+        "placeholder": "タスクの既定値を使用",
+        "hint": "空欄の場合はタスクの既定値を使用します（コマンド: 30 秒、LLM: 60 秒）。",
+        "invalid": "1,000 から 86,400,000 までの整数を入力してください。"
+      },
       "schedule": {
         "label": "スケジュール"
       },
@@ -1263,6 +1269,10 @@
       },
       "vendor": {
         "label": "ベンダー"
+      },
+      "agent": {
+        "label": "Agent",
+        "placeholder": "Select an agent"
       },
       "tools": {
         "label": "許可されたツール",
@@ -1402,7 +1412,12 @@
       "notFound": "スケジュールが見つかりません。",
       "executionNotFound": "実行記録が見つかりません。",
       "approvalNotFound": "承認エントリが見つからないか、すでに処理済みです。",
-      "invalidEventTrigger": "イベントトリガー型のスケジュールには購読する実行イベントが必要です。"
+      "invalidEventTrigger": "イベントトリガー型のスケジュールには購読する実行イベントが必要です。",
+      "invalidMaxWallClockMs": "実行タイムアウトは 1,000 から 86,400,000 ミリ秒までの整数である必要があります。",
+      "agentRequired": "Select an execution agent.",
+      "agentNotFound": "The selected execution agent no longer exists.",
+      "agentDisabled": "The selected execution agent is disabled.",
+      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve ストアは利用できません (c3.db)。"

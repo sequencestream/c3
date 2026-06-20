@@ -53,6 +53,7 @@ See [schedules-models.md](schedules-models.md) for full attributes.
 | SCH-R18 | An `event` trigger fires only when **all** hold: the event's run `kind` is `normal` (internal intent comm runs never fire user schedules); the event's `workspacePath` equals the schedule's workspace; and, for `run:settled`, the terminal `reason` (`complete` / `error` / `aborted`) is in the schedule's optional `eventReasonFilter` (empty/null = any reason). Event-storm throttling reuses SCH-R7 serial execution: an event arriving while the schedule already has an in-flight execution is **skipped**, not queued.                                                                                                                                                                     |
 | SCH-R19 | The display `name` is **auto-generated on create** (client name stripped, SCH naming). On **update** the client may supply a manual title via `config.name`: a non-empty value is stored as a **sticky user-set name** (`config.nameSource='user'`) that auto-naming never overrides — it survives later body edits (an update with no `name` key keeps the existing name and its provenance). An empty `name` on update **reverts** to a freshly auto-derived name (clears the user marker). Create never accepts a client name (manual titles are edit-only).                                                                                                                                      |
 | SCH-R20 | **Internal one-shot agent recovery schedules** (2026-06-15-002). The agent-config quota recovery flow may create a system-owned schedule row whose config marks it an agent-quota-recovery action, names the disabled agent, and records the absolute reset instant. It reuses the cron / next-run tick engine but is one-shot: when due, the dispatcher re-enables that agent, then the scheduler **deletes the schedule row** (cascading its execution logs) so it cannot fire again and leaves no paused zombie behind — a subsequent quota error simply creates a fresh recovery row (2026-06-17-001). These rows are not user-authored command schedules and do not run shell commands.         |
+| SCH-R21 | A schedule may set `maxWallClockMs`, its maximum total execution duration in milliseconds. A missing value uses the existing task-type default (30 seconds for command; 60 seconds for LLM). Values must be whole milliseconds from 1 second through 24 hours. A timeout marks the execution failed; command retries share this one total deadline.                                                                                                                                                                                                                                                                                                                                                  |
 
 ## States & transitions
 
@@ -316,10 +317,11 @@ selection UI in the schedule form.
 
 ## Vendor routing (execution)
 
-When an `llm_prompt` schedule fires, the dispatcher resolves the agent for the schedule's vendor: the
-first enabled agent of that vendor, falling back to the default agent. Vendors without a dedicated
-execution path log a warning and fall back to the same shared SDK query path — their dedicated
-execution paths are a future entry.
+When an `llm_prompt` schedule fires, it runs through the explicitly selected enabled Agent. The
+Schedule retains its vendor as the stable tool-manifest, policy, and adapter-routing scope; the
+selected Agent must belong to that vendor. A missing, disabled, or vendor-mismatched Agent fails
+the execution and never falls back to another Agent or vendor. Each vendor runs through its own
+adapter path.
 
 ## Domain events (wire)
 

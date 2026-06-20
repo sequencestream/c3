@@ -19,14 +19,20 @@ import { spawn } from 'node:child_process'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
-import type { CodexPolicy, ModeToken, RunKind, Schedule, VendorId } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  CodexPolicy,
+  ModeToken,
+  RunKind,
+  Schedule,
+  VendorId,
+} from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
-import {
-  resolveFirstAgentOfVendor,
-  launchForAgent,
-  setAgentEnabled,
-} from '../../kernel/agent-config/index.js'
+import { launchForAgent, setAgentEnabled } from '../../kernel/agent-config/index.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
+import { loadSettings } from '../../kernel/config/index.js'
+import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
+import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
@@ -48,14 +54,40 @@ export type UpdateLogFn = (id: string, patch: Record<string, unknown>) => void
 
 interface CommandConfig {
   command: string
-  timeout?: number // ms, default 30_000
   maxRetries?: number // default 0
 }
 
 interface LlmConfig {
   prompt: string
-  maxWallClockMs?: number // ms, default 60_000
   outputSchema?: Record<string, unknown> // JSON Schema
+}
+
+const DEFAULT_COMMAND_MAX_WALL_CLOCK_MS = 30_000
+const DEFAULT_LLM_MAX_WALL_CLOCK_MS = 60_000
+const CLAUDE_SCHEDULE_MODES = [
+  'default',
+  'auto',
+  'plan',
+  'acceptEdits',
+  'bypassPermissions',
+] as const
+type ClaudeScheduleMode = (typeof CLAUDE_SCHEDULE_MODES)[number]
+
+function maxWallClockMsFor(schedule: Schedule): number {
+  return (
+    schedule.maxWallClockMs ??
+    (schedule.type === 'command'
+      ? DEFAULT_COMMAND_MAX_WALL_CLOCK_MS
+      : DEFAULT_LLM_MAX_WALL_CLOCK_MS)
+  )
+}
+
+function claudeModeForSchedule(mode: ModeToken | CodexPolicy): ClaudeScheduleMode {
+  if (typeof mode === 'string') {
+    const matched = CLAUDE_SCHEDULE_MODES.find((candidate) => candidate === mode)
+    if (matched) return matched
+  }
+  return 'default'
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +229,7 @@ async function executeCommand(
   const config = (schedule.config ?? {}) as CommandConfig
   const raw = config.command ?? ''
   const command = typeof raw === 'string' ? raw : JSON.stringify(raw)
-  const timeout = typeof config.timeout === 'number' && config.timeout > 0 ? config.timeout : 30_000
+  const deadline = Date.now() + maxWallClockMsFor(schedule)
   const maxRetries =
     typeof config.maxRetries === 'number' && config.maxRetries >= 0 ? config.maxRetries : 0
 
@@ -206,6 +238,11 @@ async function executeCommand(
   let lastOutput = ''
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const timeout = deadline - Date.now()
+    if (timeout <= 0) {
+      lastError = new Error('timeout')
+      break
+    }
     if (attempt > 0) {
       console.log(
         '[dispatcher] command retry %d/%d for schedule %s',
@@ -314,12 +351,11 @@ function createPermissionHandler(
       return { behavior: 'deny', message: 'schedule execution identity: read-only' }
     }
 
-    // Step 3: Non-read-only modes: allow reads, deny writes.
-    // Schedules run unattended — write permissions must be pre-configured
-    // via toolAllowlist / toolDenylist. If a write tool is reached despite
-    // the mode not restricting it, fail immediately rather than blocking
-    // for human approval (which the frontend does not consume anyway).
-    if (!isWriteTool(toolName, frozenTools)) {
+    // Step 3: Writes require both an allowlist match (step 1) and a mode that
+    // explicitly authorizes unattended edits. Other modes retain deny-by-default.
+    const writeAllowed =
+      vendor === 'claude' && (mode === 'acceptEdits' || mode === 'bypassPermissions')
+    if (!isWriteTool(toolName, frozenTools) || writeAllowed) {
       return { behavior: 'allow' }
     }
     return {
@@ -405,10 +441,7 @@ async function executeLlmPrompt(
     `[c3:schedules] (${RUN_KIND}) llm run ${schedule.id} @ ${resolveWorkspaceRoot(schedule.workspaceId)!}`,
   )
 
-  const maxWallClockMs =
-    typeof config.maxWallClockMs === 'number' && config.maxWallClockMs > 0
-      ? config.maxWallClockMs
-      : 60_000
+  const maxWallClockMs = maxWallClockMsFor(schedule)
   const outputSchema: Record<string, unknown> | undefined =
     config.outputSchema && typeof config.outputSchema === 'object'
       ? (config.outputSchema as Record<string, unknown>)
@@ -420,22 +453,33 @@ async function executeLlmPrompt(
   }, maxWallClockMs)
   timeoutTimer.unref()
 
-  const claudePath = findClaudeExecutable()
-
-  // Resolve the agent matching the schedule's vendor, then its launch overrides
-  // (model, env). This routes execution to the correct vendor adapter.
-  // Non-Claude vendors currently fall back to the same SDK query() path with a
-  // warning — only the Claude adapter has a full query() path today.
-  const scheduleVendor = schedule.vendor
-  if (scheduleVendor !== 'claude') {
-    console.warn(
-      '[dispatcher] non-Claude vendor %s for schedule %s — falling back to SDK query()',
-      scheduleVendor,
-      schedule.id,
-    )
+  const launchAgent = schedule.agentId
+    ? loadSettings().agents.find((agent) => agent.id === schedule.agentId)
+    : undefined
+  if (!launchAgent || launchAgent.enabled === false || launchAgent.vendor !== schedule.vendor) {
+    clearTimeout(timeoutTimer)
+    updateLog(logId, {
+      finishedAt: Date.now(),
+      status: 'failed',
+      error: !schedule.agentId
+        ? 'schedule_agent_required'
+        : !launchAgent
+          ? 'schedule_agent_not_found'
+          : launchAgent.enabled === false
+            ? 'schedule_agent_disabled'
+            : 'schedule_agent_vendor_mismatch',
+    })
+    return
   }
-  const launchAgent = resolveFirstAgentOfVendor(scheduleVendor)
   const { model, envOverrides } = launchForAgent(launchAgent)
+
+  if (schedule.vendor === 'codex') {
+    await executeCodexLlmPrompt(schedule, logId, updateLog, prompt, abortController, launchAgent)
+    clearTimeout(timeoutTimer)
+    return
+  }
+
+  const claudePath = findClaudeExecutable()
 
   // Resolve workspace-level MCP configuration and freeze the tool list.
   const workspaceMcpConfig = getWorkspaceMcpConfig(resolveWorkspaceRoot(schedule.workspaceId)!)
@@ -466,11 +510,12 @@ async function executeLlmPrompt(
         settingSources: ['user', 'project'],
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         disallowedTools: [],
-        permissionMode: 'default',
+        permissionMode: claudeModeForSchedule(schedule.mode),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
         ...(mcpServers ? { mcpServers } : {}),
         env: buildChildEnv(envOverrides),
         ...(model ? { model } : {}),
+        abortController,
         canUseTool: permissionHandler,
       },
     })
@@ -548,6 +593,58 @@ async function executeLlmPrompt(
       finishedAt: now,
       status: 'failed',
       error: message,
+    })
+  }
+}
+
+async function executeCodexLlmPrompt(
+  schedule: Schedule,
+  logId: string,
+  updateLog: UpdateLogFn,
+  prompt: string,
+  abortController: AbortController,
+  agent: AgentConfig,
+): Promise<void> {
+  const policy: CodexPolicy =
+    typeof schedule.mode === 'object'
+      ? schedule.mode
+      : {
+          sandboxMode: schedule.mode === 'read-only' ? 'read-only' : 'workspace-write',
+          approvalPolicy: 'never',
+        }
+  const { actionMode, toolGate } = codexPolicyToGrid(policy)
+  const { model, baseUrl, apiKey, wireApi } = launchForAgent(agent)
+  try {
+    const run = await createCodexAdapter().driver.start({
+      prompt,
+      cwd: resolveWorkspaceRoot(schedule.workspaceId)!,
+      signal: abortController.signal,
+      actionMode,
+      toolGate,
+      ...(model ? { model } : {}),
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(apiKey ? { apiKey } : {}),
+      ...(wireApi ? { wireApi } : {}),
+    })
+    const sessionId = await run.sessionId()
+    if (sessionId) updateLog(logId, { sessionId })
+    let output = ''
+    for await (const message of run.messages()) {
+      for (const block of message.blocks) {
+        if (block.type === 'text') output = block.text
+      }
+    }
+    updateLog(logId, {
+      finishedAt: Date.now(),
+      status: abortController.signal.aborted ? 'failed' : 'success',
+      output,
+      ...(abortController.signal.aborted ? { error: 'wall_clock_timeout' } : {}),
+    })
+  } catch (err) {
+    updateLog(logId, {
+      finishedAt: Date.now(),
+      status: 'failed',
+      error: err instanceof Error ? err.message : String(err),
     })
   }
 }

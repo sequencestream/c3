@@ -185,6 +185,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       id: 'e1',
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
+      maxWallClockMs: null,
       workspaceId: '/abs/ws-a',
       triggerType: 'event',
       cronExpression: '',

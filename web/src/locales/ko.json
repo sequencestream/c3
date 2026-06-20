@@ -1196,6 +1196,12 @@
         "label": "프롬프트",
         "placeholder": "보안 감사를 실행하고 발견된 내용을 요약하세요…"
       },
+      "maxWallClockMs": {
+        "label": "실행 시간 제한(ms)",
+        "placeholder": "작업 기본값 사용",
+        "hint": "비워 두면 작업 기본값을 사용합니다(명령: 30초, LLM: 60초).",
+        "invalid": "1,000에서 86,400,000 사이의 정수를 입력하세요."
+      },
       "schedule": {
         "label": "일정"
       },
@@ -1263,6 +1269,10 @@
       },
       "vendor": {
         "label": "벤더"
+      },
+      "agent": {
+        "label": "Agent",
+        "placeholder": "Select an agent"
       },
       "tools": {
         "label": "허용된 도구",
@@ -1402,7 +1412,12 @@
       "notFound": "예약 작업을 찾을 수 없습니다.",
       "executionNotFound": "실행 기록을 찾을 수 없습니다.",
       "approvalNotFound": "승인 항목을 찾을 수 없거나 이미 처리되었습니다.",
-      "invalidEventTrigger": "이벤트 트리거 일정에는 구독할 실행 이벤트가 필요합니다."
+      "invalidEventTrigger": "이벤트 트리거 일정에는 구독할 실행 이벤트가 필요합니다.",
+      "invalidMaxWallClockMs": "실행 시간 제한은 1,000에서 86,400,000밀리초 사이의 정수여야 합니다.",
+      "agentRequired": "Select an execution agent.",
+      "agentNotFound": "The selected execution agent no longer exists.",
+      "agentDisabled": "The selected execution agent is disabled.",
+      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve 저장소를 사용할 수 없습니다 (c3.db)."

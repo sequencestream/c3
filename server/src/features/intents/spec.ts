@@ -77,16 +77,16 @@ TODO
 `
 }
 
-/** The per-run user prompt that kicks off the spec session. */
+/**
+ * The per-run VISIBLE prompt that kicks off the spec session — intent body +
+ * deliverable file only. The spec-authoring contract (Spec is Truth, the five-
+ * dimension self-check, the write-confinement, ask-via-tool) is an internal system
+ * instruction delivered via the spec agent's system prompt (`buildSpecAgentPrompt`),
+ * not restated here, so it never renders as a visible user message
+ * (hide-session-system-instructions).
+ */
 export function buildSpecInstructPrompt(intent: Intent, fileAbs: string): string {
   return `Author the spec document for intent \`${intent.id}\`.
-
-Your responsibility is strictly limited: **write the spec, do not change code.** Your only writable file is the spec file (and companion files under its directory) — an absolute path OUTSIDE the project tree: \`${fileAbs}\`. Any write to another path is denied.
-
-Follow:
-- Spec is Truth: the spec describes WHAT/WHY, never implementation code; it is the single source of truth for the development that follows.
-- Spec Self-Check (five dimensions): Complete (covers every goal), Consistent (no conflict with existing project conventions), Verifiable (every requirement has a testable acceptance criterion), Scoped (explicit Out-of-Scope), Traceable (links back to the intent id).
-- Ask via Tool: when something is ambiguous, use AskUserQuestion to confirm — do not guess.
 
 Intent title: ${intent.title}
 
@@ -97,9 +97,12 @@ Read the relevant project material first, then overwrite \`${fileAbs}\` with the
 }
 
 /**
- * The per-run prompt that kicks off a RESET spec session — a fresh, write-confined
- * `'spec'` session seeded with the user's new steering input concatenated with the
- * current spec document content. Pure (no I/O) so the concatenation is unit-testable.
+ * The per-run VISIBLE prompt that kicks off a RESET spec session — the user's new
+ * steering input + intent title + the current spec content + the deliverable file.
+ * All of these are visible business context / user input. The spec-authoring
+ * contract rides the spec agent's system prompt (`buildSpecAgentPrompt`), not this
+ * text (hide-session-system-instructions). Pure (no I/O) so the concatenation is
+ * unit-testable.
  */
 export function buildResetSpecPrompt(
   intent: Intent,
@@ -110,8 +113,6 @@ export function buildResetSpecPrompt(
   const steer = userInput.trim()
   const steerBlock = steer ? `New input from the user:\n${steer}\n\n` : ''
   return `Revise the spec document for intent \`${intent.id}\` based on fresh input.
-
-Your responsibility is strictly limited: **write the spec, do not change code.** Your only writable file is the spec file (and companion files under its directory) — an absolute path OUTSIDE the project tree: \`${fileAbs}\`. Any write to another path is denied.
 
 ${steerBlock}Intent title: ${intent.title}
 

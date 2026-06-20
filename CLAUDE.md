@@ -11,6 +11,10 @@
 - **Unidirectional boundaries**: kernel/ (pure domain) → transport/ (plumbing) → features/ (user actions); kernel must not import transport or features (ADR-0009); typed event bus for cross-layer messaging (ADR-0018)
 - **Canonical envelope on wire**: vendor-spanning CanonicalMessage as wire protocol; id-based block upsert (not append-only); opaque c3SessionId never leaks vendor-native IDs (ADR-0013)
 
+## Rules
+
+- 代码注释不要包含文档引用或序号引用，比如 `SR-R14`, `ADR-0002` 等;
+
 ## Commands
 
 ```bash

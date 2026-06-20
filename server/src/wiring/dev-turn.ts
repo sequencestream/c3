@@ -158,13 +158,21 @@ export function makeRunDevTurn(
       }
 
       // Live team lead (rare for a dev skill): feed the same process. Otherwise launch
-      // a new session or resume the existing one.
+      // a new session or resume the existing one. A slash-command dev skill rides the
+      // MODEL user turn only (`userTurnPrefix`) — the client echo carries the visible
+      // prompt alone (hide-session-system-instructions).
       if (rt.team && rt.run?.handle) {
         emit(rt.sessionId, { type: 'user_text', text: input.prompt })
         setStatus(rt.sessionId, 'running')
-        rt.run.handle.pushInput(input.prompt)
+        rt.run.handle.pushInput(`${input.userTurnPrefix ?? ''}${input.prompt}`)
       } else {
-        void launchRun(rt, input.prompt, launchDeps)
+        void launchRun(
+          rt,
+          input.prompt,
+          launchDeps,
+          undefined,
+          input.userTurnPrefix ? { userTurnPrefix: input.userTurnPrefix } : undefined,
+        )
       }
     })
 }

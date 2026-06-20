@@ -27,7 +27,7 @@ import {
 import { getRuntime, removeRuntime } from '../../runs.js'
 import { getIntent, insertIntents, resetStoreForTests, setSpecPath } from './store.js'
 import { buildResetIntentPrompt, resetIntentSession } from './index.js'
-import { buildResetSpecPrompt, resetSpecSessionHandler } from './spec.js'
+import { buildResetSpecPrompt, buildSpecInstructPrompt, resetSpecSessionHandler } from './spec.js'
 import { resetForTests as resetIntentLink, takePendingIntentLink } from './intent-link.js'
 import { resetForTests as resetSpecLink, takePendingSpecLink } from './spec-link.js'
 
@@ -103,6 +103,29 @@ describe('buildResetIntentPrompt', () => {
   })
 })
 
+// The spec-authoring contract markers that must live in the spec agent's SYSTEM
+// prompt (buildSpecAgentPrompt), never in the visible per-turn prompt
+// (hide-session-system-instructions).
+const SPEC_CONTRACT_MARKERS = [
+  'Spec is Truth',
+  'Spec Self-Check',
+  'Any write to another project path is denied',
+  'do not change code',
+]
+
+describe('buildSpecInstructPrompt — visible business context only', () => {
+  it('carries the intent body + deliverable file, but NOT the spec-authoring contract', () => {
+    const intent = { id: 'int-9', title: 'Spec it', content: 'INTENT_BODY_QRS' } as never
+    const prompt = buildSpecInstructPrompt(intent, '.specs/x/spec.md')
+    // Visible business context: which intent, its body, the deliverable file.
+    expect(prompt).toContain('int-9')
+    expect(prompt).toContain('INTENT_BODY_QRS')
+    expect(prompt).toContain('.specs/x/spec.md')
+    // The contract is internal — it must not be restated as a visible user message.
+    for (const marker of SPEC_CONTRACT_MARKERS) expect(prompt).not.toContain(marker)
+  })
+})
+
 describe('buildResetSpecPrompt', () => {
   it('concatenates the new user input with the current spec content + file path', () => {
     const intent = { id: 'int-2', title: 'Spec it', content: '' } as never
@@ -115,6 +138,12 @@ describe('buildResetSpecPrompt', () => {
     expect(prompt).toContain('tighten the scope DEF')
     expect(prompt).toContain('# Spec body LMN')
     expect(prompt).toContain('.specs/x/spec.md')
+  })
+
+  it('does not restate the spec-authoring contract in the visible prompt', () => {
+    const intent = { id: 'int-2', title: 'Spec it', content: '' } as never
+    const prompt = buildResetSpecPrompt(intent, '.specs/x/spec.md', '# body', 'steer')
+    for (const marker of SPEC_CONTRACT_MARKERS) expect(prompt).not.toContain(marker)
   })
 })
 

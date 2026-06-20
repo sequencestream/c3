@@ -18,4 +18,4 @@ scripts/i18n/code-key.map.json
 
 _zt_tmp
 .pnpm-store/
-
+.codex/skills/_c3_*

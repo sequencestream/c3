@@ -69,6 +69,7 @@ export const DISC_ID_KEY = 'c3.discussionId'
 export const SCHED_PROJECT_KEY = 'c3.schedulesProject'
 export const CODES_PROJECT_KEY = 'c3.codesProject'
 export const CURRENT_WS_KEY = 'c3.currentWorkspace'
+export const WORK_SESSION_QUERY_START_TIME_KEY = 'work_session_query_start_time'
 
 export type TabKey = 'console' | 'intents' | 'discussion' | 'schedules' | 'codes'
 

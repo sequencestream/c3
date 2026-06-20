@@ -108,6 +108,21 @@ export interface SpecProfile {
   appendSystemPrompt: string
   disallowedTools: string[]
   gate: 'spec'
+  /**
+   * Bind the in-process SDK MCP server carrying the spec author's two read-only
+   * ledger query tools (`find_intents` / `view_intent`) — the CLAUDE-path twin of
+   * {@link IntentProfile.bindInProcessMcp}, kept to the SAME binder shape so
+   * `runClaude` consumes both uniformly. The spec server is project-bound (the
+   * `workspacePath` is captured at the composition root) and needs no run-level
+   * binding (no save, no confirmation gate), so it ignores the `getRunId` / `signal`
+   * the binder is handed. Absent ⇒ no in-process MCP (a spec session with no ledger
+   * query tools, the pre-2026-06-20 behaviour). Spec is claude-only, so — unlike
+   * {@link IntentProfile} — there is deliberately no `bindDriverMcp`.
+   */
+  bindInProcessMcp?: (binding: {
+    getRunId: () => string
+    signal: AbortSignal
+  }) => Record<string, McpServerConfig>
 }
 
 /**

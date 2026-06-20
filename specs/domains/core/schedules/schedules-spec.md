@@ -63,6 +63,7 @@ See [schedules-models.md](schedules-models.md) for full attributes.
 | SCH-R19 | The display `name` is **auto-generated on create** (client name stripped, SCH naming). On **update** the client may supply a manual title via `config.name`: a non-empty value is stored as a **sticky user-set name** (`config.nameSource='user'`) that auto-naming never overrides — it survives later body edits (an update with no `name` key keeps the existing name and its provenance). An empty `name` on update **reverts** to a freshly auto-derived name (clears the user marker). Create never accepts a client name (manual titles are edit-only).                                                                                                                                                                                                                                                                                                                                                                                                        |
 | SCH-R20 | **Internal one-shot agent recovery schedules** (2026-06-15-002). The agent-config quota recovery flow may create a system-owned schedule row whose config marks it an agent-quota-recovery action, names the disabled agent, and records the absolute reset instant. It reuses the cron / next-run tick engine but is one-shot: when due, the dispatcher re-enables that agent, then the scheduler **deletes the schedule row** (cascading its execution logs) so it cannot fire again and leaves no paused zombie behind — a subsequent quota error simply creates a fresh recovery row (2026-06-17-001). These rows are not user-authored command schedules and do not run shell commands.                                                                                                                                                                                                                                                                           |
 | SCH-R21 | A schedule may set `maxWallClockMs`, its maximum total execution duration in milliseconds. A missing value uses the existing task-type default (30 seconds for command; 60 seconds for LLM). Values must be whole milliseconds from 1 second through 24 hours. A timeout marks the execution failed; command retries share this one total deadline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| SCH-R24 | While a running `llm_prompt`-type execution is selected on the execution-history page and that page is the active, visible view, its detail (status / duration) and session transcript refresh automatically on a periodic client poll — new session content and status changes appear without a manual refresh or re-entry. The poll reuses the existing read-only detail and transcript reads (no server or protocol change). When the execution reaches a terminal state the poll stops, after one final transcript fetch so the complete final content is shown. The poll never runs for non-running or `command`-type executions, when the history page is not active, or while the document is hidden (it resumes on becoming visible again if the run is still live).                                                                                                                                                                                           |
 
 ## States & transitions
 
@@ -132,6 +133,16 @@ selected schedule whenever a `schedules` broadcast arrives (e.g. after an execut
 finished runs appear without a manual refresh. Switching the selected schedule clears the second-level
 execution selection.
 
+While a **running** `llm_prompt`-type execution is the selected one and the history page is the
+active, visible view (SCH-R22), the console additionally polls that execution on a fixed short
+interval — re-reading its detail (so the row's status / duration stay current) and its session
+transcript (so newly produced content appears) — without any manual refresh or re-entry. This is a
+client-only poll over the existing read-only reads; the server pushes no live stream for schedule
+runs. The poll stops as soon as the execution reaches a terminal state, after one final transcript
+read so the complete result lands. It never runs for non-running executions, `command`-type
+executions, when the history page is not the active view, or while the document is hidden — becoming
+visible again resumes it if the run is still live.
+
 ### Session transcript (read path, SCH-R16)
 
 For `llm`-type schedules, the right column's **Session** tab renders a read-only replay of the
@@ -145,8 +156,11 @@ via `get_execution_transcript`. The server resolves the execution log's recorded
 the stored transcript via agent-session, and replies with `execution_transcript` carrying the
 execution id, session id, and a flattened list of transcript items (assistant / user / tool-use /
 tool-result / notice), identical to the live chat replay. A `command`-type or sessionless execution
-returns a null session id and an empty item list; an unknown execution id returns an error. The
-transcript is fetched once and cached client-side per execution.
+returns a null session id and an empty item list; an unknown execution id returns an error. For a
+finished execution the transcript is fetched once and cached client-side per execution; for a
+**running** selected execution it is re-fetched by the live-refresh poll (SCH-R22) so in-progress
+content keeps growing, with a final fetch on completion. Each reply overwrites the cached entry for
+that execution, so the running re-fetches never flip the view back to its loading state.
 
 The mapping from transcript items to chat messages is handled by a pure presentation step, analogous
 to the one for discussions — converting one transcript item to a chat message, and a whole transcript

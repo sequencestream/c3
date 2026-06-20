@@ -36,6 +36,7 @@ import { setAutomationHooks } from './features/intents/automation.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
+import { createSpecQueryMcpServer } from './features/intents/spec-query-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
 import { createPrEventMcpServer } from './features/pr-events/publish-tool.js'
@@ -482,9 +483,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // prompt). `specDir` is per-run and rides on the runtime, not this static
     // profile. Spec sessions are claude-only (the handler rejects a codex spec
     // agent), so there is no driver-path MCP here.
-    specProfile: () => ({
+    specProfile: (workspacePath) => ({
       appendSystemPrompt: buildSpecAgentPrompt(getUiLang()),
       disallowedTools: SPEC_DISALLOWED_TOOLS,
+      // In-process MCP for the CLAUDE path: the two READ-ONLY ledger query tools
+      // (find/view), project-bound. No save, no run-level binding — the spec author
+      // reads existing intents to ground the spec but can never write the ledger.
+      // The binder ignores the run id / signal it is handed (no save gate). The
+      // same path runs on reset_spec_session, so a reset session gets the tools too.
+      bindInProcessMcp: () => createSpecQueryMcpServer(workspacePath),
       gate: 'spec' as const,
     }),
     // Work-session base MCP profile (2026-06-20): every new and resumed work

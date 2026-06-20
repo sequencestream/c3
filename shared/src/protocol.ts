@@ -1742,6 +1742,8 @@ export interface Intent {
   latestCommitHash: string | null
   /** PR / Merge Request id (e.g. GitHub PR number); `null` when no PR yet. */
   prId: string | null
+  /** Clickable PR link (e.g. the GitHub PR URL); `null` when no PR yet. Distinct from `prId`. */
+  prUrl: string | null
   /** PR lifecycle status; `null` when no PR yet or status is unknown. */
   prStatus: IntentPrStatus | null
   /**
@@ -2184,6 +2186,15 @@ export interface ToolManifestEntry {
 
 /** Source category of a {@link WaitUserInvolveEvent}. */
 export type WaitUserInvolveSource = 'session' | 'intent' | 'discussion' | 'schedule'
+
+/**
+ * Sentinel `toolName` for the workbench todo a failed manual Start-Dev Git/PR
+ * cleanup pushes. Not a real gated tool call (no `requestId`): the event's
+ * `toolInput` carries a {@link UiError} `{code, params}` so the web localizes the
+ * failure reason instead of showing a tool name. Shared so server (create) and
+ * web (render) agree on the marker.
+ */
+export const GIT_CLEANUP_EVENT_TOOL = '__c3_git_cleanup__'
 
 /**
  * Lifecycle status of a wait-user-involve event.

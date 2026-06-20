@@ -47,8 +47,8 @@ web/src/
 │   ├── workcenter/                                  # 工作台页
 │   │   ├── WorkCenter.vue                           # 工作台容器页:桌面筛选(all/todo/done/canceled/auto)/列表 + 详情两栏,切换筛选 emit reload 重拉全量,移动端单列流式
 │   │   └── components/
-│   │       ├── EventList.vue                        # 事件列表:状态徽标(含 auto)、标题、来源图标、时间与选中态,移动端行高触控优化
-│   │       └── EventDetail.vue                      # 事件详情:完整信息、Allow/Deny、AskUserQuestion 作答面板、共识决策留痕(auto 记录的投票/裁决,只读)与跳转到源
+│   │       ├── EventList.vue                        # 事件列表:状态徽标(含 auto)、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、来源图标、时间与选中态,移动端行高触控优化
+│   │       └── EventDetail.vue                      # 事件详情:完整信息(标题经 event-title 本地化)、Allow/Deny、AskUserQuestion 作答面板、共识决策留痕(auto 记录的投票/裁决,只读)与跳转到源
 │   ├── works/                                    # 工作页
 │   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
@@ -60,7 +60,7 @@ web/src/
 │   │   ├── components/
 │   │   │   ├── IntentMergedList/IntentMergedList.vue # 合并左栏:带分段控件(Intents/Sessions)切换,接管两子组件的头区;可折叠(960px/480px);透传 selectedIntentId 高亮与 select-intent 选中事件;两 tab 标题栏右域各有一个「新建会话」入口(复用同一 new-intent-session 动作与 intent.sessionList.new.tooltip 文案)——Intents tab 的入口位于自动化按钮+状态过滤之后最右侧,点击即切到 Sessions tab(右栏随 activeTab 打开聊天列)并触发新建,Sessions tab 沿用原「+」入口
 │   │   │   ├── IntentList/IntentList.vue            # 需求列表:接受 hideHeader prop 嵌入合并栏;按状态过滤、终止态分页、自动化编排启停;行点击=选中(emit select-intent,selectedId 高亮),不再行内展开/行内操作(详情与操作迁至右栏 IntentDetail)
-│   │   │   ├── IntentDetail/IntentDetail.vue        # 右栏意图详情面板:常驻单行头部(左 intent title+module+priority+status,右侧四态主按钮+refine/open-dev/mark-done/cancel/create-pr/copy-pr/automate 切换,不显示日期前缀/runStatus chip;mark-done 仅 lastDevSessionId 存在时显示;create-pr 仅 lastDevSessionId 存在、prId 为空且 branchName 存在并不同于 workspace 默认主分支时显示)+ 其下四 tab —— intent(正文 markdown+Git/PR 元信息+依赖编辑 dep modal)/intent session(intentSessionId 沟通会话,复用 ChatColumn)/spec(渲染 specPath 指向 spec.md,经 read-spec 拉取 intentSpecContent)/spec session(specSessionId 写 spec 会话,复用 ChatColumn);主操作按钮按 SDD 态四态(sddEnabled×specPath×specApproved):关→start-dev,开无spec→write-spec,有spec未批准→approve-spec,已批准→start-dev(含 start-dev in-flight 守卫);两会话 tab 沿用单一活动会话模型——切到该 tab 即 emit open-intent-session/open-spec-session 请服务端打开,activeSession 与期望 id 对齐(chatReady)才渲染聊天列防串台;两会话 tab 的「重置」按钮跟随 active tab 标题显示(lastDevSessionId 存在时隐藏;spec session 还要求 specPath 存在)→ ResetSessionDialog 输入弹框→确认 emit reset-intent-session/reset-spec-session(意图 id+新输入),服务端以「新输入+意图/spec 内容」拼接新起会话替换对应 session id;选中意图切换复位到 intent tab;无选中(列表空)时空态
+│   │   │   ├── IntentDetail/IntentDetail.vue        # 右栏意图详情面板:常驻单行头部(左 intent title+module+priority+status,右侧四态主按钮+refine/open-dev/mark-done/cancel/create-pr/pr-link(有 prUrl 时为跳转 PR 的锚点,否则回退复制 prId)/automate 切换,不显示日期前缀/runStatus chip;mark-done 仅 lastDevSessionId 存在时显示;create-pr 仅 lastDevSessionId 存在、prId 为空且 branchName 存在并不同于 workspace 默认主分支时显示)+ 其下四 tab —— intent(正文 markdown+Git/PR 元信息+依赖编辑 dep modal)/intent session(intentSessionId 沟通会话,复用 ChatColumn)/spec(渲染 specPath 指向 spec.md,经 read-spec 拉取 intentSpecContent)/spec session(specSessionId 写 spec 会话,复用 ChatColumn);主操作按钮按 SDD 态四态(sddEnabled×specPath×specApproved):关→start-dev,开无spec→write-spec,有spec未批准→approve-spec,已批准→start-dev(含 start-dev in-flight 守卫);两会话 tab 沿用单一活动会话模型——切到该 tab 即 emit open-intent-session/open-spec-session 请服务端打开,activeSession 与期望 id 对齐(chatReady)才渲染聊天列防串台;两会话 tab 的「重置」按钮跟随 active tab 标题显示(lastDevSessionId 存在时隐藏;spec session 还要求 specPath 存在)→ ResetSessionDialog 输入弹框→确认 emit reset-intent-session/reset-spec-session(意图 id+新输入),服务端以「新输入+意图/spec 内容」拼接新起会话替换对应 session id;选中意图切换复位到 intent tab;无选中(列表空)时空态
 │   │   │   └── IntentSessionList/
 │   │   │       └── IntentSessionList.vue            # 意图通信会话列表:接受 hideHeader prop 嵌入合并栏;行内重命名/删除、活跃/已完成分组、分页加载更多
 │   │
@@ -120,6 +120,7 @@ web/src/
 │   ├── format.ts                                    # 简单值格式化:JSON 美化打印、多行折叠为单行
 │   ├── highlight.ts                                 # Shiki 按需代码高亮:白名单语言、语言别名、哨兵色转 CSS class、DOMPurify 过滤
 │   ├── intent-list-view.ts                          # 需求列表纯展示逻辑:状态/运行态标签、面板展开规则、行内字段可见性、日期格式化
+│   ├── event-title.ts                               # 工作台事件显示标题:Git/PR 收尾失败 todo(toolName=GIT_CLEANUP_EVENT_TOOL)经 toolInput 的 UiError 本地化,其余回退 title/toolName
 │   ├── pending-queue.ts                             # 待发送队列纯逻辑:追加/移除、flush 判断、Send 行为(入队或发送)、草稿合并
 │   ├── permission.ts                                # 权限决策动作性判定:找出用户当前唯一能作用的权限请求
 │   ├── prompt-image.ts                              # 输入框附图客户端处理:File→PromptImage(校验图片类型/超阈 canvas 等比压缩/base64 预览);纯函数(base64Bytes/splitDataUrl/shouldCompress/scaledSize/toWire/fromWire)可 Node 单测,readImageFiles 走 DOM

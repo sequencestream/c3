@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS intents (
   branch_name         TEXT,                          -- 开发分支名 (v7→v8 新增)
   latest_commit_hash  TEXT,                          -- 分支最新 commit hash (v7→v8 新增)
   pr_id               TEXT,                          -- PR / Merge Request 编号 (v7→v8 新增)
+  pr_url              TEXT,                          -- PR 可跳转链接 (如 GitHub PR URL); 与 latest_commit_hash 语义不同 (v13→v14 新增; 历史行为 NULL)
   pr_status           TEXT,                          -- PR 状态: 'reviewing' | 'rejected' | 'failed' | 'merged' (v7→v8 新增)
   spec_path           TEXT,                          -- 已撰写的 spec 文档路径 (相对 workspace), spec 质量闸的存在性来源 (v12→v13 新增; 文档标注 VARCHAR(255), SQLite 实为 TEXT; 历史行为 NULL)
   spec_approved       INTEGER NOT NULL DEFAULT 0,    -- spec 是否通过人工审批闸: 0=否, 1=是 (v12→v13 新增; 历史行为 0)

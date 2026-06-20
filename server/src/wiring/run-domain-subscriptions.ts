@@ -63,8 +63,11 @@ import {
   getIntentSessionBySessionId,
   insertIntentSession,
   rebindChatSession,
+  setBranchName,
   setIntentSessionId,
   setLastDevSession,
+  setLatestCommitHash,
+  setPrInfo,
   setSpecSessionId,
   updateIntentSession,
   updateStatus,
@@ -77,14 +80,26 @@ import {
 } from '../features/intents/dev-link.js'
 import { clearPendingSpecLink, takePendingSpecLink } from '../features/intents/spec-link.js'
 import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
-import { notifyTurnSettled } from '../features/intents/automation.js'
+import { isIntentDrivenByAutomation, notifyTurnSettled } from '../features/intents/automation.js'
+import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
+import { getWorktreePath } from '../features/intents/worktree.js'
+import { getDefaultMainBranch, getGitBranchMode } from '../kernel/config/index.js'
 import {
   cancelBySourceId,
+  createEvent,
   isStoreAvailable as isWaitUserEventsStoreAvailable,
 } from '../features/user-involve/store.js'
 import { agentSwitchFor } from '../features/works/index.js'
 import { resolveSessionVendor } from '../kernel/agent-config/index.js'
-import { gitDiffStat } from '../git.js'
+import {
+  commitAndPush,
+  createGhPr,
+  getCurrentBranch,
+  getHeadCommit,
+  gitDiffStat,
+  hasCommittableChanges,
+} from '../git.js'
+import { GIT_CLEANUP_EVENT_TOOL } from '@ccc/shared/protocol'
 
 /** Broader domain subscription dependencies, injected by the composition root. */
 export interface DomainSubDeps {
@@ -122,6 +137,40 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastSchedules,
     broadcastWaitUserEvents,
   } = deps
+
+  // Manual Start-Dev session-end Git/PR cleanup deps (MSC-R1…R6). Stateless
+  // wiring of git helpers + store writers + the workbench failure-todo channel.
+  const cleanupDeps: DevCleanupDeps = {
+    getGitBranchMode,
+    getDefaultMainBranch,
+    gitCwd: (ws, intentId) =>
+      getGitBranchMode(ws) === 'worktree' ? getWorktreePath(ws, intentId) : ws,
+    hasCommittableChanges,
+    getCurrentBranch,
+    getHeadCommit,
+    commitAndPush,
+    createGhPr: (cwd, title, body, headBranch) => createGhPr(cwd, title, body, headBranch),
+    getIntent,
+    setBranchName,
+    setLatestCommitHash,
+    setPrInfo,
+    cancelEventsForIntent: (intentId) => {
+      if (isWaitUserEventsStoreAvailable()) cancelBySourceId(intentId)
+    },
+    pushFailureEvent: ({ workspacePath, intentId, code, params }) => {
+      if (!isWaitUserEventsStoreAvailable()) return
+      createEvent({
+        workspacePath,
+        source: 'intent',
+        sourceId: intentId,
+        status: 'todo',
+        toolName: GIT_CLEANUP_EVENT_TOOL,
+        toolInput: { code, ...(params ? { params } : {}) },
+      })
+    },
+    broadcastIntents,
+    broadcastWaitUserEvents,
+  }
 
   // ── run:bound ────────────────────────────────────────────────────────
   // Matched via `getRuntime`. Two branches: intent comm-sessions (pending
@@ -224,6 +273,16 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
 
     // Refresh the intent list for clients tracking this project.
     broadcastIntents(workspacePath)
+
+    // Manual vs automation split (MSC-R1): automation drives its own commit/PR
+    // in `notifyTurnSettled`; a session NOT owned by the active orchestrator is a
+    // manual Start-Dev session, so run the session-end Git/PR cleanup for it.
+    // Fire-and-forget — must not block the run:settled handler.
+    if (!isIntentDrivenByAutomation(workspacePath, matched.id)) {
+      void runManualDevCleanup(matched.id, workspacePath, cleanupDeps).catch((err) => {
+        console.error('[c3:intent-cleanup] manual dev cleanup failed:', err)
+      })
+    }
 
     // Forward to the automation controller (no-op if automation is idle).
     notifyTurnSettled(workspacePath, sessionId, reason, matched.id)

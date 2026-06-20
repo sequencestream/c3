@@ -23,6 +23,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     branchName: null,
     latestCommitHash: null,
     prId: null,
+    prUrl: null,
     prStatus: null,
     specPath: null,
     specApproved: false,
@@ -253,6 +254,34 @@ describe('IntentDetail.vue — actions', () => {
     const w = mountDetail(item)
 
     expect(w.find('[data-action="createPr"]').exists()).toBe(false)
+  })
+
+  it('renders the PR link as a jumpable anchor to prUrl when present', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'in_progress',
+      prId: '42',
+      prUrl: 'https://github.com/o/r/pull/42',
+      prStatus: 'reviewing',
+    })
+    const w = mountDetail(item)
+    const link = w.find('a.req-btn.pr-link')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('https://github.com/o/r/pull/42')
+    expect(link.attributes('target')).toBe('_blank')
+  })
+
+  it('falls back to the copy button when a PR exists without a prUrl', () => {
+    const item = intent({ id: 'intent-1', status: 'in_progress', prId: '42', prUrl: null })
+    const w = mountDetail(item)
+    expect(w.find('a.req-btn.pr-link').exists()).toBe(false)
+    expect(w.find('button.req-btn.pr-link').exists()).toBe(true)
+  })
+
+  it('shows no PR link when there is no PR (empty prUrl does not break layout)', () => {
+    const item = intent({ id: 'intent-1', status: 'in_progress', prId: null, prUrl: null })
+    const w = mountDetail(item)
+    expect(w.find('.req-btn.pr-link').exists()).toBe(false)
   })
 
   it('hides create-pr when the intent branch matches the workspace main branch', () => {

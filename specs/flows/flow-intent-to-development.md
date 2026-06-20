@@ -112,6 +112,14 @@ flowchart TD
   messages the completion judge confirms `done` is **auto-completed** (commit + push +
   status set to `done`) — for manual **and** automation runs alike; a live process derives
   `runStatus = 'running'`; otherwise `dangling`. This is one of the two auto-`done` paths.
+- **Session-end Git/PR cleanup (manual, `RM-R26`).** When a **manually-started** dev session settles
+  (complete / error / terminated), the server closes the Git/PR loop **without** changing status. In
+  `worktree` mode (or `current-branch` off the `defaultMainBranch`) with changes present it commits,
+  pushes, and opens a PR via the `gh` CLI, then writes back `branchName`, `latestCommitHash`, `prId`,
+  `prUrl`, and `prStatus = reviewing`; an intent that already has a PR is refreshed (commit/push +
+  `latestCommitHash`) but **not** re-PR'd. `current-branch` **on** the main branch is a normal success
+  skip. A session the project's orchestrator is actively driving is automation-owned (`RM-A5`) and is
+  **not** cleaned up here — manual and automation are mutually exclusive.
 
 ## Discussion bridge
 
@@ -133,7 +141,14 @@ then funnels into the **unchanged** `save_intents` path (`RM-R7`). See
   lock (`RM-R21`).
 - **Manual launch never auto-completes.** The dev run finishing does not change status; the user
   marks `done`/`cancelled` (`RM-R9`). The only exceptions are the entry reconcile (`RM-R18`) and the
-  automation orchestrator (`RM-A5`).
+  automation orchestrator (`RM-A5`). The session-end Git/PR cleanup (`RM-R26`) likewise touches only
+  the Git/PR fields, never the status machine.
+- **Cleanup failure is explicit, never faked.** When the session-end cleanup should run but cannot —
+  no committable changes, commit/push failure, the `gh` CLI unavailable / not logged in, or PR
+  creation failing — it fails explicitly and pushes a workbench wait-user-involve todo asking the
+  user to act; it never sets `prStatus = reviewing` or writes a placeholder `prId`/`prUrl`, and only
+  genuinely-completed steps are recorded (`RM-R26`). It does not auto-merge, resolve conflicts, fix
+  auth, or retry.
 - **Unmet dependencies warn, not block.** Launching with a non-`done` `dependsOn` warns but proceeds
   (`RM-R11`).
 - **Ledger unavailable degrades softly.** If SQLite is down, intent messages return `error` and the

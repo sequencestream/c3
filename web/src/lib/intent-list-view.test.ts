@@ -367,6 +367,7 @@ describe('formatDependsOn', () => {
       branchName: null,
       latestCommitHash: null,
       prId: null,
+      prUrl: null,
       prStatus: null,
       specPath: null,
       specApproved: false,

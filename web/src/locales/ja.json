@@ -686,7 +686,10 @@
       },
       "pr": {
         "label": "PR #{id}",
-        "tooltip": "PR番号をコピー"
+        "tooltip": "PR番号をコピー",
+        "open": {
+          "tooltip": "PRを開く"
+        }
       },
       "more": {
         "label": "その他の操作"
@@ -1373,6 +1376,10 @@
       "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
+      "gitCleanupNoChanges": "開発セッションが終了しましたが、コミットする変更がありません。手動でコミット・プッシュし、PRを作成してください。",
+      "gitCleanupCommitPushFailed": "開発セッション後の自動コミット/プッシュに失敗しました: {detail}。手動で対応してください。",
+      "gitCleanupGhUnavailable": "PRを作成できません。gh CLIが利用できないかログインしていません: {detail}。gh をインストール/認証してから手動でPRを作成してください。",
+      "gitCleanupPrFailed": "PRの自動作成に失敗しました: {detail}。手動でPRを作成してください。",
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
       "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。開発を開始する前に手動で同期してください: {message}",
       "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。",

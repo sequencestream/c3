@@ -19,9 +19,12 @@ import type {
   CodexPolicy,
   CreateScheduleInput,
   ModeToken,
+  PrOperation,
+  PrOperationFilter,
+  PrOperationResult,
   RunEndReason,
-  RunLifecycleTopic,
   Schedule,
+  ScheduleEventTopic,
   ScheduleExecutionLog,
   ScheduleStatus,
   ScheduleTriggerType,
@@ -30,6 +33,7 @@ import type {
   VendorId,
   WorkspaceMcpConfig,
 } from '@ccc/shared/protocol'
+import { PR_OPERATIONS, PR_OPERATION_RESULTS } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { getTimezone } from '../../kernel/config/index.js'
@@ -59,7 +63,7 @@ export interface ScheduleNameOverride {
 }
 
 const AGENT_RECOVERY_ACTION = 'agent_quota_recovery'
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schedules (
@@ -73,6 +77,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   next_run_at         INTEGER,
   event_topic         TEXT,
   event_reason_filter TEXT,
+  event_pr_filter     TEXT,
   status              TEXT NOT NULL,
   mode                TEXT NOT NULL DEFAULT '',
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',
@@ -191,6 +196,13 @@ function runMigrations(d: Db): void {
   if (!columnExists(d, 'schedules', 'agent_id')) {
     d.exec(`ALTER TABLE schedules ADD COLUMN agent_id TEXT`)
   }
+  // v8 (2026-06-20): pr:operation event triggers. event_pr_filter holds the
+  // optional PR operation/result filter (JSON) for schedules subscribed to the
+  // model-published `pr:operation` event. NULL for cron + run-lifecycle rows, so
+  // their behaviour is unchanged. Gated on table_info so re-runs no-op.
+  if (!columnExists(d, 'schedules', 'event_pr_filter')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN event_pr_filter TEXT`)
+  }
 }
 
 let schemaReady = false
@@ -253,6 +265,7 @@ interface ScheduleRow {
   next_run_at: number | null
   event_topic: string | null
   event_reason_filter: string | null
+  event_pr_filter: string | null
   status: string
   mode: string
   tool_allowlist: string
@@ -317,6 +330,47 @@ function parseReasonFilter(raw: string | null): RunEndReason[] | null {
   return list.length ? list : null
 }
 
+/**
+ * Parse the event_pr_filter column to a {@link PrOperationFilter}; null/blank/
+ * corrupt → null (= any PR operation). Unknown operation/result values are
+ * dropped, and a dimension that ends up empty is omitted so it matches any value.
+ */
+function parsePrFilter(raw: string | null): PrOperationFilter | null {
+  if (!raw) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const obj = parsed as Record<string, unknown>
+  const operations = Array.isArray(obj.operations)
+    ? obj.operations.filter((x): x is PrOperation => PR_OPERATIONS.includes(x as PrOperation))
+    : []
+  const results = Array.isArray(obj.results)
+    ? obj.results.filter((x): x is PrOperationResult =>
+        PR_OPERATION_RESULTS.includes(x as PrOperationResult),
+      )
+    : []
+  const filter: PrOperationFilter = {}
+  if (operations.length) filter.operations = operations
+  if (results.length) filter.results = results
+  return Object.keys(filter).length ? filter : null
+}
+
+/** Serialize a PR filter to JSON for storage; an empty/absent filter stores NULL. */
+function serializePrFilter(filter: PrOperationFilter | null | undefined): string | null {
+  if (!filter) return null
+  const hasOps = !!filter.operations?.length
+  const hasResults = !!filter.results?.length
+  if (!hasOps && !hasResults) return null
+  return JSON.stringify({
+    ...(hasOps ? { operations: filter.operations } : {}),
+    ...(hasResults ? { results: filter.results } : {}),
+  })
+}
+
 function toSchedule(r: ScheduleRow): Schedule {
   let config: unknown = {}
   try {
@@ -333,8 +387,9 @@ function toSchedule(r: ScheduleRow): Schedule {
     triggerType: (r.trigger_type as ScheduleTriggerType | null) ?? 'cron',
     cronExpression: r.cron_expression,
     nextRunAt: r.next_run_at,
-    eventTopic: (r.event_topic as RunLifecycleTopic | null) ?? null,
+    eventTopic: (r.event_topic as ScheduleEventTopic | null) ?? null,
     eventReasonFilter: parseReasonFilter(r.event_reason_filter),
+    eventPrFilter: parsePrFilter(r.event_pr_filter),
     status: r.status as ScheduleStatus,
     mode: parseMode(r.mode),
     toolAllowlist: parseStringList(r.tool_allowlist),
@@ -488,10 +543,14 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     isEvent && input.eventReasonFilter && input.eventReasonFilter.length
       ? JSON.stringify(input.eventReasonFilter)
       : null
+  // PR filter only applies to a `pr:operation` event trigger; cron + run-lifecycle
+  // rows store NULL (= any).
+  const eventPrFilter =
+    isEvent && eventTopic === 'pr:operation' ? serializePrFilter(input.eventPrFilter) : null
   d.run(
     `INSERT INTO schedules
-       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, event_pr_filter, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
     JSON.stringify(config),
@@ -502,6 +561,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     nextRunAt,
     eventTopic,
     eventReasonFilter,
+    eventPrFilter,
     'active',
     serializeMode(input.mode),
     JSON.stringify(allowlist),
@@ -615,6 +675,8 @@ export function updateSchedule(
       params.push(null)
       sets.push('event_reason_filter=?')
       params.push(null)
+      sets.push('event_pr_filter=?')
+      params.push(null)
     }
   }
   if (patch.cronExpression !== undefined) {
@@ -640,6 +702,10 @@ export function updateSchedule(
         ? JSON.stringify(patch.eventReasonFilter)
         : null,
     )
+  }
+  if (patch.eventPrFilter !== undefined) {
+    sets.push('event_pr_filter=?')
+    params.push(serializePrFilter(patch.eventPrFilter))
   }
   if (patch.mode !== undefined) {
     sets.push('mode=?')
@@ -711,11 +777,12 @@ export function getDueSchedules(now: number): Schedule[] {
 }
 
 /**
- * All active event-triggered schedules subscribed to a given run lifecycle topic.
- * Used by the scheduler's event dispatch path (2026-06-08); cron schedules are
- * excluded by the `trigger_type='event'` filter.
+ * All active event-triggered schedules subscribed to a given event topic (a run
+ * lifecycle topic or `'pr:operation'`). Used by the scheduler's event dispatch
+ * path (2026-06-08, extended 2026-06-20); cron schedules are excluded by the
+ * `trigger_type='event'` filter.
  */
-export function getEventSchedules(topic: RunLifecycleTopic): Schedule[] {
+export function getEventSchedules(topic: ScheduleEventTopic): Schedule[] {
   const d = db()
   if (!d) return []
   return d

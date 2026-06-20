@@ -12,8 +12,9 @@ CREATE TABLE IF NOT EXISTS schedules (
   trigger_type        TEXT NOT NULL DEFAULT 'cron',         -- 触发类型: 'cron' | 'event' (v5 新增)
   cron_expression     TEXT NOT NULL,                        -- cron 表达式 (trigger_type='event' 时为空)
   next_run_at         INTEGER,                             -- 下次执行时间 (epoch ms), event 类型为 null
-  event_topic         TEXT,                                -- 事件主题 (v5 新增, trigger_type='event' 时使用)
-  event_reason_filter TEXT,                                -- JSON 数组, 事件原因过滤 (v5 新增, 如 ['complete','error','aborted'])
+  event_topic         TEXT,                                -- 事件主题 (v5 新增, trigger_type='event' 时使用: 'run:started'|'run:settled'|'pr:operation')
+  event_reason_filter TEXT,                                -- JSON 数组, run:settled 原因过滤 (v5 新增, 如 ['complete','error','aborted'])
+  event_pr_filter     TEXT,                                -- JSON {operations?,results?}, pr:operation 过滤 (v8 新增, NULL=任意)
   status              TEXT NOT NULL,                        -- 状态: 'active' | 'paused' | 'error'
   mode                TEXT NOT NULL DEFAULT '',             -- 执行模式: ModeToken 字符串或 CodexPolicy JSON (v7 改名自 mcp_mode)
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',           -- JSON 数组, 允许使用的工具名列表

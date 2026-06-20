@@ -31,8 +31,9 @@ CREATE TABLE schedules (
     trigger_type        TEXT NOT NULL DEFAULT 'cron',         -- 'cron' | 'event' (v5, 2026-06-08)
     cron_expression     TEXT NOT NULL,                        -- '' for event triggers
     next_run_at         INTEGER,                              -- Unix ms; null for event triggers
-    event_topic         TEXT,                                 -- 'run:started' | 'run:settled' | null
-    event_reason_filter TEXT,                                 -- JSON RunEndReason[] | null
+    event_topic         TEXT,                                 -- 'run:started' | 'run:settled' | 'pr:operation' | null
+    event_reason_filter TEXT,                                 -- JSON RunEndReason[] | null (run:settled)
+    event_pr_filter     TEXT,                                 -- JSON {operations?,results?} | null (pr:operation, v8 2026-06-20)
     status          TEXT NOT NULL,                           -- 'active' | 'paused' | 'error'
     mcp_mode        TEXT NOT NULL,                           -- 'read-only' | 'sandboxed' | 'full-access'
     tool_allowlist  TEXT NOT NULL DEFAULT '[]',
@@ -168,22 +169,29 @@ When the server restarts, some schedules' next-run instant may be in the past:
 - Creates an execution log and dispatches immediately (outside the tick loop).
 - The execution result is broadcast to refresh the UI.
 
-### Event-triggered dispatch (2026-06-08)
+### Event-triggered dispatch (2026-06-08, extended 2026-06-20)
 
-The event-dispatch path is wired to the kernel event bus in the composition root (subscribing to
-`run:started` / `run:settled`). On each event:
+The event-dispatch path is wired to the kernel event bus in the composition root, subscribing to
+`run:started` / `run:settled` (run-lifecycle) and `pr:operation` (model-published). On each event:
 
-1. If the event's run kind is not a user `session` run → return (internal comm runs never fire user
-   schedules, SCH-R18).
+1. **Run-lifecycle topics only:** if the event's run kind is not a user `session` run → return
+   (internal comm runs never fire user schedules, SCH-R18). `pr:operation` carries no run kind and
+   skips this gate (SCH-R22).
 2. Fetch active `event` schedules for this topic.
-3. Keep those whose workspace matches (both sides resolved) and, for `run:settled`, whose event
-   reason filter admits the event's terminal reason (null/empty = any).
+3. Keep those whose workspace matches (both sides resolved), then apply the topic filter: for
+   `run:settled`, the event reason filter (null/empty = any); for `pr:operation`, the PR filter — the
+   event's `operation` ∈ `eventPrFilter.operations` AND `result` ∈ `eventPrFilter.results`, each
+   empty/null dimension = any (SCH-R22).
 4. Skip any schedule already in-flight (SCH-R7 serial execution = event-storm throttle).
 5. Survivors run through the **same** dispatch-and-track → execute path as cron runs (so the
    three-tier MCP security + write-approval queue apply unchanged). The post-run re-arm skips the
    next-run recompute for `event` schedules (they have no cron).
 
-The publish points live in the run path; see schedules-spec.md § Triggers → Run lifecycle events.
+The run-lifecycle publish points live in the run path. The `pr:operation` publish point is the
+`publish_pr_event` MCP tool — c3 provides it to every work session (both vendor paths) so the model,
+after performing a PR operation with its own tools, can publish one vendor-neutral event; c3 itself
+never performs a PR operation. See schedules-spec.md § Triggers → PR operation events (SCH-R22 /
+SCH-R23).
 
 ## Execution dispatcher
 

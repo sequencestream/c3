@@ -232,3 +232,57 @@ describe('runViaDriver — codex delivery split (hide-session-system-instruction
     removeRuntime(sid)
   })
 })
+
+describe('runViaDriver — work-session base MCP injection (publish_pr_event, codex)', () => {
+  const sid = 'codex-native-pr'
+  const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+
+  function fakeCodexAdapter(): {
+    adapter: VendorAdapter
+    started: { mcpServers?: Record<string, unknown> }
+  } {
+    const started: { mcpServers?: Record<string, unknown> } = {}
+    const adapter = {
+      vendor: 'codex',
+      approval: { onRequest: () => () => {} },
+      driver: {
+        start: (opts: { mcpServers?: Record<string, unknown> }) => {
+          started.mcpServers = opts.mcpServers
+          return Promise.resolve({
+            sessionId: () => Promise.resolve(sid),
+            // eslint-disable-next-line require-yield
+            messages: async function* () {
+              return
+            },
+          })
+        },
+      },
+    } as unknown as VendorAdapter
+    return { adapter, started }
+  }
+
+  it('binds the session profile driver MCP and threads its servers to driver.start', async () => {
+    const rt = ensureRuntime(sid, '/proj', 'default', [], 'session')
+    const viewer: Viewer = () => {}
+    addViewer(sid, viewer)
+
+    const dispose = vi.fn()
+    const servers = {
+      c3: { type: 'http' as const, url: 'http://127.0.0.1/internal/pr-event-mcp/v1?token=t' },
+    }
+    const bindDriverMcp = vi.fn(() => ({ servers, dispose }))
+    const { adapter, started } = fakeCodexAdapter()
+
+    await runViaDriver(rt, 'hi', adapter, eventBus, undefined, undefined, undefined, undefined, {
+      bindInProcessMcp: () => ({}),
+      bindDriverMcp,
+    })
+
+    expect(bindDriverMcp).toHaveBeenCalledTimes(1)
+    expect(started.mcpServers).toEqual(servers)
+    // The per-run binding is evicted at run end.
+    expect(dispose).toHaveBeenCalledTimes(1)
+
+    removeRuntime(sid)
+  })
+})

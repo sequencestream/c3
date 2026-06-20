@@ -28,7 +28,13 @@
  *    corresponding payload type.
  */
 
-import type { IntentStatus, RunEndReason, RunKind, VendorId } from '@ccc/shared/protocol'
+import type {
+  IntentStatus,
+  PrOperationEvent,
+  RunEndReason,
+  RunKind,
+  VendorId,
+} from '@ccc/shared/protocol'
 
 /** Default event map for c3 kernel events. Extend this interface to add new topics. */
 export interface EventBusEvents {
@@ -113,6 +119,16 @@ export interface EventBusEvents {
     fromStatus: IntentStatus
     toStatus: IntentStatus
   }
+  /**
+   * A model-published, vendor-neutral PR operation event (2026-06-20). Published
+   * by the `publish_pr_event` MCP tool's handler AFTER the model performed a PR
+   * operation with its own tools — c3 never executes the operation itself. The
+   * `workspacePath` + `sessionId` come from the per-run binding closure (the
+   * model cannot forge another workspace), and the rest is the validated,
+   * safely-normalized {@link PrOperationEvent}. Event-triggered schedules
+   * subscribed to `'pr:operation'` match it by operation + result.
+   */
+  'pr:operation': { workspacePath: string; sessionId: string } & PrOperationEvent
 }
 
 /** A handler function for a given event topic. May return a Promise (fire-and-forget). */

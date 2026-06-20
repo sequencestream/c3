@@ -30,9 +30,11 @@ import type {
   AgentConfig,
   CreateScheduleInput,
   ModeToken,
+  PrOperation,
+  PrOperationResult,
   RunEndReason,
-  RunLifecycleTopic,
   Schedule,
+  ScheduleEventTopic,
   ScheduleTriggerType,
   ScheduleType,
   ToolManifestEntry,
@@ -89,15 +91,30 @@ const TRIGGER_TYPES = computed<{ value: ScheduleTriggerType; label: string }[]>(
   { value: 'event', label: t('schedule.form.trigger.event.label') },
 ])
 
-const EVENT_TOPICS = computed<{ value: RunLifecycleTopic; label: string }[]>(() => [
+const EVENT_TOPICS = computed<{ value: ScheduleEventTopic; label: string }[]>(() => [
   { value: 'run:started', label: t('schedule.form.event.topic.started.label') },
   { value: 'run:settled', label: t('schedule.form.event.topic.settled.label') },
+  { value: 'pr:operation', label: t('schedule.form.event.topic.prOperation.label') },
 ])
 
 const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
   { value: 'complete', label: t('schedule.form.event.reason.complete.label') },
   { value: 'error', label: t('schedule.form.event.reason.error.label') },
   { value: 'aborted', label: t('schedule.form.event.reason.aborted.label') },
+])
+
+// PR operation event filter options (the `pr:operation` topic; 2026-06-20).
+// Literal i18n keys (the typed `t` rejects dynamic template keys).
+const PR_OPERATION_OPTIONS = computed<{ value: PrOperation; label: string }[]>(() => [
+  { value: 'create', label: t('schedule.form.event.pr.op.create.label') },
+  { value: 'review', label: t('schedule.form.event.pr.op.review.label') },
+  { value: 'merge', label: t('schedule.form.event.pr.op.merge.label') },
+  { value: 'close', label: t('schedule.form.event.pr.op.close.label') },
+  { value: 'comment', label: t('schedule.form.event.pr.op.comment.label') },
+])
+const PR_RESULT_OPTIONS = computed<{ value: PrOperationResult; label: string }[]>(() => [
+  { value: 'success', label: t('schedule.form.event.pr.result.success.label') },
+  { value: 'failure', label: t('schedule.form.event.pr.result.failure.label') },
 ])
 
 // ---- Vendor ----------------------------------------------------------------
@@ -133,8 +150,11 @@ const prompt = ref('')
 const maxWallClockMs = ref<number | null>(null)
 const cronExpression = ref('*/30 * * * *')
 const triggerType = ref<ScheduleTriggerType>('cron')
-const eventTopic = ref<RunLifecycleTopic>('run:settled')
+const eventTopic = ref<ScheduleEventTopic>('run:settled')
 const eventReasonFilter = ref<RunEndReason[]>([])
+// PR operation event filter (the `pr:operation` topic). Empty list = any.
+const prOperations = ref<PrOperation[]>([])
+const prResults = ref<PrOperationResult[]>([])
 
 const toolAllowlist = ref<string[]>([])
 
@@ -145,6 +165,10 @@ const vendorAgents = computed(() =>
 // The reason filter only applies to run:settled (run:started has no outcome).
 const showReasonFilter = computed(
   () => triggerType.value === 'event' && eventTopic.value === 'run:settled',
+)
+// The PR filter panel only applies to the pr:operation topic (2026-06-20).
+const showPrFilter = computed(
+  () => triggerType.value === 'event' && eventTopic.value === 'pr:operation',
 )
 
 // Advanced segmented builder.
@@ -201,6 +225,10 @@ watch(
       triggerType.value = sched.triggerType
       eventTopic.value = sched.eventTopic ?? 'run:settled'
       eventReasonFilter.value = sched.eventReasonFilter ? [...sched.eventReasonFilter] : []
+      prOperations.value = sched.eventPrFilter?.operations
+        ? [...sched.eventPrFilter.operations]
+        : []
+      prResults.value = sched.eventPrFilter?.results ? [...sched.eventPrFilter.results] : []
       // Vendor: restore from schedule, then trigger manifest load.
       vendor.value = sched.vendor
       agentId.value = sched.agentId ?? ''
@@ -220,6 +248,8 @@ watch(
       triggerType.value = 'cron'
       eventTopic.value = 'run:settled'
       eventReasonFilter.value = []
+      prOperations.value = []
+      prResults.value = []
       vendor.value = 'claude'
       agentId.value = ''
       vendorInitialised.value = true
@@ -323,6 +353,18 @@ function toggleReason(r: RunEndReason): void {
   else eventReasonFilter.value.push(r)
 }
 
+function togglePrOperation(op: PrOperation): void {
+  const i = prOperations.value.indexOf(op)
+  if (i >= 0) prOperations.value.splice(i, 1)
+  else prOperations.value.push(op)
+}
+
+function togglePrResult(r: PrOperationResult): void {
+  const i = prResults.value.indexOf(r)
+  if (i >= 0) prResults.value.splice(i, 1)
+  else prResults.value.push(r)
+}
+
 // ---- Tool manifest helpers -------------------------------------------------
 const currentTools = computed<ToolManifestEntry[]>(() => props.toolManifest[vendor.value] ?? [])
 
@@ -391,6 +433,16 @@ function save(): void {
     isEvent && eventTopic.value === 'run:settled' && eventReasonFilter.value.length
       ? [...eventReasonFilter.value]
       : null
+  // PR filter only carries for pr:operation; empty dimensions mean "any".
+  const prFilter =
+    isEvent &&
+    eventTopic.value === 'pr:operation' &&
+    (prOperations.value.length || prResults.value.length)
+      ? {
+          ...(prOperations.value.length ? { operations: [...prOperations.value] } : {}),
+          ...(prResults.value.length ? { results: [...prResults.value] } : {}),
+        }
+      : null
   if (isEdit.value && props.schedule) {
     // Carry the manual title: a non-empty value is stored sticky server-side; an
     // empty value reverts to auto-naming. Create never sends a name (auto only).
@@ -409,6 +461,7 @@ function save(): void {
     if (isEvent) {
       input.eventTopic = eventTopic.value
       input.eventReasonFilter = reasonFilter
+      input.eventPrFilter = prFilter
     } else {
       input.cronExpression = cronExpression.value
     }
@@ -426,6 +479,7 @@ function save(): void {
       cronExpression: isEvent ? '' : cronExpression.value,
       eventTopic: isEvent ? eventTopic.value : null,
       eventReasonFilter: reasonFilter,
+      eventPrFilter: prFilter,
       toolAllowlist: [...toolAllowlist.value],
     })
   }
@@ -665,6 +719,47 @@ function save(): void {
               </button>
             </div>
             <span class="sf-hint">{{ t('schedule.form.event.reason.hint') }}</span>
+          </template>
+
+          <!-- PR operation event (pr:operation): the MCP integration. Selecting
+               this topic IS the explicit opt-in; the model performs PR operations
+               with its own tools and only publishes the event — c3 never executes
+               PR operations. -->
+          <template v-if="showPrFilter">
+            <p class="sf-pr-note">{{ t('schedule.form.event.pr.note') }}</p>
+
+            <span class="sf-label sf-event-reason-label">{{
+              t('schedule.form.event.pr.op.label')
+            }}</span>
+            <div class="sf-days">
+              <button
+                v-for="op in PR_OPERATION_OPTIONS"
+                :key="op.value"
+                type="button"
+                class="sf-day"
+                :class="{ active: prOperations.includes(op.value) }"
+                @click="togglePrOperation(op.value)"
+              >
+                {{ op.label }}
+              </button>
+            </div>
+
+            <span class="sf-label sf-event-reason-label">{{
+              t('schedule.form.event.pr.result.label')
+            }}</span>
+            <div class="sf-days">
+              <button
+                v-for="r in PR_RESULT_OPTIONS"
+                :key="r.value"
+                type="button"
+                class="sf-day"
+                :class="{ active: prResults.includes(r.value) }"
+                @click="togglePrResult(r.value)"
+              >
+                {{ r.label }}
+              </button>
+            </div>
+            <span class="sf-hint">{{ t('schedule.form.event.pr.hint') }}</span>
           </template>
         </div>
 
@@ -1074,6 +1169,15 @@ function save(): void {
   font-size: var(--fs-caption);
   color: var(--c-text);
   margin: var(--sp-2) 0 0;
+}
+.sf-pr-note {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2);
+  margin: 0;
 }
 
 /* Tool checklist */

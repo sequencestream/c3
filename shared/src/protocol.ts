@@ -2052,6 +2052,84 @@ export type RunLifecycleTopic = 'run:started' | 'run:settled'
 /** Terminal reason a run settled with: clean finish, error, or user abort. */
 export type RunEndReason = 'complete' | 'error' | 'aborted'
 
+// ---- Vendor-neutral PR operation events (2026-06-20) -----------------------
+//
+// c3 never executes a PR operation. The model uses its OWN tools (gh CLI, a
+// GitHub MCP, …) to create / review / merge / close / comment on a PR, and AFTER
+// the operation completes (or fails) it calls the `publish_pr_event` MCP tool to
+// publish ONE vendor-neutral PR operation event. A schedule can subscribe to
+// these events and trigger its existing follow-up action. The contract is NOT
+// bound to GitHub — `repo.provider` keeps room for GitLab and others.
+
+/** PR operation kinds a model may report (vendor-neutral). */
+export const PR_OPERATIONS = ['create', 'review', 'merge', 'close', 'comment'] as const
+export type PrOperation = (typeof PR_OPERATIONS)[number]
+
+/** Outcome of a PR operation the model performed with its own tools. */
+export const PR_OPERATION_RESULTS = ['success', 'failure'] as const
+export type PrOperationResult = (typeof PR_OPERATION_RESULTS)[number]
+
+/** PR identity — every field optional and vendor-neutral. */
+export interface PrRef {
+  number?: number
+  id?: string
+  url?: string
+  title?: string
+  state?: string
+}
+
+/** Repository context — vendor-neutral. `provider` defaults to `'github'`, may be `'gitlab'` etc. */
+export interface PrRepo {
+  provider?: string
+  host?: string
+  owner?: string
+  name?: string
+}
+
+/** Branch context for the PR. */
+export interface PrBranchRef {
+  head?: string
+  base?: string
+}
+
+/** Association linking the event back to a c3 work item so a listener can correlate it. */
+export interface PrEventAssociation {
+  intentId?: string
+}
+
+/**
+ * A vendor-neutral PR operation event, published by the model via the
+ * `publish_pr_event` MCP tool after it performs a PR operation with its own
+ * tools. Doubles as the MCP input shape and the event-bus payload core.
+ * `errorSummary` is meaningful only when `result === 'failure'` and is safely
+ * normalized server-side (never carries tokens or raw CLI output).
+ */
+export interface PrOperationEvent {
+  operation: PrOperation
+  result: PrOperationResult
+  pr?: PrRef
+  repo?: PrRepo
+  ref?: PrBranchRef
+  association?: PrEventAssociation
+  errorSummary?: string
+}
+
+/**
+ * Topics an event-triggered schedule may subscribe to: the run lifecycle topics
+ * plus the model-published `pr:operation` event (2026-06-20).
+ */
+export type ScheduleEventTopic = RunLifecycleTopic | 'pr:operation'
+
+/**
+ * Filter for `pr:operation` event triggers: a schedule fires only when the
+ * event's operation is in `operations` AND its result is in `results`. An empty
+ * (or absent) list for either dimension matches any value of that dimension.
+ */
+export interface PrOperationFilter {
+  operations?: PrOperation[]
+  results?: PrOperationResult[]
+}
+
 /**
  * Single source-of-truth taxonomy for what kind of run/agent invocation produced
  * an event or drives a runtime (2026-06-08). One value per distinct origin so
@@ -2116,13 +2194,19 @@ export interface Schedule {
   cronExpression: string
   /** Unix ms timestamp of the next planned run; null when not scheduled (always null for `'event'`). */
   nextRunAt: number | null
-  /** For `'event'` triggers: the run lifecycle topic subscribed to; null for cron. */
-  eventTopic: RunLifecycleTopic | null
+  /** For `'event'` triggers: the event topic subscribed to (run lifecycle or `'pr:operation'`); null for cron. */
+  eventTopic: ScheduleEventTopic | null
   /**
    * For `'run:settled'` event triggers: only fire when the run ended with one of
    * these reasons. `null` or `[]` means any reason. Ignored for `'run:started'`.
    */
   eventReasonFilter: RunEndReason[] | null
+  /**
+   * For `'pr:operation'` event triggers: only fire when the PR operation matches
+   * this filter (by operation kind and/or result). `null` means any PR operation.
+   * Ignored for run-lifecycle topics.
+   */
+  eventPrFilter: PrOperationFilter | null
   status: ScheduleStatus
   mode: ModeToken | CodexPolicy
   toolAllowlist: string[]
@@ -2153,10 +2237,12 @@ export interface CreateScheduleInput {
   triggerType?: ScheduleTriggerType
   /** Required for `'cron'` triggers; empty string for `'event'` triggers. */
   cronExpression: string
-  /** Required for `'event'` triggers: the run lifecycle topic to subscribe to. */
-  eventTopic?: RunLifecycleTopic | null
+  /** Required for `'event'` triggers: the event topic to subscribe to (run lifecycle or `'pr:operation'`). */
+  eventTopic?: ScheduleEventTopic | null
   /** Optional reason filter for `'run:settled'` event triggers; null/[] = any. */
   eventReasonFilter?: RunEndReason[] | null
+  /** Optional filter for `'pr:operation'` event triggers; null/empty = any PR operation. */
+  eventPrFilter?: PrOperationFilter | null
   mode: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
@@ -2179,8 +2265,9 @@ export interface UpdateScheduleInput {
   agentId?: string | null
   triggerType?: ScheduleTriggerType
   cronExpression?: string
-  eventTopic?: RunLifecycleTopic | null
+  eventTopic?: ScheduleEventTopic | null
   eventReasonFilter?: RunEndReason[] | null
+  eventPrFilter?: PrOperationFilter | null
   mode?: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]

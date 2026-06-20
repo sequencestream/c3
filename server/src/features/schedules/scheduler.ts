@@ -19,7 +19,17 @@
  */
 
 import { resolve } from 'node:path'
-import type { RunEndReason, RunKind, RunLifecycleTopic, Schedule } from '@ccc/shared/protocol'
+import type {
+  PrOperation,
+  PrOperationEvent,
+  PrOperationFilter,
+  PrOperationResult,
+  RunEndReason,
+  RunKind,
+  RunLifecycleTopic,
+  Schedule,
+  ScheduleEventTopic,
+} from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
@@ -44,7 +54,7 @@ export { computeNextRunAt }
 
 export type ExecutionStore = {
   getDueSchedules: (now: number) => Schedule[]
-  getEventSchedules: (topic: RunLifecycleTopic) => Schedule[]
+  getEventSchedules: (topic: ScheduleEventTopic) => Schedule[]
   getSchedule: (id: string) => Schedule | null
   updateNextRunAt: (id: string, nextRunAt: number | null) => void
   updateSchedule: (id: string, patch: { status?: string }) => void
@@ -143,34 +153,67 @@ export async function triggerRunNow(scheduleId: string): Promise<void> {
   dispatchAndTrack(schedule)
 }
 
+/** Run-lifecycle dispatch payload (`run:started` / `run:settled`). */
+type RunDispatchPayload = {
+  sessionId: string
+  workspacePath: string
+  reason?: RunEndReason
+  kind: RunKind
+}
+
+/** PR-event dispatch payload (`pr:operation`) — the validated, normalized event. */
+type PrDispatchPayload = { sessionId: string; workspacePath: string } & PrOperationEvent
+
+/**
+ * Whether a `pr:operation` event matches a schedule's PR filter. A null filter,
+ * or an empty dimension, matches any value of that dimension (2026-06-20).
+ */
+function prFilterMatches(
+  filter: PrOperationFilter | null,
+  operation: PrOperation,
+  result: PrOperationResult,
+): boolean {
+  if (!filter) return true
+  if (filter.operations && filter.operations.length && !filter.operations.includes(operation)) {
+    return false
+  }
+  if (filter.results && filter.results.length && !filter.results.includes(result)) {
+    return false
+  }
+  return true
+}
+
 /**
  * Dispatch event-triggered schedules in response to a run lifecycle event
- * (2026-06-08). Wired to the kernel event bus in the composition root: a
- * `run:started` / `run:settled` event arrives, and every active event-trigger
- * schedule that matches is executed via the SAME path as a cron run
- * (`dispatchAndTrack` → `execute`), reusing the three-tier MCP security model
- * and the write-approval queue.
+ * (2026-06-08) OR a model-published PR operation event (2026-06-20). Wired to the
+ * kernel event bus in the composition root: the event arrives, and every active
+ * event-trigger schedule that matches is executed via the SAME path as a cron run
+ * (`dispatchAndTrack` → `execute`), reusing the three-tier MCP security model and
+ * the write-approval queue.
  *
  * Filters, in order:
- *  - `kind`: only `session` runs fire user schedules; every other RunKind is internal.
+ *  - `kind` (run topics only): only `session` runs fire user schedules; every
+ *    other RunKind is internal. PR events carry no RunKind — they are published by
+ *    the model inside a work session and are never RunKind-filtered.
  *  - workspace: the event's workspace must equal the schedule's workspace.
- *  - reason: for `run:settled`, an optional reason allowlist (null/[] = any).
+ *  - reason (run:settled) / PR filter (pr:operation): topic-specific match.
  *  - in-flight: SCH-R7 serial execution doubles as event-storm throttling — a
  *    schedule already running skips the new event rather than stacking.
  */
+export function dispatchEventSchedules(topic: RunLifecycleTopic, payload: RunDispatchPayload): void
+export function dispatchEventSchedules(topic: 'pr:operation', payload: PrDispatchPayload): void
 export function dispatchEventSchedules(
-  topic: RunLifecycleTopic,
-  payload: {
-    sessionId: string
-    workspacePath: string
-    reason?: RunEndReason
-    kind: RunKind
-  },
+  topic: ScheduleEventTopic,
+  payload: RunDispatchPayload | PrDispatchPayload,
 ): void {
   if (!store) return
   // Explicit RunKind whitelist: only `session` runs (user/dev) fire user
-  // schedules; every other RunKind is internal and never triggers a schedule.
-  if (!SCHEDULE_TRIGGER_KINDS.includes(payload.kind)) return
+  // schedules; every other RunKind is internal. PR events carry no RunKind (the
+  // whitelist is run-lifecycle-specific), so they bypass this gate by design.
+  if (topic !== 'pr:operation') {
+    const kind = (payload as RunDispatchPayload).kind
+    if (!SCHEDULE_TRIGGER_KINDS.includes(kind)) return
+  }
 
   let candidates: Schedule[]
   try {
@@ -185,9 +228,16 @@ export function dispatchEventSchedules(
     if (schedule.status !== 'active') continue
     // Workspace filter: both sides are resolved to compare canonical paths.
     if (resolveWorkspaceRoot(schedule.workspaceId)! !== eventWorkspace) continue
-    // Reason filter (run:settled only — run:started carries no reason).
-    const filter = schedule.eventReasonFilter
-    if (filter && filter.length && payload.reason && !filter.includes(payload.reason)) continue
+    // Topic-specific filter.
+    if (topic === 'pr:operation') {
+      const e = payload as PrDispatchPayload
+      if (!prFilterMatches(schedule.eventPrFilter, e.operation, e.result)) continue
+    } else {
+      // Reason filter (run:settled only — run:started carries no reason).
+      const reason = (payload as RunDispatchPayload).reason
+      const filter = schedule.eventReasonFilter
+      if (filter && filter.length && reason && !filter.includes(reason)) continue
+    }
     // SCH-R7 / event-storm throttle: one in-flight execution per schedule.
     if (inFlight.has(schedule.id)) {
       console.warn(

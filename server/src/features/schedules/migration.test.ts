@@ -145,6 +145,8 @@ describe('schedule store v5 (event-trigger) migration', () => {
     expect(legacy!.triggerType).toBe('cron')
     expect(legacy!.eventTopic).toBeNull()
     expect(legacy!.eventReasonFilter).toBeNull()
+    // v8: a legacy row predating event_pr_filter defaults to null (= any PR op).
+    expect(legacy!.eventPrFilter).toBeNull()
     expect(legacy!.cronExpression).toBe('0 8 * * *')
     expect(legacy!.maxWallClockMs).toBe(120_000)
 
@@ -153,6 +155,7 @@ describe('schedule store v5 (event-trigger) migration', () => {
     expect(names).toContain('trigger_type')
     expect(names).toContain('event_topic')
     expect(names).toContain('event_reason_filter')
+    expect(names).toContain('event_pr_filter')
     expect(names).toContain('max_wall_clock_ms')
 
     // The legacy cron row is NOT picked up by the event-schedule query.
@@ -172,5 +175,20 @@ describe('schedule store v5 (event-trigger) migration', () => {
     })
     expect(ev.triggerType).toBe('event')
     expect(getEventSchedules('run:settled').map((s) => s.id)).toContain(ev.id)
+
+    // And a pr:operation schedule with a PR filter can also be created + queried.
+    const pr = createSchedule({
+      type: 'command',
+      config: { command: 'echo pr' },
+      workspaceId: '/abs/ws',
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'pr:operation',
+      eventPrFilter: { operations: ['merge'], results: ['success'] },
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    expect(pr.eventPrFilter).toEqual({ operations: ['merge'], results: ['success'] })
+    expect(getEventSchedules('pr:operation').map((s) => s.id)).toContain(pr.id)
   })
 })

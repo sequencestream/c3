@@ -110,6 +110,30 @@ export interface SpecProfile {
   gate: 'spec'
 }
 
+/**
+ * The base launch profile bound to EVERY ordinary work session (`rt.kind ===
+ * 'session'`), resolved before the vendor fork in `launchRun` (2026-06-20). It
+ * carries ONLY the `publish_pr_event` MCP tool — no gate override, no
+ * disallowed-tools lock — so a work run keeps its normal standard gate and tool
+ * surface while gaining the ability to publish a vendor-neutral PR operation
+ * event. Like {@link IntentProfile}, the per-run binding (live run id + abort
+ * signal) does not exist at profile-build time, so the composition root returns
+ * binders the run paths call once started: `runClaude` calls {@link
+ * bindInProcessMcp} (in-process SDK MCP), the driver path calls {@link
+ * bindDriverMcp} (localhost HTTP MCP) for codex.
+ */
+export interface SessionMcpProfile {
+  bindInProcessMcp: (binding: {
+    getRunId: () => string
+    signal: AbortSignal
+  }) => Record<string, McpServerConfig>
+  bindDriverMcp?: (binding: {
+    workspacePath: string
+    getRunId: () => string
+    signal: AbortSignal
+  }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
+}
+
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -280,6 +304,13 @@ export async function runViaDriver(
    * carries `prompt` (visible) alone (HS-R6).
    */
   inject?: RunInject,
+  /**
+   * The work-session base MCP profile (`publish_pr_event`), present for
+   * `rt.kind === 'session'` runs (2026-06-20). Mutually exclusive with
+   * `intentProfile` (a run is either an intent run or a session run); when set
+   * and the vendor is codex, its driver MCP is bound over the localhost HTTP route.
+   */
+  sessionProfile?: SessionMcpProfile,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -381,6 +412,17 @@ export async function runViaDriver(
   let driverMcpServers: Record<string, RemoteMcpServer> | undefined
   if (intentProfile?.bindDriverMcp && adapter.vendor === 'codex') {
     const bound = intentProfile.bindDriverMcp({
+      workspacePath: workspacePath,
+      getRunId: () => runId,
+      signal: cycleAbort.signal,
+    })
+    driverMcpServers = bound.servers
+    disposeDriverMcp = bound.dispose
+  } else if (sessionProfile?.bindDriverMcp && adapter.vendor === 'codex') {
+    // Work-session base MCP (publish_pr_event) over the localhost HTTP route — the
+    // codex twin of the in-process binder. A run is either intent or session, so
+    // this never coexists with the intent binding above (2026-06-20).
+    const bound = sessionProfile.bindDriverMcp({
       workspacePath: workspacePath,
       getRunId: () => runId,
       signal: cycleAbort.signal,

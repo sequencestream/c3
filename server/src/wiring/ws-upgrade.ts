@@ -24,6 +24,7 @@ import type { KernelContext } from '../kernel/types.js'
 import { getActiveSessionId, listWorkspaces, pathToId } from '../state.js'
 import { listWorkspaceSessions } from '../sessions.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
+import { paginateSessions } from '../kernel/agent/session/paginate-sessions.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listStatuses, removeViewer } from '../runs.js'
 import { loadSettings } from '../kernel/config/index.js'
@@ -93,16 +94,24 @@ export function createWsHandler(deps: {
       sendWorkspaces: () => {
         if (sock) send(sock, { type: 'workspaces', workspaces: listWorkspaces() })
       },
-      sendSessions: async (workspacePath) => {
+      sendSessions: async (workspacePath, query) => {
         if (!sock) return
         try {
           // New default: list across vendors via the accessor union (ADR-0013).
           // The env flag rolls back to the legacy claude-only path (the native id
           // stays on the wire either way — see list-sessions.ts).
-          const sessions = USE_SESSION_ACCESSOR
+          const all = USE_SESSION_ACCESSOR
             ? await listSessionsVia(sessionAccessor, workspacePath)
             : await listWorkspaceSessions(workspacePath)
-          send(sock, { type: 'sessions', workspaceId: pathToId(workspacePath)!, sessions })
+          // Cursor-paginate the full list (SR-R14): the `page` descriptor tells
+          // the client how to merge this batch into its window.
+          const { sessions, kind, hasMore } = paginateSessions(all, query)
+          send(sock, {
+            type: 'sessions',
+            workspaceId: pathToId(workspacePath)!,
+            sessions,
+            page: { kind, hasMore },
+          })
         } catch (err) {
           send(sock, {
             type: 'error',

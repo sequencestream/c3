@@ -43,6 +43,7 @@ const {
   removeWorkspace,
   // ---- console (Works) ----
   currentSessions,
+  currentSessionPaging,
   sessionStatus,
   activeWorkspace,
   activeSession,
@@ -70,6 +71,7 @@ const {
   composer,
   openNewSession,
   refreshSessions,
+  loadMoreSessions,
   selectSession,
   deleteSession,
   renameSession,
@@ -259,6 +261,8 @@ const {
           ref="composer"
           :current-workspace="currentWorkspace"
           :sessions="currentSessions"
+          :sessions-has-more="currentSessionPaging.hasMore"
+          :sessions-exhausted="currentSessionPaging.exhausted"
           :session-status="sessionStatus"
           :active-workspace="activeWorkspace"
           :active-session="activeSession"
@@ -286,6 +290,7 @@ const {
           :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
           @create-session="openNewSession"
           @refresh-sessions="() => refreshSessions(currentWorkspace)"
+          @load-more-sessions="() => loadMoreSessions(currentWorkspace)"
           @select-session="selectSession"
           @delete-session="deleteSession"
           @rename-session="renameSession"

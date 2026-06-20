@@ -108,6 +108,17 @@ export function createState(deps: StateDeps) {
   // Sidebar / session state
   const workspaces = ref<WorkspaceInfo[]>([])
   const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
+  // Per-workspace cursor-pagination state (SR-R14), parallel to the session
+  // arrays above. `hasMore` drives the "load more" button; `exhausted` flips it
+  // to a "Fully loaded" hint; `loadingMore` guards a double click;
+  // `pendingSince` remembers the `since` of an in-flight `window` refresh so its
+  // reply can keep loaded-more rows below that boundary.
+  const sessionPagingByWorkspace = ref<
+    Record<
+      string,
+      { hasMore: boolean; exhausted: boolean; loadingMore: boolean; pendingSince?: number }
+    >
+  >({})
   // The single global "current workspace" the sidebar reflects; decoupled from the
   // viewed session's workspace (`activeWorkspace`). Persisted to localStorage.
   const currentWorkspace = ref<string | null>(null)
@@ -130,6 +141,12 @@ export function createState(deps: StateDeps) {
   const currentSessions = computed<SessionInfo[]>(
     () => (currentWorkspace.value && sessionsByWorkspace.value[currentWorkspace.value]) || [],
   )
+  // Pagination flags of the current workspace's session window (SR-R14): drive
+  // the sidebar's "load more" button / "Fully loaded" hint.
+  const currentSessionPaging = computed<{ hasMore: boolean; exhausted: boolean }>(() => {
+    const p = currentWorkspace.value && sessionPagingByWorkspace.value[currentWorkspace.value]
+    return { hasMore: p ? p.hasMore : false, exhausted: p ? p.exhausted : false }
+  })
 
   // Status of one session (idle when unknown).
   function statusOf(sessionId: string): SessionStatus {
@@ -465,6 +482,7 @@ export function createState(deps: StateDeps) {
     taskModel,
     workspaces,
     sessionsByWorkspace,
+    sessionPagingByWorkspace,
     currentWorkspace,
     activeWorkspace,
     activeSession,
@@ -553,6 +571,7 @@ export function createState(deps: StateDeps) {
     workcenterPendingCount,
     hasActiveSession,
     currentSessions,
+    currentSessionPaging,
     running,
     reconnecting,
     activeIsTeam,

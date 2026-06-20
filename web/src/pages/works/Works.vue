@@ -30,6 +30,10 @@ const props = defineProps<{
   // left: session list
   currentWorkspace: string | null
   sessions: SessionInfo[]
+  /** Older sessions remain beyond the loaded window (SR-R14). */
+  sessionsHasMore?: boolean
+  /** A "load more" came back empty (SR-R14). */
+  sessionsExhausted?: boolean
   sessionStatus: Record<string, SessionStatus>
   activeWorkspace: string | null
   activeSession: string | null
@@ -69,6 +73,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'create-session': [path: string]
   'refresh-sessions': []
+  'load-more-sessions': []
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -143,6 +148,8 @@ defineExpose({
       <WorkSessionList
         :current-workspace="currentWorkspace"
         :sessions="sessions"
+        :has-more="sessionsHasMore"
+        :exhausted="sessionsExhausted"
         :session-status="sessionStatus"
         :active-workspace="activeWorkspace"
         :active-session="activeSession"
@@ -150,6 +157,7 @@ defineExpose({
         :vendor-session-caps="vendorSessionCaps"
         @create-session="(path: string) => emit('create-session', path)"
         @refresh-sessions="emit('refresh-sessions')"
+        @load-more-sessions="emit('load-more-sessions')"
         @select-session="selectSession"
         @delete-session="
           (path: string, sessionId: string) => emit('delete-session', path, sessionId)

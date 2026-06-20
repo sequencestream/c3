@@ -12,6 +12,7 @@
  */
 import type { ClientToServer, ServerToClient } from '@ccc/shared/protocol'
 import type { KernelContext } from '../kernel/types.js'
+import type { SessionListQuery } from '../kernel/agent/session/paginate-sessions.js'
 
 /**
  * A connection is a *view* (ADR-0006): it holds which session it watches and
@@ -49,8 +50,12 @@ export interface Conn {
   deliver: (msg: ServerToClient) => void
   /** Push the full workspace list to this connection. */
   sendWorkspaces: () => void
-  /** Push a workspace's session list to this connection. */
-  sendSessions: (workspacePath: string) => Promise<void>
+  /**
+   * Push a workspace's session-list page to this connection (SR-R14). `query`
+   * selects the page (absent ⇒ the newest `first` page); the reply carries a
+   * `page` descriptor telling the client how to merge it.
+   */
+  sendSessions: (workspacePath: string, query?: SessionListQuery) => Promise<void>
 }
 
 /**

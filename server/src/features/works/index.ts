@@ -147,7 +147,9 @@ export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) =>
     })
     return
   }
-  await conn.sendSessions(abs)
+  // Pass the cursor (before/since/limit) through so the reply is one page,
+  // not the whole list (SR-R14).
+  await conn.sendSessions(abs, { before: msg.before, since: msg.since, limit: msg.limit })
 }
 
 export const listCommandsHandler: Handler<'list_commands'> = async (_ctx, conn) => {
@@ -319,7 +321,10 @@ export const deleteSession: Handler<'delete_session'> = async (ctx, conn, msg) =
     await removeSession(abs, msg.sessionId)
     if (conn.viewing === msg.sessionId) conn.viewing = null
     if (getActiveSessionId() === msg.sessionId) setActiveSessionId(null)
-    await conn.sendSessions(abs)
+    // No list push here (SR-R14): a `first`-page push would clobber a client's
+    // loaded-more window. The acting client drops the row optimistically; other
+    // clients reconcile on their next window refresh (≤10s) — unchanged from the
+    // prior behavior where delete pushed only to the acting connection.
     ctx.broadcastStatuses()
   } catch (err) {
     conn.send({
@@ -340,7 +345,8 @@ export const renameSession: Handler<'rename_session'> = async (_ctx, conn, msg) 
   }
   try {
     await renameWorkspaceSession(abs, msg.sessionId, msg.title)
-    await conn.sendSessions(abs)
+    // No list push here (SR-R14): the acting client updates the title
+    // optimistically; other clients pick it up on their next window refresh.
   } catch (err) {
     conn.send({
       type: 'error',

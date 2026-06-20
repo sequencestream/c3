@@ -31,7 +31,11 @@ flowchart TD
    one is now most-recent), and its session list is returned (`workspaces`, `sessions`).
 3. Sessions are listed from the `work_session_metadata` projection, newest-first, one unified
    cross-vendor timeline deduped by `c3_id` (`SR-R4`, `SR-R12`). Each row carries its owning
-   `vendor` tag and `state`.
+   `vendor` tag and `state`. The list is **cursor-paginated** by `last_modified` (`SR-R14`): the
+   first reply is the newest page; "load more" pulls the next older page via a `{lastModified,
+sessionId}` keyset cursor; the periodic refresh re-fetches only the displayed range
+   (`last_modified >= since`). The reply's `page.kind` tells the client how to merge it
+   (`first`/`older`/`window`/`live`).
 
 ## Create → bind a session
 
@@ -62,9 +66,13 @@ flowchart TD
 
 ## Rename / delete / remove
 
-- **rename_session** updates the title only.
+- **rename_session** updates the title only. The server pushes **no** session list back
+  (`SR-R14`): the acting client updates the row's title optimistically; other clients pick it up
+  on their next `since` refresh.
 - **delete_session** stops the session's run, removes the transcript via the SDK, drops its mode
-  entry, and clears it if it was viewed/last-active (`SR-R9`).
+  entry, and clears it if it was viewed/last-active (`SR-R9`). It also pushes **no** list
+  (`SR-R14`, to avoid clobbering a loaded-more window); the acting client drops the row
+  optimistically.
 - **remove_workspace** unregisters the directory and stops any background runs under it, but
   **never** deletes on-disk transcripts (`SR-R10`); a viewed session in it is cleared.
 

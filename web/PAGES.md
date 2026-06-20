@@ -14,7 +14,7 @@ web/src/
 │   ├── transcript.ts                               # transcriptToChat():TranscriptItem→ChatBody 纯映射(会话历史回放)
 │   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/定时任务
 │   ├── message-handler.ts                          # installMessageHandler():唯一入站 WS switch(handleMessage)折叠所有 ServerToClient 事件 + applyStatuses/notifyAwaitingPermission
-│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:刷新/选择会话、新建会话弹窗、控制台 tab 进入与重绑、清空视图会话
+│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:游标分页刷新(窗口/首页)/加载更多/选择会话、乐观删除改名、新建会话弹窗、控制台 tab 进入与重绑、清空视图会话
 │   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── discussion-actions.ts                       # 讨论页动作(只读路径 + 组织者引擎):打开/创建/开始/暂停/恢复/转需求/发言/移动返回
 │   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch)
@@ -52,7 +52,7 @@ web/src/
 │   ├── works/                                    # 工作页
 │   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
-│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区会话、新增、删除/改名、分页、offline 警告
+│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区会话、新增、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
@@ -123,6 +123,7 @@ web/src/
 │   ├── pending-queue.ts                             # 待发送队列纯逻辑:追加/移除、flush 判断、Send 行为(入队或发送)、草稿合并
 │   ├── permission.ts                                # 权限决策动作性判定:找出用户当前唯一能作用的权限请求
 │   ├── prompt-image.ts                              # 输入框附图客户端处理:File→PromptImage(校验图片类型/超阈 canvas 等比压缩/base64 预览);纯函数(base64Bytes/splitDataUrl/shouldCompress/scaledSize/toWire/fromWire)可 Node 单测,readImageFiles 走 DOM
+│   ├── session-page.ts                              # 会话列表游标分页(SR-R14)纯归并:按 page.kind(first 替换/older 追加去重/window 刷新已展示范围/live upsert)折叠分页响应进每工作区窗口 + SESSION_PAGE_SIZE
 │   ├── session-title-sync.ts                        # 会话列表刷新到右侧活动标题的同步规则:仅同 workspace 且同 session 时采用列表标题
 │   ├── status-indicator.ts                          # 运行/讨论状态指示器单一数据源:状态→icon+tone+i18n key 映射,支持 agent 前缀
 │   ├── tab-view.ts                                  # 标签页/工作区切换效果纯推断:ConsoleTab 进入目标、工作区切换副作用

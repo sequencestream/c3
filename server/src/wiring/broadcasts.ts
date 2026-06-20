@@ -22,6 +22,7 @@ import { getSddEnabled } from '../kernel/config/index.js'
 import type { Broadcaster } from '../transport/index.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
+import { paginateSessions } from '../kernel/agent/session/paginate-sessions.js'
 import { isRunning, listStatuses } from '../runs.js'
 import { isStoreAvailable, listChatSessions, listIntents } from '../features/intents/store.js'
 import { enrichRunStatus } from '../features/intents/run-status.js'
@@ -168,9 +169,21 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   const broadcastSessions = (workspacePath: string): void => {
     const proj = resolve(workspacePath)
     void listSessionsVia(sessionAccessor, proj)
-      .then((sessions) =>
-        broadcaster.toAll({ type: 'sessions', workspaceId: pathToId(proj)!, sessions }),
-      )
+      .then((all) => {
+        // Bounded fan-out (SR-R14): the broadcast has no per-client cursor, so it
+        // pushes only the newest page tagged `live`. The client upserts these by
+        // id WITHOUT replacing its loaded-more window (a freshly-bound/just-active
+        // session sorts to the top, so the newest page surfaces it — SR-R13);
+        // older-session updates and deletions reconcile via the client's window
+        // refresh, not this push.
+        const { sessions } = paginateSessions(all)
+        broadcaster.toAll({
+          type: 'sessions',
+          workspaceId: pathToId(proj)!,
+          sessions,
+          page: { kind: 'live', hasMore: false },
+        })
+      })
       .catch((err) => console.error('[c3] broadcastSessions failed:', err))
   }
 

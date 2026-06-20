@@ -874,6 +874,9 @@
         "label": "▾ more",
         "tooltip": "Show more sessions"
       },
+      "exhausted": {
+        "label": "Fully loaded"
+      },
       "deleteConfirm": "Delete this session and its transcript? This cannot be undone.",
       "renamePrompt": "Rename session:",
       "stale": {

@@ -121,7 +121,7 @@ build:linux-x64      (ubuntu-latest)     needs: [pregate, setup]   if: contains(
 build:macos-arm64    (macos-14)          needs: [pregate, setup]   if: contains(targets,'macos-arm64')
 build:macos-x64      (macos-13)          needs: [pregate, setup]   if: contains(targets,'macos-x64')
 build:windows-x64    (windows-latest)    needs: [pregate, setup]   if: contains(targets,'windows-x64')  ⚠️experimental
-  └─ pnpm release:build --targets=<one> --skip-smoke --harden=basic   (env C3_RELEASE_VERSION=<version>)
+  └─ pnpm release:build --targets=<one> --skip-smoke --harden=standard   (env C3_RELEASE_VERSION=<version>, C3_OBFUSCATE_FAIL=abort)
   └─ ad-hoc codesign on darwin runners (no-op on linux/windows)
   └─ actions/upload-artifact@v4 → c3-<target>  (uploads the package sidecars, not the binary)
 smoke:<target>       (same OS as build)  needs: [build:<target>]
@@ -310,15 +310,17 @@ The dev path applies no `define` (≈ harden `none`); the version reporter then 
 
 ## Hardening tiers (release 2/7, obfuscation real in 7/7)
 
-`RELEASE_HARDEN` (env) or `--harden=` selects the tier; default **`basic`**. It governs
+`RELEASE_HARDEN` (env) or `--harden=` selects the tier; the build primitive default is
+**`basic`**, but the **CI release workflow pins `--harden=standard`** (with
+`C3_OBFUSCATE_FAIL=abort`) — every published artifact is obfuscated. It governs
 the **native binaries** (`pnpm release:build`, `pnpm binary`) only — the plain node bundle
 run by `pnpm start` gets the version `define` but no harden.
 
-| Tier              | minify | sourcemap | manifest                                        | Obfuscation                                                  | Notes                                                   |
-| ----------------- | ------ | --------- | ----------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
-| `none`            | ✗      | inline    | ✗                                               | —                                                            | dev/debug; the tsx dev path is `none` by nature         |
-| `basic` (default) | ✓      | none      | ✓ (`v1.1`)                                      | —                                                            | strip (Bun `minify` strips) + drop sourcemap + manifest |
-| `standard` (7/7)  | ✓      | none      | ✓ (`v1.1` + `obfuscation.applied` per artifact) | string-array + identifier rename via `javascript-obfuscator` | opt-in tier; fallback = bare compile on failure         |
+| Tier              | minify | sourcemap | manifest                                        | Obfuscation                                                  | Notes                                                                                              |
+| ----------------- | ------ | --------- | ----------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `none`            | ✗      | inline    | ✗                                               | —                                                            | dev/debug; the tsx dev path is `none` by nature                                                    |
+| `basic` (default) | ✓      | none      | ✓ (`v1.1`)                                      | —                                                            | strip (Bun `minify` strips) + drop sourcemap + manifest                                            |
+| `standard` (7/7)  | ✓      | none      | ✓ (`v1.1` + `obfuscation.applied` per artifact) | string-array + identifier rename via `javascript-obfuscator` | **CI release default**; fallback = bare compile, but CI pins `C3_OBFUSCATE_FAIL=abort` (hard-fail) |
 
 Motivation is **distribution trust ≫ obfuscation**: `basic` lands the trust floor
 (traceable version + verifiable artifact manifest) before any obfuscation work. The
@@ -348,18 +350,23 @@ not a release consumer artifact.
 
 ### Fallback behavior (release 7/7)
 
-Obfuscation failure is **graceful**. Any error (obfuscator throws, timeout, the
-`C3_OBFUSCATE_FORCE_FAIL` test hook) leaves the bundle **un-obfuscated** and the build
-keeps going — the trust floor (minify + signing chain) is intact, and the manifest
-records what actually shipped:
+The build primitive's default fallback is **graceful**, but the **CI release workflow
+pins `C3_OBFUSCATE_FAIL=abort`** so a published artifact is never silently downgraded to
+a bare (un-obfuscated) bundle — obfuscation failure hard-fails that target's job.
+
+Default (graceful) behavior, when `C3_OBFUSCATE_FAIL` is unset — any error (obfuscator
+throws, timeout, the `C3_OBFUSCATE_FORCE_FAIL` test hook) leaves the bundle
+**un-obfuscated** and the build keeps going; the trust floor (minify + signing chain) is
+intact and the manifest records what actually shipped:
 
 - `[build-target] WARN <target>: obfuscation failed (<err>) — falling back to bare compile`
 - The artifact ships as the un-obfuscated minified bundle.
 - The manifest stamps `obfuscation: { applied: false }` for that artifact (and
   `applied: true, durationMs: N` when it succeeded).
 - Build exit code is **0** (release is NOT blocked).
-- Override: set `C3_OBFUSCATE_FAIL=abort` to flip the build to hard-fail (used by
-  tests that need a red signal, not by production).
+
+`C3_OBFUSCATE_FAIL=abort` (CI default) flips this to a hard fail: obfuscation failure
+refuses to ship and the build exits non-zero, so no bare-compile artifact reaches the store.
 
 The e2e/smoke gates still run on the shipped artifact, so any logic regression
 introduced by the obfuscator is caught at the artifact gate (smoke) or the standard

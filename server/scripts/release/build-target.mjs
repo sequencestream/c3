@@ -253,6 +253,8 @@ export async function buildTarget({
   //    extra process per target is negligible at the 4-target scale.
   const compileArgs = ['build', stagePath, '--compile', `--target=${bunTarget}`, `--outfile=${out}`]
   if (tier.minify) compileArgs.push('--minify')
+  // --bytecode only on native host builds (cross-compile + bytecode segfaults, oven-sh/bun#18416).
+  if (nativeBuild) compileArgs.push('--bytecode')
   const compileRes = spawnSync(process.execPath, compileArgs, { encoding: 'utf-8' })
   if (compileRes.status !== 0) {
     console.error(compileRes.stderr || compileRes.stdout || '')

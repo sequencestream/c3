@@ -234,9 +234,11 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Build linux-x64
+        env:
+          C3_OBFUSCATE_FAIL: abort # standard tier: obfuscation failure hard-fails (no silent bare fallback)
         run: |
           export PATH="$BUN_INSTALL/bin:$PATH"
-          pnpm release:build --targets=linux-x64 --skip-smoke --harden=basic
+          pnpm release:build --targets=linux-x64 --skip-smoke --harden=standard
 
       - name: Smoke (--version + headless)
         run: |
@@ -300,9 +302,11 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Build macos-arm64
+        env:
+          C3_OBFUSCATE_FAIL: abort # standard tier: obfuscation failure hard-fails (no silent bare fallback)
         run: |
           export PATH="$BUN_INSTALL/bin:$PATH"
-          pnpm release:build --targets=macos-arm64 --skip-smoke --harden=basic
+          pnpm release:build --targets=macos-arm64 --skip-smoke --harden=standard
 
       - name: Smoke (--version + headless)
         run: |
@@ -366,9 +370,11 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Build macos-x64
+        env:
+          C3_OBFUSCATE_FAIL: abort # standard tier: obfuscation failure hard-fails (no silent bare fallback)
         run: |
           export PATH="$BUN_INSTALL/bin:$PATH"
-          pnpm release:build --targets=macos-x64 --skip-smoke --harden=basic
+          pnpm release:build --targets=macos-x64 --skip-smoke --harden=standard
 
       - name: Smoke (--version + headless)
         run: |
@@ -434,9 +440,11 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Build windows-x64
+        env:
+          C3_OBFUSCATE_FAIL: abort # standard tier: obfuscation failure hard-fails (no silent bare fallback)
         run: |
           $env:PATH = "$env:BUN_INSTALL/bin;$env:PATH"
-          pnpm release:build --targets=windows-x64 --skip-smoke --harden=basic
+          pnpm release:build --targets=windows-x64 --skip-smoke --harden=standard
 
       - name: Smoke (--version + headless)
         run: |

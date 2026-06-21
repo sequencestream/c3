@@ -241,7 +241,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   width: 20rem;
   max-width: 100%;
   max-height: 80vh;
-  padding: 0.75rem;
+  padding: 8px;
   border: 1px solid var(--border, #d0d0d0);
   border-radius: 10px;
   background: var(--surface, #fff);

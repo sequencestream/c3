@@ -594,9 +594,11 @@ and any background mutation can push the refreshed list.
 ## Hidden-set filtering
 
 The workspace session listing filters out the project's hidden set so communication
-sessions never enter the normal list (RM-R4) — using the resolved path so the key matches the
-stored workspace path. If the store is unavailable it does **not** filter (degrade, don't break
-the list) (RM-R12).
+sessions **and intent spec sessions** never enter the normal list (RM-R4) — both are gathered
+into one hidden set at list-build time, using the resolved path so the keys match the stored
+workspace path. The filter runs before pagination, so the page window and `hasMore` are computed
+over the already-filtered list. If the store is unavailable it does **not** filter (degrade,
+don't break the list) (RM-R12).
 
 ## Frontend
 

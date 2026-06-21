@@ -384,6 +384,11 @@ The tool manifest is fetched by the web via `get_schedule_tool_manifest { vendor
 returned as `schedule_tool_manifest { vendor, tools }`. The frontend uses this to render the tool
 selection UI in the schedule form.
 
+The c3-provided MCP capabilities also appear as explicit Claude schedule allowlist choices. They are
+never mounted merely because a schedule is an LLM task or has an empty allowlist: selecting at least
+one such capability is the precondition for mounting the workspace-bound c3 MCP service. Templates
+may preselect the entries they require.
+
 ## Vendor routing (execution)
 
 When an `llm_prompt` schedule fires, it runs through the explicitly selected enabled Agent. The

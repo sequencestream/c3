@@ -34,7 +34,7 @@ import { loadSettings } from '../../kernel/config/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
-import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
+import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 import { createScheduleMcpServer } from './c3-mcp.js'
 
@@ -507,15 +507,19 @@ async function executeLlmPrompt(
     schedule.mode,
   )
 
-  // Every Claude LLM schedule receives this in-process, workspace-bound c3 MCP
-  // server, not only schedules created from a template. Its tools remain
-  // unreachable unless the schedule's frozen allowlist and execution identity
-  // permit them. It intentionally replaces any user-configured server named
-  // `c3`; all other workspace MCP servers remain available.
-  const mcpServers = {
-    ...workspaceMcpConfig.mcpServers,
-    ...createScheduleMcpServer(resolveWorkspaceRoot(schedule.workspaceId)!, logId),
-  }
+  // The c3 MCP server is opt-in: only an explicit c3 entry in this schedule's
+  // allowlist mounts it. Templates can preselect these entries; an empty
+  // allowlist does not implicitly grant c3 capabilities. It intentionally
+  // replaces a user-configured server named `c3`; other workspace MCP servers
+  // remain available.
+  const selectedC3Mcp = hasSelectedC3McpTool(schedule.toolAllowlist ?? [])
+  const mcpServers = selectedC3Mcp
+    ? {
+        ...workspaceMcpConfig.mcpServers,
+        ...createScheduleMcpServer(resolveWorkspaceRoot(schedule.workspaceId)!, logId),
+      }
+    : workspaceMcpConfig.mcpServers
+  const hasMcpServers = Object.keys(mcpServers).length > 0
 
   try {
     const q = query({
@@ -527,7 +531,7 @@ async function executeLlmPrompt(
         disallowedTools: [],
         permissionMode: claudeModeForSchedule(schedule.mode),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-        mcpServers,
+        ...(hasMcpServers ? { mcpServers } : {}),
         env: buildChildEnv(envOverrides),
         ...(model ? { model } : {}),
         abortController,

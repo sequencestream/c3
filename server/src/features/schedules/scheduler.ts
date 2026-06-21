@@ -307,7 +307,6 @@ async function tick(): Promise<void> {
         now,
       )
       try {
-        store.updateSchedule(schedule.id, { status: 'error' })
         store.appendExecutionLog({
           scheduleId: schedule.id,
           startedAt: now,
@@ -316,6 +315,11 @@ async function tick(): Promise<void> {
           output: '',
           error: 'missed_trigger_window',
         })
+        // A delayed tick must not disable a recurring schedule. Record the
+        // missed occurrence, then re-arm it from the current time so that the
+        // same stale instant cannot be reported on every following tick.
+        const next = computeNextRunAt(schedule.cronExpression, now, getTimezone())
+        store.updateNextRunAt(schedule.id, next)
       } catch (logErr) {
         console.error('[scheduler] failed to record missed trigger for %s:', schedule.id, logErr)
       }

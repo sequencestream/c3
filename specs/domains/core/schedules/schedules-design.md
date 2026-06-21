@@ -157,8 +157,9 @@ Every 10 s: query due schedules → for each, create a log → dispatch → trac
 When the server restarts, some schedules' next-run instant may be in the past:
 
 - Within 5 minutes of now → execute normally.
-- Beyond 5 minutes → set status to `error`, record a `failed` execution log noting a missed trigger
-  window.
+- Beyond 5 minutes → retain `active` status, record a `failed` execution log noting a missed trigger
+  window, and recompute `next_run_at` from now. The missed occurrence is not replayed and the
+  recurring schedule continues at its next cron occurrence.
 - Internal agent-recovery rows are exempt from the missed-trigger error path; a late server restart
   should still re-enable the agent rather than strand it disabled.
 

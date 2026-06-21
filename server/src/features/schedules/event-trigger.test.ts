@@ -35,6 +35,8 @@ import {
   cancelInFlight,
   dispatchEventSchedules,
   setExecutionStore,
+  startScheduler,
+  stopScheduler,
   type ExecutionStore,
 } from './scheduler.js'
 
@@ -355,6 +357,65 @@ describe('scheduler — dispatchEventSchedules', () => {
     dispatchEventSchedules('run:settled', payload)
     expect(appendLog).toHaveBeenCalledTimes(1)
     cancelInFlight('dbnc') // clean up the never-resolving in-flight entry
+  })
+})
+
+describe('scheduler — stale cron trigger', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-21T00:00:00.000Z'))
+  })
+
+  afterEach(async () => {
+    await stopScheduler()
+    vi.useRealTimers()
+  })
+
+  it('records a missed occurrence and keeps the schedule active for its next cron run', async () => {
+    const schedule: Schedule = {
+      id: 'stale-cron',
+      type: 'command',
+      config: { command: 'echo hi', name: 'x' },
+      maxWallClockMs: null,
+      workspaceId: '/abs/ws-a',
+      triggerType: 'cron',
+      cronExpression: '0 * * * *',
+      nextRunAt: Date.now() - 5 * 60 * 1000 - 1,
+      eventTopic: null,
+      eventReasonFilter: null,
+      eventPrFilter: null,
+      status: 'active',
+      mode: 'sandboxed',
+      toolAllowlist: [],
+      toolDenylist: [],
+      vendor: 'claude',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const appendExecutionLog = vi.fn(() => ({ id: 'stale-log' }))
+    const updateNextRunAt = vi.fn()
+    const updateSchedule = vi.fn()
+    const store: ExecutionStore = {
+      getDueSchedules: () => [schedule],
+      getEventSchedules: () => [],
+      getSchedule: () => schedule,
+      updateNextRunAt,
+      updateSchedule,
+      deleteSchedule: vi.fn(),
+      appendExecutionLog: appendExecutionLog as unknown as ExecutionStore['appendExecutionLog'],
+      updateExecutionLog: vi.fn(),
+    }
+    setExecutionStore(store)
+
+    startScheduler(1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(updateSchedule).not.toHaveBeenCalled()
+    expect(appendExecutionLog).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: schedule.id, error: 'missed_trigger_window' }),
+    )
+    expect(updateNextRunAt).toHaveBeenCalledWith(schedule.id, expect.any(Number))
+    expect(updateNextRunAt.mock.calls[0]![1]).toBeGreaterThan(Date.now())
   })
 })
 

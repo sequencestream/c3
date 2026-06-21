@@ -10,7 +10,7 @@
  * 移动端退化为二级 drill-down 栈:列表 → 右栏(详情或聊天)逐级滑入/返回。
  * 状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。composer ref 经 defineExpose 转发。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
@@ -37,6 +37,13 @@ const props = defineProps<{
   intents: Intent[]
   automation: AutomationStatus | null
   intentActionErrorSeq?: number
+  /**
+   * One-shot external select request (from a work session's title-bar jump button).
+   * When set and the target lands in `intents`, it's selected (right panel shows its
+   * detail) and `requested-intent-consumed` is emitted so the parent clears it. A
+   * target that never appears (deleted / not loaded) leaves the default selection.
+   */
+  requestedIntentId?: string | null
   /** 当前 workspace SDD 总开关,透传给 IntentDetail 的四态主按钮。 */
   sddEnabled?: boolean
   /** 当前 workspace 配置的主分支;用于隐藏主分支上的 Create PR 动作。 */
@@ -103,6 +110,8 @@ const emit = defineEmits<{
   'rename-intent-session': [sessionId: string, title: string]
   'delete-intent-session': [sessionId: string]
   'set-session-agent': [agentId: string]
+  // external select request consumed (parent clears `requestedIntentId`)
+  'requested-intent-consumed': []
   // chat events
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
@@ -142,6 +151,23 @@ function handleOrderedChange(ids: string[]): void {
 }
 const selectedIntent = computed<Intent | null>(
   () => props.intents.find((r) => r.id === selectedIntentId.value) ?? null,
+)
+
+// External one-shot select request (work session title-bar jump button): when the
+// requested intent is present in the loaded list, select it (winning over the
+// default-first-row logic via userSelectedIntent=true) and signal the parent to
+// clear the request. The request may arrive before `intents` loads, so we watch
+// both; a target that never lands is silently ignored (default selection stands).
+watch(
+  () => [props.requestedIntentId, props.intents] as const,
+  ([requestedId]) => {
+    if (!requestedId) return
+    if (!props.intents.some((it) => it.id === requestedId)) return
+    selectedIntentId.value = requestedId
+    userSelectedIntent.value = true
+    emit('requested-intent-consumed')
+  },
+  { immediate: true },
 )
 
 // ---- 合并列当前 tab(驱动右栏上下文切换) ----

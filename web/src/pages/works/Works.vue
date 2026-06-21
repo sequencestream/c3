@@ -42,6 +42,8 @@ const props = defineProps<{
   vendor?: VendorId | null
   /** Same-vendor agent switcher data for the active session (ADR-0015); null ⇒ no switcher. */
   agentSwitch?: SessionAgentSwitch | null
+  /** The active session's linked intent id (reverse-looked-up); null ⇒ no jump button. */
+  linkedIntentId?: string | null
   /** Per-vendor session-lifecycle capability ledger (ADR-0011), gating row actions. */
   vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
   // right: chat column
@@ -80,6 +82,7 @@ const emit = defineEmits<{
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
+  'open-intent': [intentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -179,6 +182,7 @@ defineExpose({
         :mode="mode"
         :codex-policy="codexPolicy"
         :mode-options="modeOptions"
+        :linked-intent-id="linkedIntentId"
         :has-active-session="hasActiveSession"
         :messages="messages"
         :actionable-permission-id="actionablePermissionId"
@@ -197,6 +201,7 @@ defineExpose({
         @set-mode="(m: ModeToken) => emit('set-mode', m)"
         @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
         @set-session-agent="(id: string) => emit('set-session-agent', id)"
+        @open-intent="(id: string) => emit('open-intent', id)"
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
         @refresh="emit('refresh')"

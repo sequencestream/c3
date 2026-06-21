@@ -133,6 +133,54 @@ describe('Intents.vue — default selected intent', () => {
   })
 })
 
+describe('Intents.vue — external select request (jump from work session)', () => {
+  it('selects the requested intent over the default first row and emits consumed', async () => {
+    const wrapper = mountIntents([
+      intent({ id: 'todo-a', status: 'todo', priority: 'P1' }),
+      intent({ id: 'todo-b', status: 'todo', priority: 'P2' }),
+    ])
+    await nextTick()
+    // Default selection is the first rendered row.
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('todo-a')
+
+    await wrapper.setProps({ requestedIntentId: 'todo-b' })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('todo-b')
+    expect(wrapper.emitted('requested-intent-consumed')).toHaveLength(1)
+  })
+
+  it('applies the request once the target lands in a later-loaded list', async () => {
+    const wrapper = mountIntents([])
+    // Request arrives before the list loads — silently waits, no consume yet.
+    await wrapper.setProps({ requestedIntentId: 'todo-late' })
+    await nextTick()
+    expect(wrapper.emitted('requested-intent-consumed')).toBeUndefined()
+
+    await wrapper.setProps({
+      intents: [
+        intent({ id: 'todo-first', status: 'todo', priority: 'P1' }),
+        intent({ id: 'todo-late', status: 'todo', priority: 'P2' }),
+      ],
+    })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('todo-late')
+    expect(wrapper.emitted('requested-intent-consumed')).toHaveLength(1)
+  })
+
+  it('ignores a request whose target never appears, leaving the default selection', async () => {
+    const wrapper = mountIntents([intent({ id: 'todo-a', status: 'todo', priority: 'P1' })])
+    await nextTick()
+
+    await wrapper.setProps({ requestedIntentId: 'missing' })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('todo-a')
+    expect(wrapper.emitted('requested-intent-consumed')).toBeUndefined()
+  })
+})
+
 describe('Intents.vue — new-session entry from the intent list', () => {
   it('switches the right column to the chat session view when the intent-list entry creates a session', async () => {
     const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])

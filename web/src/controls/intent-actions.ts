@@ -37,6 +37,15 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'list_intent_sessions', workspaceId: path })
   }
 
+  // Jump from a work session's title bar to its linked intent: navigate to the
+  // intents tab (which loads the list) and stage a one-shot select request that
+  // Intents.vue applies once the target lands in its list. If the intent was
+  // deleted / never loads, Intents.vue falls back to its default selection.
+  ctx.openLinkedIntent = (path: string, intentId: string): void => {
+    ctx.openIntents(path)
+    ctx.requestedIntentId.value = intentId
+  }
+
   // "+" in the intent title bar: start a brand-new comm session.
   ctx.newIntentChat = (): void => {
     if (!intentsProject.value) return

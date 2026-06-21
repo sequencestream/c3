@@ -3016,6 +3016,14 @@ export type ServerToClient =
        * fact (e.g. brand-new pending with no intent yet).
        */
       agentSwitch?: SessionAgentSwitch
+      /**
+       * The c3 intent id this work session was created for, reverse-looked-up from
+       * `intent_sessions` (only `start_development`-bound sessions have a row). Present
+       * only on the works `select_session` path; absent for intent-side comm / spec
+       * sessions (already on the intent page) and for plain sessions (no row). Drives the
+       * title-bar "Intent" jump button; absent ⇒ no button.
+       */
+      linkedIntentId?: string
     }
   /** Binds a pending session's `clientId` to its real SDK `sessionId`. */
   | {

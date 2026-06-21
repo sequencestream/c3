@@ -57,11 +57,13 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   setSessionAgent: vi.fn(() => ({ ok: true })),
 }))
 vi.mock('../../kernel/agent/process/launcher.js', () => ({ probeAll: vi.fn(() => []) }))
+vi.mock('../intents/store.js', () => ({ findIntentIdBySessionId: vi.fn(() => null) }))
 
 import { selectSession } from './index.js'
 import { loadHistory, sessionTitle } from '../../sessions.js'
 import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { getByC3Id } from './work-session-store.js'
+import { findIntentIdBySessionId } from '../intents/store.js'
 import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 
 afterEach(() => vi.clearAllMocks())
@@ -171,5 +173,32 @@ describe('select_session', () => {
     })
     // Placeholder is not adopted ⇒ legacy lookup runs (returns its own value).
     expect(sessionTitle).toHaveBeenCalled()
+  })
+
+  it('intent-bound session → session_selected carries the reverse-looked-up linkedIntentId', async () => {
+    vi.mocked(findIntentIdBySessionId).mockReturnValue('intent-xyz')
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'dev-sess-1',
+    })
+    expect(findIntentIdBySessionId).toHaveBeenCalledWith('dev-sess-1')
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.linkedIntentId).toBe('intent-xyz')
+  })
+
+  it('plain session (no intent_sessions row) → linkedIntentId is absent', async () => {
+    vi.mocked(findIntentIdBySessionId).mockReturnValue(null)
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'plain-1',
+    })
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.linkedIntentId).toBeUndefined()
   })
 })

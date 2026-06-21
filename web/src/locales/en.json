@@ -915,6 +915,10 @@
       }
     },
     "titleBar": {
+      "intent": {
+        "label": "Intent",
+        "ariaLabel": "Open the intent that created this session"
+      },
       "mode": {
         "ariaLabel": "Permission mode"
       },

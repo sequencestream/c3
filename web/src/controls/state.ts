@@ -428,6 +428,13 @@ export function createState(deps: StateDeps) {
     return caps[vendor]?.taskStore ?? true
   })
   const activeAgentSwitch = ref<SessionAgentSwitch | null>(null)
+  // The intent the active work session was created for (reverse-looked-up server-side
+  // and carried on `session_selected`); null ⇒ plain session ⇒ no jump button.
+  // Refreshed/cleared on every (re)select, same lifecycle as `activeVendor`.
+  const activeLinkedIntentId = ref<string | null>(null)
+  // One-shot request to select a specific intent on the intents page (set by the
+  // title-bar jump button, consumed + cleared by Intents.vue once applied).
+  const requestedIntentId = ref<string | null>(null)
 
   // The mode-picker options for the viewed session.
   const modeOptions = computed(() => {
@@ -595,6 +602,8 @@ export function createState(deps: StateDeps) {
     newSessionWorkspace,
     activeVendor,
     activeAgentSwitch,
+    activeLinkedIntentId,
+    requestedIntentId,
     toast,
     intentActionErrorSeq,
     devLaunch,

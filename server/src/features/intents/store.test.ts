@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import {
   canTransition,
+  findIntentIdBySessionId,
   findIntents,
   getChatSession,
   getIntent,
@@ -1275,6 +1276,23 @@ describe('intent_sessions CRUD (dev session execution records)', () => {
 
   it('getIntentSession returns null for non-existent id', () => {
     expect(getIntentSession(99999)).toBeNull()
+  })
+
+  // ── findIntentIdBySessionId (reverse lookup for the title-bar jump button) ──
+
+  it('findIntentIdBySessionId returns the intent for a bound session', () => {
+    insertIntentSession('intent-rev', 'sess-rev', 'claude')
+    expect(findIntentIdBySessionId('sess-rev')).toBe('intent-rev')
+  })
+
+  it('findIntentIdBySessionId returns the most recent binding when re-bound', () => {
+    insertIntentSession('intent-old', 'sess-dup', 'claude')
+    insertIntentSession('intent-new', 'sess-dup', 'codex')
+    expect(findIntentIdBySessionId('sess-dup')).toBe('intent-new')
+  })
+
+  it('findIntentIdBySessionId returns null for an unbound (plain) session', () => {
+    expect(findIntentIdBySessionId('sess-never-bound')).toBeNull()
   })
 
   it('persists across a cache reset (real db file)', () => {

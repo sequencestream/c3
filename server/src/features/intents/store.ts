@@ -1269,6 +1269,22 @@ export function getIntentSessionBySessionId(
 }
 
 /**
+ * Reverse-lookup the intent a (dev) session belongs to, via `intent_sessions`.
+ * Only `start_development`-bound sessions have a row, so a plain work / comm
+ * session returns `null` (no button). When a session was bound more than once,
+ * the most recent binding wins. Returns `null` when the db is unavailable.
+ */
+export function findIntentIdBySessionId(sessionId: string): string | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<{ intent_id: string }>(
+    'SELECT intent_id FROM intent_sessions WHERE session_id=? ORDER BY created_at DESC, id DESC LIMIT 1',
+    sessionId,
+  )
+  return row?.intent_id ?? null
+}
+
+/**
  * List dev session records for an intent, newest first.
  * Returns `[]` when the db is unavailable.
  */

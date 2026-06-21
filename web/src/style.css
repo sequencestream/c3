@@ -309,6 +309,24 @@ header h1 {
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* Jump-to-intent button beside the work session title (only when the session was
+   created from an intent). Compact pill that emits open-intent on click. */
+.session-title-bar .intent-jump {
+  flex-shrink: 0;
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--c-primary);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.session-title-bar .intent-jump:hover {
+  background: var(--c-hover, rgba(127, 127, 127, 0.12));
+}
+
 /* Vendor identity dot beside the session title (ADR-0015 / ADR-0011). */
 .vendor-dot {
   flex-shrink: 0;

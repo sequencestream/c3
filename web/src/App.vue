@@ -51,6 +51,7 @@ const {
   activeTitle,
   activeVendor,
   activeAgentSwitch,
+  activeLinkedIntentId,
   sessionCapabilities,
   hasActiveSession,
   mode,
@@ -92,6 +93,8 @@ const {
   clearViewedSession,
   // ---- intents ----
   intentsProject,
+  requestedIntentId,
+  openLinkedIntent,
   currentIntents,
   currentIntentsSdd,
   currentAutomation,
@@ -273,6 +276,7 @@ const {
           :active-title="activeTitle"
           :vendor="activeVendor"
           :agent-switch="activeAgentSwitch"
+          :linked-intent-id="activeLinkedIntentId"
           :vendor-session-caps="sessionCapabilities ?? undefined"
           :has-active-session="hasActiveSession"
           :mode="mode"
@@ -301,6 +305,7 @@ const {
           @set-mode="setMode"
           @set-codex-policy="setCodexPolicy"
           @set-session-agent="onSetSessionAgent"
+          @open-intent="(id: string) => currentWorkspace && openLinkedIntent(currentWorkspace, id)"
           @respond="respond"
           @submit-ask="submitAsk"
           @refresh="refreshStatus"
@@ -320,6 +325,7 @@ const {
           :project="intentsProject"
           :intents="currentIntents"
           :sdd-enabled="currentIntentsSdd"
+          :requested-intent-id="requestedIntentId"
           :workspace-main-branch="
             currentWorkspaceSetting?.defaultMainBranch ??
             (intentsProject
@@ -353,6 +359,7 @@ const {
           :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
           :vendor="activeVendor"
           :agent-switch="activeAgentSwitch"
+          @requested-intent-consumed="requestedIntentId = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
           @write-spec="writeSpec"

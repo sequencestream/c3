@@ -190,6 +190,21 @@ describe('ScheduleDetailPanel.vue — 右栏容器', () => {
       expect(w.find('.sched-history-empty').exists()).toBe(false)
     })
 
+    it('历史栏显示当前选中执行的 ID 和开始时间，并随选择切换', async () => {
+      const first = execLog({ id: 'first-execution', startedAt: 1_700_000_000_000 })
+      const second = execLog({ id: 'second-execution', startedAt: 1_700_000_002_000 })
+      const w = mountPanel({ executionId: first.id, execution: first })
+      await w.findAll('.sched-panel-tab')[1].trigger('click')
+
+      const summary = () => w.find('[data-testid="history-selected-execution"]')
+      expect(summary().text()).toContain(first.id)
+      expect(summary().text()).toContain('2023')
+
+      await w.setProps({ executionId: second.id, execution: second })
+      expect(summary().text()).toContain(second.id)
+      expect(summary().text()).not.toContain(first.id)
+    })
+
     it('切换选中 schedule 后复位到详情 Tab', async () => {
       const w = mountPanel({ executionId: 'e1', execution: execLog() })
       await w.findAll('.sched-panel-tab')[1].trigger('click')

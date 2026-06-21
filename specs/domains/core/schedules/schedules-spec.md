@@ -136,6 +136,10 @@ selected schedule whenever a `schedules` broadcast arrives (e.g. after an execut
 finished runs appear without a manual refresh. Switching the selected schedule clears the second-level
 execution selection.
 
+The History-tab action bar shows the currently selected execution's identifier and start time directly
+before the execution-browser action. This is a read-only selection summary and changes immediately
+when the user selects another execution; it is absent when no execution is selected.
+
 While a **running** `llm_prompt`-type execution is the selected one and the history page is the
 active, visible view (SCH-R22), the console additionally polls that execution on a fixed short
 interval — re-reading its detail (so the row's status / duration stay current) and its session

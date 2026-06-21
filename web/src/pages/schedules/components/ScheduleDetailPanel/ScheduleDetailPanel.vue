@@ -25,7 +25,7 @@ import ScheduleDetail from '../ScheduleDetail/ScheduleDetail.vue'
 import ExecutionDetail from '../ExecutionDetail/ExecutionDetail.vue'
 import ExecutionHistoryDialog from '../ExecutionHistoryDialog/ExecutionHistoryDialog.vue'
 
-const { t } = useTypedI18n()
+const { t, d } = useTypedI18n()
 
 const props = defineProps<{
   schedule: Schedule | null
@@ -123,6 +123,15 @@ const historyDialogOpen = ref(false)
 function openHistoryDialog(): void {
   historyDialogOpen.value = true
 }
+
+const selectedExecutionSummary = computed(() => {
+  const execution = props.execution
+  if (!execution) return null
+  return {
+    id: execution.id,
+    startedAt: d(execution.startedAt, 'datetime'),
+  }
+})
 
 // 切换选中 schedule:复位到「详情」Tab 并关闭历史弹框(已选执行的清空在控制层)。
 watch(
@@ -228,6 +237,16 @@ watch(
       <!-- Tab: 历史 -->
       <div v-else class="sched-panel-history">
         <div class="sched-history-bar">
+          <div
+            v-if="selectedExecutionSummary"
+            class="sched-history-selection"
+            data-testid="history-selected-execution"
+            :title="`${selectedExecutionSummary.id} · ${selectedExecutionSummary.startedAt}`"
+          >
+            <span class="sched-history-selection-id">{{ selectedExecutionSummary.id }}</span>
+            <span aria-hidden="true">·</span>
+            <span>{{ selectedExecutionSummary.startedAt }}</span>
+          </div>
           <button
             type="button"
             class="sp-history-browse"
@@ -436,9 +455,26 @@ watch(
 .sched-history-bar {
   flex-shrink: 0;
   padding: var(--sp-2) var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   border-bottom: 1px solid var(--c-border);
 }
+.sched-history-selection {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+.sched-history-selection-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .sp-history-browse {
+  flex-shrink: 0;
   padding: var(--sp-1) var(--sp-3);
   font-size: var(--fs-caption);
   color: var(--c-text);

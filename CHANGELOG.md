@@ -3,6 +3,11 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v0.3.0
+
+- worktree support
+- schedules improvement
+
 ## v0.2.0
 
 c3 (Code Creative Center) is a coding platform that fuses harness and loop engineering

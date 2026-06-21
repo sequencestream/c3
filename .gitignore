@@ -14,8 +14,9 @@ scripts/i18n/code-key.map.json
 .playwright-cli/
 .claude/skills/_c3_*/
 .codex/skills/_c3_*/
+.codex/skills/_c3_*
 .agents/skills/_c3_*/
 
 _zt_tmp
 .pnpm-store/
-.codex/skills/_c3_*
+tsconfig.tsbuildinfo

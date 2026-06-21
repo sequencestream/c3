@@ -18,6 +18,7 @@ import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { DockerDriver } from './kernel/sandbox/docker/DockerDriver.js'
 import { SandboxRegistry } from './kernel/sandbox/SandboxRegistry.js'
 import { getSystemSandboxes } from './kernel/config/index.js'
+import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
 import { addWorkspace, listWorkspaces, resolveWorkspaceRoot } from './state.js'
 import { sessionExists } from './sessions.js'
@@ -118,6 +119,11 @@ const RUN_STALE_MS = 5 * 60_000
 const PENDING_INTENT_SWEEP_MS = 60 * 60_000
 
 export async function startServer(opts: ServerOptions): Promise<void> {
+  // ---- File logging: tee console output to ~/.c3/log/c3.log (best-effort) ----
+  // Installed first so every subsequent startup line is also persisted. The c3
+  // home dir is already resolved by this point (cli.ts called setSettingsPath).
+  initLogging()
+
   // ---- Wire the `work_session_metadata` projection hooks (kernel ↛ features) ----
   // The kernel layer doesn't import the projection store directly (ADR-0009);
   // these composition-time callbacks mirror the kernel's bind / agent-swap /
@@ -645,6 +651,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     stopCheckbindPolling()
     await stopSchedulerWiring(30_000)
     server.close()
+    shutdownLogging()
     process.exit(0)
   }
   process.on('SIGINT', shutdown)

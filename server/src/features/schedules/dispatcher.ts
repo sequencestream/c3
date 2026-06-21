@@ -109,6 +109,16 @@ export async function execute(
   executionLogId: string,
   updateLog: UpdateLogFn,
 ): Promise<void> {
+  // A workspace can be removed after a schedule is persisted but before its
+  // queued execution starts. Do not pass an undefined cwd/path into a runner.
+  if (!resolveWorkspaceRoot(schedule.workspaceId)) {
+    updateLog(executionLogId, {
+      finishedAt: Date.now(),
+      status: 'failed',
+      error: 'schedule_workspace_not_found',
+    })
+    return
+  }
   if (isAgentQuotaRecoveryConfig(schedule.config)) {
     executeAgentQuotaRecovery(schedule, executionLogId, updateLog)
     return
@@ -497,9 +507,11 @@ async function executeLlmPrompt(
     schedule.mode,
   )
 
-  // The c3 server is in-process and intentionally replaces any user-configured
-  // server called `c3`; it is the workspace-bound capability surface used by
-  // scheduled reconciliation. Other workspace MCP servers remain available.
+  // Every Claude LLM schedule receives this in-process, workspace-bound c3 MCP
+  // server, not only schedules created from a template. Its tools remain
+  // unreachable unless the schedule's frozen allowlist and execution identity
+  // permit them. It intentionally replaces any user-configured server named
+  // `c3`; all other workspace MCP servers remain available.
   const mcpServers = {
     ...workspaceMcpConfig.mcpServers,
     ...createScheduleMcpServer(resolveWorkspaceRoot(schedule.workspaceId)!, logId),

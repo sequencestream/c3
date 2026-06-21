@@ -222,7 +222,8 @@ The smoke prompt asks Claude to write `/tmp/c3-e2e-test.txt`. The script:
 ## CLI
 
 ```
-c3 [start] [--workspace <path>] [--port 3000] [--dev]
+c3 [start] [--workspace <path>] [--port 3000] [--dev] [--daemon]
+c3 install   [--workspace <path>] [--port 3000] [--settings <path>]
 c3 verify <file>
 ```
 
@@ -238,6 +239,50 @@ c3 verify <file>
   alias (prints a warning) for one cycle.
 - `--port`: HTTP port (default 3000).
 - `--dev`: skip serving the frontend bundle (use Vite at :5173 instead).
+- `--settings <path>`: use this `settings.json` instead of the default `~/.c3/settings.json`
+  (its directory also holds `state.json`). Baked as an absolute path into a `--daemon`
+  child and into an installed service unit, so the background/service process reads the
+  same c3 home.
+
+### Background (`--daemon`)
+
+`c3 start --daemon` launches the server in the background and exits immediately. It
+re-spawns a detached `c3 start` (same `--workspace`/`--port`/`--settings`, never `--daemon`
+again), redirecting its output to `~/.c3/c3-daemon.log` and recording the child PID in
+`~/.c3/c3.pid`. Binding is unchanged (loopback-only, like a foreground `c3 start` — no
+network exposure is added).
+
+- A second `--daemon` while one is already running prints the live PID and exits non-zero
+  instead of starting a duplicate; a stale PID file (process gone) is overwritten.
+- Stop a daemon with `kill "$(cat ~/.c3/c3.pid)"`.
+
+### OS service (`c3 install`)
+
+`c3 install` registers c3 as a **per-user** OS service (no root/admin required) that runs
+`c3 start` under the platform's service manager — the manager owns the lifecycle, so the
+service does **not** use `--daemon`. The current `--workspace`/`--port`/`--settings` are
+baked into the unit. Platforms differ by design:
+
+| Platform | Mechanism                 | Unit / registration                                                   | Auto-start                                                                                             |
+| -------- | ------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Linux    | systemd **user** unit     | `~/.config/systemd/user/c3.service` + `systemctl --user`              | At login. Starting before login / surviving logout needs `loginctl enable-linger` (printed as a hint). |
+| macOS    | launchd **LaunchAgent**   | `~/Library/LaunchAgents/center.c3.server.plist` + `launchctl load -w` | Within your login session, at each login.                                                              |
+| Windows  | Task Scheduler logon task | `schtasks /Create … /SC ONLOGON` (task name `c3`)                     | At logon (a logon-triggered task, **not** a pre-login service).                                        |
+
+The service process depends on the host `claude` / `codex` CLI being on the service
+account's PATH — that PATH can differ from your login shell, which is the usual cause of
+"agent unavailable" under a service. The startup log (`~/.c3/log/c3.log`) reports which
+host CLIs were found.
+
+An unsupported platform, or a failing `systemctl`/`launchctl`/`schtasks`, exits non-zero
+with the underlying error (the registration command's stderr is shown, never swallowed).
+
+**No auto-update or uninstall.** Updating c3 is a manual binary replace; the service unit
+keeps pointing at the same path. To **remove** the service manually:
+
+- Linux — `systemctl --user disable --now c3.service` then `rm ~/.config/systemd/user/c3.service`
+- macOS — `launchctl unload ~/Library/LaunchAgents/center.c3.server.plist` then `rm` the plist
+- Windows — `schtasks /Delete /TN c3 /F`
 
 ## WebSocket protocol
 

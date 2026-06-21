@@ -71,12 +71,13 @@ web/src/
 │   │       └── AgendaProgress/AgendaProgress.vue    # 讨论议程进度:展示议程、当前进展、完成度百分比;窄屏收紧横向 padding
 │   │
 │   ├── schedules/                                   # 定时任务页
-│   │   ├── Schedules.vue                            # 定时任务容器页:桌面三栏(左栏列表 + 中栏执行历史 + 右栏 Tab 详情)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为三级 drill-down(任务列表→执行历史→Tab 执行详情逐级滑入/返回)
+│   │   ├── Schedules.vue                            # 定时任务容器页:桌面两栏(左栏纯选择列表 + 右栏 ScheduleDetailPanel)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为两级 drill-down(任务列表→详情逐级滑入/返回)
 │   │   └── components/
-│   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务列表:列表、创建、编辑、删除(ConfirmDialog 组件二次确认)、enable/disable 开关、下次执行倒计时(30s 刷新)
-│   │       ├── ExecutionHistoryList/ExecutionHistoryList.vue  # 中栏执行历史列表:选中 schedule 的执行记录,点击选中某次执行;运行中行的状态/耗时随控制层自动刷新更新
-│   │       ├── ScheduleDetail/ScheduleDetail.vue    # 右栏 schedule 详情(选中任务但未选执行时):vendor 品牌名+色点、mcpMode、toolAllowlist 读/写分类列表(借 toolManifest 缓存)
-│   │       ├── ExecutionDetail/ExecutionDetail.vue  # 右栏 Tab 化执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动;运行中执行的 transcript 随控制层轮询覆盖更新(不闪 loading)
+│   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务选择列表:行点击 = 选中(emit select,activeId 高亮)、创建(+)、下次执行倒计时(30s 刷新)、状态 badge;run/edit/delete/toggle 操作已迁出至右栏标题栏
+│   │       ├── ScheduleDetailPanel/ScheduleDetailPanel.vue  # 右栏容器:常驻标题栏(选中 schedule 名称 + 迁移来的 run-now/edit/delete(ConfirmDialog 二次确认)/enable-disable 开关)+「详情/历史」Tab;详情 Tab 渲染 ScheduleDetail,历史 Tab 经 ExecutionHistoryDialog 选执行后渲染 ExecutionDetail;切换选中 schedule 复位到详情 Tab
+│   │       ├── ScheduleDetail/ScheduleDetail.vue    # 详情 Tab 内容:vendor 品牌名+色点、mcpMode、toolAllowlist 读/写分类列表(借 toolManifest 缓存)
+│   │       ├── ExecutionHistoryDialog/ExecutionHistoryDialog.vue  # 历史选择弹框:在选中 schedule 完整日志上做纯前端分页(默认最近 5 笔/页,上一页/下一页),点选一笔上抛 select-execution 并关闭;移动端全屏 sheet;状态 badge/时间/耗时/退出码行渲染
+│   │       ├── ExecutionDetail/ExecutionDetail.vue  # 历史 Tab 内执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动;运行中执行的 transcript 随控制层轮询覆盖更新(不闪 loading)
 │   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发(run:started/run:settled/pr:operation)、高级 cron 构造器、实时 next-run 预览;run:settled 显示 reason 过滤,pr:operation 显示 MCP 集成说明+操作/结果过滤面板(写入 eventPrFilter);编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);移动端全屏 sheet 且紧凑表单单列堆叠
 │   │
 │   ├── codes/                                       # 代码浏览页

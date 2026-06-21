@@ -62,11 +62,8 @@ export function installScheduleActions(ctx: AppCtx): void {
     selectedExecutionId.value = id
   }
 
+  // 两栏 drill-down:从右栏「详情」返回左栏「列表」时清空选中(执行 + schedule)。
   ctx.onScheduleMobileBack = (targetKey: string): void => {
-    if (targetKey === 'history') {
-      selectedExecutionId.value = null
-      return
-    }
     if (targetKey === 'schedules') {
       selectedExecutionId.value = null
       selectedScheduleId.value = null

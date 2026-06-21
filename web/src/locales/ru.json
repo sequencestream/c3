@@ -1143,9 +1143,23 @@
       "noHistory": "Пока нет истории выполнения.",
       "empty": "Выберите расписание, чтобы просмотреть подробности."
     },
+    "tab": {
+      "detail": "Details",
+      "history": "History"
+    },
     "history": {
       "title": "Execution History",
-      "empty": "Select a schedule to view its history."
+      "empty": "Select a schedule to view its history.",
+      "browse": {
+        "label": "Browse executions"
+      },
+      "tabEmpty": "Select an execution to view its details.",
+      "dialog": {
+        "title": "Select an execution",
+        "prev": "Previous",
+        "next": "Next",
+        "page": "{current} / {total}"
+      }
     },
     "execution": {
       "tab": {

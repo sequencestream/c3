@@ -1142,9 +1142,23 @@
       "noHistory": "还没有执行历史。",
       "empty": "选择一个定时任务以查看详情。"
     },
+    "tab": {
+      "detail": "详情",
+      "history": "历史"
+    },
     "history": {
       "title": "执行历史",
-      "empty": "选择一个定时任务以查看其历史。"
+      "empty": "选择一个定时任务以查看其历史。",
+      "browse": {
+        "label": "浏览执行记录"
+      },
+      "tabEmpty": "选择一次执行以查看其详情。",
+      "dialog": {
+        "title": "选择一次执行",
+        "prev": "上一页",
+        "next": "下一页",
+        "page": "{current} / {total}"
+      }
     },
     "execution": {
       "tab": {

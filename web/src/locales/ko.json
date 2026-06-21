@@ -1143,9 +1143,23 @@
       "noHistory": "아직 실행 기록이 없습니다.",
       "empty": "세부 정보를 보려면 예약 작업을 선택하세요."
     },
+    "tab": {
+      "detail": "Details",
+      "history": "History"
+    },
     "history": {
       "title": "Execution History",
-      "empty": "Select a schedule to view its history."
+      "empty": "Select a schedule to view its history.",
+      "browse": {
+        "label": "Browse executions"
+      },
+      "tabEmpty": "Select an execution to view its details.",
+      "dialog": {
+        "title": "Select an execution",
+        "prev": "Previous",
+        "next": "Next",
+        "page": "{current} / {total}"
+      }
     },
     "execution": {
       "tab": {

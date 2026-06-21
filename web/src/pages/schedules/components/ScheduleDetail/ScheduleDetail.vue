@@ -4,17 +4,19 @@
  *
  * 当左侧列表选中一个 schedule 但未选中具体执行时展示,包含:
  *  - Vendor 品牌名 + 色点
- *  - mcpMode (带 i18n 标签)
- *  - toolAllowlist 完整列表(利用 toolManifest 缓存做读/写分类)
+ *  - 类型、命令或 Prompt、执行超时与 mcpMode
+ *  - toolAllowlist 单行换行列表
  *
  * Props:
  *  - schedule: 选中的定时任务对象(null 时隐藏)
  *  - toolManifest: per-vendor 工具清单缓存,用于判断工具读写属性
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { describeCron } from '@ccc/shared/cron'
 import type { Schedule, ToolManifestEntry } from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
+import ScheduleCronEditor from './ScheduleCronEditor.vue'
 
 const { t } = useTypedI18n()
 
@@ -23,46 +25,96 @@ const props = defineProps<{
   toolManifest: Record<string, ToolManifestEntry[] | null>
 }>()
 
-/** 当前 vendor 的 tool manifest 缓存,可能为 null(尚未加载)。 */
-const vendorTools = computed(() => {
-  if (!props.schedule) return null
-  return props.toolManifest[props.schedule.vendor] ?? null
-})
+const emit = defineEmits<{
+  'update-cron': [id: string, cronExpression: string]
+}>()
+
+const cronEditorOpen = ref(false)
+const cronDescription = computed(() =>
+  props.schedule?.triggerType === 'cron' ? describeCron(props.schedule.cronExpression) : '',
+)
+
+function saveCron(cronExpression: string): void {
+  if (props.schedule) emit('update-cron', props.schedule.id, cronExpression)
+  cronEditorOpen.value = false
+}
 
 /** toolAllowlist 条目数量。 */
 const allowlistCount = computed(() => props.schedule?.toolAllowlist.length ?? 0)
 
-/** 读/写分类:当 manifest 可用时,将 allowlist 分为只读/写入两组。 */
-const readOnlyTools = computed(() => {
-  if (allowlistCount.value === 0) return []
-  const tools = vendorTools.value
-  if (!tools) return null /* 无法分类 */
-  const map = new Map(tools.map((t) => [t.name, t]))
-  return props.schedule!.toolAllowlist.filter((name) => {
-    const entry = map.get(name)
-    return entry && !entry.isWrite
-  })
+function configText(config: unknown, key: 'command' | 'prompt'): string {
+  if (!config || typeof config !== 'object') return '—'
+  const value = (config as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.trim() ? value : '—'
+}
+
+const taskContent = computed(() => {
+  const schedule = props.schedule
+  return schedule
+    ? configText(schedule.config, schedule.type === 'command' ? 'command' : 'prompt')
+    : '—'
 })
 
-const writeTools = computed(() => {
-  if (allowlistCount.value === 0) return []
-  const tools = vendorTools.value
-  if (!tools) return null
-  const map = new Map(tools.map((t) => [t.name, t]))
-  return props.schedule!.toolAllowlist.filter((name) => {
-    const entry = map.get(name)
-    return entry && entry.isWrite
-  })
+const timeout = computed(() => {
+  const value = props.schedule?.maxWallClockMs
+  return value === null || value === undefined
+    ? t('schedule.form.maxWallClockMs.placeholder')
+    : `${value} ms`
 })
 
-/** 无法通过 manifest 匹配的工具(数据不一致时的兜底)。 */
-const unclassifiedTools = computed(() => {
-  if (allowlistCount.value === 0) return []
-  const tools = vendorTools.value
-  if (!tools) return props.schedule!.toolAllowlist
-  const map = new Map(tools.map((t) => [t.name, t]))
-  return props.schedule!.toolAllowlist.filter((name) => !map.has(name))
-})
+function eventTopicLabel(topic: Schedule['eventTopic']): string {
+  switch (topic) {
+    case 'run:started':
+      return t('schedule.form.event.topic.started.label')
+    case 'run:settled':
+      return t('schedule.form.event.topic.settled.label')
+    case 'pr:operation':
+      return t('schedule.form.event.topic.prOperation.label')
+    default:
+      return '—'
+  }
+}
+
+function reasonLabel(reason: 'complete' | 'error' | 'aborted'): string {
+  switch (reason) {
+    case 'complete':
+      return t('schedule.form.event.reason.complete.label')
+    case 'error':
+      return t('schedule.form.event.reason.error.label')
+    case 'aborted':
+      return t('schedule.form.event.reason.aborted.label')
+  }
+}
+
+function prOperationLabel(operation: 'create' | 'review' | 'merge' | 'close' | 'comment'): string {
+  switch (operation) {
+    case 'create':
+      return t('schedule.form.event.pr.op.create.label')
+    case 'review':
+      return t('schedule.form.event.pr.op.review.label')
+    case 'merge':
+      return t('schedule.form.event.pr.op.merge.label')
+    case 'close':
+      return t('schedule.form.event.pr.op.close.label')
+    case 'comment':
+      return t('schedule.form.event.pr.op.comment.label')
+  }
+}
+
+function prResultLabel(result: 'success' | 'failure'): string {
+  return result === 'success'
+    ? t('schedule.form.event.pr.result.success.label')
+    : t('schedule.form.event.pr.result.failure.label')
+}
+
+const eventTopic = computed(() => eventTopicLabel(props.schedule?.eventTopic ?? null))
+const reasonFilter = computed(() => props.schedule?.eventReasonFilter?.map(reasonLabel) ?? [])
+const prOperationFilter = computed(
+  () => props.schedule?.eventPrFilter?.operations?.map(prOperationLabel) ?? [],
+)
+const prResultFilter = computed(
+  () => props.schedule?.eventPrFilter?.results?.map(prResultLabel) ?? [],
+)
 
 /** mode → 显示标签。不再走 i18n（mode token 本身已是英文可读值）。 */
 function modeLabel(mode: unknown): string {
@@ -107,6 +159,87 @@ function vendorLabel(vendor: string): string {
         <span class="sd-value">{{ modeLabel(schedule.mode) }}</span>
       </div>
 
+      <div class="sd-row">
+        <span class="sd-label">{{ t('schedule.form.taskType.label') }}</span>
+        <span class="sd-value">{{
+          schedule.type === 'command'
+            ? t('schedule.form.type.command.label')
+            : t('schedule.form.type.llm.label')
+        }}</span>
+      </div>
+
+      <div class="sd-row sd-row--content">
+        <span class="sd-label">{{
+          schedule.type === 'command'
+            ? t('schedule.form.command.label')
+            : t('schedule.form.prompt.label')
+        }}</span>
+        <code class="sd-task-content">{{ taskContent }}</code>
+      </div>
+
+      <div class="sd-row">
+        <span class="sd-label">{{ t('schedule.form.maxWallClockMs.label') }}</span>
+        <span class="sd-value">{{ timeout }}</span>
+      </div>
+
+      <div class="sd-row">
+        <span class="sd-label">{{ t('schedule.form.trigger.label') }}</span>
+        <span class="sd-value">{{
+          schedule.triggerType === 'cron'
+            ? t('schedule.form.trigger.cron.label')
+            : t('schedule.form.trigger.event.label')
+        }}</span>
+      </div>
+
+      <template v-if="schedule.triggerType === 'event'">
+        <div class="sd-row">
+          <span class="sd-label">{{ t('schedule.form.event.topic.label') }}</span>
+          <span class="sd-value">{{ eventTopic }}</span>
+        </div>
+        <div v-if="schedule.eventTopic === 'run:settled'" class="sd-row sd-row--content">
+          <span class="sd-label">{{ t('schedule.form.event.reason.label') }}</span>
+          <span v-if="reasonFilter.length" class="sd-value">{{ reasonFilter.join(' · ') }}</span>
+          <span v-else class="sd-value sd-value--hint">{{
+            t('schedule.form.event.reason.hint')
+          }}</span>
+        </div>
+        <template v-if="schedule.eventTopic === 'pr:operation'">
+          <div class="sd-row sd-row--content">
+            <span class="sd-label">{{ t('schedule.form.event.pr.op.label') }}</span>
+            <span v-if="prOperationFilter.length" class="sd-value">{{
+              prOperationFilter.join(' · ')
+            }}</span>
+            <span v-else class="sd-value sd-value--hint">{{
+              t('schedule.form.event.pr.hint')
+            }}</span>
+          </div>
+          <div class="sd-row sd-row--content">
+            <span class="sd-label">{{ t('schedule.form.event.pr.result.label') }}</span>
+            <span v-if="prResultFilter.length" class="sd-value">{{
+              prResultFilter.join(' · ')
+            }}</span>
+            <span v-else class="sd-value sd-value--hint">{{
+              t('schedule.form.event.pr.hint')
+            }}</span>
+          </div>
+        </template>
+      </template>
+
+      <div v-if="schedule.triggerType === 'cron'" class="sd-row sd-row--schedule">
+        <span class="sd-label">{{ t('schedule.form.schedule.label') }}</span>
+        <code class="sd-cron">{{ schedule.cronExpression }}</code>
+        <span class="sd-cron-description">{{ cronDescription }}</span>
+        <button
+          type="button"
+          class="sd-cron-edit"
+          :title="t('schedule.list.edit.tooltip')"
+          :aria-label="t('schedule.list.edit.tooltip')"
+          @click="cronEditorOpen = true"
+        >
+          ✎
+        </button>
+      </div>
+
       <!-- Tool Allowlist -->
       <div class="sd-section">
         <h4 class="sd-section-title">{{ t('schedule.form.tools.label') }}</h4>
@@ -116,58 +249,11 @@ function vendorLabel(vendor: string): string {
           {{ t('schedule.list.toolSummaryAll') }}
         </p>
 
-        <!-- 有 manifest:分类展示 -->
-        <template v-else-if="vendorTools">
-          <!-- 只读组 -->
-          <div v-if="readOnlyTools && readOnlyTools.length" class="sd-tool-group">
-            <span class="sd-tool-group-label sd-tool-group-label--ro">
-              {{ t('schedule.form.tools.readOnly.label') }}
-            </span>
-            <ul class="sd-tool-list">
-              <li
-                v-for="name in readOnlyTools"
-                :key="name"
-                :data-testid="`sd-tool-ro-${name}`"
-                class="sd-tool-item sd-tool-item--ro"
-              >
-                {{ name }}
-              </li>
-            </ul>
-          </div>
-
-          <!-- 写入组 -->
-          <div v-if="writeTools && writeTools.length" class="sd-tool-group">
-            <span class="sd-tool-group-label sd-tool-group-label--w">
-              {{ t('schedule.form.tools.write.label') }}
-            </span>
-            <ul class="sd-tool-list">
-              <li
-                v-for="name in writeTools"
-                :key="name"
-                :data-testid="`sd-tool-w-${name}`"
-                class="sd-tool-item sd-tool-item--w"
-              >
-                {{ name }}
-              </li>
-            </ul>
-          </div>
-
-          <!-- manifest 中不存在的工具(兜底) -->
-          <div v-if="unclassifiedTools.length" class="sd-tool-group">
-            <ul class="sd-tool-list">
-              <li v-for="name in unclassifiedTools" :key="name" class="sd-tool-item">
-                {{ name }}
-              </li>
-            </ul>
-          </div>
-        </template>
-
-        <!-- 无 manifest 缓存:原始列表展示 -->
         <ul v-else class="sd-tool-list">
           <li
             v-for="name in schedule.toolAllowlist"
             :key="name"
-            data-testid="sd-tool-unclassified"
+            data-testid="sd-tool-item"
             class="sd-tool-item"
           >
             {{ name }}
@@ -175,6 +261,12 @@ function vendorLabel(vendor: string): string {
         </ul>
       </div>
     </div>
+    <ScheduleCronEditor
+      :open="cronEditorOpen"
+      :schedule="schedule"
+      @close="cronEditorOpen = false"
+      @save="saveCron"
+    />
   </div>
 </template>
 
@@ -244,6 +336,40 @@ function vendorLabel(vendor: string): string {
   align-items: center;
   gap: 6px;
 }
+.sd-value--hint {
+  color: var(--c-text-muted);
+  font-style: italic;
+}
+.sd-row--schedule {
+  flex-wrap: wrap;
+}
+.sd-row--content {
+  align-items: flex-start;
+}
+.sd-cron {
+  color: var(--c-text);
+  font-family: var(--ff-mono, monospace);
+}
+.sd-cron-description {
+  color: var(--c-text-muted);
+}
+.sd-cron-edit {
+  border: 0;
+  background: transparent;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  font-size: var(--fs-body);
+}
+.sd-cron-edit:hover {
+  color: var(--c-text);
+}
+.sd-task-content {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--c-text);
+  font-family: var(--ff-mono, monospace);
+}
 
 .sd-section {
   display: flex;
@@ -258,49 +384,22 @@ function vendorLabel(vendor: string): string {
   border-bottom: 1px solid var(--c-border);
 }
 
-.sd-tool-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-.sd-tool-group-label {
-  font-size: var(--fs-badge);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  align-self: flex-start;
-}
-.sd-tool-group-label--ro {
-  color: var(--c-text-muted);
-  background: var(--c-hover);
-}
-.sd-tool-group-label--w {
-  color: var(--c-warning);
-  background: rgba(245, 158, 11, 0.1);
-}
-
 .sd-tool-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
 }
 .sd-tool-item {
   font-family: var(--ff-mono, monospace);
   font-size: var(--fs-caption);
-  padding: 2px 4px;
+  padding: 3px 6px;
   border-radius: var(--radius-sm);
   color: var(--c-text);
-}
-.sd-tool-item--ro {
-  color: var(--c-text-muted);
-}
-.sd-tool-item--w {
-  color: var(--c-text);
+  background: var(--c-hover);
+  overflow-wrap: anywhere;
 }
 
 .sd-tools-empty {

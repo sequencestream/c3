@@ -99,6 +99,9 @@ const mobileActiveToken = computed(() => props.activeId ?? 'schedules')
         @delete-schedule="(id: string) => emit('delete-schedule', id)"
         @toggle-enabled="(id: string, enabled: boolean) => emit('toggle-enabled', id, enabled)"
         @run-now="(id: string) => emit('run-now', id)"
+        @update-cron="
+          (id: string, cronExpression: string) => emit('update', id, { cronExpression })
+        "
         @select-execution="(id: string) => emit('select-execution', id)"
         @load-session="(executionId: string) => emit('load-session', executionId)"
       />

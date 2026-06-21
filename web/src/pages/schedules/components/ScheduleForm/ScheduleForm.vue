@@ -45,6 +45,7 @@ import type {
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
+import ScheduleCronEditor from '../ScheduleDetail/ScheduleCronEditor.vue'
 
 // `d` 别名为 `fmtDateTime`:模板里 `v-for="d in WEEKDAYS"` 已占用 `d`,避免 shadow。
 const { t, d: fmtDateTime } = useTypedI18n()
@@ -149,6 +150,7 @@ const command = ref('')
 const prompt = ref('')
 const maxWallClockMs = ref<number | null>(null)
 const cronExpression = ref('*/30 * * * *')
+const cronEditorOpen = ref(false)
 const triggerType = ref<ScheduleTriggerType>('cron')
 const eventTopic = ref<ScheduleEventTopic>('run:settled')
 const eventReasonFilter = ref<RunEndReason[]>([])
@@ -308,6 +310,11 @@ function toggleDay(num: number): void {
   const i = advDays.value.indexOf(num)
   if (i >= 0) advDays.value.splice(i, 1)
   else advDays.value.push(num)
+}
+
+function updateCronDraft(value: string): void {
+  cronExpression.value = value
+  cronEditorOpen.value = false
 }
 
 // ---- Live preview --------------------------------------------------------
@@ -599,8 +606,24 @@ function save(): void {
         <div v-if="triggerType === 'cron'" class="sf-field sf-field--stacked">
           <span class="sf-label">{{ t('schedule.form.schedule.label') }}</span>
 
-          <!-- Advanced segmented builder -->
-          <div class="sf-tabpane sf-advanced">
+          <!-- 编辑态收起为当前 cron 摘要；频率和时间在专用弹框中修改。 -->
+          <div v-if="isEdit" class="sf-cron-inline">
+            <span>{{ t('schedule.form.schedule.label') }}:</span>
+            <code class="sf-cron">{{ cronExpression }}</code>
+            <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
+            <button
+              type="button"
+              class="sf-cron-edit"
+              :title="t('schedule.list.edit.tooltip')"
+              :aria-label="t('schedule.list.edit.tooltip')"
+              @click="cronEditorOpen = true"
+            >
+              ✎
+            </button>
+          </div>
+
+          <!-- 新建态保留高级构造器。 -->
+          <div v-else class="sf-tabpane sf-advanced">
             <label class="sf-adv-row">
               <span class="sf-adv-label">{{ t('schedule.form.frequency.label') }}</span>
               <select v-model="advFreq" class="sf-input sf-adv-control">
@@ -673,16 +696,18 @@ function save(): void {
             </div>
           </div>
 
-          <!-- Resolved cron + live preview (shared across all tabs) -->
-          <div class="sf-preview-bar">
-            <code class="sf-cron" :class="{ invalid: !cronValid }">{{ cronExpression }}</code>
-            <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
-            <span v-else class="sf-warn">{{ t('schedule.form.cron.invalid') }}</span>
-          </div>
-          <p v-if="nextRunPreview" class="sf-nextrun">
-            {{ t('schedule.form.nextRun.label') }} <strong>{{ nextRunPreview }}</strong>
-            <span class="sf-hint"> {{ t('schedule.form.nextRun.utcHint') }}</span>
-          </p>
+          <!-- Resolved cron + live preview are shown while creating. -->
+          <template v-if="!isEdit">
+            <div class="sf-preview-bar">
+              <code class="sf-cron" :class="{ invalid: !cronValid }">{{ cronExpression }}</code>
+              <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
+              <span v-else class="sf-warn">{{ t('schedule.form.cron.invalid') }}</span>
+            </div>
+            <p v-if="nextRunPreview" class="sf-nextrun">
+              {{ t('schedule.form.nextRun.label') }} <strong>{{ nextRunPreview }}</strong>
+              <span class="sf-hint"> {{ t('schedule.form.nextRun.utcHint') }}</span>
+            </p>
+          </template>
         </div>
 
         <!-- Event trigger config -->
@@ -929,6 +954,13 @@ function save(): void {
       </div>
     </div>
   </div>
+  <ScheduleCronEditor
+    :open="cronEditorOpen"
+    :schedule="schedule"
+    :cron-expression="cronExpression"
+    @close="cronEditorOpen = false"
+    @save="updateCronDraft"
+  />
 </template>
 
 <style scoped>
@@ -1148,6 +1180,24 @@ function save(): void {
   flex-wrap: wrap;
   margin-top: var(--sp-3);
 }
+.sf-cron-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  color: var(--c-text-muted);
+}
+.sf-cron-edit {
+  border: 0;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  font-size: var(--fs-body);
+}
+.sf-cron-edit:hover {
+  color: var(--c-text);
+}
 .sf-field--stacked .sf-preview-bar {
   margin-top: 0;
 }
@@ -1314,7 +1364,8 @@ function save(): void {
   }
 
   .sf-field,
-  .sf-adv-row {
+  .sf-adv-row,
+  .sf-cron-inline {
     flex-direction: column;
     align-items: stretch;
   }

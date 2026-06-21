@@ -60,27 +60,94 @@ describe('ScheduleDetail.vue — 右栏 schedule 详情', () => {
     expect(w.text()).toContain('read-only')
   })
 
+  it('显示类型、命令和超时时间', () => {
+    const w = mountDetail(sched({ maxWallClockMs: 120_000 }))
+    expect(w.text()).toContain('Task type')
+    expect(w.text()).toContain('Command')
+    expect(w.text()).toContain('pnpm build')
+    expect(w.text()).toContain('120000 ms')
+  })
+
+  it('LLM 任务显示提示词，未设置超时时间时显示默认值', () => {
+    const w = mountDetail(
+      sched({
+        type: 'llm',
+        config: { prompt: 'Summarize the release notes' },
+        maxWallClockMs: null,
+      }),
+    )
+    expect(w.text()).toContain('LLM prompt')
+    expect(w.text()).toContain('Summarize the release notes')
+    expect(w.text()).toContain('Use task default')
+  })
+
+  it('cron 排期同时显示表达式、可读频率和修改入口', () => {
+    const w = mountDetail(sched({ cronExpression: '0 */1 * * *' }))
+    expect(w.find('.sd-cron').text()).toBe('0 */1 * * *')
+    expect(w.find('.sd-cron-description').text()).toBe('Every 1 hours')
+    expect(w.find('.sd-cron-edit').exists()).toBe(true)
+  })
+
+  it('点击修改打开频率与时间弹框，保存仅 emit cron 更新', async () => {
+    const w = mountDetail(sched({ id: 'cron-1', cronExpression: '0 */1 * * *' }))
+    await w.find('.sd-cron-edit').trigger('click')
+    expect(w.find('[role="dialog"]').exists()).toBe(true)
+    expect(w.find('.sce-body').text()).toContain('Frequency')
+    expect(w.find('.sce-body').text()).toContain('Time')
+
+    await w.find('.sce-button--primary').trigger('click')
+    expect(w.emitted('update-cron')?.[0]).toEqual(['cron-1', '0 */1 * * *'])
+    expect(w.find('[role="dialog"]').exists()).toBe(false)
+  })
+
+  it('事件触发任务不显示 cron 排期编辑器', () => {
+    const w = mountDetail(sched({ triggerType: 'event', cronExpression: '' }))
+    expect(w.find('.sd-row--schedule').exists()).toBe(false)
+  })
+
+  it('事件触发展示主题及运行结果筛选', () => {
+    const w = mountDetail(
+      sched({
+        triggerType: 'event',
+        cronExpression: '',
+        eventTopic: 'run:settled',
+        eventReasonFilter: ['complete', 'error'],
+      }),
+    )
+    expect(w.text()).toContain('On a run event')
+    expect(w.text()).toContain('Run finished')
+    expect(w.text()).toContain('Completed · Error')
+  })
+
+  it('PR 事件触发展示操作和结果筛选', () => {
+    const w = mountDetail(
+      sched({
+        triggerType: 'event',
+        cronExpression: '',
+        eventTopic: 'pr:operation',
+        eventPrFilter: { operations: ['merge', 'comment'], results: ['failure'] },
+      }),
+    )
+    expect(w.text()).toContain('PR operation')
+    expect(w.text()).toContain('Merge · Comment')
+    expect(w.text()).toContain('Failure')
+  })
+
   it('空 toolAllowlist 显示 "All tools unrestricted"', () => {
     const w = mountDetail(sched({ toolAllowlist: [] }))
     expect(w.text()).toContain('All tools unrestricted')
   })
 
-  it('有 manifest 时将工具分类为读/写两组', () => {
+  it('工具在同一可换行列表中显示', () => {
     const s = sched({
       toolAllowlist: ['read-file', 'write-file', 'search-code'],
     })
     const w = mountDetail(s, { claude: makeManifest() })
 
-    // 读组:2 个只读工具
-    const roItems = w.findAll('[data-testid^="sd-tool-ro-"]')
-    expect(roItems).toHaveLength(2)
-    expect(roItems[0].text()).toBe('read-file')
-    expect(roItems[1].text()).toBe('search-code')
-
-    // 写组:1 个写入工具
-    const wItems = w.findAll('[data-testid^="sd-tool-w-"]')
-    expect(wItems).toHaveLength(1)
-    expect(wItems[0].text()).toBe('write-file')
+    const items = w.findAll('[data-testid="sd-tool-item"]')
+    expect(items).toHaveLength(3)
+    expect(items.map((item) => item.text())).toEqual(['read-file', 'write-file', 'search-code'])
+    expect(w.find('.sd-tool-list').classes()).toContain('sd-tool-list')
   })
 
   it('无 manifest 缓存时展示原始工具列表', () => {
@@ -89,7 +156,7 @@ describe('ScheduleDetail.vue — 右栏 schedule 详情', () => {
     })
     // 空 toolManifest → vendor 的 manifest 不存在,回退到未分类列表
     const w = mountDetail(s, {})
-    const rawItems = w.findAll('[data-testid="sd-tool-unclassified"]')
+    const rawItems = w.findAll('[data-testid="sd-tool-item"]')
     expect(rawItems).toHaveLength(2)
     expect(rawItems[0].text()).toBe('read-file')
     expect(rawItems[1].text()).toBe('write-file')

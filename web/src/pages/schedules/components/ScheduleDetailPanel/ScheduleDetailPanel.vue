@@ -45,6 +45,7 @@ const emit = defineEmits<{
   'run-now': [id: string]
   'select-execution': [id: string]
   'load-session': [executionId: string]
+  'update-cron': [id: string, cronExpression: string]
 }>()
 
 // ---- 标题栏:选中 schedule 名称(name 或触发摘要回退) ----
@@ -204,7 +205,13 @@ watch(
 
       <!-- Tab: 详情 -->
       <div v-if="activeTab === TAB_DETAIL" class="sched-panel-body">
-        <ScheduleDetail :schedule="schedule" :tool-manifest="toolManifest" />
+        <ScheduleDetail
+          :schedule="schedule"
+          :tool-manifest="toolManifest"
+          @update-cron="
+            (id: string, cronExpression: string) => emit('update-cron', id, cronExpression)
+          "
+        />
       </div>
 
       <!-- Tab: 历史 -->

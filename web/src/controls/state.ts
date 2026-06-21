@@ -8,6 +8,7 @@ import {
   type DiscussionPhase,
 } from '@/lib/discussion-view'
 import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
+import { type DevLaunchModel } from '@/lib/dev-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
 import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
@@ -453,6 +454,28 @@ export function createState(deps: StateDeps) {
     toastTimer = setTimeout(() => (toast.value = null), 4000)
   }
 
+  // ---- Dev-launch startup overlay (App-global, like the toast) ----
+  // Tracks a manual `start_development` launch so a blocking overlay can show
+  // its coarse progress once the launch outlasts the reveal threshold. null =
+  // no launch in flight / overlay closed. The threshold + safety-timeout timers
+  // live in this non-reactive holder so both intent-actions (arming) and the
+  // message handler / close helper (clearing) share one source.
+  const devLaunch = ref<DevLaunchModel | null>(null)
+  const devLaunchTimers: {
+    threshold: ReturnType<typeof setTimeout> | null
+    safety: ReturnType<typeof setTimeout> | null
+  } = { threshold: null, safety: null }
+  function clearDevLaunchTimers(): void {
+    if (devLaunchTimers.threshold) clearTimeout(devLaunchTimers.threshold)
+    if (devLaunchTimers.safety) clearTimeout(devLaunchTimers.safety)
+    devLaunchTimers.threshold = null
+    devLaunchTimers.safety = null
+  }
+  function closeDevLaunch(): void {
+    clearDevLaunchTimers()
+    devLaunch.value = null
+  }
+
   // ---- Pure (state-only) message-append helpers ----
   function add(m: ChatBody): void {
     messages.value.push({ ...m, id: counters.nextId++ } as ChatMsg)
@@ -477,6 +500,9 @@ export function createState(deps: StateDeps) {
     clearSideEffectPending,
     showToast,
     sessionTitleById,
+    devLaunchTimers,
+    clearDevLaunchTimers,
+    closeDevLaunch,
     // refs
     messages,
     status,
@@ -571,6 +597,7 @@ export function createState(deps: StateDeps) {
     activeAgentSwitch,
     toast,
     intentActionErrorSeq,
+    devLaunch,
     // computeds
     authStatus,
     workcenterPendingCount,

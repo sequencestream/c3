@@ -30,6 +30,7 @@ web/src/
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定
+│   ├── DevStartupOverlay/DevStartupOverlay.vue     # 开发启动进度遮罩(App 根级,与全局 toast 同层):手动 Start Dev 启动超过阈值(>5s)时全屏阻断,按有序步骤(准备工作区/启动会话/进入会话)展示后端 dev_launch_progress 阶段进度;纯展示(model 由控制层持有,判定在 lib/dev-launch-view.ts),就绪/失败/安全超时由控制层关闭
 │   ├── ExitPlanModeDisplay/ExitPlanModeDisplay.vue # ExitPlanMode 计划独立渲染块:解析输入负载中的 plan markdown + 结构化元数据(标题/步骤索引),支持 tool-use/tool-result 双态
 │   ├── MarkdownText/MarkdownText.vue               # 单条文本消息渲染器:assistant 走 Markdown+DOMPurify 双防线、user/system 纯文本转义、Shiki 代码高亮,宽表格包局部横滚容器
 │   ├── MessageInput/MessageInput.vue               # 底部输入区:斜杠命令补全、textarea 自增长、语音输入、图片附件(点击/粘贴/拖拽选图+缩略图预览+逐张删除+超阈压缩,随 submit/enqueue 以 PromptImage 上线)、发送/停止控制、待发队列管理,移动端软键盘/安全区避让
@@ -116,6 +117,7 @@ web/src/
 │   ├── chat-scroll.ts                               # 聊天滚动纯逻辑:底部贴近阈值判定 + 消息变化签名,供 ChatMessages 决定是否跟随新输出
 │   ├── current-workspace.ts                         # 「当前工作区」解析:优先持久化选择,否则回落到最近访问工作区
 │   ├── datetime-formats.ts                          # 日期/数字格式化预设:为 vue-i18n 与纯展示 lib 提供单一数据源
+│   ├── dev-launch-view.ts                           # 开发启动遮罩纯状态机:阈值/安全超时常量 + stage→有序步骤映射(stepStatusesForPhase)+ reduceDevLaunch(tick/stage/ready/timeout 终态收敛),无 DOM/计时器,供 DevStartupOverlay 与控制层
 │   ├── discussion-view.ts                           # 讨论只读历史纯映射器:DiscussionMessage 正规化为 ChatBody,处理多说话人 icon/name/vendor
 │   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染
 │   ├── schedule-refresh.ts                           # 运行中执行实时刷新的纯决策:isExecutionRunning 推断 + decideScheduleRefresh(running/tab/可见/上次running → shouldPoll/finalFetch) + 轮询间隔常量

@@ -20,6 +20,7 @@ import type {
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
 import type { AppState, AuthApi, DepType, TypedT } from './state'
+import type { DevLaunchEvent } from '@/lib/dev-launch-view'
 
 export type WsClient = ReturnType<typeof createWsClient>
 
@@ -97,6 +98,8 @@ export interface AppMethods {
   /** Reset the intent's spec session: new input + current spec content → fresh session. */
   resetSpecSession(intentId: string, userInput: string): void
   startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
+  /** Fold one dev-launch overlay event through the reducer + handle close side-effects. */
+  dispatchDevLaunch(ev: DevLaunchEvent): void
   setIntentStatus(intentId: string, status: IntentStatus): void
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void

@@ -597,6 +597,16 @@
     "startDev": {
       "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start development anyway?"
     },
+    "devLaunch": {
+      "title": "Starting development…",
+      "step": {
+        "prepareWorkspace": "Prepare code workspace",
+        "launchSession": "Launch development session",
+        "enterSession": "Enter session"
+      },
+      "failed": "Failed to start development.",
+      "timeout": "Couldn't confirm development startup. Please try again."
+    },
     "chat": {
       "title": {
         "label": "Intent chat"

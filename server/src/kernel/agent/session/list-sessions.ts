@@ -33,7 +33,11 @@ import type { SessionAccessor } from './accessor.js'
 // path IS the composition point for the projection — it lives in the
 // kernel only because the WS handler routes through it.
 // eslint-disable-next-line no-restricted-imports
-import { isToolSessionRecorded, listHiddenSessions } from '../../../features/intents/store.js'
+import {
+  isToolSessionRecorded,
+  listHiddenSessions,
+  listSpecSessionIds,
+} from '../../../features/intents/store.js'
 import { getSessionAgentId, getShowToolSessions } from '../../config/index.js'
 import { getDefaultAgentId } from '../../agent-config/index.js'
 import { getSessionMode } from '../../../state.js'
@@ -177,8 +181,12 @@ export async function listSessionsVia(
 
   // Apply the filter parity (hidden set + tool-session filter) and stamp
   // the `mode` / `state` fields. Sort newest-first; nulls (Codex
-  // bind-time) sort last.
-  const hidden = new Set(listHiddenSessions(workspacePath))
+  // bind-time) sort last. Spec sessions join the comm-session hidden set —
+  // they are not user work sessions and must stay out of the list.
+  const hidden = new Set([
+    ...listHiddenSessions(workspacePath),
+    ...listSpecSessionIds(workspacePath),
+  ])
   const showTool = getShowToolSessions()
   const out = rows
     .map((r) => rowToSessionInfo(r))

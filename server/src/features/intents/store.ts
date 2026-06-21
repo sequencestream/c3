@@ -1031,6 +1031,22 @@ export function listHiddenSessions(workspacePath: string): string[] {
     .map((r) => r.session_id)
 }
 
+/** All spec session ids for a project, for list filtering. Spec sessions are
+ * not user work sessions and must not appear in the work-session list. */
+export function listSpecSessionIds(workspacePath: string): string[] {
+  if (!isDbAvailable()) return []
+  const d = db()
+  if (!d) return []
+  return d
+    .all<{
+      spec_session_id: string
+    }>(
+      'SELECT spec_session_id FROM intents WHERE workspace_path=? AND spec_session_id IS NOT NULL',
+      resolve(workspacePath),
+    )
+    .map((r) => r.spec_session_id)
+}
+
 // ---- Communication session CRUD (session-collection upgrade) ----
 // `intent_chats` now holds multiple rows per project (not just one current).
 // `title` is nullable — null means render "New Intent" or a first-prompt/time

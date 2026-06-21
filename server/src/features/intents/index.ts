@@ -765,6 +765,12 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       return
     }
   }
+  // All synchronous validation passed — from here on the work is the slow part
+  // (git branch strategy, then the agent launch). Emit coarse, connection-
+  // directed progress so the client can show a startup overlay if it outlasts
+  // the client-side threshold. Sync-validation failures above stay on the
+  // `error` channel only; they never emit progress.
+  conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'preparing-workspace' })
   // ── Git branch strategy (2026-06-10) ───────────────────────────────────
   // The workspace's `gitBranchMode` decides where the dev agent runs:
   //  - `worktree`: create (or reuse) an isolated git worktree at
@@ -829,6 +835,11 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // flips the intent to `in_progress` and links the real dev session id
   // (ADR-0018 resident subs model).
   registerPendingDevLink(devId, req.id)
+  // Last coarse phase before the (fire-and-forget) agent spawn. The success
+  // terminal is not signalled here — the resident `run:bound` subscription
+  // flips the intent to `in_progress`, and the client closes the overlay on
+  // that `intents` broadcast.
+  conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'launching' })
   try {
     void ctx
       .launchRun(devRt, devParts.visible, undefined, {
@@ -838,6 +849,10 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       .catch((err: unknown) => {
         clearPendingDevLink(devId)
         releaseClaim()
+        // Surface the async failure to the client (previously silent) so the
+        // overlay leaves its in-flight state instead of waiting out the safety
+        // timeout. Connection-directed; `conn` is still captured in this closure.
+        conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'failed' })
         console.warn(
           `[c3:intents] start_development launch failed before bind: ${
             err instanceof Error ? err.message : String(err)

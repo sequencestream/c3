@@ -110,6 +110,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     workcenterEvents,
     intentActionErrorSeq,
     clearSideEffectPending,
+    devLaunch,
   } = ctx
 
   ctx.handleMessage = (msg: ServerToClient): void => {
@@ -396,9 +397,22 @@ export function installMessageHandler(ctx: AppCtx): void {
           detail: msg.detail,
         }
         break
-      case 'intents':
+      case 'intents': {
         intents.value = { ...intents.value, [msg.workspaceId]: msg.items }
         intentsSdd.value = { ...intentsSdd.value, [msg.workspaceId]: msg.sddEnabled }
+        // Success terminal for the startup overlay: the target intent flipping to
+        // `in_progress` (via the resident `run:bound` subscription) means the dev
+        // session bound — close the overlay (silently, no toast).
+        const dl = devLaunch.value
+        if (dl && msg.items.some((it) => it.id === dl.intentId && it.status === 'in_progress')) {
+          ctx.dispatchDevLaunch({ kind: 'ready', intentId: dl.intentId })
+        }
+        break
+      }
+      case 'dev_launch_progress':
+        // Advance the overlay's coarse phase; a `failed` stage closes it with an
+        // error toast (the reducer + dispatch handle the side-effects).
+        ctx.dispatchDevLaunch({ kind: 'stage', intentId: msg.intentId, stage: msg.stage })
         break
       case 'intent_sessions':
         intentSessions.value = { ...intentSessions.value, [msg.workspaceId]: msg.items }
@@ -704,6 +718,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (msg.error.code.startsWith('intent.')) {
           intentActionErrorSeq.value += 1
           ctx.showToast(translateUiError(msg.error))
+          // A rejected intent action releases any in-flight startup overlay too.
+          // Close it directly (no extra toast — the specific error toast above
+          // already explains the failure).
+          if (devLaunch.value) ctx.closeDevLaunch()
           break
         }
         // License gate (PL-R6): upgrade the raw entitlement `reason` (the wire

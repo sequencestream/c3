@@ -1874,7 +1874,6 @@
     "title": "Workcenter",
     "toolInput": "도구 입력",
     "filter": {
-      "all": "All",
       "todo": "Todo",
       "done": "Done",
       "canceled": "Canceled",

@@ -46,7 +46,7 @@ web/src/
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
 │   ├── workcenter/                                  # 工作台页
-│   │   ├── WorkCenter.vue                           # 工作台容器页:桌面筛选(all/todo/done/canceled/auto)/列表 + 详情两栏,切换筛选 emit reload 重拉全量,移动端单列流式
+│   │   ├── WorkCenter.vue                           # 工作台容器页:桌面筛选(todo/done/canceled/auto,默认展示待处理 todo)/列表 + 详情两栏,切换筛选 emit reload 重拉全量,移动端单列流式
 │   │   └── components/
 │   │       ├── EventList.vue                        # 事件列表:状态徽标(含 auto)、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、来源图标、时间与选中态,移动端行高触控优化
 │   │       └── EventDetail.vue                      # 事件详情:完整信息(标题经 event-title 本地化)、Allow/Deny、AskUserQuestion 作答面板、共识决策留痕(auto 记录的投票/裁决,只读)与跳转到源

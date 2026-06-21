@@ -43,28 +43,32 @@ const toolOutcome: AnyConsensusOutcome = {
   decision: 'allow',
 }
 
-describe('WorkCenter.vue — auto filter', () => {
-  it('renders an Auto filter (5 status tabs) and filters to auto events', async () => {
-    const events = [ev({ status: 'todo' }), ev({ status: 'auto', outcome: toolOutcome })]
+describe('WorkCenter.vue — status filter', () => {
+  it('renders 4 status tabs (no All) and defaults to todo-only', async () => {
+    const events = [
+      ev({ status: 'todo' }),
+      ev({ status: 'auto', outcome: toolOutcome }),
+      ev({ status: 'auto', outcome: toolOutcome }),
+    ]
     const wrapper = mount(WorkCenter, { props: { events, currentWorkspace: '/ws' } })
 
     const btns = wrapper.findAll('.wc-filter-btn')
-    expect(btns).toHaveLength(5) // all / todo / done / canceled / auto
+    expect(btns).toHaveLength(4) // todo / done / canceled / auto — no 'all'
 
-    // Default 'all' shows both rows.
-    expect(wrapper.findAll('.wc-event-row')).toHaveLength(2)
-
-    // Click the last tab (auto) → only the auto record remains.
-    await btns[4].trigger('click')
+    // Default filter is 'todo': only the todo row renders, the auto rows are hidden.
     expect(wrapper.findAll('.wc-event-row')).toHaveLength(1)
+
+    // Click the last tab (auto) → only the two auto records remain.
+    await btns[3].trigger('click')
+    expect(wrapper.findAll('.wc-event-row')).toHaveLength(2)
   })
 
   it('emits reload on every filter switch (non-todo tabs re-fetch)', async () => {
     const wrapper = mount(WorkCenter, {
       props: { events: [ev()], currentWorkspace: '/ws' },
     })
-    await wrapper.findAll('.wc-filter-btn')[4].trigger('click') // auto
-    await wrapper.findAll('.wc-filter-btn')[2].trigger('click') // done
+    await wrapper.findAll('.wc-filter-btn')[3].trigger('click') // auto
+    await wrapper.findAll('.wc-filter-btn')[1].trigger('click') // done
     expect(wrapper.emitted('reload')).toHaveLength(2)
   })
 })

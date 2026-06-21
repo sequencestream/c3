@@ -1874,7 +1874,6 @@
     "title": "Workcenter",
     "toolInput": "Ввод инструмента",
     "filter": {
-      "all": "All",
       "todo": "Todo",
       "done": "Done",
       "canceled": "Canceled",

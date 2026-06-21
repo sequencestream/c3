@@ -1873,7 +1873,6 @@
     "title": "工作台",
     "toolInput": "工具输入",
     "filter": {
-      "all": "全部",
       "todo": "待处理",
       "done": "已完成",
       "canceled": "已取消",

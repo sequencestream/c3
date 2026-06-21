@@ -144,6 +144,7 @@ const PR_STATUS_OPTIONS: { value: IntentPrStatus; label: string }[] = [
   { value: 'rejected', label: t('intent.prStatus.rejected.label') },
   { value: 'failed', label: t('intent.prStatus.failed.label') },
   { value: 'merged', label: t('intent.prStatus.merged.label') },
+  { value: 'closed', label: t('intent.prStatus.closed.label') },
 ]
 
 function prStatusLabel(ps: IntentPrStatus): string {

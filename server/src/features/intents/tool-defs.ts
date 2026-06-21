@@ -14,10 +14,17 @@
  */
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import type { IntentStatus } from '@ccc/shared/protocol'
+import type { IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { publishIntentLifecycle } from './lifecycle-events.js'
-import { findIntents, getIntent, isStoreAvailable, upsertIntents } from './store.js'
+import {
+  findIntents,
+  getIntent,
+  isStoreAvailable,
+  setPrStatus,
+  updateStatus,
+  upsertIntents,
+} from './store.js'
 
 const INTENT_STATUSES = [
   'draft',
@@ -88,9 +95,16 @@ export const findSchema = {
 
 export const viewSchema = { id: z.string().describe('意图 id') }
 
+export const saveIntentPrInfoSchema = {
+  intentId: z.string().describe('要回填 PR 状态的本项目意图 id'),
+  prStatus: z.enum(['reviewing', 'rejected', 'failed', 'merged', 'closed']),
+  done: z.boolean().optional().describe('仅 PR 已合并时传 true，将意图标记为 done'),
+}
+
 export type SaveArgs = { intents: Parameters<typeof upsertIntents>[1] }
 export type FindArgs = { keyword?: string; module?: string; status?: IntentStatus }
 export type ViewArgs = { id: string }
+export type SaveIntentPrInfoArgs = { intentId: string; prStatus: IntentPrStatus; done?: boolean }
 
 // ---- Description strings (advertised in the system prompt) ----
 
@@ -108,6 +122,9 @@ export const findDesc =
   '返回精简列表(id、title、module、priority、status、dependsOn)。'
 
 export const viewDesc = '按 id 查看本项目单条意图的完整详情(只读,含 content、dependsOn 等)。'
+export const saveIntentPrInfoDesc =
+  '回填本项目一条意图的 PR 状态。仅用于 PR 对账：可写入 reviewing/rejected/failed/merged/closed；' +
+  '当 PR 已合并时传 done=true 将意图标记为 done。'
 
 // ---- Core logic (framing-free; bound to ONE project via `workspacePath`) ----
 
@@ -171,6 +188,31 @@ export function runSaveConfirmed(
         ? `已保存 ${saved.length} 条意图(新建 ${created}、更新 ${updated})`
         : `已保存 ${saved.length} 条意图`
     return { content: text(`${summary}:${saved.map((r) => r.title).join('、')}`) }
+  } catch (err) {
+    return { content: text(`保存失败:${String(err)}`), isError: true }
+  }
+}
+
+/** Persist PR reconciliation information for one workspace-bound intent. */
+export function runSaveIntentPrInfo(
+  workspacePath: string,
+  args: SaveIntentPrInfoArgs,
+  onSaved: (workspacePath: string) => void,
+): IntentToolResult {
+  if (!isStoreAvailable()) return { content: text('意图库不可用,未保存。'), isError: true }
+  const intent = getIntent(args.intentId)
+  if (!intent || resolveWorkspaceRoot(intent.workspaceId) !== resolve(workspacePath)) {
+    return { content: text(`未找到 id 为 ${args.intentId} 的意图(本项目)。`), isError: true }
+  }
+  try {
+    setPrStatus(intent.id, args.prStatus)
+    if (args.done === true) updateStatus(intent.id, 'done')
+    onSaved(workspacePath)
+    return {
+      content: text(
+        `已回填意图 ${intent.id} 的 PR 状态为 ${args.prStatus}${args.done ? '，并标记为完成' : ''}。`,
+      ),
+    }
   } catch (err) {
     return { content: text(`保存失败:${String(err)}`), isError: true }
   }

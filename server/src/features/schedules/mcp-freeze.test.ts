@@ -134,6 +134,8 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.readToolNames.has('mcp__c3__find_intents')).toBe(true)
     expect(frozen.readToolNames.has('mcp__c3__view_intent')).toBe(true)
     expect(frozen.writeToolNames.has('mcp__c3__save_intents')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__save_intent_pr_info')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__publish_pr_event')).toBe(true)
   })
 
   it('classifies find_intents and view_intent as read-only', () => {

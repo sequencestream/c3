@@ -12,6 +12,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import type { Schedule } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
+import { SCHEDULE_TEMPLATES } from '../../templates'
 
 const { t } = useTypedI18n()
 
@@ -23,7 +24,10 @@ defineProps<{
 const emit = defineEmits<{
   select: [id: string]
   'new-schedule': []
+  'new-from-template': [templateId: string]
 }>()
+
+const templatesOpen = ref(false)
 
 // Live countdown: refreshed every 30s so relative times stay current.
 const now = ref(Date.now())
@@ -77,6 +81,11 @@ const expanded = usePersistentToggle('c3.scheduleListExpanded')
 function toggleExpand(): void {
   expanded.value = !expanded.value
 }
+
+function selectTemplate(templateId: string): void {
+  emit('new-from-template', templateId)
+  templatesOpen.value = false
+}
 </script>
 
 <template>
@@ -96,15 +105,40 @@ function toggleExpand(): void {
         </button>
         <span class="sched-list-title">{{ t('schedule.list.title.label') }}</span>
       </div>
-      <button
-        type="button"
-        class="sched-new-btn"
-        :aria-label="t('schedule.list.new.label')"
-        :title="t('schedule.list.new.label')"
-        @click="emit('new-schedule')"
-      >
-        +
-      </button>
+      <div class="sched-head-actions">
+        <div class="sched-template-wrap">
+          <button
+            type="button"
+            class="sched-template-btn"
+            :aria-expanded="templatesOpen"
+            @click="templatesOpen = !templatesOpen"
+          >
+            {{ t('schedule.list.templates.button') }}
+          </button>
+          <div v-if="templatesOpen" class="sched-template-menu" role="menu">
+            <button
+              v-for="template in SCHEDULE_TEMPLATES"
+              :key="template.id"
+              type="button"
+              class="sched-template-item"
+              role="menuitem"
+              @click="selectTemplate(template.id)"
+            >
+              <strong>{{ t(template.titleKey) }}</strong>
+              <span>{{ t(template.descriptionKey) }}</span>
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="sched-new-btn"
+          :aria-label="t('schedule.list.new.label')"
+          :title="t('schedule.list.new.label')"
+          @click="emit('new-schedule')"
+        >
+          +
+        </button>
+      </div>
     </div>
     <div class="sched-items">
       <p v-if="schedules.length === 0" class="sched-empty">{{ t('schedule.list.empty') }}</p>
@@ -216,6 +250,54 @@ function toggleExpand(): void {
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+.sched-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.sched-template-wrap {
+  position: relative;
+}
+.sched-template-btn {
+  padding: 2px 8px;
+  color: var(--c-text-muted);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sched-template-menu {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 260px;
+  padding: var(--sp-2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.sched-template-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2);
+  color: var(--c-text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sched-template-item:hover {
+  background: var(--c-hover);
+}
+.sched-template-item span {
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
 }
 .sched-new-btn:hover {
   color: var(--c-text);

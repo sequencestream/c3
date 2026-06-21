@@ -1685,10 +1685,11 @@ export type IntentRunStatus = 'running' | 'dangling' | 'idle'
  * - `rejected` — review rejected (changes requested).
  * - `failed` — CI / merge check failed.
  * - `merged` — PR merged into target branch.
+ * - `closed` — PR closed without merging.
  * - `null` — no PR has been created yet (or PR status is unknown).
  * Independent of the intent's own `status` — a PR has its own lifecycle.
  */
-export type IntentPrStatus = 'reviewing' | 'rejected' | 'failed' | 'merged'
+export type IntentPrStatus = 'reviewing' | 'rejected' | 'failed' | 'merged' | 'closed'
 
 /**
  * Dependency type for an intent_deps edge.

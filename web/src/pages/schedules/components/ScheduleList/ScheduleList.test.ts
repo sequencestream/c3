@@ -66,6 +66,14 @@ describe('ScheduleList.vue — 左栏纯选择列表', () => {
     expect(w.emitted('new-schedule')).toHaveLength(1)
   })
 
+  it('模板按钮展示 PR 状态轮询检查并选择模板', async () => {
+    const w = mountList([])
+    await w.find('.sched-template-btn').trigger('click')
+    expect(w.find('.sched-template-menu').text()).toContain('PR status polling check')
+    await w.find('.sched-template-item').trigger('click')
+    expect(w.emitted('new-from-template')?.[0]).toEqual(['pr-status-poller'])
+  })
+
   it('行内操作按钮已全部迁出(无 run/edit/delete/toggle)', () => {
     const w = mountList([sched({ id: 'a' })])
     expect(w.find('.sched-run-btn').exists()).toBe(false)

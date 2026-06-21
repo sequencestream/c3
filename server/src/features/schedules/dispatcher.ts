@@ -36,6 +36,7 @@ import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
+import { createScheduleMcpServer } from './c3-mcp.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -496,11 +497,13 @@ async function executeLlmPrompt(
     schedule.mode,
   )
 
-  // Build mcpServers from workspace config (if any)
-  const hasMcpServers = Object.keys(workspaceMcpConfig.mcpServers).length > 0
-  const mcpServers:
-    | Record<string, { command: string; args?: string[]; env?: Record<string, string> }>
-    | undefined = hasMcpServers ? workspaceMcpConfig.mcpServers : undefined
+  // The c3 server is in-process and intentionally replaces any user-configured
+  // server called `c3`; it is the workspace-bound capability surface used by
+  // scheduled reconciliation. Other workspace MCP servers remain available.
+  const mcpServers = {
+    ...workspaceMcpConfig.mcpServers,
+    ...createScheduleMcpServer(resolveWorkspaceRoot(schedule.workspaceId)!, logId),
+  }
 
   try {
     const q = query({
@@ -512,7 +515,7 @@ async function executeLlmPrompt(
         disallowedTools: [],
         permissionMode: claudeModeForSchedule(schedule.mode),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-        ...(mcpServers ? { mcpServers } : {}),
+        mcpServers,
         env: buildChildEnv(envOverrides),
         ...(model ? { model } : {}),
         abortController,

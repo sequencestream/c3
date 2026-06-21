@@ -486,6 +486,16 @@ Wire shapes are defined in the [shared protocol](../../../shared/api-conventions
 
 ## Invariants
 
+## Built-in templates
+
+The schedule list may offer registered built-in templates. Selecting a template creates an enabled
+schedule through the same creation contract as a manually authored schedule, without a second
+confirmation; the created schedule remains fully editable and deletable. The first template polls
+reviewing GitHub PRs every ten minutes. Its Claude execution identity is explicitly allowed to use
+the bounded intent lookup/PR-reconciliation/event-publication capabilities and the shell for `gh`.
+It reconciles only reviewing intents, marks merged work done, records closed PRs without completing
+the work item, and emits a provider-neutral PR event only when a status changes.
+
 - **Workspace-scoped uniqueness:** A schedule is uniquely identified by `(workspaceId, id)`.
   Deleting the workspace archives the schedules, never orphans them.
 - **Single active status:** A schedule is in exactly one of `active`, `paused`, or `archived`.

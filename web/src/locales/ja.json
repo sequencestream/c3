@@ -790,6 +790,9 @@
       },
       "merged": {
         "label": "マージ済"
+      },
+      "closed": {
+        "label": "クローズ済"
       }
     },
     "deps": {
@@ -1044,6 +1047,14 @@
       },
       "new": {
         "label": "新しいスケジュール"
+      },
+      "templates": {
+        "button": "テンプレート",
+        "noAgent": "有効な Claude Agent がありません。",
+        "prPoller": {
+          "title": "PR 状態ポーリング確認",
+          "description": "レビュー中の意図を GitHub PR 状態と 10 分ごとに照合します。"
+        }
       },
       "empty": "まだスケジュールがありません。",
       "expand": {

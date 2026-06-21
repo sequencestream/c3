@@ -141,6 +141,7 @@ export interface AppMethods {
   runNowSchedule(id: string): void
   openScheduleForm(target: Schedule | null): void
   createSchedule(input: CreateScheduleInput): void
+  createScheduleFromTemplate(templateId: string): void
   updateSchedule(id: string, input: UpdateScheduleInput): void
   deleteSchedule(id: string): void
   onLoadScheduleToolManifest(vendor: string): void

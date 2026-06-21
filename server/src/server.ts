@@ -43,6 +43,7 @@ import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
 import { createPrEventMcpServer } from './features/pr-events/publish-tool.js'
 import { runPublishPrEvent } from './features/pr-events/tool-defs.js'
+import { configureScheduleMcp } from './features/schedules/c3-mcp.js'
 import {
   createIntentMcp,
   INTENT_MCP_PATH,
@@ -429,6 +430,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       sessionId: string
     } & import('@ccc/shared/protocol').PrOperationEvent,
   ): void => eventBus.publish('pr:operation', payload)
+  configureScheduleMcp({
+    broadcastIntents: broadcasts.broadcastIntents,
+    publishPrEvent,
+  })
   const prEventMcpTools: PrEventMcpTools = {
     publish: (binding, args) =>
       runPublishPrEvent(args, (event) =>

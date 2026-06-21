@@ -2,16 +2,14 @@
 /*
  * Schedules.vue — 定时任务页容器。
  *
- * 三栏布局:左栏 ScheduleList + 中栏执行历史列表 + 右栏 Tab 化执行详情 +
- * 创建/编辑表单弹窗。所有数据(列表/日志/transcript)与弹窗开关状态由 App.vue
- * 持有,经 props 注入;用户动作经 emit 上抛。
+ * 两栏布局:左栏 ScheduleList(纯选择列表)+ 右栏 ScheduleDetailPanel(常驻标题栏 +
+ * 「详情/历史」Tab,历史经弹框选执行)+ 创建/编辑表单弹窗。所有数据(列表/日志/
+ * transcript)与弹窗开关状态由 App.vue 持有,经 props 注入;用户动作经 emit 上抛。
  */
 import { computed } from 'vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import ScheduleList from './components/ScheduleList/ScheduleList.vue'
-import ExecutionHistoryList from './components/ExecutionHistoryList/ExecutionHistoryList.vue'
-import ScheduleDetail from './components/ScheduleDetail/ScheduleDetail.vue'
-import ExecutionDetail from './components/ExecutionDetail/ExecutionDetail.vue'
+import ScheduleDetailPanel from './components/ScheduleDetailPanel/ScheduleDetailPanel.vue'
 import ScheduleForm from './components/ScheduleForm/ScheduleForm.vue'
 import type {
   CreateScheduleInput,
@@ -35,7 +33,7 @@ const props = defineProps<{
   workspacePath: string
   /** System IANA time zone the cron next-run preview is computed in. */
   timezone: string
-  /** 当前选中的执行 ID(第二级选中态) */
+  /** 当前选中的执行 ID(历史 Tab 选中态) */
   executionId: string | null
   /** 当前选中的执行对象 */
   execution: ScheduleExecutionLog | null
@@ -65,16 +63,11 @@ const emit = defineEmits<{
 
 const mobilePanes = [
   { key: 'schedules', title: 'Schedules' },
-  { key: 'history', title: 'History' },
   { key: 'detail', title: 'Detail' },
 ] as const
 
-const mobileActiveKey = computed(() => {
-  if (props.executionId) return 'detail'
-  if (props.activeId) return 'history'
-  return 'schedules'
-})
-const mobileActiveToken = computed(() => props.executionId ?? props.activeId ?? 'schedules')
+const mobileActiveKey = computed(() => (props.activeId ? 'detail' : 'schedules'))
+const mobileActiveToken = computed(() => props.activeId ?? 'schedules')
 </script>
 
 <template>
@@ -89,36 +82,24 @@ const mobileActiveToken = computed(() => props.executionId ?? props.activeId ?? 
       <ScheduleList
         :schedules="schedules"
         :active-id="activeId"
-        :timezone="timezone"
         @select="(id: string) => emit('select', id)"
         @new-schedule="emit('open-form', null)"
-        @edit-schedule="(s: Schedule) => emit('open-form', s)"
-        @delete-schedule="(id: string) => emit('delete-schedule', id)"
-        @toggle-enabled="(id: string, enabled: boolean) => emit('toggle-enabled', id, enabled)"
-        @run-now="(id: string) => emit('run-now', id)"
-      />
-    </template>
-
-    <template #history>
-      <ExecutionHistoryList
-        :schedule="schedule"
-        :logs="logs"
-        :active-execution-id="executionId"
-        @select-execution="(id: string) => emit('select-execution', id)"
       />
     </template>
 
     <template #detail>
-      <ScheduleDetail
-        v-if="schedule && !execution"
+      <ScheduleDetailPanel
         :schedule="schedule"
         :tool-manifest="toolManifest"
-      />
-      <ExecutionDetail
-        v-else
+        :logs="logs"
+        :execution-id="executionId"
         :execution="execution"
-        :execution-type="schedule?.type ?? null"
         :transcripts="transcripts"
+        @edit-schedule="(s: Schedule) => emit('open-form', s)"
+        @delete-schedule="(id: string) => emit('delete-schedule', id)"
+        @toggle-enabled="(id: string, enabled: boolean) => emit('toggle-enabled', id, enabled)"
+        @run-now="(id: string) => emit('run-now', id)"
+        @select-execution="(id: string) => emit('select-execution', id)"
         @load-session="(executionId: string) => emit('load-session', executionId)"
       />
     </template>

@@ -1,7 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import type { Intent } from '@ccc/shared/protocol'
-import IntentDetail from './IntentDetail.vue'
+import IntentDetail, { __resetWriteSpecGuards } from './IntentDetail.vue'
+
+// 模块级防误审门状态在用例间共享 → 每个用例前清空,避免相互污染。
+beforeEach(() => {
+  __resetWriteSpecGuards()
+})
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
@@ -194,6 +200,135 @@ describe('IntentDetail.vue — SDD four-state main action', () => {
     expect(btn.attributes('data-action')).toBe('startDev')
     await btn.trigger('click')
     expect(w.emitted('start-dev')).toEqual([['i1', false]])
+  })
+})
+
+describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate + colors)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('writeSpec: switches to the spec session tab after ~1s and opens the session', async () => {
+    const item = intent({ id: 'guide-tab', specPath: null, specSessionId: 'sess-spec' })
+    const w = mountDetail(item, { sddEnabled: true })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('writeSpec')
+
+    await btn.trigger('click')
+    expect(w.emitted('write-spec')).toEqual([['guide-tab']])
+
+    // 不足 1 秒不切。
+    vi.advanceTimersByTime(999)
+    await nextTick()
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
+
+    // 满 1 秒切到 spec session,并打开会话。
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).toContain('active')
+    expect(w.emitted('open-spec-session')).toEqual([['guide-tab']])
+  })
+
+  it('writeSpec: does not steal the tab back if the user switches intent within 1s', async () => {
+    const a = intent({ id: 'guide-a', specPath: null })
+    const b = intent({ id: 'guide-b', specPath: null })
+    const w = mountDetail(a, { intents: [a, b], sddEnabled: true })
+
+    await w.find('.req-btn.primary').trigger('click')
+    // 1 秒内切到另一个意图。
+    await w.setProps({ intent: b })
+
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    // 仍停在默认 intent tab,未被抢切到 specSession。
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
+  })
+
+  it('approveSpec gate: hidden for 10s after writeSpec, then shown and clickable', async () => {
+    const item = intent({ id: 'guide-gate', specPath: null })
+    const w = mountDetail(item, { sddEnabled: true })
+
+    await w.find('.req-btn.primary').trigger('click')
+    expect(w.emitted('write-spec')).toEqual([['guide-gate']])
+
+    // specPath 回填 → mainAction 进入 approveSpec 态,但门未到点 → 主按钮不渲染。
+    await w.setProps({ intent: { ...item, specPath: '.specs/x/spec.md', specApproved: false } })
+    expect(w.find('[data-action="approveSpec"]').exists()).toBe(false)
+
+    // 不足 10 秒仍不可见。
+    vi.advanceTimersByTime(9999)
+    await nextTick()
+    expect(w.find('[data-action="approveSpec"]').exists()).toBe(false)
+
+    // 满 10 秒展示并可点击 emit approve-spec。
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    const approve = w.find('[data-action="approveSpec"]')
+    expect(approve.exists()).toBe(true)
+    await approve.trigger('click')
+    expect(w.emitted('approve-spec')).toEqual([['guide-gate']])
+  })
+
+  it('approveSpec gate: survives remount within the 10s window (refresh does not bypass)', async () => {
+    const item = intent({ id: 'guide-remount', specPath: null })
+    const w = mountDetail(item, { sddEnabled: true })
+    await w.find('.req-btn.primary').trigger('click')
+
+    vi.advanceTimersByTime(4000)
+    w.unmount()
+
+    // 重新挂载同一意图(已带 specPath,模拟刷新后的状态)。
+    const w2 = mountDetail(
+      intent({ id: 'guide-remount', specPath: '.specs/x/spec.md', specApproved: false }),
+      { sddEnabled: true },
+    )
+    // 累计未满 10 秒 → 仍隐藏。
+    expect(w2.find('[data-action="approveSpec"]').exists()).toBe(false)
+
+    vi.advanceTimersByTime(6000)
+    await nextTick()
+    expect(w2.find('[data-action="approveSpec"]').exists()).toBe(true)
+  })
+
+  it('gate not armed when writeSpec was never clicked → approveSpec visible immediately', () => {
+    const w = mountDetail(
+      intent({ id: 'guide-noarm', specPath: '.specs/x/spec.md', specApproved: false }),
+      { sddEnabled: true },
+    )
+    expect(w.find('[data-action="approveSpec"]').exists()).toBe(true)
+  })
+
+  it('cleanup: pending timers are cleared on unmount without switching or erroring', async () => {
+    const item = intent({ id: 'guide-clean', specPath: null, specSessionId: 'sess-spec' })
+    const w = mountDetail(item, { sddEnabled: true })
+    await w.find('.req-btn.primary').trigger('click')
+
+    w.unmount()
+    // 已卸载,1s 切 Tab / 10s 门定时器均已清:推进时钟不触发切 Tab、不报错。
+    expect(() => vi.advanceTimersByTime(10000)).not.toThrow()
+  })
+
+  it('semantic colors: writeSpec vs approveSpec expose distinct, stable data-action + aria-label', () => {
+    const writing = mountDetail(intent({ id: 'guide-sem-w', specPath: null }), { sddEnabled: true })
+    const wb = writing.find('.req-btn.primary')
+    expect(wb.attributes('data-action')).toBe('writeSpec')
+    const writeLabel = wb.attributes('aria-label')
+
+    const approving = mountDetail(
+      intent({ id: 'guide-sem-a', specPath: '.specs/x/spec.md', specApproved: false }),
+      { sddEnabled: true },
+    )
+    const ab = approving.find('.req-btn.primary')
+    expect(ab.attributes('data-action')).toBe('approveSpec')
+    const approveLabel = ab.attributes('aria-label')
+
+    expect(writeLabel).toBeTruthy()
+    expect(approveLabel).toBeTruthy()
+    expect(writeLabel).not.toBe(approveLabel)
   })
 })
 

@@ -11,6 +11,7 @@ import {
   isExecutionRunning,
 } from '@/lib/schedule-refresh'
 import type { AppCtx } from './types'
+import { findEnabledVendorAgent, getScheduleTemplate } from '@/pages/schedules/templates'
 
 // Install schedule-tab actions (read path + create/edit form) onto the ctx.
 export function installScheduleActions(ctx: AppCtx): void {
@@ -97,6 +98,18 @@ export function installScheduleActions(ctx: AppCtx): void {
 
   ctx.createSchedule = (input: CreateScheduleInput): void => {
     send({ type: 'create_schedule', workspaceId: input.workspaceId, input })
+  }
+
+  ctx.createScheduleFromTemplate = (templateId: string): void => {
+    const template = getScheduleTemplate(templateId)
+    const workspaceId = schedulesProject.value
+    if (!template || !workspaceId) return
+    const agent = findEnabledVendorAgent(ctx.serverSettings.value?.agents ?? [], 'claude')
+    if (!agent) {
+      ctx.showToast(ctx.t('schedule.list.templates.noAgent'))
+      return
+    }
+    ctx.createSchedule(template.build({ workspaceId, agentId: agent.id }))
   }
 
   ctx.updateSchedule = (id: string, input: UpdateScheduleInput): void => {

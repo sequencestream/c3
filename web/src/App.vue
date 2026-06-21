@@ -169,6 +169,7 @@ const {
   onSelectExecution,
   onScheduleMobileBack,
   createSchedule,
+  createScheduleFromTemplate,
   updateSchedule,
   deleteSchedule,
   onLoadScheduleToolManifest,
@@ -450,6 +451,7 @@ const {
           @mobile-back="onScheduleMobileBack"
           @close-form="scheduleFormOpen = false"
           @create="createSchedule"
+          @new-from-template="createScheduleFromTemplate"
           @update="updateSchedule"
           @load-tool-manifest="onLoadScheduleToolManifest"
         />

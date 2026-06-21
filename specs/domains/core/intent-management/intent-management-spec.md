@@ -349,8 +349,12 @@ development back-link is `select_session`. See the
 - **branchName / latestCommitHash / prId / prUrl / prStatus** — the Git/PR tracking fields on an
   intent (all nullable; `pr_url` added in schema v13→v14): the dev branch name, the latest known
   commit hash on it, the PR id, the PR's **clickable link**, and the PR lifecycle status
-  (`reviewing`/`rejected`/`failed`/`merged`). Written by the manual session-end cleanup (RM-R26) and
-  the automation orchestrator (RM-A5); shown in the intent detail (PR link jumps to `prUrl`). `prUrl`
+  (`reviewing`/`rejected`/`failed`/`merged`/`closed`). Written by the manual session-end cleanup (RM-R26),
+  the automation orchestrator, and the scheduled PR reconciliation capability. The reconciliation
+  capability is workspace-bound: it may update only the PR lifecycle field and, for a merged PR,
+  mark the associated intent done; it cannot use the general intent editing flow. It broadcasts the
+  refreshed ledger after a successful update.
+  Shown in the intent detail (PR link jumps to `prUrl`). `prUrl`
   is distinct from `latestCommitHash` — no duplicate `commit_hash` field exists.
 - **specPath / specApproved / specApproveUser** — the spec quality-gate fields on an intent:
   the authored spec's **absolute** path in the centralized spec root (RM-R21; the spec lives

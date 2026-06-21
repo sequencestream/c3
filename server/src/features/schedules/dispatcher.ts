@@ -34,8 +34,9 @@ import { loadSettings } from '../../kernel/config/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
-import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
+import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
+import { createScheduleMcpServer } from './c3-mcp.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,6 +109,16 @@ export async function execute(
   executionLogId: string,
   updateLog: UpdateLogFn,
 ): Promise<void> {
+  // A workspace can be removed after a schedule is persisted but before its
+  // queued execution starts. Do not pass an undefined cwd/path into a runner.
+  if (!resolveWorkspaceRoot(schedule.workspaceId)) {
+    updateLog(executionLogId, {
+      finishedAt: Date.now(),
+      status: 'failed',
+      error: 'schedule_workspace_not_found',
+    })
+    return
+  }
   if (isAgentQuotaRecoveryConfig(schedule.config)) {
     executeAgentQuotaRecovery(schedule, executionLogId, updateLog)
     return
@@ -496,11 +507,19 @@ async function executeLlmPrompt(
     schedule.mode,
   )
 
-  // Build mcpServers from workspace config (if any)
-  const hasMcpServers = Object.keys(workspaceMcpConfig.mcpServers).length > 0
-  const mcpServers:
-    | Record<string, { command: string; args?: string[]; env?: Record<string, string> }>
-    | undefined = hasMcpServers ? workspaceMcpConfig.mcpServers : undefined
+  // The c3 MCP server is opt-in: only an explicit c3 entry in this schedule's
+  // allowlist mounts it. Templates can preselect these entries; an empty
+  // allowlist does not implicitly grant c3 capabilities. It intentionally
+  // replaces a user-configured server named `c3`; other workspace MCP servers
+  // remain available.
+  const selectedC3Mcp = hasSelectedC3McpTool(schedule.toolAllowlist ?? [])
+  const mcpServers = selectedC3Mcp
+    ? {
+        ...workspaceMcpConfig.mcpServers,
+        ...createScheduleMcpServer(resolveWorkspaceRoot(schedule.workspaceId)!, logId),
+      }
+    : workspaceMcpConfig.mcpServers
+  const hasMcpServers = Object.keys(mcpServers).length > 0
 
   try {
     const q = query({
@@ -512,7 +531,7 @@ async function executeLlmPrompt(
         disallowedTools: [],
         permissionMode: claudeModeForSchedule(schedule.mode),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-        ...(mcpServers ? { mcpServers } : {}),
+        ...(hasMcpServers ? { mcpServers } : {}),
         env: buildChildEnv(envOverrides),
         ...(model ? { model } : {}),
         abortController,

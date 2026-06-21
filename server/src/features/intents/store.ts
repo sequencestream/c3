@@ -744,6 +744,12 @@ export function updateStatus(id: string, status: IntentStatus): void {
   )
 }
 
+/** Update an intent's PR lifecycle status without changing its work status. */
+export function setPrStatus(id: string, prStatus: IntentPrStatus): void {
+  const d = requireDb()
+  d.run('UPDATE intents SET pr_status=?, updated_at=? WHERE id=?', prStatus, Date.now(), id)
+}
+
 /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
 export function setAutomate(id: string, automate: boolean): void {
   const d = requireDb()

@@ -790,6 +790,9 @@
       },
       "merged": {
         "label": "병합됨"
+      },
+      "closed": {
+        "label": "닫힘"
       }
     },
     "deps": {
@@ -1044,6 +1047,14 @@
       },
       "new": {
         "label": "새 예약 작업"
+      },
+      "templates": {
+        "button": "템플릿",
+        "noAgent": "활성 Claude Agent가 없습니다.",
+        "prPoller": {
+          "title": "PR 상태 폴링 검사",
+          "description": "검토 중인 의도를 GitHub PR 상태와 10분마다 조정합니다."
+        }
       },
       "empty": "아직 예약 작업이 없습니다.",
       "expand": {

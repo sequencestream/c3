@@ -384,6 +384,11 @@ The tool manifest is fetched by the web via `get_schedule_tool_manifest { vendor
 returned as `schedule_tool_manifest { vendor, tools }`. The frontend uses this to render the tool
 selection UI in the schedule form.
 
+The c3-provided MCP capabilities also appear as explicit Claude schedule allowlist choices. They are
+never mounted merely because a schedule is an LLM task or has an empty allowlist: selecting at least
+one such capability is the precondition for mounting the workspace-bound c3 MCP service. Templates
+may preselect the entries they require.
+
 ## Vendor routing (execution)
 
 When an `llm_prompt` schedule fires, it runs through the explicitly selected enabled Agent. The
@@ -485,6 +490,16 @@ Wire shapes are defined in the [shared protocol](../../../shared/api-conventions
   database.
 
 ## Invariants
+
+## Built-in templates
+
+The schedule list may offer registered built-in templates. Selecting a template creates an enabled
+schedule through the same creation contract as a manually authored schedule, without a second
+confirmation; the created schedule remains fully editable and deletable. The first template polls
+reviewing GitHub PRs every ten minutes. Its Claude execution identity is explicitly allowed to use
+the bounded intent lookup/PR-reconciliation/event-publication capabilities and the shell for `gh`.
+It reconciles only reviewing intents, marks merged work done, records closed PRs without completing
+the work item, and emits a provider-neutral PR event only when a status changes.
 
 - **Workspace-scoped uniqueness:** A schedule is uniquely identified by `(workspaceId, id)`.
   Deleting the workspace archives the schedules, never orphans them.

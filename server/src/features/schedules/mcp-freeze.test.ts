@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { WorkspaceMcpConfig } from '@ccc/shared/protocol'
-import { freezeTools, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
+import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 
 const emptyConfig: WorkspaceMcpConfig = { mcpServers: {}, denylist: [] }
 
@@ -129,11 +129,19 @@ describe('isWriteTool — MCP naming convention', () => {
 })
 
 describe('freezeTools — c3 in-process MCP tools', () => {
+  it('mounts c3 only when its allowlist entry is explicitly selected', () => {
+    expect(hasSelectedC3McpTool([])).toBe(false)
+    expect(hasSelectedC3McpTool(['Read', 'Bash'])).toBe(false)
+    expect(hasSelectedC3McpTool(['mcp__c3__find_intents'])).toBe(true)
+  })
+
   it('includes c3 MCP tools in the frozen set without workspace MCP config', () => {
     const frozen = freezeTools([], [], emptyConfig)
     expect(frozen.readToolNames.has('mcp__c3__find_intents')).toBe(true)
     expect(frozen.readToolNames.has('mcp__c3__view_intent')).toBe(true)
     expect(frozen.writeToolNames.has('mcp__c3__save_intents')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__save_intent_pr_info')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__publish_pr_event')).toBe(true)
   })
 
   it('classifies find_intents and view_intent as read-only', () => {

@@ -789,6 +789,9 @@
       },
       "merged": {
         "label": "已合并"
+      },
+      "closed": {
+        "label": "已关闭"
       }
     },
     "deps": {
@@ -1043,6 +1046,14 @@
       },
       "new": {
         "label": "新建定时任务"
+      },
+      "templates": {
+        "button": "模板",
+        "noAgent": "没有可用于此模板的已启用 Claude Agent。",
+        "prPoller": {
+          "title": "PR 状态轮询检查",
+          "description": "每 10 分钟将审核中的意图与 GitHub PR 状态对账。"
+        }
       },
       "empty": "还没有定时任务。",
       "expand": {

@@ -789,6 +789,9 @@
       },
       "merged": {
         "label": "Merged"
+      },
+      "closed": {
+        "label": "Closed"
       }
     },
     "deps": {
@@ -1043,6 +1046,14 @@
       },
       "new": {
         "label": "New schedule"
+      },
+      "templates": {
+        "button": "Templates",
+        "noAgent": "No enabled Claude agent is available for this template.",
+        "prPoller": {
+          "title": "PR status polling check",
+          "description": "Reconcile reviewing intents with GitHub PR status every 10 minutes."
+        }
       },
       "empty": "No schedules yet.",
       "expand": {

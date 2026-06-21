@@ -59,7 +59,8 @@ const READ_MCP_PREFIXES = [
 ]
 
 /**
- * In-process c3 MCP tools available for all schedule executions.
+ * In-process c3 MCP tools shown in the schedule allowlist UI. They are injected
+ * into a Claude execution only when that schedule explicitly selects one.
  *
  * These are defined in `features/intents/save-tool.ts` under the `c3` MCP
  * server name. They live outside the workspace MCP config (they're in-process,
@@ -73,7 +74,14 @@ export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
   { name: 'mcp__c3__find_intents', isWrite: false },
   { name: 'mcp__c3__view_intent', isWrite: false },
   { name: 'mcp__c3__save_intents', isWrite: true },
+  { name: 'mcp__c3__save_intent_pr_info', isWrite: true },
+  { name: 'mcp__c3__publish_pr_event', isWrite: true },
 ]
+
+/** Whether a schedule explicitly selected any in-process c3 MCP capability. */
+export function hasSelectedC3McpTool(toolAllowlist: readonly string[]): boolean {
+  return C3_MCP_TOOLS.some((tool) => toolAllowlist.includes(tool.name))
+}
 
 // ---------------------------------------------------------------------------
 // Exported types

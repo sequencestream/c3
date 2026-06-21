@@ -84,7 +84,7 @@ import {
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush, createGhPr } from '../../git.js'
-import { createWorktree, pullCurrentBranch, readBranch } from './worktree.js'
+import { createWorktree, getWorktreePath, pullCurrentBranch, readBranch } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -259,6 +259,8 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
       proj,
       {
         isRunning,
+        getGitBranchMode,
+        getWorktreePath,
         loadTranscriptMessages: (p, sid, count) => loadLastAssistantMessages(p, sid, count),
         judgeCompletion,
         commitAndPush,

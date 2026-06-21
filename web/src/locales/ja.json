@@ -1349,6 +1349,9 @@
           },
           "prOperation": {
             "label": "PR 操作"
+          },
+          "intentLifecycle": {
+            "label": "意図ライフサイクル"
           }
         },
         "reason": {
@@ -1380,6 +1383,15 @@
             "failure": { "label": "失敗" }
           },
           "hint": "いずれかの行を空欄にすると、その操作 / 結果は任意になります。"
+        },
+        "intent": {
+          "label": "ライフサイクル段階のみ",
+          "created": { "label": "作成済み" },
+          "devStarted": { "label": "開発開始" },
+          "done": { "label": "完了" },
+          "failed": { "label": "失敗" },
+          "cancelled": { "label": "キャンセル" },
+          "hint": "空欄ではすべての意図ライフサイクル段階に一致します。"
         },
         "hint": "このワークスペースの実行が選択したイベントに達したときに実行されます。"
       }

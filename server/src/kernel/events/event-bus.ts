@@ -30,6 +30,7 @@
 
 import type {
   IntentStatus,
+  IntentLifecycleEvent,
   PrOperationEvent,
   RunEndReason,
   RunKind,
@@ -119,6 +120,12 @@ export interface EventBusEvents {
     fromStatus: IntentStatus
     toStatus: IntentStatus
   }
+  /**
+   * A non-persistent intent lifecycle boundary. It is separate from generic
+   * status changes: creation and abnormal automation termination are not a
+   * one-to-one status transition.
+   */
+  'intent:lifecycle': { workspacePath: string } & IntentLifecycleEvent
   /**
    * A model-published, vendor-neutral PR operation event (2026-06-20). Published
    * by the `publish_pr_event` MCP tool's handler AFTER the model performed a PR

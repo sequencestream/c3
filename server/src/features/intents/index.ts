@@ -65,6 +65,7 @@ import {
 } from './dev-link.js'
 import { clearPendingIntentLink, registerPendingIntentLink } from './intent-link.js'
 import { reconcileInProgress } from './reconcile.js'
+import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { judgeCompletion } from './judge.js'
 import {
@@ -902,6 +903,7 @@ export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, m
     fromStatus: prevStatus,
     toStatus: msg.status,
   })
+  publishIntentStatusTransition(resolveWorkspaceRoot(req.workspaceId)!, req, prevStatus, msg.status)
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
 }
 

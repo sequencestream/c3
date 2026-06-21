@@ -188,11 +188,12 @@ the execution driver only.
 
 A schedule fires from one of two trigger types (SCH-R17, SCH-R18):
 
-| Trigger                | Fires on                                                                                             | Re-arm                                              |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `cron`                 | A wall-clock match of `cronExpression` in the system time zone (SCH-R3a), via the 10 s tick loop.    | Tick loop recomputes `nextRunAt` after each run.    |
-| `event` run-lifecycle  | A subscribed run lifecycle event on the kernel event bus (ADR-0018): `run:started` or `run:settled`. | Waits for the next matching event — no `nextRunAt`. |
-| `event` `pr:operation` | A model-published PR operation event on the kernel event bus (SCH-R22, SCH-R23).                     | Waits for the next matching event — no `nextRunAt`. |
+| Trigger                    | Fires on                                                                                             | Re-arm                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `cron`                     | A wall-clock match of `cronExpression` in the system time zone (SCH-R3a), via the 10 s tick loop.    | Tick loop recomputes `nextRunAt` after each run.    |
+| `event` run-lifecycle      | A subscribed run lifecycle event on the kernel event bus (ADR-0018): `run:started` or `run:settled`. | Waits for the next matching event — no `nextRunAt`. |
+| `event` `pr:operation`     | A model-published PR operation event on the kernel event bus (SCH-R22, SCH-R23).                     | Waits for the next matching event — no `nextRunAt`. |
+| `event` `intent:lifecycle` | An in-process intent lifecycle boundary: `created`, `dev_started`, `done`, `failed`, or `cancelled`. | Waits for the next matching event — no `nextRunAt`. |
 
 Internal agent recovery rows use the cron trigger storage plus a concrete `nextRunAt` equal to the
 parsed reset instant. After firing they delete themselves, so they behave as one-shot schedules

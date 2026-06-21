@@ -29,6 +29,7 @@ import type {
   CodexSandboxMode,
   AgentConfig,
   CreateScheduleInput,
+  IntentLifecyclePhase,
   ModeToken,
   PrOperation,
   PrOperationResult,
@@ -96,6 +97,7 @@ const EVENT_TOPICS = computed<{ value: ScheduleEventTopic; label: string }[]>(()
   { value: 'run:started', label: t('schedule.form.event.topic.started.label') },
   { value: 'run:settled', label: t('schedule.form.event.topic.settled.label') },
   { value: 'pr:operation', label: t('schedule.form.event.topic.prOperation.label') },
+  { value: 'intent:lifecycle', label: t('schedule.form.event.topic.intentLifecycle.label') },
 ])
 
 const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
@@ -157,6 +159,14 @@ const eventReasonFilter = ref<RunEndReason[]>([])
 // PR operation event filter (the `pr:operation` topic). Empty list = any.
 const prOperations = ref<PrOperation[]>([])
 const prResults = ref<PrOperationResult[]>([])
+const intentPhases = ref<IntentLifecyclePhase[]>([])
+const INTENT_PHASE_OPTIONS = computed<{ value: IntentLifecyclePhase; label: string }[]>(() => [
+  { value: 'created', label: t('schedule.form.event.intent.created.label') },
+  { value: 'dev_started', label: t('schedule.form.event.intent.devStarted.label') },
+  { value: 'done', label: t('schedule.form.event.intent.done.label') },
+  { value: 'failed', label: t('schedule.form.event.intent.failed.label') },
+  { value: 'cancelled', label: t('schedule.form.event.intent.cancelled.label') },
+])
 
 const toolAllowlist = ref<string[]>([])
 
@@ -171,6 +181,9 @@ const showReasonFilter = computed(
 // The PR filter panel only applies to the pr:operation topic (2026-06-20).
 const showPrFilter = computed(
   () => triggerType.value === 'event' && eventTopic.value === 'pr:operation',
+)
+const showIntentFilter = computed(
+  () => triggerType.value === 'event' && eventTopic.value === 'intent:lifecycle',
 )
 
 // Advanced segmented builder.
@@ -231,6 +244,9 @@ watch(
         ? [...sched.eventPrFilter.operations]
         : []
       prResults.value = sched.eventPrFilter?.results ? [...sched.eventPrFilter.results] : []
+      intentPhases.value = sched.eventIntentFilter?.phases
+        ? [...sched.eventIntentFilter.phases]
+        : []
       // Vendor: restore from schedule, then trigger manifest load.
       vendor.value = sched.vendor
       agentId.value = sched.agentId ?? ''
@@ -372,6 +388,12 @@ function togglePrResult(r: PrOperationResult): void {
   else prResults.value.push(r)
 }
 
+function toggleIntentPhase(phase: IntentLifecyclePhase): void {
+  const i = intentPhases.value.indexOf(phase)
+  if (i >= 0) intentPhases.value.splice(i, 1)
+  else intentPhases.value.push(phase)
+}
+
 // ---- Tool manifest helpers -------------------------------------------------
 const currentTools = computed<ToolManifestEntry[]>(() => props.toolManifest[vendor.value] ?? [])
 
@@ -450,6 +472,10 @@ function save(): void {
           ...(prResults.value.length ? { results: [...prResults.value] } : {}),
         }
       : null
+  const intentFilter =
+    isEvent && eventTopic.value === 'intent:lifecycle' && intentPhases.value.length
+      ? { phases: [...intentPhases.value] }
+      : null
   if (isEdit.value && props.schedule) {
     // Carry the manual title: a non-empty value is stored sticky server-side; an
     // empty value reverts to auto-naming. Create never sends a name (auto only).
@@ -469,6 +495,7 @@ function save(): void {
       input.eventTopic = eventTopic.value
       input.eventReasonFilter = reasonFilter
       input.eventPrFilter = prFilter
+      input.eventIntentFilter = intentFilter
     } else {
       input.cronExpression = cronExpression.value
     }
@@ -487,6 +514,7 @@ function save(): void {
       eventTopic: isEvent ? eventTopic.value : null,
       eventReasonFilter: reasonFilter,
       eventPrFilter: prFilter,
+      eventIntentFilter: intentFilter,
       toolAllowlist: [...toolAllowlist.value],
     })
   }
@@ -785,6 +813,25 @@ function save(): void {
               </button>
             </div>
             <span class="sf-hint">{{ t('schedule.form.event.pr.hint') }}</span>
+          </template>
+
+          <template v-if="showIntentFilter">
+            <span class="sf-label sf-event-reason-label">{{
+              t('schedule.form.event.intent.label')
+            }}</span>
+            <div class="sf-days">
+              <button
+                v-for="phase in INTENT_PHASE_OPTIONS"
+                :key="phase.value"
+                type="button"
+                class="sf-day"
+                :class="{ active: intentPhases.includes(phase.value) }"
+                @click="toggleIntentPhase(phase.value)"
+              >
+                {{ phase.label }}
+              </button>
+            </div>
+            <span class="sf-hint">{{ t('schedule.form.event.intent.hint') }}</span>
           </template>
         </div>
 

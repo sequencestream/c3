@@ -48,7 +48,7 @@ A schedule's trigger is one of two (`SCH-R17`):
 - **`cron`.** The 10 s tick loop matches `cronExpression` in the **system IANA time zone**
   (`SystemSettings.timezone`, DST-aware, `SCH-R3a`), then recomputes `nextRunAt`. Only `active`
   schedules are evaluated (`SCH-R5`).
-- **`event`.** A `run:started` / `run:settled` kernel-bus event (published by agent-session on
+- **`event`.** A `run:started` / `run:settled`, `pr:operation`, or `intent:lifecycle` kernel-bus event (published by the relevant domain on
   every run, ADR-0018) fires the schedule when **all** hold: the event's run `kind` is `session`
   (internal intent/discussion runs never fire user schedules), the workspace matches, and — for
   `run:settled` — the terminal `reason` passes the optional `eventReasonFilter` (`SCH-R18`). Event
@@ -56,6 +56,11 @@ A schedule's trigger is one of two (`SCH-R17`):
 
 Both reuse the **same** dispatch-and-track → execute path, three-tier execution identity, and write
 queue (`SCH-R17`).
+
+Intent lifecycle subscriptions match only the same workspace and, when configured, the selected
+phase. The payload contains a stable intent identity, title, module, phase, and resulting status.
+These events are process-local, best-effort, non-persistent, and never replayed. A schedule run does
+not modify an intent and cannot publish another intent lifecycle event.
 
 ## Execution path
 

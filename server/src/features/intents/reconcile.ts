@@ -18,6 +18,7 @@
  */
 import type { Intent, IntentRunStatus, IntentStatus } from '@ccc/shared/protocol'
 import type { JudgeEvidence, JudgeVerdict } from './judge.js'
+import { publishIntentStatusTransition } from './lifecycle-events.js'
 
 export interface ReconcileDeps {
   /** Whether a session currently has a turn executing in the background. */
@@ -103,6 +104,7 @@ export async function reconcileInProgress(
           const res = await deps.commitAndPush(workspacePath, `feat: ${req.title}`)
           if (res.ok) {
             deps.updateStatus(req.id, 'done')
+            publishIntentStatusTransition(workspacePath, req, req.status, 'done')
             runStatus = 'idle'
             autoCompleted = true
             console.log(

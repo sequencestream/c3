@@ -20,6 +20,8 @@
 
 import { resolve } from 'node:path'
 import type {
+  IntentLifecycleEvent,
+  IntentLifecycleFilter,
   PrOperation,
   PrOperationEvent,
   PrOperationFilter,
@@ -163,6 +165,7 @@ type RunDispatchPayload = {
 
 /** PR-event dispatch payload (`pr:operation`) — the validated, normalized event. */
 type PrDispatchPayload = { sessionId: string; workspacePath: string } & PrOperationEvent
+type IntentDispatchPayload = { workspacePath: string } & IntentLifecycleEvent
 
 /**
  * Whether a `pr:operation` event matches a schedule's PR filter. A null filter,
@@ -181,6 +184,13 @@ function prFilterMatches(
     return false
   }
   return true
+}
+
+export function intentFilterMatches(
+  filter: IntentLifecycleFilter | null,
+  phase: IntentLifecycleEvent['phase'],
+): boolean {
+  return !filter?.phases?.length || filter.phases.includes(phase)
 }
 
 /**
@@ -203,14 +213,18 @@ function prFilterMatches(
 export function dispatchEventSchedules(topic: RunLifecycleTopic, payload: RunDispatchPayload): void
 export function dispatchEventSchedules(topic: 'pr:operation', payload: PrDispatchPayload): void
 export function dispatchEventSchedules(
+  topic: 'intent:lifecycle',
+  payload: IntentDispatchPayload,
+): void
+export function dispatchEventSchedules(
   topic: ScheduleEventTopic,
-  payload: RunDispatchPayload | PrDispatchPayload,
+  payload: RunDispatchPayload | PrDispatchPayload | IntentDispatchPayload,
 ): void {
   if (!store) return
   // Explicit RunKind whitelist: only `session` runs (user/dev) fire user
   // schedules; every other RunKind is internal. PR events carry no RunKind (the
   // whitelist is run-lifecycle-specific), so they bypass this gate by design.
-  if (topic !== 'pr:operation') {
+  if (topic !== 'pr:operation' && topic !== 'intent:lifecycle') {
     const kind = (payload as RunDispatchPayload).kind
     if (!SCHEDULE_TRIGGER_KINDS.includes(kind)) return
   }
@@ -232,6 +246,14 @@ export function dispatchEventSchedules(
     if (topic === 'pr:operation') {
       const e = payload as PrDispatchPayload
       if (!prFilterMatches(schedule.eventPrFilter, e.operation, e.result)) continue
+    } else if (topic === 'intent:lifecycle') {
+      if (
+        !intentFilterMatches(
+          schedule.eventIntentFilter ?? null,
+          (payload as IntentDispatchPayload).phase,
+        )
+      )
+        continue
     } else {
       // Reason filter (run:settled only — run:started carries no reason).
       const reason = (payload as RunDispatchPayload).reason

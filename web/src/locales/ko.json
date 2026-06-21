@@ -1349,6 +1349,9 @@
           },
           "prOperation": {
             "label": "PR 작업"
+          },
+          "intentLifecycle": {
+            "label": "의도 수명 주기"
           }
         },
         "reason": {
@@ -1380,6 +1383,15 @@
             "failure": { "label": "실패" }
           },
           "hint": "한 행을 비워 두면 해당 작업 / 결과는 모두 일치합니다."
+        },
+        "intent": {
+          "label": "수명 주기 단계만",
+          "created": { "label": "생성됨" },
+          "devStarted": { "label": "개발 시작" },
+          "done": { "label": "완료" },
+          "failed": { "label": "실패" },
+          "cancelled": { "label": "취소됨" },
+          "hint": "비워 두면 모든 의도 수명 주기 단계와 일치합니다."
         },
         "hint": "이 작업 공간의 실행이 선택한 이벤트에 도달하면 실행됩니다."
       }

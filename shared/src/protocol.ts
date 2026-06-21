@@ -2128,11 +2128,30 @@ export interface PrOperationEvent {
   errorSummary?: string
 }
 
+/** Intent lifecycle boundaries a schedule may subscribe to. */
+export const INTENT_LIFECYCLE_PHASES = [
+  'created',
+  'dev_started',
+  'done',
+  'failed',
+  'cancelled',
+] as const
+export type IntentLifecyclePhase = (typeof INTENT_LIFECYCLE_PHASES)[number]
+
+/** Safe, stable context emitted at an intent lifecycle boundary. */
+export interface IntentLifecycleEvent {
+  phase: IntentLifecyclePhase
+  intentId: string
+  title: string
+  module: string | null
+  toStatus: IntentStatus
+}
+
 /**
  * Topics an event-triggered schedule may subscribe to: the run lifecycle topics
  * plus the model-published `pr:operation` event (2026-06-20).
  */
-export type ScheduleEventTopic = RunLifecycleTopic | 'pr:operation'
+export type ScheduleEventTopic = RunLifecycleTopic | 'pr:operation' | 'intent:lifecycle'
 
 /**
  * Filter for `pr:operation` event triggers: a schedule fires only when the
@@ -2142,6 +2161,11 @@ export type ScheduleEventTopic = RunLifecycleTopic | 'pr:operation'
 export interface PrOperationFilter {
   operations?: PrOperation[]
   results?: PrOperationResult[]
+}
+
+/** Optional phase filter for `intent:lifecycle`; absent or empty matches every phase. */
+export interface IntentLifecycleFilter {
+  phases?: IntentLifecyclePhase[]
 }
 
 /**
@@ -2221,6 +2245,8 @@ export interface Schedule {
    * Ignored for run-lifecycle topics.
    */
   eventPrFilter: PrOperationFilter | null
+  /** For `intent:lifecycle` event triggers: null means every lifecycle phase. */
+  eventIntentFilter?: IntentLifecycleFilter | null
   status: ScheduleStatus
   mode: ModeToken | CodexPolicy
   toolAllowlist: string[]
@@ -2257,6 +2283,8 @@ export interface CreateScheduleInput {
   eventReasonFilter?: RunEndReason[] | null
   /** Optional filter for `'pr:operation'` event triggers; null/empty = any PR operation. */
   eventPrFilter?: PrOperationFilter | null
+  /** Optional filter for `intent:lifecycle` event triggers; null/empty = any phase. */
+  eventIntentFilter?: IntentLifecycleFilter | null
   mode: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
@@ -2282,6 +2310,7 @@ export interface UpdateScheduleInput {
   eventTopic?: ScheduleEventTopic | null
   eventReasonFilter?: RunEndReason[] | null
   eventPrFilter?: PrOperationFilter | null
+  eventIntentFilter?: IntentLifecycleFilter | null
   mode?: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]

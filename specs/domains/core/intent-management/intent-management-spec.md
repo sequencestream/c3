@@ -37,6 +37,15 @@ marks `done`, RM-R9). The **automation orchestrator** is the single, explicit, u
 exception: it marks a intent `done` only after an independent completion judge confirms it and
 the change is committed & pushed (RM-A5).
 
+## Lifecycle events
+
+An intent publishes one process-local lifecycle event when it is created, first enters development,
+reaches `done`, terminates abnormally, or is cancelled. The event carries only workspace, stable
+intent identity, title, module, phase, and resulting status. It is best-effort, non-persistent, and
+never replayed. An abnormal automation termination publishes `failed` even when the ledger remains
+`in_progress`; this reports the development boundary without changing intent state. A schedule may
+consume an event but never modifies an intent or recursively emits another lifecycle event.
+
 ## Core entities
 
 | Entity                  | Description                                                                                                                                          |

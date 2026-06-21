@@ -1348,6 +1348,9 @@
           },
           "prOperation": {
             "label": "PR 操作"
+          },
+          "intentLifecycle": {
+            "label": "意图生命周期"
           }
         },
         "reason": {
@@ -1379,6 +1382,15 @@
             "failure": { "label": "失败" }
           },
           "hint": "某一行留空表示匹配任意操作 / 结果。"
+        },
+        "intent": {
+          "label": "仅限生命周期阶段",
+          "created": { "label": "已创建" },
+          "devStarted": { "label": "开发开始" },
+          "done": { "label": "已完成" },
+          "failed": { "label": "异常结束" },
+          "cancelled": { "label": "已取消" },
+          "hint": "留空可匹配所有意图生命周期阶段。"
         },
         "hint": "当本工作区中的运行到达所选事件时触发。"
       }

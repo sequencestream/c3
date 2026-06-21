@@ -334,6 +334,19 @@ code {
   align-items: flex-start;
   margin: var(--sp-6) 0;
 }
+.agreement-page {
+  max-width: 52rem;
+}
+.agreement-body {
+  margin-top: var(--sp-6);
+}
+.agreement-body p {
+  margin: var(--sp-3) 0;
+}
+.agreement-item {
+  padding-left: var(--sp-4);
+  text-indent: calc(-1 * var(--sp-4));
+}
 
 /* ============ 二维码:扫码需白底 ============ */
 .qr {

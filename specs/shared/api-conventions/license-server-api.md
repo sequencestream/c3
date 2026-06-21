@@ -90,7 +90,7 @@ c3 不调用这些,记于此以保边界完整。
 用户可持**多条 license**;延长 license 的期限/状态需一笔已支付订单(PL-R9):
 
 1. **登录**(GitHub)。checkout 端点需会话;未登录 `401`。
-2. **选套餐 + 接受协议**(协议在此展示,PL-R9):`GET /v1/plans`(可购买,排除试用)、`GET /v1/licenses`(续期目标)、`GET /v1/agreement`(协议正文)。
+2. **选套餐 + 接受协议**(PL-R9):结算页提供协议正文的独立查看页；用户阅读后勾选同意。`GET /v1/plans`(可购买,排除试用)、`GET /v1/licenses`(续期目标)、`GET /v1/agreement`(协议正文)。
 3. **下单** `POST /v1/checkout` — 请求体 `{planKey, licenseId, accept}`。金额由服务端按 `planKey` 推导(客户端金额一律忽略)。创建唯一 `orderNo`(`C3+YYYYMMDDHHmmssSSS+random4`,作 WeChat `out_trade_no`)的 `pending` 订单;若目标 license 的 `termEnd` 已超过当前 +1 年则拒绝(`400`,续期上限)。配了微信支付则下 Native 统一下单(`time_expire`=创建+15min)并返回 `{orderId, orderNo, status, codeUrl, qrDataUri}`(扫码二维码)。
 4. **支付** WeChat Pay **Native**(扫码)。微信异步回调结算,详见下。
 5. **查看** `GET /v1/orders`(仅**已支付**订单)、`GET /v1/licenses`(license 与绑定状态)。

@@ -142,7 +142,7 @@ async function submit(): Promise<void> {
 
       <label class="agree">
         <input type="checkbox" v-model="accept" />
-        <span>我已阅读并同意《{{ agreement?.title }}》（含无退款条款,版本 {{ agreement?.version }}）。</span>
+        <span>我已阅读并同意《<a href="/agreement" target="_blank" rel="noopener">{{ agreement?.title }}</a>》。</span>
       </label>
       <button :disabled="submitting || !accept || !planKey || licenseId === null" @click="submit">
         {{ submitting ? '提交中…' : '下单 / Place order' }}

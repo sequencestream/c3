@@ -1,11 +1,31 @@
 import type { IntentStatus } from '@ccc/shared/protocol'
+import {
+  beginDevLaunch,
+  reduceDevLaunch,
+  DEV_LAUNCH_THRESHOLD_MS,
+  DEV_LAUNCH_SAFETY_TIMEOUT_MS,
+  type DevLaunchEvent,
+} from '@/lib/dev-launch-view'
 import type { DepType } from './state'
 import type { AppCtx } from './types'
 
 // Install intent-tab actions (filter / lifecycle / comm-session list) onto the ctx.
 export function installIntentActions(ctx: AppCtx): void {
   const send = ctx.send
+  const t = ctx.t
   const { intentsProject, selectedIntentSessionId, activeTab } = ctx
+
+  // Fold one event through the overlay reducer, swap in the next model, and run
+  // its close side-effects (clear timers + surface a toast on failure/timeout;
+  // success closes silently). Shared by the threshold/safety timers and the
+  // message handler's stage / terminal events.
+  ctx.dispatchDevLaunch = (ev: DevLaunchEvent): void => {
+    const tr = reduceDevLaunch(ctx.devLaunch.value, ev)
+    ctx.devLaunch.value = tr.model
+    if (!tr.model) ctx.clearDevLaunchTimers()
+    if (tr.closedReason === 'failed') ctx.showToast(t('intent.devLaunch.failed'))
+    else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.devLaunch.timeout'))
+  }
 
   ctx.openIntents = (path: string): void => {
     activeTab.value = 'intents'
@@ -135,6 +155,17 @@ export function installIntentActions(ctx: AppCtx): void {
       workspaceId: intentsProject.value,
       intentId,
     })
+    // Arm the startup overlay: register the in-flight launch (hidden), reveal it
+    // only if it outlasts the threshold, and guarantee it closes via a safety
+    // timeout if no terminal signal (in_progress / failed) ever arrives.
+    ctx.clearDevLaunchTimers()
+    ctx.devLaunch.value = beginDevLaunch(intentId, Date.now())
+    ctx.devLaunchTimers.threshold = setTimeout(() => {
+      ctx.dispatchDevLaunch({ kind: 'tick', now: Date.now() })
+    }, DEV_LAUNCH_THRESHOLD_MS)
+    ctx.devLaunchTimers.safety = setTimeout(() => {
+      ctx.dispatchDevLaunch({ kind: 'timeout', now: Date.now() })
+    }, DEV_LAUNCH_SAFETY_TIMEOUT_MS)
   }
 
   ctx.setIntentStatus = (intentId: string, status: IntentStatus): void => {

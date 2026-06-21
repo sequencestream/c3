@@ -597,6 +597,16 @@
     "startDev": {
       "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始开发吗?"
     },
+    "devLaunch": {
+      "title": "正在启动开发…",
+      "step": {
+        "prepareWorkspace": "准备代码工作区",
+        "launchSession": "启动开发会话",
+        "enterSession": "进入会话"
+      },
+      "failed": "开发启动失败。",
+      "timeout": "未能确认开发启动,请重试。"
+    },
     "chat": {
       "title": {
         "label": "意图对话"

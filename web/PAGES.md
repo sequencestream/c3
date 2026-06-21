@@ -26,7 +26,7 @@ web/src/
 ├── components/                                      # 跨页面通用组件
 │   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏(许可项并入「⋯」操作菜单)+ 底部 6 视图 tab(工作/需求/讨论/定时任务/代码/工作台,带未处理事件计数徽标)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
-│   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:标题栏+消息+任务面板+状态栏+待发队列+输入框 一体封装,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;prefill 经 defineExpose 透传
+│   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:标题栏+消息+任务面板+状态栏+待发队列+输入框 一体封装,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;linkedIntentId 透传给标题栏「Intent」跳转按钮(仅会话页传,意图侧复用不传)、open-intent 上抛;prefill 经 defineExpose 透传
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定
@@ -39,7 +39,7 @@ web/src/
 │   ├── PermissionPrompt/PermissionPrompt.vue       # 单条权限提示块:AskUserQuestion 逐题作答面板或其他工具 allow/deny 提示,展示 agent 共识意见
 │   ├── ResetSessionDialog/ResetSessionDialog.vue   # 「重置会话」输入弹框(ConfirmDialog 风格 + 文本输入):用于 intent/spec session 重置,受控 open、标题/正文/占位/按钮文案注入、输入为空时确认禁用、遮罩/Esc/取消均 emit cancel、确认 emit confirm(文本)、移动端全屏 sheet
 │   ├── SessionStatusBar/SessionStatusBar.vue       # 输入框上方状态条:展示会话运行态(思考/工具执行/等待授权/出错/就绪),支持刷新、停止、继续
-│   ├── SessionTitleBar/SessionTitleBar.vue         # 聊天列顶部标题行:会话标题、权限模式下拉、vendor 标签与 agent 切换器
+│   ├── SessionTitleBar/SessionTitleBar.vue         # 聊天列顶部标题行:会话标题、权限模式下拉、vendor 标签与 agent 切换器;有 linkedIntentId(由意图创建的 work session)时在标题后渲染「Intent」按钮,点击 emit open-intent(intentId) 跳转关联意图
 │   ├── SkillApprovalModal/SkillApprovalModal.vue   # 外部 skill 加载审批模态:确认向 .gitignore 追加 _c3_* 的一次性确认;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   ├── TaskPanel/TaskPanel.vue                      # 实时任务面板:只读展示当前 session 任务列表,in_progress 置顶/pending 居中/completed 垫底
 │   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:显示当前工作区(仅名称;身份是服务端不透明 workspaceId,前端不持有/不展示绝对路径),支持新增/选择/移除,内含 popover;「新增」是唯一让绝对路径进入系统的入口
@@ -51,13 +51,13 @@ web/src/
 │   │       ├── EventList.vue                        # 事件列表:状态徽标(含 auto)、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、来源图标、时间与选中态,移动端行高触控优化
 │   │       └── EventDetail.vue                      # 事件详情:完整信息(标题经 event-title 本地化)、Allow/Deny、AskUserQuestion 作答面板、共识决策留痕(auto 记录的投票/裁决,只读)与跳转到源
 │   ├── works/                                    # 工作页
-│   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);移动端列表↔聊天 drill-down(返回到列表)
+│   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);linkedIntentId 透传给聊天列标题栏「Intent」按钮、open-intent 上抛(App 据此跳转关联意图);移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
 │   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区会话、新增、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
-│   │   ├── Intents.vue                              # 需求容器页:桌面两栏(左合并列表 + 右上下文详情列);右栏按合并列 activeTab 切换 —— intents tab→IntentDetail(selectedIntentId 意图详情,首次默认选首条,聊天列 props/活动会话经其透传给两会话 tab),sessions tab→ChatColumn 聊天列;prefill 按 activeTab 路由到 IntentDetail 或 sessions 聊天列;移动端 MobileStack 二级 drill-down(列表→右栏:intents tab drill 详情/sessions tab drill 聊天)
+│   │   ├── Intents.vue                              # 需求容器页:桌面两栏(左合并列表 + 右上下文详情列);右栏按合并列 activeTab 切换 —— intents tab→IntentDetail(selectedIntentId 意图详情,首次默认选首条,聊天列 props/活动会话经其透传给两会话 tab),sessions tab→ChatColumn 聊天列;requestedIntentId(work session 标题栏跳转来的一次性外部选中请求)命中已加载意图时改选并 emit requested-intent-consumed 让父清空,目标未出现则保留默认选中;prefill 按 activeTab 路由到 IntentDetail 或 sessions 聊天列;移动端 MobileStack 二级 drill-down(列表→右栏:intents tab drill 详情/sessions tab drill 聊天)
 │   │   ├── components/
 │   │   │   ├── IntentMergedList/IntentMergedList.vue # 合并左栏:带分段控件(Intents/Sessions)切换,接管两子组件的头区;可折叠(960px/480px);透传 selectedIntentId 高亮与 select-intent 选中事件;两 tab 标题栏右域各有一个「新建会话」入口(复用同一 new-intent-session 动作与 intent.sessionList.new.tooltip 文案)——Intents tab 的入口位于自动化按钮+状态过滤之后最右侧,点击即切到 Sessions tab(右栏随 activeTab 打开聊天列)并触发新建,Sessions tab 沿用原「+」入口
 │   │   │   ├── IntentList/IntentList.vue            # 需求列表:接受 hideHeader prop 嵌入合并栏;按状态过滤、终止态分页、自动化编排启停;行点击=选中(emit select-intent,selectedId 高亮),不再行内展开/行内操作(详情与操作迁至右栏 IntentDetail)

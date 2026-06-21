@@ -915,6 +915,10 @@
       }
     },
     "titleBar": {
+      "intent": {
+        "label": "意图",
+        "ariaLabel": "打开创建此会话的意图"
+      },
       "mode": {
         "ariaLabel": "权限模式"
       },

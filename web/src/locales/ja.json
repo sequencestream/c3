@@ -916,6 +916,10 @@
       }
     },
     "titleBar": {
+      "intent": {
+        "label": "意図",
+        "ariaLabel": "このセッションを作成した意図を開く"
+      },
       "mode": {
         "ariaLabel": "権限モード"
       },

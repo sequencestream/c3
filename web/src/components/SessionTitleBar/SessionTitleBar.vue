@@ -40,6 +40,12 @@ const props = withDefaults(
      * or the current agent is unavailable.
      */
     agentSwitch?: SessionAgentSwitch | null
+    /**
+     * The intent this work session was created for (works title bar only). When set,
+     * a "Intent" button is shown that emits `open-intent`; absent/null ⇒ no button
+     * (plain sessions, and the intent-side reuse never passes it).
+     */
+    linkedIntentId?: string | null
   }>(),
   {
     mode: 'default',
@@ -48,6 +54,7 @@ const props = withDefaults(
     vendor: null,
     codexPolicy: null,
     agentSwitch: null,
+    linkedIntentId: null,
   },
 )
 
@@ -83,6 +90,7 @@ const emit = defineEmits<{
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
+  'open-intent': [intentId: string]
 }>()
 
 function onPickAgent(agentId: string): void {
@@ -100,6 +108,17 @@ function onPickAgent(agentId: string): void {
       data-testid="session-vendor-dot"
     ></span>
     <span class="session-title-text" :title="activeTitle">{{ activeTitle }}</span>
+    <button
+      v-if="linkedIntentId"
+      type="button"
+      class="intent-jump"
+      data-testid="session-intent-jump"
+      :title="t('session.titleBar.intent.ariaLabel')"
+      :aria-label="t('session.titleBar.intent.ariaLabel')"
+      @click="emit('open-intent', linkedIntentId)"
+    >
+      {{ t('session.titleBar.intent.label') }}
+    </button>
     <slot name="action" />
     <div v-if="vendor || agentSwitch || showMode" class="right-controls">
       <span v-if="vendor" class="vendor-label" data-testid="session-vendor-label">{{

@@ -43,6 +43,8 @@ withDefaults(
     modeOptions?: { value: ModeToken; label: string }[]
     /** Render the title bar even with no active session (intent side keeps it). */
     alwaysTitle?: boolean
+    /** Linked intent id for the title-bar jump button (works side only); null ⇒ no button. */
+    linkedIntentId?: string | null
     // chat body
     hasActiveSession: boolean
     messages: ChatMsg[]
@@ -72,6 +74,7 @@ withDefaults(
     mode: undefined,
     codexPolicy: null,
     modeOptions: () => [],
+    linkedIntentId: null,
     hasTaskStore: true,
     currentAgentName: undefined,
     reconnecting: false,
@@ -83,6 +86,7 @@ const emit = defineEmits<{
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
+  'open-intent': [intentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -113,9 +117,11 @@ defineExpose({
       :mode="mode"
       :codex-policy="codexPolicy"
       :mode-options="modeOptions"
+      :linked-intent-id="linkedIntentId"
       @set-mode="(m: ModeToken) => emit('set-mode', m)"
       @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
+      @open-intent="(id: string) => emit('open-intent', id)"
     />
     <ChatMessages
       :messages="messages"

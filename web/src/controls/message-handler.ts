@@ -50,6 +50,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeTitle,
     activeVendor,
     activeAgentSwitch,
+    activeLinkedIntentId,
     mode,
     codexPolicy,
     sessionStatus,
@@ -265,6 +266,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         activeVendor.value = msg.vendor ?? null
         // The same-vendor agent switcher data (absent ⇒ no switcher).
         activeAgentSwitch.value = msg.agentSwitch ?? null
+        // The intent that created this work session (absent ⇒ plain session ⇒ no
+        // jump button). Refreshed/cleared on every (re)select so a plain session
+        // never inherits the previous session's linked intent.
+        activeLinkedIntentId.value = msg.linkedIntentId ?? null
         mode.value = msg.mode
         codexPolicy.value = msg.codexPolicy ?? null
         // Remember this as the console tab's own session ONLY when the selection

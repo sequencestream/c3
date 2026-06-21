@@ -70,6 +70,24 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
   })
 })
 
+describe('SessionTitleBar.vue — 跳转关联意图按钮', () => {
+  it('有 linkedIntentId 时渲染 Intent 按钮', () => {
+    const w = mountBar({ linkedIntentId: 'intent-1' })
+    expect(w.find('[data-testid="session-intent-jump"]').exists()).toBe(true)
+  })
+
+  it('无 linkedIntentId 时不渲染按钮', () => {
+    const w = mountBar({ linkedIntentId: null })
+    expect(w.find('[data-testid="session-intent-jump"]').exists()).toBe(false)
+  })
+
+  it('点击按钮 → emit open-intent(intentId)', async () => {
+    const w = mountBar({ linkedIntentId: 'intent-42' })
+    await w.find('[data-testid="session-intent-jump"]').trigger('click')
+    expect(w.emitted('open-intent')).toEqual([['intent-42']])
+  })
+})
+
 const SWITCH = {
   current: { id: 'a1', displayName: 'Agent 1' },
   candidates: [{ id: 'a2', displayName: 'Agent 2' }],

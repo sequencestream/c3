@@ -51,6 +51,7 @@ import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { getByC3Id, upsertPendingRow } from './work-session-store.js'
+import { findIntentIdBySessionId } from '../intents/store.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
@@ -284,6 +285,10 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       status: rt.status,
       vendor: resolveSessionVendor(msg.sessionId),
       agentSwitch: agentSwitchFor(msg.sessionId),
+      // Reverse-look-up the intent that created this work session (only
+      // `start_development`-bound sessions have a row) so the title bar can offer
+      // a jump-to-intent button; absent ⇒ plain session ⇒ no button.
+      linkedIntentId: findIntentIdBySessionId(msg.sessionId) ?? undefined,
     })
     // Task-list cold replay (2026-06-07-009): the baseline transcript predates
     // this process and carries no `task_list` events, so derive the model from

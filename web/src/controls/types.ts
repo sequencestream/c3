@@ -81,6 +81,9 @@ export interface AppMethods {
 
   // intents
   openIntents(path: string): void
+  // Jump from a work session's title bar to its linked intent: switch to the intents
+  // tab for `path` and request Intents.vue select `intentId` once its list lands.
+  openLinkedIntent(path: string, intentId: string): void
   setIntentFilter(status: IntentStatus | null): void
   refineIntent(intentId: string): void
   writeSpec(intentId: string): void

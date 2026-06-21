@@ -1655,6 +1655,20 @@ export type IntentStatus =
   | 'failed'
 
 /**
+ * Coarse-grained phase of a manual `start_development` launch, carried by the
+ * connection-directed {@link dev_launch_progress} event so the client can drive
+ * a startup-progress overlay. Deliberately minimal — only the user-meaningful
+ * phases, never paths / commands / error detail (so no internal information
+ * leaks). The success terminal is NOT a stage: it is derived from the intent
+ * flipping to `in_progress` in the regular `intents` broadcast.
+ * - `preparing-workspace` — before worktree create / branch pull.
+ * - `launching` — before the dev agent process is spawned.
+ * - `failed` — asynchronous launch failure (after the handler returned).
+ */
+export const DEV_LAUNCH_STAGES = ['preparing-workspace', 'launching', 'failed'] as const
+export type DevLaunchStage = (typeof DEV_LAUNCH_STAGES)[number]
+
+/**
  * Derived run-state of an in_progress intent, computed by reconciling the
  * intent's lastDevSessionId liveness against the process table.
  * - `running` — the dev session's process is still alive (tracking in-flight).
@@ -3120,6 +3134,16 @@ export type ServerToClient =
    * (Write Spec / Approve Spec / Start Dev) without a separate settings fetch.
    */
   | { type: 'intents'; workspaceId: string; items: Intent[]; sddEnabled: boolean }
+  /**
+   * Connection-directed coarse progress of a manual `start_development` launch,
+   * driving the client's startup-progress overlay (shown only when the launch
+   * outlasts a client-side threshold). Carries only the {@link DevLaunchStage}
+   * phase + the target `intentId`, never internal detail. The success terminal
+   * is NOT signalled here — the client derives it from the intent flipping to
+   * `in_progress` in the regular `intents` broadcast; only `failed` is pushed,
+   * fixing the previously-silent async launch failure.
+   */
+  | { type: 'dev_launch_progress'; intentId: string; stage: DevLaunchStage }
   /**
    * A project's intent-communication-session list (reply to `list_intent_sessions`
    * or push after a change). `runStates` is a live snapshot of which listed

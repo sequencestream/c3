@@ -517,6 +517,12 @@
 
 **字段：** `workspaceId: string`, `items: Intent[]`, `sddEnabled: boolean`
 
+### `dev_launch_progress`
+
+手动 `start_development` 启动的粗粒度阶段进度，按连接定向（非广播），驱动客户端的开发启动进度遮罩（仅当启动超过客户端阈值才显示）。只承载阶段枚举与目标 `intentId`，**不含路径 / 命令 / 错误细节**（不泄露无关内部信息）。`stage` 取值 `preparing-workspace`（进入 worktree 创建 / 分支 pull 前）、`launching`（拉起开发 agent 进程前）、`failed`（返回后的异步启动失败——修复此前静默失败的缺口）。**成功终态不在此发**：客户端从常规 `intents` 广播中目标意图翻为 `in_progress` 推断就绪并关闭遮罩。
+
+**字段：** `intentId: string`, `stage: DevLaunchStage`（`'preparing-workspace' | 'launching' | 'failed'`）
+
 ### `intent_sessions`
 
 项目的 intent 通信会话列表（回复 `list_intent_sessions` 或在更改后推送）。`runStates` 是哪些列出的会话有活跃 agent run 的实时快照（id → `'running'`）——缺失条目表示没有活跃 run。每次列表发送都携带（首次获取 / 重连重新获取 / 状态变更推送），因此刷新或重连可权威地对账后台会话的 run 状态（与持久化 `status` 解耦）。

@@ -16,6 +16,7 @@ import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
 import Login from './pages/login/Login.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
+import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
 import { useAppController } from './controls'
 
 const {
@@ -221,6 +222,8 @@ const {
   dismissSkillApproval,
   // ---- global toast ----
   toast,
+  // ---- dev-launch startup overlay ----
+  devLaunch,
 } = useAppController()
 </script>
 
@@ -530,6 +533,10 @@ const {
   </template>
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
+
+  <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction
+       while a manual Start-Dev launch is in flight past the reveal threshold. -->
+  <DevStartupOverlay :model="devLaunch" />
 </template>
 
 <style scoped>

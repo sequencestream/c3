@@ -167,7 +167,8 @@ describe('start_development SDD forced gate', () => {
 
     await startDevelopment(ctx, conn, { type: 'start_development', workspaceId, intentId: r.id })
 
-    expect(sent).toEqual([])
+    // No error on the success path (the launch emits only `dev_launch_progress`).
+    expect(sent.filter((m) => m.type === 'error')).toEqual([])
     expect(launchRun).toHaveBeenCalledTimes(1)
     // Args: (runtime, visiblePrompt, images, inject).
     const [, visiblePrompt, , inject] = launchRun.mock.calls[0]

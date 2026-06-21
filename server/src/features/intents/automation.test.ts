@@ -472,7 +472,10 @@ describe('startDevelopment — manual start dep merge validation', () => {
       failed.conn as unknown as Parameters<typeof startDevelopment>[1],
       msg,
     )
-    expect(failed.sent[0]?.error).toMatchObject({ code: 'intent.worktreeCreateFailed' })
+    // The worktree-create error follows the `preparing-workspace` progress event
+    // (progress is emitted just before the worktree phase), so find it by code.
+    const failedErr = failed.sent.find((m: Record<string, unknown>) => m.type === 'error')
+    expect(failedErr?.error).toMatchObject({ code: 'intent.worktreeCreateFailed' })
 
     const retry = makeConn()
     await startDevelopment(
@@ -482,7 +485,105 @@ describe('startDevelopment — manual start dep merge validation', () => {
     )
 
     expect(ctx.launchRun).toHaveBeenCalledTimes(1)
-    expect(retry.sent).toHaveLength(0)
+    // The successful retry emits progress, not an error.
+    expect(retry.sent.some((m: Record<string, unknown>) => m.type === 'error')).toBe(false)
+  })
+})
+
+// =============================================================================
+// startDevelopment — startup progress events (dev_launch_progress)
+// =============================================================================
+
+describe('startDevelopment — startup progress events', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDevLinksForTests()
+    vi.mocked(readBranch).mockReturnValue('main')
+  })
+
+  function makeConn() {
+    const sent: Record<string, unknown>[] = []
+    const conn = { send: (msg: unknown) => sent.push(msg as Record<string, unknown>) }
+    return { sent, conn }
+  }
+
+  const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+
+  const progressStages = (sent: Record<string, unknown>[]): string[] =>
+    sent.filter((m) => m.type === 'dev_launch_progress').map((m) => m.stage as string)
+
+  const run = (
+    ctx: { launchRun: ReturnType<typeof vi.fn> },
+    conn: ReturnType<typeof makeConn>['conn'],
+  ): Promise<void> =>
+    Promise.resolve(
+      startDevelopment(
+        ctx as unknown as Parameters<typeof startDevelopment>[0],
+        conn as unknown as Parameters<typeof startDevelopment>[1],
+        { type: 'start_development', workspaceId: 'test-proj', intentId: 'B' },
+      ),
+    )
+
+  it('worktree: emits preparing-workspace then launching', async () => {
+    const req = makeIntent({ id: 'B', title: 'Child B' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-B', branchName: 'intent/B' })
+
+    const { sent, conn } = makeConn()
+    const ctx = { launchRun: vi.fn(() => Promise.resolve()) }
+    await run(ctx, conn)
+
+    expect(progressStages(sent)).toEqual(['preparing-workspace', 'launching'])
+  })
+
+  it('current-branch: emits preparing-workspace then launching', async () => {
+    const req = makeIntent({ id: 'B', title: 'Child B' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('main')
+
+    const { sent, conn } = makeConn()
+    const ctx = { launchRun: vi.fn(() => Promise.resolve()) }
+    await run(ctx, conn)
+
+    expect(progressStages(sent)).toEqual(['preparing-workspace', 'launching'])
+  })
+
+  it('emits failed when the async launch rejects (previously silent)', async () => {
+    const req = makeIntent({ id: 'B', title: 'Child B' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('main')
+
+    const { sent, conn } = makeConn()
+    const ctx = { launchRun: vi.fn(() => Promise.reject(new Error('spawn failed'))) }
+    await run(ctx, conn)
+    await flush()
+
+    expect(progressStages(sent)).toEqual(['preparing-workspace', 'launching', 'failed'])
+  })
+
+  it('synchronous validation failure emits only error, no progress', async () => {
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    // Unknown intent → notFound, rejected before any slow phase.
+    vi.mocked(getIntent).mockReturnValue(null)
+    vi.mocked(listIntents).mockReturnValue([])
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+
+    const { sent, conn } = makeConn()
+    const ctx = { launchRun: vi.fn(() => Promise.resolve()) }
+    await run(ctx, conn)
+
+    expect(progressStages(sent)).toEqual([])
+    expect(sent.some((m) => m.type === 'error')).toBe(true)
+    expect(ctx.launchRun).not.toHaveBeenCalled()
   })
 })
 

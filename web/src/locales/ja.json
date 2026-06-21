@@ -598,6 +598,16 @@
     "startDev": {
       "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも開発を開始しますか?"
     },
+    "devLaunch": {
+      "title": "開発を起動しています…",
+      "step": {
+        "prepareWorkspace": "コードワークスペースを準備",
+        "launchSession": "開発セッションを起動",
+        "enterSession": "セッションに入る"
+      },
+      "failed": "開発の起動に失敗しました。",
+      "timeout": "開発の起動を確認できませんでした。もう一度お試しください。"
+    },
     "chat": {
       "title": {
         "label": "意図チャット"

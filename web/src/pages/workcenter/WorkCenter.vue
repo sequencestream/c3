@@ -30,11 +30,10 @@ const emit = defineEmits<{
 
 // ---- Status filter ----
 
-type FilterValue = 'all' | WaitUserInvolveStatus
-const activeFilter = ref<FilterValue>('all')
+type FilterValue = WaitUserInvolveStatus
+const activeFilter = ref<FilterValue>('todo')
 
 const FILTERS: { key: FilterValue; labelKey: string }[] = [
-  { key: 'all', labelKey: 'workcenter.filter.all' },
   { key: 'todo', labelKey: 'workcenter.filter.todo' },
   { key: 'done', labelKey: 'workcenter.filter.done' },
   { key: 'canceled', labelKey: 'workcenter.filter.canceled' },
@@ -42,7 +41,6 @@ const FILTERS: { key: FilterValue; labelKey: string }[] = [
 ]
 
 const filteredEvents = computed(() => {
-  if (activeFilter.value === 'all') return props.events
   return props.events.filter((e) => e.status === activeFilter.value)
 })
 

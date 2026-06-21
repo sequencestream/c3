@@ -1918,7 +1918,6 @@
     "title": "Workcenter",
     "toolInput": "Tool Input",
     "filter": {
-      "all": "All",
       "todo": "Todo",
       "done": "Done",
       "canceled": "Canceled",

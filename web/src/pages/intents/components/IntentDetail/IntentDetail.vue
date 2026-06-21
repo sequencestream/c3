@@ -1,3 +1,20 @@
+<script lang="ts">
+// 防误审门:记录每个意图在本次会话内点击「编写 Spec」的时刻(毫秒)。
+// 故意放在模块作用域而非组件实例,使组件重挂载 / 重选意图后 10 秒窗口仍存活,
+// 避免「重新进入页面或状态刷新」绕过延迟展示约束。条目只增不减(规模极小)。
+const writeSpecTriggeredAt = new Map<string, number>()
+
+// 点「编写 Spec」后约 1 秒自动切到 spec session Tab。
+const SWITCH_SPEC_TAB_MS = 1000
+// 「审核 Spec」状态主按钮从编写触发起延迟展示的窗口。
+const APPROVE_GATE_MS = 10000
+
+// 仅供单测重置模块级门状态,隔离用例之间的污染;生产代码不调用。
+export function __resetWriteSpecGuards(): void {
+  writeSpecTriggeredAt.clear()
+}
+</script>
+
 <script setup lang="ts">
 /*
  * IntentDetail.vue — 需求页右栏:选中意图的详情面板(常驻头部 + 四 tab)。
@@ -13,7 +30,7 @@
  * 聊天列绑定到全局活动会话;activeSession 与期望 id 一致时才渲染,避免串台。
  * 列表为空(无选中意图)时渲染空态。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { DepType, Intent, IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
 import type {
   PromptImage,
@@ -223,6 +240,67 @@ const mainActionLabel = computed<string>(() => {
   }
 })
 
+// ── 防误审门 + 自动切 Tab 定时器 ───────────────────────────────────────────
+// gateTick 仅作 approveGateBlocked 的响应式触发源:到点的定时器自增它,强制重算。
+const gateTick = ref(0)
+let approveGateTimer: ReturnType<typeof setTimeout> | null = null
+let switchSpecTabTimer: ReturnType<typeof setTimeout> | null = null
+
+// 当前主按钮处于 approveSpec 态、且本会话点过该意图的「编写 Spec」、且距触发不足
+// 10 秒时为 true → 隐藏主按钮(审核入口此窗口内不可见)。不依赖 specPath 出现先后:
+// 本会话未点编写的意图不武装门,approveSpec 照常立即可见。
+const approveGateBlocked = computed<boolean>(() => {
+  void gateTick.value
+  const r = props.intent
+  if (!r || mainAction.value !== 'approveSpec') return false
+  const at = writeSpecTriggeredAt.get(r.id)
+  if (at === undefined) return false
+  return Date.now() - at < APPROVE_GATE_MS
+})
+
+function clearApproveGateTimer(): void {
+  if (approveGateTimer !== null) {
+    clearTimeout(approveGateTimer)
+    approveGateTimer = null
+  }
+}
+
+function clearSwitchSpecTabTimer(): void {
+  if (switchSpecTabTimer !== null) {
+    clearTimeout(switchSpecTabTimer)
+    switchSpecTabTimer = null
+  }
+}
+
+// 为当前意图的防误审门排程一个「剩余时间」定时器,到点放行(自增 gateTick 触发重算)。
+function scheduleApproveGate(): void {
+  clearApproveGateTimer()
+  const r = props.intent
+  if (!r) return
+  const at = writeSpecTriggeredAt.get(r.id)
+  if (at === undefined) return
+  const remaining = APPROVE_GATE_MS - (Date.now() - at)
+  if (remaining <= 0) return
+  approveGateTimer = setTimeout(() => {
+    approveGateTimer = null
+    gateTick.value++
+  }, remaining)
+}
+
+// 意图切换或 specPath 回填(mainAction 变化)时重排门定时器;immediate 覆盖挂载/重挂载。
+watch(
+  () => [props.intent?.id, mainAction.value] as const,
+  () => {
+    scheduleApproveGate()
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  clearApproveGateTimer()
+  clearSwitchSpecTabTimer()
+})
+
 const showCreatePr = computed<boolean>(() => {
   const r = props.intent
   const branchName = normalizeBranchName(r?.branchName)
@@ -240,6 +318,16 @@ function onMainAction(): void {
   if (!r) return
   if (mainAction.value === 'writeSpec') {
     emit('write-spec', r.id)
+    // 武装防误审门(以触发时刻锚定),并约 1 秒后自动切到 spec session Tab。
+    writeSpecTriggeredAt.set(r.id, Date.now())
+    scheduleApproveGate()
+    clearSwitchSpecTabTimer()
+    const triggeredId = r.id
+    switchSpecTabTimer = setTimeout(() => {
+      switchSpecTabTimer = null
+      // 仅当触发时的意图仍是当前选中意图时才切,用户已切走则不抢回。
+      if (props.intent?.id === triggeredId) selectTab('specSession')
+    }, SWITCH_SPEC_TAB_MS)
     return
   }
   if (mainAction.value === 'approveSpec') {
@@ -266,6 +354,9 @@ watch(
   () => {
     activeTab.value = 'intent'
     startDevInFlight.value = false
+    // 切走意图:取消挂起的自动切 Tab,避免切到别的意图后误切。门定时器由上方
+    // [intent.id, mainAction] watch 负责重排。
+    clearSwitchSpecTabTimer()
   },
 )
 
@@ -367,9 +458,11 @@ defineExpose({
                 {{ t('intent.action.refine.label') }}
               </button>
               <button
-                v-if="intent.status === 'todo'"
+                v-if="intent.status === 'todo' && !approveGateBlocked"
                 class="req-btn primary"
                 :data-action="mainAction"
+                :aria-label="mainActionLabel"
+                :title="mainActionLabel"
                 :disabled="mainAction === 'startDev' && startDevInFlight"
                 @click="onMainAction"
               >
@@ -803,5 +896,13 @@ defineExpose({
   min-height: 0;
   overflow-y: auto;
   padding: var(--sp-3);
+}
+
+/* 主按钮两态语义色:writeSpec 维持主色蓝(生成动作),approveSpec 改用成功色
+ * (审核放行)以与编写明确区分;白字保证对比度,data-action 为稳定可访问锚点。 */
+.intent-detail-actions .req-btn.primary[data-action='approveSpec'] {
+  background: var(--c-success);
+  border-color: var(--c-success);
+  color: #fff;
 }
 </style>

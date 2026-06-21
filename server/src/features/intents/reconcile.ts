@@ -16,13 +16,17 @@
  * registry, disk transcripts, AI judge, git, store) flows through the injected
  * {@link ReconcileDeps} object.
  */
-import type { Intent, IntentRunStatus, IntentStatus } from '@ccc/shared/protocol'
+import type { GitBranchMode, Intent, IntentRunStatus, IntentStatus } from '@ccc/shared/protocol'
 import type { JudgeEvidence, JudgeVerdict } from './judge.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
 
 export interface ReconcileDeps {
   /** Whether a session currently has a turn executing in the background. */
   isRunning: (sessionId: string) => boolean
+  /** Resolve the workspace's branch mode for per-intent working-directory selection. */
+  getGitBranchMode: (workspacePath: string) => GitBranchMode
+  /** Resolve the deterministic worktree path for an intent. */
+  getWorktreePath: (workspacePath: string, intentId: string) => string
   /**
    * Load the last N assistant messages from a session's on-disk transcript.
    * Returns an array of plain-text assistant replies, most-recent first.
@@ -74,6 +78,11 @@ export async function reconcileInProgress(
   const results: ReconcileItem[] = []
 
   for (const req of inProgressReqs) {
+    const cwd =
+      deps.getGitBranchMode(workspacePath) === 'worktree'
+        ? deps.getWorktreePath(workspacePath, req.id)
+        : workspacePath
+
     // Branch 1: process still running → tracking.
     if (req.lastDevSessionId && deps.isRunning(req.lastDevSessionId)) {
       results.push({ intentId: req.id, runStatus: 'running', autoCompleted: false })
@@ -87,7 +96,7 @@ export async function reconcileInProgress(
 
     if (req.lastDevSessionId) {
       try {
-        const messages = await deps.loadTranscriptMessages(workspacePath, req.lastDevSessionId, 3)
+        const messages = await deps.loadTranscriptMessages(cwd, req.lastDevSessionId, 3)
         // Judge with only the assistant messages (no git evidence — the process
         // is already dead and the working tree may be in any state; the judge
         // will decide from the messages alone).
@@ -95,13 +104,13 @@ export async function reconcileInProgress(
           req,
           lastMessages: messages,
           evidence: { diffStat: '', recentLog: '' },
-          cwd: workspacePath,
+          cwd,
           signal,
         })
 
         if (verdict.verdict === 'done' && !signal.aborted) {
           // Auto-complete: commit & push, then mark done.
-          const res = await deps.commitAndPush(workspacePath, `feat: ${req.title}`)
+          const res = await deps.commitAndPush(cwd, `feat: ${req.title}`)
           if (res.ok) {
             deps.updateStatus(req.id, 'done')
             publishIntentStatusTransition(workspacePath, req, req.status, 'done')

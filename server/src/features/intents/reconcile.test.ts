@@ -48,6 +48,8 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
 function mockDeps(overrides: Partial<ReconcileDeps> = {}): ReconcileDeps {
   return {
     isRunning: () => false,
+    getGitBranchMode: () => 'current-branch',
+    getWorktreePath: (_workspacePath, intentId) => `/abs/worktrees/intent-${intentId}`,
     loadTranscriptMessages: async () => [],
     judgeCompletion: async () => ({ verdict: 'in_progress', reason: '默认' }),
     commitAndPush: async () => ({ ok: true, committed: false }),
@@ -127,6 +129,69 @@ describe('reconcileInProgress', () => {
       // updateStatus was called with done
       expect(updateSpy).toHaveBeenCalledTimes(1)
       expect(updateSpy).toHaveBeenCalledWith(req.id, 'done')
+    })
+
+    it('uses the intent worktree for transcript, judge, and commit when the process is dead', async () => {
+      const req = makeReq({ id: 'worktree-intent', lastDevSessionId: 'sess-dead' })
+      const worktreePath = '/abs/worktrees/intent-worktree-intent'
+      const loadSpy = vi.fn().mockResolvedValue(['已完成所有任务'])
+      const judgeSpy = vi.fn().mockResolvedValue({ verdict: 'done', reason: '实现完整' })
+      const commitSpy = vi.fn().mockResolvedValue({ ok: true, committed: true })
+      const updateSpy = vi.fn()
+
+      const results = await reconcileInProgress(
+        [req],
+        PROJECT,
+        mockDeps({
+          getGitBranchMode: vi.fn(() => 'worktree' as const),
+          getWorktreePath: vi.fn(() => worktreePath),
+          loadTranscriptMessages: loadSpy,
+          judgeCompletion: judgeSpy,
+          commitAndPush: commitSpy,
+          updateStatus: updateSpy,
+        }),
+        SIGNAL,
+      )
+
+      expect(results).toEqual([{ intentId: req.id, runStatus: 'idle', autoCompleted: true }])
+      expect(loadSpy).toHaveBeenCalledWith(worktreePath, 'sess-dead', 3)
+      expect(judgeSpy).toHaveBeenCalledWith({
+        req,
+        lastMessages: ['已完成所有任务'],
+        evidence: { diffStat: '', recentLog: '' },
+        cwd: worktreePath,
+        signal: SIGNAL,
+      })
+      expect(commitSpy).toHaveBeenCalledWith(worktreePath, `feat: ${req.title}`)
+      expect(updateSpy).toHaveBeenCalledWith(req.id, 'done')
+    })
+
+    it('keeps the workspace root for transcript, judge, and commit in current-branch mode', async () => {
+      const req = makeReq({ id: 'current-branch-intent', lastDevSessionId: 'sess-dead' })
+      const loadSpy = vi.fn().mockResolvedValue(['已完成所有任务'])
+      const judgeSpy = vi.fn().mockResolvedValue({ verdict: 'done', reason: '实现完整' })
+      const commitSpy = vi.fn().mockResolvedValue({ ok: true, committed: true })
+      const getWorktreePath = vi.fn()
+
+      await reconcileInProgress(
+        [req],
+        PROJECT,
+        mockDeps({
+          getGitBranchMode: vi.fn(() => 'current-branch' as const),
+          getWorktreePath,
+          loadTranscriptMessages: loadSpy,
+          judgeCompletion: judgeSpy,
+          commitAndPush: commitSpy,
+        }),
+        SIGNAL,
+      )
+
+      expect(getWorktreePath).not.toHaveBeenCalled()
+      expect(loadSpy).toHaveBeenCalledWith(PROJECT, 'sess-dead', 3)
+      expect(judgeSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: PROJECT, evidence: { diffStat: '', recentLog: '' } }),
+      )
+      expect(commitSpy).toHaveBeenCalledWith(PROJECT, `feat: ${req.title}`)
     })
 
     it('does NOT auto-complete when commit/push fails (keeps dangling)', async () => {

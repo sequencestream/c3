@@ -82,6 +82,10 @@ import { clearPendingSpecLink, takePendingSpecLink } from '../features/intents/s
 import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
 import { isIntentDrivenByAutomation, notifyTurnSettled } from '../features/intents/automation.js'
 import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
+import {
+  publishIntentLifecycle,
+  publishIntentStatusTransition,
+} from '../features/intents/lifecycle-events.js'
 import { getWorktreePath } from '../features/intents/worktree.js'
 import { getDefaultMainBranch, getGitBranchMode } from '../kernel/config/index.js'
 import {
@@ -224,8 +228,10 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
         // Calling getIntent to check is safe but ultimately `updateStatus`
         // is the idempotent operation: setting to the same value just
         // bumps updated_at.
-        if (getIntent(intentId)?.status !== 'in_progress') {
+        const intent = getIntent(intentId)
+        if (intent && intent.status !== 'in_progress') {
           updateStatus(intentId, 'in_progress')
+          publishIntentStatusTransition(rt.workspacePath, intent, intent.status, 'in_progress')
         }
         broadcastIntents(rt.workspacePath)
       }
@@ -279,9 +285,16 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     // manual Start-Dev session, so run the session-end Git/PR cleanup for it.
     // Fire-and-forget — must not block the run:settled handler.
     if (!isIntentDrivenByAutomation(workspacePath, matched.id)) {
-      void runManualDevCleanup(matched.id, workspacePath, cleanupDeps).catch((err) => {
-        console.error('[c3:intent-cleanup] manual dev cleanup failed:', err)
-      })
+      void runManualDevCleanup(matched.id, workspacePath, cleanupDeps)
+        .then((outcome) => {
+          if (outcome.kind === 'failed') {
+            const intent = getIntent(matched.id)
+            if (intent) publishIntentLifecycle(workspacePath, intent, 'failed')
+          }
+        })
+        .catch((err) => {
+          console.error('[c3:intent-cleanup] manual dev cleanup failed:', err)
+        })
     }
 
     // Forward to the automation controller (no-op if automation is idle).

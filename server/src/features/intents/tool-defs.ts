@@ -16,6 +16,7 @@ import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { IntentStatus } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
+import { publishIntentLifecycle } from './lifecycle-events.js'
 import { findIntents, getIntent, isStoreAvailable, upsertIntents } from './store.js'
 
 const INTENT_STATUSES = [
@@ -159,6 +160,11 @@ export function runSaveConfirmed(
     const updated = args.intents.filter((it) => it.id !== undefined).length
     const created = args.intents.length - updated
     const saved = upsertIntents(workspacePath, args.intents)
+    for (const [index, input] of args.intents.entries()) {
+      if (input.id === undefined && saved[index]) {
+        publishIntentLifecycle(workspacePath, saved[index], 'created')
+      }
+    }
     onSaved(workspacePath)
     const summary =
       updated > 0

@@ -18,6 +18,8 @@ import { isValidScheduleMaxWallClockMs } from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   CreateScheduleInput,
+  IntentLifecycleFilter,
+  IntentLifecyclePhase,
   ModeToken,
   PrOperation,
   PrOperationFilter,
@@ -33,7 +35,7 @@ import type {
   VendorId,
   WorkspaceMcpConfig,
 } from '@ccc/shared/protocol'
-import { PR_OPERATIONS, PR_OPERATION_RESULTS } from '@ccc/shared/protocol'
+import { INTENT_LIFECYCLE_PHASES, PR_OPERATIONS, PR_OPERATION_RESULTS } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { getTimezone } from '../../kernel/config/index.js'
@@ -63,7 +65,7 @@ export interface ScheduleNameOverride {
 }
 
 const AGENT_RECOVERY_ACTION = 'agent_quota_recovery'
-const SCHEMA_VERSION = 8
+const SCHEMA_VERSION = 9
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schedules (
@@ -78,6 +80,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   event_topic         TEXT,
   event_reason_filter TEXT,
   event_pr_filter     TEXT,
+  event_intent_filter TEXT,
   status              TEXT NOT NULL,
   mode                TEXT NOT NULL DEFAULT '',
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',
@@ -203,6 +206,9 @@ function runMigrations(d: Db): void {
   if (!columnExists(d, 'schedules', 'event_pr_filter')) {
     d.exec(`ALTER TABLE schedules ADD COLUMN event_pr_filter TEXT`)
   }
+  if (!columnExists(d, 'schedules', 'event_intent_filter')) {
+    d.exec(`ALTER TABLE schedules ADD COLUMN event_intent_filter TEXT`)
+  }
 }
 
 let schemaReady = false
@@ -266,6 +272,7 @@ interface ScheduleRow {
   event_topic: string | null
   event_reason_filter: string | null
   event_pr_filter: string | null
+  event_intent_filter: string | null
   status: string
   mode: string
   tool_allowlist: string
@@ -371,6 +378,25 @@ function serializePrFilter(filter: PrOperationFilter | null | undefined): string
   })
 }
 
+function parseIntentFilter(raw: string | null): IntentLifecycleFilter | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as { phases?: unknown }
+    const phases = Array.isArray(parsed.phases)
+      ? parsed.phases.filter((phase): phase is IntentLifecyclePhase =>
+          INTENT_LIFECYCLE_PHASES.includes(phase as IntentLifecyclePhase),
+        )
+      : []
+    return phases.length ? { phases } : null
+  } catch {
+    return null
+  }
+}
+
+function serializeIntentFilter(filter: IntentLifecycleFilter | null | undefined): string | null {
+  return filter?.phases?.length ? JSON.stringify({ phases: filter.phases }) : null
+}
+
 function toSchedule(r: ScheduleRow): Schedule {
   let config: unknown = {}
   try {
@@ -390,6 +416,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     eventTopic: (r.event_topic as ScheduleEventTopic | null) ?? null,
     eventReasonFilter: parseReasonFilter(r.event_reason_filter),
     eventPrFilter: parsePrFilter(r.event_pr_filter),
+    eventIntentFilter: parseIntentFilter(r.event_intent_filter),
     status: r.status as ScheduleStatus,
     mode: parseMode(r.mode),
     toolAllowlist: parseStringList(r.tool_allowlist),
@@ -547,10 +574,14 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
   // rows store NULL (= any).
   const eventPrFilter =
     isEvent && eventTopic === 'pr:operation' ? serializePrFilter(input.eventPrFilter) : null
+  const eventIntentFilter =
+    isEvent && eventTopic === 'intent:lifecycle'
+      ? serializeIntentFilter(input.eventIntentFilter)
+      : null
   d.run(
     `INSERT INTO schedules
-       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, event_pr_filter, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, event_pr_filter, event_intent_filter, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
     JSON.stringify(config),
@@ -562,6 +593,7 @@ export function createSchedule(input: CreateScheduleInput, generatedName?: strin
     eventTopic,
     eventReasonFilter,
     eventPrFilter,
+    eventIntentFilter,
     'active',
     serializeMode(input.mode),
     JSON.stringify(allowlist),
@@ -677,6 +709,8 @@ export function updateSchedule(
       params.push(null)
       sets.push('event_pr_filter=?')
       params.push(null)
+      sets.push('event_intent_filter=?')
+      params.push(null)
     }
   }
   if (patch.cronExpression !== undefined) {
@@ -706,6 +740,10 @@ export function updateSchedule(
   if (patch.eventPrFilter !== undefined) {
     sets.push('event_pr_filter=?')
     params.push(serializePrFilter(patch.eventPrFilter))
+  }
+  if (patch.eventIntentFilter !== undefined) {
+    sets.push('event_intent_filter=?')
+    params.push(serializeIntentFilter(patch.eventIntentFilter))
   }
   if (patch.mode !== undefined) {
     sets.push('mode=?')

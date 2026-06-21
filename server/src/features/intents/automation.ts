@@ -42,6 +42,7 @@ import {
   updateStatus,
 } from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
+import { publishIntentLifecycle, publishIntentStatusTransition } from './lifecycle-events.js'
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
@@ -286,7 +287,11 @@ class AutomationController {
    */
   private markInProgress(reqId: string, sessionId: string): void {
     setLastDevSession(reqId, sessionId)
-    if (getIntent(reqId)?.status !== 'in_progress') updateStatus(reqId, 'in_progress')
+    const req = getIntent(reqId)
+    if (req?.status !== 'in_progress') {
+      updateStatus(reqId, 'in_progress')
+      if (req) publishIntentStatusTransition(this.workspacePath, req, req.status, 'in_progress')
+    }
     this.status.currentSessionId = sessionId
     this.hooks.broadcastIntents(this.workspacePath)
     this.emit()
@@ -294,10 +299,12 @@ class AutomationController {
 
   private fail(reason: string): void {
     console.warn(`[c3:automation] 停止 (${this.workspacePath}): ${reason}`)
+    const req = this.status.currentIntentId ? getIntent(this.status.currentIntentId) : null
     this.status.state = 'error'
     this.status.error = reason
     this.status.currentIntentId = null
     this.status.currentSessionId = null
+    if (req) publishIntentLifecycle(this.workspacePath, req, 'failed')
     this._processing = false
     this.emit()
   }
@@ -692,6 +699,7 @@ class AutomationController {
           await this._maybeCreatePr(req)
 
           updateStatus(req.id, 'done')
+          publishIntentStatusTransition(this.workspacePath, req, req.status, 'done')
           this.status.completedIds.push(req.id)
           this.hooks.broadcastIntents(this.workspacePath)
           console.log(`[c3:automation]「${req.title}」已完成 → done`)
@@ -781,6 +789,7 @@ class AutomationController {
         await this._maybeCreatePr(fixReq)
 
         updateStatus(fixReq.id, 'done')
+        publishIntentStatusTransition(this.workspacePath, fixReq, fixReq.status, 'done')
         this.status.completedIds.push(fixReq.id)
         this.hooks.broadcastIntents(this.workspacePath)
         console.log(`[c3:automation]「${fixReq.title}」已完成 → done (lint 修复后提交)`)

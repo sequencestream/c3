@@ -78,6 +78,7 @@ export function startSchedulerWiring(deps: {
   // Bridge model-published PR operation events → event-triggered schedules
   // (2026-06-20). Same resident, never-disposed subscription as the run topics.
   eventBus.subscribe('pr:operation', (e) => dispatchEventSchedules('pr:operation', e))
+  eventBus.subscribe('intent:lifecycle', (e) => dispatchEventSchedules('intent:lifecycle', e))
   startScheduler()
 }
 

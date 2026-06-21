@@ -34,6 +34,7 @@ import {
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, getUiLang, setOnPendingIntentLookup } from './kernel/config/index.js'
 import { setAutomationHooks } from './features/intents/automation.js'
+import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
 import { createIntentMcpServer } from './features/intents/save-tool.js'
@@ -414,6 +415,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   //    explicitly. The intent profile is wired HERE so the kernel
   //    launcher stays features-free (ADR-0009 R1).
   const eventBus = new EventBus()
+  setIntentLifecycleEventBus(eventBus)
 
   // Vendor-neutral PR operation events (2026-06-20). The model performs PR
   // operations with its OWN tools, then calls `publish_pr_event` to publish ONE

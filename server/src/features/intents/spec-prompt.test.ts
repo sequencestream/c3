@@ -13,8 +13,19 @@ describe('buildSpecAgentPrompt', () => {
     const prompt = buildSpecAgentPrompt('en')
 
     expect(prompt).toContain('For a simple change')
+    expect(prompt).toContain('Behavior and boundaries')
     expect(prompt).toContain('Target 8–20 lines')
-    expect(prompt).toContain('Do not add background, repeated requirements, alternatives')
+    expect(prompt).toContain('Do not add background, repeated requirements, implementation steps')
+  })
+
+  it('keeps implementation detail out of the review body', () => {
+    const prompt = buildSpecAgentPrompt('en')
+
+    expect(prompt).toContain('do not list source paths, symbols, or step-by-step code edits')
+    expect(prompt).toContain(
+      'A reviewer must be able to approve or reject it without opening the codebase',
+    )
+    expect(prompt).toContain('Do not add an implementation appendix by default')
   })
 
   it('reserves migration and trade-off detail for complex changes', () => {

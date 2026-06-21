@@ -67,14 +67,17 @@ flowchart TD
    (the **absolute** centralized location) immediately, so the spec exists even if the run fails.
    Content positioning: the **user is the first reader** and the development agent the second. The
    intent already carries the requirements (Why / What / Acceptance / Non-goals), so the spec does
-   **not** restate them — it is a concise, **grounded design/solution document** that first states
-   the change, impact, and verification. Its structure follows the real codebase impact, not the
-   request length: a focused single-surface change without contract, data, migration, security, or
-   cross-domain impact is limited to change summary, implementation notes, and concrete verification
-   (normally 8–20 lines); normal changes add only relevant approach, surfaces, and boundaries;
-   contract/data/migration/security/cross-domain changes also record trade-offs, compatibility, and
-   failure handling. Empty headings and generic prose are forbidden. A non-governance per-change
-   spec may name concrete modules / files / contracts, and is written in the console display language.
+   **not** restate them — it is a concise, review-oriented document that first states the observable
+   change, its boundaries, the decisions requiring confidence, and verification. A reviewer must be
+   able to approve or reject it without reading the codebase. Its structure follows the real impact,
+   not the request length: a focused single-surface change without contract, data, migration,
+   security, or cross-domain impact is limited to change summary, behavior and boundaries, and
+   concrete verification (normally 8–20 lines); normal changes add only relevant approach,
+   capabilities/contracts, and boundaries; contract/data/migration/security/cross-domain changes
+   also record trade-offs, compatibility, and failure handling. Empty headings and generic prose are
+   forbidden. The spec describes capabilities and contracts in domain language — it does not list
+   source paths, symbols, or per-file edits. A short implementation handoff may follow verification
+   only when necessary, describing technical boundaries and sequencing without code identifiers.
 2. **intent-management → agent-session.** A **write-confined spec session** is launched on the
    configured spec agent (`specAgentId`). Its sole job is to **write the spec, not change code**:
    writes are limited to the spec directory (any other project path is denied; the rest is

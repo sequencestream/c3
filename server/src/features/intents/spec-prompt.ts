@@ -26,21 +26,21 @@ Hard rules (enforced by the system; do not attempt to circumvent):
 
 What this spec is FOR (and what it is NOT):
 - The **intent already carries the requirements** — Why, What, Non-goals, and an acceptance checklist. **Do NOT restate the intent.** Re-copying its Why/What/scope wastes the reader's time and drifts out of sync.
-- This spec's value is the layer the intent cannot reach: **grounding the change against the REAL codebase and laying out the solution.** You have read access to the whole project — use it. So you SHOULD, where it adds signal, name the actual modules / files / contracts / data shapes the change touches. (This is a per-change working spec, not a project-governance doc — concrete is good; just describe the approach, don't paste large blocks of finished implementation code.)
+- This spec's value is the layer the intent cannot reach: making the **behavioral change, its boundaries, and its key decisions** reviewable against the real codebase. Use your codebase access to validate the proposal, but do not turn the document into a per-file implementation checklist. Describe affected capabilities, user flows, and external contracts in domain language; do not list source paths, symbols, or step-by-step code edits.
 
-The spec's first reader is the user; its second reader is the development agent. Optimize for fast human review: state what changes, what is affected, and how it will be verified before implementation detail. Use short paragraphs and concrete bullets; use a table only when it makes a comparison clearer. Write the document itself in ${UI_LANG_NAMES[uiLang]}.
+The spec's first reader is the user; its second reader is the development agent. Optimize for fast human review: state what changes, its boundaries, the decisions requiring confidence, and how it will be verified. A reviewer must be able to approve or reject it without opening the codebase. Use short paragraphs and concrete bullets; use a table only when it makes a comparison clearer. Write the document itself in ${UI_LANG_NAMES[uiLang]}.
 
 Before writing, assess the change by its real codebase impact, not by the length of the intent. Choose the smallest structure that fully explains the decision. Do not announce the complexity level.
 
 For a simple change — one focused behavior or surface, no public contract, persisted-data, migration, security, or cross-domain impact — write only:
-- **Change summary** — 2–4 sentences describing the codebase-grounded change.
-- **Implementation notes** — affected files or surfaces and the intended change.
+- **Change summary** — 2–4 sentences describing the user- or system-observable change and what remains unchanged.
+- **Behavior and boundaries** — the affected capability, key rules, and non-goals that need review.
 - **Verification** — concrete checks or tests.
-Target 8–20 lines. Do not add background, repeated requirements, alternatives, edge-case sections, or generic test prose unless they add a decision the reader needs.
+Target 8–20 lines. Do not add background, repeated requirements, implementation steps, alternatives, edge-case sections, or generic test prose unless they add a decision the reader needs.
 
 For a normal change, add only sections that carry new information:
 - **Approach**
-- **Affected surfaces / contracts**
+- **Affected capabilities / contracts**
 - **Important boundaries**
 - **Verification**
 
@@ -50,6 +50,8 @@ For a complex or high-risk change — public contract or data-model changes, mig
 - **Risks and failure handling**
 
 Never create a heading with no substantive content. Never repeat Why, What, Non-goals, or acceptance items already recorded in the intent. Refer to the intent when needed. Only restate an acceptance item when turning it into a codebase-specific, observable verification condition.
+
+Do not add an implementation appendix by default. When a code-level handoff is genuinely necessary after approval, state only the technical boundaries and sequencing in a short optional **Implementation handoff** section after Verification; it must not be a per-file list or contain source paths or symbols. The development agent can inspect the codebase when implementation begins.
 
 Before you finish, self-check that the spec is: **Consistent** (does not contradict existing project specs / conventions), **Verifiable** (every acceptance criterion is testable), and **Traceable** (clearly tied to its intent). When the intent is ambiguous, use AskUserQuestion to confirm with the user — do not guess.
 

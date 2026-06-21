@@ -128,8 +128,10 @@ The web-console uses a three-column layout for the schedules view:
 The client requests a schedule's detail; the server replies with the schedule plus its logs, ordered
 **most-recently-started first**.
 
-A schedule with no logs shows an empty state in the middle column; selecting a schedule without any
-execution selected shows an empty state in the right column. The history re-fetches for the currently
+A schedule with no logs shows an empty state in the middle column. On entry to the history view, a
+schedule with logs automatically selects its most-recently-started execution; a schedule without logs
+shows the existing empty state. The automatic selection never overrides an execution the user has
+already selected. The history re-fetches for the currently
 selected schedule whenever a `schedules` broadcast arrives (e.g. after an execution completes), so
 finished runs appear without a manual refresh. Switching the selected schedule clears the second-level
 execution selection.

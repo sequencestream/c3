@@ -144,11 +144,43 @@ describe('ScheduleDetailPanel.vue — 右栏容器', () => {
       expect(w.findComponent({ name: 'ScheduleDetail' }).exists()).toBe(true)
     })
 
-    it('切到历史 Tab:未选执行时显示提示,不渲染 ExecutionDetail', async () => {
+    it('切到历史 Tab:无执行记录时显示提示,不渲染 ExecutionDetail', async () => {
       const w = mountPanel()
       await w.findAll('.sched-panel-tab')[1].trigger('click')
       expect(w.find('.sched-history-empty').exists()).toBe(true)
       expect(w.findComponent({ name: 'ExecutionDetail' }).exists()).toBe(false)
+    })
+
+    it('切到历史 Tab 时自动选择最近一笔执行', async () => {
+      const latest = execLog({ id: 'latest', startedAt: 1_700_000_002_000 })
+      const older = execLog({ id: 'older', startedAt: 1_700_000_001_000 })
+      const w = mountPanel({ logs: [latest, older] })
+
+      await w.findAll('.sched-panel-tab')[1].trigger('click')
+
+      expect(w.emitted('select-execution')).toEqual([['latest']])
+    })
+
+    it('历史 Tab 已打开时，日志到达后自动选择最近一笔执行', async () => {
+      const w = mountPanel()
+      await w.findAll('.sched-panel-tab')[1].trigger('click')
+      expect(w.emitted('select-execution')).toBeUndefined()
+
+      await w.setProps({ logs: [execLog({ id: 'latest' })] })
+
+      expect(w.emitted('select-execution')).toEqual([['latest']])
+    })
+
+    it('历史 Tab 已有选择时不覆盖用户选择', async () => {
+      const w = mountPanel({
+        logs: [execLog({ id: 'latest' }), execLog({ id: 'selected' })],
+        executionId: 'selected',
+        execution: execLog({ id: 'selected' }),
+      })
+
+      await w.findAll('.sched-panel-tab')[1].trigger('click')
+
+      expect(w.emitted('select-execution')).toBeUndefined()
     })
 
     it('历史 Tab 选中执行时渲染 ExecutionDetail', async () => {

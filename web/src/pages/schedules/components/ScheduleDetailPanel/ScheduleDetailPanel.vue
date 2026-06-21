@@ -7,7 +7,7 @@
  *    操作 —— run-now / edit / delete(ConfirmDialog 二次确认) / enable-disable 开关。
  *    操作均作用于当前选中 schedule,emit 契约与原逐行事件一致。
  *  - 「详情」Tab(默认):渲染 ScheduleDetail(vendor / mode / toolAllowlist 读写分类)。
- *  - 「历史」Tab:不常驻列表,经 ExecutionHistoryDialog 选择一次执行后渲染 ExecutionDetail。
+ *  - 「历史」Tab:自动选择最新执行并渲染 ExecutionDetail,也可经 ExecutionHistoryDialog 改选。
  *
  * 切换选中 schedule 时复位到「详情」Tab 并关闭历史弹框;已选执行的清空由控制层
  * onSelectSchedule 负责。数据与 select-execution / load-session 契约不变,无服务端改动。
@@ -106,6 +106,17 @@ const tabs = computed<{ id: SchedTab; label: string }[]>(() => [
 function switchTab(id: SchedTab): void {
   activeTab.value = id
 }
+
+// 进入历史页时默认展示最近一笔记录。日志按 startedAt 倒序，且已有选择不得被覆盖；
+// 同时监听首行变化，以覆盖首次进入时日志尚未到达的异步详情加载。
+watch(
+  () => [activeTab.value, props.executionId, props.logs[0]?.id] as const,
+  ([tab, executionId, latestExecutionId]) => {
+    if (tab === TAB_HISTORY && !executionId && latestExecutionId) {
+      emit('select-execution', latestExecutionId)
+    }
+  },
+)
 
 // ---- 历史选择弹框 ----
 const historyDialogOpen = ref(false)

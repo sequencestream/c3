@@ -361,19 +361,49 @@ watch(
   },
 )
 
-// 切到会话/spec tab 时按需请求服务端打开会话 / 读取 spec。
+// 切到会话/spec tab 时按需读取 spec；会话打开由下方 watch 统一处理，避免
+// 「切 tab 时已有 id」与「id 在激活 tab 下回填」两条路径重复发出 open。
 function selectTab(tab: DetailTab): void {
   activeTab.value = tab
   const r = props.intent
   if (!r) return
-  if (tab === 'intentSession' && r.intentSessionId && props.activeSession !== r.intentSessionId) {
-    emit('open-intent-session', r.intentSessionId)
-  } else if (tab === 'specSession' && r.specSessionId && props.activeSession !== r.specSessionId) {
-    emit('open-spec-session', r.id)
-  } else if (tab === 'spec' && r.specPath) {
+  if (tab === 'spec' && r.specPath) {
     emit('read-spec', r.id, r.specPath)
   }
 }
+
+// 会话 tab 激活期间，sessionId 可能在切 tab 后才由服务端回填。统一监听 tab、
+// 当前意图的两个 id 与活动会话：期望 id 存在但尚未对齐时补发 open；已对齐则不发。
+function openActiveSessionIfNeeded(): void {
+  const r = props.intent
+  if (!r) return
+  if (
+    activeTab.value === 'intentSession' &&
+    r.intentSessionId &&
+    props.activeSession !== r.intentSessionId
+  ) {
+    emit('open-intent-session', r.intentSessionId)
+  } else if (
+    activeTab.value === 'specSession' &&
+    r.specSessionId &&
+    props.activeSession !== r.specSessionId
+  ) {
+    emit('open-spec-session', r.id)
+  }
+}
+
+watch(
+  () =>
+    [
+      activeTab.value,
+      props.intent?.id,
+      props.intent?.intentSessionId,
+      props.intent?.specSessionId,
+      props.activeSession,
+    ] as const,
+  openActiveSessionIfNeeded,
+  { flush: 'sync' },
+)
 
 // 当前会话 tab 期望的会话 id,以及活动会话是否已对齐(对齐才渲染聊天列)。
 const expectedSessionId = computed<string | null>(() => {

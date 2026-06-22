@@ -452,6 +452,20 @@ describe('IntentDetail.vue — tabs', () => {
     expect(w.emitted('open-intent-session')).toEqual([['sess-refine']])
   })
 
+  it('intent session tab: opens automatically when its session id is backfilled after switching', async () => {
+    const item = intent({ id: 'i1', intentSessionId: null })
+    const w = mountDetail(item)
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+    expect(w.emitted('open-intent-session')).toBeUndefined()
+
+    await w.setProps({ intent: { ...item, intentSessionId: 'sess-refine' } })
+    expect(w.emitted('open-intent-session')).toEqual([['sess-refine']])
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(false)
+
+    await w.setProps({ activeSession: 'sess-refine' })
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+  })
+
   it('intent session tab: renders the chat column once the active session aligns', async () => {
     const w = mountDetail(intent({ id: 'i1', intentSessionId: 'sess-refine' }), {
       activeSession: 'sess-refine',
@@ -479,6 +493,29 @@ describe('IntentDetail.vue — tabs', () => {
     const w = mountDetail(intent({ id: 'i1', specSessionId: 'sess-spec' }))
     await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
     expect(w.emitted('open-spec-session')).toEqual([['i1']])
+  })
+
+  it('spec session tab: opens automatically when its session id is backfilled after switching', async () => {
+    const item = intent({ id: 'i1', specSessionId: null })
+    const w = mountDetail(item)
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+    expect(w.emitted('open-spec-session')).toBeUndefined()
+
+    await w.setProps({ intent: { ...item, specSessionId: 'sess-spec' } })
+    expect(w.emitted('open-spec-session')).toEqual([['i1']])
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(false)
+
+    await w.setProps({ activeSession: 'sess-spec' })
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+  })
+
+  it('does not reopen an already aligned session after unrelated intent updates', async () => {
+    const item = intent({ id: 'i1', specSessionId: 'sess-spec' })
+    const w = mountDetail(item, { activeSession: 'sess-spec' })
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+
+    await w.setProps({ intent: { ...item, title: 'Updated title' } })
+    expect(w.emitted('open-spec-session')).toBeUndefined()
   })
 
   it('resets to the intent tab when the selected intent changes', async () => {

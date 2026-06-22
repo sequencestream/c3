@@ -6,7 +6,7 @@
 
 ## Architecture (key decisions)
 
-- **Spec-first, Constitution-governed**: doc/ is source of truth; Constitution (doc/constitution.md) overrides all code — core stack choices are locked, security rules (deny by default, localhost-only) are non-negotiable; any deviation requires an ADR
+- Constitution (doc/constitution.md) overrides all code — core stack choices are locked, security rulesare non-negotiable; any deviation requires an ADR
 - **Single process, WebSocket transport**: browser ↔ server via one WebSocket at /ws (ADR-0002); no database or persistent store allowed; runs are stateful and survive socket close (decoupled via process-wide Map, ADR-0006)
 - **Unidirectional boundaries**: kernel/ (pure domain) → transport/ (plumbing) → features/ (user actions); kernel must not import transport or features (ADR-0009); typed event bus for cross-layer messaging (ADR-0018)
 - **Canonical envelope on wire**: vendor-spanning CanonicalMessage as wire protocol; id-based block upsert (not append-only); opaque c3SessionId never leaks vendor-native IDs (ADR-0013)

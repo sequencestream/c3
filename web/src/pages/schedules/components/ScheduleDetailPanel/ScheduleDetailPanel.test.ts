@@ -87,8 +87,16 @@ describe('ScheduleDetailPanel.vue — 右栏容器', () => {
       expect(w.emitted('run-now')?.[0]).toEqual(['sx'])
     })
 
-    it('run-now 在非 active 时禁用', () => {
+    it('run-now 在 paused 时可用', async () => {
       const w = mountPanel({ schedule: sched({ status: 'paused' }) })
+      const button = w.find('.sp-action--run')
+      expect(button.attributes('disabled')).toBeUndefined()
+      await button.trigger('click')
+      expect(w.emitted('run-now')?.[0]).toEqual(['s1'])
+    })
+
+    it('run-now 在 archived 时禁用', () => {
+      const w = mountPanel({ schedule: sched({ status: 'archived' }) })
       expect(w.find('.sp-action--run').attributes('disabled')).toBeDefined()
     })
 

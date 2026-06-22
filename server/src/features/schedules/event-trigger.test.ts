@@ -34,9 +34,11 @@ import { execute } from './dispatcher.js'
 import {
   cancelInFlight,
   dispatchEventSchedules,
+  hasInFlight,
   setExecutionStore,
   startScheduler,
   stopScheduler,
+  triggerRunNow,
   type ExecutionStore,
 } from './scheduler.js'
 
@@ -357,6 +359,95 @@ describe('scheduler — dispatchEventSchedules', () => {
     dispatchEventSchedules('run:settled', payload)
     expect(appendLog).toHaveBeenCalledTimes(1)
     cancelInFlight('dbnc') // clean up the never-resolving in-flight entry
+  })
+})
+
+describe('scheduler — triggerRunNow', () => {
+  let appendLog: ReturnType<typeof vi.fn>
+  let updateNextRunAt: ReturnType<typeof vi.fn>
+
+  function schedule(over: Partial<Schedule> = {}): Schedule {
+    return {
+      id: 'manual-1',
+      type: 'command',
+      config: { command: 'echo hi', name: 'manual' },
+      maxWallClockMs: null,
+      workspaceId: '/abs/ws-a',
+      triggerType: 'cron',
+      cronExpression: '0 8 * * *',
+      nextRunAt: 1_800_000_000_000,
+      eventTopic: null,
+      eventReasonFilter: null,
+      eventPrFilter: null,
+      status: 'paused',
+      mode: 'sandboxed',
+      toolAllowlist: [],
+      toolDenylist: [],
+      vendor: 'claude',
+      createdAt: 1,
+      updatedAt: 1,
+      ...over,
+    }
+  }
+
+  function install(schedules: Schedule[]): void {
+    setExecutionStore({
+      getDueSchedules: () => [],
+      getEventSchedules: () => [],
+      getSchedule: (id) => schedules.find((item) => item.id === id) ?? null,
+      updateNextRunAt,
+      updateSchedule: vi.fn(),
+      deleteSchedule: vi.fn(),
+      appendExecutionLog: appendLog as unknown as ExecutionStore['appendExecutionLog'],
+      updateExecutionLog: vi.fn(),
+    })
+  }
+
+  beforeEach(() => {
+    vi.mocked(execute).mockReset()
+    vi.mocked(execute).mockResolvedValue(undefined)
+    appendLog = vi.fn(() => ({ id: 'manual-log' }))
+    updateNextRunAt = vi.fn()
+  })
+
+  afterEach(() => {
+    cancelInFlight('manual-1')
+  })
+
+  it('dispatches a paused schedule once without changing its status or nextRunAt', async () => {
+    const paused = schedule()
+    install([paused])
+
+    await triggerRunNow(paused.id)
+
+    expect(appendLog).toHaveBeenCalledOnce()
+    expect(execute).toHaveBeenCalledWith(paused, 'manual-log', expect.any(Function))
+    await vi.waitFor(() => expect(hasInFlight(paused.id)).toBe(false))
+    expect(paused.status).toBe('paused')
+    expect(paused.nextRunAt).toBe(1_800_000_000_000)
+    expect(updateNextRunAt).not.toHaveBeenCalled()
+  })
+
+  it('rejects archived and missing schedules without dispatching', async () => {
+    install([schedule({ status: 'archived' })])
+
+    await triggerRunNow('manual-1')
+    await triggerRunNow('missing')
+
+    expect(appendLog).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('rejects a second manual trigger while the first is in flight', async () => {
+    vi.mocked(execute).mockImplementation(() => new Promise<void>(() => {}))
+    const paused = schedule()
+    install([paused])
+
+    await triggerRunNow(paused.id)
+    await triggerRunNow(paused.id)
+
+    expect(appendLog).toHaveBeenCalledOnce()
+    expect(hasInFlight(paused.id)).toBe(true)
   })
 })
 

@@ -1086,7 +1086,7 @@
       },
       "runNow": {
         "tooltip": "立即执行一次",
-        "disabledTooltip": "请先启用该任务再立即执行"
+        "disabledTooltip": "已归档的任务无法立即执行"
       },
       "toggle": {
         "enabled": {

@@ -2,7 +2,7 @@ import type { IntentStatus } from '@ccc/shared/protocol'
 import {
   beginDevLaunch,
   reduceDevLaunch,
-  DEV_LAUNCH_THRESHOLD_MS,
+  DEV_LAUNCH_MIN_DWELL_MS,
   DEV_LAUNCH_SAFETY_TIMEOUT_MS,
   type DevLaunchEvent,
 } from '@/lib/dev-launch-view'
@@ -17,12 +17,18 @@ export function installIntentActions(ctx: AppCtx): void {
 
   // Fold one event through the overlay reducer, swap in the next model, and run
   // its close side-effects (clear timers + surface a toast on failure/timeout;
-  // success closes silently). Shared by the threshold/safety timers and the
+  // success closes silently). Shared by the dwell/safety timers and the
   // message handler's stage / terminal events.
   ctx.dispatchDevLaunch = (ev: DevLaunchEvent): void => {
     const tr = reduceDevLaunch(ctx.devLaunch.value, ev)
     ctx.devLaunch.value = tr.model
     if (!tr.model) ctx.clearDevLaunchTimers()
+    else if (tr.model.pendingCloseReason && !ctx.devLaunchTimers.dwell) {
+      const dwellRemaining = Math.max(0, tr.model.visibleAt + DEV_LAUNCH_MIN_DWELL_MS - Date.now())
+      ctx.devLaunchTimers.dwell = setTimeout(() => {
+        ctx.dispatchDevLaunch({ kind: 'dwell-complete', now: Date.now() })
+      }, dwellRemaining)
+    }
     if (tr.closedReason === 'failed') ctx.showToast(t('intent.devLaunch.failed'))
     else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.devLaunch.timeout'))
   }
@@ -164,14 +170,11 @@ export function installIntentActions(ctx: AppCtx): void {
       workspaceId: intentsProject.value,
       intentId,
     })
-    // Arm the startup overlay: register the in-flight launch (hidden), reveal it
-    // only if it outlasts the threshold, and guarantee it closes via a safety
-    // timeout if no terminal signal (in_progress / failed) ever arrives.
+    // Arm the immediately-visible startup overlay. A terminal signal arriving
+    // during its minimum dwell is closed by the dwell timer; the safety timeout
+    // still guarantees closure if no terminal signal ever arrives.
     ctx.clearDevLaunchTimers()
     ctx.devLaunch.value = beginDevLaunch(intentId, Date.now())
-    ctx.devLaunchTimers.threshold = setTimeout(() => {
-      ctx.dispatchDevLaunch({ kind: 'tick', now: Date.now() })
-    }, DEV_LAUNCH_THRESHOLD_MS)
     ctx.devLaunchTimers.safety = setTimeout(() => {
       ctx.dispatchDevLaunch({ kind: 'timeout', now: Date.now() })
     }, DEV_LAUNCH_SAFETY_TIMEOUT_MS)

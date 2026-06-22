@@ -410,14 +410,19 @@ export function installMessageHandler(ctx: AppCtx): void {
         // session bound — close the overlay (silently, no toast).
         const dl = devLaunch.value
         if (dl && msg.items.some((it) => it.id === dl.intentId && it.status === 'in_progress')) {
-          ctx.dispatchDevLaunch({ kind: 'ready', intentId: dl.intentId })
+          ctx.dispatchDevLaunch({ kind: 'ready', intentId: dl.intentId, now: Date.now() })
         }
         break
       }
       case 'dev_launch_progress':
         // Advance the overlay's coarse phase; a `failed` stage closes it with an
         // error toast (the reducer + dispatch handle the side-effects).
-        ctx.dispatchDevLaunch({ kind: 'stage', intentId: msg.intentId, stage: msg.stage })
+        ctx.dispatchDevLaunch({
+          kind: 'stage',
+          intentId: msg.intentId,
+          stage: msg.stage,
+          now: Date.now(),
+        })
         break
       case 'intent_sessions':
         intentSessions.value = { ...intentSessions.value, [msg.workspaceId]: msg.items }

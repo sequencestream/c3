@@ -52,7 +52,6 @@ export function buildSeedSpec(intent: Intent, nowIso: string): string {
   return `---
 intent_id: ${intent.id}
 title: ${intent.title}
-status: draft
 created: ${nowIso}
 ---
 

@@ -30,6 +30,8 @@ What this spec is FOR (and what it is NOT):
 
 The spec's first reader is the user; its second reader is the development agent. Optimize for fast human review: state what changes, its boundaries, the decisions requiring confidence, and how it will be verified. A reviewer must be able to approve or reject it without opening the codebase. Use short paragraphs and concrete bullets; use a table only when it makes a comparison clearer. Write the document itself in ${UI_LANG_NAMES[uiLang]}.
 
+Do not add a \`status\` label in the frontmatter or document header. Approval is a system gate and does not write a document status back, so such a label would become stale and mislead readers.
+
 Before writing, assess the change by its real codebase impact, not by the length of the intent. Choose the smallest structure that fully explains the decision. Do not announce the complexity level.
 
 For a simple change — one focused behavior or surface, no public contract, persisted-data, migration, security, or cross-domain impact — write only:

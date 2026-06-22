@@ -62,8 +62,9 @@ flowchart TD
    `<c3 home>/specs/<project-path-segment>` (per project, shared by all the project's worktrees;
    not user-configurable, not in Git), `<spec-root>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`,
    where `<slug>` derives from the intent's `shortEnTitle` (falling back to the intent id prefix)
-   and `<NNN>` is a per-day sequence. It seeds a **minimal** `spec.md` (frontmatter + title +
-   a link back to the intent, no section skeleton) and backfills the intent's spec path
+   and `<NNN>` is a per-day sequence. It seeds a **minimal** `spec.md` (frontmatter containing
+   only `intent_id`, `title`, and `created`, plus title + a link back to the intent, no section
+   skeleton and no document-level `status`) and backfills the intent's spec path
    (the **absolute** centralized location) immediately, so the spec exists even if the run fails.
    Content positioning: the **user is the first reader** and the development agent the second. The
    intent already carries the requirements (Why / What / Acceptance / Non-goals), so the spec does

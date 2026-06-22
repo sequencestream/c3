@@ -19,7 +19,7 @@ import {
   resolveWorkspaceRoot,
 } from '../../state.js'
 import { getIntent, insertIntents, resetStoreForTests, setSpecPath } from './store.js'
-import { approveSpecHandler, readSpecHandler } from './spec.js'
+import { approveSpecHandler, buildSeedSpec, readSpecHandler } from './spec.js'
 import { getSpecsBase } from './specs-root.js'
 
 let dir: string
@@ -67,6 +67,21 @@ function fakeConn(over: Partial<Conn> = {}): { conn: Conn; sent: ServerToClient[
   } as Conn
   return { conn, sent }
 }
+
+describe('buildSeedSpec', () => {
+  it('keeps only identity metadata and omits the stale document status label', () => {
+    const content = buildSeedSpec(
+      { id: 'int-1', title: 'Cached endpoint' } as NonNullable<ReturnType<typeof getIntent>>,
+      '2026-06-22T00:00:00.000Z',
+    )
+    const frontmatter = content.split('---')[1]
+
+    expect(frontmatter).toContain('intent_id: int-1')
+    expect(frontmatter).toContain('title: Cached endpoint')
+    expect(frontmatter).toContain('created: 2026-06-22T00:00:00.000Z')
+    expect(frontmatter).not.toMatch(/^status:/m)
+  })
+})
 
 describe('approveSpecHandler', () => {
   it('approves: sets spec_approved=true + records the current subject, then broadcasts', () => {

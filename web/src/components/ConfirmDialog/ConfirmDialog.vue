@@ -85,7 +85,7 @@ watch(
   background: var(--c-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-lg);
-  padding: var(--sp-5);
+  padding: var(--sp-4);
   box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.25));
 }
 .cd-title {

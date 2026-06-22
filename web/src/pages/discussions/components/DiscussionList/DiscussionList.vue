@@ -568,7 +568,7 @@ function togglePanel(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--sp-3);
+  padding: var(--sp-4);
   border-bottom: 1px solid var(--c-border);
 }
 .disc-modal-title {
@@ -579,7 +579,7 @@ function togglePanel(): void {
 .disc-modal-body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--sp-3);
+  padding: var(--sp-4);
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);

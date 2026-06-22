@@ -2315,7 +2315,7 @@ button.deny:hover:not(:disabled) {
   background: var(--c-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-lg);
-  padding: var(--sp-5);
+  padding: var(--sp-4);
   box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.25));
 }
 .settings-modal-head {
@@ -3382,7 +3382,7 @@ button.deny:hover:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-4);
   border-bottom: 1px solid var(--c-border);
 }
 .dep-edit-title {
@@ -3401,7 +3401,7 @@ button.deny:hover:not(:disabled) {
   color: var(--c-text);
 }
 .dep-edit-body {
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-4);
   overflow-y: auto;
   flex: 1;
 }
@@ -3443,7 +3443,7 @@ button.deny:hover:not(:disabled) {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-4);
   border-top: 1px solid var(--c-border);
 }
 .dep-edit-cancel,

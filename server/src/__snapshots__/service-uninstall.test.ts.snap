@@ -1,0 +1,66 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`planServiceUninstall > matches the darwin uninstall plan snapshot 1`] = `
+{
+  "notInstalledMessage": "c3 LaunchAgent is not installed; nothing to remove.",
+  "platform": "darwin",
+  "probeCommand": null,
+  "unitPath": "/home/alice/Library/LaunchAgents/center.c3.server.plist",
+  "unregisterCommands": [
+    {
+      "args": [
+        "unload",
+        "/home/alice/Library/LaunchAgents/center.c3.server.plist",
+      ],
+      "cmd": "launchctl",
+    },
+  ],
+}
+`;
+
+exports[`planServiceUninstall > matches the linux uninstall plan snapshot 1`] = `
+{
+  "notInstalledMessage": "c3 systemd user service is not installed; nothing to remove.",
+  "platform": "linux",
+  "probeCommand": null,
+  "unitPath": "/home/alice/.config/systemd/user/c3.service",
+  "unregisterCommands": [
+    {
+      "args": [
+        "--user",
+        "disable",
+        "--now",
+        "c3.service",
+      ],
+      "cmd": "systemctl",
+    },
+  ],
+}
+`;
+
+exports[`planServiceUninstall > matches the win32 uninstall plan snapshot 1`] = `
+{
+  "notInstalledMessage": "c3 Task Scheduler task is not installed; nothing to remove.",
+  "platform": "win32",
+  "probeCommand": {
+    "args": [
+      "/Query",
+      "/TN",
+      "c3",
+    ],
+    "cmd": "schtasks",
+  },
+  "unitPath": null,
+  "unregisterCommands": [
+    {
+      "args": [
+        "/Delete",
+        "/TN",
+        "c3",
+        "/F",
+      ],
+      "cmd": "schtasks",
+    },
+  ],
+}
+`;

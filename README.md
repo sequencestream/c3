@@ -224,6 +224,7 @@ The smoke prompt asks Claude to write `/tmp/c3-e2e-test.txt`. The script:
 ```
 c3 [start] [--workspace <path>] [--port 3000] [--dev] [--daemon]
 c3 install   [--workspace <path>] [--port 3000] [--settings <path>]
+c3 uninstall
 c3 verify <file>
 ```
 
@@ -256,7 +257,7 @@ network exposure is added).
   instead of starting a duplicate; a stale PID file (process gone) is overwritten.
 - Stop a daemon with `kill "$(cat ~/.c3/c3.pid)"`.
 
-### OS service (`c3 install`)
+### OS service (`c3 install` / `c3 uninstall`)
 
 `c3 install` registers c3 as a **per-user** OS service (no root/admin required) that runs
 `c3 start` under the platform's service manager — the manager owns the lifecycle, so the
@@ -274,15 +275,15 @@ account's PATH — that PATH can differ from your login shell, which is the usua
 "agent unavailable" under a service. The startup log (`~/.c3/log/c3.log`) reports which
 host CLIs were found.
 
-An unsupported platform, or a failing `systemctl`/`launchctl`/`schtasks`, exits non-zero
-with the underlying error (the registration command's stderr is shown, never swallowed).
+`c3 uninstall` removes the current platform's registration: Linux runs `systemctl --user
+disable --now c3.service` then removes its unit file; macOS unloads and removes the LaunchAgent
+plist; Windows deletes the `c3` Task Scheduler task. It is idempotent: a service that is already
+absent reports that nothing needs removal and exits successfully.
 
-**No auto-update or uninstall.** Updating c3 is a manual binary replace; the service unit
-keeps pointing at the same path. To **remove** the service manually:
-
-- Linux — `systemctl --user disable --now c3.service` then `rm ~/.config/systemd/user/c3.service`
-- macOS — `launchctl unload ~/Library/LaunchAgents/center.c3.server.plist` then `rm` the plist
-- Windows — `schtasks /Delete /TN c3 /F`
+Uninstalling **only removes the OS service registration**. It does not delete `~/.c3` settings,
+database, worktrees, specs, logs, or pid files, and it does not terminate an existing c3 process.
+An unsupported platform, missing/failing `systemctl`/`launchctl`/`schtasks`, exits non-zero with
+the underlying stderr shown. Updating c3 remains manual; auto-update is not provided.
 
 ## WebSocket protocol
 

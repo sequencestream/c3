@@ -15,7 +15,7 @@
  *               service wrapper — the single binary is not SCM-compatible, and a
  *               logon task needs no admin and matches the per-user scope).
  *
- * Non-goals (held): no auto-update, no `uninstall`. The pure plan builders are
+ * Non-goals (held): no auto-update. The pure plan builders are
  * snapshot-tested per platform; execution side effects (write unit, run register
  * command) are injectable so the failure path (register non-zero ⇒ surfaced
  * stderr, never swallowed) is testable without touching the real OS.
@@ -42,8 +42,8 @@ export interface ServiceCommand {
 /**
  * A platform-resolved installation plan: the unit file to write (none on
  * Windows, which registers entirely through `schtasks`), the registration
- * command sequence, and human-facing post-install notes (linger hint, manual
- * uninstall steps). Pure data so it can be asserted in a snapshot test.
+ * command sequence, and human-facing post-install notes. Pure data so it can
+ * be asserted in a snapshot test.
  */
 export interface ServicePlan {
   platform: NodeJS.Platform
@@ -53,7 +53,7 @@ export interface ServicePlan {
   unitContent: string | null
   /** Commands run in order to register the service; first non-zero aborts. */
   registerCommands: ServiceCommand[]
-  /** Lines printed after a successful install (hints + manual uninstall). */
+  /** Lines printed after a successful install. */
   notes: string[]
 }
 
@@ -133,9 +133,8 @@ function planLinux(inputs: ServiceInstallInputs): ServicePlan {
     notes: [
       'To keep c3 running after logout / start at boot before login, enable lingering:',
       '  loginctl enable-linger',
-      'Auto-update and uninstall are not provided. To remove the service manually:',
-      `  systemctl --user disable --now ${SYSTEMD_UNIT_NAME}`,
-      `  rm ${unitPath}`,
+      'To remove this service, run: c3 uninstall',
+      'Auto-update is not provided.',
     ],
   }
 }
@@ -176,9 +175,8 @@ function planDarwin(inputs: ServiceInstallInputs): ServicePlan {
     registerCommands: [{ cmd: 'launchctl', args: ['load', '-w', unitPath] }],
     notes: [
       'The LaunchAgent starts within your login session each time you log in.',
-      'Auto-update and uninstall are not provided. To remove the service manually:',
-      `  launchctl unload ${unitPath}`,
-      `  rm ${unitPath}`,
+      'To remove this service, run: c3 uninstall',
+      'Auto-update is not provided.',
     ],
   }
 }
@@ -200,8 +198,8 @@ function planWindows(inputs: ServiceInstallInputs): ServicePlan {
     ],
     notes: [
       'The task runs c3 at logon (it is a logon-triggered task, not a pre-login service).',
-      'Auto-update and uninstall are not provided. To remove the task manually:',
-      `  schtasks /Delete /TN ${SCHTASKS_TASK_NAME} /F`,
+      'To remove this task, run: c3 uninstall',
+      'Auto-update is not provided.',
     ],
   }
 }

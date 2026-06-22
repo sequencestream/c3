@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { classifyCommitFailure, commitAndPush, gitDiffStat, gitRecentLog } from './git.js'
+import {
+  classifyCommitFailure,
+  commitAndPush,
+  createForgePr,
+  createGlabMr,
+  detectForge,
+  gitDiffStat,
+  gitRecentLog,
+} from './git.js'
 
 // These tests drive the REAL `git` CLI against throwaway repos in a temp dir, with
 // bare repos as push targets — so they exercise discovery + per-repo commit/push
@@ -13,6 +21,7 @@ import { classifyCommitFailure, commitAndPush, gitDiffStat, gitRecentLog } from 
 let dir: string // temp sandbox; `<dir>/work` is the scanned workspace root
 let work: string
 let remotes: string // <dir>/remotes — bare push targets, outside `work`
+const originalPath = process.env.PATH
 
 function run(cmd: string, args: string[], cwd: string): string {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8' }).toString()
@@ -47,6 +56,19 @@ function aheadCount(repo: string): number {
   return Number(run('git', ['-C', repo, 'rev-list', '--count', '@{u}..HEAD'], repo).trim())
 }
 
+/** Install a controllable CLI stand-in for a test without invoking a real forge. */
+function installFakeCli(name: 'gh' | 'glab', stdout: string, stderr = '', exitCode = 0): void {
+  const bin = join(dir, 'bin')
+  mkdirSync(bin, { recursive: true })
+  const script = join(bin, name)
+  writeFileSync(
+    script,
+    `#!/bin/sh\nprintf '%s' '${stdout}'\nprintf '%s' '${stderr}' 1>&2\nexit ${exitCode}\n`,
+  )
+  chmodSync(script, 0o755)
+  process.env.PATH = `${bin}:${originalPath ?? ''}`
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-git-'))
   work = join(dir, 'work')
@@ -56,6 +78,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  process.env.PATH = originalPath
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -199,6 +222,93 @@ describe('classifyCommitFailure — lint/pre-commit-hook vs other', () => {
     expect(classifyCommitFailure('error: failed to push some refs')).toBe('other')
     expect(classifyCommitFailure('nothing to commit, working tree clean')).toBe('other')
     expect(classifyCommitFailure('')).toBe('other')
+  })
+})
+
+describe('forge detection and change-request creation', () => {
+  function setOrigin(url: string): void {
+    initRepo(work, 'root', false)
+    run('git', ['remote', 'add', 'origin', url], work)
+  }
+
+  it.each([
+    ['GitHub', 'git@github.com:owner/repo.git', 'github'],
+    ['GitLab.com', 'https://gitlab.com/owner/repo.git', 'gitlab'],
+    ['self-hosted GitLab', 'ssh://git@gitlab.internal/owner/repo.git', 'gitlab'],
+  ] as const)('detects %s origin as %s', async (_name, url, expected) => {
+    setOrigin(url)
+    expect(await detectForge(work)).toBe(expected)
+  })
+
+  it('creates a GitLab MR and parses its number', async () => {
+    installFakeCli('glab', 'https://gitlab.example/owner/repo/-/merge_requests/42\n')
+
+    await expect(createGlabMr(work, 'Title', 'Body', 'feature', 'develop')).resolves.toEqual({
+      ok: true,
+      prId: '42',
+      prUrl: 'https://gitlab.example/owner/repo/-/merge_requests/42',
+    })
+  })
+
+  it('marks a missing glab CLI unavailable', async () => {
+    process.env.PATH = join(dir, 'empty-bin')
+
+    await expect(createGlabMr(work, 'Title', 'Body')).resolves.toMatchObject({
+      ok: false,
+      unavailable: true,
+      error: 'glab CLI 未安装',
+    })
+  })
+
+  it('marks unauthenticated glab unavailable', async () => {
+    installFakeCli(
+      'glab',
+      '',
+      'You are not logged into any GitLab instances. Run glab auth login.',
+      1,
+    )
+
+    await expect(createGlabMr(work, 'Title', 'Body')).resolves.toMatchObject({
+      ok: false,
+      unavailable: true,
+    })
+  })
+
+  it('returns a regular error for other glab failures', async () => {
+    installFakeCli('glab', '', 'merge request already exists', 1)
+
+    await expect(createGlabMr(work, 'Title', 'Body')).resolves.toEqual({
+      ok: false,
+      error: 'merge request already exists',
+    })
+  })
+
+  it('uses an override before origin detection when dispatching', async () => {
+    setOrigin('https://github.com/owner/repo.git')
+    installFakeCli('glab', 'https://gitlab.example/owner/repo/-/merge_requests/7\n')
+
+    await expect(
+      createForgePr(work, 'Title', 'Body', undefined, undefined, 'gitlab'),
+    ).resolves.toMatchObject({
+      ok: true,
+      prId: '7',
+    })
+  })
+
+  it('dispatches from origin detection to GitHub and GitLab', async () => {
+    setOrigin('https://github.com/owner/repo.git')
+    installFakeCli('gh', 'https://github.com/owner/repo/pull/8\n')
+    await expect(createForgePr(work, 'Title', 'Body')).resolves.toMatchObject({
+      ok: true,
+      prId: '8',
+    })
+
+    run('git', ['remote', 'set-url', 'origin', 'https://gitlab.internal/owner/repo.git'], work)
+    installFakeCli('glab', 'https://gitlab.internal/owner/repo/-/merge_requests/9\n')
+    await expect(createForgePr(work, 'Title', 'Body')).resolves.toMatchObject({
+      ok: true,
+      prId: '9',
+    })
   })
 })
 

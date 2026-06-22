@@ -24,6 +24,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
+import { z } from 'zod'
 import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import type {
   AgentConfig,
@@ -477,7 +478,9 @@ export function normalizeWorkspaceSetting(
   const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode, validCustomAgentIds)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
+  const forge = normalizeWorkspaceForge(rec.forge)
   return {
+    forge,
     defaultMode,
     consensus,
     devSkill,
@@ -489,6 +492,14 @@ export function normalizeWorkspaceSetting(
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
   }
+}
+
+/** Runtime contract for the workspace forge selector. */
+const workspaceForgeSchema = z.enum(['auto', 'github', 'gitlab'])
+
+/** Normalize the workspace forge selector; absent or unknown values detect from origin. */
+function normalizeWorkspaceForge(raw: unknown): 'auto' | 'github' | 'gitlab' {
+  return workspaceForgeSchema.safeParse(raw).data ?? 'auto'
 }
 
 /**
@@ -1149,6 +1160,15 @@ export function getGitBranchMode(workspacePath: string): GitBranchMode {
  */
 export function getDefaultMainBranch(workspacePath: string): string | undefined {
   return normalizeDefaultMainBranch(loadWorkspaceSetting(workspacePath).defaultMainBranch)
+}
+
+/**
+ * Return the workspace's explicit forge override. `auto` deliberately becomes
+ * undefined so callers retain origin detection rather than passing a pseudo-provider.
+ */
+export function getForgeOverride(workspacePath: string): 'github' | 'gitlab' | undefined {
+  const forge = normalizeWorkspaceForge(loadWorkspaceSetting(workspacePath).forge)
+  return forge === 'auto' ? undefined : forge
 }
 
 // ---- External skill repos (ADR-0016) ----

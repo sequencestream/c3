@@ -16,6 +16,7 @@ import {
 } from './agent-config/index.js'
 import {
   getDefaultMainBranch,
+  getForgeOverride,
   getDevSkill,
   getGitBranchMode,
   getMaxRoundsPerStage,
@@ -1369,6 +1370,34 @@ describe('gitBranchMode + defaultMainBranch (2026-06-10)', () => {
       },
     })
     expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
+  })
+})
+
+describe('workspace forge normalization', () => {
+  it('migrates a missing forge to auto idempotently', () => {
+    const once = saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
+    const twice = saveWorkspaceSetting(TEST_PROJ, once)
+
+    expect(once.forge).toBe('auto')
+    expect(twice.forge).toBe('auto')
+    expect(getForgeOverride(TEST_PROJ)).toBeUndefined()
+  })
+
+  it.each(['github', 'gitlab'] as const)('preserves explicit %s forge overrides', (forge) => {
+    const saved = saveWorkspaceSetting(TEST_PROJ, { forge } as WorkspaceSetting)
+
+    expect(saved.forge).toBe(forge)
+    expect(loadWorkspaceSetting(TEST_PROJ).forge).toBe(forge)
+    expect(getForgeOverride(TEST_PROJ)).toBe(forge)
+  })
+
+  it('falls back from an invalid forge to auto', () => {
+    const saved = saveWorkspaceSetting(TEST_PROJ, {
+      forge: 'forgejo',
+    } as unknown as WorkspaceSetting)
+
+    expect(saved.forge).toBe('auto')
+    expect(getForgeOverride(TEST_PROJ)).toBeUndefined()
   })
 })
 

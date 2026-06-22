@@ -23,6 +23,7 @@ vi.mock('./store.js', () => ({
 
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMainBranch: vi.fn(() => 'main'),
+  getForgeOverride: vi.fn(),
   getDevSkill: vi.fn(),
   getDefaultMode: vi.fn(),
   getGitBranchMode: vi.fn(),
@@ -72,7 +73,7 @@ vi.mock('../../state.js', () => ({
 
 vi.mock('../../git.js', () => ({
   commitAndPush: vi.fn(),
-  createGhPr: vi.fn(),
+  createForgePr: vi.fn(),
   gitDiffStat: vi.fn(),
   gitRecentLog: vi.fn(),
 }))
@@ -96,9 +97,13 @@ import {
 import type { AutomationHooks, DevTurnResult, RunDevTurnInput } from './automation.js'
 import { startDevelopment } from './index.js'
 import { listIntents, getIntent, setBranchName, setPrInfo, updateStatus } from './store.js'
-import { getGitBranchMode, getDefaultMainBranch } from '../../kernel/config/index.js'
+import {
+  getGitBranchMode,
+  getDefaultMainBranch,
+  getForgeOverride,
+} from '../../kernel/config/index.js'
 import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
-import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
+import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { judgeCompletion } from './judge.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
@@ -677,7 +682,7 @@ describe('automation controller — branch-mode git alignment', () => {
     vi.mocked(getIntent).mockReturnValue(intent)
     vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '77', prUrl: 'http://x/pull/77' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '77', prUrl: 'http://x/pull/77' })
     vi.mocked(gitDiffStat).mockResolvedValue('')
     vi.mocked(gitRecentLog).mockResolvedValue('')
     vi.mocked(getRuntime).mockReturnValue(undefined)
@@ -693,14 +698,61 @@ describe('automation controller — branch-mode git alignment', () => {
     expect(gitDiffStat).toHaveBeenCalledWith('/tmp/wt-Z')
     expect(gitRecentLog).toHaveBeenCalledWith('/tmp/wt-Z')
     expect(commitAndPush).toHaveBeenCalledWith('/tmp/wt-Z', expect.stringContaining('feat:'))
-    expect(createGhPr).toHaveBeenCalledWith(
+    expect(createForgePr).toHaveBeenCalledWith(
       '/tmp/wt-Z',
       expect.any(String),
       expect.any(String),
       'intent/Z',
+      undefined,
+      undefined,
     )
     expect(setPrInfo).toHaveBeenCalledWith('Z', '77', 'reviewing')
     expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
+  })
+
+  it('worktree: explicit GitLab override uses the forge dispatcher and writes MR fields', async () => {
+    const proj = '/test/wt-gitlab'
+    const intent = makeIntent({ id: 'GL', status: 'todo', branchName: 'intent/GL' })
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getForgeOverride).mockReturnValue('gitlab')
+    vi.mocked(createWorktree).mockReturnValue({
+      worktreePath: '/tmp/wt-GL',
+      branchName: 'intent/GL',
+    })
+    vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-GL')
+    vi.mocked(updateStatus).mockImplementation((_id, status) => {
+      intent.status = status
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createForgePr).mockResolvedValue({
+      ok: true,
+      prId: '19',
+      prUrl: 'https://gitlab.example/group/project/-/merge_requests/19',
+    })
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+
+    await notifyTurnSettled(proj, launchedId, 'complete', 'GL')
+
+    expect(createForgePr).toHaveBeenCalledWith(
+      '/tmp/wt-GL',
+      expect.any(String),
+      expect.any(String),
+      'intent/GL',
+      undefined,
+      'gitlab',
+    )
+    expect(setPrInfo).toHaveBeenCalledWith('GL', '19', 'reviewing')
   })
 
   it('current-branch: 端到端 commit 用 workspacePath 且不建 worktree、不建 PR', async () => {
@@ -729,7 +781,7 @@ describe('automation controller — branch-mode git alignment', () => {
     expect(createWorktree).not.toHaveBeenCalled()
     expect(gitDiffStat).toHaveBeenCalledWith(proj)
     expect(commitAndPush).toHaveBeenCalledWith(proj, expect.stringContaining('feat:'))
-    expect(createGhPr).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
     expect(setPrInfo).not.toHaveBeenCalled()
     expect(updateStatus).toHaveBeenCalledWith('W', 'done')
   })

@@ -140,9 +140,9 @@ export async function triggerRunNow(scheduleId: string): Promise<void> {
     console.warn('[scheduler] triggerRunNow: schedule %s not found', scheduleId)
     return
   }
-  if (schedule.status !== 'active') {
+  if (schedule.status === 'archived') {
     console.warn(
-      '[scheduler] triggerRunNow: schedule %s not active (%s)',
+      '[scheduler] triggerRunNow: schedule %s archived (%s)',
       scheduleId,
       schedule.status,
     )

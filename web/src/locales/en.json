@@ -1086,7 +1086,7 @@
       },
       "runNow": {
         "tooltip": "Run now",
-        "disabledTooltip": "Enable the schedule to run it now"
+        "disabledTooltip": "Archived schedules cannot be run"
       },
       "toggle": {
         "enabled": {

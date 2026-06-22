@@ -68,6 +68,9 @@ const title = computed(() => {
 
 // enable/disable 开关:启用态 = status==='active';error/paused 视为未启用。
 const isEnabled = computed(() => props.schedule?.status === 'active')
+// Manual execution is independent of automatic scheduling: paused schedules
+// remain paused after the one-off run; archived schedules are terminal.
+const canRunNow = computed(() => props.schedule?.status !== 'archived')
 
 function toggleEnabled(): void {
   if (props.schedule) emit('toggle-enabled', props.schedule.id, !isEnabled.value)
@@ -155,13 +158,13 @@ watch(
       <header class="sched-panel-head">
         <h2 class="sched-panel-title" :title="title">{{ title }}</h2>
         <div class="sched-panel-actions" data-testid="schedule-panel-actions">
-          <!-- Exec Now:手动触发一次执行;仅 active 时可用。 -->
+          <!-- Exec Now:手动触发一次执行;active/paused 可用,archived 不可用。 -->
           <button
             type="button"
             class="sp-action sp-action--run"
-            :disabled="!isEnabled"
+            :disabled="!canRunNow"
             :title="
-              isEnabled
+              canRunNow
                 ? t('schedule.list.runNow.tooltip')
                 : t('schedule.list.runNow.disabledTooltip')
             "

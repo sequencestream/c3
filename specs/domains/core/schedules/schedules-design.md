@@ -166,7 +166,9 @@ When the server restarts, some schedules' next-run instant may be in the past:
 ### Manual trigger (run now)
 
 - The `schedule_run_now` WebSocket event invokes the scheduler's run-now path for the target schedule.
-- Validates: the schedule must exist, be `active`, and not already in-flight.
+- Validates: the schedule must exist, be `active` or `paused` (not `archived`), and not already
+  in-flight. This one-off manual execution does not change `status`; a paused schedule remains
+  paused and its `next_run_at` is not recomputed.
 - Creates an execution log and dispatches immediately (outside the tick loop).
 - The execution result is broadcast to refresh the UI.
 

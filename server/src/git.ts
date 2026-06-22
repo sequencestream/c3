@@ -396,8 +396,11 @@ function oneLine(s: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// PR creation with gh CLI
+// Forge change-request creation
 // ---------------------------------------------------------------------------
+
+/** Supported hosting forges for pull/merge-request creation. */
+export type ForgeProvider = 'github' | 'gitlab'
 
 export interface CreatePrResult {
   ok: boolean
@@ -405,9 +408,8 @@ export interface CreatePrResult {
   prUrl?: string
   error?: string
   /**
-   * True when the PR could not even be attempted because the `gh` CLI is missing
-   * or not authenticated. Lets callers surface a distinct "install / log in to gh"
-   * message versus a generic PR-create failure.
+   * True when the forge CLI is missing or not authenticated. Lets callers surface
+   * a distinct install / log-in message versus a generic change-request failure.
    */
   unavailable?: boolean
 }
@@ -419,6 +421,25 @@ const GH_NOT_LOGGED_IN_MARKERS = [
   'no git remotes found',
   'authentication',
 ]
+
+// `glab` prints these when no usable auth token is configured.
+const GLAB_NOT_LOGGED_IN_MARKERS = [
+  'glab auth login',
+  'not logged',
+  'not authenticated',
+  'authentication',
+  'unauthorized',
+]
+
+/**
+ * Detect the forge for `cwd` from its `origin` URL. GitHub is identified by its
+ * hostname; every other URL, including self-hosted GitLab, resolves to GitLab.
+ * A missing or unreadable origin also deterministically falls back to GitLab.
+ */
+export async function detectForge(cwd: string): Promise<ForgeProvider> {
+  const remote = await git(cwd, ['-C', cwd, 'remote', 'get-url', 'origin'])
+  return remote.code === 0 && remote.stdout.includes('github.com') ? 'github' : 'gitlab'
+}
 
 /**
  * Create a GitHub Pull Request via the `gh` CLI.
@@ -471,4 +492,69 @@ export async function createGhPr(
   }
 
   return { ok: false, error: 'gh pr create 输出未包含 PR URL' }
+}
+
+/**
+ * Create a GitLab Merge Request via the `glab` CLI. The result uses the shared
+ * change-request contract, including unavailable CLI/authentication failures.
+ * `headBranch` is optional; `baseBranch` defaults to `main`.
+ */
+export async function createGlabMr(
+  cwd: string,
+  title: string,
+  body: string,
+  headBranch?: string,
+  baseBranch = 'main',
+): Promise<CreatePrResult> {
+  const args = [
+    'mr',
+    'create',
+    '--title',
+    title,
+    '--description',
+    body,
+    '--target-branch',
+    baseBranch,
+  ]
+  if (headBranch) args.push('--source-branch', headBranch)
+
+  const { code, stdout, stderr } = await run('glab', cwd, args)
+  if (code === -1) {
+    return { ok: false, unavailable: true, error: 'glab CLI 未安装' }
+  }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = GLAB_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'glab mr create 失败',
+    }
+  }
+
+  const url = stdout.trim()
+  const match = url.match(/\/-\/merge_requests\/(\d+)/)
+  if (match) {
+    return { ok: true, prId: match[1], prUrl: url }
+  }
+
+  return { ok: false, error: 'glab mr create 输出未包含 MR URL' }
+}
+
+/**
+ * Create a pull or merge request through the selected forge. An explicit
+ * provider takes precedence; otherwise the repository's origin determines it.
+ */
+export async function createForgePr(
+  cwd: string,
+  title: string,
+  body: string,
+  headBranch?: string,
+  baseBranch?: string,
+  providerOverride?: ForgeProvider,
+): Promise<CreatePrResult> {
+  const provider = providerOverride ?? (await detectForge(cwd))
+  return provider === 'github'
+    ? createGhPr(cwd, title, body, headBranch, baseBranch)
+    : createGlabMr(cwd, title, body, headBranch, baseBranch)
 }

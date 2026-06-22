@@ -141,11 +141,16 @@ flowchart TD
 - **Session-end Git/PR cleanup (manual, `RM-R26`).** When a **manually-started** dev session settles
   (complete / error / terminated), the server closes the Git/PR loop **without** changing status. In
   `worktree` mode (or `current-branch` off the `defaultMainBranch`) with changes present it commits,
-  pushes, and opens a PR via the `gh` CLI, then writes back `branchName`, `latestCommitHash`, `prId`,
+  pushes, and creates a PR/MR through the workspace's forge-aware dispatcher: an explicit
+  workspace `forge` setting of `github` or `gitlab` overrides repository-origin detection, while
+  `auto` (or an absent value) uses detection. It invokes `gh` for GitHub or `glab` for GitLab, then writes back `branchName`, `latestCommitHash`, `prId`,
   `prUrl`, and `prStatus = reviewing`; an intent that already has a PR is refreshed (commit/push +
   `latestCommitHash`) but **not** re-PR'd. `current-branch` **on** the main branch is a normal success
   skip. A session the project's orchestrator is actively driving is automation-owned (`RM-A5`) and is
-  **not** cleaned up here — manual and automation are mutually exclusive.
+  **not** cleaned up here — manual and automation are mutually exclusive. After its own successful
+  commit and push, the orchestrator creates the same forge-aware PR/MR: an explicit workspace `forge`
+  override selects GitHub/`gh` or GitLab/`glab`; `auto` or an absent setting uses repository-origin
+  detection.
 
 ## Discussion bridge
 
@@ -170,8 +175,8 @@ then funnels into the **unchanged** `save_intents` path (`RM-R7`). See
   automation orchestrator (`RM-A5`). The session-end Git/PR cleanup (`RM-R26`) likewise touches only
   the Git/PR fields, never the status machine.
 - **Cleanup failure is explicit, never faked.** When the session-end cleanup should run but cannot —
-  no committable changes, commit/push failure, the `gh` CLI unavailable / not logged in, or PR
-  creation failing — it fails explicitly and pushes a workbench wait-user-involve todo asking the
+  no committable changes, commit/push failure, the selected forge CLI (`gh` or `glab`) unavailable /
+  not logged in, or PR/MR creation failing — it fails explicitly and pushes a workbench wait-user-involve todo asking the
   user to act; it never sets `prStatus = reviewing` or writes a placeholder `prId`/`prUrl`, and only
   genuinely-completed steps are recorded (`RM-R26`). It does not auto-merge, resolve conflicts, fix
   auth, or retry.

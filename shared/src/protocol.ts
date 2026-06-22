@@ -639,6 +639,13 @@ export type GitBranchMode = (typeof GIT_BRANCH_MODES)[number]
  */
 export interface WorkspaceSetting {
   /**
+   * Hosting forge used when creating a pull or merge request for this workspace.
+   * `auto` (the normalized default) detects the forge from the repository origin;
+   * an explicit provider corrects detection for installations such as self-hosted
+   * GitLab.
+   */
+  forge?: 'auto' | 'github' | 'gitlab'
+  /**
    * Per-vendor default permission mode map (2026-06-07-017).
    * Each vendor gets its own {@link ModeToken}, validated against that vendor's
    * {@link VendorModeCatalog} at save time. A vendor absent from the map falls

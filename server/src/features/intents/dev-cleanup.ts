@@ -15,7 +15,7 @@
  *    success skip (no commit / push / PR, no failure todo).
  *
  * Failure is explicit (MSC-R4): no committable changes, a commit/push failure,
- * `gh` unavailable / not logged in, or a PR-create failure all return a `failed`
+ * forge CLI unavailable / not logged in, or a change-request failure all return a `failed`
  * outcome AND push a `source='intent'` wait-user-involve todo carrying a UiError
  * so the workbench surfaces a localized "needs your attention" message. We NEVER
  * fake success: on failure no `reviewing` status and no placeholder PR fields are
@@ -31,7 +31,7 @@
  */
 import type { GitBranchMode, Intent, IntentPrStatus } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
-import type { CommitResult, CreatePrResult } from '../../git.js'
+import type { CommitResult, CreatePrResult, ForgeProvider } from '../../git.js'
 
 /** Why a cleanup failed — each maps to a workbench todo UiError code. */
 export type CleanupFailureCode = 'noChanges' | 'commitPushFailed' | 'ghUnavailable' | 'prFailed'
@@ -46,17 +46,21 @@ export type CleanupOutcome =
 export interface DevCleanupDeps {
   getGitBranchMode: (workspacePath: string) => GitBranchMode
   getDefaultMainBranch: (workspacePath: string) => string | undefined
+  /** Explicit forge override; undefined retains repository-origin detection. */
+  getForgeOverride: (workspacePath: string) => ForgeProvider | undefined
   /** The intent's git working dir: the worktree (worktree mode) or the checkout. */
   gitCwd: (workspacePath: string, intentId: string) => string
   hasCommittableChanges: (cwd: string) => Promise<boolean>
   getCurrentBranch: (cwd: string) => Promise<string | null>
   getHeadCommit: (cwd: string) => Promise<string | null>
   commitAndPush: (cwd: string, message: string) => Promise<CommitResult>
-  createGhPr: (
+  createForgePr: (
     cwd: string,
     title: string,
     body: string,
     headBranch?: string,
+    baseBranch?: string,
+    providerOverride?: ForgeProvider,
   ) => Promise<CreatePrResult>
   getIntent: (id: string) => Intent | null
   setBranchName: (id: string, branchName: string) => void
@@ -174,12 +178,19 @@ export async function runManualDevCleanup(
     return { kind: 'success', createdPr: false }
   }
 
-  // ④ Create the PR.
+  // ④ Create the forge-aware PR/MR.
   const { title, body } = buildPr(req, deps.getIntent)
   const headBranch = req.branchName ?? branch ?? undefined
-  const pr = await deps.createGhPr(cwd, title, body, headBranch)
+  const pr = await deps.createForgePr(
+    cwd,
+    title,
+    body,
+    headBranch,
+    undefined,
+    deps.getForgeOverride(workspacePath),
+  )
   if (!pr.ok || !pr.prId) {
-    // gh missing / not logged in vs a generic create failure (MSC-R4 ③ vs ④).
+    // Forge CLI missing / not logged in vs a generic create failure (MSC-R4 ③ vs ④).
     return fail(pr.unavailable ? 'ghUnavailable' : 'prFailed', pr.error)
   }
 

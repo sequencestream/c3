@@ -48,7 +48,7 @@ interface Harness {
   mocks: {
     hasCommittableChanges: ReturnType<typeof vi.fn>
     commitAndPush: ReturnType<typeof vi.fn>
-    createGhPr: ReturnType<typeof vi.fn>
+    createForgePr: ReturnType<typeof vi.fn>
     getCurrentBranch: ReturnType<typeof vi.fn>
     getHeadCommit: ReturnType<typeof vi.fn>
     setBranchName: ReturnType<typeof vi.fn>
@@ -66,6 +66,7 @@ function harness(
     mode?: 'worktree' | 'current-branch'
     mainBranch?: string
     currentBranch?: string
+    forgeOverride?: 'github' | 'gitlab'
     intent?: Intent
   } = {},
 ): Harness {
@@ -73,7 +74,7 @@ function harness(
   const mocks = {
     hasCommittableChanges: vi.fn().mockResolvedValue(true),
     commitAndPush: vi.fn().mockResolvedValue({ ok: true, committed: true }),
-    createGhPr: vi.fn().mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://h/pull/42' }),
+    createForgePr: vi.fn().mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://h/pull/42' }),
     getCurrentBranch: vi.fn().mockResolvedValue(opts.currentBranch ?? 'intent/i1-add-feature'),
     getHeadCommit: vi.fn().mockResolvedValue('deadbeef'),
     setBranchName: vi.fn(),
@@ -87,12 +88,13 @@ function harness(
   const deps: DevCleanupDeps = {
     getGitBranchMode: () => opts.mode ?? 'worktree',
     getDefaultMainBranch: () => opts.mainBranch ?? 'main',
+    getForgeOverride: () => opts.forgeOverride,
     gitCwd: () => '/abs/cwd',
     hasCommittableChanges: mocks.hasCommittableChanges,
     getCurrentBranch: mocks.getCurrentBranch,
     getHeadCommit: mocks.getHeadCommit,
     commitAndPush: mocks.commitAndPush,
-    createGhPr: mocks.createGhPr,
+    createForgePr: mocks.createForgePr,
     getIntent: () => intent,
     setBranchName: mocks.setBranchName,
     setLatestCommitHash: mocks.setLatestCommitHash,
@@ -119,6 +121,33 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
   })
 
+  it('explicit GitLab override creates an MR through the forge dispatcher and writes its fields', async () => {
+    const h = harness({ mode: 'worktree', forgeOverride: 'gitlab' })
+    h.mocks.createForgePr.mockResolvedValue({
+      ok: true,
+      prId: '19',
+      prUrl: 'https://gitlab.example/group/project/-/merge_requests/19',
+    })
+
+    const out = await runManualDevCleanup('I1', WS, h.deps)
+
+    expect(out).toEqual({ kind: 'success', createdPr: true })
+    expect(h.mocks.createForgePr).toHaveBeenCalledWith(
+      '/abs/cwd',
+      expect.any(String),
+      expect.any(String),
+      'intent/i1-add-feature',
+      undefined,
+      'gitlab',
+    )
+    expect(h.mocks.setPrInfo).toHaveBeenCalledWith(
+      'I1',
+      '19',
+      'reviewing',
+      'https://gitlab.example/group/project/-/merge_requests/19',
+    )
+  })
+
   // ── MSC-R3: current-branch, not on main → same cleanup ──
   it('current-branch off main: runs the same commit/push/PR cleanup', async () => {
     const h = harness({ mode: 'current-branch', mainBranch: 'main', currentBranch: 'feature/x' })
@@ -126,7 +155,7 @@ describe('runManualDevCleanup', () => {
 
     expect(out).toEqual({ kind: 'success', createdPr: true })
     expect(h.mocks.commitAndPush).toHaveBeenCalled()
-    expect(h.mocks.createGhPr).toHaveBeenCalled()
+    expect(h.mocks.createForgePr).toHaveBeenCalled()
   })
 
   // ── MSC-R3: current-branch on the main branch → success skip, no actions ──
@@ -136,7 +165,7 @@ describe('runManualDevCleanup', () => {
 
     expect(out).toEqual({ kind: 'skipped' })
     expect(h.mocks.commitAndPush).not.toHaveBeenCalled()
-    expect(h.mocks.createGhPr).not.toHaveBeenCalled()
+    expect(h.mocks.createForgePr).not.toHaveBeenCalled()
     expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
   })
@@ -168,7 +197,7 @@ describe('runManualDevCleanup', () => {
         params: { detail: 'push rejected' },
       }),
     )
-    expect(h.mocks.createGhPr).not.toHaveBeenCalled()
+    expect(h.mocks.createForgePr).not.toHaveBeenCalled()
     expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
     expect(h.mocks.setLatestCommitHash).not.toHaveBeenCalled()
   })
@@ -176,7 +205,11 @@ describe('runManualDevCleanup', () => {
   // ── MSC-R4 ③: gh unavailable / not logged in ──
   it('gh unavailable: fails with ghUnavailable; honest partial keeps the pushed commit hash', async () => {
     const h = harness({ mode: 'worktree' })
-    h.mocks.createGhPr.mockResolvedValue({ ok: false, unavailable: true, error: 'gh CLI 未安装' })
+    h.mocks.createForgePr.mockResolvedValue({
+      ok: false,
+      unavailable: true,
+      error: 'gh CLI 未安装',
+    })
     const out = await runManualDevCleanup('I1', WS, h.deps)
 
     expect(out).toEqual({ kind: 'failed', code: 'ghUnavailable', detail: 'gh CLI 未安装' })
@@ -191,7 +224,7 @@ describe('runManualDevCleanup', () => {
   // ── MSC-R4 ④: PR create failure (gh present) ──
   it('PR creation failure: fails with prFailed; commit hash recorded, PR fields empty', async () => {
     const h = harness({ mode: 'worktree' })
-    h.mocks.createGhPr.mockResolvedValue({ ok: false, error: 'base branch not found' })
+    h.mocks.createForgePr.mockResolvedValue({ ok: false, error: 'base branch not found' })
     const out = await runManualDevCleanup('I1', WS, h.deps)
 
     expect(out).toEqual({ kind: 'failed', code: 'prFailed', detail: 'base branch not found' })
@@ -213,7 +246,7 @@ describe('runManualDevCleanup', () => {
     expect(out).toEqual({ kind: 'success', createdPr: false })
     expect(h.mocks.commitAndPush).toHaveBeenCalled()
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
-    expect(h.mocks.createGhPr).not.toHaveBeenCalled()
+    expect(h.mocks.createForgePr).not.toHaveBeenCalled()
     expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
   })
 

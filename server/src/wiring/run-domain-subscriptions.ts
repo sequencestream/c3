@@ -87,7 +87,7 @@ import {
   publishIntentStatusTransition,
 } from '../features/intents/lifecycle-events.js'
 import { getWorktreePath } from '../features/intents/worktree.js'
-import { getDefaultMainBranch, getGitBranchMode } from '../kernel/config/index.js'
+import { getDefaultMainBranch, getForgeOverride, getGitBranchMode } from '../kernel/config/index.js'
 import {
   cancelBySourceId,
   createEvent,
@@ -97,7 +97,7 @@ import { agentSwitchFor } from '../features/works/index.js'
 import { resolveSessionVendor } from '../kernel/agent-config/index.js'
 import {
   commitAndPush,
-  createGhPr,
+  createForgePr,
   getCurrentBranch,
   getHeadCommit,
   gitDiffStat,
@@ -147,13 +147,15 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   const cleanupDeps: DevCleanupDeps = {
     getGitBranchMode,
     getDefaultMainBranch,
+    getForgeOverride,
     gitCwd: (ws, intentId) =>
       getGitBranchMode(ws) === 'worktree' ? getWorktreePath(ws, intentId) : ws,
     hasCommittableChanges,
     getCurrentBranch,
     getHeadCommit,
     commitAndPush,
-    createGhPr: (cwd, title, body, headBranch) => createGhPr(cwd, title, body, headBranch),
+    createForgePr: (cwd, title, body, headBranch, baseBranch, providerOverride) =>
+      createForgePr(cwd, title, body, headBranch, baseBranch, providerOverride),
     getIntent,
     setBranchName,
     setLatestCommitHash,

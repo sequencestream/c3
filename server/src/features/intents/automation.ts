@@ -45,12 +45,13 @@ import { registerPendingDevLink } from './dev-link.js'
 import { publishIntentLifecycle, publishIntentStatusTransition } from './lifecycle-events.js'
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
-import { commitAndPush, createGhPr, gitDiffStat, gitRecentLog } from '../../git.js'
+import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { pathToId } from '../../state.js'
 import {
   getDevSkill,
   getDefaultMode,
   getDefaultMainBranch,
+  getForgeOverride,
   getGitBranchMode,
 } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
@@ -836,13 +837,13 @@ class AutomationController {
   }
 
   /**
-   * Create a GitHub Pull Request for a completed intent.
+   * Create a forge-aware pull or merge request for a completed intent.
    *
    * Constructs the PR title and body from the intent's title, content, and
-   * dependency list, then calls `gh pr create` via the `createGhPr` git helper.
+   * dependency list, then creates the change request through the forge dispatcher.
    * The head branch is the intent's worktree branch (`req.branchName`, or the
    * current branch as fallback). Returns the PR id and URL on success, or an
-   * error description on failure (gh not installed, auth failure, etc.).
+   * error description on failure (forge CLI not installed, auth failure, etc.).
    *
    * Called after `commitAndPush` succeeds in the automation orchestrator.
    * Failures are logged but do NOT block the intent from being marked `done` —
@@ -863,7 +864,14 @@ class AutomationController {
     }
     const body = bodyParts.join('\n')
     const title = `feat: ${req.title}`
-    const prResult = await createGhPr(this._gitCwd(req.id), title, body, headBranch)
+    const prResult = await createForgePr(
+      this._gitCwd(req.id),
+      title,
+      body,
+      headBranch,
+      undefined,
+      getForgeOverride(this.workspacePath),
+    )
     if (prResult.ok && prResult.prId) {
       return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '' }
     }

@@ -188,7 +188,7 @@ function logStatus(log: ScheduleExecutionLog): string {
 .ehd-head {
   height: 44px;
   flex-shrink: 0;
-  padding: 0 var(--sp-3);
+  padding: 0 var(--sp-4);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -215,7 +215,7 @@ function logStatus(log: ScheduleExecutionLog): string {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-2);
+  padding: var(--sp-4);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -272,7 +272,7 @@ function logStatus(log: ScheduleExecutionLog): string {
 .ehd-pager {
   flex-shrink: 0;
   height: 48px;
-  padding: 0 var(--sp-3);
+  padding: 0 var(--sp-4);
   display: flex;
   align-items: center;
   justify-content: center;

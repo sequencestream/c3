@@ -254,7 +254,7 @@ function onCreate(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-4);
   border-bottom: 1px solid var(--c-border);
 }
 .ns-head h2 {
@@ -318,7 +318,7 @@ function onCreate(): void {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-4);
   border-top: 1px solid var(--c-border);
 }
 .ns-btn {

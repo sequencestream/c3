@@ -28,6 +28,13 @@ describe('buildSpecAgentPrompt', () => {
     expect(prompt).toContain('Do not add an implementation appendix by default')
   })
 
+  it('forbids document-level status labels because approval does not write them back', () => {
+    const prompt = buildSpecAgentPrompt('en')
+
+    expect(prompt).toContain('Do not add a `status` label in the frontmatter or document header')
+    expect(prompt).toContain('Approval is a system gate and does not write a document status back')
+  })
+
   it('reserves migration and trade-off detail for complex changes', () => {
     const prompt = buildSpecAgentPrompt('en')
 

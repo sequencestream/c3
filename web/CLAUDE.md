@@ -1,7 +1,7 @@
 - support desktop and mobile devices
 - All user-visible UI text goes through i18n: no hard-coded copy in templates.
-- Key naming is English and follows `specs/style/i18n-spec.md` §2; the displayed text lives as values in `web/src/locales/en.json` (base) and `zh.json` (and other locales).
+- Key naming is English and follows `doc/style/i18n-spec.md` §2; the displayed text lives as values in `web/src/locales/en.json` (base) and `zh.json` (and other locales).
 - Use the typed `t` / `useTypedI18n()` from `@/i18n` so a misspelt key fails `vue-tsc` (native `$t` only autocompletes).
-- Fixed translations / do-not-translate terms: see `specs/style/i18n-terms.md`.
+- Fixed translations / do-not-translate terms: see `doc/style/i18n-terms.md`.
 - Destructive / irreversible confirmations (delete, etc.) use the `ConfirmDialog` component (`@/components/ConfirmDialog`), never `window.confirm`: a controlled modal with injected title/message/labels, `danger` confirm styling, overlay/Esc/cancel all emitting `cancel`, and mobile full-screen sheet. Pre-existing `window.confirm` call sites are legacy — migrate them to `ConfirmDialog` when touched.
 - Transient, non-blocking feedback (action ok/failed, errors) uses the global toast: call `ctx.showToast(text)` (from the controls state; the single `toast` ref auto-dismisses after 4s and is rendered once in `App.vue`). Pass an already-localized string — `t('…')` for app copy, or `translateUiError(err)` for a server `{code, params}` UiError. Use it for surfacing server `error` messages so a rejected action is never silent; it is NOT for confirmations (use `ConfirmDialog`).

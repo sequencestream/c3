@@ -2,11 +2,11 @@
 
 c3 的**许可证授权方**——一个独立的 Go 服务,持有权威的商业授权记录、套餐目录以及面向买家/管理员的 Web。
 它**刻意与 c3 进程分离**(c3 进程内禁止数据库、身份提供方、支付集成与对公网监听,这些都活在这里),
-见 [ADR-0026](../specs/architecture/adr/0026-product-licensing-separate-license-server.md)。
+见 [ADR-0026](../doc/architecture/adr/0026-product-licensing-separate-license-server.md)。
 
 > **设计与接口契约**(进程形态、绑定/心跳流程、数据模型、签名信任链、**每个接口的输入输出**)集中在
-> [license-server 架构规范](../specs/architecture/license-server-architecture.md);对外边界语义见
-> [license-server API 契约](../specs/shared/api-conventions/license-server-api.md)。本 README 只做**代码级索引**,不复述设计。
+> [license-server 架构规范](../doc/architecture/license-server-architecture.md);对外边界语义见
+> [license-server API 契约](../doc/shared/api-conventions/license-server-api.md)。本 README 只做**代码级索引**,不复述设计。
 
 ## 技术栈
 
@@ -47,7 +47,7 @@ license-server/
 ```
 
 接口清单与每个接口的请求/返回参数见
-[架构规范 §10 接口参数明细](../specs/architecture/license-server-architecture.md)。
+[架构规范 §10 接口参数明细](../doc/architecture/license-server-architecture.md)。
 
 ## 配置
 

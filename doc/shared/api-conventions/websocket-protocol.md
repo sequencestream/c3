@@ -201,13 +201,13 @@
 
 ### `write_spec`
 
-为 intent 撰写 spec 文档（质量闸输出步骤）：在**固定集中**的 spec 根目录(`<c3 home>/specs/<项目路径段>`,按项目隔离、不可配置、不入 Git)下搭建按日期分层的 spec 目录、种子 `spec.md`、立即把**绝对路径**回填到 intent 的 `specPath`,并在配置的 spec agent 上启动写入受限于 spec 目录(即便其位于项目树之外)的撰写会话;非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。
+为 intent 撰写 spec 文档（质量闸输出步骤）：在**固定集中**的 spec 根目录(`<c3 home>/doc/<项目路径段>`,按项目隔离、不可配置、不入 Git)下搭建按日期分层的 spec 目录、种子 `spec.md`、立即把**绝对路径**回填到 intent 的 `specPath`,并在配置的 spec agent 上启动写入受限于 spec 目录(即便其位于项目树之外)的撰写会话;非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。
 
 **字段：** `workspaceId: string`, `intentId: string`
 
 ### `read_spec`
 
-读取 intent 已撰写的 spec(供意图详情「spec」tab 渲染)。spec 位于工作区之外的集中根目录,工作区受限的 `read_file` 无法触达,故由本消息按 **intentId** 解析该 intent 存储的绝对 `specPath`,并**只在集中 spec 根目录内**读取(失败即拒,落在根目录之外的旧版工作区内 `.specs` 不被识别),回复 `read_file`(其 `file.path` 即该绝对 spec 路径)。
+读取 intent 已撰写的 spec(供意图详情「spec」tab 渲染)。spec 位于工作区之外的集中根目录,工作区受限的 `read_file` 无法触达,故由本消息按 **intentId** 解析该 intent 存储的绝对 `specPath`,并**只在集中 spec 根目录内**读取(失败即拒,落在根目录之外的旧版工作区内 `.doc` 不被识别),回复 `read_file`(其 `file.path` 即该绝对 spec 路径)。
 
 **字段：** `workspaceId: string`, `intentId: string`
 

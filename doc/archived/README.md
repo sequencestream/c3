@@ -1,6 +1,6 @@
 # Archived
 
-Deprecated specs and domains move here, retaining their original structure, with a header
+Deprecated doc and domains move here, retaining their original structure, with a header
 note explaining when and why they were deprecated and what replaced them.
 
 - Domains: archive the whole `<domain>/` directory; update the group overview to redirect.

@@ -101,11 +101,11 @@ and the [product-license domain](domains/commerce/product-license/product-licens
 - Failure to find the `claude` executable, or an SDK error, surfaces to the user as a
   `turn_end` with `reason: 'error'` — never a silent hang.
 
-## Spec authoring discipline
+## Document authoring discipline
 
-- **C-DOC-1 — No code references.** Specs describe behaviour, contracts, and decisions in
+- **C-DOC-1 — No code references.** Documents describe behaviour, contracts, and decisions in
   domain language. They must not point at the implementation. Forbidden everywhere under
-  `specs/` (including ADRs and integration guides):
+  `doc/` (including ADRs and integration guides):
   - source or config **file / directory paths** (anything naming a real tree location);
   - **source-tree listings** (module-structure / file-tree blocks, "file responsibilities"
     tables that enumerate files);

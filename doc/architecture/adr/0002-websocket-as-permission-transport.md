@@ -45,5 +45,5 @@ carries a correlation id; the browser's `permission_response` echoes it to corre
 
 ## References
 
-- `specs/shared/api-conventions/websocket-protocol.md`
-- `specs/domains/core/permission-gateway/permission-gateway-spec.md`
+- `doc/shared/api-conventions/websocket-protocol.md`
+- `doc/domains/core/permission-gateway/permission-gateway-spec.md`

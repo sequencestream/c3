@@ -1,6 +1,6 @@
 # 发布步骤 — c3 二进制 Release
 
-> 对应 specs/non-functional/release.md(release 1–7)与 ADR-0026(自建 license-server 作为产物分发方)。
+> 对应 doc/non-functional/release.md(release 1–7)与 ADR-0026(自建 license-server 作为产物分发方)。
 > 签名信任锚见 `server/src/release-pubkey.ts`(内嵌 minisign 公钥)。
 
 ## 概述

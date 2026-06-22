@@ -24,7 +24,7 @@ the terminal.
 > logged in (`claude /login`) on the host; override its path with `$CLAUDE_PATH`.
 > A missing host CLI is a product convention, not a bug: that agent type is simply
 > unavailable (c3 logs present/missing CLIs at startup with install guidance). See
-> [ADR-0012](specs/architecture/adr/0012-host-binary-probe-first-capability-gate.md).
+> [ADR-0012](doc/architecture/adr/0012-host-binary-probe-first-capability-gate.md).
 
 ## Quick start (development)
 
@@ -135,8 +135,8 @@ minisign -Vm c3-v0.2.0-macos-arm64 -P RWQzBKv0lANWnVsOQNO6o7YjLi0MbFGbI0K0fUTIaX
 
 `RELEASE_HARDEN` (env) or `--harden=` selects a hardening tier for the native binaries.
 Default is **`basic`** — minify + strip + manifest. The **standard** tier adds an opt-in
-obfuscation pass; the other two tiers are unchanged. See `specs/non-functional/release.md`
-"Hardening tiers" for the full table and `specs/non-functional/security.md` "Non-goal:
+obfuscation pass; the other two tiers are unchanged. See `doc/non-functional/release.md`
+"Hardening tiers" for the full table and `doc/non-functional/security.md` "Non-goal:
 hardening" for the full NOT-doing list.
 
 ```bash
@@ -160,7 +160,7 @@ RELEASE_HARDEN=standard pnpm release                 # additionally forces `pnpm
   for that artifact, and the build keeps going (exit 0, release is NOT blocked).
 
 **Standard tier — what it does NOT do** (each row in the full table in
-`specs/non-functional/security.md` has a "why"):
+`doc/non-functional/security.md` has a "why"):
 
 - ❌ Control-flow flattening (e2e regressions hard to diagnose; zero defensive value)
 - ❌ String encryption (redundant with string-array; +5–10% startup)
@@ -184,7 +184,7 @@ RELEASE_HARDEN=standard pnpm release                 # additionally forces `pnpm
 > ```
 
 > Distribution trust is the signing chain above — `minify`/`strip` are **not** a security
-> control (see [`specs/non-functional/security.md`](specs/non-functional/security.md)
+> control (see [`doc/non-functional/security.md`](doc/non-functional/security.md)
 > → "Non-goal: anti-decompilation").
 
 ## End-to-end tests
@@ -281,7 +281,7 @@ plist; Windows deletes the `c3` Task Scheduler task. It is idempotent: a service
 absent reports that nothing needs removal and exits successfully.
 
 Uninstalling **only removes the OS service registration**. It does not delete `~/.c3` settings,
-database, worktrees, specs, logs, or pid files, and it does not terminate an existing c3 process.
+database, worktrees, doc, logs, or pid files, and it does not terminate an existing c3 process.
 An unsupported platform, missing/failing `systemctl`/`launchctl`/`schtasks`, exits non-zero with
 the underlying stderr shown. Updating c3 remains manual; auto-update is not provided.
 

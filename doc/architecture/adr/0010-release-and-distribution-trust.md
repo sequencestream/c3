@@ -73,7 +73,7 @@ concerns — version source of truth, channels, hardening tiers, signing/notariz
   - minisign Ed25519 + macOS ad-hoc codesign + embedded-key `c3 verify` + notes/publish
     orchestration) off the manifest + compile primitive with no structural change. Trust =
     the signing chain; obfuscation is an explicit non-goal (security.md). See
-    `specs/non-functional/release.md` "Distribution trust".
+    `doc/non-functional/release.md` "Distribution trust".
 
 ## Compliance
 
@@ -86,5 +86,5 @@ concerns — version source of truth, channels, hardening tiers, signing/notariz
 ## References
 
 - [ADR-0003](0003-single-binary-via-bun-compile.md) — single binary via `bun build --compile` (evolved by this ADR)
-- `specs/non-functional/release.md`
+- `doc/non-functional/release.md`
 - oven-sh/bun#18416 — cross-compile + `--bytecode` segfault

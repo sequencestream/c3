@@ -59,7 +59,7 @@ flowchart TD
 1. **web-console → intent-management.** For a saved intent, `write_spec` produces a constrained,
    reviewable spec document before development — the quality-gate output step (`RM-R21`). The server
    scaffolds a dated directory under the **fixed, centralized spec root**
-   `<c3 home>/specs/<project-path-segment>` (per project, shared by all the project's worktrees;
+   `<c3 home>/doc/<project-path-segment>` (per project, shared by all the project's worktrees;
    not user-configurable, not in Git), `<spec-root>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`,
    where `<slug>` derives from the intent's `shortEnTitle` (falling back to the intent id prefix)
    and `<NNN>` is a per-day sequence. It seeds a **minimal** `spec.md` (frontmatter containing

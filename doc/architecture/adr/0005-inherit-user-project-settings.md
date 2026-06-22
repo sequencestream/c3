@@ -54,7 +54,7 @@ this is accepted and intended, mirroring the `claude` CLI.
 
 ## References
 
-- `specs/constitution.md` § C-SEC-1
-- `specs/non-functional/security.md` § SEC-3
-- `specs/domains/core/permission-gateway/permission-gateway-spec.md`
+- `doc/constitution.md` § C-SEC-1
+- `doc/non-functional/security.md` § SEC-3
+- `doc/domains/core/permission-gateway/permission-gateway-spec.md`
 - Superseded: [ADR 0001](deprecated/0001-c3-sole-permission-authority.md)

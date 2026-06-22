@@ -435,7 +435,7 @@ immediately (the composer action returns send).
 ## Visual style
 
 The console's look and feel follows the project style guide at
-[`specs/style/style-spec.md`](../../../style/style-spec.md) (immersive dark base, translucent
+[`doc/style/style-spec.md`](../../../style/style-spec.md) (immersive dark base, translucent
 materials, restrained accent color, low information density). Component styling should conform to it
 rather than restating its rules here.
 

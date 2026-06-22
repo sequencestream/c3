@@ -1,7 +1,7 @@
 # Specs Knowledge Base — Overview
 
 This directory is the source of truth for **what c3 does and why**. Source code is the
-source of truth for **how it does it today**; specs describe the intended behavior that
+source of truth for **how it does it today**; doc describe the intended behavior that
 code must satisfy. When the two disagree, that is a bug in one of them — reconcile, don't
 ignore.
 
@@ -60,7 +60,7 @@ c3 has three business groups: `core` (the agent loop), `system-config` (user con
 5. **Dates are `YYYY-MM-DD`.** Business-semantic types over technical types.
 6. **No code references (C-DOC-1).** Specs describe behaviour in domain language — no source
    file/directory paths, no source-tree listings, no class/type/function/field names, no
-   JSDoc `{@link}`. Cross-links to other `.md` specs, wire-message names, user-facing config
+   JSDoc `{@link}`. Cross-links to other `.md` doc, wire-message names, user-facing config
    keys, rule/ADR IDs, and external tool identifiers are the allowed contract vocabulary. See
    [`constitution.md`](constitution.md) C-DOC-1.
 

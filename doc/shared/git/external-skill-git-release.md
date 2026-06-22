@@ -87,5 +87,5 @@ _c3_*
 
 ## 6. 相关规范
 
-- ADR-0016:`specs/architecture/adr/0016-external-skill-git-mount.md` — 扁平布局 + vendor 范围
-- ADR-0017:`specs/architecture/adr/0017-external-skill-mount-mechanism.md` — 软链挂载 + 信任审批
+- ADR-0016:`doc/architecture/adr/0016-external-skill-git-mount.md` — 扁平布局 + vendor 范围
+- ADR-0017:`doc/architecture/adr/0017-external-skill-mount-mechanism.md` — 软链挂载 + 信任审批

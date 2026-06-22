@@ -1,12 +1,7 @@
 # CI — mandatory gates for every pull request.
 #
-# Four independent jobs so each is a distinct GitHub status check:
-#   lint / typecheck / build / e2e
-#
-# Set branch protection to require all four before merge (see CONTRIBUTING.md).
-#
-# `pnpm e2e` does its own `pnpm build` internally, so the `build` job and the
-# `e2e` job each build independently — no artifact passing, no coupling.
+# A single job runs all gates sequentially: lint / i18n / typecheck / build.
+# One checkout, one install, one runner.
 name: CI
 
 on:
@@ -15,7 +10,7 @@ on:
   pull_request:
 
 jobs:
-  lint:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,40 +32,8 @@ jobs:
       - name: i18n check
         run: pnpm i18n:check
 
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
       - name: Typecheck
         run: pnpm typecheck
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build

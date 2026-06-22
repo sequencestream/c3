@@ -2063,7 +2063,7 @@ export function isValidScheduleMaxWallClockMs(value: unknown): value is number |
 
 export type McpMode = 'read-only' | 'sandboxed' | 'full-access'
 
-export type ScheduleStatus = 'active' | 'paused' | 'error'
+export type ScheduleStatus = 'active' | 'paused' | 'error' | 'archived'
 
 /** How a schedule fires: time-based cron, or a run lifecycle event (2026-06-08). */
 export type ScheduleTriggerType = 'cron' | 'event'

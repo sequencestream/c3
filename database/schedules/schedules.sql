@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   event_topic         TEXT,                                -- 事件主题 (v5 新增, trigger_type='event' 时使用: 'run:started'|'run:settled'|'pr:operation')
   event_reason_filter TEXT,                                -- JSON 数组, run:settled 原因过滤 (v5 新增, 如 ['complete','error','aborted'])
   event_pr_filter     TEXT,                                -- JSON {operations?,results?}, pr:operation 过滤 (v8 新增, NULL=任意)
-  status              TEXT NOT NULL,                        -- 状态: 'active' | 'paused' | 'error'
+  status              TEXT NOT NULL,                        -- 状态: 'active' | 'paused' | 'error' | 'archived'
   mode                TEXT NOT NULL DEFAULT '',             -- 执行模式: ModeToken 字符串或 CodexPolicy JSON (v7 改名自 mcp_mode)
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',           -- JSON 数组, 允许使用的工具名列表
   tool_denylist       TEXT NOT NULL DEFAULT '[]',           -- JSON 数组, 禁止使用的工具名列表

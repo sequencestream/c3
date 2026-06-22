@@ -4,19 +4,18 @@ import type { DevLaunchStage } from '@ccc/shared/protocol'
  * dev-launch-view — pure decision logic for the manual `start_development`
  * startup-progress overlay.
  *
- * The overlay blocks interaction while a Start-Dev launch is in flight, but only
- * once it outlasts a threshold (a fast launch shows nothing). It steps through a
- * fixed ordered list mapped from the backend's coarse {@link DevLaunchStage}
- * phases, and converges on every terminal signal (success / failure / safety
- * timeout) so the user is never trapped behind it.
+ * The overlay blocks interaction immediately while a Start-Dev launch is in
+ * flight. It remains visible for a minimum dwell time to avoid flashing during
+ * fast launches, then converges on every terminal signal (success / failure /
+ * safety timeout) so the user is never trapped behind it.
  *
  * This module holds only the state machine + step mapping (no DOM, no timers,
  * no `send`). The control layer wires it to `setTimeout` / the message handler
  * while the decisions stay unit-testable.
  */
 
-/** Delay before a still-in-flight launch reveals the overlay (>5s per spec). */
-export const DEV_LAUNCH_THRESHOLD_MS = 5_000
+/** Minimum visible time for the immediately-shown overlay. */
+export const DEV_LAUNCH_MIN_DWELL_MS = 500
 /**
  * Hard ceiling: if no terminal signal (in_progress / failed) arrives by now,
  * close the overlay with an error so a lost/dropped signal never traps the user.
@@ -41,10 +40,14 @@ export interface DevLaunchModel {
   intentId: string
   /** Current coarse phase. */
   phase: DevLaunchPhase
-  /** Click time (ms epoch); drives the threshold + safety-timeout windows. */
+  /** Click time (ms epoch); drives the safety-timeout window. */
   startedAt: number
-  /** Whether the threshold has elapsed and the overlay is actually shown. */
+  /** When the overlay became visible (ms epoch); drives the minimum dwell window. */
+  visibleAt: number
+  /** The overlay is immediately visible for every manual launch. */
   visible: boolean
+  /** A success or failure received before the minimum dwell period ends. */
+  pendingCloseReason?: Extract<DevLaunchCloseReason, 'ready' | 'failed'>
 }
 
 /** Why the overlay closed — drives the control layer's toast (none on success). */
@@ -58,23 +61,18 @@ export interface DevLaunchTransition {
 
 /** Events the overlay state machine folds in. */
 export type DevLaunchEvent =
-  /** A timer/visibility tick: reveal the overlay if the threshold has elapsed. */
-  | { kind: 'tick'; now: number }
   /** A connection-directed `dev_launch_progress` stage arrived. */
-  | { kind: 'stage'; intentId: string; stage: DevLaunchStage }
+  | { kind: 'stage'; intentId: string; stage: DevLaunchStage; now: number }
   /** The target intent flipped to `in_progress` (success terminal). */
-  | { kind: 'ready'; intentId: string }
+  | { kind: 'ready'; intentId: string; now: number }
+  /** The minimum-dwell timer fired. */
+  | { kind: 'dwell-complete'; now: number }
   /** The safety-timeout fired. */
   | { kind: 'timeout'; now: number }
 
-/** Build the initial in-flight (hidden) model for a just-clicked launch. */
+/** Build the initial in-flight (visible) model for a just-clicked launch. */
 export function beginDevLaunch(intentId: string, now: number): DevLaunchModel {
-  return { intentId, phase: 'preparing-workspace', startedAt: now, visible: false }
-}
-
-/** Whether a still-in-flight launch has outlasted the reveal threshold. */
-export function shouldRevealOverlay(elapsedMs: number, inFlight: boolean): boolean {
-  return inFlight && elapsedMs >= DEV_LAUNCH_THRESHOLD_MS
+  return { intentId, phase: 'preparing-workspace', startedAt: now, visibleAt: now, visible: true }
 }
 
 /** Terminal phases stop progress (the overlay closes around these). */
@@ -85,6 +83,29 @@ export function isTerminalPhase(phase: DevLaunchPhase): boolean {
 /** Whether the elapsed time has reached the safety-timeout ceiling. */
 export function isSafetyTimeoutDue(elapsedMs: number): boolean {
   return elapsedMs >= DEV_LAUNCH_SAFETY_TIMEOUT_MS
+}
+
+/** Whether the overlay has completed its minimum visible dwell. */
+export function isMinimumDwellComplete(elapsedMs: number): boolean {
+  return elapsedMs >= DEV_LAUNCH_MIN_DWELL_MS
+}
+
+function settleDevLaunch(
+  model: DevLaunchModel,
+  reason: Extract<DevLaunchCloseReason, 'ready' | 'failed'>,
+  now: number,
+): DevLaunchTransition {
+  if (model.pendingCloseReason) return { model }
+  if (isMinimumDwellComplete(now - model.visibleAt)) {
+    return { model: null, closedReason: reason }
+  }
+  return {
+    model: {
+      ...model,
+      ...(reason === 'failed' ? { phase: 'failed' as const } : { phase: 'ready' as const }),
+      pendingCloseReason: reason,
+    },
+  }
 }
 
 /**
@@ -122,19 +143,21 @@ export function reduceDevLaunch(
 ): DevLaunchTransition {
   if (!model) return { model: null }
   switch (ev.kind) {
-    case 'tick':
-      if (!model.visible && shouldRevealOverlay(ev.now - model.startedAt, true)) {
-        return { model: { ...model, visible: true } }
-      }
-      return { model }
     case 'stage':
       // Ignore progress for a different intent (another tab / stale launch).
       if (ev.intentId !== model.intentId) return { model }
-      if (ev.stage === 'failed') return { model: null, closedReason: 'failed' }
+      // A terminal signal already arrived; hold its terminal presentation until dwell ends.
+      if (model.pendingCloseReason) return { model }
+      if (ev.stage === 'failed') return settleDevLaunch(model, 'failed', ev.now)
       return { model: { ...model, phase: ev.stage } }
     case 'ready':
       if (ev.intentId !== model.intentId) return { model }
-      return { model: null, closedReason: 'ready' }
+      return settleDevLaunch(model, 'ready', ev.now)
+    case 'dwell-complete':
+      if (model.pendingCloseReason && isMinimumDwellComplete(ev.now - model.visibleAt)) {
+        return { model: null, closedReason: model.pendingCloseReason }
+      }
+      return { model }
     case 'timeout':
       if (isSafetyTimeoutDue(ev.now - model.startedAt)) {
         return { model: null, closedReason: 'timeout' }

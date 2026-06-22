@@ -2,9 +2,9 @@
 /*
  * DevStartupOverlay.vue — 开发启动进度遮罩。
  *
- * 仅服务于需求详情页「Start Dev」触发的 start_development 启动等待:当启动耗时超过
- * 阈值(>5s)时,以全屏阻断遮罩按有序步骤展示后端推送的粗粒度阶段进度,启动就绪/失败/
- * 安全超时后由控制层关闭(model 置空)。本组件是纯展示:不持有计时器/状态,只渲染传入的
+ * 仅服务于需求详情页「Start Dev」触发的 start_development 启动等待:点击后立即以全屏
+ * 阻断遮罩按有序步骤展示后端推送的粗粒度阶段进度,并以最小停留时间防止快速启动闪烁。
+ * 启动就绪/失败/安全超时后由控制层关闭(model 置空)。本组件是纯展示:不持有计时器/状态,只渲染传入的
  * model 与派生步骤(判定逻辑在 lib/dev-launch-view.ts,可单测)。
  */
 import { computed } from 'vue'
@@ -20,7 +20,7 @@ import {
 const props = defineProps<{ model: DevLaunchModel | null }>()
 const { t } = useTypedI18n()
 
-// 仅当存在在途启动且已越过显示阈值(visible)时才渲染遮罩。
+// 仅当存在在途启动时渲染遮罩。
 const shown = computed(() => !!props.model && props.model.visible)
 
 // 步骤 → 文案 key(字面量,保证 typed t 编译期校验)。

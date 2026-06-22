@@ -544,7 +544,7 @@ const {
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
 
   <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction
-       while a manual Start-Dev launch is in flight past the reveal threshold. -->
+       immediately while a manual Start-Dev launch is in flight. -->
   <DevStartupOverlay :model="devLaunch" />
 </template>
 

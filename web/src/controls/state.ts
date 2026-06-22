@@ -463,19 +463,19 @@ export function createState(deps: StateDeps) {
 
   // ---- Dev-launch startup overlay (App-global, like the toast) ----
   // Tracks a manual `start_development` launch so a blocking overlay can show
-  // its coarse progress once the launch outlasts the reveal threshold. null =
-  // no launch in flight / overlay closed. The threshold + safety-timeout timers
+  // its coarse progress immediately. null = no launch in flight / overlay closed.
+  // The minimum-dwell + safety-timeout timers
   // live in this non-reactive holder so both intent-actions (arming) and the
   // message handler / close helper (clearing) share one source.
   const devLaunch = ref<DevLaunchModel | null>(null)
   const devLaunchTimers: {
-    threshold: ReturnType<typeof setTimeout> | null
+    dwell: ReturnType<typeof setTimeout> | null
     safety: ReturnType<typeof setTimeout> | null
-  } = { threshold: null, safety: null }
+  } = { dwell: null, safety: null }
   function clearDevLaunchTimers(): void {
-    if (devLaunchTimers.threshold) clearTimeout(devLaunchTimers.threshold)
+    if (devLaunchTimers.dwell) clearTimeout(devLaunchTimers.dwell)
     if (devLaunchTimers.safety) clearTimeout(devLaunchTimers.safety)
-    devLaunchTimers.threshold = null
+    devLaunchTimers.dwell = null
     devLaunchTimers.safety = null
   }
   function closeDevLaunch(): void {

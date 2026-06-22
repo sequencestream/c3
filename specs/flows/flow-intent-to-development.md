@@ -120,8 +120,8 @@ flowchart TD
    coarse, connection-directed `dev_launch_progress` stages after synchronous validation passes:
    `preparing-workspace` (before the git branch phase) and `launching` (before the spawn); the
    previously-silent async launch failure now emits `failed`. The web console arms a blocking
-   startup overlay on the click and **reveals it only if the launch outlasts a threshold (>5s)**,
-   stepping through an ordered list aligned to those stages. The overlay closes on the success
+   startup overlay on the click, **shows it immediately, and keeps it visible for a minimum
+   duration to prevent flashing**, stepping through an ordered list aligned to those stages. The overlay closes on the success
    terminal (the target intent flipping to `in_progress` in the regular `intents` broadcast),
    on `failed` / an `intent.*` action error, and on a safety timeout so a lost signal never traps
    the user. Synchronous validation failures stay on the `error` channel and emit no progress.

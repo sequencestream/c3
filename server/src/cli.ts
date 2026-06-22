@@ -8,6 +8,7 @@ import { versionString } from './version.js'
 import { runVerify } from './verify.js'
 import { startDaemon, type DaemonStartOptions } from './daemon.js'
 import { installService, UnsupportedPlatformError } from './service-install.js'
+import { uninstallService } from './service-uninstall.js'
 
 const program = new Command()
 
@@ -153,6 +154,42 @@ program
           '[c3] supported platforms: linux (systemd), darwin (launchd), win32 (schtasks)',
         )
         console.error('[c3] run c3 with `--daemon` for a background process without an OS service')
+        process.exit(1)
+      }
+      throw err
+    }
+  })
+
+program
+  .command('uninstall')
+  .description('Remove the c3 per-user OS service (keeps all c3 data)')
+  .action(() => {
+    try {
+      const result = uninstallService({ platform: process.platform })
+      if (result.kind === 'not-installed') {
+        console.log(`[c3] ${result.plan.notInstalledMessage}`)
+        process.exit(0)
+      }
+      if (result.kind === 'probe-failed' || result.kind === 'unregister-failed') {
+        const { command, status, stderr } = result
+        const operation = result.kind === 'probe-failed' ? 'service check' : 'service removal'
+        console.error(
+          `[c3] error: ${operation} failed: ${command.cmd} ${command.args.join(' ')} (exit ${status})`,
+        )
+        if (stderr.trim()) console.error(stderr.trim())
+        console.error(
+          `[c3] ensure '${command.cmd}' is installed and on PATH, then re-run 'c3 uninstall'`,
+        )
+        process.exit(1)
+      }
+      console.log(`[c3] uninstalled ${result.plan.platform} service; c3 data was kept`)
+      process.exit(0)
+    } catch (err) {
+      if (err instanceof UnsupportedPlatformError) {
+        console.error(`[c3] error: ${err.message.replace("'c3 install'", "'c3 uninstall'")}`)
+        console.error(
+          '[c3] supported platforms: linux (systemd), darwin (launchd), win32 (schtasks)',
+        )
         process.exit(1)
       }
       throw err

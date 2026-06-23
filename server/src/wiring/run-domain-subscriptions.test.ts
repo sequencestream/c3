@@ -65,6 +65,7 @@ vi.mock('../features/intents/worktree.js', () => ({
 vi.mock('../kernel/config/index.js', () => ({
   getGitBranchMode: vi.fn(() => 'current-branch'),
   getDefaultMainBranch: vi.fn(() => 'main'),
+  getForgeOverride: vi.fn(() => undefined),
 }))
 vi.mock('../features/user-involve/store.js', () => ({
   cancelBySourceId: vi.fn(),

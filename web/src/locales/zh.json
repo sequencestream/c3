@@ -607,6 +607,17 @@
       "failed": "开发启动失败。",
       "timeout": "未能确认开发启动,请重试。"
     },
+    "specLaunch": {
+      "title": "正在启动 Spec 会话…",
+      "step": {
+        "checkDependencies": "检查依赖",
+        "pullCode": "拉取代码",
+        "launchSession": "启动会话"
+      },
+      "dependencyNotMerged": "依赖未合并",
+      "failed": "Spec 会话启动失败。",
+      "timeout": "未能确认 Spec 会话启动,请重试。"
+    },
     "chat": {
       "title": {
         "label": "意图对话"

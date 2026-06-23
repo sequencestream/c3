@@ -9,6 +9,7 @@ import {
 } from '@/lib/discussion-view'
 import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
 import { type DevLaunchModel } from '@/lib/dev-launch-view'
+import { type SpecLaunchModel } from '@/lib/spec-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
 import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
@@ -468,6 +469,7 @@ export function createState(deps: StateDeps) {
   // live in this non-reactive holder so both intent-actions (arming) and the
   // message handler / close helper (clearing) share one source.
   const devLaunch = ref<DevLaunchModel | null>(null)
+  const specLaunch = ref<SpecLaunchModel | null>(null)
   const devLaunchTimers: {
     dwell: ReturnType<typeof setTimeout> | null
     safety: ReturnType<typeof setTimeout> | null
@@ -481,6 +483,20 @@ export function createState(deps: StateDeps) {
   function closeDevLaunch(): void {
     clearDevLaunchTimers()
     devLaunch.value = null
+  }
+  const specLaunchTimers: {
+    dwell: ReturnType<typeof setTimeout> | null
+    safety: ReturnType<typeof setTimeout> | null
+  } = { dwell: null, safety: null }
+  function clearSpecLaunchTimers(): void {
+    if (specLaunchTimers.dwell) clearTimeout(specLaunchTimers.dwell)
+    if (specLaunchTimers.safety) clearTimeout(specLaunchTimers.safety)
+    specLaunchTimers.dwell = null
+    specLaunchTimers.safety = null
+  }
+  function closeSpecLaunch(): void {
+    clearSpecLaunchTimers()
+    specLaunch.value = null
   }
 
   // ---- Pure (state-only) message-append helpers ----
@@ -510,6 +526,9 @@ export function createState(deps: StateDeps) {
     devLaunchTimers,
     clearDevLaunchTimers,
     closeDevLaunch,
+    specLaunchTimers,
+    clearSpecLaunchTimers,
+    closeSpecLaunch,
     // refs
     messages,
     status,
@@ -607,6 +626,7 @@ export function createState(deps: StateDeps) {
     toast,
     intentActionErrorSeq,
     devLaunch,
+    specLaunch,
     // computeds
     authStatus,
     workcenterPendingCount,

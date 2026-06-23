@@ -69,6 +69,13 @@ See [intent-management-models.md](intent-management-models.md).
   historical — and every intent's spec session stay out of the sidebar (RM-R4). Both are
   non-user-work sessions reachable only from the intent view (communication sessions via the
   intent chat, the spec session via the intent's spec tab), never from the sidebar.
+- **Spec dependency context.** Before creating or resetting a spec session, worktree mode requires
+  each known dependency to be available on the workspace mainline. A dependency that is not done,
+  or that is done but still resides on a non-main branch without a merged PR, blocks the action;
+  merged PRs, branchless historical work, mainline branches, and missing historical records pass.
+  Current-branch mode skips this check. After a pass, the workspace branch is refreshed on a
+  best-effort basis before the session begins; a failed refresh is recorded but does not block
+  authoring. The corresponding controls remain disabled while the rule is unmet.
 - **Session collection.** Each project holds multiple communication sessions (not just one).
   One session per project is marked `isCurrent` as the default-open pointer when entering the
   intent view without a specific `sessionId`. Sessions can be explicitly switched to via the

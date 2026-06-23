@@ -48,6 +48,7 @@ import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetS
 import {
   formatDate,
   formatDependsOn,
+  hasDependencyBlockingSpecSession,
   isIntentOnWorkspaceMainBranch,
   normalizeBranchName,
   statusLabel,
@@ -66,6 +67,7 @@ const props = defineProps<{
   sddEnabled?: boolean
   /** 当前 workspace 配置的主分支;intent 分支与其相同时不显示 Create PR。 */
   workspaceMainBranch?: string | null
+  workspaceGitBranchMode?: 'worktree' | 'current-branch'
   // ── chat column passthrough(intent session / spec session 两 tab 共用)──
   /** 全局活动会话 id;与期望会话 id 一致时聊天列才渲染(防串台)。 */
   activeSession: string | null
@@ -240,6 +242,24 @@ const mainActionLabel = computed<string>(() => {
       return t('intent.action.startDev.label')
   }
 })
+const specDependencyBlocked = computed<boolean>(() =>
+  hasDependencyBlockingSpecSession(
+    props.intent,
+    props.intents,
+    props.workspaceGitBranchMode,
+    props.workspaceMainBranch,
+  ),
+)
+const mainActionDisabled = computed<boolean>(
+  () =>
+    (mainAction.value === 'startDev' && startDevInFlight.value) ||
+    (mainAction.value === 'writeSpec' && specDependencyBlocked.value),
+)
+const mainActionTitle = computed<string>(() =>
+  mainAction.value === 'writeSpec' && specDependencyBlocked.value
+    ? t('intent.specLaunch.dependencyNotMerged')
+    : mainActionLabel.value,
+)
 
 // ── 防误审门 + 自动切 Tab 定时器 ───────────────────────────────────────────
 // gateTick 仅作 approveGateBlocked 的响应式触发源:到点的定时器自增它,强制重算。
@@ -492,9 +512,9 @@ defineExpose({
                 v-if="intent.status === 'todo' && !approveGateBlocked"
                 class="req-btn primary"
                 :data-action="mainAction"
-                :aria-label="mainActionLabel"
-                :title="mainActionLabel"
-                :disabled="mainAction === 'startDev' && startDevInFlight"
+                :aria-label="mainActionTitle"
+                :title="mainActionTitle"
+                :disabled="mainActionDisabled"
                 @click="onMainAction"
               >
                 {{ mainActionLabel }}
@@ -585,13 +605,15 @@ defineExpose({
           </button>
           <button
             v-if="
-              (tab.key === 'intentSession' || tab.key === 'specSession') &&
+              (tab.key === 'intentSession' || (tab.key === 'specSession' && intent.specPath)) &&
               activeTab === tab.key &&
-              canResetSession
+              (canResetSession || (tab.key === 'specSession' && specDependencyBlocked))
             "
             type="button"
             class="req-btn intent-detail-tab-reset"
             data-testid="intent-detail-reset-session"
+            :title="specDependencyBlocked ? t('intent.specLaunch.dependencyNotMerged') : undefined"
+            :disabled="tab.key === 'specSession' && specDependencyBlocked"
             @click="openResetDialog"
           >
             {{ t('intent.action.resetSession.label') }}

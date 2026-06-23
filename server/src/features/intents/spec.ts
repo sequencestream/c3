@@ -20,7 +20,11 @@ import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
 import { addViewer, ensureRuntime, removeViewer } from '../../runs.js'
 import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
-import { getDefaultMode } from '../../kernel/config/index.js'
+import {
+  getDefaultMainBranch,
+  getDefaultMode,
+  getGitBranchMode,
+} from '../../kernel/config/index.js'
 import { isInside } from '../../kernel/permission/tools.js'
 import {
   resolveSessionVendor,
@@ -28,13 +32,46 @@ import {
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import type { Handler } from '../../transport/handler-registry.js'
-import { getIntent, isStoreAvailable, setSpecApproved, setSpecPath } from './store.js'
+import { getIntent, isStoreAvailable, listIntents, setSpecApproved, setSpecPath } from './store.js'
 import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
+import { findDependencyBlockingMainline } from './dependency-gate.js'
+import { pullCurrentBranch } from './worktree.js'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function prepareSpecDependencyContext(
+  proj: string,
+  intent: Intent,
+  conn: Parameters<Handler<'write_spec'>>[1],
+): boolean {
+  if (getGitBranchMode(proj) === 'worktree') {
+    const blocking = findDependencyBlockingMainline(
+      intent.dependsOn,
+      listIntents(proj),
+      getDefaultMainBranch(proj),
+    )
+    if (blocking) {
+      conn.send({
+        type: 'error',
+        error: {
+          code: 'intent.dependencyNotMerged',
+          params: { title: blocking.title, id: blocking.id },
+        },
+      })
+      return false
+    }
+  }
+  conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'pulling-code' })
+  const pull = pullCurrentBranch(proj)
+  if (!pull.ok) {
+    console.warn(`[c3:intents] spec session pull failed; continuing: ${pull.message ?? 'unknown'}`)
+  }
+  conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'launching' })
+  return true
 }
 
 /**
@@ -139,6 +176,7 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'intent.specAgentUnsupported' } })
     return
   }
+  if (!prepareSpecDependencyContext(proj, intent, conn)) return
 
   // Compute the dated layout under the FIXED centralized spec root and scaffold
   // the directory + seed spec.md. The directory must exist before the agent runs
@@ -186,6 +224,7 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
       .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
+        conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'failed' })
         console.warn(`[c3:intents] write_spec launch failed before bind: ${errMsg(err)}`)
       })
   } catch (err) {
@@ -271,6 +310,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
     conn.send({ type: 'error', error: { code: 'intent.specAgentUnsupported' } })
     return
   }
+  if (!prepareSpecDependencyContext(proj, intent, conn)) return
 
   // Read the current spec content to seed the revision prompt. A read failure is
   // non-fatal: fall back to an empty body (the agent still has the new input).
@@ -308,6 +348,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
       .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, specContent, msg.userInput))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
+        conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'failed' })
         console.warn(`[c3:intents] reset_spec_session launch failed before bind: ${errMsg(err)}`)
       })
   } catch (err) {

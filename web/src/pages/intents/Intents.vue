@@ -48,6 +48,7 @@ const props = defineProps<{
   sddEnabled?: boolean
   /** 当前 workspace 配置的主分支;用于隐藏主分支上的 Create PR 动作。 */
   workspaceMainBranch?: string | null
+  workspaceGitBranchMode?: 'worktree' | 'current-branch'
   // middle: intent session list
   intentSessions: IntentSessionInfo[]
   selectedIntentSessionId: string | null
@@ -283,6 +284,7 @@ defineExpose({
         :intent-action-error-seq="intentActionErrorSeq"
         :sdd-enabled="sddEnabled"
         :workspace-main-branch="workspaceMainBranch"
+        :workspace-git-branch-mode="workspaceGitBranchMode"
         :active-session="activeSession"
         :active-title="activeTitle"
         :vendor="vendor ?? null"

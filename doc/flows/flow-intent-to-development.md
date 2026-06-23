@@ -56,7 +56,15 @@ flowchart TD
 
 ## Write spec (optional quality gate)
 
-1. **web-console → intent-management.** For a saved intent, `write_spec` produces a constrained,
+1. **Dependency context preparation.** Before first authoring or resetting a spec session,
+   worktree mode requires every known dependency to be available on the mainline. A dependency that
+   is not `done`, or is `done` but remains on a non-main branch without a merged PR, rejects the
+   request without creating a document or replacing the selected session. Current-branch mode skips
+   this check. Once it passes, the current workspace branch is pulled best-effort before the session
+   starts; a missing remote, failed pull, or divergence is warned but does not prevent spec writing.
+   Both authoring and reset controls remain disabled with a dependency-not-merged explanation until
+   the rule is satisfied.
+2. **web-console → intent-management.** For a saved intent, `write_spec` produces a constrained,
    reviewable spec document before development — the quality-gate output step (`RM-R21`). The server
    scaffolds a dated directory under the **fixed, centralized spec root**
    `<c3 home>/doc/<project-path-segment>` (per project, shared by all the project's worktrees;
@@ -79,7 +87,7 @@ flowchart TD
    forbidden. The spec describes capabilities and contracts in domain language — it does not list
    source paths, symbols, or per-file edits. A short implementation handoff may follow verification
    only when necessary, describing technical boundaries and sequencing without code identifiers.
-2. **intent-management → agent-session.** A **write-confined spec session** is launched on the
+3. **intent-management → agent-session.** A **write-confined spec session** is launched on the
    configured spec agent (`specAgentId`). Its sole job is to **write the spec, not change code**:
    writes are limited to the spec directory (any other project path is denied; the rest is
    read-only), and shell / sub-agent / slash-command tools are blocked — enforced at the tool +

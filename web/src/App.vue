@@ -17,6 +17,7 @@ import Login from './pages/login/Login.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
 import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
+import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
 import { useAppController } from './controls'
 
 const {
@@ -228,6 +229,7 @@ const {
   toast,
   // ---- dev-launch startup overlay ----
   devLaunch,
+  specLaunch,
 } = useAppController()
 </script>
 
@@ -333,6 +335,13 @@ const {
               ? serverSettings?.projectConfigs?.[intentsProject]?.defaultMainBranch
               : null) ??
             detectedMainBranch
+          "
+          :workspace-git-branch-mode="
+            currentWorkspaceSetting?.gitBranchMode ??
+            (intentsProject
+              ? serverSettings?.projectConfigs?.[intentsProject]?.gitBranchMode
+              : undefined) ??
+            'current-branch'
           "
           :automation="currentAutomation"
           :intent-action-error-seq="intentActionErrorSeq"
@@ -546,6 +555,7 @@ const {
   <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction
        immediately while a manual Start-Dev launch is in flight. -->
   <DevStartupOverlay :model="devLaunch" />
+  <SpecStartupOverlay :model="specLaunch" />
 </template>
 
 <style scoped>

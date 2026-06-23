@@ -112,6 +112,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     intentActionErrorSeq,
     clearSideEffectPending,
     devLaunch,
+    specLaunch,
   } = ctx
 
   ctx.handleMessage = (msg: ServerToClient): void => {
@@ -259,6 +260,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'session_selected':
+        if (specLaunch.value) {
+          ctx.dispatchSpecLaunch({
+            kind: 'ready',
+            intentId: specLaunch.value.intentId,
+            now: Date.now(),
+          })
+        }
         activeWorkspace.value = msg.workspaceId
         activeSession.value = msg.sessionId
         activeTitle.value = msg.title
@@ -412,12 +420,24 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (dl && msg.items.some((it) => it.id === dl.intentId && it.status === 'in_progress')) {
           ctx.dispatchDevLaunch({ kind: 'ready', intentId: dl.intentId, now: Date.now() })
         }
+        const sl = specLaunch.value
+        if (sl && msg.items.some((it) => it.id === sl.intentId && !!it.specSessionId)) {
+          ctx.dispatchSpecLaunch({ kind: 'ready', intentId: sl.intentId, now: Date.now() })
+        }
         break
       }
       case 'dev_launch_progress':
         // Advance the overlay's coarse phase; a `failed` stage closes it with an
         // error toast (the reducer + dispatch handle the side-effects).
         ctx.dispatchDevLaunch({
+          kind: 'stage',
+          intentId: msg.intentId,
+          stage: msg.stage,
+          now: Date.now(),
+        })
+        break
+      case 'spec_launch_progress':
+        ctx.dispatchSpecLaunch({
           kind: 'stage',
           intentId: msg.intentId,
           stage: msg.stage,
@@ -732,6 +752,7 @@ export function installMessageHandler(ctx: AppCtx): void {
           // Close it directly (no extra toast — the specific error toast above
           // already explains the failure).
           if (devLaunch.value) ctx.closeDevLaunch()
+          if (specLaunch.value) ctx.dispatchSpecLaunch({ kind: 'failed', now: Date.now() })
           break
         }
         // License gate (PL-R6): upgrade the raw entitlement `reason` (the wire

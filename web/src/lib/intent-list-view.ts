@@ -119,6 +119,26 @@ export function isIntentOnWorkspaceMainBranch(
   return intentBranch !== null && mainBranch !== null && intentBranch === mainBranch
 }
 
+/** Client-side equivalent of the worktree dependency-mainline gate. */
+export function hasDependencyBlockingSpecSession(
+  intent: Intent | null,
+  intents: Intent[],
+  gitBranchMode: 'worktree' | 'current-branch' | undefined,
+  workspaceMainBranch: string | null | undefined,
+): boolean {
+  if (!intent || gitBranchMode !== 'worktree') return false
+  const byId = new Map(intents.map((item) => [item.id, item]))
+  const main = normalizeBranchName(workspaceMainBranch)
+  return intent.dependsOn.some((id) => {
+    const dep = byId.get(id)
+    if (!dep) return false
+    if (dep.status !== 'done') return true
+    if (dep.prStatus === 'merged') return false
+    const branch = normalizeBranchName(dep.branchName)
+    return branch !== null && (main === null || branch !== main)
+  })
+}
+
 /** 裁决行内操作可见性所需的最小字段集(便于测试轻量构造)。 */
 export type IntentActionInput = Pick<
   Intent,

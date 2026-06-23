@@ -1675,6 +1675,15 @@ export type IntentStatus =
 export const DEV_LAUNCH_STAGES = ['preparing-workspace', 'launching', 'failed'] as const
 export type DevLaunchStage = (typeof DEV_LAUNCH_STAGES)[number]
 
+/** Coarse startup phases for a manual spec-authoring session. */
+export const SPEC_LAUNCH_STAGES = [
+  'checking-dependencies',
+  'pulling-code',
+  'launching',
+  'failed',
+] as const
+export type SpecLaunchStage = (typeof SPEC_LAUNCH_STAGES)[number]
+
 /**
  * Derived run-state of an in_progress intent, computed by reconciling the
  * intent's lastDevSessionId liveness against the process table.
@@ -3189,6 +3198,7 @@ export type ServerToClient =
    * fixing the previously-silent async launch failure.
    */
   | { type: 'dev_launch_progress'; intentId: string; stage: DevLaunchStage }
+  | { type: 'spec_launch_progress'; intentId: string; stage: SpecLaunchStage }
   /**
    * A project's intent-communication-session list (reply to `list_intent_sessions`
    * or push after a change). `runStates` is a live snapshot of which listed

@@ -88,6 +88,16 @@ license-server/
 
 发布端脚本见 `scripts/publish/upload-to-server.mjs`(配 `C3_ARTIFACT_SERVER_URL` / `C3_ARTIFACT_UPLOAD_TOKEN`)。
 
+## 产物下载/查询端点
+
+以下端点均为**匿名公开** GET，只需设置 `C3_LS_ARTIFACT_DIR`；未设置时统一返回 `503 unavailable`。它们只暴露每个版本字典序最新的时间批次(`YYYYMMDD-HHmmZ`)，不要求上传 bearer token。
+
+- `GET /v1/artifact/latest`：返回最新稳定语义版本及其批次，形如 `{"version":"v1.2.3","batch":"20260622-1200Z"}`。预发布目录不会参与 latest 选择；没有可用版本返回 `404`。
+- `GET /v1/artifact/{version}/targets`：`version` 必须与上传目录一致，使用 `vX.Y.Z` 格式。返回该版本最新批次的 `{version,batch,targets}`；每项 target 含 `target`(os_arch)、`file`、`sha256`、`bytes`。
+- `GET /v1/artifact/download?version=vX.Y.Z&os_arch=<target>&type=binary|sha256`：`binary` 流式返回对应包文件，使用 `application/octet-stream` 和附件文件名；`sha256` 返回对应 `<package>.sha256` 文本。不存在的版本、目标或文件返回 `404`，非法参数返回 `400`。
+
+目录扫描与 manifest 解析结果保存在进程内 LRU（沿用 `C3_LS_LRU_SIZE`）30 秒；上传成功会立即失效该版本及 latest 缓存。包体和 sidecar 不缓存，每次直接从磁盘读取。
+
 ## 构建与运行
 
 ```bash

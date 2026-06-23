@@ -278,6 +278,12 @@ func (c *Config) ArtifactUploadConfigured() bool {
 		strings.TrimSpace(c.ArtifactDir) != ""
 }
 
+// ArtifactReadConfigured reports whether public artifact discovery and download
+// can read the configured store. Unlike uploads, public reads need no token.
+func (c *Config) ArtifactReadConfigured() bool {
+	return c != nil && strings.TrimSpace(c.ArtifactDir) != ""
+}
+
 func presence(v string) string {
 	if v == "" {
 		return "unset"

@@ -14,11 +14,13 @@ const (
 	NameAuth Name = "auth"
 	// NamePayment caches in-flight payment/order state.
 	NamePayment Name = "payment"
+	// NameArtifact caches filesystem-derived artifact distribution metadata.
+	NameArtifact Name = "artifact"
 )
 
 // Names lists every wired cache, in a stable order.
 func Names() []Name {
-	return []Name{NamePlans, NameLicense, NameAuth, NamePayment}
+	return []Name{NamePlans, NameLicense, NameAuth, NamePayment, NameArtifact}
 }
 
 // Registry holds the process-wide set of named caches, each bounded to the same

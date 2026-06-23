@@ -65,6 +65,9 @@ c3 是**浏览器外**的本地进程。绑定经浏览器中介完成:
 
 - **`GET /v1/plans`** — 公开套餐目录。返回 `{plans: Plan[]}`,每个 `Plan` 含 `planKey`(稳定键)、`name`、`durationMonths`、`priceCents`、`currency`(ISO-4217)。MVP:`1m`/`6m`/`1y`,CNY。
 - **`GET /healthz`** — 存活 + **脱敏**配置视图(机密只显示 `set`/`unset`,绝不显示值,PL-R12)。
+- **`GET /v1/artifact/latest`** — 公开发布发现。返回最高稳定 `vX.Y.Z` 及最新有效时间批次：`{version,batch}`；没有可用版本为 `404`。
+- **`GET /v1/artifact/{version}/targets`** — version 使用上传目录格式 `vX.Y.Z`。返回 `{version,batch,targets}`，每项 target 为 `{target,file,sha256,bytes}`；version 不合法 `400`，不存在 `404`。
+- **`GET /v1/artifact/download?version=vX.Y.Z&os_arch=<target>&type=binary|sha256`** — 匿名下载最新批次的 manifest 所列文件。`binary` 返回 `application/octet-stream` 包体和附件文件名；`sha256` 返回 `<package>.sha256` 文本。参数非法或路径穿越 `400`，版本、target、包或边车不存在 `404`。三端点只在 `C3_LS_ARTIFACT_DIR` 已配置时可用，否则 `503 unavailable`；读取元信息最多陈旧 30 秒，但上传成功立即失效同进程缓存。
 
 ## 登录与会话(LS Web,面向买家)
 

@@ -21,6 +21,7 @@ import type {
 } from '@ccc/shared/protocol'
 import type { AppState, AuthApi, DepType, TypedT } from './state'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
+import type { SpecLaunchEvent } from '@/lib/spec-launch-view'
 
 export type WsClient = ReturnType<typeof createWsClient>
 
@@ -103,6 +104,7 @@ export interface AppMethods {
   startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
   /** Fold one dev-launch overlay event through the reducer + handle close side-effects. */
   dispatchDevLaunch(ev: DevLaunchEvent): void
+  dispatchSpecLaunch(ev: SpecLaunchEvent): void
   setIntentStatus(intentId: string, status: IntentStatus): void
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void

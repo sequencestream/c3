@@ -6,6 +6,13 @@ import {
   DEV_LAUNCH_SAFETY_TIMEOUT_MS,
   type DevLaunchEvent,
 } from '@/lib/dev-launch-view'
+import {
+  beginSpecLaunch,
+  reduceSpecLaunch,
+  SPEC_LAUNCH_MIN_DWELL_MS,
+  SPEC_LAUNCH_SAFETY_TIMEOUT_MS,
+  type SpecLaunchEvent,
+} from '@/lib/spec-launch-view'
 import type { DepType } from './state'
 import type { AppCtx } from './types'
 
@@ -31,6 +38,19 @@ export function installIntentActions(ctx: AppCtx): void {
     }
     if (tr.closedReason === 'failed') ctx.showToast(t('intent.devLaunch.failed'))
     else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.devLaunch.timeout'))
+  }
+  ctx.dispatchSpecLaunch = (ev: SpecLaunchEvent): void => {
+    const tr = reduceSpecLaunch(ctx.specLaunch.value, ev)
+    ctx.specLaunch.value = tr.model
+    if (!tr.model) ctx.clearSpecLaunchTimers()
+    else if (tr.model.pendingCloseReason && !ctx.specLaunchTimers.dwell) {
+      ctx.specLaunchTimers.dwell = setTimeout(
+        () => ctx.dispatchSpecLaunch({ kind: 'dwell-complete', now: Date.now() }),
+        Math.max(0, tr.model.visibleAt + SPEC_LAUNCH_MIN_DWELL_MS - Date.now()),
+      )
+    }
+    if (tr.closedReason === 'failed') ctx.showToast(t('intent.specLaunch.failed'))
+    else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.specLaunch.timeout'))
   }
 
   ctx.openIntents = (path: string): void => {
@@ -106,6 +126,12 @@ export function installIntentActions(ctx: AppCtx): void {
       workspaceId: intentsProject.value,
       intentId,
     })
+    ctx.clearSpecLaunchTimers()
+    ctx.specLaunch.value = beginSpecLaunch(intentId, Date.now())
+    ctx.specLaunchTimers.safety = setTimeout(
+      () => ctx.dispatchSpecLaunch({ kind: 'timeout', now: Date.now() }),
+      SPEC_LAUNCH_SAFETY_TIMEOUT_MS,
+    )
   }
 
   ctx.approveSpec = (intentId: string): void => {
@@ -138,6 +164,12 @@ export function installIntentActions(ctx: AppCtx): void {
   ctx.resetSpecSession = (intentId: string, userInput: string): void => {
     if (!intentsProject.value) return
     send({ type: 'reset_spec_session', workspaceId: intentsProject.value, intentId, userInput })
+    ctx.clearSpecLaunchTimers()
+    ctx.specLaunch.value = beginSpecLaunch(intentId, Date.now())
+    ctx.specLaunchTimers.safety = setTimeout(
+      () => ctx.dispatchSpecLaunch({ kind: 'timeout', now: Date.now() }),
+      SPEC_LAUNCH_SAFETY_TIMEOUT_MS,
+    )
   }
 
   // Fetch the selected intent's spec.md for the detail's `spec` tab. Specs live

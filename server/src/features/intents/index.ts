@@ -67,6 +67,7 @@ import { clearPendingIntentLink, registerPendingIntentLink } from './intent-link
 import { reconcileInProgress } from './reconcile.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { buildDevPrompt } from './dev-prompt.js'
+import { findDependencyBlockingMainline } from './dependency-gate.js'
 import { judgeCompletion } from './judge.js'
 import {
   cacheRunStatus,
@@ -728,40 +729,17 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // PR still blocks. In current-branch mode this whole check is skipped
   // (status-only validation is done by the domain layer / pickNext for automation).
   if (req.dependsOn.length > 0 && getGitBranchMode(proj) === 'worktree') {
-    const all = listIntents(proj)
-    const byId = new Map(all.map((r) => [r.id, r]))
-    // Branch-ref normalization, same policy as the web `normalizeBranchName`
-    // (`origin/main` / `refs/heads/main` / `main` all compare as `main`).
-    const normBranch = (b: string | null | undefined): string | null => {
-      const s = b?.trim()
-      if (!s) return null
-      return s
-        .replace(/^refs\/heads\//, '')
-        .replace(/^refs\/remotes\//, '')
-        .replace(/^origin\//, '')
-    }
-    const mainBranch = normBranch(getDefaultMainBranch(proj))
-    const unmerged = req.dependsOn
-      .map((id) => byId.get(id))
-      .filter((dep): dep is NonNullable<typeof dep> => {
-        if (!dep) return false // non-existent dep treated as satisfied
-        if (dep.status !== 'done') return true // unfinished ⇒ blocks the downstream branch
-        if (dep.prStatus === 'merged') return false // PR merged ⇒ on trunk
-        const depBranch = normBranch(dep.branchName)
-        // No recorded branch (in-place / historic) ⇒ code is on the current
-        // checkout (the trunk), there is no PR to merge ⇒ treat as merged.
-        if (depBranch === null) return false
-        // Developed in place on the workspace main branch ⇒ already on trunk.
-        if (mainBranch !== null && depBranch === mainBranch) return false
-        // Else: lives on an isolated branch with an unmerged PR ⇒ blocks.
-        return true
-      })
-    if (unmerged.length > 0) {
+    const unmerged = findDependencyBlockingMainline(
+      req.dependsOn,
+      listIntents(proj),
+      getDefaultMainBranch(proj),
+    )
+    if (unmerged) {
       conn.send({
         type: 'error',
         error: {
           code: 'intent.dependencyNotMerged',
-          params: { title: unmerged[0].title, id: unmerged[0].id },
+          params: { title: unmerged.title, id: unmerged.id },
         },
       })
       releaseClaim()

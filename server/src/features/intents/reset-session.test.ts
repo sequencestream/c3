@@ -25,19 +25,29 @@ import {
   resolveWorkspaceRoot,
 } from '../../state.js'
 import { getRuntime, removeRuntime } from '../../runs.js'
-import { getIntent, insertIntents, resetStoreForTests, setSpecPath } from './store.js'
+import {
+  getIntent,
+  insertIntents,
+  resetStoreForTests,
+  setSpecPath,
+  updateIntentDeps,
+} from './store.js'
+import { saveWorkspaceSetting } from '../../kernel/config/index.js'
 import { buildResetIntentPrompt, resetIntentSession } from './index.js'
 import { buildResetSpecPrompt, buildSpecInstructPrompt, resetSpecSessionHandler } from './spec.js'
 import { resetForTests as resetIntentLink, takePendingIntentLink } from './intent-link.js'
 import { resetForTests as resetSpecLink, takePendingSpecLink } from './spec-link.js'
 
 let dir: string
+let prevC3Dir: string | undefined
 let workspaceId: string
 let proj: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-reset-session-'))
   process.env.CLAUDE_CONFIG_DIR = dir
+  prevC3Dir = process.env.C3_DIR
+  process.env.C3_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
@@ -55,6 +65,8 @@ afterEach(() => {
   resetIntentLink()
   resetSpecLink()
   delete process.env.CLAUDE_CONFIG_DIR
+  if (prevC3Dir === undefined) delete process.env.C3_DIR
+  else process.env.C3_DIR = prevC3Dir
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
@@ -199,6 +211,38 @@ describe('resetIntentSession', () => {
 })
 
 describe('resetSpecSessionHandler', () => {
+  it('blocks an unfinished worktree dependency without selecting or launching a session', () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
+    const [dependency, target] = insertIntents(proj, [
+      { title: 'Dependency', shortEnTitle: 'dep', content: '', priority: 'P1' },
+      { title: 'Spec me', shortEnTitle: 'spec', content: '', priority: 'P1' },
+    ])
+    setSpecPath(target.id, join(proj, 'existing-spec.md'))
+    updateIntentDeps(target.id, [{ dependsOnId: dependency.id, depType: 'blocks' }])
+    const launchRun = vi.fn()
+    const ctx = { launchRun } as unknown as KernelContext
+    const { conn, sent } = fakeConn()
+
+    resetSpecSessionHandler(ctx, conn, {
+      type: 'reset_spec_session',
+      workspaceId,
+      intentId: target.id,
+      userInput: 'x',
+    })
+
+    expect(sent).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'intent.dependencyNotMerged',
+          params: { title: dependency.title, id: dependency.id },
+        },
+      },
+    ])
+    expect(conn.viewing).toBeNull()
+    expect(launchRun).not.toHaveBeenCalled()
+  })
+
   it('launches a fresh spec session with input+spec content and registers the id-refresh link', () => {
     const [r] = insertIntents(proj, [
       { title: 'Spec me', shortEnTitle: 'spec', content: '', priority: 'P1' },

@@ -608,6 +608,17 @@
       "failed": "開発の起動に失敗しました。",
       "timeout": "開発の起動を確認できませんでした。もう一度お試しください。"
     },
+    "specLaunch": {
+      "title": "Spec セッションを開始中…",
+      "step": {
+        "checkDependencies": "依存関係を確認",
+        "pullCode": "最新コードを取得",
+        "launchSession": "Spec セッションを開始"
+      },
+      "dependencyNotMerged": "依存関係が未マージです",
+      "failed": "Spec セッションの開始に失敗しました。",
+      "timeout": "Spec セッションの開始を確認できませんでした。"
+    },
     "chat": {
       "title": {
         "label": "意図チャット"

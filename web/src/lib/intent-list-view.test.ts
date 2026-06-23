@@ -6,6 +6,7 @@ import {
   compareByCompletion,
   formatDate,
   formatDependsOn,
+  hasDependencyBlockingSpecSession,
   isIntentOnWorkspaceMainBranch,
   panelToggleLabel,
   reqRunStatusLabel,
@@ -16,6 +17,31 @@ import {
   TERMINAL_PAGE_SIZE,
   visibleIntentActions,
 } from './intent-list-view'
+
+describe('hasDependencyBlockingSpecSession', () => {
+  it('blocks unfinished and unmerged feature dependencies only in worktree mode', () => {
+    const target = { id: 'target', dependsOn: ['dep'] } as Intent
+    const dep = { id: 'dep', status: 'todo', branchName: null, prStatus: null } as Intent
+    expect(hasDependencyBlockingSpecSession(target, [dep], 'worktree', 'main')).toBe(true)
+    expect(hasDependencyBlockingSpecSession(target, [dep], 'current-branch', 'main')).toBe(false)
+    expect(
+      hasDependencyBlockingSpecSession(
+        target,
+        [{ ...dep, status: 'done', branchName: 'feature/x' }],
+        'worktree',
+        'main',
+      ),
+    ).toBe(true)
+    expect(
+      hasDependencyBlockingSpecSession(
+        target,
+        [{ ...dep, status: 'done', prStatus: 'merged' }],
+        'worktree',
+        'main',
+      ),
+    ).toBe(false)
+  })
+})
 
 describe('statusLabel', () => {
   it('七种状态各映射到对应英文标签', () => {

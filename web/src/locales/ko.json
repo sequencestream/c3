@@ -608,6 +608,17 @@
       "failed": "개발 시작에 실패했습니다.",
       "timeout": "개발 시작을 확인할 수 없습니다. 다시 시도해 주세요."
     },
+    "specLaunch": {
+      "title": "Spec 세션 시작 중…",
+      "step": {
+        "checkDependencies": "의존성 확인",
+        "pullCode": "최신 코드 가져오기",
+        "launchSession": "Spec 세션 시작"
+      },
+      "dependencyNotMerged": "의존성이 병합되지 않았습니다",
+      "failed": "Spec 세션을 시작하지 못했습니다.",
+      "timeout": "Spec 세션 시작을 확인할 수 없습니다."
+    },
     "chat": {
       "title": {
         "label": "의도 채팅"

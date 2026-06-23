@@ -18,9 +18,17 @@ import {
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
-import { getIntent, insertIntents, resetStoreForTests, setSpecPath } from './store.js'
+import {
+  getIntent,
+  insertIntents,
+  resetStoreForTests,
+  setSpecPath,
+  updateIntentDeps,
+} from './store.js'
 import { approveSpecHandler, buildSeedSpec, readSpecHandler } from './spec.js'
 import { getSpecsBase } from './specs-root.js'
+import { saveWorkspaceSetting } from '../../kernel/config/index.js'
+import { writeSpecHandler } from './spec.js'
 
 let dir: string
 let prevC3Dir: string | undefined
@@ -80,6 +88,54 @@ describe('buildSeedSpec', () => {
     expect(frontmatter).toContain('title: Cached endpoint')
     expect(frontmatter).toContain('created: 2026-06-22T00:00:00.000Z')
     expect(frontmatter).not.toMatch(/^status:/m)
+  })
+})
+
+describe('writeSpecHandler dependency context', () => {
+  it('blocks an unfinished worktree dependency before scaffolding or launching', () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
+    const [dependency, target] = insertIntents(proj, [
+      { title: 'Dependency', shortEnTitle: 'dep', content: '', priority: 'P1' },
+      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1', dependsOn: [] },
+    ])
+    updateIntentDeps(target.id, [{ dependsOnId: dependency.id, depType: 'blocks' }])
+    const launchRun = vi.fn()
+    const { conn, sent } = fakeConn()
+    writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
+      type: 'write_spec',
+      workspaceId,
+      intentId: target.id,
+    })
+    expect(sent).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'intent.dependencyNotMerged',
+          params: { title: dependency.title, id: dependency.id },
+        },
+      },
+    ])
+    expect(getIntent(target.id)?.specPath).toBeNull()
+    expect(launchRun).not.toHaveBeenCalled()
+  })
+
+  it('continues to launch after a best-effort pull failure', () => {
+    const [target] = insertIntents(proj, [
+      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1' },
+    ])
+    const launchRun = vi.fn().mockResolvedValue(undefined)
+    const { conn, sent } = fakeConn()
+    writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
+      type: 'write_spec',
+      workspaceId,
+      intentId: target.id,
+    })
+    expect(launchRun).toHaveBeenCalledTimes(1)
+    expect(getIntent(target.id)?.specPath).toBeTruthy()
+    expect(sent).toEqual([
+      { type: 'spec_launch_progress', intentId: target.id, stage: 'pulling-code' },
+      { type: 'spec_launch_progress', intentId: target.id, stage: 'launching' },
+    ])
   })
 })
 

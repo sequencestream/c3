@@ -19,15 +19,6 @@ import (
 // be a whole segment — together with the basename check this forbids traversal.
 var artifactSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
-// mountArtifact registers the build-artifact upload endpoint. The c3 release
-// pipeline POSTs each signed artifact (one file per request) here; the handler
-// authenticates a fixed bearer token, validates the path segments, and stores the
-// file under <ArtifactDir>/<version>/<batch>/<filename>. The endpoint is disabled
-// (503) unless both C3_LS_ARTIFACT_UPLOAD_TOKEN and C3_LS_ARTIFACT_DIR are set.
-func mountArtifact(mux *http.ServeMux, d Deps) {
-	mux.HandleFunc("/v1/artifact/upload", allowPOST(handleArtifactUpload(d)))
-}
-
 // handleArtifactUpload streams the request body to <dir>/<version>/<batch>/<file>.
 // It writes to a temp file and renames on success so a failed or truncated upload
 // never leaves a half-written artifact in place. An X-Artifact-Sha256 header, when
@@ -127,6 +118,7 @@ func handleArtifactUpload(d Deps) http.HandlerFunc {
 			return
 		}
 		committed = true
+		invalidateArtifactCache(d, version)
 
 		rel := filepath.ToSlash(filepath.Join(version, batch, filename))
 		slog.Info("artifact uploaded", "version", version, "batch", batch, "filename", filename, "bytes", n)

@@ -305,6 +305,12 @@ c3 ↔ LS 的对外契约(激活、心跳、支付、错误语义)**只在**
 
 库不可达时回退代码内置目录。
 
+**产物公开查询/下载（均为匿名 `GET`）** — 设置 `C3_LS_ARTIFACT_DIR` 后启用；未设置统一 `503 unavailable`。读取 `<dir>/<version>/<batch>/manifest.json`，全部路径段经白名单与 basename/根目录双重校验。`version` 固定为上传端写入的 `vX.Y.Z` 稳定版本；预发布目录不参与 latest。批次只接受 `YYYYMMDD-HHmmZ`，取字典序最大且 manifest 有效者。目录扫描与 manifest 解析只缓存元信息 30 秒（共享 `C3_LS_LRU_SIZE` 的 `artifact` LRU）；上传成功立即失效 `artifact:latest` 与该版本 targets 条目，包体永不缓存。
+
+- **`GET /v1/artifact/latest`** — 无参数。返回 `200 {version,batch}`，其中 version 是最高稳定 semver、batch 是该版本最新有效批次；没有可用版本为 `404 not_found`。
+- **`GET /v1/artifact/{version}/targets`** — path `version` 必填。返回 `200 {version,batch,targets}`；`targets[]` 为 `{target,file,sha256,bytes}`，分别表示 os_arch、包名、包 sha256 与字节数。非法 version 为 `400`，版本/有效批次不存在为 `404`。
+- **`GET /v1/artifact/download?version&os_arch&type`** — 三参数必填，`type` 仅 `binary` 或 `sha256`。按最新 batch manifest 的 target 寻找实际 package；`binary` 以 `application/octet-stream` 与 `Content-Disposition: attachment; filename=...` 流式返回，`sha256` 返回同包的 `.sha256` 文本。非法参数/穿越为 `400`；版本、target、包或 sidecar 缺失为 `404`。
+
 **`GET /*`** — 内嵌 Vue SPA(登录/激活/续费/账户均为 Vue 路由),非 API 路由回退 `index.html`。
 
 ### 10.2 登录(浏览器 / Vue)

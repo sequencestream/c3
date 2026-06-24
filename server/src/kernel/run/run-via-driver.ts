@@ -35,6 +35,7 @@ import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
+import { getSpecsBase } from '../config/workspace-path.js'
 import {
   freezeSessionAgent,
   isDegradableError,
@@ -461,6 +462,9 @@ export async function runViaDriver(
       ...(envOverrides ? { envOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
       ...(sandboxEnvFile ? { sandboxEnvFile } : {}),
+      ...(adapter.vendor === 'codex'
+        ? { additionalDirectories: [getSpecsBase(workspacePath)] }
+        : {}),
       ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),
       // Work & intent sessions are interactive, user-driven runs that must be able
       // to reach the network (web search/fetch + sandboxed command network access).

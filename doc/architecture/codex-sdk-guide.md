@@ -161,6 +161,15 @@ SDK 对子进程的控制比 Claude 更有限，总结如下：
 | MCP      | 通过 CLI 配置的 `mcpServers` 下发给子进程；SDK 无 `PreToolUse` hook 等效物                        |
 | Hooks    | Codex CLI 有 hooks 系统，但**SDK 进程内无 hook 注入点**（Claude SDK 的 `Pre/PostToolUse` 不存在） |
 
+### 集中式 Spec 根的额外可写目录
+
+Codex 的 `workspace-write` 默认只允许工作目录子树写入；c3 的集中式 spec 根位于工作目录之外。
+开发会话启动层以**归属 workspace 路径**解析 `getSpecsBase(workspacePath)`，并把这唯一目录作为
+`ThreadOptions.additionalDirectories` 交给 Codex adapter；CLI 序列化为 `--add-dir <specs-root>`。
+不得从 worktree 或 sandbox 内的 `/workspace` 反推该路径。sandbox wrapper 原样透传参数，且 sandbox
+运行依赖同一路径的 spec 根 bind mount，故容器内外使用同一绝对路径；除这一 spec 根外，不新增 cwd
+之外的可写目录。只读/plan 会话仍由 `read-only` sandbox 限制，不因此获得写权限。
+
 ### 过渡模式映射
 
 c3 将中性的「行动模式 × 工具闸门」网格映射为 Codex 原生的 `sandboxMode + approvalPolicy`：

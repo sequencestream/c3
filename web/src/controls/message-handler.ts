@@ -740,17 +740,16 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'error':
         // Machine-readable code translated locally via the web i18n catalog (spec 003).
         // Intent action errors (start_development gates, approve/write spec, deps, …)
-        // surface as a global TOAST so they are visible on the intents page. They used
+        // surface as a persistent global dialog so they are visible on the intents page. They used
         // to be appended only to the (often not-open) chat stream, so a rejected action
         // looked like "nothing happened". The seq bump still releases the start-dev
         // in-flight guard. Not added to the chat stream — an action error is not session
         // content.
         if (msg.error.code.startsWith('intent.')) {
           intentActionErrorSeq.value += 1
-          ctx.showToast(translateUiError(msg.error))
+          ctx.showIntentActionError(translateUiError(msg.error))
           // A rejected intent action releases any in-flight startup overlay too.
-          // Close it directly (no extra toast — the specific error toast above
-          // already explains the failure).
+          // Close it directly: the specific error dialog already explains the failure.
           if (devLaunch.value) ctx.closeDevLaunch()
           if (specLaunch.value) ctx.dispatchSpecLaunch({ kind: 'failed', now: Date.now() })
           break

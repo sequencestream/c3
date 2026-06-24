@@ -454,12 +454,20 @@ export function createState(deps: StateDeps) {
 
   // ---- Toast (transient, auto-dismissing global toast) ----
   const toast = ref<string | null>(null)
+  // Intent action failures need an explicit acknowledgement, unlike transient toast feedback.
+  const intentActionError = ref<string | null>(null)
   const intentActionErrorSeq = ref(0)
   let toastTimer: ReturnType<typeof setTimeout> | null = null
   function showToast(text: string): void {
     toast.value = text
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => (toast.value = null), 4000)
+  }
+  function showIntentActionError(text: string): void {
+    intentActionError.value = text
+  }
+  function closeIntentActionError(): void {
+    intentActionError.value = null
   }
 
   // ---- Dev-launch startup overlay (App-global, like the toast) ----
@@ -522,6 +530,8 @@ export function createState(deps: StateDeps) {
     statusOf,
     clearSideEffectPending,
     showToast,
+    showIntentActionError,
+    closeIntentActionError,
     sessionTitleById,
     devLaunchTimers,
     clearDevLaunchTimers,
@@ -624,6 +634,7 @@ export function createState(deps: StateDeps) {
     activeLinkedIntentId,
     requestedIntentId,
     toast,
+    intentActionError,
     intentActionErrorSeq,
     devLaunch,
     specLaunch,

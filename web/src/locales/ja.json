@@ -18,6 +18,7 @@
         "label": "保存"
       },
       "close": {
+        "label": "閉じる",
         "tooltip": "閉じる"
       }
     },
@@ -1430,6 +1431,9 @@
     }
   },
   "error": {
+    "intentAction": {
+      "title": "操作に失敗しました"
+    },
     "uiLang": {
       "saveFailed": "言語設定の保存に失敗しました。元に戻しました。"
     },

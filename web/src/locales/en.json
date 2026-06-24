@@ -17,6 +17,7 @@
         "label": "Save"
       },
       "close": {
+        "label": "Close",
         "tooltip": "Close"
       }
     },
@@ -1429,6 +1430,9 @@
     }
   },
   "error": {
+    "intentAction": {
+      "title": "Action failed"
+    },
     "uiLang": {
       "saveFailed": "Failed to save language setting. Reverted."
     },

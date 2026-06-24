@@ -18,7 +18,11 @@ import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalMod
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
 import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
+import ErrorDialog from './components/ErrorDialog/ErrorDialog.vue'
+import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
+
+const { t } = useTypedI18n()
 
 const {
   // ---- auth / connection / top bar ----
@@ -100,6 +104,8 @@ const {
   currentIntentsSdd,
   currentAutomation,
   intentActionErrorSeq,
+  intentActionError,
+  closeIntentActionError,
   currentIntentSessions,
   selectedIntentSessionId,
   intentSessionRunStates,
@@ -551,6 +557,14 @@ const {
   </template>
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
+
+  <ErrorDialog
+    :open="intentActionError !== null"
+    :title="t('error.intentAction.title')"
+    :message="intentActionError ?? ''"
+    :close-label="t('common.action.close.label')"
+    @close="closeIntentActionError"
+  />
 
   <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction
        immediately while a manual Start-Dev launch is in flight. -->

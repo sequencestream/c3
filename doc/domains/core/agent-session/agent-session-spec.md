@@ -147,7 +147,10 @@ The exact classification is owned by the SDK; c3 selects the mode and surfaces i
 > the driver route when the session's vendor is non-Claude, exercising the neutral driver / approval
 > bridge / session store interfaces end-to-end. The driver route resolves the session agent's launch
 > overrides (model / base URL / API key / env overrides + the codex-only policy) and threads them into
-> the driver start. The driver route is deliberately the _minimal_ route — no degradation chain,
+> the driver start. For a Codex development run, that launch layer also derives the owning
+> workspace's centralized specs root and passes it as the sole extra writable directory; the
+> Codex adapter maps it to `--add-dir`, while all other paths outside the working directory stay
+> outside Codex's writable roots. The driver route is deliberately the _minimal_ route — no degradation chain,
 > socket auto-resume, consensus, or intent profile (those are Claude-shaped). Codex has no per-tool
 > approval (008), so its approval bridge never fires; the agent's launch-time sandbox mode / approval
 > policy is the gate. No vendor SDK type crosses into the neutral surface or the shared protocol

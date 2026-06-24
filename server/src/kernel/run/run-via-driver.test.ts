@@ -14,6 +14,7 @@ import {
   runViaDriver,
 } from './run-via-driver.js'
 import { addViewer, ensureRuntime, removeRuntime, type Viewer } from '../../runs.js'
+import { getSpecsBase } from '../config/workspace-path.js'
 
 function frame(blocks: CanonicalBlock[], extra?: Partial<CanonicalMessage>): CanonicalMessage {
   return { vendor: 'codex', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
@@ -283,6 +284,37 @@ describe('runViaDriver — work-session base MCP injection (publish_pr_event, co
     // The per-run binding is evicted at run end.
     expect(dispose).toHaveBeenCalledTimes(1)
 
+    removeRuntime(sid)
+  })
+})
+
+describe('runViaDriver — Codex specs writable root', () => {
+  it('derives and injects only the owning workspace specs root', async () => {
+    const sid = 'codex-specs-root'
+    const workspacePath = '/projects/owner/repository'
+    const rt = ensureRuntime(sid, workspacePath, 'default', [], 'session')
+    const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+    const started: { additionalDirectories?: string[] } = {}
+    const adapter = {
+      vendor: 'codex',
+      approval: { onRequest: () => () => {} },
+      driver: {
+        start: (opts: { additionalDirectories?: string[] }) => {
+          started.additionalDirectories = opts.additionalDirectories
+          return Promise.resolve({
+            sessionId: () => Promise.resolve(sid),
+            // eslint-disable-next-line require-yield
+            messages: async function* () {
+              return
+            },
+          })
+        },
+      },
+    } as unknown as VendorAdapter
+
+    await runViaDriver(rt, 'hi', adapter, eventBus)
+
+    expect(started.additionalDirectories).toEqual([getSpecsBase(workspacePath)])
     removeRuntime(sid)
   })
 })

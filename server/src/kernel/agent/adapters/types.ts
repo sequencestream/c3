@@ -234,6 +234,12 @@ export interface DriverStartOptions {
   images?: import('@ccc/shared/protocol').PromptImage[]
   /** Working directory for the run. */
   cwd: string
+  /**
+   * Extra absolute directories the vendor may permit outside {@link cwd}. The
+   * launch layer resolves these from the owning workspace; adapters that support
+   * them pass them to their native sandbox configuration.
+   */
+  additionalDirectories?: string[]
   /** Aborts the run (the universal, all-vendor control). */
   signal: AbortSignal
   /** Starting action mode + tool gate (the neutral replacement for PermissionMode). */

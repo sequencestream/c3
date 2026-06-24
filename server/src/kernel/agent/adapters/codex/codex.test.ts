@@ -176,6 +176,15 @@ describe('CodexDriver', () => {
     })
   })
 
+  it('passes additional writable directories to startThread', async () => {
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver(() => client)
+    await driver.start(startOpts({ additionalDirectories: ['/home/user/.c3/specs/project'] }))
+    expect(calls[0].options).toMatchObject({
+      additionalDirectories: ['/home/user/.c3/specs/project'],
+    })
+  })
+
   it('threads networkAccess + webSearch into ThreadOptions (2026-06-15)', async () => {
     const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const driver = new CodexDriver(() => client)
@@ -225,6 +234,7 @@ describe('CodexDriver', () => {
       const run = await driver.start(
         startOpts({
           sandboxWrapperPath: fakeCodex,
+          additionalDirectories: ['/home/user/.c3/specs/project'],
           mcpServers: {
             c3: { type: 'http', url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=t' },
           },
@@ -235,6 +245,8 @@ describe('CodexDriver', () => {
       const argv = readFileSync(argsFile, 'utf-8').split('\n').filter(Boolean)
       expect(argv).toContain('exec')
       expect(argv).toContain('--experimental-json')
+      expect(argv).toContain('--add-dir')
+      expect(argv).toContain('/home/user/.c3/specs/project')
       expect(argv).toContain(
         'mcp_servers.c3.url="http://127.0.0.1:3000/internal/intent-mcp/v1?token=t"',
       )

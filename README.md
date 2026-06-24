@@ -25,9 +25,20 @@ Optional tools:
 
 ## Install / Upgrade
 
-The same commands install c3 and upgrade an existing install to the latest release.
+### Homebrew
 
-### Install script (recommended)
+```bash
+# install
+brew install sequencestream/tap/c3
+
+# upgrade
+brew upgrade c3
+```
+
+
+### Install script
+
+The same commands install c3 and upgrade an existing install to the latest release.
 
 **macOS / Linux:**
 
@@ -43,15 +54,6 @@ irm https://raw.githubusercontent.com/sequencestream/c3/main/install.ps1 | iex
 
 The script always fetches the latest release for your platform, verifies its checksum, and installs `c3` (to `~/.local/bin` on macOS/Linux, or `%LOCALAPPDATA%\c3\bin` on Windows). Re-run it any time to upgrade. Set `C3_INSTALL_DIR` to choose a different location, or `C3_VERSION` to pin a specific version.
 
-### Homebrew
-
-```bash
-# install
-brew install sequencestream/tap/c3
-
-# upgrade
-brew upgrade c3
-```
 
 ### Manual download
 
@@ -62,8 +64,7 @@ Grab the latest build for your platform from the [releases page](https://github.
 tar -xzvf c3-v0.4.3-macos-arm64.tar.gz
 ```
 
-> **macOS note:** the first launch may trigger a security warning. Allow c3 to run in
-> *System Settings → Privacy & Security*.
+> **macOS note:** the first launch may trigger a security warning. Allow c3 to run in *System Settings → Privacy & Security*.
 
 ## Usage
 

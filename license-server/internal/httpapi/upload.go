@@ -112,7 +112,23 @@ func handleArtifactUpload(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "io_error", "could not finalize temp file")
 			return
 		}
-		if err := os.Rename(tmpName, dest); err != nil {
+
+		// Aggregate index files (manifest.json / SHA256SUMS) accumulate across
+		// per-target uploads into the same batch instead of clobbering: a windows-only
+		// upload must not erase the linux/macOS entries a prior upload registered. All
+		// other files are stored as opaque blobs via an atomic rename. Note that merging
+		// SHA256SUMS changes its bytes, so a separately uploaded SHA256SUMS.minisig would
+		// no longer verify against it — this store does not sign, so that is acceptable.
+		storedSum, storedSize := sum, n
+		if isMergeableIndex(filename) {
+			mergedSum, mergedSize, err := commitMergedIndex(dir, filename, dest, tmpName)
+			if err != nil {
+				slog.Error("artifact upload merge failed", "filename", filename, "err", err)
+				writeError(w, http.StatusInternalServerError, "io_error", "could not merge index file")
+				return
+			}
+			storedSum, storedSize = mergedSum, mergedSize
+		} else if err := os.Rename(tmpName, dest); err != nil {
 			slog.Error("artifact upload rename failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "io_error", "could not store artifact")
 			return
@@ -121,8 +137,8 @@ func handleArtifactUpload(d Deps) http.HandlerFunc {
 		invalidateArtifactCache(d, version)
 
 		rel := filepath.ToSlash(filepath.Join(version, batch, filename))
-		slog.Info("artifact uploaded", "version", version, "batch", batch, "filename", filename, "bytes", n)
-		writeJSON(w, http.StatusOK, map[string]any{"path": rel, "size": n, "sha256": sum})
+		slog.Info("artifact uploaded", "version", version, "batch", batch, "filename", filename, "bytes", storedSize)
+		writeJSON(w, http.StatusOK, map[string]any{"path": rel, "size": storedSize, "sha256": storedSum})
 	}
 }
 

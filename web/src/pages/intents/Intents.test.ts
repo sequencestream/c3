@@ -181,6 +181,22 @@ describe('Intents.vue — external select request (jump from work session)', () 
   })
 })
 
+describe('Intents.vue — dependency selection', () => {
+  it('selects the dependency so its detail and left-list highlight update', async () => {
+    const wrapper = mountIntents([
+      intent({ id: 'current', status: 'todo', priority: 'P1' }),
+      intent({ id: 'dependency', status: 'todo', priority: 'P2' }),
+    ])
+    await nextTick()
+
+    wrapper.findComponent(IntentDetailStub).vm.$emit('select-dependency', 'dependency')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('dependency')
+    expect(wrapper.find('[data-intent-id="dependency"]').classes()).toContain('selected')
+  })
+})
+
 describe('Intents.vue — new-session entry from the intent list', () => {
   it('switches the right column to the chat session view when the intent-list entry creates a session', async () => {
     const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])

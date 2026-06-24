@@ -6,7 +6,7 @@
  * 行点击 = 选中(上抛 `select-intent`,由父组件驱动右栏 IntentDetail);不再行内展开,
  * 详情/操作均迁至右栏 IntentDetail 组件。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
@@ -97,6 +97,20 @@ const FILTERS = computed<{ value: IntentStatus | null; label: string }[]>(() => 
   { value: 'failed', label: t('intent.filter.failed.label') },
 ])
 const filter = ref<IntentStatus | null>(null)
+const itemsEl = ref<HTMLElement | null>(null)
+
+watch(
+  () => props.selectedId,
+  (selectedId) => {
+    if (!selectedId) return
+    void nextTick(() => {
+      const row = Array.from(
+        itemsEl.value?.querySelectorAll<HTMLElement>('[data-intent-id]') ?? [],
+      ).find((item) => item.dataset.intentId === selectedId)
+      row?.scrollIntoView({ block: 'nearest' })
+    })
+  },
+)
 
 // 「全部」视图下终止态项的可见条数:初始一页,「加载更多」每次 +一页。
 // 切换筛选时重置,避免上一视图的分页进度串到新视图(AC5)。
@@ -212,7 +226,7 @@ function datePrefix(r: Intent): string {
     </div>
     <div v-if="autoError" class="auto-status error" :title="autoError">⚠ {{ autoError }}</div>
     <div v-else-if="autoNote" class="auto-status">{{ autoNote }}</div>
-    <div class="req-items">
+    <div ref="itemsEl" class="req-items">
       <p v-if="intents.length === 0" class="req-empty">
         {{ t('intent.list.empty') }}
       </p>
@@ -220,6 +234,7 @@ function datePrefix(r: Intent): string {
         v-for="r in displayIntents"
         :key="r.id"
         class="req-item"
+        :data-intent-id="r.id"
         :class="[r.status, { selected: r.id === selectedId }]"
       >
         <div

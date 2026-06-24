@@ -807,6 +807,10 @@
       }
     },
     "deps": {
+      "status": {
+        "done": "完了",
+        "pending": "未完了"
+      },
       "unfinishedList": "⚠ 未完了の依存:{list}",
       "unfinished": {
         "tooltip": "未完了の依存があります"

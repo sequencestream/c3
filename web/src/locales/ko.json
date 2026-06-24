@@ -18,6 +18,7 @@
         "label": "저장"
       },
       "close": {
+        "label": "닫기",
         "tooltip": "닫기"
       }
     },
@@ -1430,6 +1431,9 @@
     }
   },
   "error": {
+    "intentAction": {
+      "title": "작업 실패"
+    },
     "uiLang": {
       "saveFailed": "언어 설정 저장에 실패했습니다. 되돌렸습니다."
     },

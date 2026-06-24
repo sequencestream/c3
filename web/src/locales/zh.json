@@ -17,6 +17,7 @@
         "label": "保存"
       },
       "close": {
+        "label": "关闭",
         "tooltip": "关闭"
       }
     },
@@ -1429,6 +1430,9 @@
     }
   },
   "error": {
+    "intentAction": {
+      "title": "操作失败"
+    },
     "uiLang": {
       "saveFailed": "保存语言设置失败。已还原。"
     },

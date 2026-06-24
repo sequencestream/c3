@@ -100,7 +100,10 @@ and the [product-license domain](domains/commerce/product-license/product-licens
 
 ## Document authoring discipline
 
-- C-DOC-1 — No detail code implementation in documents.
+- Documents explain the design at boundary altitude — the implementation approach, flows, logic,
+  state, and rules — clearly enough to review and implement against. Avoid exhaustively enumerating
+  low-level code details (full source-tree, per-file, or symbol listings) that merely duplicate the
+  source and drift out of sync; record shared contracts once and cite them by ID.
 
 ## Amendment procedure
 

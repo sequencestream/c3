@@ -523,8 +523,8 @@ pnpm publish:binaries --repo=owner/name --clobber      # override target repo / 
 
 ## Responsibilities (capabilities, not files)
 
-The release machinery decomposes into these responsibilities — described by what they do, per
-C-DOC-1, not by where they live:
+The release machinery decomposes into these responsibilities — described by what they do, not by
+where they live:
 
 - **Build orchestrator** — fans the per-target build out across the P0 matrix (`--targets`,
   `--harden`, `--dry-run`, `--skip-smoke`), and carries the Phase3 artifact smoke.

@@ -20,8 +20,7 @@
  * relative `specPath` setting any more.
  */
 import path from 'node:path'
-import { c3HomeDir } from '../../kernel/config/index.js'
-import { projectDirName } from './worktree.js'
+import { getSpecsBase as getKernelSpecsBase } from '../../kernel/config/workspace-path.js'
 
 /**
  * The fixed, centralized spec root for a workspace:
@@ -30,7 +29,7 @@ import { projectDirName } from './worktree.js'
  * one project resolve to the same root.
  */
 export function getSpecsBase(workspacePath: string): string {
-  return path.join(c3HomeDir(), 'specs', projectDirName(workspacePath))
+  return getKernelSpecsBase(workspacePath)
 }
 
 /**

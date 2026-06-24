@@ -19,12 +19,14 @@ import { existsSync, rmSync, mkdtempSync, readFileSync, statSync } from 'node:fs
 // Mock the config module before importing SandboxLauncher
 vi.mock('../../kernel/config/index.js', () => ({
   getProjectSandbox: vi.fn(),
+  c3HomeDir: vi.fn(() => '/home/test/.c3'),
 }))
 
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { SandboxRegistry } from './SandboxRegistry.js'
 import { launchSandbox, createSandboxWrapper, checkDockerAvailable } from './SandboxLauncher.js'
 import type { SandboxHandle } from './types.js'
+import { getSpecsBase } from '../../kernel/config/workspace-path.js'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -121,9 +123,17 @@ describe('SandboxLauncher', () => {
       expect(mockDriver.start).toHaveBeenCalledTimes(1)
       const startCall = mockDriver.start.mock.calls[0]
       expect(startCall[0].image).toBe('node:20-alpine')
-      // The bind mount is the WORKTREE (mountPath), not the workspace/config path.
+      // The worktree bind is the WORKTREE (mountPath), not the workspace/config path.
       expect(startCall[1]?.binds).toContain(`${TEST_WORKTREE}:/workspace`)
       expect(startCall[1]?.binds).not.toContain(`${TEST_PROJECT}:/workspace`)
+      // The centralized specs root is derived from the owning workspace, not
+      // the worktree, and is mounted at the identical path without `:ro`.
+      const specsBase = getSpecsBase(TEST_PROJECT)
+      expect(startCall[1]?.binds).toContain(`${specsBase}:${specsBase}`)
+      expect(startCall[1]?.binds).not.toContain(
+        `${getSpecsBase(TEST_WORKTREE)}:${getSpecsBase(TEST_WORKTREE)}`,
+      )
+      expect(startCall[1]?.binds).not.toContain(`${specsBase}:${specsBase}:ro`)
       // Labels carry both: the workspace (config key) and the worktree (mount).
       expect(startCall[1]?.labels?.['c3.project']).toBe(TEST_PROJECT.replace(/\//g, '_'))
       expect(startCall[1]?.labels?.['c3.worktree']).toBe(TEST_WORKTREE.replace(/\//g, '_'))

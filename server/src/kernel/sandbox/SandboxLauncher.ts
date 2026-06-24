@@ -30,6 +30,7 @@ import type { SandboxRegistry } from './SandboxRegistry.js'
 import type { SandboxHandle, ResolvedSandboxConfig } from './types.js'
 import type { CheckpointResult } from '../agent/adapters/types.js'
 import { getProjectSandbox } from '../../kernel/config/index.js'
+import { getSpecsBase } from '../../kernel/config/workspace-path.js'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -123,9 +124,12 @@ export async function launchSandbox(
   // Resolve the system def + project overrides into a full config
   const resolvedConfig = registry.resolve(projectCfg.sandbox, projectCfg)
 
-  // Start the container with the worktree dir bind-mounted at /workspace
+  // The worktree is the container's working directory. The centralized spec
+  // root is mounted at its host path so absolute spec paths in dev prompts work
+  // identically on the host and in the container.
+  const specsBase = getSpecsBase(workspacePath)
   const handle = await driver.start(resolvedConfig, {
-    binds: [`${mountPath}:/workspace`],
+    binds: [`${mountPath}:/workspace`, `${specsBase}:${specsBase}`],
     labels: {
       'c3.sandbox': 'true',
       'c3.project': workspacePath.replace(/\//g, '_'),

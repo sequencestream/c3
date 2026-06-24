@@ -28,9 +28,11 @@ workspace 主项目目录。这有两个问题：
 1. **仅 worktree intent-dev**：sandbox 只在运行的有效工作目录已设（worktree 运行）且该 workspace 的 sandbox
    配置 enabled 时启动。chat run（无有效工作目录）与 current-branch dev run（配置被 `worktree-only`
    normalize 滤掉）一律不启。移除"非 intent run"启动路径。
-2. **挂 worktree**：启动 sandbox 时 —— **配置按 workspace 取**，
-   **bind mount 用 worktree**（mount 路径取运行的有效工作目录）挂到 `/workspace`。labels 记 `c3.project`（workspace）
-   - `c3.worktree`（mount）。
+2. **挂 worktree 与 specs 根**：启动 sandbox 时 —— **配置按 workspace 取**，
+   **bind mount 用 worktree**（mount 路径取运行的有效工作目录）挂到 `/workspace`；同时按同一 workspace 派生其集中式
+   specs 根，并以**宿主与容器相同的绝对路径**读写 bind。dev 提示词中的宿主绝对 spec 路径因此无需按运行模式分态，容器内
+   读取和 claude 的 reverse-sync 都指向宿主同一文件。只挂该项目 specs 子树，不挂整个 c3-home。labels 记
+   `c3.project`（workspace）- `c3.worktree`（mount）。
 3. **随机选 custom agent 定 vendor**：启用时从 normalize 后的 agent 池随机选一个（纯函数选取，
    注入 resolver + RNG），把选中 agent 钉到 pending dev session 上。选中 agent 的 vendor 决定容器内二进制，
    其 provider env（claude 的 `ANTHROPIC_*`）经既有 claude wrapper 路径进 env-file。不同 run 可跑不同 agent。

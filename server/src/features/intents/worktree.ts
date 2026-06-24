@@ -25,6 +25,9 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { c3HomeDir } from '../../kernel/config/index.js'
+import { projectDirName } from '../../kernel/config/workspace-path.js'
+
+export { projectDirName } from '../../kernel/config/workspace-path.js'
 
 // ---------------------------------------------------------------------------
 // Local git helper — synchronous (worktree creation MUST be sync to preserve
@@ -60,14 +63,6 @@ function execGit(cwd: string, args: string[]): GitResult {
 // ---------------------------------------------------------------------------
 // Path computation — fully deterministic helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Convert an absolute project path to a safe filesystem segment under
- * `<c3-home>/worktrees/`, e.g. `/Users/foo/project` → `Users-foo-project`.
- */
-export function projectDirName(workspacePath: string): string {
-  return workspacePath.replace(/^\/+/, '').replace(/[/:]/g, '-')
-}
 
 /** The base directory under the c3 home that holds all worktrees for a project. */
 export function getWorktreeBase(workspacePath: string): string {

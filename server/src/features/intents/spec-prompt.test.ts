@@ -18,14 +18,17 @@ describe('buildSpecAgentPrompt', () => {
     expect(prompt).toContain('Do not add background, repeated requirements, implementation steps')
   })
 
-  it('keeps implementation detail out of the review body', () => {
+  it('requires the implementation approach while forbidding exhaustive code transcription', () => {
     const prompt = buildSpecAgentPrompt('en')
 
-    expect(prompt).toContain('do not list source paths, symbols, or step-by-step code edits')
     expect(prompt).toContain(
-      'A reviewer must be able to approve or reject it without opening the codebase',
+      'the chosen approach, the flows, the core logic, the state and its transitions, and the rules',
     )
-    expect(prompt).toContain('Do not add an implementation appendix by default')
+    expect(prompt).toContain('What you should avoid is exhaustively transcribing the code')
+    expect(prompt).toContain(
+      'A reviewer should be able to grasp the change — and the approach behind it',
+    )
+    expect(prompt).toContain('Cover the implementation approach inline where it belongs')
   })
 
   it('forbids document-level status labels because approval does not write them back', () => {

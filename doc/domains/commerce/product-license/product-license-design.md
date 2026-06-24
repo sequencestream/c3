@@ -1,10 +1,10 @@
 # product-license — Domain Design
 
 The technical shape of how c3 enforces entitlement and how the license-server (LS) asserts it. WHAT
-and WHY live in [product-license-spec.md](product-license-spec.md); this document describes HOW at boundary altitude. No source
-references (C-DOC-1); external standards (Ed25519, PostgreSQL, GitHub OAuth, WeChat Pay, Go
-standard-library HTTP) and the [LS API contract](../../../shared/api-conventions/license-server-api.md)
-are the allowed vocabulary.
+and WHY live in [product-license-spec.md](product-license-spec.md); this document describes HOW at boundary altitude — it
+stays at the design level rather than exhaustively listing source files or symbols. External
+standards (Ed25519, PostgreSQL, GitHub OAuth, WeChat Pay, Go standard-library HTTP) and the
+[LS API contract](../../../shared/api-conventions/license-server-api.md) are the shared vocabulary.
 
 ## Split of responsibility
 
@@ -132,7 +132,7 @@ realizes those transitions via the heartbeat scheduler + grace timer + offline v
 The c3 ↔ LS boundary — license-key binding, heartbeat, payment/order endpoints, token issuance,
 alive-token heartbeat, and error semantics — is documented once in the
 [license-server API contract](../../../shared/api-conventions/license-server-api.md) and cited by
-reference here (C-DOC-1: single source of truth for the external contract).
+reference here (single source of truth for the external contract).
 
 ## Non-functional considerations
 

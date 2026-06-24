@@ -58,11 +58,12 @@ c3 has three business groups: `core` (the agent loop), `system-config` (user con
    Domain docs reference that document; they do not redefine message shapes.
 4. **Reference, don't duplicate.** Shared rules live once and are cited by ID.
 5. **Dates are `YYYY-MM-DD`.** Business-semantic types over technical types.
-6. **No code references (C-DOC-1).** Specs describe behaviour in domain language — no source
-   file/directory paths, no source-tree listings, no class/type/function/field names, no
-   JSDoc `{@link}`. Cross-links to other `.md` doc, wire-message names, user-facing config
-   keys, rule/ADR IDs, and external tool identifiers are the allowed contract vocabulary. See
-   [`constitution.md`](constitution.md) C-DOC-1.
+6. **Design altitude, not code dumps.** Specs explain the change clearly — approach, flows, logic,
+   state, and rules — and validate it against the real codebase, without exhaustively enumerating
+   low-level code details (full source-tree listings or per-file/symbol checklists) that duplicate
+   the source and drift out of sync. Describe affected capabilities and contracts at boundary
+   altitude; record shared contracts once and cite them by ID. See
+   [`constitution.md`](constitution.md) Document authoring discipline.
 
 ## Maintenance
 

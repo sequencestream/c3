@@ -145,7 +145,7 @@ credential.
   fully usable on entitlement lapse (traceable to ADR-0006).
 - No LS secret ships in the c3 binary except the **public** verification key; signing keys, OAuth
   client secrets, and payment credentials live only in LS (secret-by-reference, mirroring ADR-0023).
-- The c3 ↔ LS contract is documented once in the LS API contract and cited by ID elsewhere (C-DOC-1).
+- The c3 ↔ LS contract is documented once in the LS API contract and cited by ID elsewhere.
 - The licensing domain MUST NOT be expressed as an `AuthProvider` arm or merged into the auth runtime.
 
 ## References

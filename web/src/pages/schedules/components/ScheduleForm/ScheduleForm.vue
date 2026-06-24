@@ -930,8 +930,7 @@ function save(): void {
         <div class="sf-field sf-field--stacked">
           <div class="sf-tools-labelrow">
             <span class="sf-label">{{ t('schedule.form.tools.label') }}</span>
-            <!-- Select/clear stay on the label row so they remain visible while
-                 the (capped, scrollable) list below scrolls. -->
+            <!-- Select/clear stay on the label row for quick access. -->
             <div v-if="currentTools.length" class="sf-tools-actions">
               <button type="button" class="sf-tools-btn" @click="selectAll">
                 {{ t('schedule.form.tools.selectAll.label') }}
@@ -952,8 +951,8 @@ function save(): void {
             props.toolManifestError
           }}</span>
 
-          <!-- Manifest loaded: list auto-sizes to content, caps at max-height then
-               scrolls — so it never over/under-fills the modal. -->
+          <!-- The list grows with its content; the form body owns the only vertical
+               scroll area in this dialog. -->
           <div v-else-if="currentTools.length" class="sf-tools-scroll">
             <!-- Read-only tools -->
             <div class="sf-tools-group">
@@ -1061,6 +1060,7 @@ function save(): void {
 .sf-body {
   padding: var(--sp-4);
   overflow-y: auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
@@ -1292,15 +1292,11 @@ function save(): void {
   gap: var(--sp-2);
   margin-left: auto;
 }
-/* Tool list scroll box: grows with content, caps at max-height then scrolls so
-   the list neither over-fills the modal nor leaves a big blank when sparse. */
+/* Keep the tool list in the form's single scroll area. */
 .sf-tools-scroll {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  max-height: 220px;
-  overflow-y: auto;
-  padding-right: var(--sp-1);
 }
 .sf-tools-btn {
   background: var(--c-card);

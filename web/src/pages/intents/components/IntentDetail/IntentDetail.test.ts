@@ -419,6 +419,22 @@ describe('IntentDetail.vue — actions', () => {
     expect(w.find('.req-btn.pr-link').exists()).toBe(false)
   })
 
+  it('links the PR number in metadata to prUrl when present', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'done',
+      prId: '38',
+      prUrl: 'https://github.com/o/r/pull/38',
+      prStatus: 'merged',
+    })
+    const w = mountDetail(item)
+    const link = w.find('.req-meta-pr-link')
+
+    expect(link.text()).toBe('#38')
+    expect(link.attributes('href')).toBe('https://github.com/o/r/pull/38')
+    expect(link.attributes('target')).toBe('_blank')
+  })
+
   it('hides create-pr when the intent branch matches the workspace main branch', () => {
     const item = intent({
       id: 'intent-1',

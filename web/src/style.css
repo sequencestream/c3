@@ -3356,6 +3356,10 @@ button.deny:hover:not(:disabled) {
   line-height: 1.6;
   vertical-align: middle;
 }
+.req-meta-pr-link {
+  color: inherit;
+  text-decoration: underline;
+}
 .req-pr-status--reviewing {
   background: var(--c-info-soft, #e8f4fd);
   color: var(--c-info-text, #2b6cb0);

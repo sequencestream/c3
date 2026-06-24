@@ -692,7 +692,17 @@ defineExpose({
             >
           </span>
           <span v-if="intent.prId" class="req-meta-item">
-            {{ t('intent.meta.pr.label') }} #{{ intent.prId }}
+            {{ t('intent.meta.pr.label') }}
+            <a
+              v-if="intent.prUrl"
+              class="req-meta-pr-link"
+              :href="intent.prUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              :title="t('intent.action.pr.open.tooltip')"
+              >#{{ intent.prId }}</a
+            >
+            <template v-else>#{{ intent.prId }}</template>
             <span
               v-if="intent.prStatus"
               class="req-pr-status"

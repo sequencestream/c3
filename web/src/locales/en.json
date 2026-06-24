@@ -1193,6 +1193,9 @@
       "detail": "Details",
       "history": "History"
     },
+    "runOverlay": {
+      "title": "Starting…"
+    },
     "history": {
       "title": "Execution History",
       "empty": "Select a schedule to view its history.",

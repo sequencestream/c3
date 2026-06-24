@@ -1187,6 +1187,9 @@
       "detail": "详情",
       "history": "历史"
     },
+    "runOverlay": {
+      "title": "启动中…"
+    },
     "history": {
       "title": "执行历史",
       "empty": "选择一个定时任务以查看其历史。",

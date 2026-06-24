@@ -12,7 +12,7 @@
  * 切换选中 schedule 时复位到「详情」Tab 并关闭历史弹框;已选执行的清空由控制层
  * onSelectSchedule 负责。数据与 select-execution / load-session 契约不变,无服务端改动。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import type {
   Schedule,
   ScheduleExecutionLog,
@@ -75,9 +75,58 @@ const canRunNow = computed(() => props.schedule?.status !== 'archived')
 function toggleEnabled(): void {
   if (props.schedule) emit('toggle-enabled', props.schedule.id, !isEnabled.value)
 }
-function runNow(): void {
-  if (props.schedule) emit('run-now', props.schedule.id)
+// ---- 手动启动:遮罩 + 自动跳转历史 ----
+// 点击 ▶ 后立即以全屏遮罩展示「启动中」,固定停留 2s 防闪烁;随后切到「历史」Tab 并
+// 选中最新一笔执行(即刚触发的这次)。若届时新执行日志尚未到达,由下方 logs 首行 watch 补选。
+const RUN_OVERLAY_MS = 2000
+const runOverlayVisible = ref(false)
+const pendingRunReveal = ref(false)
+let runOverlayTimer: ReturnType<typeof setTimeout> | null = null
+// 触发手动启动前的首条执行 id;用于辨别遮罩后到达的"新执行"是否确为这次启动所产生,
+// 避免新执行尚未落库时误选旧的首条并提前结束补选。
+let runBaselineLogId: string | null = null
+
+function revealLatestExecution(): void {
+  const latest = props.logs[0]?.id
+  if (!latest || latest === runBaselineLogId) return
+  emit('select-execution', latest)
+  pendingRunReveal.value = false
 }
+
+function cancelRunOverlay(): void {
+  if (runOverlayTimer) {
+    clearTimeout(runOverlayTimer)
+    runOverlayTimer = null
+  }
+  runOverlayVisible.value = false
+  pendingRunReveal.value = false
+}
+
+function runNow(): void {
+  if (!props.schedule) return
+  emit('run-now', props.schedule.id)
+  cancelRunOverlay()
+  runBaselineLogId = props.logs[0]?.id ?? null
+  runOverlayVisible.value = true
+  runOverlayTimer = setTimeout(() => {
+    runOverlayTimer = null
+    runOverlayVisible.value = false
+    activeTab.value = TAB_HISTORY
+    // 切到历史后尝试展示这次启动的新执行;尚未到达则置 pending,由下方 watch 补选。
+    pendingRunReveal.value = true
+    revealLatestExecution()
+  }, RUN_OVERLAY_MS)
+}
+
+// 启动后新执行可能稍晚于遮罩到达:日志首行变化时补选刚触发的执行。
+watch(
+  () => props.logs[0]?.id,
+  () => {
+    if (pendingRunReveal.value) revealLatestExecution()
+  },
+)
+
+onUnmounted(cancelRunOverlay)
 function editSchedule(): void {
   if (props.schedule) emit('edit-schedule', props.schedule)
 }
@@ -142,6 +191,7 @@ watch(
   () => {
     activeTab.value = TAB_DETAIL
     historyDialogOpen.value = false
+    cancelRunOverlay()
   },
 )
 </script>
@@ -292,6 +342,22 @@ watch(
       @confirm="confirmDelete"
       @cancel="cancelDelete"
     />
+
+    <!-- 手动启动遮罩:阻断交互约 2s,随后自动切到「历史」Tab 展示最新一笔执行。 -->
+    <div
+      v-if="runOverlayVisible"
+      class="sched-run-overlay"
+      role="alertdialog"
+      aria-modal="true"
+      aria-busy="true"
+      :aria-label="t('schedule.runOverlay.title')"
+      data-testid="schedule-run-overlay"
+    >
+      <div class="sched-run-panel">
+        <span class="sched-run-spinner" aria-hidden="true" />
+        <span class="sched-run-title">{{ t('schedule.runOverlay.title') }}</span>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -498,5 +564,52 @@ watch(
   color: var(--c-text-muted);
   font-size: var(--fs-body);
   margin: 0;
+}
+
+/* ---- 手动启动遮罩 ---- */
+/* 全屏阻断层:盖住所有内容并吃掉点击(z-index 低于全局 toast 1000)。 */
+.sched-run-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(1px);
+}
+.sched-run-panel {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-5);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.25));
+}
+.sched-run-title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--c-text);
+}
+.sched-run-spinner {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--c-border);
+  border-top-color: var(--c-accent, #3b82f6);
+  animation: sched-run-spin 0.7s linear infinite;
+}
+@keyframes sched-run-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sched-run-spinner {
+    animation-duration: 1.6s;
+  }
 }
 </style>

@@ -807,6 +807,10 @@
       }
     },
     "deps": {
+      "status": {
+        "done": "완료됨",
+        "pending": "미완료"
+      },
       "unfinishedList": "⚠ 완료되지 않은 의존성:{list}",
       "unfinished": {
         "tooltip": "완료되지 않은 의존성이 있음"

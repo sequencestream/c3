@@ -432,6 +432,81 @@ describe('IntentDetail.vue — actions', () => {
   })
 })
 
+describe('IntentDetail.vue — dependency metadata', () => {
+  it('renders each dependency with title, text status, type, and an edit button', () => {
+    const current = intent({
+      id: 'current',
+      dependsOn: ['done-dep', 'pending-dep'],
+      dependsOnTypes: { 'done-dep': 'blocks', 'pending-dep': 'informs' },
+    })
+    const w = mountDetail(current, {
+      intents: [
+        current,
+        intent({ id: 'done-dep', title: 'Completed dependency', status: 'done' }),
+        intent({ id: 'pending-dep', title: 'Pending dependency' }),
+      ],
+    })
+
+    const rows = w.findAll('.req-dependency-row')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('Completed dependency')
+    expect(rows[0].text()).toContain('Completed')
+    expect(rows[0].text()).toContain('Blocks')
+    expect(rows[1].text()).toContain('Pending dependency')
+    expect(rows[1].text()).toContain('Not completed')
+    expect(rows[1].text()).toContain('Informs')
+    expect(rows.every((row) => row.find('.req-dep-edit-btn').exists())).toBe(true)
+    expect(w.find('.req-meta-dependencies').exists()).toBe(true)
+  })
+
+  it('emits the selected dependency id when its title is clicked', async () => {
+    const current = intent({ id: 'current', dependsOn: ['dependency'] })
+    const w = mountDetail(current, {
+      intents: [current, intent({ id: 'dependency', title: 'Dependency' })],
+    })
+
+    await w.find('.req-dependency-title').trigger('click')
+
+    expect(w.emitted('select-dependency')).toEqual([['dependency']])
+  })
+
+  it('edits one dependency type while emitting the complete unchanged group', async () => {
+    const current = intent({
+      id: 'current',
+      dependsOn: ['first', 'second'],
+      dependsOnTypes: { first: 'blocks', second: 'informs' },
+    })
+    const w = mountDetail(current, {
+      intents: [
+        current,
+        intent({ id: 'first', title: 'First' }),
+        intent({ id: 'second', title: 'Second' }),
+      ],
+    })
+
+    await w.findAll('.req-dep-edit-btn')[1].trigger('click')
+    expect(w.findAll('.dep-edit-row')).toHaveLength(1)
+    expect(w.find('.dep-edit-dep-title').text()).toBe('Second')
+    await w.find('.dep-edit-select').setValue('soft_after')
+    await w.find('.dep-edit-save').trigger('click')
+
+    expect(w.emitted('update-deps')).toEqual([
+      [
+        'current',
+        [
+          { dependsOnId: 'first', depType: 'blocks' },
+          { dependsOnId: 'second', depType: 'soft_after' },
+        ],
+      ],
+    ])
+  })
+
+  it('does not render dependency metadata when there are no dependencies', () => {
+    const w = mountDetail(intent({ id: 'current' }))
+    expect(w.find('.req-meta-dependencies').exists()).toBe(false)
+  })
+})
+
 describe('IntentDetail.vue — tabs', () => {
   it('renders four tabs and defaults to the intent tab', () => {
     const w = mountDetail(intent({ id: 'i1' }))

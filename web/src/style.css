@@ -3289,12 +3289,33 @@ button.deny:hover:not(:disabled) {
   line-height: 1.8;
 }
 .req-meta-item {
-  display: inline;
+  display: block;
 }
-.req-meta-item + .req-meta-item::before {
-  content: '·';
-  margin: 0 var(--sp-1);
-  color: var(--c-border);
+.req-meta-dependencies {
+  display: grid;
+  gap: var(--sp-1);
+}
+.req-dependency-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.req-dependency-title {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.req-dependency-title:hover {
+  color: var(--c-primary);
+}
+.req-dep-status {
+  color: var(--c-text-muted);
 }
 .req-dep-done {
   color: var(--c-text-muted);
@@ -3354,8 +3375,6 @@ button.deny:hover:not(:disabled) {
 .req-dep-edit-btn {
   font-size: 11px;
   padding: 0 6px;
-  margin-left: 6px;
-  vertical-align: middle;
 }
 /* Dep edit modal */
 .dep-edit-overlay {

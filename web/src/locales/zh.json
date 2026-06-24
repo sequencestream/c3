@@ -806,6 +806,10 @@
       }
     },
     "deps": {
+      "status": {
+        "done": "已完成",
+        "pending": "未完成"
+      },
       "unfinishedList": "⚠ 未完成的依赖:{list}",
       "unfinished": {
         "tooltip": "存在未完成的依赖"

@@ -806,6 +806,10 @@
       }
     },
     "deps": {
+      "status": {
+        "done": "Completed",
+        "pending": "Not completed"
+      },
       "unfinishedList": "⚠ Unfinished dependencies:{list}",
       "unfinished": {
         "tooltip": "Has unfinished dependencies"

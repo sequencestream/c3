@@ -105,6 +105,7 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   'create-pr': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
+  'select-dependency': [intentId: string]
   // ── 会话/spec 打开 ──
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
@@ -162,14 +163,29 @@ const titleById = computed<Record<string, string>>(() => {
 
 // ── Dep edit modal ──────────────────────────────────────────────────────────
 const editingIntentId = ref<string | null>(null)
+const editingDepId = ref<string | null>(null)
 const editingDeps = ref<{ dependsOnId: string; depType: DepType }[]>([])
+
+const editingDepType = computed<DepType>({
+  get: () =>
+    editingDeps.value.find((dep) => dep.dependsOnId === editingDepId.value)?.depType ?? 'blocks',
+  set: (depType) => {
+    const dep = editingDeps.value.find((item) => item.dependsOnId === editingDepId.value)
+    if (dep) dep.depType = depType
+  },
+})
+
+const dependencyInfos = computed(() =>
+  props.intent ? formatDependsOn(props.intent, props.intents) : [],
+)
 
 function depTitle(dependsOnId: string): string {
   return titleById.value[dependsOnId] ?? dependsOnId
 }
 
-function openDepEdit(r: Intent): void {
+function openDepEdit(r: Intent, dependsOnId: string): void {
   editingIntentId.value = r.id
+  editingDepId.value = dependsOnId
   const types = r.dependsOnTypes ?? {}
   editingDeps.value = r.dependsOn.map((id) => ({
     dependsOnId: id,
@@ -179,6 +195,7 @@ function openDepEdit(r: Intent): void {
 
 function closeDepEdit(): void {
   editingIntentId.value = null
+  editingDepId.value = null
   editingDeps.value = []
 }
 
@@ -634,28 +651,37 @@ defineExpose({
             >{{ t('intent.meta.completed.label') }}
             {{ formatDate(intent.completedAt, locale) }}</span
           >
-          <span v-if="formatDependsOn(intent, props.intents).length" class="req-meta-item">
+          <div v-if="dependencyInfos.length" class="req-meta-item req-meta-dependencies">
             {{ t('intent.meta.dependsOn.label') }}
-            <span
-              v-for="(dep, di) in formatDependsOn(intent, props.intents)"
+            <div
+              v-for="dep in dependencyInfos"
               :key="dep.id"
+              class="req-dependency-row"
               :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
             >
-              <span v-if="di > 0">, </span>{{ dep.title }}
+              <button
+                type="button"
+                class="req-dependency-title"
+                @click="emit('select-dependency', dep.id)"
+              >
+                {{ dep.title }}
+              </button>
+              <span class="req-dep-status">{{
+                dep.done ? t('intent.deps.status.done') : t('intent.deps.status.pending')
+              }}</span>
               <span class="req-dep-type-badge" :class="'dep-type--' + dep.depType">{{
                 depTypeLabel(dep.depType)
               }}</span>
-              <span v-if="!dep.done"> ⚠</span>
-            </span>
-            <button
-              type="button"
-              class="req-btn req-dep-edit-btn"
-              :title="t('intent.deps.depType.edit.tooltip')"
-              @click.stop="openDepEdit(intent)"
-            >
-              {{ t('intent.deps.depType.edit.label') }}
-            </button>
-          </span>
+              <button
+                type="button"
+                class="req-btn req-dep-edit-btn"
+                :title="t('intent.deps.depType.edit.tooltip')"
+                @click="openDepEdit(intent, dep.id)"
+              >
+                {{ t('intent.deps.depType.edit.label') }}
+              </button>
+            </div>
+          </div>
           <span class="req-meta-item"
             >{{ t('intent.meta.updated.label') }} {{ formatDate(intent.updatedAt, locale) }}</span
           >
@@ -775,9 +801,9 @@ defineExpose({
           <div v-if="editingDeps.length === 0" class="dep-edit-empty">
             {{ t('intent.deps.depType.edit.noDeps') }}
           </div>
-          <div v-for="(dep, i) in editingDeps" :key="dep.dependsOnId" class="dep-edit-row">
-            <span class="dep-edit-dep-title">{{ depTitle(dep.dependsOnId) }}</span>
-            <select v-model="editingDeps[i].depType" class="dep-edit-select">
+          <div v-if="editingDepId" class="dep-edit-row">
+            <span class="dep-edit-dep-title">{{ depTitle(editingDepId) }}</span>
+            <select v-model="editingDepType" class="dep-edit-select">
               <option v-for="opt in DEP_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
               </option>

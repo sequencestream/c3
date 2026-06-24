@@ -213,6 +213,10 @@ function handleSelectIntent(intentId: string): void {
   mobileActiveKey.value = 'right'
 }
 
+function handleSelectDependency(intentId: string): void {
+  handleSelectIntent(intentId)
+}
+
 function handleSelectIntentSession(sessionId: string): void {
   mobileActiveKey.value = 'right'
   emit('select-intent-session', sessionId)
@@ -322,6 +326,7 @@ defineExpose({
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @create-pr="(id: string) => emit('create-pr', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
+        @select-dependency="handleSelectDependency"
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"

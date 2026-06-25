@@ -75,6 +75,7 @@ export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
   { name: 'mcp__c3__view_intent', isWrite: false },
   { name: 'mcp__c3__save_intents', isWrite: true },
   { name: 'mcp__c3__save_intent_pr_info', isWrite: true },
+  { name: 'mcp__c3__save_intent_directly', isWrite: true },
   { name: 'mcp__c3__publish_pr_event', isWrite: true },
 ]
 

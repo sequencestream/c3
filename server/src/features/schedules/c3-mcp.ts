@@ -13,13 +13,17 @@ import {
   findDesc,
   findSchema,
   runFind,
+  runSaveIntentDirectly,
   runSaveIntentPrInfo,
   runView,
+  saveIntentDirectlyDesc,
+  saveIntentDirectlySchema,
   saveIntentPrInfoDesc,
   saveIntentPrInfoSchema,
   viewDesc,
   viewSchema,
   type FindArgs,
+  type SaveIntentDirectlyArgs,
   type SaveIntentPrInfoArgs,
   type ViewArgs,
 } from '../intents/tool-defs.js'
@@ -54,6 +58,9 @@ export function createScheduleMcpServer(
   const savePrHandler = async (args: SaveIntentPrInfoArgs) => ({
     ...runSaveIntentPrInfo(workspacePath, args, (path) => current?.broadcastIntents(path)),
   })
+  const saveDirectlyHandler = async (args: SaveIntentDirectlyArgs) => ({
+    ...runSaveIntentDirectly(workspacePath, args, (path) => current?.broadcastIntents(path)),
+  })
   const publishHandler = async (args: PublishPrEventArgs) => ({
     ...runPublishPrEvent(args, (event) =>
       current?.publishPrEvent({ workspacePath, sessionId: executionId, ...event }),
@@ -66,6 +73,12 @@ export function createScheduleMcpServer(
       tool('find_intents', findDesc, findSchema, findHandler),
       tool('view_intent', viewDesc, viewSchema, viewHandler),
       tool('save_intent_pr_info', saveIntentPrInfoDesc, saveIntentPrInfoSchema, savePrHandler),
+      tool(
+        'save_intent_directly',
+        saveIntentDirectlyDesc,
+        saveIntentDirectlySchema,
+        saveDirectlyHandler,
+      ),
       tool('publish_pr_event', publishPrEventDesc, publishPrEventSchema, publishHandler),
     ],
   })

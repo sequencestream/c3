@@ -1069,6 +1069,10 @@
         "prPoller": {
           "title": "PR 状态轮询检查",
           "description": "每 10 分钟将审核中的意图与 GitHub PR 状态对账。"
+        },
+        "archReview": {
+          "title": "每周架构稳定性体检",
+          "description": "每周五 18:00 复盘最近 7 天代码变化,把高价值架构优化点落为草稿意图待人工确认。"
         }
       },
       "empty": "还没有定时任务。",

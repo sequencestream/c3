@@ -388,7 +388,18 @@ selection UI in the schedule form.
 The c3-provided MCP capabilities also appear as explicit Claude schedule allowlist choices. They are
 never mounted merely because a schedule is an LLM task or has an empty allowlist: selecting at least
 one such capability is the precondition for mounting the workspace-bound c3 MCP service. Templates
-may preselect the entries they require.
+may preselect the entries they require. The in-process c3 capabilities exposed to a schedule are:
+`mcp__c3__find_intents` / `mcp__c3__view_intent` (read-only), `mcp__c3__save_intent_pr_info` and
+`mcp__c3__publish_pr_event` (bounded PR reconciliation), and `mcp__c3__save_intent_directly` (write).
+
+`save_intent_directly` is a **schedule-only** tool: it lands a batch of NEW intents directly as
+`draft`, **bypassing** the `save_intents` confirmation gate. A schedule has no browser decision queue,
+so instead of gating the save it relies on the `draft` lifecycle — the human confirms later by
+reviewing/activating the draft in the intent list. It is **create-only** (never updates an existing
+intent; de-duplication is the caller's job via `find_intents`) and is registered **only** on the
+schedule c3 MCP server, never on the interactive intent MCP server — so the gate-bypassing write is
+pinned to unattended schedule executions. The confirmation-gated `mcp__c3__save_intents` is
+deliberately **not** offered to schedules.
 
 ## Vendor routing (execution)
 
@@ -498,11 +509,33 @@ Wire shapes are defined in the [shared protocol](../../../shared/api-conventions
 
 The schedule list may offer registered built-in templates. Selecting a template creates an enabled
 schedule through the same creation contract as a manually authored schedule, without a second
-confirmation; the created schedule remains fully editable and deletable. The first template polls
-reviewing GitHub PRs every ten minutes. Its Claude execution identity is explicitly allowed to use
-the bounded intent lookup/PR-reconciliation/event-publication capabilities and the shell for `gh`.
-It reconciles only reviewing intents, marks merged work done, records closed PRs without completing
-the work item, and emits a provider-neutral PR event only when a status changes.
+confirmation; the created schedule remains fully editable and deletable.
+
+**PR status poller** (`pr-status-poller`) polls reviewing GitHub PRs every ten minutes. Its Claude
+execution identity is explicitly allowed to use the bounded intent lookup/PR-reconciliation/event-publication
+capabilities and the shell for `gh`. It reconciles only reviewing intents, marks merged work done,
+records closed PRs without completing the work item, and emits a provider-neutral PR event only when a
+status changes.
+
+**Weekly architecture stability review** (`weekly-arch-review`) runs Claude every Friday at 18:00
+(cron `0 18 * * 5`, `mode: bypassPermissions`). It reviews only the **last 7 days** of git activity
+(incremental, never a full audit) and files high-value architecture improvement points as **draft**
+intents for human review — it never changes code. The prompt embeds the full scoring logic:
+
+- **Scoring admission** — a candidate is high-value only when it hits **≥2 strong signals**:
+  violates an established architectural constraint (constitution / architecture / adr boundary, e.g.
+  cross-layer call, bypassing the single protocol source, bypassing the vendor-neutral abstraction);
+  high leverage / broad blast radius; architecture debt actively worsening (trend); high-churn hotspot.
+  Bonus signals (concentrated risk, low-cost high-ROI, blocks upcoming evolution) only refine priority.
+- **Exclusions** — pure style/naming/formatting, one-off scripts / test fixtures / soon-removed code,
+  and subjective preference / speculative over-engineering are filed as nothing.
+- **De-dup + caps** — it calls `find_intents` to skip anything an existing intent already covers, files
+  at most **3** intents per run (prefer fewer), defaults to **P2/P3**, and produces intents only.
+
+Its toolAllowlist is `Read` / `Grep` / `Glob` / `Bash` (read the constraint docs + run git) plus
+`mcp__c3__find_intents` / `mcp__c3__view_intent` / `mcp__c3__save_intent_directly`. It uses
+`save_intent_directly` (not the confirmation-gated `save_intents`) precisely because an unattended
+schedule has no confirmation popup — the human confirmation门 is the `draft` review in the intent list.
 
 - **Workspace-scoped uniqueness:** A schedule is uniquely identified by `(workspaceId, id)`.
   Deleting the workspace archives the schedules, never orphans them.

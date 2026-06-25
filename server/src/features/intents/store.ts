@@ -517,8 +517,16 @@ function detectBatchCycle(edges: number[][]): void {
   }
 }
 
-/** Insert a batch of proposed intents (status `todo`) in one transaction. */
-export function insertIntents(workspacePath: string, items: ProposedIntent[]): Intent[] {
+/**
+ * Insert a batch of proposed intents in one transaction. New rows land as
+ * `initialStatus` (default `todo`); the schedule-only `save_intent_directly`
+ * tool passes `draft` so unattended proposals wait for human review.
+ */
+export function insertIntents(
+  workspacePath: string,
+  items: ProposedIntent[],
+  initialStatus: IntentStatus = 'todo',
+): Intent[] {
   const d = requireDb()
   const proj = resolve(workspacePath)
   const now = Date.now()
@@ -543,7 +551,7 @@ export function insertIntents(workspacePath: string, items: ProposedIntent[]): I
         truncateShortEnTitle(it.shortEnTitle),
         it.content,
         it.priority,
-        'todo',
+        initialStatus,
         it.module ?? '',
         null,
         createdAt,

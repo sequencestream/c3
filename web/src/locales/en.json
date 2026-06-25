@@ -1069,6 +1069,10 @@
         "prPoller": {
           "title": "PR status polling check",
           "description": "Reconcile reviewing intents with GitHub PR status every 10 minutes."
+        },
+        "archReview": {
+          "title": "Weekly architecture stability review",
+          "description": "Every Friday at 18:00, review the last 7 days of code changes and file high-value architecture improvements as draft intents."
         }
       },
       "empty": "No schedules yet.",

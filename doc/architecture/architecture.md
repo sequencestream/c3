@@ -69,24 +69,24 @@ c3 is a single local process with two halves connected by one WebSocket:
 
 ## Module map
 
-| Module                   | Role                                                                                                                                                                                    |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI entry                | Command-line entry; `start` is the default command; `--workspace` defaults to the current directory (`--project` is a deprecated alias), `--port` to 3000                               |
-| HTTP/WS server           | Upgrades `/ws`, serves static assets, tracks each connection's viewed session, dispatches messages, and broadcasts status                                                               |
-| Session-runtime registry | Process-wide registry of each session's run handle, replay baseline + buffer, viewers, and status (ADR 0006)                                                                            |
-| Host-CLI launcher        | Vendor-agnostic host-CLI probe: resolves a vendor to an absolute binary path or none, carries an install hint per vendor, and runs a health check; the first capability gate (ADR-0012) |
-| Kernel event bus         | In-process typed publish/subscribe bus: synchronous, error-isolated, statically typed topic→payload map; hosts the run-bound and run-settled events (ADR-0018)                          |
-| Session registry         | Persisted workspace registry, per-session mode, last active session                                                                                                                     |
-| Session IO               | List / read / rename / delete sessions plus transcript mapping                                                                                                                          |
-| Permission registry      | The pending-approval map with wait/resolve-decision and timeout handling                                                                                                                |
-| Result formatting        | Flattens tool-result content into a display string                                                                                                                                      |
-| Intent ledger            | SQLite ledger, read-only communication agent, intent-save tool (ADR 0007)                                                                                                               |
-| Static embed             | Generated, inlined web bundle                                                                                                                                                           |
-| Wire protocol            | The client→server / server→client message unions plus workspace/session types                                                                                                           |
-| WS client                | Browser WebSocket wrapper                                                                                                                                                               |
-| UI shell                 | Owns the WS client, the inbound-message handler, and all shared state; dispatches by tab to page containers                                                                             |
-| Pages                    | Per-page containers (works / intents / discussions / schedules / systemsettings) plus private components                                                                                |
-| Shared components        | Cross-page components, each with a colocated unit test                                                                                                                                  |
+| Module                   | Role                                                                                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI entry                | Command-line entry; `start` is the default command; `--workspace` defaults to the current directory (`--project` is a deprecated alias), `--port` to 3000                                                                 |
+| HTTP/WS server           | Upgrades `/ws`, serves static assets, tracks each connection's viewed session, dispatches messages, and broadcasts status                                                                                                 |
+| Session-runtime registry | Process-wide registry of each session's run handle, replay baseline + buffer, viewers, and status (ADR 0006)                                                                                                              |
+| Host-CLI launcher        | Vendor-agnostic host-CLI probe: resolves a vendor to an absolute binary path or none, carries an install hint per vendor, and runs a health check; the first capability gate (ADR-0012)                                   |
+| Kernel event bus         | In-process typed publish/subscribe bus: synchronous, error-isolated, statically typed topic→payload map; hosts run/agent/intent/pr 事件。整体运转与扩展见 [`event-mechanism.md`](event-mechanism.md)，选型决策见 ADR-0018 |
+| Session registry         | Persisted workspace registry, per-session mode, last active session                                                                                                                                                       |
+| Session IO               | List / read / rename / delete sessions plus transcript mapping                                                                                                                                                            |
+| Permission registry      | The pending-approval map with wait/resolve-decision and timeout handling                                                                                                                                                  |
+| Result formatting        | Flattens tool-result content into a display string                                                                                                                                                                        |
+| Intent ledger            | SQLite ledger, read-only communication agent, intent-save tool (ADR 0007)                                                                                                                                                 |
+| Static embed             | Generated, inlined web bundle                                                                                                                                                                                             |
+| Wire protocol            | The client→server / server→client message unions plus workspace/session types                                                                                                                                             |
+| WS client                | Browser WebSocket wrapper                                                                                                                                                                                                 |
+| UI shell                 | Owns the WS client, the inbound-message handler, and all shared state; dispatches by tab to page containers                                                                                                               |
+| Pages                    | Per-page containers (works / intents / discussions / schedules / systemsettings) plus private components                                                                                                                  |
+| Shared components        | Cross-page components, each with a colocated unit test                                                                                                                                                                    |
 
 ## Cross-cutting conventions
 

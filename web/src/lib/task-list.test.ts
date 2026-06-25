@@ -246,6 +246,87 @@ describe('脏数据容错', () => {
   })
 })
 
+// Claude 的 task 工具 tool_result 是人类可读文本而非 JSON,这些用例固定真实格式,
+// 防止再次回退到「只认 JSON → 列表永远空」的覆盖盲区。
+describe('真实文本格式 result(非 JSON)', () => {
+  const text = (content: string): TaskToolResult => ({ content, isError: false })
+
+  it('TaskCreate 文本确认行:从 result 取 id、从 input 取 subject/description', () => {
+    const m = apply(
+      emptyTaskModel(),
+      'TaskCreate',
+      { subject: 'claude.ts 参数化 runClaude', description: 'RunOptions 增加 gate' },
+      text('Task #1 created successfully: claude.ts 参数化 runClaude'),
+    )
+    expect(m.tasks).toEqual([
+      {
+        id: '1',
+        subject: 'claude.ts 参数化 runClaude',
+        description: 'RunOptions 增加 gate',
+        status: 'pending',
+        order: 0,
+      },
+    ])
+  })
+
+  it('Create(文本)→ Update(文本 result + input 状态)端到端收敛', () => {
+    let m = apply(
+      emptyTaskModel(),
+      'TaskCreate',
+      { subject: 'A' },
+      text('Task #1 created successfully: A'),
+    )
+    // TaskUpdate 的 result 仅确认("Updated task #1 status"),状态从 input 取。
+    m = apply(
+      m,
+      'TaskUpdate',
+      { taskId: '1', status: 'in_progress' },
+      text('Updated task #1 status'),
+    )
+    expect(m.tasks).toEqual([{ id: '1', subject: 'A', status: 'in_progress', order: 0 }])
+  })
+
+  it('TaskList 文本快照:解析 "#N [status] subject" 行重建全量', () => {
+    const m = apply(
+      emptyTaskModel(),
+      'TaskList',
+      {},
+      text(
+        [
+          '#1 [in_progress] Define sandbox interfaces in kernel/sandbox/',
+          '#2 [pending] Implement Docker SandboxDriver',
+          '#3 [completed] Integrate sandbox',
+        ].join('\n'),
+      ),
+    )
+    expect(m.tasks).toEqual([
+      {
+        id: '1',
+        subject: 'Define sandbox interfaces in kernel/sandbox/',
+        status: 'in_progress',
+        order: 0,
+      },
+      { id: '2', subject: 'Implement Docker SandboxDriver', status: 'pending', order: 1 },
+      { id: '3', subject: 'Integrate sandbox', status: 'completed', order: 2 },
+    ])
+  })
+
+  it('TaskList 文本里夹杂非任务行被跳过,不污染快照', () => {
+    const m = apply(
+      emptyTaskModel(),
+      'TaskList',
+      {},
+      text(['当前任务清单:', '#1 [pending] 真实任务', '(以上为全部)'].join('\n')),
+    )
+    expect(m.tasks.map((t) => t.id)).toEqual(['1'])
+  })
+
+  it('TaskCreate 文本取不到 id 时容错跳过', () => {
+    const m = apply(emptyTaskModel(), 'TaskCreate', { subject: 'X' }, text('done'))
+    expect(m.tasks).toEqual([])
+  })
+})
+
 describe('isTaskTool — task 工具名判定', () => {
   it('四个 task 工具名为真', () => {
     for (const n of ['TaskCreate', 'TaskList', 'TaskUpdate', 'TaskGet']) {

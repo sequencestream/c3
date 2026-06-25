@@ -139,6 +139,37 @@ function extractRawTasks(result: TaskToolResult | undefined): unknown[] {
   return []
 }
 
+/**
+ * 文本回退:Claude 的 task 工具 tool_result 是人类可读文本而非 JSON
+ * (TaskCreate → "Task #1 created successfully: <subject>")。这里只可靠地抽 id,
+ * subject / description 由调用方从 input 取(input 才是权威)。取不到返回 undefined。
+ */
+function parseCreatedId(result: TaskToolResult | undefined): string | undefined {
+  if (!result || result.isError || typeof result.content !== 'string') return undefined
+  const m =
+    /task\s+#?([A-Za-z0-9][\w-]*)\s+created/i.exec(result.content) ??
+    /created\s+task[:\s#]+([A-Za-z0-9][\w-]*)/i.exec(result.content) ??
+    /\btask[\s#]+([A-Za-z0-9][\w-]*)/i.exec(result.content)
+  return m ? m[1] : undefined
+}
+
+/**
+ * 文本回退:TaskList → 每行 "#<id> [<status>] <subject>" 的全量快照。只接受带合法
+ * status tag 的行(其余行视为非任务文本跳过),返回 task-like 原始记录数组。
+ */
+function parseListText(result: TaskToolResult | undefined): unknown[] {
+  if (!result || result.isError || typeof result.content !== 'string') return []
+  const out: unknown[] = []
+  for (const line of result.content.split('\n')) {
+    const m = /^\s*#?([A-Za-z0-9][\w-]*)\s*\[\s*([A-Za-z_ ]+?)\s*\]\s*(.*)$/.exec(line)
+    if (!m) continue
+    const status = m[2].replace(/\s+/g, '_').toLowerCase()
+    if (!(TASK_STATUSES as readonly string[]).includes(status)) continue
+    out.push({ id: m[1], status, subject: m[3].trim() })
+  }
+  return out
+}
+
 function nextOrder(tasks: TaskItem[]): number {
   return tasks.reduce((max, t) => Math.max(max, t.order), -1) + 1
 }
@@ -194,15 +225,33 @@ export function applyTaskTool(
   const tasks = model.tasks
   switch (toolName) {
     case 'TaskList': {
+      // 先试 JSON,失败回退解析 "#N [status] subject" 文本快照。
       const raw = extractRawTasks(result)
+      const rows = raw.length > 0 ? raw : parseListText(result)
       // 无法解析快照时保持现状,避免把列表误清空。
-      if (raw.length === 0) return model
-      const next = raw.map((r, i) => normalizeTask(r, i)).filter((t): t is TaskItem => t !== null)
+      if (rows.length === 0) return model
+      const next = rows.map((r, i) => normalizeTask(r, i)).filter((t): t is TaskItem => t !== null)
       return { tasks: next }
     }
-    case 'TaskGet':
-    case 'TaskCreate': {
+    case 'TaskGet': {
       const raw = extractRawTasks(result)
+      let next = tasks
+      for (const r of raw) {
+        const item = normalizeTask(r, nextOrder(next))
+        if (item) next = upsert(next, item)
+      }
+      return next === tasks ? model : { tasks: sorted(next) }
+    }
+    case 'TaskCreate': {
+      let raw = extractRawTasks(result)
+      // 文本回退:result 形如 "Task #1 created successfully" 只携带 id,
+      // subject / description 从 input 取(SDK result 不回显完整字段)。
+      if (raw.length === 0) {
+        const id = parseCreatedId(result)
+        if (id !== undefined && isObject(input)) {
+          raw = [{ id, status: 'pending', subject: input.subject, description: input.description }]
+        }
+      }
       let next = tasks
       for (const r of raw) {
         const item = normalizeTask(r, nextOrder(next))

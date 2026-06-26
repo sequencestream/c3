@@ -53,6 +53,7 @@ import {
   getDefaultMainBranch,
   getForgeOverride,
   getGitBranchMode,
+  getSddEnabled,
 } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import {
@@ -158,10 +159,12 @@ export function pickNext(workspacePath: string): Intent | null {
   const all = listIntents(workspacePath)
   const byId = new Map(all.map((r) => [r.id, r]))
   const gitBranchMode = getGitBranchMode(workspacePath)
+  const sddEnabled = getSddEnabled(workspacePath)
   const eligible = all.filter(
     (r) =>
       r.automate &&
       (r.status === 'todo' || r.status === 'in_progress') &&
+      (!sddEnabled || r.specApproved) &&
       r.dependsOn.every((id) => {
         const dep = byId.get(id)
         if (!dep) return true

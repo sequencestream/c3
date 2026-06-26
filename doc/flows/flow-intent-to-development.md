@@ -106,7 +106,9 @@ flowchart TD
    `spec_approve_user`, then re-broadcasts the list — single-person confirmation, no multi-sign or
    un-approve in this phase; approving before a spec exists is rejected (`RM-R22`). Approval is the
    **human checkpoint that gates development**: it clears the gate so the button advances to
-   `Start Dev` but does **not** itself launch development.
+   `Start Dev` but does **not** itself launch development. The automation orchestrator uses the
+   same checkpoint as an eligibility gate: with SDD on, queued `automate` intents are skipped until
+   `spec_approved=true`; with SDD off, automation does not require a spec.
 
 ## Launch development
 

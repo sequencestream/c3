@@ -41,8 +41,11 @@ flowchart TD
    internal viewer and waits for that turn to settle before re-checking — preventing concurrent dev
    sessions that would conflict on file writes (`RM-A12`). A **dangling** session does not block.
 3. **Pick.** Eligible = `automate` AND `status ∈ {todo, in_progress}` AND every known `dependsOn` is
-   `done`; ordered **priority (P0→P3) then oldest-first** (`RM-A3`). `dependsOnIndexes`'
-   submission-order stamp (`RM-R17`) breaks same-priority ties deterministically.
+   `done`; when the workspace enables SDD (`sddEnabled`), the intent must also have passed the
+   spec approval checkpoint (`spec_approved=true`). SDD off keeps the historic behavior and does
+   not require a spec. Eligible intents are ordered **priority (P0→P3) then oldest-first**
+   (`RM-A3`). `dependsOnIndexes`' submission-order stamp (`RM-R17`) breaks same-priority ties
+   deterministically.
 
 ## Develop one intent
 

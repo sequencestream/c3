@@ -200,6 +200,7 @@ const {
   setCodesActiveTab,
   setCodesSearchMode,
   runCodeSearch,
+  showToast,
   // ---- workcenter ----
   workcenterEvents,
   respondWorkcenter,
@@ -493,6 +494,7 @@ const {
           @update:search-query="codesSearchQuery = $event"
           @update:search-pattern="codesSearchPattern = $event"
           @run-search="runCodeSearch"
+          @toast="showToast"
         />
       </template>
 

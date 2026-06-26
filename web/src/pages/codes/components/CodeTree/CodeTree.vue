@@ -33,6 +33,7 @@ const emit = defineEmits<{
   'update:searchQuery': [value: string]
   'update:searchPattern': [value: string]
   'run-search': []
+  toast: [message: string]
 }>()
 
 const { t } = useTypedI18n()
@@ -173,6 +174,7 @@ function runNow(): void {
           :depth="0"
           @toggle="emit('toggle-dir', $event)"
           @open="emit('open-file', $event)"
+          @toast="emit('toast', $event)"
         />
       </template>
     </div>

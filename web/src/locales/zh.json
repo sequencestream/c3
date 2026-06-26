@@ -2047,6 +2047,12 @@
         "collapse": {
           "tooltip": "收起文件树,恢复默认宽度"
         }
+      },
+      "contextMenu": {
+        "copyName": "复制名称",
+        "copyRelPath": "复制相对路径",
+        "copySuccess": "已复制 {value}",
+        "copyFailed": "复制失败: {value}"
       }
     },
     "tabs": {

@@ -131,6 +131,11 @@ Verify a download — either with the bundled self-check (no extra tools):
 minisign -Vm c3-v0.2.0-macos-arm64 -P RWQzBKv0lANWnVsOQNO6o7YjLi0MbFGbI0K0fUTIaXTWKM62tlosg306
 ```
 
+`c3 upgrade` (see [CLI](#cli)) automates this same path — download, **mandatory minisign
+verification against this embedded key**, unpack, atomic replace — so the trust model is
+identical whether you update by hand or with the command. minisign remains the single trust
+gate before any replacement; sha256 is only a cross-check.
+
 ## Hardening tiers (release 7/7)
 
 `RELEASE_HARDEN` (env) or `--harden=` selects a hardening tier for the native binaries.
@@ -226,6 +231,8 @@ c3 [start] [--workspace <path>] [--port 3000] [--dev] [--daemon]
 c3 install   [--workspace <path>] [--port 3000] [--settings <path>]
 c3 uninstall
 c3 verify <file>
+c3 upgrade   [--check] [--force] [--repo <owner/repo>] [--target <target>]
+c3 restart
 ```
 
 `start` is the default command, so `c3` on its own is equivalent to `c3 start`.
@@ -233,6 +240,38 @@ c3 verify <file>
 - `verify <file>`: offline-check a downloaded artifact against the embedded minisign public
   key (see [Download & verify](#download--verify)). Exit 0 = `VERIFIED`, non-zero = tampered
   or unsigned.
+
+- `upgrade`: self-update the installed binary from the latest GitHub release. It queries the
+  latest release, picks this platform's package, downloads it plus its `.minisig`/`.sha256`,
+  **verifies the minisign signature with the embedded public key** (the same trust gate as
+  `verify` — sha256 is only a cross-check), unpacks the inner `c3`/`c3.exe`, and replaces the
+  current binary (`process.execPath`) via a same-directory temp file + atomic rename on
+  POSIX, or a `.exe.old` placeholder swap on Windows (a running exe cannot be overwritten in
+  place). Any verification or replace failure leaves your current binary untouched. It only
+  touches the current, writable binary — never PATH, shell profiles, or a package manager's
+  copy. A dev/source checkout (`0.0.0-dev` or an interpreter `execPath`) refuses to self-update
+  and points you at git/pnpm or a release download instead.
+  - `--check`: only compare versions; do not download or replace.
+  - `--force`: reinstall the **same** version (not a downgrade channel — it never installs an
+    older version).
+  - `--repo <owner/repo>` / `--target <target>`: testing/emergency overrides; the defaults
+    target the official `sequencestream/c3` releases for the host platform.
+  - **upgrade never restarts a running c3** (foreground, `--daemon`, or OS service) — the
+    swapped file only takes effect on the next start. After a successful upgrade it prints the
+    precise next step; run **`c3 restart`** (or exit and rerun a foreground c3) to load the new
+    version.
+  - Exit codes: `0` upgraded or already latest · `10` (`--check` only) a newer release exists ·
+    non-zero otherwise (network/API failure, no artifact for this platform, verification
+    failure, unwritable target, or a dev/source refusal), each with a stderr explanation.
+  - Needs network access to GitHub; set `GITHUB_TOKEN` to avoid API rate limits.
+
+- `restart`: restart the c3 OS service or `--daemon` background process so an upgraded binary
+  takes effect (priority: OS service over daemon; it names which it restarted). A service is
+  restarted via its manager (`systemctl --user restart` / `launchctl kickstart -k` / `schtasks
+/End`+`/Run`), re-reading the unit that now points at the new binary. A daemon is stopped
+  (SIGTERM, then SIGKILL as a backstop) and relaunched from the start options persisted next to
+  its pid file. It does **not** upgrade, download, or touch a foreground session (exit and rerun
+  that one yourself). With nothing managed to restart it exits `0` and says so.
 
 - `--workspace` _(optional)_: seed workspace directory passed to the SDK as `cwd`.
   Claude reads/writes files relative to it. Defaults to the current directory;
@@ -283,7 +322,8 @@ absent reports that nothing needs removal and exits successfully.
 Uninstalling **only removes the OS service registration**. It does not delete `~/.c3` settings,
 database, worktrees, doc, logs, or pid files, and it does not terminate an existing c3 process.
 An unsupported platform, missing/failing `systemctl`/`launchctl`/`schtasks`, exits non-zero with
-the underlying stderr shown. Updating c3 remains manual; auto-update is not provided.
+the underlying stderr shown. To update a service install, run `c3 upgrade` (it only swaps the
+binary, never restarting the service) then `c3 restart` to load the new version.
 
 ## WebSocket protocol
 

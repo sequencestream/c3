@@ -9,6 +9,8 @@ import { runVerify } from './verify.js'
 import { startDaemon, type DaemonStartOptions } from './daemon.js'
 import { installService, UnsupportedPlatformError } from './service-install.js'
 import { uninstallService } from './service-uninstall.js'
+import { runUpgrade, DEFAULT_REPO } from './upgrade.js'
+import { runRestart } from './restart.js'
 
 const program = new Command()
 
@@ -201,6 +203,36 @@ program
   .description('Verify a downloaded c3 artifact against the embedded minisign public key')
   .action((file: string) => {
     process.exit(runVerify(resolve(file)))
+  })
+
+program
+  .command('upgrade')
+  .description('Self-update the c3 binary from the latest GitHub release (minisign-verified)')
+  .option('--check', 'only check whether a newer release exists; do not download or replace', false)
+  .option('--force', 'reinstall the same version (not a downgrade channel)', false)
+  .option(
+    '--repo <owner/repo>',
+    `[testing/emergency] GitHub repo to query (default ${DEFAULT_REPO})`,
+  )
+  .option('--target <target>', '[testing/emergency] override the release target (e.g. macos-arm64)')
+  .action(async (opts: { check: boolean; force: boolean; repo?: string; target?: string }) => {
+    process.exit(
+      await runUpgrade({
+        check: opts.check,
+        force: opts.force,
+        repo: opts.repo,
+        target: opts.target,
+      }),
+    )
+  })
+
+program
+  .command('restart')
+  .description(
+    'Restart the c3 OS service or --daemon background process so an upgraded binary takes effect (does not upgrade or download)',
+  )
+  .action(async () => {
+    process.exit(await runRestart())
   })
 
 program.parseAsync(process.argv).catch((err) => {

@@ -40,6 +40,14 @@ binary and published in the README. Mechanism (release 3/7):
   `SHA256SUMS` — authenticity. Interoperable with the official `minisign` CLI.
 - **`c3 verify <file>`** — offline self-verification using only `node:crypto`
   (Ed25519 + BLAKE2b-512) against the **embedded** public key; no network, no external tool.
+- **`c3 upgrade`** — self-update from GitHub Releases reuses the SAME embedded key and the
+  SAME `verifyArtifact` logic as `c3 verify`; it adds **no new trust anchor**. The downloaded
+  package's `.minisig` is verified against the embedded key **before unpacking or replacing
+  anything** — minisign is the mandatory gate, sha256 only a cross-check. A failed signature
+  (missing/mismatched key id, bad content/global signature, sha256 mismatch, corrupt bytes)
+  refuses the replacement and leaves the installed binary untouched. upgrade swaps only the
+  current writable binary and never auto-restarts; the separate `c3 restart` loads the new
+  version (it re-reads the service unit / relaunches the daemon, never bypassing the gate).
 - **macOS ad-hoc `codesign -s -`** — applied before hashing so the signed bytes are what the
   sha256/minisig cover. (Ad-hoc only; not Apple notarization — Gatekeeper quarantine is
   cleared by the user with `xattr -dr com.apple.quarantine`, documented in the README.)

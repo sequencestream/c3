@@ -725,6 +725,9 @@
       },
       "manual": {
         "tooltip": "manual trigger mode"
+      },
+      "locked": {
+        "toast": "Only todo intents can switch auto/manual mode"
       }
     },
     "sessionList": {

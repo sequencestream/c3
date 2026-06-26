@@ -3194,6 +3194,10 @@ button.deny:hover:not(:disabled) {
 .req-automate.active {
   opacity: 1;
 }
+/* 锁定态(非 todo):模式只读,点击不切换而是提示不可修改;光标示意不可编辑 */
+.req-automate.locked {
+  cursor: not-allowed;
+}
 /* 行内 todo 编辑入口:与 .req-automate 同款轻量 icon 按钮,仅 todo 行渲染 */
 .req-refine {
   flex-shrink: 0;

@@ -264,7 +264,7 @@ function datePrefix(r: Intent): string {
             <button
               type="button"
               class="req-automate"
-              :class="{ active: r.automate }"
+              :class="{ active: r.automate, locked: r.status !== 'todo' }"
               :title="
                 r.automate
                   ? t('intent.automate.queued.tooltip')

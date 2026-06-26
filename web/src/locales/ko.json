@@ -2049,6 +2049,12 @@
         "collapse": {
           "tooltip": "파일 트리를 기본 너비로 접기"
         }
+      },
+      "contextMenu": {
+        "copyName": "이름 복사",
+        "copyRelPath": "상대 경로 복사",
+        "copySuccess": "{value} 복사됨",
+        "copyFailed": "{value} 복사 실패"
       }
     },
     "tabs": {

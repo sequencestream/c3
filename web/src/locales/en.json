@@ -1946,6 +1946,12 @@
         "collapse": {
           "tooltip": "Collapse the file tree back to normal width"
         }
+      },
+      "contextMenu": {
+        "copyName": "Copy name",
+        "copyRelPath": "Copy relative path",
+        "copySuccess": "Copied {value}",
+        "copyFailed": "Could not copy {value}"
       }
     },
     "tabs": {

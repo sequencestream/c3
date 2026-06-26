@@ -2049,6 +2049,12 @@
         "collapse": {
           "tooltip": "Свернуть дерево файлов до обычной ширины"
         }
+      },
+      "contextMenu": {
+        "copyName": "Копировать имя",
+        "copyRelPath": "Копировать относительный путь",
+        "copySuccess": "Скопировано: {value}",
+        "copyFailed": "Не удалось скопировать: {value}"
       }
     },
     "tabs": {

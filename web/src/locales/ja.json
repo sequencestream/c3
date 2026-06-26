@@ -2049,6 +2049,12 @@
         "collapse": {
           "tooltip": "ファイルツリーを通常の幅に戻す"
         }
+      },
+      "contextMenu": {
+        "copyName": "名前をコピー",
+        "copyRelPath": "相対パスをコピー",
+        "copySuccess": "{value} をコピーしました",
+        "copyFailed": "{value} をコピーできませんでした"
       }
     },
     "tabs": {

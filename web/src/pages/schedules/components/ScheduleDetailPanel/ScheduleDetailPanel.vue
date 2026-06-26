@@ -4,7 +4,7 @@
  *
  * 范式对齐 IntentDetail:左列表选中一个 schedule 后,右栏常驻显示其标题栏与 Tab。
  *  - 标题栏:左为选中 schedule 名称(name 或触发摘要回退),右端为迁移自原列表行内的
- *    操作 —— run-now / edit / delete(ConfirmDialog 二次确认) / enable-disable 开关。
+ *    操作 —— run-now / delete(ConfirmDialog 二次确认) / enable-disable 开关。
  *    操作均作用于当前选中 schedule,emit 契约与原逐行事件一致。
  *  - 「详情」Tab(默认):渲染 ScheduleDetail(vendor / mode / toolAllowlist 读写分类)。
  *  - 「历史」Tab:自动选择最新执行并渲染 ExecutionDetail,也可经 ExecutionHistoryDialog 改选。
@@ -14,6 +14,7 @@
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import type {
+  AgentConfig,
   Schedule,
   ScheduleExecutionLog,
   ToolManifestEntry,
@@ -30,6 +31,7 @@ const { t, d } = useTypedI18n()
 const props = defineProps<{
   schedule: Schedule | null
   toolManifest: Record<string, ToolManifestEntry[] | null>
+  agents: AgentConfig[]
   logs: ScheduleExecutionLog[]
   /** 当前选中的执行 ID */
   executionId: string | null
@@ -39,13 +41,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'edit-schedule': [schedule: Schedule]
   'delete-schedule': [id: string]
   'toggle-enabled': [id: string, enabled: boolean]
   'run-now': [id: string]
   'select-execution': [id: string]
   'load-session': [executionId: string]
-  'update-cron': [id: string, cronExpression: string]
 }>()
 
 // ---- 标题栏:选中 schedule 名称(name 或触发摘要回退) ----
@@ -127,9 +127,6 @@ watch(
 )
 
 onUnmounted(cancelRunOverlay)
-function editSchedule(): void {
-  if (props.schedule) emit('edit-schedule', props.schedule)
-}
 
 // 删除:硬删除且级联清除执行历史,不可撤销,故 ConfirmDialog 二次确认(含任务名)。
 const pendingDelete = ref(false)
@@ -222,15 +219,6 @@ watch(
           >
             ▶
           </button>
-          <!-- 编辑:打开 ScheduleForm 编辑模式弹框。 -->
-          <button
-            type="button"
-            class="sp-action"
-            :title="t('schedule.list.edit.tooltip')"
-            @click="editSchedule"
-          >
-            ✎
-          </button>
           <!-- 删除:硬删除 + 级联执行历史,经二次确认后才上抛。 -->
           <button
             type="button"
@@ -278,13 +266,7 @@ watch(
 
       <!-- Tab: 详情 -->
       <div v-if="activeTab === TAB_DETAIL" class="sched-panel-body">
-        <ScheduleDetail
-          :schedule="schedule"
-          :tool-manifest="toolManifest"
-          @update-cron="
-            (id: string, cronExpression: string) => emit('update-cron', id, cronExpression)
-          "
-        />
+        <ScheduleDetail :schedule="schedule" :tool-manifest="toolManifest" :agents="agents" />
       </div>
 
       <!-- Tab: 历史 -->

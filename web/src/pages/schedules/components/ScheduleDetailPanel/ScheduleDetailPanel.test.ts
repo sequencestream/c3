@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { Schedule, ScheduleExecutionLog } from '@ccc/shared/protocol'
+import type { AgentConfig, Schedule, ScheduleExecutionLog } from '@ccc/shared/protocol'
 import ScheduleDetailPanel from './ScheduleDetailPanel.vue'
 
 function sched(over: Partial<Schedule> = {}): Schedule {
@@ -46,11 +46,23 @@ function execLog(over: Partial<ScheduleExecutionLog> = {}): ScheduleExecutionLog
 // title bar / tabs / history-dialog wiring, not the inner renderers.
 const STUBS = { ScheduleDetail: true, ExecutionDetail: true }
 
+const AGENTS: AgentConfig[] = [
+  {
+    id: 'agent-1',
+    displayName: 'Planner',
+    vendor: 'claude',
+    configMode: 'system',
+    config: { baseUrl: '', apiKey: '', model: '' },
+    enabled: true,
+  },
+]
+
 function mountPanel(over: Record<string, unknown> = {}) {
   return mount(ScheduleDetailPanel, {
     props: {
       schedule: sched(),
       toolManifest: {},
+      agents: AGENTS,
       logs: [],
       executionId: null,
       execution: null,
@@ -100,11 +112,10 @@ describe('ScheduleDetailPanel.vue — 右栏容器', () => {
       expect(w.find('.sp-action--run').attributes('disabled')).toBeDefined()
     })
 
-    it('edit emit edit-schedule(携带 schedule)', async () => {
-      const s = sched({ id: 'sx' })
-      const w = mountPanel({ schedule: s })
-      await w.find('.sp-action:not(.sp-action--run):not(.sp-action--delete)').trigger('click')
-      expect(w.emitted('edit-schedule')?.[0]).toEqual([s])
+    it('不展示编辑 schedule 按钮', () => {
+      const w = mountPanel()
+      expect(w.find('.sp-action:not(.sp-action--run):not(.sp-action--delete)').exists()).toBe(false)
+      expect(w.emitted('edit-schedule')).toBeUndefined()
     })
 
     it('toggle emit toggle-enabled:active→false', async () => {

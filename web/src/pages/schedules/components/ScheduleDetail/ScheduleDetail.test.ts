@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { Schedule, ToolManifestEntry } from '@ccc/shared/protocol'
+import type { AgentConfig, Schedule, ToolManifestEntry } from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import ScheduleDetail from './ScheduleDetail.vue'
 
@@ -37,12 +37,31 @@ function makeManifest(): ToolManifestEntry[] {
   ]
 }
 
+const AGENTS: AgentConfig[] = [
+  {
+    id: 'agent-1',
+    displayName: 'Planner',
+    vendor: 'claude',
+    configMode: 'system',
+    config: { baseUrl: '', apiKey: '', model: '' },
+    enabled: true,
+  },
+  {
+    id: 'agent-2',
+    displayName: 'Reviewer',
+    vendor: 'codex',
+    configMode: 'custom',
+    config: { baseUrl: '', apiKey: '', model: '', wireApi: 'responses' },
+    enabled: true,
+  },
+]
+
 function mountDetail(
   schedule: Schedule | null,
   toolManifest: Record<string, ToolManifestEntry[] | null> = {},
 ) {
   return mount(ScheduleDetail, {
-    props: { schedule, toolManifest },
+    props: { schedule, toolManifest, agents: AGENTS },
   })
 }
 
@@ -53,6 +72,17 @@ describe('ScheduleDetail.vue — 右栏 schedule 详情', () => {
     expect(dot.exists()).toBe(true)
     expect(dot.attributes('style')).toContain(VENDOR_COLOR.codex)
     expect(w.text()).toContain(VENDOR_LABEL.codex)
+  })
+
+  it('显示绑定 agent 的展示名', () => {
+    const w = mountDetail(sched({ type: 'llm', agentId: 'agent-1' }))
+    expect(w.text()).toContain('Agent')
+    expect(w.text()).toContain('Planner')
+  })
+
+  it('未知 agent 回退显示 agentId', () => {
+    const w = mountDetail(sched({ type: 'llm', agentId: 'missing-agent' }))
+    expect(w.text()).toContain('missing-agent')
   })
 
   it('显示 mode 原始值（不再走 i18n；remove-exec Identity 后旧 mcpMode key 已移除）', () => {
@@ -81,22 +111,11 @@ describe('ScheduleDetail.vue — 右栏 schedule 详情', () => {
     expect(w.text()).toContain('Use task default')
   })
 
-  it('cron 排期同时显示表达式、可读频率和修改入口', () => {
+  it('cron 排期只读显示表达式和可读频率', () => {
     const w = mountDetail(sched({ cronExpression: '0 */1 * * *' }))
     expect(w.find('.sd-cron').text()).toBe('0 */1 * * *')
     expect(w.find('.sd-cron-description').text()).toBe('Every 1 hours')
-    expect(w.find('.sd-cron-edit').exists()).toBe(true)
-  })
-
-  it('点击修改打开频率与时间弹框，保存仅 emit cron 更新', async () => {
-    const w = mountDetail(sched({ id: 'cron-1', cronExpression: '0 */1 * * *' }))
-    await w.find('.sd-cron-edit').trigger('click')
-    expect(w.find('[role="dialog"]').exists()).toBe(true)
-    expect(w.find('.sce-body').text()).toContain('Frequency')
-    expect(w.find('.sce-body').text()).toContain('Time')
-
-    await w.find('.sce-button--primary').trigger('click')
-    expect(w.emitted('update-cron')?.[0]).toEqual(['cron-1', '0 */1 * * *'])
+    expect(w.find('.sd-cron-edit').exists()).toBe(false)
     expect(w.find('[role="dialog"]').exists()).toBe(false)
   })
 

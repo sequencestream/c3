@@ -11,33 +11,29 @@
  *  - schedule: 选中的定时任务对象(null 时隐藏)
  *  - toolManifest: per-vendor 工具清单缓存,用于判断工具读写属性
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { describeCron } from '@ccc/shared/cron'
-import type { Schedule, ToolManifestEntry } from '@ccc/shared/protocol'
+import type { AgentConfig, Schedule, ToolManifestEntry } from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
-import ScheduleCronEditor from './ScheduleCronEditor.vue'
 
 const { t } = useTypedI18n()
 
 const props = defineProps<{
   schedule: Schedule | null
   toolManifest: Record<string, ToolManifestEntry[] | null>
+  agents: AgentConfig[]
 }>()
 
-const emit = defineEmits<{
-  'update-cron': [id: string, cronExpression: string]
-}>()
-
-const cronEditorOpen = ref(false)
 const cronDescription = computed(() =>
   props.schedule?.triggerType === 'cron' ? describeCron(props.schedule.cronExpression) : '',
 )
 
-function saveCron(cronExpression: string): void {
-  if (props.schedule) emit('update-cron', props.schedule.id, cronExpression)
-  cronEditorOpen.value = false
-}
+const agentLabel = computed(() => {
+  const agentId = props.schedule?.agentId
+  if (!agentId) return '—'
+  return props.agents.find((agent) => agent.id === agentId)?.displayName ?? agentId
+})
 
 /** toolAllowlist 条目数量。 */
 const allowlistCount = computed(() => props.schedule?.toolAllowlist.length ?? 0)
@@ -153,6 +149,11 @@ function vendorLabel(vendor: string): string {
         </span>
       </div>
 
+      <div class="sd-row">
+        <span class="sd-label">{{ t('schedule.form.agent.label') }}</span>
+        <span class="sd-value">{{ agentLabel }}</span>
+      </div>
+
       <!-- mode -->
       <div class="sd-row">
         <span class="sd-label">{{ t('schedule.meta.mode.label') }}</span>
@@ -229,15 +230,6 @@ function vendorLabel(vendor: string): string {
         <span class="sd-label">{{ t('schedule.form.schedule.label') }}</span>
         <code class="sd-cron">{{ schedule.cronExpression }}</code>
         <span class="sd-cron-description">{{ cronDescription }}</span>
-        <button
-          type="button"
-          class="sd-cron-edit"
-          :title="t('schedule.list.edit.tooltip')"
-          :aria-label="t('schedule.list.edit.tooltip')"
-          @click="cronEditorOpen = true"
-        >
-          ✎
-        </button>
       </div>
 
       <!-- Tool Allowlist -->
@@ -261,12 +253,6 @@ function vendorLabel(vendor: string): string {
         </ul>
       </div>
     </div>
-    <ScheduleCronEditor
-      :open="cronEditorOpen"
-      :schedule="schedule"
-      @close="cronEditorOpen = false"
-      @save="saveCron"
-    />
   </div>
 </template>
 
@@ -352,16 +338,6 @@ function vendorLabel(vendor: string): string {
 }
 .sd-cron-description {
   color: var(--c-text-muted);
-}
-.sd-cron-edit {
-  border: 0;
-  background: transparent;
-  color: var(--c-text-muted);
-  cursor: pointer;
-  font-size: var(--fs-body);
-}
-.sd-cron-edit:hover {
-  color: var(--c-text);
 }
 .sd-task-content {
   min-width: 0;

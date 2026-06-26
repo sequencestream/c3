@@ -77,8 +77,8 @@ web/src/
 │   │   ├── Schedules.vue                            # 定时任务容器页:桌面两栏(左栏纯选择列表 + 右栏 ScheduleDetailPanel)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为两级 drill-down(任务列表→详情逐级滑入/返回)
 │   │   └── components/
 │   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务选择列表:行点击 = 选中(emit select,activeId 高亮)、创建(+)、模板菜单(选择后直接创建)、下次执行倒计时(30s 刷新)、状态 badge;run/edit/delete/toggle 操作已迁出至右栏标题栏
-│   │       ├── ScheduleDetailPanel/ScheduleDetailPanel.vue  # 右栏容器:常驻标题栏(选中 schedule 名称 + 迁移来的 run-now/edit/delete(ConfirmDialog 二次确认)/enable-disable 开关)+「详情/历史」Tab;详情 Tab 渲染 ScheduleDetail,历史 Tab 经 ExecutionHistoryDialog 选执行后渲染 ExecutionDetail;切换选中 schedule 复位到详情 Tab
-│   │       ├── ScheduleDetail/ScheduleDetail.vue    # 详情 Tab 内容:vendor 品牌名+色点、类型、命令/提示词、超时、模式、触发方式及事件筛选、cron 排期(表达式+可读频率+轻量编辑弹框)、可自动换行的工具列表
+│   │       ├── ScheduleDetailPanel/ScheduleDetailPanel.vue  # 右栏容器:常驻标题栏(选中 schedule 名称 + run-now/delete(ConfirmDialog 二次确认)/enable-disable 开关,不提供编辑入口)+「详情/历史」Tab;详情 Tab 渲染 ScheduleDetail,历史 Tab 经 ExecutionHistoryDialog 选执行后渲染 ExecutionDetail;切换选中 schedule 复位到详情 Tab
+│   │       ├── ScheduleDetail/ScheduleDetail.vue    # 详情 Tab 内容:vendor 品牌名+色点、绑定 agent、类型、命令/提示词、超时、模式、触发方式及事件筛选、只读 cron 排期(表达式+可读频率)、可自动换行的工具列表
 │   │       ├── ExecutionHistoryDialog/ExecutionHistoryDialog.vue  # 历史选择弹框:在选中 schedule 完整日志上做纯前端分页(默认最近 5 笔/页,上一页/下一页),点选一笔上抛 select-execution 并关闭;移动端全屏 sheet;状态 badge/时间/耗时/退出码行渲染
 │   │       ├── ExecutionDetail/ExecutionDetail.vue  # 历史 Tab 内执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动;运行中执行的 transcript 随控制层轮询覆盖更新(不闪 loading)
 │   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发(run:started/run:settled/pr:operation)、高级 cron 构造器、实时 next-run 预览;run:settled 显示 reason 过滤,pr:operation 显示 MCP 集成说明+操作/结果过滤面板(写入 eventPrFilter);编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);移动端全屏 sheet 且紧凑表单单列堆叠

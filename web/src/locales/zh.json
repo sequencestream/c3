@@ -91,11 +91,15 @@
       },
       "add": {
         "tooltip": "添加工作区",
-        "prompt": "工作区目录(绝对路径):"
+        "prompt": "工作区目录(绝对路径):",
+        "placeholder": "/工作区/绝对路径",
+        "confirmLabel": "添加"
       },
       "remove": {
         "tooltip": "移除工作区",
-        "confirm": "从侧边栏移除该工作区?\n{path}\n\n(磁盘上的会话会保留。)"
+        "confirm": "从侧边栏移除该工作区?\n{path}\n\n(磁盘上的会话会保留。)",
+        "title": "移除工作区",
+        "confirmLabel": "移除"
       },
       "list": {
         "empty": "还没有工作区。点击 + 添加一个目录。"

@@ -91,11 +91,15 @@
       },
       "add": {
         "tooltip": "Add workspace",
-        "prompt": "Workspace directory (absolute path):"
+        "prompt": "Workspace directory (absolute path):",
+        "placeholder": "/path/to/workspace",
+        "confirmLabel": "Add"
       },
       "remove": {
         "tooltip": "Remove workspace",
-        "confirm": "Remove workspace from sidebar?\n{path}\n\n(Sessions on disk are kept.)"
+        "confirm": "Remove workspace from sidebar?\n{path}\n\n(Sessions on disk are kept.)",
+        "title": "Remove workspace",
+        "confirmLabel": "Remove"
       },
       "list": {
         "empty": "No workspaces yet. Click + to add a directory."

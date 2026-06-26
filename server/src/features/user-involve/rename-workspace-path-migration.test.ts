@@ -10,6 +10,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 // Identity-stub the workspace registry mapping (see store.test.ts).
 vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
+// `toEvent` reverse-looks-up the owning intent; isolate from the intents store.
+vi.mock('../intents/store.js', () => ({
+  findIntentIdByAnySessionId: () => null,
+  getIntent: () => null,
+}))
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
 import { getEvent, listEvents, resetStoreForTests } from './store.js'
 
@@ -72,12 +77,19 @@ function seedLegacyV1(raw: Db): void {
 }
 
 function expectTerminalSchema(raw: Db): void {
-  expect(cols(raw, 'wait_user_involve_events').has('workspace_path')).toBe(true)
-  expect(cols(raw, 'wait_user_involve_events').has('project_path')).toBe(false)
+  const c = cols(raw, 'wait_user_involve_events')
+  expect(c.has('workspace_path')).toBe(true)
+  expect(c.has('project_path')).toBe(false)
+  // The v4→v5 source-column rename also runs on schema-ensure (both migrations land).
+  expect(c.has('session_kind')).toBe(true)
+  expect(c.has('session_id')).toBe(true)
+  expect(c.has('source')).toBe(false)
+  expect(c.has('source_id')).toBe(false)
   const idx = indexes(raw)
   expect(idx.has('idx_wui_workspace_status')).toBe(true)
   expect(idx.has('idx_wui_project_status')).toBe(false)
-  expect(idx.has('idx_wui_source_status')).toBe(true) // unrelated index untouched
+  expect(idx.has('idx_wui_session_status')).toBe(true)
+  expect(idx.has('idx_wui_source_status')).toBe(false)
 }
 
 describe('user-involve v1 → v2 rename: legacy project_path db migrates in place', () => {

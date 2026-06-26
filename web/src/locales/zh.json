@@ -1989,12 +1989,21 @@
         "abstain": "弃权"
       }
     },
-    "source": {
-      "work": "会话",
+    "sessionKind": {
+      "work": "工作",
       "intent": "需求",
       "discussion": "讨论",
       "schedule": "定时任务",
+      "consensus": "共识",
+      "tool": "工具",
       "spec": "规格"
+    },
+    "attribute": {
+      "workspace": "工作区",
+      "workspaceUnknown": "未知工作区",
+      "sessionKind": "会话类型",
+      "sessionId": "会话 ID",
+      "intent": "意图"
     },
     "action": {
       "jump": "跳转到源"

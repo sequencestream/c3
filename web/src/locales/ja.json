@@ -1990,12 +1990,21 @@
         "abstain": "棄権"
       }
     },
-    "source": {
-      "work": "Session",
+    "sessionKind": {
+      "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
       "schedule": "Schedule",
+      "consensus": "Consensus",
+      "tool": "Tool",
       "spec": "Spec"
+    },
+    "attribute": {
+      "workspace": "Workspace",
+      "workspaceUnknown": "Unknown workspace",
+      "sessionKind": "Session kind",
+      "sessionId": "Session ID",
+      "intent": "Intent"
     },
     "action": {
       "jump": "Go to source"

@@ -24,18 +24,20 @@ const emit = defineEmits<{
   select: [event: WaitUserInvolveEvent]
 }>()
 
-// ---- Source type icon mapping ----
+// ---- Session-kind icon mapping ----
 
-const SOURCE_ICONS: Record<string, string> = {
+const SESSION_KIND_ICONS: Record<string, string> = {
   work: '💬',
   intent: '🎯',
   discussion: '📢',
   schedule: '⏰',
   spec: '📝',
+  consensus: '⚙️',
+  tool: '🔧',
 }
 
-function sourceIcon(source: string): string {
-  return SOURCE_ICONS[source] ?? '❓'
+function sessionKindIcon(sessionKind: string): string {
+  return SESSION_KIND_ICONS[sessionKind] ?? '❓'
 }
 
 // ---- Time formatting ----
@@ -89,13 +91,18 @@ function statusClass(status: string): string {
         {{ t(`workcenter.status.${event.status}` as LocaleKey) }}
       </span>
 
-      <!-- Source icon -->
-      <span class="wc-source-icon" :title="t(`workcenter.source.${event.source}` as LocaleKey)">
-        {{ sourceIcon(event.source) }}
+      <!-- Session-kind icon -->
+      <span
+        class="wc-source-icon"
+        :title="t(`workcenter.sessionKind.${event.sessionKind}` as LocaleKey)"
+      >
+        {{ sessionKindIcon(event.sessionKind) }}
       </span>
 
       <!-- Title (or fallback) -->
-      <span class="wc-event-title">{{ eventDisplayTitle(event, sourceIcon(event.source)) }}</span>
+      <span class="wc-event-title">{{
+        eventDisplayTitle(event, sessionKindIcon(event.sessionKind))
+      }}</span>
 
       <!-- Timestamp -->
       <span class="wc-event-time">{{ formatTime(event.createdAt) }}</span>

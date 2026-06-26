@@ -7,8 +7,8 @@ function ev(over: Partial<WaitUserInvolveEvent>): WaitUserInvolveEvent {
   return {
     id: 'e1',
     workspaceId: '/ws',
-    source: 'intent',
-    sourceId: 'I1',
+    sessionKind: 'intent',
+    sessionId: 'I1',
     title: null,
     requestId: null,
     toolName: null,

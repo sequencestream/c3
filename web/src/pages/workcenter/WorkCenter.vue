@@ -11,7 +11,11 @@
 import { ref, computed } from 'vue'
 import EventList from './components/EventList.vue'
 import EventDetail from './components/EventDetail.vue'
-import type { WaitUserInvolveEvent, WaitUserInvolveStatus } from '@ccc/shared/protocol'
+import type {
+  WaitUserInvolveEvent,
+  WaitUserInvolveStatus,
+  WorkspaceInfo,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -19,6 +23,8 @@ const { t } = useTypedI18n()
 const props = defineProps<{
   events: WaitUserInvolveEvent[]
   currentWorkspace: string | null
+  /** Known workspaces, forwarded to EventDetail to resolve an event's workspace name. */
+  workspaces: WorkspaceInfo[]
 }>()
 
 const emit = defineEmits<{
@@ -90,6 +96,7 @@ function onSelect(event: WaitUserInvolveEvent) {
     <div class="wc-content">
       <EventDetail
         :event="selectedEvent"
+        :workspaces="props.workspaces"
         @respond="(e, d) => emit('respond', e, d)"
         @submit-ask="(e, a) => emit('submit-ask', e, a)"
         @jump-to-source="(e) => emit('jump-to-source', e)"

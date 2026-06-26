@@ -1,22 +1,24 @@
 /**
  * `createPermissionRequestHandler` — the CREATE side of the wait-user-involve
  * lifecycle. Asserts the handler persists an event with the caller-provided
- * `source` (NOT a hard-coded 'session') and broadcasts the refreshed todo list,
- * so a codex intent prompt lands in WorkCenter under the right tab.
+ * `sessionKind` (the producing run's full SessionKind, NOT a folded subset) and
+ * broadcasts the refreshed todo list, so a codex intent prompt lands in WorkCenter
+ * under the right tab.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type {
-  AnyConsensusOutcome,
-  ServerToClient,
-  WaitUserInvolveSource,
-} from '@ccc/shared/protocol'
+import type { AnyConsensusOutcome, ServerToClient } from '@ccc/shared/protocol'
 // The store maps `workspace_path` → opaque `workspaceId` via `pathToId`, dropping
 // rows whose workspace is unregistered. These synthetic test paths are unregistered,
 // so mock `pathToId` as identity (mirrors store.test.ts) — events stay listable.
 vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
+// `toEvent` reverse-looks-up the owning intent; isolate from the intents store.
+vi.mock('../intents/store.js', () => ({
+  findIntentIdByAnySessionId: () => null,
+  getIntent: () => null,
+}))
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { listEvents, resetStoreForTests } from './store.js'
 import { createConsensusAutoHandler, createPermissionRequestHandler } from './hooks.js'
@@ -38,23 +40,20 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function ctx(
-  source: WaitUserInvolveSource,
-  over: Partial<PermissionRequestCtx> = {},
-): PermissionRequestCtx {
+function ctx(sessionKind: string, over: Partial<PermissionRequestCtx> = {}): PermissionRequestCtx {
   return {
     requestId: 'req-1',
     toolName: 'mcp__c3__save_intents',
     input: { intents: [] },
     sessionId: 'sess-1',
     workspacePath: proj,
-    source,
+    sessionKind,
     ...over,
   }
 }
 
 describe('createPermissionRequestHandler', () => {
-  it('persists an event with the caller-provided source and broadcasts the todo list', () => {
+  it('persists an event with the caller-provided sessionKind and broadcasts the todo list', () => {
     const sent: ServerToClient[] = []
     const handler = createPermissionRequestHandler({
       broadcaster: { toAll: (m: ServerToClient) => sent.push(m) } as never,
@@ -65,8 +64,8 @@ describe('createPermissionRequestHandler', () => {
     const events = listEvents(proj, 'todo')
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
-      source: 'intent',
-      sourceId: 'sess-1',
+      sessionKind: 'intent',
+      sessionId: 'sess-1',
       requestId: 'req-1',
       toolName: 'mcp__c3__save_intents',
       status: 'todo',
@@ -76,20 +75,20 @@ describe('createPermissionRequestHandler', () => {
     expect(sent[0]).toMatchObject({ type: 'wait_user_events' })
   })
 
-  it('honours source=work (no longer hard-coded)', () => {
+  it('honours sessionKind=work (the full SessionKind, no longer folded)', () => {
     const handler = createPermissionRequestHandler({ broadcaster: { toAll: vi.fn() } as never })
     handler(ctx('work', { requestId: 'req-2', sessionId: 'work-9' }))
     const events = listEvents(proj, 'todo')
     expect(events).toHaveLength(1)
-    expect(events[0].source).toBe('work')
+    expect(events[0].sessionKind).toBe('work')
   })
 
-  it('honours source=spec (spec-authoring prompts no longer collapse to a session)', () => {
+  it('honours sessionKind=spec (spec-authoring prompts no longer collapse to a session)', () => {
     const handler = createPermissionRequestHandler({ broadcaster: { toAll: vi.fn() } as never })
     handler(ctx('spec', { requestId: 'req-3', sessionId: 'spec-7' }))
     const events = listEvents(proj, 'todo')
     expect(events).toHaveLength(1)
-    expect(events[0].source).toBe('spec')
+    expect(events[0].sessionKind).toBe('spec')
   })
 })
 
@@ -108,7 +107,7 @@ function autoCtx(over: Partial<ConsensusAutoCtx> = {}): ConsensusAutoCtx {
     input: { path: 'a.ts' },
     sessionId: 'sess-auto',
     workspacePath: proj,
-    source: 'work',
+    sessionKind: 'work',
     outcome: toolOutcome,
     ...over,
   }
@@ -125,8 +124,8 @@ describe('createConsensusAutoHandler', () => {
     expect(autos).toHaveLength(1)
     expect(autos[0]).toMatchObject({
       status: 'auto',
-      source: 'work',
-      sourceId: 'sess-auto',
+      sessionKind: 'work',
+      sessionId: 'sess-auto',
       toolName: 'edit_file',
     })
     expect(autos[0].outcome).toEqual(toolOutcome)

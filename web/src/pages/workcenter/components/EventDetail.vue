@@ -11,13 +11,15 @@
 import { ref, computed } from 'vue'
 import { askQuestionsOf, type AskQuestionView } from '../../../lib/ask'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
-import type { WaitUserInvolveEvent } from '@ccc/shared/protocol'
+import type { WaitUserInvolveEvent, WorkspaceInfo } from '@ccc/shared/protocol'
 import { eventDisplayTitle } from '@/lib/event-title'
 
 const { t } = useTypedI18n()
 
 const props = defineProps<{
   event: WaitUserInvolveEvent | null
+  /** Registry of known workspaces, to resolve an event's opaque `workspaceId` → name. */
+  workspaces: WorkspaceInfo[]
 }>()
 
 const emit = defineEmits<{
@@ -26,19 +28,35 @@ const emit = defineEmits<{
   'jump-to-source': [event: WaitUserInvolveEvent]
 }>()
 
-// ---- Source type icon mapping ----
+// ---- Session-kind icon mapping ----
 
-const SOURCE_ICONS: Record<string, string> = {
+const SESSION_KIND_ICONS: Record<string, string> = {
   work: '💬',
   intent: '🎯',
   discussion: '📢',
   schedule: '⏰',
   spec: '📝',
+  consensus: '⚙️',
+  tool: '🔧',
 }
 
-function sourceIcon(source: string): string {
-  return SOURCE_ICONS[source] ?? '❓'
+function sessionKindIcon(sessionKind: string): string {
+  return SESSION_KIND_ICONS[sessionKind] ?? '❓'
 }
+
+// ---- Attribute-list derivations ----
+
+/** The event's session-kind label, localized (falls back to the raw key for unknown kinds). */
+function sessionKindLabel(sessionKind: string): string {
+  return t(`workcenter.sessionKind.${sessionKind}` as LocaleKey)
+}
+
+/** Resolve the event's opaque workspace id → its display name, or a placeholder when unknown. */
+const workspaceName = computed<string>(() => {
+  const id = props.event?.workspaceId
+  const hit = id ? props.workspaces.find((w) => w.id === id) : undefined
+  return hit?.name ?? t('workcenter.attribute.workspaceUnknown')
+})
 
 // ---- Time formatting ----
 
@@ -202,22 +220,38 @@ watch(
           <span class="wc-status-badge" :class="statusClass(event.status)">
             {{ t(`workcenter.status.${event.status}` as LocaleKey) }}
           </span>
-          <!-- Source icon -->
-          <span class="wc-source-icon" :title="t(`workcenter.source.${event.source}` as LocaleKey)">
-            {{ sourceIcon(event.source) }}
+          <!-- Session-kind icon -->
+          <span class="wc-source-icon" :title="sessionKindLabel(event.sessionKind)">
+            {{ sessionKindIcon(event.sessionKind) }}
           </span>
           <!-- Title -->
           <h2 class="wc-detail-title">
-            {{ eventDisplayTitle(event, sourceIcon(event.source)) }}
+            {{ eventDisplayTitle(event, sessionKindIcon(event.sessionKind)) }}
           </h2>
         </div>
         <div class="wc-detail-meta">
-          <span class="wc-detail-label">{{
-            t(`workcenter.source.${event.source}` as LocaleKey)
-          }}</span>
-          <span class="wc-detail-sep">·</span>
           <span class="wc-detail-time">{{ formatTime(event.createdAt) }}</span>
         </div>
+
+        <!-- Attribute list: workspace / session kind / session id / intent -->
+        <dl class="wc-attr-list">
+          <div class="wc-attr-row">
+            <dt class="wc-attr-key">{{ t('workcenter.attribute.workspace') }}</dt>
+            <dd class="wc-attr-val">{{ workspaceName }}</dd>
+          </div>
+          <div class="wc-attr-row">
+            <dt class="wc-attr-key">{{ t('workcenter.attribute.sessionKind') }}</dt>
+            <dd class="wc-attr-val">{{ sessionKindLabel(event.sessionKind) }}</dd>
+          </div>
+          <div v-if="event.sessionId" class="wc-attr-row">
+            <dt class="wc-attr-key">{{ t('workcenter.attribute.sessionId') }}</dt>
+            <dd class="wc-attr-val wc-attr-mono">{{ event.sessionId }}</dd>
+          </div>
+          <div v-if="event.intentTitle" class="wc-attr-row">
+            <dt class="wc-attr-key">{{ t('workcenter.attribute.intent') }}</dt>
+            <dd class="wc-attr-val">{{ event.intentTitle }}</dd>
+          </div>
+        </dl>
       </div>
 
       <!-- Event actions -->
@@ -410,6 +444,35 @@ watch(
 }
 .wc-detail-sep {
   opacity: 0.4;
+}
+
+/* Attribute list (workspace / session kind / session id / intent) */
+.wc-attr-list {
+  margin: var(--sp-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wc-attr-row {
+  display: flex;
+  gap: var(--sp-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.wc-attr-key {
+  flex: 0 0 88px;
+  color: var(--c-text-muted);
+  margin: 0;
+}
+.wc-attr-val {
+  flex: 1;
+  min-width: 0;
+  color: var(--c-text);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wc-attr-mono {
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
 }
 
 /* Actions */

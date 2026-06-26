@@ -50,7 +50,7 @@ Schema 版本: 9。迁移历史: status 列、write_approvals/workspace_mcp_conf
 
 ### user-involve
 
-Schema 版本: 3。v1→v2 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_wui_project_status` → `idx_wui_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。v2→v3 新增 `outcome` (nullable TEXT，JSON)，仅 `status='auto'` 的共识自动决策审计记录携带 (AnyConsensusOutcome：投票/裁决/摘要)，人类决策事件为 NULL；同时 `status` 取值域扩展出非阻塞审计态 `'auto'`，不计待处理徽章 (详见迁移记录 `migrate/2026/06/20/015`)。
+Schema 版本: 5。v1→v2 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_wui_project_status` → `idx_wui_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。v2→v3 新增 `outcome` (nullable TEXT，JSON)，仅 `status='auto'` 的共识自动决策审计记录携带 (AnyConsensusOutcome：投票/裁决/摘要)，人类决策事件为 NULL；同时 `status` 取值域扩展出非阻塞审计态 `'auto'`，不计待处理徽章 (详见迁移记录 `migrate/2026/06/20/015`)。v3→v4 把来源取值 `'session'` 折叠为 `'work'` (详见迁移记录 `migrate/2026/06/26/016`)。v4→v5 把来源列改名为真实会话身份：`source` → `session_kind` (放宽存完整 SessionKind)、`source_id` → `session_id` (产生事件的真实会话 id)，复合索引 `idx_wui_source_status` → `idx_wui_session_status`；读取端按 `session_id` 反查所属意图派生 `intentId`/`intentTitle` (不落库)，历史行降级不回填 (详见迁移记录 `migrate/2026/06/26/017`)。
 
 ### works
 

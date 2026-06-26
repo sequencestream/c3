@@ -15,24 +15,24 @@ import { resolve } from 'node:path'
 import type {
   AnyConsensusOutcome,
   WaitUserInvolveEvent,
-  WaitUserInvolveSource,
   WaitUserInvolveStatus,
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { pathToId } from '../../state.js'
+import { findIntentIdByAnySessionId, getIntent } from '../intents/store.js'
 
 /**
  * Schema version — informational only, see discussion store comment.
  * Migrations key off `PRAGMA table_info`, never off the version number.
  */
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,
   workspace_path  TEXT NOT NULL,
-  source        TEXT NOT NULL,
-  source_id     TEXT,
+  session_kind  TEXT NOT NULL,
+  session_id    TEXT,
   title         TEXT,
   request_id    TEXT,
   tool_name     TEXT,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   updated_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_path, status);
-CREATE INDEX IF NOT EXISTS idx_wui_source_status ON wait_user_involve_events(source_id, status);
+CREATE INDEX IF NOT EXISTS idx_wui_session_status ON wait_user_involve_events(session_id, status);
 `
 
 let schemaReady = false
@@ -90,14 +90,34 @@ function migrateProjectPathToWorkspacePath(d: Db): void {
 }
 
 /**
- * v3 → v4: fold the legacy `source = 'session'` value → `'work'` IN PLACE, aligning
- * the stored taxonomy with the SessionKind-derived `WaitUserInvolveSource` subset
- * (2026-06-26). Idempotent (a no-op once no `'session'` rows remain); runs AFTER
- * SCHEMA so the table is guaranteed to exist. The web also treats any unknown source
- * as `'work'`, so this migration is belt-and-braces, not load-bearing for correctness.
+ * v4 → v5: rename the source columns to the real session identity IN PLACE —
+ * `source → session_kind` (now stores the full {@link SessionKind}, not a folded
+ * subset) and `source_id → session_id` (now stores the real producing session id).
+ * MUST run BEFORE `exec(SCHEMA)` (SCHEMA's `idx_wui_session_status` references the
+ * new `session_id` column). Idempotent + never drops the table; the legacy
+ * `idx_wui_source_status` index is dropped here and rebuilt under the new name by
+ * SCHEMA. Old `session_kind = 'session'` / intent-object-id `session_id` values are
+ * left verbatim (the web routes unknown kinds to the console; reverse-lookup of a
+ * non-session id simply yields a null intent — historical rows degrade gracefully).
  */
-function migrateSessionSourceToWork(d: Db): void {
-  d.run("UPDATE wait_user_involve_events SET source='work' WHERE source='session'")
+function migrateSourceColumnsToSession(d: Db): void {
+  if (tableExists(d, 'wait_user_involve_events')) {
+    if (
+      columnExists(d, 'wait_user_involve_events', 'source') &&
+      !columnExists(d, 'wait_user_involve_events', 'session_kind')
+    ) {
+      d.exec('ALTER TABLE wait_user_involve_events RENAME COLUMN source TO session_kind')
+    }
+    if (
+      columnExists(d, 'wait_user_involve_events', 'source_id') &&
+      !columnExists(d, 'wait_user_involve_events', 'session_id')
+    ) {
+      d.exec('ALTER TABLE wait_user_involve_events RENAME COLUMN source_id TO session_id')
+    }
+  }
+  if (indexExists(d, 'idx_wui_source_status')) {
+    d.exec('DROP INDEX idx_wui_source_status')
+  }
 }
 
 /** Return the db with the events schema ensured once, or null if unavailable. */
@@ -107,13 +127,13 @@ function db(): Db | null {
   if (!schemaReady) {
     // v1 → v2 project_path → workspace_path; MUST precede SCHEMA (see docstring).
     migrateProjectPathToWorkspacePath(d)
+    // v4 → v5 source/source_id → session_kind/session_id; MUST precede SCHEMA.
+    migrateSourceColumnsToSession(d)
     d.exec(SCHEMA)
     // Idempotent backfill for columns that may be missing on upgraded builds.
     ensureColumn(d, 'wait_user_involve_events', 'tool_input', "TEXT NOT NULL DEFAULT ''")
     // v2 → v3: consensus outcome JSON for `status: 'auto'` audit records (nullable).
     ensureColumn(d, 'wait_user_involve_events', 'outcome', 'TEXT')
-    // v3 → v4: legacy source 'session' → 'work' (runs after SCHEMA, idempotent).
-    migrateSessionSourceToWork(d)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -157,8 +177,8 @@ function _tx<T>(d: Db, fn: () => T): T {
 interface EventRow {
   id: string
   workspace_path: string
-  source: string
-  source_id: string | null
+  session_kind: string
+  session_id: string | null
   title: string | null
   request_id: string | null
   tool_name: string | null
@@ -199,11 +219,28 @@ function toEvent(r: EventRow): WaitUserInvolveEvent | null {
       outcome = null
     }
   }
+  // Derive the owning intent (id + current title) by reverse-looking-up the producing
+  // session id. Both stay null when the session belongs to no intent (e.g. a plain
+  // work session) or the row predates the session-id contract — a graceful degrade,
+  // never an error: a lookup failure must not drop the event itself.
+  let intentId: string | null = null
+  let intentTitle: string | null = null
+  if (r.session_id) {
+    try {
+      intentId = findIntentIdByAnySessionId(r.session_id)
+      if (intentId) intentTitle = getIntent(intentId)?.title ?? null
+    } catch {
+      intentId = null
+      intentTitle = null
+    }
+  }
   return {
     id: r.id,
     workspaceId,
-    source: r.source as WaitUserInvolveSource,
-    sourceId: r.source_id,
+    sessionKind: r.session_kind,
+    sessionId: r.session_id,
+    intentId,
+    intentTitle,
     title: r.title,
     requestId: r.request_id,
     toolName: r.tool_name,
@@ -218,8 +255,10 @@ function toEvent(r: EventRow): WaitUserInvolveEvent | null {
 /** Fields a caller supplies when creating a wait-user-involve event. */
 export interface CreateEventInput {
   workspacePath: string
-  source: WaitUserInvolveSource
-  sourceId?: string | null
+  /** The full {@link SessionKind} of the producing run (stored verbatim). */
+  sessionKind: string
+  /** The real producing session id (work/intent/spec session, discussion, schedule). */
+  sessionId?: string | null
   title?: string | null
   requestId?: string | null
   toolName?: string | null
@@ -241,12 +280,12 @@ export function createEvent(input: CreateEventInput): WaitUserInvolveEvent {
   const outcome = input.outcome != null ? JSON.stringify(input.outcome) : null
   d.run(
     `INSERT INTO wait_user_involve_events
-       (id, workspace_path, source, source_id, title, request_id, tool_name, tool_input, status, outcome, created_at, updated_at)
+       (id, workspace_path, session_kind, session_id, title, request_id, tool_name, tool_input, status, outcome, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     resolve(input.workspacePath),
-    input.source,
-    input.sourceId ?? null,
+    input.sessionKind,
+    input.sessionId ?? null,
     input.title ?? null,
     input.requestId ?? null,
     input.toolName ?? null,
@@ -317,13 +356,13 @@ export function updateStatus(id: string, status: WaitUserInvolveStatus): void {
 }
 
 /**
- * Cancel all 'todo' events for a given `sourceId` (e.g. when a session ends).
+ * Cancel all 'todo' events for a given `sessionId` (e.g. when a session ends).
  */
-export function cancelBySourceId(sourceId: string): void {
+export function cancelBySessionId(sessionId: string): void {
   const d = requireDb()
   d.run(
-    "UPDATE wait_user_involve_events SET status='canceled', updated_at=? WHERE source_id=? AND status='todo'",
+    "UPDATE wait_user_involve_events SET status='canceled', updated_at=? WHERE session_id=? AND status='todo'",
     Date.now(),
-    sourceId,
+    sessionId,
   )
 }

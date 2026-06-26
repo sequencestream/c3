@@ -100,7 +100,7 @@ describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
     return {
       getRunId: () => 'run-1',
       workspacePath: '/proj',
-      source: 'work' as const,
+      sessionKind: 'work' as const,
       signal: new AbortController().signal,
       emit: vi.fn(),
       waitForDecision: vi.fn(async () => ({ decision: 'allow' as const })),
@@ -109,10 +109,10 @@ describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
     }
   }
 
-  it('registers the event BEFORE the wire frame, with the runtime source + live run id', async () => {
+  it('registers the event BEFORE the wire frame, with the runtime sessionKind + live run id', async () => {
     const order: string[] = []
     const d = deps({
-      source: 'intent',
+      sessionKind: 'intent',
       getRunId: () => 'run-9',
       workspacePath: '/w',
       emit: vi.fn(() => order.push('emit')),
@@ -131,7 +131,7 @@ describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
       input: { file_path: '/x' },
       sessionId: 'run-9',
       workspacePath: '/w',
-      source: 'intent',
+      sessionKind: 'intent',
     })
     expect(order).toEqual(['hook', 'emit'])
     expect(d.emit).toHaveBeenCalledWith('run-9', {

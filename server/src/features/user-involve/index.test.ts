@@ -64,8 +64,8 @@ describe('listWaitUserEvents', () => {
       {
         id: 'e1',
         workspaceId: 'ws-1',
-        source: 'work',
-        sourceId: 's1',
+        sessionKind: 'work',
+        sessionId: 's1',
         title: null,
         requestId: null,
         toolName: null,

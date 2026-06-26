@@ -21,7 +21,7 @@ import { runConsensusVote, runAskConsensus } from '../../consensus.js'
 function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
   const base: GatewaySpec = {
     gate: 'intent',
-    source: 'intent',
+    sessionKind: 'intent',
     send: () => {},
     signal: new AbortController().signal,
     currentAgentId: null,
@@ -30,13 +30,13 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
     sessionId: () => '',
     ...overrides,
   }
-  // Mirror production (agent/index.ts): source is derived from the gate unless the
+  // Mirror production (agent/index.ts): sessionKind is derived from the gate unless the
   // test pins it explicitly, so a standard-gate prompt registers as 'work'.
-  return overrides.source
+  return overrides.sessionKind
     ? base
     : {
         ...base,
-        source:
+        sessionKind:
           base.gate === 'intent'
             ? 'intent'
             : base.gate === 'spec'
@@ -235,7 +235,7 @@ describe('onPermissionRequest callback', () => {
     await p
     expect(onPermissionRequest).toHaveBeenCalledTimes(1)
     expect(onPermissionRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ toolName: 'AskUserQuestion', source: 'intent' }),
+      expect.objectContaining({ toolName: 'AskUserQuestion', sessionKind: 'intent' }),
     )
   })
 
@@ -266,7 +266,7 @@ describe('onPermissionRequest callback', () => {
     await p
     expect(onPermissionRequest).toHaveBeenCalledTimes(1)
     expect(onPermissionRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ toolName: 'Write', source: 'work' }),
+      expect.objectContaining({ toolName: 'Write', sessionKind: 'work' }),
     )
   })
 
@@ -402,7 +402,7 @@ describe('onPermissionRequest callback', () => {
     expect(onConsensusResolved).toHaveBeenCalledWith(
       expect.objectContaining({
         toolName: 'Write',
-        source: 'work',
+        sessionKind: 'work',
         outcome: expect.objectContaining({ kind: 'tool', decision: 'allow' }),
       }),
     )

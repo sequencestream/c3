@@ -2412,52 +2412,6 @@ export interface ToolManifestEntry {
 // ---- Wait User Involve Events ----
 
 /**
- * Source category of a {@link WaitUserInvolveEvent} — the **traceable-jump subset**
- * of {@link SessionKind}. WorkCenter renders a "溯源跳转" affordance per event whose
- * target tab + object is keyed off this value, so only kinds a human can navigate
- * back to appear here. The two SessionKinds excluded are `consensus` and `tool`:
- * both are socket-less internal calls that never raise a human prompt, so they
- * never produce a gated event in the first place.
- *
- * Derived from `SessionKind` via {@link sessionKindToWaitUserSource} (the single
- * write-side source of truth) — `WaitUserInvolveSource` deliberately stays a
- * hand-picked subset rather than `= SessionKind`, so the web's `jumpToSource`
- * switch stays exhaustive with every branch actually jumpable.
- *
- * Migration (2026-06-26): the legacy `'session'` value folded into `'work'`
- * (in-place store migration + a web fallback that routes any unknown source to the
- * console); `'spec'` was added (previously collapsed into `'session'`).
- */
-export type WaitUserInvolveSource = 'work' | 'intent' | 'discussion' | 'schedule' | 'spec'
-
-/**
- * Canonical map from a run's {@link SessionKind} to its WorkCenter
- * {@link WaitUserInvolveSource}. The server stamps an event's `source` through
- * this map (run-via-driver / agent gateway), replacing the old
- * `=== 'intent' ? 'intent' : 'session'` two-value collapse that dropped `spec`.
- *
- * `consensus` / `tool` runs never raise a human prompt (no gated event), so they
- * fall back to `'work'` defensively — unreachable on the gated path, but keeps the
- * map total so no caller can mint an undefined source.
- */
-export function sessionKindToWaitUserSource(kind: SessionKind): WaitUserInvolveSource {
-  switch (kind) {
-    case 'intent':
-      return 'intent'
-    case 'discussion':
-      return 'discussion'
-    case 'schedule':
-      return 'schedule'
-    case 'spec':
-      return 'spec'
-    case 'work':
-    case 'consensus':
-    case 'tool':
-      return 'work'
-  }
-}
-
-/**
  * Sentinel `toolName` for the workbench todo a failed manual Start-Dev Git/PR
  * cleanup pushes. Not a real gated tool call (no `requestId`): the event's
  * `toolInput` carries a {@link UiError} `{code, params}` so the web localizes the
@@ -2495,23 +2449,41 @@ export interface WaitUserInvolveEvent {
    * a broken id the web could not route.
    */
   workspaceId: string
-  /** Which kind of run produced this event (the traceable-jump source). */
-  source: WaitUserInvolveSource
   /**
-   * The jump target id, interpreted per {@link source}:
-   *  - `work`       — the work session id (`select_session`).
-   *  - `intent`     — EITHER an intent object id OR the intent comm-session id; the
-   *                   web disambiguates against its loaded intent / comm-session
-   *                   lists (intent object first, then comm session), degrading to
-   *                   the Intents tab with no selection when neither matches.
-   *  - `discussion` — the discussion id (`openDiscussion`).
-   *  - `schedule`   — the schedule id (`onSelectSchedule`).
-   *  - `spec`       — the owning intent id (spec authoring binds to one intent;
-   *                   `openSpecSession(intentId)`).
-   * `null` when the producer had no jumpable id — the web degrades to the tab's
-   * list without selecting anything.
+   * The full {@link SessionKind} of the run that produced this event (work / intent /
+   * discussion / schedule / consensus / tool / spec). Stored verbatim — no longer
+   * folded to a traceable-jump subset — so WorkCenter's "溯源跳转" can route off the
+   * real session identity. Typed as `string` (not the `SessionKind` union) so the
+   * protocol stays decoupled from the kind enum; the web's jump switch accepts a
+   * string and falls back to the console for any unhandled value.
    */
-  sourceId: string | null
+  sessionKind: string
+  /**
+   * The id of the actual session that produced this event — a real, resolvable
+   * session id (work/intent/spec session id, discussion id, schedule id). The web's
+   * `jumpToSource` routes off `sessionKind + sessionId` directly; the server derives
+   * {@link intentId} / {@link intentTitle} from it on read. `null` when the producer
+   * had no session to reference (e.g. a Start-Dev cleanup todo) — the web degrades to
+   * the tab's list without selecting anything.
+   *
+   * Legacy note: rows written before 2026-06-26 may carry an intent OBJECT id here
+   * (not a session id); those reverse-lookups simply return null and the event still
+   * renders — historical rows degrade rather than mis-route.
+   */
+  sessionId: string | null
+  /**
+   * Owning intent id, **derived on read** by reverse-looking-up {@link sessionId}
+   * against the intent-session bindings. Read-only (never supplied to `createEvent`);
+   * `null` when the session is not bound to any intent (e.g. a plain work session) or
+   * the row predates the session-id contract.
+   */
+  intentId?: string | null
+  /**
+   * Owning intent's title, **derived on read** alongside {@link intentId}. Reflects
+   * the intent's current title (a rename shows up immediately, since it is not
+   * persisted on the event). `null` whenever {@link intentId} is null.
+   */
+  intentTitle?: string | null
   /** Human-friendly label summarising the gated action. */
   title: string | null
   /** The `permission_request.requestId` this event tracks. */

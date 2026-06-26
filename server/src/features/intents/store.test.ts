@@ -953,7 +953,7 @@ describe('communication session mapping / hidden set', () => {
 
     const titled = new Set<string>()
     setOnEmit((rt, event) => {
-      if (rt.kind !== 'intent') return
+      if (rt.sessionKind !== 'intent') return
       if (event.type !== 'assistant_text') return
       if (titled.has(rt.sessionId)) return
       titled.add(rt.sessionId)
@@ -996,7 +996,7 @@ describe('communication session mapping / hidden set', () => {
 
     const titled = new Set<string>()
     setOnEmit((rt, event) => {
-      if (rt.kind !== 'intent') return
+      if (rt.sessionKind !== 'intent') return
       if (event.type !== 'assistant_text') return
       if (titled.has(rt.sessionId)) return
       titled.add(rt.sessionId)
@@ -1039,7 +1039,7 @@ describe('communication session mapping / hidden set', () => {
 
     const titled = new Set<string>()
     setOnEmit((rt, event) => {
-      if (rt.kind !== 'intent') return
+      if (rt.sessionKind !== 'intent') return
       if (event.type !== 'assistant_text') return
       if (titled.has(rt.sessionId)) return
       titled.add(rt.sessionId)
@@ -1082,7 +1082,7 @@ describe('communication session mapping / hidden set', () => {
 
     const titled = new Set<string>()
     setOnEmit((rt, event) => {
-      if (rt.kind !== 'intent') return
+      if (rt.sessionKind !== 'intent') return
       if (event.type !== 'assistant_text') return
       if (titled.has(rt.sessionId)) return
       titled.add(rt.sessionId)
@@ -1109,7 +1109,7 @@ describe('communication session mapping / hidden set', () => {
     let callCount = 0
     const titled = new Set<string>()
     setOnEmit((rt, event) => {
-      if (rt.kind !== 'intent') return
+      if (rt.sessionKind !== 'intent') return
       if (event.type !== 'assistant_text') return
       if (titled.has(rt.sessionId)) return
       titled.add(rt.sessionId)

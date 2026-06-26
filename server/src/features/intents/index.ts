@@ -799,7 +799,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // run:settled events) use the correct workspace scope. The agent SDK's CWD
   // is overridden via devRt.effectiveCwd (the worktree, or the project checkout
   // itself in current-branch mode).
-  const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'session')
+  const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'work')
   devRt.effectiveCwd = effectiveCwd
   // Split the first turn into its delivery channels: the SDD work contract rides the
   // system channel, a slash-command dev skill leads the (non-echoed) model user turn,

@@ -60,7 +60,7 @@ import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 /**
  * The intent comm-agent launch profile (read-only gate + disallowed-tools lock
  * + comm system prompt + `save_intents` MCP tool), resolved once before the
- * vendor fork in `launchRun`. Only present for `rt.kind === 'intent'` runtimes.
+ * vendor fork in `launchRun`. Only present for `rt.sessionKind === 'intent'` runtimes.
  */
 export interface IntentProfile {
   appendSystemPrompt: string
@@ -100,7 +100,7 @@ export interface IntentProfile {
 /**
  * The spec-authoring launch profile (write-confined gate + disallowed-tools lock
  * + spec system prompt), resolved before the vendor fork in `launchRun`. Only
- * present for `rt.kind === 'spec'` runtimes. The confining directory itself
+ * present for `rt.sessionKind === 'spec'` runtimes. The confining directory itself
  * (`specDir`) rides on the runtime, not this static profile (it is per-run). Spec
  * sessions are claude-only (the path-level write gate is a claude `canUseTool`
  * mechanism), so — unlike {@link IntentProfile} — there is no driver-path MCP.
@@ -127,8 +127,8 @@ export interface SpecProfile {
 }
 
 /**
- * The base launch profile bound to EVERY ordinary work session (`rt.kind ===
- * 'session'`), resolved before the vendor fork in `launchRun` (2026-06-20). It
+ * The base launch profile bound to EVERY ordinary work session (`rt.sessionKind ===
+ * 'work'`), resolved before the vendor fork in `launchRun` (2026-06-20). It
  * carries ONLY the `publish_pr_event` MCP tool — no gate override, no
  * disallowed-tools lock — so a work run keeps its normal standard gate and tool
  * surface while gaining the ability to publish a vendor-neutral PR operation
@@ -322,7 +322,7 @@ export async function runViaDriver(
   inject?: RunInject,
   /**
    * The work-session base MCP profile (`publish_pr_event`), present for
-   * `rt.kind === 'session'` runs (2026-06-20). Mutually exclusive with
+   * `rt.sessionKind === 'work'` runs (2026-06-20). Mutually exclusive with
    * `intentProfile` (a run is either an intent run or a session run); when set
    * and the vendor is codex, its driver MCP is bound over the localhost HTTP route.
    */
@@ -356,7 +356,7 @@ export async function runViaDriver(
     makeDriverApprovalHandler({
       getRunId: () => runId,
       workspacePath,
-      source: rt.kind === 'intent' ? 'intent' : 'session',
+      source: rt.sessionKind === 'intent' ? 'intent' : 'session',
       signal: cycleAbort.signal,
       emit,
       waitForDecision,
@@ -530,6 +530,12 @@ export async function runViaDriver(
     clearPending(runId)
     finalizeRun(runId)
     const reason: RunEndReason = cycleAbort.signal.aborted ? 'aborted' : settledReason
-    eventBus.publish('run:settled', { sessionId: runId, workspacePath, reason, kind: rt.kind })
+    eventBus.publish('run:settled', {
+      sessionId: runId,
+      workspacePath,
+      reason,
+      sessionKind: rt.sessionKind,
+      runKind: rt.runKind,
+    })
   }
 }

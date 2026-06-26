@@ -34,16 +34,17 @@
  * AskUserQuestion as `in_progress`, the orchestrator's own `pendingQuestion` guard
  * (see automation.ts) forces a stop — the judge is the first line, not the only one.
  */
-import type { Intent, RunKind } from '@ccc/shared/protocol'
+import type { Intent, SessionKind } from '@ccc/shared/protocol'
 import { askOneShot } from '../../kernel/agent/index.js'
 import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
 
 /**
- * This module's RunKind: completion judging is an internal, socket-less tool call
- * (a tool-free one-shot), NOT a user-facing run — it does NOT go through the run
- * bus. Tagged `'tool'` so logs/audit can distinguish it from user sessions.
+ * This module's SessionKind: completion judging is an internal, socket-less tool
+ * call (a tool-free one-shot), NOT a user-facing run — it does NOT go through the
+ * run bus (its execution form is `runKind: 'internal'`). Tagged `'tool'` so
+ * logs/audit can distinguish it from user sessions.
  */
-const RUN_KIND: RunKind = 'tool'
+const SESSION_KIND: SessionKind = 'tool'
 
 export type JudgeVerdict = { verdict: 'done' | 'in_progress' | 'stuck'; reason: string }
 
@@ -128,7 +129,7 @@ export async function judgeCompletion(input: {
   })
   const verdict = parseVerdict(text)
   console.log(
-    `[c3:automation] (${RUN_KIND}) judge「${input.req.title}」→ ${verdict.verdict}: ${verdict.reason}`,
+    `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」→ ${verdict.verdict}: ${verdict.reason}`,
   )
   return verdict
 }

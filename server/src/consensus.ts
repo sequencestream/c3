@@ -23,7 +23,7 @@ import type {
   ConsensusOutcome,
   ConsensusVote,
   QuestionConsensus,
-  RunKind,
+  SessionKind,
 } from '@ccc/shared/protocol'
 import { resolveAgent, vendorScopedVoters } from './kernel/agent-config/index.js'
 import {
@@ -51,13 +51,14 @@ import {
 } from './consensus-tally.js'
 
 /**
- * This module's RunKind: a consensus vote is a fan-out of socket-less, tool-free
- * one-shots ({@link askAgentOnce}), NOT a user-facing run — it does NOT go through
- * the run bus. Tagged `'consensus'` so logs/audit distinguish vote traffic from
- * user sessions. (Distinct from {@link ConsensusOutcome.kind} `'tool' | 'ask'`,
- * which discriminates the *outcome shape*, not the run origin.)
+ * This module's SessionKind: a consensus vote is a fan-out of socket-less,
+ * tool-free one-shots ({@link askAgentOnce}), NOT a user-facing run — it does NOT
+ * go through the run bus (its execution form is `runKind: 'internal'`). Tagged
+ * `'consensus'` so logs/audit distinguish vote traffic from user sessions.
+ * (Distinct from {@link ConsensusOutcome.kind} `'tool' | 'ask'`, which
+ * discriminates the *outcome shape*, not the business origin.)
  */
-const RUN_KIND: RunKind = 'consensus'
+const SESSION_KIND: SessionKind = 'consensus'
 
 export interface ConsensusParams {
   /** The resolved agent id the session runs on (excluded from voting). */
@@ -111,7 +112,9 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
     getConsensusConfig(p.cwd),
   )
   if (voters.length === 0) return null
-  console.log(`[c3:consensus] (${RUN_KIND}) vote on "${p.toolName}" → ${voters.length} voter(s)`)
+  console.log(
+    `[c3:consensus] (${SESSION_KIND}) vote on "${p.toolName}" → ${voters.length} voter(s)`,
+  )
 
   const prompt = voterPrompt(p.toolName, p.input, p.context)
   const votes: ConsensusVote[] = await Promise.all(
@@ -204,7 +207,7 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
   const questions = askQuestions(p.input)
   if (!questions) return null
   console.log(
-    `[c3:consensus] (${RUN_KIND}) ask on "${p.toolName}" → ${voters.length} voter(s), ${questions.length} question(s)`,
+    `[c3:consensus] (${SESSION_KIND}) ask on "${p.toolName}" → ${voters.length} voter(s), ${questions.length} question(s)`,
   )
 
   // Each voter answers all questions; an errored voter abstains on every question.

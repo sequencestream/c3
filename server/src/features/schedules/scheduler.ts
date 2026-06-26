@@ -7,7 +7,7 @@
  * one in-flight execution per schedule at a time (SCH-R7).
  *
  * Each execution now publishes run lifecycle events (`run:started` / `run:bound` /
- * `run:settled`) with `kind='schedule'` on the kernel event bus (ADR-0018
+ * `run:settled`) with `sessionKind='schedule'` on the kernel event bus (ADR-0018
  * amendment, 2026-06-08-010). The resident schedule subscription in
  * `run-domain-subscriptions.ts` reacts to `run:settled` to broadcast the
  * refreshed schedule list.
@@ -27,23 +27,24 @@ import type {
   PrOperationFilter,
   PrOperationResult,
   RunEndReason,
-  RunKind,
   RunLifecycleTopic,
   Schedule,
   ScheduleEventTopic,
+  SessionKind,
 } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
 
 /**
- * Explicit RunKind whitelist for event-triggered schedules. Only `session`
- * runs (user/dev sessions) trigger schedules; every other RunKind (intent
- * comm, discussion, consensus, internal tool, the scheduler's own runs) is
- * internal and never triggers a schedule. Defined as a const array so it is
- * both testable and impossible to accidentally widen via a loose comparison.
+ * Explicit SessionKind whitelist for event-triggered schedules — a business-source
+ * judgement. Only `work` runs (user/dev sessions, incl. the automation dev-turn)
+ * trigger schedules; every other SessionKind (intent comm, discussion, consensus,
+ * internal tool, the scheduler's own runs) is internal and never triggers a
+ * schedule. Defined as a const array so it is both testable and impossible to
+ * accidentally widen via a loose comparison.
  */
-const SCHEDULE_TRIGGER_KINDS: readonly RunKind[] = ['session']
+const SCHEDULE_TRIGGER_KINDS: readonly SessionKind[] = ['work']
 import { getTimezone } from '../../kernel/config/index.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
 import { isAgentQuotaRecoverySchedule } from './store.js'
@@ -160,7 +161,7 @@ type RunDispatchPayload = {
   sessionId: string
   workspacePath: string
   reason?: RunEndReason
-  kind: RunKind
+  sessionKind: SessionKind
 }
 
 /** PR-event dispatch payload (`pr:operation`) — the validated, normalized event. */
@@ -202,9 +203,9 @@ export function intentFilterMatches(
  * the write-approval queue.
  *
  * Filters, in order:
- *  - `kind` (run topics only): only `session` runs fire user schedules; every
- *    other RunKind is internal. PR events carry no RunKind — they are published by
- *    the model inside a work session and are never RunKind-filtered.
+ *  - `sessionKind` (run topics only): only `work` runs fire user schedules; every
+ *    other SessionKind is internal. PR events carry no SessionKind — they are
+ *    published by the model inside a work session and are never SessionKind-filtered.
  *  - workspace: the event's workspace must equal the schedule's workspace.
  *  - reason (run:settled) / PR filter (pr:operation): topic-specific match.
  *  - in-flight: SCH-R7 serial execution doubles as event-storm throttling — a
@@ -221,12 +222,12 @@ export function dispatchEventSchedules(
   payload: RunDispatchPayload | PrDispatchPayload | IntentDispatchPayload,
 ): void {
   if (!store) return
-  // Explicit RunKind whitelist: only `session` runs (user/dev) fire user
-  // schedules; every other RunKind is internal. PR events carry no RunKind (the
-  // whitelist is run-lifecycle-specific), so they bypass this gate by design.
+  // Explicit SessionKind whitelist: only `work` runs (user/dev) fire user
+  // schedules; every other SessionKind is internal. PR events carry no SessionKind
+  // (the whitelist is run-lifecycle-specific), so they bypass this gate by design.
   if (topic !== 'pr:operation' && topic !== 'intent:lifecycle') {
-    const kind = (payload as RunDispatchPayload).kind
-    if (!SCHEDULE_TRIGGER_KINDS.includes(kind)) return
+    const sessionKind = (payload as RunDispatchPayload).sessionKind
+    if (!SCHEDULE_TRIGGER_KINDS.includes(sessionKind)) return
   }
 
   let candidates: Schedule[]
@@ -382,7 +383,8 @@ function dispatchAndTrack(schedule: Schedule): void {
   eventBus?.publish('run:started', {
     sessionId: logId,
     workspacePath: resolveWorkspaceRoot(schedule.workspaceId)!,
-    kind: 'schedule',
+    sessionKind: 'schedule',
+    runKind: 'headless',
   })
   eventBus?.publish('run:bound', {
     prevId: logId,
@@ -427,7 +429,7 @@ function dispatchAndTrack(schedule: Schedule): void {
           )
         }
         // Schedule list broadcast is now handled by the resident subscription
-        // on `run:settled` (kind=schedule) in run-domain-subscriptions.ts.
+        // on `run:settled` (sessionKind=schedule) in run-domain-subscriptions.ts.
       } catch (err) {
         console.error('[scheduler] failed to update next_run_at for %s:', schedule.id, err)
       }
@@ -439,7 +441,8 @@ function dispatchAndTrack(schedule: Schedule): void {
         sessionId: logId,
         workspacePath,
         reason,
-        kind: 'schedule',
+        sessionKind: 'schedule',
+        runKind: 'headless',
       })
     })
     .catch((err) => {

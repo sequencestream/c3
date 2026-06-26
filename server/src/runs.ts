@@ -25,6 +25,7 @@ import type {
   ModeToken,
   RunKind,
   ServerToClient,
+  SessionKind,
   SessionRunStatus,
   SessionStatus,
   TranscriptItem,
@@ -56,13 +57,23 @@ export interface SessionRuntime {
    */
   codexPolicy?: CodexPolicy
   /**
-   * The run's origin in the unified {@link RunKind} taxonomy. A `SessionRuntime`
-   * only ever drives `'session'` (ordinary dev/user session) or `'intent'`
-   * (read-only intent-communication session, hidden from the normal list); the
-   * other RunKind values tag socket-less internal invocations that do NOT create
-   * a runtime. (Was the two-value `SessionKind`; `'normal' → 'session'`.)
+   * The run's **business scenario** in the {@link SessionKind} taxonomy. A
+   * `SessionRuntime` only ever drives `'work'` (ordinary dev/user session) or
+   * `'intent'`/`'spec'` (read-only intent-comm / write-confined spec session,
+   * hidden from the normal list); the other SessionKind values tag socket-less
+   * internal invocations that do NOT create a runtime. Business-source judgements
+   * (schedule trigger, security gate) read this. (Was `kind: RunKind` with
+   * `'session'`; renamed and `'session' → 'work'` on 2026-06-26.)
    */
-  kind: RunKind
+  sessionKind: SessionKind
+  /**
+   * The run's **execution form** in the narrowed {@link RunKind} taxonomy — how
+   * this run executes, orthogonal to {@link sessionKind}. A user/intent/spec
+   * console runtime is `'interactive'`; the automation dev-turn (no socket, on the
+   * run bus) is `'background'`. Currently recorded for audit/extensibility; no
+   * consumer branches on it yet.
+   */
+  runKind: RunKind
   /** On-disk transcript snapshot at runtime creation; replayed before `buffer`. */
   baseline: TranscriptItem[]
   /** Every wire event emitted since creation, across all turns. */
@@ -127,7 +138,7 @@ export interface SessionRuntime {
    */
   effectiveCwd?: string
   /**
-   * Only set for `kind === 'spec'` runs: the absolute spec directory this
+   * Only set for `sessionKind === 'spec'` runs: the absolute spec directory this
    * session's writes are confined to. Threaded into the permission gateway's
    * `specDir` so the spec gate denies any write outside it (the project stays
    * read-only). Set by the `write_spec` handler after computing the layout.
@@ -186,8 +197,9 @@ export function ensureRuntime(
   workspacePath: string,
   mode: ModeToken,
   baseline: TranscriptItem[],
-  kind: RunKind = 'session',
+  sessionKind: SessionKind = 'work',
   codexPolicy?: CodexPolicy,
+  runKind: RunKind = 'interactive',
 ): SessionRuntime {
   let rt = runtimes.get(id)
   if (!rt) {
@@ -196,7 +208,8 @@ export function ensureRuntime(
       workspacePath,
       mode,
       codexPolicy,
-      kind,
+      sessionKind,
+      runKind,
       baseline,
       buffer: [],
       run: null,

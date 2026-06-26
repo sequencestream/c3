@@ -3,9 +3,9 @@
  * events that arrived in 2026-06-08-010 (discussion / schedule run bus).
  *
  * Three subscriptions to cover:
- *  1. `run:settled` + kind=discussion → broadcastDiscussions
- *  2. `run:settled` + kind=schedule   → broadcastSchedules
- *  3. Cross-kind isolation (session/discussion/schedule don't leak into each
+ *  1. `run:settled` + sessionKind=discussion → broadcastDiscussions
+ *  2. `run:settled` + sessionKind=schedule   → broadcastSchedules
+ *  3. Cross-sessionKind isolation (session/discussion/schedule don't leak into each
  *     other's handlers, and the existing subscription handlers are untouched)
  *
  * The existing session/intent subscriptions are tested by their own
@@ -124,100 +124,108 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
   // ── Discussion subscription ──────────────────────────────────────────
 
-  it('discussion sub: run:settled with kind=discussion fires broadcastDiscussions', () => {
+  it('discussion sub: run:settled with sessionKind=discussion fires broadcastDiscussions', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'disc-1',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'discussion',
+      sessionKind: 'discussion',
+      runKind: 'internal',
     })
     expect(mockBroadcastDiscussions).toHaveBeenCalledWith('/proj')
     expect(mockBroadcastDiscussions).toHaveBeenCalledTimes(1)
     expect(mockBroadcastSchedules).not.toHaveBeenCalled()
   })
 
-  it('discussion sub: run:settled with kind=session does NOT fire broadcastDiscussions', () => {
+  it('discussion sub: run:settled with sessionKind=work does NOT fire broadcastDiscussions', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'sess-1',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
     expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
   })
 
-  it('discussion sub: run:settled with kind=schedule does NOT fire broadcastDiscussions', () => {
+  it('discussion sub: run:settled with sessionKind=schedule does NOT fire broadcastDiscussions', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'sch-1',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'schedule',
+      sessionKind: 'schedule',
+      runKind: 'headless',
     })
     expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
   })
 
   // ── Schedule subscription ────────────────────────────────────────────
 
-  it('schedule sub: run:settled with kind=schedule fires broadcastSchedules', () => {
+  it('schedule sub: run:settled with sessionKind=schedule fires broadcastSchedules', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'log-1',
       workspacePath: '/ws-a',
       reason: 'complete',
-      kind: 'schedule',
+      sessionKind: 'schedule',
+      runKind: 'headless',
     })
     expect(mockBroadcastSchedules).toHaveBeenCalledWith('/ws-a')
     expect(mockBroadcastSchedules).toHaveBeenCalledTimes(1)
     expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
   })
 
-  it('schedule sub: run:settled with kind=session does NOT fire broadcastSchedules', () => {
+  it('schedule sub: run:settled with sessionKind=work does NOT fire broadcastSchedules', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'sess-1',
       workspacePath: '/ws-a',
       reason: 'error',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
     expect(mockBroadcastSchedules).not.toHaveBeenCalled()
   })
 
-  it('schedule sub: run:settled with kind=discussion does NOT fire broadcastSchedules', () => {
+  it('schedule sub: run:settled with sessionKind=discussion does NOT fire broadcastSchedules', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'disc-1',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'discussion',
+      sessionKind: 'discussion',
+      runKind: 'internal',
     })
     expect(mockBroadcastSchedules).not.toHaveBeenCalled()
   })
 
-  // ── Cross-kind isolation ─────────────────────────────────────────────
+  // ── Cross-sessionKind isolation ─────────────────────────────────────────────
 
-  it('run:settled kind=session fires ONLY the existing broadcastSessions', () => {
+  it('run:settled sessionKind=work fires ONLY the existing broadcastSessions', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'sess-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
     expect(mockBroadcastSessions).toHaveBeenCalledWith('/proj')
     expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
     expect(mockBroadcastSchedules).not.toHaveBeenCalled()
   })
 
-  it('run:settled kind=discussion triggers discussion sub but NOT schedule sub', () => {
+  it('run:settled sessionKind=discussion triggers discussion sub but NOT schedule sub', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'disc-x',
       workspacePath: '/p',
       reason: 'error',
-      kind: 'discussion',
+      sessionKind: 'discussion',
+      runKind: 'internal',
     })
     expect(mockBroadcastDiscussions).toHaveBeenCalledWith('/p')
     // The existing session subscription always broadcasts sessions on settle.
@@ -225,13 +233,14 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     expect(mockBroadcastSchedules).not.toHaveBeenCalled()
   })
 
-  it('run:settled kind=schedule triggers schedule sub but NOT discussion sub', () => {
+  it('run:settled sessionKind=schedule triggers schedule sub but NOT discussion sub', () => {
     install()
     eb.publish('run:settled', {
       sessionId: 'sch-x',
       workspacePath: '/ws',
       reason: 'aborted',
-      kind: 'schedule',
+      sessionKind: 'schedule',
+      runKind: 'headless',
     })
     expect(mockBroadcastSchedules).toHaveBeenCalledWith('/ws')
     // The existing session subscription always broadcasts sessions on settle.
@@ -243,80 +252,95 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
   it('run:started never triggers discussion or schedule settled-subscriptions', () => {
     install()
-    eb.publish('run:started', { sessionId: 'x', workspacePath: '/proj', kind: 'discussion' })
-    eb.publish('run:started', { sessionId: 'y', workspacePath: '/ws-a', kind: 'schedule' })
+    eb.publish('run:started', {
+      sessionId: 'x',
+      workspacePath: '/proj',
+      sessionKind: 'discussion',
+      runKind: 'internal',
+    })
+    eb.publish('run:started', {
+      sessionId: 'y',
+      workspacePath: '/ws-a',
+      sessionKind: 'schedule',
+      runKind: 'headless',
+    })
     expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
     expect(mockBroadcastSchedules).not.toHaveBeenCalled()
   })
 
-  // ── Wait-user-involve event cancel on run:settled (kind=session) ────
+  // ── Wait-user-involve event cancel on run:settled (sessionKind=work) ────
 
-  it('run:settled kind=session cancels events and broadcasts via broadcastWaitUserEvents', async () => {
+  it('run:settled sessionKind=work cancels events and broadcasts via broadcastWaitUserEvents', async () => {
     install()
     const { cancelBySourceId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sess-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
     expect(cancelBySourceId).toHaveBeenCalledWith('sess-x')
     expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
   })
 
-  it('run:settled kind=session (error reason) cancels events and broadcasts', async () => {
+  it('run:settled sessionKind=work (error reason) cancels events and broadcasts', async () => {
     install()
     const { cancelBySourceId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sess-y',
       workspacePath: '/proj',
       reason: 'error',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
     expect(cancelBySourceId).toHaveBeenCalledWith('sess-y')
     expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
   })
 
-  it('run:settled kind=session (aborted reason) cancels events and broadcasts', async () => {
+  it('run:settled sessionKind=work (aborted reason) cancels events and broadcasts', async () => {
     install()
     const { cancelBySourceId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sess-z',
       workspacePath: '/proj',
       reason: 'aborted',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
     expect(cancelBySourceId).toHaveBeenCalledWith('sess-z')
     expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
   })
 
-  it('run:settled kind=discussion does NOT cancel events or broadcastWaitUserEvents', async () => {
+  it('run:settled sessionKind=discussion does NOT cancel events or broadcastWaitUserEvents', async () => {
     install()
     const { cancelBySourceId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'disc-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'discussion',
+      sessionKind: 'discussion',
+      runKind: 'internal',
     })
     expect(cancelBySourceId).not.toHaveBeenCalled()
     expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
   })
 
-  it('run:settled kind=schedule does NOT cancel events or broadcastWaitUserEvents', async () => {
+  it('run:settled sessionKind=schedule does NOT cancel events or broadcastWaitUserEvents', async () => {
     install()
     const { cancelBySourceId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sch-x',
       workspacePath: '/ws',
       reason: 'complete',
-      kind: 'schedule',
+      sessionKind: 'schedule',
+      runKind: 'headless',
     })
     expect(cancelBySourceId).not.toHaveBeenCalled()
     expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
   })
 
-  it('run:settled kind=session skips when events store is unavailable', async () => {
+  it('run:settled sessionKind=work skips when events store is unavailable', async () => {
     const store = await import('../features/user-involve/store.js')
     vi.mocked(store.isStoreAvailable).mockReturnValueOnce(false)
     install()
@@ -324,7 +348,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sess-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
     expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
   })
@@ -339,7 +364,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
     vi.mocked(getRuntime).mockReturnValueOnce({
       workspacePath: '/proj',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
       mode: 'edit',
       buffer: [],
       viewers: new Set(),
@@ -370,7 +396,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
     vi.mocked(getRuntime).mockReturnValueOnce({
       workspacePath: '/proj',
-      kind: 'spec',
+      sessionKind: 'spec',
+      runKind: 'interactive',
       mode: 'default',
       buffer: [],
       viewers: new Set(),
@@ -385,14 +412,15 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
   })
 
-  it('run:settled kind=spec sweeps the pending spec link', async () => {
+  it('run:settled sessionKind=spec sweeps the pending spec link', async () => {
     const { clearPendingSpecLink } = await import('../features/intents/spec-link.js')
     install()
     eb.publish('run:settled', {
       sessionId: 'spec-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'spec',
+      sessionKind: 'spec',
+      runKind: 'interactive',
     })
     expect(clearPendingSpecLink).toHaveBeenCalledWith('spec-x')
   })
@@ -406,7 +434,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
     vi.mocked(getRuntime).mockReturnValue({
       workspacePath: '/proj',
-      kind: 'intent',
+      sessionKind: 'intent',
+      runKind: 'interactive',
       mode: 'default',
       buffer: [],
       viewers: new Set(),
@@ -429,7 +458,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
     vi.mocked(getRuntime).mockReturnValue({
       workspacePath: '/proj',
-      kind: 'intent',
+      sessionKind: 'intent',
+      runKind: 'interactive',
       mode: 'default',
       buffer: [],
       viewers: new Set(),
@@ -444,21 +474,22 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     vi.mocked(getRuntime).mockReturnValue(undefined as unknown as SessionRuntime)
   })
 
-  it('run:settled kind=intent sweeps the pending intent link', async () => {
+  it('run:settled sessionKind=intent sweeps the pending intent link', async () => {
     const { clearPendingIntentLink } = await import('../features/intents/intent-link.js')
     install()
     eb.publish('run:settled', {
       sessionId: 'intent-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'intent',
+      sessionKind: 'intent',
+      runKind: 'interactive',
     })
     expect(clearPendingIntentLink).toHaveBeenCalledWith('intent-x')
   })
 
   // ── Intent-sessions: write conclusion at run:settled ───────────────────
 
-  it('run:settled kind=session matched to intent writes conclusion with git diff', async () => {
+  it('run:settled sessionKind=work matched to intent writes conclusion with git diff', async () => {
     const { listIntents, getIntentSessionBySessionId, updateIntentSession } =
       await import('../features/intents/store.js')
 
@@ -481,7 +512,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sess-m1',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
 
     // Wait for the fire-and-forget async to complete.
@@ -501,7 +533,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
   })
 
   // ── Manual vs automation session-end cleanup dispatch (MSC-R1) ──
-  it('run:settled kind=session: a manual matched session triggers runManualDevCleanup', async () => {
+  it('run:settled sessionKind=work: a manual matched session triggers runManualDevCleanup', async () => {
     const { listIntents } = await import('../features/intents/store.js')
     const { isIntentDrivenByAutomation } = await import('../features/intents/automation.js')
     const { runManualDevCleanup } = await import('../features/intents/dev-cleanup.js')
@@ -516,7 +548,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sess-man',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
 
     await vi.waitFor(() => {
@@ -524,7 +557,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     })
   })
 
-  it('run:settled kind=session: an automation-owned session does NOT trigger cleanup', async () => {
+  it('run:settled sessionKind=work: an automation-owned session does NOT trigger cleanup', async () => {
     const { listIntents } = await import('../features/intents/store.js')
     const { isIntentDrivenByAutomation } = await import('../features/intents/automation.js')
     const { runManualDevCleanup } = await import('../features/intents/dev-cleanup.js')
@@ -539,7 +572,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sess-auto',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
 
     // Give the (not-expected) fire-and-forget a tick; it must never be called.
@@ -565,7 +599,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sess-e1',
       workspacePath: '/proj',
       reason: 'error',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
 
     await vi.waitFor(() => {
@@ -594,7 +629,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sess-a1',
       workspacePath: '/proj',
       reason: 'aborted',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
 
     await vi.waitFor(() => {
@@ -620,7 +656,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sess-n1',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
 
     // Small delay to let the async settle.
@@ -628,7 +665,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     expect(updateIntentSession).not.toHaveBeenCalled()
   })
 
-  it('run:settled kind=session NOT matched to intent — no intent session write', async () => {
+  it('run:settled sessionKind=work NOT matched to intent — no intent session write', async () => {
     const { listIntents, updateIntentSession } = await import('../features/intents/store.js')
     // listIntents returns an array with no matching lastDevSessionId
     vi.mocked(listIntents).mockReturnValueOnce([
@@ -640,14 +677,15 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'unmatched-sess',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     })
 
     await Promise.resolve()
     expect(updateIntentSession).not.toHaveBeenCalled()
   })
 
-  it('run:settled kind=discussion does NOT trigger intent session write', async () => {
+  it('run:settled sessionKind=discussion does NOT trigger intent session write', async () => {
     const { updateIntentSession } = await import('../features/intents/store.js')
 
     install()
@@ -655,14 +693,15 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'disc-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'discussion',
+      sessionKind: 'discussion',
+      runKind: 'internal',
     })
 
     await Promise.resolve()
     expect(updateIntentSession).not.toHaveBeenCalled()
   })
 
-  it('run:settled kind=schedule does NOT trigger intent session write', async () => {
+  it('run:settled sessionKind=schedule does NOT trigger intent session write', async () => {
     const { updateIntentSession } = await import('../features/intents/store.js')
 
     install()
@@ -670,7 +709,8 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionId: 'sch-x',
       workspacePath: '/proj',
       reason: 'complete',
-      kind: 'schedule',
+      sessionKind: 'schedule',
+      runKind: 'headless',
     })
 
     await Promise.resolve()

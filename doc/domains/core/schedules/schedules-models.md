@@ -101,8 +101,10 @@ The permitted values for each enumerated attribute:
 - **triggerType** (event trigger, 2026-06-08) — `cron` | `event`
   - event topic — `run:started` | `run:settled` (run-lifecycle) | `pr:operation` (model-published, 2026-06-20)
   - run end reason — `complete` | `error` | `aborted`
-  - the run kind carried on `run:started` / `run:settled` is the unified RunKind (single source of
-    truth) — `session` | `intent` | `discussion` | `schedule` | `consensus` | `tool` | `spec`
+  - the kinds carried on `run:started` / `run:settled` are the **SessionKind** (business scenario —
+    `work` | `intent` | `discussion` | `schedule` | `consensus` | `tool` | `spec`; only `work` fires
+    user schedules) and the **RunKind** (execution form — `interactive` | `background` | `headless` |
+    `internal`)
   - PR operation (`pr:operation`) — `create` | `review` | `merge` | `close` | `comment`
   - PR operation result — `success` | `failure`
 - **executionIdentity** — `read-only` | `sandboxed` | `full-access`

@@ -60,12 +60,17 @@ export function makeRunDevTurn(
   return (input: RunDevTurnInput): Promise<DevTurnResult> =>
     new Promise<DevTurnResult>((resolveTurn) => {
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
+      // The automation dev-turn is a `work` scenario executed with no socket on
+      // the run bus — `background`. (Idempotent: automation pre-creates the
+      // runtime with the same kinds, so this is a no-op for an existing one.)
       const rt = ensureRuntime(
         id,
         input.workspacePath,
         getDefaultMode(input.workspacePath),
         [],
-        'session',
+        'work',
+        undefined,
+        'background',
       )
       let lastText = ''
       // Attaching to an already-running turn: its latest assistant text may have

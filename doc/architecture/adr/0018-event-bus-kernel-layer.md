@@ -88,7 +88,8 @@ The bus exposes a typed event map and three operations:
 - A set of run-lifecycle topics (2026-06-08): every payload carries enough run identity for a
   domain listener to match without a side lookup. The run-started and run-settled topics carry the
   session id + workspace; the run-bound topic carries the previous id, real id, and workspace.
-  Run-settled also carries the run-end reason. Each carries the unified run kind (see below).
+  Run-settled also carries the run-end reason. Each carries the run's `sessionKind` (business
+  scenario) and `runKind` (execution form) — see below.
 - A set of degradation-chain topics (2026-06-08, see agent-session AS-R25): an agent-error topic
   (session id, workspace, the failing agent's id + name, error, and a degradable flag), an
   agent-fallback topic (session id, workspace, the from/to agent ids + names), and an
@@ -98,42 +99,60 @@ The bus exposes a typed event map and three operations:
 The three operations are: publish a payload to a topic (statically checked); subscribe a handler to a
 topic, returning a dispose function; and clear all subscriptions.
 
-### RunKind taxonomy (2026-06-08)
+### SessionKind / RunKind taxonomy (2026-06-08; split 2026-06-26)
 
-The run kind carried by run-started/run-settled (and threaded through the session runtime) is the
-single source-of-truth run-kind enumeration, defined in the shared protocol definitions. It replaces
-the old two-value normal/intent session kind so listeners can route by run origin instead of
-collapsing six distinct sources into two:
+The kind carried by run-started/run-settled (and threaded through the session runtime) is split into
+two orthogonal dimensions, both defined in the shared protocol definitions. **SessionKind** is the
+business scenario (where the run came from); **RunKind** is the execution form (how it executes).
+Listeners route business decisions by `sessionKind`, mechanism decisions by `runKind`.
 
-| RunKind      | Origin                                                                             |
-| ------------ | ---------------------------------------------------------------------------------- |
-| `session`    | general dev session (user console, intent→dev hand-off, dev-turn). Was `'normal'`. |
-| `intent`     | read-only intent-communication session.                                            |
-| `discussion` | discussion orchestrator + its research pass.                                       |
-| `schedule`   | a run launched by the scheduler **with no socket** (e.g. an `llm` task).           |
-| `consensus`  | a consensus vote.                                                                  |
-| `tool`       | an internal tool call: completion judging (judge) + title derivation.              |
+`SessionKind` — the business-scenario enumeration (was the single 7-value `RunKind`; the values moved
+here verbatim with `'session' → 'work'` on 2026-06-26, and `RunKind` was earlier the two-value
+normal/intent session kind, `'normal' → 'session'`):
+
+| SessionKind  | Business scenario                                                                              |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| `work`       | general dev session (user console, intent→dev hand-off, automation dev-turn). Was `'session'`. |
+| `intent`     | read-only intent-communication session.                                                        |
+| `discussion` | discussion orchestrator + its research pass.                                                   |
+| `schedule`   | a run launched by the scheduler **with no socket** (e.g. an `llm` task).                       |
+| `consensus`  | a consensus vote.                                                                              |
+| `tool`       | an internal tool call: completion judging (judge) + title derivation.                          |
+| `spec`       | a spec-authoring session (writes confined to the intent's spec directory).                     |
+
+`RunKind` — the narrowed execution-form enumeration (orthogonal to SessionKind; currently recorded for
+audit/extensibility, no consumer branch yet):
+
+| RunKind       | Execution form                                                                      |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `interactive` | socket-backed run a human is watching (user console, intent→dev, intent/spec comm). |
+| `background`  | socket-less run still on the run bus (the automation dev-turn).                     |
+| `headless`    | the scheduler's own socket-less run.                                                |
+| `internal`    | an internal orchestration/tool invocation (discussion, consensus, judge/naming).    |
+
+Two runs of the same `sessionKind` can differ in `runKind` — e.g. a `work` console is `interactive`
+while a `work` automation dev-turn is `background`.
 
 **`schedule` is a trigger source, not a run type a session morphs into.** An
-event-triggered schedule fires off a run-started/run-settled whose kind is
-`session` (a user/dev run) — the scheduler reacts to that. `schedule` only tags
+event-triggered schedule fires off a run-started/run-settled whose `sessionKind` is
+`work` (a user/dev run) — the scheduler reacts to that. `schedule` only tags
 the scheduler's _own_ socket-less run. Event-triggered schedules therefore filter
-on the `session` kind (migrated verbatim from the old `normal`-kind guard;
+on `sessionKind === 'work'` (migrated verbatim from the old `session`-kind guard;
 semantics unchanged).
 
-Today `session`, `intent`, `discussion`, and `schedule` flow through the run bus.
+Today `work`, `intent`, `discussion`, and `schedule` sessionKinds flow through the run bus.
 
-- `session`/`intent` via a session runtime (the run-launcher path; `intent` was the
-  first non-`session` kind, 2026-06-08).
+- `work`/`intent` via a session runtime (the run-launcher path; `intent` was the
+  first non-`work` kind, 2026-06-08).
 - `discussion` via the discussion run starters, which publish run-started/run-bound/
-  run-settled with the `discussion` kind around the research and orchestrator calls
+  run-settled with the `discussion` sessionKind around the research and orchestrator calls
   without creating a session runtime (2026-06-08-010).
 - `schedule` via the scheduler's dispatch-and-track step, which publishes
-  run-started/run-bound/run-settled with the `schedule` kind around each scheduled
+  run-started/run-bound/run-settled with the `schedule` sessionKind around each scheduled
   execution (2026-06-08-010).
 
 The remaining two (`consensus`, `tool`) still tag socket-less internal invocations
-with their run kind as a typed annotation + log tag but do NOT yet go through the
+with their sessionKind as a typed annotation + log tag but do NOT yet go through the
 bus.
 
 ### Retrofit: run-domain callback → bus topics

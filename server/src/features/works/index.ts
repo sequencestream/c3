@@ -217,7 +217,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   })
   const defaultMode = getDefaultMode(abs, resolvedAgent.vendor)
   const codexPolicy = resolvedAgent.vendor === 'codex' ? getCodexDefaultPolicy(abs) : undefined
-  ensureRuntime(pendingId, abs, defaultMode, [], 'session', codexPolicy)
+  ensureRuntime(pendingId, abs, defaultMode, [], 'work', codexPolicy)
   conn.viewing = pendingId
   addViewer(pendingId, conn.deliver)
   touchWorkspace(abs, Date.now())
@@ -364,7 +364,7 @@ export const setMode: Handler<'set_mode'> = async (_ctx, conn, msg) => {
   const rt = conn.viewing ? getRuntime(conn.viewing) : undefined
   // Intent comm sessions are pinned to `default` (the gateway must always
   // fire); ignore mode changes for them.
-  if (rt && rt.kind === 'intent') {
+  if (rt && rt.sessionKind === 'intent') {
     conn.send({ type: 'mode_changed', mode: 'default' })
     return
   }

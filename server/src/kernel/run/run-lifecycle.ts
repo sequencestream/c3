@@ -98,7 +98,7 @@ export interface LaunchRunDeps {
    * Intent comm-agent launch profile (read-only gate + disallowed-tools lock
    * + comm system prompt + `save_intents` MCP tool), injected at the
    * composition root so the kernel launcher never imports `features/` (ADR-0009
-   * R1). Only consulted for `rt.kind === 'intent'` runtimes; omitted for
+   * R1). Only consulted for `rt.sessionKind === 'intent'` runtimes; omitted for
    * plain/dev runs. A intent runtime launched without it throws (a missing
    * composition-root wiring is a bug, never a silent drop of the security lock).
    */
@@ -106,15 +106,15 @@ export interface LaunchRunDeps {
   /**
    * Spec-authoring launch profile (write-confined gate + disallowed-tools lock +
    * spec system prompt), injected at the composition root so the kernel launcher
-   * never imports `features/` (ADR-0009 R1). Only consulted for `rt.kind ===
-   * 'spec'` runtimes. A spec runtime launched without it throws (a missing
+   * never imports `features/` (ADR-0009 R1). Only consulted for `rt.sessionKind
+   * === 'spec'` runtimes. A spec runtime launched without it throws (a missing
    * composition-root wiring is a bug, never a silent drop of the write lock).
    */
   specProfile?: (workspacePath: string) => SpecProfile
   /**
    * Work-session base MCP profile (`publish_pr_event`), injected at the
    * composition root so the kernel launcher never imports `features/` (ADR-0009
-   * R1). Consulted ONLY for `rt.kind === 'session'` runs — every new and resumed
+   * R1). Consulted ONLY for `rt.sessionKind === 'work'` runs — every new and resumed
    * work session gets the publish tool. Absent ⇒ no work-session MCP (a plain run
    * with no PR-event tool, the pre-2026-06-20 behaviour). Unlike intent/spec, a
    * missing profile is NOT a hard error: the publish tool is a non-security
@@ -194,8 +194,8 @@ export async function launchRun(
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
-  const isIntent = rt.kind === 'intent'
-  const isSpec = rt.kind === 'spec'
+  const isIntent = rt.sessionKind === 'intent'
+  const isSpec = rt.sessionKind === 'spec'
   // The model's user turn: a slash-command dev-skill prefix (when present) + the
   // visible body. The system instruction is delivered separately (claude's preset
   // system append for work runs), so it never appears in the user turn. The client
@@ -221,11 +221,12 @@ export async function launchRun(
   // Publish the run-started lifecycle event once per launchRun, before the vendor
   // fork so it covers both the claude path below and the driver path (ADR-0018).
   // sessionId is the current runId (possibly a pending id); event-triggered
-  // schedules filter `kind === 'session'` so intent comm runs never fire them.
+  // schedules filter `sessionKind === 'work'` so intent comm runs never fire them.
   deps.eventBus.publish('run:started', {
     sessionId: runId,
     workspacePath,
-    kind: rt.kind,
+    sessionKind: rt.sessionKind,
+    runKind: rt.runKind,
   })
 
   // Supply-chain write guard signal (ADR-0017 D5, 2026-06-12): external skills are
@@ -278,7 +279,8 @@ export async function launchRun(
           sessionId: runId,
           workspacePath,
           reason: 'error',
-          kind: rt.kind,
+          sessionKind: rt.sessionKind,
+          runKind: rt.runKind,
         })
       }
       // Randomly pick one custom agent from the normalized pool; it decides the run's
@@ -352,7 +354,8 @@ export async function launchRun(
         sessionId: runId,
         workspacePath,
         reason: 'error',
-        kind: rt.kind,
+        sessionKind: rt.sessionKind,
+        runKind: rt.runKind,
       })
       return
     }
@@ -381,7 +384,8 @@ export async function launchRun(
         sessionId: runId,
         workspacePath,
         reason: 'error',
-        kind: rt.kind,
+        sessionKind: rt.sessionKind,
+        runKind: rt.runKind,
       })
       return
     }
@@ -773,6 +777,12 @@ export async function launchRun(
       : success
         ? 'complete'
         : 'error'
-    deps.eventBus.publish('run:settled', { sessionId: runId, workspacePath, reason, kind: rt.kind })
+    deps.eventBus.publish('run:settled', {
+      sessionId: runId,
+      workspacePath,
+      reason,
+      sessionKind: rt.sessionKind,
+      runKind: rt.runKind,
+    })
   }
 }

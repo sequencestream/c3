@@ -258,23 +258,31 @@ describe('EventBus — RunDomainEvent contract parity', () => {
     expect(e.workspacePath).toBe('/tmp/proj')
   })
 
-  it('run:settled payload carries session id, terminal reason, and run kind (2026-06-08)', () => {
+  it('run:settled payload carries session id, terminal reason, sessionKind + runKind', () => {
     type SettledPayload = EventBusEvents['run:settled']
     const e: SettledPayload = {
       sessionId: 'sess-1',
       workspacePath: '/tmp/proj',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
+      runKind: 'interactive',
     }
     expect(e.workspacePath).toBe('/tmp/proj')
     expect(e.reason).toBe('complete')
-    expect(e.kind).toBe('session')
+    expect(e.sessionKind).toBe('work')
+    expect(e.runKind).toBe('interactive')
   })
 
-  it('run:started payload carries session id, workspace, and run kind (2026-06-08)', () => {
+  it('run:started payload carries session id, workspace, sessionKind + runKind', () => {
     type StartedPayload = EventBusEvents['run:started']
-    const e: StartedPayload = { sessionId: 'sess-2', workspacePath: '/tmp/proj', kind: 'session' }
+    const e: StartedPayload = {
+      sessionId: 'sess-2',
+      workspacePath: '/tmp/proj',
+      sessionKind: 'work',
+      runKind: 'interactive',
+    }
     expect(e.sessionId).toBe('sess-2')
-    expect(e.kind).toBe('session')
+    expect(e.sessionKind).toBe('work')
+    expect(e.runKind).toBe('interactive')
   })
 })

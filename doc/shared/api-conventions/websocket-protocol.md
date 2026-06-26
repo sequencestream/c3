@@ -846,7 +846,8 @@ schedule 的执行日志。
 - **`ScheduleTriggerType`** — `'cron' | 'event'`。触发方式：基于时间或基于运行生命周期事件。
 - **`RunLifecycleTopic`** — `'run:started' | 'run:settled'`。事件触发 schedule 可订阅的运行生命周期主题。
 - **`RunEndReason`** — `'complete' | 'error' | 'aborted'`。运行结束的终端原因。
-- **`RunKind`** — `'session' | 'intent' | 'discussion' | 'schedule' | 'consensus' | 'tool'`。运行/agent 调用的来源分类（2026-06-08），替代旧的 `SessionKind`。
+- **`SessionKind`** — `'work' | 'intent' | 'discussion' | 'schedule' | 'consensus' | 'tool' | 'spec'`。运行/agent 调用的**业务场景**分类（业务来源判断走它）。2026-06-26 从旧 `RunKind` 拆出，7 个业务值整体迁入（`'session' → 'work'`）。未被任何线协议消息引用，仅服务端内存态使用。
+- **`RunKind`** — `'interactive' | 'background' | 'headless' | 'internal'`。运行的**执行形态**分类（执行机制判断走它），与 `SessionKind` 正交。2026-06-26 收窄而来，目前仅作记录/审计字段。未被任何线协议消息引用。
 - **`ScheduleStatus`** — `'active' | 'paused' | 'error'`。
 - **`McpMode`** — `'read-only' | 'sandboxed' | 'full-access'`。
 - **`Schedule`** — `{ id, type, config, maxWallClockMs, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventTopic, eventReasonFilter, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。

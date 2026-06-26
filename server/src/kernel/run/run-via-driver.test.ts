@@ -202,7 +202,7 @@ describe('runViaDriver — codex delivery split (hide-session-system-instruction
   const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
 
   it('folds the SDD instruct + slash-command dev skill into the model prompt; echoes the visible body alone', async () => {
-    const rt = ensureRuntime(sid, '/proj', 'default', [], 'session')
+    const rt = ensureRuntime(sid, '/proj', 'default', [], 'work')
     const frames: ServerToClient[] = []
     const viewer: Viewer = (e) => frames.push(e)
     addViewer(sid, viewer)
@@ -263,7 +263,7 @@ describe('runViaDriver — work-session base MCP injection (publish_pr_event, co
   }
 
   it('binds the session profile driver MCP and threads its servers to driver.start', async () => {
-    const rt = ensureRuntime(sid, '/proj', 'default', [], 'session')
+    const rt = ensureRuntime(sid, '/proj', 'default', [], 'work')
     const viewer: Viewer = () => {}
     addViewer(sid, viewer)
 
@@ -292,7 +292,7 @@ describe('runViaDriver — Codex specs writable root', () => {
   it('derives and injects only the owning workspace specs root', async () => {
     const sid = 'codex-specs-root'
     const workspacePath = '/projects/owner/repository'
-    const rt = ensureRuntime(sid, workspacePath, 'default', [], 'session')
+    const rt = ensureRuntime(sid, workspacePath, 'default', [], 'work')
     const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
     const started: { additionalDirectories?: string[] } = {}
     const adapter = {

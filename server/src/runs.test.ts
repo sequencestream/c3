@@ -36,6 +36,23 @@ describe('session-runtime registry', () => {
     removeRuntime('s-seed')
   })
 
+  it('defaults to a work/interactive kind split; honours explicit kinds', () => {
+    const def = ensureRuntime('s-kind-default', '/ws', 'default', [])
+    expect(def.sessionKind).toBe('work')
+    expect(def.runKind).toBe('interactive')
+    removeRuntime('s-kind-default')
+    // The automation dev-turn is a work scenario run in the background.
+    const bg = ensureRuntime('s-kind-bg', '/ws', 'default', [], 'work', undefined, 'background')
+    expect(bg.sessionKind).toBe('work')
+    expect(bg.runKind).toBe('background')
+    removeRuntime('s-kind-bg')
+    // An intent comm session is a distinct business scenario, still interactive.
+    const intent = ensureRuntime('s-kind-intent', '/ws', 'default', [], 'intent')
+    expect(intent.sessionKind).toBe('intent')
+    expect(intent.runKind).toBe('interactive')
+    removeRuntime('s-kind-intent')
+  })
+
   it('buffers events and replays them to a viewer that joins later', () => {
     ensureRuntime('s-buf', '/ws', 'default', [])
     emit('s-buf', { type: 'user_text', text: 'go' })

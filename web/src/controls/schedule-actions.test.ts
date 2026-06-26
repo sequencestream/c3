@@ -8,7 +8,13 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick, ref } from 'vue'
-import type { ClientToServer, Schedule, ScheduleExecutionLog } from '@ccc/shared/protocol'
+import type {
+  ClientToServer,
+  CreateScheduleInput,
+  Schedule,
+  ScheduleExecutionLog,
+  UpdateScheduleInput,
+} from '@ccc/shared/protocol'
 import { installScheduleActions } from './schedule-actions'
 import type { AppCtx } from './types'
 
@@ -48,19 +54,32 @@ function makeCtx() {
   const selectedExecutionId = ref<string | null>(null)
   const selectedSchedule = ref<Schedule | null>(null)
   const selectedExecution = ref<ScheduleExecutionLog | null>(null)
+  const scheduleSaving = ref(false)
+  const schedulesProject = ref<string | null>(null)
+  const showToast = vi.fn()
+  const t = vi.fn((key: string) => key)
+  const serverSettings = ref({
+    agents: [
+      { id: 'claude-1', vendor: 'claude', enabled: true, displayName: 'Claude', orderSeq: 0 },
+    ],
+  })
   const ctx = {
     send,
     activeTab,
-    schedulesProject: ref(null),
+    schedulesProject,
     selectedScheduleId,
     selectedExecutionId,
     selectedSchedule,
     selectedExecution,
+    scheduleSaving,
     scheduleFormOpen: ref(false),
     scheduleFormTarget: ref(null),
     scheduleToolManifest: ref({}),
     scheduleToolManifestLoading: ref(false),
     scheduleToolManifestError: ref(null),
+    showToast,
+    t,
+    serverSettings,
   } as unknown as AppCtx
   installScheduleActions(ctx)
   return {
@@ -70,6 +89,12 @@ function makeCtx() {
     selectedExecutionId,
     selectedSchedule,
     selectedExecution,
+    scheduleSaving,
+    showToast,
+    t,
+    serverSettings,
+    ctx,
+    schedulesProject,
   }
 }
 
@@ -189,5 +214,61 @@ describe('running execution live refresh', () => {
 
     vi.advanceTimersByTime(TICK * 3)
     expect(c.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('schedule save overlay', () => {
+  it('sets scheduleSaving on create and sends the message', () => {
+    const c = makeCtx()
+    const input: CreateScheduleInput = {
+      type: 'command',
+      config: {},
+      workspaceId: 'ws1',
+      vendor: 'claude',
+      agentId: null,
+      triggerType: 'cron',
+      cronExpression: '*/30 * * * *',
+      mode: 'default',
+    }
+    c.ctx.createSchedule(input)
+    expect(c.scheduleSaving.value).toBe(true)
+    expect(c.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'create_schedule',
+        workspaceId: 'ws1',
+        input,
+      }),
+    )
+  })
+
+  it('sets scheduleSaving on create from template and sends the message', () => {
+    const c = makeCtx()
+    c.schedulesProject.value = 'ws1'
+    c.ctx.createScheduleFromTemplate('pr-status-poller')
+    expect(c.scheduleSaving.value).toBe(true)
+    expect(c.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'create_schedule' }))
+  })
+
+  it('sets scheduleSaving on update and sends the message', () => {
+    const c = makeCtx()
+    c.ctx.updateSchedule('s1', { status: 'active' })
+    expect(c.scheduleSaving.value).toBe(true)
+    expect(c.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'update_schedule',
+        scheduleId: 's1',
+        input: { status: 'active' },
+      }),
+    )
+  })
+
+  it('does not set scheduleSaving when template has no agent', () => {
+    const c = makeCtx()
+    c.schedulesProject.value = 'ws1'
+    c.serverSettings.value = { agents: [] }
+    c.ctx.createScheduleFromTemplate('pr-status-poller')
+    expect(c.scheduleSaving.value).toBe(false)
+    expect(c.send).not.toHaveBeenCalled()
+    expect(c.showToast).toHaveBeenCalledOnce()
   })
 })

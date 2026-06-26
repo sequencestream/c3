@@ -1169,6 +1169,10 @@
         "label": "Upcoming runs"
       }
     },
+    "saveOverlay": {
+      "title": "Saving schedule…",
+      "label": "Saving…"
+    },
     "detail": {
       "title": "{name} Logs",
       "history": {

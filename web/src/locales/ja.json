@@ -1164,6 +1164,10 @@
         "label": "トリガー"
       }
     },
+    "saveOverlay": {
+      "title": "スケジュールを保存中…",
+      "label": "保存中…"
+    },
     "detail": {
       "title": "{name} のログ",
       "history": {

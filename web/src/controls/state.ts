@@ -367,6 +367,10 @@ export function createState(deps: StateDeps) {
   const scheduleToolManifestLoading = ref(false)
   const scheduleToolManifestError = ref<string | null>(null)
 
+  // Schedule save-in-progress flag: drives the "Saving…" overlay that blocks
+  // interaction while the server processes a create/update (2-4s typical latency).
+  const scheduleSaving = ref(false)
+
   // The modal serves both create (target = null) and edit (target = a schedule).
   const scheduleFormOpen = ref(false)
   const scheduleFormTarget = ref<Schedule | null>(null)
@@ -607,6 +611,7 @@ export function createState(deps: StateDeps) {
     scheduleToolManifest,
     scheduleToolManifestLoading,
     scheduleToolManifestError,
+    scheduleSaving,
     scheduleFormOpen,
     scheduleFormTarget,
     codesProject,

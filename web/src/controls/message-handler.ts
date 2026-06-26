@@ -95,6 +95,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     schedules,
     schedulesProject,
     selectedScheduleId,
+    scheduleSaving,
     scheduleLogs,
     scheduleToolManifest,
     scheduleToolManifestLoading,
@@ -494,6 +495,8 @@ export function installMessageHandler(ctx: AppCtx): void {
       }
       case 'schedules':
         schedules.value = { ...schedules.value, [msg.workspaceId]: msg.items }
+        // A schedule create/update round-trip completed — release the saving overlay.
+        if (scheduleSaving.value) scheduleSaving.value = false
         // After a run completes the server re-broadcasts the list; refresh the open
         // schedule's execution logs so history stays current.
         if (
@@ -764,6 +767,8 @@ export function installMessageHandler(ctx: AppCtx): void {
           add({ kind: 'system', text: `— ${t('error.license.notEntitled', { reason })} —` })
           break
         }
+        // Schedule save/update failed — release the saving overlay.
+        if (scheduleSaving.value) scheduleSaving.value = false
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break
       case 'wait_user_events':

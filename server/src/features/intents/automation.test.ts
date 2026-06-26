@@ -98,9 +98,11 @@ import type { AutomationHooks, DevTurnResult, RunDevTurnInput } from './automati
 import { startDevelopment } from './index.js'
 import { listIntents, getIntent, setBranchName, setPrInfo, updateStatus } from './store.js'
 import {
+  getDevSkill,
   getGitBranchMode,
   getDefaultMainBranch,
   getForgeOverride,
+  getSddEnabled,
 } from '../../kernel/config/index.js'
 import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
@@ -108,6 +110,7 @@ import { judgeCompletion } from './judge.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
 import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-link.js'
+import { buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
 
@@ -161,6 +164,7 @@ describe('pickNext — worktree dep merge validation', () => {
       branchName: 'wt-branch',
     }))
     vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   it('worktree: filters out intents whose dep is done but not merged', () => {
@@ -222,6 +226,73 @@ describe('pickNext — worktree dep merge validation', () => {
     const result = pickNext('/test/proj')
     expect(result).toBeNull()
   })
+
+  it('SDD off: does not require a spec or approval', () => {
+    const req = makeIntent({ id: 'A', specPath: null, specApproved: false })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('A')
+  })
+
+  it('SDD on: filters out intents without a spec approval', () => {
+    const req = makeIntent({ id: 'A', specPath: null, specApproved: false })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result).toBeNull()
+  })
+
+  it('SDD on: filters out authored but unapproved specs', () => {
+    const req = makeIntent({ id: 'A', specPath: '/specs/a/spec.md', specApproved: false })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result).toBeNull()
+  })
+
+  it('SDD on: allows approved specs', () => {
+    const req = makeIntent({ id: 'A', specPath: '/specs/a/spec.md', specApproved: true })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('A')
+  })
+
+  it('SDD on: skips unapproved intents and preserves priority among approved candidates', () => {
+    const highUnapproved = makeIntent({
+      id: 'A',
+      priority: 'P0',
+      specPath: '/specs/a/spec.md',
+      specApproved: false,
+    })
+    const approved = makeIntent({
+      id: 'B',
+      priority: 'P1',
+      specPath: '/specs/b/spec.md',
+      specApproved: true,
+    })
+    const lowerApproved = makeIntent({
+      id: 'C',
+      priority: 'P2',
+      specPath: '/specs/c/spec.md',
+      specApproved: true,
+    })
+    vi.mocked(listIntents).mockReturnValue([highUnapproved, lowerApproved, approved])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('B')
+  })
 })
 
 // =============================================================================
@@ -232,6 +303,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDevLinksForTests()
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   function makeConn() {
@@ -504,6 +576,7 @@ describe('startDevelopment — startup progress events', () => {
     vi.clearAllMocks()
     resetDevLinksForTests()
     vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   function makeConn() {
@@ -599,11 +672,14 @@ describe('startDevelopment — startup progress events', () => {
 describe('automation controller — branch-mode git alignment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getDevSkill).mockReturnValue('')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
     vi.mocked(createWorktree).mockImplementation(() => ({
       worktreePath: '/tmp/wt',
       branchName: 'wt-branch',
     }))
     vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   /** Flush microtasks + the fire-and-forget launch chain. */
@@ -665,6 +741,87 @@ describe('automation controller — branch-mode git alignment', () => {
     expect(runDevTurn).toHaveBeenCalledTimes(1)
     const rt = vi.mocked(ensureRuntime).mock.results.at(-1)?.value as { effectiveCwd?: string }
     expect(rt.effectiveCwd).toBe('/tmp/wt-Y')
+  })
+
+  it('fresh launch: SDD on without devSkill passes SDD instruct out-of-echo and visible spec note', async () => {
+    const proj = '/test/sdd-no-skill'
+    const specPath = '/specs/project/2026/06/26/spec.md'
+    const intent = makeIntent({
+      id: 'SDD',
+      status: 'todo',
+      content: 'Body',
+      dependsOn: ['DEP-1'],
+      specPath,
+      specApproved: true,
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+
+    const input = runDevTurn.mock.calls[0][0] as RunDevTurnInput
+    expect(input.prompt).toBe(`Test\n\nBody\n\n依赖需求:DEP-1\n\n${buildDevSpecNote(specPath)}`)
+    expect(input.systemInstruction).toBe(SDD_WORK_SESSION_INSTRUCT)
+    expect(input.userTurnPrefix).toBeUndefined()
+    expect(input.prompt).not.toContain(SDD_WORK_SESSION_INSTRUCT)
+  })
+
+  it('fresh launch: SDD on with devSkill keeps slash prefix out-of-echo and does not stack instruct', async () => {
+    const proj = '/test/sdd-skill'
+    const specPath = '/specs/project/2026/06/26/spec.md'
+    const intent = makeIntent({
+      id: 'SKILL',
+      status: 'todo',
+      content: 'Body',
+      specPath,
+      specApproved: true,
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getDevSkill).mockReturnValue('/dev')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+
+    const input = runDevTurn.mock.calls[0][0] as RunDevTurnInput
+    expect(input.prompt).toBe(`Test\n\nBody\n\n${buildDevSpecNote(specPath)}`)
+    expect(input.userTurnPrefix).toBe('/dev ')
+    expect(input.systemInstruction).toBeUndefined()
+    expect(input.prompt).not.toContain('/dev')
+    expect(input.prompt).not.toContain(SDD_WORK_SESSION_INSTRUCT)
+  })
+
+  it('fresh launch: SDD off keeps historic visible prompt and no SDD instruction', async () => {
+    const proj = '/test/sdd-off'
+    const intent = makeIntent({
+      id: 'OFF',
+      status: 'todo',
+      content: 'Body',
+      dependsOn: ['DEP-1'],
+      specPath: '/specs/project/2026/06/26/spec.md',
+      specApproved: true,
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startAutomation(proj, hooks, 1)
+    await flush()
+
+    const input = runDevTurn.mock.calls[0][0] as RunDevTurnInput
+    expect(input.prompt).toBe('Test\n\nBody\n\n依赖需求:DEP-1')
+    expect(input.systemInstruction).toBeUndefined()
+    expect(input.userTurnPrefix).toBeUndefined()
+    expect(input.prompt).not.toContain('Approved spec for this intent')
   })
 
   it('worktree: 端到端 develop→commit→PR 全针对 worktree 工作目录,setPrInfo reviewing', async () => {

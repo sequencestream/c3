@@ -11,6 +11,7 @@ import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protoco
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import {
+  automationIconState,
   compareByCompletion,
   formatDate,
   panelToggleLabel,
@@ -34,6 +35,9 @@ const props = defineProps<{
   hideHeader?: boolean
   /** collapsedOverride: hideHeader 模式下由外部控制折叠态。 */
   collapsedOverride?: boolean
+  sddEnabled?: boolean
+  workspaceMainBranch?: string | null
+  workspaceGitBranchMode?: 'worktree' | 'current-branch'
 }>()
 
 const emit = defineEmits<{
@@ -188,6 +192,16 @@ function togglePanel(): void {
 function datePrefix(r: Intent): string {
   return formatDate(r.completedAt ?? r.createdAt, locale.value, { style: 'short' })
 }
+
+function automateToneClass(r: Intent): string {
+  return `auto-tone-${automationIconState(r, {
+    sddEnabled: props.sddEnabled,
+    automation: props.automation,
+    gitBranchMode: props.workspaceGitBranchMode,
+    mainBranch: props.workspaceMainBranch,
+    intents: props.intents,
+  })}`
+}
 </script>
 
 <template>
@@ -264,7 +278,7 @@ function datePrefix(r: Intent): string {
             <button
               type="button"
               class="req-automate"
-              :class="{ active: r.automate, locked: r.status !== 'todo' }"
+              :class="[automateToneClass(r), { active: r.automate, locked: r.status !== 'todo' }]"
               :title="
                 r.automate
                   ? t('intent.automate.queued.tooltip')
@@ -302,3 +316,18 @@ function datePrefix(r: Intent): string {
     </div>
   </section>
 </template>
+
+<style scoped>
+.req-automate.auto-tone-idle {
+  color: var(--c-text-disabled);
+}
+.req-automate.auto-tone-eligible {
+  color: var(--c-warning);
+}
+.req-automate.auto-tone-running {
+  color: var(--c-info, #3b82f6);
+}
+.req-automate.auto-tone-done {
+  color: color-mix(in srgb, var(--c-text-muted) 75%, white);
+}
+</style>

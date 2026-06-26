@@ -248,15 +248,17 @@ add-column through the shared adapter (RM-R14).
   的需求条目 …, 定稿后调用 save_intents"). Triggered by the discussion view's **Convert to
   Intent** button (RM-R7).
 - **Reset intent session (`reset_intent_session`):** the escape hatch for a context-rotted refine
-  conversation after the intent changed (RM-R24). Identical machinery to **Refine**, but the seed
-  prompt prepends the user's **new steering input** (typed into a controlled input dialog) ahead of
-  the intent's current title + content, then instructs the agent to upsert the original id in place
+  conversation after the intent changed (RM-R24). The intent detail header's 「我要修改」 opens the
+  controlled input dialog; the intent-session tab itself has no reset button. Identical machinery to
+  **Refine**, but the seed prompt prepends the user's **new steering input** ahead of the intent's
+  current title + content, then instructs the agent to upsert the original id in place
   ("继续完善已存在意图 <id>… 我的新输入:… 当前意图内容:…"). It registers the same pending→intent link, so
   the resident `run:bound` subscription **replaces** the intent's `intentSessionId` with the new
   comm session id on first bind. The prior session stays queryable under Works (Run center) but is
   no longer the intent's linked session; no batch reset.
-- **Reset spec session (`reset_spec_session`):** the spec-tab counterpart, mirroring **Write spec**
-  but reusing the EXISTING spec directory / path (no scaffolding). Rejected (`error`
+- **Reset spec session (`reset_spec_session`):** the spec document tab's 「我要修改」 action, mirroring
+  **Write spec** but reusing the EXISTING spec directory / path (no scaffolding). The spec-session
+  tab itself has no reset button. Rejected (`error`
   `intent.specNotWritten`) when no spec was ever written; claude-only, same as authoring (the codex
   driver cannot path-confine writes — `intent.specAgentUnsupported`). The server launches a fresh
   write-confined `'spec'` session seeded with the user's **new input** + a pointer to the current
@@ -413,10 +415,14 @@ route**, mounted on c3's own server (before the SPA catch-all, like the codex re
      offline ⇒ best-effort skip; a **diverged** branch (non-fast-forward) ⇒ hard stop returning a
      pull-failed error (manual path: send error + release claim; automation: surfaced as an
      automation failure). Never auto-merges / auto-rebases.
-5. Start a **background normal runtime** (`pending:`) via the launcher with prompt
-   `[<devSkill> ]<title + content + dependency summary>` (the configurable development
-   skill from system settings; empty by default ⇒ no skill prefix); on session bind,
-   set last-dev-session + status `in_progress` + broadcast `intents` + broadcast statuses.
+5. Start a **background normal runtime** (`pending:`) via the shared dev prompt builder. The
+   visible prompt is `title + content + dependency summary`, plus the approved spec-path note
+   when SDD is enabled and a spec path exists. Internal prompt channels are separate from the
+   visible echo: a configured `devSkill` leads the model user turn, while SDD's work-session
+   prompt uses the system-instruction channel when no `devSkill` is configured. Manual launch and
+   automation use the same prompt construction and do not change the branch/worktree/session flow.
+   On session bind, set last-dev-session + status `in_progress` + broadcast `intents` + broadcast
+   statuses.
 6. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.
 

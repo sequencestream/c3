@@ -49,6 +49,7 @@ function mountDetail(
     intentActionErrorSeq?: number
     sddEnabled?: boolean
     workspaceMainBranch?: string | null
+    workspaceGitBranchMode?: 'worktree' | 'current-branch'
     activeSession?: string | null
     intentSpecContent?: string | null
     intentSpecLoading?: boolean
@@ -61,6 +62,7 @@ function mountDetail(
       intentActionErrorSeq: opts.intentActionErrorSeq ?? 0,
       sddEnabled: opts.sddEnabled ?? false,
       workspaceMainBranch: opts.workspaceMainBranch ?? null,
+      workspaceGitBranchMode: opts.workspaceGitBranchMode,
       activeSession: opts.activeSession ?? null,
       activeTitle: 'Title',
       vendor: null,
@@ -184,13 +186,15 @@ describe('IntentDetail.vue — SDD four-state main action', () => {
     expect(w.emitted('write-spec')).toEqual([['i1']])
   })
 
-  it('SDD on + spec written, not approved → Approve Spec, emits approve-spec', async () => {
+  it('SDD on + spec written, not approved → Approve Spec opens the spec tab only', async () => {
     const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: false })
     const w = mountDetail(item, { sddEnabled: true })
     const btn = w.find('.req-btn.primary')
     expect(btn.attributes('data-action')).toBe('approveSpec')
     await btn.trigger('click')
-    expect(w.emitted('approve-spec')).toEqual([['i1']])
+    expect(w.find('[data-testid="tab-spec"]').exists()).toBe(true)
+    expect(w.emitted('read-spec')).toEqual([['i1', '.specs/x/spec.md']])
+    expect(w.emitted('approve-spec')).toBeUndefined()
   })
 
   it('SDD on + spec approved → Start Dev, emits start-dev', async () => {
@@ -248,26 +252,30 @@ describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate 
     expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
   })
 
-  it('approveSpec gate: hidden for 10s after writeSpec, then shown and clickable', async () => {
+  it('approveSpec gate: hides the spec-tab approve button for 10s after writeSpec', async () => {
     const item = intent({ id: 'guide-gate', specPath: null })
     const w = mountDetail(item, { sddEnabled: true })
 
     await w.find('.req-btn.primary').trigger('click')
     expect(w.emitted('write-spec')).toEqual([['guide-gate']])
 
-    // specPath 回填 → mainAction 进入 approveSpec 态,但门未到点 → 主按钮不渲染。
+    // specPath 回填 → mainAction 进入 approveSpec 态;头部入口仍显示,但只负责打开 spec tab。
     await w.setProps({ intent: { ...item, specPath: '.specs/x/spec.md', specApproved: false } })
-    expect(w.find('[data-action="approveSpec"]').exists()).toBe(false)
+    expect(w.find('.intent-detail-actions [data-action="approveSpec"]').exists()).toBe(true)
+    await w.find('.intent-detail-actions [data-action="approveSpec"]').trigger('click')
+    expect(w.find('[data-testid="tab-spec"]').exists()).toBe(true)
+    expect(w.find('[data-testid="intent-detail-spec-approve"]').exists()).toBe(false)
 
     // 不足 10 秒仍不可见。
     vi.advanceTimersByTime(9999)
     await nextTick()
-    expect(w.find('[data-action="approveSpec"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-spec-approve"]').exists()).toBe(false)
 
-    // 满 10 秒展示并可点击 emit approve-spec。
+    // 满 10 秒展示,点击才真正批准。
     vi.advanceTimersByTime(1)
     await nextTick()
-    const approve = w.find('[data-action="approveSpec"]')
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    const approve = w.find('[data-testid="intent-detail-spec-approve"]')
     expect(approve.exists()).toBe(true)
     await approve.trigger('click')
     expect(w.emitted('approve-spec')).toEqual([['guide-gate']])
@@ -286,20 +294,22 @@ describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate 
       intent({ id: 'guide-remount', specPath: '.specs/x/spec.md', specApproved: false }),
       { sddEnabled: true },
     )
-    // 累计未满 10 秒 → 仍隐藏。
-    expect(w2.find('[data-action="approveSpec"]').exists()).toBe(false)
+    await w2.find('.intent-detail-actions [data-action="approveSpec"]').trigger('click')
+    // 累计未满 10 秒 → spec tab 的真正批准入口仍隐藏。
+    expect(w2.find('[data-testid="intent-detail-spec-approve"]').exists()).toBe(false)
 
     vi.advanceTimersByTime(6000)
     await nextTick()
-    expect(w2.find('[data-action="approveSpec"]').exists()).toBe(true)
+    expect(w2.find('[data-testid="intent-detail-spec-approve"]').exists()).toBe(true)
   })
 
-  it('gate not armed when writeSpec was never clicked → approveSpec visible immediately', () => {
+  it('gate not armed when writeSpec was never clicked → spec approve visible immediately', async () => {
     const w = mountDetail(
       intent({ id: 'guide-noarm', specPath: '.specs/x/spec.md', specApproved: false }),
       { sddEnabled: true },
     )
-    expect(w.find('[data-action="approveSpec"]').exists()).toBe(true)
+    await w.find('.intent-detail-actions [data-action="approveSpec"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-spec-approve"]').exists()).toBe(true)
   })
 
   it('cleanup: pending timers are cleared on unmount without switching or erroring', async () => {
@@ -622,14 +632,12 @@ describe('IntentDetail.vue — tabs', () => {
 })
 
 describe('IntentDetail.vue — session reset', () => {
-  it('intent session tab: reset → input → emits reset-intent-session with the typed input', async () => {
+  it('header modify → input → emits reset-intent-session with the typed input', async () => {
     const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
-    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
 
-    // Reset button is always available on the intent-session tab (content exists).
-    const resetBtn = w.find('[data-testid="intent-detail-reset-session"]')
-    expect(resetBtn.exists()).toBe(true)
-    await resetBtn.trigger('click')
+    const modifyBtn = w.find('[data-testid="intent-detail-intent-modify"]')
+    expect(modifyBtn.exists()).toBe(true)
+    await modifyBtn.trigger('click')
 
     await w.find('[data-testid="reset-input"]').setValue('please narrow the scope')
     await w.find('[data-testid="reset-accept"]').trigger('click')
@@ -639,13 +647,13 @@ describe('IntentDetail.vue — session reset', () => {
     expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(false)
   })
 
-  it('spec session tab: reset emits reset-spec-session when a spec exists', async () => {
+  it('spec tab modify emits reset-spec-session when a spec exists', async () => {
     const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null }))
-    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
 
-    const resetBtn = w.find('[data-testid="intent-detail-reset-session"]')
-    expect(resetBtn.exists()).toBe(true)
-    await resetBtn.trigger('click')
+    const modifyBtn = w.find('[data-testid="intent-detail-spec-modify"]')
+    expect(modifyBtn.exists()).toBe(true)
+    await modifyBtn.trigger('click')
 
     await w.find('[data-testid="reset-input"]').setValue('tighten acceptance')
     await w.find('[data-testid="reset-accept"]').trigger('click')
@@ -653,13 +661,35 @@ describe('IntentDetail.vue — session reset', () => {
     expect(w.emitted('reset-spec-session')).toEqual([['i1', 'tighten acceptance']])
   })
 
-  it('spec session tab: no reset button when no spec has been written', async () => {
+  it('spec tab: no modify button when no spec has been written', async () => {
     const w = mountDetail(intent({ id: 'i1', specPath: null }))
-    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
-    expect(w.find('[data-testid="intent-detail-reset-session"]').exists()).toBe(false)
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-spec-modify"]').exists()).toBe(false)
   })
 
-  it('hides session reset buttons once a dev session exists', async () => {
+  it('spec tab modify is visible but disabled when spec dependencies are blocking', async () => {
+    const dep = intent({ id: 'dep', status: 'todo', title: 'Blocking dep' })
+    const current = intent({
+      id: 'i1',
+      specPath: '.specs/x/spec.md',
+      dependsOn: ['dep'],
+      dependsOnTypes: { dep: 'blocks' },
+      lastDevSessionId: 'dev-1',
+    })
+    const w = mountDetail(current, {
+      intents: [dep, current],
+      workspaceGitBranchMode: 'worktree',
+      workspaceMainBranch: 'main',
+    })
+
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    const modify = w.find('[data-testid="intent-detail-spec-modify"]')
+    expect(modify.exists()).toBe(true)
+    expect((modify.element as HTMLButtonElement).disabled).toBe(true)
+    expect(modify.attributes('title')).toBeTruthy()
+  })
+
+  it('hides modify buttons once a dev session exists', async () => {
     const item = intent({
       id: 'i1',
       intentSessionId: 'sess-refine',
@@ -669,21 +699,42 @@ describe('IntentDetail.vue — session reset', () => {
     })
     const w = mountDetail(item)
 
+    expect(w.find('[data-testid="intent-detail-intent-modify"]').exists()).toBe(false)
+
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(w.find('[data-testid="intent-detail-spec-modify"]').exists()).toBe(false)
+  })
+
+  it('confirm is disabled until the user types input', async () => {
+    const w = mountDetail(intent({ id: 'i1' }))
+    await w.find('[data-testid="intent-detail-intent-modify"]').trigger('click')
+
+    const accept = w.find('[data-testid="reset-accept"]')
+    expect((accept.element as HTMLButtonElement).disabled).toBe(true)
+    await w.find('[data-testid="reset-input"]').setValue('hello')
+    expect((accept.element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('session tabs no longer render the old reset button', async () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md' }))
+
     await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
     expect(w.find('[data-testid="intent-detail-reset-session"]').exists()).toBe(false)
 
     await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
     expect(w.find('[data-testid="intent-detail-reset-session"]').exists()).toBe(false)
   })
+})
 
-  it('confirm is disabled until the user types input', async () => {
-    const w = mountDetail(intent({ id: 'i1' }))
-    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
-    await w.find('[data-testid="intent-detail-reset-session"]').trigger('click')
+describe('IntentDetail.vue — spec tab approval actions', () => {
+  it('spec tab approve emits approve-spec from the dedicated action', async () => {
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: false })
+    const w = mountDetail(item, { sddEnabled: true })
 
-    const accept = w.find('[data-testid="reset-accept"]')
-    expect((accept.element as HTMLButtonElement).disabled).toBe(true)
-    await w.find('[data-testid="reset-input"]').setValue('hello')
-    expect((accept.element as HTMLButtonElement).disabled).toBe(false)
+    await w.find('.req-btn.primary[data-action="approveSpec"]').trigger('click')
+    expect(w.emitted('approve-spec')).toBeUndefined()
+
+    await w.find('[data-testid="intent-detail-spec-approve"]').trigger('click')
+    expect(w.emitted('approve-spec')).toEqual([['i1']])
   })
 })

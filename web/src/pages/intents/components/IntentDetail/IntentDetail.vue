@@ -284,9 +284,9 @@ const gateTick = ref(0)
 let approveGateTimer: ReturnType<typeof setTimeout> | null = null
 let switchSpecTabTimer: ReturnType<typeof setTimeout> | null = null
 
-// 当前主按钮处于 approveSpec 态、且本会话点过该意图的「编写 Spec」、且距触发不足
-// 10 秒时为 true → 隐藏主按钮(审核入口此窗口内不可见)。不依赖 specPath 出现先后:
-// 本会话未点编写的意图不武装门,approveSpec 照常立即可见。
+// 当前审批动作处于 approveSpec 态、且本会话点过该意图的「编写 Spec」、且距触发不足
+// 10 秒时为 true → spec tab 内的真正批准入口不可见。不依赖 specPath 出现先后:
+// 本会话未点编写的意图不武装门,批准入口照常立即可见。
 const approveGateBlocked = computed<boolean>(() => {
   void gateTick.value
   const r = props.intent
@@ -369,7 +369,7 @@ function onMainAction(): void {
     return
   }
   if (mainAction.value === 'approveSpec') {
-    emit('approve-spec', r.id)
+    selectTab('spec')
     return
   }
   startDev()
@@ -454,38 +454,49 @@ const chatReady = computed<boolean>(
   () => expectedSessionId.value !== null && props.activeSession === expectedSessionId.value,
 )
 
-// ── 会话重置弹框(intent session / spec session 共用,按当前 tab 分流) ──────────
+// ── 会话重置弹框(intent session / spec session 共用,按入口分流) ─────────────
 const resetDialogOpen = ref(false)
+const resetDialogTarget = ref<'intentSession' | 'specSession'>('intentSession')
 
-// 当前 session tab 是否可重置:已有 dev session 后不再允许重置;
-// intent session 在此前恒可(意图内容始终存在);
-// spec session 在此前仅在已写过 spec(specPath 存在)时可重置(否则无 spec 内容可拼接)。
-const canResetSession = computed<boolean>(() => {
-  if (props.intent?.lastDevSessionId) return false
-  if (activeTab.value === 'intentSession') return true
-  if (activeTab.value === 'specSession') return !!props.intent?.specPath
-  return false
-})
+const canResetIntentSession = computed<boolean>(
+  () => !!props.intent && !props.intent.lastDevSessionId,
+)
+const canResetSpecSession = computed<boolean>(
+  () => !!props.intent && !props.intent.lastDevSessionId && !!props.intent.specPath,
+)
+const showSpecApproveAction = computed<boolean>(
+  () => !!props.intent && props.intent.status === 'todo' && mainAction.value === 'approveSpec',
+)
+const showSpecModifyAction = computed<boolean>(
+  () => canResetSpecSession.value || specDependencyBlocked.value,
+)
+const showSpecActions = computed<boolean>(
+  () =>
+    !!props.intent?.specPath &&
+    ((showSpecApproveAction.value && !approveGateBlocked.value) || showSpecModifyAction.value),
+)
 const resetDialogTitle = computed<string>(() =>
-  activeTab.value === 'specSession'
+  resetDialogTarget.value === 'specSession'
     ? t('intent.resetSession.specSession.title')
     : t('intent.resetSession.intentSession.title'),
 )
 const resetDialogMessage = computed<string>(() =>
-  activeTab.value === 'specSession'
+  resetDialogTarget.value === 'specSession'
     ? t('intent.resetSession.specSession.message')
     : t('intent.resetSession.intentSession.message'),
 )
 
-function openResetDialog(): void {
-  if (!canResetSession.value) return
+function openResetDialog(target: 'intentSession' | 'specSession'): void {
+  if (target === 'intentSession' && !canResetIntentSession.value) return
+  if (target === 'specSession' && !canResetSpecSession.value) return
+  resetDialogTarget.value = target
   resetDialogOpen.value = true
 }
 function onResetConfirm(text: string): void {
   const r = props.intent
   resetDialogOpen.value = false
   if (!r) return
-  if (activeTab.value === 'specSession') {
+  if (resetDialogTarget.value === 'specSession') {
     emit('reset-spec-session', r.id, text)
   } else {
     emit('reset-intent-session', r.id, text)
@@ -526,7 +537,16 @@ defineExpose({
                 {{ t('intent.action.refine.label') }}
               </button>
               <button
-                v-if="intent.status === 'todo' && !approveGateBlocked"
+                v-if="canResetIntentSession"
+                type="button"
+                class="req-btn"
+                data-testid="intent-detail-intent-modify"
+                @click="openResetDialog('intentSession')"
+              >
+                {{ t('intent.action.modifySession.label') }}
+              </button>
+              <button
+                v-if="intent.status === 'todo'"
                 class="req-btn primary"
                 :data-action="mainAction"
                 :aria-label="mainActionTitle"
@@ -620,21 +640,6 @@ defineExpose({
           >
             {{ tab.label }}
           </button>
-          <button
-            v-if="
-              (tab.key === 'intentSession' || (tab.key === 'specSession' && intent.specPath)) &&
-              activeTab === tab.key &&
-              (canResetSession || (tab.key === 'specSession' && specDependencyBlocked))
-            "
-            type="button"
-            class="req-btn intent-detail-tab-reset"
-            data-testid="intent-detail-reset-session"
-            :title="specDependencyBlocked ? t('intent.specLaunch.dependencyNotMerged') : undefined"
-            :disabled="tab.key === 'specSession' && specDependencyBlocked"
-            @click="openResetDialog"
-          >
-            {{ t('intent.action.resetSession.label') }}
-          </button>
         </div>
       </nav>
 
@@ -726,6 +731,32 @@ defineExpose({
 
       <!-- spec tab:渲染 spec.md -->
       <div v-else-if="activeTab === 'spec'" class="intent-detail-body" data-testid="tab-spec">
+        <div
+          v-if="showSpecActions"
+          class="intent-detail-section-actions"
+          data-testid="intent-detail-spec-actions"
+        >
+          <button
+            v-if="showSpecApproveAction && !approveGateBlocked"
+            type="button"
+            class="req-btn primary"
+            data-testid="intent-detail-spec-approve"
+            @click="emit('approve-spec', intent.id)"
+          >
+            {{ t('intent.action.approveSpec.confirmLabel') }}
+          </button>
+          <button
+            v-if="showSpecModifyAction"
+            type="button"
+            class="req-btn"
+            data-testid="intent-detail-spec-modify"
+            :title="specDependencyBlocked ? t('intent.specLaunch.dependencyNotMerged') : undefined"
+            :disabled="specDependencyBlocked"
+            @click="openResetDialog('specSession')"
+          >
+            {{ t('intent.action.modifySession.label') }}
+          </button>
+        </div>
         <p
           v-if="!intent.specPath"
           class="intent-detail-empty"
@@ -837,7 +868,7 @@ defineExpose({
       :title="resetDialogTitle"
       :message="resetDialogMessage"
       :placeholder="t('intent.resetSession.placeholder')"
-      :confirm-label="t('intent.action.resetSession.label')"
+      :confirm-label="t('intent.action.modifySession.label')"
       :cancel-label="t('common.action.cancel.label')"
       @confirm="onResetConfirm"
       @cancel="resetDialogOpen = false"
@@ -956,11 +987,6 @@ defineExpose({
   border-bottom-color: var(--c-accent, var(--c-text));
   font-weight: 600;
 }
-.intent-detail-tab-reset {
-  flex: 0 0 auto;
-  padding: var(--sp-1) var(--sp-2);
-  font-size: var(--fs-caption);
-}
 @media (max-width: 640px) {
   .intent-detail-titlebar {
     grid-template-columns: minmax(0, 1fr);
@@ -985,6 +1011,12 @@ defineExpose({
   min-height: 0;
   overflow-y: auto;
   padding: var(--sp-3);
+}
+.intent-detail-section-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 
 /* 主按钮两态语义色:writeSpec 维持主色蓝(生成动作),approveSpec 改用成功色

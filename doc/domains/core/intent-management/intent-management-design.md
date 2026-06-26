@@ -248,15 +248,17 @@ add-column through the shared adapter (RM-R14).
   的需求条目 …, 定稿后调用 save_intents"). Triggered by the discussion view's **Convert to
   Intent** button (RM-R7).
 - **Reset intent session (`reset_intent_session`):** the escape hatch for a context-rotted refine
-  conversation after the intent changed (RM-R24). Identical machinery to **Refine**, but the seed
-  prompt prepends the user's **new steering input** (typed into a controlled input dialog) ahead of
-  the intent's current title + content, then instructs the agent to upsert the original id in place
+  conversation after the intent changed (RM-R24). The intent detail header's 「我要修改」 opens the
+  controlled input dialog; the intent-session tab itself has no reset button. Identical machinery to
+  **Refine**, but the seed prompt prepends the user's **new steering input** ahead of the intent's
+  current title + content, then instructs the agent to upsert the original id in place
   ("继续完善已存在意图 <id>… 我的新输入:… 当前意图内容:…"). It registers the same pending→intent link, so
   the resident `run:bound` subscription **replaces** the intent's `intentSessionId` with the new
   comm session id on first bind. The prior session stays queryable under Works (Run center) but is
   no longer the intent's linked session; no batch reset.
-- **Reset spec session (`reset_spec_session`):** the spec-tab counterpart, mirroring **Write spec**
-  but reusing the EXISTING spec directory / path (no scaffolding). Rejected (`error`
+- **Reset spec session (`reset_spec_session`):** the spec document tab's 「我要修改」 action, mirroring
+  **Write spec** but reusing the EXISTING spec directory / path (no scaffolding). The spec-session
+  tab itself has no reset button. Rejected (`error`
   `intent.specNotWritten`) when no spec was ever written; claude-only, same as authoring (the codex
   driver cannot path-confine writes — `intent.specAgentUnsupported`). The server launches a fresh
   write-confined `'spec'` session seeded with the user's **new input** + a pointer to the current

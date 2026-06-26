@@ -125,28 +125,22 @@ Read the relevant project material first, then overwrite \`${fileAbs}\` with the
 
 /**
  * The per-run VISIBLE prompt that kicks off a RESET spec session — the user's new
- * steering input + intent title + the current spec content + the deliverable file.
+ * steering input + intent title + a pointer to the current spec FILE PATH (not its
+ * inlined body) + the deliverable file. The agent reads the spec itself off the
+ * path; keeping the prompt to a reference avoids bloating it with the whole spec.
  * All of these are visible business context / user input. The spec-authoring
  * contract rides the spec agent's system prompt (`buildSpecAgentPrompt`), not this
  * text (hide-session-system-instructions). Pure (no I/O) so the concatenation is
  * unit-testable.
  */
-export function buildResetSpecPrompt(
-  intent: Intent,
-  fileAbs: string,
-  specContent: string,
-  userInput: string,
-): string {
+export function buildResetSpecPrompt(intent: Intent, fileAbs: string, userInput: string): string {
   const steer = userInput.trim()
   const steerBlock = steer ? `New input from the user:\n${steer}\n\n` : ''
   return `Revise the spec document for intent \`${intent.id}\` based on fresh input.
 
 ${steerBlock}Intent title: ${intent.title}
 
-Current spec content (\`${fileAbs}\`):
-${specContent}
-
-Read the relevant project material first, then overwrite \`${fileAbs}\` with the revised spec. When done, briefly summarise what changed.`
+The current spec lives at \`${fileAbs}\`. Read it first to see what already exists, then overwrite the same file with the revised spec. When done, briefly summarise what changed.`
 }
 
 export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
@@ -272,8 +266,9 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
 
 /**
  * `reset_spec_session` handler — start a FRESH write-confined spec session seeded
- * with the user's new input + the current spec content, replacing the prior
- * `spec_session_id` (re-linked on first bind). The escape hatch for a
+ * with the user's new input + a pointer to the current spec path (the agent reads
+ * the file itself), replacing the prior `spec_session_id` (re-linked on first
+ * bind). The escape hatch for a
  * context-rotted spec conversation: the old session stays queryable under Works
  * but is no longer the intent's linked spec session.
  *
@@ -312,16 +307,11 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   }
   if (!prepareSpecDependencyContext(proj, intent, conn)) return
 
-  // Read the current spec content to seed the revision prompt. A read failure is
-  // non-fatal: fall back to an empty body (the agent still has the new input).
-  // The stored spec path is absolute (centralized root); resolve robustly.
+  // The reset prompt only references the spec PATH; the agent reads the file
+  // itself, so the server no longer pre-reads it. We still resolve the absolute
+  // path: `rt.specDir` and the path handed to the prompt both depend on it. The
+  // stored spec path is absolute (centralized root); resolve robustly.
   const fileAbs = resolveSpecFileAbs(proj, intent.specPath)
-  let specContent = ''
-  try {
-    specContent = readFileSync(fileAbs, 'utf8')
-  } catch (err) {
-    console.warn(`[c3:intents] reset_spec_session spec read failed: ${errMsg(err)}`)
-  }
 
   // Stop viewing whatever this connection had open, then start the fresh session.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
@@ -345,7 +335,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   })
   try {
     void ctx
-      .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, specContent, msg.userInput))
+      .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, msg.userInput))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
         conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'failed' })

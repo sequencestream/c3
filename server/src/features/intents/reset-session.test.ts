@@ -139,22 +139,25 @@ describe('buildSpecInstructPrompt — visible business context only', () => {
 })
 
 describe('buildResetSpecPrompt', () => {
-  it('concatenates the new user input with the current spec content + file path', () => {
+  it('carries the new user input + spec path, but NOT the inlined spec body', () => {
     const intent = { id: 'int-2', title: 'Spec it', content: '' } as never
-    const prompt = buildResetSpecPrompt(
-      intent,
-      '.specs/x/spec.md',
-      '# Spec body LMN',
-      'tighten the scope DEF',
-    )
+    const prompt = buildResetSpecPrompt(intent, '.specs/x/spec.md', 'tighten the scope DEF')
     expect(prompt).toContain('tighten the scope DEF')
-    expect(prompt).toContain('# Spec body LMN')
+    expect(prompt).toContain('.specs/x/spec.md')
+    // The spec body is referenced by path only — never inlined into the prompt.
+    expect(prompt).not.toContain('# Spec body LMN')
+  })
+
+  it('omits the input block when the user input is blank', () => {
+    const intent = { id: 'int-2', title: 'Spec it', content: '' } as never
+    const prompt = buildResetSpecPrompt(intent, '.specs/x/spec.md', '   ')
+    expect(prompt).not.toContain('New input from the user')
     expect(prompt).toContain('.specs/x/spec.md')
   })
 
   it('does not restate the spec-authoring contract in the visible prompt', () => {
     const intent = { id: 'int-2', title: 'Spec it', content: '' } as never
-    const prompt = buildResetSpecPrompt(intent, '.specs/x/spec.md', '# body', 'steer')
+    const prompt = buildResetSpecPrompt(intent, '.specs/x/spec.md', 'steer')
     for (const marker of SPEC_CONTRACT_MARKERS) expect(prompt).not.toContain(marker)
   })
 })
@@ -243,7 +246,7 @@ describe('resetSpecSessionHandler', () => {
     expect(launchRun).not.toHaveBeenCalled()
   })
 
-  it('launches a fresh spec session with input+spec content and registers the id-refresh link', () => {
+  it('launches a fresh spec session with input + spec path (not body) and registers the id-refresh link', () => {
     const [r] = insertIntents(proj, [
       { title: 'Spec me', shortEnTitle: 'spec', content: '', priority: 'P1' },
     ])
@@ -273,9 +276,43 @@ describe('resetSpecSessionHandler', () => {
     expect(launchRun).toHaveBeenCalledTimes(1)
     const prompt = launchRun.mock.calls[0][1] as string
     expect(prompt).toContain('SPEC_INPUT')
-    expect(prompt).toContain('SPEC_TOKEN')
+    // The prompt references the spec path, never inlines the on-disk body.
+    expect(prompt).toContain(fileAbs)
+    expect(prompt).not.toContain('SPEC_TOKEN')
 
     expect(takePendingSpecLink(sid)).toBe(r.id)
+
+    removeRuntime(sid)
+  })
+
+  it('still launches when the spec file is missing on disk (server no longer pre-reads it)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Spec me', shortEnTitle: 'spec', content: '', priority: 'P1' },
+    ])
+    // specPath is set, but the file was never materialized on disk. Since the
+    // server only references the path now (the agent reads it), the session must
+    // still launch — the missing file becomes a normal read error the agent faces.
+    const specRel = '.specs/2026/06/26/2026-06-26-001-gone/spec.md'
+    setSpecPath(r.id, specRel)
+    const fileAbs = join(proj, specRel)
+
+    const launchRun = vi.fn().mockResolvedValue(undefined)
+    const ctx = { launchRun } as unknown as KernelContext
+    const { conn, sent } = fakeConn()
+
+    resetSpecSessionHandler(ctx, conn, {
+      type: 'reset_spec_session',
+      workspaceId,
+      intentId: r.id,
+      userInput: 'SPEC_INPUT',
+    })
+
+    const sid = selectedSessionId(sent)
+    expect(sid).toBeTruthy()
+    expect(launchRun).toHaveBeenCalledTimes(1)
+    const prompt = launchRun.mock.calls[0][1] as string
+    expect(prompt).toContain('SPEC_INPUT')
+    expect(prompt).toContain(fileAbs)
 
     removeRuntime(sid)
   })

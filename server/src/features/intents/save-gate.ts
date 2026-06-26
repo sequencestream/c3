@@ -27,7 +27,7 @@ export interface SaveGateDeps {
   broadcastIntents: (workspacePath: string) => void
   /**
    * WorkCenter event hook — invoked BEFORE the `permission_request` frame so the
-   * codex intent save lands a `source='intent'` WaitUserInvolveEvent + broadcast,
+   * codex intent save lands a `sessionKind='intent'` WaitUserInvolveEvent + broadcast,
    * not just the active-chat prompt. Wired at the composition root (the same handler
    * the claude/driver paths use). Absent in tests that don't assert registration.
    */
@@ -53,14 +53,15 @@ export async function gatedSave(
   const runId = binding.getRunId()
   const input = { intents: args.intents }
   // Register the WorkCenter event + broadcast BEFORE the wire frame (claude-parity).
-  // A codex intent save always originates from the read-only comm agent ⇒ source 'intent'.
+  // A codex intent save always originates from the read-only comm agent ⇒ sessionKind
+  // 'intent'; `sessionId` is the live comm-session id (the real session that produced it).
   deps.onPermissionRequest?.({
     requestId,
     toolName: SAVE_INTENTS_TOOL,
     input,
     sessionId: runId,
     workspacePath: binding.workspacePath,
-    source: 'intent',
+    sessionKind: 'intent',
   })
   deps.emit(runId, {
     type: 'permission_request',

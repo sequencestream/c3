@@ -50,8 +50,8 @@ web/src/
 │   ├── workcenter/                                  # 工作台页
 │   │   ├── WorkCenter.vue                           # 工作台容器页:桌面筛选(todo/done/canceled/auto,默认展示待处理 todo)/列表 + 详情两栏,切换筛选 emit reload 重拉全量,移动端单列流式
 │   │   └── components/
-│   │       ├── EventList.vue                        # 事件列表:状态徽标(含 auto)、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、来源图标、时间与选中态,移动端行高触控优化
-│   │       └── EventDetail.vue                      # 事件详情:完整信息(标题经 event-title 本地化)、Allow/Deny、AskUserQuestion 作答面板、共识决策留痕(auto 记录的投票/裁决,只读)与跳转到源
+│   │       ├── EventList.vue                        # 事件列表:状态徽标(含 auto)、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间与选中态,移动端行高触控优化
+│   │       └── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 作答面板、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
 │   ├── works/                                    # 工作页
 │   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);linkedIntentId 透传给聊天列标题栏「Intent」按钮、open-intent 上抛(App 据此跳转关联意图);移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/

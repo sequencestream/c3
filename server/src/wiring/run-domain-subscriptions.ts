@@ -89,7 +89,7 @@ import {
 import { getWorktreePath } from '../features/intents/worktree.js'
 import { getDefaultMainBranch, getForgeOverride, getGitBranchMode } from '../kernel/config/index.js'
 import {
-  cancelBySourceId,
+  cancelBySessionId,
   createEvent,
   isStoreAvailable as isWaitUserEventsStoreAvailable,
 } from '../features/user-involve/store.js'
@@ -161,14 +161,18 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     setLatestCommitHash,
     setPrInfo,
     cancelEventsForIntent: (intentId) => {
-      if (isWaitUserEventsStoreAvailable()) cancelBySourceId(intentId)
+      if (isWaitUserEventsStoreAvailable()) cancelBySessionId(intentId)
     },
     pushFailureEvent: ({ workspacePath, intentId, code, params }) => {
       if (!isWaitUserEventsStoreAvailable()) return
+      // A manual Start-Dev cleanup failure has no real session to reference; the intent
+      // OBJECT id goes into `session_id` as the best available identifier. The reverse
+      // lookup of `intentId`/`intentTitle` may resolve it (via last_dev_session_id) or
+      // yield null — either way the event renders; only the derived intent name varies.
       createEvent({
         workspacePath,
-        source: 'intent',
-        sourceId: intentId,
+        sessionKind: 'intent',
+        sessionId: intentId,
         status: 'todo',
         toolName: GIT_CLEANUP_EVENT_TOOL,
         toolInput: { code, ...(params ? { params } : {}) },
@@ -350,14 +354,14 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   // cancel all still-todo wait-user-involve events for that session.
   // This is a safety net: if the user closes the tab or the process crashes
   // before resolving a pending permission request, the event won't be stuck
-  // in 'todo' forever. Events are keyed by session's sourceId, so only
-  // session-scoped events are affected (other sources like intent/discussion
-  // have different sourceIds and are left untouched).
+  // in 'todo' forever. Events are keyed by the producing session_id, so only
+  // this session's events are affected (other kinds like intent/discussion carry
+  // different session_ids and are left untouched).
   // Broadcast the refreshed todo list after cancellation.
   eventBus.subscribe('run:settled', ({ sessionId, workspacePath, sessionKind }) => {
     if (sessionKind !== 'work') return
     if (!isWaitUserEventsStoreAvailable()) return
-    cancelBySourceId(sessionId)
+    cancelBySessionId(sessionId)
     broadcastWaitUserEvents(workspacePath)
   })
 }

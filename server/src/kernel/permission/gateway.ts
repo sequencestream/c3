@@ -22,7 +22,6 @@ import type {
   AskConsensusOutcome,
   ConsensusOutcome,
   ServerToClient,
-  WaitUserInvolveSource,
 } from '@ccc/shared/protocol'
 import { allow, deny, type PermissionDecision } from './decision.js'
 import {
@@ -50,12 +49,13 @@ export interface PermissionRequestCtx {
   sessionId: string
   workspacePath: string
   /**
-   * Where this prompt originates (drives the WaitUserInvolveEvent's `source`, and
-   * thus WorkCenter's `jumpToSource` target). Resolved by the caller — a work
-   * session is `'work'`, the read-only intent comm agent is `'intent'`, etc.
-   * Never hard-coded downstream (the handler reads it verbatim).
+   * The producing run's full {@link SessionKind} (drives the WaitUserInvolveEvent's
+   * `sessionKind`, and thus WorkCenter's `jumpToSource` routing). Resolved by the
+   * caller — a work session is `'work'`, the read-only intent comm agent is
+   * `'intent'`, a spec-authoring run is `'spec'`, etc. Never hard-coded downstream
+   * (the handler reads it verbatim).
    */
-  source: WaitUserInvolveSource
+  sessionKind: string
 }
 
 /**
@@ -70,7 +70,7 @@ export interface ConsensusAutoCtx {
   input: unknown
   sessionId: string
   workspacePath: string
-  source: WaitUserInvolveSource
+  sessionKind: string
   /** The consensus that decided it (votes + verdict + summary). */
   outcome: AnyConsensusOutcome
 }
@@ -110,12 +110,12 @@ export interface GatewaySpec {
    */
   sessionId: () => string
   /**
-   * The WaitUserInvolveEvent `source` for prompts this gateway raises — `'intent'`
-   * for the read-only comm agent, `'work'` for a normal dev/user session, `'spec'`
-   * for a spec-authoring run. Forwarded verbatim into every {@link
+   * The producing run's {@link SessionKind} for prompts this gateway raises —
+   * `'intent'` for the read-only comm agent, `'work'` for a normal dev/user session,
+   * `'spec'` for a spec-authoring run. Forwarded verbatim into every {@link
    * PermissionRequestCtx}; the composition root resolves it from the runtime kind.
    */
-  source: WaitUserInvolveSource
+  sessionKind: string
   /**
    * Optional callback invoked **before** a `permission_request` wire frame is
    * sent. Receives the full {@link PermissionRequestCtx} including session-level
@@ -188,7 +188,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           input,
           sessionId: spec.sessionId(),
           workspacePath: spec.cwd,
-          source: spec.source,
+          sessionKind: spec.sessionKind,
         })
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
         const { decision, answers } = await waitForDecision(requestId, signal)
@@ -236,7 +236,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           input,
           sessionId: spec.sessionId(),
           workspacePath: spec.cwd,
-          source: spec.source,
+          sessionKind: spec.sessionKind,
         })
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
         const { decision, answers } = await waitForDecision(requestId, signal)
@@ -301,7 +301,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           input,
           sessionId: spec.sessionId(),
           workspacePath: spec.cwd,
-          source: spec.source,
+          sessionKind: spec.sessionKind,
           outcome: ask,
         })
         return allow(withAnswers(input, ask.agreedAnswers))
@@ -323,7 +323,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         input,
         sessionId: spec.sessionId(),
         workspacePath: spec.cwd,
-        source: spec.source,
+        sessionKind: spec.sessionKind,
       })
       send(
         ask
@@ -370,7 +370,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         input,
         sessionId: spec.sessionId(),
         workspacePath: spec.cwd,
-        source: spec.source,
+        sessionKind: spec.sessionKind,
       })
       send({ type: 'permission_request', requestId, toolName, input })
       const { decision } = await waitForDecision(requestId, signal)
@@ -400,7 +400,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         input,
         sessionId: spec.sessionId(),
         workspacePath: spec.cwd,
-        source: spec.source,
+        sessionKind: spec.sessionKind,
         outcome,
       })
       if (outcome.decision === 'allow') {
@@ -419,7 +419,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       input,
       sessionId: spec.sessionId(),
       workspacePath: spec.cwd,
-      source: spec.source,
+      sessionKind: spec.sessionKind,
     })
     // Split / no consensus ⇒ ask the human, attaching the opinions (if any).
     const isUI = USER_INTERACTION_TOOLS.has(toolName)

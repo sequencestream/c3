@@ -19,11 +19,9 @@
  */
 import {
   PENDING_SESSION_PREFIX,
-  sessionKindToWaitUserSource,
   type PromptImage,
   type RunEndReason,
   type ServerToClient,
-  type WaitUserInvolveSource,
 } from '@ccc/shared/protocol'
 import type {
   ApprovalHandler,
@@ -251,7 +249,7 @@ export class WireEmitter {
 export function makeDriverApprovalHandler(deps: {
   getRunId: () => string
   workspacePath: string
-  source: WaitUserInvolveSource
+  sessionKind: string
   signal: AbortSignal
   emit: (runId: string, frame: ServerToClient) => void
   waitForDecision: (
@@ -265,14 +263,14 @@ export function makeDriverApprovalHandler(deps: {
     const runId = deps.getRunId()
     // Register the WorkCenter event + broadcast BEFORE the wire frame, so a prompt
     // on a codex session lands in the pending-items panel + badge, not just
-    // the active chat. Source is the runtime kind (work / intent / spec / …).
+    // the active chat. sessionKind is the runtime kind (work / intent / spec / …).
     deps.onPermissionRequest?.({
       requestId: req.requestId,
       toolName: req.toolName,
       input: req.input,
       sessionId: runId,
       workspacePath: deps.workspacePath,
-      source: deps.source,
+      sessionKind: deps.sessionKind,
     })
     deps.emit(runId, {
       type: 'permission_request',
@@ -357,9 +355,9 @@ export async function runViaDriver(
     makeDriverApprovalHandler({
       getRunId: () => runId,
       workspacePath,
-      // WorkCenter source faithfully derived from the run's business kind (intent /
-      // spec / discussion / schedule / work) — not the old intent-vs-session collapse.
-      source: sessionKindToWaitUserSource(rt.sessionKind),
+      // The WorkCenter event carries the run's real business kind (intent / spec /
+      // discussion / schedule / work) verbatim — WorkCenter routes off it.
+      sessionKind: rt.sessionKind,
       signal: cycleAbort.signal,
       emit,
       waitForDecision,

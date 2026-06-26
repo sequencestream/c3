@@ -1308,6 +1308,39 @@ export function findIntentIdBySessionId(sessionId: string): string | null {
 }
 
 /**
+ * Broad reverse-lookup of the intent that owns ANY kind of session id — wider than
+ * {@link findIntentIdBySessionId} (which only matches Start-Dev dev sessions, on
+ * purpose, for the title-bar jump button). Probes three bindings, most-specific first:
+ *  1. `intent_sessions.session_id` — an intent dev-session record (Start-Dev runs).
+ *  2. `intents.intent_session_id`  — the comm session the save-gate links back (codex
+ *     `save_intents`).
+ *  3. `intents.last_dev_session_id` — the latest dev session bound to the intent.
+ *
+ * Used by the wait-user-involve store's `toEvent` to derive `intentId`/`intentTitle`
+ * from an event's `session_id`, so both a comm-session gate and a dev-session prompt
+ * resolve to their intent. Returns null when nothing matches or the db is unavailable.
+ */
+export function findIntentIdByAnySessionId(sessionId: string): string | null {
+  const d = db()
+  if (!d || !sessionId) return null
+  const fromDevSession = d.get<{ intent_id: string }>(
+    'SELECT intent_id FROM intent_sessions WHERE session_id=? ORDER BY created_at DESC, id DESC LIMIT 1',
+    sessionId,
+  )
+  if (fromDevSession) return fromDevSession.intent_id
+  const fromComm = d.get<{ id: string }>(
+    'SELECT id FROM intents WHERE intent_session_id=? LIMIT 1',
+    sessionId,
+  )
+  if (fromComm) return fromComm.id
+  const fromLastDev = d.get<{ id: string }>(
+    'SELECT id FROM intents WHERE last_dev_session_id=? LIMIT 1',
+    sessionId,
+  )
+  return fromLastDev ? fromLastDev.id : null
+}
+
+/**
  * List dev session records for an intent, newest first.
  * Returns `[]` when the db is unavailable.
  */

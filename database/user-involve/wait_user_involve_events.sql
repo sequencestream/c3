@@ -6,8 +6,8 @@
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,             -- 事件唯一标识 (UUID v4)
   workspace_path TEXT NOT NULL,               -- 所属工作区绝对路径 (resolve 后); v1→v2 由 project_path 改名
-  source        TEXT NOT NULL,                -- 触发源类型: 'work' | 'intent' | 'discussion' | 'schedule' | 'spec' (= WaitUserInvolveSource, SessionKind 可跳转子集); 由调用方传入,驱动 WorkCenter jumpToSource 目标; v3→v4 旧值 'session' 迁移为 'work'
-  source_id     TEXT,                         -- 触发源 ID; 按 source 解释: work=会话 id / intent=意图对象 id 或 comm 会话 id / discussion=讨论 id / schedule=计划 id / spec=所属意图 id
+  session_kind  TEXT NOT NULL,               -- 产生会话的完整 SessionKind: 'work'|'intent'|'discussion'|'schedule'|'consensus'|'tool'|'spec'; 由调用方原样传入,驱动 WorkCenter 溯源跳转; v4→v5 由 source 改名(不再折叠为可跳转子集)
+  session_id    TEXT,                         -- 产生会话的真实 id (work/intent/spec 会话 id、discussion id、schedule id); 读取端按此反查所属意图派生 intentId/intentTitle; v4→v5 由 source_id 改名; 历史行可能存意图对象 id(反查不到则降级)
   title         TEXT,                         -- 事件标题
   request_id    TEXT,                         -- 权限请求 ID (用于关联 permission-response 消息)
   tool_name     TEXT,                         -- 待审批的工具名称
@@ -18,4 +18,4 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   updated_at    INTEGER NOT NULL              -- 最后更新时间 (epoch ms)
 );
 CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_path, status);
-CREATE INDEX IF NOT EXISTS idx_wui_source_status ON wait_user_involve_events(source_id, status);
+CREATE INDEX IF NOT EXISTS idx_wui_session_status ON wait_user_involve_events(session_id, status);

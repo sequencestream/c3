@@ -1326,26 +1326,50 @@
           "note": "The model performs PR operations (create, review, merge, close, comment) with its own tools and publishes an event when done — c3 never executes PR operations itself. This schedule fires when a matching PR event is published in this workspace.",
           "op": {
             "label": "Only on operation",
-            "create": { "label": "Create" },
-            "review": { "label": "Review" },
-            "merge": { "label": "Merge" },
-            "close": { "label": "Close" },
-            "comment": { "label": "Comment" }
+            "create": {
+              "label": "Create"
+            },
+            "review": {
+              "label": "Review"
+            },
+            "merge": {
+              "label": "Merge"
+            },
+            "close": {
+              "label": "Close"
+            },
+            "comment": {
+              "label": "Comment"
+            }
           },
           "result": {
             "label": "Only on result",
-            "success": { "label": "Success" },
-            "failure": { "label": "Failure" }
+            "success": {
+              "label": "Success"
+            },
+            "failure": {
+              "label": "Failure"
+            }
           },
           "hint": "Leave a row empty to match any operation / result."
         },
         "intent": {
           "label": "Only on lifecycle phase",
-          "created": { "label": "Created" },
-          "devStarted": { "label": "Development started" },
-          "done": { "label": "Done" },
-          "failed": { "label": "Failed" },
-          "cancelled": { "label": "Cancelled" },
+          "created": {
+            "label": "Created"
+          },
+          "devStarted": {
+            "label": "Development started"
+          },
+          "done": {
+            "label": "Done"
+          },
+          "failed": {
+            "label": "Failed"
+          },
+          "cancelled": {
+            "label": "Cancelled"
+          },
           "hint": "Leave empty to match every intent lifecycle phase."
         },
         "hint": "Fires when a run in this workspace reaches the selected event."
@@ -2012,12 +2036,21 @@
         "abstain": "Abstain"
       }
     },
-    "source": {
-      "work": "Session",
+    "sessionKind": {
+      "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
       "schedule": "Schedule",
+      "consensus": "Consensus",
+      "tool": "Tool",
       "spec": "Spec"
+    },
+    "attribute": {
+      "workspace": "Workspace",
+      "workspaceUnknown": "Unknown workspace",
+      "sessionKind": "Session kind",
+      "sessionId": "Session ID",
+      "intent": "Intent"
     },
     "action": {
       "jump": "Go to source"

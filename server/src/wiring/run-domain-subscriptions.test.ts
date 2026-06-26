@@ -68,7 +68,7 @@ vi.mock('../kernel/config/index.js', () => ({
   getForgeOverride: vi.fn(() => undefined),
 }))
 vi.mock('../features/user-involve/store.js', () => ({
-  cancelBySourceId: vi.fn(),
+  cancelBySessionId: vi.fn(),
   createEvent: vi.fn(),
   isStoreAvailable: vi.fn(() => true),
 }))
@@ -272,7 +272,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
   it('run:settled sessionKind=work cancels events and broadcasts via broadcastWaitUserEvents', async () => {
     install()
-    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    const { cancelBySessionId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sess-x',
       workspacePath: '/proj',
@@ -280,13 +280,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionKind: 'work',
       runKind: 'interactive',
     })
-    expect(cancelBySourceId).toHaveBeenCalledWith('sess-x')
+    expect(cancelBySessionId).toHaveBeenCalledWith('sess-x')
     expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
   })
 
   it('run:settled sessionKind=work (error reason) cancels events and broadcasts', async () => {
     install()
-    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    const { cancelBySessionId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sess-y',
       workspacePath: '/proj',
@@ -294,13 +294,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionKind: 'work',
       runKind: 'interactive',
     })
-    expect(cancelBySourceId).toHaveBeenCalledWith('sess-y')
+    expect(cancelBySessionId).toHaveBeenCalledWith('sess-y')
     expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
   })
 
   it('run:settled sessionKind=work (aborted reason) cancels events and broadcasts', async () => {
     install()
-    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    const { cancelBySessionId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sess-z',
       workspacePath: '/proj',
@@ -308,13 +308,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionKind: 'work',
       runKind: 'interactive',
     })
-    expect(cancelBySourceId).toHaveBeenCalledWith('sess-z')
+    expect(cancelBySessionId).toHaveBeenCalledWith('sess-z')
     expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
   })
 
   it('run:settled sessionKind=discussion does NOT cancel events or broadcastWaitUserEvents', async () => {
     install()
-    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    const { cancelBySessionId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'disc-x',
       workspacePath: '/proj',
@@ -322,13 +322,13 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionKind: 'discussion',
       runKind: 'internal',
     })
-    expect(cancelBySourceId).not.toHaveBeenCalled()
+    expect(cancelBySessionId).not.toHaveBeenCalled()
     expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
   })
 
   it('run:settled sessionKind=schedule does NOT cancel events or broadcastWaitUserEvents', async () => {
     install()
-    const { cancelBySourceId } = await import('../features/user-involve/store.js')
+    const { cancelBySessionId } = await import('../features/user-involve/store.js')
     eb.publish('run:settled', {
       sessionId: 'sch-x',
       workspacePath: '/ws',
@@ -336,7 +336,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       sessionKind: 'schedule',
       runKind: 'headless',
     })
-    expect(cancelBySourceId).not.toHaveBeenCalled()
+    expect(cancelBySessionId).not.toHaveBeenCalled()
     expect(mockBroadcastWaitUserEvents).not.toHaveBeenCalled()
   })
 

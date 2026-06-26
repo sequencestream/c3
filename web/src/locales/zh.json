@@ -1416,26 +1416,50 @@
           "note": "由模型用自己的工具完成 PR 操作（创建、评审、合并、关闭、评论）并在完成后发布事件——c3 自身从不执行任何 PR 操作。当本工作区发布匹配的 PR 事件时,本定时任务触发。",
           "op": {
             "label": "仅在以下操作时",
-            "create": { "label": "创建" },
-            "review": { "label": "评审" },
-            "merge": { "label": "合并" },
-            "close": { "label": "关闭" },
-            "comment": { "label": "评论" }
+            "create": {
+              "label": "创建"
+            },
+            "review": {
+              "label": "评审"
+            },
+            "merge": {
+              "label": "合并"
+            },
+            "close": {
+              "label": "关闭"
+            },
+            "comment": {
+              "label": "评论"
+            }
           },
           "result": {
             "label": "仅在以下结果时",
-            "success": { "label": "成功" },
-            "failure": { "label": "失败" }
+            "success": {
+              "label": "成功"
+            },
+            "failure": {
+              "label": "失败"
+            }
           },
           "hint": "某一行留空表示匹配任意操作 / 结果。"
         },
         "intent": {
           "label": "仅限生命周期阶段",
-          "created": { "label": "已创建" },
-          "devStarted": { "label": "开发开始" },
-          "done": { "label": "已完成" },
-          "failed": { "label": "异常结束" },
-          "cancelled": { "label": "已取消" },
+          "created": {
+            "label": "已创建"
+          },
+          "devStarted": {
+            "label": "开发开始"
+          },
+          "done": {
+            "label": "已完成"
+          },
+          "failed": {
+            "label": "异常结束"
+          },
+          "cancelled": {
+            "label": "已取消"
+          },
           "hint": "留空可匹配所有意图生命周期阶段。"
         },
         "hint": "当本工作区中的运行到达所选事件时触发。"
@@ -1961,12 +1985,21 @@
         "abstain": "弃权"
       }
     },
-    "source": {
-      "work": "会话",
+    "sessionKind": {
+      "work": "工作",
       "intent": "需求",
       "discussion": "讨论",
       "schedule": "定时任务",
+      "consensus": "共识",
+      "tool": "工具",
       "spec": "规格"
+    },
+    "attribute": {
+      "workspace": "工作区",
+      "workspaceUnknown": "未知工作区",
+      "sessionKind": "会话类型",
+      "sessionId": "会话 ID",
+      "intent": "意图"
     },
     "action": {
       "jump": "跳转到源"

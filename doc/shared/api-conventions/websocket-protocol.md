@@ -746,8 +746,9 @@ schedule 的执行日志。
 每条 `WaitUserInvolveEvent` 的溯源跳转契约（WorkCenter 据此跳回来源）：
 
 - `workspaceId`：不透明工作区 id（不是路径）。store 持久化绝对 `workspace_path`，读出时经 `pathToId` 映射为 id，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_chat` / `open_spec_session` / 讨论 / 计划）期望的 id 一致。工作区已注销的行在读出时被丢弃，绝不下发破损 id。
-- `source`：`SessionKind` 的「可溯源跳转子集」`work | intent | discussion | schedule | spec`，由服务端经 `sessionKindToWaitUserSource` 从运行的 `sessionKind`（agent 网控路径则从 gate）派生。`consensus` / `tool` 不产生人工门控事件，不入该集合。旧值 `session` 已经存储内迁移折叠为 `work`；前端对任何未知来源亦兜底为 `work`。
-- `sourceId`：按 `source` 解释的跳转目标 id——`work`=会话 id；`intent`=意图对象 id **或** 意图 comm 会话 id（前端先匹配意图、再匹配 comm 会话，都不中则停在 Intents 页不选中）；`discussion`=讨论 id；`schedule`=计划 id；`spec`=所属意图 id（打开该意图 spec 视图）。为 `null` 或不可解析时降级到对应列表页且不选中，不静默误跳。
+- `sessionKind`：产生事件的运行的完整 `SessionKind`（`work | intent | discussion | schedule | consensus | tool | spec`），由调用方原样写入（不再折叠为可跳转子集）；driver 路径取运行的 `sessionKind`、agent 网控路径取 gate 派生。协议层类型为 `string`，前端 `jumpToSource` 据此 switch 路由，未识别取值兜底进控制台。
+- `sessionId`：产生事件的真实会话 id（work/intent/spec 会话 id、discussion id、schedule id），溯源跳转直接据 `sessionKind + sessionId` 路由。为 `null` 时降级到对应列表页且不选中。历史行可能携带意图对象 id（非会话 id），这类行反查不到意图、跳转降级，不回填。
+- `intentId` / `intentTitle`：**读时派生、不落库**。服务端按 `sessionId` 反查所属意图（`intent_sessions` 绑定 + `intents.intent_session_id` comm 会话 + `intents.last_dev_session_id`)，命中则填意图 id 与当前标题（意图改名即时反映），无归属或反查不到为 `null`。`createEvent` 不接受这两个字段。
 
 ### `skill_load_approval_request`
 
@@ -863,9 +864,8 @@ schedule 的执行日志。
 
 ## 等待用户处理事件
 
-- **`WaitUserInvolveSource`** — `'session' | 'intent' | 'discussion' | 'schedule'`。事件的来源类别。
 - **`WaitUserInvolveStatus`** — `'todo' | 'done' | 'canceled' | 'auto'`。`'auto'` = 多 Agent 共识自动决议、无人类参与的非阻塞审计记录（永不计入"待处理"徽章），其 `outcome` 携带做出该决议的共识结果，使自动决策可追溯。
-- **`WaitUserInvolveEvent`** — `{ id, workspaceId, source, sourceId, title, requestId, toolName, toolInput, status, outcome?, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。`outcome?: AnyConsensusOutcome | null` 仅在 `status: 'auto'` 记录上出现（网控的 `consensus_auto` 结果——投票、裁决、摘要），人类决策的事件上缺省/为 null。
+- **`WaitUserInvolveEvent`** — `{ id, workspaceId, sessionKind, sessionId, intentId?, intentTitle?, title, requestId, toolName, toolInput, status, outcome?, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。`sessionKind`（`string`，产生运行的完整 `SessionKind`）/ `sessionId`（真实会话 id）是溯源跳转键；`intentId` / `intentTitle` 为读时按 `sessionId` 反查所属意图派生（不落库，无归属为 null）。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。`outcome?: AnyConsensusOutcome | null` 仅在 `status: 'auto'` 记录上出现（网控的 `consensus_auto` 结果——投票、裁决、摘要），人类决策的事件上缺省/为 null。
 
 ## UI 错误码（`UiError`）
 

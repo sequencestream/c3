@@ -1417,26 +1417,50 @@
           "note": "Модель выполняет операции с PR (создание, ревью, слияние, закрытие, комментарий) своими инструментами и публикует событие по завершении — c3 сам никогда не выполняет операции с PR. Это расписание срабатывает, когда в этом рабочем пространстве публикуется подходящее событие PR.",
           "op": {
             "label": "Только для операции",
-            "create": { "label": "Создание" },
-            "review": { "label": "Ревью" },
-            "merge": { "label": "Слияние" },
-            "close": { "label": "Закрытие" },
-            "comment": { "label": "Комментарий" }
+            "create": {
+              "label": "Создание"
+            },
+            "review": {
+              "label": "Ревью"
+            },
+            "merge": {
+              "label": "Слияние"
+            },
+            "close": {
+              "label": "Закрытие"
+            },
+            "comment": {
+              "label": "Комментарий"
+            }
           },
           "result": {
             "label": "Только при результате",
-            "success": { "label": "Успех" },
-            "failure": { "label": "Неудача" }
+            "success": {
+              "label": "Успех"
+            },
+            "failure": {
+              "label": "Неудача"
+            }
           },
           "hint": "Оставьте строку пустой, чтобы совпадать с любой операцией / результатом."
         },
         "intent": {
           "label": "Только фаза жизненного цикла",
-          "created": { "label": "Создано" },
-          "devStarted": { "label": "Разработка начата" },
-          "done": { "label": "Готово" },
-          "failed": { "label": "Сбой" },
-          "cancelled": { "label": "Отменено" },
+          "created": {
+            "label": "Создано"
+          },
+          "devStarted": {
+            "label": "Разработка начата"
+          },
+          "done": {
+            "label": "Готово"
+          },
+          "failed": {
+            "label": "Сбой"
+          },
+          "cancelled": {
+            "label": "Отменено"
+          },
           "hint": "Оставьте пустым, чтобы сопоставить все фазы жизненного цикла намерения."
         },
         "hint": "Срабатывает, когда запуск в этом рабочем пространстве достигает выбранного события."
@@ -1962,12 +1986,21 @@
         "abstain": "Воздержаться"
       }
     },
-    "source": {
-      "work": "Session",
+    "sessionKind": {
+      "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
       "schedule": "Schedule",
+      "consensus": "Consensus",
+      "tool": "Tool",
       "spec": "Spec"
+    },
+    "attribute": {
+      "workspace": "Workspace",
+      "workspaceUnknown": "Unknown workspace",
+      "sessionKind": "Session kind",
+      "sessionId": "Session ID",
+      "intent": "Intent"
     },
     "action": {
       "jump": "Go to source"

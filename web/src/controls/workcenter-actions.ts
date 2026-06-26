@@ -39,63 +39,66 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     send({ type: 'list_wait_user_events', workspaceId: workspace })
   }
 
-  // Jump from a WorkCenter event to its source tab + item. `event.workspaceId` is an
-  // opaque id (the store maps the path through `pathToId`), so it is interchangeable
-  // with `currentWorkspace` and is what every jump entry expects.
+  // Jump from a WorkCenter event to its source tab + item, routed off the producing
+  // run's `sessionKind` + real `sessionId`. `event.workspaceId` is an opaque id (the
+  // store maps the path through `pathToId`), so it is interchangeable with
+  // `currentWorkspace` and is what every jump entry expects.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
     const workspace = event.workspaceId || currentWorkspace.value
     if (!workspace || !ctx.client) return
-    switch (event.source) {
+    switch (event.sessionKind) {
       case 'intent':
-        jumpToIntent(workspace, event.sourceId)
+        jumpToIntent(workspace, event.sessionId)
         break
       case 'spec':
-        jumpToSpec(workspace, event.sourceId)
+        jumpToSpec(workspace, event.sessionId)
         break
       case 'discussion':
         ctx.openDiscussions(workspace)
-        if (event.sourceId) ctx.openDiscussion(event.sourceId)
+        if (event.sessionId) ctx.openDiscussion(event.sessionId)
         break
       case 'schedule':
         ctx.openSchedules(workspace)
-        if (event.sourceId) ctx.onSelectSchedule(event.sourceId)
+        if (event.sessionId) ctx.onSelectSchedule(event.sessionId)
         break
       case 'work':
       default:
-        // 'work' and any legacy / unknown source (e.g. a historic 'session' row that
-        // escaped the store migration) route to the console: select the session when
-        // a sourceId is present, else just enter the console (explicit degradation).
+        // 'work', plus the never-prompting consensus/tool kinds and any legacy /
+        // unknown value, route to the console: select the session when a sessionId is
+        // present, else just enter the console (explicit degradation).
         ctx.enterConsole()
-        if (event.sourceId)
-          send({ type: 'select_session', workspaceId: workspace, sessionId: event.sourceId })
+        if (event.sessionId)
+          send({ type: 'select_session', workspaceId: workspace, sessionId: event.sessionId })
         break
     }
   }
 
-  // Resolve an 'intent' event's ambiguous sourceId: it is EITHER an intent object id
-  // (Start-Dev cleanup events) OR an intent comm-session id (save_intents gate). Open
-  // the Intents tab, then disambiguate against the loaded lists — intent object first,
-  // then comm session. Neither match (lists not loaded, or the target was deleted) ⇒
-  // stay on the Intents tab with no selection rather than silently mis-jumping.
-  function jumpToIntent(workspace: string, sourceId: string | null): void {
+  // Resolve an 'intent' event's `sessionId`. The save_intents gate writes the real
+  // comm-session id; the Start-Dev cleanup todo writes the intent OBJECT id (no real
+  // session to reference). Open the Intents tab, then match against the loaded lists —
+  // intent object first, then comm session — so both write paths route sensibly. No
+  // match (lists not loaded, target deleted, or a legacy row) ⇒ stay on the Intents
+  // tab with no selection rather than silently mis-jumping.
+  function jumpToIntent(workspace: string, sessionId: string | null): void {
     ctx.openIntents(workspace)
-    if (!sourceId) return
-    if ((ctx.intents.value[workspace] ?? []).some((i) => i.id === sourceId)) {
-      ctx.requestedIntentId.value = sourceId
-    } else if ((ctx.intentSessions.value[workspace] ?? []).some((s) => s.sessionId === sourceId)) {
-      ctx.selectIntentSession(sourceId)
+    if (!sessionId) return
+    if ((ctx.intents.value[workspace] ?? []).some((i) => i.id === sessionId)) {
+      ctx.requestedIntentId.value = sessionId
+    } else if ((ctx.intentSessions.value[workspace] ?? []).some((s) => s.sessionId === sessionId)) {
+      ctx.selectIntentSession(sessionId)
     }
   }
 
-  // Resolve a 'spec' event: sourceId is the owning intent id (spec authoring binds to
-  // one intent). Open the Intents tab, select the intent, and open its spec session.
-  // An unresolvable / missing intent degrades to the Intents tab with no selection.
-  function jumpToSpec(workspace: string, sourceId: string | null): void {
+  // Resolve a 'spec' event: the spec-authoring run binds to one intent, so its
+  // `sessionId` resolves to the owning intent id. Open the Intents tab, select the
+  // intent, and open its spec session. An unresolvable / missing intent degrades to
+  // the Intents tab with no selection.
+  function jumpToSpec(workspace: string, sessionId: string | null): void {
     ctx.openIntents(workspace)
-    if (!sourceId) return
-    if ((ctx.intents.value[workspace] ?? []).some((i) => i.id === sourceId)) {
-      ctx.requestedIntentId.value = sourceId
-      ctx.openSpecSession(sourceId)
+    if (!sessionId) return
+    if ((ctx.intents.value[workspace] ?? []).some((i) => i.id === sessionId)) {
+      ctx.requestedIntentId.value = sessionId
+      ctx.openSpecSession(sessionId)
     }
   }
 }

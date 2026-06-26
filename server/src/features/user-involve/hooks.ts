@@ -49,13 +49,13 @@ export function createPermissionRequestHandler(deps: {
     // in a null title — the frontend can then fall back to the id or a default.
     const title = lookupTitle(ctx.sessionId)
 
-    // Persist the event (status defaults to 'todo'). `source` is caller-provided
-    // (work / intent / spec / …) so WorkCenter's jumpToSource targets the right tab —
-    // a codex intent prompt is 'intent', a standard work session is 'work'.
+    // Persist the event (status defaults to 'todo'). `sessionKind` is caller-provided
+    // (the producing run's full SessionKind — work / intent / spec / …) so WorkCenter's
+    // jumpToSource routes off the real session identity; `sessionId` is that run's id.
     createEvent({
       workspacePath: ctx.workspacePath,
-      source: ctx.source,
-      sourceId: ctx.sessionId,
+      sessionKind: ctx.sessionKind,
+      sessionId: ctx.sessionId,
       title,
       requestId: ctx.requestId,
       toolName: ctx.toolName,
@@ -89,8 +89,8 @@ export function createConsensusAutoHandler(): (ctx: ConsensusAutoCtx) => void {
     try {
       createEvent({
         workspacePath: ctx.workspacePath,
-        source: ctx.source,
-        sourceId: ctx.sessionId,
+        sessionKind: ctx.sessionKind,
+        sessionId: ctx.sessionId,
         title: lookupTitle(ctx.sessionId),
         requestId: ctx.requestId,
         toolName: ctx.toolName,

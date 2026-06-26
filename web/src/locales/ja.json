@@ -1417,26 +1417,50 @@
           "note": "モデルが独自のツールで PR 操作（作成・レビュー・マージ・クローズ・コメント）を行い、完了後にイベントを発行します。c3 自体は PR 操作を一切実行しません。このワークスペースで一致する PR イベントが発行されると、このスケジュールが実行されます。",
           "op": {
             "label": "次の操作のみ",
-            "create": { "label": "作成" },
-            "review": { "label": "レビュー" },
-            "merge": { "label": "マージ" },
-            "close": { "label": "クローズ" },
-            "comment": { "label": "コメント" }
+            "create": {
+              "label": "作成"
+            },
+            "review": {
+              "label": "レビュー"
+            },
+            "merge": {
+              "label": "マージ"
+            },
+            "close": {
+              "label": "クローズ"
+            },
+            "comment": {
+              "label": "コメント"
+            }
           },
           "result": {
             "label": "次の結果のみ",
-            "success": { "label": "成功" },
-            "failure": { "label": "失敗" }
+            "success": {
+              "label": "成功"
+            },
+            "failure": {
+              "label": "失敗"
+            }
           },
           "hint": "いずれかの行を空欄にすると、その操作 / 結果は任意になります。"
         },
         "intent": {
           "label": "ライフサイクル段階のみ",
-          "created": { "label": "作成済み" },
-          "devStarted": { "label": "開発開始" },
-          "done": { "label": "完了" },
-          "failed": { "label": "失敗" },
-          "cancelled": { "label": "キャンセル" },
+          "created": {
+            "label": "作成済み"
+          },
+          "devStarted": {
+            "label": "開発開始"
+          },
+          "done": {
+            "label": "完了"
+          },
+          "failed": {
+            "label": "失敗"
+          },
+          "cancelled": {
+            "label": "キャンセル"
+          },
           "hint": "空欄ではすべての意図ライフサイクル段階に一致します。"
         },
         "hint": "このワークスペースの実行が選択したイベントに達したときに実行されます。"
@@ -1962,12 +1986,21 @@
         "abstain": "棄権"
       }
     },
-    "source": {
-      "work": "Session",
+    "sessionKind": {
+      "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
       "schedule": "Schedule",
+      "consensus": "Consensus",
+      "tool": "Tool",
       "spec": "Spec"
+    },
+    "attribute": {
+      "workspace": "Workspace",
+      "workspaceUnknown": "Unknown workspace",
+      "sessionKind": "Session kind",
+      "sessionId": "Session ID",
+      "intent": "Intent"
     },
     "action": {
       "jump": "Go to source"

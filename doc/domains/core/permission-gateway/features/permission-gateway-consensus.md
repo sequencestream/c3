@@ -331,20 +331,21 @@ original input plus the chosen `answers`. This is the documented PG-R6 exception
 
 ### 来源契约与溯源跳转（WorkCenter）
 
-每条 `WaitUserInvolveEvent` 携带的 `source` 是 `SessionKind` 的「可溯源跳转子集」
-`work | intent | discussion | schedule | spec`，由 `sessionKindToWaitUserSource`
-单向派生（driver 路径读 `sessionKind`，claude 网控路径读 gate：`intent`→intent、
+每条 `WaitUserInvolveEvent` 携带产生运行的完整 `SessionKind`（`sessionKind`，
+`work | intent | discussion | schedule | consensus | tool | spec`），由调用方原样写入：
+driver 路径取运行的 `sessionKind`，claude 网控路径取 gate 派生（`intent`→intent、
 `spec`→spec、`discussion-research`→discussion、`standard`→work）。`consensus` / `tool`
-不产生人工门控事件，不入该集合，映射兜底为 `work`。旧 `session` 取值已折叠为 `work`
-（存储内迁移 + 前端对未知来源兜底）。
+不产生人工门控事件，前端 switch 兜底进控制台。不再折叠为可跳转子集，旧 `WaitUserInvolveSource`
+类型与 `sessionKindToWaitUserSource` 映射已移除。
 
 `workspaceId` 为不透明工作区 id：store 持久化绝对路径，读出时经 `pathToId` 映射为 id，
 工作区已注销的行被丢弃而非下发破损 id；`list_wait_user_events` 读取端先经
 `resolveWorkspaceRoot` 把 id 解析回路径再查库（未注册 id 降级为空快照），避免把 id 当
-路径直接查询导致历史 / auto 标签 re-fetch 恒空。`sourceId` 的含义与缺失降级见
-`websocket-protocol.md` 的 `wait_user_events` 条目。其中 `intent` 来源的 `sourceId`
-有二义（意图对象 id 或 comm 会话 id），前端按「先意图、再 comm 会话、再降级」消解，
-不为消歧给协议加判别字段。
+路径直接查询导致历史 / auto 标签 re-fetch 恒空。`sessionId`（真实会话 id）的含义与缺失
+降级、以及读时按 `sessionId` 反查派生 `intentId`/`intentTitle` 的契约见
+`websocket-protocol.md` 的 `wait_user_events` 条目。`intent` 来源的 `sessionId` 通常是
+真实 comm 会话 id（save-gate 写入），但 Start-Dev 收尾事件无真实会话、写意图对象 id；
+前端按「先意图、再 comm 会话、再降级」消解，不为消歧给协议加判别字段。
 
 ## Wire protocol
 

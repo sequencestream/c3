@@ -504,6 +504,7 @@ const {
         v-else
         :events="workcenterEvents"
         :current-workspace="currentWorkspace"
+        :workspaces="workspaces"
         @respond="respondWorkcenter"
         @submit-ask="submitAskWorkcenter"
         @jump-to-source="jumpToSource"

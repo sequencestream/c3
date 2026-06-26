@@ -530,13 +530,6 @@ defineExpose({
           <div class="intent-detail-title-meta">
             <div class="intent-detail-actions" data-testid="intent-detail-actions">
               <button
-                v-if="intent.status === 'todo'"
-                class="req-btn"
-                @click="emit('refine', intent.id)"
-              >
-                {{ t('intent.action.refine.label') }}
-              </button>
-              <button
                 v-if="canResetIntentSession"
                 type="button"
                 class="req-btn"
@@ -645,6 +638,11 @@ defineExpose({
 
       <!-- intent tab:正文 + 元信息 -->
       <div v-if="activeTab === 'intent'" class="intent-detail-body" data-testid="tab-intent">
+        <div v-if="intent.status === 'todo'" class="intent-detail-section-actions">
+          <button class="req-btn" @click="emit('refine', intent.id)">
+            {{ t('intent.action.refine.label') }}
+          </button>
+        </div>
         <div class="req-detail">
           <MarkdownText :text="intent.content" markdown />
         </div>

@@ -695,7 +695,11 @@
         "label": "spec 작성"
       },
       "approveSpec": {
-        "label": "spec 승인"
+        "label": "spec 승인",
+        "confirmLabel": "승인"
+      },
+      "modifySession": {
+        "label": "수정하고 싶어요"
       },
       "session": {
         "label": "세션"

@@ -695,7 +695,11 @@
         "label": "Написать spec"
       },
       "approveSpec": {
-        "label": "Утвердить spec"
+        "label": "Утвердить spec",
+        "confirmLabel": "Утвердить"
+      },
+      "modifySession": {
+        "label": "Хочу изменить"
       },
       "session": {
         "label": "Сессия"

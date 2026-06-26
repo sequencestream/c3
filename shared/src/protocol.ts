@@ -292,7 +292,14 @@ export interface AgentConfigBase {
 export interface ClaudeAgentConfig {
   /** ANTHROPIC_BASE_URL override. Empty ⇒ no override. */
   baseUrl: string
-  /** API key / auth token override. Empty ⇒ no override. */
+  /**
+   * API key / auth token override. Empty ⇒ no override.
+   *
+   * Encrypted at rest: a non-empty value is stored in settings.json as
+   * `c3secretvN:` + base64url(AES-256-GCM) and decrypted back to plaintext on load
+   * (SEC-13; primitives in `server/src/kernel/config/encryption.ts`). On the wire /
+   * in memory it is always plaintext — encryption is a disk-boundary concern only.
+   */
   apiKey: string
   /** Model alias or id. Empty ⇒ no override. */
   model: string
@@ -313,7 +320,13 @@ export interface ClaudeAgentConfig {
 export interface CodexAgentConfig {
   /** OpenAI-compatible base URL override. Empty ⇒ no override. */
   baseUrl: string
-  /** API key / auth token override. Empty ⇒ no override. */
+  /**
+   * API key / auth token override. Empty ⇒ no override.
+   *
+   * Encrypted at rest with the same scheme as {@link ClaudeAgentConfig.apiKey}
+   * (`c3secretvN:` prefix, SEC-13) — plaintext on the wire / in memory, ciphertext
+   * only on disk.
+   */
   apiKey: string
   /** Model alias or id. Empty ⇒ no override. */
   model: string

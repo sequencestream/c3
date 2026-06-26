@@ -273,7 +273,7 @@ function datePrefix(r: Intent): string {
               :aria-pressed="r.automate"
               @click.stop="emit('set-automate', r.id, !r.automate)"
             >
-              {{ r.automate ? '⏳' : '✋' }}
+              {{ r.automate ? '⚙' : '🖱' }}
             </button>
             <button
               v-if="r.status === 'todo'"

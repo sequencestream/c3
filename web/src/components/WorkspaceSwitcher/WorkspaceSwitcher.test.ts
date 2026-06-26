@@ -57,37 +57,54 @@ describe('WorkspaceSwitcher.vue', () => {
     expect(w.emitted('select-workspace')).toEqual([['ws-b']]) // 未新增
   })
 
-  it('+ 取到路径 → emit add-workspace(路径仅在此入口出现)', async () => {
-    vi.stubGlobal('prompt', () => '  /home/proj-c  ')
+  it('+ 打开自定义输入弹框,输入路径并确认 → emit add-workspace(路径仅在此入口出现)', async () => {
     const w = mount(WorkspaceSwitcher, {
       props: { workspaces, currentWorkspaceId: 'ws-a' },
     })
+    // 加号弹出 InputDialog(非 window.prompt)
+    expect(w.find('[data-testid="input-overlay"]').exists()).toBe(false)
     await w.find('.ws-switcher-add').trigger('click')
+    expect(w.find('[data-testid="input-overlay"]').exists()).toBe(true)
+    // 输入路径(含前后空白)→ 确认 → emit trim 后的路径
+    await w.find('[data-testid="input-field"]').setValue('  /home/proj-c  ')
+    await w.find('[data-testid="input-accept"]').trigger('click')
     expect(w.emitted('add-workspace')).toEqual([['/home/proj-c']])
+    // 确认后弹框关闭
+    expect(w.find('[data-testid="input-overlay"]').exists()).toBe(false)
   })
 
-  it('+ 取消(返回空)→ 不 emit', async () => {
-    vi.stubGlobal('prompt', () => null)
+  it('+ 空输入时确认按钮禁用,取消不 emit', async () => {
     const w = mount(WorkspaceSwitcher, {
       props: { workspaces, currentWorkspaceId: 'ws-a' },
     })
     await w.find('.ws-switcher-add').trigger('click')
+    // 空输入:确认按钮禁用
+    expect((w.find('[data-testid="input-accept"]').element as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    // 取消 → 不 emit、弹框关闭
+    await w.find('[data-testid="input-cancel"]').trigger('click')
     expect(w.emitted('add-workspace')).toBeUndefined()
+    expect(w.find('[data-testid="input-overlay"]').exists()).toBe(false)
   })
 
-  it('✕ 二次确认通过 → emit remove-workspace(id);取消 → 不 emit', async () => {
-    const confirm = vi.fn(() => true)
-    vi.stubGlobal('confirm', confirm)
+  it('✕ 弹出 ConfirmDialog(danger),确认 → emit remove-workspace(id);取消 → 不 emit', async () => {
     const w = mount(WorkspaceSwitcher, {
       props: { workspaces, currentWorkspaceId: 'ws-a' },
     })
     await w.find('.ws-switcher-trigger').trigger('click')
+    // 点 ✕ 弹出 ConfirmDialog
     await w.findAll('.ws-switcher-remove')[1].trigger('click')
-    expect(confirm).toHaveBeenCalledOnce()
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
+    expect(w.find('[data-testid="confirm-accept"]').classes()).toContain('danger')
+    // 确认 → emit
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
     expect(w.emitted('remove-workspace')).toEqual([['ws-b']])
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
 
-    confirm.mockReturnValue(false)
+    // 再点另一项 → 取消 → 不新增 emit
     await w.findAll('.ws-switcher-remove')[0].trigger('click')
+    await w.find('[data-testid="confirm-cancel"]').trigger('click')
     expect(w.emitted('remove-workspace')).toEqual([['ws-b']]) // 未新增
   })
 

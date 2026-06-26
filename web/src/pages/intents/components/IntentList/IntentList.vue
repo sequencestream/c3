@@ -43,6 +43,10 @@ const emit = defineEmits<{
   'select-intent': [intentId: string]
   /** 重排后实际渲染顺序的意图 id 列表;父组件据此选默认选中项,避免与服务端原序脱节。 */
   'ordered-change': [ids: string[]]
+  /** 行内模式快捷切换:复用 IntentDetail 的 set-automate 事件流(→ set_intent_automate)。 */
+  'set-automate': [intentId: string, automate: boolean]
+  /** 行内 todo 编辑入口:复用 IntentDetail 的 refine 事件流(→ refine_intent)。 */
+  refine: [intentId: string]
 }>()
 
 // Automation orchestrator UI state derived from the pushed status.
@@ -257,6 +261,30 @@ function datePrefix(r: Intent): string {
             <span v-if="showRunStatus(r.runStatus)" class="req-run-status" :class="r.runStatus">{{
               reqRunStatusLabel(r.runStatus)
             }}</span>
+            <button
+              type="button"
+              class="req-automate"
+              :class="{ active: r.automate }"
+              :title="
+                r.automate
+                  ? t('intent.automate.queued.tooltip')
+                  : t('intent.automate.manual.tooltip')
+              "
+              :aria-pressed="r.automate"
+              @click.stop="emit('set-automate', r.id, !r.automate)"
+            >
+              {{ r.automate ? '⏳' : '✋' }}
+            </button>
+            <button
+              v-if="r.status === 'todo'"
+              type="button"
+              class="req-refine"
+              :title="t('intent.action.refine.label')"
+              :aria-label="t('intent.action.refine.label')"
+              @click.stop="emit('refine', r.id)"
+            >
+              ✎
+            </button>
           </div>
         </div>
       </div>

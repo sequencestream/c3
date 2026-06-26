@@ -86,6 +86,51 @@ describe('IntentList.vue — selection model', () => {
     expect(w.find('.req-chevron').exists()).toBe(false)
   })
 
+  it('renders the auto-mode icon ⏳ for automate intents and ✋ for manual ones', () => {
+    const w = mountList([
+      intent({ id: 'auto-1', automate: true }),
+      intent({ id: 'manual-1', automate: false }),
+    ])
+    const icons = w.findAll('.req-automate')
+
+    expect(icons[0].text()).toBe('⏳')
+    expect(icons[0].attributes('aria-pressed')).toBe('true')
+    expect(icons[1].text()).toBe('✋')
+    expect(icons[1].attributes('aria-pressed')).toBe('false')
+  })
+
+  it('emits set-automate with (id, !automate) and does not select the row when the mode icon is clicked', async () => {
+    const w = mountList([intent({ id: 'manual-1', automate: false })])
+
+    await w.find('.req-automate').trigger('click')
+
+    expect(w.emitted('set-automate')).toEqual([['manual-1', true]])
+    expect(w.emitted('select-intent')).toBeUndefined()
+  })
+
+  it('shows the refine entry only for todo intents and emits refine on click', async () => {
+    const w = mountList([intent({ id: 'todo-1', status: 'todo' })])
+
+    const refine = w.find('.req-refine')
+    expect(refine.exists()).toBe(true)
+
+    await refine.trigger('click')
+
+    expect(w.emitted('refine')).toEqual([['todo-1']])
+    expect(w.emitted('select-intent')).toBeUndefined()
+  })
+
+  it('does not render the refine entry for non-todo (in_progress / done) intents', () => {
+    const w = mountList([
+      intent({ id: 'wip-1', status: 'in_progress' }),
+      intent({ id: 'done-1', status: 'done', completedAt: 100 }),
+    ])
+    const rows = w.findAll('.req-item')
+
+    expect(rows[0].find('.req-refine').exists()).toBe(false)
+    expect(rows[1].find('.req-refine').exists()).toBe(false)
+  })
+
   it('emits ordered-change reflecting the rendered (active-first) order, not server order', () => {
     // 服务端原序按 priority ASC：高优先级的 done 项排在原序首位，活跃项在后。
     const w = mountList([

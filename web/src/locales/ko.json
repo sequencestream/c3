@@ -1163,6 +1163,10 @@
         "label": "트리거"
       }
     },
+    "saveOverlay": {
+      "title": "스케줄 저장 중…",
+      "label": "저장 중…"
+    },
     "detail": {
       "title": "{name} 로그",
       "history": {

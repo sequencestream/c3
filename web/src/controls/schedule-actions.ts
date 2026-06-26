@@ -23,6 +23,7 @@ export function installScheduleActions(ctx: AppCtx): void {
     selectedExecutionId,
     selectedSchedule,
     selectedExecution,
+    scheduleSaving,
     scheduleFormOpen,
     scheduleFormTarget,
     scheduleToolManifest,
@@ -97,6 +98,7 @@ export function installScheduleActions(ctx: AppCtx): void {
   })
 
   ctx.createSchedule = (input: CreateScheduleInput): void => {
+    scheduleSaving.value = true
     send({ type: 'create_schedule', workspaceId: input.workspaceId, input })
   }
 
@@ -113,6 +115,7 @@ export function installScheduleActions(ctx: AppCtx): void {
   }
 
   ctx.updateSchedule = (id: string, input: UpdateScheduleInput): void => {
+    scheduleSaving.value = true
     send({ type: 'update_schedule', scheduleId: id, input })
   }
 

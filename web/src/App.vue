@@ -18,6 +18,7 @@ import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalMod
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
 import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
+import ScheduleSaveOverlay from './components/ScheduleSaveOverlay/ScheduleSaveOverlay.vue'
 import ErrorDialog from './components/ErrorDialog/ErrorDialog.vue'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
@@ -163,6 +164,7 @@ const {
   schedulesProject,
   scheduleTimezone,
   selectedExecutionId,
+  scheduleSaving,
   selectedExecution,
   scheduleToolManifest,
   scheduleToolManifestLoading,
@@ -570,6 +572,10 @@ const {
        immediately while a manual Start-Dev launch is in flight. -->
   <DevStartupOverlay :model="devLaunch" />
   <SpecStartupOverlay :model="specLaunch" />
+
+  <!-- Schedule save overlay: blocks interaction while a schedule create/update is
+       in flight (2-4s typical round-trip). -->
+  <ScheduleSaveOverlay :saving="scheduleSaving" />
 </template>
 
 <style scoped>

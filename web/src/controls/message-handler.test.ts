@@ -18,6 +18,11 @@ function makeCtx() {
   const dispatchSpecLaunch = vi.fn()
   const showToast = vi.fn((text: string) => (toast.value = text))
   const showIntentActionError = vi.fn((text: string) => (intentActionError.value = text))
+  const scheduleSaving = ref(false)
+  const schedules = ref({})
+  const schedulesProject = ref<string | null>(null)
+  const activeTab = ref<string>('console')
+  const selectedScheduleId = ref<string | null>(null)
   const ctx = {
     toast,
     intentActionError,
@@ -28,6 +33,11 @@ function makeCtx() {
     dispatchSpecLaunch,
     showToast,
     showIntentActionError,
+    scheduleSaving,
+    schedules,
+    schedulesProject,
+    activeTab,
+    selectedScheduleId,
     add: vi.fn(),
   } as unknown as AppCtx
   installMessageHandler(ctx)
@@ -40,6 +50,9 @@ function makeCtx() {
     dispatchSpecLaunch,
     showToast,
     showIntentActionError,
+    scheduleSaving,
+    schedules,
+    schedulesProject,
   }
 }
 
@@ -70,5 +83,38 @@ describe('intent action errors', () => {
     expect(result.intentActionError.value).toBeNull()
     expect(result.showIntentActionError).not.toHaveBeenCalled()
     expect(result.intentActionErrorSeq.value).toBe(0)
+  })
+})
+
+describe('schedule save overlay message handler', () => {
+  it('clears scheduleSaving on schedules broadcast', () => {
+    const result = makeCtx()
+    result.scheduleSaving.value = true
+
+    result.ctx.handleMessage({
+      type: 'schedules',
+      workspaceId: 'ws1',
+      items: [],
+    } as unknown as ServerToClient)
+
+    expect(result.scheduleSaving.value).toBe(false)
+  })
+
+  it('clears scheduleSaving on schedule error', () => {
+    const result = makeCtx()
+    result.scheduleSaving.value = true
+
+    result.ctx.handleMessage(error('schedule.agentRequired'))
+
+    expect(result.scheduleSaving.value).toBe(false)
+  })
+
+  it('clears scheduleSaving on generic error', () => {
+    const result = makeCtx()
+    result.scheduleSaving.value = true
+
+    result.ctx.handleMessage(error('workspace.unknown'))
+
+    expect(result.scheduleSaving.value).toBe(false)
   })
 })

@@ -1162,6 +1162,10 @@
         "label": "触发方式"
       }
     },
+    "saveOverlay": {
+      "title": "正在保存定时任务…",
+      "label": "正在保存…"
+    },
     "detail": {
       "title": "{name} 日志",
       "history": {

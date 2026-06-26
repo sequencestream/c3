@@ -1073,6 +1073,10 @@
         "archReview": {
           "title": "Weekly architecture stability review",
           "description": "Every Friday at 18:00, review the last 7 days of code changes and file high-value architecture improvements as draft intents."
+        },
+        "vulnAnalysis": {
+          "title": "Weekly vulnerability analysis",
+          "description": "Every Monday at 09:00, analyze the last 7 days of code changes for security vulnerabilities and file confirmed findings as draft intents."
         }
       },
       "empty": "No schedules yet.",

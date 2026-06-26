@@ -7,10 +7,14 @@ export interface ScheduleTemplateBuildArgs {
 
 export interface ScheduleTemplate {
   id: string
-  titleKey: 'schedule.list.templates.prPoller.title' | 'schedule.list.templates.archReview.title'
+  titleKey:
+    | 'schedule.list.templates.prPoller.title'
+    | 'schedule.list.templates.archReview.title'
+    | 'schedule.list.templates.vulnAnalysis.title'
   descriptionKey:
     | 'schedule.list.templates.prPoller.description'
     | 'schedule.list.templates.archReview.description'
+    | 'schedule.list.templates.vulnAnalysis.description'
   build(args: ScheduleTemplateBuildArgs): CreateScheduleInput
 }
 
@@ -103,10 +107,66 @@ const WEEKLY_ARCH_REVIEW: ScheduleTemplate = {
   }),
 }
 
+export const WEEKLY_VULN_ANALYSIS_PROMPT = `You are the weekly security-vulnerability analyst for this workspace. Review the LAST 7 DAYS of git activity and turn only the highest-value, confirmed security findings into DRAFT intents for human review. You NEVER change code.
+
+WINDOW (incremental only, never a full audit)
+- Use Bash with git to inspect the recent window, e.g. \`git log --since="7 days ago" --stat\` and the matching diffs (\`git diff\`-equivalent ranges). Look ONLY at code introduced or changed this week — this is NOT a whole-repository historical security audit.
+
+VULNERABILITY CLASSES (what counts as a "vulnerability")
+- Injection: SQL injection, command/shell injection, path traversal, unsafe deserialization, template/eval injection.
+- Authentication / authorization bypass: missing or weak auth checks, broken access control, privilege escalation, IDOR.
+- Secret / credential leakage: hardcoded tokens, keys, passwords, or connection strings committed this week; secrets logged or exposed over the wire.
+- Sandbox escape / scope-of-authority violation: breaking out of the sandbox or worktree boundary, tool-allowlist bypass, executing untrusted input with elevated capability.
+- Same-class security defects newly introduced in this week's code (e.g. unvalidated input on a security-relevant path, SSRF, missing output encoding/XSS).
+
+GROUND TRUTH
+- Read the readable project docs with the Read tool when judging a finding — e.g. doc/constitution.md, doc/architecture/architecture.md, and the relevant doc/domains/ and doc/non-functional/ security material — so a report reflects the system's real trust boundaries.
+
+MUST EXCLUDE (not a vulnerability — noise)
+- General code quality, style, naming, formatting, or architecture/design suggestions — those belong to lint/format and the architecture review, NOT here.
+- One-off scripts, test fixtures, soon-to-be-removed code, and purely theoretical issues with no reachable exploit path.
+- Speculative findings you cannot tie to concrete changed lines/commits this week.
+
+DE-DUPLICATE FIRST
+- Before filing ANYTHING, call find_intents to search existing intents (by keyword/module/CWE-like term). If a candidate is already covered by an existing intent, SKIP it. Use view_intent when you need to confirm overlap.
+
+CONTROL VOLUME / ACCEPT FALSE POSITIVES
+- Model analysis can be wrong. File at most 3 intents this run (<=3, prefer fewer; quality over quantity). Everything lands as a DRAFT for human confirmation — never assume a finding is real without evidence, and never push it straight into development.
+
+OUTPUT
+- Call save_intent_directly to create each surviving candidate as a DRAFT intent (it lands as draft for human review/activation — there is no confirmation popup). Write a clear title, a concise English shortEnTitle, and content stating the evidence (which files/commits this week, the vulnerability class, the concrete attack/impact) plus a concrete acceptance criterion for the fix.
+- PRODUCE INTENTS ONLY. Never write/edit files, never refactor, never commit, never open a PR, never run change commands. Bash is only for reading git history and project docs.`
+
+const WEEKLY_VULN_ANALYSIS: ScheduleTemplate = {
+  id: 'weekly-vuln-analysis',
+  titleKey: 'schedule.list.templates.vulnAnalysis.title',
+  descriptionKey: 'schedule.list.templates.vulnAnalysis.description',
+  build: ({ workspaceId, agentId }) => ({
+    type: 'llm',
+    config: { prompt: WEEKLY_VULN_ANALYSIS_PROMPT },
+    workspaceId,
+    agentId,
+    vendor: 'claude',
+    triggerType: 'cron',
+    cronExpression: '0 9 * * 1',
+    mode: 'bypassPermissions',
+    toolAllowlist: [
+      'Read',
+      'Grep',
+      'Glob',
+      'Bash',
+      'mcp__c3__find_intents',
+      'mcp__c3__view_intent',
+      'mcp__c3__save_intent_directly',
+    ],
+  }),
+}
+
 /** Register new schedule templates here; the list UI is intentionally generic. */
 export const SCHEDULE_TEMPLATES: readonly ScheduleTemplate[] = [
   PR_STATUS_POLLER,
   WEEKLY_ARCH_REVIEW,
+  WEEKLY_VULN_ANALYSIS,
 ]
 
 export function getScheduleTemplate(id: string): ScheduleTemplate | undefined {

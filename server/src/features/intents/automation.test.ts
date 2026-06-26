@@ -101,6 +101,7 @@ import {
   getGitBranchMode,
   getDefaultMainBranch,
   getForgeOverride,
+  getSddEnabled,
 } from '../../kernel/config/index.js'
 import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
@@ -161,6 +162,7 @@ describe('pickNext — worktree dep merge validation', () => {
       branchName: 'wt-branch',
     }))
     vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   it('worktree: filters out intents whose dep is done but not merged', () => {
@@ -222,6 +224,73 @@ describe('pickNext — worktree dep merge validation', () => {
     const result = pickNext('/test/proj')
     expect(result).toBeNull()
   })
+
+  it('SDD off: does not require a spec or approval', () => {
+    const req = makeIntent({ id: 'A', specPath: null, specApproved: false })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('A')
+  })
+
+  it('SDD on: filters out intents without a spec approval', () => {
+    const req = makeIntent({ id: 'A', specPath: null, specApproved: false })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result).toBeNull()
+  })
+
+  it('SDD on: filters out authored but unapproved specs', () => {
+    const req = makeIntent({ id: 'A', specPath: '/specs/a/spec.md', specApproved: false })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result).toBeNull()
+  })
+
+  it('SDD on: allows approved specs', () => {
+    const req = makeIntent({ id: 'A', specPath: '/specs/a/spec.md', specApproved: true })
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('A')
+  })
+
+  it('SDD on: skips unapproved intents and preserves priority among approved candidates', () => {
+    const highUnapproved = makeIntent({
+      id: 'A',
+      priority: 'P0',
+      specPath: '/specs/a/spec.md',
+      specApproved: false,
+    })
+    const approved = makeIntent({
+      id: 'B',
+      priority: 'P1',
+      specPath: '/specs/b/spec.md',
+      specApproved: true,
+    })
+    const lowerApproved = makeIntent({
+      id: 'C',
+      priority: 'P2',
+      specPath: '/specs/c/spec.md',
+      specApproved: true,
+    })
+    vi.mocked(listIntents).mockReturnValue([highUnapproved, lowerApproved, approved])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(true)
+
+    const result = pickNext('/test/proj')
+    expect(result?.id).toBe('B')
+  })
 })
 
 // =============================================================================
@@ -232,6 +301,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDevLinksForTests()
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   function makeConn() {
@@ -504,6 +574,7 @@ describe('startDevelopment — startup progress events', () => {
     vi.clearAllMocks()
     resetDevLinksForTests()
     vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   function makeConn() {
@@ -604,6 +675,7 @@ describe('automation controller — branch-mode git alignment', () => {
       branchName: 'wt-branch',
     }))
     vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
   })
 
   /** Flush microtasks + the fire-and-forget launch chain. */

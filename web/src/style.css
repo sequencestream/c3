@@ -3173,7 +3173,7 @@ button.deny:hover:not(:disabled) {
   white-space: normal;
   overflow-wrap: anywhere;
 }
-/* 需求行尾的自动化开关图标:✋ 人工触发 / ⏳ 已入自动化队列 */
+/* 需求行尾的自动化开关图标:颜色表达自动化 eligibility / running / done 状态。 */
 .req-automate {
   flex-shrink: 0;
   display: inline-flex;

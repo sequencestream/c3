@@ -50,8 +50,8 @@ export function createPermissionRequestHandler(deps: {
     const title = lookupTitle(ctx.sessionId)
 
     // Persist the event (status defaults to 'todo'). `source` is caller-provided
-    // (session / intent / …) so WorkCenter's jumpToSource targets the right tab —
-    // a codex intent prompt is 'intent', a work session is 'session'.
+    // (work / intent / spec / …) so WorkCenter's jumpToSource targets the right tab —
+    // a codex intent prompt is 'intent', a standard work session is 'work'.
     createEvent({
       workspacePath: ctx.workspacePath,
       source: ctx.source,

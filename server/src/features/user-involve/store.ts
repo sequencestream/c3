@@ -25,7 +25,7 @@ import { pathToId } from '../../state.js'
  * Schema version — informational only, see discussion store comment.
  * Migrations key off `PRAGMA table_info`, never off the version number.
  */
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
@@ -89,6 +89,17 @@ function migrateProjectPathToWorkspacePath(d: Db): void {
   }
 }
 
+/**
+ * v3 → v4: fold the legacy `source = 'session'` value → `'work'` IN PLACE, aligning
+ * the stored taxonomy with the SessionKind-derived `WaitUserInvolveSource` subset
+ * (2026-06-26). Idempotent (a no-op once no `'session'` rows remain); runs AFTER
+ * SCHEMA so the table is guaranteed to exist. The web also treats any unknown source
+ * as `'work'`, so this migration is belt-and-braces, not load-bearing for correctness.
+ */
+function migrateSessionSourceToWork(d: Db): void {
+  d.run("UPDATE wait_user_involve_events SET source='work' WHERE source='session'")
+}
+
 /** Return the db with the events schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
@@ -101,6 +112,8 @@ function db(): Db | null {
     ensureColumn(d, 'wait_user_involve_events', 'tool_input', "TEXT NOT NULL DEFAULT ''")
     // v2 → v3: consensus outcome JSON for `status: 'auto'` audit records (nullable).
     ensureColumn(d, 'wait_user_involve_events', 'outcome', 'TEXT')
+    // v3 → v4: legacy source 'session' → 'work' (runs after SCHEMA, idempotent).
+    migrateSessionSourceToWork(d)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -156,7 +169,20 @@ interface EventRow {
   updated_at: number
 }
 
-function toEvent(r: EventRow): WaitUserInvolveEvent {
+/**
+ * Hydrate a row into a wire event, or `null` when its workspace is no longer
+ * registered. The wire contract is an OPAQUE `workspaceId`, so a row whose path no
+ * longer resolves to an id is dropped (and warned) rather than emitting a broken
+ * `null as string` id the web could never route a jump to.
+ */
+function toEvent(r: EventRow): WaitUserInvolveEvent | null {
+  const workspaceId = pathToId(r.workspace_path)
+  if (!workspaceId) {
+    console.warn(
+      `[c3] wait-user event ${r.id} references an unregistered workspace; omitting from results`,
+    )
+    return null
+  }
   let toolInput: unknown = null
   if (r.tool_input) {
     try {
@@ -175,7 +201,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent {
   }
   return {
     id: r.id,
-    workspaceId: pathToId(r.workspace_path)!,
+    workspaceId,
     source: r.source as WaitUserInvolveSource,
     sourceId: r.source_id,
     title: r.title,
@@ -262,7 +288,7 @@ export function listEvents(
         'SELECT * FROM wait_user_involve_events WHERE workspace_path=? ORDER BY created_at DESC',
         proj,
       )
-  return rows.map(toEvent)
+  return rows.map(toEvent).filter((e): e is WaitUserInvolveEvent => e !== null)
 }
 
 /**

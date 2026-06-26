@@ -100,7 +100,7 @@ describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
     return {
       getRunId: () => 'run-1',
       workspacePath: '/proj',
-      source: 'session' as const,
+      source: 'work' as const,
       signal: new AbortController().signal,
       emit: vi.fn(),
       waitForDecision: vi.fn(async () => ({ decision: 'allow' as const })),

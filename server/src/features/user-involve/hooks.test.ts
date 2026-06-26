@@ -13,6 +13,10 @@ import type {
   ServerToClient,
   WaitUserInvolveSource,
 } from '@ccc/shared/protocol'
+// The store maps `workspace_path` → opaque `workspaceId` via `pathToId`, dropping
+// rows whose workspace is unregistered. These synthetic test paths are unregistered,
+// so mock `pathToId` as identity (mirrors store.test.ts) — events stay listable.
+vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { listEvents, resetStoreForTests } from './store.js'
 import { createConsensusAutoHandler, createPermissionRequestHandler } from './hooks.js'
@@ -72,12 +76,20 @@ describe('createPermissionRequestHandler', () => {
     expect(sent[0]).toMatchObject({ type: 'wait_user_events' })
   })
 
-  it('honours source=session (no longer hard-coded)', () => {
+  it('honours source=work (no longer hard-coded)', () => {
     const handler = createPermissionRequestHandler({ broadcaster: { toAll: vi.fn() } as never })
-    handler(ctx('session', { requestId: 'req-2', sessionId: 'work-9' }))
+    handler(ctx('work', { requestId: 'req-2', sessionId: 'work-9' }))
     const events = listEvents(proj, 'todo')
     expect(events).toHaveLength(1)
-    expect(events[0].source).toBe('session')
+    expect(events[0].source).toBe('work')
+  })
+
+  it('honours source=spec (spec-authoring prompts no longer collapse to a session)', () => {
+    const handler = createPermissionRequestHandler({ broadcaster: { toAll: vi.fn() } as never })
+    handler(ctx('spec', { requestId: 'req-3', sessionId: 'spec-7' }))
+    const events = listEvents(proj, 'todo')
+    expect(events).toHaveLength(1)
+    expect(events[0].source).toBe('spec')
   })
 })
 
@@ -96,7 +108,7 @@ function autoCtx(over: Partial<ConsensusAutoCtx> = {}): ConsensusAutoCtx {
     input: { path: 'a.ts' },
     sessionId: 'sess-auto',
     workspacePath: proj,
-    source: 'session',
+    source: 'work',
     outcome: toolOutcome,
     ...over,
   }
@@ -113,7 +125,7 @@ describe('createConsensusAutoHandler', () => {
     expect(autos).toHaveLength(1)
     expect(autos[0]).toMatchObject({
       status: 'auto',
-      source: 'session',
+      source: 'work',
       sourceId: 'sess-auto',
       toolName: 'edit_file',
     })

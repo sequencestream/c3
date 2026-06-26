@@ -5,6 +5,7 @@ import {
   IMAGE_MEDIA_TYPES,
   SYSTEM_AGENT_ID,
   AUTH_PROVIDER_KINDS,
+  sessionKindToWaitUserSource,
 } from './protocol.js'
 import type {
   AgentConfig,
@@ -12,6 +13,8 @@ import type {
   AuthProvider,
   ClientToServer,
   ServerToClient,
+  SessionKind,
+  WaitUserInvolveSource,
 } from './protocol.js'
 
 /**
@@ -313,5 +316,35 @@ describe('auth provider kinds (ADR-0023)', () => {
       session: { ttlSeconds: 900, signingKeyRef: 'C3_AUTH_KEY' },
     }
     expect(JSON.parse(JSON.stringify(auth))).toEqual(auth)
+  })
+})
+
+describe('sessionKindToWaitUserSource', () => {
+  // The canonical SessionKind → WorkCenter source map. Business kinds map 1:1;
+  // the two non-jumpable kinds (consensus / tool) fall back to 'work'.
+  const cases: [SessionKind, WaitUserInvolveSource][] = [
+    ['work', 'work'],
+    ['intent', 'intent'],
+    ['discussion', 'discussion'],
+    ['schedule', 'schedule'],
+    ['spec', 'spec'],
+    ['consensus', 'work'],
+    ['tool', 'work'],
+  ]
+  it.each(cases)('maps %s → %s', (kind, expected) => {
+    expect(sessionKindToWaitUserSource(kind)).toBe(expected)
+  })
+
+  it('is total over every SessionKind (no undefined source)', () => {
+    const kinds: SessionKind[] = [
+      'work',
+      'intent',
+      'discussion',
+      'schedule',
+      'consensus',
+      'tool',
+      'spec',
+    ]
+    for (const k of kinds) expect(sessionKindToWaitUserSource(k)).toBeTruthy()
   })
 })

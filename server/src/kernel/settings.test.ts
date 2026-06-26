@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
@@ -1279,6 +1279,128 @@ describe('vendor discriminated-union migration (legacy-flat → claude)', () => 
     const a1 = loadSettings().agents.find((a) => a.id === 'a1')!
     expect(a1.vendor).toBe('claude')
     expect(a1.config.baseUrl).toBe('https://one')
+  })
+})
+
+describe('apiKey at-rest encryption (c3secretv1:)', () => {
+  /** A custom claude + custom codex agent, both carrying a non-empty apiKey. */
+  const CLAUDE_KEY = 'sk-claude-PLAINTEXT'
+  const CODEX_KEY = 'sk-codex-PLAINTEXT'
+  function saveTwoVendorAgents(): void {
+    saveSettings({
+      agents: [
+        {
+          id: 'cl',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'Cl',
+          config: { baseUrl: 'https://anthropic.example', apiKey: CLAUDE_KEY, model: 'm' },
+        },
+        {
+          id: 'cx',
+          vendor: 'codex',
+          configMode: 'custom',
+          displayName: 'Cx',
+          config: {
+            baseUrl: 'https://openai.example',
+            apiKey: CODEX_KEY,
+            model: 'm',
+            wireApi: 'chat',
+          },
+        },
+      ],
+      defaultAgentId: 'cl',
+    } as unknown as SystemSettings)
+  }
+
+  it('save writes ciphertext to disk (prefix, no plaintext); load restores plaintext for both vendors', () => {
+    saveTwoVendorAgents()
+    // Disk: both apiKeys are prefixed ciphertext and the raw plaintext appears nowhere.
+    const rawText = readFileSync(settingsPath(), 'utf-8')
+    expect(rawText).not.toContain(CLAUDE_KEY)
+    expect(rawText).not.toContain(CODEX_KEY)
+    const disk = readJsonFile<SystemSettings>(settingsPath())!
+    const diskCl = disk.agents.find((a) => a.id === 'cl')!
+    const diskCx = disk.agents.find((a) => a.id === 'cx')!
+    expect(diskCl.config.apiKey.startsWith('c3secretv1:')).toBe(true)
+    expect(diskCx.config.apiKey.startsWith('c3secretv1:')).toBe(true)
+
+    // Load (fresh, cache cleared): both back to plaintext, and launch env injection too.
+    resetSettingsCacheForTests()
+    const loaded = loadSettings()
+    const cl = loaded.agents.find((a) => a.id === 'cl')!
+    const cx = loaded.agents.find((a) => a.id === 'cx')!
+    expect(cl.config.apiKey).toBe(CLAUDE_KEY)
+    expect(cx.config.apiKey).toBe(CODEX_KEY)
+    expect(launchForAgent(cl).envOverrides?.ANTHROPIC_API_KEY).toBe(CLAUDE_KEY)
+    expect(launchForAgent(cx).apiKey).toBe(CODEX_KEY)
+  })
+
+  it('legacy no-prefix plaintext loads fine and is upgraded to ciphertext on next save', () => {
+    // Hand-write a legacy on-disk shape with a PLAINTEXT apiKey (no c3secret prefix).
+    writeAtomic(settingsPath(), {
+      agents: [
+        {
+          id: 'cl',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'Cl',
+          config: { baseUrl: '', apiKey: CLAUDE_KEY, model: '' },
+        },
+      ],
+      defaultAgentId: 'cl',
+    })
+    resetSettingsCacheForTests()
+    // Load: legacy plaintext used as-is.
+    const cl = loadSettings().agents.find((a) => a.id === 'cl')!
+    expect(cl.config.apiKey).toBe(CLAUDE_KEY)
+    // Save back the (plaintext) loaded settings → disk upgrades to ciphertext.
+    saveSettings(loadSettings())
+    const rawText = readFileSync(settingsPath(), 'utf-8')
+    expect(rawText).not.toContain(CLAUDE_KEY)
+    const disk = readJsonFile<SystemSettings>(settingsPath())!
+    expect(disk.agents.find((a) => a.id === 'cl')!.config.apiKey.startsWith('c3secretv1:')).toBe(
+      true,
+    )
+    // And it still loads back to the original plaintext.
+    resetSettingsCacheForTests()
+    expect(loadSettings().agents.find((a) => a.id === 'cl')!.config.apiKey).toBe(CLAUDE_KEY)
+  })
+
+  it('empty apiKey (system mode) is never encrypted — no prefix on disk', () => {
+    saveSettings({
+      agents: [
+        SYS_RECORD,
+        {
+          id: 'cl',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'Cl',
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+      ],
+      defaultAgentId: SYSTEM_AGENT_ID,
+    } as unknown as SystemSettings)
+    const disk = readJsonFile<SystemSettings>(settingsPath())!
+    for (const a of disk.agents) {
+      expect(a.config.apiKey).toBe('')
+      expect(a.config.apiKey.startsWith('c3secret')).toBe(false)
+    }
+  })
+
+  it('saveWorkspaceSetting re-encrypts on disk and keeps the cache plaintext', () => {
+    saveTwoVendorAgents()
+    resetSettingsCacheForTests()
+    loadSettings() // warm cache with plaintext
+    // A workspace-config save re-reads disk (ciphertext), normalizes, re-writes.
+    saveWorkspaceSetting('/proj/x', { devSkill: '/x' } as WorkspaceSetting)
+    // Disk stays ciphertext (no plaintext leaked by the workspace write path)...
+    const rawText = readFileSync(settingsPath(), 'utf-8')
+    expect(rawText).not.toContain(CLAUDE_KEY)
+    expect(rawText).not.toContain(CODEX_KEY)
+    // ...and the in-memory cache still serves plaintext (launch must not get ciphertext).
+    const cl = loadSettings().agents.find((a) => a.id === 'cl')!
+    expect(cl.config.apiKey).toBe(CLAUDE_KEY)
   })
 })
 

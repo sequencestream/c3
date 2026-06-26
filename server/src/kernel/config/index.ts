@@ -52,6 +52,7 @@ import {
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
+import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
 
 /**
  * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
@@ -676,7 +677,8 @@ export function saveWorkspaceSetting(
     const configs = { ...(disk?.projectConfigs ?? {}), [workspacePath]: normalized }
     const mergedSettings = normalize({ ...(disk ?? {}), projectConfigs: configs })
     try {
-      writeAtomic(settingsFile(), mergedSettings)
+      // Encrypt apiKeys for disk only; the cache keeps the plaintext `mergedSettings`.
+      writeAtomic(settingsFile(), encryptAgentApiKeys(mergedSettings))
       settingsCache = mergedSettings
     } catch (err) {
       console.error('[c3] failed to persist project config:', err)
@@ -722,6 +724,10 @@ export function loadSettings(): SystemSettings {
   if (settingsCache) return settingsCache
   try {
     const raw = JSON.parse(readFileSync(settingsFile(), 'utf-8')) as Partial<SystemSettings>
+    // Decrypt at-rest agent apiKeys back to plaintext before normalize, so the
+    // in-memory cache (and thus launchForAgent's env injection) always sees the
+    // original key. Legacy (no-prefix) keys pass through untouched.
+    decryptAgentApiKeys(raw)
     settingsCache = normalize(raw)
   } catch {
     settingsCache = defaultSettings()
@@ -735,7 +741,12 @@ export function loadSettings(): SystemSettings {
  * another c3 instance that wrote since this process last loaded.
  */
 function readSettingsFromDisk(): Partial<SystemSettings> | undefined {
-  return readJsonFile<Partial<SystemSettings>>(settingsFile())
+  const raw = readJsonFile<Partial<SystemSettings>>(settingsFile())
+  // Same plaintext invariant as loadSettings: decrypt before any merge/normalize so
+  // a re-read inside a write lock (saveSettings / saveWorkspaceSetting) round-trips
+  // plaintext through the cache and re-encrypts on write — never caches ciphertext.
+  if (raw) decryptAgentApiKeys(raw)
+  return raw
 }
 
 /**
@@ -780,7 +791,9 @@ export function saveSettings(next: SystemSettings): SystemSettings {
     const merged = mergeSettingsOverDisk(readSettingsFromDisk(), next)
     const normalized = normalize(merged)
     try {
-      writeAtomic(settingsFile(), normalized)
+      // Encrypt apiKeys for disk only; the cache keeps the plaintext `normalized`
+      // so the runtime (launchForAgent env injection) always reads the real key.
+      writeAtomic(settingsFile(), encryptAgentApiKeys(normalized))
       settingsCache = normalized
     } catch (err) {
       console.error('[c3] failed to persist settings:', err)

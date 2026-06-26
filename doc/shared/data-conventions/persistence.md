@@ -44,6 +44,22 @@
 重建 draft 时保留全部服务端字段（含 `projectConfigs`/`degradationChain`/`socketAutoResume`），
 保存不丢字段。
 
+## agent apiKey 落盘加密(磁盘边界对称加解密)
+
+agent 的 `apiKey`(claude/codex 的 `config.apiKey`)在**磁盘边界**做对称加解密,使
+**内存缓存恒为明文、磁盘恒为密文**:
+
+- **读路径(解密)**:`loadSettings` 与 `readSettingsFromDisk`(持锁重读)在 `JSON.parse`
+  之后、`normalize` 之前调用 `decryptAgentApiKeys` 原地解密 → 缓存与运行时(`launchForAgent`
+  注入 `ANTHROPIC_API_KEY` 等)始终拿原始明文。
+- **写路径(加密)**:`saveSettings` 与单工作区设置写入,在 `normalize` 之后、原子写之前,
+  对写盘对象副本调用 `encryptAgentApiKeys`(非空 `apiKey` → 密文,空键不动);内存缓存
+  仍存明文的 normalize 结果。两条写路径都加密,因为单工作区设置写入会重读磁盘(密文)
+  经 normalize 后刷新缓存,若不在该路径加解密会把密文污染进缓存。
+- 密文格式 `c3secretvN:base64url(IV‖密文‖tag)`、多版本约定、懒迁移、混淆级强度等详见
+  `doc/non-functional/security.md` § Agent apiKey at-rest encryption(SEC-13);原语在
+  `server/src/kernel/config/encryption.ts`。
+
 ## 锁健壮性
 
 - **超时**（默认 5s）、退避（默认 25ms，用同步等待原语 sleep，不空转 CPU）。
@@ -58,3 +74,4 @@
 - 写入以磁盘为权威重读合并，不以陈旧内存缓存为基准。
 - 未携带字段保留磁盘值；`save_settings` 永不清空 `projectConfigs`。
 - 拿锁失败不静默丢写。
+- agent `apiKey` 内存缓存恒明文、磁盘恒密文：读路径 normalize 前解密,两条写路径原子写前加密。

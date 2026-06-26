@@ -726,6 +726,9 @@
       },
       "manual": {
         "tooltip": "수동 트리거 모드"
+      },
+      "locked": {
+        "toast": "할 일 상태의 인텐트만 자동/수동 모드를 전환할 수 있습니다"
       }
     },
     "sessionList": {

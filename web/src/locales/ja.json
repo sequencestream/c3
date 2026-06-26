@@ -726,6 +726,9 @@
       },
       "manual": {
         "tooltip": "手動トリガーモード"
+      },
+      "locked": {
+        "toast": "ToDo状態の意図のみ自動/手動モードを切り替えられます"
       }
     },
     "sessionList": {

@@ -267,6 +267,13 @@ export function installIntentActions(ctx: AppCtx): void {
   }
 
   ctx.setIntentAutomate = (intentId: string, automateOn: boolean): void => {
+    // 仅 todo 意图可切换自动/手动模式;锁定态(in_progress/done/cancelled 等)点击给出
+    // 不可修改提示,不下发协议消息。两个入口(列表行内 icon、IntentDetail)共用此门。
+    const target = ctx.currentIntents.value.find((r) => r.id === intentId)
+    if (target && target.status !== 'todo') {
+      ctx.showToast(t('intent.automate.locked.toast'))
+      return
+    }
     send({ type: 'set_intent_automate', intentId, automate: automateOn })
   }
 

@@ -3,6 +3,7 @@ import type { Intent } from '@ccc/shared/protocol'
 import type { CompletionOrderInput } from './intent-list-view'
 import type { IntentActionInput } from './intent-list-view'
 import {
+  automationIconState,
   compareByCompletion,
   formatDate,
   formatDependsOn,
@@ -17,6 +18,37 @@ import {
   TERMINAL_PAGE_SIZE,
   visibleIntentActions,
 } from './intent-list-view'
+
+function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
+  return {
+    workspaceId: 'proj',
+    title: 'Intent',
+    shortEnTitle: null,
+    content: '',
+    priority: 'P1',
+    module: '',
+    status: 'todo',
+    dependsOn: [],
+    dependsOnTypes: {},
+    lastDevSessionId: null,
+    automate: true,
+    createdAt: 1,
+    updatedAt: 1,
+    completedAt: null,
+    runStatus: 'idle',
+    branchName: null,
+    latestCommitHash: null,
+    prId: null,
+    prUrl: null,
+    prStatus: null,
+    specPath: null,
+    specApproved: false,
+    specApproveUser: null,
+    specSessionId: null,
+    intentSessionId: null,
+    ...overrides,
+  }
+}
 
 describe('hasDependencyBlockingSpecSession', () => {
   it('blocks unfinished and unmerged feature dependencies only in worktree mode', () => {
@@ -223,6 +255,105 @@ describe('visibleIntentActions', () => {
       const actions = visibleIntentActions(make({ status }))
       expect(actions[actions.length - 1]).toBe('automate')
     }
+  })
+})
+
+describe('automationIconState', () => {
+  it('done takes precedence over running and eligibility', () => {
+    const item = makeIntent({ id: 'done', status: 'done', specApproved: true })
+
+    expect(
+      automationIconState(item, {
+        sddEnabled: true,
+        automation: {
+          workspaceId: 'proj',
+          state: 'developing',
+          currentIntentId: 'done',
+          currentSessionId: 's',
+          awaitingPermission: false,
+          error: null,
+          completedIds: [],
+          startedAt: 1,
+          checkpointConsensus: null,
+        },
+        intents: [item],
+      }),
+    ).toBe('done')
+  })
+
+  it('running takes precedence over eligible', () => {
+    const item = makeIntent({ id: 'run', specApproved: true })
+
+    expect(
+      automationIconState(item, {
+        sddEnabled: true,
+        automation: {
+          workspaceId: 'proj',
+          state: 'fixing',
+          currentIntentId: 'run',
+          currentSessionId: 's',
+          awaitingPermission: false,
+          error: null,
+          completedIds: [],
+          startedAt: 1,
+          checkpointConsensus: null,
+        },
+        intents: [item],
+      }),
+    ).toBe('running')
+  })
+
+  it('SDD on with an unapproved spec is idle', () => {
+    const item = makeIntent({ id: 'unapproved', specPath: '/spec.md', specApproved: false })
+
+    expect(automationIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
+  })
+
+  it('SDD on with an approved queued intent is eligible', () => {
+    const item = makeIntent({ id: 'approved', specPath: '/spec.md', specApproved: true })
+
+    expect(automationIconState(item, { sddEnabled: true, intents: [item] })).toBe('eligible')
+  })
+
+  it('SDD off does not require a spec for queued intents', () => {
+    const item = makeIntent({ id: 'legacy', specPath: null, specApproved: false })
+
+    expect(automationIconState(item, { sddEnabled: false, intents: [item] })).toBe('eligible')
+  })
+
+  it('an approved but manual intent is idle', () => {
+    const item = makeIntent({
+      id: 'manual',
+      automate: false,
+      specPath: '/spec.md',
+      specApproved: true,
+    })
+
+    expect(automationIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
+  })
+
+  it('dependency-blocked queued intents are idle in worktree mode', () => {
+    const dep = makeIntent({
+      id: 'dep',
+      status: 'done',
+      branchName: 'feature/dep',
+      prStatus: 'reviewing',
+    })
+    const item = makeIntent({
+      id: 'child',
+      dependsOn: ['dep'],
+      specPath: '/spec.md',
+      specApproved: true,
+    })
+
+    expect(
+      automationIconState(item, {
+        sddEnabled: true,
+        gitBranchMode: 'worktree',
+        mainBranch: 'main',
+        intents: [dep, item],
+      }),
+    ).toBe('idle')
   })
 })
 

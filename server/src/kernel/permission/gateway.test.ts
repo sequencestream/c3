@@ -31,10 +31,20 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
     ...overrides,
   }
   // Mirror production (agent/index.ts): source is derived from the gate unless the
-  // test pins it explicitly, so a standard-gate prompt registers as 'session'.
+  // test pins it explicitly, so a standard-gate prompt registers as 'work'.
   return overrides.source
     ? base
-    : { ...base, source: base.gate === 'intent' ? 'intent' : 'session' }
+    : {
+        ...base,
+        source:
+          base.gate === 'intent'
+            ? 'intent'
+            : base.gate === 'spec'
+              ? 'spec'
+              : base.gate === 'discussion-research'
+                ? 'discussion'
+                : 'work',
+      }
 }
 
 beforeEach(() => {
@@ -256,7 +266,7 @@ describe('onPermissionRequest callback', () => {
     await p
     expect(onPermissionRequest).toHaveBeenCalledTimes(1)
     expect(onPermissionRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ toolName: 'Write', source: 'session' }),
+      expect.objectContaining({ toolName: 'Write', source: 'work' }),
     )
   })
 
@@ -392,7 +402,7 @@ describe('onPermissionRequest callback', () => {
     expect(onConsensusResolved).toHaveBeenCalledWith(
       expect.objectContaining({
         toolName: 'Write',
-        source: 'session',
+        source: 'work',
         outcome: expect.objectContaining({ kind: 'tool', decision: 'allow' }),
       }),
     )

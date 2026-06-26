@@ -695,7 +695,11 @@
         "label": "spec を作成"
       },
       "approveSpec": {
-        "label": "spec を承認"
+        "label": "spec を承認",
+        "confirmLabel": "承認"
+      },
+      "modifySession": {
+        "label": "修正したい"
       },
       "session": {
         "label": "セッション"
@@ -715,9 +719,6 @@
       },
       "more": {
         "label": "その他の操作"
-      },
-      "resetSession": {
-        "label": "リセット"
       }
     },
     "automate": {
@@ -1962,10 +1963,11 @@
       }
     },
     "source": {
-      "session": "Session",
+      "work": "Session",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule"
+      "schedule": "Schedule",
+      "spec": "Spec"
     },
     "action": {
       "jump": "Go to source"

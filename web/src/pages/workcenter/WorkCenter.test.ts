@@ -19,7 +19,7 @@ function ev(over: Partial<WaitUserInvolveEvent> = {}): WaitUserInvolveEvent {
   return {
     id,
     workspaceId: '/ws',
-    source: 'session',
+    source: 'work',
     sourceId: 's1',
     title: id,
     requestId: 'r1',

@@ -395,9 +395,9 @@
 
 ### `list_wait_user_events`
 
-请求项目的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。服务器回复 `wait_user_events`。
+请求工作区的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。服务器回复 `wait_user_events`。`workspaceId` 是不透明工作区 id（与 `currentWorkspace` 一致）；服务端经 `resolveWorkspaceRoot` 解析为绝对路径后查库，未注册 id 降级为空快照——绝不把 id 当路径直接查询。
 
-**字段：** `workspacePath: string`, `status?: WaitUserInvolveStatus`
+**字段：** `workspaceId: string`, `status?: WaitUserInvolveStatus`
 
 ### `ping`
 
@@ -742,6 +742,12 @@ schedule 的执行日志。
 项目的待用户处理事件列表（回复 `list_wait_user_events`）。作为完整快照推送——客户端替换而非合并其本地状态。
 
 **字段：** `items: WaitUserInvolveEvent[]`
+
+每条 `WaitUserInvolveEvent` 的溯源跳转契约（WorkCenter 据此跳回来源）：
+
+- `workspaceId`：不透明工作区 id（不是路径）。store 持久化绝对 `workspace_path`，读出时经 `pathToId` 映射为 id，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_chat` / `open_spec_session` / 讨论 / 计划）期望的 id 一致。工作区已注销的行在读出时被丢弃，绝不下发破损 id。
+- `source`：`SessionKind` 的「可溯源跳转子集」`work | intent | discussion | schedule | spec`，由服务端经 `sessionKindToWaitUserSource` 从运行的 `sessionKind`（agent 网控路径则从 gate）派生。`consensus` / `tool` 不产生人工门控事件，不入该集合。旧值 `session` 已经存储内迁移折叠为 `work`；前端对任何未知来源亦兜底为 `work`。
+- `sourceId`：按 `source` 解释的跳转目标 id——`work`=会话 id；`intent`=意图对象 id **或** 意图 comm 会话 id（前端先匹配意图、再匹配 comm 会话，都不中则停在 Intents 页不选中）；`discussion`=讨论 id；`schedule`=计划 id；`spec`=所属意图 id（打开该意图 spec 视图）。为 `null` 或不可解析时降级到对应列表页且不选中，不静默误跳。
 
 ### `skill_load_approval_request`
 

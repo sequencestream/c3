@@ -6,7 +6,13 @@
  * 便于在 Node 环境下单测(项目的 web 测试不含 DOM)。
  */
 
-import type { DepType, Intent, IntentRunStatus, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  AutomationStatus,
+  DepType,
+  Intent,
+  IntentRunStatus,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import { DATE_FORMATS, type DateStyleName } from './datetime-formats'
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
@@ -167,6 +173,37 @@ export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
   if (r.prId) out.push('prLink')
   out.push('automate')
   return out
+}
+
+export const AUTO_RUNNING_STATES = ['running', 'developing', 'fixing'] as const
+
+export type AutomationIconState = 'idle' | 'eligible' | 'running' | 'done'
+
+export interface AutomationIconStateOptions {
+  sddEnabled?: boolean
+  automation?: AutomationStatus | null
+  gitBranchMode?: 'worktree' | 'current-branch'
+  mainBranch?: string | null
+  intents: Intent[]
+}
+
+export function automationIconState(
+  intent: Intent,
+  opts: AutomationIconStateOptions,
+): AutomationIconState {
+  if (intent.status === 'done') return 'done'
+  if (
+    opts.automation?.currentIntentId === intent.id &&
+    (AUTO_RUNNING_STATES as readonly string[]).includes(opts.automation.state)
+  ) {
+    return 'running'
+  }
+  const eligible =
+    intent.automate &&
+    (intent.status === 'todo' || intent.status === 'in_progress') &&
+    (!opts.sddEnabled || intent.specApproved) &&
+    !hasDependencyBlockingSpecSession(intent, opts.intents, opts.gitBranchMode, opts.mainBranch)
+  return eligible ? 'eligible' : 'idle'
 }
 
 /** 已完成/已取消需求排序所需的最小字段集(便于在测试中轻量构造)。 */

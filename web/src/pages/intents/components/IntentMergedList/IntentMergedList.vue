@@ -33,6 +33,9 @@ const props = defineProps<{
   automation: AutomationStatus | null
   /** 当前选中的意图 id,透传给 IntentList 做行高亮。 */
   selectedIntentId?: string | null
+  sddEnabled?: boolean
+  workspaceMainBranch?: string | null
+  workspaceGitBranchMode?: 'worktree' | 'current-branch'
 
   // IntentSessionList props
   intentSessions: IntentSessionInfo[]
@@ -227,6 +230,9 @@ function newSessionFromIntents(): void {
         :project="project"
         :intents="intents"
         :automation="automation"
+        :sdd-enabled="sddEnabled"
+        :workspace-main-branch="workspaceMainBranch"
+        :workspace-git-branch-mode="workspaceGitBranchMode"
         :selected-id="selectedIntentId"
         @filter="(s: IntentStatus | null) => emit('filter', s)"
         @start-automation="emit('start-automation')"

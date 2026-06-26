@@ -42,6 +42,7 @@ import {
   updateStatus,
 } from './store.js'
 import { registerPendingDevLink } from './dev-link.js'
+import { buildDevPrompt } from './dev-prompt.js'
 import { publishIntentLifecycle, publishIntentStatusTransition } from './lifecycle-events.js'
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
@@ -53,6 +54,7 @@ import {
   getDefaultMainBranch,
   getForgeOverride,
   getGitBranchMode,
+  getSddEnabled,
 } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import {
@@ -86,6 +88,11 @@ export interface RunDevTurnInput {
    * continuation / fix turns and when no devSkill is configured.
    */
   userTurnPrefix?: string
+  /**
+   * Internal work-session instruction for the launch turn; delivered through the
+   * vendor instruction channel and never echoed.
+   */
+  systemInstruction?: string
   intentId: string
   signal: AbortSignal
   attach?: boolean
@@ -158,10 +165,12 @@ export function pickNext(workspacePath: string): Intent | null {
   const all = listIntents(workspacePath)
   const byId = new Map(all.map((r) => [r.id, r]))
   const gitBranchMode = getGitBranchMode(workspacePath)
+  const sddEnabled = getSddEnabled(workspacePath)
   const eligible = all.filter(
     (r) =>
       r.automate &&
       (r.status === 'todo' || r.status === 'in_progress') &&
+      (!sddEnabled || r.specApproved) &&
       r.dependsOn.every((id) => {
         const dep = byId.get(id)
         if (!dep) return true
@@ -417,14 +426,6 @@ class AutomationController {
       return
     }
 
-    // Resumable (existing dev session on disk) or fresh (todo or dangling).
-    // A configured devSkill is a slash command → it leads the (non-echoed) model
-    // user turn via `userTurnPrefix`, not the visible prompt
-    // (hide-session-system-instructions).
-    const skill = getDevSkill(this.workspacePath)
-    const skillPrefix = skill ? `${skill} ` : ''
-    const dependencyNote = req.dependsOn.length ? `\n\n依赖需求:${req.dependsOn.join(', ')}` : ''
-
     // Resumable: session exists on disk (continued context).
     if (req.status === 'in_progress' && req.lastDevSessionId) {
       // Ensure the runtime exists with the right effectiveCwd (worktree, or the
@@ -504,12 +505,20 @@ class AutomationController {
     rt.effectiveCwd = effectiveCwd
     registerPendingDevLink(pendingId, req.id)
 
-    const prompt = `${req.title}\n\n${req.content}${dependencyNote}`
+    const devParts = buildDevPrompt({
+      title: req.title,
+      content: req.content,
+      dependsOn: req.dependsOn,
+      devSkill: getDevSkill(this.workspacePath),
+      sddEnabled: getSddEnabled(this.workspacePath),
+      specPath: req.specPath,
+    })
     void this.hooks.runDevTurn({
       workspacePath: this.workspacePath,
       sessionId: pendingId,
-      prompt,
-      ...(skillPrefix ? { userTurnPrefix: skillPrefix } : {}),
+      prompt: devParts.visible,
+      ...(devParts.userTurnPrefix ? { userTurnPrefix: devParts.userTurnPrefix } : {}),
+      ...(devParts.systemInstruction ? { systemInstruction: devParts.systemInstruction } : {}),
       intentId: req.id,
       signal: this.abort.signal,
       onAwaitingPermission: (a) => this.setAwaiting(a),

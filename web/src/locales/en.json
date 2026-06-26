@@ -694,7 +694,11 @@
         "label": "Write spec"
       },
       "approveSpec": {
-        "label": "Approve spec"
+        "label": "Approve spec",
+        "confirmLabel": "Approve"
+      },
+      "modifySession": {
+        "label": "I want changes"
       },
       "session": {
         "label": "Session"
@@ -714,9 +718,6 @@
       },
       "more": {
         "label": "More actions"
-      },
-      "resetSession": {
-        "label": "Reset"
       }
     },
     "automate": {
@@ -2006,10 +2007,11 @@
       }
     },
     "source": {
-      "session": "Session",
+      "work": "Session",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule"
+      "schedule": "Schedule",
+      "spec": "Spec"
     },
     "action": {
       "jump": "Go to source"

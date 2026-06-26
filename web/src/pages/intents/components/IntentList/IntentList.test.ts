@@ -35,13 +35,20 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
   }
 }
 
-function mountList(intents: Intent[], selectedId: string | null = null) {
+function mountList(
+  intents: Intent[],
+  selectedId: string | null = null,
+  opts: {
+    sddEnabled?: boolean
+  } = {},
+) {
   return mount(IntentList, {
     props: {
       project: '/proj',
       intents,
       automation: null,
       selectedId,
+      sddEnabled: opts.sddEnabled,
     },
   })
 }
@@ -97,6 +104,33 @@ describe('IntentList.vue — selection model', () => {
     expect(icons[0].attributes('aria-pressed')).toBe('true')
     expect(icons[1].text()).toBe('🖱')
     expect(icons[1].attributes('aria-pressed')).toBe('false')
+  })
+
+  it('renders automation tone classes from SDD eligibility', () => {
+    const w = mountList(
+      [
+        intent({
+          id: 'eligible',
+          automate: true,
+          specPath: '/specs/eligible/spec.md',
+          specApproved: true,
+        }),
+        intent({
+          id: 'unapproved',
+          automate: true,
+          specPath: '/specs/unapproved/spec.md',
+          specApproved: false,
+        }),
+        intent({ id: 'done', automate: true, status: 'done', completedAt: 100 }),
+      ],
+      null,
+      { sddEnabled: true },
+    )
+    const icons = w.findAll('.req-automate')
+
+    expect(icons[0].classes()).toContain('auto-tone-eligible')
+    expect(icons[1].classes()).toContain('auto-tone-idle')
+    expect(icons[2].classes()).toContain('auto-tone-done')
   })
 
   it('emits set-automate with (id, !automate) and does not select the row when the mode icon is clicked', async () => {

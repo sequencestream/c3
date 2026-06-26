@@ -11,6 +11,8 @@ import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
+import InputDialog from '@/components/InputDialog/InputDialog.vue'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 
 const { t } = useTypedI18n()
 // Adding / removing a workspace establishes or tears down a trust root — an
@@ -64,9 +66,17 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+// 新增工作区:加号打开受控 InputDialog 收集绝对路径;确认携带非空路径才 emit。
+const addOpen = ref(false)
+
 function addWorkspace() {
-  const path = window.prompt(t('nav.workspace.add.prompt'))?.trim()
-  if (path) emit('add-workspace', path)
+  addOpen.value = true
+}
+
+function onAddConfirm(path: string) {
+  const trimmed = path.trim()
+  if (trimmed) emit('add-workspace', trimmed)
+  addOpen.value = false
 }
 
 function selectWorkspace(id: string) {
@@ -74,10 +84,16 @@ function selectWorkspace(id: string) {
   close()
 }
 
+// 删除工作区:点 ✕ 设置目标并打开 danger ConfirmDialog;确认后才 emit remove。
+const removeTarget = ref<WorkspaceInfo | null>(null)
+
 function removeWorkspace(w: WorkspaceInfo) {
-  if (window.confirm(t('nav.workspace.remove.confirm', { path: w.name }))) {
-    emit('remove-workspace', w.id)
-  }
+  removeTarget.value = w
+}
+
+function onRemoveConfirm() {
+  if (removeTarget.value) emit('remove-workspace', removeTarget.value.id)
+  removeTarget.value = null
 }
 
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, true))
@@ -136,5 +152,26 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
         </button>
       </li>
     </ul>
+
+    <InputDialog
+      :open="addOpen"
+      :title="t('nav.workspace.add.prompt')"
+      :placeholder="t('nav.workspace.add.placeholder')"
+      :confirm-label="t('nav.workspace.add.confirmLabel')"
+      :cancel-label="t('common.action.cancel.label')"
+      @confirm="onAddConfirm"
+      @cancel="addOpen = false"
+    />
+
+    <ConfirmDialog
+      :open="removeTarget !== null"
+      :title="t('nav.workspace.remove.title')"
+      :message="removeTarget ? t('nav.workspace.remove.confirm', { path: removeTarget.name }) : ''"
+      :confirm-label="t('nav.workspace.remove.confirmLabel')"
+      :cancel-label="t('common.action.cancel.label')"
+      danger
+      @confirm="onRemoveConfirm"
+      @cancel="removeTarget = null"
+    />
   </div>
 </template>

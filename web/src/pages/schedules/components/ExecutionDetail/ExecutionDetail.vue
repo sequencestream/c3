@@ -5,7 +5,9 @@
  * Tabs:
  *  - 「执行信息」(始终): status / 起止时间 / 耗时 / 退出码 / output / error。
  *  - 「Session 会话记录」(仅 llm 类型): 通过 ChatMessages 组件渲染 transcript,
- *    复用 sessions 页的 markdown 渲染 / 工具调用批次折叠能力。
+ *    复用 sessions 页的 markdown 渲染 / 工具调用批次折叠能力。ChatMessages 的
+ *    内层 <main> 在本面板内通过 :deep 加大底部留白,避免最后一条消息贴底被遮盖
+ *    (详见 style 中 .exec-detail-body :deep(main))。
  *  - 「Command 日志」(仅 command 类型): command 执行的 shell 输出,终端式全宽渲染。
  *
  * 数据流:execution 由 App.vue 经 Schedules.vue 传入;transcripts 与 load-session
@@ -313,6 +315,15 @@ function logStatus(log: ScheduleExecutionLog): string {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
+}
+
+/* Session Tab 渲染 ChatMessages 时,其内层 <main>(全局样式 padding-bottom
+   仅 --sp-4=16px)是实际滚动容器,嵌套在 .exec-detail-body 之内。16px 底部
+   留白在历史会话复核场景偏局促,最后一条消息显得贴底/像被截断。此处仅在本
+   面板上下文(.exec-detail-body)内增大 <main> 底部留白至 24px,拉开可辨识间距;
+   作用域被 scoped 限制,不波及 ChatColumn 主聊天页的 <main>。 */
+.exec-detail-body :deep(main) {
+  padding-bottom: calc(var(--sp-4) + var(--sp-2));
 }
 
 /* 信息网格 */

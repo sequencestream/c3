@@ -72,5 +72,27 @@ export async function gatedSave(
   if (decision !== 'allow') {
     return { content: [{ type: 'text', text: '用户在 c3 UI 拒绝了保存,未落库。' }] }
   }
-  return runSaveConfirmed(binding.workspacePath, args, deps.broadcastIntents)
+  return runSaveConfirmed(
+    binding.workspacePath,
+    normalizeSessionBackLink(args, runId),
+    deps.broadcastIntents,
+  )
+}
+
+/**
+ * Single-intent comm back-link normalization.
+ *
+ * The comm agent's prompt injects THIS run's session id (a `pending:…` id at
+ * prompt-build time, before the SDK binds) for the model to echo back into
+ * `intentSessionId`. By save time the run is bound, so `runId` is the real
+ * comm-session id — the same id the chat row was re-keyed to and that
+ * `open_intent_chat` resolves against. We therefore overwrite the model-supplied
+ * value with `runId` so the persisted back-link is always resolvable (the value
+ * is server-authoritative; the model only decides WHETHER to set it, and only on
+ * a single-intent batch). A multi-item batch is left untouched — the store
+ * ignores the field there anyway.
+ */
+function normalizeSessionBackLink(args: SaveArgs, runId: string): SaveArgs {
+  if (args.intents.length !== 1 || args.intents[0].intentSessionId === undefined) return args
+  return { intents: [{ ...args.intents[0], intentSessionId: runId }] }
 }

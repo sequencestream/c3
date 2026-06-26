@@ -87,6 +87,14 @@ export const saveSchema = {
             '目标须可改:draft/todo 保持状态、cancelled 自动重新激活为 todo;' +
             'in_progress/done 不可修改,会导致整批保存失败。留空则新建一条意图。',
         ),
+      intentSessionId: z
+        .string()
+        .optional()
+        .describe(
+          '可选:把这条意图回链到产出它的本次沟通会话(便于日后从意图跳回当时的讨论上下文)。' +
+            '仅当本批只保存 1 条意图时才填写,值用系统在提示中给出的当前会话 id;' +
+            '批量保存多条时一律不填——填了也会被忽略,不会写入任何一行。',
+        ),
       ...proposedIntentShape,
     }),
   ),
@@ -131,7 +139,8 @@ export const saveDesc =
   'refine 已有意图时务必回填原 id 以更新原条目,避免新建重复项;' +
   'in_progress/done 的意图不可修改(整批失败),cancelled 更新后会重新激活为 todo。' +
   '当本批意图之间存在先后/依赖关系时,用每条的 dependsOnIndexes 字段(同批数组下标)' +
-  '声明它依赖本批的哪些兄弟意图,落库时会解析为真实 id,使自动化编排按依赖顺序启动。'
+  '声明它依赖本批的哪些兄弟意图,落库时会解析为真实 id,使自动化编排按依赖顺序启动。' +
+  '当本轮只产出 1 条意图、且它来自与用户的沟通时,可用 intentSessionId 把它回链到本次会话(批量多条时不填)。'
 
 export const findDesc =
   '检索本项目已有意图(只读)。用于发现关联项、避免重复、为 dependsOn 找到真实 id。' +

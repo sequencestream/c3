@@ -29,7 +29,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { Intent } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { createIntentMcpServer } from './save-tool.js'
-import { saveSchema } from './tool-defs.js'
+import { saveIntentDirectlySchema, saveSchema } from './tool-defs.js'
 import { getIntent, insertIntents, listIntents, resetStoreForTests, updateStatus } from './store.js'
 
 interface CallToolResult {
@@ -559,5 +559,111 @@ describe('save_intents input validation (shortEnTitle required)', () => {
       intents: [{ title: 'A', shortEnTitle: 'a-slug', content: 'c', priority: 'P0' }],
     })
     expect(parsed.success).toBe(true)
+  })
+})
+
+describe('intentSessionId field exposure / isolation', () => {
+  it('save_intents schema accepts an optional intentSessionId', () => {
+    const schema = z.object(saveSchema)
+    const parsed = schema.safeParse({
+      intents: [
+        {
+          title: 'A',
+          shortEnTitle: 'a',
+          content: 'c',
+          priority: 'P0',
+          intentSessionId: 'sess-1',
+        },
+      ],
+    })
+    expect(parsed.success).toBe(true)
+    // It is optional: a batch without it still validates.
+    expect(
+      schema.safeParse({
+        intents: [{ title: 'A', shortEnTitle: 'a', content: 'c', priority: 'P0' }],
+      }).success,
+    ).toBe(true)
+  })
+
+  it('save_intent_directly schema STRIPS intentSessionId (no comm-session semantics)', () => {
+    // z.object strips unknown keys by default, so a supplied intentSessionId must not
+    // survive parsing — the schedule path can never carry a back-link.
+    const schema = z.object(saveIntentDirectlySchema)
+    const parsed = schema.safeParse({
+      intents: [
+        {
+          title: 'A',
+          shortEnTitle: 'a',
+          content: 'c',
+          priority: 'P0',
+          intentSessionId: 'sess-1',
+        },
+      ],
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.intents[0]).not.toHaveProperty('intentSessionId')
+  })
+})
+
+describe('save_intents single-intent session back-link (gate normalization)', () => {
+  it('normalizes a single intent intentSessionId to the bound run id (open_intent_chat-resolvable)', async () => {
+    // The model echoes the injected (pending) session id; the gate overwrites it with
+    // binding.getRunId() (here 'run-1') so the persisted value matches the bound comm
+    // session that open_intent_chat resolves against.
+    const handler = getSaveHandler(mkServer(proj))
+    const res = await handler(
+      {
+        intents: [
+          {
+            title: 'Solo',
+            shortEnTitle: 'solo',
+            content: '',
+            priority: 'P0',
+            intentSessionId: 'pending:whatever',
+          },
+        ],
+      },
+      {},
+    )
+    expect(res.isError).toBeFalsy()
+    const [saved] = listIntents(proj)
+    expect(getIntent(saved.id)?.intentSessionId).toBe('run-1')
+  })
+
+  it('does NOT back-link any row when more than one intent is saved (batch ignored)', async () => {
+    const handler = getSaveHandler(mkServer(proj))
+    const res = await handler(
+      {
+        intents: [
+          {
+            title: 'A',
+            shortEnTitle: 'a',
+            content: '',
+            priority: 'P0',
+            intentSessionId: 'pending:x',
+          },
+          {
+            title: 'B',
+            shortEnTitle: 'b',
+            content: '',
+            priority: 'P1',
+            intentSessionId: 'pending:y',
+          },
+        ],
+      },
+      {},
+    )
+    expect(res.isError).toBeFalsy()
+    for (const r of listIntents(proj)) expect(getIntent(r.id)?.intentSessionId).toBeNull()
+  })
+
+  it('leaves intent_session_id null when a single intent omits the field', async () => {
+    const handler = getSaveHandler(mkServer(proj))
+    await handler(
+      { intents: [{ title: 'Solo', shortEnTitle: 'solo', content: '', priority: 'P0' }] },
+      {},
+    )
+    const [saved] = listIntents(proj)
+    expect(getIntent(saved.id)?.intentSessionId).toBeNull()
   })
 })

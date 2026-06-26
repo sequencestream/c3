@@ -112,6 +112,17 @@ add-column through the shared adapter (RM-R14).
   `completed_at` cleared, and rewrites the dependency edges only when `dependsOn`/`dependsOnIndexes` was supplied;
   an insert behaves exactly as a plain insert (status `todo`, creation time offset by index). The
   `save_intents` handler turns any rejection into an error result so the agent learns nothing was written.
+  - **Single-intent session back-link (`intentSessionId`).** When — and only when — the batch holds
+    **exactly one** item carrying `intentSessionId`, the upsert writes it to that row's
+    `intent_session_id` (on both the insert and the in-place-update sub-path; the update uses
+    `COALESCE(?, intent_session_id)` so an absent value preserves any prior link). A batch of more than
+    one item forces the column to null regardless of what was supplied — there is no single source
+    session for a batch. This is a **double guard**: the schema description tells the agent "single
+    only", and the store enforces it independently. `insertIntents` (the schedule-only
+    `save_intent_directly` path) never reads the field — drafts have no communication-session semantics.
+    This explicit-field write covers the gap the refine `run:bound` backfill (below) cannot reach:
+    a comm session that **creates a brand-new** intent has no pending→intent link to backfill, so the
+    one-shot field is how that new intent links back to its originating conversation.
 - **Read-only agent query (RM-R19):** the find operation backs the agent's `find_intents` tool —
   filters compose with `AND`, all optional: `keyword`
   is a substring match over `title` OR `content` (wildcard characters in the keyword are escaped so a
@@ -285,6 +296,15 @@ exists (the seed prompt hands the agent its id), the agent **must** set that ite
 `cancelled` original is reactivated to `todo`, while an `in_progress`/`done` original is immutable
 (the agent tells the user it cannot be modified rather than attempting a save). A batch may mix
 updates (with id) and brand-new items (without id).
+
+The prompt **injects this run's session id** so the agent can back-link a single saved intent to
+the conversation: when a round saves **exactly one** intent, the agent copies the injected id into
+that item's `intentSessionId` (the prompt forbids it on a multi-item batch — there is no single
+source session). The id injected at prompt-build time is a `pending:` id (the SDK has not bound
+yet), so the **save handler normalizes** it to the bound comm-session id before persisting — the
+same id `open_intent_chat` resolves against and that the refine `run:bound` backfill writes, so the
+two link sources land in one id space. The model only decides **whether** to set the field; the
+**value** is server-authoritative.
 
 The prompt also carries a **decomposition rule (a single goal is never split)**: when one goal
 touches **code, its tests, and/or its companion docs** (spec / README / comments), the analyst

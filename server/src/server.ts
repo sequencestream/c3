@@ -466,10 +466,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     eventBus,
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,
-    intentProfile: (workspacePath) => ({
+    intentProfile: (workspacePath, sessionId) => ({
       // Read the live Display language (uiLang) at run start so the analyst replies
       // in the user's console language, not a hard-coded one (2026-06-08-005).
-      appendSystemPrompt: buildIntentAgentPrompt(getUiLang()),
+      // `sessionId` (the run's id at launch, possibly pending) is injected so the
+      // model can back-link a single saved intent to this comm session.
+      appendSystemPrompt: buildIntentAgentPrompt(getUiLang(), sessionId),
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       // In-process MCP for the CLAUDE path, bound per-run (runClaude supplies the
       // live run id + signal). The project path + the SAME save-gate deps the

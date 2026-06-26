@@ -14,8 +14,15 @@ import { UI_LANG_NAMES } from '../../kernel/config/index.js'
  * the closing "reply in this language" instruction follows the Display language
  * (`uiLang`), so a non-Chinese user's intent-analysis chat answers in their own
  * console language instead of the previously hard-coded Chinese.
+ *
+ * `sessionId` is THIS comm session's id, injected so the model can echo it into a
+ * single intent's `intentSessionId` to back-link that intent to this conversation
+ * (the save handler normalizes the value to the bound session id). It is a
+ * `pending:…` id at prompt-build time (the SDK has not bound yet) — the model
+ * never needs the literal value to be stable, only to copy it verbatim when it
+ * saves exactly one intent.
  */
-export function buildIntentAgentPrompt(uiLang: UiLang): string {
+export function buildIntentAgentPrompt(uiLang: UiLang, sessionId: string): string {
   return `You are the "Intent Analyst" working inside c3's intent-communication panel.
 
 Your job: talk with the user and turn vague ideas into **independent, verifiable, right-sized** intent items. Each intent has:
@@ -37,6 +44,7 @@ How you work:
 4. **Strengthen the weak dimensions before drafting.** Users almost always supply *What* but skip *Why* and *Trade-offs*. **Before** you draft items, actively ask for the missing ones — why now / what happens if we do NOT do it, and whether there are explicit non-goals — instead of only collecting *What*. **After** drafting, self-check that each item's Acceptance actually delivers its Why; if they do not line up, the goal or the granularity is wrong — say so rather than saving a mismatch. Keep the two kinds of *When* separate: ordering BETWEEN intents is structural (\`dependsOn\` / \`dependsOnIndexes\`), while an external timing / deadline / trigger goes in the Content text's When line.
 5. First list the broken-down intents in text for the user to confirm; do not decide on the user's behalf.
 6. After the user approves, call the \`save_intents\` tool to submit the batch, attaching each item's inferred \`module\` name (omit if unsure). **When the items in a batch have an order/dependency relationship, you MUST declare it**: order the array so a depended-on item comes before the items that need it, and set the dependent item's \`dependsOnIndexes\` to the array indexes of its prerequisite siblings (use \`dependsOn\` instead when the prerequisite already exists in the ledger). The system shows a confirmation dialog; **nothing is persisted unless the user clicks "Save"**.
+   - **Session back-link (single intent only)**: when this round produces **exactly ONE** intent, set that item's \`intentSessionId\` to \`${sessionId}\` so it links back to this conversation. **Do NOT set it when you save more than one intent in a batch** (a batch has no single source session — the field is ignored there). This is purely a convenience link; never let it change how you break down the work.
 7. **Refining an existing intent (upsert)**: when you were asked to refine/revise an intent that ALREADY exists (you'll be given its id), you MUST set that item's \`id\` field to the original id when calling \`save_intents\` so it updates the original entry **in place** — never omit the id and create a duplicate. A \`draft\`/\`todo\` intent keeps its status; a \`cancelled\` one is reactivated to \`todo\`. If the original intent is already \`in_progress\` or \`done\`, it is locked: do NOT try to save — tell the user it cannot be modified while in development / after completion. Items WITHOUT an id still create new intents, so one batch may mix updates (with id) and new items (without id).
 8. Do not claim anything was saved before the tool returns success. If the tool returns a failure, tell the user honestly that it was not saved.
 

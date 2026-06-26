@@ -102,7 +102,7 @@ export interface LaunchRunDeps {
    * plain/dev runs. A intent runtime launched without it throws (a missing
    * composition-root wiring is a bug, never a silent drop of the security lock).
    */
-  intentProfile?: (workspacePath: string) => IntentProfile
+  intentProfile?: (workspacePath: string, sessionId: string) => IntentProfile
   /**
    * Spec-authoring launch profile (write-confined gate + disallowed-tools lock +
    * spec system prompt), injected at the composition root so the kernel launcher
@@ -246,7 +246,7 @@ export async function launchRun(
   // Resolve the intent profile once, before the vendor fork, so both the
   // claude path and the driver path can use it.
   const resolvedIntentProfile =
-    isIntent && deps.intentProfile ? deps.intentProfile(workspacePath) : undefined
+    isIntent && deps.intentProfile ? deps.intentProfile(workspacePath, runId) : undefined
   // Resolve the work-session base MCP profile once (publish_pr_event), for plain
   // work sessions only — never for intent/spec runs (those carry their own
   // profiles). Both the claude path and the driver path consume it (2026-06-20).
@@ -512,7 +512,7 @@ export async function launchRun(
             ? // The intent read-only profile (gate + disallowed-tools lock +
               // comm prompt + save_intents tool) is injected at the
               // composition root so the kernel launcher never imports features/.
-              deps.intentProfile!(workspacePath)
+              deps.intentProfile!(workspacePath, runId)
             : isSpec
               ? // The spec write-confined profile (gate + disallowed-tools lock +
                 // spec prompt); `specDir` rides on the runtime (per-run). Like

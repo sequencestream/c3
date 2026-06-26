@@ -415,10 +415,14 @@ route**, mounted on c3's own server (before the SPA catch-all, like the codex re
      offline ⇒ best-effort skip; a **diverged** branch (non-fast-forward) ⇒ hard stop returning a
      pull-failed error (manual path: send error + release claim; automation: surfaced as an
      automation failure). Never auto-merges / auto-rebases.
-5. Start a **background normal runtime** (`pending:`) via the launcher with prompt
-   `[<devSkill> ]<title + content + dependency summary>` (the configurable development
-   skill from system settings; empty by default ⇒ no skill prefix); on session bind,
-   set last-dev-session + status `in_progress` + broadcast `intents` + broadcast statuses.
+5. Start a **background normal runtime** (`pending:`) via the shared dev prompt builder. The
+   visible prompt is `title + content + dependency summary`, plus the approved spec-path note
+   when SDD is enabled and a spec path exists. Internal prompt channels are separate from the
+   visible echo: a configured `devSkill` leads the model user turn, while SDD's work-session
+   prompt uses the system-instruction channel when no `devSkill` is configured. Manual launch and
+   automation use the same prompt construction and do not change the branch/worktree/session flow.
+   On session bind, set last-dev-session + status `in_progress` + broadcast `intents` + broadcast
+   statuses.
 6. The run is backgrounded and survives disconnect; the development session is a **normal**
    session that appears in the sidebar; `lastDevSessionId` powers the back-link.
 

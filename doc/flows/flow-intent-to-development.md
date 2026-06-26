@@ -120,12 +120,16 @@ flowchart TD
    per-intent worktree under the c3 home directory, branched from `defaultMainBranch`;
    `current-branch` (default) ⇒ develop in place. The dev session's effective working directory is set
    accordingly (`RM-R8`).
-3. **intent-management → agent-session.** A **background normal session** is started running the
-   configurable development skill (`devSkill`; empty ⇒ no prefix) with the intent content; the
-   intent moves to `in_progress` and records `lastDevSessionId` (`RM-R8`). The dev session is a
-   normal session — it appears in the sidebar, stamped to sort to the top, fanned out to every
-   connection on bind/settle (`SR-R13`). It runs the standard gated loop
-   ([prompt → gated run](flow-prompt-to-gated-run.md)). The run survives disconnect (`AS-R8`).
+3. **intent-management → agent-session.** A **background normal session** is started with the
+   shared dev prompt builder used by both manual launch and automation. The visible turn carries
+   the intent title/content plus dependency note; when `sddEnabled` is on and the approved spec
+   path exists, it also carries the approved spec-path note. Internal launch channels stay out of
+   the visible echo: `devSkill` rides the model user-turn prefix, and when no `devSkill` is
+   configured SDD's work-session prompt rides the system-instruction channel (`RM-R23`). The intent
+   moves to `in_progress` and records `lastDevSessionId` (`RM-R8`). The dev session is a normal
+   session — it appears in the sidebar, stamped to sort to the top, fanned out to every connection
+   on bind/settle (`SR-R13`). It runs the standard gated loop ([prompt → gated
+   run](flow-prompt-to-gated-run.md)). The run survives disconnect (`AS-R8`).
 4. **Startup feedback (manual launch only).** Because the steps above can take several seconds
    (worktree create / branch pull, then the agent spawn — slowest with sandbox), the server emits
    coarse, connection-directed `dev_launch_progress` stages after synchronous validation passes:

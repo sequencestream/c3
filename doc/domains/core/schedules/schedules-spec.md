@@ -539,6 +539,32 @@ Its toolAllowlist is `Read` / `Grep` / `Glob` / `Bash` (read the constraint docs
 `save_intent_directly` (not the confirmation-gated `save_intents`) precisely because an unattended
 schedule has no confirmation popup — the human confirmation门 is the `draft` review in the intent list.
 
+**Weekly vulnerability analysis** (`weekly-vuln-analysis`) runs Claude every Monday at 09:00
+(cron `0 9 * * 1`, `mode: bypassPermissions`; the Monday slot is offset from the Friday arch review so
+the two periodic reviews never compete for the same execution slot). It is **isomorphic** to the
+architecture review — same `CreateScheduleInput` contract, same one-click create / editable / pausable /
+deletable lifecycle, same draft-intent output — differing only in focus, cron slot and prompt. It
+analyzes only the **last 7 days** of git activity (incremental, never a whole-repository historical
+security audit) and files confirmed security findings as **draft** intents for human review and fixing —
+it never changes code, never commits, never opens a PR. The prompt:
+
+- **Scope** — looks only at code introduced/changed this week via `git log --since="7 days ago"` and the
+  matching diffs; reads the readable project/security docs as ground truth for the system's trust boundaries.
+- **Vulnerability classes** — injection (SQL/command/path/deserialization), authentication/authorization
+  bypass and privilege escalation, secret/credential leakage, sandbox escape / scope-of-authority
+  violation, and same-class defects newly introduced this week. General code quality, style, naming and
+  architecture/design suggestions are explicitly **not** vulnerabilities (those belong to lint/format and
+  the architecture review).
+- **De-dup + caps + false-positive control** — it calls `find_intents` to skip anything an existing
+  intent already covers, files at most **3** intents per run (prefer fewer), and — because model analysis
+  can be wrong — lands every finding as a **draft** for human confirmation rather than pushing it into
+  development.
+
+Its toolAllowlist matches the architecture review: `Read` / `Grep` / `Glob` / `Bash` plus
+`mcp__c3__find_intents` / `mcp__c3__view_intent` / `mcp__c3__save_intent_directly`. As with the arch
+review, it uses `save_intent_directly` (not the confirmation-gated `save_intents`) because an unattended
+schedule has no confirmation popup — the human confirmation门 is the `draft` review in the intent list.
+
 - **Workspace-scoped uniqueness:** A schedule is uniquely identified by `(workspaceId, id)`.
   Deleting the workspace archives the schedules, never orphans them.
 - **Single active status:** A schedule is in exactly one of `active`, `paused`, or `archived`.

@@ -52,7 +52,7 @@ export interface PermissionRequestCtx {
   /**
    * Where this prompt originates (drives the WaitUserInvolveEvent's `source`, and
    * thus WorkCenter's `jumpToSource` target). Resolved by the caller — a work
-   * session is `'session'`, the read-only intent comm agent is `'intent'`, etc.
+   * session is `'work'`, the read-only intent comm agent is `'intent'`, etc.
    * Never hard-coded downstream (the handler reads it verbatim).
    */
   source: WaitUserInvolveSource
@@ -111,9 +111,9 @@ export interface GatewaySpec {
   sessionId: () => string
   /**
    * The WaitUserInvolveEvent `source` for prompts this gateway raises — `'intent'`
-   * for the read-only comm agent, `'session'` for a normal dev/user session.
-   * Forwarded verbatim into every {@link PermissionRequestCtx}; the composition
-   * root resolves it from the runtime kind.
+   * for the read-only comm agent, `'work'` for a normal dev/user session, `'spec'`
+   * for a spec-authoring run. Forwarded verbatim into every {@link
+   * PermissionRequestCtx}; the composition root resolves it from the runtime kind.
    */
   source: WaitUserInvolveSource
   /**

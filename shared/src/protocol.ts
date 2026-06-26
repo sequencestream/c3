@@ -2411,8 +2411,51 @@ export interface ToolManifestEntry {
 
 // ---- Wait User Involve Events ----
 
-/** Source category of a {@link WaitUserInvolveEvent}. */
-export type WaitUserInvolveSource = 'session' | 'intent' | 'discussion' | 'schedule'
+/**
+ * Source category of a {@link WaitUserInvolveEvent} — the **traceable-jump subset**
+ * of {@link SessionKind}. WorkCenter renders a "溯源跳转" affordance per event whose
+ * target tab + object is keyed off this value, so only kinds a human can navigate
+ * back to appear here. The two SessionKinds excluded are `consensus` and `tool`:
+ * both are socket-less internal calls that never raise a human prompt, so they
+ * never produce a gated event in the first place.
+ *
+ * Derived from `SessionKind` via {@link sessionKindToWaitUserSource} (the single
+ * write-side source of truth) — `WaitUserInvolveSource` deliberately stays a
+ * hand-picked subset rather than `= SessionKind`, so the web's `jumpToSource`
+ * switch stays exhaustive with every branch actually jumpable.
+ *
+ * Migration (2026-06-26): the legacy `'session'` value folded into `'work'`
+ * (in-place store migration + a web fallback that routes any unknown source to the
+ * console); `'spec'` was added (previously collapsed into `'session'`).
+ */
+export type WaitUserInvolveSource = 'work' | 'intent' | 'discussion' | 'schedule' | 'spec'
+
+/**
+ * Canonical map from a run's {@link SessionKind} to its WorkCenter
+ * {@link WaitUserInvolveSource}. The server stamps an event's `source` through
+ * this map (run-via-driver / agent gateway), replacing the old
+ * `=== 'intent' ? 'intent' : 'session'` two-value collapse that dropped `spec`.
+ *
+ * `consensus` / `tool` runs never raise a human prompt (no gated event), so they
+ * fall back to `'work'` defensively — unreachable on the gated path, but keeps the
+ * map total so no caller can mint an undefined source.
+ */
+export function sessionKindToWaitUserSource(kind: SessionKind): WaitUserInvolveSource {
+  switch (kind) {
+    case 'intent':
+      return 'intent'
+    case 'discussion':
+      return 'discussion'
+    case 'schedule':
+      return 'schedule'
+    case 'spec':
+      return 'spec'
+    case 'work':
+    case 'consensus':
+    case 'tool':
+      return 'work'
+  }
+}
 
 /**
  * Sentinel `toolName` for the workbench todo a failed manual Start-Dev Git/PR
@@ -2443,11 +2486,31 @@ export type WaitUserInvolveStatus = 'todo' | 'done' | 'canceled' | 'auto'
  */
 export interface WaitUserInvolveEvent {
   id: string
-  /** Owning project absolute path (resolved). */
+  /**
+   * Owning workspace's **opaque id** (not a path). The store persists the absolute
+   * `workspace_path` but maps it through `pathToId` on read, so this matches the id
+   * the web's `currentWorkspace` holds and every jump entry (`select_session` /
+   * `open_intent_chat` / `open_spec_session` / discussion / schedule) expects. A row
+   * whose workspace is no longer registered is dropped on read rather than emitting
+   * a broken id the web could not route.
+   */
   workspaceId: string
-  /** Which kind of run produced this event. */
+  /** Which kind of run produced this event (the traceable-jump source). */
   source: WaitUserInvolveSource
-  /** The run's owning entity id (session / intent / discussion / schedule id). */
+  /**
+   * The jump target id, interpreted per {@link source}:
+   *  - `work`       — the work session id (`select_session`).
+   *  - `intent`     — EITHER an intent object id OR the intent comm-session id; the
+   *                   web disambiguates against its loaded intent / comm-session
+   *                   lists (intent object first, then comm session), degrading to
+   *                   the Intents tab with no selection when neither matches.
+   *  - `discussion` — the discussion id (`openDiscussion`).
+   *  - `schedule`   — the schedule id (`onSelectSchedule`).
+   *  - `spec`       — the owning intent id (spec authoring binds to one intent;
+   *                   `openSpecSession(intentId)`).
+   * `null` when the producer had no jumpable id — the web degrades to the tab's
+   * list without selecting anything.
+   */
   sourceId: string | null
   /** Human-friendly label summarising the gated action. */
   title: string | null

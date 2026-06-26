@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import CodeTree from './CodeTree.vue'
 import { i18n } from '@/i18n'
+import type { CodeDirEntry } from '@ccc/shared/protocol'
 
 const STORAGE_KEY = 'c3.codesTreeExpanded'
 
@@ -28,8 +30,18 @@ function installLocalStorage(): void {
 const t = i18n.global.t
 const expandTip = t('codes.tree.toggle.expand.tooltip')
 const collapseTip = t('codes.tree.toggle.collapse.tooltip')
+const copyNameLabel = t('codes.tree.contextMenu.copyName')
+const copyRelPathLabel = t('codes.tree.contextMenu.copyRelPath')
 
-function mountTree() {
+const rootFile: CodeDirEntry = { type: 'file', name: 'README.md', path: 'README.md' }
+const rootDir: CodeDirEntry = { type: 'directory', name: 'src', path: 'src' }
+const nestedFile: CodeDirEntry = { type: 'file', name: 'main.ts', path: 'src/main.ts' }
+const nestedDir: CodeDirEntry = { type: 'directory', name: 'components', path: 'src/components' }
+
+let originalClipboard: Clipboard | undefined
+let writeText: ReturnType<typeof vi.fn>
+
+function mountTree(overrides: Record<string, unknown> = {}) {
   return mount(CodeTree, {
     props: {
       rootEntries: [],
@@ -42,16 +54,28 @@ function mountTree() {
       searchPattern: '*',
       searchResult: null,
       searchLoading: false,
+      ...overrides,
     },
   })
 }
 
 beforeEach(() => {
   installLocalStorage()
+  originalClipboard = navigator.clipboard
+  writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  })
 })
 
 afterEach(() => {
   ;(globalThis as { localStorage?: unknown }).localStorage = undefined
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: originalClipboard,
+  })
+  vi.restoreAllMocks()
 })
 
 describe('CodeTree.vue — Files 侧栏头 + 展开/收缩切换', () => {
@@ -117,5 +141,121 @@ describe('CodeTree.vue — 文件模式 glob 过滤框', () => {
     const pattern = w.find('input.search-pattern')
     await pattern.setValue('*.ts')
     expect(w.emitted('update:searchPattern')?.at(-1)).toEqual(['*.ts'])
+  })
+})
+
+describe('CodeTree.vue — 文件树节点右键复制', () => {
+  it('右键文件节点显示 copy name 与 copy relative path 菜单项', async () => {
+    const w = mountTree({ rootEntries: [rootFile] })
+    await w.find('.file-row').trigger('contextmenu', { clientX: 24, clientY: 32 })
+
+    expect(w.find('.tree-context-menu').exists()).toBe(true)
+    expect(w.find('[data-testid="tree-context-copy-name"]').text()).toBe(copyNameLabel)
+    expect(w.find('[data-testid="tree-context-copy-relative-path"]').text()).toBe(copyRelPathLabel)
+  })
+
+  it('右键文件夹节点同样显示菜单', async () => {
+    const w = mountTree({ rootEntries: [rootDir] })
+    await w.find('.dir-row').trigger('contextmenu', { clientX: 24, clientY: 32 })
+
+    expect(w.find('.tree-context-menu').exists()).toBe(true)
+    expect(w.find('[data-testid="tree-context-copy-name"]').text()).toBe(copyNameLabel)
+    expect(w.find('[data-testid="tree-context-copy-relative-path"]').text()).toBe(copyRelPathLabel)
+  })
+
+  it('copy name 复制文件 basename,不包含父级路径,并抛成功 toast', async () => {
+    const w = mountTree({
+      rootEntries: [rootDir],
+      dirs: { src: [nestedFile] },
+      expanded: new Set(['src']),
+    })
+
+    await w.findAll('.file-row')[0].trigger('contextmenu', { clientX: 24, clientY: 32 })
+    await w.find('[data-testid="tree-context-copy-name"]').trigger('click')
+
+    expect(writeText).toHaveBeenCalledWith('main.ts')
+    expect(w.emitted('toast')?.at(-1)).toEqual([
+      t('codes.tree.contextMenu.copySuccess', { value: 'main.ts' }),
+    ])
+  })
+
+  it('copy relative path 复制嵌套文件的 workspace 相对路径', async () => {
+    const w = mountTree({
+      rootEntries: [rootDir],
+      dirs: { src: [nestedFile] },
+      expanded: new Set(['src']),
+    })
+
+    await w.findAll('.file-row')[0].trigger('contextmenu', { clientX: 24, clientY: 32 })
+    await w.find('[data-testid="tree-context-copy-relative-path"]').trigger('click')
+
+    expect(writeText).toHaveBeenCalledWith('src/main.ts')
+    expect(w.emitted('toast')?.at(-1)).toEqual([
+      t('codes.tree.contextMenu.copySuccess', { value: 'src/main.ts' }),
+    ])
+  })
+
+  it('copy relative path 对根层文件和文件夹复制自身名称', async () => {
+    const w = mountTree({ rootEntries: [rootFile, rootDir] })
+
+    await w.findAll('.file-row')[0].trigger('contextmenu', { clientX: 24, clientY: 32 })
+    await w.find('[data-testid="tree-context-copy-relative-path"]').trigger('click')
+    expect(writeText).toHaveBeenLastCalledWith('README.md')
+
+    await w.findAll('.dir-row')[0].trigger('contextmenu', { clientX: 24, clientY: 32 })
+    await w.find('[data-testid="tree-context-copy-relative-path"]').trigger('click')
+    expect(writeText).toHaveBeenLastCalledWith('src')
+  })
+
+  it('copy relative path 对嵌套文件夹包含父目录', async () => {
+    const w = mountTree({
+      rootEntries: [rootDir],
+      dirs: { src: [nestedDir] },
+      expanded: new Set(['src']),
+    })
+
+    await w.findAll('.dir-row')[1].trigger('contextmenu', { clientX: 24, clientY: 32 })
+    await w.find('[data-testid="tree-context-copy-relative-path"]').trigger('click')
+
+    expect(writeText).toHaveBeenCalledWith('src/components')
+  })
+
+  it('复制失败时抛失败 toast', async () => {
+    writeText.mockRejectedValueOnce(new Error('denied'))
+    const w = mountTree({ rootEntries: [rootFile] })
+
+    await w.find('.file-row').trigger('contextmenu', { clientX: 24, clientY: 32 })
+    await w.find('[data-testid="tree-context-copy-name"]').trigger('click')
+
+    expect(writeText).toHaveBeenCalledWith('README.md')
+    expect(w.emitted('toast')?.at(-1)).toEqual([
+      t('codes.tree.contextMenu.copyFailed', { value: 'README.md' }),
+    ])
+  })
+
+  it('点击菜单外区域关闭菜单', async () => {
+    const w = mountTree({ rootEntries: [rootFile] })
+    await w.find('.file-row').trigger('contextmenu', { clientX: 24, clientY: 32 })
+
+    document.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+
+    expect(w.find('.tree-context-menu').exists()).toBe(false)
+  })
+
+  it('右键菜单不影响左键文件打开和目录展开', async () => {
+    const w = mountTree({ rootEntries: [rootDir, rootFile] })
+
+    await w.find('.dir-row').trigger('contextmenu', { clientX: 24, clientY: 32 })
+    expect(w.emitted('toggle-dir')).toBeUndefined()
+
+    await w.find('.dir-row').trigger('click')
+    expect(w.emitted('toggle-dir')?.at(-1)).toEqual(['src'])
+
+    await w.find('.file-row').trigger('contextmenu', { clientX: 24, clientY: 32 })
+    expect(w.emitted('open-file')).toBeUndefined()
+
+    await w.find('.file-row').trigger('click')
+    expect(w.emitted('open-file')?.at(-1)).toEqual(['README.md'])
   })
 })

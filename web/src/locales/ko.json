@@ -695,7 +695,11 @@
         "label": "spec 작성"
       },
       "approveSpec": {
-        "label": "spec 승인"
+        "label": "spec 승인",
+        "confirmLabel": "승인"
+      },
+      "modifySession": {
+        "label": "수정하고 싶어요"
       },
       "session": {
         "label": "세션"
@@ -715,9 +719,6 @@
       },
       "more": {
         "label": "추가 작업"
-      },
-      "resetSession": {
-        "label": "재설정"
       }
     },
     "automate": {
@@ -1962,10 +1963,11 @@
       }
     },
     "source": {
-      "session": "Session",
+      "work": "Session",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule"
+      "schedule": "Schedule",
+      "spec": "Spec"
     },
     "action": {
       "jump": "Go to source"
@@ -2051,6 +2053,12 @@
         "collapse": {
           "tooltip": "파일 트리를 기본 너비로 접기"
         }
+      },
+      "contextMenu": {
+        "copyName": "이름 복사",
+        "copyRelPath": "상대 경로 복사",
+        "copySuccess": "{value} 복사됨",
+        "copyFailed": "{value} 복사 실패"
       }
     },
     "tabs": {

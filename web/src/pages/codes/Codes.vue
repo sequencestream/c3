@@ -40,6 +40,7 @@ const emit = defineEmits<{
   'update:searchQuery': [value: string]
   'update:searchPattern': [value: string]
   'run-search': []
+  toast: [message: string]
 }>()
 
 const rootEntries = computed<CodeDirEntry[] | null>(() => props.dirs[''] ?? null)
@@ -93,6 +94,7 @@ function handleMobileBack(targetKey: string): void {
         @update:search-query="(v: string) => emit('update:searchQuery', v)"
         @update:search-pattern="(v: string) => emit('update:searchPattern', v)"
         @run-search="emit('run-search')"
+        @toast="(message: string) => emit('toast', message)"
       />
     </template>
 

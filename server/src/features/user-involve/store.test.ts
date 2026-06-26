@@ -2,10 +2,11 @@
  * Integration tests for the wait-user-involve event store over the shared c3.db adapter.
  *
  * Covers: schema/index creation, the migration paradigm (an old db with NO
- * events table → created on first access), and full CRUD (create → get → list
- * with status filter + project scope + resolve()-normalization, status updates,
- * cancelBySourceId batch cancel). Runs under Node's `node:sqlite` branch via
- * real temp files.
+ * events table → created on first access; the v3→v4 legacy `source='session'` →
+ * `'work'` fold), the `toEvent` unregistered-workspace drop, and full CRUD (create
+ * → get → list with status filter + project scope + resolve()-normalization, status
+ * updates, cancelBySourceId batch cancel). Runs under Node's `node:sqlite` branch
+ * via real temp files.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -14,8 +15,11 @@ import { join, resolve } from 'node:path'
 // Stub the workspace registry: the store maps its `workspace_path` column to an
 // opaque `workspaceId` via `pathToId`. In isolation these synthetic paths are
 // unregistered, so mock `pathToId` as identity — the round-trip assertions then
-// hold against the resolved path the rows store.
-vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
+// hold against the resolved path the rows store. A path containing 'unregistered'
+// resolves to `null`, exercising the `toEvent` drop-on-unregistered-workspace path.
+vi.mock('../../state.js', () => ({
+  pathToId: (p: string) => (p.includes('unregistered') ? null : p),
+}))
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import {
   cancelBySourceId,
@@ -64,9 +68,9 @@ describe('schema', () => {
 
 describe('events CRUD', () => {
   it('creates an event with defaults and reads it back', () => {
-    const ev = createEvent({ workspacePath: proj, source: 'session' })
+    const ev = createEvent({ workspacePath: proj, source: 'work' })
     expect(ev.status).toBe('todo') // default
-    expect(ev.source).toBe('session')
+    expect(ev.source).toBe('work')
     expect(ev.title).toBeNull()
     expect(ev.sourceId).toBeNull()
     expect(ev.requestId).toBeNull()
@@ -107,7 +111,7 @@ describe('events CRUD', () => {
     }
     const ev = createEvent({
       workspacePath: proj,
-      source: 'session',
+      source: 'work',
       toolName: 'edit_file',
       status: 'auto',
       outcome,
@@ -122,12 +126,12 @@ describe('events CRUD', () => {
   })
 
   it('leaves outcome null for ordinary human-decided events', () => {
-    const ev = createEvent({ workspacePath: proj, source: 'session' })
+    const ev = createEvent({ workspacePath: proj, source: 'work' })
     expect(ev.outcome).toBeNull()
   })
 
   it('lists events for a project, ordered by created_at descending', () => {
-    createEvent({ workspacePath: proj, source: 'session' })
+    createEvent({ workspacePath: proj, source: 'work' })
     createEvent({ workspacePath: proj, source: 'intent' })
     const list = listEvents(proj)
     // b was created after a, so b should come first (DESC order)
@@ -141,7 +145,7 @@ describe('events CRUD', () => {
   })
 
   it('filters by status when provided', () => {
-    const a = createEvent({ workspacePath: proj, source: 'session' }) // todo
+    const a = createEvent({ workspacePath: proj, source: 'work' }) // todo
     const b = createEvent({ workspacePath: proj, source: 'intent' }) // todo
     updateStatus(a.id, 'done')
 
@@ -153,14 +157,14 @@ describe('events CRUD', () => {
   })
 
   it('scopes by project and normalizes the path (resolve)', () => {
-    createEvent({ workspacePath: '/abs/project-a/', source: 'session' }) // trailing slash
-    createEvent({ workspacePath: '/abs/project-b', source: 'session' })
-    expect(listEvents('/abs/project-a').map((x) => x.source)).toEqual(['session'])
-    expect(listEvents('/abs/project-b').map((x) => x.source)).toEqual(['session'])
+    createEvent({ workspacePath: '/abs/project-a/', source: 'work' }) // trailing slash
+    createEvent({ workspacePath: '/abs/project-b', source: 'work' })
+    expect(listEvents('/abs/project-a').map((x) => x.source)).toEqual(['work'])
+    expect(listEvents('/abs/project-b').map((x) => x.source)).toEqual(['work'])
   })
 
   it('updateStatus changes the status and bumps updated_at', () => {
-    const ev = createEvent({ workspacePath: proj, source: 'session' })
+    const ev = createEvent({ workspacePath: proj, source: 'work' })
     updateStatus(ev.id, 'done')
     const got = getEvent(ev.id)
     expect(got?.status).toBe('done')
@@ -170,7 +174,7 @@ describe('events CRUD', () => {
   it('getEventByRequestId finds an event by requestId and returns null for unknown ids', () => {
     const ev = createEvent({
       workspacePath: proj,
-      source: 'session',
+      source: 'work',
       sourceId: 'sess-1',
       requestId: 'req-abc',
       toolName: 'Write',
@@ -190,19 +194,19 @@ describe('events CRUD', () => {
     // Two todo events for source 'sess-1', one for 'sess-2', one done for 'sess-1'.
     const todo1 = createEvent({
       workspacePath: proj,
-      source: 'session',
+      source: 'work',
       sourceId: 'sess-1',
       title: '待处理 1',
     })
     const todo2 = createEvent({
       workspacePath: proj,
-      source: 'session',
+      source: 'work',
       sourceId: 'sess-1',
       title: '待处理 2',
     })
     const other = createEvent({
       workspacePath: proj,
-      source: 'session',
+      source: 'work',
       sourceId: 'sess-2',
       title: '其他 session',
     })
@@ -226,11 +230,48 @@ describe('migration', () => {
     raw.exec('CREATE TABLE unrelated (id TEXT PRIMARY KEY); PRAGMA user_version=7;')
 
     resetStoreForTests()
-    expect(() => createEvent({ workspacePath: proj, source: 'session' })).not.toThrow()
+    expect(() => createEvent({ workspacePath: proj, source: 'work' })).not.toThrow()
     const tables = raw
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")
       .map((r) => r.name)
     expect(tables).toContain('wait_user_involve_events')
+  })
+
+  it("folds a legacy source='session' row to 'work' on first access (v3→v4)", () => {
+    const raw = getDb()!
+    // A pre-v4 table carrying a legacy 'session' row, schema not yet ensured by the store.
+    raw.exec(`CREATE TABLE wait_user_involve_events (
+      id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL, source TEXT NOT NULL, source_id TEXT,
+      title TEXT, request_id TEXT, tool_name TEXT, tool_input TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL, outcome TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    ); PRAGMA user_version=3;`)
+    raw.run(
+      `INSERT INTO wait_user_involve_events
+         (id, workspace_path, source, status, tool_input, created_at, updated_at)
+       VALUES ('legacy-1', ?, 'session', 'todo', '', 1, 1)`,
+      resolve(proj),
+    )
+
+    resetStoreForTests()
+    // First store access runs the v3→v4 migration (UPDATE session → work).
+    const list = listEvents(proj)
+    expect(list).toHaveLength(1)
+    expect(list[0].source).toBe('work')
+    // Idempotent: a second access leaves it untouched.
+    expect(listEvents(proj)[0].source).toBe('work')
+  })
+})
+
+describe('unregistered-workspace degradation', () => {
+  it('omits an event whose workspace is no longer registered (no broken id emitted)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const unreg = '/abs/unregistered-ws'
+    // The row persists, but `pathToId` returns null for an unregistered workspace, so
+    // `toEvent` must drop it rather than emit `workspaceId: null as string`.
+    createEvent({ workspacePath: unreg, source: 'work' })
+    expect(listEvents(unreg)).toEqual([])
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
   })
 })
 
@@ -242,8 +283,6 @@ describe('degradation', () => {
     expect(isStoreAvailable()).toBe(false)
     expect(listEvents(proj)).toEqual([])
     expect(getEvent('x')).toBeNull()
-    expect(() => createEvent({ workspacePath: proj, source: 'session' })).toThrow(
-      /待处理事件库不可用/,
-    )
+    expect(() => createEvent({ workspacePath: proj, source: 'work' })).toThrow(/待处理事件库不可用/)
   })
 })

@@ -695,7 +695,11 @@
         "label": "Написать spec"
       },
       "approveSpec": {
-        "label": "Утвердить spec"
+        "label": "Утвердить spec",
+        "confirmLabel": "Утвердить"
+      },
+      "modifySession": {
+        "label": "Хочу изменить"
       },
       "session": {
         "label": "Сессия"
@@ -715,9 +719,6 @@
       },
       "more": {
         "label": "Ещё действия"
-      },
-      "resetSession": {
-        "label": "Сбросить"
       }
     },
     "automate": {
@@ -1962,10 +1963,11 @@
       }
     },
     "source": {
-      "session": "Session",
+      "work": "Session",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule"
+      "schedule": "Schedule",
+      "spec": "Spec"
     },
     "action": {
       "jump": "Go to source"
@@ -2051,6 +2053,12 @@
         "collapse": {
           "tooltip": "Свернуть дерево файлов до обычной ширины"
         }
+      },
+      "contextMenu": {
+        "copyName": "Копировать имя",
+        "copyRelPath": "Копировать относительный путь",
+        "copySuccess": "Скопировано: {value}",
+        "copyFailed": "Не удалось скопировать: {value}"
       }
     },
     "tabs": {

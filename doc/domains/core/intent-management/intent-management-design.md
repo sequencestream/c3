@@ -258,12 +258,14 @@ add-column through the shared adapter (RM-R14).
 - **Reset spec session (`reset_spec_session`):** the spec-tab counterpart, mirroring **Write spec**
   but reusing the EXISTING spec directory / path (no scaffolding). Rejected (`error`
   `intent.specNotWritten`) when no spec was ever written; claude-only, same as authoring (the codex
-  driver cannot path-confine writes — `intent.specAgentUnsupported`). The server reads the current
-  `spec_path` content off disk and launches a fresh write-confined `'spec'` session seeded with the
-  user's **new input** + that spec content, replies `session_selected` (so the detail's 「spec
-  session」tab switches to it), and registers the pending→intent link so `run:bound` replaces the
-  intent's `specSessionId` on first bind. A read failure on the current spec is non-fatal (the new
-  input still seeds the session).
+  driver cannot path-confine writes — `intent.specAgentUnsupported`). The server launches a fresh
+  write-confined `'spec'` session seeded with the user's **new input** + a pointer to the current
+  `spec_path` (only the path — the agent reads the spec file itself; the prompt no longer inlines the
+  spec body), replies `session_selected` (so the detail's 「spec session」tab switches to it), and
+  registers the pending→intent link so `run:bound` replaces the intent's `specSessionId` on first
+  bind. The server no longer pre-reads the spec file, so its readability is not a launch
+  precondition; a missing/unreadable spec becomes a normal file error the agent faces when it reads
+  the path.
 
 ## Communication system prompt
 

@@ -719,9 +719,6 @@
       },
       "more": {
         "label": "Ещё действия"
-      },
-      "resetSession": {
-        "label": "Сбросить"
       }
     },
     "automate": {

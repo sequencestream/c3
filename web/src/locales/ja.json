@@ -719,9 +719,6 @@
       },
       "more": {
         "label": "その他の操作"
-      },
-      "resetSession": {
-        "label": "リセット"
       }
     },
     "automate": {

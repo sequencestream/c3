@@ -21,6 +21,11 @@ import { c3HomeDir } from './kernel/config/index.js'
 export const PID_FILE_NAME = 'c3.pid'
 /** stdout+stderr of the detached daemon child, under the c3 home dir. */
 export const DAEMON_LOG_NAME = 'c3-daemon.log'
+/** Snapshot of the resolved start options for the live daemon, under the c3 home
+ * dir. Written next to the pid file so `c3 restart` can faithfully rebuild the
+ * original launch command (the pid file alone carries no workspace/port/dev/settings).
+ * Consumed ONLY by restart; absence/corruption never affects start/daemon itself. */
+export const DAEMON_OPTIONS_NAME = 'c3.daemon.json'
 
 /** Runtime basenames that mean "we are running under an interpreter" (dev/tsx),
  * not as the compiled single binary. In that case the child command must include
@@ -66,8 +71,9 @@ export function buildStartArgs(opts: DaemonStartOptions): string[] {
 
 /** True when `execPath` is a JS runtime (dev/tsx) rather than the compiled c3
  * binary. Splits on BOTH separators so a Windows `node.exe` path is recognized
- * even when this runs under a POSIX `path` (and vice-versa). */
-function isInterpreter(execPath: string): boolean {
+ * even when this runs under a POSIX `path` (and vice-versa). Reused by `c3 upgrade`
+ * to refuse self-update under a dev/interpreter run (no single binary to replace). */
+export function isInterpreter(execPath: string): boolean {
   const tail = execPath.split(/[\\/]/).pop() ?? execPath
   const base = tail.toLowerCase().replace(/\.exe$/, '')
   return INTERPRETER_BASENAMES.has(base)
@@ -103,6 +109,48 @@ export function isProcessAlive(pid: number): boolean {
     return true
   } catch (err) {
     return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Persist the resolved daemon start options as a sidecar next to the pid file so
+ * `c3 restart` can rebuild the original launch command. Best-effort: a write
+ * failure must never abort the daemon launch itself (restart degrades to asking
+ * the user to start manually), so the caller ignores throws.
+ */
+export function writeDaemonOptions(optionsPath: string, opts: DaemonStartOptions): void {
+  writeFileSync(optionsPath, `${JSON.stringify(opts, null, 2)}\n`)
+}
+
+/**
+ * Read the daemon options sidecar. Returns null on a missing / unreadable /
+ * malformed file (restart then reports it must be started manually rather than
+ * guessing workspace/port/dev/settings).
+ */
+export function readDaemonOptions(optionsPath: string): DaemonStartOptions | null {
+  let raw: string
+  try {
+    raw = readFileSync(optionsPath, 'utf-8')
+  } catch {
+    return null
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const o = parsed as Record<string, unknown>
+  if (typeof o.port !== 'number' || !Number.isFinite(o.port)) return null
+  if (typeof o.dev !== 'boolean') return null
+  if (o.workspacePath !== undefined && typeof o.workspacePath !== 'string') return null
+  if (o.settingsPath !== undefined && typeof o.settingsPath !== 'string') return null
+  return {
+    workspacePath: o.workspacePath as string | undefined,
+    port: o.port,
+    dev: o.dev,
+    settingsPath: o.settingsPath as string | undefined,
   }
 }
 
@@ -161,5 +209,12 @@ export function startDaemon(opts: DaemonStartOptions, deps: DaemonDeps = {}): Da
   child.unref()
   const pid = child.pid ?? 0
   writeFileSync(pidPath, `${pid}\n`)
+  // Persist a restart-only snapshot of the launch options alongside the pid file.
+  // Best-effort: a failure here must not fail the (already-spawned) daemon.
+  try {
+    writeDaemonOptions(join(home, DAEMON_OPTIONS_NAME), opts)
+  } catch {
+    // restart will degrade to "start manually" if this sidecar is missing.
+  }
   return { kind: 'started', pid, logPath, pidPath }
 }

@@ -7,10 +7,13 @@ import {
   buildStartArgs,
   isProcessAlive,
   readActivePid,
+  readDaemonOptions,
   resolveSelfCommand,
   startDaemon,
+  writeDaemonOptions,
   PID_FILE_NAME,
   DAEMON_LOG_NAME,
+  DAEMON_OPTIONS_NAME,
 } from './daemon.js'
 
 describe('buildStartArgs', () => {
@@ -115,6 +118,44 @@ describe('readActivePid', () => {
   })
 })
 
+describe('daemon options sidecar', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'c3-daemon-opts-'))
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('round-trips the resolved start options', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    const opts = { workspacePath: '/ws', port: 8080, dev: true, settingsPath: '/abs/settings.json' }
+    writeDaemonOptions(p, opts)
+    expect(readDaemonOptions(p)).toEqual(opts)
+  })
+
+  it('round-trips minimal options (no workspace/settings)', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    const opts = { port: 3000, dev: false }
+    writeDaemonOptions(p, opts)
+    expect(readDaemonOptions(p)).toEqual(opts)
+  })
+
+  it('returns null for a missing file', () => {
+    expect(readDaemonOptions(join(dir, 'nope.json'))).toBeNull()
+  })
+
+  it('returns null for corrupt JSON', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    writeFileSync(p, '{not json')
+    expect(readDaemonOptions(p)).toBeNull()
+  })
+
+  it('returns null when required fields are missing/wrong type', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    writeFileSync(p, JSON.stringify({ port: 'oops', dev: false }))
+    expect(readDaemonOptions(p)).toBeNull()
+  })
+})
+
 describe('startDaemon', () => {
   let dir: string
   let prevC3Dir: string | undefined
@@ -161,6 +202,12 @@ describe('startDaemon', () => {
       expect(outcome.logPath).toBe(join(dir, DAEMON_LOG_NAME))
       expect(outcome.pidPath).toBe(join(dir, PID_FILE_NAME))
       expect(readFileSync(outcome.pidPath, 'utf-8').trim()).toBe('12345')
+      // a restart-only options sidecar lands next to the pid file
+      expect(readDaemonOptions(join(dir, DAEMON_OPTIONS_NAME))).toEqual({
+        workspacePath: '/ws',
+        port: 3000,
+        dev: false,
+      })
     }
   })
 

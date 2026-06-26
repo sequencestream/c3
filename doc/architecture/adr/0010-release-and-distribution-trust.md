@@ -74,6 +74,15 @@ concerns — version source of truth, channels, hardening tiers, signing/notariz
     orchestration) off the manifest + compile primitive with no structural change. Trust =
     the signing chain; obfuscation is an explicit non-goal (security.md). See
     `doc/non-functional/release.md` "Distribution trust".
+- **Self-update (`c3 upgrade` / `c3 restart`)** rides the same chain rather than a new one:
+  upgrade downloads the GitHub Release package + outer sidecars, verifies the package bytes
+  with the SAME embedded key + `verifyArtifact` as `c3 verify` **before** unpacking/replacing,
+  then atomically swaps `process.execPath` (Windows: `.exe.old` placeholder). minisign stays the
+  sole mandatory gate (sha256 a cross-check); a failure preserves the old binary. upgrade never
+  auto-restarts — the decoupled `c3 restart` re-reads the OS service unit (which references the
+  path, now the new binary) or relaunches the `--daemon` from a persisted options sidecar. No new
+  trust anchor, no PATH/profile mutation, no multi-version history. See `doc/non-functional/release.md`
+  "Distribution trust" and security.md DIST-1.
 
 ## Compliance
 

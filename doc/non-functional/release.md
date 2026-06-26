@@ -453,6 +453,15 @@ runs inside the compile primitive so hashing sees the signed Mach-O).
 - **`c3 verify <file>`** — offline self-check against the **embedded** public key; verifies
   the `.sha256` (if present) and the mandatory `.minisig`. No network, no external `minisign`.
   The signer and the in-binary verifier are cross-runtime twins, kept in lockstep by tests.
+- **`c3 upgrade`** — self-update reuses the same `verifyArtifact` + embedded key over the
+  **outer** package sidecars: it downloads `<package>` + `<package>.minisig` + `<package>.sha256`
+  and verifies the package bytes **before unpacking**, then unpacks the inner `c3`/`c3.exe` and
+  atomically replaces the running binary (Windows: `.exe.old` placeholder swap). minisign stays
+  the mandatory gate; a failure aborts with the old binary intact. upgrade never restarts a
+  running c3 — `c3 restart` re-reads the service unit / relaunches the `--daemon` to load the
+  new version. The platform→target mapping and package naming are a small in-binary copy of
+  `scripts/release/{targets,artifact-name}.mjs` (that dir is not bundled), cross-asserted by a
+  test so the two cannot drift.
 - **macOS ad-hoc** `codesign --force -s -` — gated on macOS target + darwin host + `codesign`
   present; best-effort with a warn-and-continue otherwise. Ad-hoc only (no Developer ID /
   notarization); users clear Gatekeeper quarantine with `xattr -dr com.apple.quarantine`.

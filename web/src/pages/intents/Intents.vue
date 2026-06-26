@@ -270,6 +270,8 @@ defineExpose({
         @stop-automation="emit('stop-automation')"
         @select-intent="handleSelectIntent"
         @ordered-change="handleOrderedChange"
+        @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
+        @refine="(id: string) => emit('refine', id)"
         @select-intent-session="handleSelectIntentSession"
         @new-intent-session="handleNewIntentSession"
         @rename-intent-session="

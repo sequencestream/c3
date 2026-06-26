@@ -47,6 +47,8 @@ const emit = defineEmits<{
   'stop-automation': []
   'select-intent': [intentId: string]
   'ordered-change': [ids: string[]]
+  'set-automate': [intentId: string, automate: boolean]
+  refine: [intentId: string]
 
   // IntentSessionList events (name-mapped)
   'select-intent-session': [sessionId: string]
@@ -231,6 +233,8 @@ function newSessionFromIntents(): void {
         @stop-automation="emit('stop-automation')"
         @select-intent="(id: string) => emit('select-intent', id)"
         @ordered-change="(ids: string[]) => emit('ordered-change', ids)"
+        @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
+        @refine="(id: string) => emit('refine', id)"
       />
     </div>
     <div v-show="activeTab === 'sessions'" class="merged-child-wrap">

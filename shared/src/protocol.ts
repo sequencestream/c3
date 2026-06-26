@@ -2210,36 +2210,60 @@ export interface IntentLifecycleFilter {
 }
 
 /**
- * Single source-of-truth taxonomy for what kind of run/agent invocation produced
- * an event or drives a runtime (2026-06-08). One value per distinct origin so
- * listeners can route by source instead of collapsing everything into a two-value
- * `'normal' | 'intent'` (the pre-2026-06-08 `SessionKind`):
+ * **Business-scenario** taxonomy: WHICH agent-invocation scenario produced an
+ * event or drives a runtime. One value per distinct business origin so listeners
+ * route by source. This is the source-of-truth dimension for "where did this come
+ * from" — orthogonal to {@link RunKind}, which says "how was it executed".
  *
- * - `session`     — a general development session: the user console, an
- *   intent→development hand-off, and the automation dev-turn. (Was `'normal'`.)
+ * - `work`        — a general development session: the user console, an
+ *   intent→development hand-off, and the automation dev-turn. (Was `'session'`,
+ *   itself once the pre-2026-06-08 `'normal'`.)
  * - `intent`      — a read-only intent-communication session (the intent gate +
  *   disallowed-tools lock).
  * - `discussion`  — the discussion orchestrator and its research pass.
- * - `schedule`    — a run **launched by the scheduler with no socket** (e.g. an
- *   `llm` scheduled task). NOTE: `schedule` identifies the *trigger source*, NOT a
- *   run type a user session morphs into — a schedule-*triggered* target session run
- *   is still `session` kind. `schedule` only tags the scheduler's own socket-less run.
+ * - `schedule`    — the scheduler's own **socket-less run** (e.g. an `llm`
+ *   scheduled task). NOTE: `schedule` identifies the *trigger source*, NOT a
+ *   scenario a work session morphs into — a schedule-*triggered* target session run
+ *   is still `work`. `schedule` only tags the scheduler's own run.
  * - `consensus`   — a consensus vote (each voter is a tool-free one-shot).
  * - `tool`        — an internal tool call: completion judging (judge) and title
  *   derivation.
  * - `spec`        — a spec-authoring session: writes confined to the intent's
  *   spec directory (path-level write gate), the project read-only elsewhere.
  *
- * Migration from the old `SessionKind`: `'normal' → 'session'`, `'intent' → 'intent'`.
+ * Migration (2026-06-26): split out of the old `RunKind`, whose 7 business values
+ * moved here verbatim with `'session' → 'work'`. Business-source judgements (which
+ * scenario may trigger a schedule, which security gate applies) read `sessionKind`.
  */
-export type RunKind =
-  | 'session'
+export type SessionKind =
+  | 'work'
   | 'intent'
   | 'discussion'
   | 'schedule'
   | 'consensus'
   | 'tool'
   | 'spec'
+
+/**
+ * **Execution-form** taxonomy: HOW a run executes, independent of its business
+ * scenario ({@link SessionKind}). Two runs of the same `sessionKind` can differ
+ * here — e.g. a `work` user console is `interactive` (socket-backed) while a
+ * `work` automation dev-turn is `background` (no socket, still on the run bus).
+ *
+ * - `interactive` — a socket-backed run a human is actively watching (user
+ *   console, intent→dev hand-off, intent/spec communication sessions).
+ * - `background`  — a socket-less run that still flows through the run bus (the
+ *   automation dev-turn).
+ * - `headless`    — the scheduler's own socket-less run.
+ * - `internal`    — an internal orchestration/tool invocation (discussion,
+ *   consensus, judge/naming tool calls).
+ *
+ * Migration (2026-06-26): narrowed out of the old `RunKind`, whose 7 business
+ * values moved to {@link SessionKind}. Execution-mechanism judgements read
+ * `runKind`. Currently `runKind` has audit/record readers but no consumer branch;
+ * it is laid down so a future agent scenario already carries its execution form.
+ */
+export type RunKind = 'interactive' | 'background' | 'headless' | 'internal'
 
 export interface Schedule {
   id: string

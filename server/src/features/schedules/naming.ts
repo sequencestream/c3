@@ -15,17 +15,18 @@
 // schedules feature (its naming concern); not an interactive run.
 // eslint-disable-next-line no-restricted-imports
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { CreateScheduleInput, RunKind, ScheduleType } from '@ccc/shared/protocol'
+import type { CreateScheduleInput, ScheduleType, SessionKind } from '@ccc/shared/protocol'
 import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getUiLangName } from '../../kernel/config/index.js'
 import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
 
 /**
- * This module's RunKind: title/name derivation is an internal, socket-less tool
- * call (a tool-free one-shot `query`), NOT a user-facing run — it does NOT go
- * through the run bus. Tagged `'tool'` so logs/audit can tell it apart.
+ * This module's SessionKind: title/name derivation is an internal, socket-less
+ * tool call (a tool-free one-shot `query`), NOT a user-facing run — it does NOT go
+ * through the run bus (its execution form is `runKind: 'internal'`). Tagged
+ * `'tool'` so logs/audit can tell it apart.
  */
-const RUN_KIND: RunKind = 'tool'
+const SESSION_KIND: SessionKind = 'tool'
 
 /** Max characters for a generated/fallback name. */
 const MAX_NAME_LEN = 60
@@ -158,9 +159,9 @@ export async function generateScheduleName(
     const name = tidy(raw)
     if (name) return name
   } catch (err) {
-    // fall through to deterministic fallback; tag the RunKind so an audit can see
-    // this socket-less internal tool call failed (not a user run).
-    console.warn(`[c3:schedules] (${RUN_KIND}) name derivation failed, using fallback:`, err)
+    // fall through to deterministic fallback; tag the SessionKind so an audit can
+    // see this socket-less internal tool call failed (not a user run).
+    console.warn(`[c3:schedules] (${SESSION_KIND}) name derivation failed, using fallback:`, err)
   }
   return fallbackName(input.type, input.config)
 }

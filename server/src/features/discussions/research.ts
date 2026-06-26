@@ -6,7 +6,7 @@
  * agent's final text and writes it back to the discussion's `researchResult` field
  * (the user's original `context` is left untouched).
  */
-import type { Discussion, ResearchMessage, RunKind } from '@ccc/shared/protocol'
+import type { Discussion, ResearchMessage, SessionKind } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude } from '../../kernel/agent/index.js'
@@ -14,11 +14,12 @@ import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
 import { getUiLangName } from '../../kernel/config/index.js'
 
 /**
- * This step's RunKind: the research pass calls {@link runClaude} directly (under
- * the `discussion-research` gate), NOT through the run bus. Tagged `'discussion'`
- * — it belongs to the discussion flow, same origin as the orchestrator.
+ * This step's SessionKind: the research pass calls {@link runClaude} directly
+ * (under the `discussion-research` gate), NOT through the run bus (its execution
+ * form is `runKind: 'internal'`). Tagged `'discussion'` — it belongs to the
+ * discussion flow, same business origin as the orchestrator.
  */
-const RUN_KIND: RunKind = 'discussion'
+const SESSION_KIND: SessionKind = 'discussion'
 
 /** System-prompt append that frames the unattended, read-only research run. */
 export const DISCUSSION_RESEARCH_PROMPT = `You are the discussion's "context researcher". Your sole task: research and gather the background facts for an upcoming discussion.
@@ -106,7 +107,7 @@ export async function researchDiscussionContext(
   opts: ResearchRunOptions = {},
 ): Promise<DiscussionResearchResult> {
   console.log(
-    `[c3:discussion] (${RUN_KIND}) research「${discussion.goal.slice(0, 60)}」(${discussion.id})`,
+    `[c3:discussion] (${SESSION_KIND}) research「${discussion.goal.slice(0, 60)}」(${discussion.id})`,
   )
   const def = getDiscussionType(discussion.type)
   const prompt = buildResearchPrompt(

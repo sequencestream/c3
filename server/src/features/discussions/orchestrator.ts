@@ -29,7 +29,7 @@ import type {
   Discussion,
   DiscussionMessage,
   DiscussionStatus,
-  RunKind,
+  SessionKind,
 } from '@ccc/shared/protocol'
 import {
   getDiscussionType,
@@ -214,12 +214,12 @@ export interface DiscussionDeps {
 }
 
 /**
- * This engine's RunKind: the discussion orchestrator (and the agent turns it
+ * This engine's SessionKind: the discussion orchestrator (and the agent turns it
  * fans out via {@link askAgentOnce}) is a socket-less internal run that does NOT
- * go through the run bus. Tagged `'discussion'` so logs/audit distinguish it from
- * user sessions.
+ * go through the run bus (its execution form is `runKind: 'internal'`). Tagged
+ * `'discussion'` so logs/audit distinguish it from user sessions.
  */
-const RUN_KIND: RunKind = 'discussion'
+const SESSION_KIND: SessionKind = 'discussion'
 
 /**
  * Run the organizer engine for one discussion to completion (or until `signal`
@@ -235,7 +235,7 @@ export async function runDiscussion(
   const { ask, store } = deps
   const initial = store.getDiscussion(id)
   if (!initial) return
-  console.log(`[c3:discussion] (${RUN_KIND}) start「${initial.goal.slice(0, 60)}」(${id})`)
+  console.log(`[c3:discussion] (${SESSION_KIND}) start「${initial.goal.slice(0, 60)}」(${id})`)
 
   const cwd = resolveWorkspaceRoot(initial.workspaceId)!
   const def = getDiscussionType(initial.type)

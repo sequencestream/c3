@@ -490,12 +490,16 @@ class AutomationController {
     // Use the ORIGINAL project path for ensureRuntime so broadcasts use the
     // correct workspace scope; effectiveCwd overrides the agent's CWD to the
     // worktree (or the project checkout itself in current-branch mode).
+    // The automation dev-turn is a `work` business scenario but runs with no
+    // socket on the run bus — its execution form is `background`, not interactive.
     const rt = ensureRuntime(
       pendingId,
       this.workspacePath,
       getDefaultMode(this.workspacePath),
       [],
-      'session',
+      'work',
+      undefined,
+      'background',
     )
     rt.effectiveCwd = effectiveCwd
     registerPendingDevLink(pendingId, req.id)
@@ -534,7 +538,9 @@ class AutomationController {
       this.workspacePath,
       getDefaultMode(this.workspacePath),
       [],
-      'session',
+      'work',
+      undefined,
+      'background',
     )
     if (!rt.effectiveCwd) rt.effectiveCwd = cwd
   }

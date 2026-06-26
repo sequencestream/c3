@@ -11,7 +11,7 @@
  * they belong in `wiring/` (server-only assembly, not kernel, not feature).
  *
  * Each starter now publishes run lifecycle events (`run:started` / `run:bound` /
- * `run:settled`) with `kind='discussion'` on the kernel event bus (ADR-0018
+ * `run:settled`) with `sessionKind='discussion'` on the kernel event bus (ADR-0018
  * amendment, 2026-06-08-010). The resident discussion subscription in
  * `run-domain-subscriptions.ts` reacts to those events to broadcast the
  * refreshed discussion list — the explicit `broadcastDiscussions` calls in
@@ -119,7 +119,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
   // re-entry and set the discussion's status; here we register the run
   // control, wire the broadcast + pause hooks, and clean up on finish.
   //
-  // Publishes `run:started`/`run:bound`/`run:settled` with kind='discussion'
+  // Publishes `run:started`/`run:bound`/`run:settled` with sessionKind='discussion'
   // on the kernel event bus so the resident subscription in
   // `run-domain-subscriptions.ts` broadcasts the refreshed discussion list
   // (the subscription replaces the explicit `.finally()` broadcast).
@@ -133,7 +133,8 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     eventBus.publish('run:started', {
       sessionId: discussion.id,
       workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
-      kind: 'discussion',
+      sessionKind: 'discussion',
+      runKind: 'internal',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
@@ -173,7 +174,8 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           sessionId: discussion.id,
           workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
           reason: settledReason,
-          kind: 'discussion',
+          sessionKind: 'discussion',
+          runKind: 'internal',
         })
         deleteDiscussionRun(discussion.id)
         broadcastDiscussionRunStatus(discussion.id, 'ended')
@@ -186,7 +188,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
   // `ended`, then auto-start the orchestration on success. Fire-and-forget —
   // research never blocks creation.
   //
-  // Publishes `run:started`/`run:bound`/`run:settled` with kind='discussion'
+  // Publishes `run:started`/`run:bound`/`run:settled` with sessionKind='discussion'
   // on the kernel event bus. The `ended`-before-auto-start order means the
   // right pane switches research → discussion in one batch; a failed research
   // broadcasts `ended` without auto-start, surfacing the manual Start fallback.
@@ -199,7 +201,8 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     eventBus.publish('run:started', {
       sessionId: discussion.id,
       workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
-      kind: 'discussion',
+      sessionKind: 'discussion',
+      runKind: 'internal',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
@@ -218,7 +221,8 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           sessionId: discussion.id,
           workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
           reason,
-          kind: 'discussion',
+          sessionKind: 'discussion',
+          runKind: 'internal',
         })
 
         // Store the research output in its own field; the user's original `context`
@@ -244,7 +248,8 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           sessionId: discussion.id,
           workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
           reason: 'error',
-          kind: 'discussion',
+          sessionKind: 'discussion',
+          runKind: 'internal',
         })
         deleteResearchRun(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')

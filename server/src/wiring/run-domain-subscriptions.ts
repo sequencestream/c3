@@ -6,17 +6,17 @@
  * registered once at the composition root, never disposed.
  *
  * Each subscription:
- *  - Filters for the RunKind / event type it owns.
+ *  - Filters for the SessionKind / event type it owns.
  *  - Matches domain state via the event's `sessionId` / `prevId` (not via a
  *    bus subscription id).
  *  - Is idempotent (no-ops on unmatched events).
  *
- * ── Intent-session domain (`run:bound`, kind=『intent』) ─────────────
+ * ── Intent-session domain (`run:bound`, sessionKind=『intent』) ─────────────
  *  Rebind the chat-store key from pending→real SDK id so the hidden-session
  *  filter (`isHiddenSession` / `listHiddenSessions`) matches, and broadcast
  *  the refreshed intent-session list.
  *
- * ── Session/dev domain (`run:bound`, kind≠intent) ───────────────────
+ * ── Session/dev domain (`run:bound`, sessionKind≠intent) ───────────────────
  *  Persist the session's action mode under the real SDK id. If the pending id
  *  was registered as a manual start_development (`pendingDevLink`), flip the
  *  owning intent to `in_progress` and link the real dev session id.
@@ -24,27 +24,27 @@
  *  Both domains fan out a `session_started` broadcast so every WS connection
  *  updates its active-session pointer (the client checks its own `clientId`).
  *
- * ── Intents-automation domain (`run:settled`, kind=『session』) ──────
+ * ── Intents-automation domain (`run:settled`, sessionKind=『work』) ──────
  *  Broadcast the refreshed session list (title/order). For any settled session
  *  that matches an intent's `lastDevSessionId`, refresh the intent list and,
  *  if the project's automation controller is active, forward the event so the
  *  state machine drives the next action (judge → commit → next intent).
  *
- * ── Discussion domain (`run:settled`, kind=『discussion』) ───────────
+ * ── Discussion domain (`run:settled`, sessionKind=『discussion』) ───────────
  *  Broadcast the refreshed discussion list on settle. The discussion run
  *  starters (`discussion-runs.ts`) publish `run:started`/`run:bound`/
- *  `run:settled` with kind='discussion'; this subscription handles the
+ *  `run:settled` with sessionKind='discussion'; this subscription handles the
  *  domain broadcast so each starter's `.finally()` does not need to.
  *
- * ── Schedule domain (`run:settled`, kind=『schedule』) ──────────────
+ * ── Schedule domain (`run:settled`, sessionKind=『schedule』) ──────────────
  *  Broadcast the refreshed schedule list on settle. The schedule engine
  *  (`scheduler.ts`) publishes `run:started`/`run:bound`/`run:settled` with
- *  kind='schedule'; this subscription replaces the old `store.broadcast`
+ *  sessionKind='schedule'; this subscription replaces the old `store.broadcast`
  *  call for the schedule list refresh.
  *
  * ── Schedule trigger (unchanged) ─────────────────────────────────────
  *  The existing `dispatchEventSchedules` subscription in
- *  `scheduler-startup.ts` is already resident; only its RunKind filter in
+ *  `scheduler-startup.ts` is already resident; only its SessionKind filter in
  *  `scheduler.ts` is changed to an explicit whitelist.
  *
  * IMPORTANT (ADR-0009):
@@ -188,7 +188,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     const rt = getRuntime(realId) ?? getRuntime(prevId)
     if (!rt) return // idempotent no-op for unknown sessions
 
-    if (rt.kind === 'intent' && getRuntime(realId)) {
+    if (rt.sessionKind === 'intent' && getRuntime(realId)) {
       // ── Intent-communication session ──
       // Guard: getRuntime(realId) must exist (genuine pending→real path).
       // On the resume edge prevId is already real — `rebindChatSession`
@@ -204,7 +204,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
         broadcastIntents(rt.workspacePath)
       }
       broadcastIntentSessions(rt.workspacePath)
-    } else if (rt.kind === 'spec') {
+    } else if (rt.sessionKind === 'spec') {
       // ── Spec-authoring session ──
       // Link the real spec session id back onto the originating intent so the
       // ledger's spec_session_id reflects the live session. takePendingSpecLink
@@ -251,14 +251,14 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   })
 
   // ── run:settled ──────────────────────────────────────────────────────
-  // Broadcast session list refresh always. For `session` kind runs, also
+  // Broadcast session list refresh always. For `work` sessionKind runs, also
   // match against intent `lastDevSessionId` to refresh intent status and
   // forward to the project's automation controller.
-  eventBus.subscribe('run:settled', ({ sessionId, workspacePath, reason, kind }) => {
+  eventBus.subscribe('run:settled', ({ sessionId, workspacePath, reason, sessionKind }) => {
     // Always refresh the session list (title / order / status).
     broadcastSessions(workspacePath)
 
-    if (kind !== 'session') return // only session runs affect intent state
+    if (sessionKind !== 'work') return // only work runs affect intent state
 
     const unboundIntentId = clearPendingDevLink(sessionId)
     if (unboundIntentId) releaseDevLaunch(unboundIntentId)
@@ -303,50 +303,50 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     notifyTurnSettled(workspacePath, sessionId, reason, matched.id)
   })
 
-  // ── run:settled (kind=discussion) — discussion domain ──────────────
+  // ── run:settled (sessionKind=discussion) — discussion domain ──────────────
   // Broadcast the refreshed discussion list when a discussion run (research
   // or orchestrator) settles. The discussion run starters in
   // `discussion-runs.ts` publish `run:started`/`run:bound` on start and
   // `run:settled` on finish/abort/error; this subscription reacts to the
   // latter to refresh the domain list.
-  eventBus.subscribe('run:settled', ({ workspacePath, kind }) => {
-    if (kind !== 'discussion') return
+  eventBus.subscribe('run:settled', ({ workspacePath, sessionKind }) => {
+    if (sessionKind !== 'discussion') return
     broadcastDiscussions(workspacePath)
   })
 
-  // ── run:settled (kind=schedule) — schedule domain ──────────────────
+  // ── run:settled (sessionKind=schedule) — schedule domain ──────────────────
   // Broadcast the refreshed schedule list when a scheduled execution
   // settles. The schedule engine in `scheduler.ts` publishes
-  // `run:started`/`run:bound`/`run:settled` with kind='schedule' around
+  // `run:started`/`run:bound`/`run:settled` with sessionKind='schedule' around
   // each `execute()` call; this subscription replaces the old
   // `store.broadcast` call in `dispatchAndTrack`'s `.finally()`.
-  eventBus.subscribe('run:settled', ({ workspacePath, kind }) => {
-    if (kind !== 'schedule') return
+  eventBus.subscribe('run:settled', ({ workspacePath, sessionKind }) => {
+    if (sessionKind !== 'schedule') return
     broadcastSchedules(workspacePath)
   })
 
-  // ── run:settled (kind=spec) — spec-link safety-net sweep ───────────────
+  // ── run:settled (sessionKind=spec) — spec-link safety-net sweep ───────────────
   // If a spec run settles without ever binding (an error-before-bind edge),
   // clear its pending spec-link entry so the in-memory map never leaks. The
   // happy path already consumed the entry via takePendingSpecLink on bind, so
   // this is an idempotent no-op there.
-  eventBus.subscribe('run:settled', ({ sessionId, kind }) => {
-    if (kind !== 'spec') return
+  eventBus.subscribe('run:settled', ({ sessionId, sessionKind }) => {
+    if (sessionKind !== 'spec') return
     clearPendingSpecLink(sessionId)
   })
 
-  // ── run:settled (kind=intent) — intent-link safety-net sweep ───────────
+  // ── run:settled (sessionKind=intent) — intent-link safety-net sweep ───────────
   // If a refine run settles without ever binding (error-before-bind), clear its
   // pending intent-link entry so the in-memory map never leaks. The happy path
   // already consumed the entry via takePendingIntentLink on bind, so this is an
   // idempotent no-op there.
-  eventBus.subscribe('run:settled', ({ sessionId, kind }) => {
-    if (kind !== 'intent') return
+  eventBus.subscribe('run:settled', ({ sessionId, sessionKind }) => {
+    if (sessionKind !== 'intent') return
     clearPendingIntentLink(sessionId)
   })
 
-  // ── run:settled (kind=session) — wait-user-involve event cancel ──
-  // When a session run settles for ANY reason (complete / error / aborted),
+  // ── run:settled (sessionKind=work) — wait-user-involve event cancel ──
+  // When a work run settles for ANY reason (complete / error / aborted),
   // cancel all still-todo wait-user-involve events for that session.
   // This is a safety net: if the user closes the tab or the process crashes
   // before resolving a pending permission request, the event won't be stuck
@@ -354,8 +354,8 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   // session-scoped events are affected (other sources like intent/discussion
   // have different sourceIds and are left untouched).
   // Broadcast the refreshed todo list after cancellation.
-  eventBus.subscribe('run:settled', ({ sessionId, workspacePath, kind }) => {
-    if (kind !== 'session') return
+  eventBus.subscribe('run:settled', ({ sessionId, workspacePath, sessionKind }) => {
+    if (sessionKind !== 'work') return
     if (!isWaitUserEventsStoreAvailable()) return
     cancelBySourceId(sessionId)
     broadcastWaitUserEvents(workspacePath)

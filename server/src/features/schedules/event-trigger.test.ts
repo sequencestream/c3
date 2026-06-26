@@ -290,7 +290,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
     })
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
@@ -301,18 +301,18 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/other',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
     })
     expect(appendLog).not.toHaveBeenCalled()
   })
 
-  it('never fires for intent (non-session) runs', () => {
+  it('never fires for intent (non-work) runs', () => {
     install([evSched({ id: 'm3' })])
     dispatchEventSchedules('run:settled', {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'complete',
-      kind: 'intent',
+      sessionKind: 'intent',
     })
     expect(appendLog).not.toHaveBeenCalled()
   })
@@ -323,14 +323,14 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'complete',
-      kind: 'session',
+      sessionKind: 'work',
     })
     expect(appendLog).not.toHaveBeenCalled()
     dispatchEventSchedules('run:settled', {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'error',
-      kind: 'session',
+      sessionKind: 'work',
     })
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
@@ -340,7 +340,7 @@ describe('scheduler — dispatchEventSchedules', () => {
     dispatchEventSchedules('run:started', {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
-      kind: 'session',
+      sessionKind: 'work',
     })
     expect(appendLog).not.toHaveBeenCalled()
   })
@@ -353,7 +353,7 @@ describe('scheduler — dispatchEventSchedules', () => {
       sessionId: 's',
       workspacePath: '/abs/ws-a',
       reason: 'complete' as const,
-      kind: 'session' as const,
+      sessionKind: 'work' as const,
     }
     dispatchEventSchedules('run:settled', payload)
     dispatchEventSchedules('run:settled', payload)

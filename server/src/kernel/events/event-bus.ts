@@ -34,6 +34,7 @@ import type {
   PrOperationEvent,
   RunEndReason,
   RunKind,
+  SessionKind,
   VendorId,
 } from '@ccc/shared/protocol'
 
@@ -48,21 +49,28 @@ export interface EventBusEvents {
   /**
    * A run started — `launchRun` began a turn (published once per launchRun,
    * before the vendor fork, so it covers both the claude and driver paths).
-   * `kind` is the run's {@link RunKind} origin so listeners route by source
-   * (2026-06-08): event-triggered schedules only fire on `'session'`.
+   * `sessionKind` is the run's {@link SessionKind} business origin (listeners
+   * route by source — event-triggered schedules only fire on `'work'`); `runKind`
+   * is its {@link RunKind} execution form (recorded for audit/extensibility).
    */
-  'run:started': { sessionId: string; workspacePath: string; kind: RunKind }
+  'run:started': {
+    sessionId: string
+    workspacePath: string
+    sessionKind: SessionKind
+    runKind: RunKind
+  }
   /**
    * The run is fully over (terminal state backstop reached). Carries the bound
-   * session id, the terminal `reason`, and the run's {@link RunKind} so
-   * event-triggered schedules can filter by workspace + reason and skip non-session
-   * runs (2026-06-08).
+   * session id, the terminal `reason`, the run's {@link SessionKind} business
+   * origin (so event-triggered schedules can filter by workspace + reason and skip
+   * non-`work` runs) and its {@link RunKind} execution form (audit/extensibility).
    */
   'run:settled': {
     sessionId: string
     workspacePath: string
     reason: RunEndReason
-    kind: RunKind
+    sessionKind: SessionKind
+    runKind: RunKind
   }
   /**
    * A single agent attempt in the degradation chain failed (the bus twin of the

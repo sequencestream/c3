@@ -23,8 +23,8 @@ import type {
   AgentConfig,
   CodexPolicy,
   ModeToken,
-  RunKind,
   Schedule,
+  SessionKind,
   VendorId,
 } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
@@ -43,13 +43,14 @@ import { createScheduleMcpServer } from './c3-mcp.js'
 // ---------------------------------------------------------------------------
 
 /**
- * The dispatcher's RunKind: a scheduled run is launched by the scheduler with NO
- * socket and does NOT go through the run bus. Tagged `'schedule'` so logs/audit
+ * The dispatcher's SessionKind: a scheduled run is launched by the scheduler with
+ * NO socket and does NOT go through the run bus. Tagged `'schedule'` so logs/audit
  * mark it as scheduler-originated. NOTE: this is the scheduler's *own* run; a
  * schedule that is merely *triggered* by a user session does not change that
- * session's `'session'` kind — `'schedule'` identifies the trigger source here.
+ * session's `'work'` kind — `'schedule'` identifies the trigger source here. (Its
+ * execution form is `runKind: 'headless'`.)
  */
-const RUN_KIND: RunKind = 'schedule'
+const SESSION_KIND: SessionKind = 'schedule'
 
 export type UpdateLogFn = (id: string, patch: Record<string, unknown>) => void
 
@@ -449,7 +450,7 @@ async function executeLlmPrompt(
   }
 
   console.log(
-    `[c3:schedules] (${RUN_KIND}) llm run ${schedule.id} @ ${resolveWorkspaceRoot(schedule.workspaceId)!}`,
+    `[c3:schedules] (${SESSION_KIND}) llm run ${schedule.id} @ ${resolveWorkspaceRoot(schedule.workspaceId)!}`,
   )
 
   const maxWallClockMs = maxWallClockMsFor(schedule)

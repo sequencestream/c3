@@ -364,7 +364,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Sessions that already have a title (refineIntent/discussionToIntent) are skipped.
   const autoTitledSessions = new Set<string>()
   setOnEmit((rt, event) => {
-    if (rt.kind !== 'intent') return
+    if (rt.sessionKind !== 'intent') return
     if (event.type !== 'assistant_text') return
     if (autoTitledSessions.has(rt.sessionId)) return
     autoTitledSessions.add(rt.sessionId)

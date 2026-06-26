@@ -13,6 +13,12 @@ import {
   SPEC_LAUNCH_SAFETY_TIMEOUT_MS,
   type SpecLaunchEvent,
 } from '@/lib/spec-launch-view'
+import {
+  shouldJumpAfterDevLaunch,
+  resolveJumpTargetSessionId,
+  resolvePendingWorkSessionSelect,
+  WORK_SESSION_JUMP_DELAY_MS,
+} from '@/lib/work-session-jump'
 import type { DepType } from './state'
 import type { AppCtx } from './types'
 
@@ -27,7 +33,11 @@ export function installIntentActions(ctx: AppCtx): void {
   // success closes silently). Shared by the dwell/safety timers and the
   // message handler's stage / terminal events.
   ctx.dispatchDevLaunch = (ev: DevLaunchEvent): void => {
-    const tr = reduceDevLaunch(ctx.devLaunch.value, ev)
+    // The model being folded carries the target intentId; capture it before the
+    // reducer swaps it out so the `ready` close can arm the jump in both paths
+    // (immediate close, or close via the later dwell-complete event).
+    const prev = ctx.devLaunch.value
+    const tr = reduceDevLaunch(prev, ev)
     ctx.devLaunch.value = tr.model
     if (!tr.model) ctx.clearDevLaunchTimers()
     else if (tr.model.pendingCloseReason && !ctx.devLaunchTimers.dwell) {
@@ -38,6 +48,9 @@ export function installIntentActions(ctx: AppCtx): void {
     }
     if (tr.closedReason === 'failed') ctx.showToast(t('intent.devLaunch.failed'))
     else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.devLaunch.timeout'))
+    // Success terminal: after the overlay closed silently, bridge launched → watch.
+    else if (shouldJumpAfterDevLaunch(tr.closedReason) && prev)
+      ctx.armWorkSessionJump(prev.intentId)
   }
   ctx.dispatchSpecLaunch = (ev: SpecLaunchEvent): void => {
     const tr = reduceSpecLaunch(ctx.specLaunch.value, ev)
@@ -51,6 +64,43 @@ export function installIntentActions(ctx: AppCtx): void {
     }
     if (tr.closedReason === 'failed') ctx.showToast(t('intent.specLaunch.failed'))
     else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.specLaunch.timeout'))
+  }
+
+  // Arm the post-`ready` jump: after the deliberate ~1s "已就绪" buffer, flip to
+  // the console tab and select this intent's newly-launched work session
+  // (`lastDevSessionId`). If the target is already loaded, select it now;
+  // otherwise stage a one-shot pending request and refresh the list so it's
+  // applied once the session lands (see `consumePendingWorkSessionSelect`). The
+  // timer lives in `devLaunchTimers` so a new launch / overlay close cancels it.
+  ctx.armWorkSessionJump = (intentId: string): void => {
+    const workspace = ctx.currentWorkspace.value
+    if (!workspace) return
+    const targetSessionId = resolveJumpTargetSessionId(intentId, ctx.intents.value[workspace] ?? [])
+    if (!targetSessionId) return
+    ctx.devLaunchTimers.jump = setTimeout(() => {
+      ctx.devLaunchTimers.jump = null
+      ctx.enterConsole()
+      const ready = resolvePendingWorkSessionSelect(targetSessionId, ctx.currentSessions.value)
+      if (ready) {
+        ctx.selectSession(workspace, ready)
+      } else {
+        ctx.requestedWorkSessionId.value = targetSessionId
+        ctx.refreshSessions(workspace)
+      }
+    }, WORK_SESSION_JUMP_DELAY_MS)
+  }
+
+  // Consume the one-shot pending work-session select once its target lands in the
+  // current workspace's session list: select it and clear the request. A target
+  // that never appears is silently dropped (the works page keeps its own default).
+  ctx.consumePendingWorkSessionSelect = (): void => {
+    const req = ctx.requestedWorkSessionId.value
+    const workspace = ctx.currentWorkspace.value
+    if (!req || !workspace) return
+    const hit = resolvePendingWorkSessionSelect(req, ctx.currentSessions.value)
+    if (!hit) return
+    ctx.requestedWorkSessionId.value = null
+    ctx.selectSession(workspace, hit)
   }
 
   ctx.openIntents = (path: string): void => {

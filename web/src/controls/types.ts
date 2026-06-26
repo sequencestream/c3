@@ -104,6 +104,14 @@ export interface AppMethods {
   startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
   /** Fold one dev-launch overlay event through the reducer + handle close side-effects. */
   dispatchDevLaunch(ev: DevLaunchEvent): void
+  /**
+   * After a Start-Dev `ready` close, arm the ~1s delayed jump: flip to the console
+   * tab and select the intent's newly-launched work session (`lastDevSessionId`).
+   * No-op when the intent has no dev session id yet.
+   */
+  armWorkSessionJump(intentId: string): void
+  /** Consume the one-shot pending work-session select once the target lands in the list. */
+  consumePendingWorkSessionSelect(): void
   dispatchSpecLaunch(ev: SpecLaunchEvent): void
   setIntentStatus(intentId: string, status: IntentStatus): void
   setIntentAutomate(intentId: string, automateOn: boolean): void

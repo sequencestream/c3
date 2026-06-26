@@ -436,6 +436,9 @@ export function createState(deps: StateDeps) {
   // One-shot request to select a specific intent on the intents page (set by the
   // title-bar jump button, consumed + cleared by Intents.vue once applied).
   const requestedIntentId = ref<string | null>(null)
+  // One-shot request to select a specific work session on the console tab (set by
+  // the post-Start-Dev jump, consumed + cleared once the target lands in the list).
+  const requestedWorkSessionId = ref<string | null>(null)
 
   // The mode-picker options for the viewed session.
   const modeOptions = computed(() => {
@@ -478,15 +481,20 @@ export function createState(deps: StateDeps) {
   // message handler / close helper (clearing) share one source.
   const devLaunch = ref<DevLaunchModel | null>(null)
   const specLaunch = ref<SpecLaunchModel | null>(null)
+  // `jump` is the post-`ready` delayed jump-to-work-session timer; it lives here
+  // so a new launch / overlay close cancels a stale pending jump.
   const devLaunchTimers: {
     dwell: ReturnType<typeof setTimeout> | null
     safety: ReturnType<typeof setTimeout> | null
-  } = { dwell: null, safety: null }
+    jump: ReturnType<typeof setTimeout> | null
+  } = { dwell: null, safety: null, jump: null }
   function clearDevLaunchTimers(): void {
     if (devLaunchTimers.dwell) clearTimeout(devLaunchTimers.dwell)
     if (devLaunchTimers.safety) clearTimeout(devLaunchTimers.safety)
+    if (devLaunchTimers.jump) clearTimeout(devLaunchTimers.jump)
     devLaunchTimers.dwell = null
     devLaunchTimers.safety = null
+    devLaunchTimers.jump = null
   }
   function closeDevLaunch(): void {
     clearDevLaunchTimers()
@@ -633,6 +641,7 @@ export function createState(deps: StateDeps) {
     activeAgentSwitch,
     activeLinkedIntentId,
     requestedIntentId,
+    requestedWorkSessionId,
     toast,
     intentActionError,
     intentActionErrorSeq,

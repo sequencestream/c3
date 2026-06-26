@@ -1943,6 +1943,17 @@ export interface ProposedIntent {
    * batch (nothing is written). See RM-R17.
    */
   dependsOnIndexes?: number[]
+  /**
+   * Optional back-link to the intent-communication session that produced this
+   * intent. ONLY meaningful when the batch saves exactly ONE intent: it lets the
+   * detail view jump back to the originating conversation. When more than one
+   * intent is saved in a batch the field is ignored — there is no single source
+   * session to attribute the batch to. The model fills it with the current
+   * session id injected into its prompt; the save handler normalizes that to the
+   * bound comm-session id so it resolves against `open_intent_chat`. The
+   * `save_intent_directly` (schedule) path never carries it.
+   */
+  intentSessionId?: string
 }
 
 // ---- Discussion ----

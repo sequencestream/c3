@@ -494,6 +494,94 @@ describe('intents spec + session fields (v12→v13)', () => {
   })
 })
 
+describe('upsertIntents — intent_session_id back-link (single-only)', () => {
+  it('writes intent_session_id on a single-intent INSERT that carries it', () => {
+    const [r] = upsertIntents(proj, [
+      {
+        title: 'Solo',
+        shortEnTitle: 'solo',
+        content: '',
+        priority: 'P0',
+        intentSessionId: 'sess-A',
+      },
+    ])
+    expect(getIntent(r.id)?.intentSessionId).toBe('sess-A')
+  })
+
+  it('leaves intent_session_id null on a single-intent INSERT without the field', () => {
+    const [r] = upsertIntents(proj, [
+      { title: 'Solo', shortEnTitle: 'solo', content: '', priority: 'P0' },
+    ])
+    expect(getIntent(r.id)?.intentSessionId).toBeNull()
+  })
+
+  it('writes intent_session_id on a single-intent UPDATE (upsert) sub-path', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'old', shortEnTitle: 'old', content: '', priority: 'P1' },
+    ])
+    expect(getIntent(r.id)?.intentSessionId).toBeNull()
+    upsertIntents(proj, [
+      {
+        id: r.id,
+        title: 'new',
+        shortEnTitle: 'new',
+        content: 'x',
+        priority: 'P0',
+        intentSessionId: 'sess-U',
+      },
+    ])
+    expect(getIntent(r.id)?.intentSessionId).toBe('sess-U')
+  })
+
+  it('preserves an existing intent_session_id when a single UPDATE omits the field', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'old', shortEnTitle: 'old', content: '', priority: 'P1' },
+    ])
+    setIntentSessionId(r.id, 'sess-prior')
+    // Update without the field must not clobber the prior back-link (COALESCE guard).
+    upsertIntents(proj, [
+      { id: r.id, title: 'edited', shortEnTitle: 'edited', content: 'y', priority: 'P0' },
+    ])
+    expect(getIntent(r.id)?.intentSessionId).toBe('sess-prior')
+  })
+
+  it('ignores intent_session_id for a batch (>1) even when every item carries it', () => {
+    const saved = upsertIntents(proj, [
+      { title: 'A', shortEnTitle: 'a', content: '', priority: 'P0', intentSessionId: 'sess-X' },
+      { title: 'B', shortEnTitle: 'b', content: '', priority: 'P1', intentSessionId: 'sess-Y' },
+    ])
+    expect(saved).toHaveLength(2)
+    for (const r of saved) expect(getIntent(r.id)?.intentSessionId).toBeNull()
+  })
+
+  it('a batch (>1) UPDATE never clobbers an existing back-link with the supplied field', () => {
+    const [a] = insertIntents(proj, [
+      { title: 'A', shortEnTitle: 'a', content: '', priority: 'P0' },
+    ])
+    setIntentSessionId(a.id, 'sess-keep')
+    upsertIntents(proj, [
+      {
+        id: a.id,
+        title: 'A2',
+        shortEnTitle: 'a',
+        content: '',
+        priority: 'P0',
+        intentSessionId: 'sess-new',
+      },
+      { title: 'B', shortEnTitle: 'b', content: '', priority: 'P1', intentSessionId: 'sess-new' },
+    ])
+    // >1 batch → the field is forced to null/ignored, so the prior link survives.
+    expect(getIntent(a.id)?.intentSessionId).toBe('sess-keep')
+  })
+
+  it('insertIntents (save_intent_directly path) ignores intentSessionId entirely', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Draft', shortEnTitle: 'd', content: '', priority: 'P0', intentSessionId: 'sess-Z' },
+    ])
+    expect(getIntent(r.id)?.intentSessionId).toBeNull()
+  })
+})
+
 describe('resolveBatchDependencies (pure)', () => {
   const ids = ['id-0', 'id-1', 'id-2']
 

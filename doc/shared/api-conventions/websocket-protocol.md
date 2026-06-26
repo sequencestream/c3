@@ -820,7 +820,7 @@ schedule 的执行日志。
 - **`IntentPriority`** — `'P0' | 'P1' | 'P2' | 'P3'`（P0 最高）。
 - **`IntentStatus`** — `'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'`。
 - **`Intent`** — `{ id, workspacePath, title, content, priority, module, status, dependsOn, lastDevSessionId, automate, createdAt, updatedAt, completedAt, runStatus }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态。
-- **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。
+- **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes?, intentSessionId? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。`intentSessionId` 是把本条意图回链到产出它的沟通会话的可选字段，**仅当本批只保存 1 条意图时才生效**（批量 >1 条时落库核心一律忽略，不写入任何行）；模型填入提示中注入的当前会话 id，保存处理器再将其归一化为 bind 后的真实会话 id（`open_intent_chat` 可解析）。`save_intent_directly`（schedule 路径）的 schema 不含该字段。
 - **`AutomationState`** — `'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'`。
 - **`AutomationStatus`** — `{ workspacePath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。
 

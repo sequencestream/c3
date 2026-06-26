@@ -604,6 +604,13 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
   const d = requireDb()
   const proj = resolve(workspacePath)
   const now = Date.now()
+  // Single-intent comm back-link: write `intent_session_id` ONLY when the batch holds
+  // exactly one item carrying it. A multi-item batch (>1) NEVER writes it — there is no
+  // single source session for a batch — so the field is forced to null regardless of
+  // what was supplied. This is the falling-back half of the double-guard (the schema
+  // description is the other half). On UPDATE the column is COALESCE-protected so an
+  // absent value preserves any existing back-link (e.g. the refine `run:bound` fill).
+  const sessionIdParam = items.length === 1 ? (items[0].intentSessionId ?? null) : null
   // Resolve every item to a stable id up front: the existing id for updates, a fresh
   // uuid for inserts. dependsOnIndexes then resolves against THIS id array regardless of
   // whether the referenced sibling is brand-new or being updated.
@@ -637,7 +644,7 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
         const module = it.module !== undefined ? it.module : prior.module
         d.run(
           `UPDATE intents
-             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, updated_at=?, completed_at=?
+             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?
            WHERE id=?`,
           it.title,
           truncateShortEnTitle(it.shortEnTitle),
@@ -645,6 +652,7 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
           it.priority,
           module,
           status,
+          sessionIdParam,
           now,
           null,
           ids[i],
@@ -666,8 +674,8 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, intent_session_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
@@ -684,6 +692,7 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
           null,
           null,
           null,
+          sessionIdParam,
         )
         for (const dep of deps[i]) {
           d.run(

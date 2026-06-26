@@ -1957,10 +1957,11 @@
       }
     },
     "source": {
-      "session": "会话",
+      "work": "会话",
       "intent": "需求",
       "discussion": "讨论",
-      "schedule": "定时任务"
+      "schedule": "定时任务",
+      "spec": "规格"
     },
     "action": {
       "jump": "跳转到源"

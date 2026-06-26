@@ -628,10 +628,19 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         gate,
         // Only meaningful for the spec gate: confines write-class tools to this dir.
         specDir,
-        // WorkCenter event source: the read-only comm agent's prompts are `intent`,
-        // every other gate (standard work session, spec) is `session`.
-        // discussion-research never raises a human prompt, so its source is inert.
-        source: gate === 'intent' ? 'intent' : 'session',
+        // WorkCenter source mapped from THIS run's gate (the agent path carries the
+        // gate, not a SessionKind): intent comm agent → 'intent', spec write gate →
+        // 'spec', discussion-research → 'discussion' (never prompts, so inert), the
+        // standard work session → 'work'. Mirrors `sessionKindToWaitUserSource` but
+        // keyed off the gate token, so a spec prompt no longer collapses to a session.
+        source:
+          gate === 'intent'
+            ? 'intent'
+            : gate === 'spec'
+              ? 'spec'
+              : gate === 'discussion-research'
+                ? 'discussion'
+                : 'work',
         send,
         signal,
         currentAgentId: currentAgentId ?? null,

@@ -27,10 +27,11 @@ const emit = defineEmits<{
 // ---- Source type icon mapping ----
 
 const SOURCE_ICONS: Record<string, string> = {
-  session: '💬',
+  work: '💬',
   intent: '🎯',
   discussion: '📢',
   schedule: '⏰',
+  spec: '📝',
 }
 
 function sourceIcon(source: string): string {

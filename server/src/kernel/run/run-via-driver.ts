@@ -19,6 +19,7 @@
  */
 import {
   PENDING_SESSION_PREFIX,
+  sessionKindToWaitUserSource,
   type PromptImage,
   type RunEndReason,
   type ServerToClient,
@@ -264,7 +265,7 @@ export function makeDriverApprovalHandler(deps: {
     const runId = deps.getRunId()
     // Register the WorkCenter event + broadcast BEFORE the wire frame, so a prompt
     // on a codex session lands in the pending-items panel + badge, not just
-    // the active chat. Source is the runtime kind (session / intent).
+    // the active chat. Source is the runtime kind (work / intent / spec / …).
     deps.onPermissionRequest?.({
       requestId: req.requestId,
       toolName: req.toolName,
@@ -356,7 +357,9 @@ export async function runViaDriver(
     makeDriverApprovalHandler({
       getRunId: () => runId,
       workspacePath,
-      source: rt.sessionKind === 'intent' ? 'intent' : 'session',
+      // WorkCenter source faithfully derived from the run's business kind (intent /
+      // spec / discussion / schedule / work) — not the old intent-vs-session collapse.
+      source: sessionKindToWaitUserSource(rt.sessionKind),
       signal: cycleAbort.signal,
       emit,
       waitForDecision,

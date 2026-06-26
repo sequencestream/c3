@@ -329,6 +329,23 @@ original input plus the chosen `answers`. This is the documented PG-R6 exception
 > 注：automation 编排的 checkpoint 共识（continue/wait）不镜像进 WorkCenter，仍仅经
 > `AutomationStatus.checkpointConsensus` 广播（有意决策，避免重复留痕）。
 
+### 来源契约与溯源跳转（WorkCenter）
+
+每条 `WaitUserInvolveEvent` 携带的 `source` 是 `SessionKind` 的「可溯源跳转子集」
+`work | intent | discussion | schedule | spec`，由 `sessionKindToWaitUserSource`
+单向派生（driver 路径读 `sessionKind`，claude 网控路径读 gate：`intent`→intent、
+`spec`→spec、`discussion-research`→discussion、`standard`→work）。`consensus` / `tool`
+不产生人工门控事件，不入该集合，映射兜底为 `work`。旧 `session` 取值已折叠为 `work`
+（存储内迁移 + 前端对未知来源兜底）。
+
+`workspaceId` 为不透明工作区 id：store 持久化绝对路径，读出时经 `pathToId` 映射为 id，
+工作区已注销的行被丢弃而非下发破损 id；`list_wait_user_events` 读取端先经
+`resolveWorkspaceRoot` 把 id 解析回路径再查库（未注册 id 降级为空快照），避免把 id 当
+路径直接查询导致历史 / auto 标签 re-fetch 恒空。`sourceId` 的含义与缺失降级见
+`websocket-protocol.md` 的 `wait_user_events` 条目。其中 `intent` 来源的 `sourceId`
+有二义（意图对象 id 或 comm 会话 id），前端按「先意图、再 comm 会话、再降级」消解，
+不为消歧给协议加判别字段。
+
 ## Wire protocol
 
 - `permission_request.consensus` is the consensus outcome — the allow/deny outcome

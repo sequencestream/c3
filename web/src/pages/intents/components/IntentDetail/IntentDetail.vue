@@ -600,7 +600,7 @@ defineExpose({
                 :aria-pressed="intent.automate"
                 @click="emit('set-automate', intent.id, !intent.automate)"
               >
-                {{ intent.automate ? '⏳' : '✋' }}
+                {{ intent.automate ? '⚙' : '🖱' }}
               </button>
             </div>
           </div>

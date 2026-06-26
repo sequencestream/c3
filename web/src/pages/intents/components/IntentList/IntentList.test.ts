@@ -86,16 +86,16 @@ describe('IntentList.vue — selection model', () => {
     expect(w.find('.req-chevron').exists()).toBe(false)
   })
 
-  it('renders the auto-mode icon ⏳ for automate intents and ✋ for manual ones', () => {
+  it('renders the auto-mode icon ⚙ for automate intents and 🖱 for manual ones', () => {
     const w = mountList([
       intent({ id: 'auto-1', automate: true }),
       intent({ id: 'manual-1', automate: false }),
     ])
     const icons = w.findAll('.req-automate')
 
-    expect(icons[0].text()).toBe('⏳')
+    expect(icons[0].text()).toBe('⚙')
     expect(icons[0].attributes('aria-pressed')).toBe('true')
-    expect(icons[1].text()).toBe('✋')
+    expect(icons[1].text()).toBe('🖱')
     expect(icons[1].attributes('aria-pressed')).toBe('false')
   })
 

@@ -5,7 +5,7 @@
  * `lib/work-session-jump.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Intent, SessionInfo } from '@ccc/shared/protocol'
 import { beginDevLaunch } from '@/lib/dev-launch-view'
 import { WORK_SESSION_JUMP_DELAY_MS } from '@/lib/work-session-jump'
@@ -53,6 +53,7 @@ function makeCtx(opts: { intents?: Intent[]; sessions?: SessionInfo[] }) {
     activeTab: ref('intents'),
     currentWorkspace,
     intents,
+    currentIntents: computed(() => intents.value[WS] ?? []),
     currentSessions,
     requestedWorkSessionId,
     devLaunch,
@@ -128,5 +129,36 @@ describe('post-Start-Dev jump wiring', () => {
     h.ctx.consumePendingWorkSessionSelect()
     expect(h.selectSession).not.toHaveBeenCalled()
     expect(h.requestedWorkSessionId.value).toBe('dev-1')
+  })
+})
+
+describe('setIntentAutomate — todo-only mode switching', () => {
+  function withStatus(id: string, status: Intent['status']): Intent {
+    return { id, status } as Intent
+  }
+
+  it('sends set_intent_automate for a todo intent', () => {
+    const h = makeCtx({ intents: [withStatus('i-1', 'todo')] })
+    h.ctx.setIntentAutomate('i-1', true)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'set_intent_automate',
+      intentId: 'i-1',
+      automate: true,
+    })
+    expect(h.showToast).not.toHaveBeenCalled()
+  })
+
+  it('blocks switching for a done intent and surfaces the locked toast', () => {
+    const h = makeCtx({ intents: [withStatus('i-1', 'done')] })
+    h.ctx.setIntentAutomate('i-1', true)
+    expect(h.ctx.send).not.toHaveBeenCalled()
+    expect(h.showToast).toHaveBeenCalledWith('intent.automate.locked.toast')
+  })
+
+  it('blocks switching for an in_progress intent', () => {
+    const h = makeCtx({ intents: [withStatus('i-1', 'in_progress')] })
+    h.ctx.setIntentAutomate('i-1', false)
+    expect(h.ctx.send).not.toHaveBeenCalled()
+    expect(h.showToast).toHaveBeenCalledWith('intent.automate.locked.toast')
   })
 })

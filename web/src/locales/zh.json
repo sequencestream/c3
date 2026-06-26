@@ -725,6 +725,9 @@
       },
       "manual": {
         "tooltip": "手动触发模式"
+      },
+      "locked": {
+        "toast": "仅待办状态的意图可切换自动/手动模式"
       }
     },
     "sessionList": {

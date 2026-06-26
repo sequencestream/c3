@@ -236,6 +236,8 @@ c3 restart
 ```
 
 `start` is the default command, so `c3` on its own is equivalent to `c3 start`.
+An unsupported subcommand (e.g. `c3 up`) does **not** start c3 — it prints an
+`unknown command` error, exits non-zero, and points you to `c3 --help`.
 
 - `verify <file>`: offline-check a downloaded artifact against the embedded minisign public
   key (see [Download & verify](#download--verify)). Exit 0 = `VERIFIED`, non-zero = tampered

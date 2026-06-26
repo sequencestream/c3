@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
+import type { Command as CommanderCommand } from 'commander'
+import { findUnknownCommand } from './cli-args.js'
 import { resolve } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 import { startServer } from './server.js'
@@ -83,7 +85,17 @@ program
     '--settings <path>',
     'path to settings.json (overrides the default ~/.c3/settings.json; its directory also holds state.json)',
   )
-  .action(async (opts: LaunchOpts & { daemon: boolean }) => {
+  .action(async (opts: LaunchOpts & { daemon: boolean }, command: CommanderCommand) => {
+    // Guard BEFORE any side-effecting launch step: an unsupported subcommand
+    // (e.g. `c3 up`) lands here as an excess operand instead of routing to a real
+    // command. Report it and exit non-zero rather than silently starting c3.
+    const unknown = findUnknownCommand(command.args)
+    if (unknown) {
+      console.error(`[c3] error: unknown command '${unknown.unknown}'`)
+      console.error("[c3] run 'c3 --help' to see the available commands")
+      process.exit(1)
+    }
+
     const { workspacePath, port, dev, settingsPath } = resolveLaunchOptions(opts)
     // Relocate the config dir before anything reads settings (loadSettings is lazy).
     // Done AFTER resolveLaunchOptions so the daemon child gets the absolute path too.

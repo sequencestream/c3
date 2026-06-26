@@ -257,6 +257,8 @@ export function installMessageHandler(ctx: AppCtx): void {
           ctx.flags.pendingConsoleBind = false
           if (activeTab.value === 'console') ctx.bindConsoleSession()
         }
+        // The post-Start-Dev jump may be waiting for its target session to land.
+        ctx.consumePendingWorkSessionSelect()
         break
       }
       case 'session_selected':

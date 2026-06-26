@@ -1,11 +1,14 @@
 <script setup lang="ts">
 /*
- * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 底部 5 视图 tab。
+ * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 底部 5 个工作区子 tab。
  * 会话标题与权限模式已下移到聊天列顶部的 SessionTitleBar(WC-R9)。
  *
- * 2026-06-08 新增 viewMode 支持:
- * - workspace 模式:左侧 WS switcher + 项目配置,中间标签页,右侧 viewMode 切换 + 设置
- * - workcenter 模式:左侧 workcenter 导航按钮,中间区域隐藏,右侧 viewMode 切换 + 设置
+ * viewMode(工作区/工作台)切换器位于顶栏最左侧,为两个显示器图标按钮(工作区=屏内
+ * 三横条;工作台=屏内会话气泡),生效模式蓝、另一个灰;桌面与移动端共用同一份图标标记。
+ * 工作台未处理事件徽标(workcenterBadgeCount)挂在顶部工作台图标上。
+ * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,右侧设置/账户/状态/许可
+ * - workcenter 模式:左侧切换器 + workcenter 导航按钮,中间区域隐藏,右侧同上
+ * 移动端底部 tab 仅含 5 个工作区子视图(工作台入口已上移到顶部切换器,不再在底部 tab)。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { LicenseStatus, WorkspaceInfo } from '@ccc/shared/protocol'
@@ -172,21 +175,20 @@ onBeforeUnmount(() => {
   if (refreshCooldownTimer) clearTimeout(refreshCooldownTimer)
 })
 
-function isTabDisabled(tab: HeaderTab): boolean {
-  return tab.key !== 'workcenter' && props.tabsEnabled === false
-}
+// 工作区/工作台两模式切换器(顶栏最左,桌面 + 移动端共用同一份图标标记)。
+// 当前生效模式图标蓝(--c-primary),另一个灰(--c-text-muted),点击 emit update:viewMode。
+const VIEW_MODES: ReadonlyArray<{ key: 'workspace' | 'workcenter'; labelKey: LocaleKey }> = [
+  { key: 'workspace', labelKey: 'nav.viewMode.workspace' as LocaleKey },
+  { key: 'workcenter', labelKey: 'nav.viewMode.workcenter' as LocaleKey },
+]
 
+// 底部 tab 仅承载工作区子视图(工作台入口已上移到顶部图标切换器);故无 workcenter 分支。
 function isTabActive(tab: HeaderTab): boolean {
-  if (tab.key === 'workcenter') return props.viewMode === 'workcenter'
   return props.viewMode === 'workspace' && tab.key === props.activeTab
 }
 
 function selectTab(tab: HeaderTab): void {
-  if (isTabDisabled(tab)) return
-  if (tab.key === 'workcenter') {
-    emit('update:viewMode', 'workcenter')
-    return
-  }
+  if (props.tabsEnabled === false) return
   if (props.viewMode !== 'workspace') emit('update:viewMode', 'workspace')
   emit('select-tab', tab.key)
 }
@@ -195,6 +197,68 @@ function selectTab(tab: HeaderTab): void {
 <template>
   <header class="app-header">
     <div class="desktop-header-row">
+      <!-- viewMode 切换器:整行第一个元素,恒定渲染,两图标始终在最左 -->
+      <div class="view-mode-toggle">
+        <button
+          v-for="mode in VIEW_MODES"
+          :key="mode.key"
+          type="button"
+          class="vm-toggle-btn"
+          :class="{ active: viewMode === mode.key }"
+          :title="t(mode.labelKey)"
+          :aria-label="t(mode.labelKey)"
+          @click="emit('update:viewMode', mode.key)"
+        >
+          <!-- 工作区:显示器 + 屏内三条长短不一横条 -->
+          <svg
+            v-if="mode.key === 'workspace'"
+            class="vm-icon"
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect x="3" y="4" width="18" height="13" rx="1.5" />
+            <path d="M9 20h6M12 17v3" />
+            <path d="M7 8h7" />
+            <path d="M7 11h10" />
+            <path d="M7 14h5" />
+          </svg>
+          <!-- 工作台:显示器 + 屏内会话气泡 -->
+          <svg
+            v-else
+            class="vm-icon"
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect x="3" y="4" width="18" height="13" rx="1.5" />
+            <path d="M9 20h6M12 17v3" />
+            <path
+              d="M7.5 7.5h9a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-4.5l-2.5 2v-2H7.5a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1Z"
+            />
+          </svg>
+          <span
+            v-if="mode.key === 'workcenter' && (workcenterBadgeCount ?? 0) > 0"
+            class="vm-badge"
+            >{{ workcenterBadgeCount }}</span
+          >
+        </button>
+      </div>
+
       <!-- Left area: workspace mode — WorkspaceSwitcher + project config -->
       <template v-if="viewMode === 'workspace'">
         <WorkspaceSwitcher
@@ -240,25 +304,8 @@ function selectTab(tab: HeaderTab): void {
         </button>
       </nav>
 
-      <!-- Right area: viewMode toggle + settings + status -->
+      <!-- Right area: settings + account + status + license -->
       <div class="header-right">
-        <div class="view-mode-toggle">
-          <button
-            class="vm-toggle-btn"
-            :class="{ active: viewMode === 'workspace' }"
-            @click="emit('update:viewMode', 'workspace')"
-          >
-            {{ t('nav.viewMode.workspace') }}
-          </button>
-          <button
-            class="vm-toggle-btn"
-            :class="{ active: viewMode === 'workcenter' }"
-            @click="emit('update:viewMode', 'workcenter')"
-          >
-            {{ t('nav.viewMode.workcenter') }}
-          </button>
-        </div>
-
         <button
           v-if="isAdmin"
           class="icon-btn settings-btn"
@@ -381,6 +428,66 @@ function selectTab(tab: HeaderTab): void {
     </div>
 
     <div class="mobile-header-row">
+      <!-- viewMode 切换器:与桌面同款两图标,移动端置于顶栏左侧 -->
+      <div class="view-mode-toggle">
+        <button
+          v-for="mode in VIEW_MODES"
+          :key="mode.key"
+          type="button"
+          class="vm-toggle-btn"
+          :class="{ active: viewMode === mode.key }"
+          :title="t(mode.labelKey)"
+          :aria-label="t(mode.labelKey)"
+          @click="emit('update:viewMode', mode.key)"
+        >
+          <svg
+            v-if="mode.key === 'workspace'"
+            class="vm-icon"
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect x="3" y="4" width="18" height="13" rx="1.5" />
+            <path d="M9 20h6M12 17v3" />
+            <path d="M7 8h7" />
+            <path d="M7 11h10" />
+            <path d="M7 14h5" />
+          </svg>
+          <svg
+            v-else
+            class="vm-icon"
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect x="3" y="4" width="18" height="13" rx="1.5" />
+            <path d="M9 20h6M12 17v3" />
+            <path
+              d="M7.5 7.5h9a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-4.5l-2.5 2v-2H7.5a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1Z"
+            />
+          </svg>
+          <span
+            v-if="mode.key === 'workcenter' && (workcenterBadgeCount ?? 0) > 0"
+            class="vm-badge"
+            >{{ workcenterBadgeCount }}</span
+          >
+        </button>
+      </div>
+
       <div class="mobile-workspace">
         <WorkspaceSwitcher
           :workspaces="workspaces"
@@ -434,18 +541,11 @@ function selectTab(tab: HeaderTab): void {
 
     <nav class="mobile-bottom-tabs" role="tablist" aria-label="Primary views">
       <button
-        v-for="tab in [
-          ...tabs,
-          {
-            key: 'workcenter',
-            label: t('nav.tab.workcenter.label'),
-            badgeCount: workcenterBadgeCount,
-          },
-        ]"
+        v-for="tab in tabs"
         :key="tab.key"
         class="mobile-bottom-tab"
         :class="{ active: isTabActive(tab), 'has-badge': (tab.badgeCount ?? 0) > 0 }"
-        :disabled="isTabDisabled(tab)"
+        :disabled="tabsEnabled === false"
         role="tab"
         :aria-selected="isTabActive(tab)"
         @click="selectTab(tab)"
@@ -470,35 +570,55 @@ function selectTab(tab: HeaderTab): void {
   display: none;
 }
 
+/* viewMode 切换器:两个显示器图标按钮,生效模式蓝、另一个灰(随 viewMode 互换);
+   图标用 currentColor 着色,故色彩由按钮 color 驱动。桌面与移动端共用同一份样式。 */
 .view-mode-toggle {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  gap: var(--sp-1);
+  flex-shrink: 0;
 }
 .vm-toggle-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
   background: transparent;
   border: none;
-  padding: 2px 12px;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
   color: var(--c-text-muted);
   cursor: pointer;
   transition:
     color var(--dur-fast) var(--ease-standard),
     background-color var(--dur-fast) var(--ease-standard);
-  line-height: 1.6;
-}
-.vm-toggle-btn:not(:last-child) {
-  border-right: 1px solid var(--c-border);
 }
 .vm-toggle-btn:hover {
-  color: var(--c-text);
   background: var(--c-card);
 }
 .vm-toggle-btn.active {
-  color: var(--c-text);
-  background: var(--c-card);
+  color: var(--c-primary);
+}
+.vm-icon {
+  display: block;
+}
+/* 工作台未处理事件徽标:挂在工作台图标按钮右上角,计数为 0 时不渲染 */
+.vm-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  background: var(--c-danger, #e53e3e);
+  border-radius: 8px;
 }
 
 /* Product-license 状态控件(PL-R7):受控 <details> 下拉 */
@@ -797,7 +917,7 @@ function selectTab(tab: HeaderTab): void {
     height: calc(56px + var(--safe-area-bottom));
     padding: 0 var(--sp-1) var(--safe-area-bottom);
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     background: var(--c-panel);
     border-top: 1px solid var(--c-border);
   }

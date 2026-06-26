@@ -68,31 +68,10 @@ describe('AppHeader.vue — top-bar tabs', () => {
     expect(w.find('.mode').exists()).toBe(false)
   })
 
-  it('移动端底部导航渲染 5 个视图并保留工作台徽标', () => {
+  it('移动端底部导航仅渲染工作区子 tab,不含工作台', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.mobile-bottom-tab')
-    expect(tabs.map((t) => t.text())).toEqual([
-      'Works',
-      'Intents',
-      'Discussions',
-      'Schedules',
-      'Workcenter2',
-    ])
-    expect(tabs[4].classes()).toContain('has-badge')
-    expect(tabs[4].find('.tab-badge').text()).toBe('2')
-  })
-
-  it('点击移动端工作台 tab → 切换 viewMode 到 workcenter', async () => {
-    const w = mount(AppHeader, { props: baseProps })
-    await w.findAll('.mobile-bottom-tab')[4].trigger('click')
-    expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
-  })
-
-  it('workcenter 模式点击移动端工作区 tab → 先回 workspace 再选择 tab', async () => {
-    const w = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
-    await w.findAll('.mobile-bottom-tab')[1].trigger('click')
-    expect(w.emitted('update:viewMode')).toEqual([['workspace']])
-    expect(w.emitted('select-tab')).toEqual([['intents']])
+    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Schedules'])
   })
 
   it('管理员显示系统设置入口(桌面 ⚙ + 移动端菜单项)', () => {
@@ -107,17 +86,78 @@ describe('AppHeader.vue — top-bar tabs', () => {
     expect(w.find('.settings-btn').exists()).toBe(false)
   })
 
-  it('无当前工作区时移动端工作区 tab 禁用,工作台 tab 仍可进入', async () => {
+  it('无当前工作区(tabsEnabled=false)→ 移动端底部工作区 tab 全部禁用且点击不 emit', async () => {
     const w = mount(AppHeader, {
       props: { ...baseProps, currentWorkspace: null, tabsEnabled: false },
     })
     const tabs = w.findAll('.mobile-bottom-tab')
     expect(tabs[0].attributes('disabled')).toBeDefined()
-    expect(tabs[4].attributes('disabled')).toBeUndefined()
     await tabs[0].trigger('click')
-    await tabs[4].trigger('click')
     expect(w.emitted('select-tab')).toBeUndefined()
+  })
+
+  it('workcenter 模式点击移动端底部工作区 tab → 先回 workspace 再选择 tab', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
+    await w.findAll('.mobile-bottom-tab')[1].trigger('click')
+    expect(w.emitted('update:viewMode')).toEqual([['workspace']])
+    expect(w.emitted('select-tab')).toEqual([['intents']])
+  })
+})
+
+describe('AppHeader.vue — 顶部 viewMode 图标切换器', () => {
+  it('桌面切换器渲染为 desktop-header-row 第一个元素,header-right 不再含切换器', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    const row = w.find('.desktop-header-row')
+    expect(row.element.firstElementChild?.classList.contains('view-mode-toggle')).toBe(true)
+    expect(w.find('.header-right .view-mode-toggle').exists()).toBe(false)
+  })
+
+  it('移动端顶栏左侧出现同款两图标切换器', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    const btns = w.findAll('.mobile-header-row .vm-toggle-btn')
+    expect(btns).toHaveLength(2)
+  })
+
+  it('生效模式图标带 active 类、另一个不带(蓝/灰由 .active 驱动),随 viewMode 互换', () => {
+    const ws = mount(AppHeader, { props: baseProps })
+    const dWs = ws.findAll('.desktop-header-row .vm-toggle-btn')
+    expect(dWs[0].classes()).toContain('active')
+    expect(dWs[1].classes()).not.toContain('active')
+
+    const wc = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
+    const dWc = wc.findAll('.desktop-header-row .vm-toggle-btn')
+    expect(dWc[0].classes()).not.toContain('active')
+    expect(dWc[1].classes()).toContain('active')
+  })
+
+  it('点击桌面工作台图标 → emit update:viewMode(workcenter)', async () => {
+    const w = mount(AppHeader, { props: baseProps })
+    await w.findAll('.desktop-header-row .vm-toggle-btn')[1].trigger('click')
     expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
+  })
+
+  it('点击移动端工作台图标 → emit update:viewMode(workcenter)', async () => {
+    const w = mount(AppHeader, { props: baseProps })
+    await w.findAll('.mobile-header-row .vm-toggle-btn')[1].trigger('click')
+    expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
+  })
+
+  it('workcenter 模式点击工作区图标 → emit update:viewMode(workspace)', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
+    await w.findAll('.desktop-header-row .vm-toggle-btn')[0].trigger('click')
+    expect(w.emitted('update:viewMode')).toEqual([['workspace']])
+  })
+
+  it('工作台徽标(workcenterBadgeCount)显示在工作台图标上(桌面 + 移动端)', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    const badges = w.findAll('.vm-badge')
+    expect(badges).toHaveLength(2)
+    expect(badges.every((b) => b.text() === '2')).toBe(true)
+  })
+
+  it('徽标计数为 0 时不渲染', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 0 } })
+    expect(w.findAll('.vm-badge')).toHaveLength(0)
   })
 })
 

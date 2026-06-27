@@ -169,8 +169,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  min-height: 26px;
-  padding: 2px var(--sp-2);
+  min-height: 22px;
+  padding: 1px var(--sp-2);
   border: 0;
   background: transparent;
   color: var(--c-text);
@@ -223,8 +223,8 @@ onBeforeUnmount(() => {
 }
 .tree-context-menu-item {
   width: 100%;
-  min-height: 28px;
-  padding: var(--sp-1) var(--sp-2);
+  min-height: 24px;
+  padding: 3px var(--sp-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;

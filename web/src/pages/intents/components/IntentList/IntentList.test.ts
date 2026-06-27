@@ -1,7 +1,32 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Intent } from '@ccc/shared/protocol'
 import IntentList from './IntentList.vue'
+
+function installMatchMedia(width: number): void {
+  vi.stubGlobal('matchMedia', (query: string): MediaQueryList => {
+    const maxWidth = /max-width:\s*(\d+)px/.exec(query)?.[1]
+    const minWidth = /min-width:\s*(\d+)px/.exec(query)?.[1]
+    const matches =
+      (maxWidth === undefined || width <= Number(maxWidth)) &&
+      (minWidth === undefined || width >= Number(minWidth))
+
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    } as unknown as MediaQueryList
+  })
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
@@ -176,5 +201,61 @@ describe('IntentList.vue — selection model', () => {
     expect(ordered).toBeTruthy()
     // 左侧实际渲染:活跃项 todo-p1 置顶,done-p0 沉底。首条应为活跃项。
     expect((ordered!.at(-1)![0] as string[])[0]).toBe('todo-p1')
+  })
+})
+
+describe('IntentList.vue — responsive header actions', () => {
+  it('shows inline automation and filter controls on desktop', () => {
+    installMatchMedia(1024)
+    const w = mountList([intent({ id: 'intent-1' })])
+
+    expect(w.find('.req-head-right > .auto-btn').exists()).toBe(true)
+    expect(w.find('.req-head-right > .req-filter').exists()).toBe(true)
+    expect(w.find('.req-kebab').exists()).toBe(false)
+  })
+
+  it('moves automation and filter controls into a mobile overflow menu', async () => {
+    installMatchMedia(390)
+    const w = mountList([intent({ id: 'intent-1' })])
+
+    expect(w.find('.req-head-right > .auto-btn').exists()).toBe(false)
+    expect(w.find('.req-head-right > .req-filter').exists()).toBe(false)
+    expect(w.find('.req-kebab').exists()).toBe(true)
+    expect(w.find('.req-menu').exists()).toBe(false)
+
+    await w.find('.req-kebab').trigger('click')
+
+    expect(w.find('.req-menu .auto-btn').exists()).toBe(true)
+    expect(w.find('.req-menu .req-filter').exists()).toBe(true)
+  })
+
+  it('keeps mobile overflow actions wired to the existing events and closes the menu', async () => {
+    installMatchMedia(390)
+    const w = mountList([intent({ id: 'intent-1' })])
+
+    await w.find('.req-kebab').trigger('click')
+    await w.find('.req-menu .auto-btn').trigger('click')
+
+    expect(w.emitted('start-automation')).toHaveLength(1)
+    expect(w.find('.req-menu').exists()).toBe(false)
+
+    await w.find('.req-kebab').trigger('click')
+    await w.find('.req-menu .req-filter').setValue('done')
+
+    expect(w.emitted('filter')?.at(-1)).toEqual(['done'])
+    expect(w.find('.req-menu').exists()).toBe(false)
+  })
+
+  it('closes the mobile overflow menu when clicking outside it', async () => {
+    installMatchMedia(390)
+    const w = mountList([intent({ id: 'intent-1' })])
+
+    await w.find('.req-kebab').trigger('click')
+    expect(w.find('.req-menu').exists()).toBe(true)
+
+    document.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await w.vm.$nextTick()
+
+    expect(w.find('.req-menu').exists()).toBe(false)
   })
 })

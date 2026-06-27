@@ -248,6 +248,8 @@ export async function launchRun(
   // claude path and the driver path can use it.
   const resolvedIntentProfile =
     isIntent && deps.intentProfile ? deps.intentProfile(workspacePath, runId) : undefined
+  const resolvedSpecProfile =
+    isSpec && deps.specProfile ? deps.specProfile(workspacePath) : undefined
   // Resolve the work-session base MCP profile once (publish_pr_event), for plain
   // work sessions only — never for intent/spec runs (those carry their own
   // profiles). Both the claude path and the driver path consume it (2026-06-20).
@@ -340,25 +342,6 @@ export async function launchRun(
   // `system`/`claude` vendors fall through to the claude path.
   {
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
-    // A spec run's write confinement is a claude `canUseTool` mechanism — the
-    // codex driver has no path-level write gate. The handler already rejects a
-    // non-claude spec agent, so reaching here means a config raced after the
-    // check; fail hard rather than author the spec without the write lock (C-SEC).
-    if (isSpec && vendor === 'codex') {
-      const msg =
-        '[c3] spec authoring requires a Claude agent (the codex driver cannot path-confine writes).'
-      emit(runId, { type: 'user_text', text: prompt })
-      emit(runId, { type: 'turn_end', reason: 'error', error: msg })
-      finalizeRun(runId)
-      deps.eventBus.publish('run:settled', {
-        sessionId: runId,
-        workspacePath,
-        reason: 'error',
-        sessionKind: rt.sessionKind,
-        runKind: rt.runKind,
-      })
-      return
-    }
     if (vendor === 'codex') {
       const adapter = deps.getCodexAdapter?.()
       if (adapter)
@@ -372,6 +355,7 @@ export async function launchRun(
           images,
           inject,
           resolvedSessionProfile,
+          resolvedSpecProfile,
         )
       const unavailable =
         'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'

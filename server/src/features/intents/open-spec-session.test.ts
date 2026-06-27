@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { AgentConfig, ServerToClient, SystemSettings } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
@@ -22,18 +22,24 @@ import {
 import { ensureRuntime, getRuntime, removeRuntime } from '../../runs.js'
 import { insertIntents, resetStoreForTests, setSpecPath, setSpecSessionId } from './store.js'
 import { openSpecSession } from './index.js'
+import { resetSettingsCacheForTests, saveSettings } from '../../kernel/config/index.js'
+import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 
 let dir: string
+let prevC3Dir: string | undefined
 let workspaceId: string
 let proj: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-open-spec-'))
   process.env.CLAUDE_CONFIG_DIR = dir
+  prevC3Dir = process.env.C3_DIR
+  process.env.C3_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
   resetStateCacheForTests()
+  resetSettingsCacheForTests()
   addWorkspace(dir, 1)
   workspaceId = pathToId(dir)!
   proj = resolveWorkspaceRoot(workspaceId)!
@@ -42,7 +48,10 @@ beforeEach(() => {
 afterEach(() => {
   resetDbForTests()
   resetStateCacheForTests()
+  resetSettingsCacheForTests()
   delete process.env.CLAUDE_CONFIG_DIR
+  if (prevC3Dir === undefined) delete process.env.C3_DIR
+  else process.env.C3_DIR = prevC3Dir
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
@@ -61,6 +70,25 @@ function fakeConn(over: Partial<Conn> = {}): { conn: Conn; sent: ServerToClient[
     ...over,
   } as Conn
   return { conn, sent }
+}
+
+function configureCodexSpecAgent(): void {
+  const codexAgent: AgentConfig = {
+    id: 'codex-spec',
+    vendor: 'codex',
+    configMode: 'system',
+    displayName: 'Codex Spec',
+    config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+    enabled: true,
+    order_seq: 0,
+  }
+  saveSettings({
+    agents: [codexAgent],
+    defaultAgentId: 'codex-spec',
+    toolAgentId: '',
+    intentAgentId: '',
+    specAgentId: 'codex-spec',
+  } as SystemSettings)
 }
 
 describe('openSpecSession', () => {
@@ -103,6 +131,27 @@ describe('openSpecSession', () => {
       error: { code: 'intent.chatSessionNotFound' },
     })
     expect(getRuntime('any')).toBeUndefined()
+  })
+
+  it('restores a missing Codex spec runtime and pins the spec agent', async () => {
+    configureCodexSpecAgent()
+    const [r] = insertIntents(proj, [
+      { title: 'Codex spec', shortEnTitle: 'codex', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, join(proj, '.specs/2026/06/27/spec.md'))
+    const specId = 'codex-spec-session-1'
+    setSpecSessionId(r.id, specId)
+
+    const ctx = {} as unknown as KernelContext
+    const { conn, sent } = fakeConn()
+
+    await openSpecSession(ctx, conn, { type: 'open_spec_session', workspaceId, intentId: r.id })
+
+    expect(sent.some((m) => m.type === 'session_selected')).toBe(true)
+    expect(resolveSessionVendor(specId)).toBe('codex')
+    expect(getRuntime(specId)?.specDir).toBe(join(proj, '.specs/2026/06/27'))
+
+    removeRuntime(specId)
   })
 
   it('rejects an unknown intent id', async () => {

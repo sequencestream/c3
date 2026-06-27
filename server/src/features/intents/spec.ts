@@ -10,9 +10,9 @@
  * intent (`spec_session_id`) by the resident `run:bound` subscription via
  * `./spec-link.ts`.
  *
- * Spec authoring is claude-only: the path-level write gate is a claude
- * `canUseTool` mechanism, so a non-claude spec agent is rejected up front (the
- * codex driver cannot path-confine writes).
+ * Claude spec sessions are write-confined by the path-level `canUseTool` gate.
+ * Codex spec sessions are write-confined by launch-time sandbox roots: cwd is the
+ * centralized specs root and the project stays outside the writable set.
  */
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -112,7 +112,12 @@ _(to be authored)_
  * not restated here, so it never renders as a visible user message
  * (hide-session-system-instructions).
  */
-export function buildSpecInstructPrompt(intent: Intent, fileAbs: string): string {
+export function buildSpecInstructPrompt(
+  intent: Intent,
+  fileAbs: string,
+  projectRoot?: string,
+): string {
+  const projectBlock = projectRoot ? `Project root: \`${projectRoot}\`\n\n` : ''
   return `Author the spec document for intent \`${intent.id}\`.
 
 Intent title: ${intent.title}
@@ -120,6 +125,7 @@ Intent title: ${intent.title}
 Intent content:
 ${intent.content}
 
+${projectBlock}
 Read the relevant project material first, then overwrite \`${fileAbs}\` with the spec. When done, briefly summarise what you captured.`
 }
 
@@ -133,13 +139,20 @@ Read the relevant project material first, then overwrite \`${fileAbs}\` with the
  * text (hide-session-system-instructions). Pure (no I/O) so the concatenation is
  * unit-testable.
  */
-export function buildResetSpecPrompt(intent: Intent, fileAbs: string, userInput: string): string {
+export function buildResetSpecPrompt(
+  intent: Intent,
+  fileAbs: string,
+  userInput: string,
+  projectRoot?: string,
+): string {
   const steer = userInput.trim()
   const steerBlock = steer ? `New input from the user:\n${steer}\n\n` : ''
+  const projectBlock = projectRoot ? `Project root: \`${projectRoot}\`\n\n` : ''
   return `Revise the spec document for intent \`${intent.id}\` based on fresh input.
 
 ${steerBlock}Intent title: ${intent.title}
 
+${projectBlock}
 The current spec lives at \`${fileAbs}\`. Read it first to see what already exists, then overwrite the same file with the revised spec. When done, briefly summarise what changed.`
 }
 
@@ -162,14 +175,7 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
     return
   }
 
-  // Spec authoring is claude-only: the codex driver has no path-level write gate,
-  // so it cannot confine writes to the spec directory. Reject up front rather
-  // than author the spec without the write lock (C-SEC).
   const specAgent = resolveSpecAgent()
-  if (specAgent.vendor === 'codex') {
-    conn.send({ type: 'error', error: { code: 'intent.specAgentUnsupported' } })
-    return
-  }
   if (!prepareSpecDependencyContext(proj, intent, conn)) return
 
   // Compute the dated layout under the FIXED centralized spec root and scaffold
@@ -215,7 +221,7 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
   registerPendingSpecLink(specId, intent.id)
   try {
     void ctx
-      .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs))
+      .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs, proj))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
         conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'failed' })
@@ -275,8 +281,7 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
  * Mirrors {@link writeSpecHandler} but reuses the EXISTING spec directory / path
  * (no scaffolding) and replies with a `session_selected` so the detail's `spec
  * session` tab switches to the new session immediately. Rejected when no spec was
- * ever written (`spec_path` null) — there is nothing to revise. Claude-only, same
- * as authoring (the codex driver cannot path-confine writes).
+ * ever written (`spec_path` null) — there is nothing to revise.
  */
 export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
@@ -301,10 +306,6 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
     return
   }
   const specAgent = resolveSpecAgent()
-  if (specAgent.vendor === 'codex') {
-    conn.send({ type: 'error', error: { code: 'intent.specAgentUnsupported' } })
-    return
-  }
   if (!prepareSpecDependencyContext(proj, intent, conn)) return
 
   // The reset prompt only references the spec PATH; the agent reads the file
@@ -335,7 +336,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   })
   try {
     void ctx
-      .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, msg.userInput))
+      .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, msg.userInput, proj))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
         conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'failed' })

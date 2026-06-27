@@ -139,7 +139,13 @@ export function createIntentMcp(
       const ready = server.connect(transport)
       entries.set(token, { transport, server, ready })
       return {
-        servers: { c3: { type: 'http', url: `${baseUrl}?token=${token}` } },
+        servers: {
+          c3: {
+            type: 'http',
+            url: `${baseUrl}?token=${token}`,
+            enabledTools: ['find_intents', 'view_intent', 'save_intents'],
+          },
+        },
         dispose: () => {
           const entry = entries.get(token)
           if (!entry) return

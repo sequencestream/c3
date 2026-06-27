@@ -348,17 +348,33 @@ describe('mcpServersToCodexConfig (2026-06-12-005)', () => {
     })
   })
 
+  it('uses the descriptor tool allowlist when provided', () => {
+    const out = mcpServersToCodexConfig({
+      c3: {
+        type: 'http',
+        url: 'http://127.0.0.1:3000/internal/spec-query-mcp/v1?token=abc',
+        enabledTools: ['find_intents', 'view_intent'],
+      },
+    })
+    expect(out?.c3.enabled_tools).toEqual(['find_intents', 'view_intent'])
+  })
+
   it('carries bearer_token_env_var only when present', () => {
     expect(
       mcpServersToCodexConfig({
-        c3: { type: 'http', url: 'http://x', bearerTokenEnvVar: 'C3_TOKEN' },
+        c3: {
+          type: 'http',
+          url: 'http://x',
+          bearerTokenEnvVar: 'C3_TOKEN',
+          enabledTools: ['find_intents'],
+        },
       }),
     ).toEqual({
       c3: {
         url: 'http://x',
         enabled: true,
         required: true,
-        enabled_tools: ['find_intents', 'view_intent', 'save_intents'],
+        enabled_tools: ['find_intents'],
         default_tools_approval_mode: 'approve',
         bearer_token_env_var: 'C3_TOKEN',
       },

@@ -4,6 +4,9 @@
  * new suffixes; a tool_use emits once, its result once, no duplicates on re-emit.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { CanonicalBlock, CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
@@ -12,6 +15,7 @@ import {
   intentDriverModeForVendor,
   makeDriverApprovalHandler,
   runViaDriver,
+  specDriverModeForVendor,
 } from './run-via-driver.js'
 import { addViewer, ensureRuntime, removeRuntime, type Viewer } from '../../runs.js'
 import { getSpecsBase } from '../config/workspace-path.js'
@@ -90,6 +94,15 @@ describe('intentDriverModeForVendor', () => {
   it('lets Codex use read-only MCP tools without a non-existent live approval channel', () => {
     expect(intentDriverModeForVendor('codex')).toEqual({
       actionMode: 'plan',
+      toolGate: 'never-ask',
+    })
+  })
+})
+
+describe('specDriverModeForVendor', () => {
+  it('forces Codex spec authoring to workspace-write without a live approval channel', () => {
+    expect(specDriverModeForVendor('codex')).toEqual({
+      actionMode: 'build',
       toolGate: 'never-ask',
     })
   })
@@ -316,5 +329,88 @@ describe('runViaDriver — Codex specs writable root', () => {
 
     expect(started.additionalDirectories).toEqual([getSpecsBase(workspacePath)])
     removeRuntime(sid)
+  })
+
+  it('moves Codex spec cwd to the specs root and binds read-only spec MCP', async () => {
+    const prevC3Dir = process.env.C3_DIR
+    const tmpC3 = mkdtempSync(join(tmpdir(), 'c3-run-driver-spec-'))
+    const sid = 'codex-spec-session'
+    try {
+      process.env.C3_DIR = tmpC3
+      const workspacePath = '/projects/owner/repository'
+      const rt = ensureRuntime(sid, workspacePath, 'default', [], 'spec')
+      rt.specDir = `${getSpecsBase(workspacePath)}/2026/06/27/spec`
+      const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+      const started: {
+        cwd?: string
+        actionMode?: string
+        toolGate?: string
+        additionalDirectories?: string[]
+        mcpServers?: Record<string, unknown>
+        prompt?: string
+      } = {}
+      const adapter = {
+        vendor: 'codex',
+        approval: { onRequest: () => () => {} },
+        driver: {
+          start: (opts: {
+            cwd?: string
+            actionMode?: string
+            toolGate?: string
+            additionalDirectories?: string[]
+            mcpServers?: Record<string, unknown>
+            prompt?: string
+          }) => {
+            Object.assign(started, opts)
+            return Promise.resolve({
+              sessionId: () => Promise.resolve(sid),
+              // eslint-disable-next-line require-yield
+              messages: async function* () {
+                return
+              },
+            })
+          },
+        },
+      } as unknown as VendorAdapter
+      const dispose = vi.fn()
+      const servers = {
+        c3: {
+          type: 'http' as const,
+          url: 'http://127.0.0.1/internal/spec-query-mcp/v1?token=t',
+          enabledTools: ['find_intents', 'view_intent'],
+        },
+      }
+
+      await runViaDriver(
+        rt,
+        'write spec',
+        adapter,
+        eventBus,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          appendSystemPrompt: 'SPEC SYSTEM',
+          disallowedTools: [],
+          gate: 'spec',
+          bindDriverMcp: () => ({ servers, dispose }),
+        },
+      )
+
+      expect(started.cwd).toBe(getSpecsBase(workspacePath))
+      expect(started.additionalDirectories).toEqual([getSpecsBase(workspacePath)])
+      expect(started.actionMode).toBe('build')
+      expect(started.toolGate).toBe('never-ask')
+      expect(started.mcpServers).toEqual(servers)
+      expect(started.prompt).toBe('SPEC SYSTEM\n\nwrite spec')
+      expect(dispose).toHaveBeenCalledTimes(1)
+    } finally {
+      removeRuntime(sid)
+      if (prevC3Dir === undefined) delete process.env.C3_DIR
+      else process.env.C3_DIR = prevC3Dir
+      rmSync(tmpC3, { recursive: true, force: true })
+    }
   })
 })

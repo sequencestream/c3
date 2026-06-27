@@ -87,7 +87,7 @@ interface CodexMcpServerConfig {
   url: string
   enabled: true
   required: true
-  enabled_tools: typeof INTENT_MCP_TOOL_NAMES
+  enabled_tools: readonly string[]
   default_tools_approval_mode: 'approve'
   bearer_token_env_var?: string
 }
@@ -406,7 +406,7 @@ export function mcpServersToCodexConfig(
       url: s.url,
       enabled: true,
       required: true,
-      enabled_tools: INTENT_MCP_TOOL_NAMES,
+      enabled_tools: s.enabledTools ?? INTENT_MCP_TOOL_NAMES,
       // Codex has its own MCP approval layer. c3 already gates save_intents inside
       // the MCP handler, so the Codex layer must not hide or prompt these tools.
       default_tools_approval_mode: 'approve',

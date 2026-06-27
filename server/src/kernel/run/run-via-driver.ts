@@ -23,6 +23,7 @@ import {
   type RunEndReason,
   type ServerToClient,
 } from '@ccc/shared/protocol'
+import { mkdirSync } from 'node:fs'
 import type {
   ApprovalHandler,
   CanonicalMessage,
@@ -101,8 +102,9 @@ export interface IntentProfile {
  * + spec system prompt), resolved before the vendor fork in `launchRun`. Only
  * present for `rt.sessionKind === 'spec'` runtimes. The confining directory itself
  * (`specDir`) rides on the runtime, not this static profile (it is per-run). Spec
- * sessions are claude-only (the path-level write gate is a claude `canUseTool`
- * mechanism), so — unlike {@link IntentProfile} — there is no driver-path MCP.
+ * Claude uses `canUseTool` for path-level write confinement. Codex has no
+ * per-tool gate, so the driver path enforces the boundary at launch by moving cwd
+ * to the specs root and forcing workspace-write/never.
  */
 export interface SpecProfile {
   appendSystemPrompt: string
@@ -116,13 +118,18 @@ export interface SpecProfile {
    * `workspacePath` is captured at the composition root) and needs no run-level
    * binding (no save, no confirmation gate), so it ignores the `getRunId` / `signal`
    * the binder is handed. Absent ⇒ no in-process MCP (a spec session with no ledger
-   * query tools, the pre-2026-06-20 behaviour). Spec is claude-only, so — unlike
-   * {@link IntentProfile} — there is deliberately no `bindDriverMcp`.
+   * query tools, the pre-2026-06-20 behaviour). Codex spec sessions use the
+   * driver-path twin below.
    */
   bindInProcessMcp?: (binding: {
     getRunId: () => string
     signal: AbortSignal
   }) => Record<string, McpServerConfig>
+  bindDriverMcp?: (binding: {
+    workspacePath: string
+    getRunId: () => string
+    signal: AbortSignal
+  }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
 }
 
 /**
@@ -168,6 +175,17 @@ export function intentDriverModeForVendor(vendor: VendorId): {
 } {
   return {
     actionMode: 'plan',
+    toolGate: vendor === 'codex' ? 'never-ask' : 'always-ask',
+  }
+}
+
+/** Forced permission grid for Codex spec-authoring sessions on the driver path. */
+export function specDriverModeForVendor(vendor: VendorId): {
+  actionMode: import('@ccc/shared/protocol').ActionMode
+  toolGate: import('@ccc/shared/protocol').ToolGate
+} {
+  return {
+    actionMode: 'build',
     toolGate: vendor === 'codex' ? 'never-ask' : 'always-ask',
   }
 }
@@ -326,6 +344,11 @@ export async function runViaDriver(
    * and the vendor is codex, its driver MCP is bound over the localhost HTTP route.
    */
   sessionProfile?: SessionMcpProfile,
+  /**
+   * The spec-authoring profile, present for `rt.sessionKind === 'spec'` runs.
+   * Mutually exclusive with intent/session profiles.
+   */
+  specProfile?: SpecProfile,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -333,7 +356,11 @@ export async function runViaDriver(
   // Fold the model-only text (the intent comm-agent role for an intent run, or a
   // work run's SDD instruct + slash-command dev skill) ahead of the visible turn so
   // the model receives it, while the client echo stays the visible body alone.
-  const effectivePrompt = driverModelPrompt(prompt, intentProfile?.appendSystemPrompt, inject)
+  const effectivePrompt = driverModelPrompt(
+    prompt,
+    intentProfile?.appendSystemPrompt ?? specProfile?.appendSystemPrompt,
+    inject,
+  )
 
   emit(runId, { type: 'user_text', text: prompt })
 
@@ -382,9 +409,11 @@ export async function runViaDriver(
     toolGate: import('@ccc/shared/protocol').ToolGate
   } = intentProfile
     ? intentDriverModeForVendor(adapter.vendor)
-    : adapter.vendor === 'codex' && rt.codexPolicy
-      ? codexPolicyToGrid(rt.codexPolicy)
-      : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
+    : specProfile
+      ? specDriverModeForVendor(adapter.vendor)
+      : adapter.vendor === 'codex' && rt.codexPolicy
+        ? codexPolicyToGrid(rt.codexPolicy)
+        : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
   const { actionMode, toolGate } = mode
 
   // Resolve the session agent's launch overrides (provider connection only). The
@@ -415,8 +444,24 @@ export async function runViaDriver(
     : undefined
   const sandboxEnvFile =
     rt.sandboxHandle && rt.sandboxTmpDir ? sandboxEnvFilePath(rt.sandboxTmpDir) : undefined
-  // Override cwd: sandbox container, effectiveCwd (worktree isolation), or original workspacePath.
-  const driverCwd = rt.sandboxHandle ? '/workspace' : (rt.effectiveCwd ?? workspacePath)
+  // Override cwd: sandbox container, Codex spec sessions (specs root write
+  // boundary), effectiveCwd (worktree isolation), or original workspacePath.
+  const specDriverCwd =
+    rt.sessionKind === 'spec' && adapter.vendor === 'codex'
+      ? getSpecsBase(workspacePath)
+      : undefined
+  if (specDriverCwd) {
+    try {
+      mkdirSync(specDriverCwd, { recursive: true })
+    } catch (err) {
+      throw new Error(`[c3] Codex spec session cannot create specs root: ${errMsg(err)}`, {
+        cause: err,
+      })
+    }
+  }
+  const driverCwd = rt.sandboxHandle
+    ? '/workspace'
+    : (specDriverCwd ?? rt.effectiveCwd ?? workspacePath)
 
   // Intent tools over localhost HTTP MCP (2026-06-12-005). Codex can't load
   // the in-process SDK MCP claude uses, so the comm-agent's find/view/save tools are
@@ -440,6 +485,14 @@ export async function runViaDriver(
     // codex twin of the in-process binder. A run is either intent or session, so
     // this never coexists with the intent binding above (2026-06-20).
     const bound = sessionProfile.bindDriverMcp({
+      workspacePath: workspacePath,
+      getRunId: () => runId,
+      signal: cycleAbort.signal,
+    })
+    driverMcpServers = bound.servers
+    disposeDriverMcp = bound.dispose
+  } else if (specProfile?.bindDriverMcp && adapter.vendor === 'codex') {
+    const bound = specProfile.bindDriverMcp({
       workspacePath: workspacePath,
       getRunId: () => runId,
       signal: cycleAbort.signal,

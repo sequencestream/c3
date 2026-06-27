@@ -116,7 +116,13 @@ export function createPrEventMcp(
       const ready = server.connect(transport)
       entries.set(token, { transport, server, ready })
       return {
-        servers: { c3: { type: 'http', url: `${baseUrl}?token=${token}` } },
+        servers: {
+          c3: {
+            type: 'http',
+            url: `${baseUrl}?token=${token}`,
+            enabledTools: ['publish_pr_event'],
+          },
+        },
         dispose: () => {
           const entry = entries.get(token)
           if (!entry) return

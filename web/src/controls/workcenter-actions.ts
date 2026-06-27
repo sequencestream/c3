@@ -28,7 +28,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     event.status = 'done'
   }
 
-  ctx.reloadWorkcenter = (status: WaitUserInvolveStatus = 'todo'): void => {
+  ctx.reloadWorkcenter = (status?: WaitUserInvolveStatus): void => {
     const workspace = currentWorkspace.value
     if (!workspace || !ctx.client) return
     ctx.workcenterLoading.value = true
@@ -37,7 +37,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
   }
 
   ctx.loadMoreWorkcenter = (
-    status: WaitUserInvolveStatus,
+    status: WaitUserInvolveStatus | undefined,
     cursorTime: number,
     cursorExcludeId: string,
   ): void => {
@@ -59,7 +59,8 @@ export function installWorkcenterActions(ctx: AppCtx): void {
   ctx.markDoneWorkcenter = (eventId: string): void => {
     if (!ctx.client) return
     send({ type: 'update_wait_user_event', id: eventId, status: 'done' })
-    ctx.workcenterEvents.value = ctx.workcenterEvents.value.filter((event) => event.id !== eventId)
+    const event = ctx.workcenterEvents.value.find((item) => item.id === eventId)
+    if (event) event.status = 'done'
   }
 
   // Jump from a WorkCenter event to its source tab + item, routed off the producing

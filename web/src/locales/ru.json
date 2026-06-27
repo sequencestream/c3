@@ -1966,8 +1966,11 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "notificationTitle": "Уведомления пользователя",
     "toolInput": "Ввод инструмента",
     "filter": {
+      "label": "Фильтр статуса",
+      "all": "Все",
       "todo": "Todo",
       "done": "Done",
       "canceled": "Canceled",
@@ -2034,7 +2037,7 @@
       "minutesAgo": "{n}m ago",
       "hoursAgo": "{n}h ago"
     },
-    "empty": "No pending events"
+    "empty": "Нет сообщений"
   },
   "auth": {
     "login": {

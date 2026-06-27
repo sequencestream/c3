@@ -51,6 +51,70 @@ const toolOutcome: AnyConsensusOutcome = {
   decision: 'allow',
 }
 
+const askToolInput = {
+  questions: [
+    {
+      header: 'Deployment target',
+      question: 'Where should this run?',
+      options: [
+        { label: 'Staging', description: 'Use the staging cluster' },
+        { label: 'Production', description: 'Use the production cluster' },
+      ],
+    },
+    {
+      header: 'Follow-up',
+      question: 'Which checks should run?',
+      multiSelect: true,
+      options: [
+        { label: 'Unit tests', description: 'Fast tests only' },
+        { label: 'E2E tests', description: 'Browser coverage' },
+      ],
+    },
+  ],
+}
+
+const askOutcome: AnyConsensusOutcome = {
+  kind: 'ask',
+  perQuestion: [
+    {
+      index: 0,
+      question: 'Where should this run?',
+      header: 'Deployment target',
+      multiSelect: false,
+      answers: [
+        {
+          agentId: 'a1',
+          agentName: 'Planner',
+          optionLabels: ['Staging'],
+          reason: 'Safer rollout',
+        },
+      ],
+      unanimous: true,
+      agreed: 'Staging',
+    },
+    {
+      index: 1,
+      question: 'Which checks should run?',
+      header: 'Follow-up',
+      multiSelect: true,
+      answers: [
+        {
+          agentId: 'a2',
+          agentName: 'Reviewer',
+          optionLabels: [],
+          custom: 'Run smoke tests too',
+          reason: 'Covers the risky path',
+        },
+      ],
+      unanimous: false,
+      agreed: null,
+    },
+  ],
+  fullyUnanimous: false,
+  agreedAnswers: { 'Where should this run?': 'Staging' },
+  summary: 'Use staging and add smoke coverage',
+}
+
 function installMatchMedia(matches: boolean): void {
   vi.stubGlobal(
     'matchMedia',
@@ -234,6 +298,150 @@ describe('EventDetail.vue — consensus outcome', () => {
     })
     expect(wrapper.find('.wc-consensus').exists()).toBe(false)
     expect(wrapper.find('.wc-btn-allow').exists()).toBe(true)
+  })
+})
+
+describe('EventDetail.vue — AskUserQuestion', () => {
+  it('renders every question and option in the panel without ordinary allow/deny controls', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({
+          toolName: 'AskUserQuestion',
+          toolInput: askToolInput,
+          outcome: askOutcome,
+        }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    expect(wrapper.find('.wc-ask-panel').exists()).toBe(true)
+    expect(wrapper.findAll('.wc-ask-q')).toHaveLength(2)
+    expect(wrapper.text()).toContain('Deployment target')
+    expect(wrapper.text()).toContain('Where should this run?')
+    expect(wrapper.text()).toContain('Which checks should run?')
+    expect(wrapper.text()).toContain('Staging')
+    expect(wrapper.text()).toContain('E2E tests')
+    expect(wrapper.findAll('.wc-detail-actions .wc-btn-allow')).toHaveLength(0)
+    expect(wrapper.findAll('.wc-detail-actions .wc-btn-deny')).toHaveLength(0)
+  })
+
+  it('renders native single and multi-select inputs plus the custom reply option', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({ toolName: 'AskUserQuestion', toolInput: askToolInput }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    expect(wrapper.findAll('input[type="radio"]')).toHaveLength(3)
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(3)
+    expect(wrapper.find('.wc-ask-option-custom').exists()).toBe(true)
+  })
+
+  it('shows the custom reply text input after selecting the synthetic option', async () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({ toolName: 'AskUserQuestion', toolInput: askToolInput }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await wrapper.findAll('.wc-ask-option-custom input')[0].setValue(true)
+    expect(wrapper.find('.wc-ask-custom-input').exists()).toBe(true)
+    await wrapper.find('.wc-ask-custom-input').setValue('Canary first')
+    expect((wrapper.find('.wc-ask-custom-input').element as HTMLInputElement).value).toBe(
+      'Canary first',
+    )
+  })
+
+  it('keeps submit disabled until every question has an answer', async () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({ toolName: 'AskUserQuestion', toolInput: askToolInput }),
+        workspaces: WORKSPACES,
+      },
+    })
+    const submit = () => wrapper.find('.wc-ask-actions .wc-btn-allow')
+
+    expect((submit().element as HTMLButtonElement).disabled).toBe(true)
+    await wrapper.findAll('input[type="radio"]')[0].setValue(true)
+    expect((submit().element as HTMLButtonElement).disabled).toBe(true)
+    await wrapper.findAll('input[type="checkbox"]')[0].setValue(true)
+    expect((submit().element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('emits submit-ask with question-text keyed answers', async () => {
+    const event = ev({ toolName: 'AskUserQuestion', toolInput: askToolInput })
+    const wrapper = mount(EventDetail, { props: { event, workspaces: WORKSPACES } })
+
+    await wrapper.findAll('input[type="radio"]')[1].setValue(true)
+    await wrapper.findAll('input[type="checkbox"]')[0].setValue(true)
+    await wrapper.findAll('input[type="checkbox"]')[1].setValue(true)
+    await wrapper.find('.wc-ask-actions .wc-btn-allow').trigger('click')
+
+    expect(wrapper.emitted('submit-ask')?.[0]).toEqual([
+      event,
+      {
+        'Where should this run?': 'Production',
+        'Which checks should run?': 'Unit tests, E2E tests',
+      },
+    ])
+  })
+
+  it('renders ask consensus summary and agent hints inside the pending panel', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({
+          toolName: 'AskUserQuestion',
+          toolInput: askToolInput,
+          outcome: askOutcome,
+        }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    expect(wrapper.find('.wc-ask-summary').text()).toContain('Use staging')
+    expect(wrapper.findAll('.wc-ask-agent-badge').map((node) => node.text())).toContain('Planner')
+    expect(wrapper.find('.wc-consensus').exists()).toBe(false)
+  })
+
+  it('renders done and canceled ask events as read-only history without action controls', () => {
+    for (const status of ['done', 'canceled'] as const) {
+      const wrapper = mount(EventDetail, {
+        props: {
+          event: ev({
+            status,
+            toolName: 'AskUserQuestion',
+            toolInput: askToolInput,
+            requestId: 'r1',
+          }),
+          workspaces: WORKSPACES,
+        },
+      })
+      expect(wrapper.find('.wc-ask-readonly').exists()).toBe(true)
+      expect(wrapper.find('.wc-ask-panel').exists()).toBe(false)
+      expect(wrapper.find('.wc-btn-allow').exists()).toBe(false)
+      expect(wrapper.find('.wc-btn-deny').exists()).toBe(false)
+    }
+  })
+
+  it('renders auto ask outcome as a read-only consensus audit record', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({
+          status: 'auto',
+          toolName: 'AskUserQuestion',
+          toolInput: askToolInput,
+          outcome: askOutcome,
+        }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    expect(wrapper.find('.wc-consensus').exists()).toBe(true)
+    expect(wrapper.find('.wc-consensus-summary').text()).toContain('Use staging')
+    expect(wrapper.find('.wc-ask-panel').exists()).toBe(false)
+    expect(wrapper.find('.wc-btn-allow').exists()).toBe(false)
   })
 })
 

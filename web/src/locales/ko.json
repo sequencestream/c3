@@ -2024,7 +2024,10 @@
       "back": "Back",
       "next": "Next",
       "answer": "Answer",
-      "question": "Question {current}/{total}"
+      "collapse": "Hide answers",
+      "question": "Question {current}/{total}",
+      "answered": "Answers submitted.",
+      "canceled": "This question request was canceled."
     },
     "time": {
       "justNow": "just now",

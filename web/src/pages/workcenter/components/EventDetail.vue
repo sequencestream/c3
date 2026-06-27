@@ -3,18 +3,28 @@
  * EventDetail.vue — 工作台右侧事件详情面板。
  *
  * 显示选中事件的完整详情:标题/来源/状态/创建时间/toolInput +
- * Allow/Deny/Answer + AskUserQuestion 逐题作答面板 + Jump to source 跳转。
+ * Allow/Deny/Answer + AskUserQuestion 全题作答面板 + Jump to source 跳转。
  * 初始无选中事件时右栏显示空状态提示。
  *
  * 2026-06-08 从 EventList.vue 提取,作为 WorkCenter 两栏布局的右栏。
  */
-import { ref, computed } from 'vue'
-import { askQuestionsOf, type AskQuestionView } from '../../../lib/ask'
+import { ref, computed, watch } from 'vue'
+import {
+  agentsForCustom,
+  agentsForOption,
+  askQuestionsOf,
+  initAskDraft,
+  isAskConsensus,
+  type AskDraftSlot,
+  type AskQuestionView,
+} from '../../../lib/ask'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import type { WaitUserInvolveEvent, WorkspaceInfo } from '@ccc/shared/protocol'
 import { eventDisplayTitle } from '@/lib/event-title'
 
 const { t } = useTypedI18n()
+
+const ASK_TOOL_LABEL = 'AskUserQuestion'
 
 const props = defineProps<{
   event: WaitUserInvolveEvent | null
@@ -107,82 +117,89 @@ const autoDecisionLabel = computed<string>(() => {
 
 // ---- AskUserQuestion inline state ----
 
-const askOpen = ref(false)
-const askQuestions = ref<AskQuestionView[]>([])
-const askCurrentIndex = ref(0)
-const askAnswers = ref<Record<string, string>>({})
+const askPanelExpanded = ref(true)
+const askDraft = ref<Record<number, AskDraftSlot>>({})
 
-const currentAskQuestion = computed(() => askQuestions.value[askCurrentIndex.value] ?? null)
-const isLastAskQuestion = computed(() => askCurrentIndex.value >= askQuestions.value.length - 1)
-const hasAskAnswer = computed(() => {
-  const q = currentAskQuestion.value
-  if (!q) return false
-  const answer = askAnswers.value[String(q.index)]
-  if (q.multiSelect) return (answer || '').length > 0
-  return !!answer
+const askConsensus = computed(() => {
+  const o = props.event?.outcome ?? undefined
+  return isAskConsensus(o) ? o : undefined
 })
 
-function openAsk(event: WaitUserInvolveEvent) {
-  if (askOpen.value) {
-    closeAsk()
-    return
-  }
-  const questions = askQuestionsOf(event.toolInput)
-  if (questions.length === 0) return
-  askOpen.value = true
-  askQuestions.value = questions
-  askCurrentIndex.value = 0
-  askAnswers.value = {}
+const askQuestions = computed<AskQuestionView[]>(() =>
+  props.event?.toolName === 'AskUserQuestion' ? askQuestionsOf(props.event.toolInput) : [],
+)
+
+function initCurrentAskDraft() {
+  askPanelExpanded.value = true
+  askDraft.value =
+    props.event?.toolName === 'AskUserQuestion'
+      ? initAskDraft(props.event.toolInput, askConsensus.value)
+      : {}
 }
 
-function closeAsk() {
-  askOpen.value = false
-  askQuestions.value = []
-  askCurrentIndex.value = 0
-  askAnswers.value = {}
-}
-
-function toggleAskOption(questionIndex: number, label: string) {
-  const q = askQuestions.value[questionIndex]
-  if (!q) return
-
-  if (q.multiSelect) {
-    const current = askAnswers.value[String(questionIndex)] || ''
-    const parts = current ? current.split(',') : []
-    const idx = parts.indexOf(label)
-    if (idx >= 0) parts.splice(idx, 1)
-    else parts.push(label)
-    askAnswers.value[String(questionIndex)] = parts.join(',')
-  } else {
-    askAnswers.value[String(questionIndex)] =
-      askAnswers.value[String(questionIndex)] === label ? '' : label
-  }
+function isAskActionable(event: WaitUserInvolveEvent): boolean {
+  return event.status === 'todo' && event.toolName === 'AskUserQuestion'
 }
 
 function isOptionSelected(questionIndex: number, label: string): boolean {
-  const answer = askAnswers.value[String(questionIndex)]
-  if (!answer) return false
-  if (askQuestions.value[questionIndex]?.multiSelect) {
-    return answer.split(',').includes(label)
-  }
-  return answer === label
+  return askDraft.value[questionIndex]?.labels.includes(label) ?? false
 }
 
-function nextAskQuestion() {
-  if (askCurrentIndex.value < askQuestions.value.length - 1) {
-    askCurrentIndex.value++
+function toggleAskOption(q: AskQuestionView, label: string) {
+  if (!props.event || !isAskActionable(props.event)) return
+  const slot = askDraft.value[q.index]
+  if (!slot) return
+  if (q.multiSelect) {
+    const i = slot.labels.indexOf(label)
+    if (i >= 0) slot.labels.splice(i, 1)
+    else slot.labels.push(label)
+  } else {
+    slot.labels = slot.labels[0] === label ? [] : [label]
+    slot.customActive = false
   }
 }
 
-function prevAskQuestion() {
-  if (askCurrentIndex.value > 0) {
-    askCurrentIndex.value--
-  }
+function isCustomSelected(questionIndex: number): boolean {
+  return askDraft.value[questionIndex]?.customActive ?? false
+}
+
+function toggleAskCustomOption(q: AskQuestionView) {
+  if (!props.event || !isAskActionable(props.event)) return
+  const slot = askDraft.value[q.index]
+  if (!slot) return
+  slot.customActive = !slot.customActive
+  if (slot.customActive && !q.multiSelect) slot.labels = []
+}
+
+function askCustomOf(questionIndex: number): string {
+  return askDraft.value[questionIndex]?.custom ?? ''
+}
+
+function setAskCustom(questionIndex: number, value: string) {
+  const slot = askDraft.value[questionIndex]
+  if (!slot) return
+  slot.custom = value
+}
+
+function isAskAnswered(): boolean {
+  if (askQuestions.value.length === 0) return false
+  return askQuestions.value.every((q) => {
+    const slot = askDraft.value[q.index]
+    if (!slot) return false
+    return slot.labels.length > 0 || (slot.customActive && slot.custom.trim().length > 0)
+  })
 }
 
 function submitAsk(event: WaitUserInvolveEvent) {
-  emit('submit-ask', event, { ...askAnswers.value })
-  closeAsk()
+  if (!isAskActionable(event) || !isAskAnswered()) return
+  const answers: Record<string, string> = {}
+  for (const q of askQuestions.value) {
+    const slot = askDraft.value[q.index]
+    const parts = [...slot.labels]
+    if (slot.customActive && slot.custom.trim()) parts.push(slot.custom.trim())
+    answers[q.question] = parts.join(', ')
+  }
+  emit('submit-ask', event, answers)
 }
 
 // Helper to format tool input for display
@@ -194,13 +211,10 @@ function formatToolInput(input: unknown): string {
   }
 }
 
-// Reset ask state when event changes
-import { watch } from 'vue'
 watch(
   () => props.event,
-  () => {
-    closeAsk()
-  },
+  () => initCurrentAskDraft(),
+  { immediate: true },
 )
 </script>
 
@@ -257,7 +271,9 @@ watch(
       <!-- Event actions -->
       <div class="wc-detail-actions">
         <!-- Allow / Deny for todo events with a requestId -->
-        <template v-if="event.status === 'todo' && event.requestId">
+        <template
+          v-if="event.status === 'todo' && event.requestId && event.toolName !== 'AskUserQuestion'"
+        >
           <button class="wc-btn wc-btn-allow" @click="emit('respond', event, 'allow')">
             {{ t('common.action.allow.label') }}
           </button>
@@ -268,11 +284,11 @@ watch(
 
         <!-- Answer button for AskUserQuestion -->
         <button
-          v-if="event.status === 'todo' && event.toolName === 'AskUserQuestion'"
+          v-if="isAskActionable(event)"
           class="wc-btn wc-btn-ask"
-          @click="openAsk(event)"
+          @click="askPanelExpanded = !askPanelExpanded"
         >
-          {{ askOpen ? t('workcenter.ask.back') : t('workcenter.ask.answer') }}
+          {{ askPanelExpanded ? t('workcenter.ask.collapse') : t('workcenter.ask.answer') }}
         </button>
 
         <!-- Jump to source -->
@@ -286,59 +302,118 @@ watch(
       </div>
 
       <!-- AskUserQuestion panel -->
-      <div v-if="askOpen && currentAskQuestion" class="wc-ask-panel">
-        <div class="wc-ask-progress">
-          {{
-            t('workcenter.ask.question', {
-              current: askCurrentIndex + 1,
-              total: askQuestions.length,
-            })
-          }}
+      <div v-if="isAskActionable(event) && askPanelExpanded" class="wc-ask-panel">
+        <div class="wc-ask-label">
+          {{ t('permission.ask.answerQuestion.label') }} <code>{{ ASK_TOOL_LABEL }}</code>
+          <span v-if="askConsensus" class="wc-ask-consensus-badge">
+            {{ t('permission.ask.multiAgentSuggestion.label') }}
+          </span>
         </div>
-
-        <div class="wc-ask-question">{{ currentAskQuestion.question }}</div>
-        <div class="wc-ask-options">
-          <button
-            v-for="opt in currentAskQuestion.options"
-            :key="opt.label"
-            class="wc-ask-option"
-            :class="{ selected: isOptionSelected(currentAskQuestion.index, opt.label) }"
-            @click="toggleAskOption(currentAskQuestion.index, opt.label)"
-          >
-            <span class="wc-ask-option-label">{{ opt.label }}</span>
-            <span v-if="opt.description" class="wc-ask-option-desc">{{ opt.description }}</span>
-          </button>
-        </div>
-
-        <div class="wc-ask-nav">
-          <button v-if="askCurrentIndex > 0" class="wc-btn" @click="prevAskQuestion">
-            {{ t('workcenter.ask.back') }}
-          </button>
-          <span v-else />
-
-          <div class="wc-ask-nav-right">
-            <button
-              v-if="!isLastAskQuestion"
-              class="wc-btn"
-              :disabled="!hasAskAnswer"
-              @click="nextAskQuestion"
+        <div v-if="askConsensus" class="wc-ask-summary">🤝 {{ askConsensus.summary }}</div>
+        <div class="wc-ask-questions">
+          <div v-for="q in askQuestions" :key="q.index" class="wc-ask-q">
+            <div class="wc-ask-question">
+              <span v-if="q.header" class="wc-ask-question-header">{{ q.header }}</span>
+              {{ q.question }}
+            </div>
+            <div class="wc-ask-options">
+              <label
+                v-for="opt in q.options"
+                :key="opt.label"
+                class="wc-ask-option"
+                :class="{ selected: isOptionSelected(q.index, opt.label) }"
+              >
+                <input
+                  :type="q.multiSelect ? 'checkbox' : 'radio'"
+                  :name="`wc-ask-${event.id}-${q.index}`"
+                  :checked="isOptionSelected(q.index, opt.label)"
+                  @change="toggleAskOption(q, opt.label)"
+                />
+                <span class="wc-ask-option-body">
+                  <span class="wc-ask-option-label">{{ opt.label }}</span>
+                  <span v-if="opt.description" class="wc-ask-option-desc">{{
+                    opt.description
+                  }}</span>
+                </span>
+                <span class="wc-ask-agents">
+                  <span
+                    v-for="agent in agentsForOption(askConsensus, q.index, opt.label)"
+                    :key="agent.agentName"
+                    class="wc-ask-agent-badge"
+                    :title="agent.reason"
+                    >{{ agent.agentName }}</span
+                  >
+                </span>
+              </label>
+              <label
+                class="wc-ask-option wc-ask-option-custom"
+                :class="{ selected: isCustomSelected(q.index) }"
+              >
+                <input
+                  :type="q.multiSelect ? 'checkbox' : 'radio'"
+                  :name="`wc-ask-${event.id}-${q.index}`"
+                  :checked="isCustomSelected(q.index)"
+                  @change="toggleAskCustomOption(q)"
+                />
+                <span class="wc-ask-option-body">
+                  <span class="wc-ask-option-label">{{
+                    t('permission.ask.customReply.label')
+                  }}</span>
+                  <span class="wc-ask-option-desc">{{ t('permission.ask.customReply.hint') }}</span>
+                </span>
+                <span class="wc-ask-agents">
+                  <span
+                    v-for="agent in agentsForCustom(askConsensus, q.index)"
+                    :key="agent.agentName"
+                    class="wc-ask-agent-badge"
+                    :title="`${agent.custom} (${agent.reason})`"
+                    >{{ agent.agentName }}</span
+                  >
+                </span>
+              </label>
+            </div>
+            <div
+              v-for="agent in agentsForCustom(askConsensus, q.index)"
+              :key="agent.agentName"
+              class="wc-ask-custom-hint"
+              :title="agent.reason"
             >
-              {{ t('workcenter.ask.next') }}
-            </button>
-            <button
-              v-else
-              class="wc-btn wc-btn-allow"
-              :disabled="!hasAskAnswer"
-              @click="submitAsk(event)"
-            >
-              {{ t('workcenter.ask.submit') }}
-            </button>
+              {{ agent.agentName }}: {{ agent.custom }}
+            </div>
+            <input
+              v-if="isCustomSelected(q.index)"
+              class="wc-ask-custom-input"
+              type="text"
+              :placeholder="t('permission.ask.custom.placeholder')"
+              :value="askCustomOf(q.index)"
+              @input="setAskCustom(q.index, ($event.target as HTMLInputElement).value)"
+            />
           </div>
         </div>
+        <div class="wc-ask-actions">
+          <button class="wc-btn wc-btn-deny" @click="emit('respond', event, 'deny')">
+            {{ t('common.action.deny.label') }}
+          </button>
+          <button
+            class="wc-btn wc-btn-allow"
+            :disabled="!isAskAnswered()"
+            @click="submitAsk(event)"
+          >
+            {{ t('permission.ask.submit.label') }}
+          </button>
+        </div>
+      </div>
+      <div
+        v-else-if="event.toolName === 'AskUserQuestion' && event.status !== 'auto'"
+        class="wc-ask-readonly"
+      >
+        {{
+          event.status === 'canceled' ? t('workcenter.ask.canceled') : t('workcenter.ask.answered')
+        }}
       </div>
 
       <!-- Consensus outcome (auto-resolved audit records) -->
-      <div v-if="outcome" class="wc-detail-section wc-consensus">
+      <div v-if="event.status === 'auto' && outcome" class="wc-detail-section wc-consensus">
         <h3 class="wc-detail-section-title">{{ t('workcenter.consensus.title') }}</h3>
         <p class="wc-consensus-lead">{{ t('workcenter.consensus.lead') }}</p>
         <div class="wc-consensus-meta">
@@ -659,28 +734,71 @@ watch(
   padding: var(--sp-3);
   background: var(--c-card);
 }
-.wc-ask-progress {
+.wc-ask-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: var(--sp-2);
+}
+.wc-ask-label code {
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
   font-size: 11px;
-  color: var(--c-text-muted);
-  margin-bottom: var(--sp-1);
+}
+.wc-ask-consensus-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #3730a3;
+  background: #e0e7ff;
+  border: 1px solid #c7d2fe;
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+.wc-ask-summary {
+  font-size: 12px;
+  color: var(--c-text);
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.wc-ask-questions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.wc-ask-q {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
 }
 .wc-ask-question {
   font-size: 13px;
   font-weight: 600;
   color: var(--c-text);
-  margin-bottom: var(--sp-1);
+  overflow-wrap: anywhere;
+}
+.wc-ask-question-header {
+  display: block;
+  font-size: 12px;
+  color: var(--c-text-muted);
+  font-weight: 600;
+  margin-bottom: 2px;
 }
 .wc-ask-options {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  margin-bottom: var(--sp-1);
 }
 .wc-ask-option {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
@@ -698,23 +816,70 @@ watch(
   border-color: var(--c-primary, #3b82f6);
   background: #eff6ff;
 }
+.wc-ask-option input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.wc-ask-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
 .wc-ask-option-label {
   font-size: 13px;
   color: var(--c-text);
+  overflow-wrap: anywhere;
 }
 .wc-ask-option-desc {
   font-size: 11px;
   color: var(--c-text-muted);
+  overflow-wrap: anywhere;
 }
-.wc-ask-nav {
+.wc-ask-agents {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--sp-2);
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
-.wc-ask-nav-right {
+.wc-ask-agent-badge {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #065f46;
+  background: #d1fae5;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+}
+.wc-ask-custom-hint {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  overflow-wrap: anywhere;
+}
+.wc-ask-custom-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: 13px;
+  padding: var(--sp-1) var(--sp-2);
+}
+.wc-ask-actions {
   display: flex;
   gap: var(--sp-1);
+  justify-content: flex-end;
+  margin-top: var(--sp-3);
+}
+.wc-ask-readonly {
+  border-bottom: 1px solid var(--c-border);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 12px;
+  color: var(--c-text-muted);
+  background: var(--c-card);
 }
 
 @media (max-width: 767px) {
@@ -765,14 +930,8 @@ watch(
     padding: var(--sp-3);
   }
 
-  .wc-ask-question {
-    margin-bottom: var(--sp-2);
-    overflow-wrap: anywhere;
-  }
-
   .wc-ask-options {
     gap: var(--sp-2);
-    margin-bottom: var(--sp-3);
   }
 
   .wc-ask-option {
@@ -784,18 +943,17 @@ watch(
     font-size: 14px;
   }
 
-  .wc-ask-nav {
+  .wc-ask-agents {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .wc-ask-actions {
     align-items: stretch;
   }
 
-  .wc-ask-nav > span,
-  .wc-ask-nav-right,
-  .wc-ask-nav .wc-btn {
+  .wc-ask-actions .wc-btn {
     flex: 1;
-  }
-
-  .wc-ask-nav-right {
-    justify-content: flex-end;
   }
 }
 </style>

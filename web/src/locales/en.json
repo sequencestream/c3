@@ -2061,7 +2061,9 @@
       "intent": "Intent"
     },
     "action": {
-      "jump": "Go to source"
+      "jump": "Go to source",
+      "expandList": "Expand message list",
+      "collapseList": "Collapse message list"
     },
     "ask": {
       "submit": "Submit",

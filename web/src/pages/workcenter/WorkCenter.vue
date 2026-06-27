@@ -17,8 +17,11 @@ import type {
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { usePersistentToggle } from '@/composables/usePersistentToggle'
+import { useIsMobile } from '@/composables/useBreakpoint'
 
 const { t } = useTypedI18n()
+const isMobile = useIsMobile()
 
 const props = defineProps<{
   events: WaitUserInvolveEvent[]
@@ -50,6 +53,12 @@ const filteredEvents = computed(() => {
   return props.events.filter((e) => e.status === activeFilter.value)
 })
 
+const listExpanded = usePersistentToggle('c3.workcenterListExpanded')
+
+function toggleListExpanded(): void {
+  listExpanded.value = !listExpanded.value
+}
+
 // Switching filter re-fetches the full list: the proactive broadcast carries only
 // 'todo', so non-todo tabs (done / canceled / auto) need a pull to be reliable.
 function selectFilter(key: FilterValue) {
@@ -74,8 +83,23 @@ function onSelect(event: WaitUserInvolveEvent) {
 <template>
   <div class="workcenter-page">
     <!-- Left column: filter + event list -->
-    <div class="wc-sidebar">
+    <div class="wc-sidebar" :class="{ expanded: listExpanded }">
       <div class="wc-sidebar-head">
+        <button
+          v-if="!isMobile"
+          type="button"
+          class="wc-list-toggle"
+          :aria-label="
+            listExpanded ? t('workcenter.action.collapseList') : t('workcenter.action.expandList')
+          "
+          :title="
+            listExpanded ? t('workcenter.action.collapseList') : t('workcenter.action.expandList')
+          "
+          :aria-pressed="listExpanded"
+          @click="toggleListExpanded"
+        >
+          {{ listExpanded ? '⇤' : '⇥' }}
+        </button>
         <div class="wc-filter-bar">
           <button
             v-for="f in FILTERS"
@@ -121,18 +145,43 @@ function onSelect(event: WaitUserInvolveEvent) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.2s ease;
+}
+.wc-sidebar.expanded {
+  width: 760px;
 }
 .wc-sidebar-head {
   flex-shrink: 0;
   border-bottom: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+}
+.wc-list-toggle {
+  flex: 0 0 auto;
+  background: var(--c-input);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: var(--fs-caption);
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wc-list-toggle:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
 }
 
 /* Filter bar inside sidebar head */
 .wc-filter-bar {
   display: flex;
   gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) 0;
   flex-shrink: 0;
+  min-width: 0;
 }
 .wc-filter-btn {
   background: transparent;
@@ -178,12 +227,20 @@ function onSelect(event: WaitUserInvolveEvent) {
     border-bottom: 1px solid var(--c-border);
     overflow: visible;
   }
+  .wc-sidebar.expanded {
+    width: 100%;
+  }
 
   .wc-sidebar-head {
     position: sticky;
     top: 0;
     z-index: 1;
     background: var(--c-panel);
+    padding: 0 var(--sp-3);
+  }
+
+  .wc-list-toggle {
+    display: none;
   }
 
   .wc-filter-bar {

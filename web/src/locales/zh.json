@@ -2010,7 +2010,9 @@
       "intent": "意图"
     },
     "action": {
-      "jump": "跳转到源"
+      "jump": "跳转到源",
+      "expandList": "展开消息列表",
+      "collapseList": "收起消息列表"
     },
     "ask": {
       "submit": "提交",
